@@ -126,8 +126,17 @@ a relocated copy. Both need re-running against this layout before they count for
 Live round trip: **step 2 passed on 2026-10-26 (probe U, second and third sends).** `bridge_read_reply`
 returned "pong". This needed a standing approval from the owner in the Codex chat, and that chat
 had to be listed, which happens only after it makes a bridge call. The receipt still
-passes through `unknown`. Step 3 has not passed; its one send was refused
-(`recipient-not-observed`). Details below.
+passes through `unknown`. Details below.
+
+**Pass bar, re-scoped by the owner on 2026-10-26:** the bridge is for Claude and Codex chats
+(plus outside tools); Codex-to-Codex is out of scope. The retest passes when (a) a Claude chat
+delivers to a Codex chat, and (b) a Codex chat delivers to a Claude chat. Probe U-2 and U-3 meet
+(a), with the Codex chat's `bridge_reply` read back by the Claude chat. (b) is not yet shown: a
+reply is stored by the broker and read by the sender with `bridge_read_reply`; it is not a
+delivery into the Claude chat. (b) needs a Codex chat to start its own `bridge_send` to a Claude
+chat, through the `claude-peer` adapter (table above: built, outcome `unknown` until a status
+packet arrives, waking an idle chat unproved). Step 3 below (the writer Codex chat editing a
+scratch doc under the lease) was Codex-to-Codex and is dropped by this re-scope.
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
@@ -207,7 +216,7 @@ passes through `unknown`. Step 3 has not passed; its one send was refused
     recipient made no bridge call between U-2 and U-3, yet the send was accepted. So these runs
     do not support "a chat stays listed only for the turn in which it made a bridge call". What
     keeps a chat listed, and what drops it, is still open.
-  - Step 3 has not been rerun.
+  - Step 3 was not rerun; the owner's re-scope (above) dropped it.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
@@ -218,8 +227,9 @@ Live round-trip plan (the owner grants the lease; no agent can):
    pong"). Expected: receipt `scheduled`; the Codex chat replies with `bridge_reply`; the Claude
    chat reads it with `bridge_read_reply`. Record each receipt state; "scheduled" alone is not a
    pass.
-3. If that passes, one small real delegated task (for example, add one sentence to a scratch
-   doc in a throwaway worktree), same path, checked by diff. The lease lasts an hour; renew it.
+3. Dropped on 2026-10-26 by the owner's re-scope (Codex-to-Codex is out of scope). In its place:
+   a Codex chat sends its own `bridge_send` to the Claude chat, and the Claude chat records
+   whether it arrived.
 4. Record the result here. A pass lets coordinators delegate suitable work to Codex workers.
 
 Owner steps (PowerShell; `<repo>` is the kit checkout, `<kit>` the kit folder, `<out>` a new

@@ -123,13 +123,20 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Retest on main
 
-Live round trip: **pending owner lease.** Nothing below the suite line has been run.
+Live round trip: **pending owner window selection and lease.** No message has been sent yet (attempt of 2026-10-26 below).
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
   landed after the port. It runs on fixtures, so it proves
   nothing live.
 - **Open bridge records:** only the retest record itself (pulled).
+- **Live attempt, 2026-10-26, main b135a88: blocked before step 2, nothing sent.** Install steps 1
+  and 2 were done: the service (`bridge_service.py --connections`, started 11:25) was running, the
+  `pmbridge` Claude plugin was loaded (the `bridge_*` tools were present) and Codex's
+  `config.toml` had `[mcp_servers.agent-bridge]`. `bridge_connections` returned `{"chats":[]}`;
+  `pairings.sqlite` had 0 routes (revision 0) and `outbox.sqlite` 0 messages. The Codex app was
+  not running, so there was no Codex recipient or writer to select and no lease. The registry
+  entry named "PM kit bridge" is the service itself, not a Claude chat.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the

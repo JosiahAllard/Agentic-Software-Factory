@@ -123,7 +123,7 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Retest on main
 
-Live round trip: **step 2 passed on 2026-10-26 (probe U, second send).** `bridge_read_reply`
+Live round trip: **step 2 passed on 2026-10-26 (probe U, second and third sends).** `bridge_read_reply`
 returned "pong". This needed a standing approval from the owner in the Codex chat, and that chat
 had to be listed, which happens only after it makes a bridge call. The receipt still
 passes through `unknown`. Step 3 has not passed; its one send was refused
@@ -179,7 +179,9 @@ passes through `unknown`. Step 3 has not passed; its one send was refused
     repository outside the kit) was refused with `recipient-not-observed`. `bridge_connections` then
     returned `{"chats":[]}`, so the Codex chat had dropped out of the sender's list after its reply.
     Nothing was written; the scratch doc is unchanged.
-- **Probe U, 2026-10-26: step 2 passed on the second send.**
+- **Probe U, 2026-10-26: step 2 passed on the second and third sends (U-2, U-3).**
+  - What changed since attempt 2: the owner typed a standing approval line in the recipient chat.
+    It was not an approval for any one operation.
   - A chat is listed only after it makes a bridge call in a turn, and it drops out of the list
     later (on 2026-10-26 it had dropped out after its reply turn). A send to a chat that is not
     listed is refused with `recipient-not-observed`. The second send below was accepted about 40
@@ -196,6 +198,15 @@ passes through `unknown`. Step 3 has not passed; its one send was refused
     `reply-received`, and `bridge_read_reply` returned `{"reply":"pong"}`.
   - While the receipt was still `unknown`, `bridge_receipt` once returned error
     `caller-context-unverified`. It returned the receipt on a later call.
+  - U-2 timeline (recipient rollout): the delegated turn started at 16:37:15Z with auto-review on.
+    `bridge_reply` was called at 16:37:19Z, and `reply-received` came back at 16:37:25Z. The turn
+    ended at 16:37:29Z, with no user message and no rejection in it.
+  - U-3, the same text about ten minutes later: events `queued`, `dispatching`, `unknown`,
+    `reply-received`. The recipient's `bridge_reply("pong")` went through at 16:48:13Z with no
+    user message and no rejection, and `bridge_read_reply` returned `{"reply":"pong"}`. The
+    recipient made no bridge call between U-2 and U-3, yet the send was accepted. So these runs
+    do not support "a chat stays listed only for the turn in which it made a bridge call". What
+    keeps a chat listed, and what drops it, is still open.
   - Step 3 has not been rerun.
 
 Live round-trip plan (the owner grants the lease; no agent can):

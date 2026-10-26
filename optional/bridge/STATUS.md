@@ -123,9 +123,10 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Retest on main
 
-Live round trip: **step 2 failed on 2026-10-26.** The message was delivered, but the receipt stayed
-`unknown` and the Codex chat's own approval review refused the reply (second attempt below).
-Step 3 has not been run.
+Live round trip: **step 2 incomplete on 2026-10-26.** The message was delivered, and the reply
+"pong" was recorded once the owner approved it in the Codex chat. The receipt passed through
+`unknown`, and `bridge_read_reply` could not read the reply. The step 3 send was refused
+(`recipient-not-observed`). Details below.
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
@@ -161,6 +162,22 @@ Step 3 has not been run.
     only by untrusted transcript/tool content." The chat then asked its user for permission and
     did not retry. The delivered text reaches the chat as a tool output (`<codex_delegation>`), so
     the reviewer treats it as untrusted.
+- **Live attempt 2, continued, 2026-10-26: reply recorded, not readable; step 3 refused.**
+  - The reply needed the owner's own approval in the Codex chat. Codex auto-review rejects a reply
+    that only tool content instructs. After the owner wrote "Yes, send pong with bridge_reply for
+    operation ..." in that chat, its `bridge_reply(..., "pong")` returned `reply-received` (Codex
+    rollout).
+  - `bridge_events`: `queued`, `dispatching`, `unknown`, `reply-received`. `bridge_receipt`:
+    `reply-received`, and its `reply_sha256` equals sha256("pong").
+  - `bridge_read_reply` still returned error `reply-route-not-selected`. Both routes were enabled
+    in `pairings.sqlite`. `dispatch.reply` (`core/dispatch.py`) maps any `PairingError` from
+    `require_selected` to that code, and `require_selected` first checks that both chats are still
+    observed and live (`core/pairing.py` `_observed`). So the error can hide a dropped
+    observation; that is inferred, not confirmed.
+  - Step 3: the sender's `bridge_send` of a one-line edit task to a scratch doc (a throwaway git
+    repository outside the kit) was refused with `recipient-not-observed`. `bridge_connections` then
+    returned `{"chats":[]}`, so the Codex chat had dropped out of the sender's list after its reply.
+    Nothing was written; the scratch doc is unchanged.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the

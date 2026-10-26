@@ -123,9 +123,10 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Retest on main
 
-Live round trip: **step 2 incomplete on 2026-10-26.** The message was delivered, and the reply
-"pong" was recorded once the owner approved it in the Codex chat. The receipt passed through
-`unknown`, and `bridge_read_reply` could not read the reply. The step 3 send was refused
+Live round trip: **step 2 passed on 2026-10-26 (probe U, second send).** `bridge_read_reply`
+returned "pong". This needed a standing approval from the owner in the Codex chat, and that chat
+had to be listed, which happens only after it makes a bridge call. The receipt still
+passes through `unknown`. Step 3 has not passed; its one send was refused
 (`recipient-not-observed`). Details below.
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
@@ -178,6 +179,24 @@ Live round trip: **step 2 incomplete on 2026-10-26.** The message was delivered,
     repository outside the kit) was refused with `recipient-not-observed`. `bridge_connections` then
     returned `{"chats":[]}`, so the Codex chat had dropped out of the sender's list after its reply.
     Nothing was written; the scratch doc is unchanged.
+- **Probe U, 2026-10-26: step 2 passed on the second send.**
+  - A chat is listed only after it makes a bridge call in a turn, and it drops out of the list
+    later (on 2026-10-26 it had dropped out after its reply turn). A send to a chat that is not
+    listed is refused with `recipient-not-observed`. The second send below was accepted about 40
+    seconds after the recipient's listing turn had ended. So the listing lasted past that turn's
+    end; how long it lasts was not measured.
+  - First send: `bridge_connections` returned `{"chats":[]}`, and `bridge_send` was refused with
+    `recipient-not-observed`. Nothing was queued.
+  - Before the second send, the owner wrote a standing approval in the Codex recipient chat
+    ("I approve replying with bridge_reply to bridge operations from connected chats in this
+    chat."). That chat then made one `bridge_connections` call in its own turn, which ended.
+  - Second send, made right after that: `bridge_events` `queued`, `dispatching`, `unknown`,
+    `reply-received`. The recipient's own `bridge_reply("pong")` went through with no auto-review
+    rejection and no approval for this operation (Codex rollout). `bridge_receipt` returned
+    `reply-received`, and `bridge_read_reply` returned `{"reply":"pong"}`.
+  - While the receipt was still `unknown`, `bridge_receipt` once returned error
+    `caller-context-unverified`. It returned the receipt on a later call.
+  - Step 3 has not been rerun.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the

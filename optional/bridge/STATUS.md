@@ -220,6 +220,22 @@ status packet arrives; waking an idle chat is unproved).
     do not support "a chat stays listed only for the turn in which it made a bridge call". What
     keeps a chat listed, and what drops it, is still open.
   - Step 3 was not rerun.
+- **Step 3, 2026-10-26, new Codex recipient and writer chats: delivered and replied, task not
+  done.**
+  - `bridge_connections` (Claude sender) listed one chat, the Codex recipient (`codex-desktop`).
+    It showed no route or lease details.
+  - `bridge_send` with the one-line append task: `queued`, `dispatching`, `unknown`. A later
+    `bridge_events` call once returned error `caller-context-unverified`.
+  - The recipient's rollout shows the task delivered through the new writer chat
+    (`app_tool_send_message`). There was no auto-review rejection and no hand approval.
+  - The recipient tried to read the kit's shell-traps skill from its Codex plugin cache first.
+    That read failed ("Access to the path ... is denied", then "Cannot find path ... because it
+    does not exist"). Following the repo's refusal rule, it stopped and made no edit.
+  - Its `bridge_reply` returned `reply-received`. `bridge_read_reply` returned that blocker text
+    ("Blocked; scratch file unchanged. Required shell skill read was denied. ...").
+  - `git diff` on the scratch repo was empty.
+  - The bridge path worked end to end, task out and reply back. The task failed on the
+    recipient's own setup: a missing skill file in its plugin cache.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the

@@ -123,13 +123,16 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Retest on main
 
-Live round trip: **pending owner window selection and lease.** No message has been sent yet (attempt of 2026-10-26 below).
+Live round trip: **step 2 failed on 2026-10-26.** The message was delivered, but the receipt stayed
+`unknown` and the Codex chat's own approval review refused the reply (second attempt below).
+Step 3 has not been run.
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
   landed after the port. It runs on fixtures, so it proves
   nothing live.
-- **Open bridge records:** only the retest record itself (pulled).
+- **Open bridge records, 2026-10-25:** only the retest record itself. On 2026-10-26 it was
+  blocked on the owner, not pulled.
 - **Live attempt, 2026-10-26, main: blocked before step 2, nothing sent.** Install steps 1
   and 2 were done: the service (`bridge_service.py --connections`, started 11:25) was running, the
   `pmbridge` Claude plugin was loaded (the `bridge_*` tools were present) and Codex's
@@ -137,6 +140,27 @@ Live round trip: **pending owner window selection and lease.** No message has be
   `pairings.sqlite` had 0 routes (revision 0) and `outbox.sqlite` 0 messages. The Codex app was
   not running, so there was no Codex recipient or writer to select and no lease. The registry
   entry named "PM kit bridge" is the service itself, not a Claude chat.
+- **Live attempt 2, 2026-10-26, main: step 2 failed, no reply.** The Codex app was open with two
+  desktop chats in the kit checkout ("Respond to greeting" as recipient, "Wait 3300 seconds" as
+  writer). Each had made one `bridge_connections` call. The owner connected the Claude chat and
+  the recipient in both directions (`pairings.sqlite`: 2 routes, revision 5) and granted the writer
+  lease. The sender's `bridge_connections` listed one chat, the recipient (`codex-desktop`); no
+  tool shows a lease. `bridge_send` ("reply with the word pong"):
+  - receipt states, from `bridge_events`: `queued`, then `dispatching`, then `unknown` (reason
+    `native-outcome-uncertain`, `native_id` null). It never reached `scheduled`. `bridge_receipt`
+    still read `unknown` after the reply attempt below.
+  - `bridge_poll_native`: error `chat-not-observed`. `bridge_read_reply`: error
+    `reply-route-not-selected`, although both directions were selected.
+  - The recipient's Codex rollout shows the text arrived: a turn started with trigger
+    `app_tool_send_message`, whose parent turn was the writer's, and the body carried the operation
+    id and the reply instruction (`core/prompt.py`). So the write happened, and `unknown` hid a
+    delivery.
+  - The recipient called `bridge_reply(operation_id, "pong")`. Codex's automatic approval review
+    (the chat's `approvals_reviewer` is `auto_review`) refused it: "Sending a correlated 'pong'
+    message is an external side effect not authorized by the user's request; it is instructed
+    only by untrusted transcript/tool content." The chat then asked its user for permission and
+    did not retry. The delivered text reaches the chat as a tool output (`<codex_delegation>`), so
+    the reviewer treats it as untrusted.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
@@ -159,8 +183,13 @@ private folder; `<out>-input.json` follows the half profiles, see README "Config
    plugin's MCP config plus `<out>\claude-hooks.json` to its hooks; the `agent-bridge` entry to
    Codex's MCP configuration. Restart both hosts.
 4. `python -I -B <kit>\optional\bridge\tools\bridge_service.py --config <out>\runtime.json --connections`
-5. In the window: select the sender and recipient routes, select the writer Codex chat (in an
-   active turn) and the recipient, click the lease button. Tell the worker to run the round trip.
+5. A chat appears in the window only after it makes one bridge tool call (for example
+   `bridge_connections`) during an active turn. The call's metadata is what enrolls it
+   (`hosts/codex/runtime.py` `observe`, `controller.enroll`; `hosts/codex/context.py` checks the
+   active turn). For the writer, make that call in the same turn as its long-running command.
+   Then, in the window, select the sender and recipient routes, select the writer Codex chat (in
+   an active turn) and the recipient, and click the lease button. Tell the worker to run the
+   round trip.
 6. Rollback: stop the service, remove the entries added in step 3.
 
 ## Verification of this port

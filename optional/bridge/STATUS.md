@@ -135,11 +135,9 @@ small task checked by diff. The writer Codex chat under the lease is the deliver
 Claude sender (`hosts/codex/runtime.py`; without a lease a Claude sender is refused), so step 3
 is Claude to Codex, not Codex to Codex. Probe U-2 and U-3 meet step 2. Step 3 has not passed
 yet.
-(b) Codex to Claude: a Codex chat delivers to a Claude chat. Not yet shown. A reply does not
-count: the broker stores it and the sender reads it with `bridge_read_reply`, so nothing is
-delivered into the Claude chat. (b) needs a Codex chat to start its own `bridge_send` to a
-Claude chat, through the `claude-peer` adapter (table above: built, outcome `unknown` until a
-status packet arrives; waking an idle chat is unproved).
+(b) Codex to Claude: a Codex chat delivers to a Claude chat. **Passed on 2026-10-26.** The Codex
+recipient's `bridge_reply` for step 3 arrived in the sending Claude session as a pushed message,
+headed "Reply to bridge operation: ..." and carrying the full reply text.
 
 - **Suite, 2026-10-25, main after the writer-lease merge:** `python -m unittest discover -s tests/bridge -t .` on
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
@@ -234,8 +232,13 @@ status packet arrives; waking an idle chat is unproved).
   - Its `bridge_reply` returned `reply-received`. `bridge_read_reply` returned that blocker text
     ("Blocked; scratch file unchanged. Required shell skill read was denied. ...").
   - `git diff` on the scratch repo was empty.
-  - The bridge path worked end to end, task out and reply back. The task failed on the
-    recipient's own setup: a missing skill file in its plugin cache.
+  - The bridge path worked end to end, task out and reply back. The reply was also pushed into
+    the sending Claude session, which passes Codex to Claude (pass bar (b)).
+  - Cause of the failed task: the skill file is not missing; the cache content was refreshed.
+    The Codex sandbox is denied the read through the `%USERPROFILE%\.codex\plugins\cache`
+    junction to the cache folder on another drive, and "Cannot find path" follows from that
+    denial. The owner's fix, scheduled: make the junction a real folder. After it: a read test
+    from a new chat, fresh lease setup, then step 3 once more under a new operation id.
 
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
@@ -248,8 +251,8 @@ Live round-trip plan (the owner grants the lease; no agent can):
    pass.
 3. If that passes, one small real delegated task (for example, add one sentence to a scratch
    doc in a throwaway worktree), same path, checked by diff. The lease lasts an hour; renew it.
-3b. Codex to Claude: a Codex chat sends its own `bridge_send` to the Claude chat, and the Claude
-   chat records whether it arrived.
+3b. Codex to Claude: the Codex chat's reply (or its own `bridge_send`) reaches the Claude chat as
+   a pushed message, and the Claude chat records it.
 4. Record the result here. A pass lets coordinators delegate suitable work to Codex workers.
 
 Owner steps (PowerShell; `<repo>` is the kit checkout, `<kit>` the kit folder, `<out>` a new

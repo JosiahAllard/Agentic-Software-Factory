@@ -394,9 +394,10 @@ class DeferTest(InstallCase):
             return Done(1, b'', self.DENIED)
         self.install(run=denied)                   # codex_running: False (setUp)
         self.assertEqual(self.adds(), ['pm-kit@pm-kit'])          # the hooks add skipped too
-        self.assertIn(pi.DEFERRED, self.lines)
         self.assertNotIn('FAILED', self.text())
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
+        self.assertIn(line, self.lines)
+        self.assertEqual(P.pending(self.root), {'codex': line})
 
     def test_codex_stopped_runs_the_adds_and_clears_the_flag(self):
         self.cache('1.0.0-main.1')

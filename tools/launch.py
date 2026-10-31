@@ -3,6 +3,7 @@
   launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--home-worktree] [...]
   launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--home-worktree] [...]
   launch.py consultant --repo-path DIR [--repo SLUG] [--home-worktree] [...]
+  launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--plan] [...]
   launch.py homes (--repo NAME | --repo-path DIR) [--remove NAME] [--what-if]
   launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
   launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if]
@@ -111,6 +112,19 @@ def parser():
     c.add_argument('--plan', action='store_true')
     c.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
 
+    t = sub.add_parser('topic', help='a plain session marked topic that builds one batch of records '
+                       '(skill topic-session)')
+    t.add_argument('--worktree', required=True, help="a linked worktree on the batch's branch")
+    t.add_argument('--brief', required=True, help='the brief file (relative: to the worktree)')
+    t.add_argument('--slug', required=True, help='the session is named topic-<slug>')
+    t.add_argument('--account', default='auto')
+    t.add_argument('--model')
+    t.add_argument('--effort')
+    t.add_argument('--autocompact', type=int, default=None,
+                   help='compact window in tokens (default %d; 0: the CLI default)' % start.DEFAULT_AUTOCOMPACT)
+    t.add_argument('--force', action='store_true', help='start on an account at or over 90%%')
+    t.add_argument('--plan', action='store_true', help='print, start and write nothing')
+
     m = sub.add_parser('homes', help="a main checkout's home worktrees, or remove one")
     g = m.add_mutually_exclusive_group(required=True)
     g.add_argument('--repo', help='a name in launcher.repos')
@@ -211,6 +225,9 @@ def run(a, settings, host):
     if a.cmd == 'consultant':
         return start.consultant(settings, host, a.repo_path, a.repo, a.account, a.autocompact, a.model, a.effort,
                                 a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree)
+    if a.cmd == 'topic':
+        return start.topic(settings, host, a.worktree, a.slug, a.brief, a.account, a.model, a.effort,
+                           a.autocompact, a.force, a.plan)
     if a.cmd == 'homes':
         return start.homes(settings, host, a.repo, a.repo_path, a.remove, a.what_if)
     if a.cmd == 'stop':

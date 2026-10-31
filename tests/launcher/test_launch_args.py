@@ -48,6 +48,36 @@ class HandoffState(unittest.TestCase):
         self.assertIsNone(a.state)
 
 
+class TopicArgs(unittest.TestCase):
+    """launch.py topic: --worktree, --brief and --slug are required; run passes them through."""
+
+    def test_each_required_argument_missing_exits_2(self):
+        full = ['topic', '--worktree', 'w', '--brief', 'b.md', '--slug', 'ab']
+        for drop in ('--worktree', '--brief', '--slug'):
+            with self.subTest(drop=drop):
+                i = full.index(drop)
+                with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
+                    launch.parser().parse_args(full[:i] + full[i + 2:])
+                self.assertEqual(e.exception.code, 2)
+        a = launch.parser().parse_args(full + ['--plan'])
+        self.assertEqual((a.worktree, a.brief, a.slug, a.account, a.plan), ('w', 'b.md', 'ab', 'auto', True))
+
+    def test_run_starts_a_topic_session(self):
+        from kitlib.git import repo as gitrepo
+        h = Home(self, accounts=('1',))
+        host = FakeHost(h.root)
+        host.where = gitrepo.LINKED
+        wt = h.repos['alpha']
+        with open(os.path.join(wt, 'b.md'), 'w', encoding='utf-8') as f:
+            f.write('brief\n')
+        a = launch.parser().parse_args(['topic', '--worktree', wt, '--brief', 'b.md', '--slug', 'ab',
+                                        '--account', '1'])
+        launch.run(a, h.settings, host)
+        text, = host.opened
+        self.assertIn("$env:PM_KIT_ROLE = 'topic'", text)
+        self.assertIn("-n 'topic-ab'", text)
+
+
 class HandoffStateWiring(unittest.TestCase):
     def test_run_passes_the_state_file_to_the_successors_first_message(self):
         h = Home(self, accounts=('1', '2'))

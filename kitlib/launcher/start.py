@@ -4,6 +4,7 @@
   start_entry a sessions.json entry by key: its repo, agent, stem and brief
   deep        a deep-worker: the 1M-context model, effort xhigh, a brief, a requester to report to
   consultant  one long-lived consultant per repo that answers engineering questions
+  topic       a plain session marked topic, in a linked worktree, building one batch of records
   homes       list a main checkout's home worktrees, or remove one
 
 Every function returns the lines it says; a refusal is a LaunchError (nothing started, nothing
@@ -158,12 +159,14 @@ def window_text(settings, host, name, role, folder, command, config_dir):
 def start(settings, host, repo=None, repo_path=None, account=None, org=None, prompt=None, brief=None,
           default_prompt=DEFAULT_PROMPT, name=None, predecessor=None, no_agent=False, agent=None,
           model=None, effort=None, autocompact=None, whatif=False, home_worktree=False,
-          remote_control=True):
+          remote_control=True, mark=None):
     """Open a session's window; the lines it says. The repo folder is --repo-path, or the
     launcher.repos entry for --repo. autocompact None is DEFAULT_AUTOCOMPACT; 0 passes no
     --autocompact (the CLI's own window). home_worktree: an agent session whose folder is a main
     checkout starts in its home worktree instead (home_folder). remote_control False: no
-    --remote-control on the command line (window.claude_command; for measurement)."""
+    --remote-control on the command line (window.claude_command; for measurement). mark: the
+    PM_KIT_ROLE the window sets in place of the one its agent gives (window.role_for): a topic
+    session is a plain session marked window.TOPIC (topic)."""
     if autocompact is None:
         autocompact = DEFAULT_AUTOCOMPACT
     if bool(repo) == bool(repo_path):
@@ -172,7 +175,7 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
     if agent and not window.AGENT.match(agent):
         raise LaunchError("--agent '%s' is not an agent name." % agent)
     _check_common(model, effort, autocompact)
-    role = window.role_for(agent, settings.coordinator_agent)
+    role = mark or window.role_for(agent, settings.coordinator_agent)
     if home_worktree:
         check_home_role(role)
     folder = repo_path or settings.repo_path(repo)
@@ -401,6 +404,48 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
             out.append('Launch failed; removed %s' % brief_path)
         raise _with_lines(out)
     out.append('After its report is in, stop it: %s' % stop_cmd(name))
+    return out
+
+
+def topic(settings, host, worktree, slug, brief, account='auto', model=None, effort=None, autocompact=None,
+          force=False, plan=False):
+    """A topic session named topic-<slug> (skill topic-session): a plain session (no agent) the owner
+    drives, marked window.TOPIC, started in `worktree`, a linked worktree on the branch its records are
+    batched for, with `brief` (a file; relative to the worktree) as its first read. Refused, nothing
+    started, when the folder is not a linked worktree (never the main checkout), the brief is missing,
+    or a session of that name is running."""
+    out = []
+    if not SLUG.match(slug or ''):
+        raise LaunchError("--slug '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % slug)
+    _check_common(model, effort, DEFAULT_AUTOCOMPACT if autocompact is None else autocompact)
+    if not os.path.isdir(worktree or ''):
+        raise LaunchError('No folder at %s' % worktree)
+    worktree = os.path.abspath(worktree)
+    place = host.place(worktree)
+    if place.kind != gitrepo.LINKED:
+        raise LaunchError('%s is not a linked worktree (%s): a topic session builds in its own worktree on its '
+                          "batch's branch, never in a main checkout; make one with the repo's worktree tool first. "
+                          'Nothing was started.'
+                          % (worktree, 'a main checkout' if place.kind == gitrepo.MAIN else place.detail))
+    if not brief:
+        raise LaunchError('Give --brief <file>: the topic session reads it first.')
+    brief_path = os.path.abspath(brief if os.path.isabs(brief) else os.path.join(worktree, brief))
+    if not os.path.isfile(brief_path):
+        raise LaunchError('No brief file at %s' % brief_path)
+    name = 'topic-' + slug
+    acct = _pick_or(settings, host, account, out)
+    A.launch_dir(settings, acct)
+    A.check_headroom(settings, acct, host.now(), force, out)
+    _refuse_live(host, name, 'stop it first or pick another --slug.')
+    prompt = ("You are %s, a topic session: a plain session the owner drives directly, in the worktree %s. "
+              "Read your brief %s first and work from it with the owner. Pull each record before you work on it "
+              "(backlog.py -C <this worktree> pull <ID>); never edit the main checkout, and never merge, land or "
+              "push. When the work is done, gate the tip and SendMessage %s the branch, the tip, the gate result "
+              "and the records it covers; the coordinator reviews and lands it."
+              % (name, worktree, brief_path, PM_REF))
+    out += start(settings, host, repo_path=worktree, account=acct, name=name, no_agent=True, model=model,
+                 effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, mark=window.TOPIC)
+    out.append('When its report is in and the branch has landed, stop it: %s' % stop_cmd(name))
     return out
 
 

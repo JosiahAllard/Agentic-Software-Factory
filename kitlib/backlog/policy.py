@@ -19,7 +19,7 @@ as the store holds it locally.
                                 take a row, or a topic session writes a record not batched for
                                 its branch (batch_refusal); else the rows it sorted
   batch_refusal(role, verb, rid, rec, branch)
-                                why a topic session may not write `rid`, or None
+                                why a topic session may not write `rid` (or `add` at all), or None
   may(name, environ)            True when the session tools/backlog.py runs in may take the row
                                 `name`: a row the plan finds (pull-collision, set-widen-collision)
   top_only(rows)                the rows of `rows` only the owner and the PM may take, which a
@@ -301,9 +301,15 @@ def check(args, ctx, snap, environ=None):
 def batch_refusal(role, verb, rid, rec, branch):
     """Why a topic session (TOPIC) may not write record `rid` as `branch`, or None: its writes
     name only a record whose `batch:` is that branch (a lead sets it, `set ID --batch <branch>`).
-    A read, an `add` and every other role's write are None. `rec` None: the store holds no such
-    record, which the plan refuses by its own words."""
-    if role != TOPIC or verb in READS or verb == 'add' or not rid or rec is None:
+    A read and every other role's write are None. Its `add` is refused: a session the owner
+    drives files no records for its work, the owner does (or asks a coordinator to). `rec` None:
+    the store holds no such record, which the plan refuses by its own words."""
+    if role != TOPIC or verb in READS:
+        return None
+    if verb == 'add':
+        return ('a topic session files no records: the owner files the records for a session '
+                'the owner drives, or asks a coordinator to. Tell the owner what you found')
+    if not rid or rec is None:
         return None
     batch = rec.get('batch')
     if batch is not None and batch == branch:

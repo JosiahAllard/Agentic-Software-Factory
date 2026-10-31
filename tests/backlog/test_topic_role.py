@@ -1,6 +1,6 @@
 """The topic session (content/roles/topic.md, docs/backlog.md "Roles"): a launched plain session
 marked `topic`, a builder whose writes name only the records batched for its branch
-(`batch: <branch>`, set by a lead). Its pull of a record batched for its own branch takes the
+(`batch: <branch>`, set by a lead), and which files no records (`add` is refused). Its pull of a record batched for its own branch takes the
 whole batch first (plan.batch_members as current_offer's seeds), so rank order is no refusal and
 no `preempt` is written; every other refusal stands. A record batched for one branch is held from
 every other branch's pull and `next`."""
@@ -164,8 +164,23 @@ class TopicCli(unittest.TestCase):
         self.ok('topic', *self.topic('pull', 'MINE'))
         self.assertIn('pulled_by: %s\n' % self.TOPIC_BRANCH, self.ok(None, 'show', 'MINE'))
 
-    def test_a_topic_session_never_prices_or_closes_and_may_add(self):
-        """(e) Its role's rows stay a builder's: no price, no close, even on its own batch."""
+    def test_a_topic_session_sets_scope_on_its_own_pull_and_a_widen_into_a_live_pull_is_refused(self):
+        """(b) `set --scope` on a record it holds pulled is a builder's own-pull text edit; a
+        widen into another branch's live pull stays a lead's (`set-widen-collision`)."""
+        self.ok('coordinator', 'set', 'MINE', '--batch', self.TOPIC_BRANCH)
+        self.ok('topic', *self.topic('pull', 'MINE'))
+        self.ok('topic', *self.topic('set', 'MINE', '--scope', 'tools/mine2.py'))
+        self.assertIn('tools/mine2.py', self.ok(None, 'show', 'MINE'))
+        self.repo.git('branch', OTHER)  # a live pull is one whose branch exists
+        self.ok('coordinator', '--as', OTHER, 'pull', 'ELSE')
+        out = self.refused('topic', *self.topic('set', 'MINE', '--scope', 'tools/else.py'))
+        self.assertIn('widens its scope into a live pull', out)
+        self.assertIn('`set-widen-collision`', out)
+        self.assertNotIn('tools/else.py', self.ok(None, 'show', 'MINE'))
+
+    def test_a_topic_session_never_prices_closes_or_adds(self):
+        """(e) Its role's rows stay a builder's: no price, no close, even on its own batch. It
+        files no records: its `add` is refused, pointing at the owner."""
         self.ok('coordinator', 'set', 'MINE', '--batch', self.TOPIC_BRANCH)
         self.ok('topic', *self.topic('pull', 'MINE'))
         out = self.refused('topic', *self.topic('set', 'MINE', '--priority', '1', '--priority-by',
@@ -174,7 +189,12 @@ class TopicCli(unittest.TestCase):
         out = self.refused('topic', *self.topic('close', 'MINE', '--reason',
                                                 'built on the topic branch'))
         self.assertIn("this session's role is topic", out)
-        self.ok('topic', 'add', 'NEWONE', '--summary', 'found while building', '--scope',
+        out = self.refused('topic', 'add', 'NEWONE', '--summary', 'found while building',
+                           '--scope', 'tools/newone.py', *ADD_FLAGS)
+        self.assertIn('a topic session files no records: the owner files the records', out)
+        self.assertIn('NOT FOUND', self.run_tool(None, 'show', 'NEWONE')[1] +
+                      self.run_tool(None, 'show', 'NEWONE')[2])
+        self.ok('worker', 'add', 'NEWONE', '--summary', 'found while building', '--scope',
                 'tools/newone.py', *ADD_FLAGS)
 
 

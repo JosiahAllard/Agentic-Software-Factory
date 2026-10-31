@@ -53,6 +53,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _host                                                        # noqa: E402
 from kitlib import config as kconfig                              # noqa: E402
+from kitlib.coordstate.render import main_as_fetched                # noqa: E402,F401
 from kitlib.gate import verdicts                                    # noqa: E402
 from kitlib.git import refs, repo                                  # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
@@ -124,17 +125,6 @@ def transcript_reader(environ=None):
     except (ImportError, AttributeError, registry.RegistryError):
         return None
     return make() if make is not None else None
-
-
-def main_as_fetched(root):
-    """`(<remote>/<main_branch> as last fetched, None)`, or `(None, why)`; no network."""
-    root = os.path.abspath(root)
-    try:
-        cfg = kconfig.load(root)
-    except kconfig.ConfigError as e:
-        return None, 'the kit configuration cannot be read: %s' % e
-    sha, why = refs.remote_tip(cfg.remote, cfg.main_branch, root)
-    return (sha, None) if sha else (None, '%s/%s: %s' % (cfg.remote, cfg.main_branch, why))
 
 
 def carry(a, common_dir):

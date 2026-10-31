@@ -427,6 +427,23 @@ class PairingStore:
             self._observed(sender)
             self._observed(recipient)
 
+    def require_reply_read(self, replier, reader):
+        """The route gate for reading a reply already recorded: replier -> reader still
+        open and the reader observed live. The replier need not be observed now: its reply
+        passed the full gate when it was recorded, and a chat between turns can fail its
+        live check (a Codex chat whose turn moved on) and leave the observed list."""
+        with self._lock:
+            self._ready()
+            if type(replier) is not ChatBinding or type(reader) is not ChatBinding:
+                raise PairingError('chat-not-observed')
+            if not self._route_open(replier, reader):
+                try:
+                    self._observed(reader)
+                except PairingError:
+                    pass
+                raise PairingError('chat-route-not-selected')
+            self._observed(reader)
+
     @contextmanager
     def selected_guard(self, sender, recipient):
         """Serialize a bounded broker action with owner route changes, including other DB clients.

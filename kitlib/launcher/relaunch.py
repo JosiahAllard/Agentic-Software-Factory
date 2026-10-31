@@ -102,13 +102,14 @@ def _live_records(settings, host):
 
 def pm_running(procs, records, sid):
     """True when the PM session `sid` runs: a live registry record with that sessionId (a resumed,
-    forked or desktop-app PM), or a launched process whose command line carries the id or the name
-    pm-session (reboot.running's test)."""
+    forked or desktop-app PM), or a launched process that runs as the id (stop.runs_as: its --resume
+    or --session-id value, not the id elsewhere, as in a topic session's brief path) or is named
+    pm-session."""
     if any(r.get('sessionId') == sid for r in records):
         return True
     for p in lookup.launched(procs):
         cmd = p.get('CommandLine') or ''
-        if sid in cmd or lookup.rc_name(cmd) == S.PM_NAME:
+        if stop.runs_as(cmd, sid) or lookup.rc_name(cmd) == S.PM_NAME:
             return True
     return False
 

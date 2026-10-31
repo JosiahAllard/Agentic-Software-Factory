@@ -43,7 +43,7 @@ Every pair of the two may be connected except Codex to Codex, which `peers.json`
 |---|---|---|
 | any → Claude terminal or desktop | `claude-peer`. It writes Claude's protocol-1 peer packet into the recipient's own pipe and receives status packets on an owned return pipe. | Built. It writes once, and the outcome is **unknown** (`native-outcome-unconfirmed`) until a correlated `held`, `refused` or `expired` packet arrives. Neither acceptance nor a reply is confirmed natively. Return expectations live only for the endpoint's lifetime (512 at most). Waking an idle chat is unproved. |
 | Codex → Codex | none | **Refused by design.** The bridge is for Claude and Codex and outside tools; Codex chats message each other through Codex's own messaging. `peers.json` refuses the pair, so the broker refuses it at admission (`host-pair-refused`, nothing queued) and again before any send. Behind that, the Codex half still refuses a Codex sender before writing (`codex-direct-route-unavailable`), and a lease never serves one. |
-| Claude → Codex | `codex-desktop`, through an owner-granted **writer lease**: a Codex desktop chat in an active turn carries the message as the native executor | Built, fixtures only. The owner grants it in the window for one recipient until Stop, a PM revoke or either chat's binding being replaced (a turn change or a failed observation ends nothing); it lives in memory, a service restart drops it, and every grant is logged. A writer whose turn has ended is refused (`codex-direct-context-unverified`) until it makes a bridge call in a new active turn. The sender's own route must still be selected, and the writer must be live, in an active turn, on the recipient's account and not the recipient, at every write. Without a lease the adapter refuses before writing (`codex-direct-route-unavailable`). A reply return from another host to a Codex chat needs the lease too. A correlated success means "scheduled" only, never "ran" or "replied". The check after the write accepts the recipient's turn having moved on (the delivery starts a new turn) but still requires the same app process, image and channel, the lease, and the recipient's same rollout file holding the captured turn; it drops no chat from the observed list. A failure there gives **unknown**, its reason `native-outcome-uncertain:<adapter code>`. The tools pipe is a measured private protocol, not a public contract. Both chats must be in the same app, distinct and on the same account. |
+| Claude → Codex | `codex-desktop`, through an owner-granted **writer lease**: a Codex desktop chat in an active turn carries the message as the native executor | Delivered and replied on live runs (2026-10-26 and 2026-10-31; see "Retest on main"). Receipts on the 10-26 runs stayed `unknown`, never `scheduled`; on 10-31 ping-005 reached `recipient-accepted`. The owner grants it in the window for one recipient until Stop, a PM revoke or either chat's binding being replaced (a turn change or a failed observation ends nothing); it lives in memory, a service restart drops it, and every grant is logged. A writer whose turn has ended is refused (`codex-direct-context-unverified`) until it makes a bridge call in a new active turn. The sender's own route must still be selected, and the writer must be live, in an active turn, on the recipient's account and not the recipient, at every write. Without a lease the adapter refuses before writing (`codex-direct-route-unavailable`). A reply return from another host to a Codex chat needs the lease too. A correlated success means "scheduled" only, never "ran" or "replied"; no live run has shown `scheduled`, and the replies came back through `bridge_reply`. The check after the write accepts the recipient's turn having moved on (the delivery starts a new turn) but still requires the same app process, image and channel, the lease, and the recipient's same rollout file holding the captured turn; it drops no chat from the observed list. A failure there gives **unknown**, its reason `native-outcome-uncertain:<adapter code>`. The tools pipe is a measured private protocol, not a public contract. Both chats must be in the same app, distinct and on the same account. |
 | Codex terminal as recipient | `codex-terminal` (`CodexTerminalAdapter`) | **Dead.** It advertises no capability and every send refuses before writing. No verified control channel to the original terminal exists (the default control socket was absent; the experimental queue methods are unproved). The service never installs it. |
 | Codex chat's reply → a Codex sender | none | Does not arise: the Codex-to-Codex message it would answer is refused at admission (`host-pair-refused`). A return delivery queued earlier is refused before any send, and the Codex half would refuse it at the write too. |
 
@@ -159,13 +159,14 @@ Observations only; none is fixed here.
   0x8007000F, probably because it cannot see drive Z:. This is in the owner's Codex
   configuration, not the bridge.
 
-## Open before any live use
+## Open items
 
 1. Re-run the Claude hook canary and the relocated idle start on this layout.
 2. A live canary from an owner-selected Claude chat to a Claude chat: delivery, wake and a
    correlated reply.
-3. A live canary of the writer lease: an owner-selected Claude chat to a Codex desktop chat,
-   carried by a leased Codex chat in an active turn. It is built and tested on fixtures only.
+3. The writer lease was shown live on 2026-10-26 and 2026-10-31 (ping and append task, both
+   replied). Not yet shown: a run with no hand approval of the reply in the recipient chat (the
+   owner's explicit permission line was needed on 10-31).
 4. A verified control channel to the original Codex terminal before `codex-terminal` advertises
    SEND.
 5. Precise task ancestry for incoming operations. Codex currently uses the chat as the task root,
@@ -201,10 +202,7 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
   Windows: 489 tests, OK (199 s). This includes the Claude-to-Codex writer lease code that
   landed after the port. It runs on fixtures, so it proves
   nothing live.
-- **Open bridge records, 2026-10-31:** only the retest record itself
-  (the retest), pulled again on branch `kit/codex-bridge-retest`. The sandbox
-  junction cause of the step 3 failure is fixed (Codex now reads a real copy of the kit plugin).
-  The owner's live sitting of 2026-10-31 followed; it is recorded below.
+- **2026-10-31:** the owner's live sitting is recorded below.
 - **Live attempt, 2026-10-26, main: blocked before step 2, nothing sent.** Install steps 1
   and 2 were done: the service (`bridge_service.py --connections`, started 11:25) was running, the
   `pmbridge` Claude plugin was loaded (the `bridge_*` tools were present) and Codex's
@@ -334,7 +332,7 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
    service with `--connections`.
-2. Round trip: in the window select the Claude chat as sender and a Codex desktop chat as
+2. Round trip (read "Running a sitting" below first: conditions (a), (b) and (d)): in the window select the Claude chat as sender and a Codex desktop chat as
    recipient, select a second Codex desktop chat in an active turn as writer, click the lease
    button. The Claude chat calls `bridge_send` with a one-line task ("reply with the word
    pong"). Observed on every live run so far: `queued`, `dispatching`, `unknown` (`native-outcome-uncertain`),
@@ -373,7 +371,9 @@ private folder; `<out>-input.json` follows the half profiles, see README "Config
    active turn). For the writer, make that call in the same turn as its long-running command.
    Then, in the window, select the sender and recipient routes, select the writer Codex chat (in
    an active turn) and the recipient, and click the lease button. Tell the worker to run the
-   round trip.
+   round trip. See "Running a sitting" above for conditions (a) to (d): a foreground writer turn,
+   the owner's explicit reply line in the recipient chat, and addressing the recipient by its
+   reference.
 6. Rollback: stop the service, remove the entries added in step 3.
 
 ## Verification of this port

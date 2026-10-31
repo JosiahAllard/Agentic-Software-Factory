@@ -1,8 +1,13 @@
 """bg_client: the trainer's side of the lock's background tier, kitlib.lock.background.
 
-Standard library only and no Windows calls, so it can be copied into a container image as it is.
+Standard library only and no Windows calls, so it runs in a Linux container. Mount the kitlib
+folder into the container read-only (so the trainer always runs the kit's current copy; never copy
+this file into the image, where it goes stale), put the folder that contains kitlib on sys.path
+(PYTHONPATH), and import it as a package module. Never put kitlib/lock itself on sys.path: its
+site.py and queue.py would shadow the standard library's.
 
-    import sys, bg_client
+    import sys
+    import kitlib.lock.bg_client as bg_client
     resume_from_newest_checkpoint()               # every start, the first and each resume
     while training:
         if bg_client.should_pause():              # at least every POLL_S, and before step one
@@ -14,7 +19,7 @@ Standard library only and no Windows calls, so it can be copied into a container
 `machine_lock.py background ... -- <command>` gives the command MACHINE_LOCK_BG_CONTROL, a
 control.json it rewrites every few seconds: {"seq", "pause", "reason", "stale_s", ...}, and
 MACHINE_LOCK_BG (<run id>:<pid>:<ctime>). Inside a persistent container that mounts the store's
-background folder read-only (say at /mlock), run the trainer with
+background folder (<store>\background) read-only (say at /mlock), run the trainer with
 `docker exec -e MACHINE_LOCK_BG -e MACHINE_LOCK_BG_ROOT=/mlock <container> ...`: with both set,
 control.json is found at $MACHINE_LOCK_BG_ROOT/<run id>.d/control.json. The launcher must stay
 attached and return the trainer's exit code.

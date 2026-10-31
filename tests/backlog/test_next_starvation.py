@@ -112,7 +112,7 @@ class ReleasableHolds(unittest.TestCase):
 class Broad(unittest.TestCase):
 
     def test_a_folder_glob_and_a_literal_doc_are_broad(self):
-        for m in ('brain/**', 'shared/retribution-api/**', 'docs/architecture.md', 'A.MD'):
+        for m in ('brain/**', 'shared/game-api/**', 'docs/architecture.md', 'A.MD'):
             self.assertTrue(omod.is_broad(m), m)
         for m in ('tools/x.py', 'docs', 'none'):
             self.assertFalse(omod.is_broad(m), m)

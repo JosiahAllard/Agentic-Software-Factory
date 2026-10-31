@@ -158,6 +158,33 @@ class LandsAloneFullFresh(StrictCase):
                             'lands alone, never in a batch')
 
 
+class GateConfigLandsAlone(StrictCase):
+    """A branch that changes a gate config file (kitlib.gate.reuse.config_hits; here the hook
+    module, as .kit.json is owner-only) is refused in a named batch, as a strict branch is, and
+    lands alone."""
+    KIT = dict(test_land.LandCase.KIT, hook={'module': 'kit_hooks'})
+
+    def setUp(self):
+        StrictCase.setUp(self)
+        self.on_main({'tools/kit_hooks.py': 'GATE_CHECKS = {}\n'}, 'hook module')
+
+    def test_a_batch_holding_a_branch_that_changes_the_gate_config_is_refused(self):
+        _, config_tip = self.branch('config', {'tools/kit_hooks.py': 'GATE_CHECKS = {}  # x\n'})
+        _, plain_tip = self.branch('feature', {'src/a.py': 'a\n'})
+        self.queue('kit/config', config_tip)
+        self.queue(BRANCH, plain_tip)
+        _, out, _ = self.land_it([BRANCH, 'kit/config'], [plain_tip, config_tip])
+        self.assert_refused(out, "kit/config changes the gate's config (tools/kit_hooks.py)",
+                            'lands alone, never in a batch')
+
+    def test_alone_it_lands(self):
+        _, config_tip = self.branch('config', {'tools/kit_hooks.py': 'GATE_CHECKS = {}  # x\n'})
+        self.queue('kit/config', config_tip)
+        _, out, _ = self.land_it('kit/config', config_tip)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.remote_main(), out.merge)
+
+
 class ReviewerTierByAuthor(StrictCase):
     """A strict branch needs a strong-tier review whoever built it: a haiku review counts for
     none, a worker or weak-worker build included. A plain branch built by worker lands on a haiku

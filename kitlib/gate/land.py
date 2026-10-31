@@ -195,13 +195,32 @@ time is NOT RUN with the machine lock's exit code, not BUSY.
 and no verdict, it says whether each branch changes a strict path (Lander.strict_paths).
 
 A batch (several branches, one --expect-tip each, merged in the order given): every branch passes
-the locked checks, and no tip may contain another; the branches are merged one after another with
---no-ff in the landing tree, the merged tree is gated once against the base, and the last merge
-is pushed. A conflict on any branch aborts that merge and drops the earlier ones; a red gate drops
-them all (main never held them). Each branch gets its own result record.
+the locked checks, and no tip may contain another; a branch that changes a strict path or a gate
+config file (reuse.config_hits) is refused in a batch (it lands alone). The branches are merged
+one after another with --no-ff in the landing tree, the merged tree is gated once against the
+base, and the last merge is pushed. A named batch is all or nothing: a conflict on any branch
+aborts that merge and drops the earlier ones; a red gate drops them all (main never held them).
+Each branch gets its own result record, which names the batch (`batch`).
 
 A submitted landing (kitlib.gate.submit; `land.py --submit`) is this landing run by a detached
 process: its records are written `running` before it starts, and every outcome finishes them.
+At its turn (the booking given) it reads its first record (submit.turn): folded into another
+landing's batch, it says FOLDED and ends, writing nothing more (that landing finishes its
+records); folded into one that still runs, it gives the turn back and books again until that one
+lands them or gives them back; else it marks the record turn_at, so no landing folds it from
+then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
+
+Folding (docs/gate.md "Folding queued submissions"): a submitted landing whose locked checks
+passed, that changes no strict path and no gate config file, was not given back from a batch
+itself, and has room under "landing".batch_max, folds the submissions queued behind it into its
+batch, oldest first (Lander.fold_queued): whole submissions run with the same flags, each checked
+with the landing's own branches by the locked checks a batch passes, then the whole batch again
+(a miss gives them all back). Its own branches merge first. A folded batch releases or drops
+units, never refusing the landing for them: a folded submission that does not merge cleanly is
+given back, dropped (fold_dropped: it lands alone, at its own turn), and the rest merged again; a
+red merged gate gives back every folded submission dropped and gates the landing's own branches
+alone, in the same slot; any other outcome that does not land gives them back to land at their
+own turn.
 """
 import ast
 import itertools
@@ -311,6 +330,12 @@ def _rmtree(path):
         shutil.rmtree(path, onexc=again)        # Python 3.12 and later
     except TypeError:
         shutil.rmtree(path, onerror=again)
+
+
+def submitmod():
+    """kitlib.gate.submit, imported late: it imports this module late in turn."""
+    from kitlib.gate import submit
+    return submit
 
 
 def _as_list(x):
@@ -571,6 +596,11 @@ class Lander(object):
         self.strict_hits = {}       # branch -> the strict paths it changes (strict_check)
         self.strict_review = None   # the verdict entry a strict branch lands with (strict_check)
         self.strict_carry = None    # its carry facts, checked again here, when it was carried
+        self.flags = sub.get('flags')   # a submitted landing's flags (submit.flags_of), or None
+        self.anchor_run_id = self.result_runs[0].run_id if self.result_runs else None
+        self.folds = []             # the submissions folded into this batch: {unit, runs}, in order
+        self.was_dropped = False    # a batch gave this submission back dropped: it lands alone
+        self.folded_exit = False    # another landing folded this one: it ends writing nothing
 
     @property
     def pairs(self):
@@ -897,10 +927,6 @@ class Lander(object):
         why = self.onto_origin()
         if why:
             return why
-        for b, t in self.pairs:
-            tip = self.ref('refs/heads/%s' % b)
-            if tip != t:
-                return '%s is at %s, and the caller expects %s' % (b, (tip or '?')[:10], t[:10])
         entries, why = gitstatus.status(self.root)
         if entries is None:
             return 'git status failed: %s' % why
@@ -913,6 +939,18 @@ class Lander(object):
         merging, why = refs.merge_in_progress(self.root)
         if merging is not False:
             return why or 'a merge is in progress in the main checkout'
+        return self.pair_checks() or self.scope_check()
+
+    def pair_checks(self):
+        """The locked checks of the batch's branches and tips (self.pairs), after the checks of
+        the main checkout (locked_checks): each tip still the branch's, none already in main, none
+        inside another, the owner and ancestry checks, the tips' gate records, the strict, gate
+        config and verdict checks. None, or the first refusal. A fold runs them for the landing's
+        own branches with each submission it would fold, then for the whole batch."""
+        for b, t in self.pairs:
+            tip = self.ref('refs/heads/%s' % b)
+            if tip != t:
+                return '%s is at %s, and the caller expects %s' % (b, (tip or '?')[:10], t[:10])
         for b, t in self.pairs:
             landed, why = refs.is_ancestor(t, self.expect_main, self.root)
             if landed is not False:
@@ -931,8 +969,8 @@ class Lander(object):
             why = at_landing.ancestry_refusal(self.root, self.cfg, t, env=self.git_env)
             if why:
                 return why
-        return (self.tip_gate_check() or self.strict_check() or self.verdict_check()
-                or self.scope_check())
+        return (self.tip_gate_check() or self.strict_check() or self.config_check()
+                or self.verdict_check())
 
     # ---------------------------------------------------------------- the tips' full gate
 
@@ -1269,6 +1307,45 @@ class Lander(object):
         why = self.review_refusal(b, t, strict=True)
         if why:
             return '%s: %s' % (self.strict_says(b), why)
+        return None
+
+    def branch_paths(self, t):
+        """`(the paths the tip t changes from its merge base with the base, None)`, or `(None,
+        why)`."""
+        mb, why = refs.merge_base(self.expect_main, t, self.root)
+        if not mb:
+            return None, why or 'no common commit with %s' % self.expect_main[:10]
+        return runner.changed_between(self.root, mb, t)
+
+    def config_paths(self):
+        """`(hits, None)`: branch -> the gate config files it changes (reuse.config_hits: the
+        base's `.kit.json`, a section file, the hook module; merge base with the base to its
+        tip), for each branch with any; or `(None, why)` when a branch's paths cannot be read."""
+        hits = {}
+        for b, t in self.pairs:
+            changed, why = self.branch_paths(t)
+            if changed is None:
+                return None, 'git cannot list the paths of %s to check the gate\'s config files: %s' % (
+                    b, why)
+            found = reuse.config_hits(self.cfg, changed)
+            if found:
+                hits[b] = found
+        return hits, None
+
+    def config_check(self):
+        """A locked check (docs/gate.md "Strict paths"), after strict_check: in a batch, a branch
+        that changes a gate config file (config_paths) is refused, as a strict branch is: it lands
+        alone, never in a batch. A batch whose paths cannot be read refuses. None, or why not
+        (REFUSED, nothing merged)."""
+        if len(self.pairs) < 2:
+            return None
+        hits, why = self.config_paths()
+        if why:
+            return why
+        for b in self.branches:
+            if b in hits:
+                return ('%s changes the gate\'s config (%s): a branch that changes a gate config '
+                        'file lands alone, never in a batch' % (b, ', '.join(hits[b][:STRICT_SHOWN])))
         return None
 
     def verdict_check(self):
@@ -2214,7 +2291,12 @@ class Lander(object):
         the `error` records carry gate_once and escalated (once_facts), and each is appended to
         the land ledger as one line (ledger; result.append_ledger), a failed append a WARNING.
         Landed, the final records are then posted to the hub's landing feed (post_landing).
-        facts['result_record']: the path (one branch), the list of paths (a batch), or None."""
+        facts['result_record']: the path (one branch), the list of paths (a batch), or None.
+        Each final and `error` record names the batch it landed in (`batch`). A submitted
+        landing's are written only while each record is still its run's and folded as its
+        result.Run says (folded_into: a fold's, into this landing; else none), judged under the
+        record's lock; a record left as it is gets no ledger line. A landing another landing
+        folded (folded_exit) writes no record and no ledger line at all."""
         try:
             out = self._run()
         except BaseException as e:
@@ -2223,14 +2305,19 @@ class Lander(object):
                 self.drop_slot(130 if ctrl_c else 1, 'interrupted' if ctrl_c else 'error')
             except BaseException:   # noqa: BLE001 - never replace the exception being raised
                 pass
-            for rr in self.result_runs:
+            for rr in ([] if self.folded_exit else self.result_runs):
                 try:
+                    rr.batch = list(self.branches)
                     self.say(rr.error(e, log=self.gate_logs or self.output_log,
-                                      **self.once_facts())[1])
-                    self.ledger(rr)
+                                      when=self.still_ours(rr), **self.once_facts())[1])
+                    if not rr.kept:
+                        self.ledger(rr)
                 except Exception:   # noqa: BLE001 - never replace the exception being raised
                     pass
             raise
+        if self.folded_exit:        # another landing lands these branches and finishes the records
+            self.drop_slot(0, 'done')
+            return out
         try:
             self.drop_slot(0 if out.code == G.OK else out.code or 1, 'done')
         except KeyboardInterrupt as e:  # the outcome stands: the records still say it
@@ -2242,16 +2329,28 @@ class Lander(object):
         paths = []
         once = self.once_facts()
         for rr in self.result_runs:
+            rr.batch = list(self.branches)
             path, line = rr.finish(out, base=self.expect_main,
                                    log=self.gate_logs or self.output_log, source=self.source(),
-                                   **once)
+                                   when=self.still_ours(rr), **once)
             self.say(line)
-            self.ledger(rr)
+            if not rr.kept:
+                self.ledger(rr)
             paths.append(path)
         out.facts['result_record'] = (paths[0] if len(self.branches) == 1 else paths) if paths else None
         if out.code == G.OK and out.facts.get('merge'):
             self.post_landing()
         return out
+
+    def still_ours(self, rr):
+        """The `when` a submitted landing writes the record of `rr` with: the record on disk
+        is still `rr`'s run, folded as `rr` says (into this landing, or none); None (write) for a
+        direct landing."""
+        if not self.submitted:
+            return None
+        want = rr.folded_into or None
+        return lambda now: (isinstance(now, dict) and now.get('run_id') == rr.run_id
+                            and (now.get('folded_into') or None) == want)
 
     def post_landing(self):
         """Landed, the records finished and the lock released: one landing feed event per branch
@@ -2316,6 +2415,10 @@ class Lander(object):
         why = self.usage()
         if why:
             return G.Outcome(G.USAGE, ['USAGE: %s' % why])
+        if self.submitted:          # folded before its booking: no check, no booking at all
+            out = self.turn_check()
+            if out is not None:
+                return out
         why = self.preconditions()
         if why:
             return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % why])
@@ -2325,10 +2428,14 @@ class Lander(object):
         self.plan_route()
         try:
             self.book_turn()
+            out = self.own_turn() if self.submitted else None
         except (landing.LockError, ConfigError) as e:
-            return G.Outcome(G.REFUSED, ['REFUSED: the landing lock: %s; nothing was changed' % e])
+            return self.turn_check() or G.Outcome(
+                G.REFUSED, ['REFUSED: the landing lock: %s; nothing was changed' % e])
         except LockError as e:
-            return self.not_run(e)
+            return self.turn_check() or self.not_run(e)
+        if out is not None:
+            return out
         why = self.fetch()
         if why:
             return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % why])
@@ -2341,7 +2448,7 @@ class Lander(object):
         if why:
             return G.Outcome(G.BUSY, ['BUSY: %s; nothing was changed' % why])
         try:
-            return self._locked()
+            return self.unfold_unlanded(self._locked())
         except _Stuck as e:
             return self.stuck(str(e))
         except BaseException as e:  # after the lock is taken nothing may leave it silently
@@ -2349,13 +2456,227 @@ class Lander(object):
             if out.code in (G.STUCK, G.OK):  # Ctrl+C included: STUCK is exit 3, with what is
                 return out      # left; OK: stopped after the verified push, landed
             if isinstance(e, ConfigError) and out.code == G.REFUSED:
-                return out
+                return self.unfold_unlanded(out)
             if isinstance(e, KeyboardInterrupt) or (isinstance(e, Exception) and
                                                     self.phase == 'before'):
                 for line in out.lines:  # Ctrl+C undone and released (exit 130), or a bug
                     self.say(line)      # before the merge: raised again
                 raise
-            return out                  # an exception or SystemExit after the merge: dropped
+            return self.unfold_unlanded(out)    # an exception or SystemExit after the merge
+
+    # ---------------------------------------------------------------- the turn of a submission
+
+    def turn_check(self):
+        """A submitted landing without its turn (before its booking, or its booking failed):
+        the FOLDED Outcome (fold_exit) when another landing folded it (submit.turn, given False),
+        nothing written; else None, and the landing goes on to its own outcome. A direct
+        landing: None."""
+        if not self.submitted or not self.result_runs:
+            return None
+        state, rec = submitmod().turn(self.root, self.result_runs, self.output_log, given=False)
+        if state == submitmod().FOLDED:
+            return self.fold_exit(rec)
+        self.was_dropped = isinstance(rec, dict) and rec.get('fold_dropped') is True
+        return None
+
+    def own_turn(self):
+        """Step 3 for a submitted landing, its booking given: None when the turn is its own
+        (submit.turn marked its first record turn_at); the FOLDED Outcome (fold_exit) when
+        another landing folded it. Folded into a landing that still runs (it lands them, or gives
+        them back): the slot is released and booked again, a look every poll_s, with what is left
+        of the --wait budget. Raises LockError (that booking not given; the caller checks the
+        turn again)."""
+        sub, said = submitmod(), False
+        while True:
+            state, rec = sub.turn(self.root, self.result_runs, self.output_log, given=True)
+            if state == sub.FOLDED:
+                return self.fold_exit(rec)
+            if state == sub.MINE:
+                self.was_dropped = isinstance(rec, dict) and rec.get('fold_dropped') is True
+                return None
+            if not said:
+                said = True
+                self.say('waiting: %s is folded into the batch of the landing run %s, which still '
+                         'runs: it lands them or gives them back; booking again a look every %s s'
+                         % ('+'.join(self.branches), rec.get('folded_into'), self.poll_s))
+            self.drop_slot(0, 'done')
+            left = (self.deadline or 0) - time.monotonic()
+            time.sleep(max(0.01, min(self.poll_s, max(0.0, left))))
+            left = (self.deadline or 0) - time.monotonic()
+            self.book_slot(max(0, int(left)), cores=1 if self.on_node() else None)
+
+    def fold_exit(self, rec):
+        """Another landing folded this submission into its batch: its slot released, one line
+        said as the outcome, and nothing else written (run: folded_exit)."""
+        self.folded_exit = True
+        self.drop_slot(0, 'done')
+        into = rec.get('folded_into') if isinstance(rec, dict) else None
+        return G.Outcome(G.OK, ['FOLDED: %s lands in the batch of the landing run %s; its land '
+                                'records say how it ended' % ('+'.join(self.branches),
+                                                              into or '?')])
+
+    # ---------------------------------------------------------------- folding
+
+    def can_fold(self):
+        """True when this landing, its locked checks passed, may fold queued submissions into
+        its batch: a submitted landing with its flags (an older kit's payload has none), that
+        changes no strict path and no gate config file, was not given back dropped from a batch
+        itself, with room under "landing".batch_max."""
+        if not self.submitted or not isinstance(self.flags, dict) or self.was_dropped:
+            return False
+        if self.strict_hits or not self.anchor_run_id:
+            return False
+        if len(self.branches) >= self.cfg.section('landing')['batch_max']:
+            return False
+        hits, why = self.config_paths()
+        return why is None and not hits
+
+    def fold_queued(self):
+        """Fold the submissions queued behind this landing into its batch (docs/gate.md "Folding
+        queued submissions"): oldest first (submit.foldable), each whole and while it fits under
+        "landing".batch_max, run with the same flags (submit.same_flags), its branches none of
+        this batch's, and passing pair_checks with the landing's own branches; then taken
+        (submit.take; one whose records changed meanwhile is left) and appended to the batch. Each
+        one left out is said with why. With any folded, the whole batch passes pair_checks and
+        scope_check again, or every fold is given back (to land at its own turn) and the landing
+        goes on alone."""
+        sub = submitmod()
+        room = self.cfg.section('landing')['batch_max'] - len(self.branches)
+        for unit in sub.foldable(self.root, self.anchor_run_id):
+            if room <= 0:
+                break
+            label = '%s (run %s)' % ('+'.join(unit['branches']), unit['run_id'])
+            why = self.unit_why(unit, room)
+            if why:
+                self.say('not folding %s: %s' % (label, why))
+                continue
+            runs = sub.take(self.root, unit, self.anchor_run_id, self.expect_main,
+                             self.output_log)
+            if runs is None:
+                self.say('not folding %s: its records changed while this landing took them'
+                         % label)
+                continue
+            self.folds.append({'unit': unit, 'runs': runs})
+            self.branches = self.branches + list(unit['branches'])
+            self.tips = self.tips + list(unit['tips'])
+            self.result_runs = self.result_runs + runs
+            self.own_runs.add(unit['run_id'])
+            self.replaced = self.replaced + list(unit['replaced'])
+            self.branch = ', '.join(self.branches)
+            room -= len(unit['branches'])
+            self.say('FOLDED %s into this landing: the batch is %s' % (
+                label, '+'.join(self.branches)))
+        if not self.folds:
+            return
+        kept = (self.strict_hits, self.strict_review, self.strict_carry,
+                list(self.scope_notes), list(self.scope_warnings))
+        self.scope_notes, self.scope_warnings = [], []
+        why = self.pair_checks() or self.scope_check()
+        if why:
+            self.say('not folding: the batch %s does not land as one (%s); each folded submission '
+                     'is given back to land at its own turn' % ('+'.join(self.branches), why))
+            self.unfold_all(False, 'the batch did not land as one: %s' % why)
+            (self.strict_hits, self.strict_review, self.strict_carry, self.scope_notes,
+             self.scope_warnings) = kept
+
+    def unit_why(self, unit, room):
+        """Why the submission `unit` (submit.foldable's) is not folded into this batch, or None.
+        Reads only: the checks run on the batch with it, and this landing's state is put back."""
+        sub = submitmod()
+        if len(unit['branches']) > room:
+            return ('its %d branch(es) are more than the %d "landing".batch_max leaves room for'
+                    % (len(unit['branches']), room))
+        if not sub.same_flags(self.flags, unit['flags']):
+            return 'it was submitted with other landing flags than this landing'
+        if set(unit['branches']) & set(self.branches):
+            return 'it names a branch of this batch'
+        kept = (self.branches, self.tips, self.branch, self.strict_hits, self.strict_review,
+                self.strict_carry)
+        self.branches = self.branches + list(unit['branches'])
+        self.tips = self.tips + list(unit['tips'])
+        try:
+            return self.pair_checks()
+        finally:
+            (self.branches, self.tips, self.branch, self.strict_hits, self.strict_review,
+             self.strict_carry) = kept
+
+    def fold_of(self, branch):
+        """The fold (self.folds) whose submission holds `branch`, or None."""
+        return next((f for f in self.folds if branch in f['unit']['branches']), None)
+
+    def unfold(self, fold, dropped, why):
+        """Give the folded submission `fold` back (submit.give_back; `dropped`: it lands alone)
+        and take it out of the batch; the record lines said."""
+        unit = fold['unit']
+        for line in submitmod().give_back(self.root, unit, self.anchor_run_id, dropped, why):
+            self.say(line)
+        self.folds = [f for f in self.folds if f is not fold]
+        gone = set(unit['branches'])
+        keep = [(b, t) for b, t in self.pairs if b not in gone]
+        self.branches, self.tips = [b for b, _ in keep], [t for _, t in keep]
+        self.result_runs = [rr for rr in self.result_runs if rr.run_id != unit['run_id']]
+        self.own_runs.discard(unit['run_id'])
+        self.replaced = [r for r in self.replaced if not any(r is x for x in unit['replaced'])]
+        self.branch = ', '.join(self.branches)
+
+    def unfold_all(self, dropped, why):
+        for fold in list(self.folds):
+            self.unfold(fold, dropped, why)
+
+    def unfold_unlanded(self, out):
+        """`out`, once every folded submission is given back when it did not land (any code but
+        OK and STUCK): each lands at its own turn."""
+        if self.folds and out.code not in (G.OK, G.STUCK):
+            self.unfold_all(False, 'the batch it was folded into did not land')
+        return out
+
+    def merge_batch(self):
+        """do_merge, dropping each folded submission whose branch does not merge cleanly: given
+        back dropped (it lands alone, at its own turn), the landing tree put back at the base,
+        and the rest merged again. None, or do_merge's Outcome for a branch of the landing's
+        own; a landing tree that cannot be put back is NOT LANDED."""
+        while True:
+            failed = self.do_merge()
+            b = failed.facts.get('conflict') if failed is not None else None
+            fold = self.fold_of(b) if b else None
+            if fold is None:
+                return failed
+            self.say('dropping %s (run %s) from the batch: %s' % (
+                '+'.join(fold['unit']['branches']), fold['unit']['run_id'], failed.lines[0]))
+            self.unfold(fold, True, '%s does not merge cleanly onto the batch before it' % b)
+            self.merges, self.merge = [], None
+            why = self.prepare_tree()
+            if why:
+                return G.Outcome(G.FAILED, [
+                    'NOT LANDED: the landing tree could not be put back at the base once %s was '
+                    'dropped from the batch: %s; nothing was pushed, and the landing did not move '
+                    '%s from the base %s' % (b, why, self.cfg.main_branch, self.expect_main[:10])],
+                    undone=True)
+
+    def regate_alone(self, out):
+        """The merged gate of a batch holding folded submissions failed (`out`): its lines said,
+        every fold given back dropped (each lands alone, at its own turn), and the landing's own
+        branches merged again and gated in the same slot. The new gate's Outcome, or the
+        merge's NOT LANDED."""
+        for line in out.lines:
+            self.say(line)
+        batch = '+'.join(self.branches)
+        self.unfold_all(True, 'the merged gate of the batch %s failed' % batch)
+        self.say('the merged gate of the batch %s failed: each folded submission is given back '
+                 'to land alone, at its own turn; gating %s alone' % (batch, '+'.join(self.branches)))
+        self.merges, self.merge = [], None
+        why = self.prepare_tree()
+        if why:
+            return G.Outcome(G.FAILED, [
+                'NOT LANDED: the landing tree could not be put back at the base to gate %s alone: '
+                '%s; nothing was pushed, and the landing did not move %s from the base %s' % (
+                    self.branch, why, self.cfg.main_branch, self.expect_main[:10])], undone=True)
+        failed = self.do_merge()
+        if failed is not None:
+            return failed
+        self.say('merged %s at %s in the landing tree %s; gating the merged tree' % (
+            self.branch, self.merge[:10], self.tree))
+        return self.gate()
 
     def not_run(self, e):
         """The outcome of the machine lock's LockError `e` before the landing lock file is held."""
@@ -2493,19 +2814,22 @@ class Lander(object):
             return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was merged' % why])
         if self.strict_hits:        # strict_check passed it: --full --fresh, said once
             self.strict_escalate()
+        elif self.can_fold():
+            self.fold_queued()
         if not self.fresh:          # before this landing's own records replace them
             self.prior = self.prior_records()
         if self.submitted:          # running since the submission: now with the base
             for rr in self.result_runs:
                 rr.base = self.expect_main
-                self.say(rr.start(log=self.output_log)[1])
+                self.say(rr.start(log=self.output_log,
+                                  when=self.still_ours(rr) if rr.folded_into else None)[1])
         else:                       # made when the landing joined the queue (_run)
             for rr in self.queued_runs:
                 rr.base = self.expect_main
                 self.result_runs.append(rr)
                 self.say(rr.start()[1])
         started = gate_ok.utc()
-        failed = self.do_merge()
+        failed = self.merge_batch()
         if failed is not None:
             self.release()
             return failed
@@ -2513,6 +2837,8 @@ class Lander(object):
             self.branch, self.merge[:10], self.tree))
         self.once_escalate()
         out = self.gate_out = self.gate()
+        if out.code == G.FAILED and self.folds:     # a folded batch drops its folds, never fails them
+            out = self.gate_out = self.regate_alone(out)
         main_b, base = self.cfg.main_branch, self.expect_main
         if out.code == G.OK:
             changed = self.unchanged()      # the commit pushed must be the commit gated

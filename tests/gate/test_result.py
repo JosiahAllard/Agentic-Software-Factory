@@ -24,7 +24,7 @@ from tests.home import machine_config, result_drive, temp_home
 GATE_PY = os.path.join(steps.KIT_TOOLS, 'gate.py')
 FIELDS = ('schema', 'kind', 'branch', 'tip', 'base', 'run_id', 'started_at', 'finished_at',
           'verdict', 'code', 'log', 'summary', 'gate_ok_record', 'cleanup', 'source', 'pid',
-          'ctime', 'gate_once', 'escalated')
+          'ctime', 'gate_once', 'escalated', 'turn_at', 'folded_into', 'fold_dropped', 'batch')
 UTC = r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
 
 

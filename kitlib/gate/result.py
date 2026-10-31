@@ -72,6 +72,17 @@ The record (SCHEMA 1), every key always present:
                   before the key. Added after the schema, like source
   escalated       the same records: whether gate_once made the merged gate run --full
                   (Lander.once_escalate); null where gate_once is
+  turn_at         a submitted landing's records: when its own process was given its landing
+                  turn (kitlib.gate.submit turn), or null: still queued. No other landing folds a
+                  submission whose turn came (docs/gate.md "Folding queued submissions")
+  folded_into     the run_id of the landing that folded this submission into its batch and
+                  lands it (its pid and ctime are then that landing's, its log that landing's
+                  output), or null
+  fold_dropped    true once a batch it was folded into gave it back after a conflict of its own
+                  or a red merged gate: it lands alone, and is never folded again; else false
+  batch           a final land record: the branches the landing merged and gated together, in
+                  merge order (a landing of one branch: that one); else null
+                  Each of these four added after the schema, like source
 
 The land ledger, `<result folder>/land-ledger.jsonl` (ledger_path): one JSON line per final or
 error land record Lander.run writes, with LEDGER_FIELDS, appended and never rewritten, so a
@@ -240,7 +251,8 @@ def source_of(rec):
 
 def build(branch, tip, base, kind, code, log=None, summary=None, gate_ok_record=None,
           finished_at=None, run_id=None, started_at=None, verdict=None, cleanup=None,
-          source=None, pid=None, ctime=None, gate_once=None, escalated=None):
+          source=None, pid=None, ctime=None, gate_once=None, escalated=None, turn_at=None,
+          folded_into=None, fold_dropped=False, batch=None):
     """A record. `verdict` defaults to verdict_of(code); RUNNING and ERROR carry no code."""
     verdict = verdict or verdict_of(code)
     now = gate_ok.utc()
@@ -250,7 +262,20 @@ def build(branch, tip, base, kind, code, log=None, summary=None, gate_ok_record=
             'verdict': verdict, 'code': None if verdict in (RUNNING, ERROR) else code,
             'log': log, 'summary': summary or '', 'gate_ok_record': gate_ok_record,
             'cleanup': cleanup, 'source': source, 'pid': pid, 'ctime': ctime,
-            'gate_once': gate_once, 'escalated': escalated}
+            'gate_once': gate_once, 'escalated': escalated, 'turn_at': turn_at,
+            'folded_into': folded_into, 'fold_dropped': bool(fold_dropped),
+            'batch': list(batch) if batch is not None else None}
+
+
+FOLD_KEYS = ('turn_at', 'folded_into', 'fold_dropped')
+
+
+def fold_facts(rec):
+    """{turn_at, folded_into, fold_dropped} of the record `rec` (build's defaults for a record
+    without them): what another writer finishing it keeps."""
+    rec = rec if isinstance(rec, dict) else {}
+    return {'turn_at': rec.get('turn_at'), 'folded_into': rec.get('folded_into'),
+            'fold_dropped': rec.get('fold_dropped') is True}
 
 
 def own_process():
@@ -367,7 +392,9 @@ class Run(object):
     record with the same run_id and started_at. Each returns `(path, line)`: the line to say as
     progress, `result record: <path>` or a WARNING (path None). Nothing here raises: a record
     that cannot be written never changes the run's outcome. Its records name this process (pid,
-    ctime), the one doing the run; a submission clears them (kitlib.gate.submit)."""
+    ctime), the one doing the run; a submission clears them (kitlib.gate.submit). `turn_at`,
+    `folded_into` and `fold_dropped` go into every record it writes (FOLD_KEYS; a submitted
+    landing's, kitlib.gate.submit), `batch` into its final and error records."""
 
     def __init__(self, root, kind, branch, tip, base=None):
         self.root, self.kind, self.branch, self.tip, self.base = root, kind, branch, tip, base
@@ -375,6 +402,9 @@ class Run(object):
         self.started_at = gate_ok.utc()
         self.pid, self.ctime = own_process()
         self.last = None
+        self.kept = False   # the last write was refused by its `when`: the record was left as it is
+        self.turn_at = self.folded_into = self.batch = None
+        self.fold_dropped = False
 
     @classmethod
     def maybe(cls, root, kind, branch, tip, base=None):
@@ -385,15 +415,20 @@ class Run(object):
 
     def _write(self, when=None, **kw):
         self.last = None    # the record this write built (written or not), for the land ledger
+        self.kept = False
         try:
             rec = self.last = build(self.branch, self.tip, kw.pop('base', self.base), self.kind,
                                     kw.pop('code', None), run_id=self.run_id,
                                     started_at=self.started_at, pid=self.pid, ctime=self.ctime,
+                                    turn_at=self.turn_at, folded_into=self.folded_into,
+                                    fold_dropped=self.fold_dropped,
+                                    batch=None if kw.get('verdict') == RUNNING else self.batch,
                                     **kw)
             path = write(self.root, rec, when=when)
         except Exception as e:      # noqa: BLE001 - the run's outcome stands whatever happens here
             return None, 'WARNING: the result record could not be written: %s' % e
         if path is None:
+            self.kept = True
             return None, 'result record of %s %s left as it is: it changed before this write' % (
                 self.kind, self.branch)
         return path, 'result record: %s' % path
@@ -419,9 +454,9 @@ class Run(object):
             return None, 'WARNING: the result record could not be written: %s' % e
         return self._write(when=when, **kw)
 
-    def error(self, exc, log=None, gate_once=None, escalated=None):
+    def error(self, exc, log=None, gate_once=None, escalated=None, when=None):
         """`log`: the run's log folder, when it was made before `exc` ended the run."""
-        return self._write(verdict=ERROR, log=log, summary='the %s stopped: %s: %s' % (
+        return self._write(when=when, verdict=ERROR, log=log, summary='the %s stopped: %s: %s' % (
             self.kind, type(exc).__name__, exc), gate_once=gate_once, escalated=escalated)
 
 
@@ -519,8 +554,8 @@ def finish_dead(root, rec, why=None, unclaimed=False, path=None):
     """Finish the running record `rec`, whose process died, as `error`: the record as it is
     now, or None when it cannot be read. Only when the record on disk is still `rec`'s run and
     running (`unclaimed`: and has no pid yet); anything else (finished, or a newer run's) is
-    returned untouched. The final record keeps the run's run_id, started_at, tip, base, log, pid
-    and ctime. The record is read, judged and replaced under its lock, so a record another writer
+    returned untouched. The final record keeps the run's run_id, started_at, tip, base, log, pid,
+    ctime and FOLD_KEYS. The record is read, judged and replaced under its lock, so a record another writer
     put there meanwhile is judged, never overwritten unread. `path`: the file `rec` was read
     from (wait finishes an old-folder record where it is, under that file's lock); default the
     record's path in the new folder."""
@@ -541,7 +576,7 @@ def finish_dead(root, rec, why=None, unclaimed=False, path=None):
             final = build(now['branch'], now.get('tip'), now.get('base'), now['kind'], None,
                           log=now.get('log'), summary=why, run_id=now.get('run_id'),
                           started_at=now.get('started_at'), verdict=ERROR, pid=now.get('pid'),
-                          ctime=now.get('ctime'))
+                          ctime=now.get('ctime'), **fold_facts(now))
             _put(path, final)
     except ResultError:
         return read_path(path)[0]
@@ -554,7 +589,7 @@ def finish_stopped(rec, path, why):
     it is now, or None when it cannot be read. Only when the record on disk is still `rec`'s run
     and running, or `error` (a waiter saw the process die first: finish_dead); anything else is
     returned untouched. Read, judged and replaced under its lock, as finish_dead does, keeping the
-    run's run_id, started_at, tip, base, log, pid and ctime."""
+    run's run_id, started_at, tip, base, log, pid, ctime and FOLD_KEYS."""
     try:
         with _held(path):
             now, _ = read_path(path)
@@ -564,7 +599,7 @@ def finish_stopped(rec, path, why):
             final = build(now['branch'], now.get('tip'), now.get('base'), now['kind'], G.STOPPED,
                           log=now.get('log'), summary=why, run_id=now.get('run_id'),
                           started_at=now.get('started_at'), pid=now.get('pid'),
-                          ctime=now.get('ctime'))
+                          ctime=now.get('ctime'), **fold_facts(now))
             _put(path, final)
     except ResultError:
         return read_path(path)[0]

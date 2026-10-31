@@ -67,7 +67,7 @@ The result record says nothing of the hub feed. `Lander.post_landing` says its `
 
 A `reported` mark counts only on a final record at the tip. A landing in flight stays in flight, so a failed landing cannot fall into the trimmed Reported section on a mark made before it failed.
 
-A landing whose process died leaves a `running` record, and `show` reads without finishing it, so it stays in flight until a `gate.py wait-result` finishes it `error` (docs/gate.md "Result record").
+A landing whose process died leaves a `running` record. `show` and `reported` finish it `error` as `gate.py wait-result` does (`result.finish_dead`, when `result.running_state` says `dead`), so it is to report, and `reported` marks it. A `running` record whose process cannot be told (no pid) stays in flight.
 
 ## Commands
 

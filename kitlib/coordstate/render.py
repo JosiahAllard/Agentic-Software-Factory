@@ -149,9 +149,20 @@ def judge(item, record, why, block):
     return item
 
 
+def _finished_if_dead(root, record):
+    """A `running` land record whose process is gone (result.running_state, the test
+    `gate.py wait-result` uses) is finished `error` there (result.finish_dead), so the landing
+    ends instead of staying in flight for good. Any other record is returned as it is."""
+    from kitlib.gate import result
+    if result.running_state(record) == 'dead':
+        return result.finish_dead(root, record) or record
+    return record
+
+
 def _judged(root, item, read, block):
     try:
         record, why = read(root, item['branch'], 'land')
+        record = _finished_if_dead(root, record)
     except Exception as e:          # noqa: BLE001 - one unreadable record is said, not fatal
         record, why = None, str(e)
     return judge(item, record, why, block)
@@ -181,9 +192,11 @@ def landing(root, events, branch, tip=None, read=None, block=None):
 
 
 def main_as_fetched(root):
-    """`(<remote>/<main branch> as last fetched, None)`, or `(None, why)`; no network."""
+    """`(<remote>/<main branch> as last fetched, None)`, or `(None, why)`; no network. Shared
+    with tools/verdict.py."""
     from kitlib import config as kconfig
     from kitlib.git import refs
+    root = os.path.abspath(root)
     try:
         cfg = kconfig.load(root)
     except kconfig.ConfigError as e:

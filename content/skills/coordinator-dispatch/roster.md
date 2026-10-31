@@ -52,9 +52,9 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   status.
 - **Reviewer model** (this is the rule's one home). A review goes to the analyst, pinned to the
   light tier at high effort; its model follows the tier of the role that built the branch.
-  High risk or strict -> strong whoever built it (land.py and verdict.py refuse a lighter
-  review; `land.py <branch> --check-strict` says which branch is strict before you pick); this
-  comes before the rows. The first row that fits:
+  High risk or strict -> strong whoever built it (land.py refuses a lighter review of either,
+  verdict.py add of a High-risk one; `land.py <branch> --check-strict` says which branch is
+  strict before you pick); this comes before the rows. The first row that fits:
   1. Built by strong-worker, senior-worker or deep-worker -> raise to strong.
   2. Built by worker or weak-worker -> no override: light as pinned.
   3. Otherwise -> raise to strong.

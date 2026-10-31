@@ -21,7 +21,8 @@
       A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
       or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
       strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
-      the rule land.py checks again at landing, where a strict branch needs one too).
+      the rule land.py checks again at landing, where a strict branch needs one too); when
+      hosts.json "tiers" cannot be read it is NOT DONE (exit 1, nothing written).
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one

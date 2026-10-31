@@ -16,7 +16,8 @@
       runs every step of the merged gate (no gate reuse, docs/gate.md "Gate reuse").
       Every branch lands only with a verdict queued for its tip (tools/verdict.py add, or carried
       to it over main merges by tools/verdict.py carry and checked again here) by a reviewer who
-      is not its author (docs/gate.md "Landing" step 4). A branch that changes a strict path
+      is not its author (docs/gate.md "Landing" step 4), strong-tier for a High-risk verdict
+      (kitlib/gate/verdicts.py tier_why). A branch that changes a strict path
       (kitlib/gate/strict_defaults.py, read from main) lands alone, its reviewer strong-tier, and
       its merged gate runs --full --fresh whatever was passed (docs/gate.md "Strict paths").
       --submit: the same landing, started detached and windowless; prints a REVIEW line for each

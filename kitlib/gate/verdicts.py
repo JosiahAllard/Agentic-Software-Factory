@@ -69,7 +69,8 @@ nothing written; TipMismatch when the tip is not the branch's head, or there is 
 CarryRefused when carry() finds the head does not carry the verdict, nothing written;
 OtherBranch when the file for the branch named holds another branch's entry (names that differ
 only in case share one file on Windows); VerdictError itself for a queue file that cannot be read
-or written, or is not an entry, the queue lock not had in time, or git giving no answer. Nothing
+or written, or is not an entry, the queue lock not had in time, git giving no answer, or (add())
+hosts.json "tiers" unread when the tier rule needs them, nothing written. Nothing
 here prints.
 
 Residual race (inference, not tested): two callers that find the same stale lock at once can
@@ -387,7 +388,8 @@ def tier_why(entry, strict, tiers):
     `strict` (changes a strict path) lands only on a review whose reviewer_model names a
     strong-tier model (land.strong_alias), whoever built it; a Low or Medium one off the strict
     paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives
-    land.tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed).
+    land.tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed), and
+    an exception it raises passes through (add() raises VerdictError for unread tiers).
     `entry` is well formed (check). Pure."""
     if not (strict or entry['risk'] == 'High'):
         return None
@@ -611,7 +613,8 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
     (model_mismatch_why). A High-risk verdict whose reviewer_model is not a strong-tier model is
-    LightReview (tier_why). Nothing seen is stored. `now`: a datetime for queued_utc."""
+    LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
+    (a configuration fault: nothing queued). Nothing seen is stored. `now`: a datetime for queued_utc."""
     why = check(entry, stored=False)
     if why:
         raise BadEntry(why)
@@ -622,7 +625,14 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     if why:
         raise ModelMismatch(why)
     from kitlib.gate import land          # land imports this module: a late import
-    why = tier_why(entry, False, land.tier_models)
+
+    def tiers():
+        got = land.tier_models()
+        if got[0] is None:                # a configuration fault, not a light review
+            raise VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
+                               'nothing was queued' % got[2])
+        return got
+    why = tier_why(entry, False, tiers)
     if why:
         raise LightReview('%s; nothing was queued\n%s' % (why, TIER_INSTEAD))
     branch, tip = entry['branch'], entry['tip']

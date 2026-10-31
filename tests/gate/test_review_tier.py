@@ -6,8 +6,10 @@ pure test. A Low or Medium branch off the strict paths lands on any reviewer mod
 import json
 import os
 import unittest
+from unittest import mock
 
 from kitlib import gate as G
+from kitlib.gate import land
 from kitlib.gate import verdicts as V
 from tests.gate import test_land_strict, test_land_verdict, test_verdict_cli
 from tests.gate.fixtures import GateRepoCase
@@ -91,6 +93,23 @@ class QueueTime(GateRepoCase):
     def test_a_medium_haiku_review_of_a_worker_build_is_queued(self):
         code, out, err = self.run_tool(*self.add_args(**{'--risk': 'Medium',
                                                           '--reviewer-model': 'haiku'}))
+        self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
+
+    def test_tiers_that_cannot_be_read_at_add_are_not_done_not_refused(self):
+        """hosts.json unreadable: a High add is NOT DONE (exit 1, a configuration message, nothing
+        queued), not REFUSED with an Instead: line to dispatch a strong-tier analyst."""
+        unread = mock.patch.object(land, 'tier_models', return_value=(None, None, 'no hosts.json'))
+        with unread:
+            code, out, err = self.run_tool(*self.add_args(**{'--risk': 'High'}))
+        self.assertEqual(code, 1, (out, err))
+        both = out + err
+        self.assertIn('NOT DONE: the kit configuration cannot be read: hosts.json "tiers": '
+                      'no hosts.json; nothing was queued', both)
+        self.assertNotIn('REFUSED', both)
+        self.assertNotIn(V.TIER_INSTEAD, both)
+        self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
+        with unread:              # the rule does not apply below High: the tiers are not read
+            code, out, err = self.run_tool(*self.add_args(**{'--risk': 'Medium'}))
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
 
 

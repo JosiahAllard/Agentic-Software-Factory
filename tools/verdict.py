@@ -18,6 +18,10 @@
       `REFUSED: ...` and an `Instead:` line (exit 2, nothing written; verdicts.model_mismatch_why); an
       id with no transcript prints `NOTE: --reviewer-model <m> is not checked: ...` before QUEUED.
       A session name, a self-review and a host with no reader (Codex) are not looked up.
+      A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
+      or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
+      strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
+      the rule land.py checks again at landing, where a strict branch needs one too).
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one
@@ -41,7 +45,7 @@ A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.verdi
 exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot be read or written,
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
-entry add finds malformed or a self-review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
+entry add finds malformed, or a self-review or light review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
 there is no such branch; nothing written).
 """
 import argparse
@@ -213,7 +217,7 @@ def main(argv=None):
         return fail('NOT DONE', 'no git repository at %s: %s' % (root, why), NOT_DONE)
     try:
         return run(a, common_dir)
-    except (verdicts.SelfReview, verdicts.ModelMismatch) as e:
+    except (verdicts.SelfReview, verdicts.ModelMismatch, verdicts.LightReview) as e:
         return fail('REFUSED', str(e), USAGE)
     except verdicts.BadEntry as e:
         p.print_usage(sys.stderr)

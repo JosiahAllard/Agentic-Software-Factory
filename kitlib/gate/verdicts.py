@@ -38,9 +38,9 @@ An entry (every key always present):
                   reviewer's transcript where the host has a reader (model_mismatch_why)
   reviewer_id     the reviewer's agent or session id
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
-                  picks no reviewer model: a strict branch needs a strong-tier reviewer
-                  whoever built it, and off the strict paths there is no tier rule
-                  (kitlib.gate.land, Lander.review_refusal)
+                  picks no reviewer model: a High-risk or strict branch needs a strong-tier
+                  reviewer whoever built it, and a Low or Medium branch off the strict paths has
+                  no tier rule (tier_why: add() and kitlib.gate.land, Lander.review_refusal)
   range           the range reviewed, `<base>..<tip>`; its right side is the tip or a prefix of
                   it (7 or more hex digits), so the review covered the commit queued
   session         the coordinator session that queued it
@@ -63,7 +63,9 @@ it reviewed itself (self_review_why), nothing read or written, or, with "landing
 self_review_max_lines given, a self-read of a branch over that many changed lines or one whose
 size cannot be told (self_review_size_why), nothing written; ModelMismatch (a BadEntry) when
 add() is given the models the reviewer's transcript shows (seen_models, the host's reader) and one
-is not the reviewer_model stated (model_mismatch_why), nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
+is not the reviewer_model stated (model_mismatch_why), nothing written; LightReview (a BadEntry)
+when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
+nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
 CarryRefused when carry() finds the head does not carry the verdict, nothing written;
 OtherBranch when the file for the branch named holds another branch's entry (names that differ
 only in case share one file on Windows); VerdictError itself for a queue file that cannot be read
@@ -137,6 +139,11 @@ class SelfReview(BadEntry):
 class ModelMismatch(BadEntry):
     """The reviewer's transcript shows a model other than the reviewer_model given
     (model_mismatch_why): its text ends with an Instead: line. Nothing was read or written."""
+
+
+class LightReview(BadEntry):
+    """A High-risk verdict whose reviewer_model is not a strong-tier model (tier_why): its text
+    ends with the Instead: line (TIER_INSTEAD). Nothing was read or written."""
 
 
 class TipMismatch(VerdictError):
@@ -360,12 +367,42 @@ def model_mismatch_why(entry, seen):
         # the review ran on more than one model: no one --reviewer-model can name it
         return head + ('the review ran on more than one model (%s), which no --reviewer-model can '
                        'name: dispatch a fresh analyst with model %s, the model the verdict needs '
-                       '(%s for a branch land.py --check-strict calls STRICT; skill branch-review)'
-                       % (', '.join(every), typed, tier))
+                       '(%s for a High-risk branch or one land.py --check-strict calls '
+                       'STRICT; skill branch-review)' % (', '.join(every), typed, tier))
     use = 'queue it with --reviewer-model %s, the model it ran on' % (
         land.named_model(every[0], strong, weak) or every[0])
-    return head + ('%s; a branch land.py --check-strict calls STRICT needs a review on %s: '
-                   'dispatch a fresh analyst with model %s (skill branch-review)' % (use, tier, tier))
+    return head + ('%s; a High-risk branch, or one land.py --check-strict calls STRICT, needs a '
+                   'review on %s: dispatch a fresh analyst with model %s (skill branch-review)'
+                   % (use, tier, tier))
+
+
+TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hosts.json "tiers") '
+                'to review the branch (skill branch-review), then queue its verdict')
+
+
+def tier_why(entry, strict, tiers):
+    """Why `entry`'s reviewer is too light for its branch, or None: the one tier rule add() (at
+    queue time, `strict` False: strict comes from the diff, so the landing checks it) and
+    kitlib.gate.land (Lander.review_refusal, at landing) share. A branch that is High risk or
+    `strict` (changes a strict path) lands only on a review whose reviewer_model names a
+    strong-tier model (land.strong_alias), whoever built it; a Low or Medium one off the strict
+    paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives
+    land.tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed).
+    `entry` is well formed (check). Pure."""
+    if not (strict or entry['risk'] == 'High'):
+        return None
+    from kitlib.gate import land          # land imports this module: a late import
+    strong, weak, why = tiers()
+    if strong is None:
+        return 'the strong-tier models cannot be read: %s' % why
+    model = entry['reviewer_model']
+    if land.strong_alias(model, strong, weak) is not None:
+        return None
+    return ('the reviewer ran on %s, not a strong-tier model (%s, or a full model id naming it; '
+            'hosts.json "tiers"): %s lands only on a strong-tier review, whoever built it (its '
+            'author is %s)' % (model, ', '.join(sorted(strong - weak)) or 'none',
+                               'a branch that changes a strict path' if strict
+                               else 'a High-risk branch', entry['author']))
 
 
 def check(entry, stored=True):
@@ -573,7 +610,8 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     one whose size cannot be told, when that cap ("landing".self_review_max_lines) is given
     (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
-    (model_mismatch_why). Nothing seen is stored. `now`: a datetime for queued_utc."""
+    (model_mismatch_why). A High-risk verdict whose reviewer_model is not a strong-tier model is
+    LightReview (tier_why). Nothing seen is stored. `now`: a datetime for queued_utc."""
     why = check(entry, stored=False)
     if why:
         raise BadEntry(why)
@@ -583,6 +621,10 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     why = model_mismatch_why(entry, seen) if seen else None
     if why:
         raise ModelMismatch(why)
+    from kitlib.gate import land          # land imports this module: a late import
+    why = tier_why(entry, False, land.tier_models)
+    if why:
+        raise LightReview('%s; nothing was queued\n%s' % (why, TIER_INSTEAD))
     branch, tip = entry['branch'], entry['tip']
     path = entry_path(common_dir, branch)
     head = head_of(common_dir, branch)

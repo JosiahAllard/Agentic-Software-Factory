@@ -117,9 +117,10 @@ class CoreBroker:
         return self.outbox.receipt(operation)
 
     def reply(self, operation, proof):
+        """The operation's own sender reads its recorded reply; the recipient need not be live."""
         message = self._read(operation, proof)
         try:
-            self.pairings.require_selected(message.recipient, message.sender)
+            self.pairings.require_reply_read(message.recipient, message.sender)
         except PairingError as error:
             raise DeliveryError(_reply_refusal(error)) from None
         return self.outbox.reply(operation)

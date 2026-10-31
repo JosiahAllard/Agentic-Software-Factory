@@ -548,7 +548,10 @@ store's git push (the `push` setting).
   will not import or whose `make` raises is a start-up note and the hub serves without it. The plugin
   refresh is one (docs/plugin-source.md "Hub refresh"). At a job's third failure in a row the worker
   pushes the PM once `[hub push] job <name> failing route:pm attempt:<k>`, and `... recovered` at its
-  next success (`job_event`). A job may push a word of its own with `ctx.event(word, detail=None)`;
+  next success (`job_event`). `usage-crossover` and `coord-restart` list processes with a 15 s timeout
+  (`coord_restart.PROC_TIMEOUT_S`; the session start keeps 4 s); a listing that still times out is a `Skip`
+  (no failure counted, no push; the next run lists again). `usage-crossover` lists before it writes anything;
+  `coord-restart`'s boot step (`launch.py after-reboot`, its boot record) runs first and is reported in the Skip note. A job may push a word of its own with `ctx.event(word, detail=None)`;
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a

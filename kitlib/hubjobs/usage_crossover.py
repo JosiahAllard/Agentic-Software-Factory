@@ -908,7 +908,7 @@ class CrossoverJob(object):
 
     def __init__(self, load, deliver, handoffs, host, procs=None, child=None, clock=None, kit=None):
         self.load, self.deliver, self.handoffs, self.host = load, deliver, handoffs, host
-        self.procs = procs or pmstart.list_processes
+        self.procs = procs or C.list_processes
         self.child = child or C.run_child
         self.clock = clock or time.time
         self.kit = kit or pmstart.KIT_ROOT
@@ -923,7 +923,11 @@ class CrossoverJob(object):
         doc = self._read(settings, now)
         sessions = state.read_sessions(settings)
         coordinators = state.read_coordinators(settings) or {}
-        rows = [(lookup.rc_name(p.get('CommandLine')), p) for p in lookup.launched(self.procs())]
+        try:
+            listed = self.procs()
+        except subprocess.TimeoutExpired as e:     # before any state is written: the next run decides
+            return C.skip_timed_out(e)
+        rows = [(lookup.rc_name(p.get('CommandLine')), p) for p in lookup.launched(listed)]
         lives = [Live(n, p.get('ProcessId'), p.get('Created')) for n, p in rows if n]
         had_old = 'pm_old' in doc
         pm_old = _old_pm(doc, lives)

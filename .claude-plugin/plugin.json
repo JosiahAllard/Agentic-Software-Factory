@@ -14,6 +14,7 @@
     "./hosts/claude/shell/agents/senior-worker.md",
     "./hosts/claude/shell/agents/strong-worker.md",
     "./hosts/claude/shell/agents/test-runner.md",
+    "./hosts/claude/shell/agents/topic.md",
     "./hosts/claude/shell/agents/weak-worker.md",
     "./hosts/claude/shell/agents/worker.md"
   ],

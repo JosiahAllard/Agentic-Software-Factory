@@ -163,8 +163,9 @@ def planner(args, ctx):
                                            role_checked=True)
     if v == 'pull':
         may_collide = policy.may('pull-collision')
+        batch = policy.cli_role() == policy.TOPIC
         return lambda s: pullmod.plan_pull(s, ctx, args.id, args.reason, may_collide,
-                                           args.blocker)
+                                           args.blocker, batch=batch)
     if v == 'release':
         return lambda s: pmod.plan_release(s, ctx, args.id, args.reason)
     if v == 'close':

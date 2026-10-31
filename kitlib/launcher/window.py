@@ -38,6 +38,7 @@ DEEP_WORKER = 'deep-worker'
 CONSULTANT = 'consultant'
 PM = 'pm'
 PLAIN = 'plain'
+TOPIC = 'topic'          # a plain session (no agent) launch.py topic marks: start.topic
 _BY_AGENT = {'coordinator': COORDINATOR, 'deep-worker': DEEP_WORKER, 'consultant': CONSULTANT}
 MODEL = re.compile(r'^[A-Za-z0-9._-]+(\[1m\])?$')
 # an agent name, bare or with the kit plugin's prefix (kitlib.agentname); no other colon

@@ -26,6 +26,8 @@ Roles are named bare here; your host's instructions say how a role name becomes 
 - Writes in another session's worktree (a sync, a commit, a stuck run) are made by the agent that
   owns it, or by a fresh agent dispatched into that worktree; never by you with `-C` from outside.
   Only for new work: a refused command is never rerouted this way.
+- A session the owner drives (a topic session, `topic-<slug>`) owns its records' files while it
+  runs: dispatch no work on them; its branch comes to you to review and land when the owner says it is done.
 - Non-trivial: plan read-only -> your approval or correction -> build.
 - Slicing a redesign or mockup-built record: walk the mockups into an element checklist on the umbrella (one line per sidebar entry, view, control, state, each owned by a slice); it closes when every element is ticked against a landed slice, not when every slice has landed (`<kit>/docs/backlog.md` "Umbrella records").
 - A change to `.kit.json` or any other owner-only path (`--find kit-json`, key `owner.paths`) is

@@ -40,8 +40,10 @@ Session = collections.namedtuple(
                'requester brief notes slug agent_temp predecessor')
 
 _Q = r"'((?:[^']|'')*)'"
-_SET = re.compile(r"; Set-Location %s; (claude .*)\Z" % _Q, re.S)
-_CMD = re.compile(r"^claude --agent (?P<agent>\S+)(?: --model (?P<model>'(?:[^']|'')*'))?(?: --effort (?P<effort>\S+))?"
+# the host program window.session_command runs, read from it: the host's name stays out of kitlib
+_PROGRAM = re.escape(window.session_command('n', 'p').split(' ', 1)[0])
+_SET = re.compile(r"; Set-Location %s; (%s .*)\Z" % (_Q, _PROGRAM), re.S)
+_CMD = re.compile(r"^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>'(?:[^']|'')*'))?(?: --effort (?P<effort>\S+))?"
                   r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>'(?:[^']|'')*'))?(?: --permission-mode \S+)?"
                   r" --remote-control (?P<rc>'(?:[^']|'')*') -n (?P<n>'(?:[^']|'')*') (?P<prompt>'(?:[^']|'')*')\Z",
                   re.S)

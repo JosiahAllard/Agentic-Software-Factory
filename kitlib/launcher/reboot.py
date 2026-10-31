@@ -64,7 +64,8 @@ def _cli(p):
 
 
 def running(procs, text):
-    """A claude.exe whose command line contains text (the old after-reboot test, for the PM)."""
+    """A claude.exe whose command line contains text (--test's check for TEST_NAME; never the PM's:
+    other sessions' first messages name pm-session)."""
     return any(_cli(p) and text in (p.get('CommandLine') or '') for p in procs)
 
 
@@ -186,7 +187,8 @@ def resume_pm(settings, host, cfg, log, dry_run=False, permission_mode=None):
     procs = host.processes()
     pm_name = cfg.get('pm_name')                     # pm-relaunch's fork: its command line carries the old id
     named = isinstance(pm_name, str) and pm_name and lookup.find_exact(lookup.launched(procs), pm_name)
-    if running(procs, 'pm-session') or runs_session(procs, sid) or named:
+    # by name exactly: PROMPT and start.PM_REF put 'pm-session' in other sessions' first messages
+    if lookup.find_exact(lookup.launched(procs), 'pm-session') or runs_session(procs, sid) or named:
         log('pm-session already running, skipped')
         return []
     if desktop_app_running(procs):

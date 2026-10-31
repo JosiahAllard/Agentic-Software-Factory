@@ -106,6 +106,31 @@ class FrontendFrameTests(unittest.TestCase):
         self.assertEqual(seen,{'mark':None})
 
 
+class FrontendFailureCauseTests(unittest.TestCase):
+    def run_failing(self,error,message):
+        def request(target,frame):
+            raise error
+        output=io.BytesIO()
+        with mock.patch.object(frontend_module,'request',request),                mock.patch.object(frontend_module,'capture_inherited_channel',lambda:None),                mock.patch.object(frontend_module,'_generation',lambda marker:('target','v1')):
+            serve_frontend(io.BytesIO(json.dumps(message).encode()+b'
+'),output,Path('unused-marker'))
+        return output.getvalue()
+
+    def test_a_delivery_error_code_is_carried(self):
+        out=json.loads(self.run_failing(DeliveryError('service-marker-changed'),INITIALIZE))
+        self.assertEqual(out['error']['code'],-32603)
+        self.assertEqual(out['error']['message'],'bridge connection unavailable')
+        self.assertEqual(out['error']['data'],{'cause':'service-marker-changed'})
+
+    def test_an_os_error_gives_its_class_name_and_not_its_text(self):
+        out=self.run_failing(OSError('Z:\secret\path'),INITIALIZE)
+        self.assertEqual(json.loads(out)['error']['data'],{'cause':'OSError'})
+        self.assertNotIn(b'secret',out)
+
+    def test_a_notification_gets_no_response(self):
+        self.assertEqual(self.run_failing(DeliveryError('service-marker-changed'),INITIALIZED),b'')
+
+
 class LaunchMarkTests(unittest.TestCase):
     def test_plain_marks_are_kept_exactly(self):
         for value in (None,'pm','coordinator','marked-owner','deep_worker-2','A'*64):

@@ -86,7 +86,8 @@ class RecipientReplyTests(DispatchTests):
         with self.assertRaisesRegex(DeliveryError, 'reply-chat-not-observed'):
             self.core.reply('op', b'test-caller-proof')
         with self.assertRaisesRegex(DeliveryError, 'reply-chat-not-observed'):
-            self.core.reply('op', b'test-caller-proof')  # now dropped from the observed list too
+            self.core.reply('op', b'test-caller-proof')  # still listed, checked again, still refused
+        self.assertIn(self.a, self.pairings.registered())
 
     def test_a_route_that_is_off_is_reported_as_such_even_with_a_dead_chat(self):
         self.select(False)
@@ -100,7 +101,8 @@ class RecipientReplyTests(DispatchTests):
             self.core.reply('op', b'test-caller-proof')
         with self.assertRaisesRegex(DeliveryError, 'reply-route-not-selected'):
             self.core.reply_to('op', 'not allowed', b'recipient-proof')
-        self.assertNotIn(self.b, self.pairings.registered())  # a refused route still prunes a dead chat
+        # A failed live check no longer drops a chat (a Codex chat between turns is not gone).
+        self.assertIn(self.b, self.pairings.registered())
 
     def test_reply_to_from_a_sender_no_longer_live_names_that_refusal(self):
         self.admit()

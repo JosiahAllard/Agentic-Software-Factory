@@ -73,7 +73,7 @@ class PmRoutes:
         # Lock order: the pairings store's lock, then this one; never the reverse.
         self._lock, self._routes = threading.RLock(), {}
         pairings.on_observe(self._observed)
-        pairings.extend_routes(self.allows)
+        pairings.extend_routes(self.allows, self.allows_reply)
 
     def _mark(self, binding):
         try: mark = self._launched(binding)
@@ -86,6 +86,15 @@ class PmRoutes:
         if route is None or (route.sender, route.recipient) != (sender, recipient): return False
         if self.host_pairs is not None and not self.host_pairs.allowed(sender, recipient): return False
         return self._mark(sender) is not None and self._mark(recipient) is not None
+
+    def allows_reply(self, replier, reader):
+        """The reply-read port, the ordinary route's rule (PairingStore.require_reply_read): this
+        exact PM route back exists and the reader is kit-launched now. The replier is not checked:
+        its reply passed `allows` when it was recorded, and a chat between turns fails its check."""
+        with self._lock: route = self._routes.get((replier.reference, reader.reference))
+        if route is None or (route.sender, route.recipient) != (replier, reader): return False
+        if self.host_pairs is not None and not self.host_pairs.allowed(replier, reader): return False
+        return self._mark(reader) is not None
 
     def _caller(self, authority):
         if type(authority) is not SenderAuthority: raise PairingError('caller-context-unverified')

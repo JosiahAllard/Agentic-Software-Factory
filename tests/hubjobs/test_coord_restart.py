@@ -307,6 +307,38 @@ class Job(JobBase):
             note = self.run_job()
         return note
 
+    def timed_out(self):
+        raise subprocess.TimeoutExpired('Get-CimInstance Win32_Process', 4)
+
+    def test_a_timed_out_listing_is_a_quiet_skip_and_the_next_run_still_restarts(self):
+        self.live = ['kit-coord-a2']
+        self.run_job()
+        self.live = []
+        self.now += 300
+        self.run_job()                                            # down once
+        good = self.job.procs
+        self.job.procs = self.timed_out
+        self.now += 300
+        skipped = self.run_job()
+        self.assertIsInstance(skipped, jobs.Skip)
+        self.assertIn('timed out', skipped.note)
+        self.assertEqual((self.calls, self.job._fails), ([], 0))
+        self.job.procs = good
+        self.now += 300
+        self.assertIn('kit: started on account 2', self.run_job())
+
+    def test_another_listing_failure_still_fails_the_run(self):
+        self.job.procs = lambda: (_ for _ in ()).throw(RuntimeError('powershell exit 1'))
+        with self.assertRaises(RuntimeError):
+            self.run_job()
+        self.assertEqual(self.job._fails, 1)
+
+    def test_the_default_listing_waits_longer_than_the_session_start(self):
+        with mock.patch.object(C.pmstart, 'list_processes', return_value=[]) as lp:
+            self.assertEqual(C.list_processes(), [])
+        lp.assert_called_once_with(timeout=C.PROC_TIMEOUT_S)
+        self.assertGreater(C.PROC_TIMEOUT_S, C.pmstart.TIMEOUT)
+
     def test_a_crossing_on_the_entry_holds_the_start_until_its_claim_lapses(self):
         crossing = {'phase': 'stall-stop', 'phase_at': NOW}
         self.write('usage-crossover.json', {'crossings': {'kit': crossing}})

@@ -895,6 +895,37 @@ class Job(JobBase):
         self.assertEqual(self.crossing()['phase'], U.ASKED)
         self.assertEqual(len(self.sent), 1)
 
+    def test_a_timed_out_listing_is_a_quiet_skip_that_writes_nothing(self):
+        self.newest = {'kit': record(7, 'handoff')}
+        self.job.procs = lambda: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired('Get-CimInstance Win32_Process', 4))
+        result = self.run_job()
+        self.assertIsInstance(result, jobs.Skip)
+        self.assertIn('timed out', result.note)
+        self.assertFalse(os.path.exists(os.path.join(self.state, U.STATE_FILE)))
+        self.assertEqual((self.sent, self.calls, self.ctx.events), ([], [], []))
+
+    def test_a_due_crossing_is_acted_on_at_the_pass_after_a_skipped_one(self):
+        self.run_job()                                    # asked
+        self.newest = {'kit': self.note(1, NOW + 100)}
+        self.host.written[OLD.name] = NOW + 120
+        before = self.doc()
+        good = self.job.procs
+        self.job.procs = lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired('Get-CimInstance', 4))
+        self.now += 300
+        self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual((self.doc(), self.calls), (before, []))
+        self.job.procs = good
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.calls[0][:5], ['handoff', '--session', 'kit', '--account', '2'])
+        self.assertEqual(self.crossing()['phase'], U.STARTING)
+
+    def test_another_listing_failure_still_fails_the_run(self):
+        self.job.procs = lambda: (_ for _ in ()).throw(RuntimeError('powershell exit 1'))
+        with self.assertRaises(RuntimeError):
+            self.run_job()
+
     def test_a_second_run_does_not_ask_again(self):
         self.run_job()
         self.assertIsInstance(self.run_job(), jobs.Skip)

@@ -29,7 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, autostart, handoff, reboot, relaunch, settings as S, start, stop, usage  # noqa: E402
+from kitlib.launcher import accounts, autostart, handoff, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
@@ -55,6 +55,11 @@ def existing_file(path):
     if not os.path.isfile(path):
         raise argparse.ArgumentTypeError('no such file: %s' % path)
     return os.path.abspath(path)
+
+
+PERMISSION_MODE_ARG = dict(choices=window.PERMISSION_MODES, default=None, metavar='MODE',
+                           help='the claude --permission-mode (%s); omitted: the default command line'
+                           % ', '.join(window.PERMISSION_MODES))
 
 
 def parser():
@@ -83,6 +88,7 @@ def parser():
     s.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
     s.add_argument('--no-remote-control', action='store_true',
                    help='start without --remote-control (for measuring its cost; found by -n)')
+    s.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     d = sub.add_parser('deep', help='a deep-worker session')
     d.add_argument('--repo-path', required=True)
@@ -165,11 +171,13 @@ def parser():
     r = sub.add_parser('after-reboot', help='start every plain session, then resume the PM (the hub runs it after a boot)')
     r.add_argument('--test', action='store_true', help="start only an 'autostart-test' session")
     r.add_argument('--dry-run', action='store_true')
+    r.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     f = sub.add_parser('pm-relaunch', help='fork the running PM into a new window with a new Remote Control name')
     f.add_argument('--name', required=True, help='the new session and Remote Control name')
     f.add_argument('--wait', type=int, default=relaunch.WAIT_S,
                    help="seconds to wait for the fork's own session id (default %(default)s)")
+    f.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     x = sub.add_parser('pm-crossover',
                        help='start a fresh PM on another account from its hand-off file and make it the PM')
@@ -179,6 +187,7 @@ def parser():
     x.add_argument('--wait', type=int, default=relaunch.WAIT_S,
                    help="seconds to wait for the new PM's session id (default %(default)s)")
     x.add_argument('--what-if', action='store_true')
+    x.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     i = sub.add_parser('install-autostart', help='retired: refuses, registers nothing (the hub restarts agents)')
     i.add_argument('--what-if', action='store_true')
@@ -219,11 +228,12 @@ def run(a, settings, host):
                 raise S.LaunchError('--session takes its settings from the sessions.json entry; '
                                     'drop %s.' % ', '.join(ignored))
             return start.start_entry(settings, host, a.session, a.account, a.prompt, a.what_if,
-                                     home_worktree=a.home_worktree)
+                                     home_worktree=a.home_worktree, permission_mode=a.permission_mode)
         return start.start(settings, host, a.repo, a.repo_path, a.account, a.org, a.prompt, a.brief,
                            name=a.name, predecessor=a.predecessor, no_agent=a.no_agent, agent=a.agent,
                            model=a.model, effort=a.effort, autocompact=a.autocompact, whatif=a.what_if,
-                           home_worktree=a.home_worktree, remote_control=not a.no_remote_control)
+                           home_worktree=a.home_worktree, remote_control=not a.no_remote_control,
+                           permission_mode=a.permission_mode)
     if a.cmd == 'deep':
         return start.deep(settings, host, a.repo_path, a.requester, a.slug, a.brief, a.brief_text, a.account,
                           a.autocompact, a.model, a.effort, a.force, a.plan, a.brief_dir,
@@ -250,16 +260,19 @@ def run(a, settings, host):
     if a.cmd == 'usage':
         return usage.report(settings, host.now())
     if a.cmd == 'after-reboot':
-        return reboot.run(settings, host, a.test, a.dry_run, say=lambda l: print(l, flush=True))
+        return reboot.run(settings, host, a.test, a.dry_run, say=lambda l: print(l, flush=True),
+                          permission_mode=a.permission_mode)
     if a.cmd == 'pm-relaunch':
         if a.wait < 1:
             raise S.LaunchError('--wait must be at least 1 second.')
-        return relaunch.relaunch(settings, host, a.name, push_delivery(settings), a.wait)
+        return relaunch.relaunch(settings, host, a.name, push_delivery(settings), a.wait,
+                                  permission_mode=a.permission_mode)
     if a.cmd == 'pm-crossover':
         if a.wait < 1:
             raise S.LaunchError('--wait must be at least 1 second.')
         return relaunch.crossover(settings, host, a.account, a.name, a.state,
-                                  None if a.what_if else push_delivery(settings), a.wait, a.what_if)
+                                  None if a.what_if else push_delivery(settings), a.wait, a.what_if,
+                                  permission_mode=a.permission_mode)
     if a.cmd == 'install-autostart':
         return autostart.install(os.path.abspath(__file__), whatif=a.what_if)     # always refuses
     raise AssertionError(a.cmd)

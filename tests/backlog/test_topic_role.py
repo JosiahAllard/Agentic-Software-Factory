@@ -13,7 +13,7 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import roles as R
 from kitlib.backlog.errors import Refusal
 from tests import inproc
-from tests.backlog.helpers import ADD_FLAGS, BRANCH, TODAY, StoreCase, kit_json_ref, priced
+from tests.backlog.helpers import ADD_FLAGS, BRANCH, TODAY, StoreCase, kit_json_ref, priced, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
 HOLDER = 'kit/holder'
@@ -47,6 +47,20 @@ class TopicPull(StoreCase):
         for key in rmod.PREEMPT_KEYS:
             self.assertFalse(r.has(key), key)
         self.assertNotIn('pre-empting', change.subject)
+
+    def test_an_unpriced_record_outside_the_batch_does_not_break_the_batched_pull(self):
+        self.seed(priced('MINE', priority='3', batch=BRANCH), rec('LOOSE', priority='-'))
+        self.verb('pull', 'MINE', batch=True)
+        self.assertEqual(self.get('MINE').get('state'), 'pulled')
+
+    def test_an_unpriced_record_in_the_batch_is_refused_with_a_message(self):
+        self.seed(priced('MINE', priority='3', batch=BRANCH),
+                  rec('RAW', priority='-', batch=BRANCH))
+        with self.assertRaises(Refusal) as cm:
+            self.verb('pull', 'MINE', batch=True)
+        self.assertIn('`RAW` is batched for %s but is `priority: -`' % BRANCH, str(cm.exception))
+        self.assertIn('--priority N', str(cm.exception))
+        self.assertEqual(self.get('MINE').get('state'), 'open')
 
     def test_a_worker_pull_of_the_same_member_is_still_out_of_order(self):
         """Pin: only the topic pull skips the rank order; anyone else's is not in the offer."""

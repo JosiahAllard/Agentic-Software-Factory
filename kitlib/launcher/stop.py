@@ -8,7 +8,8 @@ token. Refused (REFUSED: ..., nothing stopped):
   - a name with surrounding spaces, or a successor equal to the name;
   - a successor that is not running;
   - no match; several matches, unless --pid picks one; a --pid that is not one of them;
-  - a match that is the PM session (its name, or the pm_session_id of coordinators.json);
+  - a match that is the PM session (its name, or coordinators.json's pm_session_id as its --resume
+    or --session-id value; the id elsewhere in the line, as in a brief path, is not the PM);
   - a match that is this process's own ancestor (the caller).
 It stops the matched claude.exe, then its parent window only when that parent is powershell.exe
 whose script (plain or -EncodedCommand) carries the same name quoted as the window writes it, and
@@ -35,6 +36,8 @@ from kitlib.launcher.settings import LaunchError
 PM_RC_NAME = 'pm-session'
 LOG = 'stop.log'
 _ENC = re.compile(r'(?:^|\s)-(?:EncodedCommand|enc|ec)\s+([A-Za-z0-9+/=]+)', re.I)
+# the session id a claude command line runs as: the value of --resume (-r) or --session-id
+_SID = re.compile(r"""(?:^|\s)(?:--resume|-r|--session-id)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))""")
 
 
 class Refused(LaunchError):
@@ -52,6 +55,14 @@ def window_script(cmd):
 def _image():
     """The session process's name in the lines said: claude.exe, on Linux claude."""
     return 'claude' if platform.NAME == 'linux' else 'claude.exe'
+
+
+def _runs_as(cmd, sid):
+    """True when cmd resumes or starts session `sid` (the --resume/-r or --session-id value), not
+    when the id only appears elsewhere: a topic session's brief path in the PM's scratchpad folder
+    carries the PM's session id."""
+    return any(next((g for g in m.groups() if g is not None), None) == sid
+               for m in _SID.finditer(cmd or ''))
 
 
 def _pm_named(n):
@@ -99,7 +110,7 @@ def plan(procs, name, successor=None, pid=0, own_pid=None, pm_session_id=None, p
     target = hits[0]
     tpid = int(target['ProcessId'])
     if ((lookup.rc_name(target.get('CommandLine')) or '').startswith(PM_RC_NAME)
-            or (pm_session_id and pm_session_id in (target.get('CommandLine') or ''))):
+            or (pm_session_id and _runs_as(target.get('CommandLine'), pm_session_id))):
         raise Refused('PID %d is the PM session.' % tpid)
     by_pid = {int(p['ProcessId']): p for p in procs if p.get('ProcessId') is not None}
     cur, seen = by_pid.get(int(own_pid)) if own_pid is not None else None, set()

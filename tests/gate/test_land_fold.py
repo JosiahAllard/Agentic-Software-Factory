@@ -120,7 +120,7 @@ class Folds(FoldCase):
                          [('kit/one', a.run_id, 2, None), ('kit/two', b.run_id, 2, a.run_id)])
 
     def test_high_risk_verdicts_fold(self):
-        """Owner ruling (hub Q-1652): a High-risk branch may fold; only a strict branch and a gate
+        """An owner ruling: a High-risk branch may fold; only a strict branch and a gate
         config branch land alone. Both verdicts here are High."""
         a = self.queued(['one'], review=False)
         b = self.queued(['two'], review=False)

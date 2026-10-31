@@ -9,6 +9,9 @@ the weekly limit (docs/launcher.md "Usage crossover", docs/action-hub.md "Timed 
   decide_pm(pms, crossing, stall, quiet_s, accounts, newest, starts, running, landed, mode, now,
             note_at, cleared, asks, points, recorded, names) -> Decision
                                      the PM's next step, pure (module docstring "The PM")
+  decide_unlisted(key, sess, crossing, live, stall, quiet_s, accounts, starts, running, landed,
+                  mode, now, files, cleared, asks, weeks) -> Decision
+                                     an unlisted session's next step, pure ("Unlisted sessions")
   burn_eta(points, now) -> seconds | None
                                      when a week reaches 100% at its current burn rate, pure
   pick_target(accounts, current, running, landed, now, tier2) -> (account, why) | None
@@ -108,9 +111,38 @@ In every state, coordinators.json naming another PM session than the one asked c
 on normal is pushed `stalled` and left to the owner; on full the start goes ahead with no ask. The
 caps, holds and remembered clears are a session's. A PM that is not a launched process (the
 desktop app) is not moved: a `pm-limit` push, once per week window. A live session of no
-sessions.json entry gets an `unmanaged` push the same way and is left alone. Every PM crossing
+sessions.json entry that is not an unlisted one below gets an `unmanaged` push the same way,
+detail <name>:<reason> (kitlib.launcher.unlisted.REASONS), and is left alone; each run's note
+lists them as never crossed. Every PM crossing
 that ends without `crossed` pushes cross-cleared, cross-failed, no-room or stalled with detail
 `pm`, and each of those texts tells the PM to resume its normal work.
+
+Unlisted sessions (decide_unlisted): a consultant or deep-worker launch.py started, with no
+sessions.json entry, read back from its window by kitlib.launcher.unlisted (its account, model,
+repository, brief, requester, notes file). Its key: its name, a deep-worker's without the -a<N> of
+a successor. It has no hand-off record to post, so it hands off through files in
+<agent temp>/usage-crossover/<key>/ (the window's AGENT_TEMP, else the job's `temp`): the
+checkpoint message (DEEP_CHECKPOINT, CONSULTANT_CHECKPOINT) names `ready`, which the session
+writes when it has checkpointed, and its successor's first message names `checkin` (launch.py
+--checkin). A file counts only when written after the ask (`ready`) or the start (`checkin`). The
+note: a deep-worker's state note `state.md` in that folder, a consultant's own notes file. The
+trigger, caps, target and remembered clears are a session's; the states differ thus:
+
+  asked       the ready file stands for the ready record; there is no `stop` reply.
+  ready       as a session's, the note for the state note; then a deep-worker starts at once, and a
+              consultant (one session per name) goes to stop-first.
+  stop-first  a consultant's `launch.py stop --name old --pid P` (no successor); the old session
+              gone: ready, `stopped` set. A stopped crossing at a cap waits (`cross-failed` cap)
+              rather than clearing: nothing else runs.
+  starting    `launch.py deep ... --predecessor old --state state.md --checkin FILE` (named
+              <key>-a<target>, in the old worktree) or `launch.py consultant ... --checkin FILE`
+              (the same name), --force; its successor live: started.
+  started     a deep-worker as a session's, on the check-in file. A consultant: the check-in file,
+              `crossed`; WAIT_CHECKIN_S with none, `no-checkin` and cleared (the old one is gone).
+
+A crossing that clears with its old session running and told to checkpoint delivers RESUME. On
+notify, `would-cross` runs `launch.py deep|consultant ... --plan` and `stop --dry-run`. Several
+unlisted sessions of one key with no crossing open: none crosses (`several`).
 
 Pushes (ctx.event, push.JOB_EACH: owed once per detail, each with its own text): crossing,
 would-cross, crossed, cross-cleared, cross-failed, stalled, no-ready, no-checkin, no-room, pm-limit,
@@ -142,6 +174,7 @@ from kitlib.hubsite import jobs
 from kitlib.launcher import accounts as A
 from kitlib.launcher import handoff, lookup, pipes, relaunch, state
 from kitlib.launcher import stop as lstop
+from kitlib.launcher import unlisted as UL
 from kitlib.launcher.settings import LaunchError, NOTIFY, FULL
 
 NAME = 'usage-crossover'
@@ -175,6 +208,9 @@ BURN_MIN_S = 10 * 60           # fewer minutes of readings than this: no burn ra
 
 ASKED, READY, STARTING, STARTED, STOPPING, STALL_STOP = (
     'asked', 'ready', 'starting', 'started', 'stopping', 'stall-stop')
+STOP_FIRST = 'stop-first'      # an unlisted consultant: one session per name, so the old one stops before the start
+HANDOFF_FOLDER = 'usage-crossover'   # <agent temp>/usage-crossover/<key>/: an unlisted session's hand-off files
+READY_FILE, CHECKIN_FILE, DEEP_STATE = 'ready', 'checkin', 'state.md'
 # What a Decision does. The first six act, one per run, in this order
 STOP_STALLED, STOP_OLD, FINISH, START, ASK, WOULD = (
     'stop-stalled', 'stop-old', 'finish', 'start', 'ask', 'would')
@@ -354,9 +390,17 @@ def _trigger(key, entry, live, stall, quiet_s, accounts, starts, running, landed
         return _hold('not running')
     if len(live) > 1:
         return _hold('several processes of the stem: %s' % ', '.join(sorted(l.name for l in live)))
-    stalled = is_stalled(stall, quiet_s, now)
     acct = (stall[0] if stall and stall[0] else None) or C.name_account(live[0].name) or (
         None if entry.get('account') in (None, '') else str(entry['account']))
+    return _trigger_on(key, acct, _skip(acct, entry), stall, quiet_s, accounts, starts, running, landed,
+                       mode, now, cleared, asks, weeks)
+
+
+def _trigger_on(key, acct, skip, stall, quiet_s, accounts, starts, running, landed, mode, now,
+                cleared=None, asks=None, weeks=None):
+    """The trigger for one running session on account `acct`; `skip` the accounts no target may
+    be. A sessions.json entry's (_trigger) and an unlisted session's (decide_unlisted)."""
+    stalled = is_stalled(stall, quiet_s, now)
     st = accounts.get(acct)
     week, week_reset, high, early, eta = _week_trigger(st.usage if st is not None else None,
                                                        (weeks or {}).get(acct), now)
@@ -377,7 +421,7 @@ def _trigger(key, entry, live, stall, quiet_s, accounts, starts, running, landed
     why = cap_reached(key, starts, now)
     if why:
         return _hold(why, 'cross-failed', key, 'cap')
-    pick = pick_target(accounts, _skip(acct, entry), running, landed, now)
+    pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
         return _no_room(key)
     target, reason = pick
@@ -408,8 +452,12 @@ def _advance(phase, note, **fields):
 
 def _step(key, entry, c, live, stall, quiet_s, accounts, newest, starts, running, landed, mode, now,
           note_at=None):
-    d = _phase_step(key, entry, c, live, stall, quiet_s, accounts, newest, starts, running, landed,
-                    mode, now, note_at)
+    return _remembered(_phase_step(key, entry, c, live, stall, quiet_s, accounts, newest, starts, running,
+                                   landed, mode, now, note_at), c, stall, accounts, now)
+
+
+def _remembered(d, c, stall, accounts, now):
+    """`d`, with a remembering CLEAR's {account, reset} filled in (Decision `remember`)."""
     if d.action == CLEAR and d.remember:
         acct = str(c.get('account'))
         st = accounts.get(acct)
@@ -605,6 +653,146 @@ def _stall_stop(args, stalled, now):
     return _advance(READY, 'the stalled session has gone: start on its own note', stalled=True)
 
 
+def decide_unlisted(key, sess, crossing, live, stall, quiet_s, accounts, starts, running, landed, mode, now,
+                    files=None, cleared=None, asks=None, weeks=None):
+    """The next step of a launched consultant or deep-worker with no sessions.json entry (module
+    docstring "Unlisted sessions"). `sess` its kitlib.launcher.unlisted.Session (None: not running
+    now); `live` [Live] of the processes of its key (a deep-worker's -a<N> successors too);
+    `files` {ready, checkin, note}: the mtimes of its crossing's ready and check-in files and of its
+    note (a deep-worker's state note, a consultant's notes file), None when missing; the rest as
+    decide. Reads nothing itself."""
+    if crossing:
+        return _remembered(_unlisted_phase(key, crossing, live, stall, quiet_s, accounts, starts, running,
+                                           landed, mode, now, files or {}), crossing, stall, accounts, now)
+    if sess is None:
+        return _hold('not running')
+    if len(live) > 1:
+        return _hold('several processes of its name: %s' % ', '.join(sorted(l.name for l in live)))
+    acct = (stall[0] if stall and stall[0] else None) or sess.account
+    skip = {str(a) for a in (acct, sess.account, C.name_account(sess.name)) if a}
+    return _trigger_on(key, acct, skip, stall, quiet_s, accounts, starts, running, landed, mode, now,
+                       cleared, asks, weeks)
+
+
+def _after(t, since):
+    return _number(t) and _number(since) and t > since
+
+
+def _unlisted_phase(key, c, live, stall, quiet_s, accounts, starts, running, landed, mode, now, files):
+    phase = c.get('phase')
+    stopped = bool(c.get('stopped') or c.get('stalled'))
+    if mode == NOTIFY:
+        if phase in (ASKED, READY) and not stopped:
+            return _gone('usage_crossover is notify: crossing dropped', detail=key)
+        return _hold('usage_crossover is notify: %s left as it is' % phase)
+    mine = (c.get('old_pid'), c.get('old_created'))
+    old = [l for l in live if (l.pid, l.created) == mine]
+    up = [l for l in live if c.get('new_name') and l.name == c['new_name'] and (l.pid, l.created) != mine]
+    others = [l for l in live if l not in old and l not in up]
+    stall_now = bool(old) and is_stalled(stall, quiet_s, now)
+    stalled = stall_now and mode == FULL
+    args = (key, None, c, live, old, up, True)
+    if phase == ASKED:
+        return _u_asked(key, c, old, others, stalled, stall_now, accounts, running, landed, now, files)
+    if phase == READY:
+        return _u_ready(key, c, live, old, up, others, stopped, stalled, accounts, starts, running, landed,
+                        now, quiet_s, files)
+    if phase == STOP_FIRST:
+        if old:
+            return _stop_or_wait(key, c, now, STOP_OLD, 'stop first: a consultant is one session of its name')
+        return _advance(READY, 'it has stopped: start it on account %s' % c.get('target'), stopped=True)
+    if phase == STALL_STOP:
+        return _stall_stop(args, stalled, now)
+    if phase == STARTING:
+        return _starting(args, c, now)
+    if phase == STARTED:
+        return _u_started(key, c, old, up, stalled, now, files)
+    if phase == STOPPING:
+        return _stopping(args, now)
+    return _gone('unknown state %r' % (phase,), 'cross-failed', key, remember=True)
+
+
+def _u_asked(key, c, old, others, stalled, stall_now, accounts, running, landed, now, files):
+    if not old:
+        return _gone('the session ended before its ready file', detail=key)
+    if others:
+        return _hold('several processes of its name')
+    if _after(files.get('ready'), c.get('asked_at')):
+        return _advance(READY, 'its ready file %s' % c.get('ready'))
+    if stalled:
+        return _stall_first(key, None, c, accounts, running, landed, now)
+    if stall_now:
+        return _gone('stalled before its ready file: left to the PM (usage_crossover is not full)', 'stalled', key)
+    st = accounts.get(str(c.get('account')))
+    week, _ = window(st.usage if st is not None else None, 'seven_day', now)
+    if week is not None and week < EARLY_FLOOR:
+        return _gone('the week reset: no crossing needed', detail=key)
+    if not c.get('delivered'):
+        return Decision(ASK, 'the checkpoint message again: not delivered', c.get('target'))
+    if now - c.get('phase_at', now) >= WAIT_READY_S:
+        return _hold('no ready file in %d min' % (WAIT_READY_S // 60), 'no-ready', key)
+    return _hold('waiting for its ready file')
+
+
+def _u_ready(key, c, live, old, up, others, stopped, stalled, accounts, starts, running, landed, now, quiet_s,
+             files):
+    if up:
+        return _advance(STARTING, 'its successor is up')
+    if stopped and live:
+        return _gone('someone started it again', detail=key)
+    if not stopped:
+        if not old:
+            return _gone('the session ended before its successor started', detail=key)
+        if others:
+            return _hold('several processes of its name')
+        if stalled:
+            return _stall_first(key, None, c, accounts, running, landed, now)
+        wait = _settled(key, c, quiet_s, files.get('note'), now)
+        if wait is not None:
+            return wait
+    why = cap_reached(key, starts, now)
+    if why and stopped:         # nothing runs: it starts once the cap allows
+        return _hold('%s; it is stopped and starts once the cap allows' % why, 'cross-failed', key, 'cap')
+    if why:
+        return _gone(why, 'cross-failed', key)
+    retry = c.get('retry_at')
+    if _number(retry) and now < retry:
+        return _hold('backoff after a failed start')
+    pick = pick_target(accounts, {str(c.get('account'))}, running, landed, now)
+    if pick is None:
+        return _no_room(key)
+    if c.get('kind') == UL.CONSULTANT and not stopped:
+        return _advance(STOP_FIRST, 'stop first, then account %s (%s)' % pick)
+    return Decision(START, 'to account %s (%s)' % pick, pick[0])
+
+
+def _u_started(key, c, old, up, stalled, now, files):
+    checked = _after(files.get('checkin'), c.get('start_at'))
+    late = now - c.get('phase_at', now) >= WAIT_CHECKIN_S
+    if c.get('kind') == UL.CONSULTANT:      # stopped before its start: nothing more to stop
+        if not up:
+            return _gone('its successor has gone', 'cross-failed', key)
+        if checked:
+            return _gone('its successor checked in: done', 'crossed', c.get('new_name'))
+        if late:
+            return _gone('no check-in file in %d min; its successor runs' % (WAIT_CHECKIN_S // 60), 'no-checkin', key)
+        return _hold('waiting for its check-in file')
+    if not old:
+        if up:
+            return _gone('its old session has gone: done', 'crossed', c.get('new_name'))
+        return _gone('both sessions have gone', 'cross-failed', key)
+    if not up:
+        return _gone('its successor has gone; the old session stays', 'cross-failed', key, remember=True)
+    if stalled:
+        return _advance(STALL_STOP, 'the old session stalled: stopped with its successor up')
+    if checked:
+        return _advance(STOPPING, 'its check-in file')
+    if late:
+        return _hold('no check-in file in %d min; the old session stays idle' % (WAIT_CHECKIN_S // 60),
+                     'no-checkin', key)
+    return _hold('waiting for its check-in file')
+
+
 def burn_eta(points, now):
     """Seconds until a week reaches 100% at its current burn rate, or None: no rise, or under
     BURN_MIN_S of readings. `points` [(epoch, week %)] of its readings; those of the last
@@ -652,15 +840,8 @@ def decide_pm(pms, crossing, stall, quiet_s, accounts, newest, starts, running, 
     account's week readings (burn_eta); `recorded` coordinators.json's PM (Recorded); `names` the
     names of the live launched sessions; the rest as decide. Reads nothing itself."""
     if crossing:
-        d = _pm_phase(pms, crossing, stall, quiet_s, accounts, newest, starts, running, landed, mode,
-                      now, note_at, recorded, names)
-        if d.action == CLEAR and d.remember:
-            acct = str(crossing.get('account'))
-            st = accounts.get(acct)
-            reset = stall[1] if stall is not None and stall[1] > now else window(
-                st.usage if st is not None else None, 'seven_day', now)[1]
-            d.fields = {} if reset is None else {'account': acct, 'reset': reset}
-        return d
+        return _remembered(_pm_phase(pms, crossing, stall, quiet_s, accounts, newest, starts, running, landed,
+                                     mode, now, note_at, recorded, names), crossing, stall, accounts, now)
     return _pm_trigger(pms, stall, quiet_s, accounts, starts, running, landed, mode, now, cleared,
                        asks, points, recorded)
 
@@ -841,8 +1022,54 @@ CHECKPOINT = ("The hub's usage crossover: this session's account is near its wee
               'next step; do not wait for the PM.')
 
 
+# An unlisted session has no hand-off record to post: it writes its ready file instead (module docstring
+# "Unlisted sessions"), and is told to resume (RESUME) when the crossing is dropped before its stop.
+DEEP_CHECKPOINT = ("The hub's usage crossover: this session's account is near its weekly limit, and the hub will "
+                   'start your successor on account %(target)s, in your worktree and on your branch, from your '
+                   'state note. Now: commit your work in progress on your branch, start no new heavy run (let a '
+                   'running gate finish, or note its log), write your state note to %(state)s (your worktree, '
+                   'branch and tip, what is done, what is next, what is still running), then write any text to '
+                   'the file %(ready)s and go idle; send no report. The hub stops this session once your '
+                   'successor has checked in. If the hub drops the crossing, it tells you to resume.')
+CONSULTANT_CHECKPOINT = ("The hub's usage crossover: this session's account is near its weekly limit, and the hub "
+                         'will stop this session and start %(name)s again on account %(target)s, from your notes '
+                         'file. Now: finish the answer in hand and take no new question, append a dated line to '
+                         'your notes file %(state)s saying where you stopped, then write any text to the file '
+                         '%(ready)s and go idle. If the hub drops the crossing, it tells you to resume.')
+RESUME = ("The hub's usage crossover was dropped: this session stays on its account. Resume your normal work.")
+
+
 def checkpoint_text(key, target):
     return CHECKPOINT % (target, key)
+
+
+def unlisted_checkpoint_text(c, target):
+    """The checkpoint message of the unlisted crossing `c` (DEEP_CHECKPOINT, CONSULTANT_CHECKPOINT)."""
+    text = CONSULTANT_CHECKPOINT if c.get('kind') == UL.CONSULTANT else DEEP_CHECKPOINT
+    return text % {'target': target, 'name': c.get('old_name'), 'state': c.get('state_path'), 'ready': c.get('ready')}
+
+
+def unlisted_argv(kit, c, target, plan=False):
+    """`launch.py consultant` or `launch.py deep` for the unlisted crossing `c` to account `target`,
+    from its launch (kitlib.launcher.unlisted.Session). --force: pick_target's tier 2 lies over the
+    launcher's headroom limit. `plan`: --plan, and for a consultant --replace (the old one runs)."""
+    L = c.get('launch') or {}
+    if c.get('kind') == UL.CONSULTANT:
+        args = ['consultant', '--repo-path', L.get('repo_path'), '--repo', L.get('slug'), '--account', target]
+    else:
+        args = ['deep', '--repo-path', L.get('repo_path'), '--brief', L.get('brief'), '--requester',
+                L.get('requester'), '--slug', L.get('slug'), '--account', target]
+    for flag, k in (('--model', 'model'), ('--effort', 'effort'), ('--autocompact', 'autocompact')):
+        if L.get(k):
+            args += [flag, L[k]]
+    if c.get('kind') == UL.CONSULTANT:
+        args += ['--notes-path', L.get('notes')]
+    else:
+        args += ['--predecessor', c.get('old_name'), '--state', c.get('state_path')]
+    args += ['--checkin', c.get('checkin'), '--force'] + (['--home-worktree'] if L.get('home') else [])
+    if plan:
+        args += ['--plan'] + (['--replace'] if c.get('kind') == UL.CONSULTANT else [])
+    return launch_argv(kit, *args)
 
 
 def pm_checkpoint_text(target):
@@ -904,14 +1131,16 @@ class CrossoverJob(object):
     may have been; `handoffs()` {key: newest hand-off record}, None when the hub has no read yet;
     `host` the watcher readers (session_watch.host_module). What a test also replaces: `procs()`
     the process rows, `child(argv, cwd)` -> (exit code, lines), `clock` epoch seconds, `kit` the
-    kit checkout whose tools/launch.py runs."""
+    kit checkout whose tools/launch.py runs, `temp` the agent temp folder an unlisted session's
+    hand-off files go under when its window sets none (AGENT_TEMP, else TEMP, else home)."""
 
-    def __init__(self, load, deliver, handoffs, host, procs=None, child=None, clock=None, kit=None):
+    def __init__(self, load, deliver, handoffs, host, procs=None, child=None, clock=None, kit=None, temp=None):
         self.load, self.deliver, self.handoffs, self.host = load, deliver, handoffs, host
         self.procs = procs or pmstart.list_processes
         self.child = child or C.run_child
         self.clock = clock or time.time
         self.kit = kit or pmstart.KIT_ROOT
+        self.temp = temp or os.environ.get('AGENT_TEMP') or os.environ.get('TEMP') or os.path.expanduser('~')
         self._noted = {}                # key: the decision note last logged
 
     def __call__(self, ctx):
@@ -923,7 +1152,8 @@ class CrossoverJob(object):
         doc = self._read(settings, now)
         sessions = state.read_sessions(settings)
         coordinators = state.read_coordinators(settings) or {}
-        rows = [(lookup.rc_name(p.get('CommandLine')), p) for p in lookup.launched(self.procs())]
+        procs = list(self.procs())
+        rows = [(lookup.rc_name(p.get('CommandLine')), p) for p in lookup.launched(procs)]
         lives = [Live(n, p.get('ProcessId'), p.get('Created')) for n, p in rows if n]
         had_old = 'pm_old' in doc
         pm_old = _old_pm(doc, lives)
@@ -951,7 +1181,7 @@ class CrossoverJob(object):
 
         steps, known = [], set()
         for key in sorted(set(entries) | set(doc['crossings'])):
-            if key == PM_DOC:
+            if key == PM_DOC or _is_unlisted(doc['crossings'].get(key)):
                 continue
             entry = entries.get(key)
             stem = (entry or {}).get('stem')
@@ -965,6 +1195,8 @@ class CrossoverJob(object):
                 d = step(key, entry, live)
             run.settle(key, d)
             steps.append((key, entry, live, d))
+        never = self._unlisted(run, procs, settings, lives, known, pm, entries, stalls, quiet, accounts, running,
+                               steps)
         run.names = {l.name for l in lives} | {e.get('name') for e in entries.values() if isinstance(e, dict)}
         if pms or doc['crossings'].get(PM_DOC):
 
@@ -978,20 +1210,69 @@ class CrossoverJob(object):
                                  asks=doc['asks'].get(PM_DOC), points=doc['weeks'].get(str(acct)),
                                  recorded=_recorded(coordinators), names={l.name for l in lives})
             steps.append(run.pm_settle(pm_step, pm, pms))
-        self._others(run, lives, known, pm, accounts, coordinators, stalls)
+        self._others(run, lives, known, pm, accounts, coordinators, stalls, never)
         run.act(steps, newest, sessions, coordinators)
         return run.finish()
 
-    def _others(self, run, lives, known, pm, accounts, coordinators, stalls=None):
-        """The `unmanaged` pushes, and `pm-limit` for a PM that is not a launched process (the
-        desktop app; a launched one is moved, decide_pm), once per week window."""
+    def _unlisted(self, run, procs, settings, lives, known, pm, entries, stalls, quiet, accounts, running, steps):
+        """Decide each launched consultant and deep-worker with no sessions.json entry, and each
+        open crossing of one (module docstring "Unlisted sessions"), into `steps`; their names go
+        into `known` and their accounts into `running`. Returns {name: (reason, account)} of the
+        live sessions that are never crossed."""
+        doc, now = run.doc, run.now
+        found, never = UL.classify(procs, settings, skip=set(known) | set(pm), keys=set(entries))
+        never = {n: (why, acct or C.name_account(n)) for n, (why, acct) in never.items()}
+        run.unlisted.update(found)
+        run.unlisted.update(k for k, c in doc['crossings'].items() if _is_unlisted(c))
+        for group in found.values():
+            for s in group:
+                known.add(s.name)
+                if C.name_account(s.name) is None:
+                    running[s.account] += 1
+        keys = set(found) | {k for k, c in doc['crossings'].items() if _is_unlisted(c)}
+        for key in sorted(keys):
+            c = doc['crossings'].get(key)
+            group = found.get(key, [])
+            if c is None and len(group) > 1:    # which one would cross is unknown: none does
+                for s in group:
+                    known.discard(s.name)
+                    never[s.name] = (UL.SEVERAL, s.account)
+                continue
+            sess = group[0] if len(group) == 1 else None
+            live = [l for l in lives if l.name == key or re.match(re.escape(key) + r'-a\d+\Z', l.name)]
+
+            def step():
+                cur = doc['crossings'].get(key)
+                name = (cur or {}).get('old_name') or (sess.name if sess else None)
+                return decide_unlisted(key, sess, cur, live, stalls.get(name), quiet.get(name), accounts,
+                                       doc['starts'], running, doc['landed'], settings.usage_crossover, now,
+                                       files=_files(cur), cleared=doc['cleared'].get(key),
+                                       asks=doc['asks'].get(key), weeks=doc['weeks'])
+            d = step()
+            for _ in range(2):          # asked -> ready -> stop-first: state changes, no acting step
+                if d.action != ADVANCE:
+                    break
+                run.advance(key, d)
+                d = step()
+            run.unlisted_settle(key, d, live)
+            steps.append((key, sess, live, d))
+        if never:
+            run.notes.append('never crossed: %s' % ', '.join('%s (%s)' % (n, never[n][0]) for n in sorted(never)))
+        return never
+
+    def _others(self, run, lives, known, pm, accounts, coordinators, stalls=None, never=None):
+        """The `unmanaged` pushes, detail <name>:<reason> (never: {name: (reason, account)}), and
+        `pm-limit` for a PM that is not a launched process (the desktop app; a launched one is
+        moved, decide_pm), once per week window."""
         now = run.now
         stalls = stalls or {}
+        never = never or {}
         for l in lives:
             if l.name not in pm and l.name not in known:
-                hot = _hot_reset(C.name_account(l.name), stalls.get(l.name), accounts, now)
+                why, acct = never.get(l.name, (UL.NO_WINDOW, C.name_account(l.name)))
+                hot = _hot_reset(acct, stalls.get(l.name), accounts, now)
                 if hot is not None:
-                    run.once_a_window(l.name, hot, 'unmanaged', l.name)
+                    run.once_a_window(l.name, hot, 'unmanaged', unmanaged_detail(l.name, why))
         if pm:
             return
         acct = coordinators.get('pm_account')
@@ -1058,6 +1339,22 @@ def _mtime(path):
         return os.path.getmtime(path)
     except (OSError, ValueError):
         return None
+
+
+def _is_unlisted(c):
+    """True for the crossing of an unlisted session (it carries its kind)."""
+    return isinstance(c, dict) and c.get('kind') in (UL.CONSULTANT, UL.DEEP)
+
+
+def _files(c):
+    """decide_unlisted's `files` of the crossing `c`: the mtimes of its ready, check-in and note files."""
+    c = c or {}
+    return {'ready': _mtime(c.get('ready')), 'checkin': _mtime(c.get('checkin')), 'note': _mtime(c.get('state_path'))}
+
+
+def unmanaged_detail(name, reason):
+    """An `unmanaged` push's detail, <name>:<reason>, cut to push.field's 64 characters with the reason whole."""
+    return '%s:%s' % (name[:max(1, 64 - len(reason) - 1)], reason)
 
 
 def _pm_name(name, coordinators):
@@ -1143,6 +1440,7 @@ class _Run(object):
         self.acted = False
         self.dirty = False
         self.names = set()              # the names a new PM may not take (the live and the entries')
+        self.unlisted = set()           # the keys of unlisted sessions (decide_unlisted)
 
     def save(self):
         state.write_json(state.path(self.settings, STATE_FILE), self.doc)
@@ -1251,6 +1549,9 @@ class _Run(object):
         if key == PM_DOC:
             getattr(self, '_pm_' + d.action)(live, d, newest.get(PM_FROM), coordinators)
             return
+        if key in self.unlisted:
+            getattr(self, '_u_' + d.action.replace('-', '_'))(key, entry, live, d)
+            return
         step = getattr(self, '_' + d.action.replace('-', '_'))
         step(key, entry, live, d, newest.get(key), sessions, coordinators)
 
@@ -1335,6 +1636,98 @@ class _Run(object):
                 code, lines = -1, [type(e).__name__]
             self.log('%s: would run %s: exit %s: %s' % (key, argv[2], code,
                                                         (lines or ['no output'])[-1]))
+        self.tell(key, d)
+
+    def unlisted_settle(self, key, d, live):
+        """An unlisted key's settle: a crossing that clears with its old session still running and
+        told to checkpoint (not crossed: it stopped or its successor runs) tells it to resume."""
+        c = self.doc['crossings'].get(key)
+        if (d.action == CLEAR and d.word != 'crossed' and isinstance(c, dict) and c.get('delivered')
+                and any((l.pid, l.created) == (c.get('old_pid'), c.get('old_created')) for l in live)):
+            if self.job.deliver(c.get('old_name'), RESUME):
+                self.notes.append('%s: %s told to resume' % (key, c.get('old_name')))
+            else:
+                self.notes.append('%s: %s could not be told to resume' % (key, c.get('old_name')))
+        self.settle(key, d)
+
+    def _u_crossing(self, key, sess, target, phase):
+        """A new crossing of the unlisted session `sess`; its hand-off files go in
+        <agent temp>/usage-crossover/<key>/ (module docstring "Unlisted sessions")."""
+        folder = os.path.join(sess.agent_temp or self.job.temp, HANDOFF_FOLDER, key)
+        state_path = sess.notes if sess.kind == UL.CONSULTANT else os.path.join(folder, DEEP_STATE)
+        return {'kind': sess.kind, 'phase': phase, 'phase_at': self.now, 'asked_at': self.now, 'target': target,
+                'account': sess.account, 'old_name': sess.name, 'old_pid': sess.pid, 'old_created': sess.created,
+                'delivered': False, 'folder': folder, 'ready': os.path.join(folder, READY_FILE),
+                'checkin': os.path.join(folder, CHECKIN_FILE), 'state_path': state_path,
+                'launch': {'repo_path': sess.repo_path, 'home': sess.home, 'model': sess.model,
+                           'effort': sess.effort, 'autocompact': sess.autocompact, 'requester': sess.requester,
+                           'brief': sess.brief, 'notes': sess.notes, 'slug': sess.slug}}
+
+    def _u_ask(self, key, sess, live, d):
+        c = self.doc['crossings'].get(key)
+        if c is None:
+            c = self.doc['crossings'][key] = self._u_crossing(key, sess, d.target, ASKED)
+            kept = {k: recent(v, self.now) for k, v in self.doc['asks'].items()}
+            self.doc['asks'] = {k: v for k, v in kept.items() if v}
+            self.doc['asks'].setdefault(key, []).append(self.now)
+        self.save()
+        try:
+            os.makedirs(c['folder'], exist_ok=True)
+        except OSError as e:            # the session is told the path; it may make the folder itself
+            self.log('%s: could not make %s: %s' % (key, c['folder'], e))
+        c['delivered'] = bool(self.job.deliver(c['old_name'], unlisted_checkpoint_text(c, d.target)))
+        self.dirty = True
+        if d.word:
+            self.tell(key, d)
+        self.notes.insert(0, '%s: asked to checkpoint for account %s' % (key, d.target))
+
+    def _u_start(self, key, sess, live, d):
+        c = self.doc['crossings'][key]
+        new = key if c.get('kind') == UL.CONSULTANT else '%s-a%s' % (key, d.target)
+        c.update(phase=STARTING, phase_at=self.now, start_at=self.now, target=d.target, new_name=new)
+        kept = {k: recent(v, self.now) for k, v in self.doc['starts'].items()}
+        self.doc['starts'] = {k: v for k, v in kept.items() if v}
+        self.doc['starts'].setdefault(key, []).append(self.now)
+        self.doc['landed'][d.target] = self.now
+        self.save()                     # before the child: a crash mid-start still counts
+        self.notes.insert(0, '%s: starting %s on account %s' % (key, new, d.target))
+        self._child(unlisted_argv(self.job.kit, c, d.target))
+
+    def _u_stop_old(self, key, sess, live, d):
+        """The old session's stop: a consultant's before its start (stop-first, no successor), a
+        deep-worker's once its successor checked in."""
+        c = self.doc['crossings'][key]
+        self._count_stop(c)
+        self.save()
+        self.notes.insert(0, '%s: stopping %s' % (key, c['old_name']))
+        self._child(stop_argv(self.job.kit, c['old_name'], c['old_pid'],
+                              c.get('new_name') if c.get('phase') == STOPPING else None))
+
+    def _u_stop_stalled(self, key, sess, live, d):
+        c = self.doc['crossings'].get(key)
+        if c is None:
+            c = self.doc['crossings'][key] = self._u_crossing(key, sess, d.target, STALL_STOP)
+            c['stalled'] = True
+        if d.word:
+            self.tell(key, d)
+        self._count_stop(c)
+        self.save()
+        mine = (c.get('old_pid'), c.get('old_created'))
+        up = c.get('kind') == UL.DEEP and any(l.name == c.get('new_name') and (l.pid, l.created) != mine
+                                              for l in live)
+        self.notes.insert(0, '%s: stopping stalled %s' % (key, c['old_name']))
+        self._child(stop_argv(self.job.kit, c['old_name'], c['old_pid'], c['new_name'] if up else None))
+
+    def _u_would(self, key, sess, live, d):
+        """A dry run on a change: nothing starts or stops, and a refusal is only logged."""
+        c = self._u_crossing(key, sess, d.target, ASKED)
+        for argv in (unlisted_argv(self.job.kit, c, d.target, plan=True),
+                     stop_argv(self.job.kit, sess.name, sess.pid, dry_run=True)):
+            try:
+                code, lines = self.job.child(argv, self.job.kit)
+            except (subprocess.TimeoutExpired, OSError) as e:
+                code, lines = -1, [type(e).__name__]
+            self.log('%s: would run %s: exit %s: %s' % (key, argv[2], code, (lines or ['no output'])[-1]))
         self.tell(key, d)
 
     def _pm_crossing(self, pm, target, high, phase, coordinators):

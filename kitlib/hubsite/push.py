@@ -218,11 +218,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                              'is needed.' + _PM_RESUMES,
             'cross-failed': _CROSSOVER + 'gave up on detail: it needs you. The log says why.'
                             + _PM_RESUMES,
-            'no-ready': _CROSSOVER + 'detail has not replied ready to its checkpoint message, or '
-                        'has not gone quiet on a state note written since, in 30 minutes; the hub '
-                        'still waits. Check on it.',
-            'no-checkin': _CROSSOVER + 'the successor of detail has not recorded its check-in in '
-                          '30 minutes; its old session stays idle. Check on the successor.',
+            'no-ready': _CROSSOVER + 'detail has not replied ready to its checkpoint message (or '
+                        'written its ready file), or has not gone quiet on a state note written '
+                        'since, in 30 minutes; the hub still waits. Check on it.',
+            'no-checkin': _CROSSOVER + 'the successor of detail has not recorded its check-in (or '
+                          'written its check-in file) in 30 minutes; its old session stays idle (a '
+                          'consultant was stopped first, and the hub stops watching it). Check on '
+                          'the successor.',
             'no-room': _CROSSOVER + 'detail needs moving and no account has room: nothing was '
                        'stopped or started. A stalled session wakes at its reset.'
                        + _PM_RESUMES,
@@ -230,8 +232,9 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                         'move it: it is not a launched session (the desktop app), or '
                         'coordinators.json records no pm_session_id or pm_account. It is yours to '
                         'hand off.',
-            'unmanaged': _CROSSOVER + 'detail, a session with no sessions.json entry, is at the '
-                         'weekly limit; this job leaves it to you.'}
+            'unmanaged': _CROSSOVER + 'a session with no sessions.json entry is at the weekly limit '
+                         'and this job never crosses it; detail is <session>:<reason> (the reasons: '
+                         'docs/launcher.md "Usage crossover"). It is left to you.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

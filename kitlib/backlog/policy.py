@@ -16,7 +16,10 @@ as the store holds it locally.
   read_argv(words)              what a backlog.py command line gives (the guard's reader), as an Argv
   check(args, ctx, snap, environ)
                                 tools/backlog.py's check: raises Refusal when its role may not
-                                take a row; else the rows it sorted
+                                take a row, or a topic session writes a record not batched for
+                                its branch (batch_refusal); else the rows it sorted
+  batch_refusal(role, verb, rid, rec, branch)
+                                why a topic session may not write `rid`, or None
   may(name, environ)            True when the session tools/backlog.py runs in may take the row
                                 `name`: a row the plan finds (pull-collision, set-widen-collision)
   top_only(rows)                the rows of `rows` only the owner and the PM may take, which a
@@ -40,6 +43,9 @@ from . import roles
 from .errors import Refusal
 
 READS = roles.ACTIONS['read'].verbs
+# The topic session's mark (content/roles/topic.md): a builder whose writes name only the records
+# batched for its branch (check, batch_refusal); `add` makes a new record, so it is not narrowed.
+TOPIC = 'topic'
 UNKNOWN = 'unknown'
 # read_argv's readable mark for a word the shell passes as one word whose text the line does not
 # show (a double-quoted variable): read only as the value of an option whose value sorts nothing
@@ -275,6 +281,7 @@ def check(args, ctx, snap, environ=None):
     # `add` makes it, so it sorts as unheld and unpriced
     rows = sort(args.verb, given_of(args), _Absent() if rec is None and snap is not None else rec)
     facts = ()
+    branch = None
     if rec is not None:
         try:
             branch = ctx.current_branch()
@@ -285,7 +292,26 @@ def check(args, ctx, snap, environ=None):
     text = refusal(role, rows, facts)
     if text:
         raise Refusal('%s (kitlib/backlog/roles.py); ask a session whose role may' % text)
+    text = batch_refusal(role, args.verb, rid, rec, branch)
+    if text:
+        raise Refusal(text)
     return rows
+
+
+def batch_refusal(role, verb, rid, rec, branch):
+    """Why a topic session (TOPIC) may not write record `rid` as `branch`, or None: its writes
+    name only a record whose `batch:` is that branch (a lead sets it, `set ID --batch <branch>`).
+    A read, an `add` and every other role's write are None. `rec` None: the store holds no such
+    record, which the plan refuses by its own words."""
+    if role != TOPIC or verb in READS or verb == 'add' or not rid or rec is None:
+        return None
+    batch = rec.get('batch')
+    if batch is not None and batch == branch:
+        return None
+    return ('a topic session writes only the records batched for its branch: `%s` has %s, and '
+            'this branch is %s. A coordinator sets it with `set %s --batch <branch>`, or the '
+            'record is not this session\'s' % (rid, '`batch: %s`' % batch if batch else 'no `batch:`',
+                                                branch or '(unreadable)', rid))
 
 
 # The rows a plan finds (a collision with another branch's live pull), by verb, and the words a

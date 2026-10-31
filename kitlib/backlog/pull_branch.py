@@ -118,11 +118,11 @@ def change_session(snap, rid):
     return rec.get('session') if rec else None
 
 
-def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
+def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batch=False):
     """plan.plan_pull, refused when the branch it records is a main branch (main_branches). The
     record's own refusals come first: an unpullable record says why before where it is pulled
-    from."""
-    change = pmod.plan_pull(snap, ctx, rid, reason, may_collide, blocker)
+    from. `batch`: a topic session's pull (plan.plan_pull)."""
+    change = pmod.plan_pull(snap, ctx, rid, reason, may_collide, blocker, batch=batch)
     why = refusal(rid, ctx.current_branch(), main_branches(ctx), change_session(snap, rid))
     if why:
         raise Refusal(why)

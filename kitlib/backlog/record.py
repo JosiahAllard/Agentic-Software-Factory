@@ -327,6 +327,7 @@ FIELDS = collections.OrderedDict([
     ('displaced', (ANY, _displaced)),
     ('pin', (AT_MOST_ONE, _pin)),
     ('session', (AT_MOST_ONE, _session)),
+    ('batch', (AT_MOST_ONE, _free)),             # the branch a topic session builds it on
     ('ref', (AT_MOST_ONE, _free)),
     ('summary', (ONE, _free)),
 ])

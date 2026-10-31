@@ -285,8 +285,15 @@ def uses_line(rec, holding, capacity):
     return 'uses %s' % ', '.join(parts)
 
 
+def held_for_batch(rec, branch):
+    """The branch `rec` is held for (its `batch:`, set for a topic session) when that is not
+    `branch` (None: no branch, as the main checkout's `next`), else None."""
+    batch = rec.get('batch')
+    return batch if batch is not None and batch != branch else None
+
+
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
-               folded=None, capacity=None):
+               folded=None, capacity=None, branch=None):
     """`((offers, passed), refusals, ranks)`. `holding` are the live pulls whose scopes are taken
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
@@ -304,7 +311,9 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     sessions' records. A record with no room in any one of its resources is passed over, a live
     pull named as its blocker; each record taking a place takes one unit of each. A seed is
     measured against the live pulls alone. A candidate naming a resource `capacity` does not
-    declare is passed over, never offered and never a crash."""
+    declare is passed over, never offered and never a crash.
+    `branch` is the branch the offer is for: a record batched for another branch
+    (held_for_batch) is passed over as held for that batch, and takes no scope."""
     capacity = capacity or {}
     ranks = ranked(snap)
     occupied = []
@@ -339,6 +348,12 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     for rec in ordered:
         reached.add(id(rec))
         rid = rec.id
+        held = held_for_batch(rec, branch)
+        if held is not None:
+            if own(rec):
+                passed.append(PassedOver(rec, ranks.get(rid, '-'), 'held for the batch on %s'
+                                         % held))
+            continue
         scopes = rec.all('scope')
         errs = [(m, smod.scope_member_error(m, True)) for m in scopes]
         errs = [(m, why) for m, why in errs if why is not None]

@@ -246,13 +246,21 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None):
     folded = _offer_folds(ctx, holding, own, diffs)
     result, refusals, _ranks = omod.next_offer(snap, taken, cap=cap, seeds=seeds,
                                                session=ctx.session, unmet=ctx.unmet(snap),
-                                               folded=folded, capacity=ctx.capacity(snap))
+                                               folded=folded, capacity=ctx.capacity(snap),
+                                               branch=own)
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
 
 
-def current_offer(snap, ctx, branch=None):
+def batch_members(snap, branch):
+    """The ids of the open records batched for `branch` (`batch: <branch>`), in rank order: the
+    seeds of a topic session's pull (plan_pull)."""
+    return [r.id for r in sorted(snap.readable, key=omod.rank_key)
+            if r.get('batch') == branch and r.get('state') == 'open']
+
+
+def current_offer(snap, ctx, branch=None, seeds=()):
     """`(offers, passed, holding, also, notes)` for a pull onto `branch`: the offer `next` prints
     as that branch (offer_for), and `also`, the records `next` offers without it (as the main
     checkout prints it), [] when the two are the same. A pull takes a record either one offers,
@@ -260,9 +268,14 @@ def current_offer(snap, ctx, branch=None):
     `also` only widens what a pull takes: when it cannot be computed (one of the branch's own
     pulls has a scope that cannot be compared, which the branch's offer never reads) it is [],
     so a record `next` offered as the branch still pulls plainly and nothing else is let in;
-    `notes` then holds one NOTE naming why, for the pull to print."""
+    `notes` then holds one NOTE naming why, for the pull to print.
+    `seeds` (a topic session's batch, batch_members) go first in the branch's offer, as
+    `next --with` puts them, and the cap grows to hold them all."""
     diffs = []
-    offers, passed, holding, own = _offer(snap, ctx, branch, ctx.cap, (), None, diffs)
+    cap = ctx.cap
+    if seeds and cap is not None:
+        cap = max(cap, len(seeds))
+    offers, passed, holding, own = _offer(snap, ctx, branch, cap, tuple(seeds), None, diffs)
     also, notes = [], []
     if own is not None and any(r.get('pulled_by') == own for r in holding):
         # The fold check `next` runs in the main checkout (no own branch, so the branch's own
@@ -1306,7 +1319,7 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
 
 # --- pull / release -------------------------------------------------------------------------------
 
-def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
+def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batch=False):
     """Take an open, priced record and record the branch. One in `next`'s offer pulls plainly;
     one outside it needs `--reason` and records `preempt` and the `displaced` offer, computed
     here. In the offer means in `next`'s offer as the caller's branch prints it (its own pulls
@@ -1322,9 +1335,19 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
     before the not-offered one. A `uses:` resource live pulls on other branches fill
     (resource_hits) is the same row.
     A pulled record refuses, unless its pull is dead and it is this session's: see
-    `_plan_takeover`."""
+    `_plan_takeover`.
+    A record batched for another branch (`batch:`, offer.held_for_batch) refuses for every role:
+    a lead lifts the hold (`set ID --unset batch`) first. `batch` (a topic session's pull,
+    opener.planner): a record batched for this branch is offered with the whole batch first
+    (batch_members as current_offer's seeds), so its rank order is no refusal; no `preempt` is
+    written."""
     refuse_machine_paths('--reason', reason)
     rec = require(snap, rid)
+    held = rec.get('batch')
+    if held is not None and held != ctx.current_branch():
+        raise Refusal('`%s` is held for the batch on %s (`batch: %s`), and only that branch pulls '
+                      'it. A coordinator lifts the hold first, in its own step: `set %s --unset '
+                      'batch`' % (rid, held, held, rid))
     if reason is not None:
         reason = ' '.join(reason.split())
         if not reason:
@@ -1356,7 +1379,8 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
     if missing:
         raise Refusal('`%s` requires %s, which is unmet: %s' % ((rid,) + missing[0]))
     branch = ctx.current_branch()
-    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch)
+    seeds = batch_members(snap, branch) if batch and held == branch else ()
+    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds)
     offered = rec in [o.rec for o in offers] or rec in also
     hits = live_hits(rec.all('scope'), holding, skip=rid, branch=branch)
     full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)

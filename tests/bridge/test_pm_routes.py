@@ -182,6 +182,21 @@ class PmRouteTests(unittest.TestCase):
         self.assertEqual(self.stop(self.b, self.a), (True, None))
         self.assertEqual(self.code(read(self.servers['a'])), 'reply-route-not-selected')
 
+    def test_a_reply_on_a_pm_route_is_refused_once_the_pm_disconnects_the_route_back(self):
+        # No owner row: the PM's disconnect leaves only allows_reply to decide the read.
+        self.connect(self.a, self.b)
+        self.assertEqual(self.send(self.servers['a'], self.b)['state'], 'queued')
+        operation = 'op-%d' % self.operation
+        self.assertEqual([item.state for item in self.controller.dispatch_pending()], ['reply-received'])
+        del self.live['b']
+        read = lambda: self.call(self.servers['a'], 'bridge_read_reply', operation_id=operation)
+        self.assertEqual(read(), {'reply': 'test reply'})
+        self.call(self.pm, 'bridge_pm_disconnect', sender=self.b.reference, recipient=self.a.reference,
+                  bidirectional=False)
+        self.assertIsNone(self.controller.pairs.owner_choice(self.b, self.a))
+        self.assertEqual([route[:2] for route in self.controller.pm.current()], [(self.a.reference, self.b.reference)])
+        self.assertEqual(self.code(read()), 'reply-route-not-selected')
+
     def test_a_replaced_binding_drops_its_routes(self):
         self.connect(self.a, self.b)
         self.enroll(replace(self.a, permission_revision=2))

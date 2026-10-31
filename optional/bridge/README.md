@@ -121,7 +121,8 @@ nominates no channel, and the other halves keep working.
     by one discovery pass ends nothing: the write-time checks below refuse while the chat is away.
     A closed chat keeps its lease (it cannot deliver, and it still holds one of the 32 slots)
     until Stop, a revoke or a restart. The window lists every lease with its grant time, marks one
-    whose chat is not listed now, and its "Stop selected" stops it by reference
+    that cannot deliver now (a chat not listed, or, on a full refresh, failing its live check: a
+    failed check keeps a chat listed), and its "Stop selected" stops it by reference
   - is logged: every grant, revoke and replacement appends one JSON line (`at`, `event`, `by`,
     `writer`, `recipient`; chat references only) to `writer-leases.log` beside `pairings.sqlite`.
     A grant that cannot be logged is refused, and a writer it would have replaced keeps its lease
@@ -212,8 +213,11 @@ nominates no channel, and the other halves keep working.
   - A PM route is held for the exact chat bindings, in the service's memory only: it writes no row
     to `pairings.sqlite`, a restart drops it, and a different binding for either chat's session
     ends it. At most 64 at a time.
-  - At every use (admission, dispatch, replies) the route opens only while both chats are still
+  - At every admission and dispatch the route opens only while both chats are still
     kit-launched: a chat attested by an unmarked frontend, or whose frontend detached, refuses.
+  - Reading a reply follows the ordinary route's rule: the PM route back still exists and the
+    reader is kit-launched now. The replier is not checked, so a reply from a Codex chat whose
+    turn has moved on still reads.
   - The PM removes only routes it made (`route-not-made-by-pm` for any other).
   - Logged: every connect, disconnect, owner stop, replacement and refused connect or disconnect
     appends one JSON line (`at`, `event`, `by`, `caller`, `sender`, `recipient`, and `sender_mark`

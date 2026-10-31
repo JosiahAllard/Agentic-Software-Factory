@@ -357,6 +357,17 @@ class PairingStore:
             return tuple(sorted((current[left], current[right]) for left, right in self.remembered_routes()
                 if left in current and right in current))
 
+    def live(self, binding):
+        """Whether this exact binding is listed and passes its live check now. Display only: it
+        changes nothing and grants nothing."""
+        with self._lock:
+            self._ready()
+            try:
+                self._observed(binding)
+            except PairingError:
+                return False
+            return True
+
     def _observed(self, binding):
         if type(binding) is not ChatBinding or self._peers.get(binding.identity.session_id) != binding:
             raise PairingError('chat-not-observed')

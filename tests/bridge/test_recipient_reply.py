@@ -39,8 +39,9 @@ class RecipientReplyTests(DispatchTests):
             self.core.reply('op', b'test-caller-proof')
 
     def test_a_recorded_reply_reads_after_the_recipients_observation_lapses(self):
-        # A Codex recipient fails its live check once its turn moves on, and leaves the
-        # observed list; the reply it already recorded still belongs to the operation's sender.
+        # A Codex recipient fails its live check once its turn moves on (it stays listed,
+        # stale), or a discovery pass withdraws it (here); either way the reply it already
+        # recorded still belongs to the operation's sender.
         self.admit()
         self.adapter.response = NativeResult('op', self.b.reference, 'recipient-accepted', 'native-op')
         self.core.dispatch_once('op')

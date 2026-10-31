@@ -414,8 +414,8 @@ class CodexSources:
             target_rollout=target.rollout_identity(message.recipient,expected=target_capture)
             def confirm():
                 # After the write: the delivery has started a new turn in the recipient, so
-                # recheck (exact captured turn, and _live, which drops a failed chat from the
-                # observed list) would refuse a write that landed. Identity only: the same
+                # recheck (exact captured turn, and _live, which fails for a turn that moved
+                # on) would refuse a write that landed. Identity only: the same
                 # app process, image and channels, the lease still granted and the
                 # recipient's same rollout with its captured turn followed by any newer one.
                 try:

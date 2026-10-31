@@ -149,6 +149,14 @@ class ResumePm(unittest.TestCase):
             self.assertEqual(self.resume(self.cfg(), procs).opened, [])
         self.assertEqual(self.lines, ['pm-session already running, skipped'] * 2)
 
+    def test_pm_session_only_inside_another_sessions_prompt_does_not_skip_it(self):
+        prompt = reboot.PROMPT % ('s.md', start.PM_REF)
+        self.assertIn('pm-session', prompt)
+        cmd = "claude --remote-control 'alpha-coord-a1' -n 'alpha-coord-a1' %s" % window.q(prompt)
+        text, = self.resume(self.cfg(), [dict(session(8, 'alpha-coord-a1'), CommandLine=cmd)]).opened
+        self.assertEqual(role_of(text), 'pm')
+        self.assertEqual(self.lines, ['started pm-session'])
+
     def test_the_desktop_app_or_an_unnamed_session_skips_it(self):
         self.assertFalse(self.h.settings.pm_resume_beside_desktop)          # the default
         for p in (STORE, UNNAMED):

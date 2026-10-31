@@ -88,7 +88,7 @@ would-cross; the rest wait for the next run. Every key is decided on each run.
 
 The PM (decide_pm; docs/launcher.md "PM crossover") moves too, under the state key PM_DOC and the
 push detail `pm`. Its process is the launched session coordinators.json names (pm_name, else
-pm-session or its pm_session_id on the command line); its account is pm_account. With no
+pm-session or its pm_session_id as the --resume or --session-id value); its account is pm_account. With no
 pm_session_id or pm_account recorded, pm-crossover cannot move it: `pm-limit` once per change. A conversation
 cannot resume on another account, so its successor starts fresh from its hand-off file through
 `launch.py pm-crossover`, which confirms the new session and writes coordinators.json. The trigger
@@ -1373,11 +1373,12 @@ def _pm_entry(key, entry, coordinators):
 
 
 def _pm_row(name, row, coordinators):
-    """True for the PM's process, as launcher.stop refuses it: by name, or by the session id on
-    its command line (pm_session_id: a `<` value is the example file's placeholder)."""
+    """True for the PM's process: by name, or by pm_session_id as its --resume or --session-id value
+    (launcher.stop.runs_as; the id elsewhere on the line, as in a topic session's brief path, is not
+    the PM; a `<` value is the example file's placeholder)."""
     pm_id = coordinators.get('pm_session_id')
     return _pm_name(name, coordinators) or (isinstance(pm_id, str) and not pm_id.startswith('<')
-                                            and pm_id in (row.get('CommandLine') or ''))
+                                            and lstop.runs_as(row.get('CommandLine'), pm_id))
 
 
 def _recorded(coordinators):

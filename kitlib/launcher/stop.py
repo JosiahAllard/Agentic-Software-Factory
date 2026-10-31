@@ -57,10 +57,10 @@ def _image():
     return 'claude' if platform.NAME == 'linux' else 'claude.exe'
 
 
-def _runs_as(cmd, sid):
+def runs_as(cmd, sid):
     """True when cmd resumes or starts session `sid` (the --resume/-r or --session-id value), not
     when the id only appears elsewhere: a topic session's brief path in the PM's scratchpad folder
-    carries the PM's session id."""
+    carries the PM's session id. Shared by reboot, relaunch and hubjobs.usage_crossover."""
     return any(next((g for g in m.groups() if g is not None), None) == sid
                for m in _SID.finditer(cmd or ''))
 
@@ -110,7 +110,7 @@ def plan(procs, name, successor=None, pid=0, own_pid=None, pm_session_id=None, p
     target = hits[0]
     tpid = int(target['ProcessId'])
     if ((lookup.rc_name(target.get('CommandLine')) or '').startswith(PM_RC_NAME)
-            or (pm_session_id and _runs_as(target.get('CommandLine'), pm_session_id))):
+            or (pm_session_id and runs_as(target.get('CommandLine'), pm_session_id))):
         raise Refused('PID %d is the PM session.' % tpid)
     by_pid = {int(p['ProcessId']): p for p in procs if p.get('ProcessId') is not None}
     cur, seen = by_pid.get(int(own_pid)) if own_pid is not None else None, set()

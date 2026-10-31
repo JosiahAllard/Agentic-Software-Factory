@@ -643,6 +643,23 @@ class AfterBoot(JobBase):
         self.assertIsInstance(self.run_job(), jobs.Skip)
         self.assertEqual(len(self.spawned), 1)
 
+    def test_a_boot_pass_whose_listing_times_out_starts_after_reboot_once_and_skips(self):
+        self.uptime = 240
+        self.job._fails = 2                                     # failures in a row from before
+        self.job.procs = lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired('Get-CimInstance', 4))
+        result = self.run_job()
+        self.assertIsInstance(result, jobs.Skip)
+        self.assertIn('after-reboot started', result.note)      # the boot step ran first, and is reported
+        self.assertIn('timed out', result.note)
+        self.assertEqual(len(self.spawned), 1)
+        self.assertEqual(self.records()[C.BOOT_KEY], {'boot_at': NOW - 240})
+        self.assertEqual(self.job._fails, 2)                    # a Skip keeps the count (and the runner's ok_at)
+        self.job.procs = lambda: [proc(n) for n in self.live]
+        self.now += 300
+        self.uptime += 300
+        self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual(len(self.spawned), 1)                  # the kept boot: not started again
+
     def test_a_hub_restart_soon_after_the_boot_does_not_run_it_again(self):
         self.uptime = 240
         self.run_job()

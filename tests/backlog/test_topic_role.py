@@ -164,6 +164,22 @@ class TopicCli(unittest.TestCase):
         self.ok('topic', *self.topic('pull', 'MINE'))
         self.assertIn('pulled_by: %s\n' % self.TOPIC_BRANCH, self.ok(None, 'show', 'MINE'))
 
+    def test_a_topic_pull_through_the_tool_takes_a_batch_member_the_plain_offer_passes_over(self):
+        """(a) Through tools/backlog.py (opener.planner passes batch=True for the topic mark): a
+        member below a higher record whose scope collides with it is not in the plain offer, yet the
+        topic pull takes it with no `--reason` and writes no `preempt`; a worker's pull is refused."""
+        self.ok(None, 'add', 'HIGH', '--summary', 'a higher thing', '--scope', 'tools/mine.py',
+                *ADD_FLAGS)
+        self.ok(None, 'set', 'HIGH', '--priority', '1', '--priority-by', 'agent')
+        self.ok('coordinator', 'set', 'MINE', '--batch', self.TOPIC_BRANCH)
+        out = self.refused('worker', *self.topic('pull', 'MINE'))
+        self.assertIn("`MINE` is not in `next`'s offer", out)
+        self.assertIn('already taken by HIGH', out)
+        self.ok('topic', *self.topic('pull', 'MINE'))
+        shown = self.ok(None, 'show', 'MINE')
+        self.assertIn('pulled_by: %s\n' % self.TOPIC_BRANCH, shown)
+        self.assertNotIn('preempt', shown)
+
     def test_a_topic_session_sets_scope_on_its_own_pull_and_a_widen_into_a_live_pull_is_refused(self):
         """(b) `set --scope` on a record it holds pulled is a builder's own-pull text edit; a
         widen into another branch's live pull stays a lead's (`set-widen-collision`)."""

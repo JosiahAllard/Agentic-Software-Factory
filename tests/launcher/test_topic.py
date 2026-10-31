@@ -42,6 +42,13 @@ class Topic(Base):
         self.assertIn("stop --name 'topic-brain-ui'", out)
         self.assertEqual(self.host.opened, [])
 
+    def test_the_first_message_pulls_with_the_session_key_and_files_no_records(self):
+        """The session never reads its role file: the prompt carries the pull form and the add rule."""
+        out = self.topic()
+        self.assertIn('--session <key> pull <ID>', out)
+        self.assertIn('Create no records: backlog.py add is refused for this session', out)
+        self.assertIn('When the owner says the work is done', out)
+
     def test_a_real_run_opens_one_window_with_the_mark(self):
         self.topic(plan=False)
         text, = self.host.opened

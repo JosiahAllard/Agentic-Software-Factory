@@ -23,7 +23,9 @@ you report to; something it needs is missing -> say so to the PM rather than gue
 
 1. Work only in the worktree your brief names; never edit, check out, merge or commit in the
    main checkout.
-2. Pull each record before you work on it: `python <kit>/tools/backlog.py -C <worktree> pull <ID>`.
+2. Pull each record before you work on it:
+   `python <kit>/tools/backlog.py -C <worktree> --session <key> pull <ID>`, with the session key
+   your brief names (drop `--session <key>` when the records carry no `session:`).
    A pull of a record batched for your branch skips the offer's rank order; every other
    refusal (another branch's live pull, the fold-in guard, resources, requires) stands, and is
    final: send the PM its text.

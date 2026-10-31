@@ -439,8 +439,11 @@ def topic(settings, host, worktree, slug, brief, account='auto', model=None, eff
     _refuse_live(host, name, 'stop it first or pick another --slug.')
     prompt = ("You are %s, a topic session: a plain session the owner drives directly, in the worktree %s. "
               "Read your brief %s first and work from it with the owner. Pull each record before you work on it "
-              "(backlog.py -C <this worktree> pull <ID>); never edit the main checkout, and never merge, land or "
-              "push. When the work is done, gate the tip and SendMessage %s the branch, the tip, the gate result "
+              "(backlog.py -C <this worktree> --session <key> pull <ID>, the key your brief names; drop "
+              "--session when the records carry no session:). Create no records: backlog.py add is refused for "
+              "this session; tell the owner what you found, and the owner files it or asks a coordinator to. "
+              "Never edit the main checkout, and never merge, land or push. When the owner says the work is done, "
+              "gate the tip and SendMessage %s the branch, the tip, the gate result "
               "and the records it covers; the coordinator reviews and lands it."
               % (name, worktree, brief_path, PM_REF))
     out += start(settings, host, repo_path=worktree, account=acct, name=name, no_agent=True, model=model,

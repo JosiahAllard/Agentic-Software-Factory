@@ -44,7 +44,7 @@ from .errors import Refusal
 
 READS = roles.ACTIONS['read'].verbs
 # The topic session's mark (content/roles/topic.md): a builder whose writes name only the records
-# batched for its branch (check, batch_refusal); `add` makes a new record, so it is not narrowed.
+# batched for its branch, and which files no records: its `add` is refused (check, batch_refusal).
 TOPIC = 'topic'
 UNKNOWN = 'unknown'
 # read_argv's readable mark for a word the shell passes as one word whose text the line does not

@@ -184,6 +184,35 @@ class Deep(Base):
             self.refused(msg, plan=False, brief=None, brief_text='x', **kw)
             self.assertFalse(os.path.exists(self.briefdir), kw)
 
+    def test_a_successor_takes_the_account_in_its_name_and_reads_the_state_note_first(self):
+        state = os.path.join(self.h.root, 'state.md')
+        out = self.deep(account='2', predecessor='deep-net-race', state=state)
+        self.assertIn("--remote-control 'deep-net-race-a2' -n 'deep-net-race-a2' ", out)
+        self.assertIn('You are deep-net-race-a2, a deep-worker session', out)
+        self.assertIn('succeeding deep-net-race, which reached', out)
+        self.assertIn('Read its state note %s first' % state, out)
+        self.assertIn('then your brief %s' % self.brief, out)
+        self.assertIn('Carry on in its worktree and on its branch; make no new worktree', out)
+        self.assertNotIn('make your own git worktree', out)
+        self.assertIn("SendMessage your report to ''alpha-coord-a1''", out)
+
+    def test_a_check_in_file_is_named_last(self):
+        checkin = os.path.join(self.h.root, 'checkin')
+        out = self.deep(checkin=checkin)
+        self.assertIn((start.CHECKIN_NOTE % checkin).replace("'", "''") + "'", out)
+        self.assertNotIn('write any text to the file', self.deep())
+
+    def test_successor_refusals(self):
+        state = os.path.join(self.h.root, 'state.md')
+        self.refused('together, or neither', predecessor='deep-net-race')
+        self.refused('together, or neither', state=state)
+        for bad in ("o'x", ' deep-x', 'a\nb'):
+            self.refused('--predecessor must be', predecessor=bad, state=state)
+        self.refused('--state must be an absolute', predecessor='deep-net-race', state='rel.md')
+        self.refused('--checkin must be an absolute', checkin='rel')
+        self.refused('--checkin must be an absolute', checkin=os.path.join(self.h.root, 'a\nb'))
+        self.refused('is the name this session would take', account='1', predecessor='deep-net-race-a1', state=state)
+
     def test_agent_temp_is_the_default_brief_folder(self):
         self.host = FakeHost(self.h.root, env={'AGENT_TEMP': os.path.join(self.h.root, 'agent-temp')})
         out = self.deep(brief=None, brief_text='x', brief_dir=None)
@@ -341,6 +370,14 @@ class Consultant(Base):
         for kw, msg in [({'autocompact': 600000}, '100000..500000'), ({'account': '2'}, 'Account 2 is at 97%'),
                         ({'account': '3'}, 'Account 3 is not signed in')]:
             self.refused(msg, plan=False, **kw)
+
+    def test_a_check_in_file_is_named_after_the_first_reading(self):
+        checkin = os.path.join(self.h.root, 'checkin')
+        out = self.cons(checkin=checkin)
+        self.assertIn('reread the digest and the notes file.%s' % (start.CHECKIN_NOTE % checkin).replace("'", "''"),
+                      out)
+        self.assertNotIn('write any text to the file', self.cons())
+        self.refused('--checkin must be an absolute', checkin='rel')
 
 
 class Start(Base):

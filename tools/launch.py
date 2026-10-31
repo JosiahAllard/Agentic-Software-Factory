@@ -1,8 +1,9 @@
 """launch.py: start, hand off and stop the PM's long-running Claude sessions (docs/launcher.md).
 
   launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--home-worktree] [...]
-  launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--home-worktree] [...]
-  launch.py consultant --repo-path DIR [--repo SLUG] [--home-worktree] [...]
+  launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--home-worktree]
+                 [--predecessor NAME --state FILE] [--checkin FILE] [...]
+  launch.py consultant --repo-path DIR [--repo SLUG] [--home-worktree] [--checkin FILE] [...]
   launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--plan] [...]
   launch.py homes (--repo NAME | --repo-path DIR) [--remove NAME] [--what-if]
   launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
@@ -97,6 +98,10 @@ def parser():
     d.add_argument('--plan', action='store_true', help='print, start and write nothing')
     d.add_argument('--brief-dir')
     d.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
+    d.add_argument('--predecessor', help='the deep-worker this one succeeds on another account (the hub\'s usage '
+                   'crossover); the new one is named deep-<slug>-a<N>; needs --state')
+    d.add_argument('--state', help="the predecessor's state note, read first (an absolute path)")
+    d.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
 
     c = sub.add_parser('consultant', help="a repo's consultant session")
     c.add_argument('--repo-path', required=True)
@@ -111,6 +116,7 @@ def parser():
     c.add_argument('--replace', action='store_true', help='start beside a live one (an account hand-off)')
     c.add_argument('--plan', action='store_true')
     c.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
+    c.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
 
     t = sub.add_parser('topic', help='a plain session marked topic that builds one batch of records '
                        '(skill topic-session)')
@@ -221,10 +227,12 @@ def run(a, settings, host):
     if a.cmd == 'deep':
         return start.deep(settings, host, a.repo_path, a.requester, a.slug, a.brief, a.brief_text, a.account,
                           a.autocompact, a.model, a.effort, a.force, a.plan, a.brief_dir,
-                          home_worktree=a.home_worktree)
+                          home_worktree=a.home_worktree, predecessor=a.predecessor, state=a.state,
+                          checkin=a.checkin)
     if a.cmd == 'consultant':
         return start.consultant(settings, host, a.repo_path, a.repo, a.account, a.autocompact, a.model, a.effort,
-                                a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree)
+                                a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree,
+                                checkin=a.checkin)
     if a.cmd == 'topic':
         return start.topic(settings, host, a.worktree, a.slug, a.brief, a.account, a.model, a.effort,
                            a.autocompact, a.force, a.plan)

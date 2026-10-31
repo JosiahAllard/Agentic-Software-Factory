@@ -241,7 +241,12 @@ def do_next(args, ctx, snap):
         raise Usage('`--cap %d`: the cap is a whole number >= 1' % args.cap)
     # The repository's cap (`.kit.json` backlog.cap, plan.Context.cap): the one `pull` checks.
     cap = None if args.all else (args.cap if args.cap is not None else ctx.cap)
-    b = banner(snap)
+    b = omod.Banner(snap)
+    released, hub_note = releasable_holds(ctx, snap)
+    for line in b.lines():
+        if released and line.startswith('held '):
+            line += '  (%d releasable, below)' % len(set(r.id for r, _ in released))
+        say(line)
     warn = b.queue_warning()
     if warn:
         say(warn)
@@ -275,7 +280,35 @@ def do_next(args, ctx, snap):
         say('  blockers, most first:')
         for line in summary:
             say('    ' + line)
+    # A short offer's causes (docs/backlog.md "next: a short offer's causes").
+    if hub_note:
+        say(hub_note)
+    for line in [line for _, line in released]:
+        say(line)
+    narrow = narrow_lines(ctx, passed, holding, own)
+    for line in narrow:
+        say(line)
+    n, kinds = omod.pass_counts(passed)
+    why = ', '.join('%d %s' % (c, k) for k, c in kinds if c)
+    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow'
+        % (len(offers), b.count(omod.PULLABLE), n, ' (%s)' % why if why else '',
+           len(released), len(narrow)))
     return 0
+
+
+def releasable_holds(ctx, snap):
+    """omod.releasable_holds for the session, against the store's history and this machine's
+    hub."""
+    return omod.releasable_holds(snap, ctx.session, ctx.history(snap))
+
+
+def narrow_lines(ctx, passed, holding, own):
+    """omod.narrowings; the live branches are diffed (plan's fold-in diff, read only) only when a
+    pass-over asks for it."""
+    if not omod.wants_narrowing(passed):
+        return []
+    changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
+    return omod.narrowings(passed, holding, changes, unknown)
 
 
 def do_show(args, ctx, snap):

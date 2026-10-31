@@ -5,8 +5,8 @@ tools/review_pack.py; docs/review-pack.md).
 `Outcome.lines` and exits with `Outcome.code`. It never prints and never exits.
 
 The pack: base and merge-base, whether the branch contains the base tip, commits, whether the tip
-has a full-gate OK record (the `gate` line, gate_line: printed only, the exit status unchanged;
-a landing refuses a tip without one), files changed
+has the gate-OK record its landing needs (the `gate` line, gate_line: printed only, the exit status
+unchanged; a --full one, or a scoped one where docs/gate.md "The final gate" allows it), files changed
 with +/- grouped by the risk level in docs/ops/risk-map.md (unlisted = High), owner-only paths
 touched and whether an Owner-Approved trailer covers them, the branch's commits with no
 Co-Authored-By trailer (when configured, below), and the doc-budget verdict. `diff` set: only the
@@ -544,29 +544,92 @@ def pack(path, branch, base=None, diff=None):
         return Outcome(USAGE, lines)
 
 
-def gate_line(top, branch, cfg=None):
-    """The `gate` line: whether `branch`'s tip has the record a landing requires, a gate-OK
-    record of exactly that commit from a `gate.py --full` pass (gate_ok.verify_full; docs/gate.md
-    "Landing"), or, when the base's config `cfg` sets "landing".gate_once (docs/gate.md "Gate once
-    at landing"), a default-mode ("select") record of it too. Printed only: it never changes the
-    exit status."""
+def gate_line(top, branch, cfg=None, base=None):
+    """The `gate` line: whether `branch`'s tip has the record its landing requires. A
+    `gate.py --full` pass's gate-OK record of exactly that commit always lands it (gate_ok.verify_full;
+    docs/gate.md "Landing"). Otherwise the base's config `cfg` and the base `base` decide, by the
+    landing's own rules (kitlib.gate.land: Lander.diff_refusal for what a scoped record cannot land,
+    full_needed for the procedure's --full; docs/gate.md "The final gate"). "landing will refuse" is
+    said only where the landing does: no record at all, or a record the diff check refuses. A strict
+    path under a base without gate_once or shared_paths is the procedure's rule, not the record
+    check's, so a scoped record is then said to land, with its --full final gate named. Printed only:
+    it never changes the exit status. The record's own steps are not re-checked."""
     tip, why = gitrefs.resolve(branch, top)
     if not tip:
         return 'gate     tip of %s cannot be read (%s); landing will refuse' % (branch, why)
     rec, why = gate_ok.verify_full(top, tip)
-    if rec is None:
-        scoped = gate_ok.verify(top, tip)[0] if gate_once(cfg) else None
-        if scoped is not None and gate_ok.mode_of(scoped) == 'select':
-            return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
-                    ' a strict path or a gate config change still needs --full'
-                    % (tip[:10], scoped.get('ended_utc')))
-        return 'gate     tip %s: NO full-gate OK record (%s); landing will refuse' % (tip[:10], why)
-    return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    if rec is not None:
+        return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    head = 'gate     tip %s: NO full-gate OK record (%s)' % (tip[:10], why)
+    scoped = gate_ok.verify(top, tip)[0]
+    mode = gate_ok.mode_of(scoped) if scoped is not None else None
+    if mode not in ('select', 'docs'):
+        scoped, mode = None, None
+    kind, text = _final_gate(top, cfg, base, tip, mode)
+    if kind == 'unknown' and scoped is None:
+        return '%s; landing will refuse' % head        # no record at all: it refuses whatever the rule
+    if kind == 'record':
+        return '%s; landing will refuse: this tip needs --full (%s)' % (head, text)
+    if kind == 'default':
+        return ('%s; landing will refuse the docs-only record: the change is not docs-only, so the '
+                'final gate is the default gate (gate.py without --full)' % head)
+    if kind == 'procedure':
+        if scoped is None:
+            return ("%s; landing will refuse; this tip's final gate must be --full (%s)"
+                    % (head, text))
+        return ("gate     tip %s: scoped gate record, ended %s, which the landing takes; this tip's "
+                'final gate must be --full (%s)' % (tip[:10], scoped.get('ended_utc'), text))
+    if kind == 'unknown':
+        return '%s; cannot tell whether the scoped record lands it (%s)' % (head, text)
+    if scoped is None:
+        return ('%s; landing will refuse until the scoped final gate (gate.py without --full) '
+                'passes on this tip' % head)
+    if gate_once(cfg):
+        return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
+                ' a strict path or a gate config change still needs --full'
+                % (tip[:10], scoped.get('ended_utc')))
+    return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s, steps not '
+            're-checked' % (tip[:10], scoped.get('ended_utc')))
 
 
 def gate_once(cfg):
     """True when the Config `cfg` (None: no config) sets "landing".gate_once true."""
     return cfg is not None and cfg.section('landing').get('gate_once') is True
+
+
+def _final_gate(top, cfg, base, tip, mode):
+    """`(kind, text)` for a tip whose scoped record (`mode` "select", "docs" or None) is judged by
+    the landing's rules on its diff against `base` under `cfg`: ('record', why) the diff check
+    refuses a scoped record; ('default', None) only a docs record is refused, and a default-mode
+    one is not; ('procedure', why) the record check takes it but the procedure ends the tip on
+    --full (a strict path); ('unknown', why) it cannot be told; (None, None) a scoped record lands."""
+    if cfg is None or not base:
+        return 'unknown', 'no base config'
+    try:
+        from kitlib.gate import land, runner
+        sha, why = gitrefs.resolve(base, top)
+        mb, why2 = merge_base(top, base, tip)
+        if not sha or not mb:
+            return 'unknown', why or why2 or 'no merge base'
+        changed, why = runner.changed_between(top, mb, tip)
+        if changed is None:
+            return 'unknown', why
+        lander = land.Lander(top, [], None, [])
+        lander.cfg, lander.expect_main = cfg, sha
+        refused = lander.diff_refusal(changed, mode or 'select', None)
+        if refused and mode == 'docs':
+            if lander.diff_refusal(changed, 'select', None) is None:
+                return 'default', None
+        if refused:
+            return 'record', refused
+        reason, unknown = land.full_needed(top, cfg, sha, changed, mode == 'docs')
+        if reason:
+            return 'procedure', reason
+        if unknown:
+            return 'unknown', unknown
+        return None, None
+    except Exception as e:      # noqa: BLE001 - the line is printed only and never fails the pack
+        return 'unknown', '%s: %s' % (type(e).__name__, e)
 
 
 def _pack(lines, path, branch, base, diff):
@@ -608,7 +671,7 @@ def _pack(lines, path, branch, base, diff):
                   '--').splitlines()
     lines.append('commits  %d (no merges)' % len(commits))
     lines.extend('           ' + c for c in commits[:40])
-    lines.append(gate_line(top, branch, base_cfg))
+    lines.append(gate_line(top, branch, base_cfg, base))
 
     levels = risk_rules(top)
     groups = {}

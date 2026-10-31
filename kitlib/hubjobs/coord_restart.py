@@ -101,6 +101,7 @@ BOOT_DRIFT = 1e-3              # ... or within this share of the uptime: NTP sle
                                # not the tick count, so now - uptime drifts ~10-100 ppm
 RUN, MARK = 'run', 'mark'      # boot_action: start after-reboot, or only keep the boot
 BOOT_KEY = '_after_reboot'     # coord-restart.json's record of the boot after-reboot ran for
+PROC_TIMEOUT_S = 15            # the process listing (about 1 s idle, past 4 s under load; the session start keeps 4)
 DOWN_RUNS = 2                  # runs in a row a coordinator must be seen down before a start
 BACKOFF_S = (600, 1800, 5400)  # after the 1st, 2nd, 3rd start in the window
 START_CAP = 3                  # starts per entry in CAP_WINDOW_S
@@ -374,6 +375,17 @@ def boot_slack(uptime_s):
     return max(BOOT_SAME_S, uptime_s * BOOT_DRIFT)
 
 
+def list_processes():
+    """The jobs' default process listing: kitlib.pmstart.list_processes with PROC_TIMEOUT_S."""
+    return pmstart.list_processes(timeout=PROC_TIMEOUT_S)
+
+
+def skip_timed_out(e):
+    """The Skip for a listing that timed out `e`: this run decides nothing and counts no failure;
+    the next run lists again."""
+    return jobs.Skip('process listing timed out (%s s): skipped, tried again next run' % (e.timeout,))
+
+
 def uptime_s():
     """Seconds since boot (kitlib.launcher.host.Host.uptime_minutes), inf when unknown."""
     from kitlib.launcher import host
@@ -505,7 +517,7 @@ def make(sources):
 
 class RestartJob(object):
     """run(ctx) is the job. The parts a test replaces: `procs()` the process rows (default
-    kitlib.pmstart.list_processes), `child(argv, cwd)` -> (exit code, lines) (default
+    list_processes; a timed-out listing is a Skip), `child(argv, cwd)` -> (exit code, lines) (default
     run_child), `clock` epoch seconds, `kit` the kit checkout whose tools/launch.py runs,
     `uptime()` seconds since boot (default uptime_s), `detached(argv, cwd)` the after-reboot
     start (default spawn_detached), `backlog(key, entry)` the ids the coordinator is offered
@@ -518,7 +530,7 @@ class RestartJob(object):
         self.settings = settings
         self.pending = pending or (lambda key, entry: [])
         self.backlog = backlog or (lambda key, entry: offered_ids(settings, key, entry))
-        self.procs = procs or pmstart.list_processes
+        self.procs = procs or list_processes
         self.child = child or run_child
         self.clock = clock or time.time
         self.kit = kit or pmstart.KIT_ROOT
@@ -551,7 +563,12 @@ class RestartJob(object):
         from kitlib.hubjobs import usage_crossover      # it imports this module
         claimed = usage_crossover.claims(self.settings, now)
         sessions = state.read_sessions(self.settings)
-        rows = lookup.launched(self.procs())
+        try:
+            listed = self.procs()
+        except subprocess.TimeoutExpired as e:     # not a failure: no push, the next run lists again
+            skip = skip_timed_out(e)
+            return jobs.Skip('; '.join(x for x in (booted, skip.note) if x))
+        rows = lookup.launched(listed)
         live = {lookup.rc_name(p.get('CommandLine')) for p in rows}
         live.discard(None)
         created = {}

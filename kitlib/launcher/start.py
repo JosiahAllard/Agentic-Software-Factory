@@ -87,6 +87,36 @@ CONSULTANT_NOTES = 'notes.md'
 NOTES_DEFAULT = None             # --notes-path left out: consultant_notes_path
 OLD_NOTES = os.path.join('docs', 'ops', 'consultant-notes.local.md')   # the default before; copied, never deleted
 DIGEST = os.path.join('docs', 'conventions-digest.md')
+# The first messages of a deep-worker and a consultant, filled by name (%(pm)s is PM_REF, which
+# start() names live). kitlib.launcher.unlisted reads a running session's launch back from them (the
+# hub's usage crossover of a session with no sessions.json entry), so a change here is a change there.
+DEEP_PROMPT = ("You are %(name)s, a deep-worker session started for the session named '%(requester)s'. Read your brief "
+               "%(brief)s first and work only from it. Before changing anything, make your own git worktree and "
+               "branch with the repo's worktree tool (EnterWorktree if it has none); never edit the main checkout, "
+               "and never merge, land or push. When the work is done, or you are blocked on something only the "
+               "requester can settle, SendMessage your report to '%(requester)s' (ListAgents finds it; if it is "
+               "gone, send it to %(pm)s), then stay idle: the requester or the PM closes this window.")
+# a deep-worker moved to another account (launch.py deep --predecessor): it carries on in its predecessor's worktree
+DEEP_SUCCESSOR_PROMPT = (
+    "You are %(name)s, a deep-worker session started for the session named '%(requester)s', succeeding "
+    "%(predecessor)s, which reached its account's usage limit and does nothing more; never wait on it. Read its "
+    "state note %(state)s first (if there is none, it stopped before writing one: find its worktree and branch "
+    "with git worktree list and start from its last commit), then your brief %(brief)s, and work only from them. "
+    "Carry on in its worktree and on its branch; make no new worktree, never edit the main checkout, and never "
+    "merge, land or push. When the work is done, or you are blocked on something only the requester can settle, "
+    "SendMessage your report to '%(requester)s' (ListAgents finds it; if it is gone, send it to %(pm)s), then "
+    "stay idle: the requester or the PM closes this window.")
+CONSULTANT_PROMPT = (
+    "You are %(name)s, a consultant session for the repository at %(repo_path)s. Read its conventions digest "
+    "docs/conventions-digest.md, then your notes file %(notes)s (create it on your first call if it is missing), "
+    "reply 'ready', and stay idle until asked: no crons, monitors, wake-ups or polling. Answer engineering "
+    "questions by SendMessage to whoever asked; record every call and durable fact in your notes file, and "
+    "SendMessage each call to %(pm)s as 'engineering call for delegated logging' with the "
+    "question, answer and reason. Never edit code, commit, land or dispatch builds. After a compaction, "
+    "reread the digest and the notes file.")
+# --checkin: the file a session moved by the hub writes once it has read its notes (docs/launcher.md "Usage crossover")
+CHECKIN_NOTE = (" Once you have done that first reading, write any text to the file %s: the hub's usage crossover "
+                "waits for that file before it closes the session you succeed.")
 
 
 def agent_temp(host):
@@ -343,11 +373,19 @@ def _refuse_live(host, name, why):
         raise LaunchError("A session named '%s' is already running (PID %s): %s" % (name, lookup.pids(live), why))
 
 
+def _check_path(flag, path):
+    if path is not None and (not path.strip() or re.search(r'[\r\n]', path) or not os.path.isabs(path)):
+        raise LaunchError('%s must be an absolute file path on one line.' % flag)
+
+
 def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None, account='auto',
          autocompact=DEEP_AUTOCOMPACT, model=LONG_MODEL, effort='xhigh', force=False, plan=False, brief_dir=None,
-         home_worktree=False):
+         home_worktree=False, predecessor=None, state=None, checkin=None):
     """A deep-worker session named deep-<slug>. Every check runs before anything is written; a
-    --brief-text file is removed again when the launch fails."""
+    --brief-text file is removed again when the launch fails. `predecessor`: the deep-worker it
+    succeeds on another account (the hub's usage crossover): it is named deep-<slug>-a<N> and reads
+    the predecessor's state note `state` first (DEEP_SUCCESSOR_PROMPT). `checkin`: the file it
+    writes after that first reading (CHECKIN_NOTE)."""
     out = []
     if not SLUG.match(slug or ''):
         raise LaunchError("--slug '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % slug)
@@ -355,13 +393,18 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
         raise LaunchError("--requester must be the requesting session's name, on one line.")
     if bool(brief) == bool(brief_text):
         raise LaunchError('Give --brief <file> or --brief-text <text>, one of them.')
+    if bool(predecessor) != bool(state):
+        raise LaunchError('Give --predecessor <name> and --state <file> together, or neither.')
+    if predecessor and (predecessor.strip() != predecessor or re.search(r"[\r\n']", predecessor)):
+        raise LaunchError('--predecessor must be the session name, on one line, without quotes.')
+    _check_path('--state', state)
+    _check_path('--checkin', checkin)
     if not autocompact:
         raise LaunchError('--autocompact must be %d..%d tokens, not 0.' % AUTOCOMPACT)
     _check_common(model, effort, autocompact)
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
     repo_path = os.path.abspath(repo_path)
-    name = 'deep-' + slug
     if brief:
         brief_path = brief if os.path.isabs(brief) else os.path.join(repo_path, brief)
         if not os.path.isfile(brief_path):
@@ -370,17 +413,17 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     acct = _pick_or(settings, host, account, out)
     A.launch_dir(settings, acct)
     A.check_headroom(settings, acct, host.now(), force, out)
+    name = 'deep-' + slug + ('-a%s' % acct if predecessor else '')
+    if predecessor == name:
+        raise LaunchError("--predecessor '%s' is the name this session would take; pick another --account." % name)
     _refuse_live(host, name, 'stop it first or pick another --slug.')
     if brief_text:
         brief_dir = brief_dir or os.path.join(agent_temp(host), 'deep-briefs')
         brief_path = os.path.join(brief_dir, '%s-%s.md' % (name, host.now().strftime('%Y%m%dT%H%M%S')))
-    prompt = ("You are %s, a deep-worker session started for the session named '%s'. Read your brief %s first and "
-              "work only from it. Before changing anything, make your own git worktree and branch with the repo's "
-              "worktree tool (EnterWorktree if it has none); never edit the main checkout, and never merge, land or "
-              "push. When the work is done, or you are blocked on something only the requester can settle, "
-              "SendMessage your report to '%s' (ListAgents finds it; if it is gone, send it to "
-              "%s), then stay idle: the requester or the PM closes this window."
-              % (name, requester, brief_path, requester, PM_REF))
+    fields = dict(name=name, requester=requester, brief=brief_path, predecessor=predecessor, state=state, pm=PM_REF)
+    prompt = (DEEP_SUCCESSOR_PROMPT if predecessor else DEEP_PROMPT) % fields
+    if checkin:
+        prompt += CHECKIN_NOTE % checkin
     wrote = False
     if brief_text:
         if plan:
@@ -463,13 +506,15 @@ def _with_lines(out):
 
 def consultant(settings, host, repo_path, repo=None, account='auto', autocompact=CONSULTANT_DEFAULT_AUTOCOMPACT,
                model=LONG_MODEL, effort='high', notes_path=NOTES_DEFAULT, force=False, replace=False, plan=False,
-               home_worktree=False):
+               home_worktree=False, checkin=None):
     """The consultant session consultant-<repo>; one per repo unless --replace (an account hand-off).
     notes_path None is consultant_notes_path; then an old notes file in the repo (OLD_NOTES) is
     copied to it on first use, just before the window opens, and never changed or deleted
-    (_copy_old_notes). With home_worktree, a notes file in the main checkout is refused."""
+    (_copy_old_notes). With home_worktree, a notes file in the main checkout is refused.
+    `checkin`: the file it writes once it has read its notes (CHECKIN_NOTE)."""
     if home_worktree:
         check_home_role(window.CONSULTANT)
+    _check_path('--checkin', checkin)
     out = []
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
@@ -513,13 +558,9 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
         if host.git_ignored(repo_path, notes) is False:
             out.append("Warning: git does not ignore %s; add it to the repo's .gitignore before the consultant's "
                        'first call.' % notes)
-    prompt = ("You are %s, a consultant session for the repository at %s. Read its conventions digest "
-              "docs/conventions-digest.md, then your notes file %s (create it on your first call if it is missing), "
-              "reply 'ready', and stay idle until asked: no crons, monitors, wake-ups or polling. Answer engineering "
-              "questions by SendMessage to whoever asked; record every call and durable fact in your notes file, and "
-              "SendMessage each call to %s as 'engineering call for delegated logging' with the "
-              "question, answer and reason. Never edit code, commit, land or dispatch builds. After a compaction, "
-              "reread the digest and the notes file." % (name, repo_path, notes, PM_REF))
+    prompt = CONSULTANT_PROMPT % dict(name=name, repo_path=repo_path, notes=notes, pm=PM_REF)
+    if checkin:
+        prompt += CHECKIN_NOTE % checkin
     old = os.path.join(repo_path, OLD_NOTES)
     copied = _copy_old_notes(old, notes, plan, out) if default and os.path.isfile(old) else False
     if copied is not False and live:

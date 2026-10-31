@@ -41,3 +41,12 @@ Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bu
 `{{tool:message}}` it to the requester (`{{tool:list-agents}}` finds it; gone -> the PM session your start
 context names, else Project Manager or pm-session), when done or blocked on something only the requester can settle, in the form skill builder
 gives (worktree included); then stay idle - the requester or the PM closes your window.
+
+## Usage crossover
+
+A message from the hub's usage crossover (your account is near its weekly limit) asks you to
+checkpoint: commit your work in progress on your branch, start no new heavy run, write your state
+note to the path it names, then write any text to the ready file it names and go idle. A later
+message that the crossover was dropped: resume your work. Started as the successor (your first
+message names the session you succeed and its state note): carry on in its worktree and on its
+branch, and write the check-in file your first message names once you have read the note.

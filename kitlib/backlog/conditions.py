@@ -24,8 +24,14 @@ Any other text is free text: it is kept, and nothing acts on it (it is cleared b
   owner_error(member, text) None, or why `member` may not end on `text`
   evaluate(cond, readers)   True (met), False (not met) or None (cannot tell); only True acts
   expand(path, environ)     a path's %VAR%s filled from `environ`; None when one is not set
+  cited_ids(text)           the hub ids (Q-n, T-n) a free text cites, each once
+  releasable(rec, status, closed)
+                            the blocked_on members of `rec` whose cited end is already met
+                            (`next`'s RELEASABLE lines; docs/backlog.md
+                            "next: a short offer's causes")
 
-Nothing here reads a file, a store or the hub: evaluate asks the `readers` it is given.
+Nothing here reads a file, a store or the hub: evaluate and releasable ask the readers they are
+given.
 """
 import collections
 import os
@@ -40,6 +46,7 @@ ANSWERED = ('answered', 'filed', 'logged', 'done')
 Condition = collections.namedtuple('Condition', 'kind target state')
 
 _VAR = re.compile(r'%([A-Za-z_][A-Za-z0-9_]*)%')
+_CITED = re.compile(r'\b([QT]-[0-9]+)\b')
 _FORMS = {
     'todo': re.compile(r'^todo:(T-[0-9]+) (done)$'),
     'question': re.compile(r'^question:(Q-[0-9]+) (answered)$'),
@@ -133,3 +140,53 @@ def evaluate(cond, readers):
         there = readers.plugin_present(cond.target)
         return None if there is None else not there
     return None
+
+
+# --- releasable holds (`next`) --------------------------------------------------------------------
+
+def cited_ids(text):
+    """The hub ids (`Q-n`, `T-n`) `text` cites, in order, each once."""
+    return list(dict.fromkeys(_CITED.findall(text or '')))
+
+
+def _met(hub_id, status):
+    """True when the hub item `hub_id` is answered (a question) or done (a to-do)."""
+    got = status(hub_id)
+    if got is None:
+        return False
+    return got in ANSWERED if hub_id.startswith('Q-') else got == 'done'
+
+
+def _shown(hub_id, status):
+    return '%s %s' % (hub_id, status(hub_id))
+
+
+def releasable(rec, status, closed):
+    """`[(member, why, reason)]` for each `blocked_on` member of `rec` whose cited end is already
+    met, in the record's order:
+
+      item:X    X is closed: `closed(X)` gives the short sha of the commit that closed it (None:
+                still live, never closed, or cannot tell)
+      any other the member cites at least one hub id (`owner_ask` for `owner`, and the member's
+                `until` text) and every one is met: a question answered, filed, logged or done
+                (ANSWERED), a to-do done. `status(id)` gives the hub status, or None (unknown,
+                or the hub was not read: never met). A member that cites nothing is not judged.
+
+    `why` is what `next` prints, `reason` the `unblock --reason` it suggests."""
+    out = []
+    untils = [split(v) for v in rec.all('until')]
+    for member in rec.all('blocked_on'):
+        if member.startswith('item:'):
+            target = member[len('item:'):]
+            sha = closed(target) if target else None
+            if sha:
+                out.append((member, '%s closed (%s)' % (member, sha), '%s closed' % target))
+            continue
+        texts = [cond for m, cond in untils if m == member]
+        if member == 'owner':
+            texts.insert(0, rec.get('owner_ask') or '')
+        ids = cited_ids(' '.join(texts))
+        if ids and all(_met(i, status) for i in ids):
+            shown = ', '.join(_shown(i, status) for i in ids)
+            out.append((member, '%s cites %s' % (member, shown), shown))
+    return out

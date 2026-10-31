@@ -1,20 +1,27 @@
-"""--permission-mode on the verbs that start a session (start, pm-relaunch, pm-crossover,
-after-reboot): the flag reaches window.session_command; with none given every command is as before."""
+"""--permission-mode on the verbs that start a session (start, deep, consultant, topic, handoff,
+pm-relaunch, pm-crossover, after-reboot): the flag reaches window.session_command; with none given every command is as before."""
 import io
 import os
 import sys
 import unittest
 from contextlib import redirect_stderr
 
+from kitlib.git import repo as gitrepo
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), 'tools'))
 import launch                                                       # noqa: E402
-from kitlib.launcher import relaunch, start, window                 # noqa: E402
-from tests.launcher.fakes import FakeHost, Home                     # noqa: E402
+from kitlib.launcher import handoff, relaunch, start, window        # noqa: E402
+from tests.launcher.fakes import FakeHost, Home, session          # noqa: E402
+from tests.launcher.test_start import Base                         # noqa: E402
 
 FLAG = ' --permission-mode '
 VERBS = (['start', '--repo', 'alpha', '--account', '1'], ['pm-relaunch', '--name', 'x'],
-         ['pm-crossover', '--account', '1'], ['after-reboot'])
+         ['pm-crossover', '--account', '1'], ['after-reboot'],
+         ['deep', '--repo-path', 'r', '--brief-text', 'b', '--requester', 'q', '--slug', 's'],
+         ['consultant', '--repo-path', 'r'],
+         ['topic', '--worktree', 'w', '--brief', 'b', '--slug', 's'],
+         ['handoff', '--session', 'alpha', '--account', '2'])
 
 
 class Parsing(unittest.TestCase):
@@ -81,6 +88,43 @@ class Reboot(unittest.TestCase):
         self.assertEqual((len(texts[None]), len(texts['acceptEdits'])), (3, 3))     # alpha, beta, the PM resume
         self.assertFalse([t for t in texts[None] if FLAG + 'acceptEdits' in t])
         self.assertTrue(all(FLAG + 'acceptEdits' in t for t in texts['acceptEdits']))
+
+
+class OtherVerbs(Base):
+    """deep, consultant, topic and handoff pass the mode on; with none the command is as before."""
+    def check(self, make):
+        base = make()
+        self.assertEqual(base, make(permission_mode=None))
+        self.assertIn(FLAG + 'auto', base)
+        got = make(permission_mode='acceptEdits')
+        self.assertEqual(got, base.replace(FLAG + 'auto', FLAG + 'acceptEdits', 1))
+
+    def test_deep(self):
+        brief = os.path.join(self.repo, 'brief.md')
+        with open(brief, 'w', encoding='utf-8') as f:
+            f.write('brief')
+        self.check(lambda **kw: '\n'.join(start.deep(
+            self.h.settings, self.host, repo_path=self.repo, requester='alpha-coord-a1', slug='net-race', brief=brief,
+            account='1', brief_dir=os.path.join(self.h.root, 'briefs'), plan=True, **kw)))
+
+    def test_consultant(self):
+        self.check(lambda **kw: '\n'.join(start.consultant(
+            self.h.settings, self.host, self.repo, account='1', plan=True, **kw)))
+
+    def test_topic(self):
+        self.host.where = gitrepo.LINKED
+        brief = os.path.join(self.repo, 'topic-brief.md')
+        with open(brief, 'w', encoding='utf-8') as f:
+            f.write('brief')
+        self.check(lambda **kw: '\n'.join(start.topic(
+            self.h.settings, self.host, self.repo, 'brain-ui', brief, account='1', plan=True, **kw)))
+
+    def test_handoff(self):
+        self.h.write_state('sessions.json', {'alpha': {'repo': 'alpha', 'agent': True, 'stem': 'alpha-lead',
+                                                       'state': 's.md', 'account': 1, 'name': 'alpha-lead-a1'}})
+        self.host.procs = [session(10, 'alpha-lead-a1', agent='coordinator')]
+        self.check(lambda **kw: '\n'.join(handoff.handoff(
+            self.h.settings, self.host, 'alpha', '2', whatif=True, **kw)))
 
 
 if __name__ == '__main__':

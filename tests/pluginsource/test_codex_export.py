@@ -10,6 +10,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from hosts.codex.adapter import plugin_copy as codex
 from hosts.codex.adapter import plugin_install as pi
@@ -186,6 +187,11 @@ class InstallCase(unittest.TestCase):
         self.env = {'PM_KIT_CODEX_EXE': self.exe, 'PATH': ''}
         self.config('\\\\?\\' + self.root)
         self.lines, self.calls = [], []
+        # never this machine's processes: a Codex the owner has open would defer every add
+        self.real_running = getattr(pi, 'codex_running', None)
+        patcher = mock.patch.object(pi, 'codex_running', lambda: False, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def config(self, source, extra=''):
         write(os.path.join(self.home, 'config.toml'),
@@ -228,9 +234,9 @@ class InstallCase(unittest.TestCase):
         """The plugins each codex plugin add named, in order."""
         return [argv[-1] for argv, _home in self.calls]
 
-    def install(self, apply=True, run=None, env=None):
+    def install(self, apply=True, run=None, env=None, **kw):
         pi.install(self.export, self.home, pi.read_config(self.home), self.lines.append, apply=apply,
-                   environ=self.env if env is None else env, run=run or self.installs())
+                   environ=self.env if env is None else env, run=run or self.installs(), **kw)
 
     def text(self):
         return '\n'.join(self.lines)
@@ -365,6 +371,69 @@ class InstallTest(InstallCase):
             pi.read_config(self.home)
 
 
+class DeferTest(InstallCase):
+    """A running Codex holds its cache (`codex plugin add` fails with os error 5): the adds are
+    deferred, not failed, and the export root's codex pending flag records it until an add goes
+    through (KIT-CODEX-REFRESH-WHILE-OPEN)."""
+
+    DENIED = b'Error: failed to back up plugin cache entry: Access is denied. (os error 5)'
+
+    def test_codex_running_runs_no_add_prints_the_deferral_and_sets_the_flag(self):
+        self.cache('1.0.0-main.1')
+        self.install(running=lambda: True)
+        self.assertEqual(self.calls, [])
+        self.assertIn('codex: deferred: Codex is running; close it and run plugin_refresh.py --apply', self.lines)
+        self.assertNotIn('FAILED', self.text())
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+
+    def test_os_error_5_from_the_add_is_deferred_not_failed_and_sets_the_flag(self):
+        self.cache('1.0.0-main.1')
+
+        def denied(argv, env):
+            self.calls.append((argv, env.get('CODEX_HOME')))
+            return Done(1, b'', self.DENIED)
+        self.install(run=denied, running=lambda: False)
+        self.assertEqual(self.adds(), ['pm-kit@pm-kit'])          # the hooks add skipped too
+        self.assertIn(pi.DEFERRED, self.lines)
+        self.assertNotIn('FAILED', self.text())
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+
+    def test_codex_stopped_runs_the_adds_and_clears_the_flag(self):
+        self.cache('1.0.0-main.1')
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        self.install(running=lambda: False)
+        self.assertEqual(self.adds(), ['pm-kit@pm-kit', 'pm-kit-hooks@pm-kit'])
+        self.assertNotIn(pi.DEFERRED, self.lines)
+        self.assertEqual(P.pending(self.root), {})
+
+    def test_a_dry_run_never_checks_for_codex_nor_touches_the_flag(self):
+        self.cache('1.0.0-main.1')
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        self.install(apply=False, running=lambda: self.fail('a dry run checked for Codex'))
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+
+    def test_a_running_codex_is_a_process_named_codex_exe_and_no_other(self):
+        running = self.real_running
+        with mock.patch('kitlib.proc.process.snapshot',
+                        return_value=[(1, 0, 'System'), (2, 1, 'codex-windows-sandbox-service.exe')]):
+            self.assertFalse(running())
+        with mock.patch('kitlib.proc.process.snapshot', return_value=[(3, 1, 'Codex.exe')]):
+            self.assertTrue(running())
+        with mock.patch('kitlib.proc.process.snapshot', side_effect=OSError('no snapshot')):
+            self.assertFalse(running())
+
+
+class CacheVersionsTest(InstallCase):
+    def test_a_folder_that_is_not_a_version_is_not_a_cache_version(self):
+        self.cache('1.0.0-main.2')
+        os.makedirs(os.path.join(self.home, 'plugins', 'cache', 'pm-kit', 'pm-kit', 'headers'))
+        self.assertEqual(pi.cache_versions(self.home), ['1.0.0-main.2'])
+        self.hooks_cache()
+        self.install()
+        self.assertEqual(self.calls, [], 'a stray headers folder forced a re-add')
+        self.assertIn('codex: pm-kit 1.0.0-main.2 is installed from the export: current', self.text())
+
+
 class CacheInUseTest(InstallCase):
     def test_the_cache_markers_name_their_exports(self):
         self.cache('1.0.0-main.1', 'c' * 40)
@@ -492,6 +561,9 @@ class RefreshTest(Base):
         real = mod._run
         mod._run = lambda argv, env: calls.append(argv) or Done(1, b'', b'stand-in')
         self.addCleanup(setattr, mod, '_run', real)
+        patcher = mock.patch.object(mod, 'codex_running', lambda: False, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         code = P.refresh(self.k.kit, self.s, f, self.lines.append, apply=True, runner=runner, now=NOW,
                          own=(1234, 99), alive=lambda pid, ctime: False, copies=[step],
                          in_use=lambda: P.InUse(['x'], set(), []))

@@ -12,10 +12,13 @@
   marketplace(export, out, apply)  <root>\\.agents\\plugins\\marketplace.json names the export folder
                                    (pm-kit) and its hosts\\codex\\shell\\hooks-plugin (pm-kit-hooks):
                                    Codex's marketplace (`codex plugin marketplace add <root>` reads it)
-  install(export, home, config, out, apply, environ, run)
+  install(export, home, config, out, apply, environ, run, running)
                                    the dry run names `codex plugin add pm-kit@pm-kit`; apply runs it
                                    when the cache does not hold the export's version, then
-                                   `codex plugin add pm-kit-hooks@pm-kit` when hooks_current is False
+                                   `codex plugin add pm-kit-hooks@pm-kit` when hooks_current is False;
+                                   deferred (DEFERRED, the export root's codex pending flag) while
+                                   Codex runs, and the flag cleared once both are current
+  codex_running()                  whether a process named codex.exe runs (the CLI or the app's)
   switch_lines(home, root)         the owner's hand steps from the hand-made pm-kit-local copy to the export
 
 Codex runs a plugin only from its cache: `codex plugin add` copies the folder the marketplace names
@@ -28,6 +31,11 @@ Codex's hook trust covers every byte of a plugin's folder, so the owner trusts i
 Nothing here writes config.toml or the cache itself: Codex does, in that one command. A codex.exe
 that cannot be found (PM_KIT_CODEX_EXE, else PATH, else the desktop app's own: sessions.native_codex)
 is a line naming the command to run by hand. Every problem is a line, never an exit code.
+A running Codex holds its cache, and `codex plugin add` then fails with os error 5: so while
+codex_running() says so, or when an add fails that way (a name check can miss the desktop app),
+no add runs, the line is DEFERRED and the export root's pending flag (kitlib.pluginsource
+set_pending, label `codex`) is set; the hub's plugin job retries the refresh while it is set, and
+the session start names it. It clears when an apply leaves both plugins current.
 """
 import json
 import os
@@ -49,6 +57,12 @@ MARKER = '.pm-kit-export'            # kitlib.pluginsource.MARKER: Codex copies 
 INSTALL_TIMEOUT = 120                # seconds for `codex plugin add`
 _SHA12 = re.compile(r'^[0-9a-f]{12}$')
 _VERSION = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$')
+# A cache folder that is a version: digits first (1.0.0, 0.4.0-main.5566), so a stray folder (headers)
+# never makes the cache look stale.
+_VERSION_DIR = re.compile(r'^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z._+-]{0,60})?$')
+PENDING_LABEL = 'codex'              # the export root's pending flag (kitlib.pluginsource.set_pending)
+DEFERRED = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
+_DENIED = '(os error 5)'             # what codex plugin add says when a running Codex holds the cache
 
 
 class Missing(Exception):
@@ -112,14 +126,15 @@ def cache_dir(home, plugin=PLUGIN):
 
 
 def cache_versions(home, plugin=PLUGIN):
-    """The version folders Codex holds for <plugin>@pm-kit, sorted; [] when there are none. OSError
+    """The version folders Codex holds for <plugin>@pm-kit (digits first: _VERSION_DIR), sorted; []
+    when there are none. OSError
     when the folder exists and cannot be listed."""
     top = cache_dir(home, plugin)
     try:
         names = os.listdir(top)
     except FileNotFoundError:
         return []
-    return sorted(n for n in names if _VERSION.match(n) and os.path.isdir(os.path.join(top, n)))
+    return sorted(n for n in names if _VERSION_DIR.match(n) and os.path.isdir(os.path.join(top, n)))
 
 
 def in_use(home):
@@ -246,10 +261,42 @@ def _run(argv, env):
     return spawn.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=INSTALL_TIMEOUT)
 
 
-def _add(key, home, out, environ=None, run=None):
+def codex_running():
+    """True when a process named codex.exe runs (the CLI, or the desktop app's). False when none
+    does or the list cannot be had: the add's os error 5 is the fallback."""
+    from kitlib.proc import process
+    try:
+        return any(name.lower() == 'codex.exe' for _pid, _ppid, name in process.snapshot())
+    except OSError:
+        return False
+
+
+def _pending(export, out, deferred):
+    """Set (deferred) or clear the export root's codex pending flag; one that cannot be written is a line."""
+    from kitlib import pluginsource
+    root = os.path.dirname(os.path.abspath(export))
+    try:
+        if deferred:
+            pluginsource.set_pending(root, PENDING_LABEL, DEFERRED)
+        else:
+            pluginsource.clear_pending(root, PENDING_LABEL)
+    except OSError as e:
+        out('codex: cannot %s the pending flag in %s: %s' % ('set' if deferred else 'clear', root, e))
+
+
+def _defer(export, out):
+    out(DEFERRED)
+    _pending(export, out, True)
+
+
+def _add(key, home, out, environ=None, run=None, running=None, export=None):
     """Run `codex plugin add <key>` with CODEX_HOME=`home`: True when it exited 0, else a line and
-    False."""
+    False. While Codex runs (`running`, default codex_running), or when the add fails with os
+    error 5, it is DEFERRED instead and the pending flag of `export`'s root set."""
     from hosts.codex.adapter.sessions import native_codex
+    if (running or codex_running)():
+        _defer(export, out)
+        return False
     env = dict(os.environ if environ is None else environ, CODEX_HOME=home)
     try:
         exe = native_codex(None, env)
@@ -267,18 +314,22 @@ def _add(key, home, out, environ=None, run=None):
         return False
     said = ((r.stdout or b'') + (r.stderr or b''))
     said = (said.decode('utf-8', errors='replace') if isinstance(said, bytes) else said).strip()
+    if r.returncode != 0 and _DENIED in said:
+        _defer(export, out)
+        return False
     if r.returncode != 0:
         out('codex: FAILED: codex plugin add %s exited %s: %s' % (key, r.returncode, said[-400:] or 'no output'))
         return False
     return True
 
 
-def install(export, home, config, out, apply=False, environ=None, run=None):
+def install(export, home, config, out, apply=False, environ=None, run=None, running=None):
     """Install the export folder `export` into the Codex home `home` (its parsed config.toml:
     `config`) by `codex plugin add pm-kit@pm-kit`, when [marketplaces.pm-kit] names the export
     root (the folder holding `export`) and the cache does not hold the export's version; then
     install_hooks, unless that add failed. `run` (argv, env) -> CompletedProcess: the tests'
-    stand-in for running codex.exe."""
+    stand-in for running codex.exe; `running` () -> bool: theirs for codex_running. An apply that
+    leaves both plugins current clears the pending flag; a deferred add sets it (_add)."""
     root = os.path.dirname(os.path.abspath(export))
     source = export_source(config)
     if source is None:
@@ -300,14 +351,14 @@ def install(export, home, config, out, apply=False, environ=None, run=None):
         return
     if isinstance(plugins.get(KEY), dict) and have == [version]:
         out('codex: pm-kit %s is installed from the export: current' % version)
-        install_hooks(export, home, config, out, apply, environ, run)
+        _hooks_then_clear(export, home, config, out, apply, environ, run, running)
         return
     was = ', '.join(have) or 'none'
     if not apply:
         out('codex: would run %s: the cache holds %s, the export is %s' % (hand_command(home), was, version))
-        install_hooks(export, home, config, out, apply, environ, run)
+        install_hooks(export, home, config, out, apply, environ, run, running)
         return
-    if not _add(KEY, home, out, environ, run):
+    if not _add(KEY, home, out, environ, run, running, export):
         return
     try:
         now = cache_versions(home)
@@ -319,20 +370,27 @@ def install(export, home, config, out, apply=False, environ=None, run=None):
         return
     # The hooks are pm-kit-hooks', which this version does not change: no new trust.
     out('codex: installed pm-kit %s from %s (was %s); a running Codex loads it at its next start' % (version, export, was))
-    install_hooks(export, home, config, out, apply, environ, run)
+    _hooks_then_clear(export, home, config, out, apply, environ, run, running)
 
 
-def install_hooks(export, home, config, out, apply=False, environ=None, run=None):
+def _hooks_then_clear(export, home, config, out, apply, environ, run, running):
+    """install_hooks, then, with apply and nothing left to add, the pending flag cleared."""
+    if install_hooks(export, home, config, out, apply, environ, run, running) and apply:
+        _pending(export, out, False)
+
+
+def install_hooks(export, home, config, out, apply=False, environ=None, run=None, running=None):
     """`codex plugin add pm-kit-hooks@pm-kit` when hooks_current is False: the dry run names it.
-    Codex asks the owner to trust the hooks of a new or changed pm-kit-hooks; this never does."""
+    Codex asks the owner to trust the hooks of a new or changed pm-kit-hooks; this never does.
+    True when nothing is left to add: current, installed, or no hooks plugin in the export."""
     stub = os.path.join(export, *HOOKS_DIR)
     if not os.path.isfile(os.path.join(stub, *MANIFEST)):
         out('codex: the export %s has no %s: %s not installed' % (export, '/'.join(HOOKS_DIR + MANIFEST), HOOKS_PLUGIN))
-        return
+        return True
     try:
         if hooks_current(export, home, config):
             out('codex: %s is installed: current' % HOOKS_PLUGIN)
-            return
+            return True
         had = cache_versions(home, HOOKS_PLUGIN)
         same = len(had) == 1 and files(os.path.join(cache_dir(home, HOOKS_PLUGIN), had[0])) == files(stub)
     except OSError as e:
@@ -341,8 +399,8 @@ def install_hooks(export, home, config, out, apply=False, environ=None, run=None
     if not apply:
         out("codex: would run %s: Codex does not hold the export's %s" % (hand_command(home, HOOKS_KEY), HOOKS_PLUGIN))
         return
-    if not _add(HOOKS_KEY, home, out, environ, run):
-        return
+    if not _add(HOOKS_KEY, home, out, environ, run, running, export):
+        return False
     try:
         now = cache_versions(home, HOOKS_PLUGIN)
         ok = len(now) == 1 and files(os.path.join(cache_dir(home, HOOKS_PLUGIN), now[0])) == files(stub)
@@ -361,3 +419,4 @@ def install_hooks(export, home, config, out, apply=False, environ=None, run=None
     else:
         out('codex: %s changed: Codex shows its four hooks as modified and asks the owner once more to trust '
             'them at its next start' % HOOKS_PLUGIN)
+    return True

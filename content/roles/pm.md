@@ -75,6 +75,8 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   (<kit>/docs/launcher.md): `start`, `handoff`, `stop`, `launch.py deep` for a deep-worker a coordinator
   asked for, `launch.py consultant` for a repository's consultant. Stop a session only by its name, after its
   successor has checked in (or after `ready to stop:`, with none).
+- The owner wants to drive a batch of records himself, on one branch: start a topic session with
+  `launch.py topic` after the coordinator has batched the records (skill topic-session).
 - A coordinator's `ready to stop: <note>`: stop it with no successor. Start it again only when its
   repo gets startable work, an owner answer or an approval, with `launch.py start --session <key>
   --account <n> --prompt "..."` whose prompt says to read that note (skill session-handoff).

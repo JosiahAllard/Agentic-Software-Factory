@@ -11,7 +11,7 @@ EXPECTED = {"backlog-ops", "backlog-pricing", "branch-review", "branch-sync", "b
             "flaky-test-triage", "hub-ops", "ledger-ops", "land-branch", "machine-lock-run", "mutation-testing", "session-handoff",
             "shell-and-worktree-traps",
             "specialty-3d-assets", "specialty-rigging", "specialty-tech-art", "specialty-sound",
-            "specialty-review", "specialty-research", "specialty-docs"}
+            "specialty-review", "specialty-research", "specialty-docs", "topic-session"}
 # a task specialty a generic agent loads because its brief names it (docs/specialty-skills.md
 # "Specialty skills"): the agent type its Dispatch line names as the minimum
 SPECIALTY_MIN = {"specialty-3d-assets": "senior-worker", "specialty-rigging": "senior-worker",
@@ -24,7 +24,7 @@ CREATIVE_HOME = "specialty-tech-art"
 # reference files a skill carries beside its SKILL.md
 EXTRA_FILES = {"coordinator-dispatch": ["roster.md", "creative.md", "upkeep.md"], "specialty-tech-art": ["creative.md"],
                "specialty-sound": ["measuring.md"], "machine-lock-run": ["training.md"],
-               "specialty-docs": ["doc-writing.md"]}
+               "specialty-docs": ["doc-writing.md"], "topic-session": ["brief-template.md"]}
 # one repo's own: never shipped in the plugin (docs/shipping.md, "Stays repo-local")
 REPO_LOCAL = {"worktree-start"}
 REPO_LOCAL_SUFFIX = "-train-eval"     # the training-and-evaluation workflow skill

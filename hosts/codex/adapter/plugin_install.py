@@ -17,7 +17,9 @@
                                    when the cache does not hold the export's version, then
                                    `codex plugin add pm-kit-hooks@pm-kit` when hooks_current is False;
                                    deferred (DEFERRED, the export root's codex pending flag) while
-                                   Codex runs, and the flag cleared once both are current
+                                   Codex runs or an add is denied (os error 5); an apply clears the
+                                   flag first, so only a deferral in this run leaves it
+  clear_deferral(export, out)      clear the export root's codex pending flag (plugin_copy.Step, on apply)
   codex_running()                  whether a process named codex.exe runs (the CLI or the app's)
   switch_lines(home, root)         the owner's hand steps from the hand-made pm-kit-local copy to the export
 
@@ -33,9 +35,13 @@ that cannot be found (PM_KIT_CODEX_EXE, else PATH, else the desktop app's own: s
 is a line naming the command to run by hand. Every problem is a line, never an exit code.
 A running Codex holds its cache, and `codex plugin add` then fails with os error 5: so while
 codex_running() says so, or when an add fails that way (a name check can miss the desktop app),
-no add runs, the line is DEFERRED and the export root's pending flag (kitlib.pluginsource
-set_pending, label `codex`) is set; the hub's plugin job retries the refresh while it is set, and
-the session start names it. It clears when an apply leaves both plugins current.
+no add runs, the line is DEFERRED (or, for os error 5, a deferral line that keeps the tail of what
+Codex said, since something else, antivirus or a cache ACL, can deny it too) and the export root's
+pending flag (kitlib.pluginsource set_pending, label `codex`) holds that line; the hub's plugin job
+retries the refresh while it is set, and the session start names it. Every apply clears the flag
+before it decides (plugin_copy.Step, and install itself), so any ending but a deferral in this run
+(current, installed, a FAILED line, a refusal, no Codex set up) leaves none; a marked session's
+skip leaves it as it is, since that run decides nothing.
 """
 import json
 import os
@@ -63,6 +69,7 @@ _VERSION_DIR = re.compile(r'^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z._+-]{0,60})?$')
 PENDING_LABEL = 'codex'              # the export root's pending flag (kitlib.pluginsource.set_pending)
 DEFERRED = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
 _DENIED = '(os error 5)'             # what codex plugin add says when a running Codex holds the cache
+_SAID_TAIL = 200                     # characters of codex's own output a denied add keeps
 
 
 class Missing(Exception):
@@ -271,22 +278,37 @@ def codex_running():
         return False
 
 
-def _pending(export, out, deferred):
-    """Set (deferred) or clear the export root's codex pending flag; one that cannot be written is a line."""
+def denied_line(key, said):
+    """The deferral line of an add of `key` denied with os error 5, with the tail of what Codex said
+    (`said`) on one line: the trigger may be Codex holding its cache or something else."""
+    tail = ' '.join(said[-_SAID_TAIL:].split()) or 'no output'
+    return ('codex: deferred: codex plugin add %s was denied (os error 5: Codex running, or something else holding '
+            'its cache): %s; close Codex, or fix the cause, and run plugin_refresh.py --apply' % (key, tail))
+
+
+def _pending(export, out, deferred, line=DEFERRED):
+    """Set (deferred, holding `line`) or clear the export root's codex pending flag; one that cannot
+    be written is a line."""
     from kitlib import pluginsource
     root = os.path.dirname(os.path.abspath(export))
     try:
         if deferred:
-            pluginsource.set_pending(root, PENDING_LABEL, DEFERRED)
+            pluginsource.set_pending(root, PENDING_LABEL, line)
         else:
             pluginsource.clear_pending(root, PENDING_LABEL)
     except OSError as e:
         out('codex: cannot %s the pending flag in %s: %s' % ('set' if deferred else 'clear', root, e))
 
 
-def _defer(export, out):
-    out(DEFERRED)
-    _pending(export, out, True)
+def clear_deferral(export, out):
+    """Clear the export root's codex pending flag: an apply does so before it decides, so only a
+    deferral in that run sets it again."""
+    _pending(export, out, False)
+
+
+def _defer(export, out, line=DEFERRED):
+    out(line)
+    _pending(export, out, True, line)
 
 
 def _add(key, home, out, environ=None, run=None, running=None, export=None):
@@ -315,7 +337,7 @@ def _add(key, home, out, environ=None, run=None, running=None, export=None):
     said = ((r.stdout or b'') + (r.stderr or b''))
     said = (said.decode('utf-8', errors='replace') if isinstance(said, bytes) else said).strip()
     if r.returncode != 0 and _DENIED in said:
-        _defer(export, out)
+        _defer(export, out, denied_line(key, said))
         return False
     if r.returncode != 0:
         out('codex: FAILED: codex plugin add %s exited %s: %s' % (key, r.returncode, said[-400:] or 'no output'))
@@ -328,9 +350,11 @@ def install(export, home, config, out, apply=False, environ=None, run=None, runn
     `config`) by `codex plugin add pm-kit@pm-kit`, when [marketplaces.pm-kit] names the export
     root (the folder holding `export`) and the cache does not hold the export's version; then
     install_hooks, unless that add failed. `run` (argv, env) -> CompletedProcess: the tests'
-    stand-in for running codex.exe; `running` () -> bool: theirs for codex_running. An apply that
-    leaves both plugins current clears the pending flag; a deferred add sets it (_add)."""
+    stand-in for running codex.exe; `running` () -> bool: theirs for codex_running. An apply clears
+    the pending flag first; a deferred add sets it again (_add)."""
     root = os.path.dirname(os.path.abspath(export))
+    if apply:
+        clear_deferral(export, out)
     source = export_source(config)
     if source is None:
         out('codex: refused, nothing installed: config.toml gives [marketplaces.%s] no local source folder' % MARKET)
@@ -351,7 +375,7 @@ def install(export, home, config, out, apply=False, environ=None, run=None, runn
         return
     if isinstance(plugins.get(KEY), dict) and have == [version]:
         out('codex: pm-kit %s is installed from the export: current' % version)
-        _hooks_then_clear(export, home, config, out, apply, environ, run, running)
+        install_hooks(export, home, config, out, apply, environ, run, running)
         return
     was = ', '.join(have) or 'none'
     if not apply:
@@ -370,13 +394,7 @@ def install(export, home, config, out, apply=False, environ=None, run=None, runn
         return
     # The hooks are pm-kit-hooks', which this version does not change: no new trust.
     out('codex: installed pm-kit %s from %s (was %s); a running Codex loads it at its next start' % (version, export, was))
-    _hooks_then_clear(export, home, config, out, apply, environ, run, running)
-
-
-def _hooks_then_clear(export, home, config, out, apply, environ, run, running):
-    """install_hooks, then, with apply and nothing left to add, the pending flag cleared."""
-    if install_hooks(export, home, config, out, apply, environ, run, running) and apply:
-        _pending(export, out, False)
+    install_hooks(export, home, config, out, apply, environ, run, running)
 
 
 def install_hooks(export, home, config, out, apply=False, environ=None, run=None, running=None):

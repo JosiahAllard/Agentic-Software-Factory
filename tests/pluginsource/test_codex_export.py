@@ -395,9 +395,48 @@ class DeferTest(InstallCase):
         self.install(run=denied)                   # codex_running: False (setUp)
         self.assertEqual(self.adds(), ['pm-kit@pm-kit'])          # the hooks add skipped too
         self.assertNotIn('FAILED', self.text())
-        line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
+        line = ('codex: deferred: codex plugin add pm-kit@pm-kit was denied (os error 5: Codex running, or something '
+                'else holding its cache): Error: failed to back up plugin cache entry: Access is denied. (os error 5); '
+                'close Codex, or fix the cause, and run plugin_refresh.py --apply')
         self.assertIn(line, self.lines)
         self.assertEqual(P.pending(self.root), {'codex': line})
+
+    def test_os_error_5_keeps_the_tail_of_what_codex_said_on_one_line_and_never_claims_codex_runs(self):
+        self.cache('1.0.0-main.1')
+        said = ('x' * 500 + '\nline two\r\n' + self.DENIED.decode()).encode()
+        self.install(run=lambda argv, env: Done(1, said, b''))
+        flag = P.pending(self.root)['codex']
+        self.assertNotIn('Codex is running', flag)
+        self.assertIn('line two Error: failed to back up plugin cache entry: Access is denied. (os error 5);', flag)
+        self.assertNotIn('x' * 200, flag)                         # the tail only
+        self.assertEqual([l for l in self.lines if l.startswith('codex: deferred:')], [flag])
+
+    def test_a_failed_add_after_a_deferral_leaves_no_stale_flag(self):
+        self.cache('1.0.0-main.1')
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        self.install(run=self.installs(rc=1))
+        self.assertIn('codex: FAILED: codex plugin add pm-kit@pm-kit exited 1', self.text())
+        self.assertEqual(P.pending(self.root), {})
+
+    def test_a_refused_install_after_a_deferral_leaves_no_stale_flag(self):
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        self.config(os.path.join(self.base, 'elsewhere'))
+        self.install()
+        self.assertIn('codex: refused, nothing installed', self.text())
+        self.assertEqual(P.pending(self.root), {})
+
+    def test_the_first_add_through_then_the_hooks_add_deferred_sets_the_flag(self):
+        self.cache('1.0.0-main.1')
+        seen = []
+
+        def running():
+            seen.append(1)
+            return len(seen) > 1                # Codex opened between the two adds
+        self.install(running=running)
+        self.assertEqual(self.adds(), ['pm-kit@pm-kit'])
+        self.assertIn('codex: installed pm-kit 1.0.0-main.2', self.text())
+        self.assertEqual(self.lines[-1], pi.DEFERRED)
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
 
     def test_codex_stopped_runs_the_adds_and_clears_the_flag(self):
         self.cache('1.0.0-main.1')
@@ -496,6 +535,31 @@ class StepTest(InstallCase):
         codex.Step(environ=dict(self.env, CODEX_HOME=self.home, PM_KIT_ROLE='pm'))(self.export, self.lines.append, True)
         self.assertIn('codex: skipped: a marked session (pm)', self.text())
         self.assertFalse(os.path.exists(os.path.join(self.home, 'plugins')))
+
+    def test_a_marked_session_leaves_a_deferral_as_it_is(self):
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        codex.Step(environ=dict(self.env, CODEX_HOME=self.home, PM_KIT_ROLE='pm'))(self.export, self.lines.append, True)
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+
+    def test_no_codex_config_after_a_deferral_clears_the_flag(self):
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        os.remove(os.path.join(self.home, 'config.toml'))
+        self.step(apply=True)
+        self.assertIn('nothing to refresh', self.text())
+        self.assertEqual(P.pending(self.root), {})
+
+    def test_no_pm_kit_marketplace_after_a_deferral_clears_the_flag(self):
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        write(os.path.join(self.home, 'config.toml'), "model = 'x'\n")
+        self.step(apply=True)
+        self.assertIn('config.toml names no pm-kit marketplace', self.text())
+        self.assertEqual(P.pending(self.root), {})
+
+    def test_a_dry_run_step_leaves_the_flag(self):
+        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        os.remove(os.path.join(self.home, 'config.toml'))
+        self.step()
+        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
 
 
 class MarketplaceTest(InstallCase):

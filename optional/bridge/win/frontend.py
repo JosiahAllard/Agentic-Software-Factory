@@ -246,11 +246,13 @@ def serve_frontend(input_stream,output_stream,marker,mark=None):
                     bound=current
                 response=_forward(current[0],message,channel,mark)
                 if _generation(marker)!=current:raise DeliveryError('service-marker-changed')
-        except Exception:
+        except Exception as error:
             identity=message.get('id') if type(message) is dict else None
             if type(message) is dict and 'id' not in message:response=None
             else:response={'jsonrpc':'2.0','id':identity,'error':{
-                'code':-32603,'message':'bridge connection unavailable'}}
+                'code':-32603,'message':'bridge connection unavailable',
+                # Only a DeliveryError code or a class name: never exception text, which can hold paths.
+                'data':{'cause':error.code if isinstance(error,DeliveryError) else type(error).__name__}}}
         if response is not None:
             output_stream.write(encode(response))
             output_stream.flush()

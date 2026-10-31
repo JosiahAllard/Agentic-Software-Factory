@@ -392,7 +392,7 @@ class DeferTest(InstallCase):
         def denied(argv, env):
             self.calls.append((argv, env.get('CODEX_HOME')))
             return Done(1, b'', self.DENIED)
-        self.install(run=denied, running=lambda: False)
+        self.install(run=denied)                   # codex_running: False (setUp)
         self.assertEqual(self.adds(), ['pm-kit@pm-kit'])          # the hooks add skipped too
         self.assertIn(pi.DEFERRED, self.lines)
         self.assertNotIn('FAILED', self.text())

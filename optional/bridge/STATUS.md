@@ -190,8 +190,9 @@ a sitting" below. Details under "Live sitting, 2026-10-31".
 (a) Claude to Codex: a Claude chat delivers to a Codex chat. That covers step 2 and step 3, the
 small task checked by diff. The writer Codex chat under the lease is the delivery path for a
 Claude sender (`hosts/codex/runtime.py`; without a lease a Claude sender is refused), so step 3
-is Claude to Codex, not Codex to Codex. Probe U-2 and U-3 meet step 2. Step 3 has not passed
-yet.
+is Claude to Codex, not Codex to Codex. Probe U-2 and U-3 meet step 2. **Step 3 passed on
+2026-10-31:** the append task went through the writer lease and was checked by diff (see "Live
+sitting, 2026-10-31").
 (b) Codex to Claude: a Codex chat delivers to a Claude chat. **Passed on 2026-10-26.** The Codex
 recipient's `bridge_reply` for step 3 arrived in the sending Claude session as a pushed message,
 headed "Reply to bridge operation: ..." and carrying the full reply text.

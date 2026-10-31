@@ -143,10 +143,10 @@ def fork_prompt(name, coordinators_path):
     return FORK_PROMPT % (name, name, coordinators_path, name, name)
 
 
-def fork_command(sid, name, coordinators_path):
+def fork_command(sid, name, coordinators_path, permission_mode=None):
     """The fork's claude command line."""
     return window.session_command(name, fork_prompt(name, coordinators_path), S.run_as(PM_AGENT), resume=sid,
-                                  fork=True)
+                                  fork=True, permission_mode=permission_mode)
 
 
 def await_fork(settings, host, name, after_ms, old_sid, wait_s):
@@ -204,7 +204,7 @@ def record_pm(settings, host, new_sid, name, account=None):
     return err
 
 
-def relaunch(settings, host, name, delivery=None, wait_s=WAIT_S):
+def relaunch(settings, host, name, delivery=None, wait_s=WAIT_S, permission_mode=None):
     """Fork the running PM into a new window named `name`; the lines it says. `delivery` is the
     host's hub push delivery (an object with deliver(recipient, text) -> push.Sent), or None when
     the host has none: the stand-down is then the owner's to send. wait_s: how long to wait for
@@ -220,7 +220,7 @@ def relaunch(settings, host, name, delivery=None, wait_s=WAIT_S):
     d = A.launch_dir(settings, str(acct))
     config_dir = None if settings.is_default(d) else d
     coords = state.path(settings, state.COORDINATORS)
-    text = window.script(name, window.PM, folder, fork_command(sid, name, coords), config_dir,
+    text = window.script(name, window.PM, folder, fork_command(sid, name, coords, permission_mode), config_dir,
                          host.env('AGENT_TEMP'))
     after_ms = pipes.launch_ms(host.now())
     kw = window.open_args(name, settings)
@@ -298,15 +298,17 @@ def crossover_prompt(name, account, coordinators_path, state_path=None):
     return CROSS_PROMPT % (name, account, name, coordinators_path, name, account, read, name, account)
 
 
-def crossover_command(name, prompt):
+def crossover_command(name, prompt, permission_mode=None):
     """The new PM's claude command line: a fresh session, no --resume and no --permission-mode.
     window.session_command gives a fresh start `--permission-mode auto`; its first occurrence is
-    that flag, ahead of the quoted prompt, so dropping it once leaves the prompt as it is."""
-    return window.session_command(name, prompt, S.run_as(PM_AGENT)).replace(' --permission-mode auto', '', 1)
+    that flag, ahead of the quoted prompt, so dropping it once leaves the prompt as it is. An explicit
+    `permission_mode` (launch.py --permission-mode) is passed on instead and kept."""
+    cmd = window.session_command(name, prompt, S.run_as(PM_AGENT), permission_mode=permission_mode)
+    return cmd if permission_mode else cmd.replace(' --permission-mode auto', '', 1)
 
 
 def crossover(settings, host, account, name=None, state_path=None, delivery=None, wait_s=WAIT_S,
-              what_if=False):
+              what_if=False, permission_mode=None):
     """Start a fresh PM on `account` from the hand-off file and make it the PM; the lines it says
     (module docstring "PM crossover"). LaunchError, with the lines so far, when it was not
     confirmed or coordinators.json was not written."""
@@ -328,7 +330,7 @@ def crossover(settings, host, account, name=None, state_path=None, delivery=None
     check_name(settings, procs, records, name)
     config_dir = None if settings.is_default(d) else d
     coords = state.path(settings, state.COORDINATORS)
-    cmd = crossover_command(name, crossover_prompt(name, account, coords, state_path))
+    cmd = crossover_command(name, crossover_prompt(name, account, coords, state_path), permission_mode)
     if what_if:
         return ['Would start %s, a fresh PM on account %s (the PM session %s is on account %s), in %s with config '
                 'folder %s: %s' % (name, account, sid, acct, folder, config_dir or 'the default', cmd)]

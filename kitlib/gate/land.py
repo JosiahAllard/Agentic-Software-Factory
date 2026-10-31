@@ -12,7 +12,8 @@
                  gate on a node"), its `gating here: ...` or `gating on load node ...` line said
                  unless it is quiet (a kit checkout, no registry, no node opted in)
   3  turn        ONE booking in the machine lock (kitlib.lock.run.book): a gate run of the
-                 config's "gate".kind for <repo>/<branch[+branch...]>, holding the resource
+                 config's "gate".kind, as land-<kind> when the kinds table has one (land-test:
+                 4 cores), for <repo>/<branch[+branch...]>, holding the resource
                  `landing:<git common dir>` at priority "land" ("The queue" below); routed to a
                  node, with cores=1 (the landing's own work; the node runs the gate). At once, or
                  waited for up to --wait seconds (default "landing".wait_s); not given: the lock's
@@ -217,6 +218,7 @@ from kitlib.backlog import scope as scmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal
 import kitlib.config as kconfig
+from kitlib.config import policy as kpolicy
 from kitlib.config.types import ConfigError
 from kitlib.content import oncommit
 from kitlib.gate import cleanup, detect, gitstatus, result, reuse, runner, stash, strict_defaults
@@ -697,7 +699,8 @@ class Lander(object):
 
     def book_turn(self):
         """Step 3: the landing's ONE booking in the machine lock, waited for up to the --wait
-        budget: a gate run of the config's "gate".kind for <repo>/<branches>, holding the
+        budget: a gate run of the config's "gate".kind (its land kind: land_kind) for
+        <repo>/<branches>, holding the
         resource queue_key(<git common dir>) at priority "land"; with cores=1 when the plan
         routed the merged gate to a load node. The merged gate runs in this slot (self.slot), or
         a node-routed landing's fallback books again (rebook_here). Raises
@@ -708,10 +711,27 @@ class Lander(object):
         self.deadline = time.monotonic() + wait_s
         self.book_slot(wait_s, cores=1 if self.on_node() else None)
 
+    def land_kind(self, kind):
+        """The lock kind a landing of "gate".kind `kind` books: `land-<kind>` (its retired name
+        read as the kind it names now) when the lock's kinds table (book_kw's kinds_table, else
+        the store's kinds file) has it, else `kind`. A table that cannot be read: `kind`, whose
+        booking then fails closed as any run's does."""
+        path = self.queue_store().kinds_path
+        table = (self.book_kw or {}).get('kinds_table')
+        if table is None:
+            try:
+                table = kpolicy.kinds_table(path)
+            except ConfigError:
+                return kind
+        land = 'land-%s' % lockkinds.canonical(kind, path)
+        return land if land in table else kind
+
     def book_slot(self, wait_s, cores=None):
-        """Book the landing's run into self.slot: the gate kind, the landing resource, priority
-        "land", waiting up to `wait_s` (None: no limit; 0: now or never), with `cores` cpu slots
-        (None: the kind's size, or book_kw's). Says its held line. Raises LockError."""
+        """Book the landing's run into self.slot: the land kind of the gate kind (land_kind), the
+        landing resource, priority "land", waiting up to `wait_s` (None: no limit; 0: now or
+        never), with `cores` cpu slots (None: the kind's size, or book_kw's). self.booked_kind
+        keeps the "gate".kind, which rebook_kind and route_need compare with the base's. Says its
+        held line. Raises LockError."""
         kw = dict(self.book_kw or {}, store=self.queue_store(), gate=True,
                   resource=queue_key(self.lock.common), priority='land', wait_s=wait_s,
                   no_wait=wait_s == 0, note='landing: %s' % self.branch)
@@ -721,7 +741,7 @@ class Lander(object):
             kw['detached'] = True   # its launcher's ancestry is in ORIGIN_ENV (kitlib.gate.submit)
         book = self.book_fn or lockrun.book
         kind = self.cfg.section('gate')['kind']
-        self.slot = book(kind, runner.repo_name(self.cfg, self.root),
+        self.slot = book(self.land_kind(kind), runner.repo_name(self.cfg, self.root),
                          runner.slug_of('+'.join(self.branches)), **kw)
         self.booked_kind = kind
         self.say(self.slot.held_text())
@@ -735,7 +755,8 @@ class Lander(object):
         the turn back (yield_turn). Raises LockError."""
         self.say('gating here: %s' % why)
         self.say("releasing the landing's 1-slot run and booking a full %s run for main's "
-                 "merged gate, waiting with no limit" % self.cfg.section('gate')['kind'])
+                 "merged gate, waiting with no limit"
+                 % self.land_kind(self.cfg.section('gate')['kind']))
         self.route = None
         self.drop_slot(0, 'done')
         self.book_slot(None)

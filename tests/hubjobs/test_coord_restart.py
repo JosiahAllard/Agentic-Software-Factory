@@ -307,6 +307,38 @@ class Job(JobBase):
             note = self.run_job()
         return note
 
+    def timed_out(self):
+        raise subprocess.TimeoutExpired('Get-CimInstance Win32_Process', 4)
+
+    def test_a_timed_out_listing_is_a_quiet_skip_and_the_next_run_still_restarts(self):
+        self.live = ['kit-coord-a2']
+        self.run_job()
+        self.live = []
+        self.now += 300
+        self.run_job()                                            # down once
+        good = self.job.procs
+        self.job.procs = self.timed_out
+        self.now += 300
+        skipped = self.run_job()
+        self.assertIsInstance(skipped, jobs.Skip)
+        self.assertIn('timed out', skipped.note)
+        self.assertEqual((self.calls, self.job._fails), ([], 0))
+        self.job.procs = good
+        self.now += 300
+        self.assertIn('kit: started on account 2', self.run_job())
+
+    def test_another_listing_failure_still_fails_the_run(self):
+        self.job.procs = lambda: (_ for _ in ()).throw(RuntimeError('powershell exit 1'))
+        with self.assertRaises(RuntimeError):
+            self.run_job()
+        self.assertEqual(self.job._fails, 1)
+
+    def test_the_default_listing_waits_longer_than_the_session_start(self):
+        with mock.patch.object(C.pmstart, 'list_processes', return_value=[]) as lp:
+            self.assertEqual(C.list_processes(), [])
+        lp.assert_called_once_with(timeout=C.PROC_TIMEOUT_S)
+        self.assertGreater(C.PROC_TIMEOUT_S, C.pmstart.TIMEOUT)
+
     def test_a_crossing_on_the_entry_holds_the_start_until_its_claim_lapses(self):
         crossing = {'phase': 'stall-stop', 'phase_at': NOW}
         self.write('usage-crossover.json', {'crossings': {'kit': crossing}})
@@ -610,6 +642,23 @@ class AfterBoot(JobBase):
         self.uptime += 300
         self.assertIsInstance(self.run_job(), jobs.Skip)
         self.assertEqual(len(self.spawned), 1)
+
+    def test_a_boot_pass_whose_listing_times_out_starts_after_reboot_once_and_skips(self):
+        self.uptime = 240
+        self.job._fails = 2                                     # failures in a row from before
+        self.job.procs = lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired('Get-CimInstance', 4))
+        result = self.run_job()
+        self.assertIsInstance(result, jobs.Skip)
+        self.assertIn('after-reboot started', result.note)      # the boot step ran first, and is reported
+        self.assertIn('timed out', result.note)
+        self.assertEqual(len(self.spawned), 1)
+        self.assertEqual(self.records()[C.BOOT_KEY], {'boot_at': NOW - 240})
+        self.assertEqual(self.job._fails, 2)                    # a Skip keeps the count (and the runner's ok_at)
+        self.job.procs = lambda: [proc(n) for n in self.live]
+        self.now += 300
+        self.uptime += 300
+        self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual(len(self.spawned), 1)                  # the kept boot: not started again
 
     def test_a_hub_restart_soon_after_the_boot_does_not_run_it_again(self):
         self.uptime = 240

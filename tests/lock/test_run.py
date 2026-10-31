@@ -24,6 +24,7 @@ from tests.platforms import windows_only
 if os.name == "nt":
     from kitlib.lock import api
     from kitlib.lock import holds as hl
+    from kitlib.lock import kinds as lockkinds
     from kitlib.lock import layout as lay
     from kitlib.lock import run as rm
     from kitlib.lock import store as store_mod
@@ -551,6 +552,41 @@ class CoreRequests(StoreCase):
         self.confine(1)
         with rm.slot("one", "kit", "t", store=self.store, env=clean_env()) as launch:
             self.assertEqual(len(launch.cores), 1)
+
+
+class LandKindOnASmallMachine(StoreCase):
+    """On a machine whose agent_cap is under a land kind's size (kitlib/lock/kinds.json's
+    land-test, 4), the kit's own table still books: a land kind is left out of the cap check and
+    books the cap (layout.kind_cores), and every other kind books as before."""
+    HW = {"threads": 8, "smt": 2, "l3": 1}  # 4 cpu slots: agent_cap 2
+
+    code = Refusals.code
+    everything_held = CoreRequests.everything_held
+    ended = CoreRequests.ended
+
+    def setUp(self):
+        StoreCase.setUp(self)
+        with open(lockkinds.KINDS_FILE, encoding="utf-8") as f:
+            real = json.load(f)
+        self.assertEqual(real["kinds"]["land-test"]["cpu"], 4)
+        with open(self.kinds_path, "w", encoding="utf-8") as f:
+            json.dump(real, f)
+        self.assertEqual(self.layout()["agent_cap"], 2)
+
+    def test_test_and_land_test_both_book_and_land_test_books_the_cap(self):
+        self.everything_held()
+        self.assertEqual(self.code(kind="test", no_wait=True), 11)
+        self.assertEqual(self.code(kind="land-test", no_wait=True), 11)
+        need = {e["kind"]: e["need"]["cpu"] for e in self.ended()}
+        self.assertEqual(need, {"test": self.layout()["medium_cores"], "land-test": 2})
+        self.assertEqual(self.code(kind="land-test", cores=3, no_wait=True), 2)  # past the cap
+
+    def test_a_land_kind_is_left_out_of_the_cap_check_and_no_other_kind_is(self):
+        table = lockkinds.load(self.kinds_path, agent_cap=2)
+        self.assertEqual(table["land-test"]["cpu"], 4)
+        table["big"] = {"cpu": 3, "gpu": 0, "share": False, "warn_min": 30}
+        with self.assertRaises(lockkinds.KindsError):
+            lockkinds.check_cap(table, 2)
 
 
 class RepoKinds(StoreCase):

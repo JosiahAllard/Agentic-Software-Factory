@@ -235,6 +235,42 @@ class PluginJobTest(JobCase):
             job(ctx())
         self.assertEqual(len(self.child.calls), 2)
 
+    def test_a_pending_codex_copy_is_retried_retry_s_apart_until_it_clears(self):
+        # the export current, every folder rc 0, but the Codex copy deferred
+        self.k.seed_migrated(self.folders)
+        job = self.job()
+        job(ctx())
+        line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
+        P.set_pending(self.k.root, 'codex', line)
+        self.assertEqual(job(ctx()), 'refreshed to %s; %s' % (self.main()[:12], line))
+        self.assertEqual(len(self.child.calls), 2, 'a pending copy is refreshed again')
+        self.t[0] += plugin_job.EVERY_S
+        got = job(ctx())
+        self.assertIsInstance(got, jobs.Skip)
+        self.assertIn('the codex copy deferred; waiting to retry', got.note)
+        self.assertEqual(len(self.child.calls), 2, 'not tried again before RETRY_S')
+        self.t[0] += plugin_job.RETRY_S
+        real = self.child.__call__
+
+        def closed(argv, cwd):                  # Codex closed: the retry's add goes through
+            P.clear_pending(self.k.root, 'codex')
+            return real(argv, cwd)
+        job.child = closed
+        self.assertEqual(job(ctx()), 'refreshed to %s' % self.main()[:12])
+        self.assertEqual(len(self.child.calls), 3)
+        self.assertEqual(job(ctx()), 'current at %s' % self.main()[:12])
+
+    def test_the_session_start_names_a_pending_codex_copy_until_it_clears(self):
+        self.k.seed_migrated(self.folders)
+        self.job()(ctx())
+        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
+        line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
+        P.set_pending(self.k.root, 'codex', line)
+        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None),
+                         ['pm-kit plugin codex copy not refreshed: %s' % line])
+        P.clear_pending(self.k.root, 'codex')
+        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
+
     def test_one_real_failure_counts_once_in_the_runner(self):
         self.k.seed_migrated(self.folders)
         self.child.code, self.child.lines = 1, ['FAILED: x']

@@ -8,11 +8,14 @@ export folder and never names this host.
                                    hooks plugin pm-kit-hooks) when config.toml names
                                    the marketplace pm-kit; the owner's switch steps when it names only
                                    the old hand-made pm-kit-local copy, which is no longer refreshed
-  codex_home(home, environ)        <home>\.codex when --home names one, else CODEX_HOME, else the
-                                   user's ~\.codex
+  codex_home(home, environ)        <home>\\.codex when --home names one, else CODEX_HOME, else the
+                                   user's ~\\.codex
 
 A marked session (kitlib.sessionmark) installs nothing: the install is the owner's. Every problem is
-a line, never an exit code: the rest of the refresh decides that.
+a line, never an exit code: the rest of the refresh decides that. An apply that is not a marked
+session's clears the export root's codex pending flag first (plugin_install.clear_deferral), so
+whatever ends the step, only a deferral in this run leaves the flag; a marked session's skip leaves
+it as it is.
 """
 import os
 
@@ -54,10 +57,13 @@ class Step(object):
         return plugin_install.in_use(self.home)
 
     def __call__(self, export, out, apply=False):
+        mark = sessionmark.mark(self.environ)
+        if apply and not mark:
+            # every ending below but a deferral (plugin_install._add sets it again) leaves no flag
+            plugin_install.clear_deferral(export, out)
         # the export root's marketplace first (not the Codex home's: a marked session writes it too)
         if not plugin_install.marketplace(export, out, apply) and apply:
             return
-        mark = sessionmark.mark(self.environ)
         if mark:
             out('codex: skipped: a marked session (%s) never installs the Codex plugin; the owner '
                 'runs plugin_refresh.py --apply' % mark)

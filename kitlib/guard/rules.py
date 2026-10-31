@@ -598,12 +598,18 @@ def agent_session(event, ctx):
     AGENT_MARKS: coordinator, deep-worker, consultant and pm), case
     ignored; a guard_agent_marks value replaces the default list. The rules only agents are held to (kill by name, lock state,
     kit-json, the write jail, git-stash-shared) use it. The mark is compared without the kit plugin's prefix
-    (kitlib.agentname.bare_mark), so a role_resolver that does not strip it fails closed too."""
+    (kitlib.agentname.bare_mark), so a role_resolver that does not strip it fails closed too.
+    On a host whose hooks carry no subagent identity (hosts.json capabilities
+    subagent_identity_in_hooks false: Codex) every session is an agent session, the unmarked
+    main chat too, and so is one on a host no hosts.json entry has the profile of (fail closed)."""
     if subagent(event):
         return True
     marks = ctx.user().get('guard_agent_marks') or AGENT_MARKS
     who = agentname.bare_mark(str(ctx.session_role(event) or ''))
-    return who.lower() in {str(m).lower() for m in marks}
+    if who.lower() in {str(m).lower() for m in marks}:
+        return True
+    caps = ctx.host_capabilities()
+    return caps is None or not caps.subagent_identity_in_hooks
 
 
 # every session kind the kit launcher marks but `plain` and other agents' names

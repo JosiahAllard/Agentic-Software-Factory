@@ -801,8 +801,10 @@ class JobBase(unittest.TestCase):
                               kit=self.tmp)
 
     def procs(self):
+        resume = getattr(self, 'resume', {})            # name -> the session id it runs as (--resume)
         return [{'Name': 'claude.exe', 'ProcessId': l.pid, 'Created': l.created,
-                 'CommandLine': 'claude.exe --remote-control %s -n %s' % (l.name, l.name)}
+                 'CommandLine': 'claude.exe %s--remote-control %s -n %s' % (
+                     "--resume '%s' " % resume[l.name] if l.name in resume else '', l.name, l.name)}
                 for l in self.live]
 
     def deliver(self, name, text):
@@ -1253,7 +1255,8 @@ class Others(JobBase):
 
     def test_a_pm_by_session_id_or_name_is_skipped(self):
         self.write('sessions.json', {'kit': dict(ENTRY)})
-        self.write('coordinators.json', {'pm_session_id': 'kit-coord'})
+        self.resume = {OLD.name: 'pm-sid-9'}            # the PM's id as its --resume value
+        self.write('coordinators.json', {'pm_session_id': 'pm-sid-9'})
         self.run_job()
         self.assertEqual(self.sent, [])
         self.write('coordinators.json', {'pm_name': OLD.name})

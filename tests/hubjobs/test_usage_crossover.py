@@ -1779,7 +1779,8 @@ class Unlisted(JobBase):
         self.assertEqual(self.calls, [['stop', '--name', DEEP, '--pid', '31']])
         self.assertEqual(self.saved_at_child['crossings'][DEEP]['phase'], U.STALL_STOP)
         for path in files:
-            self.assertEqual((os.path.exists(path), os.path.getmtime(path + U.PREV)), (False, NOW - DAY), path)
+            self.assertFalse(os.path.exists(path), path)
+            self.assertEqual(os.path.getmtime(path + '.prev'), NOW - DAY, path)
         self.live = []                  # launch.py stop did it
         self.now += 300
         self.run_job()

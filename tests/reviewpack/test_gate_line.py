@@ -63,8 +63,15 @@ class GateLine(GateLineCase):
 
 class GateOnceLine(GateLineCase):
     """A base that sets "landing".gate_once takes a default-mode record (docs/gate.md "Gate once
-    at landing"): the line says so instead of "landing will refuse"."""
+    at landing"): the line says so instead of "landing will refuse", unless the branch changes a
+    strict path, which always ends on --full (docs/gate.md "The final gate")."""
     CONFIG = {'owner': {'email': EMAIL}, 'landing': {'gate_once': True}}
+
+    def strict_feature(self):
+        self.git('checkout', '-q', '-b', 'feature')
+        self.write('kitlib/gate/x.txt', '1')
+        self.commit_all('change a strict path')
+        return self.git('rev-parse', 'feature')
 
     def test_a_default_mode_record_is_said_as_enough(self):
         tip = self.feature()
@@ -72,10 +79,18 @@ class GateOnceLine(GateLineCase):
         code, out = self.run_pack('feature', '--base', 'main')
         self.assertEqual(code, 0, out)
         line = self.gate_line(out)
-        self.assertTrue(line.startswith('gate     tip %s: scoped gate OK (the base sets '
-                                        '"landing".gate_once), ended %s'
-                                        % (tip[:10], rec['ended_utc'])), line)
+        self.assertTrue(line.startswith('gate     tip %s: scoped gate OK (this branch needs no '
+                                        '--full), ended %s' % (tip[:10], rec['ended_utc'])), line)
         self.assertNotIn('landing will refuse', line)
+
+    def test_a_strict_branch_with_no_full_record_still_refuses(self):
+        tip = self.strict_feature()
+        self.record(tip, full=False, mode='select')
+        code, out = self.run_pack('feature', '--base', 'main')
+        self.assertEqual(code, 0, out)
+        line = self.gate_line(out)
+        self.assertIn('landing will refuse', line)
+        self.assertIn('kitlib/gate/x.txt', line)
 
     def test_a_docs_record_is_still_not_enough(self):
         tip = self.feature()
@@ -83,6 +98,12 @@ class GateOnceLine(GateLineCase):
         code, out = self.run_pack('feature', '--base', 'main')
         self.assertEqual(code, 0, out)
         self.assertIn('landing will refuse', self.gate_line(out))
+
+    def test_no_record_names_the_scoped_final_gate(self):
+        self.feature()
+        code, out = self.run_pack('feature', '--base', 'main')
+        self.assertEqual(code, 0, out)
+        self.assertIn('scoped final gate', self.gate_line(out))
 
     def test_a_full_record_is_said_as_before(self):
         tip = self.feature()

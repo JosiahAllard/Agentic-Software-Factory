@@ -544,29 +544,54 @@ def pack(path, branch, base=None, diff=None):
         return Outcome(USAGE, lines)
 
 
-def gate_line(top, branch, cfg=None):
-    """The `gate` line: whether `branch`'s tip has the record a landing requires, a gate-OK
-    record of exactly that commit from a `gate.py --full` pass (gate_ok.verify_full; docs/gate.md
-    "Landing"), or, when the base's config `cfg` sets "landing".gate_once (docs/gate.md "Gate once
-    at landing"), a default-mode ("select") record of it too. Printed only: it never changes the
-    exit status."""
+def gate_line(top, branch, cfg=None, base=None):
+    """The `gate` line: whether `branch`'s tip has the record its landing requires. A
+    `gate.py --full` pass's gate-OK record of exactly that commit always lands it (gate_ok.verify_full;
+    docs/gate.md "Landing"). Otherwise the final gate this branch needs is the landing's own rule
+    (kitlib.gate.land.full_needed, from the base's config `cfg` and the base `base`; docs/gate.md "The
+    final gate"): a scoped (default-mode or docs-only) record of the tip lands a branch that needs no
+    --full, and "landing will refuse" is said only where it will. Printed only: it never changes the
+    exit status. The record's own steps are not re-checked here."""
     tip, why = gitrefs.resolve(branch, top)
     if not tip:
         return 'gate     tip of %s cannot be read (%s); landing will refuse' % (branch, why)
     rec, why = gate_ok.verify_full(top, tip)
-    if rec is None:
-        scoped = gate_ok.verify(top, tip)[0] if gate_once(cfg) else None
-        if scoped is not None and gate_ok.mode_of(scoped) == 'select':
-            return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
-                    ' a strict path or a gate config change still needs --full'
-                    % (tip[:10], scoped.get('ended_utc')))
-        return 'gate     tip %s: NO full-gate OK record (%s); landing will refuse' % (tip[:10], why)
-    return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    if rec is not None:
+        return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    head = 'gate     tip %s: NO full-gate OK record (%s)' % (tip[:10], why)
+    scoped = gate_ok.verify(top, tip)[0]
+    mode = gate_ok.mode_of(scoped) if scoped is not None else None
+    if scoped is not None and mode not in ('select', 'docs'):
+        scoped = None
+    reason, unknown = _full_needed(top, cfg, base, tip, mode == 'docs')
+    if reason:
+        return '%s; landing will refuse: this tip needs --full (%s)' % (head, reason)
+    if unknown:
+        return '%s; cannot tell whether a scoped gate lands it (%s)' % (head, unknown)
+    if scoped is not None:
+        return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s'
+                % (tip[:10], scoped.get('ended_utc')))
+    return ('%s; landing will refuse until the scoped final gate (gate.py without --full) passes '
+            'on this tip' % head)
 
 
-def gate_once(cfg):
-    """True when the Config `cfg` (None: no config) sets "landing".gate_once true."""
-    return cfg is not None and cfg.section('landing').get('gate_once') is True
+def _full_needed(top, cfg, base, tip, docs):
+    """`(reason, unknown)` of kitlib.gate.land.full_needed for the landing diff of `tip` against
+    `base` under `cfg`; `(None, why)` when that cannot be told."""
+    if cfg is None or not base:
+        return None, 'no base config'
+    try:
+        from kitlib.gate import land, runner
+        sha, why = gitrefs.resolve(base, top)
+        mb, why2 = merge_base(top, base, tip)
+        if not sha or not mb:
+            return None, why or why2 or 'no merge base'
+        changed, why = runner.changed_between(top, mb, tip)
+        if changed is None:
+            return None, why
+        return land.full_needed(top, cfg, sha, changed, docs)
+    except Exception as e:      # noqa: BLE001 - the line is printed only and never fails the pack
+        return None, '%s: %s' % (type(e).__name__, e)
 
 
 def _pack(lines, path, branch, base, diff):
@@ -608,7 +633,7 @@ def _pack(lines, path, branch, base, diff):
                   '--').splitlines()
     lines.append('commits  %d (no merges)' % len(commits))
     lines.extend('           ' + c for c in commits[:40])
-    lines.append(gate_line(top, branch, base_cfg))
+    lines.append(gate_line(top, branch, base_cfg, base))
 
     levels = risk_rules(top)
     groups = {}

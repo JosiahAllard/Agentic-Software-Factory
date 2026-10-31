@@ -176,7 +176,7 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
   landed after the port. It runs on fixtures, so it proves
   nothing live.
 - **Open bridge records, 2026-10-31:** only the retest record itself
-  (`KIT-CODEX-BRIDGE-RETEST`), pulled again on branch `kit/codex-bridge-retest`. The sandbox
+  (the retest), pulled again on branch `kit/codex-bridge-retest`. The sandbox
   junction cause of the step 3 failure is fixed (Codex now reads a real copy of the kit plugin);
   what is left is the owner granting a fresh writer lease and being at the machine for step 3.
 - **Live attempt, 2026-10-26, main: blocked before step 2, nothing sent.** Install steps 1

@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 from contextlib import redirect_stderr
+from unittest import mock
 
 from kitlib.git import repo as gitrepo
 
@@ -125,6 +126,21 @@ class OtherVerbs(Base):
         self.host.procs = [session(10, 'alpha-lead-a1', agent='coordinator')]
         self.check(lambda **kw: '\n'.join(handoff.handoff(
             self.h.settings, self.host, 'alpha', '2', whatif=True, **kw)))
+
+
+class Run(unittest.TestCase):
+    """tools/launch.py run() hands the parsed mode to the verb's function (a dropped keyword stays red)."""
+    def test_the_mode_reaches_each_verbs_function(self):
+        cases = (('deep', (start, 'deep'), VERBS[4]), ('consultant', (start, 'consultant'), VERBS[5]),
+                 ('topic', (start, 'topic'), VERBS[6]), ('handoff', (handoff, 'handoff'), VERBS[7]),
+                 ('start', (start, 'start'), VERBS[0]), ('pm-relaunch', (relaunch, 'relaunch'), VERBS[1]),
+                 ('pm-crossover', (relaunch, 'crossover'), VERBS[2]))
+        for verb, (mod, fn), argv in cases:
+            for mode in (None, 'acceptEdits'):
+                args = launch.parser().parse_args(argv + (['--permission-mode', mode] if mode else []))
+                with mock.patch.object(mod, fn, return_value=[]) as m,                         mock.patch.object(launch, 'push_delivery', return_value=None):
+                    launch.run(args, object(), object())
+                self.assertEqual(m.call_args.kwargs.get('permission_mode'), mode, verb)
 
 
 if __name__ == '__main__':

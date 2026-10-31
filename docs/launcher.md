@@ -3,7 +3,7 @@
 `tools/launch.py` starts, hands off and stops the PM's long-running Claude sessions, each in its own minimized window. Logic: `kitlib/launcher` (no argparse, print or exit); the machine-facing calls (process list, registry with `REG_EXPAND_SZ` values expanded as .NET did, window, stopping a process) sit in `kitlib/launcher/host.py` so tests fake them (`tests/launcher/fakes.py`).
 
 ```
-launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--agent A | --no-agent] [--brief F] [--prompt P] [--name N] [--predecessor N] [--model M] [--effort E] [--autocompact T] [--what-if] [--home-worktree] [--no-remote-control] [--permission-mode default|acceptEdits|auto]
+launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--agent A | --no-agent] [--brief F] [--prompt P] [--name N] [--predecessor N] [--model M] [--effort E] [--autocompact T] [--what-if] [--home-worktree] [--no-remote-control] [--permission-mode MODE]
 launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--predecessor NAME --state FILE] [--checkin FILE] [--force] [--plan] [--home-worktree] [--permission-mode MODE]
 launch.py consultant --repo-path DIR [--repo SLUG] [--account N|auto] [--model M] [--effort E] [--autocompact T] [--notes-path P] [--checkin FILE] [--force] [--replace] [--plan] [--home-worktree] [--permission-mode MODE]
 launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--force] [--plan] [--permission-mode MODE]
@@ -12,9 +12,9 @@ launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
 launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if] [--home-worktree] [--permission-mode MODE]
 launch.py pick-account [--limit 95] [--explain]
 launch.py usage
-launch.py after-reboot [--test] [--dry-run]
-launch.py pm-relaunch --name NEW
-launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] [--what-if]
+launch.py after-reboot [--test] [--dry-run] [--permission-mode MODE]
+launch.py pm-relaunch --name NEW [--permission-mode MODE]
+launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] [--what-if] [--permission-mode MODE]
 launch.py install-autostart [--what-if]          (retired: refuses)
 ```
 

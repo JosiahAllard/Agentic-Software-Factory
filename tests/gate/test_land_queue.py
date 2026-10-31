@@ -91,6 +91,26 @@ class QueueCase(LandCase):
         return gate
 
 
+class AliasedGateKind(QueueCase):
+    """A "gate".kind that is a retired name (an `aliases` entry of the kinds table) books the
+    land kind of the kind it names now."""
+    GATE = dict(fixtures.GATE, kind='engine-test')
+
+    def test_a_retired_gate_kind_books_the_land_kind_of_its_current_name(self):
+        with open(self.kinds_path, encoding='utf-8') as f:
+            table = json.load(f)
+        del table['kinds']['engine-test']
+        table['kinds']['land-test'] = {'cpu': 4, 'gpu': 0, 'warn_min': 30}
+        table['aliases'] = {'engine-test': {'to': 'test', 'why': 'a retired name'}}
+        with open(self.kinds_path, 'w', encoding='utf-8') as f:
+            json.dump(table, f)
+        self.assertEqual(kconfig.load(self.repo.root).section('gate')['kind'], 'engine-test')
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([c['kind'] for c in self.book_calls], ['land-test'], self.book_calls)
+
+
 class OneBooking(QueueCase):
     def test_the_machine_lock_books_the_landing_resource(self):
         # kitlib.gate.land books resource= and priority=: without the machine lock's landing queue
@@ -119,6 +139,33 @@ class OneBooking(QueueCase):
                          if s.startswith('the gate runs in the slot the landing holds (run ')], said)
         self.assertEqual(len(self.store.history_records(1)), 1)    # one run, ended
         self.assertEqual(self.entries(), [])
+
+    def with_land_kind(self):
+        """The scratch kinds table with a land-<"gate".kind> entry beside the gate kind's."""
+        kind = kconfig.load(self.repo.root).section('gate')['kind']
+        with open(self.kinds_path, encoding='utf-8') as f:
+            table = json.load(f)
+        table['kinds']['land-' + kind] = {'cpu': 4, 'gpu': 0, 'warn_min': 30}
+        with open(self.kinds_path, 'w', encoding='utf-8') as f:
+            json.dump(table, f)
+        return kind
+
+    def test_a_landing_books_the_land_kind_when_the_kinds_table_has_it(self):
+        # The owner's call: a landing's merged gate books land-<kind> (4
+        # cores in kitlib/lock/kinds.json), once, with no second booking for a kind it did not
+        # take from the config (rebook_kind compares the "gate".kind, not the land kind).
+        kind = self.with_land_kind()
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([c['kind'] for c in self.book_calls], ['land-' + kind], self.book_calls)
+
+    def test_a_landing_books_the_gate_kind_when_the_kinds_table_has_no_land_kind(self):
+        kind = kconfig.load(self.repo.root).section('gate')['kind']
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([c['kind'] for c in self.book_calls], [kind], self.book_calls)
 
     def test_the_wait_budget_is_the_configs_unless_given(self):
         _, tip = self.branch('feature', {'a.py': 'a\n'})

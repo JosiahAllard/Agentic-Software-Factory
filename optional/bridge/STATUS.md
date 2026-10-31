@@ -10,7 +10,7 @@ and `bridge_prepare.py` accept a Codex profile, and the MCP frontend reads Codex
 Every pair of the two may be connected except Codex to Codex, which `peers.json` refuses (README
 "Host pairs"). Being served is not being deliverable. The limits below still hold:
 - Claude to Codex is delivered only through an owner-granted writer lease (README "Writer
-  leases"). No live run has shown it.
+  leases"). A live run showed it on 2026-10-31 (see "Retest on main").
 - Only the Codex desktop app can deliver to a Codex chat.
 - The Codex terminal adapter is dead.
 
@@ -66,7 +66,9 @@ tested on fixtures only, with no live run. Limits:
 - A restart drops every PM route. The owner window's PM rows and its 5 s re-read have no test.
 - The owner window lists and connects no Codex-to-Codex route (README "Host pairs").
 
-Idle roster at frontend start: **pending a read-only probe with the owner present.** A chat is
+Idle roster at frontend start: **one live probe so far (2026-10-31).** A kit-launched Claude
+session (`launch.py start --no-agent`) had its frontend running and was not listed until it
+called `bridge_connections`; the Codex frontend question below is not answered by it. A chat is
 listed today only after its first bridge tool call, except Claude desktop chats, which are listed
 when their frontend starts. When a frontend starts, neither half receives a chat identity it can
 verify: a Codex binding needs the thread, turn and auto-review flags from a tool call's
@@ -137,6 +139,21 @@ The source's live evidence was gathered with the old paths. This covers the Clau
 (its plugin-scoped PreToolUse provenance and the hook's kernel ancestry) and the idle start from
 a relocated copy. Both need re-running against this layout before they count for it.
 
+## Known problems seen in the 2026-10-31 sitting
+
+Observations only; none is fixed here.
+- `bridge_read_reply` returned `reply-chat-not-observed` for `ping-20261031-005` and for
+  `notes-append-20261031-002`, although each reply was pushed into the Claude chat.
+- One early send returned the frontend's catch-all "bridge connection unavailable", which hides
+  the real code.
+- The recipient chat (the kit folder) dropped out of the window's list after its turns ended. Its
+  routes vanished from Current connections, and the lease row showed the chat "(not listed) ...
+  cannot deliver". It came back after a `bridge_connections` call.
+- The appended line used CRLF while `notes.md` is LF.
+- Codex's own Windows sandbox failed some commands with `CreateProcessSecurityEnvironment`
+  0x8007000F, probably because it cannot see drive Z:. This is in the owner's Codex
+  configuration, not the bridge.
+
 ## Open before any live use
 
 1. Re-run the Claude hook canary and the relocated idle start on this layout.
@@ -160,6 +177,9 @@ returned "pong". This needed a standing approval from the owner in the Codex cha
 had to be listed, which happens only after it makes a bridge call. The receipt still
 passes through `unknown`. Details below.
 
+**Live sitting, 2026-10-31: the pass bar is met**, under conditions (a), (b) and (d) of "Running
+a sitting" below. Details under "Live sitting, 2026-10-31".
+
 **Pass bar, re-scoped by the owner on 2026-10-26:** the bridge is for Claude and Codex chats
 (plus outside tools); Codex-to-Codex is out of scope. The retest passes when:
 (a) Claude to Codex: a Claude chat delivers to a Codex chat. That covers step 2 and step 3, the
@@ -177,8 +197,8 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
   nothing live.
 - **Open bridge records, 2026-10-31:** only the retest record itself
   (the retest), pulled again on branch `kit/codex-bridge-retest`. The sandbox
-  junction cause of the step 3 failure is fixed (Codex now reads a real copy of the kit plugin);
-  what is left is the owner granting a fresh writer lease and being at the machine for step 3.
+  junction cause of the step 3 failure is fixed (Codex now reads a real copy of the kit plugin).
+  The owner's live sitting of 2026-10-31 followed; it is recorded below.
 - **Live attempt, 2026-10-26, main: blocked before step 2, nothing sent.** Install steps 1
   and 2 were done: the service (`bridge_service.py --connections`, started 11:25) was running, the
   `pmbridge` Claude plugin was loaded (the `bridge_*` tools were present) and Codex's
@@ -274,6 +294,37 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
     denial. The owner's fix, scheduled: make the junction a real folder. After it: a read test
     from a new chat, fresh lease setup, then step 3 once more under a new operation id.
 
+- **Live sitting, 2026-10-31, main: passed.** The owner sat at the machine with the Codex app
+  open.
+  - Claude to Codex, writer lease, ping: operations -003 and -004 failed
+    (`codex-direct-context-unverified`) while the writer ran `ping` in the background. With the
+    writer told "run ping in the foreground and wait", `ping-20261031-005` reached
+    `recipient-accepted`. Codex replied "pong", and the reply was pushed into the Claude chat as a
+    cross-session message. `bridge_read_reply` had first returned `reply-chat-not-observed`.
+  - Claude to Codex, task through the writer lease: `notes-append-20261031-002`. The recipient
+    appended exactly one line ("bridge test") to the scratch `notes.md`, with a CRLF ending in an
+    LF file. Its first `bridge_reply` was rejected by Codex's automatic approval reviewer ("would
+    disclose an internal local filesystem path ... without trusted user authorization"). After the
+    owner typed an explicit permission line in that chat, the reply went through as
+    `reply-received` and was pushed into the Claude chat. `bridge_read_reply` never returned it
+    (`reply-chat-not-observed`). In the same chat a `ping` failed with the sandbox error
+    `0x8007000F`.
+  - Check after the sitting: `git diff` in the scratch repo showed exactly one added line,
+    "bridge test".
+  - Frontend count (python `mcp_frontend` processes): baseline 3 (claude, codex, codex). After
+    hello chat 1: 7 (a new codex frontend plus 3 python-parented ones). After hello chat 2: 4 (the
+    python-parented ones gone; no new frontend for chat 2). On refresh there were no hello-chat
+    rows. Pass. Checked again after the sitting, with Codex closed and the probe stopped: 0.
+  - Probe session (`launch.py start --no-agent`): its frontend (parent claude) appeared, and the
+    session was not listed until it called `bridge_connections`; after that it was listed. The
+    probe and the recipient connected both ways. `pong-20261031-1` went through, "pong" was
+    pushed back, and the recipient showed no approval prompt. Pass.
+  - Shutdown: the probe was stopped and its frontend was gone. After Codex closed there were 0
+    frontends. Reopening Codex gave no hook-trust prompt, and its header showed the kit plugin
+    0.4.0-main.5566. Pass.
+  - Pass bar: Claude to Codex pong, the task through the writer lease, and Codex to Claude were
+    all met, given conditions (a), (b) and (d) below.
+
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
    service with `--connections`.
@@ -289,6 +340,18 @@ Live round-trip plan (the owner grants the lease; no agent can):
 3b. Codex to Claude: the Codex chat's reply (or its own `bridge_send`) reaches the Claude chat as
    a pushed message, and the Claude chat records it.
 4. Record the result here. A pass lets coordinators delegate suitable work to Codex workers.
+
+Running a sitting. The 2026-10-31 sitting showed these conditions:
+- (a) The Codex writer must be in a foreground active turn. Codex runs `ping` in the background
+  and ends its turn after about 20 s, which gives `codex-direct-context-unverified`. Tell it to
+  "run ping in the foreground and wait".
+- (b) A Codex recipient needs the owner's explicit line in its chat ("You may answer bridge
+  messages from <sender> with bridge_reply in this chat"). Without it, Codex's own automatic
+  approval reviewer rejects the `bridge_reply` as disclosing a local path.
+- (c) A chat that has dropped out of the connections list needs a fresh bridge call
+  (`bridge_connections`) to be listed again.
+- (d) Address the recipient by its reference, not its chat id: a chat id gives
+  `recipient-not-observed`.
 
 Owner steps (PowerShell; `<repo>` is the kit checkout, `<kit>` the kit folder, `<out>` a new
 private folder; `<out>-input.json` follows the half profiles, see README "Configuration"):

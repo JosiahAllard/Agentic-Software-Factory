@@ -18,6 +18,7 @@ from tests.gate import fixtures
 from tests.gate.test_land import HANG_S
 from tests.gate.test_land_strict import STRICT
 from tests.gate.test_land_submit import LAND_PY, Detach, SubmitCase
+from tests.gate.test_result import ledger_lines
 
 
 class Queued(object):
@@ -113,6 +114,22 @@ class Folds(FoldCase):
         self.assertEqual((two['verdict'], two['run_id'], two['folded_into'], two['batch']),
                          ('pass', b.run_id, a.run_id, ['kit/one', 'kit/two']))
         self.assertEqual(len(self.book_calls), 1)      # one booking, one merged gate
+        lines = ledger_lines(self.repo.root)            # the ledger says the batch's size
+        self.assertEqual([(l['branch'], l['run_id'], l['batch_size'], l['folded_into'])
+                          for l in lines],
+                         [('kit/one', a.run_id, 2, None), ('kit/two', b.run_id, 2, a.run_id)])
+
+    def test_high_risk_verdicts_fold(self):
+        """Owner ruling (hub Q-1652): a High-risk branch may fold; only a strict branch and a gate
+        config branch land alone. Both verdicts here are High."""
+        a = self.queued(['one'], review=False)
+        b = self.queued(['two'], review=False)
+        for q in (a, b):
+            self.queue(q.branches[0], q.tips[0], risk='High')
+        out = self.landing(a).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.record('kit/two')['folded_into'], a.run_id)
+        self.assertEqual(self.record('kit/one')['batch'], ['kit/one', 'kit/two'])
 
     def test_batch_max_caps_the_fold_and_the_rest_waits_its_turn(self):
         a = self.queued(['one'])
@@ -249,6 +266,17 @@ class ConfigUnit(FoldCase):
         Folds.left_out(self, "kit/two changes the gate's config (tools/kit_hooks.py): a branch "
                              "that changes a gate config file lands alone, never in a batch",
                        files={'two': {'tools/kit_hooks.py': 'GATE_CHECKS = {}  # two\n'}})
+
+    def test_a_landing_that_changes_the_gate_config_folds_nothing(self):
+        a = self.queued(['one'], files={'one': {'tools/kit_hooks.py': 'GATE_CHECKS = {}  # 1\n'}})
+        b = self.queued(['two'])
+        before = {'kit/two': self.record('kit/two')}
+        said = []
+        out = self.landing(a, said).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertFalse([s for s in said if 'FOLDED' in s or 'folding' in s], said)
+        self.assert_untaken(b, before)
+        self.assertEqual(self.record('kit/one')['batch'], ['kit/one'])
 
 
 class Drops(FoldCase):

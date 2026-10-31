@@ -85,8 +85,9 @@ The record (SCHEMA 1), every key always present:
                   Each of these four added after the schema, like source
 
 The land ledger, `<result folder>/land-ledger.jsonl` (ledger_path): one JSON line per final or
-error land record Lander.run writes, with LEDGER_FIELDS, appended and never rewritten, so a
-retry that replaces the land record leaves the earlier outcome's line (append_ledger).
+error land record Lander.run writes, with LEDGER_FIELDS and LEDGER_BATCH (ledger_line), appended
+and never rewritten, so a retry that replaces the land record leaves the earlier outcome's line
+(append_ledger).
 
 wait() polls for the final record of a branch and kind at a tip. It writes one thing: a running
 record at that tip whose process has died (running_state 'dead') is finished `error`, "the
@@ -141,6 +142,12 @@ DEVICES = frozenset(['con', 'prn', 'aux', 'nul'] + ['com%d' % i for i in range(1
 LEDGER = 'land-ledger.jsonl'
 LEDGER_FIELDS = ('branch', 'tip', 'run_id', 'started_at', 'finished_at', 'verdict', 'code',
                  'summary', 'gate_once', 'escalated')
+# The ledger line's batch facts, beyond LEDGER_FIELDS (which the hub's landing feed carries too,
+# and the hub takes no other field): batch_size, how many branches the landing merged and gated
+# together (the length of the record's `batch`; null when it has none), and folded_into, the
+# run_id of the landing that folded it into its batch (null for that landing's own branches), so a
+# counter of gate runs dedupes on `folded_into or run_id` (docs/gate.md "Land ledger")
+LEDGER_BATCH = ('batch_size', 'folded_into')
 VERDICTS = {G.OK: 'pass', G.FAILED: 'fail', G.USAGE: 'usage', G.STUCK: 'stuck',
             G.REFUSED: 'refused', G.BUSY: 'busy', G.LANDED_UNGATED: 'landed-ungated',
             G.STOPPED: 'stopped'}
@@ -356,14 +363,24 @@ def ledger_path(root):
     return os.path.join(result_dir(root), LEDGER)
 
 
+def ledger_line(record):
+    """The land ledger line of the land record `record`: its LEDGER_FIELDS, then LEDGER_BATCH."""
+    line = dict((k, record.get(k)) for k in LEDGER_FIELDS)
+    batch = record.get('batch')
+    line['batch_size'] = len(batch) if isinstance(batch, list) else None
+    line['folded_into'] = record.get('folded_into') or None
+    return line
+
+
 def append_ledger(root, record):
-    """Append `record`'s LEDGER_FIELDS to the land ledger as one JSON line, in one write call
-    (landings are serialized by the landing lock; one write keeps a line whole all the same).
+    """Append `record`'s ledger line (ledger_line) to the land ledger as one JSON line, in one
+    write call (landings are serialized by the landing lock; one write keeps a line whole all the
+    same).
     `(path, None)`, or `(None, warning line)` when it could not be appended: nothing here raises,
     so a ledger that cannot be written never changes the landing's outcome."""
     try:
         path = ledger_path(root)
-        data = (json.dumps(dict((k, record.get(k)) for k in LEDGER_FIELDS)) + '\n').encode('utf-8')
+        data = (json.dumps(ledger_line(record)) + '\n').encode('utf-8')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_BINARY', 0))
         try:

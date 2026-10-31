@@ -147,7 +147,8 @@ class Records(unittest.TestCase):
         with open(path, 'rb') as f:
             self.assertTrue(f.read().startswith(first))        # appended, the first line kept
         got = ledger_lines(self.repo.root)
-        self.assertEqual([list(l) for l in got], [list(result.LEDGER_FIELDS)] * 2)
+        self.assertEqual([list(l) for l in got],
+                         [list(result.LEDGER_FIELDS + result.LEDGER_BATCH)] * 2)
         self.assertEqual([(l['verdict'], l['code'], l['gate_once'], l['escalated']) for l in got],
                          [('fail', G.FAILED, True, True), ('pass', G.OK, True, False)])
         self.assertEqual([l['run_id'] for l in got], [a['run_id'], b['run_id']])
@@ -744,7 +745,9 @@ class LandingWrites(fixtures.GateRepoCase):
         rec = result.read(self.repo.root, 'kit/feature', 'land')[0]
         self.assertEqual((rec['gate_once'], rec['escalated']), (False, False))
         line, = ledger_lines(self.repo.root)
-        self.assertEqual(line, dict((k, rec[k]) for k in result.LEDGER_FIELDS))
+        self.assertEqual(line, dict(dict((k, rec[k]) for k in result.LEDGER_FIELDS),
+                                    batch_size=1, folded_into=None))
+        self.assertEqual(rec['batch'], ['kit/feature'])
         self.assertEqual((line['branch'], line['tip'], line['verdict'], line['code']),
                          ('kit/feature', tip, 'pass', G.OK))
         self.assertRegex(line['finished_at'], UTC)

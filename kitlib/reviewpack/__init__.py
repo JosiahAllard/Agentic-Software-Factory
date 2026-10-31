@@ -5,8 +5,8 @@ tools/review_pack.py; docs/review-pack.md).
 `Outcome.lines` and exits with `Outcome.code`. It never prints and never exits.
 
 The pack: base and merge-base, whether the branch contains the base tip, commits, whether the tip
-has a full-gate OK record (the `gate` line, gate_line: printed only, the exit status unchanged;
-a landing refuses a tip without one), files changed
+has the gate-OK record its landing needs (the `gate` line, gate_line: printed only, the exit status
+unchanged; a --full one, or a scoped one where docs/gate.md "The final gate" allows it), files changed
 with +/- grouped by the risk level in docs/ops/risk-map.md (unlisted = High), owner-only paths
 touched and whether an Owner-Approved trailer covers them, the branch's commits with no
 Co-Authored-By trailer (when configured, below), and the doc-budget verdict. `diff` set: only the

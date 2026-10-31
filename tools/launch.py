@@ -58,7 +58,7 @@ def existing_file(path):
 
 
 PERMISSION_MODE_ARG = dict(choices=window.PERMISSION_MODES, default=None, metavar='MODE',
-                           help='the claude --permission-mode (%s); omitted: the default command line'
+                           help='the session permission mode (%s); omitted: the default command line'
                            % ', '.join(window.PERMISSION_MODES))
 
 

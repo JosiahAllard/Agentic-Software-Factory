@@ -15,7 +15,7 @@ from tests import inproc
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, parse
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
-BUILDERS = ('weak-worker', 'worker', 'senior-worker', 'opus-worker', 'strong-worker', 'helper')
+BUILDERS = ('weak-worker', 'worker', 'senior-worker', 'opus-worker', 'strong-worker', 'helper', 'topic')
 READ_ONLY = ('analyst', 'test-runner', 'consultant')
 ROLES = ('owner', 'pm', 'coordinator', 'deep-worker', 'lander', 'docs-writer') + \
     BUILDERS + READ_ONLY
@@ -68,7 +68,7 @@ class RolesTest(unittest.TestCase):
                          (sorted(BUILDERS + ('deep-worker',)), sorted(READ_ONLY), ['docs-writer'],
                           ('lander',)))
         self.assertEqual(sorted(R.LEADS), sorted(CPO))
-        self.assertEqual(sorted(R.SESSION_ONLY), ['consultant', 'coordinator', 'deep-worker', 'owner', 'pm'])
+        self.assertEqual(sorted(R.SESSION_ONLY), ['consultant', 'coordinator', 'deep-worker', 'owner', 'pm', 'topic'])
         self.assertIn('kitlib/backlog/roles.py', schema.OWNER_PATHS)
 
     def test_the_groups_are_read_from_the_role_files(self):

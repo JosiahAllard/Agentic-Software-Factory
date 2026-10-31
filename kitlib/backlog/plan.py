@@ -256,8 +256,14 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None):
 def batch_members(snap, branch):
     """The ids of the open records batched for `branch` (`batch: <branch>`), in rank order: the
     seeds of a topic session's pull (plan_pull)."""
-    return [r.id for r in sorted(snap.readable, key=omod.rank_key)
-            if r.get('batch') == branch and r.get('state') == 'open']
+    mine = [r for r in snap.readable if r.get('batch') == branch and r.get('state') == 'open']
+    for r in mine:
+        if not rmod.is_band(r.get('priority')):
+            # rank_key reads a price; refuse as a plain pull of an unpriced record does
+            raise Refusal('`%s` is batched for %s but is `priority: %s`, and `pull` takes a priced '
+                          'record (`1`-`5`). Price it first: `set %s --priority N --priority-by '
+                          'agent`' % (r.id, branch, r.get('priority'), r.id))
+    return [r.id for r in sorted(mine, key=omod.rank_key)]
 
 
 def current_offer(snap, ctx, branch=None, seeds=()):

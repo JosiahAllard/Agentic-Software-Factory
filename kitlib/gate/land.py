@@ -67,7 +67,8 @@
                  merged gate then runs --full --fresh. Then the verdict check
                  (Lander.verdict_check): every other branch, each of a batch, lands only with a
                  verdict queued for its tip by any reviewer who is not its author (a High-risk
-                 one: a strong-tier reviewer, verdicts.tier_why), a carried one checked the same way. Any miss: REFUSED, the lock released, nothing
+                 one: a strong-tier reviewer, verdicts.tier_why), a carried one
+                 checked the same way. Any miss: REFUSED, the lock released, nothing
                  merged. Last, the scope check (Lander.scope_check): every path the branch changes
                  in a scope of a record it holds, in SCOPE_ALWAYS or in a folder store's folder;
                  a miss is a WARNING after the LANDED line while SCOPE_REFUSES is False, else

@@ -4,12 +4,12 @@
 
 ```
 launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--agent A | --no-agent] [--brief F] [--prompt P] [--name N] [--predecessor N] [--model M] [--effort E] [--autocompact T] [--what-if] [--home-worktree] [--no-remote-control] [--permission-mode default|acceptEdits|auto]
-launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--predecessor NAME --state FILE] [--checkin FILE] [--force] [--plan] [--home-worktree]
-launch.py consultant --repo-path DIR [--repo SLUG] [--account N|auto] [--model M] [--effort E] [--autocompact T] [--notes-path P] [--checkin FILE] [--force] [--replace] [--plan] [--home-worktree]
-launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--force] [--plan]
+launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--predecessor NAME --state FILE] [--checkin FILE] [--force] [--plan] [--home-worktree] [--permission-mode MODE]
+launch.py consultant --repo-path DIR [--repo SLUG] [--account N|auto] [--model M] [--effort E] [--autocompact T] [--notes-path P] [--checkin FILE] [--force] [--replace] [--plan] [--home-worktree] [--permission-mode MODE]
+launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--model M] [--effort E] [--autocompact T] [--force] [--plan] [--permission-mode MODE]
 launch.py homes (--repo NAME | --repo-path DIR) [--remove NAME] [--what-if]
 launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
-launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if] [--home-worktree]
+launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if] [--home-worktree] [--permission-mode MODE]
 launch.py pick-account [--limit 95] [--explain]
 launch.py usage
 launch.py after-reboot [--test] [--dry-run]
@@ -94,7 +94,7 @@ Only the launcher's PM resume carries the `pm` mark; no settings file sets `PM_K
 
 The consultant's notes file is `<agent temp>/<repo>-consultant/notes.md` unless `--notes-path` names another (`start.consultant_notes_path`; the agent temp folder is `AGENT_TEMP`, else `TEMP`, else the home folder, `start.agent_temp`), outside the repository, so a consultant in a home worktree can write it. The agent-temp sweep never removes a `<name>-consultant` or `<name>-coordinator` folder (`optional/agenttemp/agent_temp_sweep.py` `BUILT_IN_KEEP`). The old default, `docs/ops/consultant-notes.local.md` in the repo, is never changed or deleted: when `--notes-path` is left out, the old file exists and the new one does not, the launcher copies it to the new path just before the window opens ("Copied the old notes file ..."; with `--plan` "Would copy ...", nothing written), and removes that copy again if the launch then fails; when both exist it copies nothing and warns that the old file is no longer read. With `--replace` beside a running consultant that still writes the old file, a warning says that what it writes after the copy stays in the old file (`start._copy_old_notes`; tests/launcher/test_consultant_notes.py). The old file can be deleted by hand once the new one has what it needs.
 
-`--permission-mode MODE` (`start`, also with `--session`; `pm-relaunch`; `pm-crossover`; `after-reboot`, which applies it to every session it starts; MODE one of `window.PERMISSION_MODES`, so not `bypassPermissions` or `dontAsk`) passes `claude --permission-mode MODE`; omitted, every command line is as before. No session record stores a mode, so a successor does not inherit one: pass the flag again. `handoff` has no flag yet.
+`--permission-mode MODE` (`start`, also with `--session`; `deep`; `consultant`; `topic`; `handoff`, which applies it to each successor; `pm-relaunch`; `pm-crossover`; `after-reboot`, which applies it to every session it starts; MODE one of `window.PERMISSION_MODES`, so not `bypassPermissions` or `dontAsk`) passes `claude --permission-mode MODE`; omitted, every command line is as before. No session record stores a mode, so a successor does not inherit one: pass the flag again.
 
 `--home-worktree` (parsed on `start`, `deep`, `consultant` and `handoff`; off by default, so without it every session starts in its repo folder as before) starts a deep-worker or consultant session in its home worktree instead; any other agent session is refused ("The home worktree").
 

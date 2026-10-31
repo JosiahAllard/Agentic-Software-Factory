@@ -80,7 +80,7 @@ def record_move(settings, sessions, coordinators, key, entry, target, new, stem=
 
 
 def handoff(settings, host, session=None, account=None, all_=False, recycle=False, whatif=False, stem=None,
-            state=None, home_worktree=False):
+            state=None, home_worktree=False, permission_mode=None):
     if not all_ and not session:
         raise LaunchError('Give --session <key of sessions.json>, or --all.')
     if all_ and recycle:
@@ -144,7 +144,8 @@ def handoff(settings, host, session=None, account=None, all_=False, recycle=Fals
                                   predecessor=old, name=new)
         out.append('== %s : %s (account %s) -> %s (account %s)' % (key, old, entry.get('account'), new, target))
         try:
-            out += S.start(settings, host, whatif=whatif, home_worktree=home_worktree, **args)
+            out += S.start(settings, host, whatif=whatif, home_worktree=home_worktree,
+                            permission_mode=permission_mode, **args)
         except LaunchError as e:
             e.lines = out + e.lines
             raise

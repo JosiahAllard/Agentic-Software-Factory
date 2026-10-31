@@ -78,7 +78,7 @@ class Reboot(unittest.TestCase):
             reboot.run(h.settings, host, permission_mode=mode)
             texts[mode] = host.opened
             self.assertTrue(host.opened)
-        self.assertEqual(len(texts[None]), len(texts['acceptEdits']))
+        self.assertEqual((len(texts[None]), len(texts['acceptEdits'])), (3, 3))     # alpha, beta, the PM resume
         self.assertFalse([t for t in texts[None] if FLAG + 'acceptEdits' in t])
         self.assertTrue(all(FLAG + 'acceptEdits' in t for t in texts['acceptEdits']))
 

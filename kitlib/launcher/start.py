@@ -383,7 +383,7 @@ def _check_path(flag, path):
 
 def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None, account='auto',
          autocompact=DEEP_AUTOCOMPACT, model=LONG_MODEL, effort='xhigh', force=False, plan=False, brief_dir=None,
-         home_worktree=False, predecessor=None, state=None, checkin=None):
+         home_worktree=False, predecessor=None, state=None, checkin=None, permission_mode=None):
     """A deep-worker session named deep-<slug>. Every check runs before anything is written; a
     --brief-text file is removed again when the launch fails. `predecessor`: the deep-worker it
     succeeds on another account (the hub's usage crossover): it is named deep-<slug>-a<N> and reads
@@ -440,7 +440,7 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     try:
         out += start(settings, host, repo_path=repo_path, account=acct, name=name, agent='pm-kit:deep-worker',
                      model=model, effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan,
-                     home_worktree=home_worktree)
+                     home_worktree=home_worktree, permission_mode=permission_mode)
     except Exception:
         if wrote:
             try:
@@ -454,7 +454,7 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
 
 
 def topic(settings, host, worktree, slug, brief, account='auto', model=None, effort=None, autocompact=None,
-          force=False, plan=False):
+          force=False, plan=False, permission_mode=None):
     """A topic session named topic-<slug> (skill topic-session): a plain session (no agent) the owner
     drives, marked window.TOPIC, started in `worktree`, a linked worktree on the branch its records are
     batched for, with `brief` (a file; relative to the worktree) as its first read. Refused, nothing
@@ -493,7 +493,8 @@ def topic(settings, host, worktree, slug, brief, account='auto', model=None, eff
               "and the records it covers; the coordinator reviews and lands it."
               % (name, worktree, brief_path, PM_REF))
     out += start(settings, host, repo_path=worktree, account=acct, name=name, no_agent=True, model=model,
-                 effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, mark=window.TOPIC)
+                 effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, mark=window.TOPIC,
+                 permission_mode=permission_mode)
     out.append('When its report is in and the branch has landed, stop it: %s' % stop_cmd(name))
     return out
 
@@ -509,7 +510,7 @@ def _with_lines(out):
 
 def consultant(settings, host, repo_path, repo=None, account='auto', autocompact=CONSULTANT_DEFAULT_AUTOCOMPACT,
                model=LONG_MODEL, effort='high', notes_path=NOTES_DEFAULT, force=False, replace=False, plan=False,
-               home_worktree=False, checkin=None):
+               home_worktree=False, checkin=None, permission_mode=None):
     """The consultant session consultant-<repo>; one per repo unless --replace (an account hand-off).
     notes_path None is consultant_notes_path; then an old notes file in the repo (OLD_NOTES) is
     copied to it on first use, just before the window opens, and never changed or deleted
@@ -571,7 +572,8 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
                    % (name, old))
     try:
         out += start(settings, host, repo_path=repo_path, account=acct, name=name, agent='pm-kit:consultant', model=model,
-                     effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, home_worktree=home_worktree)
+                     effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, home_worktree=home_worktree,
+                     permission_mode=permission_mode)
     except Exception:
         if copied:
             try:

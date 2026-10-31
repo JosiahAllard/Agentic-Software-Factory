@@ -108,6 +108,7 @@ def parser():
                    'crossover); the new one is named deep-<slug>-a<N>; needs --state')
     d.add_argument('--state', help="the predecessor's state note, read first (an absolute path)")
     d.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
+    d.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     c = sub.add_parser('consultant', help="a repo's consultant session")
     c.add_argument('--repo-path', required=True)
@@ -123,6 +124,7 @@ def parser():
     c.add_argument('--plan', action='store_true')
     c.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
     c.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
+    c.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     t = sub.add_parser('topic', help='a plain session marked topic that builds one batch of records '
                        '(skill topic-session)')
@@ -136,6 +138,7 @@ def parser():
                    help='compact window in tokens (default %d; 0: the CLI default)' % start.DEFAULT_AUTOCOMPACT)
     t.add_argument('--force', action='store_true', help='start on an account at or over 90%%')
     t.add_argument('--plan', action='store_true', help='print, start and write nothing')
+    t.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     m = sub.add_parser('homes', help="a main checkout's home worktrees, or remove one")
     g = m.add_mutually_exclusive_group(required=True)
@@ -161,6 +164,7 @@ def parser():
                    "the entry's state (an existing file)")
     h.add_argument('--what-if', action='store_true')
     h.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
+    h.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 
     k = sub.add_parser('pick-account', help='the account whose week resets soonest, with headroom')
     k.add_argument('--limit', type=int, default=accounts.PICK_LIMIT)
@@ -238,14 +242,14 @@ def run(a, settings, host):
         return start.deep(settings, host, a.repo_path, a.requester, a.slug, a.brief, a.brief_text, a.account,
                           a.autocompact, a.model, a.effort, a.force, a.plan, a.brief_dir,
                           home_worktree=a.home_worktree, predecessor=a.predecessor, state=a.state,
-                          checkin=a.checkin)
+                          checkin=a.checkin, permission_mode=a.permission_mode)
     if a.cmd == 'consultant':
         return start.consultant(settings, host, a.repo_path, a.repo, a.account, a.autocompact, a.model, a.effort,
                                 a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree,
-                                checkin=a.checkin)
+                                checkin=a.checkin, permission_mode=a.permission_mode)
     if a.cmd == 'topic':
         return start.topic(settings, host, a.worktree, a.slug, a.brief, a.account, a.model, a.effort,
-                           a.autocompact, a.force, a.plan)
+                           a.autocompact, a.force, a.plan, permission_mode=a.permission_mode)
     if a.cmd == 'homes':
         return start.homes(settings, host, a.repo, a.repo_path, a.remove, a.what_if)
     if a.cmd == 'stop':
@@ -253,7 +257,8 @@ def run(a, settings, host):
                          warn=lambda msg: print('launch.py stop: %s' % msg, file=sys.stderr))
     if a.cmd == 'handoff':
         return handoff.handoff(settings, host, a.session, a.account, a.all, a.recycle, a.what_if, stem=a.stem,
-                               state=a.state, home_worktree=a.home_worktree)
+                               state=a.state, home_worktree=a.home_worktree,
+                               permission_mode=a.permission_mode)
     if a.cmd == 'pick-account':
         n, rows = accounts.pick(settings, host.now(), a.limit)
         return (accounts.explain(rows) if a.explain else []) + [n]

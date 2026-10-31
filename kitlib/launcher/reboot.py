@@ -23,7 +23,7 @@ import os
 
 from kitlib import platform
 from kitlib.launcher import accounts as A
-from kitlib.launcher import lookup, state, window
+from kitlib.launcher import lookup, state, stop, window
 from kitlib.launcher import start as S
 from kitlib.launcher.settings import LaunchError
 
@@ -62,6 +62,13 @@ def desktop_app_running(procs):
 def running(procs, text):
     """A claude.exe whose command line contains text (the old after-reboot test, for the PM)."""
     return any((p.get('Name') or '').lower() == 'claude.exe' and text in (p.get('CommandLine') or '') for p in procs)
+
+
+def runs_session(procs, sid):
+    """A claude.exe that resumes or starts session sid (stop.runs_as: the --resume/-r or --session-id
+    value), not one whose command line only mentions the id, as a topic session's brief path does."""
+    return any((p.get('Name') or '').lower() == 'claude.exe' and stop.runs_as(p.get('CommandLine'), sid)
+               for p in procs)
 
 
 def newest_transcript_mtime(settings, session_id):
@@ -176,7 +183,7 @@ def resume_pm(settings, host, cfg, log, dry_run=False, permission_mode=None):
     procs = host.processes()
     pm_name = cfg.get('pm_name')                     # pm-relaunch's fork: its command line carries the old id
     named = isinstance(pm_name, str) and pm_name and lookup.find_exact(lookup.launched(procs), pm_name)
-    if running(procs, 'pm-session') or running(procs, sid) or named:
+    if running(procs, 'pm-session') or runs_session(procs, sid) or named:
         log('pm-session already running, skipped')
         return []
     if desktop_app_running(procs):

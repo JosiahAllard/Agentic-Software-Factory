@@ -15,13 +15,18 @@ Every pair of the two may be connected except Codex to Codex, which `peers.json`
 - The Codex terminal adapter is dead.
 
 **Bottom line:**
-- No message has been delivered end to end between two live chats.
-- No idle chat has been shown to wake on a message.
-- No live correlated reply has come back.
+- Live delivery has been shown. On 2026-10-26 a Codex chat answered a Claude chat's `ping` with a
+  correlated "pong" (`reply-received`), and the Codex reply reached the Claude chat as a pushed
+  message. On 2026-10-31 a Claude chat delivered a ping and a one-line file-append task to a Codex
+  desktop chat through an owner-granted writer lease, and both replies came back to the Claude chat.
+  The appended line was checked by diff. The conditions are under "Running a sitting".
+- Receipts still pass through `unknown` for Claude to Codex, and `bridge_read_reply` often
+  fails with a not-observed error although the reply was pushed (see "Known problems seen in the
+  2026-10-31 sitting").
+- No idle chat has been shown to wake on a message: every recipient had made a bridge call first.
 - The service, storage, routes, frontend and helpers are built and tested against owned pipes,
   processes and fixture records.
-- The live native checks were read-only probes and one Claude canary. No message was sent.
-- The writer lease is tested on fixtures only (limits under "Delivery").
+- Claude to Claude, and the PM routes, have had no live run.
 
 ## Senders: who can call the bridge
 

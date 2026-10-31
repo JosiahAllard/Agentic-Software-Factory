@@ -1765,6 +1765,54 @@ class Unlisted(JobBase):
         self.assertIsNone(self.crossing(CONS.name))
         self.assertEqual((len(self.sent), len(self.calls)), (1, 2))
 
+    def test_a_stall_path_start_never_hands_on_an_earlier_crossings_state_note(self):
+        self.mode = 'full'
+        self.usage['1'] = reading(50)
+        folder = os.path.join(self.temp, U.HANDOFF_FOLDER, DEEP)
+        files = [os.path.join(folder, f) for f in (U.READY_FILE, U.CHECKIN_FILE, U.DEEP_STATE)]
+        for path in files:              # left by an earlier crossing of the key, before this ask
+            self.touch(path, NOW - DAY)
+        note = files[2]
+        self.deep()
+        self.stall(DEEP, DEEP_OLD.pid, '1')
+        self.run_job()
+        self.assertEqual(self.calls, [['stop', '--name', DEEP, '--pid', '31']])
+        self.assertEqual(self.saved_at_child['crossings'][DEEP]['phase'], U.STALL_STOP)
+        for path in files:
+            self.assertEqual((os.path.exists(path), os.path.getmtime(path + U.PREV)), (False, NOW - DAY), path)
+        self.live = []                  # launch.py stop did it
+        self.now += 300
+        self.run_job()
+        args = self.parse(self.calls[-1])
+        self.assertEqual((args.cmd, args.predecessor, args.state), ('deep', DEEP, note))
+        self.assertFalse(os.path.exists(note))      # the successor finds no note, as its prompt allows for
+
+    def test_a_consultant_successor_that_exits_after_it_is_up_fails_and_is_never_started_again(self):
+        self.consultant()
+        self.run_job()
+        c = self.crossing(CONS.name)
+        self.touch(self.notes, NOW + 100)
+        self.touch(c['ready'], NOW + 110)
+        self.host.written[CONS.name] = NOW + 120
+        self.now += 300
+        self.run_job()                  # stop first
+        self.live = []
+        self.now += 300
+        self.run_job()                  # the start
+        self.consultant(CONS_NEW, '2')
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.crossing(CONS.name)['phase'], U.STARTED)
+        self.live = []                  # the successor exits before its check-in
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('cross-failed', CONS.name)])
+        self.assertIsNone(self.crossing(CONS.name))
+        calls = len(self.calls)
+        self.now += 300
+        self.run_job()
+        self.assertEqual((len(self.calls), self.doc()['crossings']), (calls, {}))
+
     def test_a_crossing_dropped_before_its_stop_tells_the_session_to_resume(self):
         self.deep()
         self.run_job()

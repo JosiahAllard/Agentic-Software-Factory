@@ -124,7 +124,8 @@ a successor. It has no hand-off record to post, so it hands off through files in
 <agent temp>/usage-crossover/<key>/ (the window's AGENT_TEMP, else the job's `temp`): the
 checkpoint message (DEEP_CHECKPOINT, CONSULTANT_CHECKPOINT) names `ready`, which the session
 writes when it has checkpointed, and its successor's first message names `checkin` (launch.py
---checkin). A file counts only when written after the ask (`ready`) or the start (`checkin`). The
+--checkin). A file counts only when written after the ask (`ready`) or the start (`checkin`), and
+a new crossing first sets the folder's ready, checkin and state.md aside as <file>.prev. The
 note: a deep-worker's state note `state.md` in that folder, a consultant's own notes file. The
 trigger, caps, target and remembered clears are a session's; the states differ thus:
 
@@ -211,6 +212,7 @@ ASKED, READY, STARTING, STARTED, STOPPING, STALL_STOP = (
 STOP_FIRST = 'stop-first'      # an unlisted consultant: one session per name, so the old one stops before the start
 HANDOFF_FOLDER = 'usage-crossover'   # <agent temp>/usage-crossover/<key>/: an unlisted session's hand-off files
 READY_FILE, CHECKIN_FILE, DEEP_STATE = 'ready', 'checkin', 'state.md'
+PREV = '.prev'                 # an earlier crossing's hand-off file, set aside when the next one opens
 # What a Decision does. The first six act, one per run, in this order
 STOP_STALLED, STOP_OLD, FINISH, START, ASK, WOULD = (
     'stop-stalled', 'stop-old', 'finish', 'start', 'ask', 'would')
@@ -1666,10 +1668,29 @@ class _Run(object):
                            'effort': sess.effort, 'autocompact': sess.autocompact, 'requester': sess.requester,
                            'brief': sess.brief, 'notes': sess.notes, 'slug': sess.slug}}
 
+    def _u_open(self, key, sess, target, phase):
+        """A new crossing of `sess` (_u_crossing), kept in the state. Its folder is the key's for
+        every crossing, so an earlier crossing's ready, check-in and state.md files are set aside
+        first as <file>.prev: none of them counts for this one, and a stall-path start, which
+        waits for no note, never hands the successor an old state note. A consultant's notes file
+        lies outside the folder and stays."""
+        c = self.doc['crossings'][key] = self._u_crossing(key, sess, target, phase)
+        for name in (READY_FILE, CHECKIN_FILE, DEEP_STATE):
+            path = os.path.join(c['folder'], name)
+            try:
+                os.replace(path, path + PREV)
+            except FileNotFoundError:
+                continue
+            except OSError as e:
+                self.log('%s: could not set aside %s: %s' % (key, path, e))
+            else:
+                self.notes.append('%s: set aside %s from an earlier crossing' % (key, path))
+        return c
+
     def _u_ask(self, key, sess, live, d):
         c = self.doc['crossings'].get(key)
         if c is None:
-            c = self.doc['crossings'][key] = self._u_crossing(key, sess, d.target, ASKED)
+            c = self._u_open(key, sess, d.target, ASKED)
             kept = {k: recent(v, self.now) for k, v in self.doc['asks'].items()}
             self.doc['asks'] = {k: v for k, v in kept.items() if v}
             self.doc['asks'].setdefault(key, []).append(self.now)
@@ -1709,7 +1730,7 @@ class _Run(object):
     def _u_stop_stalled(self, key, sess, live, d):
         c = self.doc['crossings'].get(key)
         if c is None:
-            c = self.doc['crossings'][key] = self._u_crossing(key, sess, d.target, STALL_STOP)
+            c = self._u_open(key, sess, d.target, STALL_STOP)
             c['stalled'] = True
         if d.word:
             self.tell(key, d)

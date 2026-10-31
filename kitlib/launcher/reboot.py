@@ -59,16 +59,19 @@ def desktop_app_running(procs):
     return False
 
 
+def _cli(p):
+    return (p.get('Name') or '').lower() == 'claude.exe'
+
+
 def running(procs, text):
     """A claude.exe whose command line contains text (the old after-reboot test, for the PM)."""
-    return any((p.get('Name') or '').lower() == 'claude.exe' and text in (p.get('CommandLine') or '') for p in procs)
+    return any(_cli(p) and text in (p.get('CommandLine') or '') for p in procs)
 
 
 def runs_session(procs, sid):
     """A claude.exe that resumes or starts session sid (stop.runs_as: the --resume/-r or --session-id
     value), not one whose command line only mentions the id, as a topic session's brief path does."""
-    return any((p.get('Name') or '').lower() == 'claude.exe' and stop.runs_as(p.get('CommandLine'), sid)
-               for p in procs)
+    return any(_cli(p) and stop.runs_as(p.get('CommandLine'), sid) for p in procs)
 
 
 def newest_transcript_mtime(settings, session_id):

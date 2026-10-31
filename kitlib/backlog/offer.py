@@ -233,11 +233,13 @@ class Offer(object):
 
 
 class PassedOver(object):
-    def __init__(self, rec, rank, why, blocker=None):
+    def __init__(self, rec, rank, why, blocker=None, pair=None):
         # `blocker`: `(who, record id)` of the live pull or other session's record whose scope or
         # resource this one collides with; None for any other reason (`blocker_summary` counts
-        # these).
+        # these). `pair`: `(this record's member, the taken member)` of a scope collision
+        # (`narrowings` reads it); None for any other reason.
         self.rec, self.rank, self.why, self.blocker = rec, rank, why, blocker
+        self.pair = pair
 
 
 # --- resources ------------------------------------------------------------------------------------
@@ -378,7 +380,7 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
                 holder, who = holders.get(hit[0][1]) or (None, None)
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), 'scope %s collides with %s '
                                          'already taken%s' % (hit[0][0], hit[0][1], ' by %s'
-                                         % holder if holder else ''), who))
+                                         % holder if holder else ''), who, hit[0]))
             continue
         names = uses(rec)
         unknown = [n for n in names if n not in capacity]
@@ -438,6 +440,189 @@ def blocker_summary(passed, top=5):
             counts[p.blocker] = counts.get(p.blocker, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
     return ['blocks %d: %s (%s)' % (n, who, rid) for (who, rid), n in ordered]
+
+
+# --- a short offer's causes: releasable holds and narrowable pass-overs (`next`) -----------------
+
+HUB_TIMEOUT_S = 3       # one hub listing; `next` never waits longer on the hub than this
+NARROW_SHOWN = 8        # changed files a NARROW line names before `+N more`
+
+
+def is_broad(member):
+    """A whole-folder glob (`x/**`) or a literal doc file (`*.md`): the scope members whose
+    collision with a live pull `next` names a narrowing for (`narrowings`)."""
+    if member.endswith(smod.GLOB_SUFFIX):
+        return True
+    return member.lower().endswith('.md') and not any(c in member for c in smod.WILDCARD_CHARS)
+
+
+def hub_statuses(listing=None, timeout=HUB_TIMEOUT_S):
+    """`({hub id: status}, None)` of every hub question and to-do on this machine, read with the
+    agent token (read only); `(None, why)` on any failure, never a raise. `listing(collection)`
+    gives a collection's documents (default: the hub client, `timeout` seconds a call)."""
+    try:
+        if listing is None:
+            from kitlib.hubsite import client, settings
+            hub = client.Client(settings.load().port, timeout=timeout)
+
+            def listing(coll):
+                return hub.listing(coll, status='all', role=client.AGENT)
+        out = {}
+        for coll in ('questions', 'todos'):
+            for doc in listing(coll) or ():
+                if isinstance(doc, dict) and isinstance(doc.get('status'), str):
+                    out[str(doc.get('id'))] = doc['status']
+        return out, None
+    except Exception as exc:            # noqa: BLE001 - any failure is the one note line
+        return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
+
+
+def closed_reader(snap, history):
+    """`closed(rid)` for conditions.releasable: the short sha of the store commit that closed
+    `rid`, or None when it is still live, was retired or deleted, or was never closed (as
+    `unmet_requires` reads an `item:` requirement)."""
+    def closed(rid):
+        if snap.get(rid) is not None:
+            return None
+        last = history(rid)
+        return last.split(' ', 1)[0] if last and re.match(r'^\S+ closes ', last) else None
+    return closed
+
+
+def held_of(snap, session):
+    """The held records of `session`, by id."""
+    return sorted((r for r in snap.records if classify(r)[0] == HELD
+                   and r.get('session') == session and r.readable), key=lambda r: r.id)
+
+
+def cites_hub(recs):
+    """True when any record in `recs` cites a hub id where conditions.releasable reads one."""
+    from . import conditions as cmod
+    return any(cmod.cited_ids(' '.join([r.get('owner_ask') or ''] + r.all('until')))
+               for r in recs)
+
+
+def releasable_holds(snap, session, history, hub=None):
+    """`([(rec, RELEASABLE line)], note)`: the held records of `session` whose cited end is met
+    (conditions.releasable). `hub()` -> `(statuses, why)` (default `hub_statuses`) is asked only
+    when one of them cites a hub id; a hub that cannot be read gives the one `note` line, and
+    then only `item:` ends are judged. `history(rid)` is the store's (Context.history)."""
+    from . import conditions as cmod
+    held = held_of(snap, session)
+    if not held:
+        return [], None
+    statuses, note = {}, None
+    if cites_hub(held):
+        statuses, why = (hub or hub_statuses)()
+        if statuses is None:
+            statuses, note = {}, 'releasable: hub not read (%s); Q-/T- holds not checked' % why
+    closed = closed_reader(snap, history)
+    ranks = ranked(snap)
+    out = []
+    for rec in held:
+        for member, why, reason in cmod.releasable(rec, statuses.get, closed):
+            out.append((rec, releasable_line(rec, rank_label(rec, ranks), member, why, reason)))
+    return out, note
+
+
+def releasable_line(rec, rank, member, why, reason):
+    """`next`'s RELEASABLE line: what is met, and the `unblock` that ends the hold. An `owner`
+    member is the PM's or the owner's to clear (the unblock-owner row)."""
+    who = "the PM's (unblock-owner): " if member == 'owner' else ''
+    return 'RELEASABLE %s (rank %s): %s -> %s`unblock %s --on %s --reason "%s"`' % (
+        rec.id, rank, why, who, rec.id, member, reason)
+
+
+def _under(member, paths):
+    out = []
+    for p in paths:
+        try:
+            if smod.members_collide(member, p):
+                out.append(p)
+        except smod.UndecidableScope:
+            out.append(p)
+    return out
+
+
+def _named(paths):
+    shown = ', '.join(paths[:NARROW_SHOWN])
+    return shown + (' +%d more' % (len(paths) - NARROW_SHOWN) if len(paths) > NARROW_SHOWN else '')
+
+
+def wants_narrowing(passed):
+    """True when a record in `passed` collided on scope with a broad member (`narrowings` would
+    ask the branch diffs)."""
+    return any(p.pair is not None and p.blocker is not None
+               and (is_broad(p.pair[0]) or is_broad(p.pair[1])) for p in passed)
+
+
+def narrowings(passed, holding, changes, unknown):
+    """`next`'s NARROW lines: one for each record passed over on a scope collision with a live
+    pull (in `holding`) where either member is broad (`is_broad`). `changes` and `unknown` are
+    plan `_live_changes`'s: `{branch: [(label, paths)]}`, the paths each live branch changed
+    since its merge base with the code main, and `{branch: error}`. A broad taken member gets the
+    `set --scope` that narrows the live pull to the files its branch changed there, unless those
+    files overlap this record too (then it waits for the landing); a broad member of this record
+    only gets the overlap named."""
+    live = {r.id: r for r in holding}
+    out = []
+    for p in passed:
+        if p.pair is None or p.blocker is None:
+            continue
+        other = live.get(p.blocker[1])
+        if other is None or other.get('pulled_by') != p.blocker[0]:
+            continue
+        mine, theirs = p.pair
+        if not (is_broad(mine) or is_broad(theirs)):
+            continue
+        branch = other.get('pulled_by')
+        head = 'NARROW %s (rank %s): %s collides with %s of %s on %s' % (
+            p.rec.id, p.rank, mine, theirs, other.id, branch)
+        if branch in unknown:
+            out.append('%s; cannot tell what %s changed (%s)' % (head, branch, unknown[branch]))
+            continue
+        if branch not in changes:
+            out.append('%s; %s\'s diff was not compared' % (head, branch))
+            continue
+        paths = sorted(set(q for _label, qs in changes[branch] for q in qs))
+        there = _under(theirs, paths)
+        if not there:
+            out.append('%s, which changed nothing under %s yet' % (head, theirs))
+            continue
+        head = '%s, which changed %d file(s) there: %s' % (head, len(there), _named(there))
+        overlap = _under(mine, there)
+        if is_broad(theirs) and not overlap:
+            keep = [m for m in other.all('scope') if m != theirs]
+            keep += [q for q in there if q not in keep]
+            out.append('%s -> `set %s %s`' % (
+                head, other.id, ' '.join('--scope %s' % m for m in keep)))
+        elif is_broad(mine) and not is_broad(theirs):
+            out.append('%s; %s is broad: narrow %s\'s own scope to leave out %s' % (
+                head, mine, p.rec.id, theirs))
+        else:
+            out.append('%s; %s overlaps that work too (%s): pull %s after %s lands' % (
+                head, mine, _named(overlap), p.rec.id, branch))
+    return out
+
+
+def pass_counts(passed):
+    """`(n, [(kind, count)])` of the passed-over records by reason, for `next`'s counts line."""
+    kinds = [('scope', 0), ('fold', 0), ('resource', 0), ('not reached', 0), ('other', 0)]
+    counts = dict(kinds)
+    for p in passed:
+        why = p.why
+        if p.pair is not None or why.startswith('scope undecidable'):
+            kind = 'scope'
+        elif why.startswith('scope overlaps the work of') or why.startswith('cannot tell whether'):
+            kind = 'fold'
+        elif why.startswith('resource ') or why.startswith('uses '):
+            kind = 'resource'
+        elif why.startswith('not reached'):
+            kind = 'not reached'
+        else:
+            kind = 'other'
+        counts[kind] += 1
+    return len(passed), [(k, counts[k]) for k, _ in kinds]
 
 
 def not_offered_why(rec, passed, session=None):

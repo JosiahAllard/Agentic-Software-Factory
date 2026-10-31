@@ -119,6 +119,10 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   path>` (skill session-handoff). Start nothing new and queue no landing after you send either:
   your successor queues every LAND verdict in the note at once, and never waits for workers'
   reports.
+- `next` offers fewer than your free slots -> act on its RELEASABLE lines first (yours: run the
+  `unblock`; an `owner` one: send the PM the line) and on its NARROW lines (narrow the in-flight
+  record with its `set --scope`, or pull after it lands); a status line saying nothing is
+  startable quotes `next`'s `counts:` line.
 - `next` offers nothing startable, every LAND verdict has landed, the landing queue is clear and no
   agent is in flight or waiting on a gate (builders or reviewers) -> write the state note and
   SendMessage the PM `ready to stop: <state note path>`. The PM stops you with no successor

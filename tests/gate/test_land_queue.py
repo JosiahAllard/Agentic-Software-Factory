@@ -120,6 +120,33 @@ class OneBooking(QueueCase):
         self.assertEqual(len(self.store.history_records(1)), 1)    # one run, ended
         self.assertEqual(self.entries(), [])
 
+    def with_land_kind(self):
+        """The scratch kinds table with a land-<"gate".kind> entry beside the gate kind's."""
+        kind = kconfig.load(self.repo.root).section('gate')['kind']
+        with open(self.kinds_path, encoding='utf-8') as f:
+            table = json.load(f)
+        table['kinds']['land-' + kind] = {'cpu': 4, 'gpu': 0, 'warn_min': 30}
+        with open(self.kinds_path, 'w', encoding='utf-8') as f:
+            json.dump(table, f)
+        return kind
+
+    def test_a_landing_books_the_land_kind_when_the_kinds_table_has_it(self):
+        # The owner's call (KIT-LAND-LOCK-SIZE): a landing's merged gate books land-<kind> (4
+        # cores in kitlib/lock/kinds.json), once, with no second booking for a kind it did not
+        # take from the config (rebook_kind compares the "gate".kind, not the land kind).
+        kind = self.with_land_kind()
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([c['kind'] for c in self.book_calls], ['land-' + kind], self.book_calls)
+
+    def test_a_landing_books_the_gate_kind_when_the_kinds_table_has_no_land_kind(self):
+        kind = kconfig.load(self.repo.root).section('gate')['kind']
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([c['kind'] for c in self.book_calls], [kind], self.book_calls)
+
     def test_the_wait_budget_is_the_configs_unless_given(self):
         _, tip = self.branch('feature', {'a.py': 'a\n'})
         refused = LockError(6, 'not now')

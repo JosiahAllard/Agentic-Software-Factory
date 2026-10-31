@@ -1,7 +1,8 @@
 {
- "_note": "The kinds table: one per kind, read by the lock and by gate.py. cpu: a whole number of cpu slots 1..the layout agent_cap, set only by gate.py --measure and a reviewed commit; a run may ask for fewer (--cores), never more. medium (medium_cores) and heavy (the half cap, or every core inside an owner whole hold) stay as aliases. gpu: 0 (none) or pool (the whole gpu pool; share true lets --gpu-share training take one gpu slot). warn_min: a WARNING past this, never a kill. Sizes change only by a PM-reviewed commit. aliases: a retired name and the kind it books now (generic names); a caller passing one still books, and a record written under one compares equal to the kind.",
+ "_note": "The kinds table: one per kind, read by the lock and by gate.py. cpu: a whole number of cpu slots 1..the layout agent_cap, set only by gate.py --measure and a reviewed commit; a run may ask for fewer (--cores), never more. medium (medium_cores) and heavy (the half cap, or every core inside an owner whole hold) stay as aliases. gpu: 0 (none) or pool (the whole gpu pool; share true lets --gpu-share training take one gpu slot). warn_min: a WARNING past this, never a kill. Sizes change only by a PM-reviewed commit. land-<kind>: what a landing's merged gate books in place of its \"gate\".kind <kind> (kitlib.gate.land; land-test: 4 cores by the owner's call, no measurement). aliases: a retired name and the kind it books now (generic names); a caller passing one still books, and a record written under one compares equal to the kind.",
  "kinds": {
   "test": {"cpu": "medium", "gpu": 0, "warn_min": 30},
+  "land-test": {"cpu": 4, "gpu": 0, "warn_min": 30},
   "app-run": {"cpu": "medium", "gpu": 0, "warn_min": 30},
   "build": {"cpu": "medium", "gpu": 0, "warn_min": 60},
   "graph-build": {"cpu": "heavy", "gpu": 0, "warn_min": 120},

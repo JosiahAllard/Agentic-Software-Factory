@@ -161,6 +161,15 @@ class IntegerSizes(KindsTest):
         kinds.check_cap(table, 6)
         kinds.check_cap({'maint-lint': table['maint-lint']}, 1)
 
+    def test_a_landing_of_test_books_four_cores_and_a_branch_gate_stays_medium(self):
+        # The owner's call (KIT-LAND-LOCK-SIZE): a landing's merged gate books land-test
+        # (kitlib.gate.land.Lander.land_kind), 4 cores; a branch gate's test stays medium.
+        table = kinds.load()
+        self.assertEqual((table['land-test']['cpu'], table['land-test']['gpu']), (4, 0))
+        self.assertEqual(table['land-test']['warn_min'], table['test']['warn_min'])
+        self.assertEqual(table['test']['cpu'], 'medium')
+        kinds.check_cap(table, 4)
+
     def test_describe_names_the_cores(self):
         lines = kinds.describe({'a': {'cpu': 3, 'gpu': 0, 'share': False},
                                 'b': {'cpu': 1, 'gpu': 0, 'share': False},

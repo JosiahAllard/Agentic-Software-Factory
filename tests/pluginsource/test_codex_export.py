@@ -374,7 +374,7 @@ class InstallTest(InstallCase):
 class DeferTest(InstallCase):
     """A running Codex holds its cache (`codex plugin add` fails with os error 5): the adds are
     deferred, not failed, and the export root's codex pending flag records it until an add goes
-    through (KIT-CODEX-REFRESH-WHILE-OPEN)."""
+    through."""
 
     DENIED = b'Error: failed to back up plugin cache entry: Access is denied. (os error 5)'
 

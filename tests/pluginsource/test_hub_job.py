@@ -236,7 +236,7 @@ class PluginJobTest(JobCase):
         self.assertEqual(len(self.child.calls), 2)
 
     def test_a_pending_codex_copy_is_retried_retry_s_apart_until_it_clears(self):
-        # KIT-CODEX-REFRESH-WHILE-OPEN: the export current, every folder rc 0, but Codex deferred
+        # the export current, every folder rc 0, but the Codex copy deferred
         self.k.seed_migrated(self.folders)
         job = self.job()
         job(ctx())

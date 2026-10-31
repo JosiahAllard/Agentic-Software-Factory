@@ -4,7 +4,8 @@ kitlib.config.policy.kinds_table reads it; this module checks each entry for the
 An entry: {"cpu": N | "medium" | "heavy", "gpu": 0 | "pool", "share": bool, "warn_min": int}.
 cpu N is a whole number of cpu slots, 1..the layout's agent_cap, set only by
 measurement (gate.py --measure) and a reviewed commit; a run may ask for fewer
-(--cores), never more. medium and heavy stay as aliases, the sizes the table had before whole-core sizes:
+(--cores), never more. A land kind (LAND_PREFIX: what a landing's merged gate books) may
+be past agent_cap and books the cap there (check_cap). medium and heavy stay as aliases, the sizes the table had before whole-core sizes:
 medium takes the division's medium_cores; heavy takes the half cap (every core inside an owner
 whole hold). gpu "pool" takes the whole gpu pool, or one gpu slot with --gpu-share training when
 share is true.
@@ -77,10 +78,17 @@ def is_size(cpu):
     return type(cpu) is int and cpu >= 1
 
 
+LAND_PREFIX = "land-"
+
+
 def check_cap(table, agent_cap):
     """KindsError naming the first kind (by name) whose cpu is a whole number past agent_cap;
-    `table` is kinds.load()'s, or one a caller passed in."""
+    `table` is kinds.load()'s, or one a caller passed in. A land kind (LAND_PREFIX, what a
+    landing's merged gate books: kitlib.gate.land) is not checked: past the cap it books the cap
+    (layout.kind_cores), so a smaller machine never refuses other runs over it."""
     for name, e in sorted(table.items()):
+        if isinstance(name, str) and name.startswith(LAND_PREFIX):
+            continue
         cpu = e.get("cpu") if isinstance(e, dict) else None
         if is_size(cpu) and cpu > agent_cap:
             raise KindsError("kind %s: cpu %d is more than the agent cap %d (a kind's "

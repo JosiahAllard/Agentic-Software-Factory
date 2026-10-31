@@ -10,7 +10,7 @@ and `bridge_prepare.py` accept a Codex profile, and the MCP frontend reads Codex
 Every pair of the two may be connected except Codex to Codex, which `peers.json` refuses (README
 "Host pairs"). Being served is not being deliverable. The limits below still hold:
 - Claude to Codex is delivered only through an owner-granted writer lease (README "Writer
-  leases"). A live run showed it on 2026-10-31 (see "Retest on main").
+  leases"). Live runs showed it on 2026-10-26 and 2026-10-31 (see "Retest on main").
 - Only the Codex desktop app can deliver to a Codex chat.
 - The Codex terminal adapter is dead.
 
@@ -166,8 +166,8 @@ Observations only; none is fixed here.
 2. A live canary from an owner-selected Claude chat to a Claude chat: delivery, wake and a
    correlated reply.
 3. The writer lease was shown live on 2026-10-26 and 2026-10-31 (ping and append task, both
-   replied). Not yet shown: a run with no hand approval of the reply in the recipient chat (the
-   owner's explicit permission line was needed on 10-31).
+   replied). Not yet shown: a run with no owner permission line in the recipient chat (a standing
+   line was in place on 10-26, and the explicit line was needed on 10-31).
 4. A verified control channel to the original Codex terminal before `codex-terminal` advertises
    SEND.
 5. Precise task ancestry for incoming operations. Codex currently uses the chat as the task root,
@@ -181,8 +181,8 @@ Observations only; none is fixed here.
 
 Live round trip: **step 2 passed on 2026-10-26 (probe U, second and third sends).** `bridge_read_reply`
 returned "pong". This needed a standing approval from the owner in the Codex chat, and that chat
-had to be listed, which happens only after it makes a bridge call. The receipt still
-passes through `unknown`. Details below.
+had to be listed, which happens only after it makes a bridge call. On the 10-26 runs the
+receipt stayed `unknown`. Details below.
 
 **Live sitting, 2026-10-31: the pass bar is met**, under conditions (a), (b) and (d) of "Running
 a sitting" below. Details under "Live sitting, 2026-10-31".
@@ -333,13 +333,15 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
 Live round-trip plan (the owner grants the lease; no agent can):
 1. Prepare and register the bridge for both hosts (README "Install", steps 1 and 2), start the
    service with `--connections`.
-2. Round trip (read "Running a sitting" below first: conditions (a), (b) and (d)): in the window select the Claude chat as sender and a Codex desktop chat as
-   recipient, select a second Codex desktop chat in an active turn as writer, click the lease
-   button. The Claude chat calls `bridge_send` with a one-line task ("reply with the word
-   pong"). Observed: on the 2026-10-26 runs `queued`, `dispatching`, `unknown` (`native-outcome-uncertain`);
-   on 2026-10-31 ping-005 reached `recipient-accepted`. No run reached `scheduled`. The Codex chat replies with `bridge_reply` (`reply-received`) and the Claude
-   chat reads it with `bridge_read_reply`. The pass is the reply, not the receipt: a receipt short of `scheduled`
-   followed by `reply-received` with the right text passes. Record each receipt state.
+2. Round trip (read "Running a sitting" below first: conditions (a), (b) and (d)): in the
+   window select the Claude chat as sender and a Codex desktop chat as recipient, select a second
+   Codex desktop chat in an active turn as writer, click the lease button. The Claude chat calls
+   `bridge_send` with a one-line task ("reply with the word pong"). Observed: on the 2026-10-26
+   runs `queued`, `dispatching`, `unknown` (`native-outcome-uncertain`); on 2026-10-31 ping-005
+   reached `recipient-accepted`. No run reached `scheduled`. The Codex chat replies with
+   `bridge_reply` (`reply-received`) and the Claude chat reads it with `bridge_read_reply`. The
+   pass is the reply, not the receipt: a receipt short of `scheduled` followed by
+   `reply-received` with the right text passes. Record each receipt state.
 3. If that passes, one small real delegated task (for example, add one sentence to a scratch
    doc in a throwaway worktree), same path, checked by diff. The lease lasts until it is stopped; the writer must make a bridge call in each new turn before it can deliver.
 3b. Codex to Claude: the Codex chat's reply (or its own `bridge_send`) reaches the Claude chat as

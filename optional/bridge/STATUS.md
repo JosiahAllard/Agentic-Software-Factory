@@ -20,7 +20,8 @@ Every pair of the two may be connected except Codex to Codex, which `peers.json`
   message. On 2026-10-31 a Claude chat delivered a ping and a one-line file-append task to a Codex
   desktop chat through an owner-granted writer lease, and both replies came back to the Claude chat.
   The appended line was checked by diff. The conditions are under "Running a sitting".
-- Receipts still pass through `unknown` for Claude to Codex, and `bridge_read_reply` often
+- No live run reached `scheduled` for Claude to Codex (10-26 receipts stayed `unknown`; 10-31
+  ping-005 reached `recipient-accepted`), and `bridge_read_reply` often
   fails with a not-observed error although the reply was pushed (see "Known problems seen in the
   2026-10-31 sitting").
 - No idle chat has been shown to wake on a message: every recipient had made a bridge call first.
@@ -335,9 +336,9 @@ Live round-trip plan (the owner grants the lease; no agent can):
 2. Round trip (read "Running a sitting" below first: conditions (a), (b) and (d)): in the window select the Claude chat as sender and a Codex desktop chat as
    recipient, select a second Codex desktop chat in an active turn as writer, click the lease
    button. The Claude chat calls `bridge_send` with a one-line task ("reply with the word
-   pong"). Observed on every live run so far: `queued`, `dispatching`, `unknown` (`native-outcome-uncertain`),
-   never `scheduled`; the Codex chat replies with `bridge_reply` (`reply-received`) and the Claude
-   chat reads it with `bridge_read_reply`. The pass is the reply, not the receipt: `unknown`
+   pong"). Observed: on the 2026-10-26 runs `queued`, `dispatching`, `unknown` (`native-outcome-uncertain`);
+   on 2026-10-31 ping-005 reached `recipient-accepted`. No run reached `scheduled`. The Codex chat replies with `bridge_reply` (`reply-received`) and the Claude
+   chat reads it with `bridge_read_reply`. The pass is the reply, not the receipt: a receipt short of `scheduled`
    followed by `reply-received` with the right text passes. Record each receipt state.
 3. If that passes, one small real delegated task (for example, add one sentence to a scratch
    doc in a throwaway worktree), same path, checked by diff. The lease lasts until it is stopped; the writer must make a bridge call in each new turn before it can deliver.

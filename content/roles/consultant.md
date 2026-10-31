@@ -54,10 +54,19 @@ a topic: `python <kit>/tools/doc_index.py -C <worktree> --find <topic>`, then th
    **Durable facts** section of what you learned that the digest lacks (a convention, where a
    mechanism lives, a trap) with its source. Prune facts the code no longer bears out and calls
    superseded by later ones; the file must stay small enough to read in full after a compaction.
-   It is your only write; it is in agent temp (`<agent temp>/<repo slug>-consultant/notes.md`), outside the repo, and never committed.
+   It is your only write, besides the usage crossover's ready and check-in files (below); it is in agent temp (`<agent temp>/<repo slug>-consultant/notes.md`), outside the repo, and never committed.
 2. **The PM.** {{tool:message}} the PM session your start context names (else Project Manager or pm-session): `engineering call for delegated
    logging` with the question, the answer, the reason and who asked. The PM logs it
    as delegated; you never log it yourself.
+
+## Usage crossover
+
+A message from the hub's usage crossover (your account is near its weekly limit) asks you to
+checkpoint: finish the answer in hand, take no new question, append a dated line to your notes
+file saying where you stopped, then write any text to the ready file it names and go idle; the
+hub stops you and starts you again on another account. A later message that the crossover was
+dropped: resume. Started again by it (your first message names a check-in file): write that file
+once you have read the digest and your notes.
 
 ## Never
 

@@ -13,7 +13,11 @@ from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import usage_crossover as U
 from kitlib.hubsite import jobs, push
 from kitlib.launcher import settings as lsettings
+from kitlib.launcher import start as lstart
+from kitlib.launcher import unlisted as UL
+from kitlib.launcher import window
 from kitlib.launcher.settings import LaunchError
+from tests import inproc
 
 NOW = 1_800_000_000.0
 DAY = 86400
@@ -1282,7 +1286,7 @@ class Others(JobBase):
         self.write('sessions.json', {})
         self.live = [U.Live('stray-a1', 50, CREATED)]
         self.run_job()
-        self.assertEqual(self.ctx.events, [('unmanaged', 'stray-a1')])
+        self.assertEqual(self.ctx.events, [('unmanaged', 'stray-a1:no-window')])
         self.run_job()
         self.assertEqual((self.ctx.events, self.sent, self.calls), ([], [], []))
 
@@ -1294,7 +1298,7 @@ class Others(JobBase):
         self.usage['1'] = dict(reading(99), updated_at=iso(self.now - 60))
         self.usage['1']['seven_day'] = {'used_percentage': 99, 'resets_at': iso(self.now + 2 * DAY)}
         self.run_job()
-        self.assertEqual(self.ctx.events, [('unmanaged', 'stray-a1')])
+        self.assertEqual(self.ctx.events, [('unmanaged', 'stray-a1:no-window')])
 
 
 class PmJob(JobBase):
@@ -1510,6 +1514,349 @@ class Make(JobBase):
                 mock.patch.object(U.session_watch, 'host_module', return_value=self.host):
             job = U.make(s)
         self.assertIsInstance(job.run(jobs.Ctx(threading.Event(), lambda *a: None)), jobs.Skip)
+
+
+DEEP = 'deep-net-race'
+DEEP_OLD = U.Live(DEEP, 31, CREATED)
+DEEP_NEW = U.Live(DEEP + '-a2', 41, CREATED)
+CONS = U.Live('consultant-alpha', 51, CREATED)
+CONS_NEW = U.Live('consultant-alpha', 61, '2027-01-02T00:00:00')
+
+
+def session(kind=UL.DEEP, live=DEEP_OLD, account='1'):
+    key = live.name if kind == UL.CONSULTANT else DEEP
+    return UL.Session(kind, key, live.name, live.pid, live.created, account, 'opus[1m]', 'xhigh', 500000, 'Z:/r',
+                      False, 'kit-coord-a1', 'Z:/r/brief.md', 'Z:/t/notes.md', 'net-race', None, None)
+
+
+def ucrossing(phase, kind=UL.DEEP, old=DEEP_OLD, **fields):
+    c = {'kind': kind, 'phase': phase, 'phase_at': NOW - 60, 'asked_at': NOW - 120, 'account': '1',
+         'target': '2', 'old_name': old.name, 'old_pid': old.pid, 'old_created': old.created, 'delivered': True}
+    c.update(fields)
+    return c
+
+
+def udecide(cross=None, live=(DEEP_OLD,), sess=None, files=None, starts=None, mode='normal', accounts=ACCOUNTS,
+            stall=None, quiet=None, key=DEEP):
+    return U.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1}, {},
+                             mode, NOW, files=files)
+
+
+class DecideUnlisted(unittest.TestCase):
+    def test_a_session_at_99_of_its_week_is_asked(self):
+        d = udecide(sess=session())
+        self.assertEqual((d.action, d.target, d.word, d.detail), (U.ASK, '2', 'crossing', DEEP + ':a2'))
+
+    def test_a_successors_own_account_is_never_its_target(self):
+        accounts = {'1': on(20, week_in=DAY), '2': HOT, '3': on(20, week_in=3 * DAY)}
+        d = udecide(live=(DEEP_NEW,), sess=session(live=DEEP_NEW, account='2'), accounts=accounts)
+        self.assertEqual((d.action, d.target), (U.ASK, '1'))
+
+    def test_several_processes_of_its_key_hold(self):
+        self.assertEqual(udecide(live=(DEEP_OLD, DEEP_NEW), sess=session()).action, U.HOLD)
+
+    def test_asked_moves_on_only_on_a_ready_file_written_after_the_ask(self):
+        c = ucrossing(U.ASKED)
+        self.assertEqual(udecide(c, files={'ready': NOW - 200}).action, U.HOLD)
+        d = udecide(c, files={'ready': NOW - 30})
+        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.READY))
+
+    def test_asked_clears_when_the_week_reset(self):
+        d = udecide(ucrossing(U.ASKED), accounts={'1': on(50), '2': on(20)})
+        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+
+    def test_ready_waits_for_the_note_and_quiet_then_a_deep_worker_starts_and_a_consultant_stops_first(self):
+        c = ucrossing(U.READY)
+        self.assertEqual(udecide(c, files={'note': None}, quiet=600).action, U.HOLD)
+        self.assertEqual(udecide(c, files={'note': NOW - 30}, quiet=10).action, U.HOLD)
+        d = udecide(c, files={'note': NOW - 30}, quiet=600)
+        self.assertEqual((d.action, d.target), (U.START, '2'))
+        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS), live=(CONS,), files={'note': NOW - 30}, quiet=600,
+                    key=CONS.name)
+        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STOP_FIRST))
+
+    def test_stop_first_stops_the_old_consultant_then_starts_it_with_nothing_live(self):
+        c = ucrossing(U.STOP_FIRST, UL.CONSULTANT, CONS)
+        self.assertEqual(udecide(c, live=(CONS,), key=CONS.name).action, U.STOP_OLD)
+        d = udecide(c, live=(), key=CONS.name)
+        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.READY, {'stopped': True}))
+        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True), live=(), key=CONS.name)
+        self.assertEqual((d.action, d.target), (U.START, '2'))
+        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True), live=(CONS_NEW,), key=CONS.name)
+        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+
+    def test_a_stopped_consultant_at_its_cap_holds_rather_than_clears(self):
+        c = ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True)
+        d = udecide(c, live=(), starts={CONS.name: [NOW - 60] * U.KEY_CAP}, key=CONS.name)
+        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'cross-failed', CONS.name))
+
+    def test_a_stop_first_refused_too_often_gives_up_and_is_remembered(self):
+        c = ucrossing(U.STOP_FIRST, UL.CONSULTANT, CONS, stop_tries=U.STOP_TRIES)
+        d = udecide(c, live=(CONS,), key=CONS.name)
+        self.assertEqual((d.action, d.word, d.remember), (U.CLEAR, 'cross-failed', True))
+        self.assertEqual(d.fields, {'account': '1', 'reset': NOW + 2 * DAY})
+
+    def test_a_consultant_successor_checks_in_or_is_left_running(self):
+        c = ucrossing(U.STARTED, UL.CONSULTANT, CONS, new_name=CONS.name, start_at=NOW - 100, stopped=True)
+        d = udecide(c, live=(CONS_NEW,), files={'checkin': NOW - 10}, key=CONS.name)
+        self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'crossed', CONS.name))
+        self.assertEqual(udecide(c, live=(CONS_NEW,), files={'checkin': NOW - 200}, key=CONS.name).action, U.HOLD)
+        late = dict(c, phase_at=NOW - U.WAIT_CHECKIN_S)
+        self.assertEqual(udecide(late, live=(CONS_NEW,), key=CONS.name).word, 'no-checkin')
+        self.assertEqual(udecide(c, live=(), key=CONS.name).word, 'cross-failed')
+
+    def test_a_deep_successor_checked_in_stops_the_old_one(self):
+        c = ucrossing(U.STARTED, new_name=DEEP_NEW.name, start_at=NOW - 100)
+        live = (DEEP_OLD, DEEP_NEW)
+        self.assertEqual(udecide(c, live=live, files={'checkin': NOW - 200}).action, U.HOLD)
+        d = udecide(c, live=live, files={'checkin': NOW - 10})
+        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STOPPING))
+        self.assertEqual(udecide(dict(c, phase=U.STOPPING), live=live).action, U.STOP_OLD)
+
+    def test_notify_drops_an_asked_crossing_and_leaves_a_stopped_one(self):
+        self.assertEqual(udecide(ucrossing(U.ASKED), mode='notify').action, U.CLEAR)
+        c = ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True)
+        self.assertEqual(udecide(c, live=(), mode='notify', key=CONS.name).action, U.HOLD)
+
+    def test_an_unmanaged_detail_keeps_its_reason_whole_within_64_characters(self):
+        self.assertEqual(U.unmanaged_detail('stray-a1', UL.NO_WINDOW), 'stray-a1:no-window')
+        d = U.unmanaged_detail('x' * 80, UL.UNKNOWN_ACCOUNT)
+        self.assertEqual((len(d), d.endswith(':' + UL.UNKNOWN_ACCOUNT)), (64, True))
+
+
+class Unlisted(JobBase):
+    """Deep-workers and consultants launch.py started, with no sessions.json entry, read from
+    their windows; account 1 at 99% of its week, account 2's week resets first."""
+
+    def setUp(self):
+        super().setUp()
+        self.write('sessions.json', {})
+        self.temp = os.path.join(self.tmp, 'agent-temp')
+        self.repo = os.path.join(self.tmp, 'alpha')
+        self.brief = os.path.join(self.repo, 'brief.md')
+        self.notes = os.path.join(self.temp, 'consultant-alpha', 'notes.md')
+        self.windows = {}
+        self.live = []
+
+    def open(self, live, role, agent, prompt, account, effort, autocompact):
+        cmd = window.session_command(live.name, prompt, agent=agent, model='opus[1m]', effort=effort,
+                                     autocompact=autocompact)
+        self.windows[live.pid] = window.script(live.name, role, self.repo, cmd, config_dir=self.acct[account],
+                                               agent_temp=self.temp)
+        self.live.append(live)
+
+    def deep(self, live=DEEP_OLD, account='1', predecessor=None):
+        fields = dict(name=live.name, requester='kit-coord-a1', brief=self.brief, pm='the PM')
+        prompt = (lstart.DEEP_SUCCESSOR_PROMPT % dict(fields, predecessor=predecessor, state='x.md')
+                  if predecessor else lstart.DEEP_PROMPT % fields)
+        self.open(live, window.DEEP_WORKER, 'pm-kit:deep-worker', prompt, account, 'xhigh', 500000)
+
+    def consultant(self, live=CONS, account='1'):
+        prompt = lstart.CONSULTANT_PROMPT % dict(name=live.name, repo_path=self.repo, notes=self.notes, pm='the PM')
+        self.open(live, window.CONSULTANT, 'pm-kit:consultant', prompt, account, 'high', 300000)
+
+    def procs(self):
+        """Each live session's claude.exe and, when it has one, its window's powershell.exe."""
+        rows = []
+        for l in self.live:
+            rows.append({'Name': 'claude.exe', 'ProcessId': l.pid, 'ParentProcessId': l.pid + 1,
+                         'Created': l.created, 'CommandLine': "claude --remote-control '%s' -n '%s' 'x'"
+                                                              % (l.name, l.name)})
+            if l.pid in self.windows:
+                rows.append({'Name': 'powershell.exe', 'ProcessId': l.pid + 1, 'ParentProcessId': 1,
+                             'CommandLine': 'powershell.exe -NoExit -EncodedCommand %s'
+                                            % window.encode(self.windows[l.pid])})
+        return rows
+
+    def touch(self, path, at):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('x')
+        os.utime(path, (at, at))
+
+    def parse(self, argv):
+        """The child's arguments as launch.py reads them: the job's argv is launch.py's contract."""
+        return inproc.load_tool('launch').parser().parse_args(argv)
+
+    def test_a_deep_worker_is_asked_then_its_successor_started_on_the_target_then_it_is_stopped(self):
+        self.deep()
+        self.run_job()
+        folder = os.path.join(self.temp, U.HANDOFF_FOLDER, DEEP)
+        ready, checkin, note = (os.path.join(folder, f) for f in (U.READY_FILE, U.CHECKIN_FILE, U.DEEP_STATE))
+        c = self.crossing(DEEP)
+        self.assertEqual((c['kind'], c['phase'], c['account'], c['target'], c['ready'], c['checkin'],
+                          c['state_path']), (UL.DEEP, U.ASKED, '1', '2', ready, checkin, note))
+        self.assertTrue(os.path.isdir(folder))
+        (to, text), = self.sent
+        self.assertEqual(to, DEEP)
+        for part in (ready, note, 'account 2'):
+            self.assertIn(part, text)
+        self.assertEqual(self.ctx.events, [('crossing', DEEP + ':a2')])
+        self.assertEqual(self.doc()['asks'], {DEEP: [NOW]})
+        # it checkpoints: its state note, then its ready file, and goes quiet
+        self.touch(note, NOW + 100)
+        self.touch(ready, NOW + 110)
+        self.host.written[DEEP] = NOW + 120
+        self.now += 300
+        self.run_job()
+        argv = self.calls[-1]
+        self.assertEqual(argv, ['deep', '--repo-path', self.repo, '--brief', self.brief, '--requester',
+                                'kit-coord-a1', '--slug', 'net-race', '--account', '2', '--model', 'opus[1m]',
+                                '--effort', 'xhigh', '--autocompact', '500000', '--predecessor', DEEP,
+                                '--state', note, '--checkin', checkin, '--force'])
+        args = self.parse(argv)
+        self.assertEqual((args.cmd, args.account, args.predecessor, args.state, args.checkin, args.force),
+                         ('deep', '2', DEEP, note, checkin, True))
+        saved = self.saved_at_child
+        self.assertEqual((saved['crossings'][DEEP]['phase'], saved['crossings'][DEEP]['new_name']),
+                         (U.STARTING, DEEP_NEW.name))
+        self.assertEqual((saved['starts'], saved['landed']), ({DEEP: [NOW + 300]}, {'2': NOW + 300}))
+        # launch.py deep did it: the successor runs on account 2
+        self.deep(DEEP_NEW, '2', predecessor=DEEP)
+        self.now += 300
+        self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual(self.crossing(DEEP)['phase'], U.STARTED)
+        self.touch(checkin, self.now + 10)
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.calls[-1], ['stop', '--name', DEEP, '--successor', DEEP_NEW.name, '--pid', '31'])
+        self.live = [DEEP_NEW]
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('crossed', DEEP_NEW.name)])
+        self.assertIsNone(self.crossing(DEEP))
+        self.assertEqual((len(self.sent), len(self.calls)), (1, 2))
+
+    def test_a_consultant_is_stopped_first_then_started_again_under_its_own_name(self):
+        self.consultant()
+        self.run_job()
+        c = self.crossing(CONS.name)
+        self.assertEqual((c['kind'], c['state_path']), (UL.CONSULTANT, self.notes))
+        (to, text), = self.sent
+        self.assertEqual(to, CONS.name)
+        for part in (self.notes, c['ready'], 'account 2'):
+            self.assertIn(part, text)
+        self.touch(self.notes, NOW + 100)
+        self.touch(c['ready'], NOW + 110)
+        self.host.written[CONS.name] = NOW + 120
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.calls, [['stop', '--name', CONS.name, '--pid', '51']])
+        self.assertEqual(self.saved_at_child['crossings'][CONS.name]['phase'], U.STOP_FIRST)
+        self.live = []                  # launch.py stop did it
+        self.now += 300
+        self.run_job()
+        argv = self.calls[-1]
+        self.assertEqual(argv, ['consultant', '--repo-path', self.repo, '--repo', 'alpha', '--account', '2',
+                                '--model', 'opus[1m]', '--effort', 'high', '--autocompact', '300000',
+                                '--notes-path', self.notes, '--checkin', c['checkin'], '--force'])
+        args = self.parse(argv)
+        self.assertEqual((args.cmd, args.repo, args.notes_path, args.checkin), ('consultant', 'alpha', self.notes,
+                                                                               c['checkin']))
+        self.assertEqual(self.saved_at_child['crossings'][CONS.name]['new_name'], CONS.name)
+        self.consultant(CONS_NEW, '2')
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.crossing(CONS.name)['phase'], U.STARTED)
+        self.touch(c['checkin'], self.now + 10)
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('crossed', CONS.name)])
+        self.assertIsNone(self.crossing(CONS.name))
+        self.assertEqual((len(self.sent), len(self.calls)), (1, 2))
+
+    def test_a_stall_path_start_never_hands_on_an_earlier_crossings_state_note(self):
+        self.mode = 'full'
+        self.usage['1'] = reading(50)
+        folder = os.path.join(self.temp, U.HANDOFF_FOLDER, DEEP)
+        files = [os.path.join(folder, f) for f in (U.READY_FILE, U.CHECKIN_FILE, U.DEEP_STATE)]
+        for path in files:              # left by an earlier crossing of the key, before this ask
+            self.touch(path, NOW - DAY)
+        note = files[2]
+        self.deep()
+        self.stall(DEEP, DEEP_OLD.pid, '1')
+        self.run_job()
+        self.assertEqual(self.calls, [['stop', '--name', DEEP, '--pid', '31']])
+        self.assertEqual(self.saved_at_child['crossings'][DEEP]['phase'], U.STALL_STOP)
+        for path in files:
+            self.assertFalse(os.path.exists(path), path)
+            self.assertEqual(os.path.getmtime(path + '.prev'), NOW - DAY, path)
+        self.live = []                  # launch.py stop did it
+        self.now += 300
+        self.run_job()
+        args = self.parse(self.calls[-1])
+        self.assertEqual((args.cmd, args.predecessor, args.state), ('deep', DEEP, note))
+        self.assertFalse(os.path.exists(note))      # the successor finds no note, as its prompt allows for
+
+    def test_a_consultant_successor_that_exits_after_it_is_up_fails_and_is_never_started_again(self):
+        self.consultant()
+        self.run_job()
+        c = self.crossing(CONS.name)
+        self.touch(self.notes, NOW + 100)
+        self.touch(c['ready'], NOW + 110)
+        self.host.written[CONS.name] = NOW + 120
+        self.now += 300
+        self.run_job()                  # stop first
+        self.live = []
+        self.now += 300
+        self.run_job()                  # the start
+        self.consultant(CONS_NEW, '2')
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.crossing(CONS.name)['phase'], U.STARTED)
+        self.live = []                  # the successor exits before its check-in
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('cross-failed', CONS.name)])
+        self.assertIsNone(self.crossing(CONS.name))
+        calls = len(self.calls)
+        self.now += 300
+        self.run_job()
+        self.assertEqual((len(self.calls), self.doc()['crossings']), (calls, {}))
+
+    def test_a_crossing_dropped_before_its_stop_tells_the_session_to_resume(self):
+        self.deep()
+        self.run_job()
+        self.now += 300
+        self.usage['1'] = reading(50, age=-240)     # a minute old at the next run, the week reset
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('cross-cleared', DEEP)])
+        self.assertEqual(self.sent[-1], (DEEP, U.RESUME))
+        self.assertIsNone(self.crossing(DEEP))
+
+    def test_notify_dry_runs_the_start_and_the_stop_and_changes_nothing(self):
+        self.mode = 'notify'
+        self.consultant()
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('would-cross', CONS.name + ':a2')])
+        self.assertEqual(self.calls[0][-3:], ['--force', '--plan', '--replace'])
+        self.assertEqual(self.parse(self.calls[0]).plan, True)
+        self.assertEqual(self.calls[1], ['stop', '--name', CONS.name, '--pid', '51', '--dry-run'])
+        self.assertEqual((self.sent, self.doc()['crossings']), ([], {}))
+
+    def test_every_session_never_crossed_is_pushed_and_noted_with_its_reason(self):
+        coord = U.Live('alpha-coord-a1', 71, CREATED)
+        cmd = window.session_command(coord.name, 'hi', agent='pm-kit:coordinator')
+        self.windows[coord.pid] = window.script(coord.name, 'coordinator', self.repo, cmd,
+                                                config_dir=self.acct['1'])
+        self.live.append(coord)
+        self.deep()
+        self.deep(U.Live(DEEP, 81, CREATED))     # two of one key: which one would cross is unknown
+        self.live.append(U.Live('stray-a1', 91, CREATED))
+        result = self.run_job()
+        self.assertEqual(sorted(self.ctx.events), [('unmanaged', 'alpha-coord-a1:other-role'),
+                                                   ('unmanaged', DEEP + ':several'),
+                                                   ('unmanaged', 'stray-a1:no-window')])
+        self.assertIn('never crossed: alpha-coord-a1 (other-role), %s (several), stray-a1 (no-window)' % DEEP,
+                      result.note)
+        self.assertEqual((self.sent, self.calls, self.doc()['crossings']), ([], [], {}))
+
+    def test_a_session_whose_key_is_a_sessions_json_key_is_never_crossed(self):
+        self.write('sessions.json', {DEEP: dict(ENTRY, stem='nomatch', name='nomatch-a1')})
+        self.deep()
+        self.run_job()
+        self.assertEqual(self.ctx.events, [('unmanaged', DEEP + ':key-taken')])
+        self.assertEqual(self.sent, [])
 
 
 if __name__ == '__main__':

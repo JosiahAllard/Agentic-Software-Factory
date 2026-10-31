@@ -131,7 +131,7 @@ class OneBooking(QueueCase):
         return kind
 
     def test_a_landing_books_the_land_kind_when_the_kinds_table_has_it(self):
-        # The owner's call (KIT-LAND-LOCK-SIZE): a landing's merged gate books land-<kind> (4
+        # The owner's call: a landing's merged gate books land-<kind> (4
         # cores in kitlib/lock/kinds.json), once, with no second booking for a kind it did not
         # take from the config (rebook_kind compares the "gate".kind, not the land kind).
         kind = self.with_land_kind()

@@ -388,6 +388,8 @@ class TheFoldedLanding(FoldCase):
         self.assertEqual(out.code, G.OK, out.lines)
         with open(a.output, 'w', encoding='utf-8') as f:     # tools/land.py prints it there
             f.write('result record: x\n' + '\n'.join(out.lines) + '\n')
+        # Not folded, kit/two's record would stay running and follow() would wait for ever.
+        self.assertEqual(self.record('kit/two').get('folded_into'), a.run_id)
         got = submit.follow(self.repo.root, b.branches, b.tips, b.output, exit_wait_s=0)
         self.assertEqual(got.code, G.OK, got.lines)
         self.assertIn('FOLDED: the landing of kit/two was folded into the batch of the landing '

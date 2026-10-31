@@ -15,6 +15,11 @@ each comes from this object, and a missing one is an error that says which key t
   pm_resume_beside_desktop
                       true: after-reboot resumes the PM session even while the desktop app or an
                       unnamed Claude session runs (reboot.resume_pm); unset or false: it skips
+  terminal            Linux: the terminal command a window opens in, as a list of words, with
+                      `/bin/bash -c <script>` appended (kitlib.launcher.linuxwin); unset: a
+                      detached tmux session
+  usage_crossover     how far the hub's usage crossover job goes (kitlib.hubjobs.usage_crossover):
+                      notify, normal or full; unset: notify, which stops and starts nothing
 """
 import os
 import re
@@ -30,7 +35,10 @@ DEFAULT_COORDINATOR_AGENT = 'coordinator'
 _NUM = re.compile(r'^[1-9][0-9]?$')
 # an agent name, bare or with the kit plugin's prefix (the same pattern as window.AGENT)
 _AGENT = re.compile(r'^(?:%s)?[A-Za-z0-9_-]+$' % re.escape(agentname.PREFIX))
-KNOWN = ('state_dir', 'repos', 'accounts', 'orgs', 'coordinator_agent', 'pm_resume_beside_desktop')
+KNOWN = ('state_dir', 'repos', 'accounts', 'orgs', 'coordinator_agent', 'pm_resume_beside_desktop',
+         'terminal', 'usage_crossover')
+NOTIFY, NORMAL, FULL = 'notify', 'normal', 'full'   # usage_crossover's values
+CROSSOVER_MODES = (NOTIFY, NORMAL, FULL)
 
 
 class LaunchError(Exception):
@@ -97,6 +105,14 @@ def check(obj):
     pr = obj.get('pm_resume_beside_desktop')
     if pr is not None and not isinstance(pr, bool):
         errs.append('launcher.pm_resume_beside_desktop must be true or false, not %r' % (pr,))
+    term = obj.get('terminal')
+    if term is not None and (not isinstance(term, list) or not term
+                             or not all(isinstance(w, str) and w.strip() for w in term)):
+        errs.append('launcher.terminal must be a non-empty list of words (a command), not %r' % (term,))
+    uc = obj.get('usage_crossover')
+    if uc is not None and uc not in CROSSOVER_MODES:
+        errs.append('launcher.usage_crossover must be one of %s, not %r'
+                    % (', '.join(CROSSOVER_MODES), uc))
     return errs
 
 
@@ -115,6 +131,8 @@ class Settings(object):
         self.orgs = {str(k): v for k, v in (obj.get('orgs') or {}).items()}
         self.coordinator_agent = obj.get('coordinator_agent') or DEFAULT_COORDINATOR_AGENT
         self.pm_resume_beside_desktop = obj.get('pm_resume_beside_desktop') is True
+        self.terminal = list(obj['terminal']) if obj.get('terminal') else None
+        self.usage_crossover = obj.get('usage_crossover') or NOTIFY
 
     def expand(self, folder):
         """A configured folder made absolute: ~ is the home folder."""

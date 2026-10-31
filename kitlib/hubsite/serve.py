@@ -59,6 +59,12 @@ text is for the owner's console (it may name a folder):
   6. the push-notification worker (kitlib.hubsite.push.PushWorker), only when Sources.push and
      Sources.push_dir are both set, with a line in `Hub.notes`. It is made here and started by
      start(); one that fails to start is an 'error' line and the hub serves without it.
+  7. the timed jobs (kitlib.hubsite.jobs.Jobs), one per maker in Sources.jobs (GET health
+     `jobs` names them); a maker that raises, or makes a job whose name an earlier one has, is
+     a line in `Hub.notes` and the hub serves without that job; one that gives None is left
+     out. Their events are pushed through the push worker when there is one, their
+     failures are 'error' lines of the log, and GET health's `jobs` reads them. Started by
+     start(), before the listeners.
 `Hub.listeners` is a list: the local listener first, then the tunnel's when there is one.
 start() and close() carry every listener in it, and a start-up that fails after one was bound
 closes its door. Each gets a health_route of its own: the local listener's answers as it did
@@ -94,7 +100,8 @@ owner's stop route):
      (up to access.FETCH_DEADLINE_S, longer than a step's `timeout`) is refused at once with
      the tunnel's one answer, so step 3 does not wait for it; a stop admits nobody. Then no
      new connection, and no write begins (httpd refuses it);
-  2. the backlog timer;
+  2. the backlog timer, then the timed jobs (no job begins a run after this; one in flight, a
+     plugin refresh say, may outlast `timeout`, and its thread, a daemon, ends with the process);
   3. the requests in flight, except the long waits: after this no write is in flight;
   4. the git sync, only when the server was started: a 'note' line says that the wait for git
      begins, the sync's thread is stopped, then one last pass (sync_once) runs while the store
@@ -144,7 +151,7 @@ and none raised. Three things about step 4:
 A process that is killed closes nothing: the system drops the store lock with it, and the next
 start takes it over.
 
-Views (SiteViews). backlog, completed, repos and agents exist only where their source does, so
+Views (SiteViews). backlog, completed, repos, agents and skills exist only where their source does, so
 the Api answers a missing one `unavailable` by itself. What a view says never holds a path,
 git's words or an exception's text: the backlog views carry kitlib.hubsite.backlog's fixed
 phrases, and the reasons of the derived views are replaced by fixed phrases here.
@@ -159,7 +166,7 @@ phrases, and the reasons of the derived views are replaced by fixed phrases here
       round has not come to yet is an entry with "error" backlog.NOT_READ; with none read yet
       both raise NotReadYet, which the snapshot shows in `unavailable`. With no timer running
       (backlog_refresh_s unset, or the timer not started or ended) they read as the routes do.
-  notices() repos() usage() agents() findings()
+  notices() repos() usage() agents() skills() skill(name) skill_source(name) findings()
                                           kitlib.hubsite.derived's answers
   health()    {git, backlog, backlog_at, backlog_error, backlog_timer}. `git` is GitSync.status()
       without `detail`, or {"running": false, "off": phrase}. `backlog` is null with no backlog
@@ -223,14 +230,16 @@ import socket
 import threading
 import time
 
-from kitlib import hubbacklog, pmdata, pmstart, pmwatch
+from kitlib import hubbacklog, hubjobs, pmdata, pmstart, pmwatch
 from kitlib.config import user
 from kitlib.config.types import ConfigError
 from kitlib.proc import process
 
 from . import api as _api
+from . import jobs as _jobs
 from . import push as _push
 from . import access, auth, backlog, codestale, derived, gitsync, httpd, recordwrite, tunnel
+from . import selfrestart, skilledits
 from .store import HubError, Store, StoreBusy
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
@@ -262,6 +271,7 @@ TUNNEL_ON_NOTE = ('the tunnel listener is on %s: every request there needs a Clo
 NO_USAGE_SOURCE = 'no launcher usage source configured'     # derived.usage's own phrase
 USAGE_FAILED = 'the usage source could not be read'
 AGENTS_FAILED = 'the agent definitions could not be read'
+SKILLS_FAILED = 'the skill sources could not be read'
 ROUND_FAILED = ('the backlog view could not be read after a round of the backlog timer, so '
                 'health does not follow the timer: %s: %s')
 STOP_ASKED = 'closing: the owner asked the server to stop (hub.py stop)'
@@ -358,6 +368,7 @@ class Sources(object):
                    check accepts without a repos/ document; None: none
       usage        callable() -> the lines kitlib.launcher.usage prints
       agents       the folder of agent definitions
+      skills       the folder of skill sources (content/skills: <name>/SKILL.md each)
       backlog      callable(refresh_s) -> a kitlib.hubsite.backlog.Views (or its like: get, start,
                    stop, days, clock, timer_error; a callable `wait`, when it has one, is
                    wrapped by build(), and its get() is then also called with `stop=`, the
@@ -381,12 +392,27 @@ class Sources(object):
       lock         the machine lock's door for the Api's lock routes (kitlib.hubsite.lockdoor
                    LockDoor, or its like: revision, view, stats); None: those routes answer
                    `unavailable`
+      jobs         the timed jobs (kitlib.hubsite.jobs): [make(sources) -> jobs.Job or None],
+                   one per job; machine_sources gives kitlib.hubjobs.makers(), a scratch store
+                   none; [] or None: none
+      home         the home folder machine_sources read the machine config under (None: the
+                   user's), for a job that reads it again
+      pending      callable(for_key) -> the pending items for a session key (Api.pending: each
+                   with kind, id, from, at). Set by build() once the Api exists, before the
+                   jobs are made; None before. Read only: unlike GET pending it sets no handed/seen
+                   marks (the routing's own clean-up of marks for items gone is not one).
+      handoffs     callable() -> {session key: its newest hand-off record} (api.newest_handoffs).
+                   Set by build() as `pending` is; None before. Read only.
     """
 
     def __init__(self, tokens=None, static_dir=STATIC_DIR, pm_data=None, notices=None, repos=None,
                  usage=None, agents=None, backlog=None, sync=None, access_keys=None,
                  access_now=None, known_repos=None, push=None, push_dir=None, lock=None,
-                 findings=None):
+                 findings=None, skills=None, jobs=None, home=None):
+        self.jobs = list(jobs or [])
+        self.home = home
+        self.pending = None
+        self.handoffs = None
         self.findings = findings
         self.lock = lock
         self.push = push
@@ -399,6 +425,7 @@ class Sources(object):
         self.repos = repos
         self.usage = usage
         self.agents = agents
+        self.skills = skills
         self.backlog = backlog
         self.sync = sync
         self.access_keys = access_keys
@@ -455,6 +482,11 @@ def agents_dir(environ=None):
     except registry.RegistryError:
         return None
     return os.path.join(pmstart.KIT_ROOT, os.path.normpath(shell), 'agents')
+
+
+def skills_dir():
+    """The kit's skill sources, <kit>/content/skills: never a host's rendered copy."""
+    return os.path.join(pmstart.KIT_ROOT, 'content', 'skills')
 
 
 def _configured_repos(cfg, toplevel=None):
@@ -520,8 +552,12 @@ def machine_sources(home=None, sync=True):
         raise ConfigError(str(e))
     src = Sources(tokens=auth.folder(home), pm_data=pm,
                   notices=pmwatch.configured_notice_dir(path),
-                  agents=agents_dir(),
-                  sync=gitsync.GitSync if sync else None)
+                  agents=agents_dir(), skills=skills_dir(),
+                  sync=gitsync.GitSync if sync else None, home=home)
+    # The timed jobs: every module of kitlib.hubjobs, found there (no line here per job). `sync`
+    # is false only for a scratch store (tools/hub.py serve --store), which runs no machine job.
+    if sync:
+        src.jobs.extend(hubjobs.makers())
     if pm and pm.get('path'):
         from kitlib.maintlint import result as lint_result
         src.findings = os.path.join(pm['path'], lint_result.FOLDER)
@@ -571,7 +607,7 @@ class SiteViews(object):
     """The Api's `views` (module docstring, "Views"). A view is bound only where its source
     exists: `backlog_views` for backlog, completed, record, record_template and the record
     writes (record_add, record_edit, record_delete, record_unblock, and record_answer, the
-    filing of a bound question's answer), sources.repos and .agents
+    filing of a bound question's answer), sources.repos, .agents and .skills
     for theirs. notices, findings, lint_runs, usage and health are always there
     (kitlib.hubsite.derived answers a missing notice or findings folder with none and a missing
     usage source with its own phrase). `sync` is the git
@@ -606,6 +642,10 @@ class SiteViews(object):
             self.repos = self._repos
         if sources.agents:
             self.agents = self._agents
+        if sources.skills:
+            self.skills = self._skills
+            self.skill = self._skill
+            self.skill_source = self._skill_source
 
     def _held(self):
         """The backlog source's held answer (backlog.Views.held) while its timer runs, or None
@@ -742,6 +782,24 @@ class SiteViews(object):
         out = derived.agents(self._sources.agents)
         if not out.get('available'):
             out['reason'] = AGENTS_FAILED
+        return out
+
+    def _skills(self):
+        out = derived.skills(self._sources.skills)
+        if not out.get('available'):
+            out['reason'] = SKILLS_FAILED
+        return out
+
+    def _skill(self, name):
+        out = derived.skill(self._sources.skills, name)
+        if out is None:
+            raise HubError('not_found', 'there is no skill %s' % name, 'name')
+        return out
+
+    def _skill_source(self, name):
+        out = derived.skill_source(self._sources.skills, name)
+        if out is None:
+            raise HubError('not_found', 'there is no skill %s' % name, 'name')
         return out
 
     def _git(self):
@@ -951,6 +1009,64 @@ def _checkout(backlog_views):
     return checkout
 
 
+def kit_checkout(kit_root=None):
+    """The kit's main checkout: kit_root (default pmstart.KIT_ROOT) when it is a checkout, else
+    the checkout its plugin export marker names (kitlib.pluginsource.default_kit); None when there
+    is none."""
+    from kitlib import pluginsource
+    return pluginsource.default_kit(kit_root or pmstart.KIT_ROOT)[0]
+
+
+def _kit_key(repo_name, remote_ids, kit_root=None):
+    """Api's kit_key() (kitlib.hubsite.api, "Skill edits"): the name repo_name gives the kit
+    checkout's origin remote (`remote_ids`, a _RemoteIds), the session key of the kit's
+    coordinator; '' when there is no checkout, no remote or no configured name, so a submitted
+    skill edit is the PM's."""
+    def kit_key():
+        checkout = kit_checkout(kit_root)
+        repo_id = remote_ids(checkout)[0] if checkout else None
+        name = repo_name(repo_id) if repo_id else None
+        return name if isinstance(name, str) else ''
+    return kit_key
+
+
+def _kit_blob(kit_root=None, run=None):
+    """Api's kit_blob(branch, path) (kitlib.hubsite.api, "Skill edits"): the blob id of `path`
+    on `branch` in the kit checkout, read with `git rev-parse --verify` (`run`, default
+    kitlib.git.cmd.run_text; a read: the hub never writes a repository), or None when there is no
+    checkout or git cannot read it."""
+    def kit_blob(branch, path):
+        from kitlib.git import cmd
+        checkout = kit_checkout(kit_root)
+        if not checkout:
+            return None
+        out, _why = (run or cmd.run_text)(['rev-parse', '--verify', '--quiet',
+                                           '%s:%s' % (branch, path)], checkout)
+        return out if skilledits.is_blob(out) else None
+    return kit_blob
+
+
+def _kit_text(kit_root=None, run=None):
+    """Api's kit_text(blob) (kitlib.hubsite.api, "Skill edits"): the text of git blob `blob` in
+    the kit checkout, read with `git cat-file blob` (`run`, default kitlib.git.cmd.run, giving
+    bytes; a read: the hub never writes a repository), CRLF read as LF; None when there is no
+    checkout, `blob` is not a blob id, git cannot read it, the bytes are not that blob or are not
+    UTF-8."""
+    def kit_text(blob):
+        from kitlib.git import cmd
+        checkout = kit_checkout(kit_root)
+        if not checkout or not skilledits.is_blob(blob):
+            return None
+        out, _why = (run or cmd.run)(['cat-file', 'blob', blob], checkout)
+        if not isinstance(out, bytes) or skilledits.git_blob(out) != blob:
+            return None
+        try:
+            return skilledits.normal(out.decode('utf-8'))
+        except UnicodeDecodeError:
+            return None
+    return kit_text
+
+
 REMOTE_TTL_S = 60.0     # the longest a remembered origin remote answers (_RemoteIds)
 REMOTE_MISS_TTL_S = 5.0     # the longest a remembered failure to read one answers
 
@@ -1048,6 +1164,47 @@ def _configured(backlog_views, repo_id, remote_id=None):
     return [(name, root) for name, root in pairs if root and remote_id(root)[0] == repo_id]
 
 
+def _job_line(log, text):
+    """The timed jobs' one-argument log, as an 'error' line of the hub's log (scrubbed)."""
+    if log is None:
+        return
+    try:
+        log('error', scrub(text))
+    except Exception:               # noqa: BLE001 - a log that fails must not stop a job
+        pass
+
+
+def _make_jobs(sources, pusher, notes, log):
+    """The timed jobs of `sources` (Sources.jobs) as one kitlib.hubsite.jobs.Jobs, their events
+    pushed through `pusher` when there is one; None with none. A job whose maker raises, gives
+    something other than a jobs.Job, or whose name a job made before it has, is left out with a
+    line in `notes`: the hub serves
+    without it. A maker that gives None (the job does not apply here) is left out silently."""
+    made = []
+    for make in sources.jobs:
+        where = getattr(make, '__module__', '?')
+        try:
+            job = make(sources)
+        except Exception as e:      # noqa: BLE001 - the hub serves without that job
+            notes.append('a timed job was not made (%s): %s: %s' % (where, type(e).__name__, e))
+            continue
+        if job is None:
+            continue
+        if not isinstance(job, _jobs.Job):
+            notes.append('a timed job was not made (%s): its make gave a %s, not a jobs.Job'
+                         % (where, type(job).__name__))
+            continue
+        if any(j.name == job.name for j in made):
+            notes.append('a timed job was not made (%s): a job named %r is made already'
+                         % (where, job.name))
+            continue
+        made.append(job)
+    if not made:
+        return None
+    return _jobs.Jobs(made, notify=pusher.job_event if pusher is not None else None,
+                      log=functools.partial(_job_line, log))
+
+
 def _push_line(log, text):
     """The push worker's one-argument log, as a 'note' line of the hub's log (scrubbed)."""
     if log is None:
@@ -1090,10 +1247,13 @@ def build(settings, sources, log=None):
         views = SiteViews(store, sources, views_b, sync, sync_off, log=log)
         if views_b is not None:
             _follow_rounds(views_b, views)
+        remote_ids = _RemoteIds()
+        repo_name = _repo_name(views_b, _api.launcher_keys, remote_ids)
         api = _api.Api(store, views,
                        approval_key=functools.partial(auth.read_approval_key, sources.tokens),
-                       checkout=_checkout(views_b), lock=sources.lock,
-                       repo_name=_repo_name(views_b, _api.launcher_keys, _RemoteIds()))
+                       checkout=_checkout(views_b), lock=sources.lock, repo_name=repo_name,
+                       kit_key=_kit_key(repo_name, remote_ids), kit_blob=_kit_blob(),
+                       kit_text=_kit_text())
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,
@@ -1129,8 +1289,14 @@ def build(settings, sources, log=None):
                                      log=functools.partial(_push_line, log))
             notes.append('push notifications on: the asking session and the PM hear of an answer '
                          'or a done to-do')
+        sources.pending = api.pending
+        sources.handoffs = lambda: _api.newest_handoffs(store.docs('handoffs'))
+        timed = _make_jobs(sources, pusher, notes, log)
+        if timed is not None:
+            api.jobs_status = timed.status   # GET health `jobs` (Api.jobs_seen)
         hub = Hub(settings, store, api, views, creds, listeners, sync, views_b, notes, log,
-                  tunnel=said, stopping=stopping, push=pusher)
+                  tunnel=said, stopping=stopping, push=pusher, jobs=timed,
+                  tokens=sources.tokens)
         api.code_status = hub.code_state     # GET health and GET snapshot `code` (Api.code_seen)
         return hub
     except BaseException:
@@ -1140,15 +1306,25 @@ def build(settings, sources, log=None):
         raise
 
 
-def code_stamp():
-    """What the hub package's code is now: the name, modified time and size of each .py file in
-    this folder, sorted. A server that started on a different stamp runs older code (watch)."""
+def code_folders():
+    """The folders whose .py files are the hub's code: this package, the timed jobs'
+    (kitlib.hubjobs), so a job added or changed on disk is stale code too, and the two packages
+    the server reads its machine settings through (kitlib.pmdata, kitlib.config)."""
     here = os.path.dirname(os.path.abspath(__file__))
+    return [here] + [os.path.dirname(os.path.abspath(m.__file__))
+                     for m in (hubjobs, pmdata, user)]
+
+
+def code_stamp(folders=None):
+    """What the hub's code is now: the folder, name, modified time and size of each .py file in
+    `folders` (default code_folders()), sorted. A server that started on a different stamp runs
+    older code (watch)."""
     out = []
-    for name in sorted(os.listdir(here)):
-        if name.endswith('.py'):
-            st = os.stat(os.path.join(here, name))
-            out.append((name, st.st_mtime_ns, st.st_size))
+    for folder in folders or code_folders():
+        for name in sorted(os.listdir(folder)):
+            if name.endswith('.py'):
+                st = os.stat(os.path.join(folder, name))
+                out.append((os.path.basename(folder), name, st.st_mtime_ns, st.st_size))
     return tuple(out)
 
 
@@ -1161,11 +1337,17 @@ class Hub(object):
     none it stays what it was). The `tunnel` given here is that text or a callable giving it.
     `stopping` is the event the local listener's stop route sets (httpd.stop_route); run()
     closes the hub once it is set. A Hub made without one gets an event nothing sets. `push` is
-    the push-notification worker (kitlib.hubsite.push.PushWorker: start, stop) or None."""
+    the push-notification worker (kitlib.hubsite.push.PushWorker: start, stop) or None; `jobs`
+    the timed jobs (kitlib.hubsite.jobs.Jobs: start, stop) or None. `tokens` is the token
+    folder (selfrestart.LOG_NAME goes there) or None; `self_restart` the selfrestart.Watcher,
+    made at the first look that finds the code changed unless one was set before."""
 
     def __init__(self, settings, store, api, views, creds, listeners, sync, backlog_views, notes,
-                 log=None, tunnel='', stopping=None, push=None):
+                 log=None, tunnel='', stopping=None, push=None, jobs=None, tokens=None):
+        self.tokens = tokens
+        self.self_restart = None
         self.push = push
+        self.jobs = jobs
         self.settings = settings
         self.store = store
         self.api = api
@@ -1222,10 +1404,11 @@ class Hub(object):
     def watch(self):
         """Look at the git sync once and log what is new (module docstring, "The git sync's
         failures"): an 'error' line when its last pass failed at another step or for another
-        reason than the last look saw, a 'note' when it works again. Also an 'error' line, once,
-        when the hub package's code on disk is no longer what this process started on
-        (STALE_CODE: nothing is restarted for the owner). Never waits for a pass and never
-        raises. One caller at a time: run() is it."""
+        reason than the last look saw, a 'note' when it works again. Also the hub code's look
+        (_watch_code): a server whose code on disk changed restarts itself through its
+        scheduled task (kitlib.hubsite.selfrestart), and logs an 'error' line, once, when it
+        does not (STALE_CODE). Never waits for a pass and never raises. One caller at a time:
+        run() is it."""
         self._watch_code()
         if self.sync is None:
             return
@@ -1242,7 +1425,10 @@ class Hub(object):
             self._say('the git sync works again', 'note')
 
     def _watch_code(self):
-        if self._stale or self._code is None:
+        """At most every CODE_LOOK_S: the code stamp to the self-restart (selfrestart.Watcher,
+        made at the first look that finds the code changed), then STALE_CODE, once, when it
+        says the stale warning shows."""
+        if self._code is None:
             return
         at = time.monotonic()
         if at - self._looked < CODE_LOOK_S:
@@ -1252,13 +1438,38 @@ class Hub(object):
             now = code_stamp()
         except Exception:           # noqa: BLE001 - a look that fails is tried again next turn
             return
-        if now != self._code:
+        if self.self_restart is None:
+            if now == self._code:
+                return
+            self.self_restart = selfrestart.Watcher(self._code, self.port, self.store.root,
+                                                    self.tokens, self._say, self._quiet)
+        try:
+            self.self_restart.look(now)
+        except Exception as e:      # noqa: BLE001 - the warning shows, the server goes on
+            self._say('the self-restart look failed: %s: %s' % (type(e).__name__, e))
+            self.self_restart.stale = True
+        if self.self_restart.stale and not self._stale:
             self._stale = True
             self._say(STALE_CODE)
 
+    def _quiet(self):
+        """True when no request is in flight on any listener (its counted waits aside: they end
+        with the close) and no timed job is running: when a restart may begin."""
+        for lis in self.listeners:
+            if lis.drain(0) is not True:
+                return False
+        if self.jobs is not None:
+            try:
+                blocks = self.jobs.status()
+            except Exception:       # noqa: BLE001 - not known to be quiet
+                return False
+            if any(isinstance(b, dict) and b.get('running') for b in blocks.values()):
+                return False
+        return True
+
     def start(self):
-        """Start the git sync, the backlog timer, the push-notification worker and every
-        listener, the listeners last so the first request finds the rest running. A push worker
+        """Start the git sync, the backlog timer, the push-notification worker, the timed jobs
+        and every listener, the listeners last so the first request finds the rest running. A push worker
         that fails to start is an 'error' line and the hub serves without it. False, and nothing
         started, when it was started or closed already."""
         with self._life:
@@ -1275,6 +1486,8 @@ class Hub(object):
                 except Exception as e:      # noqa: BLE001 - the hub serves without pushes
                     self._say('push notifications did not start: %s: %s' % (type(e).__name__, e))
                     self.push = None
+            if self.jobs is not None:
+                self.jobs.start()
             for lis in self.listeners:
                 lis.start()
             if self.backlog is not None:
@@ -1398,6 +1611,8 @@ class Hub(object):
                 if self.backlog is not None:
                     clean.append(self._step('the backlog timer', timeout, self.backlog.stop,
                                             timeout))
+                if self.jobs is not None:
+                    clean.append(self._step('the timed jobs', timeout, self.jobs.stop, timeout))
                 drained = True
                 for lis in self.listeners:
                     done = self._step('the requests in flight', timeout, lis.drain, timeout)
@@ -1573,9 +1788,36 @@ def _git_line(git):
     return ', '.join(parts)
 
 
+JOB_NOTE_MAX = 60               # characters of a job's note or error on the `jobs:` status line
+
+
+def _jobs_line(blocks):
+    """GET health `jobs` in one line: `none` for null, else per job (by name) `<name> runs R,
+    failures F` with `, running` while it runs and its error (while failures is not 0) or else
+    its last note, scrubbed and cut to JOB_NOTE_MAX characters."""
+    if not isinstance(blocks, dict) or not blocks:
+        return 'none'
+    parts = []
+    for name in sorted(blocks):
+        b = blocks[name] if isinstance(blocks[name], dict) else {}
+        text = '%s runs %s, failures %s' % (name, b.get('runs'), b.get('failures'))
+        if b.get('running'):
+            text += ', running'
+        said = b.get('error') if b.get('failures') else b.get('note')
+        if isinstance(said, str) and said:
+            said = ' '.join(scrub(said).split())     # one line, whatever the job wrote
+            text += ': ' + (said if len(said) <= JOB_NOTE_MAX else said[:JOB_NOTE_MAX - 3] + '...')
+        parts.append(text)
+    return '; '.join(parts)
+
+
 def status_lines(health, now=None):
     """The lines `hub status` prints for a GET health answer: the revision, the store (the
-    owner's answer has it), the git sync, each repository's backlog fetch age, the tunnel
+    owner's answer has it), the git sync, each repository's backlog fetch age, `code: current`
+    or `code: stale: ` and the restart (from health's `code`, codestale.notice), `jobs: ` and
+    each timed job's runs, failures and last note or error (_jobs_line; `jobs: none` when the
+    server runs none) (neither line when the answer lacks the field, as an older server's), the
+    tunnel
     listener in one line (`tunnel: on`, `tunnel: bound, keys not fetched` with the reason in
     brackets when health gave one, or `tunnel: off: ` and why; none when the answer has no such
     text, as an older server's) and what is unavailable. `now`: an aware datetime (default the
@@ -1601,6 +1843,12 @@ def status_lines(health, now=None):
     for key, what in (('backlog_error', 'backlog'), ('backlog_timer', 'backlog timer')):
         if health.get(key):
             lines.append('%s: %s' % (what, health[key]))
+    code = health.get('code')
+    if isinstance(code, dict):
+        stale = codestale.notice(code)
+        lines.append('code: %s' % ('stale: ' + stale if stale else 'current'))
+    if 'jobs' in health:
+        lines.append('jobs: %s' % _jobs_line(health['jobs']))
     said = health.get('tunnel')
     if isinstance(said, str) and said:
         lines.append('tunnel: %s' % scrub(said))    # fixed words; scrubbed all the same

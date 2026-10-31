@@ -668,6 +668,42 @@ class WatcherTest(PushCase):
         self.watch(push.WATCHER_STALE_S + 1, after=60)
         self.assertEqual(len(self.downs()), 2, 'fresh again, then stale: a second push')
 
+    def test_a_covering_session_watch_job_counts_as_up(self):
+        block = [None]
+        self.worker.jobs = lambda: {'session-watch': block[0]} if block[0] else {}
+        self.watch(10)
+        block[0] = {'failures': 0, 'ok_at': self.t + 50}
+        self.watch(push.WATCHER_STALE_S + 5, after=60)      # pm_watch stale, the job covers
+        self.assertEqual(self.downs(), [])
+        self.assertEqual(self.worker.watcher_status()['state'], 'up')
+        self.watch(None, after=60)                          # no beat at all: still covered
+        self.assertEqual(self.downs(), [])
+        self.assertEqual(self.worker.watcher_status(), {'state': 'up', 'age': None})
+        block[0] = {'failures': 3, 'ok_at': self.t}         # the job fails: nobody covers
+        self.watch(None, after=60)
+        self.assertEqual(len(self.downs()), 1)
+        self.assertEqual(self.worker.watcher_status(), {'state': 'none', 'age': None})
+
+    def test_a_skipping_or_stale_job_does_not_count(self):
+        self.worker.jobs = lambda: {'session-watch': {'failures': 0, 'ok_at': None}}
+        self.watch(10)
+        self.watch(push.WATCHER_STALE_S + 5, after=60)
+        self.assertEqual(len(self.downs()), 1, 'a job that only skipped covers nothing')
+
+    def test_the_default_job_reader_is_the_api_s_health_jobs(self):
+        self.api.jobs_status = lambda: {'session-watch': {'failures': 0, 'ok_at': self.t}}
+        self.watch(10)
+        self.watch(None, after=60)
+        self.assertEqual(self.downs(), [])
+
+    def test_a_job_reader_that_raises_covers_nothing(self):
+        def broken():
+            raise RuntimeError('boom')
+        self.worker.jobs = broken
+        self.watch(10)
+        self.watch(None, after=60)
+        self.assertEqual(len(self.downs()), 1)
+
     def test_a_heartbeat_that_goes_missing_is_down(self):
         self.watch(10)
         self.watch(None, after=60)
@@ -884,17 +920,62 @@ class FiledRecipientsTest(FiledPushCase):
         self.assertIn('its worker reads it', self.push.to(push.PM_KEY)[0])
         self.assertIn('no ack needed', self.push.to(push.PM_KEY)[0])
 
-    def test_an_answer_that_leaves_its_record_waiting_pushes_to_nobody(self):
-        self.bind('blocked')
-        qid = self.ask_bound()
+    def test_a_held_answer_goes_to_its_live_asker_saying_the_record_stays_as_it_was(self):
+        # red proof: before this change a held filing pushed to nobody
+        self.bind('blocked', live={'zeta'})
+        qid = self.ask_bound(asker='zeta')
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual(self.store.get('questions', qid)['filed_as'], 'held')
+        self.assertEqual([r for r, _t in self.push.calls], ['zeta'],
+                         'one push, to the asker: no separate answered push besides it')
+        text = self.push.to('zeta')[0]
+        self.assertIn('[hub push] question %s filed' % qid, text)
+        self.assertIn('does not free record kit:EX-1', text)
+        self.assertIn('stays as it was', text)
+        self.assertIn('hub pending --for zeta', text)
+        self.later(130)
+        self.assertEqual(self.attempts('zeta'), [1, 2], 'the asker is told until it picks it up')
+        self.pick_up('zeta')
+        self.later(400)
+        self.assertEqual(self.attempts('zeta'), [1, 2])
+        self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_a_held_answer_whose_asker_is_gone_goes_to_the_records_coordinator_once(self):
+        self.bind('blocked', live={'kit'})
+        qid = self.ask_bound(asker='zeta')
         self.answer(qid)
         self.worker.poll()
         self.later(130)
+        self.later(400)
         self.assertEqual(self.store.get('questions', qid)['filed_as'], 'held')
-        self.assertEqual(self.push.calls, [])
-        self.assertEqual([p['id'] for p in self.ok('GET', '/pending', AGENT,
-                                                    query={'for': 'kit'})['items']], [qid],
-                         'its asker still reads it in its pending list')
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+        text = self.push.to('kit')[0]
+        self.assertIn('does not free record kit:EX-1', text)
+        self.assertIn('asked by zeta', text)
+        self.assertIn('hub view %s' % qid, text)
+
+    def test_a_held_answer_with_nobody_live_stays_owed_to_its_asker(self):
+        for push_obj in ('no resolve', 'none live'):
+            with self.subTest(push=push_obj):
+                self.bind('blocked', live=None if push_obj == 'no resolve' else ())
+                qid = self.ask_bound()
+                self.answer(qid)
+                self.worker.poll()
+                self.assertEqual(self.store.get('questions', qid)['filed_as'], 'held')
+                self.assertEqual([r for r, _t in self.push.calls], ['kit'],
+                                 'tried at its asker, which reads it at its next start anyway')
+                self.assertIn(qid, [p['id'] for p in self.ok('GET', '/pending', AGENT,
+                                                              query={'for': 'kit'})['items']])
+
+    def test_a_held_answer_the_pm_asked_tells_the_pm_once(self):
+        self.bind('blocked', live=())
+        qid = self.ask_bound(asker='pm')
+        self.answer(qid)
+        self.worker.poll()
+        self.later(130)
+        self.assertEqual(self.attempts(push.PM_KEY), [1])
+        self.assertIn('does not free record kit:EX-1', self.push.to(push.PM_KEY)[0])
 
     def test_a_freed_record_with_no_live_coordinator_pings_the_pm_once(self):
         self.bind('parked', 'open', live=())
@@ -910,15 +991,46 @@ class FiledRecipientsTest(FiledPushCase):
         self.assertIn('no ack needed', text)
         self.assertEqual(self.push.resolved, ['kit'], 'the asker and the repo are one key here')
 
-    def test_a_freed_record_whose_coordinator_is_live_pushes_to_nobody(self):
-        for live in ({'kit'}, {'zeta'}):        # the record's repository, or the asker
+    def test_a_freed_answer_goes_to_its_live_asker(self):
+        # red proof: before this change a freed filing with a live session pushed to nobody
+        for live in ({'zeta'}, {'zeta', 'kit'}):    # the asker is preferred to the coordinator
             with self.subTest(live=live):
                 self.bind('blocked', 'open', live=live)
                 qid = self.ask_bound(asker='zeta')
                 self.answer(qid)
                 self.worker.poll()
                 self.assertEqual(self.store.get('questions', qid)['filed_as'], 'freed')
-                self.assertEqual(self.push.calls, [])
+                self.assertEqual([r for r, _t in self.push.calls], ['zeta'])
+                text = self.push.to('zeta')[0]
+                self.assertIn('frees record kit:EX-1', text)
+                self.assertIn('hub pending --for zeta', text)
+                self.later(130)
+                self.assertEqual(self.attempts('zeta'), [1, 2], 'until it picks it up')
+                self.pick_up('zeta')
+                self.later(400)
+                self.assertEqual(self.attempts('zeta'), [1, 2])
+                self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_a_freed_answer_whose_asker_is_gone_goes_to_the_records_coordinator_once(self):
+        self.bind('blocked', 'open', live={'kit'})
+        qid = self.ask_bound(asker='zeta')
+        self.answer(qid)
+        self.worker.poll()
+        self.later(130)
+        self.later(400)
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+        text = self.push.to('kit')[0]
+        self.assertIn('frees record kit:EX-1', text)
+        self.assertIn('asked by zeta', text)
+        self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_the_records_coordinator_is_found_through_the_repo_key_map(self):
+        self.bind('blocked', 'open', live={'kitcoord'})
+        self.api.repo_name = lambda repo: 'kitcoord' if repo == 'kit' else None
+        qid = self.ask_bound(asker='zeta')
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
 
     def test_a_freed_record_without_resolve_pings_the_pm(self):
         self.bind('blocked', 'open')
@@ -972,7 +1084,8 @@ class StandingPushTest(FiledPushCase):
         self.ok('POST', '/questions/%s/answer' % qid, OWNER,
                 {'choice': 0, 'note': NOTE, 'standing': True})
         self.worker.poll()
-        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+        self.assertEqual(sorted(r for r, _t in self.push.calls), sorted(['kit', push.PM_KEY]),
+                         'held: its asker hears it, and the PM logs the standing rule')
         self.assertIn('a standing rule', self.push.to(push.PM_KEY)[0])
         self.assertIn('hub questions log %s' % qid, self.push.to(push.PM_KEY)[0])
         self.pick_up('pm')
@@ -998,16 +1111,361 @@ class StandingPushTest(FiledPushCase):
         self.assertEqual(self.attempts('kit'), [1, 2])
         self.assertEqual(self.attempts(push.PM_KEY), [1, 2], 'the PM until it logs it')
 
-    def test_a_promote_of_an_answer_pushed_to_nobody_goes_to_the_pm_alone(self):
+    def test_a_promote_of_an_answer_no_longer_owed_goes_to_the_pm_alone(self):
         self.bind('blocked')
         qid = self.ask_bound()
         self.answer(qid)
         self.worker.poll()
-        self.assertEqual(self.push.calls, [])
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+        self.pick_up('kit')
+        self.later(130)
+        self.assertEqual(self.attempts('kit'), [1], 'picked up: nothing more owed')
         self.promote(qid)
         self.worker.poll()
-        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+        self.assertEqual([r for r, _t in self.push.calls], ['kit', push.PM_KEY])
         self.assertIn('standing rule', self.push.to(push.PM_KEY)[0])
+
+
+class AutoDoneTest(FiledPushCase):
+    """A filed answer is marked done by the hub once its asker has it, pinned to the version the
+    push fired at (kitlib.hubsite.push "Done by the hub", docs/action-hub.md "Filing the
+    answer")."""
+
+    def q(self, qid):
+        return self.store.get('questions', qid)
+
+    def assert_hub_done(self, qid):
+        d = self.q(qid)
+        self.assertEqual((d['status'], d.get('done_by'), d.get('done_why'), d.get('via')),
+                         ('done', 'hub', 'filed into kit:EX-1', 'hub-push'), d)
+        self.assertTrue(d.get('done_at'))
+        self.assertIsNotNone(d.get('filed_as'), 'the filing is kept')
+
+    def assert_not_done(self, qid, status='filed'):
+        d = self.q(qid)
+        self.assertEqual((d['status'], d.get('done_by')), (status, None), d)
+
+    def pending_for(self, key):
+        return [p['id'] for p in self.ok('GET', '/pending', AGENT, query={'for': key})['items']]
+
+    def test_a_pulled_answer_is_marked_done_once_its_asker_picks_it_up(self):
+        self.bind('pulled')
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.assert_not_done(qid)       # never in the filing's own write, nor at the push
+        self.later(130)
+        self.assertEqual(self.attempts('kit'), [1, 2], 'the filed push still reaches the asker')
+        self.assert_not_done(qid)
+        self.pick_up('kit')
+        self.later(400)
+        self.assert_hub_done(qid)
+        self.assertEqual(self.attempts('kit'), [1, 2])
+        self.assertEqual(self.pending_for('kit'), [])
+        self.later(3600)
+        self.assertEqual(self.attempts('kit'), [1, 2], 'the done fires no push')
+        self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_an_answer_picked_up_before_the_push_fired_is_marked_done_at_once(self):
+        self.bind('pulled')
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.pick_up('kit')
+        self.worker.poll()
+        self.assertEqual(self.push.calls, [])
+        self.assert_hub_done(qid)
+
+    def test_one_the_pm_asked_is_done_at_its_written_try_and_not_before(self):
+        self.bind('pulled')
+        self.push.states[push.PM_KEY] = push.NOT_WRITTEN
+        qid = self.ask_bound(asker='pm')
+        self.answer(qid)
+        self.worker.poll()
+        self.assert_not_done(qid)
+        self.push.states[push.PM_KEY] = push.WRITTEN
+        self.later(130)
+        self.assertEqual(self.attempts(push.PM_KEY), [1, 2])
+        self.assert_hub_done(qid)
+
+    def test_a_freed_record_still_pings_the_pm_and_stays_its_askers_until_it_reads_it(self):
+        self.bind('parked', 'open', live=())
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.later(130)
+        self.later(400)
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY],
+                         'the freed ping still fires; the asker is not sent it')
+        self.assertIn('no coordinator of repo kit is running', self.push.to(push.PM_KEY)[0])
+        self.assert_not_done(qid)
+        self.assertEqual(self.pending_for('kit'), [qid], 'pending for its asker (the wake)')
+        self.later(3600)
+        self.assert_hub_done(qid)
+
+    def test_an_asker_never_sent_it_counts_as_no_undelivered_try_and_no_give_up(self):
+        self.bind('parked', 'open', live=())
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.later(push.GIVE_UP_S + 10)
+        self.assertEqual(self.undelivered(), [])
+        self.assert_not_done(qid)
+        self.assertEqual(self.pending_for('kit'), [qid], 'its asker still reads it at its start')
+
+    def test_a_held_answer_told_to_the_records_coordinator_waits_for_its_asker(self):
+        self.bind('blocked', live={'kit'})
+        qid = self.ask_bound(asker='zeta')
+        self.answer(qid)
+        self.worker.poll()
+        self.later(130)
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+        self.assert_not_done(qid)
+        self.pick_up('kit')
+        self.later(400)
+        self.assert_not_done(qid)       # the coordinator's read is not the asker's
+        self.pick_up('zeta')
+        self.later(900)
+        self.assert_hub_done(qid)
+
+    def test_a_held_answer_to_its_live_asker_is_done_when_it_picks_it_up(self):
+        self.bind('blocked', live={'zeta'})
+        qid = self.ask_bound(asker='zeta')
+        self.answer(qid)
+        self.worker.poll()
+        self.pick_up('zeta')
+        self.later(130)
+        self.assert_hub_done(qid)
+
+    def test_a_standing_a_failed_an_unbound_and_a_run_line_answer_are_never_marked_done(self):
+        for case in ('standing', 'failed', 'class', 'unbound pm', 'run line'):
+            with self.subTest(case=case):
+                self.bind('pulled')
+                if case == 'failed':
+                    self.views.fail = HubError('store', 'disk full', 'views')
+                if case == 'class':
+                    qid = self.ask(**{'from': 'kit'})
+                elif case == 'unbound pm':
+                    qid = self.ask()
+                elif case == 'run line':
+                    qid = self.ask(**{'from': 'kit', 'record': {'repo': 'kit', 'id': 'EX-1'},
+                                      'options': [{'label': 'run D-001 cap=2',
+                                                   'description': 'go'},
+                                                  {'label': 'hold', 'description': 'no'}]})
+                else:
+                    qid = self.ask_bound()
+                body = {'choice': 0, 'note': NOTE}
+                if case == 'standing':
+                    body['standing'] = True
+                self.ok('POST', '/questions/%s/answer' % qid, OWNER, body)
+                self.worker.poll()
+                self.pick_up('kit')
+                self.pick_up('pm')
+                self.later(130)
+                self.later(400)
+                d = self.q(qid)
+                self.assertNotEqual(d['status'], 'done', d)
+                self.assertIsNone(d.get('done_by'))
+
+    def test_a_re_answer_reopens_one_the_hub_marked_done_and_reaches_its_asker_again(self):
+        self.bind('pulled')
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.pick_up('kit')
+        self.later(130)
+        self.assert_hub_done(qid)
+        self.answer(qid, choice=1)      # "Change answer" on the page
+        d = self.q(qid)
+        self.assertEqual((d['status'], d['answer']['choice'], d.get('done_by'),
+                          d.get('done_why'), d.get('done_at')),
+                         ('filed', 1, None, None, None))
+        self.worker.poll()
+        self.assertEqual(self.attempts('kit'), [1, 1],
+                         'the new answer is pushed: the old pick-up does not count for it')
+        self.assert_not_done(qid)
+        self.pick_up('kit')
+        self.later(400)
+        self.assert_hub_done(qid)
+        self.assertEqual(self.q(qid)['answer']['choice'], 1)
+
+    def test_a_promote_of_one_the_hub_marked_done_files_it_again_for_the_pm(self):
+        self.bind('pulled')
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.pick_up('kit')
+        self.later(130)
+        self.assert_hub_done(qid)
+        self.promote(qid)
+        d = self.q(qid)
+        self.assertEqual((d['status'], d.get('done_by'), d.get('done_why')), ('filed', None, None))
+        self.assertIsInstance(d['standing'], dict)
+        self.worker.poll()
+        self.assertIn('standing rule', self.push.to(push.PM_KEY)[0])
+        self.pick_up('pm')
+        self.pick_up('kit')
+        self.later(400)
+        self.assert_not_done(qid)       # a standing rule is the PM's to log
+        self.log(qid)
+        self.assertEqual(self.q(qid)['status'], 'logged')
+
+    def test_a_write_after_the_push_fired_wins_and_the_done_is_skipped(self):
+        # mutation proof: a done written with no version pin overwrites this write's version
+        logged = []
+        self.bind('pulled')
+        self.worker.log = logged.append
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.store.update('questions', qid, {'urgent': True})   # the answer is the same
+        self.pick_up('kit')
+        self.later(130)
+        self.assert_not_done(qid)
+        self.assertTrue(self.q(qid)['urgent'])
+        self.assertEqual(logged, ['push: %s not marked done: conflict' % qid])
+        self.assertEqual(self.attempts('kit'), [1], 'picked up: nothing more owed')
+
+    def test_a_re_answer_landing_as_the_done_is_written_wins(self):
+        self.bind('pulled')
+        logged = []
+        self.worker.log = logged.append
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.pick_up('kit')
+        real = self.store.update
+        raced = []
+
+        def update(coll, doc_id, changes, **kw):
+            if changes.get('done_by') == 'hub' and not raced:
+                raced.append(True)
+                self.answer(qid, choice=1)  # the owner's "Change answer" gets in first
+            return real(coll, doc_id, changes, **kw)
+        with mock.patch.object(self.store, 'update', update):
+            self.later(130)
+        self.assertEqual(raced, [True], 'the done write was tried')
+        d = self.q(qid)
+        self.assertEqual((d['status'], d['answer']['choice'], d.get('done_by')), ('filed', 1, None))
+        self.assertEqual(logged, ['push: %s not marked done: conflict' % qid])
+        self.worker.poll()
+        self.assertEqual(self.attempts('kit'), [1, 1], 'the new answer reaches its asker')
+
+    def test_the_done_survives_a_restart_of_the_worker(self):
+        self.bind('parked', 'open', live=())
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.worker = self.make()
+        self.pick_up('kit')
+        self.later(130)
+        self.assert_hub_done(qid)
+
+    def test_the_askers_own_done_of_one_the_hub_marked_done_is_no_conflict(self):
+        self.bind('pulled')
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        stale = self.q(qid)['version']      # what the asker read with the answer
+        self.pick_up('kit')
+        self.later(130)
+        self.assert_hub_done(qid)
+        before = self.q(qid)
+        got = self.ok('POST', '/questions/%s/done' % qid, AGENT,
+                      {'why': 'read it', 'from': 'kit', 'if_version': stale})
+        self.assertEqual((got['status'], got['done_by'], got['version']),
+                         ('done', 'hub', before['version']))
+        self.assertEqual(self.q(qid), before, 'nothing written')
+        status, obj = self.api.call('POST', BASE + '/questions/%s/done' % qid, AGENT,
+                                    {'why': 'w', 'from': 'other', 'if_version': stale})
+        self.assertEqual((status, obj['error']['code']), (403, 'forbidden'), obj)
+
+    def entry(self, qid):
+        return self.worker._outbox['question:' + qid]
+
+    def test_a_silent_asker_still_owed_the_answer_is_not_counted_undelivered(self):
+        # mutation proof: _summarize counting a silent recipient reports 1 undelivered here
+        self.bind('parked', 'open', live=())
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.later(10)
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY], 'the freed ping alone')
+        recipients = self.entry(qid)['recipients']
+        self.assertTrue(recipients['kit'].get('silent'), recipients)    # still owed, unsent
+        self.assertEqual([r for r, st in recipients.items() if not st.get('silent')
+                          and st.get('last') != push.WRITTEN], [], recipients)
+        self.assertEqual(self.worker.status()['undelivered'], 0)
+
+    def test_a_standing_rule_made_of_an_owed_answer_drops_the_hub_done_and_the_silent_asker(self):
+        # mutation proof: the merge keeping `done`, `version` or `has_it`, or the silent asker,
+        # leaves them on the entry (push-outbox.json) of a standing rule, which the PM logs
+        self.bind('parked', 'open', live=())
+        qid = self.ask_bound()
+        self.answer(qid)
+        self.worker.poll()
+        self.later(10)
+        before = self.entry(qid)
+        self.assertEqual((before.get('done'), type(before.get('version'))), ('kit', int))
+        self.assertTrue(before['recipients']['kit'].get('silent'))
+        self.promote(qid)
+        self.worker.poll()
+        after = self.entry(qid)
+        self.assertTrue(after['standing'])
+        self.assertEqual([k for k in ('done', 'version', 'has_it') if k in after], [], after)
+        self.assertEqual(sorted(after['recipients']), [push.PM_KEY], after['recipients'])
+        self.assertFalse(after['recipients'][push.PM_KEY]['once'])
+        self.assertIn('standing rule', self.push.to(push.PM_KEY)[-1])
+        self.pick_up('kit')
+        self.later(400)
+        self.assert_not_done(qid)       # a standing rule is the PM's to log
+
+
+class UnblockedPushTest(PushCase):
+    """The unblock-conditions job's `unblocked` event (kitlib.hubjobs.unblock_conditions): owed
+    once per record, so two in one round both reach the PM, each saying what it is."""
+
+    def jobs_sent(self):
+        return [t for t in self.push.to(push.PM_KEY) if t.startswith('[hub push] job ')]
+
+    def test_two_unblocks_are_two_pushes_and_a_failing_one_beside_them(self):
+        self.push.states[push.PM_KEY] = push.NO_SESSION
+        self.worker.job_event('unblock-conditions', 'unblocked', 'kit:FOO')
+        self.worker.job_event('unblock-conditions', 'unblocked', 'kit:BAR')
+        self.worker.job_event('unblock-conditions', 'failing')
+        self.push.states[push.PM_KEY] = push.WRITTEN
+        self.worker.send_jobs()
+        heads = sorted(t.splitlines()[0] for t in self.jobs_sent())
+        self.assertEqual(heads, [
+            '[hub push] job unblock-conditions failing route:pm attempt:1',
+            '[hub push] job unblock-conditions unblocked detail:kit:BAR route:pm attempt:1',
+            '[hub push] job unblock-conditions unblocked detail:kit:FOO route:pm attempt:1'])
+        said = [t for t in self.jobs_sent() if ' unblocked ' in t.splitlines()[0]]
+        for text in said:
+            self.assertIn('is unblocked', text)
+            self.assertNotIn('jobs.unblock-conditions', text)
+        self.t += push.SCHEDULE_S[-1]
+        self.worker.send_jobs()
+        self.assertEqual(len(self.jobs_sent()), 3, 'all written: nothing owed')
+
+    def test_the_same_record_again_is_one_push(self):
+        self.worker.job_event('unblock-conditions', 'unblocked', 'kit:FOO')
+        self.worker.job_event('unblock-conditions', 'unblocked', 'kit:FOO')
+        self.worker.send_jobs()
+        self.assertEqual(len(self.jobs_sent()), 1)
+
+    def test_two_sessions_crossing_in_one_round_are_two_pushes_each_saying_what_it_is(self):
+        self.push.states[push.PM_KEY] = push.NO_SESSION
+        self.worker.job_event('usage-crossover', 'crossing', 'kit:a2')
+        self.worker.job_event('usage-crossover', 'no-room', 'griff')
+        self.worker.job_event('usage-crossover', 'crossing', 'griff:a3')
+        self.push.states[push.PM_KEY] = push.WRITTEN
+        self.worker.send_jobs()
+        self.assertEqual(sorted(t.splitlines()[0] for t in self.jobs_sent()), [
+            '[hub push] job usage-crossover crossing detail:griff:a3 route:pm attempt:1',
+            '[hub push] job usage-crossover crossing detail:kit:a2 route:pm attempt:1',
+            '[hub push] job usage-crossover no-room detail:griff route:pm attempt:1'])
+        for text in self.jobs_sent():
+            self.assertIn('hub health jobs.usage-crossover', text)
 
 
 if __name__ == '__main__':

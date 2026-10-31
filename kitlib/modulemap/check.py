@@ -1,0 +1,315 @@
+"""The edge check and the baseline (docs/module-map.md "--check", "--baseline").
+
+The check scans the whole tree each run, so it keeps no state and needs no diff. Each crossing a
+detector reports is, in this order: into a messaging module (allowed), along an allowed edge of its
+kind (allowed), counted by a ratchet, or refused. A ratchet whose count is over its ceiling fails
+too; one under its ceiling gets a "lower the ceiling" line. A ceiling above the base's is refused
+unless the owner's map raises it (ratchet.py), and so is an architecture page that does not match
+the map (page.py). run() also prints or writes that page and the scope report (scope.py), and
+keeps a scope record when asked (scopelog.py).
+"""
+import collections
+import json
+import os
+import re
+
+from kitlib.git import checkout as gitcheckout
+from kitlib.git import cmd as gitcmd
+from kitlib.git import refs as gitrefs
+from kitlib.git import repo as gitrepo
+
+from . import detectors, ratchet
+from . import page as pagemod
+from . import scope as scopemod
+from . import scopelog
+from .load import ROOT, MapError, load_ceilings, load_map
+
+SECTION = 'modules'
+LIST_TIMEOUT = 120
+MAX_BYTES = 4 * 1024 * 1024
+OK, FAIL, REFUSED = 0, 1, 2
+Outcome = collections.namedtuple('Outcome', 'code lines')
+Sorted = collections.namedtuple('Sorted', 'messaging allowed ratcheted refused')
+
+
+def tree_files(root):
+    """The repo-relative files git lists in `root` (tracked, and untracked but not ignored).
+    MapError when git cannot list them: an empty list would read as a clean tree."""
+    r = gitcmd.call(['ls-files', '-co', '--exclude-standard', '-z'], root, timeout=LIST_TIMEOUT)
+    if r.rc != 0:
+        raise MapError('git ls-files failed in %s: %s' % (root, r.err or 'exit %s' % r.rc))
+    return sorted(set(n for n in gitcmd.text(r.out).split('\0') if n))
+
+
+def reader(root):
+    def read(rel):
+        path = os.path.join(root, *rel.split('/'))
+        try:
+            if os.path.getsize(path) > MAX_BYTES:
+                return None
+            with open(path, encoding='utf-8-sig', errors='replace') as fh:
+                return fh.read()
+        except OSError:
+            return None
+    return read
+
+
+def _abs(root, rel):
+    return os.path.join(root, *rel.replace('\\', '/').split('/'))
+
+
+def map_paths(root, cfg, map_path=None, ceilings_path=None, require_owner=True):
+    """`(map file, ceilings file or None, notes)`, absolute. Given paths win over `.kit.json`
+    "modules"; with none, the section must name the map, and (`require_owner`) the owner rules
+    must lock it. MapError otherwise."""
+    notes = []
+    sec = cfg.section(SECTION)
+    if map_path and require_owner:
+        notes.append('dry run: the map was given on the command line, so it is not checked as an '
+                     'owner path')
+    elif not map_path:
+        rel = sec.get('map')
+        if not rel:
+            raise MapError('.kit.json has no "modules".map naming the module map '
+                           '(docs/module-map.md "Configuring")')
+        if require_owner and not cfg.owner_rules().is_locked(rel):
+            raise MapError('the module map %s is not an owner path: list it in .kit.json '
+                           '"owner".paths (docs/module-map.md "Configuring")' % rel)
+        map_path = _abs(root, rel)
+    if not ceilings_path and sec.get('ceilings'):
+        ceilings_path = _abs(root, sec['ceilings'])
+    return map_path, ceilings_path, notes
+
+
+def scan(mm, files, read):
+    """Every crossing the detectors report, sorted by file and line."""
+    out = []
+    for d in detectors.all_detectors():
+        out.extend(d.detect(files, mm, read))
+    return sorted(out, key=lambda c: (c.path, c.line, c.detector, c.dst, c.target))
+
+
+def sort_crossings(mm, crossings):
+    messaging, allowed, refused = [], [], []
+    ratcheted = collections.OrderedDict((r['id'], []) for r in mm.ratchets)
+    for c in crossings:
+        if c.ratchet:                       # a ratchet's own detector (java-imports) counts it
+            ratcheted[c.ratchet].append(c)
+        elif c.dst in mm.messaging:
+            messaging.append(c)
+        elif mm.edge_for(c.src, c.dst, c.kind):
+            allowed.append(c)
+        else:
+            r = mm.ratchet_for(c)
+            if r:
+                ratcheted[r['id']].append(c)
+            else:
+                refused.append(c)
+    return Sorted(messaging, allowed, ratcheted, refused)
+
+
+def where(c):
+    return '%s:%d  (%s: %s)' % (c.path, c.line, c.detector, c.target)
+
+
+def page_lines(page_rel, current, expected):
+    """`(failed, lines)` for the architecture page at `page_rel`: `current` its text on disk (None
+    when missing), `expected` the text the map renders."""
+    if not pagemod.stale(current, expected):
+        return False, ['page %s matches the map' % page_rel]
+    why = 'does not exist' if current is None else 'does not match the map'
+    return True, ['PAGE STALE  %s %s: run module_map.py --page --write and commit it'
+                  % (page_rel, why)]
+
+
+def check(mm, ceilings, files, read, base=None, page=None):
+    """Outcome of the edge check: 0 every crossing allowed or under its ratchet's ceiling, every
+    ceiling at or under the base's (`base`, a ratchet.Base; None: not compared) and the page
+    current (`page`, `(rel, text on disk or None, rendered text)`; None: not checked), 1 not."""
+    s = sort_crossings(mm, scan(mm, files, read))
+    lines, failed = [], False
+    total = len(s.messaging) + len(s.allowed) + sum(map(len, s.ratcheted.values())) + len(s.refused)
+    lines.append('module_map: %d crossing(s): %d into messaging, %d on allowed edges, %d under '
+                 'ratchets, %d refused' % (total, len(s.messaging), len(s.allowed),
+                                           sum(map(len, s.ratcheted.values())), len(s.refused)))
+    for c in s.refused:
+        failed = True
+        lines.append('REFUSED  %s -> %s  %s  %s' % (c.src, c.dst, c.kind, where(c)))
+    unknown = sorted(k for k in ceilings if k not in s.ratcheted)
+    for k in unknown:
+        lines.append('note: the ceilings file names %s, which no ratchet in the map has' % k)
+    for r in mm.ratchets:
+        got = s.ratcheted[r['id']]
+        ceiling = ceilings.get(r['id'], 0)
+        state = 'ok'
+        if len(got) > ceiling:
+            failed = True
+            state = 'OVER CEILING'
+        elif len(got) < ceiling:
+            state = 'lower the ceiling to %d' % len(got)
+        lines.append('ratchet %s  %s -> %s  count %d / ceiling %d / goal %d  %s'
+                     % (r['id'], r['from'], r['to'], len(got), ceiling, r['goal'], state))
+        if len(got) > ceiling:
+            for c in got:
+                lines.append('  %s' % where(c))
+    if base is not None:
+        raised, more = ratchet.compare(mm, ceilings, base)
+        failed = failed or raised
+        lines.extend(more)
+    if page is not None:
+        stale, more = page_lines(*page)
+        failed = failed or stale
+        lines.extend(more)
+    lines.append('module_map: %s' % ('FAIL' if failed else 'OK'))
+    return Outcome(FAIL if failed else OK, lines)
+
+
+def ratchet_id(src, kind, dst):
+    name = '%s-%s-%s' % (src, kind, 'root' if dst == ROOT else dst)
+    return re.sub(r'[^A-Za-z0-9._-]', '-', name)
+
+
+def baseline(mm, ceilings, files, read):
+    """Outcome (always 0) printing the ratchets the current tree needs: the map's ratchets with
+    their counts as ceilings, and one new ratchet per (from, kind, to) of refused crossings."""
+    s = sort_crossings(mm, scan(mm, files, read))
+    new = collections.OrderedDict()
+    for c in s.refused:
+        new.setdefault((c.src, c.kind, c.dst), []).append(c)
+    taken = {r['id'] for r in mm.ratchets}
+    entries, ceil = [], collections.OrderedDict()
+    lines = ['module_map baseline: %d existing ratchet(s), %d new' % (len(mm.ratchets), len(new))]
+    for r in mm.ratchets:
+        n = len(s.ratcheted[r['id']])
+        ceil[r['id']] = n
+        lines.append('  %-32s %s -> %s  count %d (ceiling now %d)'
+                     % (r['id'], r['from'], r['to'], n, ceilings.get(r['id'], 0)))
+    for (src, kind, dst), got in new.items():
+        rid = ratchet_id(src, kind, dst)
+        while rid in taken:
+            rid += '-x'
+        taken.add(rid)
+        ceil[rid] = len(got)
+        entries.append(collections.OrderedDict([('id', rid), ('from', src), ('to', dst),
+                                                ('kinds', [kind]), ('goal', 0)]))
+        lines.append('  %-32s %s -> %s  %s  count %d (new)' % (rid, src, dst, kind, len(got)))
+    if entries:
+        lines.append('new ratchets for the map (the owner sets each goal; a goal above 0 needs '
+                     'goal_reason):')
+        lines.extend(json.dumps(e) for e in entries)
+    lines.append('ceilings:')
+    lines.append(json.dumps(ceil, indent=1))
+    return Outcome(OK, lines)
+
+
+def _rel(root, path):
+    """`path` relative to `root`, posix, or None when it is outside it (another drive too)."""
+    if not path:
+        return None
+    try:
+        rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root)).replace(os.sep, '/')
+    except ValueError:
+        return None
+    return None if rel == '..' or rel.startswith('../') or os.path.isabs(rel) else rel
+
+
+def base_of(root, cfg, rev, map_path, ceilings_path):
+    """`(ratchet.Base or None, notes)` for `rev`; with no `rev`, the default base (docs/gate.md
+    "Default base"), and none (a note) when that does not resolve. MapError when a given `rev`
+    or the git reads fail."""
+    notes = []
+    if not rev:
+        rev, note = gitrefs.default_base(root, cfg.remote, cfg.main_branch)
+        if note:
+            notes.append('note: %s' % note)
+        sha, why = gitrefs.resolve(rev, root)
+        if not sha:
+            return None, notes + ['note: no base (%s): ceilings are not compared; pass --base'
+                                  % why]
+    map_rel, ceilings_rel = _rel(root, map_path), _rel(root, ceilings_path)
+    for what, path, rel in (('map', map_path, map_rel), ('ceilings file', ceilings_path,
+                                                          ceilings_rel)):
+        if path and rel is None:
+            return None, notes + ['note: the %s is outside the checkout: ceilings are not '
+                                  'compared with the base' % what]
+    base, more = ratchet.read_base(root, rev, map_rel, ceilings_rel)
+    return base, notes + more
+
+
+def render_page(root, mm, map_path):
+    """The architecture page text for `mm`, its header naming the map repo-relative (by file name
+    when the map is outside the checkout)."""
+    return pagemod.render(mm, _rel(root, map_path) or os.path.basename(map_path))
+
+
+def _page_check(root, cfg, mm, map_path, given_map):
+    """`(page tuple for check() or None, notes)`."""
+    rel = cfg.section(SECTION).get('page')
+    if not rel:
+        return None, []
+    if given_map:
+        return None, ['note: the page %s is not checked: the map was given on the command line'
+                      % rel]
+    return (rel, reader(root)(rel.replace('\\', '/')), render_page(root, mm, map_path)), []
+
+
+def write_page(root, cfg, mm, map_path):
+    """Write the page `.kit.json` "modules".page names; Outcome. MapError when none is named or
+    the write is refused (kitlib.git.checkout.write_text: a linked worktree only)."""
+    rel = cfg.section(SECTION).get('page')
+    if not rel:
+        raise MapError('.kit.json has no "modules".page naming the architecture page '
+                       '(docs/module-map.md "The architecture page")')
+    try:
+        gitcheckout.write_text(rel, render_page(root, mm, map_path), root)
+    except (gitrepo.WriteRefused, OSError) as e:
+        raise MapError('cannot write the page %s: %s' % (rel, e))
+    return Outcome(OK, ['module_map: wrote the page %s' % rel])
+
+
+def scope_base(root, cfg, rev):
+    """`(rev, notes)`: `rev`, or the default base (docs/gate.md "Default base"). MapError when no
+    base is given and the default does not resolve."""
+    if rev:
+        return rev, []
+    rev, note = gitrefs.default_base(root, cfg.remote, cfg.main_branch)
+    sha, why = gitrefs.resolve(rev, root)
+    if not sha:
+        raise MapError('no base (%s): pass --base' % why)
+    return rev, ['note: %s' % note] if note else []
+
+
+def run(root, cfg, mode, map_path=None, ceilings_path=None, files=None, base_rev=None,
+        write=False, record=False):
+    """`mode` 'check', 'baseline', 'page' or 'scope'. MapError when the map, the ceilings file,
+    the base or the tree listing cannot be used. Only a check needs the owner path; a baseline
+    writes nothing, a scope writes only its scope record (`record`; scopelog.write, whose failure
+    is a line and never an exit code), and a page writes only the generated page (`write`)."""
+    given_map = bool(map_path)
+    map_path, ceilings_path, notes = map_paths(root, cfg, map_path, ceilings_path,
+                                               require_owner=(mode == 'check'))
+    mm = load_map(map_path)
+    if mode == 'page':
+        if write:
+            return write_page(root, cfg, mm, map_path)
+        return Outcome(OK, render_page(root, mm, map_path).splitlines())
+    if mode == 'scope':
+        rev, more = scope_base(root, cfg, base_rev)
+        paths, mb = scopemod.changed_paths(root, rev)
+        found = scopemod.scope_of(mm, paths)
+        lines = scopemod.report(found, '%s (%s)' % (rev, mb[:10]))
+        if record:
+            kept, why = scopelog.write(root, found, rev, mb)
+            lines.append('module_map scope: record kept %s' % kept if kept else
+                         'module_map scope: record not kept: %s' % why)
+        return Outcome(OK, more + lines)
+    ceilings = load_ceilings(ceilings_path)
+    if files is None:
+        files = tree_files(root)
+    if mode == 'check':
+        base, more = base_of(root, cfg, base_rev, map_path, ceilings_path)
+        page, pnotes = _page_check(root, cfg, mm, map_path, given_map)
+        out = check(mm, ceilings, files, reader(root), base, page)
+        return Outcome(out.code, notes + more + pnotes + out.lines)
+    out = baseline(mm, ceilings, files, reader(root))
+    return Outcome(out.code, notes + out.lines)

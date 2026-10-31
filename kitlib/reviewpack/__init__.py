@@ -5,8 +5,8 @@ tools/review_pack.py; docs/review-pack.md).
 `Outcome.lines` and exits with `Outcome.code`. It never prints and never exits.
 
 The pack: base and merge-base, whether the branch contains the base tip, commits, whether the tip
-has a full-gate OK record (the `gate` line, gate_line: printed only, the exit status unchanged;
-a landing refuses a tip without one), files changed
+has the gate-OK record its landing needs (the `gate` line, gate_line: printed only, the exit status
+unchanged; a --full one, or a scoped one where docs/gate.md "The final gate" allows it), files changed
 with +/- grouped by the risk level in docs/ops/risk-map.md (unlisted = High), owner-only paths
 touched and whether an Owner-Approved trailer covers them, the branch's commits with no
 Co-Authored-By trailer (when configured, below), and the doc-budget verdict. `diff` set: only the
@@ -21,10 +21,13 @@ Owner-only rows read OK (approved), MISSING or UNMATCHED (both block), or REVERT
 edit the branch itself takes back, printed so a reviewer sees the round-trip but not counted as a
 problem, because the path is byte-identical to the merge base. The rules are the base's `owner`
 section merged with the branch's (kitlib.config.owner.merge): a branch cannot unlock a path, and
-the owner's email comes from the base alone. A trailer approves only on a commit whose AUTHOR
-email is the owner's; `Owner-Approval: hub:A-<n>` (the hub form) on a non-merge commit reads ok by its
-form only, and landing verifies it; with "owner".email unset every Owner-Approved trailer is
-unverified and every owner-only change blocks.
+the owner's email comes from the base alone. As the landing guard judges (docs/guard.md "Owner-only
+commits"), a commit whose AUTHOR email is the owner's (read by ownercommits.commits, judged by
+rules.is_owner) is ok, with or without a trailer; its row shows an Owner-Approved trailer that
+covers the path. On anyone else's commit an Owner-Approved trailer approves nothing;
+`Owner-Approval: hub:A-<n>` (the hub form) on a non-merge commit reads ok by its form only, and
+landing verifies it; with "owner".email unset no commit is the owner's and every owner-only change
+blocks.
 
 `.kit.json` "review_pack" as the BASE holds it (a branch cannot switch its own check off):
 "coauthor" (default false) lists the branch's commits with no Co-Authored-By trailer, each with
@@ -57,6 +60,7 @@ import subprocess
 import sys
 
 from kitlib import kitroot
+from kitlib.preflight import paths
 from kitlib.config import ConfigError, load as load_config, load_at
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd as gitcmd
@@ -291,10 +295,14 @@ def owner_approval_rows(commits, rules):
     """[(sha, changed paths, Owner-Approved values, not_owner[, hub values])] ->
     [(sha, status, subject, detail)].
 
-    MISSING: a locked path this commit changes that no trailer OF ITS OWN covers (approval is per
-    commit), or that a trailer covers on a commit `not_owner` says is not provably the owner's.
-    UNMATCHED: a trailer naming a path this commit does not change. Each locked path needs its own
-    cover. The hub form (`Owner-Approval: hub:A-<n>`, the 5th field, read as ownercommits reads it;
+    A commit `not_owner` is None for (the owner authored it, by the landing guard's own test:
+    owner_only_section) is ok on every locked path, as the landing judges it
+    (kitlib.guard.ownercommits: an owner's commit is never a violation); its row shows the
+    Owner-Approved trailer that covers the path, if one does.
+    MISSING, on anyone else's commit: a locked path no hub approval of its own covers (approval is
+    per commit; an Owner-Approved trailer there is an unproven claim and covers nothing).
+    UNMATCHED: a trailer naming a path this commit does not change. The hub form
+    (`Owner-Approval: hub:A-<n>`, the 5th field, read as ownercommits reads it;
     the 6th says the commit is a merge, which cannot carry one)
     covers every locked path of a commit when it is the one valid value; the hub verifies it at land
     time (kitlib.guard.ownercommits), which this read-only pack cannot, so the row says so."""
@@ -308,7 +316,10 @@ def owner_approval_rows(commits, rules):
             if not rules.is_locked(path):
                 continue
             got = rules.approved_by(path, values)
-            if not got and hub_ok:
+            if not not_owner:
+                rows.append((sha, 'ok', path, '%s %s' % (key, got) if got else
+                             'authored by the owner (the landing judges by author email)'))
+            elif not got and hub_ok:
                 rows.append((sha, 'ok', path, '%s %s (the hub verifies it at land time, not this pack)'
                              % (ownercommits.TRAILER, hub[0])))
             elif not got and hub and merge:
@@ -318,14 +329,13 @@ def owner_approval_rows(commits, rules):
             elif not got and hub:
                 rows.append((sha, 'MISSING', path, 'do not land - its %s %s is not one hub:A-<n> (as %s)'
                              % (ownercommits.TRAILER, ', '.join(hub), ownercommits.EXAMPLE)))
-            elif got and not_owner:
+            elif got:
                 rows.append((sha, 'MISSING', path, 'do not land - %s %s is on a commit %s'
                              % (key, got, not_owner)))
-            elif got:
-                rows.append((sha, 'ok', path, '%s %s' % (key, got)))
             else:
-                rows.append((sha, 'MISSING', path, 'do not land - trailers on this commit: %s'
-                             % (', '.join('%s %s' % (key, t) for t in values) or 'none')))
+                rows.append((sha, 'MISSING', path, 'do not land - a commit %s; trailers on this '
+                             'commit: %s' % (not_owner, ', '.join('%s %s' % (key, t) for t in values)
+                                             or 'none')))
         for value in values:
             if not rules.trailer_matches(value, paths):
                 rows.append((sha, 'UNMATCHED', '%s %s' % (key, value),
@@ -385,6 +395,12 @@ def owner_only_section(root, base, branch, mb, rules):
     rules.is_locked() on every path, never a git pathspec (those match case-sensitively)."""
     rng = '%s..%s' % (base, branch)
     identity = rules.identity_problem()
+    # Who authored each commit, read as the landing guard reads it (no mailmap, no replace refs)
+    # and judged by its test, rules.is_owner, so this table and the landing cannot disagree.
+    found, why = ownercommits.commits(root, branch, [base])
+    if found is None:
+        raise Stop('%s: %s' % (TOOL, why))
+    authors = {sha: email for sha, _, email, _ in found}
     simple, merges = [], []
     for sha, merge, author, body, names in range_commits(root, rng):
         values = trailers_of(body, rules.trailer)
@@ -392,6 +408,7 @@ def owner_only_section(root, base, branch, mb, rules):
         paths = commit_paths(root, sha) if merge else names
         if not values and not any(rules.is_locked(p) for p in paths):
             continue
+        author = authors.get(sha, '')
         not_owner = None if rules.is_owner(author) else (
             'whose author cannot be verified: %s' % identity if identity
             else 'authored by %s, not the owner' % (author or '?'))
@@ -517,6 +534,9 @@ def index_line(root, base, branch, base_cfg):
 def pack(path, branch, base=None, diff=None):
     """The whole command for the checkout `path` is in. Returns an Outcome; never prints."""
     lines = []
+    fixed = paths.mangled_dir(path)
+    if fixed:
+        return Outcome(USAGE, ['%s: refused: %s' % (TOOL, paths.mangled_message(path, fixed))])
     try:
         return _pack(lines, path, branch, base, diff)
     except Stop as stop:
@@ -524,17 +544,92 @@ def pack(path, branch, base=None, diff=None):
         return Outcome(USAGE, lines)
 
 
-def gate_line(top, branch):
-    """The `gate` line: whether `branch`'s tip has the record a landing requires, a gate-OK
-    record of exactly that commit from a `gate.py --full` pass (gate_ok.verify_full; docs/gate.md
-    "Landing"). Printed only: it never changes the exit status."""
+def gate_line(top, branch, cfg=None, base=None):
+    """The `gate` line: whether `branch`'s tip has the record its landing requires. A
+    `gate.py --full` pass's gate-OK record of exactly that commit always lands it (gate_ok.verify_full;
+    docs/gate.md "Landing"). Otherwise the base's config `cfg` and the base `base` decide, by the
+    landing's own rules (kitlib.gate.land: Lander.diff_refusal for what a scoped record cannot land,
+    full_needed for the procedure's --full; docs/gate.md "The final gate"). "landing will refuse" is
+    said only where the landing does: no record at all, or a record the diff check refuses. A strict
+    path under a base without gate_once or shared_paths is the procedure's rule, not the record
+    check's, so a scoped record is then said to land, with its --full final gate named. Printed only:
+    it never changes the exit status. The record's own steps are not re-checked."""
     tip, why = gitrefs.resolve(branch, top)
     if not tip:
         return 'gate     tip of %s cannot be read (%s); landing will refuse' % (branch, why)
     rec, why = gate_ok.verify_full(top, tip)
-    if rec is None:
-        return 'gate     tip %s: NO full-gate OK record (%s); landing will refuse' % (tip[:10], why)
-    return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    if rec is not None:
+        return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
+    head = 'gate     tip %s: NO full-gate OK record (%s)' % (tip[:10], why)
+    scoped = gate_ok.verify(top, tip)[0]
+    mode = gate_ok.mode_of(scoped) if scoped is not None else None
+    if mode not in ('select', 'docs'):
+        scoped, mode = None, None
+    kind, text = _final_gate(top, cfg, base, tip, mode)
+    if kind == 'unknown' and scoped is None:
+        return '%s; landing will refuse' % head        # no record at all: it refuses whatever the rule
+    if kind == 'record':
+        return '%s; landing will refuse: this tip needs --full (%s)' % (head, text)
+    if kind == 'default':
+        return ('%s; landing will refuse the docs-only record: the change is not docs-only, so the '
+                'final gate is the default gate (gate.py without --full)' % head)
+    if kind == 'procedure':
+        if scoped is None:
+            return ("%s; landing will refuse; this tip's final gate must be --full (%s)"
+                    % (head, text))
+        return ("gate     tip %s: scoped gate record, ended %s, which the landing takes; this tip's "
+                'final gate must be --full (%s)' % (tip[:10], scoped.get('ended_utc'), text))
+    if kind == 'unknown':
+        return '%s; cannot tell whether the scoped record lands it (%s)' % (head, text)
+    if scoped is None:
+        return ('%s; landing will refuse until the scoped final gate (gate.py without --full) '
+                'passes on this tip' % head)
+    if gate_once(cfg):
+        return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
+                ' a strict path or a gate config change still needs --full'
+                % (tip[:10], scoped.get('ended_utc')))
+    return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s, steps not '
+            're-checked' % (tip[:10], scoped.get('ended_utc')))
+
+
+def gate_once(cfg):
+    """True when the Config `cfg` (None: no config) sets "landing".gate_once true."""
+    return cfg is not None and cfg.section('landing').get('gate_once') is True
+
+
+def _final_gate(top, cfg, base, tip, mode):
+    """`(kind, text)` for a tip whose scoped record (`mode` "select", "docs" or None) is judged by
+    the landing's rules on its diff against `base` under `cfg`: ('record', why) the diff check
+    refuses a scoped record; ('default', None) only a docs record is refused, and a default-mode
+    one is not; ('procedure', why) the record check takes it but the procedure ends the tip on
+    --full (a strict path); ('unknown', why) it cannot be told; (None, None) a scoped record lands."""
+    if cfg is None or not base:
+        return 'unknown', 'no base config'
+    try:
+        from kitlib.gate import land, runner
+        sha, why = gitrefs.resolve(base, top)
+        mb, why2 = merge_base(top, base, tip)
+        if not sha or not mb:
+            return 'unknown', why or why2 or 'no merge base'
+        changed, why = runner.changed_between(top, mb, tip)
+        if changed is None:
+            return 'unknown', why
+        lander = land.Lander(top, [], None, [])
+        lander.cfg, lander.expect_main = cfg, sha
+        refused = lander.diff_refusal(changed, mode or 'select', None)
+        if refused and mode == 'docs':
+            if lander.diff_refusal(changed, 'select', None) is None:
+                return 'default', None
+        if refused:
+            return 'record', refused
+        reason, unknown = land.full_needed(top, cfg, sha, changed, mode == 'docs')
+        if reason:
+            return 'procedure', reason
+        if unknown:
+            return 'unknown', unknown
+        return None, None
+    except Exception as e:      # noqa: BLE001 - the line is printed only and never fails the pack
+        return 'unknown', '%s: %s' % (type(e).__name__, e)
 
 
 def _pack(lines, path, branch, base, diff):
@@ -576,7 +671,7 @@ def _pack(lines, path, branch, base, diff):
                   '--').splitlines()
     lines.append('commits  %d (no merges)' % len(commits))
     lines.extend('           ' + c for c in commits[:40])
-    lines.append(gate_line(top, branch))
+    lines.append(gate_line(top, branch, base_cfg, base))
 
     levels = risk_rules(top)
     groups = {}

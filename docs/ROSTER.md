@@ -1,7 +1,7 @@
 # Agent roster
 
 The kit's plugin ships these agent definitions in `hosts/claude/shell/agents/`, rendered from `content/roles/`
-(docs/content.md). Each is a generic copy of the live definition; repo specifics live in the repo's `.claude/agent-profile.md` (every agent) and
+(docs/content.md). Repo specifics live in the repo's `.claude/agent-profile.md` (every agent) and
 `.claude/coordinator-profile.md` (coordinator only). The plugin registers each one under its prefix:
 dispatch a row as `pm-kit:<row>` (`subagent_type`, `--agent`). A repo's own `.claude/agents/<row>.md`
 is a separate agent named `<row>`; it does not replace `pm-kit:<row>`. A repo that ships its own
@@ -29,17 +29,18 @@ standard tier (Claude: `model: sonnet`).
 <!-- rendered: roles -->
 | role | tier | effort | use for |
 |---|---|---|---|
-| analyst | light | high | The read type - branch review (skill specialty-review) and research (skill specialty-research); builds and edits nothing. Raised to the strong tier per dispatch only by the "Reviewer model" rule in the dispatch skill's roster file. |
+| analyst | light | high | The read type - branch review (skill specialty-review) and research (skill specialty-research); builds and edits nothing. Raised per dispatch only by the "Reviewer model" rule (strong tier) and the research rule (standard tier) in the dispatch skill's roster file. |
 | consultant | deep | high | Own long-lived launched session per repository (never dispatched; 1M via launcher). Answers engineering questions from coordinators and workers; never edits, lands or dispatches builds; idle until asked. |
 | coordinator | strong | medium | Main session, never a subagent. Splits work, dispatches agents, reviews branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code. |
 | deep-worker | deep | xhigh | Own launched session (never dispatched; 1M via launcher). Root cause or concurrency work senior-worker failed at or plainly cannot do; never builds or plans. |
 | docs-writer | standard | medium | The docs type - records and specs (skill specialty-docs). Docs only. |
 | helper | light | medium | Bulk menial reads and mechanical bulk writes, dispatched by a builder into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story. |
 | lander | light | medium | Optional wrapper: submits one reviewed branch (or a batch) for landing, waits for the result, reports. Never edits code. Dispatched with no model override, and never overridden. |
-| pm | strong | low | The project manager: the owner's one main session (the after-reboot resume starts it so), never a subagent. Keeps every repository's coordinator running and briefed, records owner decisions in the ledger, schedules the machine, runs the Action Hub. Builds and lands nothing itself. |
+| pm | strong | low | The project manager: the owner's one main session (the hub resumes it so after a boot), never a subagent. Keeps every repository's coordinator running and briefed, records owner decisions in the ledger, schedules the machine, runs the Action Hub. Builds and lands nothing itself. |
 | senior-worker | strong | high | High-risk changes: networking, concurrency, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes. |
 | strong-worker | strong | medium | High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring. Not plan-only or sync/prep work (worker). |
 | test-runner | light | - | Runs test tiers in a given worktree and reports only PASS/FAIL plus failing lines. |
+| topic | strong | high | Own launched plain session the owner drives (never dispatched). Builds the records batched for its branch, in its own worktree; pulls each, gates, reports to the PM; never lands. |
 | weak-worker | light | high | Small, well-defined, low-risk changes the brief sizes by listing them (named files, named edits, a few files): doc lines, small additive changes with their test. Escalates to worker when the task is bigger or less clear than briefed. |
 | worker | standard | medium | Default coder for routine low and medium risk work: additive content, UI, pure logic with tests, small fixes with a known cause, behaviour-neutral moves and renames; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation). |
 <!-- end rendered -->
@@ -59,8 +60,7 @@ host (`model.<host>:`, docs/content.md); none does.
 | deep | opus | account-default |
 <!-- end rendered -->
 
-`account-default` writes no `model` line: the role runs on the model the Codex account is set to, as
-the Codex branch's roles had it. On Codex a tier differs by reasoning effort: a role's `effort`, else
+`account-default` writes no `model` line: the role runs on the model the Codex account is set to. On Codex a tier differs by reasoning effort: a role's `effort`, else
 light `low`, standard `medium`, strong `high`, deep `xhigh` (hosts/codex/adapter/content.py
 `TIER_EFFORT`). The owner names Codex models per tier in hosts.json when they are chosen, and the table follows on the next render.
 With no light-tier model mapped for Codex, weak-worker there runs the account default at its own effort, high
@@ -88,23 +88,8 @@ experimental:
   inferred, not stated there.
 - Only these four rows have it (tests/agents/test_agents.py,
   `test_only_the_long_cache_roles_ask_for_the_one_hour_prompt_cache`): strong-worker, worker,
-  docs-writer and weak-worker. The owner asked for the last three after a prompt-cache audit. The
-  untested pricing computation in docs/agent-review.md, "Context and cache findings", was made for
-  the opus/medium default coder, which was senior-worker (opus-worker before it) until the two
-  roles swapped charters on 2026-10-15, and for worker; it does not cover docs-writer or weak-worker.
+  docs-writer and weak-worker. The pricing computation in docs/agent-review.md, "Context and cache findings", is untested
+  and does not cover docs-writer or weak-worker.
 - Check it took: in one run's usage block for any of these four roles, the cache-creation split
-  counts tokens in the one-hour field and none in the five-minute field. Not yet observed for any
+  counts tokens in the one-hour field and none in the five-minute field. NOT OBSERVED for any
   of them.
-
-## Changes versus the live files
-
-Source: the files in the project manager's `kit/agents/` at the time of the copy. Every other file is byte-identical to its live file. Behaviour is unchanged in all cases.
-
-The live files held no ruling id, no repo name and no owner path, so the scrub changed only two files.
-
-- **coordinator.md**, startup step 3 (check in with the project manager): the id of the newest ruling in the state note was replaced by plain words, and later the step stopped asking for an id at all: it asks for "owner decisions since your last check-in". Reason: the ids were the project manager's own numbering.
-- **researcher.md**, end of "Repo tools": removed one line, a research exclusion for a single repository. Reason: it named a repo, and is a repo-specific research exclusion. It belongs in that repo's `.claude/agent-profile.md`; the agent already reads the profile. Until a repo's profile carries it, an agent could research those topics. The researcher role has since merged into the analyst (docs/specialty-skills.md); the exclusion stays out of it.
-
-Left as is, on purpose:
-- Role words "PM" and "project manager" and the launcher commands `launch.py deep` (coordinator, deep-worker) and `launch.py consultant` (consultant; `launcher\start-*.ps1` paths before the launcher moved into the kit, docs/launcher.md): the kit's own roles and launcher, not owner-specific.
-- The host's per-user folder (`{{user_folder}}`, `~/.claude` on Claude): home-relative, no user name. The comfy tools and the knowledge folder are named in the kit since (`<kit>/optional/comfy`, `<kit>/knowledge/asset-generation`; machine setup links the old `~/.claude` paths to them).

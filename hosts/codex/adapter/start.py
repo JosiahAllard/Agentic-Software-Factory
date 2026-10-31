@@ -14,6 +14,7 @@ note comes from PM_KIT_CODEX_STATE (outside the checkout). The checks read; they
 and start nothing. A check that fails is reported in the text, never raised.
 """
 import json
+import os
 
 from kitlib import agentstart, sessionmark
 from kitlib.host import header
@@ -34,7 +35,6 @@ def _lock_lines():
 
 
 def text(event, kit, payload=None, environ=None, checks=None, lock_reader=None):
-    import os
     env = os.environ if environ is None else environ
     out = header.text(kit)
     if event == 'SubagentStart':

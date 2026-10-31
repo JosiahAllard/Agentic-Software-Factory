@@ -10,12 +10,10 @@ common dir, where records were before, is writable by any session that can write
 NoRecordFolder. One record per commit; a later pass of the same commit replaces it (atomically: a
 temp file in the same folder, then os.replace).
 
-The grace window (until the legacy read and the .git copies are retired, later work): every
-write also writes the record's .git copy, `<git common dir>/kit-gate-ok/<commit>.json`
-(legacy_dir), after the folder's record, for an older kit's readers (write). Every reader (a landing, the guard, the pre-push
-hook, the worktree and review tools) reads the record folder first and, when it has no record
-for the commit or there is no record folder (no dev_drive), the .git copy, so a branch gated by
-an older kit or before the record folder moved needs no fresh gate.
+The .git copy, `<git common dir>/kit-gate-ok/<commit>.json` (legacy_dir), is used only when
+there is no record folder (no dev_drive): it is then the one record written (write) and the one
+read (read). With a dev_drive it is neither written nor read. It stays for load nodes set up
+without a dev_drive (docs/load-nodes.md "Gating a branch on a node").
 
 The record (SCHEMA 1), every key always present:
 
@@ -53,6 +51,20 @@ unless the caller asks for what they carry):
                 "docs" (a docs-only change: only "gate".docs_only steps ran;
                 kitlib.gate.steps.docs_only). A record without it is "full" when full_of says so,
                 else unknown (mode_of: None), and a landing takes an unknown mode only as --full
+  input_keys    {"schema": 1, "steps": {name: {part: sha256}}}: for each step that asks for reuse
+                and passed, the digests a landing compares to serve it from this record when
+                main moved (kitlib.gate.reuse, "The input tree"; INPUT_PARTS), or null (no step
+                has one, or the gate wrote none: --only, a partial or docs-only gate, a work tree
+                not clean at its start)
+
+One more key, only on a record of a gate that ran on a load node (import_record, a branch's
+gate: docs/load-nodes.md "Gating a branch on a node"; build with `ran_on`, a landing's merged gate
+main checked with kitlib.loadnode.landgate); a record without it ran on this machine. verify()
+neither requires nor checks it:
+
+  ran_on        {"node": its registry name, "host_key": the SHA256 fingerprint of the host key
+                main pinned for it, "job": the node job id}, written by main from its own
+                registry, never taken from the node. Its record's input_keys is always null
 
 verify() re-derives everything git can answer: the record's file name, `commit`, `tree` and
 `author` must match the repository now, and `gate_config` must match the caller's config when it
@@ -65,8 +77,8 @@ import hashlib
 import json
 import os
 import secrets
-import time
 
+from kitlib.fs import replace as fsreplace
 from kitlib.git import cmd, refs, repo
 
 DIR_NAME = 'kit-gate-ok'
@@ -74,10 +86,15 @@ SCHEMA = 1
 VERDICT = 'OK'
 KEYS = ('schema', 'verdict', 'commit', 'tree', 'base', 'gate_config', 'kit', 'author', 'repo',
         'started_utc', 'ended_utc', 'steps')
-ADDED_KEYS = ('config_rev', 'source', 'full', 'mode')
+ADDED_KEYS = ('config_rev', 'source', 'full', 'mode', 'input_keys')
 MODES = ('full', 'select', 'docs')
-RETRIES = 5
-RETRY_SLEEP = 0.2
+RAN_ON_KEYS = ('node', 'host_key', 'job')
+RETRIES = 5         # tries of a record's os.replace while it fails with PermissionError
+RETRY_SLEEP = 0.2   # seconds between them
+# RETRIES as a wait for kitlib.fs.replace: try k starts at least k-1 pauses in, so the last (at
+# 0.8 s or later) is past this bound and the one before it (at 0.6 s) is not; the half pause is
+# the margin for a slow try.
+REPLACE_WAIT = (RETRIES - 1.5) * RETRY_SLEEP
 
 
 class RecordError(Exception):
@@ -132,9 +149,8 @@ def record_dir(root):
 
 
 def legacy_dir(root):
-    """The old record folder, `<git common dir>/kit-gate-ok`: written beside the new one until
-    the .git copies are retired, and read when the new one has no record until the legacy read
-    is retired (read)."""
+    """The old record folder, `<git common dir>/kit-gate-ok`: written and read only when there is
+    no record folder (no dev_drive; write, read)."""
     return os.path.join(_common(root), DIR_NAME)
 
 
@@ -228,13 +244,49 @@ def verify_full(root, commit):
     return None, 'the record for %s is from a gate run without --full' % rec['commit']
 
 
+def _input_keys(keys):
+    """`keys` when it is None or {"schema": int, "steps": {name: {part: 64-hex}}}, else
+    RecordError."""
+    if keys is None:
+        return None
+    bad = RecordError('input_keys is {"schema": int, "steps": {name: {part: sha256}}}')
+    if not isinstance(keys, dict) or set(keys) != {'schema', 'steps'} \
+            or isinstance(keys['schema'], bool) or not isinstance(keys['schema'], int) \
+            or not isinstance(keys['steps'], dict):
+        raise bad
+    for name, parts in keys['steps'].items():
+        if not isinstance(name, str) or not name or not isinstance(parts, dict) or not parts:
+            raise bad
+        for part, digest in parts.items():
+            if not isinstance(part, str) or not isinstance(digest, str) or len(digest) != 64 \
+                    or digest.strip('0123456789abcdef'):
+                raise bad
+    return {'schema': keys['schema'],
+            'steps': {n: dict(parts) for n, parts in keys['steps'].items()}}
+
+
+def _ran_on(ran_on):
+    """`ran_on` as a new dict when it is {"node", "host_key", "job"}, each a non-empty string,
+    else RecordError."""
+    if not isinstance(ran_on, dict) or set(ran_on) != set(RAN_ON_KEYS) or not all(
+            isinstance(ran_on[k], str) and ran_on[k] for k in RAN_ON_KEYS):
+        raise RecordError('ran_on is {%s}, each a string' % ', '.join(RAN_ON_KEYS))
+    return dict(ran_on)
+
+
 def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None, ended_utc=None,
-          config_rev=None, source=None, full=False, mode=None):
+          config_rev=None, source=None, full=False, mode=None, input_keys=None, ran_on=None):
     """The record for `rev` (resolved here: commit, tree and author come from git, never the
     caller). `config_rev`: the commit the gate config was read from (resolved to a full hash).
     `source`: "gate.json" or "auto" (kitlib.gate.detect), or None. `full`: the gate ran --full.
     `mode`: one of MODES; None: "full" with `full`, else "select". "full" goes with `full` and
-    only with it (RecordError)."""
+    only with it (RecordError). `input_keys`: kitlib.gate.reuse.record_keys, or None. `ran_on`:
+    the steps ran on a load node ({"node", "host_key", "job"}, from main's registry), so the
+    record gets that key and no input_keys (RecordError when both are given)."""
+    if ran_on is not None:
+        ran_on = _ran_on(ran_on)
+        if input_keys is not None:
+            raise RecordError('a record of a gate run on a load node has no input_keys')
     full = full is True
     if mode is None:
         mode = 'full' if full else 'select'
@@ -254,52 +306,39 @@ def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
         config_rev = resolved
     if not isinstance(kit, dict) or not kit:
         raise RecordError('the kit identity is an object such as {"version": ..., "commit": ...}')
-    return {
+    input_keys = _input_keys(input_keys)
+    rec = {
         'schema': SCHEMA, 'verdict': VERDICT, 'commit': commit, 'tree': tree, 'base': base,
         'gate_config': config_hash(gate_config), 'kit': dict(kit), 'author': author,
         'repo': repo_name or '', 'started_utc': started_utc, 'ended_utc': ended_utc or utc(),
         'steps': [_step(s, i) for i, s in enumerate(steps or [])],
         'config_rev': config_rev, 'source': source, 'full': full, 'mode': mode,
+        'input_keys': input_keys,
     }
-
-
-def _retry(fn, *args):
-    for i in range(RETRIES):
-        try:
-            return fn(*args)
-        except PermissionError:
-            if i == RETRIES - 1:
-                raise
-            time.sleep(RETRY_SLEEP)
+    if ran_on is not None:
+        rec['ran_on'] = ran_on
+    return rec
 
 
 def write(root, record):
-    """Write `record` (from build()) to the record folder, then to its .git copy (legacy_dir),
-    each atomically; returns the record folder's path. The folder first, so a failed write leaves
-    no copy that read() would take; when the copy then fails the folder's record is removed, so
-    the record is there only when its copy is. RecordError when either write fails.
-    NoRecordFolder, with only the .git copy written, when there is no record folder (no
-    dev_drive)."""
+    """Write `record` (from build()) to the record folder, atomically; returns its path.
+    RecordError when the write fails. NoRecordFolder, with the .git copy (legacy_path) written
+    instead, when there is no record folder (no dev_drive)."""
     commit = record.get('commit')
     old = legacy_path(root, commit)
     try:
         path = record_path(root, commit)
     except NoRecordFolder:
+        # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
         _write_file(old, record)
         raise
     _write_file(path, record)
-    try:
-        _write_file(old, record)
-    except RecordError as e:
-        try:
-            os.remove(path)
-        except OSError as gone:
-            raise RecordError('%s; and %s could not be removed: %s' % (e, path, gone))
-        raise
     return path
 
 
 def _write_file(path, record):
+    """Write `record` to `path`: a temp file, then os.replace, retried while a reader holds the
+    old file open (PermissionError; kitlib.fs.replace for REPLACE_WAIT). RecordError on failure."""
     folder = os.path.dirname(path)
     try:
         os.makedirs(folder, exist_ok=True)
@@ -307,7 +346,7 @@ def _write_file(path, record):
         try:
             with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(json.dumps(record, sort_keys=True, indent=1) + '\n')
-            _retry(os.replace, tmp, path)
+            fsreplace.replace(tmp, path, wait=REPLACE_WAIT, pause=RETRY_SLEEP)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -317,10 +356,12 @@ def _write_file(path, record):
 
 
 def record_pass(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
-                config_rev=None, source=None, full=False, mode=None):
+                config_rev=None, source=None, full=False, mode=None, input_keys=None,
+                ran_on=None):
     """build() then write(): `(path, record)`. Only a passing gate calls this."""
     rec = build(root, rev, gate_config, kit, repo_name, started_utc, steps, base,
-                config_rev=config_rev, source=source, full=full, mode=mode)
+                config_rev=config_rev, source=source, full=full, mode=mode,
+                input_keys=input_keys, ran_on=ran_on)
     return write(root, rec), rec
 
 
@@ -342,22 +383,19 @@ def _load(path):
 
 def read(root, commit):
     """`(record, None)`, `(None, 'none')` when there is no record, or `(None, why)` when the file
-    is there and cannot be read as one. The record folder's file first; when it has none, or
-    there is no record folder (no dev_drive), the .git copy (legacy_path), until the legacy read
-    is retired (the module docstring)."""
+    is there and cannot be read as one. The record folder's file; only when there is no record
+    folder (no dev_drive), the .git copy (legacy_path)."""
     try:
         old = legacy_path(root, commit)
     except RecordError as e:
         return None, str(e)
     try:
-        path = record_path(root, commit)
-    except RecordError:
-        path = None
-    if path is not None:
-        rec, why = _load(path)
-        if why != 'none':
-            return rec, why
-    return _load(old)
+        return _load(record_path(root, commit))
+    except NoRecordFolder:
+        # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
+        return _load(old)
+    except RecordError as e:
+        return None, str(e)
 
 
 def verify(root, commit, gate_config=None, config_at=None):
@@ -374,38 +412,78 @@ def verify(root, commit, gate_config=None, config_at=None):
     rec, why = read(root, commit)
     if rec is None:
         return None, ('no gate-OK record for %s' % commit) if why == 'none' else why
+    why = _check(root, commit, rec, gate_config, config_at)
+    return (None, why) if why is not None else (rec, None)
+
+
+def _check(root, commit, rec, gate_config=None, config_at=None):
+    """Why the record `rec` (a dict) filed under the full hash `commit` is not one git still
+    agrees with, or None: verify()'s checks, shared with import_record()."""
     missing = [k for k in KEYS if k not in rec]
     if missing:
-        return None, 'the record for %s lacks %s' % (commit, ', '.join(missing))
+        return 'the record for %s lacks %s' % (commit, ', '.join(missing))
     if rec['schema'] != SCHEMA:
-        return None, 'the record for %s is schema %r, not %d' % (commit, rec['schema'], SCHEMA)
+        return 'the record for %s is schema %r, not %d' % (commit, rec['schema'], SCHEMA)
     if rec['verdict'] != VERDICT:
-        return None, 'the record for %s says %r, not OK' % (commit, rec['verdict'])
+        return 'the record for %s says %r, not OK' % (commit, rec['verdict'])
     if rec['commit'] != commit:
-        return None, 'the record filed under %s names commit %s' % (commit, rec['commit'])
+        return 'the record filed under %s names commit %s' % (commit, rec['commit'])
     try:
         _, tree, author = _facts(root, commit)
     except RecordError as e:
-        return None, str(e)
+        return str(e)
     if rec['tree'] != tree:
-        return None, 'the record for %s names tree %s; git says %s' % (commit, rec['tree'], tree)
+        return 'the record for %s names tree %s; git says %s' % (commit, rec['tree'], tree)
     if rec['author'] != author:
-        return None, 'the record for %s names author %r; git says %r' % (commit, rec['author'], author)
+        return 'the record for %s names author %r; git says %r' % (commit, rec['author'], author)
     if gate_config is not None and rec['gate_config'] != config_hash(gate_config):
-        return None, 'the record for %s was made with another gate config' % commit
+        return 'the record for %s was made with another gate config' % commit
     if config_at is not None:
         rev = rec.get('config_rev')
         if not refs.is_sha(rev):
-            return None, 'the record for %s names no config_rev (%r)' % (commit, rev)
+            return 'the record for %s names no config_rev (%r)' % (commit, rev)
         inside, why = refs.is_ancestor(rev, commit, root)
         if inside is not True:
-            return None, 'the record for %s names config_rev %s, which is not in its history%s' % (
+            return 'the record for %s names config_rev %s, which is not in its history%s' % (
                 commit, rev, ': %s' % why if why else '')
         try:
             cfg = config_at(rev)
         except RecordError as e:
-            return None, str(e)
+            return str(e)
         if rec['gate_config'] != config_hash(cfg):
-            return None, ('the record for %s was made with another gate config than its '
-                          'config_rev %s holds' % (commit, rev[:10]))
-    return rec, None
+            return ('the record for %s was made with another gate config than its '
+                    'config_rev %s holds' % (commit, rev[:10]))
+    return None
+
+
+def import_record(root, rec, commit, ran_on, config_at, repo_name):
+    """Take `rec`, the record a load node's `gate.py --full` wrote for the full hash `commit`
+    (the commit main pushed it), into this machine's record folder: `(path, record)` or
+    RecordError naming why not. Checked here, never taken from the node: everything verify()
+    checks with `config_at` (the hash of the gate config main's own kit reads at `config_rev`,
+    which is `commit` itself, as for any branch gate), that it is a --full pass (full_of, mode
+    "full") and that `repo` is `repo_name`. `ran_on` ({"node", "host_key", "job"}, from main's
+    registry) is added; `input_keys` is set to null, so a landing serves no step from a run on
+    another machine. A local record of the same commit is replaced, as a later pass replaces it."""
+    if not isinstance(rec, dict):
+        raise RecordError('the node sent no gate-OK record')
+    if not refs.is_sha(commit):
+        raise RecordError('a gate-OK record is imported for a full commit hash, not %r' % (commit,))
+    ran_on = _ran_on(ran_on)
+    if config_at is None:
+        raise RecordError('an imported record is checked against the gate config at its config_rev')
+    why = _check(root, commit, rec, config_at=config_at)
+    if why is not None:
+        raise RecordError(why)
+    if rec.get('config_rev') != commit:
+        raise RecordError('the record for %s names config_rev %s, not the commit itself'
+                          % (commit, rec.get('config_rev')))
+    if not full_of(rec) or mode_of(rec) != 'full':
+        raise RecordError('the record for %s is not from a --full gate' % commit)
+    if rec.get('repo') != repo_name:
+        raise RecordError('the record for %s is of repository %r, not %r'
+                          % (commit, rec.get('repo'), repo_name))
+    out = dict(rec)
+    out['input_keys'] = None
+    out['ran_on'] = dict(ran_on)
+    return write(root, out), out

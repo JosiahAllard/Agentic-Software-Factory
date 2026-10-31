@@ -1,7 +1,11 @@
 """A submitted landing (docs/gate.md "Submitting a landing"): `land.py --submit` and `gate.py land
 --submit` start the same landing as a detached, windowless process and return at once.
 
-  submit    check the arguments (USAGE); refuse, writing nothing, while a branch's landing runs
+  submit    check the arguments (USAGE); with `reviewed_by` (both tools pass it), check that each
+            branch has a verdict queued at its tip and that the submission names its reviewer
+            (named_review: a missing or miscounted --reviewed-by is USAGE with an `Instead:`
+            line, a wrong id or no usable verdict REFUSED, nothing written); refuse, writing
+            nothing, while a branch's landing runs
             in a live process or once a branch landed at its tip (blocked); write each branch's
             `running` land record (one run_id for the batch, no pid yet), start the tool again,
             detached, with `--submitted <payload>`, wait for it to record itself (claim), and
@@ -20,6 +24,12 @@
   abandon   the detached tool that cannot read its payload (at the path submit names it)
             finishes the submission's records `refused`, found by the run_id in the payload's name
   redirect_output  the detached tool's stdout and stderr, appended to the output file
+  follow    `land.py --wait-result --submit`, once submit gave OK: wait for the batch's last
+            land record to be final (result.wait), then up to EXIT_WAIT_S for the landing's
+            process to exit, and give the outcome's own lines from the output file (those after
+            its last `result record:` line, at most BLOCK_MAX), then each branch's RESULT line
+            and record (result.result_lines, as gate.py wait-result gives them), the code the
+            last record's
 
 The detached tool is started the way `machine_lock.py run --detach` starts its wrapper
 (kitlib.lock.detach, "Why WMI" and "Why the carrier"): `create` asks Win32_Process.Create, through
@@ -83,9 +93,13 @@ from kitlib.gate import result, verdicts
 from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
 from kitlib.lock import run as lockrun
-from kitlib.proc import process, spawn
+from kitlib.proc import process
 
 FLAG = '--submitted'
+# The submission's naming of the review each branch lands on (named_review): shown on the command
+# line, where the host's permission check reads it; the verdict itself is in the queue.
+REVIEWED_BY = '--reviewed-by'
+ID_SPLIT = re.compile(r'[/,;\s]+')
 # 2: the token's hash (token_sha256) and restore's checks (Trust, above). A schema-1 payload, an
 # older kit's, is a SubmitError: its records are finished refused, and it is submitted again.
 SCHEMA = 2
@@ -103,6 +117,13 @@ LANDED = ('pass', 'landed-ungated')    # landed-ungated: an old record's (exit 9
 # kitlib/config/schema.py), so the age alone never reaches a landing still queued; prune also
 # keeps every run a land record has running whatever its age.
 KEEP_S = 14 * 86400
+# follow: how long, once the last record is final, it waits for the landing's process to exit
+# (after its records it appends the land ledger and posts the hub feed, 3 s an event, then prints
+# its outcome lines), and the most outcome lines it gives from the output file.
+EXIT_WAIT_S = 60.0
+EXIT_POLL_S = 0.25
+BLOCK_MAX = 60
+RECORD_LINE = 'result record: '     # result.Run's progress line: the outcome's lines follow the last
 
 
 class SubmitError(Exception):
@@ -201,13 +222,11 @@ def prune(root, now=None, keep_s=KEEP_S):
 
 
 def command(tool_file, args, python=None):
-    """The detached tool's argv: the pythonw.exe beside `python` (default: this interpreter), the
-    carrier beside `tool_file`, the python.exe beside `python`, then `-B tool_file` and `args`.
-    kitlib.lock.detach.command's shape, without the lock's --detached-id."""
-    pythonw, console = lockdetach.pythons(python or sys.executable)
-    tool = os.path.abspath(tool_file)
-    carrier = os.path.join(os.path.dirname(tool), spawn.CARRIER)
-    return [pythonw, carrier, console, '-B', tool] + list(args)
+    """The detached tool's argv (kitlib.lock.detach.tool_command): the pythonw.exe beside `python`
+    (default: this interpreter), the carrier beside `tool_file`, the python.exe beside `python`,
+    then `-B tool_file` and `args`; on Linux `python -B tool_file args`. kitlib.lock.detach
+    .command's shape, without the lock's --detached-id."""
+    return lockdetach.tool_command(python or sys.executable, tool_file, args)
 
 
 def detach(argv, cwd, env, run=None, timeout=START_TIMEOUT_S):
@@ -298,14 +317,87 @@ def blocked(root, branches, tips):
     return None
 
 
+def reviewer_ids(entry):
+    """The ids a verdict entry's `reviewer_id` lists, split as kitlib.gate.land.is_author splits
+    it (on `/`, `,`, `;` or white space); the whole value when that leaves none."""
+    ids = [i for i in ID_SPLIT.split(entry['reviewer_id'].strip()) if i]
+    return ids or [entry['reviewer_id']]
+
+
+def again_line(tool, args, ids, kit=None):
+    """The `Instead:` command of a submission that did not name its reviewers: `python
+    <kit>/tools/<tool> <args> --reviewed-by <id> ... --submit`, in the land permission rule's form
+    (docs/allow-rules.md: --submit last, nothing after it). Forward slashes in the script's path,
+    since the rules deny a backslash; an argument holding a space is double-quoted."""
+    kit = (kit or pluginsource.live_root()).replace('\\', '/').rstrip('/')
+    words = list(args)
+    for i in ids:
+        words += [REVIEWED_BY, i]
+    return 'python %s/tools/%s %s --submit' % (kit, tool, ' '.join(_arg(w) for w in words))
+
+
+def named_review(root, branches, tips, given, again=None):
+    """None when every branch has a verdict queued at its tip (kitlib.gate.verdicts) and `given`,
+    the submission's --reviewed-by ids, names each one's reviewer, in order: an id the entry's
+    `reviewer_id` lists, or that whole value, case aside (reviewer_ids). Else an Outcome, with
+    nothing read beyond the queue and nothing written: REFUSED for the first branch, in order,
+    whose entry is missing, cannot be used, is marked failed or is at another tip (the landing
+    would refuse it too: docs/gate.md "Strict paths"), then USAGE when `given` is not one id per
+    branch, its `Instead:` line `again(ids)` with the first id each entry lists, then REFUSED for
+    the first id that is not its branch's reviewer, with no `Instead:` line (the review named is
+    not the one on record: the caller finds out which is meant). This shows the review on the
+    command line; the landing's own checks still decide (Lander.verdict_check)."""
+    common, why = repo.common_dir(root)
+    if not common:
+        return G.Outcome(G.REFUSED, ['REFUSED: the verdict queue cannot be found: %s; nothing '
+                                     'was changed' % why])
+    entries = []
+    for b, t in zip(branches, tips):
+        try:
+            e = verdicts._load(verdicts.entry_path(common, b), b)
+        except verdicts.VerdictError as x:
+            return _refused([], 'the verdict entry of %s cannot be used: %s' % (b, x))
+        if e is None:
+            return _refused([], '%s lands only with a verdict queued at its tip, and none is '
+                                'queued for it: queue it with tools/verdict.py add' % b)
+        if e['state'] != verdicts.QUEUED:
+            return _refused([], 'the verdict of %s is marked failed (%s): queue it again with '
+                                'tools/verdict.py add' % (b, e['last_result']))
+        if e['tip'].lower() != t.lower():
+            return _refused([], 'the verdict of %s was given at %s, and the submission names %s: '
+                                'review and queue that tip, or carry the verdict (tools/verdict.py '
+                                'carry) when a main sync is all that changed' % (b, e['tip'], t))
+        entries.append(e)
+    if len(given) != len(branches):
+        lines = ['USAGE: a submission names the review each branch lands on: one %s <reviewer '
+                 'id> per branch, in --expect-tip\'s order, the reviewer_id of its verdict queued '
+                 'at its tip (%d given for %d branch%s); nothing was changed' % (
+                     REVIEWED_BY, len(given), len(branches), '' if len(branches) == 1 else 'es')]
+        if again is not None:
+            lines.append('Instead: %s' % again([reviewer_ids(e)[0] for e in entries]))
+        return G.Outcome(G.USAGE, lines)
+    for b, e, g in zip(branches, entries, given):
+        names = [i.casefold() for i in reviewer_ids(e)] + [e['reviewer_id'].strip().casefold()]
+        if g.strip().casefold() not in names:
+            return _refused([], '%s %s for %s is not the reviewer of its verdict queued at %s: '
+                                '%s by %s/%s (%s); name the review that verdict records, or queue '
+                                'the one you mean (tools/verdict.py add)' % (
+                                    REVIEWED_BY, g, b, e['tip'], e['verdict'], e['reviewer'],
+                                    e['reviewer_model'], e['reviewer_id']))
+    return None
+
+
 def submit(root, tool_file, child_args, branches, tips, expect_main=None, environ=None,
            detach_fn=None, kit=None, now=None, claim_wait_s=CLAIM_WAIT_S,
-           clock=time.monotonic, sleep=time.sleep, landing_of=None):
+           clock=time.monotonic, sleep=time.sleep, landing_of=None, reviewed_by=None,
+           again=None):
     """Start the landing of `branches` at `tips` detached: `tool_file` (tools/land.py or
     tools/gate.py) again with `child_args` (the landing's own arguments, -C absolute) and
     `--submitted <payload>`. An Outcome: OK with the REVIEW lines (review_lines) and the
     SUBMITTED line last, once old submissions' files are pruned (prune), USAGE for arguments the
-    landing would refuse as usage (nothing written), REFUSED with nothing written when a
+    landing would refuse as usage (nothing written), with `reviewed_by` (the --reviewed-by ids;
+    None checks nothing, for a caller other than the two tools) named_review's USAGE or REFUSED
+    with `again` its Instead: command (nothing written), REFUSED with nothing written when a
     branch's landing is running or it landed at its tip already (blocked), REFUSED when the
     records or the payload cannot be written or the start fails (records written are finished
     `refused`), or when the detached landing died before it recorded itself (claim: its
@@ -318,6 +410,10 @@ def submit(root, tool_file, child_args, branches, tips, expect_main=None, enviro
     why = land.Lander(root, branches, expect_main, tips).usage()
     if why:
         return G.Outcome(G.USAGE, ['USAGE: %s' % why])
+    if reviewed_by is not None:
+        out = named_review(root, branches, tips, list(reviewed_by), again)
+        if out is not None:
+            return out
     run_id = secrets.token_hex(8)
     try:
         payload, output = files(root, branches, run_id)
@@ -403,6 +499,80 @@ def review_lines(root, branches, tips):
         lines.append('REVIEW %s %s: %s by %s/%s (%s)%s' % (
             b, e['tip'], e['verdict'], e['reviewer'], e['reviewer_model'], e['reviewer_id'], more))
     return lines
+
+
+def follow(root, branches, tips, output, exit_wait_s=EXIT_WAIT_S, poll_s=result.POLL_S,
+           clock=time.monotonic, sleep=time.sleep, alive=None):
+    """The landing `submit` started for `branches` at `tips`, followed to its end, for
+    `land.py --wait-result --submit`: an Outcome whose lines are a WARNING when its process had
+    not exited `exit_wait_s` after the last record went final (the lines are then what the
+    output held), the outcome's lines from `output` (outcome_block), then result.result_lines
+    for each branch in batch order; its code the last record's code, FAILED when that is null
+    (error). The wait has no timeout of its own: the landing bounds it ("landing".wait_s, then
+    its run), and a record whose process died is finished `error` (result.wait). Each branch
+    before the last is read once, its record final before the last's (Lander.run's order); one
+    that is not is a WARNING with its wait-result command. Ctrl+C is raised to the caller: the
+    landing goes on."""
+    branches, tips = list(branches), list(tips)
+    alive = alive or process.alive
+    try:
+        last, _ = result.wait(root, branches[-1], tips[-1], 'land', poll_s=poll_s, clock=clock,
+                              sleep=sleep)
+    except result.ResultError as e:
+        return G.Outcome(G.FAILED, ['WARNING: the land record of %s cannot be waited for: %s; '
+                                    'the landing goes on' % (branches[-1], e)])
+    lines = []
+    pid, ctime = last.get('pid'), last.get('ctime')
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        end = clock() + max(0.0, exit_wait_s)
+        while True:
+            try:
+                up = alive(pid, ctime if isinstance(ctime, int) else None)
+            except Exception:   # noqa: BLE001 - not surely running: read what the output holds
+                up = False
+            if not up:
+                break
+            if clock() >= end:
+                lines.append('WARNING: the landing process (pid %d) had not exited %d s after its '
+                             'result record; the lines below are what its output %s held then'
+                             % (pid, exit_wait_s, output))
+                break
+            sleep(max(0.0, min(EXIT_POLL_S, end - clock())))
+    lines += outcome_block(output)
+    for b, t in zip(branches[:-1], tips[:-1]):
+        try:
+            rec, _ = result.wait(root, b, t, 'land', timeout_s=0, clock=clock, sleep=sleep)
+        except result.ResultError:
+            rec = None
+        if rec is None:
+            lines.append('WARNING: no final land record of %s at %s yet; wait for it with '
+                         'gate.py wait-result %s --tip %s --kind land' % (b, t[:10], b, t))
+            continue
+        lines += result.result_lines(rec, 'land', b)
+    lines += result.result_lines(last, 'land', branches[-1])
+    code = last.get('code')
+    if not isinstance(code, int) or isinstance(code, bool):
+        code = G.FAILED
+    return G.Outcome(code, lines)
+
+
+def outcome_block(output, most=BLOCK_MAX):
+    """The landing's own outcome lines in its output file `output`: those after the last
+    `result record:` line (Lander.run says each record it finishes, then ends with its outcome's
+    lines: cleanup, LANDED or NOT LANDED, closed, WARNING, STUCK's steps), at most `most` (the
+    last, after a line saying how many were left out); every line when it has none. A file that
+    cannot be read is one WARNING line. Read only."""
+    try:
+        with open(output, encoding='utf-8', errors='replace') as f:
+            got = f.read().splitlines()
+    except (OSError, TypeError, ValueError) as e:
+        return ['WARNING: the landing\'s output %s cannot be read: %s' % (output, e)]
+    at = max([i for i, line in enumerate(got) if line.startswith(RECORD_LINE)] or [-1])
+    got = got[at + 1:]
+    if len(got) > most:
+        return ['... %d earlier line(s) of the landing\'s output: %s' % (len(got) - most, output)] \
+            + got[-most:]
+    return got
 
 
 def _landing(carrier, landing_of=None):

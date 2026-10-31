@@ -11,7 +11,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `CLAUDE.md` | Claude's pointer: imports AGENTS.md | always | kw: rules, claude
 - `AGENTS.md` | kit repo rules for every agent host (canonical) | always | kw: rules, agents
 - `README.md` | what the kit is | first look | kw: readme, overview
-- `ARCHITECTURE.md` | kit tool architecture (the contract; owner approves changes) | before changing a tool | kw: architecture, contract
+- `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract
 - `docs/agent-profile.md` | this repo's profile for worker agents | starting a task | kw: profile, branches, build, test
 - `.claude/agent-profile.md` | stub: the profile moved to docs/agent-profile.md | an agent names the old path | kw: profile
 - `.codex/agent-profile.md` | stub: the profile is docs/agent-profile.md | an agent names the host's profile path | kw: profile
@@ -25,11 +25,12 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/branch-overlap.md` | branch overlap: unmerged branches touching a file set | checking a sweep's exclusions | kw: branch_overlap, overlap
 - `docs/commit.md` | commit.py and machine_paths.py | committing | kw: commit, machine_paths
 - `docs/content.md` | content/ and render_content: roles and skills written once, rendered per host with the plugin manifests (kit.json's version) and the kit header | editing an agent or a skill | kw: content, render_content, roles, render, kit.json, manifest, header
+- `docs/coord-state.md` | coord_state.py: a coordinator's opt-in event log and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
 - `docs/daily-full.md` | daily_full | the nightly full run | kw: daily-full, nightly
 - `docs/delegations.md` | the owner's delegation list: location, schema 1, the hard exclusions E1 to E5, running one, known limits | reading or changing what the PM may run for the owner, or running it | kw: delegations, owner-delegations, exclusions, delegated, runner
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale
 - `docs/engineering-rulings.md` | engineering rulings | before a design choice | kw: rulings, engineering
-- `docs/flaky-tests.md` | flaky tests: the time fence design (first step built: kitlib.clock, agentstart's budget), survey of nondeterminism in tests/ | a test fails under load, adding a time budget | kw: flaky, flake, time-fence, clock, budget
+- `docs/flaky-tests.md` | flaky tests: the time fence (kitlib.clock; agentstart's budget), the reviewer rules for a time budget | a test fails under load, adding a time budget | kw: flaky, flake, time-fence, clock, budget
 - `docs/gate.md` | gate.py | running the gate | kw: gate, test, stash
 - `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
 - `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
@@ -42,11 +43,13 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/launcher.md` | launcher | starting sessions | kw: launcher, launch
 - `docs/ledger.md` | the rulings ledger | recording a ruling | kw: ledger, rulings
 - `docs/linux-support-plan.md` | Linux support plan (proposal): the platform seam, Linux backends, the guard's path review, CI, slices and owner questions | planning or building Linux support | kw: linux, platform, posix, cgroup, wsl, port
-- `docs/lock-api.md` | machine lock API | heavy runs | kw: lock, machine-lock
+- `docs/load-nodes.md` | load nodes: the registry and its repos opt-in, setting up a node, node.py list, status, run, follow and stop, choosing a machine, lock runs on a node, exit codes | sending heavy runs to another box | kw: load-node, node.py, loadnode, registry, offload
+- `docs/lock-api.md` | machine lock API, runs on a load node | heavy runs | kw: lock, machine-lock
 - `docs/lock-mcp.md` | lock MCP server | lock from an agent | kw: lock-mcp, mcp
 - `docs/lock-release.md` | lock release pre-check | releasing a lock | kw: lock-release
 - `docs/machine-setup.md` | machine setup | a new machine | kw: machine-setup, setup, leftover links, kit.cmd
-- `docs/maint-lint.md` | maintenance lint: read-only upkeep findings (holds, dead pulls and blockers, duplicates, paths gone, worktrees, landed pulls and closes of unlanded work, ledger counts), each with its fix; its weekly schedule and lock slot; its page published on the hub as `maint-lint-<repo>` | linting a repository's upkeep | kw: maint-lint, maint_lint, maintenance, upkeep, schedule
+- `docs/maint-lint.md` | maintenance lint: read-only upkeep findings (holds, dead pulls and blockers, duplicates, paths gone, worktrees, landed pulls and closes of unlanded work, ledger counts, the gates' module scope sum), each with its fix; its weekly schedule and lock slot; its page published on the hub as `maint-lint-<repo>` | linting a repository's upkeep | kw: maint-lint, maint_lint, maintenance, upkeep, schedule
+- `docs/module-map.md` | module boundary check: the map file, kinds, ratchets and ceilings, detectors, the architecture page, the scope report and its records summed weekly, isolation runs | changing what a module may depend on, or reading a change's scope | kw: module-map, module_map, modules, boundary, scope
 - `docs/model-ab.md` | model A/B results | choosing a model | kw: model, ab
 - `docs/multi-host-plan.md` | multi-host architecture plan (proposal) | changing host adapters, plugins or the bridge | kw: multi-host, codex, host, plugin, bridge
 - `docs/agent-review.md` | agent review: usage, refusals, definition findings (undecided) | choosing a model, editing agent definitions | kw: agent-review, agents, model
@@ -57,7 +60,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/pending.md` | the pending-steps file | pending steps | kw: pending
 - `docs/pm-data-branch.md` | PM data on a private branch of the kit repo | PM data | kw: pm-data, data-branch
 - `docs/pm-first-run.md` | PM first run | the first PM session | kw: pm-first-run
-- `docs/plugin-source.md` | the plugin's source: export of pushed kit main, refresh, migrate | installing or refreshing the plugin | kw: plugin-source, plugin, plugin_refresh, export
+- `docs/plugin-source.md` | the plugin's source: export of pushed kit main, refresh, migrate | installing or refreshing the plugin | kw: plugin-source, plugin, plugin_refresh, export, pm-kit-hooks
 - `docs/pm-start.md` | PM session-start checklist | starting a PM session | kw: pm-start, checklist
 - `docs/pm-watch.md` | PM watcher | watching sessions | kw: pm-watch, watcher
 - `docs/preflight.md` | preflight (with its --board) and checkout guard | starting any task | kw: preflight, board, checkout
@@ -78,8 +81,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `content/default-profile.md` | the agent profile roles read in a repository with none of its own (`docs/agent-profile.md`) | a repo has no profile | kw: profile, default-profile
 - `content/skills/*/*.md` | one skill per folder, the source of every host's skills, and the folder Claude's plugin loads them from (`docs/content.md`) | editing a skill, reading what Claude loads | kw: skills, skill
 - `hosts/claude/shell/agents/*.md` | Claude's agent files, rendered from content/roles (never edit by hand) | reading what Claude loads | kw: agents, rendered
-- `hosts/codex/README.md` | the Codex host: what is ported, what runs, what is not verified | working on the Codex plugin | kw: codex, host, plugin, runtime, canary
-- `hosts/codex/shell/skills/*/*.md` | Codex's skills, copied from content/skills (never edit by hand) | reading what Codex loads | kw: skills, rendered, codex
+- `hosts/codex/README.md` | the Codex host: what is ported, what runs, what is not verified | working on the Codex plugin | kw: codex, host, plugin, runtime, canary, pm-kit-hooks
 - `templates/stacks/godot/.claude/skills/godot-render-check/SKILL.md` | Godot render check and e2e tiers | Godot repos | kw: godot, render, e2e
 - `templates/common/AGENTS.md` | starter rules file (AGENTS.md) for a new repo | installing | kw: template, agents, rules
 - `templates/common/CLAUDE.md` | starter CLAUDE.md: imports AGENTS.md | installing | kw: template, claude
@@ -104,7 +106,9 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `tools/codemap.py` | where code lives (`docs/doc-tools.md`) | kw: codemap
 - `tools/backlog.py` | backlog store (`docs/backlog.md`) | kw: backlog
 - `tools/backlog_audit.py` | backlog audit check (`docs/backlog.md` "Audit log") | kw: backlog_audit
+- `tools/coord_state.py` | a coordinator's event log and rendered state note (`docs/coord-state.md`) | kw: coord_state
 - `tools/maint_lint.py` | maintenance lint, read-only (`docs/maint-lint.md`) | kw: maint_lint
+- `tools/module_map.py` | module boundary check, scope report and records (`docs/module-map.md`) | kw: module_map
 - `tools/review_pack.py` | review pack (`docs/review-pack.md`) | kw: review_pack
 - `tools/land.py` | land a reviewed branch (`docs/shipping.md`) | kw: land
 - `tools/allow_rules.py` | print the land permission rules for a repository (`docs/allow-rules.md`) | kw: allow_rules, permissions
@@ -128,7 +132,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `tools/agent_view.py` | everything one role is given and held to on one host (`docs/content.md` "Agent view") | kw: agent_view, role, view, instructions, mode, capabilities
 - `tools/checkout_guard.py` | is a path in the main checkout; strays in it (`docs/preflight.md`) | kw: checkout_guard, stray
 - `tools/stray_restore.py` | discard main-checkout strays a branch tip holds (`docs/stray-restore.md`) | kw: stray_restore, stray
-- `tools/kit_stubs.py` | write or check a repo's stubs for the kit tools (`docs/install.md`) | kw: kit_stubs, stubs
+- `tools/kit_stubs.py` | add a repo's agent memory folder key (`docs/install.md`) | kw: kit_stubs, memory
 - `tools/kit_tests.py` | run the kit test suite, whole or selected (`docs/test-tools.md`) | kw: kit_tests, tests
 - `tools/ci_ratchet.py` | the suite's failing tests held to a platform baseline (`docs/test-tools.md`) | kw: ci_ratchet, ratchet, baseline
 - `tools/machine_paths.py` | refuse a hard-coded machine path (`docs/commit.md`) | kw: machine_paths

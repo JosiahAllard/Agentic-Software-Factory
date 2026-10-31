@@ -7,7 +7,9 @@ lives here once:
         (adapter.CONTEXT_EVENTS): the context text, adapter.start_text(event_name, kit, payload,
         environ, part) when the adapter has one, else the kit header (kitlib.host.header; no part
         then), written through adapter.context; exit 0. The header part (no part) also records
-        which kit folder the header named (kitlib.host.headerfollow.note). Any other event: run()
+        which kit folder the header named (kitlib.host.headerfollow.note); at a SubagentStart that
+        folder, and the one the context text names, is the current export
+        (kitlib.host.headerfollow.start_kit), not the one the session began on. Any other event: run()
         over the payload `text`, the adapter's DEADLINE (None when it has none) for the whole call
         from `started`, with `kit`. `entry` and `args` are the hook's own command line, for the
         reproduce line of a deny.
@@ -26,7 +28,8 @@ lives here once:
         in a marked session is judged as an agent of its mark's role (unidentified()). `args`: the
         entry's arguments, named in the reproduce line after `entry`. With `kit` (the kit the hook
         booted), the header-update line of a session whose header named an older plugin export
-        (kitlib.host.headerfollow.line, once per refresh) goes with the verdict whatever it is, through
+        (kitlib.host.headerfollow.line: at once when the folder the header named is gone, else at
+        most once an hour) goes with the verdict whatever it is, through
         the adapter's optional tool_context(event_name, text, rendered) (none: no line), so a
         reason keeps its format; the record is rewritten only after the answer is written. A deny,
         whatever made it, is then logged before run returns: one line in
@@ -43,14 +46,22 @@ lives here once:
         {"command", "args"} that starts `script` with no console window: the one place a hook
         command line is rendered (plan section 6, rule 4). Today: pythonw.exe beside `executable`
         (default this interpreter) when there is one, else `executable` itself.
-  manifest_command(script, platforms, *args)
-        {"command", "args"} for a hook manifest another machine runs (a plugin's hooks.json): the
-        windowless interpreter by name for the host's hosts.json `platforms` (INTERPRETERS), found
-        on that machine's PATH, then `script` and `args` as given. The same on every machine that
-        renders it, so a committed manifest has no drift.
-  settings_entry(event_name, matcher, script, executable, timeout, args)
-        {event_name: [{"matcher", "hooks": [{"type": "command", "command", "args"[, "timeout"]}]}]}:
-        a settings.json hooks entry in exec form (no shell), `script` then `args`. boot/hook.py
+  manifest_command(script, platform, *args, blocking=False)
+        {"command", "args"} for a hook manifest another machine runs (a plugin's hooks.json, one
+        per platform): the interpreter by name for `platform` (INTERPRETERS), found on that
+        machine's PATH, then `script` and `args` as given. The same on every machine that renders
+        it, so a committed manifest has no drift. Windows: pythonw in exec form. Linux: /bin/sh -c
+        runs python3 with the script and args as its own arguments, so a missing or failing
+        python3 still answers as boot/hook.py does: a tool event (`blocking`) exits 2, the
+        guard-error deny; a start event prints "PM kit: the kit did not load: ..." and exits 0.
+        A platform with no interpreter raises ValueError.
+  mcp_interpreter(platform)
+        the interpreter, by name, that a plugin manifest's MCP servers run on `platform`
+        (MCP_INTERPRETERS): python on Windows, python3 on Linux. ValueError for any other.
+  settings_entry(event_name, matcher, script, executable, timeout, args, platform)
+        {event_name: [{"matcher", "hooks": [{"type": "command", "command", "args"[, "timeout"]
+        [, "onFailure"]}]}]}: a settings.json hooks entry in exec form (no shell), `script` then
+        `args`; "onFailure" per `platform` (default the running one, ON_FAILURE). boot/hook.py
         <host> --settings-entry prints the adapter's, and kitlib.machinesetup installs what that
         prints.
 
@@ -295,6 +306,12 @@ def dispatch(adapter, event_name, kit, text, stdout, entry=None, args=(), part=N
         except ValueError:
             payload = {}
         payload = payload if isinstance(payload, dict) else {}
+        if part is None and event_name == 'SubagentStart':
+            try:
+                from kitlib.host import headerfollow
+                kit = headerfollow.start_kit(kit, environ)
+            except Exception:                   # advice too: the session's own folder stands
+                pass
         start = getattr(adapter, 'start_text', None)
         if start is not None:
             body = start(event_name, kit, payload, environ, part)
@@ -328,21 +345,54 @@ def command_line(script, executable=None):
     return {'command': windowless(executable).replace(os.sep, '/'), 'args': [script.replace(os.sep, '/')]}
 
 
-# The windowless Python interpreter, by name, per hosts.json platform (plan section 6, rule 4).
-INTERPRETERS = {'windows': 'pythonw'}
+# The hook's Python interpreter, by name, per hosts.json platform: windowless pythonw on Windows
+# (plan section 6, rule 4), python3 on Linux (run by SHELL, manifest_command).
+INTERPRETERS = {'windows': 'pythonw', 'linux': 'python3'}
+SHELL = '/bin/sh'
+SHELL_NAME = 'kit-hook'
+TOOL_BODY = '%s "$@" || exit 2'
+START_BODY = '%s "$@" || echo "PM kit: the kit did not load: %s failed or is not on PATH (exit $?)"'
 
 
-def manifest_command(script, platforms, *args):
-    names = sorted(set(INTERPRETERS.get(p, '') for p in platforms))
-    if len(names) != 1 or not names[0]:
-        raise ValueError('no one windowless interpreter for the platforms %s' % ', '.join(platforms))
-    return {'command': names[0], 'args': [script.replace(os.sep, '/')] + list(args)}
+# The MCP servers' Python interpreter, by name, per hosts.json platform (mcp_interpreter): python
+# on Windows, python3 on Linux, where stock Ubuntu has no `python`.
+MCP_INTERPRETERS = {'windows': 'python', 'linux': 'python3'}
 
 
-def settings_entry(event_name, matcher, script, executable=None, timeout=None, args=()):
+def mcp_interpreter(platform):
+    name = MCP_INTERPRETERS.get(platform)
+    if not name:
+        raise ValueError('no MCP server interpreter for the platform %r' % (platform,))
+    return name
+
+
+def manifest_command(script, platform, *args, blocking=False):
+    name = INTERPRETERS.get(platform)
+    if not name:
+        raise ValueError('no hook interpreter for the platform %r' % (platform,))
+    argv = [script.replace(os.sep, '/')] + list(args)
+    if platform == 'windows':
+        return {'command': name, 'args': argv}
+    body = TOOL_BODY % name if blocking else START_BODY % (name, name)
+    return {'command': SHELL, 'args': ['-c', body, SHELL_NAME] + argv}
+
+
+# What Claude Code does with a settings hook that fails (cannot start, times out, exits neither 0 nor
+# 2), per running platform: on Linux it blocks the call (code.claude.com/docs/en/hooks, "Block the
+# action when a hook fails"; Claude Code 2.1.295 or later), so a gone interpreter is no unguarded
+# call. Windows: unset (the host's default, the call goes ahead), its entry unchanged.
+ON_FAILURE = {'linux': 'block'}
+
+
+def settings_entry(event_name, matcher, script, executable=None, timeout=None, args=(), platform=None):
     hook = {'type': 'command'}
     hook.update(command_line(script, executable))
     hook['args'] += list(args)
     if timeout is not None:
         hook['timeout'] = timeout
+    if platform is None:
+        from kitlib import platform as running
+        platform = running.NAME
+    if platform in ON_FAILURE:
+        hook['onFailure'] = ON_FAILURE[platform]
     return {event_name: [{'matcher': matcher, 'hooks': [hook]}]}

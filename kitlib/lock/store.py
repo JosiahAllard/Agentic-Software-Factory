@@ -1,5 +1,5 @@
 """The lock's store: a folder of JSON records, read and written under
-named Win32 mutexes, plus each run's liveness mutex.
+named Win32 mutexes (flocks on Linux), plus each run's liveness mutex.
 
     active/<run>.json      a live run's record (.stop: a stop request)
     ended/<id>.json        ended runs and holds, kept ENDED_KEEP_S
@@ -13,9 +13,16 @@ named Win32 mutexes, plus each run's liveness mutex.
     background/<run>.d     a background run's control folder
     revision               a counter every write bumps (kitlib.lock.api.wait_change)
 
+On Linux the mutexes are flocks (kitlib.platform.linux.locks), on files in the store:
+
+    locks/<name>.lock      a named lock (Store.lock)
+    runs/<run>.alive       a run's liveness lock (Store.run_mutex), removed when it is let go
+
 Store(root) is the machine's store when root is None; any other root is a scratch store with
-mutexes of its own (tests). Timings live in Settings, so a test shortens them by parameter, not
-by environment (the old MACHINE_LOCK_TEST_* seams). Nothing here prints: `say` is the caller's.
+mutexes of its own (tests). Its root is ~/.claude/machine-lock under the profile folder the
+system reports (profile_dir): Windows's, or on Linux the password database's (slice 9 of
+docs/linux-support-plan.md section 8), never $HOME or USERPROFILE. Timings live in Settings, so a
+test shortens them by parameter, not by environment (the old MACHINE_LOCK_TEST_* seams). Nothing here prints: `say` is the caller's.
 
 Under the kit's tests the machine's store is fenced (fence; docs/test-tools.md "Home fence"): it
 can be built and its root named, but Store.path and Store.mutex_name raise HomeFenced, so nothing
@@ -34,7 +41,12 @@ import threading
 import time
 from ctypes import wintypes
 
+import kitlib.platform
 from kitlib.host import registry
+from kitlib.platform import PlatformUnsupported
+from kitlib.platform.linux import locks
+from kitlib.platform.linux import paths as linux_paths
+from kitlib.platform.linux import process as procfs
 from kitlib.proc import process
 from kitlib.proc import win32
 from kitlib.proc.win32 import K32, ADV
@@ -74,6 +86,7 @@ class Settings:
         "bg_resume_s": 180.0, "bg_free_s": 30.0, "bg_keep_s": 600.0, "bg_stop_grace_s": 50.0,
         "bg_yield_s": 120.0, "bg_yield_margin_s": 15.0, "game_poll_s": 5.0, "game_roll_s": 120.0,
         "gpu_use_cache_s": 5.0, "wait_change_poll_s": 0.25, "child_poll_s": 1.0,
+        "stale_scale": 3.0, "stale_min_s": 3600.0, "stale_check_s": 60.0,
     }
 
     def __init__(self, pauses=None, **overrides):
@@ -86,8 +99,17 @@ class Settings:
 
 
 def profile_dir():
-    """The user's profile folder from Windows (FOLDERID_Profile), never from the environment: a
-    caller's USERPROFILE or HOME cannot move the store."""
+    """The user's profile folder from Windows (FOLDERID_Profile), or on Linux from the password
+    database (kitlib.platform.linux.paths.profile), never from the environment: a caller's
+    USERPROFILE or HOME cannot move the store. OSError when the system does not answer; on any
+    other platform PlatformUnsupported."""
+    if kitlib.platform.NAME == "linux":
+        return linux_paths.profile()
+    if kitlib.platform.NAME != "windows":
+        raise PlatformUnsupported(
+            "the machine's lock store has no root on %s: its profile folder comes from Windows "
+            "(SHGetKnownFolderPath) or Linux's password database; a scratch store is "
+            "Store(root=<a folder>)" % kitlib.platform.NAME)
     class GUID(ctypes.Structure):
         _fields_ = [("d1", wintypes.DWORD), ("d2", wintypes.WORD), ("d3", wintypes.WORD),
                     ("d4", ctypes.c_ubyte * 8)]
@@ -247,6 +269,29 @@ def chain_host(chain, names, hosts=None):
     return None
 
 
+
+def booking_hosts(pairs, snap=None, hosts=None, live=None):
+    """[[pid, ctime]] of the agent hosts among pairs ([pid, ctime], a run's ancestors at its
+    booking, run.run_ancestors): each one the process listing (snap, default process.snapshot())
+    names as an agent host image (hosts, default agent_hosts()). The stale-run reap reads them
+    (kitlib.lock.stale): a run all of whose hosts are gone has lost the sessions that booked it.
+    Every one must be live at booking (live, default wrapper_state, is True): the ancestor walk
+    can end at an exited process that can still be opened, and a host already gone at booking
+    would make the run stale while its agent lives. So [] when any is not surely live, when there
+    is none, and when the listing or the host registry cannot be read: such a run is never taken
+    as stale."""
+    try:
+        snap = process.snapshot() if snap is None else snap
+        hosts = agent_hosts() if hosts is None else hosts
+        live = wrapper_state if live is None else live
+        names = {int(p): (n or "").lower() for p, _pp, n in snap}
+        found = sorted([int(p), int(c)] for p, c in pairs if names.get(int(p)) in hosts)
+        if any(live(p, c) is not True for p, c in found):
+            return []
+        return found
+    except Exception:
+        return []
+
 # WMI's provider host: the parent of every process Win32_Process.Create starts (kitlib.lock.detach,
 # a detached lock run or a submitted landing). It is listed, but this user cannot open it, so a
 # walk ends below it at a running process, the same end as the owner's desktop chain; what
@@ -363,6 +408,28 @@ def write_json(path, data, replace_s=2.0):
             time.sleep(0.05)
 
 
+def create_json(path, data):
+    """Writes path only when nothing is there: a temp file moved into place by a move that fails
+    when path exists, so a reader never sees it half
+    written and a file another process wrote first is never replaced (os.rename on Windows; os.link
+    on Linux). True when written, False when path was already there."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = "%s.%d.new.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=1)
+    try:
+        if kitlib.platform.NAME == "linux":
+            os.link(tmp, path)
+        else:
+            os.rename(tmp, path)
+        return True
+    except FileExistsError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+
+
 def read_json(path):
     """A JSON object from path, or None (missing, unreadable or not an object)."""
     try:
@@ -406,13 +473,47 @@ def public(d):
 
 
 # ------------------------------------------------------------------ the run mutex
+def record_state(d):
+    """wrapper_state of record or entry d's pid and ctime, but None (cannot tell) on Linux when d
+    names a pid namespace (`pidns`, Run's record) other than this process's: a pid is a number
+    in one namespace, and a wrapper inside a job's namespace (contain's W1) or a checker inside
+    one sees the other's pids as other processes'."""
+    if kitlib.platform.NAME == "linux":
+        ns = d.get("pidns")
+        if ns is not None and ns != procfs.pidns():
+            return None
+    return wrapper_state(d.get("pid", 0), d.get("ctime"))
+
+
+
+def hosts_gone(d):
+    """Has run record d lost every agent host it was booked under? True only when d names one or
+    more (`hosts`, booking_hosts) and each is surely gone (wrapper_state False). False when it
+    names none, when any is live or cannot be told, and on Linux when d names a pid namespace
+    other than this process's (record_state)."""
+    hs = d.get("hosts")
+    if not isinstance(hs, list) or not hs:
+        return False
+    if kitlib.platform.NAME == "linux":
+        ns = d.get("pidns")
+        if ns is not None and ns != procfs.pidns():
+            return False
+    for h in hs:
+        if not (isinstance(h, (list, tuple)) and len(h) == 2):
+            return False
+        if wrapper_state(h[0], h[1]) is not False:
+            return False
+    return True
+
 def wrapper_state(pid, ctime):
     """Is the wrapper (pid, ctime) of a run record live? True when pid names a running process
     created at ctime. False when it surely names none: no such pid, one that has exited, or one
     created at another time. None when that cannot be told: the process cannot be opened (another
     user's or a protected one; a reused pid can name one, such as a SYSTEM svchost, and
     process.alive then says alive without its creation time), or ctime is missing. A pid without
-    a matching creation time is never proof of life (run_live then asks the run mutex)."""
+    a matching creation time is never proof of life (run_live then asks the run mutex).
+    On Linux the same three answers from /proc (kitlib.platform.linux.process identity): an ended
+    process is a zombie, and None is a stat or boot id that cannot be read."""
     try:
         pid = int(pid)
         ctime = None if ctime is None else int(ctime)
@@ -420,6 +521,14 @@ def wrapper_state(pid, ctime):
         return None
     if pid <= 0:
         return False
+    if kitlib.platform.NAME == "linux":
+        try:
+            seen = procfs.identity(pid)
+        except (OSError, ValueError):
+            return None
+        if seen is None or seen[1]:
+            return False
+        return None if ctime is None else seen[0] == ctime
     h = K32.OpenProcess(win32.QUERY_LIMITED | win32.SYNCHRONIZE, False, pid)
     if not h:
         return False if ctypes.get_last_error() == win32.ERROR_INVALID_PARAMETER else None
@@ -478,15 +587,20 @@ class RunMutex:
 
 # ------------------------------------------------------------------ the store
 class Store:
-    """One lock store. root None: the machine's (~/.claude/machine-lock, from Windows);
+    """One lock store. root None: the machine's (~/.claude/machine-lock, profile_dir's);
     else a scratch store whose mutexes are named after its path. say(text): where the library's
     progress lines go (default: nowhere; the CLI prints them). Under the kit's tests the machine's
     store gives no file path and names no mutex: path and mutex_name raise HomeFenced (fence)."""
 
     def __init__(self, root=None, settings=None, say=None, hardware=None, kinds_path=None):
-        real = real_root()
+        try:
+            real = real_root()
+        except PlatformUnsupported:     # no backend here: a given root is a scratch store
+            if root is None:
+                raise
+            real = None
         self.root = os.path.abspath(root or real)
-        self.testing = os.path.normcase(self.root) != os.path.normcase(real)
+        self.testing = real is None or os.path.normcase(self.root) != os.path.normcase(real)
         self.settings = settings or Settings()
         self.say = say or (lambda text: None)
         self.hardware = hardware            # kitlib.lock.layout: None = detect this machine
@@ -518,8 +632,13 @@ class Store:
     @contextlib.contextmanager
     def lock(self, name, wait_s=None):
         """A named store mutex, held while its records are read and written. Raises OSError when
-        it is not had within wait_s (default settings.store_lock_s). Recursive for its thread."""
+        it is not had within wait_s (default settings.store_lock_s). Recursive for its thread.
+        On Linux: a flock on locks/<name>.lock (kitlib.platform.linux.locks.hold)."""
         wait_s = self.settings.store_lock_s if wait_s is None else wait_s
+        if kitlib.platform.NAME == "linux":
+            with locks.hold(self.path("locks", name + ".lock"), wait_s, name):
+                yield
+            return
         h = K32.CreateMutexW(ctypes.byref(mutex_sa()), False, self.mutex_name(name))
         if not h:
             raise ctypes.WinError(ctypes.get_last_error())
@@ -534,12 +653,23 @@ class Store:
             K32.CloseHandle(h)
 
     def run_mutex(self, rid):
+        """Run rid's liveness signal, held until its release(): RunMutex, or on Linux a flock on
+        runs/<rid>.alive (kitlib.platform.linux.locks.RunLock)."""
+        if kitlib.platform.NAME == "linux":
+            return locks.RunLock(self.path("runs", rid + ".alive"))
         return RunMutex(self.mutex_name("run." + rid))
 
     def run_dead(self, e):
         """True when entry or record e's wrapper is surely gone: its pid and creation time name
         no live process, or its run mutex is gone, abandoned or unowned. A mutex this process may
-        not open leaves it to the pid and creation time."""
+        not open leaves it to the pid and creation time. On Linux the run lock (run_mutex_held)
+        must be free, and the pid and creation time must not show the wrapper live
+        (record_state): a pid that names no process is never enough on its own, since a checker
+        in its own pid namespace sees no wrapper's pid, but any namespace sees its flock. Exactly
+        what run_live does not take as live."""
+        if kitlib.platform.NAME == "linux":
+            return (record_state(e) is not True
+                    and self.run_mutex_held(str(e["id"])) is False)
         try:
             if not process.alive(int(e.get("pid") or 0), e.get("ctime")):
                 return True
@@ -552,7 +682,11 @@ class Store:
         (no such mutex, ERROR_FILE_NOT_FOUND), abandoned or unowned (an unowned one is taken and
         let go at once); None when it cannot be told: any other failure to open it (access
         denied, say). This assumes the checker and the wrappers share the Global namespace
-        (mutex_name): a wrapper's mutex is then seen from any session on the machine."""
+        (mutex_name): a wrapper's mutex is then seen from any session on the machine. On Linux:
+        a probe of runs/<rid>.alive (kitlib.platform.linux.locks.run_lock_held), the same three
+        answers."""
+        if kitlib.platform.NAME == "linux":
+            return locks.run_lock_held(self.path("runs", rid + ".alive"))
         h = K32.OpenMutexW(win32.SYNCHRONIZE | win32.MUTEX_MODIFY_STATE, False,
                            self.mutex_name("run." + rid))
         if not h:
@@ -567,15 +701,21 @@ class Store:
 
     def run_live(self, d):
         """Is record or entry d's wrapper live? Its pid and creation time decide when they can be
-        checked (wrapper_state). When they cannot (a process this user may not open, which a
+        checked (record_state: never across pid namespaces). When they cannot (a process this user may not open, which a
         reused pid can name, or a record with no creation time), its run mutex decides: a wrapper
         holds it from before its record is written until after the record leaves active/
         (run.claim_id, run.settle), so one gone, abandoned or unowned means the wrapper is gone.
-        A mutex this process may not open, or a d with no run id, counts as live."""
-        state = wrapper_state(d.get("pid", 0), d.get("ctime"))
+        A mutex this process may not open, or a d with no run id, counts as live. On Linux a
+        pid and creation time that name no process are not enough either: the run lock decides
+        then too, and only a free one is gone (run_dead: a checker in its own pid namespace sees
+        no wrapper's pid); with no run id to ask it by, the pid's answer stands."""
+        state = record_state(d)
+        rid = d.get("id")
+        if state is False and kitlib.platform.NAME == "linux":
+            return (isinstance(rid, str) and bool(ID_RE.match(rid))
+                    and self.run_mutex_held(rid) is not False)
         if state is not None:
             return state
-        rid = d.get("id")
         if not isinstance(rid, str) or not ID_RE.match(rid):
             return True
         return self.run_mutex_held(rid) is not False
@@ -604,7 +744,8 @@ class Store:
 
     def bump(self):
         """revision + 1, under the revision mutex. A bump that cannot be had is skipped: the
-        next write bumps, and wait_change also wakes on its timeout."""
+        next write bumps, and wait_change also wakes on its timeout. A lock the platform cannot
+        take (PlatformUnsupported) is raised, never skipped."""
         try:
             with self.lock("revision", 2):
                 n = self.revision() + 1
@@ -613,6 +754,8 @@ class Store:
                 with open(tmp, "w", encoding="utf-8", newline="\n") as f:
                     f.write(str(n))
                 os.replace(tmp, self.path("revision"))
+        except PlatformUnsupported:
+            raise
         except OSError:
             pass
 
@@ -649,7 +792,7 @@ class Store:
             elif prune:
                 ended = self.path("ended", n)
                 if not os.path.exists(ended):
-                    gone = wrapper_state(d.get("pid", 0), d.get("ctime")) is False
+                    gone = record_state(d) is False
                     try:
                         write_json(ended, dict(public(d), state="ended", code=None, how="reaped",
                                                ended=iso(), reaped="its wrapper process is gone"
@@ -768,10 +911,14 @@ class Store:
         """Expected seconds of a run of repo, kind and mode (run_mode): the median held time of
         its finished (how: done) runs of that mode, at least history_min_s; None with fewer than
         history_min_runs of them, so a thin mode falls back to the kind's guide, not to the
-        other modes' median."""
-        s = self.settings
+        other modes' median. A line written under a kind's retired name (an alias in the kinds
+        table) counts as a line of the kind it now names."""
+        from kitlib.lock import kinds as kinds_mod      # kinds imports no store: no cycle
+        s, al = self.settings, kinds_mod.aliases(self.kinds_path)
+        kind = kinds_mod.canonical(kind, table_aliases=al)
         ds = sorted(float(d["held_s"]) for d in self.history_records()
-                    if d.get("repo") == repo and d.get("kind") == kind and d.get("how") == "done"
+                    if d.get("repo") == repo and d.get("how") == "done"
+                    and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
                     and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
                     and isinstance(d.get("held_s"), (int, float)) and d["held_s"] >= 0)
         if len(ds) < s.history_min_runs:

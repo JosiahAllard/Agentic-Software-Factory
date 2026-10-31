@@ -1,8 +1,13 @@
 """The plugin's source: an export of pushed kit main that every account folder's Claude Code
 installs from (docs/plugin-source.md).
 
+  default_export_dir()             the export root with no plugin.export_dir: %LOCALAPPDATA%\\pm-kit\\
+                                   plugin, on Linux <profile>/.local/share/pm-kit/plugin
   remote_main(kit, remote)         the sha the remote's main points at; refuses one not fetched
-  export(kit, sha, root)           <root>/<sha12>/: the tracked files at sha, plugin.json stamped,
+  export(kit, sha, root)           <root>/<sha12>/: the tracked files at sha but tests/, plugin.json
+                                   stamped, each per-platform manifest the running platform's
+                                   (platform_manifests), each host's own manifest placed
+                                   (host_manifests) and stamped,
                                    the marker naming the kit's main checkout
   export_checkout(folder)          that main checkout, while it still is one, or None
   write_marketplace(root, folder)  <root>/.claude-plugin/marketplace.json names that folder
@@ -14,7 +19,8 @@ installs from (docs/plugin-source.md).
   read_state / write_state         <root>/state.json: {sha, version, folder, exported_at, folders}
   RefreshLock                      <root>/refresh.pid, one refresh at a time
   pick_folders(folders, wanted)    the account folders --folder names, and the names that are not one
-  refresh(...)                     the whole run tools/plugin_refresh.py makes
+  refresh(...)                     the whole run tools/plugin_refresh.py makes (with copies, each
+                                   host's own plugin copy too: tools/_host.py plugin_copies)
   installs(folders)                [(install path, account folder)] of each account's kit install
   marketplace_mismatches(export_dir, folders, managed)
                                    lines where a marketplace path is not the export (read only)
@@ -24,13 +30,16 @@ installs from (docs/plugin-source.md).
 
 The export holds tracked files only (git ls-tree of the commit, blobs from one cat-file batch),
 so no worktree, no .git and nothing untracked reaches a plugin cache. It reads git and writes
-only under the export root (and, for prune_caches with apply, under each account's plugins cache);
+only under the export root (and, for prune_caches with apply or a refresh that went through,
+under each account's plugins cache; a host's plugin-copy step, which refresh is handed, writes
+that host's own copy);
 it fetches nothing and takes no machine lock.
 """
 import collections
 import datetime
 import json
 import os
+import posixpath
 import re
 import shutil
 import stat
@@ -39,6 +48,7 @@ import sys
 import time
 
 from kitlib import kitroot
+from kitlib import platform as kitplatform
 from kitlib.git import batch, cmd, refs, repo
 
 NAME = 'pm-kit'                      # the marketplace's and the plugin's name
@@ -56,8 +66,18 @@ CLAIM = '.pruning-'                  # a folder prune is removing: <name>.prunin
 LIST_TIMEOUT = 30                    # seconds for the process list and the task list
 LOCK_GRACE_S = 10                    # an empty or unreadable refresh.pid younger than this is live
 MANIFEST = '.claude-plugin/plugin.json'
+HOOKS_FILE = 'hooks/hooks.json'
+# The manifests a renderer writes once per platform, `<name>.<platform>.json` beside each
+# (platform_manifests): the hooks, Codex's MCP servers and Claude's plugin manifest.
+PLATFORM_FILES = (HOOKS_FILE, 'mcp.json', MANIFEST)
 MARKETPLACE = '.claude-plugin/marketplace.json'
+# A host's own plugin manifest, rendered at hosts/<host>/shell/plugin.json: the export also writes
+# it at .<host>-plugin/plugin.json, stamped, where that host looks (host_manifests; Codex reads
+# .codex-plugin/plugin.json; docs/plugin-source.md "Codex"). The host's marketplace file is its
+# own copy step's to write; this module names no host.
+_HOST_MANIFEST = re.compile(r'^hosts/([a-z][a-z0-9-]*)/shell/plugin\.json$')
 CONFIG_KEY = 'plugin'
+LEFT_OUT = 'tests'                   # the top-level folder export leaves out (kitrelease does too)
 _SHA12 = re.compile(r'^[0-9a-f]{12}$')
 _TMP = re.compile(r'^([0-9a-f]{12})\.tmp$')
 _CLAIMED = re.compile(r'^.+\.pruning-\d+$')
@@ -138,21 +158,43 @@ def check(obj, kit=None, sweep_dir=None):
     return errs
 
 
+LINUX_EXPORT = ('.local', 'share', 'pm-kit', 'plugin')    # under the Linux profile folder
+
+
+def default_export_dir(environ=None):
+    """The export root when the machine config sets no plugin.export_dir, the one default every
+    reader (settings, so kitlib.gate.pin, kitlib.kitcmd and the installers) gets. Windows (and
+    any platform but Linux): %LOCALAPPDATA%\\pm-kit\\plugin, LOCALAPPDATA from `environ`. Linux:
+    <profile>/.local/share/pm-kit/plugin, the profile from the password database
+    (kitlib.platform.linux.paths.profile), never $HOME or $XDG_DATA_HOME: a cron job, a systemd
+    unit and a login shell of the user all get the folder the managed settings name, as they all
+    get the same PM-repo pointer. RefreshError when it cannot be told, a Python with no password
+    database module (no pwd: Linux patched in on Windows) included, so a caller that skips the
+    export on RefreshError (kitlib.guard.rules.advice_kit) skips it there too."""
+    if kitplatform.NAME == 'linux':
+        from kitlib.platform.linux import paths as linux_paths
+        try:
+            profile = linux_paths.profile()
+        except (OSError, ImportError) as e:
+            raise RefreshError('the profile folder cannot be read (%s): set plugin.export_dir in '
+                               'the machine config' % e)
+        return posixpath.join(profile, *LINUX_EXPORT)
+    env = os.environ if environ is None else environ
+    base = env.get('LOCALAPPDATA')
+    if not base or not os.path.isabs(base):
+        raise RefreshError('LOCALAPPDATA is not set: set plugin.export_dir in the machine config')
+    return os.path.join(base, 'pm-kit', 'plugin')
+
+
 def settings(obj, environ=None, kit=None, sweep_dir=None):
     """The checked Settings of a `plugin` object (None: every default). The default export_dir is
-    %LOCALAPPDATA%\\pm-kit\\plugin; RefreshError when that is needed and LOCALAPPDATA is unset,
-    and when the export root is inside `kit` or `sweep_dir` (placement_errors)."""
+    default_export_dir's; RefreshError when that is needed and cannot be told, and when the
+    export root is inside `kit` or `sweep_dir` (placement_errors)."""
     errs = check(obj)
     if errs:
         raise RefreshError('; '.join(errs))
     obj = obj or {}
-    root = obj.get('export_dir')
-    if not root:
-        env = os.environ if environ is None else environ
-        base = env.get('LOCALAPPDATA')
-        if not base or not os.path.isabs(base):
-            raise RefreshError('LOCALAPPDATA is not set: set plugin.export_dir in the machine config')
-        root = os.path.join(base, 'pm-kit', 'plugin')
+    root = obj.get('export_dir') or default_export_dir(environ)
     errs = placement_errors(root, kit, sweep_dir)
     if errs:
         raise RefreshError('; '.join(errs))
@@ -286,12 +328,12 @@ def stamped_version(base, count):
     return '%s-main.%d' % (base, count)
 
 
-def stamp(manifest, version):
+def stamp(manifest, version, name=MANIFEST):
     """plugin.json bytes with its one `version` value replaced; every other byte (a BOM, the
-    layout) kept. RefreshError when the file does not hold exactly one."""
+    layout) kept. RefreshError, naming the manifest `name`, when the file does not hold exactly one."""
     found = _VERSION.findall(manifest)
     if len(found) != 1:
-        raise RefreshError('%s holds %d "version" keys, not one' % (MANIFEST, len(found)))
+        raise RefreshError('%s holds %d "version" keys, not one' % (name, len(found)))
     return _VERSION.sub(lambda m: m.group(1) + version.encode('utf-8') + m.group(3), manifest)
 
 
@@ -336,10 +378,42 @@ def folder_name(sha):
     return sha[:12]
 
 
-def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py'):
-    """<root>/<sha12>: the tracked files at `sha`, plugin.json's version stamped, and the marker
-    (`made_by`: the tool that wrote it; `checkout`: the main checkout of `kit`'s repository, left
-    out when git cannot place it). Written into <sha12>.tmp and renamed, so a folder by the
+def host_manifests(oids):
+    """{export path: blob oid} of each host's own plugin manifest: hosts/<host>/shell/plugin.json
+    of the tree (`oids`: {path: oid}) placed at .<host>-plugin/plugin.json, where that host reads
+    it, unless the tree holds that path itself (Claude's .claude-plugin/plugin.json)."""
+    placed = {}
+    for path, oid in oids.items():
+        m = _HOST_MANIFEST.match(path)
+        if m and '.%s-plugin/plugin.json' % m.group(1) not in oids:
+            placed['.%s-plugin/plugin.json' % m.group(1)] = oid
+    return placed
+
+
+def platform_manifests(paths, platform):
+    """{manifest path: the path whose bytes the export writes there} for `platform`: each
+    PLATFORM_FILES manifest among `paths` (`<dir>/hooks/hooks.json`, `<dir>/mcp.json`,
+    MANIFEST) with its `<name>.<platform>.json` beside it (the host renderers write one per
+    platform; docs/content.md "Manifests"). Windows: none, the files the plugin names are its own."""
+    if platform == 'windows':
+        return {}
+    have = set(paths)
+    swap = {}
+    for path in have:
+        if any(path == name or path.endswith('/' + name) for name in PLATFORM_FILES):
+            other = path[:-len('.json')] + '.%s.json' % platform
+            if other in have:
+                swap[path] = other
+    return swap
+
+
+def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py', platform=None):
+    """<root>/<sha12>: the tracked files at `sha` but the top-level tests/ (LEFT_OUT: no tool reads
+    the kit's tests from an export, and they were half its size), plugin.json's version stamped,
+    each per-platform manifest holding the running `platform`'s file (platform_manifests; a
+    swapped plugin.json is stamped too), each host's own manifest written where that host looks
+    and stamped (host_manifests), and the marker (`made_by`: the tool that wrote it;
+    `checkout`: the main checkout of `kit`'s repository, left out when git cannot place it). Written into <sha12>.tmp and renamed, so a folder by the
     final name is always whole. An existing folder whose marker names `sha` is kept as it is.
     Returns (folder, version)."""
     name = folder_name(sha)
@@ -349,7 +423,7 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py'):
         return dest, have.get('version')
     if os.path.exists(dest):
         raise RefreshError('%s exists and is not an export of %s; move it away first' % (dest, sha[:12]))
-    entries = _tree(kit, sha)
+    entries = [e for e in _tree(kit, sha) if e[3].split('/')[0] != LEFT_OUT]
     blobs = [e for e in entries if e[1] == 'blob' and e[0] != '120000']
     bad = [e[3] for e in blobs if not _safe_rel(e[3])]
     if bad:
@@ -361,17 +435,21 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py'):
     if not manifest:
         raise RefreshError('%s has no %s' % (sha[:12], MANIFEST))
     version = stamped_version(kit_version(manifest[1]), _count(kit, sha))
+    oids = {e[3]: e[2] for e in blobs}
+    swap = platform_manifests(oids, kitplatform.NAME if platform is None else platform)
+    placed = host_manifests(oids)
     tmp = dest + '.tmp'
     if os.path.lexists(tmp):
         _rmtree(tmp)
     os.makedirs(tmp)
-    for mode, _typ, oid, path in blobs:
+    for path, oid in [(e[3], e[2]) for e in blobs] + sorted(placed.items()):
+        oid = oids[swap[path]] if path in swap else oid
         got = data.get(oid)
         if got is None:
             raise RefreshError('git has no blob %s for %s' % (oid[:12], path))
         body = got[1]
-        if path == MANIFEST:
-            body = stamp(body, version)
+        if path == MANIFEST or path in placed:
+            body = stamp(body, version, path)
         full = os.path.join(tmp, *path.split('/'))
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, 'wb') as fh:
@@ -445,7 +523,9 @@ def marketplace_path(root):
 
 def write_marketplace(root, folder):
     """<root>/.claude-plugin/marketplace.json: the marketplace `pm-kit` whose plugin `pm-kit` is
-    `./<folder>`. The names never change, so agent names (pm-kit:<agent>) and allow entries do not."""
+    `./<folder>`. The names never change, so agent names (pm-kit:<agent>) and allow entries do not.
+    A host with a marketplace file of its own writes it in its copy step (docs/plugin-source.md
+    "Codex")."""
     _write_json(marketplace_path(root), {
         'name': NAME,
         'description': 'The PM kit\'s plugin, exported from pushed kit main (docs/plugin-source.md).',
@@ -568,6 +648,35 @@ def read_in_use(root, procs=None, tasks=None):
     return InUse(texts, named, errors)
 
 
+def with_hosts(in_use, copies):
+    """The in-use reader `in_use` (None: nothing read) with what each plugin-copy step's in_use()
+    names added to its `named`: the export folders a host's own plugin copy was installed from
+    (Codex's: its cache's export markers), which prune then keeps. A step's read that fails,
+    or a base reader that raises, is an error of the InUse, so prune keeps every young export.
+    `in_use` itself when no step has in_use()."""
+    hosts = [(getattr(c, 'label', 'plugin copy'), c.in_use) for c in copies or ()
+             if callable(getattr(c, 'in_use', None))]
+    if not hosts:
+        return in_use
+
+    def read():
+        if in_use is None:
+            u = InUse([], set(), ['nothing but the host plugin copies was read'])
+        else:
+            try:
+                u = in_use()
+            except Exception as e:
+                u = InUse([], set(), ['%s: %s' % (type(e).__name__, e)])
+        named, errors = set(u.named), list(u.errors)
+        for label, host in hosts:
+            try:
+                named |= {n for n in host() if _SHA12.match(n)}
+            except Exception as e:
+                errors.append('the %s plugin copy could not be read (%s: %s)' % (label, type(e).__name__, e))
+        return InUse(u.texts, named, errors)
+    return read
+
+
 def in_use_sha12s(u):
     """Every <sha12> `u` names: a path part of 12 hex digits (not the tail of a uuid), or a lease."""
     found = set(u.named)
@@ -676,7 +785,8 @@ def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None):
             spare.add(n)
     held = sorted(n for _, n in found if n in used and n not in spare)
     if held:
-        say('prune: kept, a running process, scheduled task or pin lease names it: %s' % ', '.join(held))
+        say('prune: kept, a running process, scheduled task, pin lease or host plugin copy names it: %s'
+            % ', '.join(held))
     spare.update(used)
     removed, failed = [], []
     for n in [n for _, n in found if n not in spare] + sorted(stale):
@@ -927,15 +1037,21 @@ def migrate_cmd(folder):
 
 
 def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=None, own=None,
-            alive=None, in_use=None):
+            alive=None, in_use=None, copies=None):
     """One refresh (tools/plugin_refresh.py). `folders` are the account folders to run in (all of
     them, or those --folder named); `runner` is kitlib.pluginsource.claude.Runner (or a test's);
-    `in_use` is the prune's reader of what is in use (prune; None: the 7-day rule).
+    `in_use` is the prune's reader of what is in use (prune; None: the 7-day rule), with what each
+    copy step's in_use() names added (with_hosts). `copies` are
+    the hosts' plugin-copy steps (tools/_host.py plugin_copies), each run as step(export folder,
+    out, apply) after the account folders, also when they had nothing to do: a step prints its own
+    lines and never sets the exit code; None or []: none. After an update that went through, the
+    old versions in each account folder's plugins cache are pruned (_prune_old_caches).
     Without `migrate`, a folder whose state record does not say `migrated: true` is refused with
     a line naming the migrate command for it, and the others still run. Dry run (apply False):
     prints the plan and writes nothing. Returns the exit code: 0 done or nothing to do, 1 refused
     (the whole run or one folder) or a folder failed."""
     root = s.export_dir
+    in_use = with_hosts(in_use, copies)
     try:
         sha = remote_main(kit, s.remote)
         state = read_state(root)
@@ -960,6 +1076,8 @@ def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=N
         if not refused:
             out('pm-kit plugin is current: %s is exported and every account folder named refreshed; '
                 'nothing to do' % name)
+        if copies:
+            _copies_locked(s, name, sha, copies, out, apply, own, alive)
         return 1 if refused else 0
     if not apply:
         out('DRY RUN (nothing written; --apply makes these):')
@@ -976,6 +1094,8 @@ def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=N
             out('  no account folder to run claude in')
         if migrate:
             _old_cache_lines(kit, sha, folders, out)
+        if copies:
+            _copies(s, name, sha, copies, out, False)
         return 1 if refused else 0
     try:
         os.makedirs(root, exist_ok=True)
@@ -991,9 +1111,47 @@ def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=N
     try:
         code = _apply(kit, s, sha, state, fresh, todo, steps, migrate, folders, runner, out, now,
                       in_use)
+        if copies:
+            _copies(s, name, sha, copies, out, True)
     finally:
         lock.release()
     return 1 if refused else code
+
+
+def _copies(s, name, sha, copies, out, apply):
+    """Run each plugin-copy step with export <name>'s folder. With apply the caller holds the
+    refresh lock, and an export that is not there whole (the export step failed) is a line per
+    step, not a write. A step that raises is a line: it never fails the account folders' result."""
+    folder = os.path.join(s.export_dir, name)
+    whole = not apply or (read_marker(folder) or {}).get('sha') == sha
+    for step in copies:
+        label = getattr(step, 'label', 'plugin copy')
+        if not whole:
+            out('%s: not refreshed: there is no export of %s at %s' % (label, sha[:12], folder))
+            continue
+        try:
+            step(folder, out, apply)
+        except Exception as e:                   # never fail the refresh over a host's copy
+            out('%s: not refreshed: %s: %s' % (label, type(e).__name__, e))
+
+
+def _copies_locked(s, name, sha, copies, out, apply, own, alive):
+    """_copies when the account folders had nothing to do: with apply, under the refresh lock
+    (busy: a line per step, and the copies are left for the refresh holding it)."""
+    if not apply:
+        _copies(s, name, sha, copies, out, False)
+        return
+    lock = RefreshLock(s.export_dir, own=own, alive=alive)
+    try:
+        lock.acquire()
+    except Busy as e:
+        for step in copies:
+            out('%s: not refreshed: %s' % (getattr(step, 'label', 'plugin copy'), e))
+        return
+    try:
+        _copies(s, name, sha, copies, out, True)
+    finally:
+        lock.release()
 
 
 def _apply(kit, s, sha, state, fresh, todo, steps, migrate, folders, runner, out, now, in_use=None):
@@ -1023,6 +1181,7 @@ def _apply(kit, s, sha, state, fresh, todo, steps, migrate, folders, runner, out
     if migrate:
         _old_cache_lines(kit, sha, folders, out)
     if not todo:
+        _prune_old_caches(folders, state, in_use, migrate, out, now)
         return 0
     if runner is None or not runner.available():
         out('REFUSED: claude is not on PATH: the export is made, no account folder was refreshed')
@@ -1049,7 +1208,33 @@ def _apply(kit, s, sha, state, fresh, todo, steps, migrate, folders, runner, out
         else:
             code = 1
             out('FAILED %s: claude %s exited %s: %s' % (f, cmd_line, rc, (text or '').strip()[-400:]))
+    if code == 0:
+        _prune_old_caches(folders, state, in_use, migrate, out, now)
     return code
+
+
+def _prune_old_caches(folders, state, in_use, migrate, out, now):
+    """After an update that went through, the old versions in the plugins cache of each account
+    folder that `state` records migrated and refreshed with rc 0 go; a refused folder, not yet
+    migrated, is never touched. prune_caches runs with apply, every guard of it kept: the
+    installed version, the newest, one replaced less than IN_USE_YOUNG_DAYS ago, one in use, a
+    link. Prints a line per version removed or failed, never the kept ones, and changes no exit
+    code. A migrate run removes none: it only lists the old caches (_old_cache_lines)."""
+    if migrate:
+        return
+    done = [f for f in folders if migrated(state, f) and _record(state, f).get('rc') == 0]
+    if not done:
+        return
+    try:
+        rows = prune_caches(done, in_use, apply=True, now=now)
+    except (OSError, ValueError) as e:
+        out('WARNING: the old plugin caches were not pruned: %s' % e)
+        return
+    for p, action, why in rows:
+        if action == 'removed':
+            out('pruned cache %s' % p)
+        elif action == 'failed':
+            out('WARNING: could not remove %s: %s' % (p, why))
 
 
 def ensure_export(kit, s, now=None, own=None, alive=None, in_use=None):
@@ -1111,9 +1296,10 @@ def _folders(folders):
     return list(folders)
 
 
-def account_folders():
-    """This machine's account folders on the plugin's host (the ones `folders=None` means here)."""
-    return _folders(None)
+def account_folders(home=None):
+    """This machine's account folders on the plugin's host (the ones `folders=None` means here);
+    `home` (default the user's home) as plugin_refresh.py --home names it."""
+    return list(_host().account_folders(home)) if home else _folders(None)
 
 
 def installs(folders=None):

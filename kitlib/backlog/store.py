@@ -28,6 +28,7 @@ import time
 
 from kitlib import pmdata
 from kitlib.config import user as kuser
+from kitlib.fs import replace as fsreplace
 from kitlib.git import batch, cmd, refs
 from kitlib.git import repo as gitrepo
 
@@ -474,6 +475,12 @@ class RefBackend(object):
         """Always False: every write to a ref store is a commit."""
         return False
 
+    def removed(self, snap):
+        """`[(stem, Removal, last text)]` of every record a store commit deleted."""
+        if not snap.tip:
+            return []
+        return removed_records(self.root, snap.tip, STORE_DIR)
+
     def touched(self, snap):
         """`{stem: epoch}` of the last store commit that wrote each record."""
         if not snap.tip:
@@ -522,6 +529,40 @@ def last_removal(root, rev, rel, rid):
         return None
     sha, when, subject, body = (out.split('\x1f', 3) + ['', '', ''])[:4]
     return Removal(sha, when, session_of(body), subject)
+
+
+def removed_records(root, rev, rel):
+    """`[(stem, Removal, text)]`, newest removal first, one per record id: every `<rel>/<id>.md` a
+    commit reachable from `rev` deleted, with the text it had in that commit's first parent. One
+    `git log` names every deleted path and one `cat-file --batch` reads them all, however many
+    records there are. A record added back later is listed too; the caller drops the ids the
+    store holds. A path git cannot read at the parent is left out."""
+    rel = rel.replace('\\', '/').strip('/')
+    out, why = cmd.run_text(['-c', 'core.quotePath=false', 'log', '--full-history', '--no-renames',
+                             '--diff-filter=D', '--name-only',
+                             '--format=%x01%H%x1f%h%x1f%cI%x1f%s%x1f%b%x02', rev, '--', rel + '/'],
+                            root, timeout=120, strip=False)
+    if out is None:
+        raise Failure('cannot read the store history: %s' % why)
+    found, seen = [], set()
+    for head, names in batch.log_records_names(out):
+        full, sha, when, subject, body = (head.split('\x1f', 4) + ['', '', '', ''])[:5]
+        for name in names:
+            stem, ext = os.path.splitext(name[len(rel) + 1:])
+            if not name.startswith(rel + '/') or ext != '.md' or '/' in stem or stem in seen:
+                continue
+            seen.add(stem)
+            found.append((stem, Removal(sha, when, session_of(body), subject),
+                          '%s^:%s' % (full, name)))
+    blobs, why = batch.cat_file([spec for _s, _r, spec in found], root, timeout=120)
+    if blobs is None:
+        raise Failure('cannot read the store history: %s' % why)
+    done = []
+    for stem, removal, spec in found:
+        got = blobs.get(spec)
+        if got and got[0] == 'blob':
+            done.append((stem, removal, got[1].decode('utf-8', 'replace')))
+    return done
 
 
 # An id the history lookup may put in a pathspec: no glob or pathspec-magic character, no path
@@ -608,38 +649,27 @@ class _IndexLock(object):
 
     def install(self):
         """Move the lock file over the index ('' when done, else why not). A move Windows
-        refuses (a reader has the index open) is retried for REPLACE_WAIT seconds."""
-        deadline = time.monotonic() + REPLACE_WAIT
-        while True:
-            try:
-                os.replace(self.path, self.index)
-                self.held = False
-                return ''
-            except PermissionError as exc:
-                if time.monotonic() >= deadline:
-                    return 'cannot move %s over the index: %s' % (self.path, exc)
-            except OSError as exc:
-                return 'cannot move %s over the index: %s' % (self.path, exc)
-            time.sleep(0.05)
+        refuses (a reader has the index open) is retried for REPLACE_WAIT seconds
+        (kitlib.fs.replace)."""
+        try:
+            fsreplace.replace(self.path, self.index, wait=REPLACE_WAIT)
+        except OSError as exc:
+            return 'cannot move %s over the index: %s' % (self.path, exc)
+        self.held = False
+        return ''
 
     def release(self):
-        """Remove the lock file if this still holds it ('' when it is gone, else why not)."""
+        """Remove the lock file if this still holds it ('' when it is gone, else why not). A
+        removal Windows refuses is retried for REPLACE_WAIT seconds (kitlib.fs.replace)."""
         if not self.held:
             return ''
-        deadline = time.monotonic() + REPLACE_WAIT
-        while True:
-            try:
-                os.remove(self.path)
-                self.held = False
-                return ''
-            except FileNotFoundError:
-                self.held = False
-                return ''
-            except OSError as exc:
-                if not isinstance(exc, PermissionError) or time.monotonic() >= deadline:
-                    return ('git\'s index lock %s could not be removed (%s): no git command can '
-                            'write that index until it is; remove it by hand' % (self.path, exc))
-            time.sleep(0.05)
+        try:
+            fsreplace.remove(self.path, wait=REPLACE_WAIT)
+        except OSError as exc:
+            return ('git\'s index lock %s could not be removed (%s): no git command can '
+                    'write that index until it is; remove it by hand' % (self.path, exc))
+        self.held = False
+        return ''
 
 
 def _replace_file(full, data):
@@ -654,15 +684,7 @@ def _replace_file(full, data):
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        deadline = time.monotonic() + REPLACE_WAIT
-        while True:
-            try:
-                os.replace(tmp, full)
-                return
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    raise
-            time.sleep(0.05)
+        fsreplace.replace(tmp, full, wait=REPLACE_WAIT)
     except BaseException as exc:
         try:
             os.remove(tmp)
@@ -1275,6 +1297,15 @@ class MainBackend(object):
             raise Failure(r.err)
         return r.rc == 0
 
+    def removed(self, snap):
+        """`[(stem, Removal, last text)]` of every record a commit on HEAD deleted; none while the
+        repository has no commit."""
+        out, _why = cmd.run_text(['rev-parse', '--verify', '-q', 'HEAD^{commit}'], self.root,
+                                 env=_store_env())
+        if not out:
+            return []
+        return removed_records(self.root, 'HEAD', self.rel)
+
     def touched(self, snap):
         return _touch_times(self.root, 'HEAD', self.rel)
 
@@ -1324,6 +1355,38 @@ def pm_data_live_store(root):
     except (ConfigError, OSError) as exc:
         return pm_root, None, str(exc) or type(exc).__name__
     return pm_root, named, None
+
+
+def worktree_live_store(top, cfg):
+    """`(pm_root, branch)` when a run from the checkout `top` opens the live store in the PM data
+    worktree instead of its own: `top`'s `.kit.json` (`cfg`) names no "backlog".store, `top` is a
+    linked worktree of its repository (git's own answer; the PM data worktree itself is excluded
+    by pm_data_live_store), that repository's PM data worktree names a store of its own
+    (pm_data_live_store, read without error), and `top` has a branch checked out, `branch`, the
+    one the run acts as. None otherwise: the main checkout, a detached HEAD, a named store or no
+    live store keep `top`'s own (the implicit ref, whose writes default_store_refusal refuses).
+    A PM data worktree that cannot be found or read is pm_data_live_store's `why`, so also None:
+    a write then refuses naming that `why` (default_store_refusal) and preflight's backlog line
+    names it. Nothing is caught here: anything else pm_data_live_store raises is a defect, never
+    a quiet fall back to the stale ref. The same resolution `-C <pm data> --as <branch>` spells
+    out by hand (docs/backlog.md "The store a worktree opens")."""
+    if cfg.written('backlog', 'store') is not None:
+        return None
+    branch = worktree_branch(top)
+    if branch is None:
+        return None
+    pm_root, named, why = pm_data_live_store(top)
+    if pm_root is None or not named or why:
+        return None
+    return pm_root, branch
+
+
+def worktree_branch(top):
+    """The branch checked out at `top` when it is a linked worktree of its repository, else None
+    (the main checkout, a detached HEAD): the checkouts worktree_live_store can resolve."""
+    if gitrepo.classify(top).kind != gitrepo.LINKED:
+        return None
+    return refs.current_branch(top)[0] or None
 
 
 def unreadable_kit_json(pm_root, why):
@@ -1454,6 +1517,9 @@ class Store(object):
 
     def uncommitted_removal(self, rid):
         return self.backend.uncommitted_removal(rid)
+
+    def removed(self, snap):
+        return self.backend.removed(snap)
 
     def touched(self, snap):
         return self.backend.touched(snap)

@@ -26,7 +26,8 @@ closed).
 
 Uncovered (the rerun refuses; only a passing `gate.py --full` lands the tip): a FAIL step whose
 reasons are more than its exit code and a missing pass pattern; one whose log is neither
-kit_tests' report nor unittest's; a kit_tests unit that is not FAILED (TIMEOUT, a runner
+kit_tests' report nor unittest's (a gradle or dotnet log, say); a kit_tests unit that is not
+FAILED (TIMEOUT, a runner
 failure); a test that could not be loaded (`unittest.loader._FailedTest`); FAIL/ERROR lines
 that do not add up to the FAILED summary; an unexpected success; an interrupted or refused
 kit_tests run; a step whose directory is outside the tree.
@@ -345,7 +346,8 @@ def parse_log(text):
         return _parse_kit_tests(lines)
     if any(RAN.match(line) for line in lines):
         return _parse_block(lines, {}, 'unittest')
-    return [], ['the log is neither a kit_tests nor a unittest report']
+    return [], ['gate.py --rerun covers kit_tests and unittest reports only, and this log is '
+                'neither (a gradle or dotnet log, say)']
 
 
 def _read(path):
@@ -608,16 +610,19 @@ def scope_of(top, cls):
 
 def add_line(top, branch, head, classes):
     """The `backlog.py add` line a FLAKE prints: the builder reports it; the coordinator decides
-    on filing it (skill builder, step 10)."""
+    on filing it (skill builder, step 10). The summary is a short title, within plan.SUMMARY_MAX
+    (the class, cut to 60 characters, and the tip); the failing test ids go into the
+    not-folded reason, which the record keeps in its body's `## Found` section."""
     ids = [t for c in classes for t in c['ids']]
-    name = re.sub(r'[^A-Za-z0-9]+', '-', classes[0]['cls'].split('.')[-1]).strip('-').upper()
+    cls = classes[0]['cls'].split('.')[-1]
+    name = re.sub(r'[^A-Za-z0-9]+', '-', cls).strip('-').upper()
     scopes = sorted({scope_of(top, c['cls']) for c in classes})
-    return ('%s add FLAKE-%s --summary "flaky: %s failed in gate.py --full at %s and passed its '
-            'targeted rerun" --scope %s --found-on %s --why-not-folded "a flake outside this '
-            'branch\'s story"' % (kitroot.command('backlog', top), name[:40] or 'TEST',
-                                  ', '.join(ids[:3]) + (' and %d more' % (len(ids) - 3)
-                                                        if len(ids) > 3 else ''),
-                                  head[:10], ','.join(scopes), branch or 'none'))
+    more = ' and %d more' % (len(classes) - 1) if len(classes) > 1 else ''
+    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py --full at %s" --scope %s '
+            '--found-on %s --why-not-folded "a flake outside this branch\'s story; it failed in '
+            'gate.py --full and passed its targeted rerun: %s"'
+            % (kitroot.command('backlog', top), name[:40] or 'TEST', cls[:60], more, head[:10],
+               ','.join(scopes), branch or 'none', ', '.join(ids)))
 
 
 def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
@@ -707,7 +712,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
         slot = lockrun.book(gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
                             **dict(book_kw or {}, gate=True, tree=red['tree'], **mine))
     except LockError as e:
-        return runner.lock_refusal(e)
+        return runner.book_refusal(e, logs, base)
     done, results = [], []
     with slot:
         say(slot.held_text())
@@ -716,6 +721,8 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             say('control: no tree at the base %s (%s); the controls are not run' % (base[:10], why))
         try:
             for i, c in enumerate(classes):
+                if slot.stop_asked():
+                    break
                 env = runner.child_env(slot.launcher)
                 env.update(c['env'])
                 argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
@@ -724,7 +731,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
                             c['cwd'] else top, env, log)
                 passed, got = judge_class(_read(log), rc, c['ids'])
                 control, clog = 'not run', None
-                if tw:
+                if tw and not slot.stop_asked():
                     clog = os.path.join(logs, 'class-%d.base.log' % (i + 1))
                     crc = _start(slot.launcher, argv, os.path.join(tw, *c['cwd'].split('/')) if
                                  c['cwd'] else tw, env, clog)
@@ -742,11 +749,15 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             if steps:
                 ctx = {'root': top, 'base': base, 'merged': False, 'changed': list(changed or []),
                        'options': options}
-                results = runner.run_steps(slot.launcher, steps, gate, ctx, logs, say, checks)
+                results = runner.run_steps(slot.launcher, steps, gate, ctx, logs, say, checks,
+                                           halted=slot.stop_asked)
             results += runner.window_results(slot, say)
         finally:
             if tw:
                 _drop_tree(main, tw, base, cfg, say)
+        if slot.stop_asked():       # no rerun record: the red run keeps its one rerun
+            slot.release(1, 'cancelled')
+            return runner.stopped_outcome('gate run %s was stopped' % slot.id, logs, base)
         flake = (all(c['tip'] == 'pass' for c in done) and
                  all(r['status'] in PASSING for r in results))
         slot.release(0 if flake else 1, 'done')

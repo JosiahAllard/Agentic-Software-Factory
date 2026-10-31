@@ -92,6 +92,7 @@ A command line the parser cannot read cleanly also goes through kitlib.guard.fal
 unreadable, is a warning by default).
 "Agent session" and "the owner's own" are the session mark's (docs/guard.md "Session mark").
 """
+import contextvars
 import fnmatch
 import json
 import ntpath
@@ -129,13 +130,45 @@ def tag(rule, role):
     return TAG % (rule, role)
 
 
+CITE_MAX = 120                  # the most of the command a warning quotes (cited)
+ELIDED = ' [...]'
+_COMMAND = contextvars.ContextVar('kit_guard_command', default=None)   # the shell text decide() judges
+
+
+def cited(what, command, cap=CITE_MAX):
+    """`what` with each backtick quote of the shell text `command` (or of a part of it) longer than
+    `cap` cut to its first `cap` characters and ELIDED. A quote runs from a backtick to the furthest
+    later backtick whose text between is all in `command`, so a PowerShell escape inside it does not
+    end it; text `command` does not hold is never cut."""
+    if not command or len(command) <= cap or '`' not in what:
+        return what
+    ticks = [i for i, c in enumerate(what) if c == '`']
+    out, done, k = [], 0, 0
+    while k < len(ticks):
+        i, end = ticks[k], None
+        for n in range(k + 1, len(ticks)):
+            if what[i + 1:ticks[n]] not in command:
+                break
+            end = n
+        if end is not None and ticks[end] - i - 1 > cap:
+            out.append(what[done:i + 1 + cap] + ELIDED)
+            done, k = ticks[end], end + 1
+        else:
+            k += 1
+    return ''.join(out) + what[done:]
+
+
 def refuse(rule, role, what, instead, kind=DENY):
     """The refusal `rule` makes, or None when its mode (kitlib.guard.modes) is warn, which keeps the
-    reason as the call's warning, or off."""
-    reason = '%s Instead: %s %s' % (what.rstrip(), instead.strip(), tag(rule, role))
+    reason as the call's warning, or off. A warning quotes at most CITE_MAX characters of the
+    command decide() judges (cited); the Instead text and the tag stay whole, and a refusal keeps
+    its full text."""
     m = modes.mode(rule)
     if m == modes.OFF:
         return None
+    if m == modes.WARN:
+        what = cited(what, _COMMAND.get())
+    reason = '%s Instead: %s %s' % (what.rstrip(), instead.strip(), tag(rule, role))
     if m == modes.WARN:
         modes.note(reason)
         return None
@@ -260,9 +293,19 @@ def decide(event, ctx=None, environ=None, profile=None):
     allow or ask then meets the role policy (kitlib.guard.rolepolicy; its refusal wins over an ask), which is off for a role whose
     .kit.json entry names no mode, and, when it adds write-jail roots, the shared rules again.
     Each refusal meets its rule's mode (kitlib.guard.modes): an allow that a warn-mode rule
-    refused carries the warnings (rule WARNED, reason WARNING plus each refusal's reason)."""
+    refused carries the warnings (rule WARNED, reason WARNING plus each refusal's reason), each
+    quoting at most CITE_MAX characters of a shell call's text (refuse, cited)."""
     from . import rolepolicy
     ctx = ctx or context.Ctx(environ=environ, profile=profile)
+    command = getattr(event, 'command', None) if getattr(event, 'kind', None) == 'shell' else None
+    token = _COMMAND.set(command if isinstance(command, str) else None)
+    try:
+        return _decide(event, ctx, rolepolicy)
+    finally:
+        _COMMAND.reset(token)
+
+
+def _decide(event, ctx, rolepolicy):
     with modes.judging(ctx) as warnings:
         asked = Asked()                         # an ask still meets the role policy, whose refusal wins
         d = asked.firm(judge(event, ctx))
@@ -552,7 +595,7 @@ def is_owner_session(event, ctx):
 
 def agent_session(event, ctx):
     """True for a subagent, or a session whose mark is one of guard_agent_marks (default
-    AGENT_MARKS: coordinator, its old name conductor, deep-worker, consultant and pm), case
+    AGENT_MARKS: coordinator, deep-worker, consultant and pm), case
     ignored; a guard_agent_marks value replaces the default list. The rules only agents are held to (kill by name, lock state,
     kit-json, the write jail, git-stash-shared) use it. The mark is compared without the kit plugin's prefix
     (kitlib.agentname.bare_mark), so a role_resolver that does not strip it fails closed too."""
@@ -563,9 +606,8 @@ def agent_session(event, ctx):
     return who.lower() in {str(m).lower() for m in marks}
 
 
-# every session kind the kit launcher marks but `plain` and other agents' names; 'conductor' is the
-# coordinator's old mark, until the launcher is renamed
-AGENT_MARKS = ('coordinator', 'conductor', 'deep-worker', 'consultant', 'pm')
+# every session kind the kit launcher marks but `plain` and other agents' names
+AGENT_MARKS = ('coordinator', 'deep-worker', 'consultant', 'pm')
 
 
 # ---------------------------------------------------------------- owner tools
@@ -593,7 +635,8 @@ OWNER_LOCK_WHY = ('owner-only lock tools are run by the owner, not agents; the l
 def tool_run(inv):
     """(name, Words) for the file the invocation `inv` runs, or None: its program's base name
     (commands.base_name) and arguments; python's script (its first operand) or -m module (as
-    <its last part>.py) and the words after it; PowerShell's .ps1 script; the file an opener
+    <its last part>.py) and the words after it; PowerShell's .ps1 script; a POSIX shell's script
+    (its first operand; -c text and -s standard input are None); the file an opener
     (Invoke-Item, explorer, Git Bash's start) opens. The kit command (`kit X`, tools/kit.py X,
     -m tools.kit X) is read as the tool X it runs (kit_run). python -c, standard input and a
     program or script the text does not show are None: the guard reads what a line runs, not
@@ -642,6 +685,25 @@ def _tool_run(inv):
             if a.text.lower().endswith('.ps1') and not a.dyn:
                 return cm.base_name(a.text), args[k + 1:]
         return None
+    if name in cm.BASH_SHELLS:                          # sh [opts] script.sh args (installer/machine-setup.sh)
+        k = 0
+        while k < len(args):
+            t = args[k].text
+            if t in cm.BASH_VALUE_OPTS:
+                k += 2
+                continue
+            if t in ('-', '--'):
+                k += 1
+                break
+            if t[:1] in '-+' and len(t) > 1:
+                if t[:1] == '-' and not t.startswith('--') and ('c' in t[1:] or 's' in t[1:]):
+                    return None                         # -c text (the nested parse reads it), -s stdin
+                k += 1
+                continue
+            break
+        if k >= len(args) or args[k].dyn:
+            return None
+        return cm.base_name(args[k].text), args[k + 1:]
     if not PY_RUN_RE.match(name):
         return name, args
     k = 0
@@ -713,8 +775,10 @@ def lock_owner_write(words):
 # Machine setup's --apply writes the machine config, the owner's email among them (plan decision 27),
 # and the owner's email is what proves a commit the owner's (owner-only paths, owner-identity). An agent
 # that ran it could make its own address the owner's, so only the owner runs it to act. Its dry run stays
-# open. The entry points: tools/machine_setup.py and its PowerShell front ends.
-SETUP_SCRIPTS = {'machine_setup.py': 'py', 'machine-setup.ps1': 'ps', 'new-repo.ps1': 'ps'}
+# open. The entry points: tools/machine_setup.py, its PowerShell front ends and its Linux front end
+# installer/machine-setup.sh (run as a program or as a shell's script, tool_run; it takes --apply exactly).
+SETUP_SCRIPTS = {'machine_setup.py': 'py', 'machine-setup.ps1': 'ps', 'new-repo.ps1': 'ps',
+                 'machine-setup.sh': 'py'}
 # argparse takes a unique prefix of --apply (--ap..); PowerShell a prefix of -Apply, -Apply:$true too
 SETUP_APPLY = {'py': re.compile(r'^--ap(?:p(?:l(?:y)?)?)?(?:=.*)?$'),
                'ps': re.compile(r'(?i)^-a(?:p(?:p(?:l(?:y)?)?)?)?(?::.*)?$')}
@@ -1287,11 +1351,20 @@ def ledger_glob(ctx, target, start=0, above=False):
     path whose parts each match the folders it passes through names a folder above it
     (ledger_kind's `above`)."""
     first = min(target.index(c, start) for c in LEDGER_GLOB_CHARS if c in target[start:])
-    cut = max(target.rfind('/', 0, first), target.rfind('\\', 0, first))
+    posix = paths.posix()
+    cut = target.rfind('/', 0, first) if posix else max(target.rfind('/', 0, first), target.rfind('\\', 0, first))
     base, rest = (target[:cut + 1], target[cut + 1:]) if cut >= 0 else ('.', target)
     b = file_key(base)
-    parts = [x.split(':', 1)[0].lower().translate(DOS_WILDCARDS) for x in re.split(r'[\\/]', rest)
-             if x and x != '.']
+    if posix:
+        # Linux: `/` alone separates, and each part folds as the held path's own does (paths.fold,
+        # by the mount that holds it), so both sides compare the same way
+        raw = [x.split(':', 1)[0] for x in rest.split('/') if x and x != '.']
+        top = paths.norm(os.path.abspath(base), real=True, fold=False).rstrip('/')
+        folded = paths.fold('/'.join([top] + raw)).split('/')
+        parts = [x.translate(DOS_WILDCARDS) for x in folded[len(folded) - len(raw):]] if raw else []
+    else:
+        parts = [x.split(':', 1)[0].lower().translate(DOS_WILDCARDS) for x in re.split(r'[\\/]', rest)
+                 if x and x != '.']
     wide = any('**' in x or x == '..' for x in parts)
     for kind, real in ledger_guarded(ctx):
         if kind == 'rulebook' and b == real:
@@ -1949,7 +2022,8 @@ def edit_target(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=N
 UNPLACED = 'unplaced'
 # the rules a write the guard cannot place would otherwise be refused under (unplaced())
 PLACE_RULES = frozenset(['main-checkout', 'write-jail', 'git-main-history', 'git-restore', 'git-checkout',
-                         'git-reset-hard', 'git-clean', 'git-stash', 'git-bulk-add', 'git-commit-all'])
+                         'git-reset-hard', 'git-clean', 'git-stash', 'git-bulk-add', 'git-commit-all',
+                         'dev-drive'])
 
 
 def unplaced(d, role):
@@ -1983,7 +2057,7 @@ def gate_result(event, ctx, target, role, what):
         for k in range(1, len(parts)):
             if parts[k].lower() != GATE_RESULT:
                 continue
-            gitdir = '\\'.join(parts[:k])
+            gitdir = ('/' if paths.posix() else '\\').join(parts[:k])
             if parts[k - 1].lower() == '.git' or (os.path.isfile(os.path.join(gitdir, 'HEAD')) and
                                                   os.path.isdir(os.path.join(gitdir, 'objects'))):
                 return refuse('gate-result', role, '%s: %s is in the gate result folder %s, which only the '
@@ -2167,34 +2241,92 @@ def session_mark(event, ctx):
 
 
 def jail_roots(event, ctx, cwd):
-    return jail.roots(ctx, cwd, lambda p: is_root(p, None, ctx), session_mark(event, ctx))
+    return jail_view(event, ctx, cwd)[0]
+
+
+# The outer bound on the write jail (docs/guard.md "Write jail", "Outer bound"): an agent session's
+# write the roots allow is refused when it is off the Dev Drive (the machine config's dev_drive).
+DEV_DRIVE = 'dev-drive'
+
+
+def jail_view(event, ctx, cwd):
+    """(roots, dev, dropped) for an agent session running in `cwd`: its write roots (jail.roots),
+    the Dev Drive's root while the outer bound judges (rule dev-drive not off; None when dev_drive
+    is unset) and, while it denies, the data and mark roots dropped for lying off the Dev Drive,
+    each said as a warning naming the entry and its path."""
+    m = modes.mode(DEV_DRIVE)
+    dev = None if m == modes.OFF else jail.dev_root(ctx)
+    dropped = []
+    rs = jail.roots(ctx, cwd, lambda p: is_root(p, None, ctx), session_mark(event, ctx),
+                    dev=dev if m == modes.DENY else None, dropped=dropped)
+    for r in dropped:
+        modes.note('the %s root %s is not on the Dev Drive (%s), so it is no write root: an agent session writes only '
+                   'on the Dev Drive. The owner moves the folder onto the Dev Drive and the entry with it (%s).'
+                   % (r.kind, quote(r.path), fwd(dev),
+                      '.kit.json guard.data_roots' if r.kind == jail.DATA else 'the machine config\'s guard_mark_roots'))
+    return rs, dev, dropped
 
 
 JAIL_ASK = 'Ask the coordinator (a coordinator asks the PM) when the work needs a folder outside them.'
 
 
+def jail_aim(event, ctx, cwd, dest, rewrite):
+    """The folder a rewrite names in place of the jail's destination `dest`, or None: when `dest`
+    is a main checkout this role may not edit (main-checkout refuses the same write there), its
+    own worktree of it, <worktree> when the call shows none."""
+    if dest is None or rewrite is None:
+        return None
+    place = ctx.place(dest.path)
+    try:
+        barred = place.kind == repo.MAIN and not kconfig.permissions(
+            event, kconfig.roles(ctx.config(place.top or dest.path))).get('edit_main_checkout')
+    except Exception:  # noqa: BLE001 - the advice only: a config that does not read leaves it as it was
+        barred = False
+    return (own_worktree(ctx, cwd, place.top) or '<worktree>') if barred else None
+
+
+def dev_drive_bound(event, ctx, cwd, rs, dev, target, role, what, rewrite=None, run=None):
+    """The outer bound: `target`, which the jail's roots allow (or a dropped root holds), refused
+    when it is not on the Dev Drive `dev` (jail.on_drive: links and junctions resolved). None when
+    `dev` is None (dev_drive unset, or the rule off) or the target is on it. The alternative aims
+    at the session's own checkout, else temp, on the Dev Drive (jail.destination)."""
+    if not dev or not target or jail.on_drive(target, dev):
+        return None
+    why = ('%s: %s is not on the Dev Drive (%s): an agent session writes only there, whatever folder it may '
+           'otherwise write. %s' % (what, fwd(target), fwd(dev), JAIL_ASK))
+    dest = jail.destination(rs, dev)
+    if dest is None:
+        return refuse(DEV_DRIVE, role, why + ' To see where this session runs:', 'pwd')
+    if rewrite is not None:
+        name = os.path.basename(target.rstrip('\\/')) or 'out'
+        there = jail_aim(event, ctx, cwd, dest, rewrite) or dest.path
+        return refuse(DEV_DRIVE, role, why + ' The same write in %s:' % fwd(there),
+                      rewrite(fwd(there) + '/' + name if there.startswith('<') else fwd(os.path.join(there, name))))
+    return refuse(DEV_DRIVE, role, why + ' Run it with %s as the working directory:' % quote(dest.path),
+                  run or 'cd %s' % quote(dest.path))
+
+
+def in_dropped(target, dropped, dev):
+    """True when `target` is off the Dev Drive `dev` and lies in a root jail_view dropped for lying
+    off it. A dropped root that holds the Dev Drive (<drive>/ around <drive>/dev) opens nothing on it: a
+    target there is judged by the other roots alone."""
+    if not dropped or jail.on_drive(target, dev):
+        return False
+    t = jail.real(target)
+    return any(jail.inside(t, r.real) for r in dropped)
+
+
 def write_jail(event, ctx, target, cwd, role, what, rewrite=None, run=None):
     """An agent session's write outside its roots (kitlib.guard.jail): its checkout, its
     repository's other worktrees (jail.sibling), temp and the .kit.json data roots, judged by the
-    resolved path."""
+    resolved path; then, last, the outer bound (dev_drive_bound) on a write they allow."""
     if not target or not agent_session(event, ctx):
         return None
-    rs = jail_roots(event, ctx, cwd)
+    rs, dev, dropped = jail_view(event, ctx, cwd)
     verdict, root = jail.judge(target, rs)
-    if verdict is None or (verdict == jail.OUTSIDE and jail.sibling(ctx, target, cwd)):
-        return None
-    dest, aim = jail.destination(rs), None
-    if dest is not None and rewrite is not None:
-        place = ctx.place(dest.path)
-        try:
-            barred = place.kind == repo.MAIN and not kconfig.permissions(
-                event, kconfig.roles(ctx.config(place.top or dest.path))).get('edit_main_checkout')
-        except Exception:  # noqa: BLE001 - the advice only: a config that does not read leaves it as it was
-            barred = False
-        if barred:
-            # the checkout it may write is a main checkout this role may not edit (main-checkout
-            # refuses the same write there): its own worktree of it, <worktree> when the call shows none
-            aim = own_worktree(ctx, cwd, place.top) or '<worktree>'
+    if verdict is None or (verdict == jail.OUTSIDE and (jail.sibling(ctx, target, cwd) or in_dropped(target, dropped, dev))):
+        return dev_drive_bound(event, ctx, cwd, rs, dev, target, role, what, rewrite, run)
+    aim = jail_aim(event, ctx, cwd, jail.destination(rs), rewrite)
     return jail_refusal(role, rs, verdict, root, what, target, rewrite, run, aim)
 
 
@@ -2579,11 +2711,12 @@ def pipe_stand_in_word(cmd, w):
 class NetWrite(object):
     """One path a .NET file call writes (net_writes): `word` its argument, dyn when the line
     computes it (a variable, an expression, a string with $ or a backtick), with its span in the
-    source; `end` the offset just past the call's closing parenthesis."""
-    __slots__ = ('word', 'end')
+    source; `end` the offset just past the call's closing parenthesis; `paths` every path argument
+    of the call, written or read (Copy's source too), `word` among them (net_retarget)."""
+    __slots__ = ('word', 'end', 'paths')
 
-    def __init__(self, word, end):
-        self.word, self.end = word, end
+    def __init__(self, word, end, paths=None):
+        self.word, self.end, self.paths = word, end, paths if paths is not None else [word]
 
 
 NET_QUOTES = '‘’‚‛“”„'     # PowerShell reads these as quotes too
@@ -2863,11 +2996,15 @@ def net_writes(cmd):
         args, end = _net_args(src, k + 1)
         written, found = _net_written(method, len(args))
         unread = unread or not found or _net_lost(src[k + 1:end])
-        for i in written:
+        words = {}
+        for i in sorted(set(written) | ({0} if method.startswith('copy') and args else set())):
             text, s, e = args[i]
             if text is None and src[s:e].lower() == '$null':
                 continue
-            out.append(NetWrite(sh.Word(src[s:e] if text is None else text, text is None, s, e), end))
+            words[i] = sh.Word(src[s:e] if text is None else text, text is None, s, e)
+        for i in written:
+            if i in words:
+                out.append(NetWrite(words[i], end, [words[j] for j in sorted(words)]))
     for x in out:
         m = None if x.word.dyn else NET_DEVICE_RE.match(x.word.text)
         if m:                                   # \\?\<drive>:\x is <drive>:\x; the span stays the argument's
@@ -2885,22 +3022,50 @@ def net_placed(w):
 def net_relative(w):
     """True when the .NET argument Word `w` is a literal relative path (no drive, no leading slash,
     no ~): write_targets judges it where the PowerShell location puts it, as a bash one is, though
-    .NET reads it against the process's directory (NET_UNPLACED), which the guard does not judge
-    (docs/guard-v2.md B17)."""
+    .NET reads it against the process's directory (NET_PROCESS_DIR), which the guard cannot see;
+    so an agent session's is refused as well (net_process_dir)."""
     return not w.dyn and bool(w.text) and w.text[0] not in '\\/~' and ':' not in w.text
 
 
+# where .NET reads a path that is not absolute
+NET_PROCESS_DIR = ('.NET reads a relative or driveless path against the process\'s working directory '
+                   '([Environment]::CurrentDirectory), not the PowerShell location')
 # why a .NET write the guard cannot place is counted as a write to the directory the line runs in
 NET_UNPLACED = ('a .NET call whose path the guard does not read or cannot place: a driveless path, a share or '
-                'device path, or one the line computes. .NET reads a relative or driveless path against the '
-                'process\'s working directory ([Environment]::CurrentDirectory), not the PowerShell location')
+                'device path, or one the line computes. ' + NET_PROCESS_DIR)
 
 
-def net_retarget(cmd, x, path):
+def net_process_dir(event, ctx, role, what, relative, target, rewrite):
+    """An agent session's .NET write whose call names a literal relative path (net_relative, the
+    texts `relative`: the path written, or Copy's source), already judged where the PowerShell
+    location puts it (`target`): refused all the same, under write-jail, since .NET reads it
+    against the process's directory, which Set-Location does not move and the guard cannot see (a
+    docs-writer's [IO.File]::WriteAllText('docs/ROSTER.md', ...) from its worktree wrote the main
+    checkout). The alternative is the same call with every relative path the absolute one the
+    location gives (net_retarget), which .NET reads the same from any directory."""
+    if not agent_session(event, ctx):
+        return None
+    return refuse('write-jail', role, '%s; the call names the relative path %s: .NET reads it against the process\'s '
+                  'working directory ([Environment]::CurrentDirectory), which cd and Set-Location do not move, so '
+                  'the guard cannot tell what it names. An agent session gives .NET absolute paths. The same call '
+                  'with the paths the PowerShell location gives:' % (what, ', '.join(relative)), rewrite(fwd(target)))
+
+
+def net_retarget(cmd, x, path, place=None):
     """The command `cmd` through the end of its .NET call, with the NetWrite `x`'s argument
-    replaced by `path`."""
+    replaced by `path` and, with `place` (Word -> path or None), each other literal relative path
+    argument of the call (net_relative: Copy's source, Move's other path) by the path it gives, so
+    the alternative names no path .NET would read from the process's directory."""
     start = cmd.words[0].start if cmd.words else cmd.start
-    return (cmd.source[start:x.word.start] + literal_word(path) + cmd.source[x.word.end:x.end]).strip()
+    out, k = [], start
+    for o in sorted(x.paths, key=lambda o: o.start):
+        own = (o.start, o.end) == (x.word.start, x.word.end)     # net_writes may have re-read x.word (a device path)
+        new = path if own else place(o) if place is not None and net_relative(o) else None
+        if new is None:
+            continue
+        out.append(cmd.source[k:o.start] + literal_word(new))
+        k = o.end
+    return (''.join(out) + cmd.source[k:x.end]).strip()
 
 
 def _cluster_values(args, value_shorts, value_longs, k):
@@ -3211,7 +3376,10 @@ def _curl(args, cmd_word):
     for o, v in opts:
         if o in ('-o', '--output') and v is not None:
             if v.text != '-':
-                out.append(_under(folder, v))
+                placed = _under(folder, v)
+                out.append(placed)
+                if folder is not None and placed is v:
+                    out.append(Under(folder, v))    # curl joins --output-dir to an absolute name too
         elif o in ('-D', '--dump-header', '-c', '--cookie-jar') and v is not None:
             if v.text != '-':
                 out.append(v)
@@ -3226,14 +3394,15 @@ class Under(sh.Word):
     __slots__ = ('folder', 'name')
 
     def __init__(self, folder, name):
-        sh.Word.__init__(self, folder.text.rstrip('/\\') + '/' + name.text, folder.dyn or name.dyn,
+        cut = '/' if paths.posix() else '/\\'          # on Linux `\` is a name's character
+        sh.Word.__init__(self, folder.text.rstrip(cut) + '/' + name.text, folder.dyn or name.dyn,
                          name.start, name.end)
         self.folder, self.name = folder, name
 
 
 def _under(folder, w):
-    """`w` placed in `folder` (curl --output-dir), unless it is absolute."""
-    if folder is None or re.match(r'^(?:[A-Za-z]:)?[\\/]', w.text):
+    """`w` placed in `folder` (curl --output-dir), unless it is absolute (on Linux: starts with `/`)."""
+    if folder is None or (w.text.startswith('/') if paths.posix() else re.match(r'^(?:[A-Za-z]:)?[\\/]', w.text)):
         return w
     return Under(folder, w)
 
@@ -3310,9 +3479,13 @@ class _TarDirs:
         not `sure`: it may not be a -C, so the folders in force stay possible too."""
         new = []
         for b in self.bases:
-            rooted = folder.text.startswith(('/', '\\', '~')) or ntpath.splitdrive(folder.text)[0]
+            if paths.posix():                   # Linux: `\` is a name's character, no drives
+                rooted, join = folder.text.startswith(('/', '~')), posixpath.join
+            else:
+                rooted = folder.text.startswith(('/', '\\', '~')) or ntpath.splitdrive(folder.text)[0]
+                join = ntpath.join
             new.append(folder if b is None or rooted else
-                       sh.Word(ntpath.join(b.text, folder.text), folder.dyn or b.dyn, folder.start, folder.end))
+                       sh.Word(join(b.text, folder.text), folder.dyn or b.dyn, folder.start, folder.end))
         self.bases = new if sure else self.bases + new
         self.seen += new
         self.unsure = self.unsure or not sure
@@ -3700,10 +3873,12 @@ def write_targets(cmd, inv):
         out.append(t)
     if net_mentioned(cmd):
         net, unread = net_writes(cmd)
-        # a literal path is judged where it points, a relative one where the location puts it; for
-        # any other the directory the command runs in stands in, as a path it cannot place (NET_UNPLACED)
-        out.extend(x.word for x in net if net_placed(x.word) or net_relative(x.word))
-        if unread or any(not (net_placed(x.word) or net_relative(x.word)) for x in net):
+        # a literal path is judged where it points, a relative one where the location puts it (and,
+        # for an agent session, refused: net_process_dir), a computed one as a cmdlet's computed
+        # target is; for any other the directory the command runs in stands in, as a path it
+        # cannot place (NET_UNPLACED)
+        out.extend(x.word for x in net if net_placed(x.word) or net_relative(x.word) or x.word.dyn)
+        if unread or any(not (net_placed(x.word) or net_relative(x.word) or x.word.dyn) for x in net):
             out.append(here(cmd.words[0] if cmd.words else None))
     if inv is None:
         return out
@@ -3952,7 +4127,12 @@ def into_folder(target, w, into, cwd, home=None):
         return [target]
     out = []
     for s in srcs:
-        base = re.split(r'[\\/]', s.text.rstrip('\\/'))[-1] if not s.dyn else ''
+        if s.dyn:
+            base = ''
+        elif paths.posix():
+            base = s.text.rstrip('/').split('/')[-1]    # Linux: `\` is a name's character
+        else:
+            base = re.split(r'[\\/]', s.text.rstrip('\\/'))[-1]
         if not base or base in ('.', '..') or GLOB_CHARS & set(base):
             return [target]
         if files_only:
@@ -4145,6 +4325,8 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
     asked = Asked()                             # find's ask waits for this target's own refusal
     piped = pipe_stand_in_word(cmd, w)
     target, why = (None, PIPE_UNPLACED) if piped else write_place(ctx, cmd, w, base)
+    if target is None and w.dyn and (w.start, w.end) in net:
+        why = '%s; %s' % (why, NET_PROCESS_DIR)
     unread = py_unread(cmd, inv, w) or (NET_UNPLACED if net_stand_in(cmd, w) else None)
     # a kit tool acts on the checkout its -C names: that folder, not the one it runs in
     checked = kit_tool_dir(event, ctx, cmd, inv, cwd) if base is OUTER and unread == PY_PS_WHY else None
@@ -4173,8 +4355,9 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
     # a value its option's word also spells (of=, --output=, -tDIR) keeps that option before it
     rewrite = None if stand_in else word_rewrite(cmd, w)
     attached = attached_lead(cmd, w) if rewrite is not None and not isinstance(w, Under) else None
-    if (w.start, w.end) in net and not w.dyn:
-        rewrite, attached = (lambda path, x=net[(w.start, w.end)]: net_retarget(cmd, x, path)), None
+    if (w.start, w.end) in net:
+        rewrite, attached = (lambda path, x=net[(w.start, w.end)]: net_retarget(
+            cmd, x, path, lambda o: write_place(ctx, cmd, o, base)[0])), None
     if checked is not None:
         x = checked[0]
         # -C'dir' spelt other than its text: the value's span is the whole word, so the rewrite spells -C again
@@ -4204,6 +4387,15 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
         d = asked.firm(d)
         if d:
             return d, searched
+    # the relative path this write names, or a relative one the call only reads (Copy's source);
+    # another relative path it writes is judged as its own target first (Move's into the main checkout)
+    others = net[(w.start, w.end)].paths if (w.start, w.end) in net else []
+    relative = [o.text for o in others if net_relative(o)]
+    if target is not None and base is OUTER and others and \
+            (net_relative(w) or any(net_relative(o) and (o.start, o.end) not in net for o in others)):
+        d = asked.firm(net_process_dir(event, ctx, role, what, relative, target, rewrite))
+        if d:
+            return d, searched
     # A computed PowerShell target, or a path read from a directory the guard cannot tell (after a
     # `cd $x`): for a role main_checkout lets through, the jail cannot judge it either.
     if computed or (target is None and runs_in is None):
@@ -4228,7 +4420,7 @@ def write_place(ctx, cmd, w, base=OUTER):
         target, why = sh.resolve_path(pwd, cmd.cwd, cmd.shell, getattr(ctx, 'home', None)), None
     elif w.dyn:
         target, why = None, 'a target that is not literal: %s' % w.text
-    elif cmd.shell == sh.BASH and BASH_TMP_RE.match(w.text):
+    elif cmd.shell == sh.BASH and BASH_TMP_RE.match(w.text) and not paths.posix():
         target, why = paths.norm(os.path.join(jail.bash_tmp(ctx), w.text[5:]), fold=False), None
     else:
         target = sh.resolve_path(w.text, here_dir, cmd.shell, getattr(ctx, 'home', None))
@@ -4522,6 +4714,8 @@ def is_root(text, cwd, ctx=None, shell=None):
         return False
     if ctx is not None and getattr(ctx, 'home', None) and same_dir(p, ctx.home):
         return True
+    if paths.posix():
+        return p in ('/', '//')                 # Linux: no drives; `/` (and `//`) is the root
     drive, rest = os.path.splitdrive(p)
     return bool(drive) and rest in ('', '\\', '/')
 
@@ -5219,6 +5413,18 @@ def git_plain_commit(event, ctx, cmd, inv, cwd, role):
     return refuse('git-plain-commit', role, why + alt[0], alt[1])
 
 
+# a commit hash as typed: 7 to 40 hex digits (git's default abbreviation up to a full SHA-1)
+TYPED_HASH_RE = re.compile(r'[0-9a-fA-F]{7,40}')
+
+
+def typed_hash(revs):
+    """The one commit hash among a merge's or pull's words `revs` (commit_scan), which sync_base.py
+    then merges; `<hash>` when there is none, more than one, or the words could not be placed
+    (None). A branch name (origin/main) is never resolved: the coordinator names the hash."""
+    found = [r for r in revs or () if TYPED_HASH_RE.fullmatch(r)]
+    return found[0] if len(found) == 1 else '<hash>'
+
+
 def commit_alternative(ctx, gc, where):
     """(advice, command) for git `gc` when it makes a commit (COMMIT_VERBS, commit_scan), run in
     the linked worktree `where`: the kit tool that does the job with the trailer (git_plain_commit
@@ -5257,7 +5463,7 @@ def commit_alternative(ctx, gc, where):
     if sub in ('merge', 'pull'):
         return ('Sync with the commit your coordinator named; the tool merges exactly it and adds the trailer (to '
                 'merge anything else, run git -C %s merge --no-commit <rev>, then in its own call %s):' % (top, commit),
-                'python %s -C %s <hash> --model "<your model>"' % (kit_tool(ctx, 'sync_base'), top))
+                'python %s -C %s %s --model "<your model>"' % (kit_tool(ctx, 'sync_base'), top, typed_hash(revs)))
     if sub == 'am':
         return ('Apply the patch to the index, then in its own call commit it with %s:' % commit,
                 'git -C %s apply --index <patch>' % top)
@@ -6119,32 +6325,42 @@ def git_jail(event, ctx, cmd, inv, cwd, role):
         return git_jail_unknown(ctx, cmd, gc, cwd, role)
     if gc.unknown:
         return None                             # a computed subcommand: the unreadable rule's
-    rs = None
+    view = None
     for w in git_targets(gc):
         if w.dyn:
             continue
         target = sh.resolve_path(w.text, gc.dir, home=getattr(ctx, 'home', None))
         if not target:
             continue
-        rs = rs or jail_roots(event, ctx, cwd)
+        view = view or jail_view(event, ctx, cwd)
+        rs, dev, dropped = view
         verdict, root = jail.judge(target, rs)
-        if verdict is not None and not (verdict == jail.OUTSIDE and jail.sibling(ctx, target, cwd)):
-            what = '`%s` makes %s' % (bare(cmd), w.text)
-            # a word an inline alias gave has no span in the line to aim (inline_alias)
-            return jail_refusal(role, rs, verdict, root, what, target,
-                                rewrite=None if w.start is None else git_retarget(ctx, cmd, inv, gc, w, cwd))
+        what = '`%s` makes %s' % (bare(cmd), w.text)
+        allowed = verdict is None or (verdict == jail.OUTSIDE and (jail.sibling(ctx, target, cwd) or
+                                                                   in_dropped(target, dropped, dev)))
+        if allowed and (not dev or jail.on_drive(target, dev)):
+            continue
+        # a word an inline alias gave has no span in the line to aim (inline_alias)
+        rewrite = None if w.start is None else git_retarget(ctx, cmd, inv, gc, w, cwd)
+        if allowed:
+            d = dev_drive_bound(event, ctx, cwd, rs, dev, target, role, what, rewrite)
+            if d:
+                return d
+            continue
+        return jail_refusal(role, rs, verdict, root, what, target, rewrite=rewrite)
     if git_reads(gc):
         return None
+    rs, dev, dropped = view or jail_view(event, ctx, cwd)
+    changes = '`%s` changes the checkout %s' % (bare(cmd), fwd(gc.dir))
     landed, why = lander_check(event, ctx, cmd, inv, gc)
     if landed:
-        return None
+        return dev_drive_bound(event, ctx, cwd, rs, dev, gc.dir, role, changes)
     d = pm_data_unknown(ctx, gc.dir, cwd, role, '`%s`' % bare(cmd))
     if d:
         return d
-    rs = rs or jail_roots(event, ctx, cwd)
     verdict, root = jail.judge(gc.dir, rs)
-    if verdict is None or (verdict == jail.OUTSIDE and jail.sibling(ctx, gc.dir, cwd)):
-        return None
+    if verdict is None or (verdict == jail.OUTSIDE and (jail.sibling(ctx, gc.dir, cwd) or in_dropped(gc.dir, dropped, dev))):
+        return dev_drive_bound(event, ctx, cwd, rs, dev, gc.dir, role, changes)
     if why is not None:
         return lander_refusal(ctx, cmd, gc, 'write-jail', role, why)
     what = '`%s` changes the checkout %s' % (bare(cmd), fwd(gc.dir))
@@ -6290,10 +6506,10 @@ def scratch_ref(name):
     return ref_name_ok(name) and name != 'HEAD' and (name.startswith('refs/tmp/') or per_worktree_ref(name))
 
 
-# the main sessions that may delete a stray ref in their own repository (the coordinator and its
-# old mark: AGENT_MARKS's first two), and the refs that are no stray ref, compared without case:
-# NTFS reads refs/HEADS/main as the loose file of refs/heads/main
-REF_CLEANUP_MARKS = AGENT_MARKS[:2]
+# the main sessions that may delete a stray ref in their own repository (the coordinator only),
+# and the refs that are no stray ref, compared without case: NTFS reads refs/HEADS/main as the
+# loose file of refs/heads/main
+REF_CLEANUP_MARKS = ('coordinator',)
 NOT_STRAY = ('refs/heads', 'refs/tags', 'refs/stash', 'refs/backlog')
 
 
@@ -6341,8 +6557,11 @@ def shared_ref_held(event, ctx):
 
 
 def _in_temp(ctx, path):
-    real = jail.real(path)
-    return any(jail.inside(real, jail.real(r)) for r in jail.temp_roots(ctx))
+    """True when `path` lies in a temp root (jail.temp_roots). It lifts checks, so it compares with
+    the jail's strict fold (jail.real strict: on Linux a mount in doubt does not fold)."""
+    strict = paths.posix()
+    real = jail.real(path, strict)
+    return any(jail.inside(real, jail.real(r, strict)) for r in jail.temp_roots(ctx))
 
 
 def _scratch_repo(ctx, place):
@@ -8482,10 +8701,14 @@ def _without(cmd, first, last):
 
 
 def _under_temp(ctx, d):
+    """True when the folder `d` is the temp folder or below it. It lifts the core.hooksPath checks,
+    so on Linux it compares with the strict fold (a mount in doubt does not fold) and a `\\` is a
+    name's character."""
     if not d:
         return False
-    top = paths.norm(ctx.tempdir, absolute=True).rstrip('\\/')
-    here_ = paths.norm(d, absolute=True)
+    strict = paths.posix()
+    top = paths.norm(ctx.tempdir, absolute=True, strict=strict).rstrip('/' if strict else '\\/')
+    here_ = paths.norm(d, absolute=True, strict=strict)
     return here_ == top or here_.startswith(top + os.sep)
 
 

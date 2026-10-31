@@ -2,7 +2,7 @@
 
 Read by the kit's agents section by section; they find their sections by these headings, so the
 headings stay. Owner-only. Nothing here names a machine, a drive, a person or another repository:
-machine values come from `.kit.json` and the tools that read it.
+machine values come from the machine config (docs/kit-json.md "Machine config keys") and the tools that read it.
 
 No profile: a repository's profile is optional (docs/multi-host-plan.md decision 26). A role whose
 repository has none reads the kit's `content/default-profile.md`, which has every heading below,
@@ -10,7 +10,7 @@ plus the repository's README and instructions file where they exist. The same ho
 coordinator profile: with none, the coordinator works from the repository's own files.
 
 ## Branches and worktrees
-AGENTS.md: a branch `kit/<slug>` in a worktree made by `tools/new_worktree.py` (docs/new-worktree.md,
+AGENTS.md: a branch in a worktree under `.claude/worktrees/<slug>` made by `tools/new_worktree.py` (docs/new-worktree.md,
 docs/worktree-paths.md), never the main checkout. Commit by explicit path with `tools/commit.py`
 (docs/commit.md). Remove only your own worktree, with `tools/worktree_remove.py` (docs/worktree-remove.md).
 A session started with `launch.py --home-worktree` runs in a detached, locked `home-<session name>`
@@ -33,7 +33,7 @@ module lines only.
 Landing is standing owner-approved work and needs no further go: the coordinator queues a verdict for
 every landing, then submits it. Before a landing, per branch, from the main checkout:
 `python tools/verdict.py add -C <repo> --branch <branch> --tip <sha> --verdict LAND ...`
-(docs/gate.md "Strict paths"), then `python tools/land.py <branch> --expect-tip <sha> --submit`, then
+(docs/gate.md "Strict paths"), then `python tools/land.py <branch> --expect-tip <sha> --reviewed-by <reviewer id> --submit` (the verdict's reviewer_id), then
 the `gate.py wait-result ... --kind land` command it prints, kept running in the background. A lander
 role may do the submit, wait and report for the coordinator. No agent merges or pushes, and no
 expected-main hash is given: a detached process books its turn in the machine lock (the landing
@@ -41,26 +41,28 @@ queue), so submitted landings merge in ticket order, each onto the main it finds
 in its own landing tree and pushes only when green (docs/gate.md "Landing"). Success: a `RESULT pass
 land` line with `LANDED `. `CONFLICT <branch> with main <sha>: the author merges main` goes back to
 the branch's author; any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT
-RUN:`) is reported as is, with the doc's recovery steps, and not retried. Batches allowed: up to
+RUN:`, `USAGE:`, `GATE FAILED:`, `RERUN VOID:`) is reported as is, with the doc's recovery steps, and not retried. Batches allowed: up to
 `"landing".batch_max` branches (3), each with its own reviewer, range and LAND verdict; never a
-high-risk branch (docs/gate.md "Batch").
+branch changing a strict path (docs/gate.md "Batch").
 
 ## Review
-A coordinator reviews a branch itself when it is small and low or medium risk: read every hunk; skim
+A coordinator reviews a branch itself when it is small and low risk: read every hunk; skim
 docs and additive content. "Small" is the `.kit.json` key `landing.self_review_max_lines`
 (docs/kit-json.md): `tools/verdict.py add` refuses a coordinator's own review of a larger diff, so a
-larger diff needs an analyst review. Larger or High: a fresh reviewer.
+larger diff needs an analyst review. Larger, Medium or High: a fresh reviewer.
 Continue an agent 2-3 rounds per artefact, then reseed from a short written summary. Reseed a
 strong- or deep-tier coder whose context is above about 150k tokens.
 
 ## Shared resources that must be serialised
 The machine lock (docs/lock-api.md), through the live install only, never a copy on a branch.
-Never pre-empt a holder. Temp folders: the tools' own (`.kit.json`, docs/kit-json.md); do not
+Never pre-empt a holder. Temp folders: the tools' own (machine config `temp_dir`, docs/kit-json.md "Machine config keys"); do not
 hardcode a temp path.
 
 ## Risk map
 High: `boot/`, `kitlib/host/hookmain.py`, `kitlib/guard/`, `kitlib/gate/`, `kitlib/lock/`, `kitlib/lockmcp/`,
-`kitlib/proc/`, `kitlib/git/`, `kitlib/backlog/`. A High change gets a fresh reviewer before landing. Low: docs.
+`kitlib/hubmcp/`, `kitlib/mcpwire/`, `kitlib/commit/`, `kitlib/records/`, `kitlib/proc/`, `kitlib/git/`,
+`kitlib/backlog/`, `tools/land.py`, `tools/gate.py`, `hosts/*/adapter/`, `hosts/*/shell/hooks/`, `hosts/*/shell/hooks-plugin/`,
+`hosts/*/shell/agents/`, `content/roles/`, `content/skills/`. A High change gets a fresh reviewer before landing. Low: docs.
 
 ## Moves and renames
 Behaviour-preserving only; old paths keep a stub until go-live (docs/go-live.md).

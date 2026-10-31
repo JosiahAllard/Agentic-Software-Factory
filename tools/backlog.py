@@ -4,11 +4,13 @@
 
   reads   next [--cap N | --all] [--with ID]...     show ID     check     landable BRANCH...
           list [--blocked [--on M]] [--needs-priority] [--status S] [--area A]
-          stale [--days N]
+          stale [--days N]       find TEXT      (open and closed records: id, summary, body)
   writes  add ID --summary S --scope P... --found-on BRANCH|none --why-not-folded T
-              [--effort s|m|l] [--ref R] [--reopen]
+              [--uses NAME]... [--effort s|m|l] [--ref R] [--reopen] [--body-file F]
+              (S: at most 120 characters)
           set ID [--<field> V]... [--unset K]... [--body-file F]
           block ID --on M... [--reason T] [--owner-ask Q]   (adds; unblock removes)
+              [--until C]   (one --on: the condition that ends it; docs/backlog.md "block --until")
           retarget OLD NEW [--apply]                (a moved path; a dry run without --apply)
           uncite [--apply]       (owner ruling and question ids -> words; a dry run without --apply)
           unblock ID [--on M] [--reason T]      (several blockers: --on and --reason)
@@ -26,9 +28,10 @@ REFUSED before the write plans. A published write of a MEDIUM or HIGH row append
 audit log, <pm_data>/audit/backlog.jsonl (kitlib.backlog.audit; docs/backlog.md "Audit log"); no
 pm_data is a NOTE and a log that cannot be written a WARNING, on standard error, after the write.
 A marked session may not give `--session` a by-design writer's name (gate-land, owner-hub,
-daily-full: audit_check.BY_DESIGN): REFUSED before the store is opened.
-Exit codes: 0 OK, 1 NOT FOUND / ERROR / a red check / a landable that cannot tell, 2 USAGE /
-REFUSED / NOT LANDABLE.
+daily-full, hub-condition: audit_check.BY_DESIGN): REFUSED before the store is opened.
+Exit codes: 0 OK (a `show` of a closed, retired or deleted id too: ENDED), 1 NOT FOUND (an id
+no commit removed) / ERROR / a red check / a landable that cannot tell, 2 USAGE / REFUSED /
+NOT LANDABLE.
 """
 import argparse
 import os
@@ -40,6 +43,7 @@ from kitlib import kitroot, sessionmark                            # noqa: E402
 from kitlib.backlog import audit                                    # noqa: E402
 from kitlib.backlog import audit_check                              # noqa: E402
 from kitlib.backlog import check as checkmod                        # noqa: E402
+from kitlib.backlog import find as findmod                          # noqa: E402
 from kitlib.backlog import landable as landmod                      # noqa: E402
 from kitlib.backlog import offer as omod                            # noqa: E402
 from kitlib.backlog import plan as pmod                             # noqa: E402
@@ -50,6 +54,7 @@ from kitlib.backlog import store as smod                            # noqa: E402
 from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E402
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
+from kitlib.coordstate import log as coordlog                       # noqa: E402
 
 
 def say(line=''):
@@ -70,12 +75,49 @@ def audit_line(verb, rid, rows, tip, session):
         sys.stderr.flush()
 
 
+# One correct command per verb, printed under a usage error. Each one parses and passes the verb's
+# own checks: tests/backlog/test_usage_examples.py.
+EXAMPLES = {
+    'next': 'backlog.py next --cap 5',
+    'show': 'backlog.py show EX-EXAMPLE',
+    'find': 'backlog.py find "text to look for"',
+    'list': 'backlog.py list --status open',
+    'check': 'backlog.py check',
+    'stale': 'backlog.py stale --days 30',
+    'landable': 'backlog.py landable kit/example-branch',
+    'add': ('backlog.py add EX-EXAMPLE --summary "<at most 120 characters>" --scope <path> '
+            '--found-on none --why-not-folded "<why>" --body-file <file>'),
+    'set': 'backlog.py set EX-EXAMPLE --scope <path> --body-file <file>',
+    'block': 'backlog.py block EX-EXAMPLE --on owner --owner-ask "item:EX-OTHER until <what the owner decides>"',
+    'retarget': 'backlog.py retarget <old-path> <new-path>',
+    'uncite': 'backlog.py uncite',
+    'unblock': 'backlog.py unblock EX-EXAMPLE --on owner --reason "<why it ends>"',
+    'pull': 'backlog.py --as <branch> pull EX-EXAMPLE',
+    'release': 'backlog.py --as <branch> release EX-EXAMPLE --reason "<why>"',
+    'close': 'backlog.py close EX-EXAMPLE --reason "<what landed>"',
+    'retire': 'backlog.py retire EX-EXAMPLE --why "<why>"',
+    'delete': 'backlog.py delete EX-EXAMPLE --why "<why>"',
+    'clear-review': 'backlog.py clear-review EX-EXAMPLE --reason "<why>"',
+    'set-status': 'backlog.py set-status EX-EXAMPLE parked --q <Q-id>',
+    'unpark': 'backlog.py unpark EX-EXAMPLE',
+    'catch-up': 'backlog.py catch-up',
+}
+
+
+def example_line(verb):
+    """`  example: <command>` for a verb that has one, else ''."""
+    return '  example: %s' % EXAMPLES[verb] if verb in EXAMPLES else ''
+
+
 class Parser(argparse.ArgumentParser):
-    """argparse whose errors print `USAGE:` and exit 2."""
+    """argparse whose errors print `USAGE:` and exit 2, then one example of the verb."""
 
     def error(self, message):
         self.print_usage(sys.stderr)
         sys.stderr.write('USAGE: %s\n' % message)
+        words = self.prog.split()
+        if len(words) > 1 and example_line(words[-1]):
+            sys.stderr.write(example_line(words[-1]) + '\n')
         sys.exit(2)
 
 
@@ -94,6 +136,8 @@ def build_parser():
     v.add_argument('--with', dest='seeds', action='append', default=[])
     v = sub.add_parser('show')
     v.add_argument('id')
+    v = sub.add_parser('find')
+    v.add_argument('text', help='looked for in each id, summary and body, any case')
     v = sub.add_parser('list')
     v.add_argument('--blocked', action='store_true')
     v.add_argument('--on', default=None)
@@ -110,6 +154,8 @@ def build_parser():
     v.add_argument('id')
     v.add_argument('--summary', required=True)
     v.add_argument('--scope', action='append', default=[])
+    v.add_argument('--uses', action='append', default=[],
+                   help='a resource .kit.json declares that the record needs while pulled')
     v.add_argument('--effort', default=None)
     v.add_argument('--ref', default=None)
     v.add_argument('--reopen', action='store_true')
@@ -117,6 +163,7 @@ def build_parser():
                    help='the branch the finding was made on, or none')
     v.add_argument('--why-not-folded', dest='why_not_folded', required=True,
                    help='why the finding is not fixed on that branch')
+    v.add_argument('--body-file', default=None, help='the body: what the summary leaves out')
     v = sub.add_parser('set')
     v.add_argument('id')
     for key in FIELD_FLAGS:
@@ -129,6 +176,7 @@ def build_parser():
     v.add_argument('--on', action='append', default=[])
     v.add_argument('--reason', default=None)
     v.add_argument('--owner-ask', default=None)
+    v.add_argument('--until', default=None)
     v = sub.add_parser('retarget')
     v.add_argument('old')
     v.add_argument('new')
@@ -189,8 +237,16 @@ def row(rec, ranks):
 def do_next(args, ctx, snap):
     if args.all and args.cap is not None:
         raise Usage('`--all` lists every startable item; it takes no `--cap`')
-    cap = None if args.all else (args.cap if args.cap is not None else omod.DEFAULT_CAP)
-    b = banner(snap)
+    if args.cap is not None and args.cap < 1:
+        raise Usage('`--cap %d`: the cap is a whole number >= 1' % args.cap)
+    # The repository's cap (`.kit.json` backlog.cap, plan.Context.cap): the one `pull` checks.
+    cap = None if args.all else (args.cap if args.cap is not None else ctx.cap)
+    b = omod.Banner(snap)
+    released, hub_note = releasable_holds(ctx, snap)
+    for line in b.lines():
+        if released and line.startswith('held '):
+            line += '  (%d releasable, below)' % len(set(r.id for r, _ in released))
+        say(line)
     warn = b.queue_warning()
     if warn:
         say(warn)
@@ -224,7 +280,35 @@ def do_next(args, ctx, snap):
         say('  blockers, most first:')
         for line in summary:
             say('    ' + line)
+    # A short offer's causes (docs/backlog.md "next: a short offer's causes").
+    if hub_note:
+        say(hub_note)
+    for line in [line for _, line in released]:
+        say(line)
+    narrow = narrow_lines(ctx, passed, holding, own)
+    for line in narrow:
+        say(line)
+    n, kinds = omod.pass_counts(passed)
+    why = ', '.join('%d %s' % (c, k) for k, c in kinds if c)
+    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow'
+        % (len(offers), b.count(omod.PULLABLE), n, ' (%s)' % why if why else '',
+           len(released), len(narrow)))
     return 0
+
+
+def releasable_holds(ctx, snap):
+    """omod.releasable_holds for the session, against the store's history and this machine's
+    hub."""
+    return omod.releasable_holds(snap, ctx.session, ctx.history(snap))
+
+
+def narrow_lines(ctx, passed, holding, own):
+    """omod.narrowings; the live branches are diffed (plan's fold-in diff, read only) only when a
+    pass-over asks for it."""
+    if not omod.wants_narrowing(passed):
+        return []
+    changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
+    return omod.narrowings(passed, holding, changes, unknown)
 
 
 def do_show(args, ctx, snap):
@@ -234,8 +318,26 @@ def do_show(args, ctx, snap):
     say('%s  rank %s  %s  (%s)' % (rec.id, omod.rank_label(rec, ranks), bucket, rec.path))
     if rmod.is_owner_held(rec):
         say('OWNER HOLD (%s): %s' % (rmod.owner_hold_label(rec), rec.get('owner_ask')))
+    uses = pmod.uses_shown(snap, ctx, rec)
+    if uses:
+        say(uses)
     say('')
     say((rec.text or '').rstrip('\n'))
+    return 0
+
+
+def do_find(args, ctx, snap):
+    if not args.text.strip():
+        raise Usage('`find` needs some text to look for')
+    banner(snap)
+    lines, omitted = findmod.search(snap, ctx.store, args.text)
+    if not lines:
+        say('no record matches "%s" (open or closed)' % args.text.strip())
+        return 0
+    for line in lines:
+        say(line)
+    say('%d hit(s) shown%s' % (len(lines), ', %d more left out (narrow the text)' % omitted
+                               if omitted else ''))
     return 0
 
 
@@ -246,11 +348,9 @@ def do_list(args, ctx, snap):
     if args.area:
         recs = [r for r in recs if r.get('area') == args.area]
     if args.needs_priority:
-        # A record marked for review at `-` or `-1` still wants its price (the pricing pass).
-        recs = sorted((r for r in recs if omod.classify(r)[0] in
-                       (omod.UNPRIORITISED_OPEN, omod.OWNER_PRIORITISED) or
-                       omod.classify(r)[0] == omod.REVIEW and
-                       r.get('priority') in ('-', rmod.OWNER_PRIORITY)),
+        # A record marked for review at `-` still wants its price (the pricing pass).
+        recs = sorted((r for r in recs if omod.classify(r)[0] == omod.UNPRIORITISED_OPEN or
+                       omod.classify(r)[0] == omod.REVIEW and r.get('priority') == '-'),
                       key=lambda r: r.id)
     elif args.blocked:
         recs = [r for r in recs if omod.classify(r)[0] == omod.HELD]
@@ -292,7 +392,8 @@ def do_stale(args, ctx, snap):
 def do_check(args, ctx, snap):
     say('CHECK %s (%s)' % (snap.head_label(), snap.where))
     red = False
-    for res in checkmod.check_store(snap, implicit=getattr(ctx.store.backend, 'implicit', False)):
+    for res in checkmod.check_store(snap, implicit=getattr(ctx.store.backend, 'implicit', False),
+                                    resources=ctx.capacity(snap)):
         say(res.line())
         for f in res.findings:
             say('    FAIL %s:%s %s' % (f.path, f.line, f.message))
@@ -346,6 +447,7 @@ def do_write(args, ctx, store):
     # the row a plan found (a collision with a live pull, plan._collision_change) is audited too
     rows.extend(r for r in getattr(change, 'rows', ()) if r not in rows)
     audit_line(args.verb, getattr(args, 'id', None), rows, tip, args.session)
+    coordlog.note_backlog(args.verb, getattr(args, 'id', None), getattr(args, 'branch', None))
     return 0
 
 
@@ -435,13 +537,15 @@ def main(argv=None):
             snap = store.load()
         if args.verb == 'landable':
             return do_landable(args, ctx, snap, store.backend)
-        return {'next': do_next, 'show': do_show, 'list': do_list,
+        return {'next': do_next, 'show': do_show, 'find': do_find, 'list': do_list,
                 'check': do_check, 'stale': do_stale}[args.verb](args, ctx, snap)
     except omod.PartitionError as exc:
         say('ERROR: the partition does not add up: %s' % exc)
         return 1
     except Refusal as exc:
         say('%s: %s' % (exc.label, exc))
+        if isinstance(exc, Usage) and example_line(args.verb):
+            say(example_line(args.verb))
         return exc.code
 
 

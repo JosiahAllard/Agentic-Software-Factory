@@ -53,16 +53,15 @@ class Sort(unittest.TestCase):
         self.assertEqual(policy.sort('set', {}), ['set-other'])
         priced = record(priority='3', priority_by='agent')
         owner = record(priority='3', priority_by='owner')
-        held = record(priority='-1', priority_by='owner')
         one = {'fields': ['priority'], 'priority': ['2']}
         self.assertEqual(policy.sort('set', one, priced), ['set-price'])
         self.assertEqual(policy.sort('set', one, owner), ['set-price-owner'])
-        self.assertEqual(policy.sort('set', one, held), ['set-hold'])
-        self.assertEqual(policy.sort('set', one, None), ['set-hold'])      # not read: the strictest
+        self.assertEqual(policy.sort('set', one, None), ['set-price-owner'])   # not read: the strictest
         top = {'fields': ['priority'], 'priority': ['1']}
         self.assertEqual(policy.sort('set', top, priced), ['set-price-owner'])
-        hold = {'fields': ['priority'], 'priority': ['-1']}
-        self.assertEqual(policy.sort('set', hold, priced), ['set-hold'])
+        # retired `-1` sorts as a low price, so the plan's refusal, naming `block --on owner`, is seen
+        retired = {'fields': ['priority'], 'priority': ['-1']}
+        self.assertEqual(policy.sort('set', retired, priced), ['set-price'])
         unset = {'fields': ['priority'], 'priority': ['-']}
         self.assertEqual(policy.sort('set', unset, priced), ['set-price'])
         blocked = record(priority='3', priority_by='agent', state='blocked', blocked_on='owner',
@@ -76,7 +75,8 @@ class Sort(unittest.TestCase):
         self.assertEqual(policy.sort('set', clear, priced), ['set-other'])
 
     def test_pull_block_and_close_sort_by_their_options_and_the_record(self):
-        free, held = record(), record(priority='-1', priority_by='owner')
+        free = record()
+        held = record(state='blocked', blocked_on='owner', owner_ask='which one?')
         self.assertEqual(policy.sort('pull', {}, free), ['pull'])
         self.assertEqual(policy.sort('pull', {}, held), ['pull-held'])
         # a collision is the plan's to find, not a flag's: the CLI's sort never names it
@@ -84,6 +84,13 @@ class Sort(unittest.TestCase):
         self.assertEqual(policy.sort('block', {'on': ['BAR']}, free), ['block'])
         self.assertEqual(policy.sort('block', {'on': ['owner']}, free), ['block-owner'])
         self.assertEqual(policy.sort('block', {'owner_ask': True}, free), ['block-owner'])
+        # `--until` on the owner schedules the owner's hold to end: the unblock-owner row too
+        self.assertEqual(policy.sort('block', {'on': ['owner'], 'until': True}, held),
+                         ['block-owner', 'unblock-owner'])
+        self.assertEqual(policy.sort('block', {'on': [policy.UNREAD], 'until': True}, free),
+                         ['unblock-owner'])
+        self.assertEqual(policy.sort('block', {'on': ['BAR'], 'until': True}, free), ['block'])
+        self.assertIn('unblock-owner', policy.sort('block', {'unknown': True, 'until': True}))
         self.assertEqual(policy.sort('unblock', {}, None), ['unblock-owner'])
         self.assertEqual(policy.sort('unblock', {'on': ['owner']}, free), ['unblock-owner'])
         self.assertEqual(policy.sort('unblock', {'on': ['BAR']}, None), ['block'])
@@ -103,7 +110,7 @@ class Sort(unittest.TestCase):
     def test_what_is_not_read_counts_as_every_row_it_could_be(self):
         self.assertEqual(policy.sort(None), [n for n in roles.ACTIONS if n != 'read'])
         self.assertEqual(policy.sort('set', {'unknown': True}),
-                         ['set-text', 'set-price', 'set-price-owner', 'set-hold', 'set-other',
+                         ['set-text', 'set-price', 'set-price-owner', 'set-other',
                           'set-widen-collision', 'unblock-owner'])
         self.assertEqual(policy.sort('show', {'unknown': True}), ['read'])
         self.assertEqual(policy.sort('catch-up'), ['read'])
@@ -116,7 +123,7 @@ class TopOnly(unittest.TestCase):
     the ones only the owner and the PM may take."""
 
     def test_the_owner_gates_are_top_only(self):
-        gates = ['set-price-owner', 'set-hold', 'unblock-owner', 'close-held', 'retire-priced']
+        gates = ['set-price-owner', 'unblock-owner', 'close-held', 'retire-priced']
         for name in gates:
             self.assertEqual(roles.ACTIONS[name].allowed, roles.TOP, name)
         # and retarget, a rewrite of many records, not an owner gate on one
@@ -322,6 +329,24 @@ class CliRole(unittest.TestCase):
         self.assertIn('unlisted (only risk none)', out)
         self.assertIn('FOO', self.ok('plain', 'show', 'FOO'))
         self.assertIn('scope:', self.ok(None, 'show', 'FOO'))
+
+    def test_a_coordinator_may_not_set_the_end_of_an_owner_hold(self):
+        # KIT-UNBLOCK-CONDITIONS review: a lead may block on the owner, never schedule that hold
+        # to end (the hub job would clear it under Session: hub-condition)
+        self.seed()
+        self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask', 'which one, Q-101?')
+        before = self.ok(None, 'show', 'FOO')
+        # the record already holds the owner's ask, so no new one is needed: the role decides
+        out = self.refused('coordinator', 'block', 'FOO', '--on', 'owner', '--reason',
+                           'until T-101 is done', '--until', 'todo:T-101 done')
+        self.assertIn('`unblock-owner`', out)
+        out = self.refused('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask',
+                           'which one now, Q-102?', '--until', 'question:Q-102 answered')
+        self.assertIn('`unblock-owner`', out)
+        self.assertEqual(self.ok(None, 'show', 'FOO'), before)
+        self.ok('pm', 'block', 'FOO', '--on', 'owner', '--reason', 'until T-101 is done',
+                '--until', 'todo:T-101 done')
+        self.assertIn('until: owner todo:T-101 done', self.ok(None, 'show', 'FOO'))
 
     def test_catch_up_apply_is_for_the_leads_and_the_plain_listing_for_everyone(self):
         self.seed()

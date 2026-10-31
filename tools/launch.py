@@ -1,8 +1,10 @@
 """launch.py: start, hand off and stop the PM's long-running Claude sessions (docs/launcher.md).
 
   launch.py start (--repo NAME | --repo-path DIR | --session KEY) (--account N | --org N) [--home-worktree] [...]
-  launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--home-worktree] [...]
-  launch.py consultant --repo-path DIR [--repo SLUG] [--home-worktree] [...]
+  launch.py deep --repo-path DIR (--brief FILE | --brief-text TEXT) --requester NAME --slug SLUG [--home-worktree]
+                 [--predecessor NAME --state FILE] [--checkin FILE] [...]
+  launch.py consultant --repo-path DIR [--repo SLUG] [--home-worktree] [--checkin FILE] [...]
+  launch.py topic --worktree DIR --brief FILE --slug SLUG [--account N|auto] [--plan] [...]
   launch.py homes (--repo NAME | --repo-path DIR) [--remove NAME] [--what-if]
   launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
   launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if]
@@ -10,7 +12,9 @@
   launch.py pick-account [--limit 95] [--explain]
   launch.py usage
   launch.py after-reboot [--test] [--dry-run]
-  launch.py install-autostart [--what-if]
+  launch.py pm-relaunch --name NEW [--wait SECONDS]
+  launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] [--what-if]
+  launch.py install-autostart [--what-if]   retired: refuses (the hub restarts agents)
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.launcher, prints and exits.
 Settings come from the `launcher` object of the machine config. Every launched session
@@ -25,7 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, autostart, handoff, reboot, settings as S, start, stop, usage  # noqa: E402
+from kitlib.launcher import accounts, autostart, handoff, reboot, relaunch, settings as S, start, stop, usage  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
@@ -94,6 +98,10 @@ def parser():
     d.add_argument('--plan', action='store_true', help='print, start and write nothing')
     d.add_argument('--brief-dir')
     d.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
+    d.add_argument('--predecessor', help='the deep-worker this one succeeds on another account (the hub\'s usage '
+                   'crossover); the new one is named deep-<slug>-a<N>; needs --state')
+    d.add_argument('--state', help="the predecessor's state note, read first (an absolute path)")
+    d.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
 
     c = sub.add_parser('consultant', help="a repo's consultant session")
     c.add_argument('--repo-path', required=True)
@@ -108,6 +116,20 @@ def parser():
     c.add_argument('--replace', action='store_true', help='start beside a live one (an account hand-off)')
     c.add_argument('--plan', action='store_true')
     c.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
+    c.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
+
+    t = sub.add_parser('topic', help='a plain session marked topic that builds one batch of records '
+                       '(skill topic-session)')
+    t.add_argument('--worktree', required=True, help="a linked worktree on the batch's branch")
+    t.add_argument('--brief', required=True, help='the brief file (relative: to the worktree)')
+    t.add_argument('--slug', required=True, help='the session is named topic-<slug>')
+    t.add_argument('--account', default='auto')
+    t.add_argument('--model')
+    t.add_argument('--effort')
+    t.add_argument('--autocompact', type=int, default=None,
+                   help='compact window in tokens (default %d; 0: the CLI default)' % start.DEFAULT_AUTOCOMPACT)
+    t.add_argument('--force', action='store_true', help='start on an account at or over 90%%')
+    t.add_argument('--plan', action='store_true', help='print, start and write nothing')
 
     m = sub.add_parser('homes', help="a main checkout's home worktrees, or remove one")
     g = m.add_mutually_exclusive_group(required=True)
@@ -140,11 +162,25 @@ def parser():
 
     sub.add_parser('usage', help="every account's usage")
 
-    r = sub.add_parser('after-reboot', help='start every session, then resume the PM')
+    r = sub.add_parser('after-reboot', help='start every plain session, then resume the PM (the hub runs it after a boot)')
     r.add_argument('--test', action='store_true', help="start only an 'autostart-test' session")
     r.add_argument('--dry-run', action='store_true')
 
-    i = sub.add_parser('install-autostart', help='register the after-reboot scheduled task')
+    f = sub.add_parser('pm-relaunch', help='fork the running PM into a new window with a new Remote Control name')
+    f.add_argument('--name', required=True, help='the new session and Remote Control name')
+    f.add_argument('--wait', type=int, default=relaunch.WAIT_S,
+                   help="seconds to wait for the fork's own session id (default %(default)s)")
+
+    x = sub.add_parser('pm-crossover',
+                       help='start a fresh PM on another account from its hand-off file and make it the PM')
+    x.add_argument('--account', required=True, help='the account the new PM starts on')
+    x.add_argument('--name', help='the new session and Remote Control name (default pm-a<N>)')
+    x.add_argument('--state', type=existing_file, help="the PM's hand-off file the new PM reads first")
+    x.add_argument('--wait', type=int, default=relaunch.WAIT_S,
+                   help="seconds to wait for the new PM's session id (default %(default)s)")
+    x.add_argument('--what-if', action='store_true')
+
+    i = sub.add_parser('install-autostart', help='retired: refuses, registers nothing (the hub restarts agents)')
     i.add_argument('--what-if', action='store_true')
     return p
 
@@ -159,6 +195,18 @@ def session_conflicts(a):
     """The `start` flags given beside --session, which takes them from its entry instead."""
     return [flag for attr, flag in SESSION_EXCLUSIVE
             if getattr(a, attr) is not None and getattr(a, attr) is not False]    # --autocompact 0 counts
+
+
+def push_delivery(settings):
+    """The host adapter's hub push delivery over the launcher's settings (tools/hub.py
+    _push_delivery), or None when the host has none (no adapter, or an adapter without push):
+    pm-relaunch and pm-crossover then say the stand-down is the owner's to send. Any other fault surfaces."""
+    try:
+        import _host
+        make = getattr(_host.adapter_module().ADAPTER, 'push', None)
+    except (ImportError, AttributeError):
+        return None
+    return make(settings) if make is not None else None
 
 
 def run(a, settings, host):
@@ -179,10 +227,15 @@ def run(a, settings, host):
     if a.cmd == 'deep':
         return start.deep(settings, host, a.repo_path, a.requester, a.slug, a.brief, a.brief_text, a.account,
                           a.autocompact, a.model, a.effort, a.force, a.plan, a.brief_dir,
-                          home_worktree=a.home_worktree)
+                          home_worktree=a.home_worktree, predecessor=a.predecessor, state=a.state,
+                          checkin=a.checkin)
     if a.cmd == 'consultant':
         return start.consultant(settings, host, a.repo_path, a.repo, a.account, a.autocompact, a.model, a.effort,
-                                a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree)
+                                a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree,
+                                checkin=a.checkin)
+    if a.cmd == 'topic':
+        return start.topic(settings, host, a.worktree, a.slug, a.brief, a.account, a.model, a.effort,
+                           a.autocompact, a.force, a.plan)
     if a.cmd == 'homes':
         return start.homes(settings, host, a.repo, a.repo_path, a.remove, a.what_if)
     if a.cmd == 'stop':
@@ -198,8 +251,17 @@ def run(a, settings, host):
         return usage.report(settings, host.now())
     if a.cmd == 'after-reboot':
         return reboot.run(settings, host, a.test, a.dry_run, say=lambda l: print(l, flush=True))
+    if a.cmd == 'pm-relaunch':
+        if a.wait < 1:
+            raise S.LaunchError('--wait must be at least 1 second.')
+        return relaunch.relaunch(settings, host, a.name, push_delivery(settings), a.wait)
+    if a.cmd == 'pm-crossover':
+        if a.wait < 1:
+            raise S.LaunchError('--wait must be at least 1 second.')
+        return relaunch.crossover(settings, host, a.account, a.name, a.state,
+                                  None if a.what_if else push_delivery(settings), a.wait, a.what_if)
     if a.cmd == 'install-autostart':
-        return autostart.install(os.path.abspath(__file__), whatif=a.what_if)
+        return autostart.install(os.path.abspath(__file__), whatif=a.what_if)     # always refuses
     raise AssertionError(a.cmd)
 
 

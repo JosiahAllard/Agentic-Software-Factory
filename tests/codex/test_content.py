@@ -66,6 +66,12 @@ class Agents(unittest.TestCase):
                 self.assertNotIn('model', got, 'every tier is the account default')
                 self.assertNotIn('{{', got['developer_instructions'])
 
+    def test_the_test_runner_works_in_its_given_worktree_and_never_creates_one(self):
+        c = kcontent.load(ROOT)
+        text = cc.renderer().render(c)['hosts/codex/shell/agents/kit-test-runner.toml'].decode('utf-8')
+        self.assertNotIn('new_worktree.py', text)
+        self.assertIn('run every command in that existing worktree (never create one', text)
+
     def test_no_rendered_role_names_the_other_hosts_values(self):
         from hosts.claude.adapter import content as claude
         c = kcontent.load(ROOT)
@@ -75,6 +81,31 @@ class Agents(unittest.TestCase):
             if path.endswith('.toml'):
                 for value in values:
                     self.assertNotIn(value.encode(), data, (path, value))
+
+
+class Retired(unittest.TestCase):
+    def test_a_file_left_in_a_retired_folder_is_stale(self):
+        """The skills and boot copies the Codex renderer no longer writes: a file left in either is
+        drift (`stale:`), so render_content --check fails and --write removes it."""
+        import tempfile
+
+        class Agents:                       # the Codex renderer's own folders, without its manifests
+            r = cc.renderer()
+            owned, retired = r.owned, r.retired
+
+            def render(self, content):
+                return self.r.render(content)
+
+        left = ('hosts/codex/shell/skills/old/SKILL.md', 'hosts/codex/shell/boot/kitboot.py',
+                'hosts/codex/shell/hooks/hooks.json')     # the hooks before the pm-kit-hooks plugin
+        with tempfile.TemporaryDirectory() as root:
+            for rel in left:
+                os.makedirs(os.path.join(root, os.path.dirname(rel)))
+                with open(os.path.join(root, rel), 'wb') as f:
+                    f.write(b'x\n')
+            lines = kcontent.drift(root, [Agents()], content=hc.Content(roles=(), skills=()))
+        self.assertEqual([l for l in lines if l.startswith('stale:')],
+                         ['stale: %s' % rel for rel in sorted(left)])
 
 
 class DefaultRole(unittest.TestCase):
@@ -149,17 +180,66 @@ class Manifests(unittest.TestCase):
         files = cc.renderer().manifests(kit, kcontent.load(ROOT))
         plugin = json.loads(files[cc.MANIFEST_REL])
         self.assertEqual((plugin['name'], plugin['version']), (kit['name'], kit['version']))
-        self.assertEqual(plugin['extensions']['com.openai']['hooks'], './hooks/hooks.json')
-        mcp = json.loads(files[cc.MCP_REL])['mcpServers']['machine-lock']
-        self.assertEqual(mcp['args'], ['${PLUGIN_ROOT}/mcp/lock_server.py'])
-        self.assertTrue(os.path.isfile(os.path.join(ROOT, *cc.SHELL_REL.split('/'), 'mcp', 'lock_server.py')))
-        hub = json.loads(files[cc.MCP_REL])['mcpServers']['hub']
-        self.assertEqual(hub['args'], ['${PLUGIN_ROOT}/mcp/hub_server.py'])
-        self.assertTrue(os.path.isfile(os.path.join(ROOT, *cc.SHELL_REL.split('/'), 'mcp', 'hub_server.py')))
-        hooks = json.loads(files[cc.HOOKS_REL])['hooks']
+        # The manifest the export writes at .codex-plugin/plugin.json: every path from the plugin
+        # root, the export (no $schema and no extensions: the live Codex refuses that form).
+        # No hooks: they are the separate plugin pm-kit-hooks (hosts/codex/shell/hooks-plugin).
+        self.assertEqual(sorted(plugin), ['description', 'mcpServers', 'name', 'skills', 'version'])
+        self.assertEqual(plugin['skills'], './content/skills/')
+        self.assertEqual(plugin['mcpServers'], './hosts/codex/shell/mcp.json')
+        for key in ('skills', 'mcpServers'):
+            self.assertTrue(os.path.exists(os.path.join(ROOT, *plugin[key][2:].strip('/').split('/'))), key)
+        # Codex starts a plugin's MCP server in its cache copy and expands no ${PLUGIN_ROOT}.
+        servers = json.loads(files[cc.MCP_REL])
+        self.assertEqual(sorted(servers), ['mcpServers'])
+        for name, script in (('machine-lock', 'lock_server.py'), ('hub', 'hub_server.py')):
+            server = servers['mcpServers'][name]
+            self.assertEqual(server['args'], ['hosts/codex/shell/mcp/' + script])
+            self.assertEqual(server['cwd'], '.')
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, *server['args'][0].split('/'))))
+        self.assertFalse([p for p in files if '/hooks' in p[len(cc.SHELL_REL):]], 'no hooks file is rendered')
+        hooks = cc.renderer().hooks()['hooks']
         self.assertEqual(sorted(hooks), sorted(registry.host('codex').capabilities.hook_events))
         for event, groups in hooks.items():
-            self.assertEqual(groups[0]['hooks'][0]['command'], 'pythonw "${PLUGIN_ROOT}/boot/hook.py" codex ' + event)
+            self.assertEqual(groups[0]['hooks'][0]['command'], 'pythonw "${PLUGIN_ROOT}/pm_kit_hook.py" codex ' + event)
+
+    def test_the_linux_hooks_are_one_posix_shell_line_each(self):
+        """hooks.linux.json: the same events, matchers, timeout and status as hooks.json, each command
+        /bin/sh running python3 on the hooks plugin's stub; the guard's exits 2 when python3 fails
+        (the guard-error deny), a start event's prints the did-not-load line."""
+        self.assertEqual(cc.hooks_rel('linux'), 'hosts/codex/shell/hooks-plugin/hooks/hooks.linux.json')
+        windows = cc.renderer().hooks(platform='windows')['hooks']
+        linux = cc.renderer().hooks(platform='linux')['hooks']
+        self.assertEqual(sorted(linux), sorted(windows))
+        script = ' kit-hook "${PLUGIN_ROOT}/pm_kit_hook.py" codex '
+        start = ("/bin/sh -c 'python3 \"$@\" || echo \"PM kit: the kit did not load: python3 failed or is not "
+                 "on PATH (exit $?)\"'")
+        for event, groups in windows.items():
+            (w,), (l,) = groups[0]['hooks'], linux[event][0]['hooks']
+            self.assertEqual(linux[event][0]['matcher'], groups[0]['matcher'])
+            self.assertEqual(dict(l, command=None), dict(w, command=None))
+            head = "/bin/sh -c 'python3 \"$@\" || exit 2'" if event == 'PreToolUse' else start
+            self.assertEqual(l['command'], head + script + event)
+
+    def test_the_linux_mcp_servers_run_python3(self):
+        """mcp.linux.json: mcp.json's servers, each run by python3 (stock Ubuntu has no `python`);
+        mcp.json, the Windows file, keeps `python`. Nothing else differs."""
+        files = cc.renderer().manifests(kcontent.load_kit(ROOT), kcontent.load(ROOT))
+        windows = json.loads(files[cc.MCP_REL])
+        linux = json.loads(files['hosts/codex/shell/mcp.linux.json'])
+        self.assertEqual(sorted(linux['mcpServers']), ['hub', 'machine-lock'])
+        for name, server in windows['mcpServers'].items():
+            self.assertEqual(server['command'], 'python')
+            self.assertEqual(linux['mcpServers'][name], dict(server, command='python3'))
+        self.assertEqual(dict(linux, mcpServers=None), dict(windows, mcpServers=None))
+
+    def test_a_linux_argument_quoting_cannot_hold_is_refused(self):
+        self.assertEqual(cc.posix_quote('codex'), 'codex')
+        self.assertEqual(cc.posix_quote('${PLUGIN_ROOT}/a b.py'), '"${PLUGIN_ROOT}/a b.py"')
+        self.assertEqual(cc.posix_quote('a "$@" b'), "'a \"$@\" b'")
+        for bad in ("it's", '${A}"', '${A}' + chr(92), '${A}' + chr(96)):
+            with self.subTest(bad):
+                with self.assertRaises(hc.ContentError):
+                    cc.posix_quote(bad)
 
     def test_claude_and_codex_list_the_same_mcp_servers(self):
         files = cc.renderer().manifests(kcontent.load_kit(ROOT), kcontent.load(ROOT))
@@ -176,26 +256,11 @@ class Manifests(unittest.TestCase):
                 r.hooks()
 
 
-class Vendored(unittest.TestCase):
-    def test_the_plugin_ships_the_kits_boot_folder_byte_for_byte_and_its_hosts_entry(self):
-        files = cc.renderer().vendored(ROOT)
-        want = {}
-        for name in ('kitboot.py', 'hook.py'):
-            with open(os.path.join(ROOT, 'boot', name), 'rb') as f:
-                want['hosts/codex/shell/boot/' + name] = f.read()
-        with open(os.path.join(ROOT, 'hosts.json'), encoding='utf-8') as f:
-            entry = json.load(f)['codex']
-        self.assertEqual(json.loads(files.pop(cc.HOSTS_REL)), {'codex': entry})
-        self.assertEqual(files, want)
-        rendered = kcontent.render(ROOT, [cc.renderer()])
-        for path in list(want) + [cc.HOSTS_REL]:
-            self.assertIn(path, rendered)
-
+class Hook(unittest.TestCase):
     def load_hook(self):
-        """The plugin's copy of boot/hook.py, as a module."""
+        """boot/hook.py, the plugin's hook entry (the export's own boot folder), as a module."""
         import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            'codex_hook', os.path.join(ROOT, 'hosts', 'codex', 'shell', 'boot', 'hook.py'))
+        spec = importlib.util.spec_from_file_location('codex_hook', os.path.join(ROOT, 'boot', 'hook.py'))
         hook = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(hook)
         return hook

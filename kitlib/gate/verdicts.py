@@ -34,7 +34,8 @@ An entry (every key always present):
   verdict         LAND | LAND WITH FOLLOW-UP
   risk            Low | Medium | High
   reviewer        the reviewer's agent type
-  reviewer_model  the model the reviewer ran on
+  reviewer_model  the model the reviewer ran on; tools/verdict.py add checks it against the
+                  reviewer's transcript where the host has a reader (model_mismatch_why)
   reviewer_id     the reviewer's agent or session id
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
                   picks no reviewer model: a strict branch needs a strong-tier reviewer
@@ -57,10 +58,12 @@ and, only in an entry carry() moved (a re-add drops it):
                   landing checks it again (docs/gate.md "Carrying a verdict forward").
 
 Errors (all VerdictError): BadEntry for a malformed entry or branch name given, nothing read or
-written; SelfReview (a BadEntry) when add() is given a High-risk verdict the coordinator queueing
+written; SelfReview (a BadEntry) when add() is given a Medium or High-risk verdict the coordinator queueing
 it reviewed itself (self_review_why), nothing read or written, or, with "landing".
 self_review_max_lines given, a self-read of a branch over that many changed lines or one whose
-size cannot be told (self_review_size_why), nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
+size cannot be told (self_review_size_why), nothing written; ModelMismatch (a BadEntry) when
+add() is given the models the reviewer's transcript shows (seen_models, the host's reader) and one
+is not the reviewer_model stated (model_mismatch_why), nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
 CarryRefused when carry() finds the head does not carry the verdict, nothing written;
 OtherBranch when the file for the branch named holds another branch's entry (names that differ
 only in case share one file on Windows); VerdictError itself for a queue file that cannot be read
@@ -71,7 +74,6 @@ Residual race (inference, not tested): two callers that find the same stale lock
 both remove it, the second removing the lock the first just made; that needs a holder to have
 died first. A wall-clock jump of more than LOCK_STALE_S can make a held lock look stale.
 """
-import collections
 import contextlib
 import datetime
 import json
@@ -81,6 +83,7 @@ import secrets
 import time
 import urllib.parse
 
+from kitlib.fs import replace as fsreplace
 from kitlib.gate import carry as carrymod
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
@@ -105,23 +108,17 @@ RANGE_TIP_RE = re.compile(r'^[0-9a-f]{7,64}$')
 # DOS device names: a file called CON.json or nul.x.json is the device, not a file.
 DEVICES = frozenset(['CON', 'PRN', 'AUX', 'NUL'] + ['COM%d' % i for i in range(1, 10)]
                     + ['LPT%d' % i for i in range(1, 10)])
-RETRIES = 5
-RETRY_SLEEP = 0.2
+RETRIES = 5                 # tries of a read, replace or remove while it fails with PermissionError
+RETRY_SLEEP = 0.2           # seconds between them
+# RETRIES as a wait for kitlib.fs.replace: try k starts at least k-1 pauses in, so the last (at
+# 0.8 s or later) is past this bound and the one before it (at 0.6 s) is not; the half pause is
+# the margin for a slow try.
+REPLACE_WAIT = (RETRIES - 1.5) * RETRY_SLEEP
 LOCK_NAME = '.queue.lock'
 LOCK_WAIT_S = 10.0          # how long add, drop and mark_failed wait for the queue lock
 LOCK_STALE_S = 60.0         # a lock file older than this was left by a crash
 LOCK_POLL_S = 0.05
 BY_HAND = 'remove it by hand'
-
-# Why ready() leaves an entry out of the batch (Skip.reason).
-SKIP_FAILED = 'failed'      # a landing marked it failed; a re-add queues it again
-SKIP_STALE = 'stale'        # the branch's head is not the queued tip (or the branch is gone)
-SKIP_HIGH = 'high'          # High risk lands alone
-SKIP_STRICT = 'strict'      # its diff touches a strict path (or that cannot be told): lands alone
-SKIP_LATER = 'later'        # ready, but the batch is full (batch_max)
-SKIP_INVALID = 'invalid'    # not a well-formed entry
-
-Skip = collections.namedtuple('Skip', 'branch reason why entry')
 
 
 class VerdictError(Exception):
@@ -133,8 +130,13 @@ class BadEntry(VerdictError):
 
 
 class SelfReview(BadEntry):
-    """A High-risk verdict whose reviewer is the coordinator queueing it (self_review_why): its
+    """A Medium or High-risk verdict whose reviewer is the coordinator queueing it (self_review_why): its
     text ends with the Instead: line (SELF_REVIEW_INSTEAD). Nothing was read or written."""
+
+
+class ModelMismatch(BadEntry):
+    """The reviewer's transcript shows a model other than the reviewer_model given
+    (model_mismatch_why): its text ends with an Instead: line. Nothing was read or written."""
 
 
 class TipMismatch(VerdictError):
@@ -224,18 +226,19 @@ def self_reader(entry):
 
 
 def self_review_why(entry):
-    """Why add() refuses `entry` as a self-review, or None. Refused: a High-risk verdict whose
-    reviewer is the coordinator queueing it (self_reader). A Low or Medium one is not: a
-    coordinator may read a small branch itself (skill branch-review, step 3), up to
+    """Why add() refuses `entry` as a self-review, or None. Refused: a Medium or High-risk
+    verdict whose reviewer is the coordinator queueing it (self_reader). A Low one is not: a
+    coordinator may read a small Low branch itself (skill branch-review, step 3), up to
     "landing".self_review_max_lines when that is set (self_review_size_why). `entry` is well
     formed (check). Pure."""
-    if entry['risk'] != 'High':
+    if entry['risk'] not in ('Medium', 'High'):
         return None
     who = self_reader(entry)
     if not who:
         return None
-    return ('a High-risk verdict needs a reviewer other than the coordinator queueing it, and %s '
-            '(skill branch-review, step 3); nothing was queued\n%s' % (who, SELF_REVIEW_INSTEAD))
+    return ('a %s-risk verdict needs a reviewer other than the coordinator queueing it, and %s '
+            '(skill branch-review, step 3); nothing was queued\n%s'
+            % (entry['risk'], who, SELF_REVIEW_INSTEAD))
 
 
 def diff_lines(cwd, rng):
@@ -301,6 +304,68 @@ def self_review_size_why(entry, max_lines, cwd, main, main_why=None):
                    'from main as fetched)' % (entry['range'], added + removed, added, removed,
                                               files, '' if files == 1 else 's', main[:10],
                                               tip)) + tail
+
+
+def _reviewer_ids(text):
+    """The ids a verdict's `reviewer_id` lists, split as land.is_author splits them. Pure."""
+    return [i for i in re.split(r'[/,;\s]+', text) if i]
+
+
+def seen_models(entry, reader):
+    """`{id: [models]}`: for each id `entry`'s reviewer_id lists that `reader` takes as an agent
+    id, the models its transcript shows. `reader` is a host's transcript reader (on Claude
+    hosts.claude.adapter.agent_models.models): id -> sorted models, [] for an agent id with no
+    transcript, None for an id that is not an agent id (a session name), which is left out. {}
+    when there is no reader (a host with none, Codex) or the reviewer is the coordinator queueing
+    it (self_reader): a self-review is no subagent. `entry` is well formed (check)."""
+    if reader is None or self_reader(entry):
+        return {}
+    out = {}
+    for rid in _reviewer_ids(entry['reviewer_id']):
+        got = reader(rid)
+        if got is not None:
+            out[rid] = list(got)
+    return out
+
+
+def model_mismatch_why(entry, seen):
+    """Why add() refuses `entry` because its reviewer ran on another model than its reviewer_model
+    says, or None. `seen` is seen_models(): a model seen matches when it is reviewer_model (case
+    and outer space aside) or names the same tier model of hosts.json (land.named_model:
+    `claude-haiku-5-5` names haiku). Refused when any model seen for any id does not match; an id
+    with none seen (no transcript) is not checked. The Instead: line names the one model seen, or,
+    when the review ran on more than one, asks for a fresh review on reviewer_model: no one
+    reviewer_model could name it. `entry` is well formed (check)."""
+    from kitlib.gate import land          # land imports this module: a late import
+    strong, weak, _ = land.tier_models()
+    strong, weak = strong or set(), weak or set()
+    typed = entry['reviewer_model'].strip()
+    want = land.named_model(typed, strong, weak)
+
+    def same(model):
+        return (model.casefold() == typed.casefold()
+                or (want is not None and land.named_model(model, strong, weak) == want))
+    off = [(rid, models) for rid, models in sorted(seen.items())
+           if models and not all(same(m) for m in models)]
+    if not off:
+        return None
+    said = '; '.join('the reviewer %s ran on %s' % (rid, ' and '.join(models))
+                     for rid, models in off)
+    tier = ' or '.join(sorted(strong - weak)) or 'a strong-tier model'
+    head = ('--reviewer-model %s, but %s (its transcript): an agent dispatched with no model '
+            'override runs on its role\'s default tier; nothing was queued\nInstead: '
+            % (typed, said))
+    every = sorted(set(m for models in seen.values() for m in models))
+    if len(every) > 1:
+        # the review ran on more than one model: no one --reviewer-model can name it
+        return head + ('the review ran on more than one model (%s), which no --reviewer-model can '
+                       'name: dispatch a fresh analyst with model %s, the model the verdict needs '
+                       '(%s for a branch land.py --check-strict calls STRICT; skill branch-review)'
+                       % (', '.join(every), typed, tier))
+    use = 'queue it with --reviewer-model %s, the model it ran on' % (
+        land.named_model(every[0], strong, weak) or every[0])
+    return head + ('%s; a branch land.py --check-strict calls STRICT needs a review on %s: '
+                   'dispatch a fresh analyst with model %s (skill branch-review)' % (use, tier, tier))
 
 
 def check(entry, stored=True):
@@ -382,6 +447,9 @@ def _carried_why(c, tip):
 
 
 def _retry(fn, *args):
+    """fn(*args), tried RETRIES times RETRY_SLEEP apart while it fails with PermissionError. Kept
+    for the entry read (kitlib.fs.replace has no read) and drop()'s remove (a file already gone
+    is False there, where kitlib.fs.replace.remove returns as on success)."""
     for i in range(RETRIES):
         try:
             return fn(*args)
@@ -465,7 +533,7 @@ def _locked(common_dir):
         yield
     finally:
         try:
-            _retry(os.remove, lock)
+            fsreplace.remove(lock, wait=REPLACE_WAIT, pause=RETRY_SLEEP)
         except OSError:                  # left to the stale-lock rule
             pass
 
@@ -478,7 +546,7 @@ def _write(path, entry):
         try:
             with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(json.dumps(entry, sort_keys=True, indent=1) + '\n')
-            _retry(os.replace, tmp, path)
+            fsreplace.replace(tmp, path, wait=REPLACE_WAIT, pause=RETRY_SLEEP)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -496,20 +564,25 @@ def head_of(common_dir, branch):
     return sha
 
 
-def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None):
+def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
+        seen=None):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
-    whose common dir is `common_dir`, else TipMismatch. A High-risk self-review is SelfReview
+    whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
     (self_review_why); so is a self-read of a branch over `self_review_max_lines` changed lines, or
     one whose size cannot be told, when that cap ("landing".self_review_max_lines) is given
-    (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `now`: a
-    datetime for queued_utc."""
+    (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
+    seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
+    (model_mismatch_why). Nothing seen is stored. `now`: a datetime for queued_utc."""
     why = check(entry, stored=False)
     if why:
         raise BadEntry(why)
     why = self_review_why(entry)
     if why:
         raise SelfReview(why)
+    why = model_mismatch_why(entry, seen) if seen else None
+    if why:
+        raise ModelMismatch(why)
     branch, tip = entry['branch'], entry['tip']
     path = entry_path(common_dir, branch)
     head = head_of(common_dir, branch)
@@ -713,51 +786,3 @@ def expire(common_dir, items, main):
         except VerdictError:
             continue
     return gone
-
-
-def ready(items, tip_of, strict_hits, batch_max):
-    """`(batch, skipped)` from queue entries `items`: the batch is the entries that may land
-    together, oldest first, at most `batch_max`; skipped is a Skip(branch, reason, why, entry) for
-    every other entry, oldest first.
-
-    Checked in this order, the first that holds naming the reason: not well-formed (invalid);
-    state failed (failed); tip_of(branch) is not the queued tip (stale: the branch moved, or
-    tip_of gave None because it is gone or git could not say); risk High (high); strict_hits(entry)
-    is a non-empty list of paths (strict), or not a list at all (None, False, '' ...), which means
-    it cannot be told (strict too); the batch already holds batch_max (later). Only an empty list
-    lets an entry in. Nothing here calls git: the caller's tip_of and strict_hits do."""
-    if isinstance(batch_max, bool) or not isinstance(batch_max, int) or batch_max < 1:
-        raise ValueError('batch_max is a whole number of at least 1, not %r' % (batch_max,))
-    batch, skipped = [], []
-    for e in order(items):
-        why = check(e)
-        branch = e.get('branch') if isinstance(e, dict) else None
-        if why:
-            skipped.append(Skip(branch, SKIP_INVALID, why, e))
-            continue
-        if e['state'] == FAILED:
-            skipped.append(Skip(branch, SKIP_FAILED, 'a landing failed: %s' % e['last_result'], e))
-            continue
-        now = tip_of(branch)
-        if now != e['tip']:
-            skipped.append(Skip(branch, SKIP_STALE,
-                                'queued at %s, but the branch is %s' % (
-                                    e['tip'][:10], now[:10] if now else 'gone or unknown'), e))
-            continue
-        if e['risk'] == 'High':
-            skipped.append(Skip(branch, SKIP_HIGH, 'High risk lands alone', e))
-            continue
-        hits = strict_hits(e)
-        if not isinstance(hits, list):
-            skipped.append(Skip(branch, SKIP_STRICT,
-                                'cannot tell whether it touches a strict path: lands alone', e))
-            continue
-        if hits:
-            skipped.append(Skip(branch, SKIP_STRICT, 'touches strict path %s: lands alone'
-                                % ', '.join(sorted(hits)), e))
-            continue
-        if len(batch) >= batch_max:
-            skipped.append(Skip(branch, SKIP_LATER, 'the batch is full (%d)' % batch_max, e))
-            continue
-        batch.append(e)
-    return batch, skipped

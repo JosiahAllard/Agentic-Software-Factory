@@ -88,8 +88,10 @@ class NextAllCli(unittest.TestCase):
             out = self.ok(*args)
             self.assertIn('  passed over R2 (rank', out)
             self.assertLess(out.index('  passed over R2'), out.index('  blockers, most first:'))
-            self.assertTrue(out.rstrip('\n').endswith(
-                '  blockers, most first:\n    blocks 2: session other (HOLD)'), out)
+            # The blockers come last of the offer's lines; only the counts line follows them.
+            self.assertIn('  blockers, most first:\n    blocks 2: session other (HOLD)\ncounts: ',
+                          out)
+            self.assertTrue(out.rstrip('\n').rsplit('\n', 1)[-1].startswith('counts: '), out)
 
     def test_all_with_cap_is_usage(self):
         rc, out = self.run_tool('next', '--all', '--cap', '3')

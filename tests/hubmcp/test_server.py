@@ -29,7 +29,7 @@ READS = {"hub_pending", "hub_wait", "hub_list", "hub_inbox", "hub_backlog", "hub
 CREATOR = {"hub_question_edit", "hub_question_withdraw", "hub_todo_edit", "hub_todo_withdraw"}
 WRITES = {"hub_ask", "hub_question_log", "hub_question_done", "hub_todo_add", "hub_todo_ack", "hub_story_set",
           "hub_to_pm_reply", "hub_inbox_post", "hub_page_publish",
-          "hub_approval_request"} | CREATOR
+          "hub_approval_request", "hub_handoff_ready"} | CREATOR
 
 
 class Settings(object):
@@ -98,7 +98,8 @@ class Pinned(Case):
         self.assertEqual(names, READS | WRITES)
 
     def test_destructive_hint_is_only_on_tools_that_change_an_existing_document(self):
-        additive = {"hub_ask", "hub_todo_add", "hub_inbox_post", "hub_approval_request"}
+        additive = {"hub_ask", "hub_todo_add", "hub_inbox_post", "hub_approval_request",
+                    "hub_handoff_ready"}
         changes = {"hub_question_log", "hub_question_done", "hub_todo_ack", "hub_story_set",
                    "hub_to_pm_reply", "hub_page_publish"} | CREATOR    # publish replaces a page
         self.assertEqual(additive | changes, WRITES)
@@ -312,6 +313,25 @@ class TodoSteps(Case):
     def test_a_to_do_without_steps_posts_as_before(self):
         self.rpc(self.server(), "hub_todo_add", {"title": "t", "commands": ["x"]})
         self.assertEqual(self.ask.calls[-1]["body"], {"title": "t", "commands": ["x"]})
+
+    def test_os_names_the_target_of_a_per_os_run_and_posts_as_given(self):
+        os_ = srv.TOOLS["hub_todo_add"][1]["properties"]["os"]
+        self.assertEqual(os_["enum"], list(todosteps.OSES))
+        steps = [{"run": {"windows": "Get-Date", "linux": "date"}}]
+        args = {"title": "t", "steps": steps, "os": "linux"}
+        payload, is_error = self.rpc(self.server(), "hub_todo_add", args)
+        self.assertFalse(is_error, payload)
+        self.assertEqual(self.ask.calls[-1]["body"], args)
+        payload, is_error = self.rpc(self.server(), "hub_todo_add", dict(args, os="mac"))
+        self.assertTrue(is_error)
+        self.assertEqual((payload["error"]["code"], payload["error"]["field"]), ("invalid", "os"))
+        self.assertEqual(len(self.ask.calls), 1)
+
+    def test_the_steps_description_names_the_per_os_run(self):
+        says = srv.TOOLS["hub_todo_add"][1]["properties"]["steps"]["description"]
+        self.assertNotIn("{run: <PowerShell command>}", says)
+        for word in ("windows", "linux", "os"):
+            self.assertIn(word, says)
 
 
 class Pages(Case):
@@ -826,6 +846,17 @@ class Live(httpfix.ListenerCase):
         self.assertNotIn("steps", doc)
         self.assertEqual(self.errors(), [])
 
+    def test_a_to_do_for_linux_gets_the_linux_form_of_a_per_os_run(self):
+        steps = [{"run": {"windows": "Get-Date", "linux": "date"}}]
+        payload, is_error = self.mcp.call("hub_todo_add", {"title": "t", "steps": steps,
+                                                           "os": "linux"})
+        self.assertFalse(is_error, payload)
+        doc = self.store.docs("todos")[payload["id"]]
+        self.assertEqual(doc["commands"], todosteps.render(steps, "linux"))
+        self.assertNotEqual(doc["commands"], todosteps.render(steps))
+        self.assertNotIn("os", doc)
+        self.assertEqual(self.errors(), [])
+
     def test_the_creator_edits_and_withdraws_through_the_listener(self):
         payload, is_error = self.mcp.call("hub_ask", {"title": "which?", "class": "go",
                                                       "options": httpfix.OPTIONS})
@@ -935,6 +966,39 @@ class LiveKeys(httpfix.ListenerCase):
 
 
 @windows_only("the kit is Windows only")
+class HandoffReady(Case):
+    """hub_handoff_ready posts a session's hand-off record (docs/action-hub.md
+    "handoffs/C-NNN"): kind, state_path and from, as given; a kind the hub never takes is
+    refused here."""
+
+    ARGS = {"kind": "restart", "state_path": r"C:\t\state-k.md", "from": "kit"}
+
+    def test_the_record_posts_as_given_to_the_handoffs_route(self):
+        payload, is_error = self.rpc(self.server(), "hub_handoff_ready", dict(self.ARGS))
+        self.assertFalse(is_error, payload)
+        call = self.ask.calls[-1]
+        self.assertEqual((call["method"], call["path"]), ("POST", api.BASE + "/handoffs"))
+        self.assertEqual(call["body"], self.ARGS)
+        self.assertEqual(call["token"], self.agent)
+
+    def test_kind_is_the_ready_reply_word_and_every_argument_is_required(self):
+        schema = srv.TOOLS["hub_handoff_ready"][1]
+        self.assertEqual(schema["properties"]["kind"]["enum"], ["handoff", "restart", "stop", "checkin"])
+        self.assertEqual(sorted(schema["required"]), ["from", "kind", "state_path"])
+        payload, is_error = self.rpc(self.server(), "hub_handoff_ready",
+                                     dict(self.ARGS, kind="pause"))
+        self.assertTrue(is_error)
+        self.assertEqual((payload["error"]["code"], payload["error"]["field"]), ("invalid", "kind"))
+        self.assertEqual(self.ask.calls, [])
+
+    def test_the_hubs_refusal_of_a_key_comes_back_as_a_result(self):
+        self.ask.answer = (400, api.error_body("invalid", "from 'x' is not a session", "from"))
+        payload, is_error = self.rpc(self.server(), "hub_handoff_ready",
+                                     dict(self.ARGS, **{"from": "x"}))
+        self.assertTrue(is_error)
+        self.assertEqual((payload["status"], payload["error"]["field"]), (400, "from"))
+
+
 class EntryPoint(unittest.TestCase):
     """mcp/hub_server.py itself: initialize and tools/list need no hub; the mark is read at start."""
 

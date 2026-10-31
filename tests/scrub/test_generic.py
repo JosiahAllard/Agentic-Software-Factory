@@ -32,13 +32,8 @@ from tests.scrub.test_scrub import ROOT, read_text, tracked_files
 
 DRIVE = re.compile(r'(?<![A-Za-z0-9_?%$])[A-Za-z]:(?:\\|/)')
 EXCLUDED = ('tests/',)
-_ROOT_SEARCH = 'Get-ChildItem C:\\ -Recurse'
 # (file glob, text the line contains, why it may name a drive)
 DRIVE_ALLOWED = (
-    ('hosts/claude/shell/agents/*.md', _ROOT_SEARCH, 'the root-search rule names the searches it forbids'),
-    ('content/roles/*.md', _ROOT_SEARCH, 'the roles the agent files above are rendered from'),
-    ('hosts/codex/shell/agents/*.toml', _ROOT_SEARCH.replace('\\', '\\\\'),
-     'the same roles rendered for Codex, the backslash escaped as TOML writes it'),
     ('docs/guard.md', '| `root-search` |', 'the root-search rule names the searches it denies'),
     ('kitlib/guard/commands.py', 'C:\\\\x\\\\Godot_v4.exe', 'a docstring example of a program path'),
     ('kitlib/guard/shell.py', 'unquoted Windows path (C:\\\\tmp', 'a docstring on bash quoting'),
@@ -52,7 +47,11 @@ DRIVE_ALLOWED = (
     ('optional/procwatch/winproc.py', 'r"C:\\Program Files', "Git for Windows' defaults "
      '(GIT_PS_EXE overrides them)'),
 )
-NAMES_ALLOWED = ()
+# (exact path, whole-line regex, why an install name may stand there). No glob characters: the
+# path is matched exactly, so `LICENSE` covers the root file only.
+NAMES_ALLOWED = (
+    ('LICENSE', re.compile(r'.*'), "the license names its copyright holder (an owner ruling)"),
+)
 # (file glob, the whole line as a regex, why a kit name may stand there). `{kit}` is the kit's
 # repository name, escaped; `.*` allows every line of the file. kit_allowed compiles them.
 KIT_NAMES_ALLOWED = (
@@ -306,6 +305,16 @@ class TheChecks(unittest.TestCase):
         found, _ = scan(list(files), files.get, DRIVE_PATTERNS,
                         (('docs/c.md', 'C:\\Program Files', 'example'),))
         self.assertEqual(found, ['docs/d.md:1: C:\\ (drive path)'])
+
+    def test_only_the_root_license_may_name_the_install(self):
+        line = 'Copyright (c) 2026 Quillon Fernsby\n'
+        pats = [(name_pattern('Quillon Fernsby'), 'scrub_patterns')]
+        files = {'LICENSE': 'MIT License\n\n' + line, 'docs/LICENSE': line, 'LICENSE.md': line,
+                 'LICENSE.txt': line, 'kitlib/LICENSE': line, 'docs/a.md': line}
+        found, stale = scan(sorted(files), files.get, pats, NAMES_ALLOWED, excluded=())
+        self.assertEqual(found, ['%s:1: Quillon Fernsby (scrub_patterns)' % rel
+                                 for rel in sorted(files) if rel != 'LICENSE'])
+        self.assertEqual(stale, [])
 
     def test_names_are_whole_words_any_case(self):
         files = {'docs/a.md': 'the Alpha repo\nalphabet soup\nalpha-tools/x\n'}

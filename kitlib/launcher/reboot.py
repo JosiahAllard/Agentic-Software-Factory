@@ -1,25 +1,27 @@
-"""After a restart (docs/launcher.md "After a reboot"): run by the scheduled task autostart.py
-installs, or by hand. It starts every sessions.json entry on the account pick-account chooses,
-then resumes the PM session with Remote Control and tells it to re-sync. Anything already running
-is left alone, so a second run never starts duplicates.
+"""After a restart (docs/launcher.md "After a reboot"): run by the hub's coord-restart job once
+after a boot (kitlib.hubjobs.coord_restart), or by hand. It starts every plain sessions.json entry
+(`agent` false) on the account pick-account chooses, then resumes the PM session with Remote
+Control and tells it to re-sync. An agent entry (a coordinator) is the hub's: coord-restart starts
+it, so after-reboot leaves it alone. Anything already running is left alone, so a second run never
+starts duplicates.
 
-An entry's brief is passed whenever it has one, agent or plain (after-reboot.ps1 did so); a
-failed start, of any kind, is logged FAILED and the run goes on to the next entry. The task runs
-hidden, so the failures around the entries (no signed-in account, sessions.json or coordinators.json
-missing or bad, coordinators.json still under its old name, the PM account not signed in) are
-logged FAILED too, never raised.
+An entry's brief is passed whenever it has one; a failed start, of any kind, is logged FAILED and
+the run goes on to the next entry. The run has no console, so the failures around the entries (no
+signed-in account, sessions.json or coordinators.json missing or bad, the PM account not signed
+in) are logged FAILED too, never raised.
 
-Skipped: a "_" key, an entry without a stem, "autostart": false, and an entry whose stem is
-already running under any account or recycle, or whose old `conductor` stem is
-(lookup.legacy_stems; a one-release guard). The PM resume is skipped when pm-session or the PM
-session id is running, when the Claude desktop app is running (resuming there too would fork the
-conversation) unless launcher.pm_resume_beside_desktop is true, and, more than 15 minutes after
-boot, when the PM transcript was written in the last 15 minutes. --test starts only a throwaway
-"autostart-test" session.
+Skipped: a "_" key, an entry without a stem, "autostart": false, an agent entry, and an entry
+whose stem is already running under any account or recycle. The PM resume is skipped when
+pm-session, the PM session id or coordinators.json's pm_name (pm-relaunch's fork) is running, when
+the Claude desktop app is running (resuming there too would fork the conversation) unless
+launcher.pm_resume_beside_desktop is true, and, more than 15 minutes after boot, when the PM
+transcript was written in the last 15 minutes. --test starts only a throwaway "autostart-test"
+session.
 """
 import glob
 import os
 
+from kitlib import platform
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, state, window
 from kitlib.launcher import start as S
@@ -33,8 +35,9 @@ WAIT_SECONDS = 60
 PROMPT = ('Start up now: the machine restarted and after-reboot launched you. Run your start-up routine, read your '
           'state note %s, check in with %s and say the machine restarted, then continue '
           'your queue.')
-PM_PROMPT = ('The machine restarted and after-reboot relaunched the coordinators. Re-arm the usage watch and any '
-             'dead-man checks, find the coordinators with ListAgents, and send each a sync (main state, what was in '
+PM_PROMPT = ('The machine restarted and the hub resumed you through after-reboot; its coord-restart job brings the '
+             'coordinators back one at a time, about 5 minutes apart. Re-arm the usage watch and any dead-man checks, '
+             'find the coordinators with ListAgents as they come back, and send each a sync (main state, what was in '
              'flight, anything from the owner). Then tell the owner briefly what came back and what did not, and that '
              'this %s must be stopped before the Project Manager conversation is opened in the desktop app, so it '
              'does not fork.' % S.PM_NAME)
@@ -108,9 +111,12 @@ def run(settings, host, test=False, dry_run=False, say=None):
         if dry_run:
             tell('would start %s in %s' % (TEST_NAME, folder))
             return out
-        host.open_window(text)
-        log('started %s: its window opens minimized and unfocused (window.open_window), so look for it '
-            'on the taskbar' % TEST_NAME)
+        host.open_window(text, **window.open_args(TEST_NAME, settings))
+        if platform.NAME == 'linux':
+            log('started %s in %s' % (TEST_NAME, window.opened_in(TEST_NAME, settings.terminal)))
+        else:
+            log('started %s: its window opens minimized and unfocused (window.open_window), so look '
+                'for it on the taskbar' % TEST_NAME)
         return out
     try:
         cfg = state.read_coordinators(settings) or {}
@@ -130,12 +136,11 @@ def run(settings, host, test=False, dry_run=False, say=None):
         if 'autostart' in entry and not entry['autostart']:
             log('%s autostart off, skipped' % key)
             continue
+        if entry.get('agent'):
+            log('%s a coordinator: the hub restarts it (coord-restart), skipped' % key)
+            continue
         if lookup.running_stem(procs, entry['stem']):
             log('%s already running, skipped' % key)
-            continue
-        legacy = lookup.legacy_running(procs, key, entry)
-        if legacy:                                   # one-release guard, removed after the switch (W2b)
-            log('%s already running under the old stem %s, skipped' % (key, legacy))
             continue
         args = S.entry_start_args(settings, key, entry, acct, PROMPT % (entry.get('state'), S.PM_REF),
                                   any_brief=True)
@@ -167,7 +172,9 @@ def resume_pm(settings, host, cfg, log, dry_run=False):
         log('coordinators.json names no PM session (pm_session_id, pm_folder, pm_account), pm-session skipped')
         return []
     procs = host.processes()
-    if running(procs, 'pm-session') or running(procs, sid):
+    pm_name = cfg.get('pm_name')                     # pm-relaunch's fork: its command line carries the old id
+    named = isinstance(pm_name, str) and pm_name and lookup.find_exact(lookup.launched(procs), pm_name)
+    if running(procs, 'pm-session') or running(procs, sid) or named:
         log('pm-session already running, skipped')
         return []
     if desktop_app_running(procs):
@@ -187,9 +194,24 @@ def resume_pm(settings, host, cfg, log, dry_run=False):
         if dry_run:
             log('would resume pm-session (session %s, account %s) in %s' % (sid, pm_account, folder))
             return []
-        host.open_window(text)
+        host.open_window(text, **window.open_args('pm-session', settings))
     except Exception as e:                           # the PM account not signed in, or the window failed
         log('FAILED to resume pm-session : %s' % why(e))
         return []
     log('started pm-session')
+    if cfg.get('pm_name') is not None:
+        clear_pm_name(settings, log)
     return []
+
+
+def clear_pm_name(settings, log):
+    """Drop coordinators.json's pm_name: the PM runs as pm-session again, so a name pm-relaunch
+    gave it no longer names it. Read again so only that key changes; a fault is logged."""
+    try:
+        p = state.path(settings, state.COORDINATORS)
+        cfg = state.read_json(p) or {}
+        if cfg.pop('pm_name', None) is not None:
+            state.write_json(p, cfg)
+            log('cleared pm_name in coordinators.json (the PM runs as pm-session)')
+    except (LaunchError, OSError, ValueError) as e:
+        log('FAILED to clear pm_name in coordinators.json : %s' % why(e))

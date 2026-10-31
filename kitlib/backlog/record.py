@@ -7,6 +7,7 @@ import collections
 import datetime
 import re
 
+from . import conditions as condmod
 from . import scope as scopemod
 from .errors import Usage
 
@@ -125,16 +126,21 @@ def blocker_kind(member):
 # --- the schema -----------------------------------------------------------------------------------
 
 ONE, AT_MOST_ONE, ONE_PLUS, ANY = '1', '0-1', '1+', '0+'
-OWNER_PRIORITY = '-1'
+# `priority: -1` once marked a record awaiting the owner; `blocked_on: owner` is the only owner
+# hold now, and -1 is refused with this pointer (docs/backlog.md "Fields").
+RETIRED_PRIORITY = '-1'
+RETIRED_PRIORITY_WHY = ('`priority: -1` is retired: a record awaiting the owner is `block ID --on '
+                        'owner --owner-ask "<the question>"`')
 RULING_RE = re.compile(r'^R-[0-9]{4,}$')
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 QUESTION_RE = re.compile(r'^Q-[0-9]{3,}$')
 KEY_RE = re.compile(r'^[a-z][a-z0-9_]*$')
 SESSION_RE = re.compile(r'^[a-z][a-z0-9-]*$')
+RESOURCE_RE = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 
 
 def is_band(v):
-    """True iff `v` is a band `1`-`5` (1 the top). `-` and `-1` are not bands and have no rank."""
+    """True iff `v` is a band `1`-`5` (1 the top). `-` is not a band and has no rank."""
     return v is not None and bool(re.match(r'^[1-5]$', v))
 
 
@@ -147,10 +153,12 @@ def _id(v, rules):
 
 
 def _priority(v, rules=None):
-    if v in ('-', OWNER_PRIORITY) or is_band(v):
+    if v == '-' or is_band(v):
         return None
-    return ('`%s` is not a priority - a band `1`-`5` (1 the top), `-1` where the judgement of '
-            'the owner is required, or `-` for not prioritised' % v)
+    if v == RETIRED_PRIORITY:
+        return RETIRED_PRIORITY_WHY
+    return ('`%s` is not a priority - a band `1`-`5` (1 the top), or `-` for not prioritised'
+            % v)
 
 
 def _priority_by(v, rules=None):
@@ -210,6 +218,14 @@ def _session(v, rules=None):
     return '`%s` is not a session name - lower-case `[a-z][a-z0-9-]*`' % v
 
 
+def _uses(v, rules=None):
+    """A resource the record needs while it is pulled (docs/backlog.md "Resources"). Only the
+    grammar: which names exist is the repository's `.kit.json`, which `check` reads."""
+    if RESOURCE_RE.match(v):
+        return None
+    return '`%s` is not a resource name - lower-case `[a-z0-9][a-z0-9-]*`' % v
+
+
 def _review(v, rules=None):
     """`<source> <YYYY-MM-DD>`: who marked the record for review, and when (docs/backlog.md,
     "Records")."""
@@ -242,6 +258,32 @@ def _answer(v, rules=None):
     return shape if when.tzinfo is None else None
 
 
+def _until(v, rules):
+    """`<member> <condition>`: the end condition of one `blocked_on` member, written by `block
+    --on M --until C` (kitlib/backlog/conditions.py says which conditions a program checks; any
+    other text is kept as free text). The member is one word, in the closed set and not `-`; one
+    line per member, and only a member the record is blocked on (_cross_field)."""
+    member, cond = condmod.split(v)
+    if not member or not cond.strip():
+        return '`%s` is not an until line - `<member> <condition>`' % v
+    if member == '-':
+        return '`-` is not a blocker, so nothing ends on `%s`' % cond
+    return blocked_on_error(member, rules)
+
+
+def until_lines(rec):
+    """[(member, condition)] of the record's `until` lines, in order."""
+    return [condmod.split(v) for v in rec.all('until')]
+
+
+def prune_until(pairs):
+    """`pairs` without the `until` lines of a member that is not in their `blocked_on`: a write
+    that clears a blocker (unblock, an answer, a close's dependents, set) drops its condition
+    with it."""
+    members = set(values(pairs, 'blocked_on'))
+    return [(k, v) for k, v in pairs if k != 'until' or condmod.split(v)[0] in members]
+
+
 def answered(rec):
     """{question id: at} of the record's `answer:` lines (a malformed line is left out)."""
     out = {}
@@ -265,6 +307,7 @@ FIELDS = collections.OrderedDict([
     ('pulled_at', (AT_MOST_ONE, _date)),
     ('pulled_by', (AT_MOST_ONE, _free)),
     ('blocked_on', (ONE_PLUS, None)),            # the closed set, under its own check name
+    ('until', (ANY, _until)),
     ('hold_ruling', (AT_MOST_ONE, _ruling)),
     ('q', (AT_MOST_ONE, _question)),
     ('parked_at', (AT_MOST_ONE, _date)),
@@ -272,6 +315,7 @@ FIELDS = collections.OrderedDict([
     ('review', (AT_MOST_ONE, _review)),
     ('answer', (ANY, _answer)),
     ('scope', (ONE_PLUS, _scope)),
+    ('uses', (ANY, _uses)),
     ('files', (ANY, _path)),
     ('files_at', (AT_MOST_ONE, _free)),
     ('requires', (ANY, _free)),
@@ -283,6 +327,7 @@ FIELDS = collections.OrderedDict([
     ('displaced', (ANY, _displaced)),
     ('pin', (AT_MOST_ONE, _pin)),
     ('session', (AT_MOST_ONE, _session)),
+    ('batch', (AT_MOST_ONE, _free)),             # the branch a topic session builds it on
     ('ref', (AT_MOST_ONE, _free)),
     ('summary', (ONE, _free)),
 ])
@@ -450,7 +495,7 @@ def _cross_field(rec):
     priority, by = rec.get('priority'), rec.get('priority_by')
     state, blockers, scopes = rec.get('state'), rec.all('blocked_on'), rec.all('scope')
     if priority is not None and by is not None:
-        if priority in ('-', OWNER_PRIORITY) and by != '-':
+        if priority == '-' and by != '-':
             add(Finding(SCHEMA, path, rec.line_of('priority_by'), '`priority: %s` is not a band, '
                         'so `priority_by` must be `-`, not `%s`' % (priority, by)))
         if is_band(priority) and by == '-':
@@ -473,9 +518,8 @@ def _cross_field(rec):
     if '-' in blockers and len(blockers) > 1:
         add(Finding(BLOCKED_ON, path, rec.line_of('blocked_on'), '`blocked_on: -` means not '
                     'blocked, so it cannot sit beside other members'))
-    awaits = 'owner' in blockers or priority == OWNER_PRIORITY
-    out.extend(_both_or_neither(rec, 'owner_ask', awaits, 'an item awaiting the owner - '
-                                '`blocked_on: owner` or `priority: -1`'))
+    out.extend(_both_or_neither(rec, 'owner_ask', 'owner' in blockers, 'an item awaiting the '
+                                'owner - `blocked_on: owner`'))
     for key in PULL_KEYS:
         out.extend(_both_or_neither(rec, key, state == 'pulled', 'an item with `state: pulled`'))
     out.extend(_both_or_neither(rec, 'files_at', rec.has('files'), 'a record with `files`'))
@@ -492,6 +536,23 @@ def _cross_field(rec):
                 add(Finding(SCHEMA, path, n, '`answer` holds one line per question, and %s has '
                             'more than one; a re-answer replaces its line' % qid))
             seen_q.add(qid)
+    seen_member = set()
+    for n, key, value in rec.entries:
+        if key != 'until':
+            continue
+        member, cond = condmod.split(value)
+        if not member or not cond.strip():
+            continue                    # the shape is _until's finding
+        if member not in blockers:
+            add(Finding(SCHEMA, path, n, '`until: %s` ends `%s`, and the record is not blocked on '
+                        'it; `unblock` drops its line' % (value, member)))
+        if member in seen_member:
+            add(Finding(SCHEMA, path, n, '`until` holds one line per member, and `%s` has more '
+                        'than one; a re-block with `--until` replaces its line' % member))
+        seen_member.add(member)
+        why = condmod.owner_error(member, cond)
+        if why:
+            add(Finding(SCHEMA, path, n, '`until: %s`: %s' % (value, why)))
     if scopemod.NONE in scopes and len(scopes) > 1:
         add(Finding(SCHEMA, path, rec.line_of('scope'), '`scope: none` touches no tracked file, '
                     'so it cannot sit beside other members'))
@@ -543,8 +604,8 @@ def values(pairs, key):
 
 
 def is_owner_held(rec):
-    """Awaiting the owner: `blocked_on: owner` or `priority: -1`."""
-    return rec.get('priority') == OWNER_PRIORITY or 'owner' in rec.all('blocked_on')
+    """Awaiting the owner: `blocked_on: owner`."""
+    return 'owner' in rec.all('blocked_on')
 
 
 def is_owner_prioritised(rec):
@@ -553,4 +614,4 @@ def is_owner_prioritised(rec):
 
 
 def owner_hold_label(rec):
-    return 'priority: -1' if rec.get('priority') == OWNER_PRIORITY else 'blocked_on: owner'
+    return 'blocked_on: owner'

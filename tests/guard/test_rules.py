@@ -59,13 +59,13 @@ ROWS = [
 
     # ---------------------------------------------------------------- heavy programs
     ('godot with no lock', lambda w: bash('godot --headless --path .', w.wt), 'deny', 'heavy',
-     LOCK + ' --kind engine-run --repo demo --slug wt -- godot --headless --path .'),
+     LOCK + ' --kind app-run --repo demo --slug wt -- godot --headless --path .'),
     ('godot.exe by path, PowerShell', lambda w: ps('& "C:\\Program Files\\Godot\\godot.exe" --headless', w.main, sub=True),
-     'deny', 'heavy', LOCK + ' --kind engine-run --repo demo --slug main -- "C:\\Program Files\\Godot\\godot.exe" --headless'),
+     'deny', 'heavy', LOCK + ' --kind app-run --repo demo --slug main -- "C:\\Program Files\\Godot\\godot.exe" --headless'),
     ('env flag alone is no lock', lambda w: bash('MACHINE_LOCK_RUN=r-20261006T120000Z-abcdef:1:2 godot -s x.gd', w.wt),
-     'deny', 'heavy', LOCK + ' --kind engine-run --repo demo --slug wt -- godot -s x.gd'),
+     'deny', 'heavy', LOCK + ' --kind app-run --repo demo --slug wt -- godot -s x.gd'),
     ('godot nested in bash -c', lambda w: bash('bash -c "godot --headless"', w.wt), 'deny', 'heavy',
-     LOCK + ' --kind engine-run --repo demo --slug wt -- godot --headless'),
+     LOCK + ' --kind app-run --repo demo --slug wt -- godot --headless'),
     ('godot in Start-Process', lambda w: ps('Start-Process -FilePath godot.exe -ArgumentList "--headless"', w.wt),
      'deny', 'heavy', None),
     ('blender -b is a render', lambda w: bash('blender -b scene.blend -a', w.wt), 'deny', 'heavy',
@@ -203,7 +203,7 @@ ROWS = [
     ('unclosed quote hiding a subagent merge in its worktree', lambda w: bash("echo 'x ; git merge kit/wt", w.wt, sub=True), 'deny', 'unreadable', None),
     ('cmd /c with a trailing backslash root', lambda w: bash('cmd /c "dir /s C:\\"', w.wt), 'deny', 'root-search', None),
     ('variable program running godot', lambda w: bash('GODOT=/c/tools/godot.exe; $GODOT --headless', w.wt), 'deny', 'heavy',
-     LOCK + ' --kind engine-run --repo demo --slug wt -- <the program $GODOT names> --headless'),
+     LOCK + ' --kind app-run --repo demo --slug wt -- <the program $GODOT names> --headless'),
 
     # ---------------------------------------------------------------- backlog roles (tests/guard/test_backlog_role.py)
     ('subagent builder closes a record', lambda w: bash('python "%s/tools/backlog.py" -C "%s" close X-1'
@@ -935,6 +935,35 @@ class OwnerSetup(unittest.TestCase):
                     self.assertTrue(d.reason.endswith(' Instead: %s %s' % (
                         dry, rules.tag('owner-tool', 'subagent' if sub else 'main'))), d.reason)
 
+    # installer/machine-setup.sh, the Linux front end: run by a shell or as the program, sudo too
+    SH_BLOCKED = [
+        ('bash', 'sh installer/machine-setup.sh --owner-email a@example.invalid --apply'),
+        ('bash', 'sudo sh /k/installer/machine-setup.sh --delegation --apply'),
+        ('bash', 'sudo -u root bash -x -o pipefail installer/machine-setup.sh --pm-repo /p --apply'),
+        ('bash', 'bash -- installer/machine-setup.sh --apply'),
+        ('bash', './installer/machine-setup.sh --apply'),
+        ('bash', '/bin/sh installer/machine-setup.sh --apply'),
+    ]
+    SH_ALLOWED = [
+        ('bash', 'sh installer/machine-setup.sh --owner-email a@example.invalid'),
+        ('bash', 'sudo sh installer/machine-setup.sh --delegation'),
+        ('bash', 'sh -n installer/machine-setup.sh'),
+        ('bash', 'cat installer/machine-setup.sh'),
+        ('bash', 'bash tools/other.sh --apply'),
+    ]
+
+    def test_the_linux_installer_is_the_owners_to_apply(self):
+        for shell, text in self.SH_BLOCKED:
+            with self.subTest(text):
+                d = self.run_one(shell, text, True)
+                self.assertIsNotNone(d, 'allowed')
+                self.assertEqual((d.verdict, d.rule), ('deny', 'owner-tool'), d.reason)
+                self.assertIn('machine-setup.sh --apply', d.reason)
+        for shell, text in self.SH_ALLOWED:
+            with self.subTest(text):
+                d = self.run_one(shell, text, True)
+                self.assertTrue(d is None or d.rule != 'owner-tool', d and d.reason)
+
     def test_the_owner_session_may(self):
         for shell, text in self.BLOCKED:
             with self.subTest(text):
@@ -1349,7 +1378,7 @@ class PlainCommit(unittest.TestCase):
         return decide(shell(text, self.w.wt, sub), self.w.ctx(environ=environ or {}))
 
     def test_every_marked_session_is_held(self):
-        for mark in ('coordinator', 'pm', 'deep-worker', 'conductor', 'consultant'):
+        for mark in ('coordinator', 'pm', 'deep-worker', 'consultant'):
             with self.subTest(mark):
                 d = self.decide('git commit -m x -- a.py', {context.ROLE_ENV: mark})
                 self.assertEqual(d and d.rule, 'git-plain-commit', d and d.reason)
@@ -1378,6 +1407,22 @@ class PlainCommit(unittest.TestCase):
                 self.assertEqual(d and d.rule, 'git-plain-commit', d and d.reason)
                 held = d.instead.replace('<patch>', 'fix.patch')      # the placeholder is no shell word
                 self.assertIsNone(self.decide(held, sub=True), held)
+
+    def test_a_merge_or_pull_names_sync_base_with_the_worktree_and_the_typed_hash(self):
+        """The Instead line is the exact command to run: this worktree, and the one hash the agent
+        typed (rules.typed_hash); a branch name or two hashes leave <hash> for the coordinator's."""
+        tool = 'python "%s/tools/sync_base.py" -C "%s" ' % (W.fwd(self.w.kit_dir), W.fwd(self.w.wt))
+        for shell, text, commit in (
+                (bash, 'git merge --no-edit d6454c8fa', 'd6454c8fa'),
+                (ps, 'git merge -m "sync" 0123abcdef', '0123abcdef'),
+                (bash, 'git pull origin d6454c8faa49', 'd6454c8faa49'),
+                (bash, 'git merge origin/main', '<hash>'),
+                (bash, 'git merge abc123', '<hash>'),
+                (bash, 'git merge d6454c8fa 99fe8fadb', '<hash>')):
+            with self.subTest(text):
+                d = self.decide(text, sub=True, shell=shell)
+                self.assertEqual(d and d.rule, 'git-plain-commit', d and d.reason)
+                self.assertEqual(d.instead, tool + '%s --model "<your model>"' % commit)
 
     def test_a_sequence_step_names_what_commit_py_leaves(self):
         for text in ('git cherry-pick --continue', 'git revert --continue', 'git am --continue'):
@@ -1539,7 +1584,7 @@ class InterpreterGit(unittest.TestCase):
 
     def test_every_marked_session_is_held_and_the_owner_is_not(self):
         text = 'python -c "import subprocess; subprocess.run([\'git\', \'status\'])"'
-        for mark in ('coordinator', 'deep-worker', 'consultant', 'conductor', 'pm'):
+        for mark in ('coordinator', 'deep-worker', 'consultant', 'pm'):
             with self.subTest(mark):
                 self.assert_refused(self.decide(text, environ={context.ROLE_ENV: mark}, sub=False), text)
         self.assertIsNone(self.decide(text, sub=False))

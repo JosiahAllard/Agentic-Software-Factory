@@ -3,7 +3,7 @@ it does. docs/kit-json.md is these lines (`doc_lines()`); tests/config keeps the
 
 A section's value is an object, or (where `FILE_OK`) a string naming a repo-relative JSON file
 that holds the object. Defaults of None mean "absent": the tool that reads the key decides.
-Kit-level sections (repo, owner, hook, heavy, roles) are read by kitlib itself; the rest are the
+Kit-level sections (repo, owner, hook, heavy, roles, kinds) are read by kitlib itself; the rest are the
 per-tool sections the PM kit's tools read (kit/tools/_kit.py SECTIONS), checked here for shape only.
 """
 from kitlib.host import registry
@@ -60,6 +60,18 @@ IN_FLIGHT = Obj({
     'wait_s': Field(Int(0, 3600), None, 'most seconds to wait; unset: 100 (inferred, not measured: under the agent shell 120 s timeout)'),
     'command': Field(Argv, None, 'argv run in the main checkout: exit 0 in flight (first line names the holder), 1 none, else in flight'),
 }, what='{wait_s, command}')
+
+# A repository's own run kind ("kinds", kitlib.lock.kinds.repo_entry): the kit table's entry shape
+# (kitlib/lock/kinds.json, kinds.check_entry) plus its reason. A whole-number cpu past the layout's
+# agent_cap is refused when a run books it (the layout is the machine's, not the config's).
+KIND_RE = r'[a-z][a-z0-9-]*'
+KIND_ENTRY = Obj({
+    'cpu': Field(Either(Int(1), Enum('medium', 'heavy')), None, 'its size: a whole number of cpu slots (at most the layout\'s agent_cap, checked when a run books), or medium or heavy'),
+    'gpu': Field(Enum(0, 'pool'), 0, '0, or "pool": the whole gpu pool'),
+    'share': Field(Bool(), False, 'with gpu "pool": a run may take one gpu slot instead (--gpu-share training)'),
+    'warn_min': Field(Int(1), 60, 'minutes a run may hold its slots before it is warned of'),
+    'why': Field(Str(), None, 'the reason for its size, a ruling or a measurement'),
+}, required=('cpu', 'why'), what='{cpu, gpu, share, warn_min, why}')
 
 ROLE = Obj({
     'edit_main_checkout': Field(Bool(), None, 'may edit files in a main checkout; unset: the base role (main: true, any other: false)'),
@@ -142,7 +154,7 @@ SECTIONS = {
         'worktrees_by_host': Field(MapOf(RelPath(), what='host'), {},
                                    'per-host worktree folders, keyed by hosts.json host name '
                                    '(docs/new-worktree.md "Hosts")'),
-        'tools_dir': Field(RelPath(), 'tools', 'where repo tools, the opt-in kit tool stubs and the hook module live'),
+        'tools_dir': Field(RelPath(), 'tools', 'where repo tools and the hook module live'),
         'push_block': Field(Bool(), False, 'pre-push refuses a push to main without a gate-OK record; a delete or a forced push of main is refused whatever it says'),
     },
     'owner': {
@@ -160,12 +172,16 @@ SECTIONS = {
         'programs': Field(ListOf(HEAVY_ENTRY), [], 'repo heavy programs, added to the kit defaults'),
     },
     'roles': {},
+    'kinds': {},
     'backlog': {
         'store': Field(Either(Enum('ref', 'branch', 'main'), RelPath()), 'ref',
                        'the record store: ref (refs/backlog/main), branch (the backlog branch), main (docs/backlog) or a folder (docs/backlog.md); the default ref is read-only, so a repository that writes records names its store'),
         'phases': Field(Strs, [], 'phase names in order'),
         'id_grammar': Field(Enum('upper', 'mixed'), 'upper', 'item id spelling'),
         'code_main': Field(Str(), None, 'the branch code lands on, which `add --found-on` measures a branch\'s diff from; default repo.main_branch'),
+        'cap': Field(Int(1, None), 5, 'most records `backlog.py next` offers and `pull` takes in order (`next --cap` overrides it for one call); every worktree reads the main checkout\'s value'),
+        'resources': Field(MapOf(Int(1, None), 'name', key=Str(pattern=r'[a-z0-9][a-z0-9-]*', what='a lower-case resource name')), {},
+                           'limited resources and how many live pulls may use each at once: a record names one with `uses:`, and `next` passes it over at capacity (docs/backlog.md "Resources"); every worktree reads the main checkout\'s value'),
     },
     'board': {
         'state_file': Field(RelPath(), None, 'the board state file, under the git dir (default <git common dir>/kit/board-state.md)'),
@@ -219,7 +235,7 @@ SECTIONS = {
                              'expect': Field(ListOf(Str(), length=2), None, 'begin and end markers of expected errors')},
                             required=('match',), what='{match, excuse, expect}'),
                         None, 'error-line policy'),
-        'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'engine-test', 'the kinds-table kind a gate run books (gate.py and gate.py land)'),
+        'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'test', 'the kinds-table kind a gate run books (gate.py and gate.py land)'),
         'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) branch gate runs whatever changed; a landing takes such a gate\'s record for a tip once these steps passed in it (docs/gate.md "Landing"); unset: a landing needs a --full record'),
         'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate.md "Docs-only changes"); unset: no change is docs-only'),
     },
@@ -237,6 +253,7 @@ SECTIONS = {
         'in_flight': Field(IN_FLIGHT, None, 'how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")'),
         # Not in "gate": a key there is in every gate-OK record's gate_config hash (runner.gate_config).
         'shared_paths': Field(ListOf(Str(pattern=r'(?s).*[^/\\]', what='whole-path glob (a folder is "api/*", never "api/")'), nonempty=True), None, 'globs of the repo\'s shared code: a landing takes a default-mode (scoped) record of a tip that changes none of them, no strict path and no gate config file, without "gate".smoke_steps; a tip that changes one of those needs a --full record, whatever "gate".smoke_steps or "gate".docs_only say (docs/gate.md "Shared paths"); unset: a landing needs a --full record unless "gate".smoke_steps or "gate".docs_only take it'),
+        'gate_once': Field(Bool(), False, 'a landing takes a default-mode (scoped) record of any tip that changes no strict path and no gate config file, shared paths included, and its merged gate runs --full (each step\'s full_cmd) once on the merged or batched tree; a docs-only merge stays docs-only (docs/gate.md "Gate once at landing"); off: "landing".shared_paths, "gate".smoke_steps and "gate".docs_only decide alone'),
     },
     'ledger': {
         'pre_commit_check': Field(Bool(), False, 'githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes the ledger file or its standing digest (opt-in; docs/ledger.md "Pre-commit check")'),
@@ -270,6 +287,12 @@ SECTIONS = {
         }, what='{prefix, bound_s, session}'), None,
             'the gate-time check of tools/maint_lint.py (docs/maint-lint.md "Gate time"): bound_s (1 to 86400, default 900) the seconds a gate step\'s median time over full gates may reach; prefix the id prefix of the record a plain run files for a step over it (unset: none is filed); session the session that record carries; unset: the check runs at 900 s and files nothing'),
     },
+    # tools/module_map.py (kitlib.modulemap, docs/module-map.md).
+    'modules': {
+        'map': Field(RelPath(), None, 'the module map file: modules, messaging, allowed edges and ratchets (docs/module-map.md); --check refuses to run unless "owner".paths locks it; unset: no module map'),
+        'ceilings': Field(RelPath(), None, 'the ratchet ceilings file, {ratchet id: ceiling} (docs/module-map.md "Ratchets"); unset: every ceiling is 0'),
+        'page': Field(RelPath(), None, 'the architecture page generated from the map (docs/module-map.md "The architecture page"); --page --write writes it and --check fails when it does not match the map; unset: no page'),
+    },
     'pieces': {},
     'preflight': {
         'engines': Field(Strs, [], 'process-name prefixes listed as running engines'),
@@ -283,9 +306,6 @@ SECTIONS = {
     },
     'review_pack': {
         'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a failing one blocks'),
-    },
-    'stubs': {
-        'tools': Field(Strs, None, 'kit tools stubbed into the repo; stubs are opt-in (none by default), and setting this opts in'),
     },
     'testlist': {
         'junit': Field(Strs, ['**/build/test-results/**/*.xml'], 'JUnit result globs'),
@@ -329,11 +349,18 @@ SECTIONS = {
 
 # A section that may be a string naming a repo-relative JSON file. guard never: a file beside
 # .kit.json would let a change to it widen what agent sessions may write past the kit-json rule.
-FILE_OK = frozenset(SECTIONS) - {'repo', 'owner', 'hook', 'guard'}
+# modules never: a file beside .kit.json would let an agent repoint the owner's module map.
+# kinds never: a file beside .kit.json would let a change to it size runs without the owner.
+FILE_OK = frozenset(SECTIONS) - {'repo', 'owner', 'hook', 'guard', 'modules', 'kinds'}
 # Sections whose content is a table the kit does not shape-check (an object of anything).
 OPAQUE = frozenset(('forbidden', 'pieces'))
-# Sections that are a map of one entry type: role name -> permissions, over policy.ROLE_DEFAULTS.
-MAPS = {'roles': (ROLE, 'role', 'agent type (or main, subagent) -> permissions, over the kit defaults')}
+# Sections that are a map of one entry type: (entry type, key name, doc, key type or None).
+# roles: role name -> permissions, over policy.ROLE_DEFAULTS; kinds: the repository's own run kinds.
+MAPS = {
+    'roles': (ROLE, 'role', 'agent type (or main, subagent) -> permissions, over the kit defaults', None),
+    'kinds': (KIND_ENTRY, 'kind', 'the repository\'s own run kinds, beside the kit\'s (kitlib/lock/kinds.json): a run from one of its checkouts may book one by name (docs/lock-api.md "Repository kinds"); a kit kind or kit alias of the same name wins, and the entry is ignored; read from the main checkout only',
+              Str(pattern=KIND_RE, what='a kind name ([a-z][a-z0-9-]*)')),
+}
 
 
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
@@ -341,14 +368,15 @@ MAPS = {'roles': (ROLE, 'role', 'agent type (or main, subagent) -> permissions, 
 RETIRED = {'backlog': ('retired_docs', 'rename_script', 'ledger_repo'), 'landing': ('lanes', 'lock_file')}
 # Whole sections no tool reads any more. A config that still carries one loads: the section is
 # dropped unchecked, whatever it holds. Any other unknown section still refuses.
-RETIRED_SECTIONS = ('ruling_cites',)
+RETIRED_SECTIONS = ('ruling_cites', 'stubs')
 
 
 def section_type(name):
     if name in OPAQUE:
         return MapOf(Any(), 'key')
     if name in MAPS:
-        return MapOf(MAPS[name][0], MAPS[name][1])
+        t, what, _doc, key = MAPS[name]
+        return MapOf(t, what, key)
     return Obj(SECTIONS[name], what='"%s"' % name)
 
 
@@ -371,7 +399,7 @@ def doc_lines():
             out.append('- `%s`: a table the kit passes through unchecked (a file path or an object)' % name)
             continue
         if name in MAPS:
-            t, what, doc = MAPS[name]
+            t, what, doc, _key = MAPS[name]
             out.append('- `%s` (map %s -> %s): %s' % (name, what, t.describe(), doc))
             for k, f in t.fields.items():
                 d = '' if f.default is None else ', default %s' % _fmt(f.default)

@@ -39,7 +39,7 @@ class RenderTest(unittest.TestCase):
     def test_a_plugin_prefixed_mark_is_the_coordinator_and_no_other_prefix(self):
         with tempfile.TemporaryDirectory() as d:
             p = write(os.path.join(d, "c.json"), json.dumps({"coordinator_start": {"standing": ["one"]}}))
-            for role in (P + "coordinator", P.upper() + "coordinator", P + "conductor"):
+            for role in (P + "coordinator", P.upper() + "coordinator"):
                 self.assertEqual(coordinatorstart.render(env={"PM_KIT_ROLE": role}, path=p, live=False),
                                  "Coordinator session start:\n- one", role)
             for role in ("some-plugin:coordinator", P + "pm", P):
@@ -65,16 +65,17 @@ class RenderTest(unittest.TestCase):
                      "Check every other unpriced open record (an owner story, a record from the PM's brief) "
                      "for duplicates, size and fit",
                      "--priority-by agent",
-                     "Promote a follow-up at any time it enters a work set", "price before pull",
-                     "When `next --all` lists fewer startable records than the set needs",
-                     "price only those going into this set; never a sweep",
+                     "Promote a follow-up at any time: price it 2-5", "price before pull",
+                     "When `next --all` lists fewer startable records than you have free slots",
+                     "price only those you pull now; never a sweep",
                      "`next` never offers an unpriced record",
                      "under `unprioritised+open`, not under `held` (`held` = blocked)",
                      "goes to the PM", "never ask the owner directly"):
             self.assertIn(want, line)
         # Withdrawn wording: no pass at all, unpriced called held, the capped-offer and duplicate triggers.
         for gone in ("No start-up pricing pass", "is held", "stay held", "held is not waiting",
-                     "`next` offers fewer items", "duplicates or replaces a priced one", "each unpriced"):
+                     "`next` offers fewer items", "duplicates or replaces a priced one", "each unpriced",
+                     "work set", "this set"):
             self.assertNotIn(gone, line)
         # "held" only where it is true: the banner's group, twice, and "owner-held".
         self.assertEqual(line.count("held"), 3, line)
@@ -273,7 +274,7 @@ class OthersTest(unittest.TestCase):
     def test_lists_predecessor(self):
         out = coordinatorstart.others(ENTRY, self.procs(), {}, 4)
         self.assertEqual(len(out), 1)
-        self.assertIn("also running: alpha-coordinator-a2-n5; if one is your winding-down", out[0])
+        self.assertIn("also running: alpha-coordinator-a2-n5; if one is your predecessor handing off", out[0])
         self.assertNotIn("beta", out[0])
 
     def test_unknown_self_is_newest_and_alone_prints_nothing(self):
@@ -295,7 +296,9 @@ class ContextTest(unittest.TestCase):
 
         def run(args, timeout=10):
             return json.dumps(status) if "machine_lock.py" in args[1] else "G"
-        base = dict(env={"CLAUDE_CONFIG_DIR": "C:/u/.claude-ex2"}, cwd=ROOT + "/alpha", now=NOW,
+        empty = os.path.join(tempfile.gettempdir(), "coordinatorstart-test-no-notes")   # never holds a note
+        base = dict(env={"CLAUDE_CONFIG_DIR": "C:/u/.claude-ex2", "AGENT_TEMP": empty, "TEMP": empty},
+                    cwd=ROOT + "/alpha", now=NOW,
                     procs=[], run=run, read=reader(files), kit="H", pid=1, pm_cfg=self.PM, machine_cfg={})
         base.update(kw)
         return coordinatorstart.context(dict(dict(repos_root=ROOT), **cfg), **base)
@@ -371,7 +374,7 @@ class ContextTest(unittest.TestCase):
         lines = self.build({}, read=reader(files)).splitlines()
         self.assertEqual([l for l in lines if "hub key" in l],
                          ["- hub key: kitc (hub.py questions add --from kitc --record REPO:ID|"
-                          "--class C; read hub.py pending --for kitc once at start; answers come "
+                          "--class C; its pending list is in this start context; answers come "
                           "by push)"])
         self.assertNotIn("wait", "\n".join(lines))   # no session keeps a background hub wait
 
@@ -402,7 +405,7 @@ class ContextTest(unittest.TestCase):
                 f.write(b"\xef\xbb\xbf" + json.dumps({"alpha": ENTRY}).encode("utf-8"))
             text = coordinatorstart.context(
                 {"repos_root": ROOT, "cap": {"alpha": [{"cap": 4}]}},
-                env={}, cwd=ROOT + "/alpha", now=NOW, procs=[], run=lambda a, timeout=10: "G",
+                env={"AGENT_TEMP": d}, cwd=ROOT + "/alpha", now=NOW, procs=[], run=lambda a, timeout=10: "G",
                 kit="H", pid=1, pm_cfg={"sessions_file": p}, machine_cfg={})
         self.assertIn("- agent cap 4", text)
 
@@ -581,60 +584,13 @@ class LedgerLineTest(unittest.TestCase):
         self.assertTrue(line.endswith("rules --repo alpha"), line)
 
 
-class StubsLineTest(unittest.TestCase):
-
-    def test_silent_when_current_and_one_line_when_not(self):
-        with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "alpha"))
-            seen = []
-
-            def check(p):
-                seen.append(p)
-                return None
-            self.assertEqual(coordinatorstart.stubs_line(ENTRY, d, check), [])
-            self.assertEqual(seen, [os.path.join(d, "alpha")])
-            self.assertEqual(coordinatorstart.stubs_line(ENTRY, d, lambda p: "stubs (alpha): 1 missing/stale: gate"),
-                             ["stubs (alpha): 1 missing/stale: gate"])
-
-    def test_missing_folder_is_could_not_check_not_a_traceback(self):
-        self.assertEqual(coordinatorstart.stubs_line(ENTRY, "D:/no/such/root", lambda p: None),
-                         ["could not check stubs: no repository folder %s" % os.path.join("D:/no/such/root", "alpha")])
-
-    def test_no_repos_root_is_a_key_error(self):
-        with self.assertRaises(KeyError):
-            coordinatorstart.stubs_line(ENTRY, None)
-
-    def test_context_prints_the_check_last_and_isolates_it(self):
-        with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "alpha"))
-            text = ContextTest().build({"repos_root": d, "cap": {"alpha": [{"cap": 4}]}},
-                                       cwd=d + "/alpha", stubs_check=lambda p: "stubs (alpha): 2 missing/stale: a, b")
-            self.assertEqual(text.splitlines()[-1], "- stubs (alpha): 2 missing/stale: a, b")
-
-    def test_context_has_no_stubs_line_when_current(self):
-        with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "alpha"))
-            t = ContextTest()
-            text = t.build({"repos_root": d, "cap": {"alpha": [{"cap": 4}]}}, cwd=d + "/alpha", stubs_check=lambda p: None)
-            self.assertNotIn("stubs", text)
-
-    def test_a_raising_check_is_a_could_not_check_stubs_line(self):
-        with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "alpha"))
-
-            def boom(p):
-                raise OSError("disk gone")
-            text = ContextTest().build({"repos_root": d, "cap": {"alpha": [{"cap": 4}]}}, cwd=d + "/alpha", stubs_check=boom)
-            self.assertIn("could not check stubs: OSError: disk gone", text)
-
-
 @real_git('the hook child runs git check-ignore (the auto-tasks check): the fake lacks check-ignore')
 class HookTest(unittest.TestCase):
     def run_hook(self, role, config):
         with tempfile.TemporaryDirectory() as d:
             machine_config(d, config, case=self)        # the fenced pointer's PM repo, which the child inherits
-            env = {k: v for k, v in os.environ.items() if k != "PM_KIT_ROLE"}
-            env.update(USERPROFILE=d, HOME=d)
+            env = {k: v for k, v in os.environ.items() if k not in ("PM_KIT_ROLE", "PM_KIT_SESSION_NAME")}
+            env.update(USERPROFILE=d, HOME=d, AGENT_TEMP=d, TEMP=d, TMP=d)
             if role:
                 env["PM_KIT_ROLE"] = role
             return subprocess.run([sys.executable] + HOOK, capture_output=True, text=True, env=env, timeout=30,
@@ -666,21 +622,17 @@ class HookTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         text = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertEqual(text.split("\n")[1], "- s")
-        for name in ("cap", "machine state", "other coordinators", "stubs"):
+        for name in ("cap", "machine state", "other coordinators"):
             self.assertIn("could not check %s:" % name, text)
         self.assertNotIn("rulings", text.lower())
 
-    def test_old_role_and_old_config_key_still_work(self):
-        r = self.run_hook("conductor", json.dumps({"conductor_start": {"standing": ["wind down"]}}))
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("- wind down", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
-
-    def test_new_key_wins_over_the_old_key(self):
-        r = self.run_hook("coordinator", json.dumps({"conductor_start": {"standing": ["old"]},
-                                                     "coordinator_start": {"standing": ["new"]}}))
-        text = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("- new", text)
-        self.assertNotIn("- old", text)
+    def test_the_retired_old_mark_and_old_key_are_not_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write(os.path.join(d, "c.json"), json.dumps({"coordinator_start": {"standing": ["s"]}}))
+            for role in ("conductor", P + "conductor"):
+                self.assertIsNone(coordinatorstart.render(env={"PM_KIT_ROLE": role}, path=p), role)
+            old = write(os.path.join(d, "old.json"), json.dumps({"conductor_start": {"standing": ["old"]}}))
+            self.assertIsNone(coordinatorstart.load_config(old))
 
     def test_bad_json_exit_0(self):
         r = self.run_hook("coordinator", "{bad")
@@ -690,3 +642,16 @@ class HookTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinuxCli(unittest.TestCase):
+    """On Linux own_name and others take only a process that runs a host's CLI
+    (pmstart.runs_a_cli): a node with --remote-control that runs anything else is no session."""
+    def test_own_name_and_others_skip_a_node_that_runs_no_cli(self):
+        rc = "node /usr/local/bin/claude --remote-control %s -n x"
+        procs = [proc(1, 0, "node", rc % "alpha-coordinator-a2-n6", exe="/usr/bin/node"),
+                 proc(2, 1, "node", "node app.js --remote-control alpha-coordinator-a2-n9", exe="/usr/bin/node"),
+                 proc(3, 2, "bash", "bash", exe="/usr/bin/bash")]
+        with mock.patch("kitlib.platform.NAME", "linux"):
+            self.assertEqual(coordinatorstart.own_name(procs, {}, 3), "alpha-coordinator-a2-n6")
+            self.assertEqual(coordinatorstart.others(ENTRY, procs, {}, 3), [])

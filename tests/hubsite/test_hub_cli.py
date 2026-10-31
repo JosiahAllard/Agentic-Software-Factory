@@ -104,7 +104,7 @@ class UsageCase(CliCase):
         self.assertEqual((code, out), (2, ''))
         self.assertIn('USAGE: give a verb: serve, status, setup, open, unpair, stop, restart, '
                       'questions, answer, todos, stories, to-pm, inbox, pages, approvals, '
-                      'pending, wait or validate\n', err)
+                      'handoffs, skill-edit, pending, wait or validate\n', err)
         self.assertEqual(sorted(HUB.VERBS), sorted(HUB.VERB_NAMES))     # every verb it has
         self.assertEqual(self.run_cli('launch')[0], 2)
         self.assertEqual(self.run_cli('serve', '--bind', '0.0.0.0')[0], 2)
@@ -1393,6 +1393,22 @@ class WriteCase(VerbCase):
         self.assertEqual(doc['answer']['note'], 'as planned')
         self.assertIn('REFUSED: Q-9 is not a question', self.refused('questions', 'show', 'Q-9'))
 
+    def test_a_question_the_hub_marked_done_says_so_in_its_line_and_its_show(self):
+        self.ask()
+        self.ask('another')
+        self.ask('a third')
+        self.hub.store.update('questions', 'Q-1000', {
+            'status': 'done', 'done_by': 'hub', 'done_why': 'filed into kit:EX-1',
+            'done_at': '2026-10-24T00:00:00Z'})
+        self.hub.store.update('questions', 'Q-1001', {
+            'status': 'done', 'done_why': 'a one-off\n  go', 'done_at': '2026-10-24T00:00:00Z'})
+        self.assertEqual(self.ok('questions', '--status', 'all'), [
+            'Q-1000 v2 done [kit] which way (done by the hub: filed into kit:EX-1)',
+            'Q-1001 v2 done [kit] another (done: a one-off go)',
+            'Q-1002 v1 open [kit] a third'])
+        self.assertEqual(self.ok('questions', 'show', 'Q-1000')[0],
+                         'Q-1000 v2 done [kit] which way (done by the hub: filed into kit:EX-1)')
+
     def test_questions_show_marks_the_recommended_option_and_prints_context_and_other(self):
         self.ok('questions', 'add', '--title', 'which road', '--class', 'go', '--context-file',
                 self.file('context.md', 'why it matters'), '--option', 'up::go up',
@@ -1627,6 +1643,26 @@ class WriteCase(VerbCase):
         self.assertEqual([(m['id'], m['read'], m['text']) for m in got['items']],
                          [('M-001', False, 'the answer')])
 
+    def test_a_hand_off_is_recorded_and_each_sessions_newest_listed(self):
+        state = os.path.join(self.home, 'state-pm.md')
+        self.assertEqual(self.ok('handoffs'), [])
+        self.assertEqual(self.ok('handoffs', 'add', '--kind', 'handoff', '--state', state,
+                                 '--from', 'pm'), ['RECORDED C-001'])
+        self.assertEqual(self.ok('handoffs', 'add', '--kind', 'stop', '--state', state,
+                                 '--from', 'pm'), ['RECORDED C-002'])
+        got = self.ok('handoffs')
+        self.assertEqual(len(got), 1, got)
+        self.assertTrue(got[0].startswith('C-002 stop from=pm at='), got)
+        self.assertTrue(got[0].endswith(' ' + state), got)
+        self.assertEqual(self.ok('handoffs', '--from', 'kit-9'), [])
+        code, out, err = self.run_cli('handoffs', 'add', '--kind', 'stop', '--state', state,
+                                      '--from', 'kit-9', '--port', self.port)
+        self.assertEqual((code, out), (1, ''))
+        self.assertIn('not a session the hub knows', err)
+        code, out, err = self.run_cli('handoffs', 'add', '--kind', 'pause', '--state', state,
+                                      '--from', 'pm')
+        self.assertEqual((code, out), (2, ''))
+
     def test_a_page_is_published_listed_and_shown(self):
         html = '<h1>Plan</h1>\n<p>café &amp; more</p>\n'
         page = self.file('plan.html', html)
@@ -1680,6 +1716,70 @@ class WriteCase(VerbCase):
         self.assertEqual(len(self.warned), 1, self.warned)
         self.assertTrue(self.warned[0].startswith('WARN questions/Q-1000 repo: '), self.warned)
         self.assertTrue(self.warned[0].endswith('[repo-alias]'), self.warned)
+
+
+class SkillEditCase(VerbCase):
+    """`skill-edit`: an agent shows the owner's text, commits it and says done or fail; the blob
+    it sends is read from its own checkout, and the hub reads the branch again itself."""
+    OLD = '---\nname: builder\n---\nold\n'
+    NEW = '---\nname: builder\n---\nnew\n'
+
+    def setUp(self):
+        VerbCase.setUp(self)
+        from kitlib.hubsite import skilledits
+        from tests.gitfixture import TempRepo
+        self.repo = TempRepo()
+        self.addCleanup(self.repo.cleanup)
+        src = 'content/skills/builder/SKILL.md'
+        self.repo.write(src, self.OLD)
+        self.repo.commit('old', src)
+        self.repo.git('checkout', '-q', '-b', 'kit/edit')
+        self.repo.write(src, self.NEW)
+        self.repo.commit('new', src)
+        self.repo.git('checkout', '-q', 'main')
+        self.blob = lambda t: skilledits.git_blob(t.encode('utf-8'))
+        self.hub.api.kit_blob = lambda branch, path: self.repo.git(
+            'rev-parse', '--verify', '--quiet', '%s:%s' % (branch, path), check=False) or None
+        self.assertEqual(self.hub.store.add('skill_edits', {
+            'status': 'submitted', 'skill': 'builder', 'text': self.NEW,
+            'base_blob': self.blob(self.OLD)}).id, 'E-001')
+
+    def item(self):
+        return self.direct('/skill_edits/E-001')['item']
+
+    def test_show_lists_and_writes_the_owners_text_byte_for_byte(self):
+        self.assertEqual(self.ok('skill-edit'), ['E-001 v1 submitted skill builder'])
+        self.assertEqual(self.ok('skill-edit', 'show', 'E-001'),
+                         ['E-001 v1 submitted skill builder base ' + self.blob(self.OLD)])
+        out = os.path.join(self.home, 'edit.md')
+        self.assertEqual(self.ok('skill-edit', 'show', 'E-001', '--out', out), ['WROTE ' + out])
+        with open(out, 'rb') as f:
+            self.assertEqual(f.read(), self.NEW.encode('utf-8'))
+
+    def test_done_sends_the_branchs_blob_and_the_hub_takes_it(self):
+        self.assertEqual(self.ok('skill-edit', 'done', 'E-001', '--branch', 'kit/edit',
+                                 '--checkout', self.repo.root, '--if-version', '1'),
+                         ['COMMITTED E-001'])
+        d = self.item()
+        self.assertEqual((d['status'], d['branch'], d['blob']),
+                         ('committed', 'kit/edit', self.blob(self.NEW)))
+
+    def test_done_on_a_branch_without_the_text_is_refused_and_nothing_changes(self):
+        err = self.refused('skill-edit', 'done', 'E-001', '--branch', 'main', '--checkout',
+                           self.repo.root, '--if-version', '1')
+        self.assertIn('blob', err)
+        self.assertEqual(self.item()['status'], 'submitted')
+
+    def test_fail_at_a_main_that_moved_on_supersedes_the_edit(self):
+        src = 'content/skills/builder/SKILL.md'
+        self.repo.write(src, self.OLD + 'later\n')
+        self.repo.commit('later', src)
+        self.assertEqual(self.ok('skill-edit', 'fail', 'E-001', '--why', 'the skill changed on main',
+                                 '--at', 'main', '--checkout', self.repo.root, '--if-version', '1'),
+                         ['SUPERSEDED E-001'])
+        d = self.item()
+        self.assertEqual((d['status'], d['source_blob']),
+                         ('superseded', self.blob(self.OLD + 'later\n')))
 
 
 class ForeignCase(CliCase):
@@ -1921,7 +2021,11 @@ class ArgumentCase(CliCase):
              ('to-pm', 'send'), ('to-pm', 'reply', 'P-001', 'text'), ('inbox',),
              ('inbox', 'add', '--text', 't'), ('inbox', 'read', 'M-001'), ('pages',),
              ('pages', 'show', 'plan'), ('approvals',),
-             ('approvals', 'show', 'A-001'), ('pending',), ('wait', '--timeout', '0'))
+             ('approvals', 'show', 'A-001'), ('handoffs',),
+             ('handoffs', 'add', '--kind', 'stop', '--state', 'C:/s.md', '--from', 'pm'),
+             ('skill-edit',), ('skill-edit', 'show', 'E-001'),
+             ('skill-edit', 'fail', 'E-001', '--why', 'w', '--if-version', '1'),
+             ('pending',), ('wait', '--timeout', '0'))
 
     def test_every_verb_that_asks_is_exit_3_with_the_start_command_when_no_server_runs(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
@@ -2104,6 +2208,9 @@ class ArgumentCase(CliCase):
                     (('to-pm', 'reply', 'P-001', 'text'), ('POST', '/to_pm/P-001/reply', 'agent')),
                     (('inbox', 'add', '--text', 't'), ('POST', '/inbox', 'agent')),
                     (('inbox', 'read', 'M-001'), ('POST', '/inbox/M-001/read', 'owner')),
+                    (('handoffs', 'add', '--kind', 'stop', '--state', 'C:/s.md', '--from',
+                      'pm'), ('POST', '/handoffs', 'agent')),
+                    (('handoffs', '--from', 'pm'), ('GET', '/handoffs?from=pm', 'agent')),
                     (('questions', 'add', '--title', 't'), ('POST', '/questions', 'agent')),
                     (('questions', 'log', 'Q-001', '--if-version', '3'),
                      ('POST', '/questions/Q-001/log', 'agent')),

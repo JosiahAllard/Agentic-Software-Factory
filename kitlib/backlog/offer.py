@@ -17,11 +17,9 @@ PARKED = 'parked'
 IN_FLIGHT = 'in flight'
 UNPRIORITISED_OPEN = 'unprioritised+open'
 REVIEW = 'to review'
-OWNER_PRIORITISED = 'owner to prioritise'
 UNCLASSIFIED = 'unclassifiable'
 NOT_READ = 'unreadable'
-BUCKETS = (PULLABLE, HELD, PARKED, IN_FLIGHT, UNPRIORITISED_OPEN, REVIEW, OWNER_PRIORITISED,
-           UNCLASSIFIED, NOT_READ)
+BUCKETS = (PULLABLE, HELD, PARKED, IN_FLIGHT, UNPRIORITISED_OPEN, REVIEW, UNCLASSIFIED, NOT_READ)
 EFFORT_ORDER = {'s': 0, 'm': 1, 'l': 2, '-': 3}
 PROBE_TIMEOUT = 60
 DEFAULT_CAP = 5
@@ -52,8 +50,6 @@ def classify(rec):
     priority = rec.get('priority')
     if priority is None or rmod._priority(priority) is not None:
         return UNCLASSIFIED, 'no readable `priority`'
-    if priority == rmod.OWNER_PRIORITY:
-        return OWNER_PRIORITISED, None
     if priority == '-':
         return UNPRIORITISED_OPEN, None
     if rmod.is_band(priority):
@@ -109,15 +105,9 @@ class Banner(object):
                  '%d unprioritised+open' % self.count(UNPRIORITISED_OPEN)]
         if self.count(REVIEW):
             parts.append('%d %s' % (self.count(REVIEW), REVIEW))
-        for bucket in (PARKED, IN_FLIGHT, OWNER_PRIORITISED, NOT_READ, UNCLASSIFIED):
+        for bucket in (PARKED, IN_FLIGHT, NOT_READ, UNCLASSIFIED):
             if self.count(bucket):
                 parts.append('%d %s' % (self.count(bucket), bucket))
-        minus_one = sum(1 for r in self.snap.readable if r.get('priority') == rmod.OWNER_PRIORITY)
-        # An open `-1` record marked for review sits in REVIEW, not OWNER_PRIORITISED: still open.
-        open_minus_one = self.count(OWNER_PRIORITISED) + sum(
-            1 for r in self.buckets[REVIEW] if r.get('priority') == rmod.OWNER_PRIORITY)
-        if minus_one != open_minus_one:
-            parts.append('%d at priority -1 (%d of them open)' % (minus_one, open_minus_one))
         out = [' | '.join(parts)]
         groups, multi = self.held_groups()
         if self.count(HELD):
@@ -243,14 +233,69 @@ class Offer(object):
 
 
 class PassedOver(object):
-    def __init__(self, rec, rank, why, blocker=None):
-        # `blocker`: `(who, record id)` of the live pull or other session's record whose scope
-        # this one collides with; None for any other reason (`blocker_summary` counts these).
+    def __init__(self, rec, rank, why, blocker=None, pair=None):
+        # `blocker`: `(who, record id)` of the live pull or other session's record whose scope or
+        # resource this one collides with; None for any other reason (`blocker_summary` counts
+        # these). `pair`: `(this record's member, the taken member)` of a scope collision
+        # (`narrowings` reads it); None for any other reason.
         self.rec, self.rank, self.why, self.blocker = rec, rank, why, blocker
+        self.pair = pair
+
+
+# --- resources ------------------------------------------------------------------------------------
+
+def uses(rec):
+    """The record's `uses:` names, each once."""
+    return list(dict.fromkeys(rec.all('uses')))
+
+
+def live_label(rec):
+    return '%s (in flight on %s)' % (rec.id, rec.get('pulled_by') or '?')
+
+
+def resource_load(holding, capacity):
+    """`{name: [the live pulls of `holding` using it]}` for every name `capacity` declares. A name
+    it does not declare counts nothing (`check` flags it). One git-free pass, so `show` shares it
+    with the offer without computing one."""
+    load = {name: [] for name in capacity}
+    for rec in holding:
+        for name in uses(rec):
+            if name in load:
+                load[name].append(rec)
+    return load
+
+
+def capacity_why(name, limit, takers):
+    return 'resource %s at capacity %d, taken by %s' % (name, limit, ', '.join(takers))
+
+
+def undeclared_why(names):
+    return 'uses %s, which .kit.json does not declare' % ', '.join(names)
+
+
+def uses_line(rec, holding, capacity):
+    """`show`'s line: `uses dev-clone (1/1: X on B), gpu (0/1)`."""
+    load = resource_load(holding, capacity)
+    parts = []
+    for name in uses(rec):
+        if name not in capacity:
+            parts.append('%s (not declared in .kit.json)' % name)
+            continue
+        taken = ['%s on %s' % (r.id, r.get('pulled_by') or '?') for r in load[name]]
+        parts.append('%s (%d/%d%s)' % (name, len(taken), capacity[name],
+                                       ': %s' % ', '.join(taken) if taken else ''))
+    return 'uses %s' % ', '.join(parts)
+
+
+def held_for_batch(rec, branch):
+    """The branch `rec` is held for (its `batch:`, set for a topic session) when that is not
+    `branch` (None: no branch, as the main checkout's `next`), else None."""
+    batch = rec.get('batch')
+    return batch if batch is not None and batch != branch else None
 
 
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
-               folded=None):
+               folded=None, capacity=None, branch=None):
     """`((offers, passed), refusals, ranks)`. `holding` are the live pulls whose scopes are taken
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
@@ -262,7 +307,16 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     (kitlib/backlog/roles.py), takes scope a live pull holds.
     `folded(rec)` -> a reason or None: a record of `session` it gives a reason for (its scope
     folds into another live pull's branch, or git cannot tell) is passed over with that reason
-    and takes no scope; it is asked only of a record that would otherwise be offered."""
+    and takes no scope; it is asked only of a record that would otherwise be offered.
+    `capacity` ({resource: limit}; None: none declared) counts `uses:` the way scope is counted:
+    the live pulls of `holding` first, then, in rank order, the records offered above and other
+    sessions' records. A record with no room in any one of its resources is passed over, a live
+    pull named as its blocker; each record taking a place takes one unit of each. A seed is
+    measured against the live pulls alone. A candidate naming a resource `capacity` does not
+    declare is passed over, never offered and never a crash.
+    `branch` is the branch the offer is for: a record batched for another branch
+    (held_for_batch) is passed over as held for that batch, and takes no scope."""
+    capacity = capacity or {}
     ranks = ranked(snap)
     occupied = []
     for rec in holding:
@@ -290,9 +344,18 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
         for m in rec.all('scope'):
             holders.setdefault(m, ('%s (in flight on %s)' % (rec.id, rec.get('pulled_by') or '?'),
                                    (rec.get('pulled_by') or '?', rec.id)))
+    live_takers = {name: [(live_label(r), (r.get('pulled_by') or '?', r.id)) for r in recs]
+                   for name, recs in resource_load(holding, capacity).items()}
+    takers = {name: list(held) for name, held in live_takers.items()}
     for rec in ordered:
         reached.add(id(rec))
         rid = rec.id
+        held = held_for_batch(rec, branch)
+        if held is not None:
+            if own(rec):
+                passed.append(PassedOver(rec, ranks.get(rid, '-'), 'held for the batch on %s'
+                                         % held))
+            continue
         scopes = rec.all('scope')
         errs = [(m, smod.scope_member_error(m, True)) for m in scopes]
         errs = [(m, why) for m, why in errs if why is not None]
@@ -317,7 +380,24 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
                 holder, who = holders.get(hit[0][1]) or (None, None)
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), 'scope %s collides with %s '
                                          'already taken%s' % (hit[0][0], hit[0][1], ' by %s'
-                                         % holder if holder else ''), who))
+                                         % holder if holder else ''), who, hit[0]))
+            continue
+        names = uses(rec)
+        unknown = [n for n in names if n not in capacity]
+        if unknown:
+            if own(rec):
+                passed.append(PassedOver(rec, ranks.get(rid, '-'), undeclared_why(unknown)))
+            continue
+        # As for scope: a seed goes first over the rest of this offer, never over a live pull.
+        room = live_takers if id(rec) in seeded else takers
+        full = [n for n in names if len(room[n]) >= capacity[n]]
+        if full:
+            if own(rec):
+                held = room[full[0]]
+                passed.append(PassedOver(rec, ranks.get(rid, '-'),
+                                         capacity_why(full[0], capacity[full[0]],
+                                                      [label for label, _ in held]),
+                                         next((who for _, who in held if who), None)))
             continue
         if own(rec) and unmet is not None:
             missing = unmet(rec)
@@ -331,13 +411,15 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), why))
                 continue
         occupied.extend(scopes)
-        if not own(rec):
-            for m in scopes:
-                holders.setdefault(m, ('%s (session %s)' % (rid, rec.get('session') or 'none'),
-                                       ('session %s' % (rec.get('session') or 'none'), rid)))
-            continue
+        taker = (('%s (offered above)' % rid, None) if own(rec) else
+                 ('%s (session %s)' % (rid, rec.get('session') or 'none'),
+                  ('session %s' % (rec.get('session') or 'none'), rid)))
         for m in scopes:
-            holders.setdefault(m, ('%s (offered above)' % rid, None))
+            holders.setdefault(m, taker)
+        for name in names:
+            takers[name].append(taker)
+        if not own(rec):
+            continue
         offers.append(Offer(rec, ranks.get(rid, '-'), id(rec) in seeded))
         if cap is not None and len(offers) >= cap:
             break
@@ -360,6 +442,189 @@ def blocker_summary(passed, top=5):
     return ['blocks %d: %s (%s)' % (n, who, rid) for (who, rid), n in ordered]
 
 
+# --- a short offer's causes: releasable holds and narrowable pass-overs (`next`) -----------------
+
+HUB_TIMEOUT_S = 3       # one hub listing; `next` never waits longer on the hub than this
+NARROW_SHOWN = 8        # changed files a NARROW line names before `+N more`
+
+
+def is_broad(member):
+    """A whole-folder glob (`x/**`) or a literal doc file (`*.md`): the scope members whose
+    collision with a live pull `next` names a narrowing for (`narrowings`)."""
+    if member.endswith(smod.GLOB_SUFFIX):
+        return True
+    return member.lower().endswith('.md') and not any(c in member for c in smod.WILDCARD_CHARS)
+
+
+def hub_statuses(listing=None, timeout=HUB_TIMEOUT_S):
+    """`({hub id: status}, None)` of every hub question and to-do on this machine, read with the
+    agent token (read only); `(None, why)` on any failure, never a raise. `listing(collection)`
+    gives a collection's documents (default: the hub client, `timeout` seconds a call)."""
+    try:
+        if listing is None:
+            from kitlib.hubsite import client, settings
+            hub = client.Client(settings.load().port, timeout=timeout)
+
+            def listing(coll):
+                return hub.listing(coll, status='all', role=client.AGENT)
+        out = {}
+        for coll in ('questions', 'todos'):
+            for doc in listing(coll) or ():
+                if isinstance(doc, dict) and isinstance(doc.get('status'), str):
+                    out[str(doc.get('id'))] = doc['status']
+        return out, None
+    except Exception as exc:            # noqa: BLE001 - any failure is the one note line
+        return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
+
+
+def closed_reader(snap, history):
+    """`closed(rid)` for conditions.releasable: the short sha of the store commit that closed
+    `rid`, or None when it is still live, was retired or deleted, or was never closed (as
+    `unmet_requires` reads an `item:` requirement)."""
+    def closed(rid):
+        if snap.get(rid) is not None:
+            return None
+        last = history(rid)
+        return last.split(' ', 1)[0] if last and re.match(r'^\S+ closes ', last) else None
+    return closed
+
+
+def held_of(snap, session):
+    """The held records of `session`, by id."""
+    return sorted((r for r in snap.records if classify(r)[0] == HELD
+                   and r.get('session') == session and r.readable), key=lambda r: r.id)
+
+
+def cites_hub(recs):
+    """True when any record in `recs` cites a hub id where conditions.releasable reads one."""
+    from . import conditions as cmod
+    return any(cmod.cited_ids(' '.join([r.get('owner_ask') or ''] + r.all('until')))
+               for r in recs)
+
+
+def releasable_holds(snap, session, history, hub=None):
+    """`([(rec, RELEASABLE line)], note)`: the held records of `session` whose cited end is met
+    (conditions.releasable). `hub()` -> `(statuses, why)` (default `hub_statuses`) is asked only
+    when one of them cites a hub id; a hub that cannot be read gives the one `note` line, and
+    then only `item:` ends are judged. `history(rid)` is the store's (Context.history)."""
+    from . import conditions as cmod
+    held = held_of(snap, session)
+    if not held:
+        return [], None
+    statuses, note = {}, None
+    if cites_hub(held):
+        statuses, why = (hub or hub_statuses)()
+        if statuses is None:
+            statuses, note = {}, 'releasable: hub not read (%s); Q-/T- holds not checked' % why
+    closed = closed_reader(snap, history)
+    ranks = ranked(snap)
+    out = []
+    for rec in held:
+        for member, why, reason in cmod.releasable(rec, statuses.get, closed):
+            out.append((rec, releasable_line(rec, rank_label(rec, ranks), member, why, reason)))
+    return out, note
+
+
+def releasable_line(rec, rank, member, why, reason):
+    """`next`'s RELEASABLE line: what is met, and the `unblock` that ends the hold. An `owner`
+    member is the PM's or the owner's to clear (the unblock-owner row)."""
+    who = "the PM's (unblock-owner): " if member == 'owner' else ''
+    return 'RELEASABLE %s (rank %s): %s -> %s`unblock %s --on %s --reason "%s"`' % (
+        rec.id, rank, why, who, rec.id, member, reason)
+
+
+def _under(member, paths):
+    out = []
+    for p in paths:
+        try:
+            if smod.members_collide(member, p):
+                out.append(p)
+        except smod.UndecidableScope:
+            out.append(p)
+    return out
+
+
+def _named(paths):
+    shown = ', '.join(paths[:NARROW_SHOWN])
+    return shown + (' +%d more' % (len(paths) - NARROW_SHOWN) if len(paths) > NARROW_SHOWN else '')
+
+
+def wants_narrowing(passed):
+    """True when a record in `passed` collided on scope with a broad member (`narrowings` would
+    ask the branch diffs)."""
+    return any(p.pair is not None and p.blocker is not None
+               and (is_broad(p.pair[0]) or is_broad(p.pair[1])) for p in passed)
+
+
+def narrowings(passed, holding, changes, unknown):
+    """`next`'s NARROW lines: one for each record passed over on a scope collision with a live
+    pull (in `holding`) where either member is broad (`is_broad`). `changes` and `unknown` are
+    plan `_live_changes`'s: `{branch: [(label, paths)]}`, the paths each live branch changed
+    since its merge base with the code main, and `{branch: error}`. A broad taken member gets the
+    `set --scope` that narrows the live pull to the files its branch changed there, unless those
+    files overlap this record too (then it waits for the landing); a broad member of this record
+    only gets the overlap named."""
+    live = {r.id: r for r in holding}
+    out = []
+    for p in passed:
+        if p.pair is None or p.blocker is None:
+            continue
+        other = live.get(p.blocker[1])
+        if other is None or other.get('pulled_by') != p.blocker[0]:
+            continue
+        mine, theirs = p.pair
+        if not (is_broad(mine) or is_broad(theirs)):
+            continue
+        branch = other.get('pulled_by')
+        head = 'NARROW %s (rank %s): %s collides with %s of %s on %s' % (
+            p.rec.id, p.rank, mine, theirs, other.id, branch)
+        if branch in unknown:
+            out.append('%s; cannot tell what %s changed (%s)' % (head, branch, unknown[branch]))
+            continue
+        if branch not in changes:
+            out.append('%s; %s\'s diff was not compared' % (head, branch))
+            continue
+        paths = sorted(set(q for _label, qs in changes[branch] for q in qs))
+        there = _under(theirs, paths)
+        if not there:
+            out.append('%s, which changed nothing under %s yet' % (head, theirs))
+            continue
+        head = '%s, which changed %d file(s) there: %s' % (head, len(there), _named(there))
+        overlap = _under(mine, there)
+        if is_broad(theirs) and not overlap:
+            keep = [m for m in other.all('scope') if m != theirs]
+            keep += [q for q in there if q not in keep]
+            out.append('%s -> `set %s %s`' % (
+                head, other.id, ' '.join('--scope %s' % m for m in keep)))
+        elif is_broad(mine) and not is_broad(theirs):
+            out.append('%s; %s is broad: narrow %s\'s own scope to leave out %s' % (
+                head, mine, p.rec.id, theirs))
+        else:
+            out.append('%s; %s overlaps that work too (%s): pull %s after %s lands' % (
+                head, mine, _named(overlap), p.rec.id, branch))
+    return out
+
+
+def pass_counts(passed):
+    """`(n, [(kind, count)])` of the passed-over records by reason, for `next`'s counts line."""
+    kinds = [('scope', 0), ('fold', 0), ('resource', 0), ('not reached', 0), ('other', 0)]
+    counts = dict(kinds)
+    for p in passed:
+        why = p.why
+        if p.pair is not None or why.startswith('scope undecidable'):
+            kind = 'scope'
+        elif why.startswith('scope overlaps the work of') or why.startswith('cannot tell whether'):
+            kind = 'fold'
+        elif why.startswith('resource ') or why.startswith('uses '):
+            kind = 'resource'
+        elif why.startswith('not reached'):
+            kind = 'not reached'
+        else:
+            kind = 'other'
+        counts[kind] += 1
+    return len(passed), [(k, counts[k]) for k, _ in kinds]
+
+
 def not_offered_why(rec, passed, session=None):
     """Why `rec` is not in the offer, named."""
     bucket, why = classify(rec)
@@ -372,8 +637,6 @@ def not_offered_why(rec, passed, session=None):
                 % (rec.get('review'), rec.id))
     if bucket == UNPRIORITISED_OPEN:
         return 'it is unprioritised, so it has no rank and is never offered'
-    if bucket == OWNER_PRIORITISED:
-        return 'it is `priority: -1`, the owner\'s to price, so it has no rank'
     if bucket == UNCLASSIFIED:
         return 'it cannot be classified: %s' % why
     if rec.get('session') != session:

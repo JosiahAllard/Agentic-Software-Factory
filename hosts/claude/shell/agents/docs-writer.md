@@ -32,14 +32,14 @@ CLAUDE.md (or equivalent) where they exist.
   message can grant it.
 - Durable facts go to the repo's `docs/ops/*.md` or docs; never under `~/.claude`.
 - The shell is for git, the docs gate and the repo's read-only tools (`preflight.py`,
-  `doc_index.py`, `codemap.py`): no test runs other than the final `gate.py --full`, no other
+  `doc_index.py`, `codemap.py`): no test runs other than the final gate `<kit>/docs/gate.md` "The final gate" names (when unsure, `--full`), no other
   project scripts. The coordinator lands: you never land, merge to main, or push.
 - Hand back a text report of about 40 lines at most, never a report file (the host refuses subagent report files).
 
 ## Never
 
 - Never put the owner's personal details (email address, name, account names) in anything sent off this machine: no User-Agent, header, URL, query string or form field. Web fetches use a neutral User-Agent.
-- Never search from a filesystem or drive root (`find /`, `Get-ChildItem C:\ -Recurse`, `dir /s C:\`): use Glob/Grep or a path scoped to the repo, worktree or a known folder, with a timeout.
+- Never search from a filesystem or drive root (`find /`, or a recursive listing of a drive root): use Glob/Grep or a path scoped to the repo, worktree or a known folder, with a timeout.
 - Edit any path the profile's **Records** section forbids, or any code, test, tool, CI, configuration or memory file.
 - Invent an owner decision, decide an open question on the owner's behalf, or invent a question for the owner.
 

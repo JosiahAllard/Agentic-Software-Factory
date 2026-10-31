@@ -14,9 +14,9 @@ item itself is read through the hub. Nothing here imports a host: the delivery o
 
 What fires (a fingerprint per item: a question's phase (question_phase), answer.at, a digest of
 its answer and, once it is a standing rule, standing.at, a to-do's status and done_at, an
-approval's status, decided_at and phase, a story's status and submitted_at, a note to the PM's
-status and sent_at; only a changed fingerprint fires, so a pm_ack, which leaves them alone, never
-does):
+approval's status, decided_at and phase, a story's and a skill edit's status and submitted_at,
+a note to the PM's status and sent_at; only a changed fingerprint fires, so a pm_ack, which leaves
+them alone, never does):
   answered    a question answered or answered again: not bound to a record, its filing failed,
               or filed with no `filed_as` (read as before that field)
   filed       a question's answer filed into its record, with `filed_as` (Filed answers below);
@@ -29,7 +29,8 @@ does):
   expiring    an approval still approved and not consumed EXPIRING_S after its decision: the
               one reminder before it expires (APPROVED_TTL_S), so a missed first push cannot
               lose it
-  submitted   a story the owner submitted (or submitted again): to the PM only
+  submitted   a story the owner submitted (or submitted again): to the PM only; a skill edit
+              the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
 Recipients: the item's `from` (a launcher key, or a to-do's free name; for an approval, which has
 no `from`, Api.repo_key of its repo) unless it is the PM's (AGENT_FROM, OWNER_FROM, empty, or
@@ -38,14 +39,34 @@ is_pm), and the PM (PM_KEY) always, once.
 Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_as):
   pulled      its asker alone: someone is working on the record (the PM when the PM asked,
               sent once: the worker on the record reads the answer)
-  freed       the PM alone, sent once, and only when no live session can take the record up:
-              the delivery object's resolve(key) (None: none live) finds none of the asker, the
-              record's repository and the question's repo; with no resolve the PM is told
-  held        nobody: the record waits on more, and the asker reads it in its pending list
-              (the PM start's digest counts the answers filed since the last start that are
-              still `filed`, waiting for their askers: a logged or done one drops out)
+  freed, held one recipient (_live_session: the delivery object's resolve(key), None for
+              none live; no resolve counts as none live): the asker while it is live, until it
+              picks it up; else the coordinator of the record's repository or the question's
+              repo (each through Api.repo_key, then as it is) while one is live, sent once;
+              else, freed: the PM, sent once (start a coordinator); held: the asker all the
+              same (it reads it at its next start too). The PM that asked is told once. A held
+              push says plainly the record is not freed: its park or block stays.
 An answer that is a standing rule (`standing`) also goes to the PM, who logs it, whatever its
 filed_as; a `standing` change of an answer already pushed adds the PM to the push still owed.
+
+Done by the hub (docs/action-hub.md "Done by the hub"): a filed answer auto_done_ok passes (a
+known filed_as, no standing rule, no option or answer that is a delegation run line) is marked
+done by this worker once its asker has it, never in the filing's own write: status `done`,
+done_by `hub`, done_why `filed into <repo>:<id>`, done_at, via `hub-push`. The entry keeps the
+asker's key (`done`: its `from`, or the PM's when the PM asked) and the question's version when
+the push fired (`version`). The asker has it (`has_it`) when its own pick-up acknowledges it
+(handed_to names it), when its once push is written, or when it picked the answer up before the
+push fired; one that held an earlier answer and is not sent this one gets no done. An asker the push is not sent to
+(the record's coordinator or the PM's freed ping stands in for it) is a `silent` recipient:
+never sent, left out of `undelivered`, acknowledged as any other and dropped at GIVE_UP_S with
+no gave-up line, so its pending item, and a stopped coordinator's wake on it, stay until it
+reads it. Only once every recipient is done with the entry is the done written: so the `filed`
+push and the `freed` ping are never cut short. The write is pinned to `version`: a new answer,
+a promote, an asker's own log or done or any other write since wins, and the question stays as it
+is (logged here). A standing rule, an unbound answer, a classed one and one whose filing failed
+are never marked done here. A question the hub marked done takes a new answer and a promote
+(kitlib.hubsite.api): a new answer forgets the old hand-over there, so it is a first answer here
+(_first), and a promote of the same answer is the `standing` event.
 
 An approval's phase is read at the worker's clock: 'decided' while it is decided and pending,
 'expiring' from EXPIRING_S after decided_at while it is still approved, None once it is not
@@ -66,6 +87,8 @@ Each recipient is sent each item until it is acknowledged:
                            `freed` ping: its first written try
   PM, to-do                pm_ack, or no longer done (an owner-added one: pm_ack)
   PM, story or note        its status changed (hub stories set, hub to-pm reply)
+  either, skill edit       its status changed (hub skill-edit done or fail; the owner's
+                           withdraw)
   either                   the item is withdrawn, or a newer fingerprint replaces the push
 A recipient that already held the item when a first answer or done mark fired picked that one
 up before the worker saw it, and is not sent it. One that held it when a re-answer or a re-done
@@ -87,25 +110,42 @@ poll() never does, watch() does once. A beat at most WATCHER_STALE_S old is 'up'
 'down', none readable 'none'. When a watcher seen 'up' is no longer, one `watcher down` push goes
 to the PM alone, tried on the same schedule until a try is written or GIVE_UP_S passes; a fresh
 beat acknowledges one still owed, and only after a fresh beat can it fire again. Nothing fires
-for a watcher this worker never saw fresh. watcher_status() -> {"state", "age"} (age in whole
-seconds, None with no beat) is the snapshot's and GET health's `watcher` (Api.watcher_seen).
+for a watcher this worker never saw fresh. The hub's session-watch job stands in for the beat:
+at each read its health block (`jobs`, default Api.jobs_seen: GET health jobs) that
+kitlib.pmwatch.session_job_healthy counts as covering (not failing, a success at most
+SESSION_JOB_STALE_S old) is 'up' too, so a pm_watch that stepped aside or stopped while the job
+pushes its checks is no `watcher down`. watcher_status() -> {"state", "age"} (age in whole
+seconds of the beat, None with no beat; state 'up' also while the job covers) is the
+snapshot's and GET health's `watcher` (Api.watcher_seen).
+
+Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
+thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
+one is given (one owed push per job name: a newer event of the same job replaces one still owed,
+its detail with it; an event in JOB_EACH, `unblocked` and the usage crossover's words, is owed
+once per detail instead, beside the rest, and its text says what to do: each names one thing); the
+thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
+written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
+drops them, and the job pushes again when it fails again.
 
 Files, in `folder` (the launcher's state_dir):
   push-outbox.json         {"<kind>:<id>": {kind, id, event, fingerprint, status, repo, from,
-                           first_at, recipients: {key: {attempt, next_at, last, once}}}} (a
-                           question's also filed_as, record, record_repo, freed, asker_pm and
-                           standing when they apply: its guidance), times in
+                           first_at, recipients: {key: {attempt, next_at, last, once,
+                           silent}}}} (a question's also filed_as, record, record_repo, freed,
+                           asker_pm, coordinator and standing when they apply: its guidance;
+                           done, version and has_it: "Done by the hub"), times in
                            epoch seconds, replaced whole after each round that changed it. At
                            start an entry whose item changed since is fired afresh; one whose
                            item is gone is dropped; nothing else already pending is sent again.
   push-undelivered.jsonl   one line per try that was not written, and per give-up:
                            {ts, kind, id, status, recipient, name, attempt, reason}; reason is the
                            state, `ambiguous` (an extra line, written or not) or `gave-up`;
-                           a `watcher down` try is kind watcher, id down. Never
+                           a `watcher down` try is kind watcher, id down; a job push's
+                           kind job, id the job's name, status its event. Never
                            a token or any item text. Rotated once to .1 at LOG_MAX.
 
 The text is fixed: a header `[hub push] <kind> <id> <status> repo:<repo> from:<from>
-route:<recipient> attempt:<k>` (each field cut to [A-Za-z0-9._:-], 64 characters) and one line of
+route:<recipient> attempt:<k>` (`[hub push] job <name> <event> [detail:<detail> ]route:<recipient>
+attempt:<k>` for a job push; each field cut to [A-Za-z0-9._:-], 64 characters) and one line of
 what to do. It never carries a title, a note or an answer: those are free text and the
 recipient takes the message as a prompt.
 
@@ -134,7 +174,7 @@ import threading
 import time
 
 from kitlib import pmwatch
-from kitlib.hubsite.api import AGENT_FROM, OWNER_FROM
+from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
@@ -149,9 +189,55 @@ STOP_S = 15                                 # Hub.close's join: longer than a de
 MAX_ITEMS = 20                              # items in one message
 LOG_MAX = 1 << 20                           # push-undelivered.jsonl rotates past this
 OUTBOX = 'push-outbox.json'
+# Job events owed once per detail rather than once per job: each names one thing the PM must
+# hear about (kitlib.hubjobs.unblock_conditions: one opened record each; usage_crossover: one
+# session or account each), so a second one in a round must not replace the first.
+_CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usage-crossover.log): '
+# the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`
+_PM_RESUMES = (' When detail is pm (you, the PM), no crossing of yours is open now: the '
+               'checkpoint message no longer holds, so resume your normal work.')
+JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
+                         'record named in detail (<repo>:<ID>) is unblocked; `backlog.py show '
+                         '<ID>` gives the commit. No reply is needed.',
+            'crossing': _CROSSOVER + 'detail (<session>:a<account>) nears the weekly limit and the '
+                        'hub is moving it there. Do not hand it off or stop it yourself: when it '
+                        'replies ready, the hub runs the next step. No reply is needed. Detail '
+                        'pm:a<account> is you, the PM: follow the checkpoint message the hub sent.',
+            'would-cross': _CROSSOVER + 'would move detail (<session>:a<account>) now, but '
+                           'launcher.usage_crossover is notify: nothing was stopped or started. '
+                           'For your information; no reply is needed.',
+            'stalled': _CROSSOVER + 'detail stands stopped at the weekly limit. On `full` the hub '
+                       'stops it and starts a successor on its state note; otherwise it is yours.'
+                       + _PM_RESUMES,
+            'crossed': _CROSSOVER + 'the session in detail has taken over and its old session has '
+                       'gone. For your information; no reply is needed. When detail is the PM, '
+                       'coordinators.json names it and the old PM window stays until the owner '
+                       'closes it.',
+            'cross-cleared': _CROSSOVER + 'dropped the crossing of detail before it finished; the '
+                             'log says why and what it had done. For your information; no reply '
+                             'is needed.' + _PM_RESUMES,
+            'cross-failed': _CROSSOVER + 'gave up on detail: it needs you. The log says why.'
+                            + _PM_RESUMES,
+            'no-ready': _CROSSOVER + 'detail has not replied ready to its checkpoint message (or '
+                        'written its ready file), or has not gone quiet on a state note written '
+                        'since, in 30 minutes; the hub still waits. Check on it.',
+            'no-checkin': _CROSSOVER + 'the successor of detail has not recorded its check-in (or '
+                          'written its check-in file) in 30 minutes; its old session stays idle (a '
+                          'consultant was stopped first, and the hub stops watching it). Check on '
+                          'the successor.',
+            'no-room': _CROSSOVER + 'detail needs moving and no account has room: nothing was '
+                       'stopped or started. A stalled session wakes at its reset.'
+                       + _PM_RESUMES,
+            'pm-limit': _CROSSOVER + 'the PM session is at the weekly limit and this job cannot '
+                        'move it: it is not a launched session (the desktop app), or '
+                        'coordinators.json records no pm_session_id or pm_account. It is yours to '
+                        'hand off.',
+            'unmanaged': _CROSSOVER + 'a session with no sessions.json entry is at the weekly limit '
+                         'and this job never crosses it; detail is <session>:<reason> (the reasons: '
+                         'docs/launcher.md "Usage crossover"). It is left to you.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
-               'stories': 'story', 'to_pm': 'to_pm'}
+               'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}
 ANSWERED = ('answered', 'filed')          # a question's statuses that hold an unread answer
 FILED_AS = ('pulled', 'freed', 'held')    # what a filed answer did to its record (api._filed_as)
 EVENTS = ('answered', 'filed', 'standing', 'done', 'reopened', 'added', 'decided', 'expiring',
@@ -160,6 +246,11 @@ EXPIRING_S = 20 * 3600                      # after decided_at: an approved one'
 WATCHER_STALE_S = 300                       # a heartbeat older than this: the watcher is down
                                             # (kitlib.pmstart BEAT_STALE, the same rule)
 WATCHER_POLL_S = 30                         # between heartbeat reads on the thread
+DONE_BY = HUB_DONE_BY                       # a question's done_by when this worker marked it done
+DONE_VIA = 'hub-push'                       # the `via` of that write
+# a delegation run line (kitlib.delegations.run run_line, `D-nnn` its schema.ID): not imported,
+# kitlib.delegations imports this package
+RUN_LINE = re.compile(r'run D-[0-9]{3,}(?: |\Z)')
 _FIELD = re.compile(r'[^A-Za-z0-9._:-]')
 
 Sent = collections.namedtuple('Sent', 'state name session ambiguous')
@@ -212,6 +303,22 @@ def question_phase(doc):
     return status
 
 
+def auto_done_ok(doc):
+    """True when question doc is one the hub marks done itself once its asker has the answer
+    (module docstring "Done by the hub"): filed into its record with a known `filed_as`, not a
+    standing rule (the PM logs it), and with no option and no answer that is a delegation run
+    line (kitlib.delegations.run hub_order runs only a logged question)."""
+    if doc.get('status') != 'filed' or doc.get('filed_as') not in FILED_AS:
+        return False
+    if not isinstance(doc.get('record'), dict) or doc.get('standing') is not None:
+        return False
+    options = doc.get('options') if isinstance(doc.get('options'), list) else []
+    labels = [o.get('label') for o in options if isinstance(o, dict)]
+    answer = doc.get('answer') if isinstance(doc.get('answer'), dict) else {}
+    labels.append(answer.get('label'))
+    return not any(isinstance(t, str) and RUN_LINE.match(t.strip()) for t in labels)
+
+
 def fingerprint(kind, doc, now=None):
     """What a push is about: a question's phase (question_phase) and answer, and the time it
     was made a standing rule when it is one, a to-do's status and done_at, an approval's status,
@@ -229,7 +336,7 @@ def fingerprint(kind, doc, now=None):
         if isinstance(standing, dict):
             out.append(standing.get('at'))
         return out
-    if kind == 'story':
+    if kind in ('story', 'skill_edit'):
         return [doc.get('status'), doc.get('submitted_at')]
     if kind == 'to_pm':
         return [doc.get('status'), doc.get('sent_at')]
@@ -246,11 +353,15 @@ def trigger(kind, doc, old, now=None):
         phase = question_phase(doc)
         if phase not in ('answered', 'filed'):
             return None
+        fp = fingerprint(kind, doc)
         if (isinstance(doc.get('standing'), dict) and old is not None
-                and list(old[:3]) == fingerprint(kind, doc)[:3]):
-            return 'standing'           # the same answer, made a standing rule since
+                and (list(old[:3]) == fp[:3]
+                     or (old[0] == 'done' and list(old[1:3]) == fp[1:3]))):
+            # the same answer, made a standing rule since (from `done` too: the promote of one
+            # the hub marked done, api _promote, puts it back to filed)
+            return 'standing'
         return phase
-    if kind == 'story':
+    if kind in ('story', 'skill_edit'):
         return 'submitted' if status == 'submitted' else None
     if kind == 'to_pm':
         return 'sent' if status == 'sent' else None
@@ -282,6 +393,24 @@ def _question_guidance(doc_id, event, recipient, entry):
         said.append('The owner\'s answer to your question is filed into record %s, which is '
                     'being worked on, so its worker reads it: hub view %s. For your information, '
                     'no ack needed.' % (record, doc_id))
+    elif (event == 'filed' and entry.get('filed_as') in ('freed', 'held')
+          and not (recipient == PM_KEY and (entry.get('freed') or not entry.get('asker_pm')))):
+        # to the PM only when it asked (the freed ping and a standing rule say their own)
+        if entry.get('filed_as') == 'held':
+            said.append('The owner\'s answer is filed but does not free record %s: the record '
+                        'stays as it was (still parked or blocked if it was), so do not take it '
+                        'up as freed; act on what the answer says.' % record)
+        else:
+            said.append('The owner\'s answer is filed and frees record %s: its park or block '
+                        'ended, and it is open to take up.' % record)
+        if recipient == field(entry.get('coordinator')):
+            said.append('It was asked by %s, which is not running: hub view %s. For your '
+                        'information, no ack needed.' % (field(entry.get('from')), doc_id))
+        elif recipient == PM_KEY:
+            said.append('hub view %s. For your information, no ack needed.' % doc_id)
+        else:
+            said.append('Read it: hub pending --for %s (or hub view %s). Picking it up '
+                        'acknowledges this push.' % (recipient, doc_id))
     elif event == 'answered':
         said.append('Read it: hub pending --for %s (or hub view %s). Picking it up acknowledges '
                     'this push.' % (recipient, doc_id))
@@ -300,6 +429,10 @@ def _question_guidance(doc_id, event, recipient, entry):
 def guidance(kind, doc_id, event, recipient, entry=None):
     if kind == 'question' and entry is not None:
         return _question_guidance(doc_id, event, recipient, entry)
+    if kind == 'skill_edit':
+        return ('The owner submitted an edit of a kit skill: hub skill-edit show %s --out FILE, '
+                'then follow skill hub-ops "Skill edits" (its done or fail acknowledges this '
+                'push).' % doc_id)
     if event == 'decided':
         return ('Decided by the owner: hub pending --for %s (or hub approvals show %s).'
                 % (recipient, doc_id))
@@ -323,10 +456,12 @@ def guidance(kind, doc_id, event, recipient, entry=None):
 
 
 class PushWorker(object):
-    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None):
+    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None):
         self.store, self.api, self.push, self.folder = store, api, push, folder
         self.clock = clock or time.time
         self.watcher = watcher          # None: watcher_heartbeat, looked up at each read
+        self.jobs = jobs                # None: the api's jobs_seen (GET health jobs), at each read
+        self._job_up = False            # the session-watch job covered at the latest read
         self.log = log or (lambda text: None)
         self._stop = threading.Event()
         self._thread = None
@@ -342,6 +477,10 @@ class PushWorker(object):
         self._watched = None            # the clock of the latest heartbeat read, None before
         self._armed = False             # seen 'up' since the last `watcher down` fired
         self._down = None               # the `watcher down` owed: {attempt, next_at, first_at}
+        # job name (or a JOB_EACH event's (name, event, detail)) -> the job push owed:
+        # {name, event, detail, attempt, next_at, first_at}
+        self._jobs = {}
+        self._jobs_lock = threading.Lock()  # job_event is called on a job's thread
         if api is not None:
             api.push_status = self.status   # the snapshot's `push` (Api.push_seen)
             api.watcher_status = self.watcher_status    # its `watcher` (Api.watcher_seen)
@@ -391,6 +530,7 @@ class PushWorker(object):
                     self._round(changes)
                     if self._watched is None or self.clock() - self._watched >= WATCHER_POLL_S:
                         self.watch()
+                    self.send_jobs()
                     self._save()                    # each round: an unclean exit loses no more
                     self._summarize()
                 except HubError as e:
@@ -423,9 +563,21 @@ class PushWorker(object):
         any thread."""
         beat = self._beat
         if beat is None:
-            return {'state': 'none', 'age': None}
+            return {'state': 'up' if self._job_up else 'none', 'age': None}
         age = max(0, int(self.clock() - beat))
-        return {'state': 'up' if age <= WATCHER_STALE_S else 'down', 'age': age}
+        return {'state': 'up' if age <= WATCHER_STALE_S or self._job_up else 'down', 'age': age}
+
+    def _session_job_up(self, now):
+        """True when the hub's session-watch job covers pm_watch's checks (module docstring
+        "Watcher"). A reader that raises is False."""
+        try:
+            read = self.jobs or getattr(self.api, 'jobs_seen', None)
+            blocks = read() if read is not None else None
+            block = blocks.get(pmwatch.SESSION_JOB) if isinstance(blocks, dict) else None
+            return pmwatch.session_job_healthy(block, now)
+        except Exception as e:          # noqa: BLE001 - an unreadable job status covers nothing
+            self.log('push: session-watch status unreadable: %s' % type(e).__name__)
+            return False
 
     def watch(self):
         """Read the watcher's heartbeat and send the `watcher down` push when it is due (module
@@ -440,7 +592,8 @@ class PushWorker(object):
             self.log('push: watcher heartbeat unreadable: %s' % type(e).__name__)
             beat = None
         self._beat = beat
-        if beat is not None and now - beat <= WATCHER_STALE_S:
+        self._job_up = self._session_job_up(now)
+        if (beat is not None and now - beat <= WATCHER_STALE_S) or self._job_up:
             self._armed, self._down = True, None    # fresh: acknowledges a push still owed
         elif self._armed:
             self._armed = False
@@ -457,8 +610,9 @@ class PushWorker(object):
             return
         age = 'none' if beat is None else str(int(now - beat))
         text = ('[hub push] watcher down age:%s route:%s attempt:%d\n'
-                'The PM watcher (pm_watch) has no fresh heartbeat: it stopped or hung. Start it '
-                'again (docs/pm-watch.md); a fresh heartbeat acknowledges this push.'
+                'The PM watcher (pm_watch) has no fresh heartbeat and the hub session-watch job is '
+                'not covering it: it stopped or hung. Start it again (docs/pm-watch.md); a fresh '
+                'heartbeat acknowledges this push.'
                 % (field(age), field(PM_KEY), down['attempt'] + 1))
         sent = self._deliver(PM_KEY, text)
         self._last = sent.state
@@ -473,6 +627,63 @@ class PushWorker(object):
         if sent.state == WRITTEN:
             self._down = None
         self._summarize()
+
+    def job_event(self, name, event, detail=None):
+        """Owe the PM one job push: a timed job's `event` (kitlib.hubsite.jobs: `failing`,
+        `recovered`, or a job's own word) and its optional `detail` (a `detail:` header field),
+        sent by the thread (module docstring "Jobs"). A newer event of the same job replaces one
+        still owed, detail and all, except an event in JOB_EACH, owed once per detail beside
+        the job's other pushes. Any thread."""
+        slot = (name, event, detail) if event in JOB_EACH else name
+        with self._jobs_lock:
+            self._jobs[slot] = {'name': name, 'event': event, 'detail': detail, 'attempt': 0,
+                                'next_at': self.clock(), 'first_at': None}
+
+    def send_jobs(self):
+        """Send each job push that is due (module docstring "Jobs"): the thread's step every
+        round, and a test's."""
+        now = self.clock()
+        with self._jobs_lock:
+            due = [(n, o) for n, o in self._jobs.items()]
+        for slot, owed in due:
+            if self._stop.is_set():
+                return
+            name = owed['name']
+            entry = {'kind': 'job', 'id': name, 'status': owed['event']}
+            if owed['first_at'] is not None and now - owed['first_at'] >= GIVE_UP_S:
+                self._note(entry, PM_KEY, None, owed['attempt'], GAVE_UP)
+                self._forget_job(slot, owed)
+                continue
+            if owed['next_at'] > now:
+                continue
+            said = owed.get('detail')
+            text = ('[hub push] job %s %s%s route:%s attempt:%d\n'
+                    % (field(name), field(owed['event']),
+                       '' if said is None else ' detail:' + field(said), field(PM_KEY),
+                       owed['attempt'] + 1))
+            text += JOB_EACH.get(owed['event']) or (
+                'A hub timed job reported this: hub health shows its state, note and error '
+                'under jobs.%s. For your information; no reply is needed.' % field(name))
+            sent = self._deliver(PM_KEY, text)
+            self._last = sent.state
+            owed['attempt'] += 1
+            owed['next_at'] = now + schedule(owed['attempt'])
+            if owed['first_at'] is None:
+                owed['first_at'] = now
+            if sent.state != WRITTEN:
+                self._note(entry, PM_KEY, sent.name, owed['attempt'], sent.state)
+            if sent.ambiguous:
+                self._note(entry, PM_KEY, sent.name, owed['attempt'], AMBIGUOUS)
+            if sent.state == WRITTEN:
+                self._forget_job(slot, owed)
+            self._summarize()
+
+    def _forget_job(self, slot, owed):
+        """Drop the owed push in `slot` (a job name, or a JOB_EACH event's (name, event,
+        detail)), unless job_event replaced it meanwhile."""
+        with self._jobs_lock:
+            if self._jobs.get(slot) is owed:
+                del self._jobs[slot]
 
     def _deliver(self, recipient, text):
         """Sent of one deliver: one that raises, or answers a state not known, is UNCERTAIN."""
@@ -489,7 +700,8 @@ class PushWorker(object):
 
     def _summarize(self):
         owed = sum(1 for e in self._outbox.values()
-                   if any(st.get('last') != WRITTEN for st in e['recipients'].values()))
+                   if any(st.get('last') != WRITTEN and not st.get('silent')
+                          for st in e['recipients'].values()))
         self._status = {'state': 'up' if self._last in (None, WRITTEN) else 'down',
                         'last': self._last, 'undelivered': owed}
 
@@ -583,6 +795,8 @@ class PushWorker(object):
             sender = self._repo_key(doc.get('repo'))    # no `from`: its repository's coordinator
         elif kind in ('story', 'to_pm'):
             sender = ''                 # the owner's own, for the PM
+        elif kind == 'skill_edit':
+            sender = self._kit_key()    # the kit's coordinator commits it
         else:
             sender = doc.get('from') if isinstance(doc.get('from'), str) else ''
         keys = [PM_KEY]
@@ -638,6 +852,11 @@ class PushWorker(object):
                 entry['fingerprint'] = fp
                 entry['standing'] = True
                 entry['status'] = doc.get('status')
+                for k in ('done', 'has_it', 'version'):
+                    entry.pop(k, None)          # a standing rule is the PM's to log
+                for r, st in list(entry['recipients'].items()):
+                    if st.get('silent'):
+                        del entry['recipients'][r]
                 st = entry['recipients'].get(PM_KEY)
                 if st is None:
                     entry['recipients'][PM_KEY] = {'attempt': 0, 'next_at': now, 'last': None,
@@ -661,17 +880,37 @@ class PushWorker(object):
                                      'once': r == PM_KEY or held == r}
                 if r == PM_KEY:
                     flags['asker_pm'] = True
-            elif filed_as == 'freed' and not self._coordinator_live(doc, sender if mine else ''):
-                recipients[PM_KEY] = {'attempt': 0, 'next_at': now, 'last': None, 'once': True}
-                flags['freed'] = True
+            elif filed_as in ('freed', 'held'):
+                # the asker while it is live, else the record's coordinator while it is; with
+                # neither, a freed record pings the PM, a held answer stays owed to its asker
+                live = self._live_session(doc, sender if mine else '')
+                if not mine:
+                    r = PM_KEY                  # the PM asked: told once
+                    flags['asker_pm'] = True
+                elif live == sender or (live is None and filed_as == 'held'):
+                    r = sender
+                elif live is not None:
+                    r = live                    # the record's coordinator: told once
+                    flags['coordinator'] = live
+                else:
+                    r = PM_KEY
+                if r == PM_KEY and filed_as == 'freed' and live is None:
+                    flags['freed'] = True       # the PM is to start a coordinator
+                if not (r == sender and mine and held == r and first):   # picked it up already
+                    recipients[r] = {'attempt': 0, 'next_at': now, 'last': None,
+                                     'once': r != sender or not mine or held == r}
             if standing:
                 st = recipients.setdefault(PM_KEY, {'attempt': 0, 'next_at': now, 'last': None,
                                                     'once': False})
                 st['once'] = False
+            elif auto_done_ok(doc):
+                self._done_flags(doc, sender, mine, held, first, recipients, flags, now)
             flags['record'] = '%s:%s' % (record.get('repo') or '', record.get('id') or '')
             flags['record_repo'] = record.get('repo') or ''
         if not recipients:
-            self._drop(key)             # held, or freed with its coordinator running: no push
+            if flags.get('has_it'):
+                self._hub_done(dict(flags, id=doc_id, fingerprint=fp))
+            self._drop(key)             # its asker picked it up already: no push
             return
         entry = {'kind': 'question', 'id': doc_id, 'event': event, 'fingerprint': fp,
                  'status': doc.get('status'),
@@ -683,17 +922,61 @@ class PushWorker(object):
         self._outbox[key] = entry
         self._dirty = True
 
-    def _coordinator_live(self, doc, asker):
-        """True when a live session can take up the record doc's answer freed: its asker, or
-        the coordinator keyed by the record's repository or the question's repo, resolves to a
-        live session (the delivery object's `resolve`, None for none). False when the delivery
-        object cannot tell (no `resolve`, or it raised): the PM is told."""
+    @staticmethod
+    def _done_flags(doc, sender, mine, held, first, recipients, flags, now):
+        """The flags of a filed answer the hub marks done once its asker has it (module
+        docstring "Done by the hub"): `done` the asker's key (the PM's when the PM asked),
+        `version` the question's version now (the done write is pinned to it), `has_it` when
+        the asker picked this answer up before the push fired; an asker the push is not sent to
+        becomes a `silent` recipient, never sent, that only its own pick-up acknowledges. One
+        that held the answer before this one (a re-answer) and is not sent it gets no done: no
+        pick-up can be told from the old one."""
+        asker = sender if mine else PM_KEY
+        if mine and held == sender:
+            if not first:
+                return
+            flags['has_it'] = True
+        elif asker not in recipients:
+            recipients[asker] = {'attempt': 0, 'next_at': now, 'last': None, 'once': False,
+                                 'silent': True}
+        flags['done'] = asker
+        flags['version'] = _doc_version(doc)
+
+    def _hub_done(self, entry):
+        """Mark question entry['id'] done for its asker (module docstring "Done by the hub"),
+        pinned to entry['version'], the version auto_done_ok judged when the push fired: a new
+        answer, a promote or any other write since wins, and nothing is written (logged)."""
+        doc_id, version = entry['id'], entry.get('version')
+        if type(version) is not int:
+            return
+        try:
+            self.store.update('questions', doc_id, {
+                'status': 'done', 'done_by': DONE_BY,
+                'done_why': 'filed into %s' % entry.get('record'),
+                'done_at': self.store.clock(), 'via': DONE_VIA}, if_version=version)
+        except HubError as e:
+            self.log('push: %s not marked done: %s' % (field(doc_id), e.code))
+
+    def _finish(self, key, entry):
+        """Drop an entry every recipient is done with; first mark its question done when the
+        asker has the answer (`has_it`)."""
+        if entry.get('done') and entry.get('has_it'):
+            self._hub_done(entry)
+        self._drop(key)
+
+    def _live_session(self, doc, asker):
+        """The first key with a live session (the delivery object's `resolve`, None for none)
+        of: question doc's asker, then the coordinator of the record's repository and of the
+        question's repo, each through Api.repo_key and as it is. None when none is live or the
+        delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
+        live, logged)."""
         resolve = getattr(self.push, 'resolve', None)
         if not callable(resolve):
-            return False
+            return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
         keys = []
-        for k in (asker, record.get('repo'), doc.get('repo')):
+        for k in (asker, self._repo_key(record.get('repo')), record.get('repo'),
+                  self._repo_key(doc.get('repo')), doc.get('repo')):
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
         for k in keys:
@@ -701,10 +984,10 @@ class PushWorker(object):
                 continue
             try:
                 if resolve(k) is not None:
-                    return True
+                    return k
             except Exception as e:      # noqa: BLE001 - a host fault: the PM hears it
                 self.log('push: resolve(%s) failed: %s' % (field(k), type(e).__name__))
-        return False
+        return None
 
     def _asked_by(self, entry):
         """True when the entry's item is from a session other than the PM's (a recipient)."""
@@ -726,6 +1009,16 @@ class PushWorker(object):
             got = fn(repo) if fn is not None else ''
         except Exception as e:          # noqa: BLE001 - a host fault: the PM alone hears it
             self.log('push: repo_key failed: %s' % type(e).__name__)
+            got = ''
+        return got if isinstance(got, str) else ''
+
+    def _kit_key(self):
+        """The kit coordinator's key (Api.kit_session_key), '' when none."""
+        fn = getattr(self.api, 'kit_session_key', None)
+        try:
+            got = fn() if fn is not None else ''
+        except Exception as e:          # noqa: BLE001 - a host fault: the PM alone hears it
+            self.log('push: kit_session_key failed: %s' % type(e).__name__)
             got = ''
         return got if isinstance(got, str) else ''
 
@@ -753,7 +1046,7 @@ class PushWorker(object):
         if entry['event'] == 'reopened' or entry['kind'] == 'approval':
             return False                # only a written try acknowledges it
         kind = entry['kind']
-        if kind in ('story', 'to_pm'):
+        if kind in ('story', 'to_pm', 'skill_edit'):
             return False                # only its status changing (the fingerprint) does
         # a recipient that held the item when it fired (`once`) is acknowledged by a written try,
         # never by handed_to: that hand-over may be the old one (todos_done forgets it only after
@@ -780,10 +1073,19 @@ class PushWorker(object):
             doc = self.store.get(_coll(entry['kind']), entry['id'])
             for r in list(entry['recipients']):
                 if self._acked(entry, r, doc):
+                    if r == entry.get('done') and self._picked(entry, r):
+                        entry['has_it'] = True      # the asker picked this answer up
                     del entry['recipients'][r]
                     self._dirty = True
             if not entry['recipients']:
-                self._drop(key)
+                self._finish(key, entry)
+
+    def _picked(self, entry, recipient):
+        """True when `recipient`, a session that is not `once`, picked entry's item up
+        (handed_to names it). Any other acknowledgement (a newer answer, a log) is a write the
+        done's version pin loses to."""
+        return (recipient != PM_KEY and not entry['recipients'][recipient].get('once')
+                and self._handed(entry['kind'], entry['id']) == recipient)
 
     def _send_due(self):
         now = self.clock()
@@ -791,14 +1093,15 @@ class PushWorker(object):
         for key, entry in sorted(self._outbox.items(), key=lambda kv: (kv[1]['first_at'] or now, kv[0])):
             for r, st in list(entry['recipients'].items()):
                 if entry['first_at'] is not None and now - entry['first_at'] >= GIVE_UP_S:
-                    self._note(entry, r, None, st['attempt'], GAVE_UP)
+                    if not st.get('silent'):    # never sent: nothing was undelivered
+                        self._note(entry, r, None, st['attempt'], GAVE_UP)
                     del entry['recipients'][r]
                     self._dirty = True
                     continue
-                if st['next_at'] <= now:
+                if st['next_at'] <= now and not st.get('silent'):
                     due.setdefault(r, []).append(key)
             if not entry['recipients']:
-                self._drop(key)
+                self._finish(key, entry)
         for r, keys in due.items():
             if self._stop.is_set():
                 return
@@ -835,9 +1138,11 @@ class PushWorker(object):
             if sent.ambiguous:
                 self._note(entry, recipient, sent.name, st['attempt'], AMBIGUOUS)
             if state == WRITTEN and st.get('once'):
+                if recipient == entry.get('done'):
+                    entry['has_it'] = True      # the PM that asked: told once (_done_flags)
                 del entry['recipients'][recipient]
             if not entry['recipients']:
-                self._drop(key)
+                self._finish(key, entry)
         for key in rest:                # the "+N more" line told of them: due at the next slot
             st = self._outbox[key]['recipients'][recipient]
             st['next_at'] = now + schedule(st['attempt'] + 1)
@@ -901,9 +1206,15 @@ class PushWorker(object):
             self.log('push: could not write %s: %s' % (UNDELIVERED, e))
 
 
+def _doc_version(doc):
+    """A document's version as the store counts it (kitlib.hubsite.store _version)."""
+    v = doc.get('version', 0)
+    return v if type(v) is int else 0
+
+
 def _coll(kind):
     return {'question': 'questions', 'approval': 'approvals', 'story': 'stories',
-            'to_pm': 'to_pm'}.get(kind, 'todos')
+            'to_pm': 'to_pm', 'skill_edit': 'skill_edits'}.get(kind, 'todos')
 
 
 def _entry_ok(key, e):

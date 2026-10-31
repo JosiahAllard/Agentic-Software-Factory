@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from kitlib import config, lockmcp
 from kitlib.config import policy
@@ -31,12 +32,12 @@ class HeavyTest(TreeCase):
     def test_godot_is_heavy_by_any_path_and_case(self):
         entries = policy.heavy_programs()
         for prog in ('godot', 'C:\\Tools\\Godot_v4.4-stable_mono_win64.exe', '/opt/godot/godot.x86_64'):
-            self.assertEqual(policy.heavy_match(prog, [], entries)['kind'], 'engine-run', prog)
+            self.assertEqual(policy.heavy_match(prog, [], entries)['kind'], 'app-run', prog)
 
     def test_godot_glob_names_godot_builds_only(self):
         entries = policy.heavy_programs()
         for prog in ('godot.exe', 'Godot_v4.3-stable_win64_console.exe', 'godot_mono'):
-            self.assertEqual(policy.heavy_match(prog, [], entries)['kind'], 'engine-run', prog)
+            self.assertEqual(policy.heavy_match(prog, [], entries)['kind'], 'app-run', prog)
         for prog in ('godotenv', 'godotenv.exe', 'godot-tools', 'godots'):
             self.assertIsNone(policy.heavy_match(prog, [], entries), prog)
 
@@ -67,6 +68,7 @@ class HeavyTest(TreeCase):
     def test_an_unlisted_program_is_not_heavy(self):
         self.assertIsNone(policy.heavy_match('python.exe', ['-m', 'unittest'], policy.heavy_programs()))
 
+    @mock.patch('kitlib.platform.NAME', 'windows')
     def test_repo_entries_follow_the_defaults_and_cannot_remove_them(self):
         cfg = self.load({'heavy': {'programs': [
             {'program': 'test.bat', 'kind': 'engine-test', 'why': 'runs Godot tests'},
@@ -94,6 +96,88 @@ class HeavyTest(TreeCase):
                    {'program': 'a*', 'kind': 'two'}]
         self.assertEqual(policy.heavy_match('ab', ['-x'], entries)['kind'], 'one')
         self.assertEqual(policy.heavy_match('ab', [], entries)['kind'], 'two')
+
+
+WINDOWS_DEFAULTS = ['godot', 'godot.*', 'godot_*', 'blender*', 'dotnet', 'dotnet.exe', 'gradle',
+                    'gradle.*', 'gradlew', 'gradlew.*']
+
+
+class LinuxHeavyTest(unittest.TestCase):
+    """Godot and Blender as Linux names them (docs/linux-support-plan.md section 3, finding 8)."""
+
+    def setUp(self):
+        patcher = mock.patch('kitlib.platform.NAME', 'linux')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.entries = policy.heavy_programs()
+
+    def kind(self, prog, args):
+        entry = policy.heavy_match(prog, args, self.entries)
+        return entry and entry['kind']
+
+    def test_linux_godot_names_are_heavy(self):
+        for prog, args in (('godot', []), ('godot4', []), ('/usr/bin/godot3', ['--path', 'game']),
+                           ('Godot_v4.3-stable_linux.x86_64', ['--headless']),
+                           ('Godot4.AppImage', []), ('Godot.AppImage', ['--headless']),
+                           ('flatpak', ['run', 'org.godotengine.Godot', '--headless']),
+                           ('flatpak', ['--user', 'run', 'org.godotengine.Godot']),
+                           ('/usr/bin/flatpak', ['run', '--branch=stable', 'org.godotengine.GodotSharp']),
+                           ('/var/lib/flatpak/exports/bin/org.godotengine.Godot', ['-e'])):
+            self.assertEqual(self.kind(prog, args), 'app-run', (prog, args))
+
+    def test_flatpak_management_and_other_apps_are_not_heavy(self):
+        for prog, args in (('flatpak', ['run', 'org.gnome.Calculator']), ('flatpak', ['list']),
+                           ('flatpak', ['install', 'flathub', 'org.godotengine.Godot']),
+                           ('flatpak', ['update', 'org.godotengine.Godot']),
+                           ('flatpak', ['info', 'org.godotengine.GodotSharp']),
+                           ('flatpak', ['uninstall', 'org.blender.Blender', '-y']),
+                           ('flatpak', ['remote-info', 'flathub', 'org.godotengine.Godot']),
+                           ('flatpak', ['remote-info', 'flathub', 'org.blender.Blender', '-b']),
+                           ('flatpak', ['mask', 'org.godotengine.GodotSharp']),
+                           ('godotenv', []), ('godot-tools', []), ('godots', [])):
+            self.assertIsNone(self.kind(prog, args), (prog, args))
+
+    def test_blender_is_heavy_only_in_the_background(self):
+        for prog, args in (('blender', ['-b', 'x.blend']), ('/usr/bin/blender', ['--background']),
+                           ('flatpak', ['run', 'org.blender.Blender', '-b', 'x.blend']),
+                           ('flatpak', ['run', '--branch=stable', 'org.blender.Blender', '--background']),
+                           ('/var/lib/flatpak/exports/bin/org.blender.Blender', ['-b', 'x.blend'])):
+            self.assertEqual(self.kind(prog, args), 'render', (prog, args))
+        for prog, args in (('blender', ['x.blend']), ('flatpak', ['run', 'org.blender.Blender']),
+                           ('flatpak', ['run', 'org.blender.Blender', 'x.blend']),
+                           ('flatpak', ['run', 'org.gimp.GIMP', '-b', '(gimp-quit 0)']),
+                           ('flatpak', ['install', 'flathub', 'org.blender.Blender']),
+                           ('/var/lib/flatpak/exports/bin/org.blender.Blender', ['x.blend'])):
+            self.assertIsNone(self.kind(prog, args), (prog, args))
+
+
+class WindowsHeavyUnchangedTest(unittest.TestCase):
+    """The Linux names are added on Linux only: on Windows the list and every result stay as they
+    were (godot[0-9]* would make godot4.exe heavy there)."""
+
+    def setUp(self):
+        patcher = mock.patch('kitlib.platform.NAME', 'windows')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.entries = policy.heavy_programs()
+
+    def test_the_windows_defaults_are_the_same_list(self):
+        self.assertEqual([e['program'] for e in self.entries], WINDOWS_DEFAULTS)
+        self.assertEqual(self.entries, list(policy.HEAVY_DEFAULTS))
+
+    def test_windows_results_do_not_change(self):
+        for prog, args, kind in (
+                ('godot.exe', [], 'app-run'), ('C:\\Tools\\Godot_v4.4-stable_mono_win64.exe', [], 'app-run'),
+                ('Godot_v4.3-stable_win64_console.exe', ['--headless'], 'app-run'),
+                ('godot_mono', [], 'app-run'), ('Godot.AppImage', [], 'app-run'),
+                ('blender.exe', ['-b', 'x.blend'], 'render'), ('blender', ['--background'], 'render'),
+                ('godot4.exe', [], None), ('godot4', [], None), ('Godot4.exe', ['--path', 'game'], None),
+                ('godot3.exe', [], None), ('godotenv.exe', [], None), ('blender.exe', ['x.blend'], None),
+                ('org.godotengine.Godot', [], None), ('flatpak', ['run', 'org.godotengine.Godot'], None),
+                ('flatpak', ['run', 'org.blender.Blender', '-b'], None),
+                ('org.blender.Blender', ['-b', 'x.blend'], None)):
+            entry = policy.heavy_match(prog, args, self.entries)
+            self.assertEqual(entry and entry['kind'], kind, (prog, args))
 
 
 class RolesTest(TreeCase):
@@ -227,6 +311,42 @@ class KindsTableTest(unittest.TestCase):
         path = self.write({'kinds': {'a': {}, 'aliases': {'x': {'to': 'a', 'why': 'w'}}}})
         with self.assertRaisesRegex(config.ConfigError, 'aliases belongs at the top level'):
             policy.kinds_table(path)
+
+
+class RepoKindsTest(TreeCase):
+    """`.kit.json` "kinds": a repository's own run kinds (policy.repo_kinds), shape-checked whole."""
+    GAME_KINDS = {'graph-build': {'cpu': 'heavy', 'gpu': 0, 'warn_min': 120, 'why': 'world graph'},
+                   'cpu-eval': {'cpu': 'heavy', 'gpu': 0, 'warn_min': 120, 'why': 'evaluation'}}
+
+    def test_the_section_loads_and_repo_kinds_returns_it_with_notes_dropped(self):
+        """Red before: "kinds" was an unknown section, so the whole .kit.json refused."""
+        kinds = dict(self.GAME_KINDS, _about='notes',
+                     render2={'cpu': 4, 'gpu': 'pool', 'share': True, 'why': 'w', 'comment': 'c'})
+        got = policy.repo_kinds(self.load({'kinds': kinds}))
+        self.assertEqual(got, dict(self.GAME_KINDS, render2={'cpu': 4, 'gpu': 'pool',
+                                                              'share': True, 'why': 'w'}))
+        self.assertEqual(policy.repo_kinds(self.load({})), {})
+        self.assertEqual(policy.repo_kinds(None), {})
+
+    def test_a_bad_entry_refuses_the_whole_config(self):
+        bad = {'Graph Build': {'cpu': 1, 'why': 'w'},
+               'a': {'cpu': 0, 'why': 'w'},
+               'b': {'cpu': 'huge', 'why': 'w'},
+               'c': {'cpu': 1, 'gpu': 2, 'why': 'w'},
+               'd': {'cpu': 1, 'warn_min': 0, 'why': 'w'},
+               'e': {'cpu': 1},
+               'f': {'why': 'w'},
+               'g': {'cpu': 1, 'why': 'w', 'slot': 'cpu'},
+               'h': {'cpu': True, 'why': 'w'},
+               '2x': {'cpu': 1, 'why': 'w'}}
+        for name, entry in bad.items():
+            with self.subTest(name=name), self.assertRaises(config.ConfigError):
+                self.load({'kinds': {name: entry}})
+
+    def test_the_section_is_never_a_file(self):
+        """A file beside .kit.json would size runs without an owner-approved .kit.json change."""
+        with self.assertRaisesRegex(config.ConfigError, 'section "kinds" must be an object$'):
+            self.load({'kinds': 'kinds.json'}, {'kinds.json': json.dumps(self.GAME_KINDS)})
 
 
 class HookModuleTest(TreeCase):

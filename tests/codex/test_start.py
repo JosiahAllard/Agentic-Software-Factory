@@ -1,6 +1,8 @@
 """hosts.codex.adapter.start: what a Codex start hook adds to the context."""
 import io
 import json
+import os
+import tempfile
 import unittest
 
 from hosts.codex.adapter import ADAPTER, start
@@ -58,6 +60,20 @@ class Start(unittest.TestCase):
                                                                   'additionalContext': header.text(KIT)}})
         self.assertEqual(json.loads(start.output(ADAPTER, 'SessionStart', KIT, io.StringIO('{bad'), {}))
                          ['hookSpecificOutput']['additionalContext'], header.text(KIT))
+
+
+class ExportLayout(unittest.TestCase):
+    """Codex installs the whole export: the hook's plugin root is the kit, its skills are under
+    content/skills/, and there is no skills/ copy to compare, so the start text has no copy line."""
+
+    def test_a_start_from_the_export_layout_has_no_plugin_copy_line(self):
+        with tempfile.TemporaryDirectory() as kit:
+            os.makedirs(os.path.join(kit, 'content', 'skills', 'a'))
+            hook = os.path.join(kit, 'boot', 'hook.py')
+            with unittest.mock.patch('sys.argv', [hook, 'codex', 'SessionStart']):
+                got = start.text('SessionStart', kit, {}, {})
+            self.assertEqual(got, header.text(kit))
+            self.assertNotIn('plugin copy', got)
 
 
 import unittest.mock  # noqa: E402

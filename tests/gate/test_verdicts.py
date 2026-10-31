@@ -1,6 +1,6 @@
 """kitlib.gate.verdicts: the verdict queue on the scratch repository of tests/gate/fixtures.py
-GateRepoCase, and ready() on fake tip_of and strict_hits callables."""
-import hashlib
+GateRepoCase."""
+import contextlib
 import json
 import os
 import threading
@@ -37,11 +37,14 @@ class Check(unittest.TestCase):
 
 
 class SelfReviewWhy(unittest.TestCase):
-    """A High-risk verdict the queueing coordinator reviewed itself is refused (verdicts.
-    self_review_why); a Low or Medium self-read, or a High one by another reviewer, is not."""
+    """A Medium or High-risk verdict the queueing coordinator reviewed itself is refused (verdicts.
+    self_review_why); a Low self-read, or a Medium or High one by another reviewer, is not."""
 
-    def test_a_high_risk_coordinator_self_review_is_refused_with_the_instead_line(self):
+    def test_a_medium_or_high_risk_coordinator_self_review_is_refused_with_the_instead_line(self):
         tip = 'a' * 40
+        for risk in ('Medium', 'High'):
+            why = V.self_review_why(given('kit/a', tip, risk=risk, reviewer_id='coord-1'))
+            self.assertIn('a %s-risk verdict needs a reviewer other than the coordinator' % risk, why or '')
         for over in ({'reviewer_id': 'coord-1'}, {'reviewer_id': ' Coord-1 '},
                      {'reviewer_id': 'agent-x / coord-1'},
                      {'session': ' Coord-1 ', 'reviewer_id': 'coord-1'},
@@ -54,16 +57,37 @@ class SelfReviewWhy(unittest.TestCase):
                 self.assertEqual(why.splitlines()[-1], V.SELF_REVIEW_INSTEAD)
                 self.assertIn('--reviewer pm-kit:analyst --reviewer-id <its agent id>', why)
 
-    def test_a_small_self_read_and_another_reviewer_stay_allowed(self):
+    def test_a_low_self_read_and_another_reviewer_stay_allowed(self):
         tip = 'a' * 40
-        for risk in ('Low', 'Medium'):
-            for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
+        for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
+            with self.subTest(risk='Low', **over):
+                self.assertIsNone(V.self_review_why(given('kit/a', tip, risk='Low', **over)))
+        for risk in ('Medium', 'High'):
+            for over in ({}, {'reviewer': 'pm-kit:analyst', 'reviewer_id': 'agent-a7'},
+                         {'reviewer_id': 'coord-10'}, {'reviewer': 'pm-kit:coordinators-helper'}):
                 with self.subTest(risk=risk, **over):
                     self.assertIsNone(V.self_review_why(given('kit/a', tip, risk=risk, **over)))
-        for over in ({}, {'reviewer': 'pm-kit:analyst', 'reviewer_id': 'agent-a7'},
-                     {'reviewer_id': 'coord-10'}, {'reviewer': 'pm-kit:coordinators-helper'}):
-            with self.subTest(**over):
-                self.assertIsNone(V.self_review_why(given('kit/a', tip, risk='High', **over)))
+
+
+class FakeClock(object):
+    """time.monotonic and time.sleep for the `with` of patched(): a sleep is recorded and moves
+    the clock on at once, so a retry loop's tries and pauses are counted exactly."""
+
+    def __init__(self):
+        self.now, self.sleeps = 1000.0, []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, s):
+        self.sleeps.append(s)
+        self.now += s
+
+    def patched(self):
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(time, 'monotonic', self.monotonic))
+        stack.enter_context(mock.patch.object(time, 'sleep', self.sleep))
+        return stack
 
 
 class QueueCase(GateRepoCase):
@@ -110,13 +134,11 @@ class SelfReviewSize(QueueCase):
 
     def test_a_self_read_over_the_cap_is_refused_with_the_counts(self):
         _, tip = self.branch('a', {'a.txt': lines(3), 'b.txt': lines(2)})
-        for risk in ('Low', 'Medium'):
-            with self.subTest(risk=risk):
-                why = self.refused(tip, risk=risk, reviewer_id='coord-1')
-                self.assertIn('covers at most 4 changed lines', why)
-                self.assertIn('changes 5 (+5 -0 in 2 files; the larger of the range given and %s...%s from '
-                              'main as fetched)' % (self.main[:10], tip[:10]), why)
-                self.assertIn('its reviewer id coord-1 is the session queueing it', why)
+        why = self.refused(tip, risk='Low', reviewer_id='coord-1')
+        self.assertIn('covers at most 4 changed lines', why)
+        self.assertIn('changes 5 (+5 -0 in 2 files; the larger of the range given and %s...%s from '
+                      'main as fetched)' % (self.main[:10], tip[:10]), why)
+        self.assertIn('its reviewer id coord-1 is the session queueing it', why)
 
     def test_the_coordinator_role_as_reviewer_counts_as_a_self_read(self):
         _, tip = self.branch('a', {'a.txt': lines(5)})
@@ -208,11 +230,12 @@ class SelfReviewSize(QueueCase):
         _, stored = self.add(tip, base='nosuchbase', reviewer='pm-kit:analyst', reviewer_id='a7')
         self.assertEqual(stored['tip'], tip)
 
-    def test_a_high_risk_self_review_is_still_refused_whatever_its_size(self):
+    def test_a_medium_or_high_risk_self_review_is_still_refused_whatever_its_size(self):
         _, tip = self.branch('a', {'a.txt': lines(1)})
-        with self.assertRaises(V.SelfReview) as cm:
-            self.add(tip, risk='High', reviewer_id='coord-1')
-        self.assertIn('a High-risk verdict needs a reviewer other than', str(cm.exception))
+        for risk in ('Medium', 'High'):
+            with self.subTest(risk=risk), self.assertRaises(V.SelfReview) as cm:
+                self.add(tip, risk=risk, reviewer_id='coord-1')
+            self.assertIn('a %s-risk verdict needs a reviewer other than' % risk, str(cm.exception))
 
 
 class SelfReviewSizeRenames(QueueCase):
@@ -276,15 +299,21 @@ class Queue(QueueCase):
         self.assertEqual([(e['tip'], e['risk']) for e in got], [(second, 'Medium')])
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])
 
-    def test_a_moved_tip_is_stale_and_never_in_the_batch(self):
-        wt, tip = self.branch('a', {'a.txt': 'a\n'})
-        V.add(self.common, given('kit/a', tip))
-        moved = self.more(wt, 'a', {'a.txt': 'moved\n'})
-        batch, skipped = V.ready(V.entries(self.common),
-                                 lambda b: V.head_of(self.common, b), lambda e: [], 5)
-        self.assertEqual(batch, [])
-        self.assertEqual([(s.branch, s.reason) for s in skipped], [('kit/a', V.SKIP_STALE)])
-        self.assertIn(moved[:10], skipped[0].why)
+    def test_entries_are_oldest_first_and_the_branch_name_settles_a_tie(self):
+        folder = V.queue_dir(self.common)
+        os.makedirs(folder)
+        queued = [('kit/c', '2026-01-01T00:00:03Z'), ('kit/b', '2026-01-01T00:00:01Z'),
+                  ('kit/d', '2026-01-01T00:00:02Z'), ('kit/a', '2026-01-01T00:00:01Z')]
+        for branch, when in queued:
+            with open(os.path.join(folder, V.file_name(branch)), 'w', encoding='utf-8') as f:
+                json.dump(dict(given(branch, 'a' * 40), queued_utc=when, state=V.QUEUED,
+                               last_result=None), f)
+        want = ['kit/a', 'kit/b', 'kit/d', 'kit/c']          # a and b tie in time: name first
+        self.assertEqual([e['branch'] for e in V.entries(self.common)], want)
+        good, bad = V.scan(self.common)
+        self.assertEqual(([e['branch'] for e in good], bad), (want, []))
+        # the folder lists names in order, so the tie is shown again from reversed input
+        self.assertEqual([e['branch'] for e in V.order(list(reversed(good)))], want)
 
     def test_a_malformed_entry_is_refused_and_nothing_written(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
@@ -305,15 +334,16 @@ class Queue(QueueCase):
                 V.add(self.common, e)
         self.assertEqual(self.folder_names(), [])
 
-    def test_a_high_risk_self_review_is_refused_and_nothing_written(self):
+    def test_a_medium_or_high_risk_self_review_is_refused_and_nothing_written(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
-        for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
-            with self.subTest(**over), self.assertRaises(V.SelfReview) as cm:
-                V.add(self.common, given('kit/a', tip, risk='High', **over))
-            self.assertIsInstance(cm.exception, V.BadEntry)
+        for risk in ('Medium', 'High'):
+            for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
+                with self.subTest(risk=risk, **over), self.assertRaises(V.SelfReview) as cm:
+                    V.add(self.common, given('kit/a', tip, risk=risk, **over))
+                self.assertIsInstance(cm.exception, V.BadEntry)
         self.assertEqual(self.folder_names(), [])
-        _, stored = V.add(self.common, given('kit/a', tip, risk='Medium', reviewer_id='coord-1'))
-        self.assertEqual(stored['reviewer_id'], 'coord-1')       # a small self-read is queued
+        _, stored = V.add(self.common, given('kit/a', tip, risk='Low', reviewer_id='coord-1'))
+        self.assertEqual(stored['reviewer_id'], 'coord-1')       # a small Low self-read is queued
 
     def test_a_windows_device_name_is_refused(self):
         for name in ('con', 'NUL', 'com1', 'aux.x'):
@@ -332,15 +362,42 @@ class Queue(QueueCase):
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])        # no .tmp left
         self.assertEqual(V.entries(self.common), [old])
 
-    def test_mark_failed_keeps_it_out_until_a_re_add(self):
+    def test_a_replace_held_open_is_tried_five_times_0_2_s_apart_then_a_verdict_error(self):
+        # The equivalence test of _write's move onto kitlib.fs.replace: the loop it replaced
+        # tried RETRIES (5) times, sleeping RETRY_SLEEP (0.2 s) between, then raised the
+        # PermissionError (a VerdictError here). The clock is faked, so the count is exact.
+        for fails, tries, written in ((2, 3, True), (4, 5, True), (5, 5, False), (9, 5, False)):
+            with self.subTest(fails=fails):
+                name = 'held%d' % fails
+                _, tip = self.branch(name, {'%s.txt' % name: 'x\n'})
+                real, calls, clock = os.replace, [], FakeClock()
+
+                def flaky(a, b):
+                    calls.append(b)
+                    if len(calls) <= fails:
+                        raise PermissionError('held open')
+                    return real(a, b)
+                with clock.patched(), mock.patch.object(V.os, 'replace', flaky):
+                    if written:
+                        V.add(self.common, given('kit/' + name, tip))
+                    else:
+                        with self.assertRaises(V.VerdictError) as cm:
+                            V.add(self.common, given('kit/' + name, tip))
+                self.assertEqual(len(calls), tries)
+                self.assertEqual(clock.sleeps, [0.2] * (tries - 1))
+                queued = [e['branch'] for e in V.entries(self.common)]
+                self.assertEqual('kit/' + name in queued, written)
+                if not written:
+                    self.assertIn('held open', str(cm.exception))
+                self.assertEqual([n for n in self.folder_names() if n.endswith('.tmp')], [])
+
+    def test_mark_failed_holds_until_a_re_add(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         V.add(self.common, given('kit/a', tip))
         self.assertFalse(V.mark_failed(self.common, 'kit/a', 'red', tip=self.main))
         self.assertTrue(V.mark_failed(self.common, 'kit/a', 'merged gate red: unit', tip=tip))
         [e] = V.entries(self.common)
         self.assertEqual((e['state'], e['last_result']), (V.FAILED, 'merged gate red: unit'))
-        batch, skipped = V.ready([e], lambda b: tip, lambda e: [], 5)
-        self.assertEqual((batch, [s.reason for s in skipped]), ([], [V.SKIP_FAILED]))
         V.add(self.common, given('kit/a', tip))
         [e] = V.entries(self.common)
         self.assertEqual((e['state'], e['last_result']), (V.QUEUED, None))
@@ -607,6 +664,34 @@ class Lock(QueueCase):
                          [(tip, V.QUEUED)])
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])
 
+    def test_a_lock_removal_held_open_is_tried_five_times_0_2_s_apart_then_left(self):
+        # The equivalence test of _locked's lock removal onto kitlib.fs.replace.remove: the loop
+        # it replaced tried RETRIES (5) times, sleeping RETRY_SLEEP (0.2 s) between, and a lock
+        # it could not remove was left to the stale-lock rule; the add itself stands either way.
+        folder = V.queue_dir(self.common)
+        lock = os.path.join(folder, V.LOCK_NAME)
+        for fails, tries, removed in ((2, 3, True), (4, 5, True), (5, 5, False), (9, 5, False)):
+            with self.subTest(fails=fails):
+                name = 'unlock%d' % fails
+                _, tip = self.branch(name, {'%s.txt' % name: 'x\n'})
+                real, calls, clock = os.remove, [], FakeClock()
+
+                def flaky(path):
+                    if os.path.basename(path) == V.LOCK_NAME:
+                        calls.append(path)
+                        if len(calls) <= fails:
+                            raise PermissionError('held open')
+                    return real(path)
+                with clock.patched(), mock.patch.object(V.os, 'remove', flaky):
+                    V.add(self.common, given('kit/' + name, tip))
+                left = os.path.exists(lock)
+                if left:
+                    os.remove(lock)              # as the stale-lock rule would, later
+                self.assertEqual(len(calls), tries)
+                self.assertEqual(clock.sleeps, [0.2] * (tries - 1))
+                self.assertEqual(left, not removed)
+                self.assertIn('kit/' + name, [e['branch'] for e in V.entries(self.common)])
+
     def test_a_held_lock_is_waited_for_and_a_stale_one_removed(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         folder = V.queue_dir(self.common)
@@ -623,82 +708,6 @@ class Lock(QueueCase):
         os.utime(lock, (old, old))
         V.add(self.common, given('kit/a', tip))
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])     # the lock is gone after
-
-
-def entry(branch, utc, tip=None, **over):
-    """A stored entry for ready(), no repository needed."""
-    tip = tip or hashlib.sha1(branch.encode('utf-8')).hexdigest()
-    state = over.pop('state', V.QUEUED)
-    last_result = over.pop('last_result', None)
-    return dict(given(branch, tip, **over), queued_utc=utc, state=state, last_result=last_result)
-
-
-def tips(items):
-    return {e['branch']: e['tip'] for e in items}.get
-
-
-class Ready(unittest.TestCase):
-    def test_high_strict_and_failed_entries_are_never_in_the_batch(self):
-        items = [entry('kit/low', '2026-01-01T00:00:01Z'),
-                 entry('kit/high', '2026-01-01T00:00:02Z', risk='High'),
-                 entry('kit/strict', '2026-01-01T00:00:03Z', risk='Medium'),
-                 entry('kit/failed', '2026-01-01T00:00:04Z', state=V.FAILED, last_result='red'),
-                 entry('kit/med', '2026-01-01T00:00:05Z', risk='Medium')]
-        hits = {'kit/strict': ['kitlib/gate/land.py']}
-        batch, skipped = V.ready(items, tips(items), lambda e: hits.get(e['branch'], []), 10)
-        self.assertEqual([e['branch'] for e in batch], ['kit/low', 'kit/med'])
-        self.assertEqual([(s.branch, s.reason) for s in skipped],
-                         [('kit/high', V.SKIP_HIGH), ('kit/strict', V.SKIP_STRICT),
-                          ('kit/failed', V.SKIP_FAILED)])
-        self.assertIn('kitlib/gate/land.py', skipped[1].why)
-
-    def test_batch_max_caps_the_batch_oldest_first(self):
-        items = [entry('kit/c', '2026-01-01T00:00:03Z'), entry('kit/a', '2026-01-01T00:00:01Z'),
-                 entry('kit/d', '2026-01-01T00:00:04Z'), entry('kit/b', '2026-01-01T00:00:02Z')]
-        batch, skipped = V.ready(items, tips(items), lambda e: [], 2)
-        self.assertEqual([e['branch'] for e in batch], ['kit/a', 'kit/b'])
-        self.assertEqual([(s.branch, s.reason) for s in skipped],
-                         [('kit/c', V.SKIP_LATER), ('kit/d', V.SKIP_LATER)])
-
-    def test_a_tie_in_time_is_settled_by_the_branch_name(self):
-        items = [entry('kit/b', '2026-01-01T00:00:01Z'), entry('kit/a', '2026-01-01T00:00:01Z')]
-        batch, _ = V.ready(items, tips(items), lambda e: [], 1)
-        self.assertEqual([e['branch'] for e in batch], ['kit/a'])
-
-    def test_strict_unknown_and_a_gone_branch_are_held(self):
-        items = [entry('kit/unknown', '2026-01-01T00:00:01Z'),
-                 entry('kit/gone', '2026-01-01T00:00:02Z')]
-        known = tips(items)
-        batch, skipped = V.ready(items, lambda b: None if b == 'kit/gone' else known(b),
-                                 lambda e: None, 5)
-        self.assertEqual(batch, [])
-        self.assertEqual([(s.branch, s.reason) for s in skipped],
-                         [('kit/unknown', V.SKIP_STRICT), ('kit/gone', V.SKIP_STALE)])
-
-    def test_strict_hits_that_is_not_a_list_holds_the_entry(self):
-        for hits in (None, False, 0, '', (), {}):
-            items = [entry('kit/a', '2026-01-01T00:00:01Z')]
-            batch, skipped = V.ready(items, tips(items), lambda e: hits, 5)
-            self.assertEqual((batch, [s.reason for s in skipped]), ([], [V.SKIP_STRICT]), msg=hits)
-            self.assertIn('cannot tell', skipped[0].why)
-
-    def test_a_stale_entry_is_not_asked_about_strict_paths(self):
-        items = [entry('kit/a', '2026-01-01T00:00:01Z', risk='High')]
-        asked = []
-        batch, skipped = V.ready(items, lambda b: 'f' * 40, lambda e: asked.append(e) or [], 5)
-        self.assertEqual(([s.reason for s in skipped], asked), ([V.SKIP_STALE], []))
-
-    def test_a_malformed_entry_is_skipped_as_invalid(self):
-        bad = entry('kit/a', '2026-01-01T00:00:01Z')
-        del bad['reviewer_model']
-        batch, skipped = V.ready([bad, 'junk'], lambda b: bad['tip'], lambda e: [], 5)
-        self.assertEqual(batch, [])
-        self.assertEqual(sorted(s.reason for s in skipped), [V.SKIP_INVALID, V.SKIP_INVALID])
-
-    def test_batch_max_is_a_whole_number_of_at_least_one(self):
-        for n in (0, -1, 1.5, True, None):
-            with self.assertRaises(ValueError, msg=n):
-                V.ready([], lambda b: None, lambda e: [], n)
 
 
 if __name__ == '__main__':

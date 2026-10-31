@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest import mock
 
+import kitlib.platform
 from kitlib import kitroot, pmdata
 from kitlib.records import gate_ok
 from kitlib.worktree import classify, holders, marks, remove, sweep
@@ -161,6 +162,29 @@ class Classes(ClassifyCase):
         self.assertEqual((row['class'], row['gate']),
                          ('C', 'not full: the record for %s is from a gate run without --full'
                           % head), row)
+
+    def test_a_scoped_record_is_green_when_the_base_sets_gate_once(self):
+        """"landing".gate_once (docs/gate.md "Gate once at landing"): a landing takes a
+        default-mode record, so the tree is as finished as with a --full one."""
+        self.configure({'landing': {'gate_once': True}})
+        path = self.workstream('scoped')
+        head = self.git('rev-parse', 'HEAD', cwd=path)
+        gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
+                            full=False, mode='select')
+        rc, out, data = self.run_classify()
+        row = self.row(data, path)
+        self.assertEqual((row['class'], row['gate']), ('B', 'green'), row)
+
+    def test_a_docs_record_is_not_green_under_gate_once(self):
+        self.configure({'landing': {'gate_once': True}})
+        path = self.workstream('docs')
+        head = self.git('rev-parse', 'HEAD', cwd=path)
+        gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
+                            full=False, mode='docs')
+        rc, out, data = self.run_classify()
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'C', row)
+        self.assertTrue(row['gate'].startswith('not full: '), row)
 
     def test_the_backlog_store_is_opened_once_for_every_tree(self):
         self.configure({'backlog': {'store': 'main'}})
@@ -646,7 +670,8 @@ class Live(ClassifyCase):
 
     def test_an_unread_process_off_windows_is_l_and_says_not_probed(self):
         path = self.workstream('offwin')
-        with mock.patch.object(holders, 'WINDOWS', False):
+        with mock.patch.object(holders, 'WINDOWS', False), \
+                mock.patch.object(kitlib.platform, 'NAME', 'unsupported'):
             rc, out, data = self.run_classify(procs=lambda: (([], 1, 1), None))
         row = self.row(data, path)
         self.assertEqual(row['class'], 'L', row)
@@ -654,6 +679,18 @@ class Live(ClassifyCase):
                          'unreadable: 1 process(es) could not be read and %s was not probed: the '
                          'open for delete is made on Windows only: a process we could not read '
                          'may hold it' % path)
+
+    def test_an_unread_process_on_linux_is_l_and_says_why(self):
+        path = self.workstream('onlinux')
+        with mock.patch.object(holders, 'WINDOWS', False), \
+                mock.patch.object(kitlib.platform, 'NAME', 'linux'):
+            rc, out, data = self.run_classify(procs=lambda: (([], 1, 1), None))
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'L', row)
+        self.assertEqual(row['reason'],
+                         'unreadable: 1 process(es) could not be read and %s was not probed: '
+                         'Linux has no open that shows which folders a process holds: a process '
+                         'we could not read may hold it' % path)
 
     @windows_only('the process scan is Windows only')
     def test_the_real_process_scan_finds_this_process_in_a_tree(self):

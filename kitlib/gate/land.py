@@ -7,12 +7,18 @@
   2  refusals    not the main checkout, HEAD not on main, no such branch, a branch is main,
                  more branches than "landing".batch_max (read from the config at the main
                  checkout's HEAD): REFUSED, nothing changed
+  2b route      where the merged gate (7) will run, main or a load node, chosen before the
+                 booking (kitlib.loadnode.landroute.plan; docs/load-nodes.md "A landing's merged
+                 gate on a node"), its `gating here: ...` or `gating on load node ...` line said
+                 unless it is quiet (a kit checkout, no registry, no node opted in)
   3  turn        ONE booking in the machine lock (kitlib.lock.run.book): a gate run of the
-                 config's "gate".kind for <repo>/<branch[+branch...]>, holding the resource
-                 `landing:<git common dir>` at priority "land" ("The queue" below). At once, or
+                 config's "gate".kind, as land-<kind> when the kinds table has one (land-test:
+                 4 cores), for <repo>/<branch[+branch...]>, holding the resource
+                 `landing:<git common dir>` at priority "land" ("The queue" below); routed to a
+                 node, with cores=1 (the landing's own work; the node runs the gate). At once, or
                  waited for up to --wait seconds (default "landing".wait_s); not given: the lock's
                  code and a NOT RUN line, nothing changed. The merged gate (7) runs in this slot
-                 and books nothing more
+                 and books nothing more, unless a node-routed landing falls back to main (7)
   4  lock        fetch <remote>, then the landing lock file (kitlib.records.landing), with what is
                  left of --wait; not had: BUSY. Held at phase stuck: BUSY at once; held by a
                  process that is surely gone: broken and taken unless something is unpushed (one
@@ -42,7 +48,10 @@
                  config file changes, or the change is docs-only under the base's
                  "gate".docs_only and its steps all passed, or the base sets
                  "landing".shared_paths and the change touches none of them, no strict path and
-                 no gate config file; docs/gate.md "Shared paths"), or by none when the tip's
+                 no gate config file; docs/gate.md "Shared paths", or the base sets
+                 "landing".gate_once and the change touches no strict path and no gate config
+                 file, and the merged gate then runs --full unless the merge is docs-only;
+                 docs/gate.md "Gate once at landing"), or by none when the tip's
                  latest red --full run has a FLAKE targeted rerun (kitlib.gate.rerun.verify_flake);
                  a tip a test failed on, that failed twice on its branch, never lands
                  (rerun.twice_refusal);
@@ -84,9 +93,25 @@
                  --fresh or --full; a batch reuses per step like one branch; one branch also
                  from its tip's --full record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
                  (not --full) runs only the "gate".docs_only steps (docs/gate.md "Docs-only
-                 changes"). Red, or a gate where nothing ran: NOT LANDED, the
+                 changes"). A base that sets "landing".gate_once makes any other merge --full
+                 (Lander.once_escalate: each step's full_cmd, no reuse; docs/gate.md "Gate once
+                 at landing"). Red, or a gate where nothing ran: NOT LANDED, the
                  merge dropped (it is only in the landing tree; the landing never moves main),
-                 the lock released: FAILED / REFUSED
+                 the lock released: FAILED / REFUSED.
+                 Routed to a node (2b): main gates it instead when the tip's --full record has
+                 the merge's tree (landroute.same_tree_why), when no node qualifies at the turn
+                 (landroute.recheck; another that does takes it), or when nothing ran on the node
+                 (landroute.Fallback): `gating here: <why>`, the 1-slot run released, then a
+                 full run of the kind booked as in step 3 with no wait limit, and the gate run
+                 in it as above. Else the land job runs it there (landroute.run_on_node, docs
+                 included): a pass is this step's green; any other end is NOT LANDED, never
+                 gated again on main, and so is any exception.
+                 The base's config (step 4, follow) names another "gate".kind than step 3
+                 booked: on main, `the base <b> books "gate".kind <k>, not <k0> ...`, the slot
+                 released first, then the base's kind booked at its own size with no wait limit
+                 (rebook_kind), the lock file still held; the lock refusing it is NOT LANDED.
+                 Routed to a node, recheck asks for the base's kind's slots (route_need; a kind
+                 that cannot be sized gates here as above), and the 1-slot run stays
   7b unchanged   green: the landing tree's HEAD still the merge, no tracked change, no untracked
                  file there, the stash stack still empty; else NOT LANDED as on red and nothing
                  pushed (the pushed commit is the gated one). What the owner does in the main
@@ -94,12 +119,16 @@
                  the pushed commit
   8  record      green: the gate-OK record for the merge commit (pre-push reads it), its
                  config_rev the base, its `full` whether the merged gate ran --full, its `mode`
-                 "docs" when it ran only the docs-only steps
+                 "docs" when it ran only the docs-only steps, its `ran_on` the node, host key
+                 and job when the gate ran on a load node
   9  push        `git push <remote> <merge>:refs/heads/<main>` from the main checkout, never
                  forced. Someone pushed <remote>/<main> to a commit without the merge while the
                  gate ran: the push is refused, NOT LANDED (FAILED, `nothing landed`), the lock
                  released; so is a push git refuses (exit 1 with git's own `! [rejected]` or
-                 `! [remote rejected]` line, PUSH_REFUSED) while <remote>/<main> is the base
+                 `! [remote rejected]` line, PUSH_REFUSED) while <remote>/<main> is the base,
+                 and a push that never connected (push_never_connected: exit 128, only
+                 `fatal: unable to access '<url>': ` with a curl connect error,
+                 PUSH_NEVER_CONNECTED) unless <remote>/<main> shows the merge
   10 verify      `git ls-remote` must show the merge on <remote>/<main>; then the tracking ref
                  is fetched, the main checkout's main brought to the merge (sync_main: a
                  fast-forward when HEAD is on main, main has nothing of its own and no local
@@ -118,6 +147,15 @@
                  worktree with work in it or in use, and anything git refuses are kept and named;
                  an exception or Ctrl+C here is a WARNING naming `land.py --sweep-landed`. The
                  landing stands whatever is kept. --keep-branch (keep_branch) skips it
+  13 mirror      once the slot is released too (Lander.run, nothing held): the merge pushed to
+                 each opted-in load node's mirror of main (kitlib.loadnode.mirror.refresh, at
+                 most its time cap); its lines go before the LANDED line, a failure or an
+                 exception or Ctrl+C there is a WARNING, and the landing stands
+  14 feed        once the result records are finished and in the land ledger (Lander.run): one
+                 event per branch, built from its land record, posted to this machine's hub
+                 (Lander.post_landing; kitlib.hubsite.landings) with a short timeout; a hub that is
+                 down, older than the route, slow or without an agent token is a WARNING said as
+                 progress, the event dropped, and the landing, its lines and its exit code stand
 
 An exception or Ctrl+C under the lock (recover): before the push the lock is released and the
 merge dropped (a merge in progress in the landing tree aborted, best effort), main untouched, and
@@ -133,7 +171,7 @@ OK` line appears only in a landing that LANDED (a green merged gate that is not 
 reworded).
 
 STUCK is only a push that may have landed and cannot be told: interrupted, timed out, died (exit
-128), ended with exit 1 without git's refusal line (no message: a git ended from outside,
+128, except a push that never connected, push_never_connected: NOT LANDED), ended with exit 1 without git's refusal line (no message: a git ended from outside,
 refs.KILLED_SHAPE; or only a stray warning) or reported done while <remote>/<main> is still the
 base, or with <remote>/<main> unreadable. A push git refused (exit 1 with git's own `! [rejected]`
 or `! [remote rejected]` line, PUSH_REFUSED) while <remote>/<main> is still the base published
@@ -146,7 +184,15 @@ The queue: a landing is ONE entry in the machine lock's queue (step 3; kitlib.lo
 repository hold at a time, every checkout of it sharing the key; the others wait in the machine
 lock's queue, landings ahead of ordinary waiting runs. `land.py --queue` (queue()) lists the
 entries of priority "land". The lock file (step 4) stays: the stuck record, a gone holder's break,
-and a landing of a tool outside the machine lock.
+and a landing of a tool outside the machine lock. A node-routed landing that falls back to main
+(step 7) gives the resource up while it books again, holding the lock file: the next landing of
+the repository may then book and wait at the lock file, with the holder waiting in the queue
+behind it. That landing sees it (Lander.yield_turn), releases its run and books again, behind the
+holder, with what is left of its --wait, at most once a look (poll_s). That booking not given in
+time is NOT RUN with the machine lock's exit code, not BUSY.
+
+`land.py --check-strict BRANCH` (check_strict()) is the strict check's dry run: read-only, no lock
+and no verdict, it says whether each branch changes a strict path (Lander.strict_paths).
 
 A batch (several branches, one --expect-tip each, merged in the order given): every branch passes
 the locked checks, and no tip may contain another; the branches are merged one after another with
@@ -172,6 +218,7 @@ from kitlib.backlog import scope as scmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal
 import kitlib.config as kconfig
+from kitlib.config import policy as kpolicy
 from kitlib.config.types import ConfigError
 from kitlib.content import oncommit
 from kitlib.gate import cleanup, detect, gitstatus, result, reuse, runner, stash, strict_defaults
@@ -180,6 +227,7 @@ from kitlib.gate import steps as S
 from kitlib.git import cmd, refs, repo
 from kitlib.guard import ownercommits
 from kitlib.host import registry
+from kitlib.lock import kinds as lockkinds
 from kitlib.lock import queue as lockqueue
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_USAGE, LockError, Store
@@ -192,9 +240,28 @@ PUSH_TIMEOUT = 600      # seconds
 # `! [remote rejected]` the remote's answer (a hook declined). `failed to push some refs` alone is
 # not one: git prints it for any failed push, a status report lost after the upload included
 PUSH_REFUSED = ('! [rejected] ', '! [remote rejected] ')
+# git's line for a push over HTTP(S) that never connected (exit 128, nothing else on stderr):
+# `fatal: unable to access '<url>': <curl's error>`, which git dies with only when its first
+# request, the ref discovery (remote-curl.c discover_refs), fails, before any pack is sent; with
+# curl's error one that only a connection never made gives: `Could not resolve host: <host>` (or
+# `proxy`), `Failed to connect to <host>:<port>` or `<host> port <port>` (curl 8 adds `after <n>
+# ms`; the reason after `: ` is the OS's or curl's, as `Connection refused`, `Timed out`, `Could
+# not connect to server`), `Connection timed out after <n> milliseconds` and `Resolving timed out
+# after <n> milliseconds` (curl's connect timeout in those states, before any request is sent).
+# git 2.55.0.windows.5 with libcurl 8.21.0 printed the first two forms, `<host>:<port> after <n>
+# ms: Could not connect to server` for both a refused port and a timed-out connect. Every other
+# curl error (a reset, a TLS failure, `Operation timed out`) came after the connection: STUCK
+PUSH_NEVER_CONNECTED = re.compile(
+    r"fatal: unable to access '[^']*': (?:"
+    r"Could not resolve (?:host|proxy): \S+"
+    r"|Failed to connect to \S+(?::\d+| port \d+)(?: after \d+ ms)?: [^:]+"
+    r"|(?:Connection|Resolving) timed out after \d+ milliseconds"
+    r")\Z")
 FETCH_TIMEOUT = 300
 MERGE_TIMEOUT = 300
 POLL_S = 5.0
+# a record close_pulled closed: at_landing.close_landed's line, `closed <id> in the backlog store`
+_CLOSED = re.compile(r'closed (\S+) in the backlog store\b')
 STEP_CMD = '    $ '      # a STUCK clear step's command line starts with this
 TREE_NAME = '_landing'   # the landing tree's folder, under the config's worktrees_dir
 TREE_LOCK = 'kit landing tree (kitlib.gate.land)'     # its git worktree lock reason
@@ -220,6 +287,14 @@ STRICT_SHOWN = 5        # strict paths a refusal names; more are counted
 
 class _Stuck(Exception):
     pass
+
+
+def push_never_connected(rc, err):
+    """Whether a push that ended with exit `rc` and stderr `err` never connected to the remote,
+    so no byte of it can have reached it: git died (exit 128) and every line it printed is
+    PUSH_NEVER_CONNECTED. Any other line, a later-phase one included, or any other exit: False."""
+    lines = [l.strip() for l in (err or '').splitlines() if l.strip()]
+    return rc == 128 and bool(lines) and all(PUSH_NEVER_CONNECTED.match(l) for l in lines)
 
 
 def _paths(entries):
@@ -427,13 +502,24 @@ class Lander(object):
     `submitted` (kitlib.gate.submit.restore): the detached landing of a --submit, a dict with
     `runs` (the result.Run per branch whose running records the submission wrote; every outcome
     finishes them), `output` (the file this process's output goes to) and `replaced` (the land
-    records those running records replaced)."""
+    records those running records replaced).
+    `node_route`: where the merged gate runs (step 2b), an object with kitlib.loadnode.landroute's
+    plan, route_line, recheck, same_tree_why, run_on_node and Fallback (None: that module).
+    `hub`: the client the landing feed is posted with (post_landing; None: this machine's hub)."""
 
     def __init__(self, root, branch, expect_main, expect_tip, summary=None,
                  full=False, wait_s=0, say=None, book_kw=None, git_env=None, lock_kw=None,
                  merged_gate=None, log_dir=None, poll_s=POLL_S, pid=None, keep_branch=False,
-                 fresh=False, book=None, submitted=None, tree=None):
+                 fresh=False, book=None, submitted=None, tree=None, node_route=None, hub=None):
         self.root = root
+        self.hub = hub              # the hub client the feed post uses (None: this machine's hub)
+        self.closed = {}            # branch -> the record ids close_pulled closed for it
+        self.node_route = node_route    # None: kitlib.loadnode.landroute, imported when routed
+        self.route = None           # the landroute.Route plan_route chose before the booking;
+                                    # None again once a fallback gates on main (rebook_here)
+        self.holder = None          # the landing lock file's record when another holds it
+        self.yielded_to = None      # the holder yield_turn last gave the turn back to
+        self.booked_kind = None     # the "gate".kind of the last booking (book_slot)
         self.tree_given = tree      # Lander(tree=), or None: the default place (tree_path)
         self.tree = None            # the landing tree's path, once prepare_tree placed it
         self.branches, self.tips = _as_list(branch), _as_list(expect_tip)
@@ -472,8 +558,11 @@ class Lander(object):
         self.synced = False         # sync_main ran (the main checkout brought to the merge)
         self.cleanup = None         # its facts: {branch: kitlib.gate.cleanup entry, or None}
         self.fresh = fresh          # True: the merged gate reuses no branch-gate step
+        self.escalated = False      # once_escalate made the merged gate --full (gate_once)
         self.prior = None           # result records naming the tips, read before this landing
                                     # writes its own (_locked); None: reuse nothing
+        self.tip_records = {}       # tip -> the gate-OK record tip_refusal landed it on (none for
+                                    # a FLAKE rerun): the merged gate's input tree (reuse.planner)
         self.landed_at = None       # the remote's main once verified to hold the merge: the merge,
                                     # or a commit on top of it pushed right after
         self.scope_notes = []       # scope-check NOTE lines, said before the LANDED line
@@ -580,24 +669,97 @@ class Lander(object):
         wait_s = self.wait_s if self.wait_s is not None else self.cfg.section('landing')['wait_s']
         return max(0, wait_s or 0)
 
+    def routes(self):
+        """The load-node routing: Lander(node_route=), or kitlib.loadnode.landroute."""
+        if self.node_route is None:
+            from kitlib.loadnode import landroute
+            self.node_route = landroute
+        return self.node_route
+
+    def plan_route(self):
+        """Step 2b, before the booking: where the merged gate runs (landroute.plan), its line said
+        unless it is quiet. A test's merged gate always gates here. A plan that raises gates here
+        too, said as `gating here: the load-node plan failed: <error>`."""
+        lr = self.routes()
+        try:
+            self.route = lr.plan(self.root, runner.repo_name(self.cfg, self.root),
+                                 self.cfg.section('gate')['kind'], store=self.queue_store(),
+                                 merged_gate_fn=self.merged_gate_fn)
+        except Exception as e:      # noqa: BLE001 - nothing booked or changed yet: gate on main
+            self.route = None
+            self.say('gating here: the load-node plan failed: %s' % _what(e))
+            return
+        line = lr.route_line(self.route)
+        if line:
+            self.say(line)
+
+    def on_node(self):
+        """True while the merged gate is routed to a load node."""
+        return self.route is not None and self.route.node is not None
+
     def book_turn(self):
         """Step 3: the landing's ONE booking in the machine lock, waited for up to the --wait
-        budget: a gate run of the config's "gate".kind for <repo>/<branches>, holding the
-        resource queue_key(<git common dir>) at priority "land". The merged gate runs in this
-        slot (self.slot). Raises kitlib.lock.store.LockError when the lock does not give it, and
-        landing.LockError when the landing lock's place cannot be worked out."""
+        budget: a gate run of the config's "gate".kind (its land kind: land_kind) for
+        <repo>/<branches>, holding the
+        resource queue_key(<git common dir>) at priority "land"; with cores=1 when the plan
+        routed the merged gate to a load node. The merged gate runs in this slot (self.slot), or
+        a node-routed landing's fallback books again (rebook_here). Raises
+        kitlib.lock.store.LockError when the lock does not give it, and landing.LockError when the
+        landing lock's place cannot be worked out."""
         self.lock = landing.LandingLock.for_config(self.root, self.cfg, **self.lock_kw)
         wait_s = self.wait_budget()
+        self.deadline = time.monotonic() + wait_s
+        self.book_slot(wait_s, cores=1 if self.on_node() else None)
+
+    def land_kind(self, kind):
+        """The lock kind a landing of "gate".kind `kind` books: `land-<kind>` (its retired name
+        read as the kind it names now) when the lock's kinds table (book_kw's kinds_table, else
+        the store's kinds file) has it, else `kind`. A table that cannot be read: `kind`, whose
+        booking then fails closed as any run's does."""
+        path = self.queue_store().kinds_path
+        table = (self.book_kw or {}).get('kinds_table')
+        if table is None:
+            try:
+                table = kpolicy.kinds_table(path)
+            except ConfigError:
+                return kind
+        land = 'land-%s' % lockkinds.canonical(kind, path)
+        return land if land in table else kind
+
+    def book_slot(self, wait_s, cores=None):
+        """Book the landing's run into self.slot: the land kind of the gate kind (land_kind), the
+        landing resource, priority "land", waiting up to `wait_s` (None: no limit; 0: now or
+        never), with `cores` cpu slots (None: the kind's size, or book_kw's). self.booked_kind
+        keeps the "gate".kind, which rebook_kind and route_need compare with the base's. Says its
+        held line. Raises LockError."""
         kw = dict(self.book_kw or {}, store=self.queue_store(), gate=True,
                   resource=queue_key(self.lock.common), priority='land', wait_s=wait_s,
                   no_wait=wait_s == 0, note='landing: %s' % self.branch)
+        if cores is not None:
+            kw['cores'] = cores
         if self.submitted:
             kw['detached'] = True   # its launcher's ancestry is in ORIGIN_ENV (kitlib.gate.submit)
-        self.deadline = time.monotonic() + wait_s
         book = self.book_fn or lockrun.book
-        self.slot = book(self.cfg.section('gate')['kind'], runner.repo_name(self.cfg, self.root),
+        kind = self.cfg.section('gate')['kind']
+        self.slot = book(self.land_kind(kind), runner.repo_name(self.cfg, self.root),
                          runner.slug_of('+'.join(self.branches)), **kw)
+        self.booked_kind = kind
         self.say(self.slot.held_text())
+
+    def rebook_here(self, why):
+        """A node-routed landing's merged gate falls back to main after its booking: says
+        `gating here: <why>`, releases the 1-slot run first (booking the full kind while holding
+        it may wait on itself: a kind of every slot, an owner whole hold, a gpu pool), then books
+        the full kind as book_turn does, with no wait limit. The landing lock file stays held, so
+        no other landing merges meanwhile; the next landing in the queue may book, and it gives
+        the turn back (yield_turn). Raises LockError."""
+        self.say('gating here: %s' % why)
+        self.say("releasing the landing's 1-slot run and booking a full %s run for main's "
+                 "merged gate, waiting with no limit"
+                 % self.land_kind(self.cfg.section('gate')['kind']))
+        self.route = None
+        self.drop_slot(0, 'done')
+        self.book_slot(None)
 
     def take(self):
         """Step 4, the slot held: None when this landing holds the landing lock file; else why not
@@ -611,6 +773,9 @@ class Lander(object):
             left = (self.deadline or 0) - time.monotonic()
             if final or left <= 0:
                 return why
+            if self.yield_turn(left):
+                time.sleep(max(0.01, min(self.poll_s, left)))   # one booking a look, at most
+                continue
             if not said:
                 said = True
                 self.say('waiting up to %d s for the landing lock: %s' % (left, why))
@@ -621,9 +786,52 @@ class Lander(object):
         try:
             rec = self.lock.take(self.branches, pid=self.pid)
         except landing.Busy as e:
+            self.holder = e.record
             return self.held_by(e.record)
+        self.holder = None
         self.token = rec['token']
         return None, False
+
+    def turn_waiters(self):
+        """The machine lock's waiting queue entries that name this repository's landing
+        resource."""
+        key = queue_key(self.lock.common)
+        q = lockqueue.load(self.queue_store())
+        return [e for e in q.get('entries') or []
+                if e.get('state') == 'waiting' and e.get('resource') == key]
+
+    def yield_turn(self, left):
+        """At the landing lock file, holding the landing's turn: True when it gave the turn back,
+        because the lock file's holder (self.holder, not gone) is a landing of this repository
+        waiting in the machine lock's queue for that turn (a node-routed landing's fallback
+        booking again, rebook_here): else each waits for the other until this landing's --wait
+        runs out. Its run is released and booked again, behind the holder, waiting for what is
+        left (`left`) of the --wait budget, with one cpu slot again when its merged gate is routed
+        to a load node. Its line is said once per holder: the new booking may be granted at once
+        (a backfill, the holder's start being far off) and given back again at the next look,
+        one look (poll_s) apart (take). A queue that cannot be read: False. Raises LockError (the
+        new booking)."""
+        rec = self.holder or {}
+        branches = rec.get('branches')
+        if self.slot is None or not isinstance(branches, list) or not branches:
+            return False
+        slug = runner.slug_of('+'.join(str(b) for b in branches))
+        try:
+            waiting = [e for e in self.turn_waiters() if e.get('slug') == slug]
+        except (OSError, ValueError):
+            return False
+        if not waiting:
+            return False
+        who = (rec.get('token'), rec.get('pid'), tuple(map(str, branches)))
+        if who != self.yielded_to:
+            self.yielded_to = who
+            self.say('the landing holding the landing lock (%s) waits in the machine lock for '
+                     "this repository's landing turn, which this landing holds: releasing it and "
+                     'booking again behind it, waiting up to %d s'
+                     % (', '.join(map(str, branches)), left))
+        self.drop_slot(0, 'done')
+        self.book_slot(left, cores=1 if self.on_node() else None)
+        return True
 
     def held_by(self, rec):
         """`(None, False)` when a gone holder's lock was broken and taken; else `(why, final)`."""
@@ -766,15 +974,19 @@ class Lander(object):
         """Why `tip`'s gate-OK record does not land it, or None: verify_full's reason, unless the
         record is a default-mode ("select") or docs-only ("docs") pass that select_refusal takes,
         or the tip's latest red --full run has a FLAKE targeted rerun (rerun.verify_flake; its
-        reason is added only when the tip has rerun records)."""
-        _, why = gate_ok.verify_full(self.root, tip)
+        reason is added only when the tip has rerun records). The record it lands on goes in
+        self.tip_records."""
+        self.tip_records.pop(tip, None)
+        rec, why = gate_ok.verify_full(self.root, tip)
         if why is None:
+            self.tip_records[tip] = rec
             return None
         rec, _ = gate_ok.verify(self.root, tip)
         mode = gate_ok.mode_of(rec) if rec is not None else None
         if mode in ('select', 'docs'):
             more = self.select_refusal(rec, tip, mode)
             if more is None:
+                self.tip_records[tip] = rec
                 return None
             why = '%s, and %s' % (why, more)
         flake = rerun.verify_flake(self.root, tip)
@@ -801,13 +1013,15 @@ class Lander(object):
                   default-mode record lands without "gate".smoke_steps, and any record that is
                   not --full (docs or select, smoke steps or not) is refused when the landing diff
                   changes a shared path or a strict path (shared_refusal, checked before the
-                  docs route), beside the config check above."""
-        gate = self.cfg.section('gate')
-        smoke = list(gate.get('smoke_steps') or [])
-        shared = self.cfg.section('landing').get('shared_paths')
-        if not smoke and not S.docs_steps(gate) and shared is None:
-            return ('the base %s sets no "gate".smoke_steps or "gate".docs_only, so only a --full '
-                    'record lands' % self.expect_main[:10])
+                  docs route), beside the config check above;
+          once    when the base sets "landing".gate_once (docs/gate.md "Gate once at landing"),
+                  a default-mode record lands whatever "gate".smoke_steps and "landing".shared_paths
+                  say: only a strict path (strict_refusal, before the docs route) or a gate config
+                  file refuses it, as the merged gate runs --full (once_escalate).
+        The checks of the landing diff alone, in this order, are diff_refusal's."""
+        why = self.no_route_refusal()
+        if why:
+            return why
         mb, why = refs.merge_base(tip, self.expect_main, self.root)
         if not mb:
             return 'git cannot find the merge base of the tip and %s: %s' % (
@@ -828,11 +1042,43 @@ class Lander(object):
                                           self.expect_main[:10]))
         passed = {s.get('name') for s in rec.get('steps') or []
                   if isinstance(s, dict) and s.get('result') in ('pass', 'warn', 'reused')}
-        if shared is not None:          # before the docs-only route: a docs record too
+        return self.diff_refusal(changed, mode, passed)
+
+    def no_route_refusal(self):
+        """Why the base's config takes no record that is not --full, whatever the tip changes, or
+        None: it sets none of "gate".smoke_steps, "gate".docs_only, "landing".shared_paths and
+        "landing".gate_once."""
+        gate = self.cfg.section('gate')
+        if (not self.gate_once() and not gate.get('smoke_steps') and not S.docs_steps(gate)
+                and self.cfg.section('landing').get('shared_paths') is None):
+            return ('the base %s sets no "gate".smoke_steps or "gate".docs_only, so only a --full '
+                    'record lands' % self.expect_main[:10])
+        return None
+
+    def diff_refusal(self, changed, mode, passed):
+        """select_refusal's checks of the landing diff `changed` for a record of `mode` ("select"
+        or "docs") whose passed steps are the names `passed`, in select_refusal's order: None, or
+        why such a record does not land it. `passed` None (full_needed: a plain gate not yet run)
+        skips the two checks of which steps passed, so only what the diff and the base's config
+        decide is left."""
+        why = self.no_route_refusal()
+        if why:
+            return why
+        gate = self.cfg.section('gate')
+        smoke = list(gate.get('smoke_steps') or [])
+        shared = self.cfg.section('landing').get('shared_paths')
+        once = self.gate_once()
+        if once:                        # before the docs-only route: a docs record too
+            why = self.strict_refusal(changed, '"landing".gate_once')
+            if why:
+                return why
+        elif shared is not None:
             why = self.shared_refusal(shared, changed)
             if why:
                 return why
         if reuse.docs_only_change(self.cfg, gate, changed):
+            if passed is None:
+                return None
             missing = [n for n in S.docs_steps(gate) if n not in passed]
             if not missing:
                 return None
@@ -840,17 +1086,49 @@ class Lander(object):
                 ', '.join(missing))
         if mode != 'select':
             return 'its gate ran only the docs-only steps, and the change is not docs-only under the base'
-        if not smoke and shared is None:
+        if not once and not smoke and shared is None:
             return ('the change is not docs-only, and the base %s sets no "gate".smoke_steps'
                     % self.expect_main[:10])
         hit = reuse.config_hits(self.cfg, changed)
         if hit:
             return 'the tip changes the gate\'s config (%s), which only a --full record lands' % (
                 ', '.join(hit[:5]))
-        missing = [n for n in smoke if n not in passed]
+        missing = [] if once or passed is None else [n for n in smoke if n not in passed]
         if missing:
             return 'the base\'s smoke step %s did not pass in it' % ', '.join(missing)
         return None
+
+    def gate_once(self):
+        """True when the base's config sets "landing".gate_once true (docs/gate.md "Gate once at
+        landing"): select_refusal takes a default-mode record of any tip that changes no strict
+        path and no gate config file, and once_escalate makes the merged gate --full."""
+        return self.cfg.section('landing').get('gate_once') is True
+
+    def once_facts(self):
+        """{gate_once, escalated} for the land records (kitlib.gate.result build): gate_once()
+        and whether once_escalate escalated; both None when the base's config was never read (a
+        submitted landing that ended before it). Never raises."""
+        try:
+            if self.cfg is None:
+                return {'gate_once': None, 'escalated': None}
+            return {'gate_once': self.gate_once(), 'escalated': self.escalated}
+        except Exception:   # noqa: BLE001 - a record without them still records the outcome
+            return {'gate_once': None, 'escalated': None}
+
+    def ledger(self, rr):
+        """The land ledger line of the record `rr` (a result.Run) just built: appended; a line
+        that cannot be appended, or a record that was never built (rr.last None), is said as a
+        WARNING and the outcome stands. Never raises."""
+        try:
+            if rr.last is None:
+                self.say('WARNING: no land record was built, so no ledger line for %s; the '
+                         'outcome stands' % rr.branch)
+                return
+            _, warning = result.append_ledger(self.root, rr.last)
+            if warning:
+                self.say(warning)
+        except Exception:   # noqa: BLE001 - the outcome stands whatever happens here
+            pass
 
     def shared_refusal(self, shared, changed):
         """Why a record that is not --full does not land a landing diff `changed` under the base's
@@ -862,6 +1140,14 @@ class Lander(object):
         if hits:
             return ('the tip changes shared path %s ("landing".shared_paths), which only a --full '
                     'record lands' % ', '.join(hits[:5]))
+        return self.strict_refusal(changed, '"landing".shared_paths')
+
+    def strict_refusal(self, changed, setting):
+        """Why a record that is not --full does not land a landing diff `changed` under the base
+        setting `setting` that took it ("landing".shared_paths or "landing".gate_once), or None: a
+        changed strict path (strict_globs; a strict branch always ends on --full) refuses, and so
+        does a strict list that cannot be read."""
+        paths = reuse.changed_list(changed)
         globs, why = self.strict_globs()
         if globs is None:
             return 'cannot read the strict paths from %s at %s: %s' % (
@@ -869,7 +1155,7 @@ class Lander(object):
         hits = [p for p in paths if S._match(p, globs)]
         if hits:
             return ('the tip changes strict path %s, which only a --full record lands under '
-                    '"landing".shared_paths' % ', '.join(hits[:5]))
+                    '%s' % (', '.join(hits[:5]), setting))
         return None
 
     def no_full_step(self):
@@ -939,6 +1225,27 @@ class Lander(object):
         except ValueError as e:
             return None, '%s: %s' % (STRICT_FILE, e)
 
+    def strict_paths(self):
+        """`(hits, None)`: branch -> the strict paths it changes (merge base with the base to its
+        tip, matched against strict_globs()), for each branch with any; or `(None, why)` when the
+        list or a branch's paths cannot be read. Reads only: strict_check and check_strict (the
+        dry check) both decide by it."""
+        globs, why = self.strict_globs()
+        if globs is None:
+            return None, 'cannot read the strict paths from %s at %s: %s' % (
+                self.cfg.main_branch, self.expect_main[:10], why)
+        hits = {}
+        for b, t in self.pairs:
+            mb, why = refs.merge_base(self.expect_main, t, self.root)
+            changed, why2 = runner.changed_between(self.root, mb, t) if mb else (None, why)
+            if changed is None:
+                return None, 'git cannot list the paths of %s to check strict paths: %s' % (
+                    b, why2 or why or 'no common commit with %s' % self.expect_main[:10])
+            found = [p for p in changed if S._match(p, globs)]
+            if found:
+                hits[b] = found
+        return hits, None
+
     def strict_check(self):
         """A locked check (docs/gate.md "Strict paths"): the paths each branch changes (merge base
         with the base to its tip) against strict_globs(). A branch with a hit lands only alone,
@@ -948,19 +1255,10 @@ class Lander(object):
         --full --fresh. None, or why not (REFUSED, nothing merged). Every read that fails
         refuses."""
         self.strict_hits, self.strict_review, self.strict_carry = {}, None, None
-        globs, why = self.strict_globs()
-        if globs is None:
-            return 'cannot read the strict paths from %s at %s: %s' % (
-                self.cfg.main_branch, self.expect_main[:10], why)
-        for b, t in self.pairs:
-            mb, why = refs.merge_base(self.expect_main, t, self.root)
-            changed, why2 = runner.changed_between(self.root, mb, t) if mb else (None, why)
-            if changed is None:
-                return 'git cannot list the paths of %s to check strict paths: %s' % (
-                    b, why2 or why or 'no common commit with %s' % self.expect_main[:10])
-            hits = [p for p in changed if S._match(p, globs)]
-            if hits:
-                self.strict_hits[b] = hits
+        hits, why = self.strict_paths()
+        if why:
+            return why
+        self.strict_hits = hits
         if not self.strict_hits:
             return None
         if len(self.pairs) > 1:
@@ -1046,6 +1344,22 @@ class Lander(object):
         if strict:
             self.strict_review, self.strict_carry = entry, facts
         return None
+
+    def once_escalate(self):
+        """After the merge, before the merged gate: when the base sets "landing".gate_once
+        (docs/gate.md "Gate once at landing") and the merged gate is not --full already, it runs
+        --full (each step's full_cmd) on the merged or batched tree, said once; a merge whose diff
+        to the base is docs-only (reuse.docs_only_change) stays on the docs-only route. A diff git
+        cannot list escalates too."""
+        if self.full or not self.gate_once():
+            return
+        changed, _ = runner.changed_between(self.root, self.expect_main, self.merge)
+        if changed is not None and reuse.docs_only_change(self.cfg, self.cfg.section('gate'),
+                                                           changed):
+            return
+        self.full = self.escalated = True
+        self.say('GATE ONCE: the base %s sets "landing".gate_once: the merged gate runs --full on '
+                 'the merged tree' % self.expect_main[:10])
 
     def strict_escalate(self):
         """A strict branch passed strict_check: its merged gate runs --full --fresh, whatever the
@@ -1612,9 +1926,108 @@ class Lander(object):
             return G.Outcome(G.REFUSED, ['REFUSED: %s' % refusal])
         if self.merged_gate_fn is not None:
             return self.merged_gate_fn(self)
+        if self.on_node():
+            out = self.node_gate()
+            if out is not None:
+                return out
+        out = self.rebook_kind()
+        if out is not None:
+            return out
+        return self.main_gate()
+
+    def rebook_kind(self):
+        """Step 7 on main, just before main's merged gate: None when the slot held is of the
+        base config's "gate".kind. Main moved on before the turn to a base whose config (read
+        again by follow, step 4) names another kind than book_turn booked (the config read at
+        preconditions): it says so, releases the slot first, then books the base's kind at its
+        own size with no wait limit, as rebook_here does and for the same reason (booked while
+        the old run is held, a kind of every slot, an owner whole hold or a gpu pool would wait
+        on itself). The landing lock file stays held, so no other landing merges meanwhile.
+        None once booked; the machine lock not giving it: a FAILED Outcome (NOT LANDED, the
+        merge undone). After a node-routed fallback rebook_here booked the base's kind already:
+        nothing to do."""
+        kind, booked = self.cfg.section('gate')['kind'], self.booked_kind
+        if booked is None or self.same_kind(booked, kind):
+            return None
+        self.say('the base %s books "gate".kind %s, not %s as this landing did: releasing the '
+                 "landing's %s run and booking a %s run for the merged gate, waiting with no "
+                 'limit' % (self.expect_main[:10], kind, booked, booked, kind))
+        self.drop_slot(0, 'done')
+        try:
+            self.book_slot(None)
+        except LockError as e:
+            line = ('the machine lock did not give the merged gate its %s run: %s'
+                    % (kind, e.message))
+            return G.Outcome(G.FAILED, [line], verdict=line, results=[])
+        return None
+
+    def same_kind(self, a, b):
+        """True when kind names a and b book the same kind: equal once a retired name (an alias
+        in the lock's kinds table) is read as the kind it names now, so a base whose config
+        still names the old name, or already the new one, is not a different kind."""
+        path = self.queue_store().kinds_path
+        al = lockkinds.aliases(path)
+        return lockkinds.canonical(a, table_aliases=al) == lockkinds.canonical(b, table_aliases=al)
+
+    def route_need(self, lr, kind):
+        """The slots the merged gate's kind `kind` needs on a node, for recheck: `(need, None)`,
+        the plan's when the base's config names the kind booked (book_turn); else `kind` sized
+        again (lr.need_of), or `(None, why)` when it cannot be, and the landing gates here."""
+        if self.booked_kind is None or self.same_kind(self.booked_kind, kind):
+            return self.route.need, None
+        try:
+            return lr.need_of(kind, self.queue_store()), None
+        except Exception as e:      # noqa: BLE001 - gate here, at the base's kind
+            return None, ('the base %s books "gate".kind %s, not %s, and %s cannot be sized '
+                          'here (%s)' % (self.expect_main[:10], kind, self.booked_kind, kind,
+                                         _what(e)))
+
+    def node_gate(self):
+        """Step 7 for a node-routed landing: the land job's Outcome (landroute.run_on_node), or
+        None once it fell back to main (rebook_here booked main's full run): the tip's --full
+        record has the merge's tree (same_tree_why), no node qualifies now (recheck, for the
+        slots of the base's kind: route_need; another node that does takes it), or nothing ran
+        on the node (Fallback). Only those fall back:
+        any other exception goes on up (recover: NOT LANDED). The machine lock not giving the
+        full run: a FAILED Outcome."""
+        lr, kind = self.routes(), self.cfg.section('gate')['kind']
+        repo_name = runner.repo_name(self.cfg, self.root)
+        why = lr.same_tree_why(self.tree, self.cfg, self.branches[0], self.tips[0],
+                               self.expect_main, self.merge, batch=len(self.branches),
+                               fresh=self.fresh, full=self.full)
+        node = need = None
+        if not why:
+            need, why = self.route_need(lr, kind)
+        if not why:
+            c = lr.recheck(self.route.nodes, repo_name, need)
+            if c.node is None:
+                why = c.why
+            else:
+                node = c.node
+                if c.node.name != self.route.node.name:
+                    self.say('gating on load node %s: %s' % (c.node.name, c.why))
+        if node is not None:
+            try:
+                return lr.run_on_node(node, self.root, self.merge, self.expect_main, self.cfg,
+                                      repo_name, runner.slug_of('+'.join(self.branches)),
+                                      full=self.full, docs=True, tree=self.tree, kind=kind,
+                                      say=self.say, store=self.queue_store())
+            except lr.Fallback as e:
+                why = '%s (nothing ran on load node %s)' % (e.why, node.name)
+        try:
+            self.rebook_here(why)
+        except LockError as e:
+            line = ("the machine lock did not give main's merged gate its full %s run: %s"
+                    % (kind, e.message))
+            return G.Outcome(G.FAILED, [line], verdict=line, results=[])
+        return None
+
+    def main_gate(self):
+        """Step 7 on main: the merged gate in the landing's slot (runner.merged_gate)."""
         plan = reuse.planner(self.tree, self.cfg, self.branches[0], self.tips[0], self.expect_main,
                              self.merge, self.prior, fresh=self.fresh, full=self.full,
-                             batch=len(self.branches))
+                             batch=len(self.branches),
+                             record=self.tip_records.get(self.tips[0]))
         out = runner.merged_gate(self.root, self.cfg, self.expect_main, full=self.full,
                                  slug='+'.join(self.branches), log_dir=self.log_dir, say=self.say,
                                  book_kw=self.book_kw, reuse=plan,
@@ -1628,15 +2041,17 @@ class Lander(object):
 
     def write_record(self, started, results):
         """The gate-OK record for the merge commit (pre-push reads it), its config_rev the
-        base, its mode "docs" when the merged gate ran only the docs-only steps; its path. Raises
+        base, its mode "docs" when the merged gate ran only the docs-only steps, its ran_on the
+        land job's when the merged gate ran on a load node; its path. Raises
         gate_ok.RecordError."""
         docs = self.gate_out is not None and self.gate_out.facts.get('docs') is True
+        ran_on = self.gate_out.facts.get('ran_on') if self.gate_out is not None else None
         path, _ = gate_ok.record_pass(self.root, self.merge, runner.gate_config(self.cfg),
                                       runner.kit_identity(), runner.repo_name(self.cfg, self.root),
                                       started, runner.record_steps(results or []),
                                       base=self.expect_main, config_rev=self.expect_main,
                                       source=self.source(), full=bool(self.full) and not docs,
-                                      mode='docs' if docs else None)
+                                      mode='docs' if docs else None, ran_on=ran_on)
         return path
 
     def push(self, started, results):
@@ -1645,7 +2060,9 @@ class Lander(object):
         else why nothing landed (NOT LANDED: the record could not be written, the remote's main
         moved on while the gate ran, so the push was refused, or git refused the push, exit 1
         with git's own ref status line `! [rejected] ...` or `! [remote rejected] ...`
-        (PUSH_REFUSED), with the remote's main still the base). _Stuck when the push may have
+        (PUSH_REFUSED), with the remote's main still the base; or the push never connected,
+        push_never_connected, with the remote's main anything but the merge or a commit holding
+        it, unreadable included). _Stuck when the push may have
         landed and git cannot tell (ls-remote unreadable, or a remote main this checkout cannot
         place), or when any other push did not land on a remote main still at the base or absent:
         exit 0, no exit (timed out), exit 1 without that line (no message: a git ended from
@@ -1666,7 +2083,20 @@ class Lander(object):
                      timeout=PUSH_TIMEOUT)
         pushed, why = refs.ls_remote(remote, 'refs/heads/%s' % main_b, self.root)
         how = 'exited 0' if r.rc == 0 else 'failed (%s)' % (r.err or 'exit %s' % r.rc)
+        lines = [l.strip() for l in (r.err or '').splitlines() if l.strip()]
+        said = ' | '.join(lines)
+        unconnected = push_never_connected(r.rc, r.err)
+
+        def never_connected(state):
+            # git died before connecting (PUSH_NEVER_CONNECTED): no byte reached the remote, so
+            # the merge, made only here, is not on it whatever ls-remote read (in an outage it
+            # fails the same way). A remote main that is or holds the merge still counts as landed
+            return ('the push of the merge %s never connected to %s (%s), and %s/%s %s; nothing '
+                    'landed, and the merge of %s was undone: land again once %s can be reached'
+                    % (self.merge[:10], remote, said, remote, main_b, state, self.branch, remote))
         if pushed is None:
+            if unconnected:
+                return never_connected('is unreadable (%s)' % why)
             raise _Stuck('the push %s, and %s/%s is unreadable (%s), not known to be the merge %s'
                          % (how, remote, main_b, why, self.merge[:10]))
         if pushed != self.merge:
@@ -1675,12 +2105,17 @@ class Lander(object):
                 self.fetch()
                 on = self.on_remote(pushed)
             if on is None:
+                if unconnected:
+                    return never_connected('is %s, which this checkout cannot place' % (
+                        pushed[:10] or 'absent'))
                 raise _Stuck('the push %s, and %s/%s is %s, which this checkout cannot place '
                              'against the merge %s' % (how, remote, main_b, pushed[:10] or 'absent',
                                                        self.merge[:10]))
             if not on:
-                lines = [l.strip() for l in (r.err or '').splitlines() if l.strip()]
-                said = ' | '.join(lines)
+                if unconnected:
+                    return never_connected('is still the base %s' % self.expect_main[:10]
+                                           if pushed == self.expect_main else
+                                           'is %s' % (pushed[:10] or 'absent'))
                 refused = any(l.startswith(PUSH_REFUSED) for l in lines)
                 if r.rc == 1 and refused and pushed == self.expect_main:
                     # git ran to the end and printed the ref's refusal (PUSH_REFUSED): nothing was
@@ -1775,7 +2210,10 @@ class Lander(object):
         refusal: a retry or a duplicate) writes no record, so it never replaces a real result; a
         submitted landing's records were written running before it started, so every outcome
         finishes them. The record lines are said as progress: the verdict stays the
-        outcome's last line. The machine-lock slot is released however _run ends.
+        outcome's last line. The machine-lock slot is released however _run ends. The final and
+        the `error` records carry gate_once and escalated (once_facts), and each is appended to
+        the land ledger as one line (ledger; result.append_ledger), a failed append a WARNING.
+        Landed, the final records are then posted to the hub's landing feed (post_landing).
         facts['result_record']: the path (one branch), the list of paths (a batch), or None."""
         try:
             out = self._run()
@@ -1787,7 +2225,9 @@ class Lander(object):
                 pass
             for rr in self.result_runs:
                 try:
-                    self.say(rr.error(e, log=self.gate_logs or self.output_log)[1])
+                    self.say(rr.error(e, log=self.gate_logs or self.output_log,
+                                      **self.once_facts())[1])
+                    self.ledger(rr)
                 except Exception:   # noqa: BLE001 - never replace the exception being raised
                     pass
             raise
@@ -1797,14 +2237,80 @@ class Lander(object):
             out.lines.insert(max(0, len(out.lines) - 1), 'WARNING: %s while the machine-lock '
                              'slot was released; its queue entry goes once this process ends'
                              % _what(e))
+        if out.code == G.OK and out.facts.get('merge'):
+            self.refresh_mirrors(out)
         paths = []
+        once = self.once_facts()
         for rr in self.result_runs:
             path, line = rr.finish(out, base=self.expect_main,
-                                   log=self.gate_logs or self.output_log, source=self.source())
+                                   log=self.gate_logs or self.output_log, source=self.source(),
+                                   **once)
             self.say(line)
+            self.ledger(rr)
             paths.append(path)
         out.facts['result_record'] = (paths[0] if len(self.branches) == 1 else paths) if paths else None
+        if out.code == G.OK and out.facts.get('merge'):
+            self.post_landing()
         return out
+
+    def post_landing(self):
+        """Landed, the records finished and the lock released: one landing feed event per branch
+        posted to the hub (kitlib.hubsite.landings), built from the land record the ledger line
+        was (rr.last). Best-effort with a short timeout: each event the hub did not take is a
+        WARNING said as progress and dropped, and the outcome, its lines and its code stand
+        whatever happens here. Never raises."""
+        try:
+            from kitlib.hubsite import landings
+            repo_name = runner.repo_name(self.cfg, self.root)
+            mode = self.merged_mode()
+            events = []
+            for rr in self.result_runs:
+                if rr.last is None:
+                    continue            # ledger() said so; there is nothing to build it from
+                events.append(landings.event(
+                    rr.last, repo_name, self.cfg.main_branch, self.merge,
+                    records=self.closed.get(rr.branch, ()), mode=mode,
+                    deploy=self.deploy_note(rr.last.get('tip'))))
+            lines = landings.post(events, client=self.hub)
+        except BaseException as e:  # noqa: BLE001 - landed: only the feed misses it
+            lines = ['WARNING: the landing was not posted to the hub feed (%s); the landing '
+                     'stands' % _what(e)]
+        for line in lines:
+            try:
+                self.say(line)
+            except BaseException:   # noqa: BLE001 - the outcome stands
+                pass
+
+    def merged_mode(self):
+        """The mode of the merged gate's gate-OK record on the new main (gate_ok.MODES), or None."""
+        try:
+            rec, _ = gate_ok.read(self.root, self.merge)
+            return gate_ok.mode_of(rec) if isinstance(rec, dict) else None
+        except Exception:   # noqa: BLE001 - an event without it still says the landing
+            return None
+
+    def deploy_note(self, tip):
+        """The `Deploy:` note of the commit `tip` (kitlib.hubsite.landings.deploy_note), or None."""
+        from kitlib.hubsite import landings
+        if not tip:
+            return None
+        r = self.git('log', '-1', '--format=%B', tip)
+        return landings.deploy_note(cmd.text(r.out)) if r.rc == 0 else None
+
+    def refresh_mirrors(self, out):
+        """Step 13, landed and nothing held: the merge pushed to the load nodes' mirrors of main
+        (kitlib.loadnode.mirror.refresh), its lines put before the LANDED line of `out`. The
+        landing stands whatever happens here: an exception or Ctrl+C is a WARNING line."""
+        lines = []
+        try:
+            from kitlib.loadnode import mirror
+            mirror.refresh(self.root, runner.repo_name(self.cfg, self.root), self.cfg.main_branch,
+                           out.facts['merge'], store=self.queue_store(), say=lines.append)
+        except BaseException as e:  # noqa: BLE001 - landed: only the nodes' mirrors lag
+            lines.append("WARNING: refreshing the load nodes' mirrors of %s stopped (%s); the "
+                         'landing stands' % (self.cfg.main_branch, _what(e)))
+        at = next((i for i, x in enumerate(out.lines) if x.startswith('LANDED ')), len(out.lines))
+        out.lines[at:at] = lines
 
     def _run(self):
         why = self.usage()
@@ -1816,15 +2322,13 @@ class Lander(object):
         if not self.submitted:      # joins the queue now: its records' started_at
             runs = (result.Run.maybe(self.root, 'land', b, t) for b, t in self.pairs)
             self.queued_runs = [rr for rr in runs if rr is not None]
+        self.plan_route()
         try:
             self.book_turn()
         except (landing.LockError, ConfigError) as e:
             return G.Outcome(G.REFUSED, ['REFUSED: the landing lock: %s; nothing was changed' % e])
         except LockError as e:
-            if e.code == EXIT_USAGE:
-                return runner.lock_refusal(e)
-            return G.Outcome(e.code, ['NOT RUN: the machine lock did not give the landing its '
-                                      'turn: %s; nothing was changed' % e.message])
+            return self.not_run(e)
         why = self.fetch()
         if why:
             return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % why])
@@ -1832,6 +2336,8 @@ class Lander(object):
             why = self.take()
         except (landing.LockError, ConfigError) as e:
             return G.Outcome(G.REFUSED, ['REFUSED: the landing lock: %s; nothing was changed' % e])
+        except LockError as e:      # booking again behind the lock file's holder (yield_turn)
+            return self.not_run(e)
         if why:
             return G.Outcome(G.BUSY, ['BUSY: %s; nothing was changed' % why])
         try:
@@ -1850,6 +2356,13 @@ class Lander(object):
                     self.say(line)      # before the merge: raised again
                 raise
             return out                  # an exception or SystemExit after the merge: dropped
+
+    def not_run(self, e):
+        """The outcome of the machine lock's LockError `e` before the landing lock file is held."""
+        if e.code == EXIT_USAGE:
+            return runner.lock_refusal(e)
+        return G.Outcome(e.code, ['NOT RUN: the machine lock did not give the landing its turn: '
+                                  '%s; nothing was changed' % e.message])
 
     def recover(self, e):
         """After an exception `e` under the lock: release it before the merge; after the merge
@@ -1998,6 +2511,7 @@ class Lander(object):
             return failed
         self.say('merged %s at %s in the landing tree %s; gating the merged tree' % (
             self.branch, self.merge[:10], self.tree))
+        self.once_escalate()
         out = self.gate_out = self.gate()
         main_b, base = self.cfg.main_branch, self.expect_main
         if out.code == G.OK:
@@ -2058,6 +2572,8 @@ class Lander(object):
         Each branch's `Closes:` lines are read from its tip down to the main it was merged onto
         (the batch's previous merge, else the base), so a stacked branch never re-reads the
         lines of the branch merged before it; the batch's other branches are no holder to tell.
+        The ids of each branch's `closed <id> in the backlog store` lines go in self.closed, for
+        the landing feed (post_landing).
         A batch not merged as a stack (fewer merges than branches) reads every branch's lines down
         to the base, which takes in an earlier batch branch's lines when the tip carries them: a
         WARNING says so for each branch after the first (its Part-of line can release what this
@@ -2076,9 +2592,11 @@ class Lander(object):
                     'them; see the lines read with: git log --format=%%B %s --not %s'
                     % (len(self.merges), len(self.pairs), b, str(base)[:10], b, t, base))
             try:
-                lines.extend(at_landing.close_landed(
+                said = at_landing.close_landed(
                     self.root, self.cfg, b, self.merge, tip=t, base=base,
-                    batch=[o for o in self.branches if o != b]))
+                    batch=[o for o in self.branches if o != b])
+                lines.extend(said)
+                self.closed[b] = [m.group(1) for m in map(_CLOSED.match, said) if m]
             except BaseException as e:
                 what = 'Ctrl+C' if isinstance(e, KeyboardInterrupt) else '%s: %s' % (
                     type(e).__name__, e)
@@ -2363,6 +2881,74 @@ def land(root, branch, expect_main, expect_tip, **kw):
     Outcome (OK, FAILED, USAGE, STUCK, REFUSED, BUSY, or a machine lock code when the booking was
     refused; LANDED_UNGATED is retired, never returned)."""
     return Lander(root, branch, expect_main, expect_tip, **kw).run()
+
+
+def full_needed(root, cfg, base, changed, docs):
+    """Whether a branch whose landing diff is `changed` must end on `gate.py --full` (docs/gate.md
+    "The final gate"), for the plain branch gate's FULL NEEDED line: `(reason, None)` when it must,
+    `(None, None)` when its default-mode record (`docs` True: its docs-only one) would land, or
+    `(None, why)` when that cannot be told. `cfg` is the base's config and `base` the base commit,
+    as a landing reads them. The reason is Lander.diff_refusal's, the tip check's own (steps that
+    passed aside, as the gate has not run them yet), or else a changed strict path: the procedure
+    ends a strict branch on --full even where the record check takes its default-mode record (the
+    merged gate runs --full --fresh; Strict paths). Reads only."""
+    lander = Lander(root, [], None, [])
+    lander.cfg, lander.expect_main = cfg, base
+    why = lander.diff_refusal(changed, 'docs' if docs else 'select', None)
+    if why:
+        return why, None
+    globs, why = lander.strict_globs()
+    if globs is None:
+        return None, 'cannot read the strict paths from %s at %s: %s' % (
+            cfg.main_branch, base[:10], why)
+    hits = [p for p in reuse.changed_list(changed) if S._match(p, globs)]
+    if hits:
+        more = len(hits) - STRICT_SHOWN
+        return ('the tip changes strict path %s%s, and a strict branch ends on --full (docs/gate.md '
+                '"Strict paths")' % (', '.join(hits[:STRICT_SHOWN]),
+                                     ' and %d more' % more if more > 0 else ''), None)
+    return None, None
+
+
+def check_strict(root, branches):
+    """Read-only, the dry strict check a coordinator runs before it picks a reviewer (docs/gate.md
+    "Strict paths"): for each of `branches`, its local tip against `<remote>/<main>` as last
+    fetched (runner.default_base; no fetch), decided by Lander.strict_paths, the matcher
+    strict_check refuses by. An OK Outcome, one line per branch: `STRICT <branch>: <paths>: ...`
+    or `NOT STRICT <branch>: ...`. Takes no lock, needs no verdict and writes nothing. REFUSED
+    when the config, the base, a branch or the strict paths cannot be read."""
+    try:
+        cfg = kconfig.load(root)
+    except ConfigError as e:
+        return G.Outcome(G.REFUSED, ['REFUSED: the config of %s: %s' % (root, e)])
+    ref, why = runner.default_base(cfg, root)
+    base = refs.resolve(ref, root)[0] if ref else None
+    if not base:
+        return G.Outcome(G.REFUSED, ['REFUSED: no base to check against: %s' % (
+            why or '%s does not resolve' % ref)])
+    tips = []
+    for b in branches:
+        tip = None if refs.bad_rev(b) else refs.resolve('refs/heads/%s' % b, root)[0]
+        if not tip:
+            return G.Outcome(G.REFUSED, ['REFUSED: no branch %s in this repository' % b])
+        tips.append(tip)
+    lander = Lander(root, list(branches), None, tips)
+    lander.cfg, lander.expect_main = cfg, base
+    hits, why = lander.strict_paths()
+    if why:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+    lines = []
+    for b, t in zip(branches, tips):
+        on = 'tip %s, base %s %s' % (t[:10], ref, base[:10])
+        found = hits.get(b)
+        if not found:
+            lines.append('NOT STRICT %s: no strict path changed (%s)' % (b, on))
+            continue
+        more = len(found) - STRICT_SHOWN
+        lines.append('STRICT %s: %s%s (%s): its reviewer must run on a strong-tier model, and it '
+                     'lands alone' % (b, ', '.join(found[:STRICT_SHOWN]),
+                                      ' and %d more' % more if more > 0 else '', on))
+    return G.Outcome(G.OK, lines)
 
 
 def queue(root, store=None):

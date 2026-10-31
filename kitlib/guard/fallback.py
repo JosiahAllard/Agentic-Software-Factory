@@ -197,7 +197,7 @@ WHY = 'The guard could not read this command; write the program name literally. 
 SCRIPT = (' Make every program name and nested shell text literal (a nested bash -c in single quotes; a '
           'variable it needs exported), or write the commands to a script file with the Write tool, then run it:')
 SCRIPT_RUNS = {'bash': ('script.sh', 'bash "%s"'),
-               'powershell': ('script.ps1', 'powershell -NoProfile -ExecutionPolicy Bypass -File "%s"')}
+               'powershell': ('script.ps1', 'powershell -NoProfile -File "%s"')}
 
 
 def heavy_patterns(cfg):
@@ -375,7 +375,8 @@ def check(event, ctx, text, cwd, role, parsed):
     cfg = ctx.config(cwd) if cwd else None
     for entry, pat in heavy_patterns(cfg):
         m = pat.search(text)
-        if not m or (entry.get('when_args') and not any(a in text for a in entry['when_args'])):
+        if not m or (entry.get('when_args') and not any(a in text for a in entry['when_args'])) or any(
+                not any(a in text for a in wanted) for wanted in entry.get('also_args', ())):
             continue
         if held is None:
             held = ctx.lock_held()[0]

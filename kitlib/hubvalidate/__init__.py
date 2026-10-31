@@ -32,8 +32,8 @@ Finding = collections.namedtuple('Finding', 'level rel field code message')
 
 ERROR, WARN, NOTE = 'error', 'warn', 'note'
 
-# status values per collection (docs/action-hub.md: questions, stories, todos, to_pm, finding_marks;
-# approvals: kitlib.hubsite.approvals)
+# status values per collection (docs/action-hub.md: questions, stories, todos, to_pm, finding_marks,
+# skill_edits; approvals: kitlib.hubsite.approvals)
 STATUSES = {
     'questions': ('open', 'answered', 'logged', 'done', 'filed'),
     'stories': ('submitted', 'review', 'questions', 'added', 'declined', 'withdrawn'),
@@ -41,14 +41,16 @@ STATUSES = {
     'to_pm': ('queued', 'sent', 'done'),
     'approvals': ('pending', 'approved', 'denied', 'consumed', 'expired'),
     'finding_marks': ('dismissed', 'passed_on', 'done'),
+    'skill_edits': ('draft', 'submitted', 'committed', 'superseded', 'failed', 'withdrawn'),
 }
-# the collection a Q-/M-/T-/P-/S-/A- id names (the store's id prefixes), and the fields that carry
-# such ids (an A- id is never a ref)
+# the collection a Q-/M-/T-/P-/S-/A-/E-/L-/C- id names (the store's id prefixes), and the fields
+# that carry such ids (an A-, E-, L- or C- id is never a ref; E is a skill edit, L a landing feed
+# event, C a session's hand-off record, docs/action-hub.md)
 REF_COLLECTIONS = {'Q': 'questions', 'M': 'inbox', 'T': 'todos', 'P': 'to_pm', 'S': 'stories',
-                   'A': 'approvals'}
+                   'A': 'approvals', 'E': 'skill_edits', 'L': 'landings', 'C': 'handoffs'}
 REF_FIELDS = {'questions': ('refs',), 'inbox': ('ref', 'refs'), 'parked': ('q',),
               'todos': ('refs',), 'to_pm': ('refs',)}
-REPO_COLLECTIONS = ('questions', 'inbox', 'todos', 'to_pm', 'stories', 'parked')
+REPO_COLLECTIONS = ('questions', 'inbox', 'todos', 'to_pm', 'stories', 'parked', 'landings')
 ANY_REPO = ('all', 'pm', '')        # a repo tag that needs no repos/ entry
 _REF = re.compile(r'(?<![A-Za-z0-9])([QMTPS])-\d+(?![A-Za-z0-9])', re.I)
 # a kit plugin export folder (kitlib.pluginsource: <export_dir>/<sha12>, the default export_dir

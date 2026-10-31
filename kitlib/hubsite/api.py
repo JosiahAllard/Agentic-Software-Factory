@@ -5,7 +5,8 @@ hub site design, section 2 "HTTP API" and section 9).
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
              AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
   Api(store, views=None, clock=None, session_keys=None, now=None, approval_key=None,
-      checkout=None, lock=None, repo_name=None, schedule_repos=None, tick_seen=None)
+      checkout=None, lock=None, repo_name=None, schedule_repos=None, tick_seen=None,
+      kit_key=None, kit_blob=None)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
              via names the transport (web, desktop-mcp, cli, tunnel, ...); every write records
@@ -53,7 +54,7 @@ shows Approve and Deny as usable; the decide route checks the role itself all th
 
 Pages. POST pages (AGENT) publishes a page: the card `pages/<id>` and its body `page_html/<id>`.
 The body is {id, title, html, repo?, from?, summary?, refs?, if_version?}. The id is the
-caller's (a document id that holds no hub item's or ruling's id, `[QMTPSAR]-<digits>` with no
+caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>` with no
 letter or digit either side, anywhere, so a ref that names a page is never read as an item);
 html is judged by kitlib.hubsite.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
 outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
@@ -117,6 +118,53 @@ the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or n
 skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
 else null (_lint_runs); no view, or one that fails, is an empty list.
 
+Landings (docs/action-hub.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
+landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
+fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
+record ids), and the hub sets posted_at. GET landings (ANY) lists them newest first, filtered by
+`repo`, at most `limit` (default FEED_MAX); GET snapshot carries the newest FEED_MAX. Every event
+is kept; none is ever pending or pushed, and no route changes or deletes one.
+
+Hand-offs (docs/action-hub.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
+checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
+kind, state_path}, all required. from is a session key checked as a question's is (a launcher
+session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
+of the reply; checkin: a successor that has checked in, kitlib.launcher.handoff); state_path is
+the absolute path of the state note, on one line. The hub sets `at`.
+GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the highest id per
+`from`), sorted by key, or with `from=<key>` that key's alone; over the tunnel only, the state
+path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
+deletes one, and GET snapshot leaves them out.
+
+Skill edits (docs/action-hub.md "skill_edits/E-NNN"). The owner writes a new text for one kit
+skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
+repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
+listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
+of that text. Only the owner writes an edit, as only the owner writes a story (POST stories,
+stories/{id}/withdraw, to_pm and finding_marks are OWNER routes too): POST skill_edits {skill,
+text, submit?}, POST skill_edits/{id}/edit {text?, submit?, if_version} and POST
+skill_edits/{id}/withdraw {if_version?} are OWNER, so an agent's key is refused `forbidden`, field
+role, before the body is read, and nothing is written. An edit is draft, or submitted with
+`submit`; base_blob is the blob of the source the hub served when it was written, so it can lag
+the kit's main. The text is checked by kitlib.hubsite.skilledits.why_not: at most MAX_BYTES of
+UTF-8, no NUL, and front matter whose `name:` is the source's (an edit never renames a skill).
+Only a draft, superseded or failed edit changes; a superseded or failed one is put on the source
+at its source_blob when kit_text reads that blob (the text GET skill_edits/{id} shows the owner),
+else on the served source as it is now; its base_blob is that blob. Submitting when base_blob is
+neither the served source's blob nor the blob on main (kit_blob) makes it superseded, with
+source_blob the blob on main (the served blob when kit_blob reads none), for the owner to re-apply.
+POST skill_edits/{id}/done {branch, blob, if_version} and POST skill_edits/{id}/fail {why,
+current_blob?, if_version} are AGENT, and only for a submitted edit: done refuses a blob that is
+not git_blob of the edit's text as UTF-8, and it reads the blob of the source on `branch` in
+the kit checkout itself (the Api's kit_blob) and refuses one it cannot read or that is not that
+blob (field branch), so an agent cannot mark committed a text it never wrote; with no kit_blob it
+reads nothing, so done is refused. fail with a current_blob
+that is not base_blob (the worker's check against main) makes the edit superseded, else failed.
+GET skill_edits (ANY, status) lists the edits, GET skill_edits/{id} (ANY) gives {item, source}:
+source is {text, blob} at a superseded or failed edit's source_blob when kit_text reads it, else
+null. A
+submitted edit is a pending item of kind `skill_edit` ("Routes").
+
 Fields. A write route names the body fields it takes; any other field is refused (`invalid`, the
 field named), so a body cannot carry a field another role owns (an agent posting a question
 cannot post its answer). status, the time stamps and a to-do's `from: you` are set here from the
@@ -170,6 +218,8 @@ is null and `unavailable` maps its name to that same reason:
   backlog(repo='', state='', fresh=False)   [{repo, fetched_at, items}]
   completed(repo='', days=None)             [{repo, fetched_at, items}]
   notices()  repos()  usage()  agents()     a list each
+  skills()                                  {available, skills|reason}: each skill's name and description
+  skill(name)                               one skill with its body (GET skills/{name}); not_found
   findings()                                the lint's rows (GET findings; not in GET snapshot)
   lint_runs()                               [{repo, started, ledger, skip}]: each repo's last
                                             result's started and ledger, and its skip marker
@@ -193,9 +243,13 @@ the local owner is given. POST records/{repo}/{id}/delete takes `confirm`, which
 An answer to a question bound to a record is filed by POST questions/{id}/answer as soon as it is
 stored, and again by POST questions/file (AGENT, optional {id}) and at hub start for every
 answered one not filed yet: file_answer. A filed question has status `filed` and stays pending,
-with `filed` true, until its asker logs it or marks it done (POST questions/{id}/log or done), so
-an asker between waits still reads the answer; the PM's list carries it only when it is the PM's
-or routed to `pm` (Routes), or a standing rule. One that failed stays `answered` with `filing`,
+with `filed` true, until its asker has it: the push worker then marks it done itself (done_by
+`hub`, kitlib.hubsite.push "Done by the hub"), never in the filing's own write; the asker may
+still log it or mark it done (POST questions/{id}/log or done; its done of one the hub marked
+done is no conflict). So an asker between waits still reads the answer; the PM's list carries it
+only when it is the PM's or routed to `pm` (Routes), or a standing rule. One the hub marked done
+takes a new answer, which reopens it, and a promote, which files it again (HUB_DONE_CLEARED).
+One that failed stays `answered` with `filing`,
 for the PM. A filed question carries `filed_as`, what the answer did to its record (pulled,
 freed, held: _filed_as, from the `record` view read before and after), which the push reads to
 choose who hears it. `standing` {at, via} marks an answer the owner made a standing rule (the
@@ -283,6 +337,12 @@ is newer than this process, restart the owner's to-do text then (null otherwise)
 Api.code_status when it is built; a status that raises or is not an object gives null. The
 tunnel's health holds fixed words only and carries none.
 
+Jobs. GET health carries `jobs`: null when this hub runs no timed job, else {name: block} from
+kitlib.hubsite.jobs Jobs.status, each block {"every_s", "runs", "failures", "running",
+"last_at", "ok_at", "note", "error"} (kitlib.hubsite.jobs docstring). The server sets
+Api.jobs_status when it is built; a status that raises or is not an object gives null. The
+tunnel's health carries none.
+
 Pending for one session. Every pending item carries `from`, the session key it is for
 (Api.pending). GET pending and GET wait (with pending=1) take `for=<key>`: only that key's
 items are listed (`for=pm`: see Routes), and such a wait is woken only by one of them, a reset or its timeout, so a
@@ -307,7 +367,9 @@ lists the items routed to `pm`, every answered question, whoever it is from (the
 ruling), and every decided approval; a filed question only when it is routed to `pm` (its asker
 reads it). An approval has no `from`: it is for the coordinator of its
 repository, the session key named as the configured repository whose origin remote is the
-approval's `repo` (Api's repo_name), while that key is in sessions.json, else for `pm`. A wait
+approval's `repo` (Api's repo_name), while that key is in sessions.json, else for `pm`. A
+skill edit has no `from` either: it is for the kit's coordinator, the key Api's kit_key gives
+(kit_session_key), on the same terms. A wait
 `for=pm` is also woken when an item's route turns to `pm` with no write. All of
 this lives in this Api object: a new Api (a server restart) routes every item to `pm` until its
 creator waits again. As for PM seen, no lock is taken: each note is one dict step, a dict is
@@ -322,6 +384,7 @@ import collections
 import datetime
 import json
 import math
+import ntpath
 import os
 import re
 import time
@@ -332,6 +395,7 @@ from kitlib.launcher import settings as lsettings, state as lstate
 
 from . import pagecheck
 from . import schema
+from . import skilledits
 from . import todosteps
 from .store import PAGES_LOCK, HubError
 
@@ -358,13 +422,15 @@ WRITES_WHY = {
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
           'unavailable': 503, 'internal': 500}
 WAIT_MAX_S = 55
+FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
+LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
 LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
 LOCK_DAYS_MAX = 366                 # GET lock/stats `days`
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's via (kitlib.hubsite.httpd): a remote view
 ACK_WINDOW_S = 30 * 60              # a creator's time to handle an item handed to it ("Routes")
 REACH_GRACE_S = WAIT_MAX_S + 30     # a key is reachable this long after its last wait ("Routes")
 ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
-VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents')
+VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
 OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
 AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
 AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')
@@ -382,8 +448,8 @@ _ID_SPLIT = re.compile(r'([0-9]+)')
 _NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
 _SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
 # A hub item's id or a ruling's anywhere in a page id ("Pages"): hubvalidate._REF's pattern, plus
-# A and R and the per-repo ledger id H-<repo>-nnnn, searched, so neither `plan-Q-1` nor `Q-1.v2` holds a ref a reader would follow.
-_REF_SHAPED = re.compile(r'(?<![A-Za-z0-9])(?:[QMTPSAR]-\d+|H-[a-z0-9][a-z0-9-]*-\d+)(?![A-Za-z0-9])', re.I)
+# A, E and R and the per-repo ledger id H-<repo>-nnnn, searched, so neither `plan-Q-1` nor `Q-1.v2` holds a ref a reader would follow.
+_REF_SHAPED = re.compile(r'(?<![A-Za-z0-9])(?:[QMTPSARE]-\d+|H-[a-z0-9][a-z0-9-]*-\d+)(?![A-Za-z0-9])', re.I)
 PAGE_HTML_MAX = pagecheck.MAX_BYTES
 
 
@@ -599,12 +665,21 @@ class Api(object):
     machine config's launcher.repos as [(label, main checkout, name)] (default:
     launcher_checkouts), `tick_seen()` the ISO time the automatic tasks' tick was last seen or
     None (default: tick_last_seen), `tick_state()` the tick's records by schedule key (default:
-    tick_run_state); all are read on each use ("Schedules")."""
+    tick_run_state); all are read on each use ("Schedules"). `kit_key()` gives the session key
+    of the kit repository's coordinator, '' when none is known (default), so a submitted skill
+    edit is the PM's; `kit_blob(branch, path)` gives the blob id of `path` on `branch` in this
+    machine's kit checkout, or None when git cannot read it; with none given (default) every
+    read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
+    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits")."""
 
     def __init__(self, store, views=None, clock=None, session_keys=None, now=None,
                  approval_key=None, checkout=None, lock=None, repo_name=None,
-                 schedule_repos=None, tick_seen=None, tick_state=None):
+                 schedule_repos=None, tick_seen=None, tick_state=None, kit_key=None,
+                 kit_blob=None, kit_text=None):
         self.store = store
+        self.kit_text = kit_text or (lambda blob: None)
+        self.kit_key = kit_key or (lambda: '')
+        self.kit_blob = kit_blob or (lambda branch, path: None)
         self.tick_state = tick_state or tick_run_state
         self.schedule_repos = schedule_repos or launcher_checkouts
         self.tick_seen = tick_seen or tick_last_seen
@@ -629,6 +704,7 @@ class Api(object):
         self._pushed = {}           # session key -> `now` of the latest push written to it
         self.watcher_status = None  # PushWorker.watcher_status, set by the worker ("Watcher")
         self.code_status = None     # Hub.code_state, set by serve.build ("Code")
+        self.jobs_status = None     # jobs.Jobs.status, set by serve.build ("Jobs")
 
     def call(self, method, path, role, body=None, query=None, via='', raise_unexpected=False,
              agent_words=False, strong=False):
@@ -782,6 +858,15 @@ class Api(object):
         except Exception as e:      # noqa: BLE001 - unreadable: only the PM's key is known
             return {AGENT_FROM}, _reason(e)
 
+    def kit_session_key(self):
+        """kit_key(): the kit coordinator's session key, '' when it fails or gives no string
+        ("Skill edits")."""
+        try:
+            key = self.kit_key()
+        except Exception:           # noqa: BLE001 - no kit coordinator known: the PM hears it
+            key = ''
+        return key if isinstance(key, str) else ''
+
     def repo_key(self, repo):
         """The session key of the coordinator of the repository whose remote is the repo_id
         `repo`: the configured repository's name (a repo's main coordinator is keyed by its name
@@ -823,6 +908,8 @@ class Api(object):
                 if repo not in repo_keys:
                     repo_keys[repo] = self.repo_key(repo)
                 sender = repo_keys[repo]
+            elif d['kind'] == 'skill_edit':
+                sender = self.kit_session_key()     # the kit's coordinator commits it
             mine = sender and sender not in (AGENT_FROM, OWNER_FROM)
             if mine and keys is None:
                 keys = self.session_keys()          # read once, and only when it can matter
@@ -963,6 +1050,17 @@ class Api(object):
             return None
         return got if isinstance(got, dict) else None
 
+    def jobs_seen(self):
+        """The timed jobs' health blocks (module docstring "Jobs"), or None. Never raises."""
+        fn = self.jobs_status
+        if fn is None:
+            return None
+        try:
+            got = fn()
+        except Exception:           # noqa: BLE001 - health answers whatever the jobs do
+            return None
+        return got if isinstance(got, dict) else None
+
 
 # ------------------------------------------------------------------ handlers
 def questions_list(api, req):
@@ -970,6 +1068,27 @@ def questions_list(api, req):
 
 
 RECORD_SHAPE = 'record is {"repo": <a configured repository>, "id": <one of its record ids>}'
+
+
+def _holders(api, repo, rid):
+    """The other configured repo names whose backlog has the record `rid` (a kit record is keyed
+    on the PM repo's folder name, not the kit repo's own), for the not_found refusal. Best
+    effort: a view that is missing or fails names none."""
+    try:
+        names = [r.get('name') for r in api._view('repos')() if isinstance(r, dict)]
+    except Exception:       # noqa: BLE001 - a view is another module's code
+        return []
+    held = []
+    for name in names:
+        if not isinstance(name, str) or name.lower() == repo.lower():
+            continue
+        try:
+            got = api._view('record')(name, rid)
+        except Exception:   # noqa: BLE001
+            continue
+        if isinstance(got, dict) and got.get('where') == 'open':
+            held.append(name)
+    return held
 
 
 def _bound(api, value):
@@ -997,8 +1116,10 @@ def _bound(api, value):
             raise HubError('not_found', 'record names repo %s, which is not a repository the '
                            'hub has configured' % ascii(repo), 'record')
         if e.code == 'not_found':
-            raise HubError('not_found', "record %s: repo %s's backlog has no record %s"
-                           % (named, repo, rid), 'record')
+            held = _holders(api, repo, rid)
+            raise HubError('not_found', "record %s: repo %s's backlog has no record %s%s"
+                           % (named, repo, rid, '; the repo key that holds it is %s' % ', '.join(held)
+                              if held else ''), 'record')
         raise HubError('unavailable', 'record %s could not be checked: %s; ask again, or ask '
                        'without a record' % (named, e.message), 'record')
     except Exception as e:          # noqa: BLE001 - a view is another module's code
@@ -1040,6 +1161,21 @@ def _class(b, bound):
                                                       ascii(given)), 'class')
 
 
+def _session_from(api, who, what):
+    """who, a `from` that names a session: AGENT_FROM or a launcher session key, read now
+    (Api.read_session_keys); else `invalid`, field from, naming the known keys, never the file.
+    `what` names the document in the refusal (`a question`)."""
+    if who != AGENT_FROM:
+        keys, why = api.read_session_keys()
+        if who not in keys:
+            unread = ('; the launcher\'s session keys could not be read (%s), so only %s is '
+                      'known' % (why, AGENT_FROM)) if why else ''
+            raise _invalid('from %s is not a session the hub knows: %s comes from a '
+                           'launcher session key (known: %s)%s'
+                           % (ascii(who), what, ', '.join(sorted(keys)), unread), 'from')
+    return who
+
+
 def questions_add(api, req):
     """A new open question: `record` (the backlog record its answer is filed into) or `class`
     (_class) is required."""
@@ -1048,16 +1184,7 @@ def questions_add(api, req):
     for name in ('repo', 'from', 'title', 'context', 'story'):
         _text(b, name)
     # the session the answer goes back to: a launcher session key, read now, or the PM's
-    who = (b.get('from') or '').strip() or AGENT_FROM
-    if who != AGENT_FROM:
-        keys, why = api.read_session_keys()
-        if who not in keys:
-            unread = ('; the launcher\'s session keys could not be read (%s), so only %s is '
-                      'known' % (why, AGENT_FROM)) if why else ''
-            raise _invalid('from %s is not a session the hub knows: a question comes from a '
-                           'launcher session key (known: %s)%s'
-                           % (ascii(who), ', '.join(sorted(keys)), unread), 'from')
-    b['from'] = who
+    b['from'] = _session_from(api, (b.get('from') or '').strip() or AGENT_FROM, 'a question')
     _typed(b, 'options', (list,), 'a list of {label, description}')
     _class(b, 'record' in b)
     if 'record' in b:               # checked last: the one part that reads a backlog
@@ -1071,7 +1198,8 @@ def questions_answer(api, req):
     """The owner's answer: `choice`, an optional `note`, and `standing` true when the answer is
     to be a standing rule (a question bound to a record only: the PM logs it, docs/action-hub.md
     "A standing rule"); a re-answer with no `standing` drops the mark. `standing` true with no
-    `choice` is the promote of an answer already given (_promote)."""
+    `choice` is the promote of an answer already given (_promote). A question the hub marked
+    done (_hub_done) takes a new answer too: it is reopened, its done fields cleared."""
     allowed = ('choice', 'note', 'standing', 'if_version')
     b = _fields(req, allowed, flags=('standing',))
     standing = _flag(b, 'standing', False)
@@ -1086,9 +1214,9 @@ def questions_answer(api, req):
     _pin(b)
     note = (_text(b, 'note') or '').strip()
     d = api.doc('questions', doc_id, b)
-    if d.get('status') not in ('open', 'answered', 'filed'):
+    if d.get('status') not in ('open', 'answered', 'filed') and not _hub_done(d):
         raise _invalid('%s is %s: only an open, an answered or a filed question takes an answer'
-                       % (doc_id, d.get('status')), 'status')
+                       ' (or one the hub marked done)' % (doc_id, d.get('status')), 'status')
     if standing and not isinstance(d.get('record'), dict):
         raise _invalid('%s is bound to no record: an answer the PM handles is logged by the PM '
                        'already, so it takes no standing flag' % doc_id, 'standing')
@@ -1110,12 +1238,18 @@ def questions_answer(api, req):
     if (d.get('filing') is not None or d.get('filed_at') is not None
             or d.get('filed_as') is not None):
         changes.update(filing=None, filed_at=None, filed_as=None)   # a re-answer is filed afresh
+    if _hub_done(d):
+        changes.update(HUB_DONE_CLEARED)    # a new answer reopens it
     if standing:
         changes['standing'] = {'at': answer['at'], 'via': answer['via']}
     elif d.get('standing') is not None:
         changes['standing'] = None      # a re-answer without the box is no standing rule
     out = api.change('questions', doc_id, d, changes, req,
                      {'status': 'answered', 'answer': answer})
+    if _hub_done(d):
+        # pending afresh: the old answer's hand-over must not pass for a pick-up of this one when
+        # no read ran in between (_routed forgets only what it sees gone; todos_done the same)
+        api._handed.pop(('question', doc_id), None)
     if isinstance(d.get('record'), dict):
         got = file_answer(api, doc_id, _via(req), full=req.full)
         if got is not None:
@@ -1407,6 +1541,16 @@ def questions_bind(api, req):
 # The statuses a question is logged or marked done from: an answer the PM handles, and one filed
 # into its record that its asker has not yet read and closed.
 HANDLED_FROM = ('answered', 'filed')
+# A question's done_by when the hub's push worker marked it done once its asker had the filed
+# answer (kitlib.hubsite.push "Done by the hub"), and what a new answer or a promote clears.
+HUB_DONE_BY = 'hub'
+HUB_DONE_CLEARED = {'done_by': None, 'done_why': None, 'done_at': None}
+
+
+def _hub_done(d):
+    """True when question d is done because the hub marked it so (HUB_DONE_BY): it still takes
+    a new answer and a promote, and its asker's own done is no conflict."""
+    return d.get('status') == 'done' and d.get('done_by') == HUB_DONE_BY
 # The filing codes no retry mends by itself (FILING_SAYS: the PM handles the answer); any other
 # code, or no filing mark yet, may still file on the next filing call (questions_file).
 FINAL_FILING = ('not_found', 'invalid', 'no_store')
@@ -1467,9 +1611,12 @@ def questions_done(api, req):
     caller's session key (AGENT_FROM, the PM, when none): refused `forbidden` (field from)
     unless it is the question's own `from` or the PM's, and before anything else about the
     question is said or written. Like _creator it is a claim checked against the item, not
-    proof (all agents share one token). Refused (`invalid`) for a question that is neither
-    answered nor filed, for a blank why and for a standing rule (the PM logs it). An answer bound
-    to a record and not filed is refused or needs `unfiled` (_unfiled), kept as `unfiled_why`."""
+    proof (all agents share one token). One the hub marked done already (_hub_done: once its
+    asker had the filed answer, maybe after the version the call pins) is done: ok, nothing
+    written, its version kept, `done_by` given. Refused (`invalid`) for a question that is
+    neither answered nor filed, for a blank why and for a standing rule (the PM logs it). An
+    answer bound to a record and not filed is refused or needs `unfiled` (_unfiled), kept as
+    `unfiled_why`."""
     b = _fields(req, ('why', 'from', 'if_version', 'unfiled'), required=('why',))
     _pin(b, required=True)
     _text(b, 'from')
@@ -1478,12 +1625,19 @@ def questions_done(api, req):
     if not why:
         raise _invalid('why says why the answer needs no ruling: it cannot be blank', 'why')
     doc_id = req.params['id']
-    d = api.doc('questions', doc_id, b)
+    d = api.doc('questions', doc_id)
     claimed = (b.get('from') or '').strip() or AGENT_FROM
     asker = d.get('from') or AGENT_FROM
     if claimed not in (asker, AGENT_FROM):
         raise HubError('forbidden', '%s is from %s: only its asker or %s can mark it done '
                        '(%s was given)' % (doc_id, asker, AGENT_FROM, ascii(claimed)), 'from')
+    if _hub_done(d):
+        # the hub marked it done once its asker had it (kitlib.hubsite.push "Done by the hub"),
+        # maybe after the version this call pins: done already, nothing written
+        return {'ok': True, 'id': doc_id, 'version': _version(d),
+                'revision': api.store.revision, 'warnings': [], 'status': 'done',
+                'done_by': HUB_DONE_BY}
+    d = api.doc('questions', doc_id, b)
     if d.get('status') not in HANDLED_FROM:
         raise _invalid('%s is %s: only an answered or filed question is marked done'
                        % (doc_id, d.get('status')), 'status')
@@ -1501,21 +1655,25 @@ def _promote(api, req, doc_id, b):
     answer already given to a question bound to a record a standing rule (the filed card's
     promote button), the answer kept as it is and not filed again: `standing` {at, via}, so the
     question is pending for the PM, who logs it into the ledger, as well as for its asker
-    (docs/action-hub.md "A standing rule"). Refused (`invalid`) for a question that is not
-    answered or filed, one bound to no record (the PM logs every such answer already) and one
-    already standing."""
+    (docs/action-hub.md "A standing rule"). One the hub marked done (_hub_done) is put back to
+    `filed`, its done fields cleared, so it is pending for the PM. Refused (`invalid`) for a
+    question that is not answered, filed or marked done by the hub, one bound to no record (the
+    PM logs every such answer already) and one already standing."""
     d = api.doc('questions', doc_id, b)
-    if d.get('status') not in HANDLED_FROM:
+    if d.get('status') not in HANDLED_FROM and not _hub_done(d):
         raise _invalid('%s is %s: only an answered or filed question is made a standing rule'
-                       % (doc_id, d.get('status')), 'status')
+                       ' (or one the hub marked done)' % (doc_id, d.get('status')), 'status')
     if not isinstance(d.get('record'), dict):
         raise _invalid('%s is bound to no record: the PM logs its answer already' % doc_id,
                        'record')
     if isinstance(d.get('standing'), dict):
         raise _invalid('%s is a standing rule already' % doc_id, 'standing')
     standing = {'at': api.clock(), 'via': _via(req)}
-    return api.change('questions', doc_id, d, {'standing': standing}, req,
-                      {'standing': standing})
+    changes = {'standing': standing}
+    if _hub_done(d):
+        # filed again, so pending for the PM, who logs it: the hub's done is undone
+        changes.update(HUB_DONE_CLEARED, status='filed')
+    return api.change('questions', doc_id, d, changes, req, {'standing': standing})
 
 
 def todos_list(api, req):
@@ -1529,9 +1687,12 @@ def todo_steps(b, judge=True):
     `commands` that is not a list, a given command holding a lone surrogate, a bad step and, when
     `judge` (an agent's to-do or edit), text the owner's to-do rules forbid (todosteps.check).
     The rules judge the text as given, before any step is rendered: the owner's text is never
-    judged."""
+    judged. An `os` field ('windows' by default, or 'linux') names the OS the steps' per-OS
+    commands are for; it is not kept, and an unknown one is refused (`invalid`, field `os`).
+    The caller says it: a machine-OS source is left for a later slice."""
     b = dict(b)
     steps = b.pop('steps', None)
+    os_ = b.pop('os', todosteps.DEFAULT_OS)
     commands = _typed(b, 'commands', (list,), 'a list of strings')
     for i, c in enumerate(commands or ()):
         m = _SURROGATE.search(c) if isinstance(c, str) else None
@@ -1540,11 +1701,12 @@ def todo_steps(b, judge=True):
                            'of a character that cannot be written'
                            % (i, ord(m.group()), m.start()), 'commands')
     try:
+        todosteps.check_os(os_)
         if judge:
             todosteps.check(dict(b, steps=steps))
         if steps is not None:
-            b['commands'] = list(commands or []) + todosteps.render(steps)
-            lines = '\n'.join(todosteps.summary(steps))
+            b['commands'] = list(commands or []) + todosteps.render(steps, os_)
+            lines = '\n'.join(todosteps.summary(steps, os_))
             b['detail'] = (b['detail'].rstrip() + '\n\n' + lines) if b.get('detail') else lines
     except (todosteps.StepError, todosteps.Refused) as e:
         raise _invalid(str(e), e.field)
@@ -1553,7 +1715,7 @@ def todo_steps(b, judge=True):
 
 def todos_add(api, req):
     owner = req.role == OWNER
-    names = ('title', 'detail', 'commands', 'steps', 'repo', 'refs', 'urgent')
+    names = ('title', 'detail', 'commands', 'steps', 'os', 'repo', 'refs', 'urgent')
     b = _fields(req, names if owner else names + ('from',), required=('title',),
                 flags=('urgent',))
     for name in ('title', 'detail', 'repo', 'from'):
@@ -1908,6 +2070,82 @@ def inbox_read(api, req):
     return api.change('inbox', doc_id, d, changes, req, changes)
 
 
+# landings ("Landings"): the feed tools/land.py posts, one event per landed branch
+LANDING_FIELDS = tuple(f for f in sorted(schema.FIELDS['landings'][1]) if f != 'posted_at')
+
+
+def _newest(docs, n):
+    """The `n` documents of `docs` (a list, each with its `id`) with the highest ids, newest
+    (highest) first."""
+    return sorted(docs, key=lambda d: _natural(d['id']), reverse=True)[:n]
+
+
+def landings_list(api, req):
+    """The events, newest first: at most `limit` (a whole number of at most LIMIT_DIGITS
+    digits, default FEED_MAX) of them, filtered by repo as every listing is."""
+    text = _q(req, 'limit')
+    if text and not (text.isdigit() and text.isascii() and len(text) <= LIMIT_DIGITS
+                     and int(text) > 0):
+        raise _invalid('limit is a whole number from 1 to %s, not %r'
+                       % ('9' * LIMIT_DIGITS, text[:40]), 'limit')
+    return {'items': _newest(api.items('landings', req), int(text) if text else FEED_MAX)}
+
+
+def landings_add(api, req):
+    b = _fields(req, LANDING_FIELDS, required=schema.FIELDS['landings'][0])
+    records = _typed(b, 'records', (list,), 'a list')
+    if records is not None and not all(isinstance(r, str) and r.strip() for r in records):
+        raise _invalid('records is a list of record ids', 'records')
+    b['posted_at'] = api.clock()
+    return api.add('landings', b, req)
+
+
+# hand-offs ("Hand-offs"): the record a session writes beside its ready reply to the PM
+HANDOFF_KINDS = schema.KINDS['handoffs']
+_CONTROL = re.compile('[\x00-\x1f\x7f]')
+
+
+def newest_handoffs(docs):
+    """{session key: its newest hand-off record} of docs ({id: document} of `handoffs`), each
+    with its `id`: the record with the highest id of each `from` (ids only grow). A document
+    with no string `from` is left out."""
+    out = {}
+    for doc_id in sorted(docs, key=_natural):
+        d = docs[doc_id]
+        if isinstance(d, dict) and isinstance(d.get('from'), str):
+            out[d['from']] = dict(d, id=doc_id)
+    return out
+
+
+def handoffs_list(api, req):
+    """The newest record of each session, sorted by session key; with `from=<key>` that key's
+    alone (none: an empty list). Over the tunnel only, the state path is cut to
+    `.../<its file name>`."""
+    newest = newest_handoffs(api.store.docs('handoffs'))
+    who = _q(req, 'from')
+    items = [newest[k] for k in sorted(newest) if not who or k == who]
+    if _remote(req):
+        for d in items:
+            if isinstance(d.get('state_path'), str):
+                d['state_path'] = '.../' + ntpath.basename(d['state_path'])
+    return {'items': items}
+
+
+def handoffs_add(api, req):
+    """A new record: `from` (a session key, checked as a question's: _session_from), `kind`
+    (HANDOFF_KINDS) and `state_path` (an absolute path, on one line), all required; the hub
+    sets `at`."""
+    b = _fields(req, ('from', 'kind', 'state_path'), required=('from', 'kind', 'state_path'))
+    _one_of(b, 'kind', HANDOFF_KINDS)
+    path = _text(b, 'state_path').strip()
+    if _CONTROL.search(path) or _SURROGATE.search(path) or not os.path.isabs(path):
+        raise _invalid('state_path is the absolute path of your state note, on one line, not %s'
+                       % ascii(path[:200]), 'state_path')
+    b['from'] = _session_from(api, _text(b, 'from').strip(), 'a hand-off record')
+    b.update(state_path=path, at=api.clock())
+    return api.add('handoffs', b, req)
+
+
 # approvals: imported here, not at the top, as kitlib.hubsite.approvals imports this module
 def _approval(make, *args):
     from . import approvals as ap
@@ -2021,7 +2259,7 @@ def completed(api, req):
 # record id may be (kitlib.hubsite.backlog checks each again, more narrowly). The refusal is a
 # fixed phrase: it never repeats the segment.
 _SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z')
-SEGMENT_SAYS = {'repo': 'not a repository name', 'id': 'not a record id'}
+SEGMENT_SAYS = {'repo': 'not a repository name', 'id': 'not a record id', 'name': 'not a skill name'}
 
 
 def _segment(req, name):
@@ -2042,6 +2280,15 @@ def _record_view(api, name, *args):
         raise
     except Exception as e:      # noqa: BLE001 - a view is another module's code
         raise HubError('unavailable', 'the %s view failed: %s' % (name, _reason(e)), 'views')
+
+
+def skill_get(api, req):
+    return _record_view(api, 'skill', _segment(req, 'name'))
+
+
+def skill_source_get(api, req):
+    """The skill's whole SKILL.md and its blob, what the owner edits ("Skill edits")."""
+    return _skill_source(api, _segment(req, 'name'))
 
 
 def record(api, req):
@@ -2663,9 +2910,198 @@ def _act_note(api, b, req):
                                                                       'fix'))
 
 
+# ---- skill edits (module docstring "Skill edits")
+SKILL_EDIT_CHANGE = ('draft', 'superseded', 'failed')     # the owner may change the text
+SKILL_EDIT_WITHDRAW = ('draft', 'submitted', 'superseded', 'failed')
+
+
+def _skill_name(b):
+    v = _text(b, 'skill')
+    if not isinstance(v, str) or not _SEGMENT.match(v) or '..' in v:
+        raise HubError('invalid', SEGMENT_SAYS['name'], 'skill')
+    return v
+
+
+def _skill_text(b, name, source):
+    """The body's text, CRLF read as LF, `invalid` (field text) where skilledits.why_not says
+    it cannot replace the skill source `source` (the skill_source view's answer)."""
+    text = _text(b, 'text')
+    text = skilledits.normal(text) if isinstance(text, str) else text
+    why = skilledits.why_not(text, source.get('text'), name)
+    if why is not None:
+        raise _invalid(why, 'text')
+    return text
+
+
+def _skill_source(api, name):
+    """The skill_source view's answer for the listed skill `name`; its not_found is the answer
+    (a skill that is not listed), anything else it raises is `unavailable`."""
+    src = _record_view(api, 'skill_source', name)
+    if not isinstance(src, dict) or not skilledits.is_blob(src.get('blob')):
+        raise HubError('unavailable', 'the skill_source view gave no blob', 'views')
+    return src
+
+
+def _blob_field(b, name):
+    v = _text(b, name)
+    if v is not None and not skilledits.is_blob(v):
+        raise _invalid('%s is a git blob id: 40 lowercase hex digits' % name, name)
+    return v
+
+
+def skill_edits_list(api, req):
+    return {'items': api.items('skill_edits', req)}
+
+
+def _source_at(api, d):
+    """{text, blob}: the source text at a superseded or failed edit's source_blob, read with
+    kit_text, or None (another status, no source_blob, or kit_text cannot read it)."""
+    blob = d.get('source_blob')
+    if d.get('status') not in ('superseded', 'failed') or not skilledits.is_blob(blob):
+        return None
+    try:
+        text = api.kit_text(blob)
+    except Exception:               # noqa: BLE001 - git could not be asked: not read
+        text = None
+    return {'text': text, 'blob': blob} if isinstance(text, str) else None
+
+
+def _main_blob(api, name):
+    """The blob of skill `name`'s source on main in the kit checkout (kit_blob), or None."""
+    try:
+        got = api.kit_blob('main', skilledits.source_path(name))
+    except Exception:               # noqa: BLE001 - git could not be asked: not read
+        return None
+    return got if skilledits.is_blob(got) else None
+
+
+def skill_edits_get(api, req):
+    doc_id = req.params['id']
+    d = api.doc('skill_edits', doc_id)
+    d['id'] = doc_id
+    return {'item': d, 'source': _source_at(api, d)}
+
+
+def skill_edits_add(api, req):
+    b = _fields(req, ('skill', 'text', 'submit'), required=('skill', 'text'), flags=('submit',))
+    name = _skill_name(b)
+    src = _skill_source(api, name)
+    text = _skill_text(b, name, src)
+    now = api.clock()
+    fields = {'status': 'draft', 'skill': name, 'text': text, 'base_blob': src['blob'],
+              'created_at': now}
+    if _flag(b, 'submit', False):
+        fields.update(status='submitted', submitted_at=now)
+    return api.add('skill_edits', fields, req, {'status': fields['status']})
+
+
+def skill_edits_edit(api, req):
+    b = _fields(req, ('text', 'submit', 'if_version'), required=('if_version',),
+                flags=('submit',))
+    _pin(b, required=True)
+    doc_id = req.params['id']
+    d = api.doc('skill_edits', doc_id, b)
+    status = d.get('status')
+    if status not in SKILL_EDIT_CHANGE:
+        raise _invalid('%s is %s: only a draft, superseded or failed edit can change'
+                       % (doc_id, status), 'status')
+    name = d.get('skill')
+    src = _skill_source(api, name)
+    if b.get('text') is None:
+        b['text'] = d.get('text')
+    text = _skill_text(b, name, src)
+    # a draft keeps the source it was written on; a superseded or failed edit is put on the
+    # source the owner was shown to re-apply onto: its source_blob's text when the hub reads it,
+    # else the source as served now
+    if status == 'draft':
+        base = d.get('base_blob')
+    else:
+        at = _source_at(api, d)
+        base = at['blob'] if at else src['blob']
+    changes = {'text': text, 'base_blob': base, 'status': 'draft', 'source_blob': None,
+               'why': None}
+    if _flag(b, 'submit', False):
+        main = _main_blob(api, name) if base != src['blob'] else None
+        if base != src['blob'] and base != main:
+            # the newest source known: main's when the hub reads it, else the served copy
+            changes.update(status='superseded', source_blob=main or src['blob'])
+        else:
+            changes.update(status='submitted', submitted_at=api.clock())
+    return api.change('skill_edits', doc_id, d, changes, req, {'status': changes['status']})
+
+
+def skill_edits_withdraw(api, req):
+    b = _fields(req, ('if_version',))
+    _pin(b)
+    doc_id = req.params['id']
+    d = api.doc('skill_edits', doc_id, b)
+    if d.get('status') not in SKILL_EDIT_WITHDRAW:
+        raise _invalid('%s is %s: a committed or withdrawn edit cannot be withdrawn'
+                       % (doc_id, d.get('status')), 'status')
+    return api.change('skill_edits', doc_id, d, {'status': 'withdrawn', 'closed_at': api.clock()},
+                      req, {'status': 'withdrawn'})
+
+
+def _submitted(api, b, req):
+    """(id, document) of the submitted skill edit the body's if_version pins; `invalid` (field
+    status) for any other status."""
+    _pin(b, required=True)
+    doc_id = req.params['id']
+    d = api.doc('skill_edits', doc_id, b)
+    if d.get('status') != 'submitted':
+        raise _invalid('%s is %s: only a submitted edit is committed or failed'
+                       % (doc_id, d.get('status')), 'status')
+    return doc_id, d
+
+
+def skill_edits_done(api, req):
+    b = _fields(req, ('branch', 'blob', 'if_version'), required=('branch', 'blob', 'if_version'))
+    branch = _text(b, 'branch')
+    if not skilledits.BRANCH.match(branch) or '..' in branch or branch.endswith(('/', '.lock')):
+        raise _invalid('branch is a branch name, not %r' % branch, 'branch')
+    blob = _blob_field(b, 'blob')
+    doc_id, d = _submitted(api, b, req)
+    text = d.get('text') if isinstance(d.get('text'), str) else ''
+    want = skilledits.git_blob(text.encode('utf-8'))
+    if blob != want:
+        raise _invalid("blob %s is not the owner's text (%s): commit the text `hub.py skill-edit "
+                       "show %s --out FILE` writes, byte for byte" % (blob, want, doc_id), 'blob')
+    path = skilledits.source_path(d.get('skill'))
+    try:
+        got = api.kit_blob(branch, path)
+    except Exception:               # noqa: BLE001 - git could not be asked: not verified
+        got = None
+    if got is None:
+        raise _invalid('the hub could not read %s on branch %s in the kit checkout'
+                       % (path, branch), 'branch')
+    if got != want:
+        raise _invalid("branch %s holds %s as blob %s, not the owner's text (%s)"
+                       % (branch, path, got, want), 'branch')
+    return api.change('skill_edits', doc_id, d, {'status': 'committed', 'branch': branch,
+                                                 'blob': blob, 'done_at': api.clock()},
+                      req, {'status': 'committed'})
+
+
+def skill_edits_fail(api, req):
+    b = _fields(req, ('why', 'current_blob', 'if_version'), required=('why', 'if_version'))
+    why = _text(b, 'why')
+    if not why.strip():
+        raise _invalid('why is required: what stopped the commit', 'why')
+    current = _blob_field(b, 'current_blob')
+    doc_id, d = _submitted(api, b, req)
+    changes = {'status': 'failed', 'why': why, 'closed_at': api.clock()}
+    if current is not None and current != d.get('base_blob'):
+        changes.update(status='superseded', source_blob=current)
+    return api.change('skill_edits', doc_id, d, changes, req, {'status': changes['status']})
+
+
 def snapshot(api, req):
     revision, docs = api.store.snapshot()
     docs.pop('page_html', None)     # a body is read on its own (GET pages/{id}, "Pages")
+    docs.pop('handoffs', None)      # read with GET handoffs, newest per session ("Hand-offs")
+    if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings")
+        feed = docs['landings']
+        docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-FEED_MAX:]}
     if not req.full:                # the paths as GET to_pm and GET finding_marks cut them
         for d in (docs.get('to_pm') or {}).values():
             _unpath_act(d)
@@ -2697,7 +3133,8 @@ def health(api, req):
         out.update(extra)
     out.pop('store', None)
     out.update(ok=True, version=API_VERSION, revision=api.store.revision, unavailable=missing,
-               watcher=api.watcher_seen(), push=api.push_seen(), code=api.code_seen())
+               watcher=api.watcher_seen(), push=api.push_seen(), code=api.code_seen(),
+               jobs=api.jobs_seen())
     if req.role == OWNER:           # where the store is on this machine is the owner's to know
         out['store'] = api.store.root
     return out
@@ -2891,6 +3328,10 @@ ROUTES = (
     _r('POST', '/to_pm/{id}/delete', OWNER, to_pm_delete),
     _r('POST', '/inbox', AGENT, inbox_add),
     _r('POST', '/inbox/{id}/read', OWNER, inbox_read),
+    _r('GET', '/landings', ANY, landings_list),
+    _r('POST', '/landings', AGENT, landings_add),
+    _r('GET', '/handoffs', ANY, handoffs_list),
+    _r('POST', '/handoffs', AGENT, handoffs_add),
     _r('GET', '/pages', ANY, pages_list),
     _r('POST', '/pages', AGENT, pages_publish),
     _r('GET', '/pages/{id}', ANY, pages_get),
@@ -2918,6 +3359,16 @@ ROUTES = (
     _r('GET', '/repos', ANY, _listing('repos')),
     _r('GET', '/usage', ANY, _listing('usage')),
     _r('GET', '/agents', ANY, _listing('agents')),
+    _r('GET', '/skills', ANY, _listing('skills')),
+    _r('GET', '/skills/{name}', ANY, skill_get),
+    _r('GET', '/skills/{name}/source', ANY, skill_source_get),
+    _r('GET', '/skill_edits', ANY, skill_edits_list),
+    _r('POST', '/skill_edits', OWNER, skill_edits_add),
+    _r('GET', '/skill_edits/{id}', ANY, skill_edits_get),
+    _r('POST', '/skill_edits/{id}/edit', OWNER, skill_edits_edit),
+    _r('POST', '/skill_edits/{id}/withdraw', OWNER, skill_edits_withdraw),
+    _r('POST', '/skill_edits/{id}/done', AGENT, skill_edits_done),
+    _r('POST', '/skill_edits/{id}/fail', AGENT, skill_edits_fail),
     _r('GET', '/pending', ANY, pending),
     _r('GET', '/wait', ANY, wait),
     _r('GET', '/snapshot', ANY, snapshot),

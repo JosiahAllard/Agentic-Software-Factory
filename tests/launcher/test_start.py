@@ -113,16 +113,16 @@ class Deep(Base):
         self.refused("--model 'opus;rm'", model='opus;rm')
 
     def test_full_account_is_refused_unless_forced(self):
-        self.full('1', 93)
-        e = self.refused('Account 1 is at 93% of its seven_day window')
+        self.full('1', 96)
+        e = self.refused('Account 1 is at 96% of its seven_day window')
         self.assertIn('--force', str(e))
         out = self.deep(force=True)
-        self.assertIn('--force: starting on account 1 anyway; it is at 93% of its seven_day window', out)
+        self.assertIn('--force: starting on account 1 anyway; it is at 96% of its seven_day window', out)
         self.assertIn('Would open a new window running:', out)
 
     def test_five_hour_window_counts_too(self):
-        self.full('2', 90, days=0.1, window_='five')
-        self.refused('Account 2 is at 90% of its five_hour window', account='2')
+        self.full('2', 95, days=0.1, window_='five')
+        self.refused('Account 2 is at 95% of its five_hour window', account='2')
 
     def test_a_window_past_its_reset_is_fresh(self):
         self.full('1', 99, days=-1)
@@ -135,7 +135,7 @@ class Deep(Base):
         out = self.deep(account='auto')
         self.assertIn('auto picked account 2', out)
         self.assertIn(window.q(self.h.accounts['2'][0]), out)
-        self.full('2', 91, days=5)
+        self.full('2', 96, days=5)
         e = self.refused('Account 1 is at 95%', account='auto')
         self.assertIn('auto picked account 1', e.lines)               # the soonest reset, when every one is full
 
@@ -183,6 +183,35 @@ class Deep(Base):
                         ({'account': '3'}, 'Account 3 is not signed in')]:
             self.refused(msg, plan=False, brief=None, brief_text='x', **kw)
             self.assertFalse(os.path.exists(self.briefdir), kw)
+
+    def test_a_successor_takes_the_account_in_its_name_and_reads_the_state_note_first(self):
+        state = os.path.join(self.h.root, 'state.md')
+        out = self.deep(account='2', predecessor='deep-net-race', state=state)
+        self.assertIn("--remote-control 'deep-net-race-a2' -n 'deep-net-race-a2' ", out)
+        self.assertIn('You are deep-net-race-a2, a deep-worker session', out)
+        self.assertIn('succeeding deep-net-race, which reached', out)
+        self.assertIn('Read its state note %s first' % state, out)
+        self.assertIn('then your brief %s' % self.brief, out)
+        self.assertIn('Carry on in its worktree and on its branch; make no new worktree', out)
+        self.assertNotIn('make your own git worktree', out)
+        self.assertIn("SendMessage your report to ''alpha-coord-a1''", out)
+
+    def test_a_check_in_file_is_named_last(self):
+        checkin = os.path.join(self.h.root, 'checkin')
+        out = self.deep(checkin=checkin)
+        self.assertIn((start.CHECKIN_NOTE % checkin).replace("'", "''") + "'", out)
+        self.assertNotIn('write any text to the file', self.deep())
+
+    def test_successor_refusals(self):
+        state = os.path.join(self.h.root, 'state.md')
+        self.refused('together, or neither', predecessor='deep-net-race')
+        self.refused('together, or neither', state=state)
+        for bad in ("o'x", ' deep-x', 'a\nb'):
+            self.refused('--predecessor must be', predecessor=bad, state=state)
+        self.refused('--state must be an absolute', predecessor='deep-net-race', state='rel.md')
+        self.refused('--checkin must be an absolute', checkin='rel')
+        self.refused('--checkin must be an absolute', checkin=os.path.join(self.h.root, 'a\nb'))
+        self.refused('is the name this session would take', account='1', predecessor='deep-net-race-a1', state=state)
 
     def test_agent_temp_is_the_default_brief_folder(self):
         self.host = FakeHost(self.h.root, env={'AGENT_TEMP': os.path.join(self.h.root, 'agent-temp')})
@@ -262,8 +291,8 @@ class Consultant(Base):
             self.refused(msg, **kw)
 
     def test_full_account_is_refused_unless_forced(self):
-        self.full('1', 93)
-        self.refused('Account 1 is at 93% of its seven_day window')
+        self.full('1', 96)
+        self.refused('Account 1 is at 96% of its seven_day window')
         out = self.cons(force=True)
         self.assertIn('--force: starting on account 1 anyway', out)
         self.assertIn('Would open', out)
@@ -300,8 +329,8 @@ class Consultant(Base):
 
     def test_replace_alone_still_refuses_a_full_account(self):
         self.live()
-        self.full('1', 90)
-        self.refused('Account 1 is at 90% of its seven_day window', replace=True)
+        self.full('1', 95)
+        self.refused('Account 1 is at 95% of its seven_day window', replace=True)
         out = self.cons(replace=True, force=True)
         self.assertIn('--force: starting on account 1 anyway', out)
         self.assertIn("--replace: a session named 'consultant-myrepo' is already running", out)
@@ -341,6 +370,14 @@ class Consultant(Base):
         for kw, msg in [({'autocompact': 600000}, '100000..500000'), ({'account': '2'}, 'Account 2 is at 97%'),
                         ({'account': '3'}, 'Account 3 is not signed in')]:
             self.refused(msg, plan=False, **kw)
+
+    def test_a_check_in_file_is_named_after_the_first_reading(self):
+        checkin = os.path.join(self.h.root, 'checkin')
+        out = self.cons(checkin=checkin)
+        self.assertIn('reread the digest and the notes file.%s' % (start.CHECKIN_NOTE % checkin).replace("'", "''"),
+                      out)
+        self.assertNotIn('write any text to the file', self.cons())
+        self.refused('--checkin must be an absolute', checkin='rel')
 
 
 class Start(Base):
@@ -387,11 +424,29 @@ class Start(Base):
         self.assertIn("'You succeed old-a1, which has checkpointed", out)
         self.assertTrue(out.rstrip().endswith("go'\""), out[-40:])      # the what-if line closes its quote
 
+    def test_default_prompt_points_at_the_coordinator_state_note_in_agent_temp(self):
+        self.assertNotIn('state.local.md', start.DEFAULT_PROMPT)
+        self.assertIn('<repo slug>-coordinator', start.DEFAULT_PROMPT)
+        self.assertIn('AGENT_TEMP else TEMP', start.DEFAULT_PROMPT)
+        self.assertIn('state-<your session name>.md', start.DEFAULT_PROMPT)
+
     def test_every_prompt_names_the_pm_by_both_live_session_names(self):
         for out in (self.go(), self.go(brief='b.md')):
             self.assertIn("ListAgents shows its session as ''Project Manager'' in the desktop app, or "
                           "''pm-session'' when the launcher resumed it", out)
         self.assertEqual((start.PM_DESKTOP_NAME, start.PM_NAME), ('Project Manager', 'pm-session'))
+
+    def test_a_relaunched_pm_is_named_first_by_coordinators_json_pm_name(self):
+        relaunched = "ListAgents shows its session as ''pm-b'', the name launch.py pm-relaunch gave it"
+        self.h.write_state('coordinators.json', {'alpha': 1, 'pm_session_id': 's', 'pm_name': 'pm-b'})
+        for out in (self.go(), self.go(brief='b.md')):
+            self.assertIn(relaunched, out)
+            self.assertIn("else ''Project Manager'' or ''pm-session''", out)
+        for unset in ({'alpha': 1}, {'alpha': 1, 'pm_name': '<the PM name>'}):
+            self.h.write_state('coordinators.json', unset)
+            out = self.go()
+            self.assertNotIn('pm-relaunch gave it', out)
+            self.assertIn(window.q(start.DEFAULT_PROMPT), out)
 
     def test_the_predecessor_text_serialises_no_landing(self):
         text = start.predecessor_text('x')

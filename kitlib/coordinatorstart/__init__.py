@@ -5,9 +5,8 @@ comes from the "coordinator_start" key of the machine config and is emitted only
 environment variable PM_KIT_ROLE is "coordinator". After the standing lines come the optional ENG
 filing and pricing-pass lines (each switched on in the config), then the live checks (cap,
 machine state, other coordinators, the ledger line, the hub key: the session's sessions.json
-key, which it posts hub questions --from and reads pending --for once at start (answers come by
-push), or "unknown" when no entry is found,
-and stubs: a line only when a repo that uses stubs has them not current), run as in kitlib.pmstart: each is a pure function over fakeable inputs
+key, which it posts hub questions --from (its pending list is printed in the start context; answers come by
+push), or "unknown" when no entry is found), run as in kitlib.pmstart: each is a pure function over fakeable inputs
 (process list, file reads, a subprocess runner, now, the machine config), and a failed one is one
 "could not check X: reason" line. No check reads the rulings ledger: with the split ledger
 (`ledger_dir`, docs/ledger.md "Files") the ledger line names the repo's file from the machine
@@ -23,17 +22,16 @@ import os
 import re
 import sys
 
-from kitlib import kitroot, pmstart, sessionmark, stubs
+from kitlib import kitroot, pmstart, sessionmark
 from kitlib.config import user as kuser
 from kitlib.git import cmd as gitcmd
 from kitlib.pmstart import configcheck
+from kitlib.coordinatorstart import parts
 from kitlib.records import landing
 
 KEY = "coordinator_start"
 ROLE_VAR = "PM_KIT_ROLE"
 ROLE = "coordinator"
-LEGACY_KEY = "conductor_start"   # the old names, read until the live config and launcher are renamed
-LEGACY_ROLE = "conductor"
 NAME_VAR = "PM_KIT_SESSION_NAME"  # optional: this session's Remote Control name (else the process tree)
 TIMEOUT = 10
 SOON_HOURS = 4
@@ -49,7 +47,7 @@ ENG_LINE = ("ENG rulings: an engineering question (API shape, class versus recor
             "classifier, credentials, hooks that guard owner files); Money and accounts (purchases, cloud credit, "
             "game accounts, bans); Priority and pre-empts (one owner entry per change); Go-live and live-client "
             "runs, and removals of owner files; anything the owner flagged for review (eng_review).")
-# When a coordinator prices a record (hosts/claude/shell/agents/coordinator.md, On start step 6 and Work sets,
+# When a coordinator prices a record (hosts/claude/shell/agents/coordinator.md, On start step 6 and Slots,
 # Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
 # Emitted only when coordinator_start.pricing_pass is true.
 PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, follow-up records excepted: run "
@@ -58,10 +56,10 @@ PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, foll
                 "you or the PM promote it. Check "
                 "every other unpriced open record (an owner story, a record from the PM's brief) for duplicates, "
                 "size and fit, then price it 2-5 (`set <ID> --priority <n> "
-                "--priority-by agent`). Promote a follow-up at any time it enters a work set: price it 2-5; "
-                "price before pull. When `next --all` lists fewer startable records than the set needs, pick the "
-                "follow-ups worth doing now, check each for duplicates, size and fit, and price only those going "
-                "into this set; never a sweep. `next` never offers an unpriced record; its banner counts it "
+                "--priority-by agent`). Promote a follow-up at any time: price it 2-5; "
+                "price before pull. When `next --all` lists fewer startable records than you have free slots, pick the "
+                "follow-ups worth doing now, check each for duplicates, size and fit, and price only those you "
+                "pull now; never a sweep. `next` never offers an unpriced record; its banner counts it "
                 "under `unprioritised+open`, not under `held` (`held` = blocked). "
                 "A record that needs the owner (priority 1, a pre-emption, an owner-held area, a question only "
                 "the owner can answer) goes to the PM as one question; never ask the owner directly.")
@@ -69,8 +67,8 @@ PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, foll
 
 def is_coordinator(env=None):
     """The session mark (ROLE_VAR, read by kitlib.sessionmark: the kit plugin's prefix removed) is
-    the coordinator's or its old name."""
-    return sessionmark.mark(os.environ if env is None else env) in (ROLE, LEGACY_ROLE)
+    the coordinator's."""
+    return sessionmark.mark(os.environ if env is None else env) == ROLE
 
 
 def load_config(path=None):
@@ -83,11 +81,7 @@ def load_config(path=None):
             data = json.load(f)
     except OSError:
         return None
-    cfg = None
-    if isinstance(data, dict):
-        cfg = data.get(KEY)
-        if not isinstance(cfg, dict):
-            cfg = data.get(LEGACY_KEY)
+    cfg = data.get(KEY) if isinstance(data, dict) else None
     return cfg if isinstance(cfg, dict) else None
 
 
@@ -118,16 +112,17 @@ def _parse_time(text):
 
 def own_name(procs, env, pid):
     """This session's Remote Control name: PM_KIT_SESSION_NAME, else the nearest session process
-    (pmstart.session_images) above pid; None if unknown."""
+    (pmstart.session_images; on Linux one that runs a host's CLI, pmstart.runs_a_cli) above pid;
+    None if unknown."""
     if env.get(NAME_VAR):
         return env[NAME_VAR]
     by_pid = {p.get("ProcessId"): p for p in procs}
-    images = pmstart.session_images()
+    images, clis = pmstart.session_images(), pmstart.linux_clis()
     seen = set()
     while pid in by_pid and pid not in seen:
         seen.add(pid)
         p = by_pid[pid]
-        if p.get("Name") in images:
+        if p.get("Name") in images and pmstart.runs_a_cli(p, clis):
             n = pmstart.rc_name(p.get("CommandLine"))
             if n:
                 return n
@@ -160,13 +155,13 @@ def find_entry(sessions, cwd, name=None, root=None):
 
 def hub_key(sessions, entry):
     """[the `hub key: <key>` line]: the sessions.json key of `entry` (find_entry's pick, the same
-    object), the key this coordinator posts hub questions --from and reads pending --for once at
+    object), the key this coordinator posts hub questions --from; its pending list is printed at
     start; it runs no background wait, as the hub pushes its answers and done to-dos
     (docs/action-hub.md "For the PM"). LookupError when no key holds it."""
     for k, v in sessions.items():
         if v is entry and not str(k).startswith("_"):
-            return ["hub key: %s (hub.py questions add --from %s --record REPO:ID|--class C; read "
-                    "hub.py pending --for %s once at start; answers come by push)" % (k, k, k)]
+            return ["hub key: %s (hub.py questions add --from %s --record REPO:ID|--class C; its "
+                    "pending list is in this start context; answers come by push)" % (k, k)]
     raise LookupError("no sessions.json key holds this session's entry")
 
 
@@ -266,28 +261,15 @@ def ledger_name(repo):
     return str(repo or "").lower().replace("_", "-")
 
 
-def stubs_line(entry, root=None, check=stubs.problem_line):
-    """[the stubs line] for the coordinator's repo (repos_root/<repo>), [] when its stubs are current
-    or it uses none (stubs are opt-in: kitlib.stubs.problem_line).
-    KeyError without repos_root; a missing folder is a could-not-check line, not an error."""
-    if not root:
-        raise KeyError("repos_root not configured")
-    repo = os.path.join(root, str(entry.get("repo")))
-    if not os.path.isdir(repo):
-        return ["could not check stubs: no repository folder %s" % repo]
-    line = check(repo)
-    return [line] if line else []
-
-
 def others(entry, procs, env, pid):
     """Other live sessions whose Remote Control name starts with this coordinator's stem."""
     stem = _need(entry, "stem")
     me = own_name(procs, env, pid)
     cand = []
-    images = pmstart.session_images()
+    images, clis = pmstart.session_images(), pmstart.linux_clis()
     for p in procs:
         if (p.get("Name") in images and p.get("CommandLine")
-                and pmstart.STORE_DIR not in (p.get("ExecutablePath") or "")):
+                and pmstart.STORE_DIR not in (p.get("ExecutablePath") or "") and pmstart.runs_a_cli(p, clis)):
             n = pmstart.rc_name(p["CommandLine"])
             if n and n.startswith(stem):
                 cand.append((p.get("Created") or "", n))
@@ -296,14 +278,14 @@ def others(entry, procs, env, pid):
     names = sorted({n for _, n in cand if n != me})
     if not names:
         return []
-    return ["also running: %s; if one is your winding-down predecessor that is expected, "
+    return ["also running: %s; if one is your predecessor handing off that is expected, "
             "otherwise stop and tell the PM" % ", ".join(names)]
 
 
 def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read, kit=None,
-            pid=None, pm_cfg=None, live=True, stubs_check=stubs.problem_line, machine_cfg=None,
-            config_lines=None):
-    """The heading, one "- <text>" line per string in cfg["standing"], the ENG filing line (only when cfg["eng_filing"] is true), the pricing-pass line (only when cfg["pricing_pass"] is true), then the live checks (the ledger check prints only with `ledger_dir` set, and nothing when the machine config cannot be read; the stubs check only when the repo's stubs are missing or stale). `machine_cfg`: the machine config (default kitlib.config.user.user_config(), read by the ledger check). `config_lines`: the machine config check, first of the live checks (default kitlib.pmstart.configcheck.lines)."""
+            pid=None, pm_cfg=None, live=True, machine_cfg=None,
+            config_lines=None, run_loose=None, deadline=parts.DEADLINE):
+    """The heading, one "- <text>" line per string in cfg["standing"], the ENG filing line (only when cfg["eng_filing"] is true), the pricing-pass line (only when cfg["pricing_pass"] is true), then the live checks (the ledger check prints only with `ledger_dir` set, and nothing when the machine config cannot be read). `machine_cfg`: the machine config (default kitlib.config.user.user_config(), read by the ledger check). `config_lines`: the machine config check, first of the live checks (default kitlib.pmstart.configcheck.lines). Last come the read-only start parts (kitlib.coordinatorstart.parts: state note tail, hub pending, backlog next, stale worktrees), run in parallel under one `deadline`; `run_loose` runs the worktree classify (default: `run` when it was passed, else stdout whatever the exit code)."""
     env = os.environ if env is None else env
     lines = [str(t) for t in cfg.get("standing") or []]
     if cfg.get("eng_filing") is True:
@@ -330,6 +312,7 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
                     name = own_name(procs_once(), env, pid)
                 except Exception:
                     name = None
+                box["name"] = name
                 box["s"] = json.loads(read(sf))
                 box["e"] = find_entry(box["s"], cwd, name, cfg.get("repos_root"))
                 if box["e"][1]:
@@ -369,7 +352,6 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
             ("other coordinators", lambda: others(entry_once(), procs_once(), env, pid)),
             ("ledger", ledger),
             ("hub key", own_key),
-            ("stubs", lambda: stubs_line(entry_once(), cfg.get("repos_root"), stubs_check)),
         ]
         for name, fn in checks:
             try:
@@ -378,7 +360,41 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
                 lines.append("could not check %s: %s" % (name, str(e).strip("'\"")))
             except Exception as e:
                 lines.append("could not check %s: %s: %s" % (name, type(e).__name__, e))
+        lines.extend(_start_parts(cfg, box, entry_once, env, run, run_loose, kit, deadline))
     return "Coordinator session start:\n" + "\n".join("- " + l for l in lines)
+
+
+def _start_parts(cfg, box, entry_once, env, run, run_loose, kit, deadline):
+    """The lines of the read-only start parts. The sessions entry is read once here (the checks
+    above cached it or its failure), then the parts run in threads."""
+    try:
+        entry = entry_once()
+    except Exception:
+        entry = None
+    key = None
+    if entry is not None and "s" in box and not box["e"][1]:
+        key = next((k for k, v in box["s"].items() if v is entry and not str(k).startswith("_")), None)
+    if run_loose is None:
+        run_loose = parts.run_loose if run is _run else run
+    if run is _run:
+        run = parts.run_strict          # the parts' runner ends a timed-out command's whole process tree
+
+    def need():
+        if entry is None:
+            raise KeyError("no sessions entry for this repo")
+        return "%s/%s" % ((cfg.get("repos_root") or "").replace("\\", "/").rstrip("/"), entry.get("repo"))
+
+    slugs = [s for s in (ledger_name(entry.get("repo")) if entry else None, key,
+                         str(entry.get("stem") or "")[:-len(parts.FOLDER_SUFFIX)]
+                         if entry and str(entry.get("stem") or "").endswith(parts.FOLDER_SUFFIX) else None) if s]
+    jobs = [("state note", lambda: parts.state_note(env, env.get(NAME_VAR) or box.get("name"), slugs)),
+            ("hub pending", lambda: parts.hub_pending(key, run, kit)),
+            ("backlog next", lambda: parts.backlog_next(need(), key, run, kit)),
+            ("worktrees", lambda: parts.worktrees(need(), run_loose, kit))]
+    out = []
+    for _, lines in parts.run_all(jobs, deadline):
+        out.extend(lines)
+    return out
 
 
 def render(env=None, path=None, **kw):

@@ -4,6 +4,7 @@
   start_entry a sessions.json entry by key: its repo, agent, stem and brief
   deep        a deep-worker: the 1M-context model, effort xhigh, a brief, a requester to report to
   consultant  one long-lived consultant per repo that answers engineering questions
+  topic       a plain session marked topic, in a linked worktree, building one batch of records
   homes       list a main checkout's home worktrees, or remove one
 
 Every function returns the lines it says; a refusal is a LaunchError (nothing started, nothing
@@ -30,19 +31,36 @@ PM_NAME = stop.PM_RC_NAME
 PM_DESKTOP_NAME = 'Project Manager'
 PM_REF = ("the PM (ListAgents shows its session as '%s' in the desktop app, or '%s' when the launcher resumed it)"
           % (PM_DESKTOP_NAME, PM_NAME))
-DEFAULT_PROMPT = ('Start up now: run your start-up routine, read docs/ops/state.local.md, check in with %s, '
+PM_REF_RELAUNCHED = ("the PM (ListAgents shows its session as '%s', the name launch.py pm-relaunch gave it; else '%s' "
+                     "or '%s')")
+
+
+def pm_ref(settings):
+    """How a first message names the PM: PM_REF, or, when coordinators.json's pm_name is set (not a
+    placeholder), that name first (pm-relaunch's fork). An unreadable coordinators.json is PM_REF."""
+    try:
+        cfg = state.read_coordinators(settings) or {}
+    except (LaunchError, OSError):
+        return PM_REF
+    name = cfg.get('pm_name') if isinstance(cfg, dict) else None
+    if not isinstance(name, str) or not name or name.startswith('<'):
+        return PM_REF
+    return PM_REF_RELAUNCHED % (name, PM_DESKTOP_NAME, PM_NAME)
+DEFAULT_PROMPT = ('Start up now: run your start-up routine, read your state note (in the '
+                  '<repo slug>-coordinator subfolder of the agent temp folder, AGENT_TEMP else TEMP, as '
+                  'state-<your session name>.md), check in with %s, '
                   'then continue the queue in the state note.' % PM_REF)
 HOME_NOTE = (' Your start folder %s is a home worktree of the main checkout %s, and a relative path resolves in '
              'it: do not write there; your branch work goes in your own worktree, and the main checkout, by '
              'absolute path, is read-only to you.')
 # the roles --home-worktree may start in a home: a session in a linked worktree may write only that
 # worktree and temp (docs/guard.md "Write jail"). A consultant's notes file is in agent temp
-# (consultant_notes_path); a coordinator's state note is still in the main checkout, so a coordinator
-# would be refused its writes (docs/launcher.md "The home worktree")
+# (consultant_notes_path); a coordinator's state note is in agent temp too (COORDINATOR_FOLDER), so the
+# note is not a reason to refuse one; only these two roles are given a home (docs/launcher.md "The home worktree")
 HOME_ROLES = (window.DEEP_WORKER, window.CONSULTANT)
-HOME_REFUSED = ('--home-worktree is for deep-worker and consultant sessions only: a %s session started in a home '
-                "worktree cannot write its files in the main checkout (the guard's write jail; a coordinator's "
-                'state note is still there); nothing was started.')
+HOME_REFUSED = ('--home-worktree is for deep-worker and consultant sessions only: a %s session may not be given a '
+                "home worktree; a coordinator's state note is in agent temp, not in the main checkout; nothing "
+                'was started.')
 AUTOCOMPACT = (100000, 1000000)  # the CLI's range for --autocompact
 SLUG = re.compile(r'^[a-z0-9][a-z0-9-]{1,40}\Z')
 DEFAULT_AUTOCOMPACT = 200000   # a coordinator, another agent or a plain session; deep and consultant set their own
@@ -69,6 +87,36 @@ CONSULTANT_NOTES = 'notes.md'
 NOTES_DEFAULT = None             # --notes-path left out: consultant_notes_path
 OLD_NOTES = os.path.join('docs', 'ops', 'consultant-notes.local.md')   # the default before; copied, never deleted
 DIGEST = os.path.join('docs', 'conventions-digest.md')
+# The first messages of a deep-worker and a consultant, filled by name (%(pm)s is PM_REF, which
+# start() names live). kitlib.launcher.unlisted reads a running session's launch back from them (the
+# hub's usage crossover of a session with no sessions.json entry), so a change here is a change there.
+DEEP_PROMPT = ("You are %(name)s, a deep-worker session started for the session named '%(requester)s'. Read your brief "
+               "%(brief)s first and work only from it. Before changing anything, make your own git worktree and "
+               "branch with the repo's worktree tool (EnterWorktree if it has none); never edit the main checkout, "
+               "and never merge, land or push. When the work is done, or you are blocked on something only the "
+               "requester can settle, SendMessage your report to '%(requester)s' (ListAgents finds it; if it is "
+               "gone, send it to %(pm)s), then stay idle: the requester or the PM closes this window.")
+# a deep-worker moved to another account (launch.py deep --predecessor): it carries on in its predecessor's worktree
+DEEP_SUCCESSOR_PROMPT = (
+    "You are %(name)s, a deep-worker session started for the session named '%(requester)s', succeeding "
+    "%(predecessor)s, which reached its account's usage limit and does nothing more; never wait on it. Read its "
+    "state note %(state)s first (if there is none, it stopped before writing one: find its worktree and branch "
+    "with git worktree list and start from its last commit), then your brief %(brief)s, and work only from them. "
+    "Carry on in its worktree and on its branch; make no new worktree, never edit the main checkout, and never "
+    "merge, land or push. When the work is done, or you are blocked on something only the requester can settle, "
+    "SendMessage your report to '%(requester)s' (ListAgents finds it; if it is gone, send it to %(pm)s), then "
+    "stay idle: the requester or the PM closes this window.")
+CONSULTANT_PROMPT = (
+    "You are %(name)s, a consultant session for the repository at %(repo_path)s. Read its conventions digest "
+    "docs/conventions-digest.md, then your notes file %(notes)s (create it on your first call if it is missing), "
+    "reply 'ready', and stay idle until asked: no crons, monitors, wake-ups or polling. Answer engineering "
+    "questions by SendMessage to whoever asked; record every call and durable fact in your notes file, and "
+    "SendMessage each call to %(pm)s as 'engineering call for delegated logging' with the "
+    "question, answer and reason. Never edit code, commit, land or dispatch builds. After a compaction, "
+    "reread the digest and the notes file.")
+# --checkin: the file a session moved by the hub writes once it has read its notes (docs/launcher.md "Usage crossover")
+CHECKIN_NOTE = (" Once you have done that first reading, write any text to the file %s: the hub's usage crossover "
+                "waits for that file before it closes the session you succeed.")
 
 
 def agent_temp(host):
@@ -141,12 +189,14 @@ def window_text(settings, host, name, role, folder, command, config_dir):
 def start(settings, host, repo=None, repo_path=None, account=None, org=None, prompt=None, brief=None,
           default_prompt=DEFAULT_PROMPT, name=None, predecessor=None, no_agent=False, agent=None,
           model=None, effort=None, autocompact=None, whatif=False, home_worktree=False,
-          remote_control=True):
+          remote_control=True, mark=None):
     """Open a session's window; the lines it says. The repo folder is --repo-path, or the
     launcher.repos entry for --repo. autocompact None is DEFAULT_AUTOCOMPACT; 0 passes no
     --autocompact (the CLI's own window). home_worktree: an agent session whose folder is a main
     checkout starts in its home worktree instead (home_folder). remote_control False: no
-    --remote-control on the command line (window.claude_command; for measurement)."""
+    --remote-control on the command line (window.claude_command; for measurement). mark: the
+    PM_KIT_ROLE the window sets in place of the one its agent gives (window.role_for): a topic
+    session is a plain session marked window.TOPIC (topic)."""
     if autocompact is None:
         autocompact = DEFAULT_AUTOCOMPACT
     if bool(repo) == bool(repo_path):
@@ -155,7 +205,7 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
     if agent and not window.AGENT.match(agent):
         raise LaunchError("--agent '%s' is not an agent name." % agent)
     _check_common(model, effort, autocompact)
-    role = window.role_for(agent, settings.coordinator_agent)
+    role = mark or window.role_for(agent, settings.coordinator_agent)
     if home_worktree:
         check_home_role(role)
     folder = repo_path or settings.repo_path(repo)
@@ -167,10 +217,14 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
                   'with %s, and begin.' % (brief, PM_REF)) if brief else default_prompt
     elif brief:
         prompt = 'Read your standing brief %s first. ' % brief + prompt
+    if PM_REF in prompt:                       # every first message names the PM as PM_REF: the live name here
+        prompt = prompt.replace(PM_REF, pm_ref(settings))
     if predecessor:
         prompt = predecessor_text(predecessor, role == window.COORDINATOR) + prompt
     repo_label = repo or os.path.basename(os.path.normpath(folder))
+    derived = not name
     name = name or '%s-%s-%s' % (repo_label.lower(), agentname.bare(agent) or 'session', tag)
+    window.check_name(name, derived)
     out, add_dir = [], None
     if home_worktree and role != window.PLAIN:
         start_in, add_dir, out = home_folder(host, folder, name, whatif)
@@ -181,10 +235,12 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
                                    remote_control=remote_control)
     text = window_text(settings, host, name, role, folder, command, config_dir)
     if whatif:
-        return out + ['Would open a new window running:', '  powershell -NoExit -Command "%s"' % text]
+        return out + ['Would open a new window running:', window.shown(text)]
     after_ms = pipes.launch_ms(host.now())      # the registry record the window makes starts after this
-    host.open_window(text)
-    out = out + ['Started %s (%s) in a new minimized window. Remote Control name: %s' % (name, label, name)]
+    kw = window.open_args(name, settings)
+    host.open_window(text, **kw)
+    out = out + ['Started %s (%s) in %s. Remote Control name: %s'
+                 % (name, label, window.opened_in(name, kw.get('terminal')), name)]
     try:            # the window is open: a fault here must not read as a failed launch
         said = host.record_pipe(settings, name, after_ms)
     except (OSError, ValueError, LaunchError) as e:
@@ -276,10 +332,6 @@ def start_entry(settings, host, key, account=None, prompt=None, whatif=False, ho
     if lookup.running_stem(host.processes(), entry['stem']):
         raise LaunchError("A session of '%s' (stem %s) is already running; stop it first or use handoff."
                           % (key, entry['stem']))
-    old = lookup.legacy_running(host.processes(), key, entry)   # one-release guard (W2b removes it)
-    if old:
-        raise LaunchError("A session under the old stem %s is running for '%s' (repo %s); stop it first "
-                          "(one-release guard for the conductor-to-coordinator rename)." % (old, key, entry.get('repo')))
     out = []
     if account == 'current':
         account, note = A.resolve_current(settings, host.now(), host.environ)
@@ -321,11 +373,19 @@ def _refuse_live(host, name, why):
         raise LaunchError("A session named '%s' is already running (PID %s): %s" % (name, lookup.pids(live), why))
 
 
+def _check_path(flag, path):
+    if path is not None and (not path.strip() or re.search(r'[\r\n]', path) or not os.path.isabs(path)):
+        raise LaunchError('%s must be an absolute file path on one line.' % flag)
+
+
 def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None, account='auto',
          autocompact=DEEP_AUTOCOMPACT, model=LONG_MODEL, effort='xhigh', force=False, plan=False, brief_dir=None,
-         home_worktree=False):
+         home_worktree=False, predecessor=None, state=None, checkin=None):
     """A deep-worker session named deep-<slug>. Every check runs before anything is written; a
-    --brief-text file is removed again when the launch fails."""
+    --brief-text file is removed again when the launch fails. `predecessor`: the deep-worker it
+    succeeds on another account (the hub's usage crossover): it is named deep-<slug>-a<N> and reads
+    the predecessor's state note `state` first (DEEP_SUCCESSOR_PROMPT). `checkin`: the file it
+    writes after that first reading (CHECKIN_NOTE)."""
     out = []
     if not SLUG.match(slug or ''):
         raise LaunchError("--slug '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % slug)
@@ -333,13 +393,18 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
         raise LaunchError("--requester must be the requesting session's name, on one line.")
     if bool(brief) == bool(brief_text):
         raise LaunchError('Give --brief <file> or --brief-text <text>, one of them.')
+    if bool(predecessor) != bool(state):
+        raise LaunchError('Give --predecessor <name> and --state <file> together, or neither.')
+    if predecessor and (predecessor.strip() != predecessor or re.search(r"[\r\n']", predecessor)):
+        raise LaunchError('--predecessor must be the session name, on one line, without quotes.')
+    _check_path('--state', state)
+    _check_path('--checkin', checkin)
     if not autocompact:
         raise LaunchError('--autocompact must be %d..%d tokens, not 0.' % AUTOCOMPACT)
     _check_common(model, effort, autocompact)
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
     repo_path = os.path.abspath(repo_path)
-    name = 'deep-' + slug
     if brief:
         brief_path = brief if os.path.isabs(brief) else os.path.join(repo_path, brief)
         if not os.path.isfile(brief_path):
@@ -348,17 +413,17 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     acct = _pick_or(settings, host, account, out)
     A.launch_dir(settings, acct)
     A.check_headroom(settings, acct, host.now(), force, out)
+    name = 'deep-' + slug + ('-a%s' % acct if predecessor else '')
+    if predecessor == name:
+        raise LaunchError("--predecessor '%s' is the name this session would take; pick another --account." % name)
     _refuse_live(host, name, 'stop it first or pick another --slug.')
     if brief_text:
         brief_dir = brief_dir or os.path.join(agent_temp(host), 'deep-briefs')
         brief_path = os.path.join(brief_dir, '%s-%s.md' % (name, host.now().strftime('%Y%m%dT%H%M%S')))
-    prompt = ("You are %s, a deep-worker session started for the session named '%s'. Read your brief %s first and "
-              "work only from it. Before changing anything, make your own git worktree and branch with the repo's "
-              "worktree tool (EnterWorktree if it has none); never edit the main checkout, and never merge, land or "
-              "push. When the work is done, or you are blocked on something only the requester can settle, "
-              "SendMessage your report to '%s' (ListAgents finds it; if it is gone, send it to "
-              "%s), then stay idle: the requester or the PM closes this window."
-              % (name, requester, brief_path, requester, PM_REF))
+    fields = dict(name=name, requester=requester, brief=brief_path, predecessor=predecessor, state=state, pm=PM_REF)
+    prompt = (DEEP_SUCCESSOR_PROMPT if predecessor else DEEP_PROMPT) % fields
+    if checkin:
+        prompt += CHECKIN_NOTE % checkin
     wrote = False
     if brief_text:
         if plan:
@@ -385,6 +450,51 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     return out
 
 
+def topic(settings, host, worktree, slug, brief, account='auto', model=None, effort=None, autocompact=None,
+          force=False, plan=False):
+    """A topic session named topic-<slug> (skill topic-session): a plain session (no agent) the owner
+    drives, marked window.TOPIC, started in `worktree`, a linked worktree on the branch its records are
+    batched for, with `brief` (a file; relative to the worktree) as its first read. Refused, nothing
+    started, when the folder is not a linked worktree (never the main checkout), the brief is missing,
+    or a session of that name is running."""
+    out = []
+    if not SLUG.match(slug or ''):
+        raise LaunchError("--slug '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % slug)
+    _check_common(model, effort, DEFAULT_AUTOCOMPACT if autocompact is None else autocompact)
+    if not os.path.isdir(worktree or ''):
+        raise LaunchError('No folder at %s' % worktree)
+    worktree = os.path.abspath(worktree)
+    place = host.place(worktree)
+    if place.kind != gitrepo.LINKED:
+        raise LaunchError('%s is not a linked worktree (%s): a topic session builds in its own worktree on its '
+                          "batch's branch, never in a main checkout; make one with the repo's worktree tool first. "
+                          'Nothing was started.'
+                          % (worktree, 'a main checkout' if place.kind == gitrepo.MAIN else place.detail))
+    if not brief:
+        raise LaunchError('Give --brief <file>: the topic session reads it first.')
+    brief_path = os.path.abspath(brief if os.path.isabs(brief) else os.path.join(worktree, brief))
+    if not os.path.isfile(brief_path):
+        raise LaunchError('No brief file at %s' % brief_path)
+    name = 'topic-' + slug
+    acct = _pick_or(settings, host, account, out)
+    A.launch_dir(settings, acct)
+    A.check_headroom(settings, acct, host.now(), force, out)
+    _refuse_live(host, name, 'stop it first or pick another --slug.')
+    prompt = ("You are %s, a topic session: a plain session the owner drives directly, in the worktree %s. "
+              "Read your brief %s first and work from it with the owner. Pull each record before you work on it "
+              "(backlog.py -C <this worktree> --session <key> pull <ID>, the key your brief names; drop "
+              "--session when the records carry no session:). Create no records: backlog.py add is refused for "
+              "this session; tell the owner what you found, and the owner files it or asks a coordinator to. "
+              "Never edit the main checkout, and never merge, land or push. When the owner says the work is done, "
+              "gate the tip and SendMessage %s the branch, the tip, the gate result "
+              "and the records it covers; the coordinator reviews and lands it."
+              % (name, worktree, brief_path, PM_REF))
+    out += start(settings, host, repo_path=worktree, account=acct, name=name, no_agent=True, model=model,
+                 effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, mark=window.TOPIC)
+    out.append('When its report is in and the branch has landed, stop it: %s' % stop_cmd(name))
+    return out
+
+
 def _with_lines(out):
     """The exception being handled, as a LaunchError carrying the lines said before it."""
     e = sys.exc_info()[1]
@@ -396,13 +506,15 @@ def _with_lines(out):
 
 def consultant(settings, host, repo_path, repo=None, account='auto', autocompact=CONSULTANT_DEFAULT_AUTOCOMPACT,
                model=LONG_MODEL, effort='high', notes_path=NOTES_DEFAULT, force=False, replace=False, plan=False,
-               home_worktree=False):
+               home_worktree=False, checkin=None):
     """The consultant session consultant-<repo>; one per repo unless --replace (an account hand-off).
     notes_path None is consultant_notes_path; then an old notes file in the repo (OLD_NOTES) is
     copied to it on first use, just before the window opens, and never changed or deleted
-    (_copy_old_notes). With home_worktree, a notes file in the main checkout is refused."""
+    (_copy_old_notes). With home_worktree, a notes file in the main checkout is refused.
+    `checkin`: the file it writes once it has read its notes (CHECKIN_NOTE)."""
     if home_worktree:
         check_home_role(window.CONSULTANT)
+    _check_path('--checkin', checkin)
     out = []
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
@@ -446,13 +558,9 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
         if host.git_ignored(repo_path, notes) is False:
             out.append("Warning: git does not ignore %s; add it to the repo's .gitignore before the consultant's "
                        'first call.' % notes)
-    prompt = ("You are %s, a consultant session for the repository at %s. Read its conventions digest "
-              "docs/conventions-digest.md, then your notes file %s (create it on your first call if it is missing), "
-              "reply 'ready', and stay idle until asked: no crons, monitors, wake-ups or polling. Answer engineering "
-              "questions by SendMessage to whoever asked; record every call and durable fact in your notes file, and "
-              "SendMessage each call to %s as 'engineering call for delegated logging' with the "
-              "question, answer and reason. Never edit code, commit, land or dispatch builds. After a compaction, "
-              "reread the digest and the notes file." % (name, repo_path, notes, PM_REF))
+    prompt = CONSULTANT_PROMPT % dict(name=name, repo_path=repo_path, notes=notes, pm=PM_REF)
+    if checkin:
+        prompt += CHECKIN_NOTE % checkin
     old = os.path.join(repo_path, OLD_NOTES)
     copied = _copy_old_notes(old, notes, plan, out) if default and os.path.isfile(old) else False
     if copied is not False and live:

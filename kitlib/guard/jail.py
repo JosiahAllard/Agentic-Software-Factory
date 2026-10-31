@@ -22,15 +22,21 @@ An agent session writes only inside its roots:
   mark roots       the machine config's guard_mark_roots for a main session's launcher mark
                    ({mark: [{path, mode, why}]}, `~/` read as the home folder); a subagent gets
                    none
-A root of any kind on, over or inside either home machine config folder, or on or inside the PM
-repository's <pointer>/.pm-kit, is dropped unless it is read-only (roots, touches_config): a data
+A root of any kind on, over or inside either home machine config folder or (Linux) the user's PM-repo
+pointer file (user_pointer_file), or on or inside the PM repository's <pointer>/.pm-kit, is dropped unless it is read-only (roots, touches_config): a data
 root, TMP or AGENT_TEMP at the home folder would otherwise open the machine config. A root that
 only holds <pointer>/.pm-kit (the PM repository's own checkout) is kept; rules.machine_config
 refuses the writes inside that folder. A root's mode holds wherever it nests: a target inside a read-only data root is denied though
 it also lies in the checkout or temp, and one inside an add-only root may only be new.
 
+The outer bound (rules.dev_drive_bound, rule dev-drive): a write the roots allow is still refused
+when it is not on the Dev Drive, the machine config's dev_drive (dev_root, on_drive); unset,
+relative or not an existing folder, the bound is off. While it denies, roots drops a data or mark root off the Dev Drive.
+
 Paths compare after kitlib.guard.paths.norm(real=True): os.path.realpath (symlinks and junctions
-resolved, `..` folded), then os.path.normcase.
+resolved, `..` folded), then the case fold (os.path.normcase on Windows). On Linux whether a root
+allows a target is read with the strict fold (a mount in doubt does not fold); whether a
+read-only or add-only root holds it, and every other check here, with the default fold.
 """
 import os
 
@@ -38,6 +44,7 @@ from kitlib.config import user as kuser
 from kitlib.config.migration import OLD_DIR_NAME
 from kitlib.git import repo
 from kitlib.guard import paths
+from kitlib.platform.linux import paths as linux_paths
 
 OPEN, ADD_ONLY, READ_ONLY = 'open', 'add-only', 'read-only'
 MODES = (ADD_ONLY, READ_ONLY, OPEN)
@@ -46,22 +53,30 @@ OUTSIDE = 'outside'
 CHECKOUT, TEMP, DATA, MARK = 'your checkout', 'temp', 'data', 'mark'
 
 
-def real(path):
-    """`path` as the filesystem reaches it, case folded: links and junctions resolved."""
-    return paths.norm(path, real=True)
+def real(path, strict=False):
+    """`path` as the filesystem reaches it, case folded: links and junctions resolved. `strict`:
+    the fold for what the jail allows (paths.norm: on Linux, a mount in doubt does not fold)."""
+    return paths.norm(path, real=True, strict=strict)
+
+
+def allow_real(path):
+    """real(path, strict=True) on Linux; None elsewhere, where the strict fold is real(path)'s own
+    (the caller then uses the real() it already has)."""
+    return real(path, strict=True) if paths.posix() else None
 
 
 def inside(path, root):
     """True when the real()ed `path` is `root` or below it."""
-    return path == root or path.startswith(root.rstrip('\\/') + os.sep)
+    return path == root or path.startswith(root.rstrip('/' if paths.posix() else '\\/') + os.sep)
 
 
 class Root(object):
-    __slots__ = ('path', 'kind', 'mode', 'real')
+    __slots__ = ('path', 'kind', 'mode', 'real', 'strict')
 
     def __init__(self, path, kind, mode=OPEN):
         self.path, self.kind, self.mode = path, kind, mode
         self.real = real(path)
+        self.strict = allow_real(path) or self.real     # what it allows (real, strict)
 
     def label(self):
         if self.kind in (DATA, MARK):
@@ -102,22 +117,27 @@ def sibling(ctx, target, cwd):
     here, there = ctx.place(cwd), ctx.place(target)
     if here.kind not in (repo.MAIN, repo.LINKED) or not here.common:
         return False
-    if there.kind != repo.LINKED or not there.top or not there.common or real(there.common) != real(here.common):
+    strict = paths.posix()                      # what it allows: real, strict
+    if there.kind != repo.LINKED or not there.top or not there.common or \
+            real(there.common, strict) != real(here.common, strict):
         return False
     main = ctx.main_top(cwd)
-    t, top = real(target), real(there.top)
-    if not main or not inside(t, top) or not inside(top, real(main)):
+    t, top = real(target, strict), real(there.top, strict)
+    if not main or not inside(t, top) or not inside(top, real(main, strict)):
         return False
     return not touches_config(ctx, there.top)
 
 
 def touches_config(ctx, path):
-    """True when `path` is, holds or lies inside either home machine config folder, or is or lies
-    inside the PM repository's (pointer_config_dir). Holding the PM repository's folder does not
-    count: that is the PM repository's own checkout, a root its sessions write in, and
-    rules.machine_config refuses the writes inside the folder."""
+    """True when `path` is, holds or lies inside either home machine config folder or the user's
+    PM-repo pointer file (user_pointer_file), or is or lies inside the PM repository's
+    (pointer_config_dir). Holding the PM repository's folder does not count: that is the PM
+    repository's own checkout, a root its sessions write in, and rules.machine_config refuses the
+    writes inside the folder."""
     p = real(path)
-    if any(inside(p, c) or inside(c, p) for c in (real(d) for d in home_config_dirs(ctx))):
+    pointer = user_pointer_file()
+    held = home_config_dirs(ctx) + ([pointer] if pointer else [])
+    if any(inside(p, c) or inside(c, p) for c in (real(d) for d in held)):
         return True
     d = pointer_config_dir(ctx)
     return d is not None and inside(p, real(d))
@@ -168,6 +188,22 @@ def home_config_dirs(ctx):
     return [os.path.join(ctx.home, kuser.DIR_NAME), os.path.join(ctx.home, OLD_DIR_NAME)]
 
 
+def user_pointer_file():
+    """Linux: the user's PM-repo pointer file, <profile>/.config/pm-kit/pointer from the password
+    database (kitlib.platform.linux.paths.pointer_files, the file kitlib.config.pointer reads when
+    there is no machine one). The user can write it, so a session that could would point the kit
+    at another PM repository and its machine config. None elsewhere (Windows keeps the pointer in
+    HKLM, which only an administrator writes) and when the password database gives no profile
+    folder (the kit then reads no user pointer file either). The machine file /etc/pm-kit/pointer
+    is an administrator's to write, as HKLM is."""
+    if not paths.posix():
+        return None
+    try:
+        return linux_paths.pointer_files()[1]
+    except OSError:
+        return None
+
+
 def pointer_config_dir(ctx):
     """The PM repository's machine config folder, <pointer>/.pm-kit (kitlib.config.user.DIR_NAME
     under the PM-repo pointer's value as stored, Ctx.pm_repo_pointer), or None when there is no
@@ -203,11 +239,13 @@ def mark_roots(ctx, mark):
     return out
 
 
-def roots(ctx, cwd, is_root, mark=None):
+def roots(ctx, cwd, is_root, mark=None, dev=None, dropped=None):
     """[Root] for a session running in `cwd`, its own checkout first; `mark` (a main session's
     launcher mark, None for a subagent) adds its guard_mark_roots. A root of any kind that touches
     a machine config folder (touches_config) is dropped unless it is read-only: a data root, TMP or AGENT_TEMP at the home folder or above would otherwise let the
-    session write the machine config. A read-only root only denies, so it is kept."""
+    session write the machine config. A read-only root only denies, so it is kept. `dev`, the Dev
+    Drive's root (dev_root) when the outer bound denies: a data or mark root off it that may write
+    is dropped too, and appended to the list `dropped` when one is given."""
     out = []
     own = own_root(ctx, cwd, is_root)
     if own:
@@ -215,12 +253,53 @@ def roots(ctx, cwd, is_root, mark=None):
     out.extend(Root(p, TEMP) for p in temp_roots(ctx))
     out.extend(Root(p, DATA, mode) for p, mode in data_roots(ctx, cwd))
     out.extend(Root(p, MARK, mode) for p, mode in mark_roots(ctx, mark))
-    return [r for r in out if r.mode == READ_ONLY or not touches_config(ctx, r.path)]
+    kept = []
+    for r in out:
+        if r.mode != READ_ONLY and touches_config(ctx, r.path):
+            continue
+        if dev and r.mode != READ_ONLY and r.kind in (DATA, MARK) and not on_drive(r.path, dev):
+            if dropped is not None:
+                dropped.append(r)
+            continue
+        kept.append(r)
+    return kept
+
+
+def dev_root(ctx):
+    """The Dev Drive's root folder, the machine config's dev_drive read the guard's tolerant way
+    (ctx.user), or None (dev_root_of). None leaves the outer bound off. kitlib.host.header reads
+    it the same way, so the start warning and the guard agree."""
+    try:
+        user = ctx.user()
+    except Exception:  # noqa: BLE001 - no config read: the bound stays off, as with no key
+        return None
+    return dev_root_of(user)
+
+
+def dev_root_of(user):
+    """dev_drive of the machine config `user` (kitlib.config.user.dev_drive) when it is an absolute
+    path to an existing folder; else None: unset, a config that does not read (ctx.user's
+    tolerant read sets no key), relative, or not there (the Dev Drive unmounted, a wrong letter),
+    so a bad value turns the bound off rather than refusing every agent write."""
+    value = kuser.dev_drive(user) if isinstance(user, dict) else None
+    if not value or not os.path.isabs(value) or not os.path.isdir(value):
+        return None
+    return value
+
+
+def on_drive(path, dev):
+    """True when `path`, real()ed (links and junctions resolved), is `dev` or below it; read with
+    the strict fold, as what the jail allows is (allow_real)."""
+    t = allow_real(path) or real(path)
+    d = allow_real(dev) or real(dev)
+    return inside(t, d)
 
 
 def judge(target, rs):
     """(verdict, root): (None, None) when `target` may be written; else OUTSIDE, READ_ONLY or
-    ADD_ONLY (the target exists) with the root that decided it."""
+    ADD_ONLY (the target exists) with the root that decided it. A read-only or add-only root
+    holds the target by the fold for what the guard refuses, an allowing one by the strict fold
+    (Root.strict): on Linux a mount in doubt never widens what may be written."""
     t = real(target)
     holders = [r for r in rs if inside(t, r.real)]
     for r in holders:
@@ -229,17 +308,19 @@ def judge(target, rs):
     for r in holders:
         if r.mode == ADD_ONLY and os.path.lexists(target):
             return ADD_ONLY, r
-    if holders:
+    ts = allow_real(target) or t
+    if any(inside(ts, r.strict) for r in rs):
         return None, None
     return OUTSIDE, None
 
 
-def destination(rs):
+def destination(rs, dev=None):
     """Where the alternative aims: the session's own checkout, else the temp folder; never one a
-    read-only or add-only root holds (a role whose checkout is read-only is pointed at temp)."""
+    read-only or add-only root holds (a role whose checkout is read-only is pointed at temp), nor,
+    with `dev` (the Dev Drive's root), one off the Dev Drive."""
     for kind in (CHECKOUT, TEMP):
         for r in rs:
-            if r.kind == kind and judge(r.path, rs)[0] is None:
+            if r.kind == kind and judge(r.path, rs)[0] is None and (not dev or on_drive(r.path, dev)):
                 return r
     return None
 

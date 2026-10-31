@@ -7,10 +7,14 @@ a tip a test failed on when that test failed twice over the branch's commits, wh
 has. Every missing, unreadable or altered record refuses."""
 import json
 import os
+import re
 import unittest
+from unittest import mock
 
 from kitlib import gate as G
+from kitlib.backlog import plan as pmod
 from kitlib.gate import rerun, runner
+from kitlib.lock import run as lockrun
 from kitlib.records import gate_ok
 from tests.gate import fixtures, test_land
 
@@ -55,6 +59,44 @@ GATE = {'steps': [
     {'name': 'unit', 'always': True, 'cmd': ['{python}', '-m', 'unittest', '-v', 'flaky_mod'],
      'pass': '^OK'},
     {'name': 'after', 'always': True, 'cmd': AFTER, 'pass': '^ok$'}]}
+
+# A repository gate's gradle step log, red on one test (2026-10-28), cut down and its worktree
+# path dropped: the class is a simple name, the method a display name, and no passing test shows.
+GRADLE_LOG = '''gate_tiers gradle: 31 changed path(s) against b857e2a660 (--all)
+gate_tiers: --- gradle-build: gradlew.bat build --offline --max-workers=4
+
+> Task :app-api:test
+
+ApiLayeringTest > api.errand <-> api.movement import files stay at or under their ceilings FAILED
+    org.opentest4j.AssertionFailedError at ApiLayeringTest.java:77
+
+> Task :worker:assemble
+
+
+> Task :app-api:test
+
+6000 tests completed, 1 failed
+
+> Task :app-api:test FAILED
+> Task :worldmap:test
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app-api:test'.
+> There were failing tests. See the report at: file:///build/reports/tests/test/index.html
+
+BUILD FAILED in 9m 27s
+81 actionable tasks: 47 executed, 34 up-to-date
+gate_tiers: --- gradle-build exited 1
+    test tasks: 7 ran, 1 UP-TO-DATE, 1 FAILED
+      FAILED     :app-api:test
+gate_tiers gradle: FAILED - gradle-build: exit 1
+'''
+GRADLE_GATE = {'steps': [
+    {'name': 'gradle', 'always': True, 'pass': '^gate_tiers gradle: OK',
+     'cmd': ['{python}', '-c', 'import sys; print(open("gradle_report.txt").read()); sys.exit(1)']}]}
+COVERS = 'gate.py --rerun covers kit_tests and unittest reports only, and this log is neither'
 
 
 def unittest_log(*blocks, summary='FAILED (failures=1)', ran=2):
@@ -140,7 +182,13 @@ class ParseLog(unittest.TestCase):
 
     def test_any_other_log_is_uncovered(self):
         self.assertEqual(rerun.parse_log('lint: 3 problems\n'),
-                         ([], ['the log is neither a kit_tests nor a unittest report']))
+                         ([], [COVERS + ' (a gradle or dotnet log, say)']))
+
+    def test_a_gradle_log_gives_no_failing_id_and_says_what_the_rerun_covers(self):
+        failures, uncovered = rerun.parse_log(GRADLE_LOG)
+        self.assertEqual(failures, [])
+        self.assertEqual(len(uncovered), 1, uncovered)
+        self.assertIn(COVERS, uncovered[0])
 
     def test_a_step_failing_on_more_than_its_exit_is_uncovered(self):
         entry = rerun.cover_step({'name': 'unit', 'status': 'FAIL', 'log': None,
@@ -187,6 +235,20 @@ class JudgeClass(unittest.TestCase):
         text = self.run_log('test_a (m.C.test_a) ... ok')
         self.assertTrue(rerun.judge_class(text, 0, ['m.C.setUpClass'])[0])
         self.assertFalse(rerun.judge_class(text, 0, ['m.D.setUpClass'])[0])
+
+
+class AddLine(unittest.TestCase):
+    def test_the_summary_stays_a_title_however_many_long_tests_failed(self):
+        long = 'tests.gate.test_' + 'x' * 70
+        classes = [{'cls': '%s.Case%d%s' % (long, n, 'Y' * 80),
+                    'ids': ['%s.Case%d.test_%s' % (long, n, 'z' * 50)]} for n in range(5)]
+        add = rerun.add_line(os.getcwd(), BRANCH, 'a' * 40, classes)
+        summary = re.search(r'--summary "([^"]*)"', add).group(1)
+        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertIn('and 4 more', summary)
+        why = re.search(r'--why-not-folded "([^"]*)"', add).group(1)
+        for c in classes:
+            self.assertIn(c['ids'][0], why)
 
 
 class RerunCase(test_land.LandCase):
@@ -273,6 +335,50 @@ class RedRun(RerunCase):
         self.assertEqual(self.book_calls, [])
 
 
+class Stopped(RerunCase):
+    def ask_stop(self):
+        for d in self.store.live_runs():
+            lockrun.request_stop(self.store, d['id'], 'test')
+
+    def test_a_stop_before_the_first_class_starts_none(self):
+        wt, _ = self.work('once')
+        self.red(wt)
+        real, started = rerun._control_tree, []
+
+        def control(*args):
+            self.ask_stop()
+            return real(*args)
+        with mock.patch.object(rerun, '_control_tree', control), \
+                mock.patch.object(rerun, '_start', lambda *args: started.append(args)):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.STOPPED, out.lines + out.said)
+        self.assertEqual(started, [])
+
+    def test_a_stopped_rerun_runs_nothing_more_and_the_red_run_keeps_its_rerun(self):
+        wt, tip = self.work('once')
+        self.red(wt)
+        real, real_steps, started, ran = rerun._start, runner.run_steps, [], []
+
+        def start(launcher, argv, cwd, env, log):
+            started.append(log)
+            self.ask_stop()
+            return real(launcher, argv, cwd, env, log)
+
+        def run_steps(*args, **kw):
+            ran.extend(real_steps(*args, **kw))
+            return list(ran)
+        with mock.patch.object(rerun, '_start', start), \
+                mock.patch.object(runner, 'run_steps', run_steps):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.STOPPED, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('STOPPED: '), out.lines)
+        self.assertEqual(len(started), 1, started)      # the tip's class, no control
+        self.assertEqual(ran, [])                       # and not the step it never reached
+        self.assertEqual(self.loaded(tip)[1], [])       # no rerun record
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+
+
 class Flake(RerunCase):
     def test_a_flake_passes_its_rerun_and_the_tip_lands_on_it(self):
         wt, tip = self.work('once')
@@ -286,6 +392,10 @@ class Flake(RerunCase):
         self.assertIn(' add FLAKE-%s ' % ID.split('.')[-2].upper(), add)
         self.assertIn('--scope flaky_mod.py', add)
         self.assertIn('--found-on %s' % BRANCH, add)
+        # the summary is a title `backlog.py add` takes; the test id goes in the reason
+        summary = re.search(r'--summary "([^"]*)"', add).group(1)
+        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertIn(ID, re.search(r'--why-not-folded "([^"]*)"', add).group(1))
         self.assertIn('report this line to your coordinator', out.lines[-2])
         # one gate slot of the branch: it counts toward the branch gate budget
         calls = self.book_calls[n:]
@@ -423,6 +533,23 @@ class Real(RerunCase):
         self.assertEqual(out.code, G.REFUSED, out.lines)
         self.assertIn('not clean', out.lines[0])
         self.assertEqual(self.loaded(tip)[1], [])
+
+
+class GradleStep(RerunCase):
+    GATE = GRADLE_GATE
+
+    def test_a_red_gradle_step_is_not_rerun_and_the_refusal_says_what_is_covered(self):
+        wt, tip = self.branch('feature', {'gradle_report.txt': GRADLE_LOG})
+        self.red(wt)
+        step = self.loaded(tip)[0][0]['steps'][0]
+        self.assertEqual((step['name'], step['failures']), ('gradle', []))
+        n = len(self.book_calls)
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('only a passing gate.py --full lands this tip', out.lines[0])
+        self.assertIn('  gradle: ' + COVERS, '\n'.join(out.lines))
+        self.assertEqual(self.book_calls[n:], [])
+        self.assertIn(COVERS, rerun.verify_flake(self.repo.root, tip))
 
 
 class Branch(RerunCase):

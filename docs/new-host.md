@@ -24,7 +24,7 @@ checks the whole file, and one bad field refuses all of it. The fake host's entr
 |---|---|
 | `adapter` | The adapter's dotted module name, `hosts.<name>.adapter`. kitlib never imports it. `tools/_host.py` does. |
 | `shell` | `hosts/<name>/shell`, the folder with the host's manifests and rendered files |
-| `platforms` | The operating systems it runs on. Use `["windows"]` until the OS work (plan section 6). This field picks the hook interpreter (`kitlib.host.hookmain.manifest_command`). |
+| `platforms` | The operating systems it runs on, such as `["windows", "linux"]`. The renderer writes one hook manifest for each (`hooks.json` for Windows, `hooks.<platform>.json` beside it for the others), each command line from `kitlib.host.hookmain.manifest_command` for that platform's interpreter (docs/content.md "Manifests"). |
 | `default` | Leave it out. Exactly one host is the default, and it is `claude`. |
 | `tiers` | `light`, `standard`, `strong` and `deep`, each mapped to the host's model id (docs/ROSTER.md) |
 
@@ -63,6 +63,8 @@ checks the whole file, and one bad field refuses all of it. The fake host's entr
 | `agent_name_format` | How it names a bundled agent: `{plugin}` once at most, then `{name}` last |
 | `session_process` | The process image of a session it launches |
 | `env_prefixes` | The environment variable prefixes its sessions own (`CLAUDE_`). A child launched on another host never inherits them (`kitlib.sessionmark.child_environment`). |
+| `cli_program` | The name its CLI runs as on Linux (`claude`). |
+| `cli_package` | Its npm package's scoped name, `@scope/name` (`@anthropic-ai/claude-code`). With `cli_program` it tells a Linux `node` process that runs the CLI from any other: its script lies in the package directly under a `node_modules` folder (`kitlib.pmstart.runs_cli`). |
 
 ## 2. The adapter: `hosts/<name>/adapter/`
 
@@ -118,11 +120,18 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   launcher's settings. `deliver` must end within `push.STOP_S`, the hub's close join. `tools/hub.py serve` asks for it with `getattr`; without it the hub serves
   with no push notifications (docs/action-hub.md "Push notifications"; Claude:
   `hosts/claude/adapter/peer.py` `HubPush`).
+- `agent_models()` (optional): the subagent model reader `tools/verdict.py add` checks
+  `--reviewer-model` with, a function from a reviewer id to the sorted models that subagent's
+  transcripts show: `[]` for a subagent id with no transcript found (`add` queues with a NOTE),
+  `None` for an id that is not a subagent's (a session name, not looked up). `verdict.py` asks
+  for it with `getattr`; without it no reviewer model is checked (Codex; docs/gate.md "Strict
+  paths"; Claude: `hosts/claude/adapter/agent_models.py` `models`).
 - The renderer's optional `vendored(root)`: `{path: bytes}` of kit files the host's plugin ships a
   copy of, read from the kit checkout `root` and drift-checked with the rest. A plugin root that is
-  not the whole kit cannot reach the kit's `boot/` from a plugin cache, so it ships `boot/kitboot.py`
-  and `boot/hook.py` this way, and a `hosts.json` holding its own entry beside them (Codex). The
-  copy finds the kit through `PM_KIT_ROOT`, or the checkout it sits in.
+  not the whole kit cannot reach the kit's `boot/` from a plugin cache, so it would ship
+  `boot/kitboot.py` and `boot/hook.py` this way, with a `hosts.json` holding its own entry beside
+  them, and the copy finds the kit through `PM_KIT_ROOT`, or the checkout it sits in. No host does
+  today: Claude's and Codex's plugin roots are laid out as the kit.
 
 ## 3. The shell: `hosts/<name>/shell/`
 
@@ -133,7 +142,10 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   and calls `kitlib.host.hookmain.dispatch`: the guard through `hookmain.run` for the tool event,
   which fails closed (any error becomes the host's deny), and `ADAPTER.context` for a start event.
   When the kit will not boot, a tool call exits 2 (a block on every host so far) and a start event
-  says so in plain text. The fake host's `plugin.json` runs it this way.
+  says so in plain text. The fake host's `plugin.json` runs it this way. One exception: a host
+  whose hook trust covers the plugin's every byte (Codex) registers its hooks in a second,
+  fixed-bytes plugin whose stub runs `boot/hook.py` of the installed kit (docs/plugin-source.md
+  "Codex hooks plugin"), so a new kit version asks no new trust.
 - The rendered files. Run `python tools/render_content.py --write` and commit what it writes.
   `--check` fails on drift. Never edit them by hand.
 
@@ -185,8 +197,9 @@ One list covers what is left to fix: `LEAK_ALLOWED`. It can only shrink.
 For agent-to-agent messaging, add `optional/bridge/hosts/<name>/` (the name with `-` as `_`),
 which exports `HOST`, an `optional.bridge.port.BridgeHost`, and has a `bridge-profile.json`
 (its settings, and as `channel_env` any variable the host's app nominates a tool pipe in). It is
-served only once the host's `hosts.json` entry exists
-(optional/bridge/README.md "The port", "Adding a host half"). The core never imports it. With the
+served only once the bridge's own list, `optional/bridge/peers.json`, names it; its `hosts.json`
+entry does not serve it. Every pair with the other peers is allowed unless `refused` there lists
+it (optional/bridge/README.md "The port", "Host pairs", "Adding a host half"). The core never imports it. With the
 bridge not installed, no host shell mentions it. Once the half exists, the conformance class runs the
 bridge part of the suite by itself: subclass `bridge_conformance.mixin(HOST)` beside
 `conformance.HostConformance` (`tests/host/bridge_conformance.py`), and supply `bridge_delivery()`

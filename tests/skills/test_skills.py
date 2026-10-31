@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kitlib.stubs import SHARED
 from tests.shipped import ROOT, frontmatter, violations
 
 SKILLS = ROOT / "content" / "skills"      # every host ships these (docs/content.md)
@@ -12,7 +11,7 @@ EXPECTED = {"backlog-ops", "backlog-pricing", "branch-review", "branch-sync", "b
             "flaky-test-triage", "hub-ops", "ledger-ops", "land-branch", "machine-lock-run", "mutation-testing", "session-handoff",
             "shell-and-worktree-traps",
             "specialty-3d-assets", "specialty-rigging", "specialty-tech-art", "specialty-sound",
-            "specialty-review", "specialty-research", "specialty-docs"}
+            "specialty-review", "specialty-research", "specialty-docs", "topic-session"}
 # a task specialty a generic agent loads because its brief names it (docs/specialty-skills.md
 # "Specialty skills"): the agent type its Dispatch line names as the minimum
 SPECIALTY_MIN = {"specialty-3d-assets": "senior-worker", "specialty-rigging": "senior-worker",
@@ -25,7 +24,7 @@ CREATIVE_HOME = "specialty-tech-art"
 # reference files a skill carries beside its SKILL.md
 EXTRA_FILES = {"coordinator-dispatch": ["roster.md", "creative.md", "upkeep.md"], "specialty-tech-art": ["creative.md"],
                "specialty-sound": ["measuring.md"], "machine-lock-run": ["training.md"],
-               "specialty-docs": ["doc-writing.md"]}
+               "specialty-docs": ["doc-writing.md"], "topic-session": ["brief-template.md"]}
 # one repo's own: never shipped in the plugin (docs/shipping.md, "Stays repo-local")
 REPO_LOCAL = {"worktree-start"}
 REPO_LOCAL_SUFFIX = "-train-eval"     # the training-and-evaluation workflow skill
@@ -100,8 +99,8 @@ class SkillFilesTest(unittest.TestCase):
 
     def test_kit_tools_named_exist(self):
         """Kit-only paths are written `<kit>/<path>` in a skill and in an agent
-        file, and exist in the kit; a repo-relative `tools/<name>.py` is one a repo has through a stub
-        (kitlib.stubs.SHARED) or supplies itself."""
+        file, and exist in the kit; a repo-relative path is one a repository supplies itself
+        (REPO_FILES)."""
         for p in _shipped_text_files():
             text = _shipped_text(p)
             for rel in PLUGIN_RX.findall(text):
@@ -112,9 +111,8 @@ class SkillFilesTest(unittest.TestCase):
                 if GODOT_SKILL in p.parents:     # a repo-local template, not loaded as a plugin: no root variable
                     self.assertTrue(rel in REPO_FILES or (ROOT / rel).exists(), f"{p.parent.name} names {rel}")
                     continue
-                self.assertTrue(rel in REPO_FILES or (rel.startswith("tools/") and
-                                                      rel[len("tools/"):-len(".py")] in SHARED),
-                                f"{p.parent.name}/{p.name} names {rel}: not a stub tool; write {_kit_form(p)}/{rel}")
+                self.assertTrue(rel in REPO_FILES,
+                                f"{p.parent.name}/{p.name} names {rel}: not a repository file; write {_kit_form(p)}/{rel}")
 
     def test_no_repo_relative_kit_doc_or_template(self):
         """A kit doc (`docs/<name>.md` that exists in the kit's docs/) or a `templates/` file is written

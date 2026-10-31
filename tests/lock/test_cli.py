@@ -23,7 +23,9 @@ def load_tool():
     return mod
 
 
-class Cli(StoreCase):
+class CliBase(StoreCase):
+    """The tool on a scratch store, with no tests of its own (Cli and LoadNodes hold them)."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -57,6 +59,8 @@ class Cli(StoreCase):
                 code = e.code
         return code, out.getvalue(), err.getvalue()
 
+
+class Cli(CliBase):
     def test_status(self):
         code, out, _ = self.call("status", "--json")
         self.assertEqual(code, 0)
@@ -384,6 +388,171 @@ class Cli(StoreCase):
         code, out, _ = self.call("game")
         self.assertEqual(code, 0)
         self.assertFalse(json.loads(out)["enabled"])
+
+
+class LoadNodes(CliBase):
+    """run's --node, --artifact and the hidden --registry, and status's `node:` lines. The
+    registry is a temp file (registry.ignored stood in), ssh a runner, the node NodeJob.run."""
+
+    def setUp(self):
+        super().setUp()
+        from kitlib.loadnode import registry
+        from tests import gitfixture
+        from tests.loadnode.test_registry import node, text
+        self.repo = gitfixture.TempRepo(branch="main")
+        self.addCleanup(self.repo.cleanup)
+        self.repo.write("a.txt", "one" + chr(10))
+        self.repo.commit("add a", "a.txt")
+        self.file = os.path.join(self.tmp, "load-nodes.json")
+        with open(self.file, "w", encoding="utf-8") as f:
+            f.write(text(node(memory_mb=4096, repos=["kit"])))
+        p = mock.patch.object(registry, "ignored", return_value=None)
+        p.start()
+        self.addCleanup(p.stop)
+        here = os.getcwd()
+        self.addCleanup(os.chdir, here)
+        os.chdir(self.repo.root)
+        self.node_runs = []
+
+    def node_run(self, code):
+        def run(nj):
+            self.node_runs.append((nj.node.name, nj.cmd, nj.artifacts))
+            return code
+        return mock.patch("kitlib.loadnode.job.NodeJob.run", run)
+
+    def ssh(self, runner):
+        return mock.patch("kitlib.loadnode.remote.default_runner", runner)
+
+    def run_on(self, *extra, cmd=None):
+        return self.call("run", "--kind", "engine-test", "--repo", "kit", "--slug", "t",
+                         "--no-wait", *extra, cmd=cmd or ["python", "x.py"])
+
+    def test_no_registry_is_no_node_line_and_no_routing(self):
+        def no_ssh(argv, timeout_s):
+            raise AssertionError("ssh was asked")
+        with self.ssh(no_ssh), self.node_run(5):
+            code, out, _ = self.call("status")
+            self.assertEqual(code, 0)
+            self.assertNotIn("node:", out)
+            self.confine(1)
+            code, _, err = self.run_on("--cores", "1", cmd=[sys.executable, "-c",
+                                                            "import sys; sys.exit(3)"])
+        self.assertEqual(code, 3, err)
+        self.assertEqual(self.node_runs, [])
+        self.assertEqual(len(self.store.history_records()), 1)
+
+    def test_status_says_a_node_line_for_each_node(self):
+        from tests.loadnode.test_remote import Runner, ok_reply
+        with self.ssh(Runner(out=ok_reply())):
+            code, out, _ = self.call("status", "--registry", self.file)
+        self.assertEqual(code, 0)
+        self.assertIn("node: box1  ok  cpu 3/4 free", out)
+        with self.ssh(Runner(rc=255, err=b"Host key verification failed.")):
+            code, out, _ = self.call("status", "--registry", self.file)
+        self.assertIn("node: box1  host key mismatch", out)
+        code, out, _ = self.call("status", "--json", "--registry", self.file)
+        self.assertNotIn("node:", out)
+
+    def test_a_named_node_runs_it_there_and_its_code_comes_back(self):
+        with self.node_run(5):
+            code, _, err = self.run_on("--node", "box1", "--registry", self.file,
+                                       "--artifact", "out/*.txt")
+        self.assertEqual(code, 5, err)
+        self.assertEqual(self.node_runs, [("box1", ["python", "x.py"], ["out/*.txt"])])
+        self.assertFalse(os.path.isdir(self.store.path("ended"))
+                         and os.listdir(self.store.path("ended")), "a node's run was booked here")
+
+    def test_node_main_and_a_resource_run_it_here(self):
+        def no_ssh(argv, timeout_s):
+            raise AssertionError("ssh was asked")
+        # one core, so the run fits the one slot confine(1) leaves (--cores would keep it here
+        # by itself, hiding what --resource does)
+        with open(self.kinds_path, "w", encoding="utf-8") as f:
+            json.dump({"kinds": {"engine-test": {"cpu": 1, "gpu": 0, "warn_min": 30}}}, f)
+        self.confine(1)
+        for extra in (("--node", "main"), ("--node", "box1", "--node", "main"),
+                      ("--resource", "vm:x")):
+            with self.subTest(extra=extra), self.node_run(5), self.ssh(no_ssh):
+                code, _, err = self.run_on("--registry", self.file, *extra,
+                                           cmd=["python", "-c", "import sys; sys.exit(3)"])
+                self.assertEqual(code, 3, err)
+                self.assertNotIn("load node", err)
+        self.assertEqual(self.node_runs, [])
+        self.assertEqual(len(self.store.history_records()), 3)
+
+    def test_node_usage_is_2_and_books_nothing(self):
+        for extra, want in ((("--node", "nope"), "no node named nope"),
+                            (("--node", "box1", "--cores", "1"), "does not take --cores"),
+                            (("--node", "box1", "--detach"), "does not detach"),
+                            (("--artifact", "../x"), "not a relative glob"),
+                            (("--artifact", "out/caf%s.txt" % chr(0xe9)), "ASCII")):
+            with self.subTest(extra=extra), self.node_run(5):
+                code, _, err = self.run_on("--registry", self.file, *extra)
+                self.assertEqual(code, 2, err)
+                self.assertIn(want, err)
+        self.assertEqual(self.node_runs, [])
+        self.assertFalse(os.path.isdir(self.store.path("ended"))
+                         and os.listdir(self.store.path("ended")))
+        self.assertNotIn("--registry", self.tool.parser().format_help())
+
+
+class RepoKinds(CliBase):
+    """run and `hold agent` book a kind from the "kinds" section of the .kit.json in the main
+    checkout of the current directory (a worktree here)."""
+
+    def setUp(self):
+        super().setUp()
+        from tests import gitfixture
+        self.repo = gitfixture.TempRepo(branch="main")
+        self.addCleanup(self.repo.cleanup)
+        self.repo.write(".kit.json", json.dumps({"kinds": {"graph-build": {
+            "cpu": "heavy", "gpu": 0, "warn_min": 120, "why": "the world graph"}}}))
+        wt = self.repo.worktree("kinds")
+        here = os.getcwd()
+        self.addCleanup(os.chdir, here)
+        os.chdir(wt)
+
+    def records(self, folder, prefix):
+        d = self.store.path(folder)
+        return [self.store.read("%s/%s" % (folder, n))
+                for n in (os.listdir(d) if os.path.isdir(d) else []) if n.startswith(prefix)]
+
+    def test_run_books_a_repo_kind_at_its_size(self):
+        import datetime
+        from kitlib.lock import holds as hl
+        from kitlib.lock.store import utc_now
+        from .helpers import OWNER
+        now = utc_now()
+        hl.create(self.store, self.layout(), {"owner": "owner", "scope": "whole", "start": now,
+                                              "end": now + datetime.timedelta(hours=1)},
+                  OWNER, None)
+        code, _, err = self.call("run", "--kind", "graph-build", "--repo", "kit", "--slug", "t",
+                                 "--no-wait", cmd=[sys.executable, "-V"])
+        self.assertEqual(code, 11, err)             # sized and booked, then the owner hold refuses
+        [r] = self.records("ended", "r-")
+        self.assertEqual((r["kind"], r["need"]["cpu"]), ("graph-build", 6))
+
+    def test_an_unknown_kind_names_where_repo_kinds_are_read(self):
+        code, _, err = self.call("run", "--kind", "no-such-kind", "--repo", "kit", "--slug", "t",
+                                 cmd=[sys.executable, "-V"])
+        self.assertEqual(code, 2)
+        self.assertIn('"kinds" section of the .kit.json in the main checkout of', err)
+
+    def test_hold_agent_keeps_a_repo_kinds_slots(self):
+        code, out, err = self.call("hold", "agent", "--repo", "kit", "--slug", "t", "--kind",
+                                   "graph-build", "--for", "1h", agent=True)
+        self.assertEqual(code, 0, out + err)
+        [h] = self.records("holds", "h-")
+        self.assertEqual((h["kind"], len(h["slots"]["cpu"])), ("graph-build", 6))
+
+    def test_hold_agent_refuses_a_repo_kind_past_the_agent_cap(self):
+        self.repo.write(".kit.json", json.dumps({"kinds": {"big": {
+            "cpu": 7, "gpu": 0, "why": "too big"}}}))
+        code, out, err = self.call("hold", "agent", "--repo", "kit", "--slug", "t", "--kind",
+                                   "big", "--for", "1h", agent=True)
+        self.assertEqual(code, 10, out + err)
+        self.assertIn("more than the agent cap 6", out + err)
+        self.assertEqual(self.records("holds", "h-"), [])
 
 
 if __name__ == "__main__":

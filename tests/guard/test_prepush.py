@@ -94,17 +94,17 @@ class HookTest(pc.PrePushCase):
         rec, why = ctx.gate_ok(self.repo.root, self.with_kit)
         self.assertEqual((rec['commit'], rec['config_rev'], why), (self.with_kit, self.with_kit, None))
 
-    def test_a_record_only_in_git_is_pushed(self):
-        # Until the legacy read is retired: a landing by an older kit writes only the .git copy,
-        # and every reader takes it.
+    def test_with_a_dev_drive_a_record_only_in_git_is_refused(self):
         self.assertEqual(self.push('origin', 'main')[0], 0)
+        before = self.remote_main()
         self.repo.write('a.txt', 'a\n')
         head = self.repo.commit('a', 'a.txt')
         self.passed(head, git_copy_only=True)
-        self.assertEqual(runner.verify_record(self.repo.root, head)[0]['commit'], head)
+        self.assertIsNone(runner.verify_record(self.repo.root, head)[0])
         code, err = self.push('origin', 'main')
-        self.assertEqual(code, 0, err)
-        self.assertEqual(self.remote_main(), head)
+        self.assertEqual(code, 1, err)
+        self.assertIn('pre-push: refused, %s has no gate-OK record' % head[:12], err)
+        self.assertEqual(self.remote_main(), before)
 
     def test_refspec_to_main_is_checked_and_a_branch_is_not(self):
         self.assertEqual(self.push('origin', 'main')[0], 0)
@@ -192,9 +192,15 @@ class OwnerApprovalTest(pc.PrePushCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def approved_commit(self, content):
+    def approved_commit(self, content, before=None):
         """An agent commit of CLAUDE.md `content` on main, carrying hub:A-001, which the owner
-        approved as 'approved' and the hub consumed for it: its id."""
+        approved as 'approved' on with_kit and the hub consumed for it: its id. `before` ({path:
+        text}): first an owner commit of those files, so the approved commit is on a moved base."""
+        if before:
+            for rel, text in before.items():
+                self.repo.write(rel, text)
+            self.repo.git('add', '--', *before)
+            self.repo.git('commit', '-q', '-m', 'main moves on')
         doc = ap.new_doc(toc.REPO, 'owner-only edit', self.with_kit, [
             {'path': 'CLAUDE.md', 'base_blob': None, 'content': 'approved\n'}], toc.NOW)
         doc.update(ap.decide_fields(toc.KEY, 'A-001', doc, ap.APPROVE, toc.NOW))
@@ -223,6 +229,22 @@ class OwnerApprovalTest(pc.PrePushCase):
         self.assertIn('pre-push: refused, owner-only paths changed by a commit not authored by '
                       'the owner: %s by %s changes CLAUDE.md (owner approval hub:A-001 refused: %s)'
                       % (tip[:10], AGENT, ap.WHY_FILES), msg)
+
+    def test_an_approved_commit_on_a_base_moved_by_other_paths_is_pushed(self):
+        tip = self.approved_commit('approved\n', before={'a.txt': 'a\n'})
+        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+            self.assertEqual(self.check(tip), (True, None))
+        self.assertEqual(self.hub.asked[-1][1], self.with_kit)
+
+    def test_an_approved_commit_on_a_base_where_the_owner_changed_its_path_is_refused(self):
+        tip = self.approved_commit('approved\n', before={'CLAUDE.md': 'owner\n'})
+        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+            ok, msg = self.check(tip)
+        self.assertFalse(ok)
+        self.assertIn('%s by %s changes CLAUDE.md (owner approval hub:A-001 refused: %s: '
+                      'CLAUDE.md at ' % (tip[:10], AGENT, ap.WHY_HEAD), msg)
 
 
 class CheckTest(pc.PrePushCase):
@@ -329,21 +351,23 @@ class CheckTest(pc.PrePushCase):
         self.base({'repo': {'push_block': False}}, push=False)
         self.assertEqual(self.check(), (True, None))
 
-    def test_pre_push_and_the_guard_rules_reader_both_take_a_git_copy(self):
+    def test_pre_push_and_the_guard_rules_reader_take_a_git_copy_only_with_no_dev_drive(self):
         # ctx.gate_ok is what the guard's git-push-main rule reads (kitlib.guard.rules).
         self.repo.git('push', '-q', 'origin', 'main')
         old = self.with_kit
-        self.passed(old, git_copy_only=True)            # an older kit's record
+        self.passed(old, git_copy_only=True)
         ctx = context.Ctx(environ={}, home=self.repo.root)
-        rec, why = ctx.gate_ok(self.repo.root, old)
-        self.assertEqual((rec and rec['commit'], why), (old, None))
         self.repo.write('a.txt', 'a' + chr(10))
         new = self.repo.commit('a', 'a.txt')
-        self.passed(new, git_copy_only=True)            # written now, by an older kit's landing
-        rec, why = ctx.gate_ok(self.repo.root, new)
-        self.assertEqual((rec and rec['commit'], why), (new, None))
+        self.passed(new, git_copy_only=True)
         line = 'refs/heads/main %s refs/heads/main %s' % (new, old)
-        self.assertEqual(prepush.check(self.repo.root, [line]), (True, None))
+        self.assertIsNone(ctx.gate_ok(self.repo.root, new)[0])          # a dev_drive: not read
+        self.assertFalse(prepush.check(self.repo.root, [line])[0])
+        with mock.patch('kitlib.config.user.dev_drive', return_value=None):   # a load node's case
+            for rev in (old, new):
+                rec, why = ctx.gate_ok(self.repo.root, rev)
+                self.assertEqual((rec and rec['commit'], why), (rev, None))
+            self.assertEqual(prepush.check(self.repo.root, [line]), (True, None))
 
     def test_a_record_reader_that_fails_refuses_a_push_to_main_only(self):
         self.base({'repo': {'push_block': True}})

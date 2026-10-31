@@ -95,7 +95,9 @@ The verbs below ask the running server through kitlib.hubsite.client. Each takes
 the lines named here. A verb marked (owner) carries the owner's token, the others the agent's;
 the server alone decides what a role may do.
 
-  hub.py questions [--status S] [--repo R]          `Q-1 v2 open [repo] title` for each
+  hub.py questions [--status S] [--repo R]          `Q-1 v2 open [repo] title` for each; a
+                                                     done one ends ` (done by the hub: WHY)`
+                                                     or ` (done: WHY)`
   hub.py questions show Q-1                         one question: title, status, version, options
                                                      (the recommended marked), context, answer
                                                      and note; any status
@@ -195,6 +197,25 @@ the server alone decides what a role may do.
                                                      the requester takes back a request still
                                                      pending (KEY is pm: approvals store no from);
                                                      a decided or expired one is refused
+  hub.py handoffs [--from KEY]                      `C-1 restart from=KEY at=TIME PATH`: each
+                                                     session's newest hand-off record, or KEY's
+                                                     (docs/action-hub.md "handoffs/C-NNN")
+  hub.py handoffs add --kind K --state PATH --from KEY       `RECORDED C-1`: beside the ready
+                                                     reply (skill session-handoff), K handoff,
+                                                     restart or stop, PATH the state note
+  hub.py skill-edit [--status S]                    `E-1 v2 submitted skill NAME` for each of the
+                                                     owner's edits of a kit skill (the owner
+                                                     writes them on the hub page only;
+                                                     docs/action-hub.md "skill_edits/E-NNN")
+  hub.py skill-edit show E-1 [--out F]              its status, skill and base blob; --out F
+                                                     writes the owner's text to F byte for byte
+  hub.py skill-edit done E-1 --branch B [--checkout DIR] --if-version V    `COMMITTED E-1`
+                                                     posts B and the blob of the skill's SKILL.md
+                                                     on B in DIR; the hub refuses a blob that is
+                                                     not the owner's text
+  hub.py skill-edit fail E-1 --why W [--at REV] [--checkout DIR] --if-version V    `FAILED E-1`, or
+                                                     `SUPERSEDED E-1` when the blob at REV is not
+                                                     the one the owner edited
   hub.py pending [--for KEY]                        `<kind> <id> [repo] to=R from=K title` for
                                                      each item of owner input not yet handled: R
                                                      is the session key to handle it now (pm
@@ -253,6 +274,7 @@ from kitlib.hubsite import approvals                               # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
 from kitlib.hubsite import control                                 # noqa: E402
 from kitlib.hubsite import pagecheck                               # noqa: E402
+from kitlib.hubsite import skilledits                              # noqa: E402
 from kitlib.hubsite import storecheck                              # noqa: E402
 
 START = 'python "%s" serve' % os.path.abspath(__file__)
@@ -261,14 +283,90 @@ HEALTH = api.BASE + '/health'
 # every verb, in the order the usage error names them
 VERB_NAMES = ('serve', 'status', 'setup', 'open', 'unpair', 'stop', 'restart',
               'questions', 'answer', 'todos', 'stories', 'to-pm', 'inbox', 'pages', 'approvals',
-              'pending', 'wait', 'validate')
+              'handoffs', 'skill-edit', 'pending', 'wait', 'validate')
 NO_VERB = 'give a verb: %s or %s' % (', '.join(VERB_NAMES[:-1]), VERB_NAMES[-1])
+
+
+# One correct command per verb, printed under a usage error (and under the hub's refusal of a
+# --record), keyed by the parser's prog. Each one parses: tests/hubsite/test_usage_examples.py.
+EXAMPLES = {
+    'hub.py serve': 'hub.py serve --port 0',
+    'hub.py status': 'hub.py status',
+    'hub.py setup': 'hub.py setup --check',
+    'hub.py open': 'hub.py open --print',
+    'hub.py unpair': 'hub.py unpair',
+    'hub.py stop': 'hub.py stop',
+    'hub.py restart': 'hub.py restart',
+    'hub.py questions': 'hub.py questions --status open',
+    'hub.py questions show': 'hub.py questions show Q-1000',
+    'hub.py questions add': ('hub.py questions add --title "<title>" --context-file <file> '
+                             '--option "<label>::<description>" --record <pm-folder>:<ID>'),
+    'hub.py questions log': 'hub.py questions log Q-1000 --if-version 3',
+    'hub.py questions done': 'hub.py questions done Q-1000 --why "<why>" --if-version 3',
+    'hub.py questions file': 'hub.py questions file Q-1000',
+    'hub.py questions bind': 'hub.py questions bind --dry-run',
+    'hub.py questions edit': ('hub.py questions edit Q-1000 --from <key> --if-version 3 '
+                              '--record <pm-folder>:<ID>'),
+    'hub.py questions withdraw': 'hub.py questions withdraw Q-1000 --from <key> --if-version 3',
+    'hub.py answer': 'hub.py answer Q-1000 --choice 0',
+    'hub.py todos': 'hub.py todos --status open',
+    'hub.py todos add': 'hub.py todos add --title "<title>"',
+    'hub.py todos done': 'hub.py todos done T-1000',
+    'hub.py todos ack': 'hub.py todos ack T-1000',
+    'hub.py todos edit': 'hub.py todos edit T-1000 --from <key> --if-version 3',
+    'hub.py todos withdraw': 'hub.py todos withdraw T-1000 --from <key> --if-version 3',
+    'hub.py stories': 'hub.py stories',
+    'hub.py stories add': 'hub.py stories add --repo <repo> --title "<title>" --story-file <file>',
+    'hub.py stories set': 'hub.py stories set S-1 --status review --if-version 3',
+    'hub.py stories withdraw': 'hub.py stories withdraw S-1',
+    'hub.py to-pm': 'hub.py to-pm',
+    'hub.py to-pm add': 'hub.py to-pm add --text "<text>"',
+    'hub.py to-pm send': 'hub.py to-pm send',
+    'hub.py to-pm reply': 'hub.py to-pm reply M-1 "<reply>"',
+    'hub.py handoffs': 'hub.py handoffs --from kit',
+    'hub.py handoffs add': 'hub.py handoffs add --kind restart --state "<state file path>" '
+                           '--from kit',
+    'hub.py inbox': 'hub.py inbox',
+    'hub.py inbox add': 'hub.py inbox add --text "<text>"',
+    'hub.py inbox read': 'hub.py inbox read I-1',
+    'hub.py pages': 'hub.py pages',
+    'hub.py pages publish': 'hub.py pages publish <id> --title "<title>" --html-file <file>',
+    'hub.py pages show': 'hub.py pages show <id>',
+    'hub.py skill-edit': 'hub.py skill-edit --status submitted',
+    'hub.py skill-edit show': 'hub.py skill-edit show E-1',
+    'hub.py skill-edit done': 'hub.py skill-edit done E-1 --branch <branch> --if-version 3',
+    'hub.py skill-edit fail': 'hub.py skill-edit fail E-1 --why "<why>" --if-version 3',
+    'hub.py approvals': 'hub.py approvals',
+    'hub.py approvals show': 'hub.py approvals show A-1',
+    'hub.py approvals add': 'hub.py approvals add --title "<title>" --file <path> <content-file>',
+    'hub.py approvals withdraw': 'hub.py approvals withdraw A-1 --from <key> --if-version 3',
+    'hub.py pending': 'hub.py pending',
+    'hub.py wait': 'hub.py wait --pending --timeout 600',
+    'hub.py validate': 'hub.py validate',
+}
+
+
+def example_for(prog):
+    """The example of the parser `prog`, or of the nearest verb above it; None when none."""
+    words = prog.split()
+    while words:
+        found = EXAMPLES.get(' '.join(words))
+        if found:
+            return found
+        words.pop()
+    return None
+
+
+def example_line(prog):
+    found = example_for(prog)
+    return '  example: %s\n' % found if found and len(prog.split()) > 1 else ''
 
 
 class Parser(argparse.ArgumentParser):
     def error(self, message):
         self.print_usage(sys.stderr)
         sys.stderr.write('USAGE: %s\n' % message)
+        sys.stderr.write(example_line(self.prog))
         sys.exit(2)
 
 
@@ -573,6 +671,18 @@ def _client_verbs(sub):
     x.add_argument('--undo', action='store_true')
     _pins(x)
 
+    x = _asks(sub.add_parser('handoffs', help="each session's newest hand-off record; add: "
+                                               "record yours"))
+    x.add_argument('--from', dest='who', default=argparse.SUPPRESS, metavar='KEY',
+                   help="only this session key's")
+    h = x.add_subparsers(dest='sub')
+    x = _leaf(h, 'add', 'record your hand-off, beside the ready reply to the PM')
+    x.add_argument('--kind', required=True, choices=api.HANDOFF_KINDS)
+    x.add_argument('--state', required=True, metavar='PATH',
+                   help='the absolute path of your state note')
+    x.add_argument('--from', dest='who', required=True, metavar='KEY',
+                   help='your launcher session key')
+
     g = _listed(sub, 'pages', 'list the published pages; publish, show')
     x = _leaf(g, 'publish', 'publish an HTML page to the hub')
     x.add_argument('id')
@@ -587,6 +697,30 @@ def _client_verbs(sub):
     x = _leaf(g, 'show', "a page's HTML")
     x.add_argument('id')
     x.add_argument('--out', metavar='F', help='write the HTML to this file instead')
+
+    e = _listed(sub, 'skill-edit', "list the owner's edits of kit skills; show; done: the "
+                "text is committed on a branch; fail: it could not be", S['skill_edits'],
+                repo=False)
+    x = _leaf(e, 'show', "one edit; --out writes the owner's text to a file, byte for byte")
+    x.add_argument('id')
+    x.add_argument('--out', metavar='F', help="write the owner's text to this file")
+    x = _leaf(e, 'done', 'mark a submitted edit committed: the hub checks the blob of the '
+              "skill's SKILL.md on --branch against the owner's text")
+    x.add_argument('id')
+    x.add_argument('--branch', required=True, help='the branch the commit is on')
+    x.add_argument('--checkout', default='.', metavar='DIR',
+                   help='the checkout to read the branch in (default: .)')
+    _pins(x, required=True)
+    x = _leaf(e, 'fail', 'mark a submitted edit failed; with --at, superseded when the skill '
+              'changed since the owner wrote it')
+    x.add_argument('id')
+    x.add_argument('--why', required=True, help='what stopped the commit')
+    x.add_argument('--at', metavar='REV',
+                   help="send the blob of the skill's SKILL.md at this revision (main): the "
+                        'hub marks the edit superseded when it is not the one the owner edited')
+    x.add_argument('--checkout', default='.', metavar='DIR',
+                   help='the checkout to read --at in (default: .)')
+    _pins(x, required=True)
 
     x = _listed(sub, 'approvals', "list the requests for the owner's approval; show; add: ask "
                 "for one; withdraw: take back a pending one", S['approvals'])
@@ -1034,7 +1168,20 @@ def _hub(a):
 def _item(d, state=None, version=False):
     title = d.get('title') or d.get('text') or ''
     name = '%s v%s' % (d.get('id'), d.get('version')) if version else d.get('id')
-    return '%s %s [%s] %s' % (name, state or d.get('status') or '-', d.get('repo') or '-', title)
+    return '%s %s [%s] %s%s' % (name, state or d.get('status') or '-', d.get('repo') or '-', title,
+                                _done_note(d))
+
+
+def _done_note(d):
+    """` (done by the hub: <why>)` after a question the hub marked done once its asker had the
+    filed answer (done_by, docs/action-hub.md "Done by the hub"), ` (done: <why>)` after one its
+    asker or the PM marked done; nothing for any other document. The why on one line."""
+    by, why = d.get('done_by'), d.get('done_why')
+    why = ' '.join(why.split()) if isinstance(why, str) else ''
+    if isinstance(by, str) and by.strip():
+        who = 'the hub' if by == 'hub' else by.strip()
+        return ' (done by %s%s)' % (who, ': ' + why if why else '')
+    return ' (done: %s)' % why if why else ''
 
 
 def _list(a, collection, version=False):
@@ -1252,6 +1399,20 @@ def _inbox(a, stop):
                  [_item(d, 'read' if d.get('read') else 'unread') for d in items])
 
 
+def _handoffs(a, stop):
+    hub = _hub(a)
+    if a.sub == 'add':
+        got = hub.post('/handoffs', client.AGENT, _body(
+            kind=a.kind, state_path=a.state, **{'from': a.who}))
+        return _wrote(a, got, 'RECORDED %s' % got.get('id'))
+    who = getattr(a, 'who', None)
+    got = hub.get('/handoffs', query={'from': who} if who else None)
+    items = got.get('items') or []
+    return _show(a, {'items': items},
+                 ['%s %s from=%s at=%s %s' % (d.get('id'), d.get('kind'), d.get('from'),
+                                              d.get('at'), d.get('state_path')) for d in items])
+
+
 def _pages(a, stop):
     """No delete: deleting a page is the owner's, on the hub page only."""
     hub = _hub(a)
@@ -1284,6 +1445,54 @@ def _pages(a, stop):
             sys.stdout.write(html.encode(enc, 'backslashreplace').decode(enc) + '\n')
         return client.OK
     return _list(a, 'pages', version=True)
+
+
+def _blob_at(checkout, rev, skill):
+    """The blob id of the skill's source at `rev` in `checkout` (git rev-parse, a read)."""
+    from kitlib.git import cmd
+    path = skilledits.source_path(skill)
+    out, why = cmd.run_text(['rev-parse', '--verify', '--quiet', '%s:%s' % (rev, path)],
+                            checkout)
+    if not skilledits.is_blob(out):
+        raise serve.ServeError('cannot read %s at %s in %s: %s'
+                               % (path, rev, checkout, why or 'not found'))
+    return out
+
+
+def _skill_edit(a, stop):
+    """The owner's edits are the owner's (the hub page): an agent shows, commits and reports."""
+    hub = _hub(a)
+    if a.sub in ('done', 'fail'):
+        d = hub.get(_one('skill_edits', a)).get('item') or {}
+        if a.sub == 'done':
+            body = {'branch': a.branch, 'if_version': a.if_version,
+                    'blob': _blob_at(a.checkout, a.branch, d.get('skill'))}
+        else:
+            body = _body(why=a.why, if_version=a.if_version)
+            if a.at:
+                body['current_blob'] = _blob_at(a.checkout, a.at, d.get('skill'))
+        got = hub.post(_one('skill_edits', a) + '/' + a.sub, client.AGENT, body)
+        return _wrote(a, got, '%s %s' % ('COMMITTED' if a.sub == 'done' else
+                                         str(got.get('status') or 'failed').upper(), got.get('id')))
+    if a.sub == 'show':
+        got = hub.get(_one('skill_edits', a))
+        d = got.get('item') or {}
+        text = d.get('text') if isinstance(d.get('text'), str) else ''
+        if a.out:
+            try:
+                with open(a.out, 'w', encoding='utf-8', newline='') as f:
+                    f.write(text)
+            except OSError as e:
+                raise serve.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
+            return _show(a, {'ok': True, 'id': d.get('id'), 'version': d.get('version'),
+                             'out': a.out}, ['WROTE %s' % a.out])
+        return _show(a, got, ['%s v%s %s skill %s base %s' % (
+            d.get('id'), d.get('version'), d.get('status'), d.get('skill'), d.get('base_blob'))]
+            + ['%s: %s' % (k, d[k]) for k in ('branch', 'blob', 'source_blob', 'why') if d.get(k)])
+    got = hub.get('/skill_edits', query={'status': getattr(a, 'status', None)})
+    return _show(a, got, ['%s v%s %s skill %s' % (d.get('id'), d.get('version'), d.get('status'),
+                                                   d.get('skill'))
+                          for d in got.get('items') or []])
 
 
 def _approvals(a, stop):
@@ -1374,7 +1583,7 @@ VERBS = {'serve': _serve, 'status': _status, 'setup': _setup, 'open': _open,
          'unpair': _unpair, 'stop': _stop, 'restart': _restart,
          'questions': _questions, 'answer': _answer, 'todos': _todos,
          'stories': _stories, 'to-pm': _to_pm, 'inbox': _inbox, 'pages': _pages,
-         'approvals': _approvals,
+         'approvals': _approvals, 'handoffs': _handoffs, 'skill-edit': _skill_edit,
          'pending': _pending,
          'wait': _wait, 'validate': _validate}
 
@@ -1408,6 +1617,8 @@ def main(argv=None, stop=None):
             print(serve.scrub(json.dumps(e.body, sort_keys=True)))
         print(serve.scrub('REFUSED %s: %s' % (e.code, ' '.join(e.message.split()))),
               file=sys.stderr)
+        if e.field == 'record':         # a --record the hub would not take: the form that it does
+            sys.stderr.write(example_line('hub.py %s %s' % (a.verb, getattr(a, 'sub', None) or '')))
         return client.exit_code(e)
     except (serve.ServeError, auth.TokenFileError) as e:
         print(serve.scrub('REFUSED: %s' % e), file=sys.stderr)

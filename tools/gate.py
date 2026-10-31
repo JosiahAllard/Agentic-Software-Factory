@@ -2,25 +2,25 @@
 
   gate.py [-C DIR] [--base REV] [--full | --only STEP ...] [--plan] [--slug S] [--log-dir D]
       gate the checkout under the machine lock; on a pass of a clean tree, the gate-OK record.
-      Through a stub run from outside its checkout, refused (4) when the caller is in another
-      checkout, unless an absolute -C names the tree; with no stub and no -C or a relative one,
-      refused (4) when this gate.py is in another checkout of the gated tree's repository; a
-      relative --log-dir
-      outside the gated checkout is USAGE (2) (kitlib.gate.caller). From another directory:
+      With no -C or a relative one, refused (4) when this gate.py is in another checkout of the
+      gated tree's repository; a relative --log-dir outside the gated checkout is USAGE (2)
+      (kitlib.gate.caller). From another directory:
       python <worktree>/tools/gate.py -C <worktree> (docs/gate.md "The caller's checkout").
       Refused (4), with --plan and as `land` too, while the repository's stash stack holds an
       entry, whichever checkout made it (kitlib.gate.stash; docs/gate.md "The stash guard").
       Refused (4) before its header when its stdout is a file another gate run is writing
       (kitlib.gate.outfile; docs/gate.md "Whose run a log is")
   gate.py land BRANCH --expect-tip SHA [--expect-main SHA] [-C DIR] [--summary TEXT]
-                      [--full] [--fresh] [--wait SECONDS] [--log-dir D] [--keep-branch] [--submit]
+                      [--full] [--fresh] [--wait SECONDS] [--log-dir D] [--keep-branch]
+                      [--reviewed-by REVIEWER_ID --submit]
       land BRANCH from the main checkout, as tools/land.py does: merge onto <remote>/<main> as it
       is at the landing's turn, gate the merged tree, push, verify, then delete the landed branch
       (remote and local) and remove its worktree, never forced, unless --keep-branch (docs/gate.md
       "Branch cleanup"); --fresh or --full runs every step of the merged gate: nothing is read
       from or stored in the gate cache (docs/gate.md "Gate reuse"). --submit: started detached;
       prints a REVIEW line for each branch whose queued verdict is at the tip submitted, then the
-      one SUBMITTED line with its wait-result command, and exits 0
+      one SUBMITTED line with its wait-result command, and exits 0; it needs --reviewed-by,
+      before --submit: the reviewer id of the verdict queued at the tip (as tools/land.py)
   gate.py [-C DIR] --rerun [--slug S] [--log-dir D]
       after a red --full run of a clean tree: rerun only its failing test classes, each paired
       with a control at the merge base, and the steps it never reached, under the machine lock;
@@ -35,11 +35,17 @@
   gate.py allow BRANCH --runs N --why TEXT [-C DIR]
       allow BRANCH N gate runs in all, past the branch gate budget (kitlib.gate.budget; a branch
       gate is refused (4) before booking one more): the coordinator's call, never the builder's
+  gate.py stop RUN [-C DIR]
+      end gate run RUN (the r-... id on its held line and in machine_lock.py status): only its
+      own process tree and lock; 0 stopped or already gone, 1 could not end it, 4 refused: not a
+      gate run, another session's, or a landing's (a load node's land gate shows as none on the
+      node: kitlib.gate.stop; docs/gate.md "Stopping a gate"). The gate it stops exits 16 with a
+      `stopped` result record
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate, prints and exits.
-Exit codes (kitlib.gate): 0 OK, 1 FAILED, 2 USAGE, 3 STUCK, 4 REFUSED, 5 BUSY; 9 LANDED_UNGATED
-is retired (no landing gives it); a machine lock refusal passes its own code through
-(6, 8, 10, 11, 12); 130 Ctrl+C.
+Exit codes (kitlib.gate): 0 OK, 1 FAILED, 2 USAGE, 3 STUCK, 4 REFUSED, 5 BUSY, 16 STOPPED; 9
+LANDED_UNGATED is retired (no landing gives it); a machine lock refusal passes its own code
+through (6, 8, 10, 11, 12); 130 Ctrl+C.
 """
 import argparse
 import json
@@ -75,9 +81,11 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
 from kitlib import gate as G                                       # noqa: E402
 from kitlib import pluginsource                                    # noqa: E402
 from kitlib.config import policy                                  # noqa: E402
+from kitlib.coordstate import log as coordlog                       # noqa: E402
 from kitlib.gate import land as landmod                            # noqa: E402
 from kitlib.gate import budget, caller, measure, outfile, rerun, runner  # noqa: E402
 from kitlib.gate import result as resultmod                       # noqa: E402
+from kitlib.gate import stop as stopmod                            # noqa: E402
 from kitlib.gate import submit as submitmod                        # noqa: E402
 from kitlib.lock import layout as lay                              # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402
@@ -99,11 +107,9 @@ class Parser(argparse.ArgumentParser):
 
 def gate_parser():
     p = Parser(prog='gate.py', description='Gate this checkout under the machine lock.')
-    p.add_argument('-C', dest='root', help='the checkout (default: here; through a stub run from '
-                   'outside its checkout, refused when the caller is in another checkout unless '
-                   '-C is an absolute path; with no stub, refused when a relative or absent -C names '
-                   'another checkout of this gate.py\'s repository). From another directory: python '
-                   '<worktree>/tools/gate.py -C <worktree>')
+    p.add_argument('-C', dest='root', help='the checkout (default: here; refused when a relative '
+                   'or absent -C names another checkout of this gate.py\'s repository). From '
+                   'another directory: python <worktree>/tools/gate.py -C <worktree>')
     p.add_argument('--base', help='compare against this rev (default <remote>/<main>)')
     sel = p.add_mutually_exclusive_group()
     sel.add_argument('--full', action='store_true', help='every step that is not manual; nothing '
@@ -140,10 +146,29 @@ def land_parser():
     p.add_argument('--log-dir', help='where the merged gate\'s logs go')
     p.add_argument('--keep-branch', action='store_true',
                    help='after landing, keep the remote branch, the worktree and the local branch')
+    p.add_argument('--reviewed-by', dest='reviewed_by', action='append', default=[],
+                   metavar='REVIEWER_ID',
+                   help='--submit: the reviewer id of the verdict queued at the tip (required)')
     p.add_argument('--submit', action='store_true',
                    help='start the landing detached; print the wait-result command and exit 0')
     p.add_argument(submitmod.FLAG, dest='submitted', metavar='PAYLOAD', help=argparse.SUPPRESS)
     return p
+
+
+def land_again_args(a, root):
+    """This submission's arguments, `land` first, for the Instead: command of one that did not
+    name its reviewer (submit.again_line): -C absolute with forward slashes."""
+    args = ['land', a.branch, '-C', root.replace('\\', '/'), '--expect-tip', a.expect_tip]
+    if a.expect_main:
+        args += ['--expect-main', a.expect_main]
+    if a.summary:
+        args += ['--summary', a.summary]
+    if a.wait is not None:
+        args += ['--wait', str(a.wait)]
+    if a.log_dir:
+        args += ['--log-dir', a.log_dir]
+    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
+                                         ('--keep-branch', a.keep_branch)) if on]
 
 
 def land_child_args(a, root):
@@ -170,9 +195,16 @@ def do_land(argv):
         p.error('--wait is 0 or more seconds')
     if a.submit and a.submitted:
         p.error('--submit starts the landing that --submitted runs; not both')
+    if a.reviewed_by and not a.submit:
+        p.error('%s goes with --submit' % submitmod.REVIEWED_BY)
     if a.submit:
-        return emit(submitmod.submit(root, __file__, land_child_args(a, root), [a.branch],
-                                     [a.expect_tip], expect_main=a.expect_main))
+        out = submitmod.submit(
+            root, __file__, land_child_args(a, root), [a.branch], [a.expect_tip],
+            expect_main=a.expect_main, reviewed_by=a.reviewed_by,
+            again=lambda ids: submitmod.again_line('gate.py', land_again_args(a, root), ids))
+        code = emit(out)
+        coordlog.note_submit(out, [a.branch], [a.expect_tip], a.reviewed_by)   # docs/coord-state.md
+        return code
     submitted = None
     if a.submitted:
         try:
@@ -231,10 +263,8 @@ def do_wait(argv):
         print('TIMEOUT: no final %s result record for %s at %s within %s s' % (
             a.kind, a.branch, a.tip, a.timeout))
         return resultmod.TIMEOUT
-    print('RESULT %s %s %s at %s: %s (%s)' % (rec.get('verdict'), a.kind, a.branch,
-                                             str(rec.get('tip'))[:10], rec.get('summary'),
-                                             rec.get('log')))
-    print(json.dumps(rec, sort_keys=True))
+    for line in resultmod.result_lines(rec, a.kind, a.branch):
+        print(line)
     return G.OK if rec.get('verdict') == 'pass' else G.FAILED
 
 
@@ -263,6 +293,24 @@ def do_allow(argv):
         return G.REFUSED
     print('ALLOWED %s: %d gate runs (%d used); %s' % (a.branch, a.runs, used, path))
     return G.OK
+
+
+def stop_parser():
+    p = Parser(prog='gate.py stop',
+               description='End one gate run: only its own process tree and lock, never a '
+                           'landing (docs/gate.md "Stopping a gate").')
+    p.add_argument('run', metavar='RUN',
+                   help='the lock run id: the r-... on the gate\'s held line and in '
+                        'machine_lock.py status')
+    p.add_argument('-C', dest='root', default='.',
+                   help='a checkout whose repository\'s landing lock is read too (default: here)')
+    return p
+
+
+def do_stop(argv):
+    a = stop_parser().parse_args(argv)
+    return emit(stopmod.stop_run(a.run, Store(say=say), root=os.path.abspath(a.root),
+                                 actor={'name': 'gate.py stop'}, say=say))
 
 
 def emit(outcome):
@@ -311,7 +359,8 @@ def do_measure(a):
         print('REFUSED: cannot read the kinds table or the lock history: %s' % e)
         return G.REFUSED
     kinds, notes = measure.propose(table, history, layout['medium_cores'],
-                                   store.settings.history_min_runs, agent_cap=layout['agent_cap'])
+                                   store.settings.history_min_runs, agent_cap=layout['agent_cap'],
+                                   aliases=aliases)
     doc = measure.document(kinds, 'PROPOSED by gate.py --measure from %d day(s) of history; '
                                   'review, then commit to kitlib/lock/kinds.json.' % a.days,
                            aliases)
@@ -330,7 +379,6 @@ def do_measure(a):
 def main(argv):
     safe_stdio()
     book_kw = None
-    here, why = caller.take()       # every subcommand: no child inherits the stub's variable
     try:
         if argv[:1] == ['wait-result']:
             return do_wait(argv[1:])
@@ -338,6 +386,8 @@ def main(argv):
             return do_land(argv[1:])
         if argv[:1] == ['allow']:
             return do_allow(argv[1:])
+        if argv[:1] == ['stop']:
+            return do_stop(argv[1:])
         a = gate_parser().parse_args(argv)
         if a.measure:
             if a.only or a.full or a.rerun or a.plan or a.base:
@@ -350,19 +400,10 @@ def main(argv):
         if a.rerun and (a.plan or a.base):
             print('USAGE: --rerun takes only -C, --slug and --log-dir', file=sys.stderr)
             return G.USAGE
-        if why:
-            print('REFUSED: %s; nothing ran' % why)
-            return G.REFUSED
         root = os.path.abspath(a.root or '.')
-        # Only an absolute -C names the tree: through a stub that moved the caller, a relative
-        # one resolves against the stub's checkout, not where the caller typed it.
-        if here is not None and not (a.root and os.path.isabs(a.root)):
-            refused = caller.refusal(root, here)
-            if refused is not None:
-                return emit(refused)
-        # No stub, and no -C or a relative one: this gate.py on another checkout of its own
-        # repository. An absolute -C names the tree on purpose.
-        if here is None and not (a.root and os.path.isabs(a.root)):
+        # No -C or a relative one: this gate.py on another checkout of its own repository. An
+        # absolute -C names the tree on purpose.
+        if not (a.root and os.path.isabs(a.root)):
             refused = caller.own_copy_refusal(root, pluginsource.live_root(KIT), rel=a.root)
             if refused is not None:
                 return emit(refused)

@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest import mock
 
+from kitlib.fs import replace as fsreplace
 from kitlib.hubsite import approvals, store
 from kitlib.hubsite.store import HubError, Store, StoreBusy
 from kitlib.proc import spawn
@@ -459,6 +460,84 @@ class RingTest(StoreCase):
         start = time.monotonic()
         s.wait(1, 20)
         self.assertLess(time.monotonic() - start, 15)
+
+
+class FakeTime:
+    """Stands in for kitlib.fs.replace's `time`: monotonic() reads `t` and sleep(s) adds s to it,
+    so the retry loop runs on counted pauses, never on the machine's speed."""
+
+    def __init__(self):
+        self.t, self.sleeps = 0.0, []
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.t += seconds
+
+
+class ReplaceRetryTest(StoreCase):
+    """_replace and _remove keep the store's behaviour on the shared kitlib.fs.replace loop. The
+    loop runs on a fake clock: REPLACE_S 0.25 and a 0.0625 pause (exact in binary) give tries at
+    0, 1/16, 1/8, 3/16 and 1/4 s, so a refusal that never ends is tried exactly 5 times."""
+
+    def setUp(self):
+        self.root = tmpdir(self)
+        self.clock = FakeTime()
+        for patcher in (mock.patch.object(fsreplace, 'time', self.clock),
+                        mock.patch.object(fsreplace, 'PAUSE', 0.0625),
+                        mock.patch.object(store, 'REPLACE_S', 0.25)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_replace_waits_out_a_reader_for_REPLACE_S_then_raises_and_drops_the_temp(self):
+        path = os.path.join(self.root, 'doc.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('old')
+        with mock.patch('os.replace', side_effect=PermissionError(13, 'denied')) as m:
+            with self.assertRaises(PermissionError):
+                store._replace(path, 'new')
+        self.assertEqual(m.call_count, 5)
+        self.assertEqual(self.clock.sleeps, [0.0625] * 4)
+        self.assertEqual(sorted(os.listdir(self.root)), ['doc.json'])
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'old')
+
+    def test_replace_succeeds_once_the_reader_lets_go(self):
+        path = os.path.join(self.root, 'doc.json')
+        real, calls = os.replace, []
+
+        def flaky(a, b):
+            calls.append(1)
+            if len(calls) < 3:
+                raise PermissionError(13, 'denied')
+            real(a, b)
+        with mock.patch('os.replace', side_effect=flaky):
+            store._replace(path, 'new')
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(self.clock.sleeps, [0.0625] * 2)
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'new')
+
+    def test_replace_raises_another_error_at_once(self):
+        path = os.path.join(self.root, 'doc.json')
+        with mock.patch('os.replace', side_effect=OSError(5, 'io')) as m:
+            with self.assertRaises(OSError):
+                store._replace(path, 'new')
+        self.assertEqual(m.call_count, 1)
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_remove_a_missing_file_is_success_and_a_held_one_is_raised_after_REPLACE_S(self):
+        store._remove(os.path.join(self.root, 'nothing.json'))
+        path = os.path.join(self.root, 'doc.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('x')
+        with mock.patch('os.remove', side_effect=PermissionError(13, 'denied')) as m:
+            with self.assertRaises(PermissionError):
+                store._remove(path)
+        self.assertEqual(m.call_count, 5)
+        self.assertEqual(self.clock.sleeps, [0.0625] * 4)
 
 
 class PendingTest(StoreCase):

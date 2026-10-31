@@ -21,11 +21,13 @@ import datetime
 import subprocess
 import time
 
+import kitlib.platform
 from kitlib.lock import game
 from kitlib.lock import holds as hl
 from kitlib.lock import kinds as kinds_mod
 from kitlib.lock import layout as lay
 from kitlib.lock import queue as qm
+from kitlib.lock import stale as stale_mod
 from kitlib.lock import status as st
 from kitlib.lock.run import expected_end, request_stop
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_USAGE,
@@ -166,7 +168,7 @@ def _hardware(store, L, hw):
         ccds.append({"index": i, "threads": dom, "cpu_slots": slots,
                      "preferred": bool(set(preferred) & set(dom)),
                      "game_pick": bool(slots) and set(slots) == set(game_pick)})
-    mem = process.memory_mb() if not store.testing else None
+    mem = kitlib.platform.memory_mb() if not store.testing else None   # the running platform's
     return {"threads": len(hw["threads"]), "thread_ids": hw["threads"], "groups": hw.get("groups") or [],
             "cores": [{"threads": c["threads"], "smt": c["smt"], "efficiency": c["efficiency"]}
                       for c in hw.get("cores") or []],
@@ -248,6 +250,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
                    gpu_mem_mb=None if gpu is None else sum(gpu.get(p, 0) for p in tree),
                    expected_end=expected_end(start_at, r.get("expect_s")),
                    background=bool(r.get("background")),
+                   stale=stale_mod.reason(store, r, now),
                    overrun=None)
         if r.get("state") == "held" and r.get("held_since") and r.get("expect_s"):
             try:
@@ -495,12 +498,14 @@ def _hold_spec(spec, now):
     return out
 
 
-def hold_create(actor, spec, store=None, kinds_table=None):
+def hold_create(actor, spec, store=None, kinds_table=None, checkout=None):
     """Makes a hold. spec: {owner: owner | agent, scope (owner: whole | half | slots), start
     (ISO, default now), end (ISO) or for_s, note, job (optional; holds.job_of names it: OWNER for an
     owner hold, repo/slug for an agent hold), and by scope: slots: slots {cpu: [...], gpu:
     [...]}; agent: repo, slug, kind, gpu_share}. A whole hold names nothing more: it is the
-    owner's, for the owner's own runs. Game holds are made by game mode only. result:
+    owner's, for the owner's own runs. Game holds are made by game mode only. checkout: the
+    folder the hold is made from (the CLI's current directory): an agent hold's kind may then be
+    a repository kind of its main checkout's `.kit.json` (run.book's checkout). result:
     {hold, notes}."""
     def go(store):
         me = who(actor, store)
@@ -521,6 +526,11 @@ def hold_create(actor, spec, store=None, kinds_table=None):
         if table and s.get("kind"):
             try:
                 s["kind"] = kinds_mod.resolve(s["kind"], table, store.kinds_path)
+                if s.get("owner") == "agent":
+                    merged = kinds_mod.with_repo(table, s["kind"], checkout, store.kinds_path)
+                    if merged is not table:     # the repo kind's size against the layout
+                        kinds_mod.check_cap({s["kind"]: merged[s["kind"]]}, L["agent_cap"])
+                    table = merged
             except kinds_mod.KindsError as e:
                 raise ApiError("store", str(e))
         h, notes = hl.create(store, L, s, me, table, now)

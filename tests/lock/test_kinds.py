@@ -24,7 +24,7 @@ class KindsTest(unittest.TestCase):
 
     def test_one_file_one_reader(self):
         self.assertEqual(kinds.KINDS_FILE, policy.KINDS_FILE)
-        self.assertIn('engine-test', kinds.load())
+        self.assertIn('test', kinds.load())
         self.assertFalse(hasattr(kinds, 'json'), 'kinds.py still carries its own JSON reader')
 
     def test_load_reads_through_the_config_reader(self):
@@ -70,6 +70,39 @@ class Aliases(KindsTest):
     def test_a_kind_that_is_not_text_comes_back_unchanged(self):
         for odd in (['x'], {'x': 1}, None, 3):
             self.assertEqual(kinds.resolve(odd, {'a': {}}), odd)
+
+    def test_canonical_reads_a_retired_name_as_the_kind_it_names(self):
+        path = self.write({'kinds': {'a': {'cpu': 1}}, 'aliases': {'x': {'to': 'a', 'why': 'w'}}})
+        self.assertEqual(kinds.aliases(path), {'x': 'a'})
+        self.assertEqual([kinds.canonical(k, path) for k in ('x', 'a', 'other', None)],
+                         ['a', 'a', 'other', None])
+        self.assertEqual(kinds.canonical('x', table_aliases={}), 'x')
+
+    def test_an_aliases_object_that_does_not_read_compares_names_as_written(self):
+        path = self.write({'kinds': {'a': {'cpu': 1}}, 'aliases': {'x': {'to': 'nope', 'why': 'w'}}})
+        self.assertEqual(kinds.aliases(path), {})
+        self.assertEqual(kinds.canonical('x', path), 'x')
+        with self.assertRaises(kinds.KindsError):
+            kinds.resolve('x', {'a': {}}, path)          # booking still fails closed
+
+
+class LiveTable(unittest.TestCase):
+    """The kit's own kinds.json: generic names, the retired ones as aliases."""
+
+    def test_the_generic_names_are_kinds_and_the_retired_ones_aliases(self):
+        table = kinds.load()
+        for k in ('test', 'app-run'):
+            self.assertIn(k, table)
+        for old in ('engine-test', 'engine-run'):
+            self.assertNotIn(old, table)
+        self.assertEqual(kinds.aliases(), {'engine-test': 'test', 'engine-run': 'app-run'})
+        self.assertEqual(kinds.resolve('engine-test', table), 'test')
+        self.assertEqual(kinds.resolve('engine-run', table), 'app-run')
+
+    def test_a_renamed_kind_keeps_its_size(self):
+        table = kinds.load()
+        for k in ('test', 'app-run'):
+            self.assertEqual(table[k], {'cpu': 'medium', 'gpu': 0, 'share': False, 'warn_min': 30})
 
 
 class GpuValues(KindsTest):
@@ -128,11 +161,74 @@ class IntegerSizes(KindsTest):
         kinds.check_cap(table, 6)
         kinds.check_cap({'maint-lint': table['maint-lint']}, 1)
 
+    def test_a_landing_of_test_books_four_cores_and_a_branch_gate_stays_medium(self):
+        # The owner's call: a landing's merged gate books land-test
+        # (kitlib.gate.land.Lander.land_kind), 4 cores; a branch gate's test stays medium.
+        table = kinds.load()
+        self.assertEqual((table['land-test']['cpu'], table['land-test']['gpu']), (4, 0))
+        self.assertEqual(table['land-test']['warn_min'], table['test']['warn_min'])
+        self.assertEqual(table['test']['cpu'], 'medium')
+        kinds.check_cap(table, 4)
+
     def test_describe_names_the_cores(self):
         lines = kinds.describe({'a': {'cpu': 3, 'gpu': 0, 'share': False},
                                 'b': {'cpu': 1, 'gpu': 0, 'share': False},
                                 'c': {'cpu': 'medium', 'gpu': 0, 'share': False}})
         self.assertEqual(lines, ['a: 3 cores', 'b: 1 core', 'c: medium cpu'])
+
+
+class RepoKinds(KindsTest):
+    """A repository's own kinds (`.kit.json` "kinds"): read from its main checkout, only for a
+    name that is neither a kit kind nor a kit alias."""
+    HEAVY = {'cpu': 'heavy', 'gpu': 0, 'warn_min': 120, 'why': 'world graph'}
+
+    def setUp(self):
+        super().setUp()
+        from tests import gitfixture
+        self.repo = gitfixture.TempRepo(branch='main')
+        self.addCleanup(self.repo.cleanup)
+        self.kit({'kinds': {'graph-build': self.HEAVY}})
+        self.wt = self.repo.worktree('kinds')
+        self.table = {'a': {'cpu': 1, 'gpu': 0, 'share': False, 'warn_min': 60}}
+        self.path = self.write({'kinds': {'a': {'cpu': 1}}, 'aliases': {'x': {'to': 'a', 'why': 'w'}}})
+
+    def kit(self, data, root=None):
+        self.repo.write('.kit.json', data if isinstance(data, str) else json.dumps(data), root)
+
+    def test_a_worktree_reads_the_main_checkouts_entry_never_its_own(self):
+        """Red before: there was no repo kind at all. The worktree's own .kit.json says 2 cores
+        (an uncommitted edit an agent could make); the main checkout's says heavy."""
+        self.kit({'kinds': {'graph-build': dict(self.HEAVY, cpu=2)}}, self.wt)
+        want = {'cpu': 'heavy', 'gpu': 0, 'share': False, 'warn_min': 120}
+        self.assertEqual(kinds.repo_entry('graph-build', self.wt), want)
+        self.assertEqual(kinds.repo_entry('graph-build', self.repo.root), want)
+
+    def test_an_undeclared_name_or_no_work_tree_is_none(self):
+        self.assertIsNone(kinds.repo_entry('cpu-eval', self.wt))
+        self.assertIsNone(kinds.repo_entry('graph-build', self.dir))       # no git here
+
+    def test_a_main_checkout_kit_json_that_does_not_load_fails_closed(self):
+        self.kit('{')
+        with self.assertRaisesRegex(kinds.KindsError, 'repository kinds of .* cannot be read'):
+            kinds.repo_entry('graph-build', self.wt)
+
+    def test_with_repo_adds_the_repo_kind_to_a_copy(self):
+        got = kinds.with_repo(self.table, 'graph-build', self.wt, self.path)
+        self.assertEqual(got, dict(self.table, **{'graph-build': {
+            'cpu': 'heavy', 'gpu': 0, 'share': False, 'warn_min': 120}}))
+        self.assertNotIn('graph-build', self.table)
+        self.assertIs(kinds.with_repo(self.table, 'nope', self.wt, self.path), self.table)
+
+    def test_a_kit_kind_or_alias_wins_and_never_reads_the_kit_json(self):
+        """The kit wins a clash: a repo entry named like a kit kind or alias is ignored, and a
+        broken .kit.json cannot stop a kit kind from booking."""
+        self.kit({'kinds': {'a': self.HEAVY, 'x': self.HEAVY}})
+        for name in ('a', 'x'):
+            self.assertIs(kinds.with_repo(self.table, name, self.wt, self.path), self.table)
+        self.kit('{')
+        for name in ('a', 'x'):
+            self.assertIs(kinds.with_repo(self.table, name, self.wt, self.path), self.table)
+        self.assertIs(kinds.with_repo(self.table, 'graph-build', None, self.path), self.table)
 
 
 if __name__ == '__main__':

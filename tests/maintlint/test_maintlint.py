@@ -1,6 +1,7 @@
 """kitlib.maintlint and tools/maint_lint.py: the checks on in-memory snapshots, the whole run on a
 real store (a record that is merely old gives no finding), the ledger as counts only, the result
 file, and the page that kitlib.hubsite.pagecheck passes."""
+import datetime
 import io
 import json
 import os
@@ -16,10 +17,12 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.hubsite import pagecheck
 from kitlib.maintlint import Finding, backlog, ledger, page, result, verify, worktrees
+from kitlib.modulemap import scopelog
 
 from tests.backlog.helpers import BRANCH, StoreCase, kit_json_ref, priced, rec
 from tests.backlog.test_stale import at
 from tests.gitfixture import rmtree
+from tests.home import result_drive
 from tests.ledger.test_standing import entry, rid
 from tests.pathfree import without_paths
 from tools import maint_lint
@@ -476,6 +479,22 @@ class PageAndResult(unittest.TestCase):
         self.assertIn('a/ b.py', doc)
         self.assertIn('note  here', doc)
 
+    def test_the_module_scope_section_shows_the_sum_and_its_routes_escaped(self):
+        res = self.result([])
+        res['module_scope'] = {
+            'days': 7, 'runs': 4, 'heads': 3, 'widened': 3, 'widened_heads': 2,
+            'routes': [{'from': 'node', 'why': 'via edge build: <b>tests</b>',
+                        'modules': ['brain', 'worker'], 'runs': 2}]}
+        doc = page.render(res)
+        self.assertIsNone(pagecheck.check(doc))
+        self.assertIn('<h2>Module scope</h2>', doc)
+        self.assertIn('4 gate runs in 7 days kept a scope record (3 heads); 3 widened beyond the '
+                      'changed modules (75%).', doc)
+        self.assertIn('<tr><td>node</td><td>brain, worker</td>'
+                      '<td>via edge build: &lt;b&gt;tests&lt;/b&gt;</td><td>2</td></tr>', doc)
+        res['module_scope'] = None
+        self.assertNotIn('Module scope', page.render(res))
+
     def test_the_fingerprint_is_repo_check_and_target_never_the_text(self):
         f = Finding('scope-path-gone', 'AAA gone/**', 'AAA scope gone/** is gone', 'x')
         reworded = f._replace(text='AAA: gone/** was removed', fix='y', age='idle 9d')
@@ -521,6 +540,31 @@ class WholeRun(StoreCase):
         self.assertFalse(any(n.startswith('backlog NOT CHECKED') for n in res['notes']),
                          res['notes'])
 
+    def _lint_with_unreadable_resources(self, *records):
+        kit_json_ref(self.repo)
+        self.seed(*records)
+        broken = mock.PropertyMock(side_effect=maintlint.Refusal('resources config is broken'))
+        with mock.patch.object(type(maintlint.open_store(self.repo.root, fetch=False)), 'resources',
+                               broken):
+            return self.run_lint()
+
+    def test_the_uses_hint_needs_a_uses_line_in_the_store(self):
+        kit_json_ref(self.repo, {'backlog': {'resources': {'gpu': 1}}})
+        self.seed(priced('AAA', summary='needs a live client'))
+        res = self.run_lint()
+        fixes = [f['fix'] for f in res['findings'] if f['check'] == 'keyword-hold']
+        self.assertEqual(len(fixes), 1, res)
+        self.assertNotIn('--uses', fixes[0])
+
+    def test_no_uses_line_never_reads_the_resources_config(self):
+        res = self._lint_with_unreadable_resources(priced('AAA'))
+        self.assertFalse(any('backlog resources not read' in n for n in res['notes']), res['notes'])
+
+    def test_a_uses_line_with_an_unreadable_resources_config_gives_a_note(self):
+        res = self._lint_with_unreadable_resources(priced('AAA', uses='dev-clone'))
+        self.assertTrue(any('backlog resources not read: resources config is broken' in n
+                            for n in res['notes']), res['notes'])
+
     def test_in_a_pm_data_worktree_paths_are_read_in_the_code_checkout(self):
         kit_json_ref(self.repo)
         self.seed(priced('AAA'))
@@ -557,6 +601,31 @@ class WholeRun(StoreCase):
         self.assertEqual(sorted((f['check'], f['new']) for f in third['findings']),
                          [('dead-blocker', True), ('duplicate', False)])
 
+
+    def test_with_no_module_map_there_is_no_module_scope_and_no_note_of_it(self):
+        kit_json_ref(self.repo)
+        res = self.run_lint()
+        self.assertIsNone(res['module_scope'])
+        self.assertFalse(any('module scope' in n for n in res['notes']), res['notes'])
+
+    def test_with_a_module_map_the_scope_records_are_summed(self):
+        kit_json_ref(self.repo, {'modules': {'map': 'docs/module-map.json'}})
+        result_drive(self)
+        where, why = scopelog.folder(self.repo.root)
+        self.assertIsNone(why)
+        os.makedirs(where)
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime(scopelog.STAMP)
+        with open(os.path.join(where, '%s-1-abcd.json' % stamp), 'w', encoding='utf-8') as fh:
+            json.dump({'schema': 1, 'head': 'h1', 'widen': [
+                {'module': 'brain', 'from': 'node', 'why': 'via messaging'}]}, fh)
+        res = self.run_lint()
+        self.assertEqual(res['module_scope']['runs'], 1, res['notes'])
+        self.assertEqual(res['module_scope']['routes'],
+                         [{'from': 'node', 'why': 'via messaging', 'modules': ['brain'],
+                           'runs': 1}])
+        self.assertEqual(res['findings'], [], res['notes'])            # counts only, no finding
+        self.assertIn('module scope: 1 gate run(s) in 7 days (1 head(s)), 1 widened beyond the '
+                      'changed modules (100%)', maint_lint._counts(res))
 
     def test_a_landed_pull_and_a_close_of_unlanded_work_are_flagged_once_each(self):
         kit_json_ref(self.repo)

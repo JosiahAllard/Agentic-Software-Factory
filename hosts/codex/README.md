@@ -1,32 +1,30 @@
 # Codex host
 
-Codex's slot in the multi-host kit (docs/multi-host-plan.md step 9; docs/new-host.md). It carries the
-Codex companion plugin's behaviour onto the host contract. **Nothing here is installed or activated
-on any machine, and live parity with the default host is not verified.** The package passes the
-conformance suite on payloads in the branch's recorded shapes; no installed Codex client has run it.
-Every rendered agent file says so in its header comment.
+Codex's slot in the multi-host kit (docs/multi-host-plan.md step 9; docs/new-host.md): the Codex
+companion plugin's behaviour on the host contract. **Nothing here is installed or activated on any
+machine, and live parity with the default host is not verified.** The package passes the conformance
+suite on payloads in the branch's recorded shapes; no installed Codex client has run it. Every
+rendered agent file says so in its header comment.
 
 ## What is here
 
 | Part | Where | State |
 |---|---|---|
 | Registry entry | `hosts.json` `codex` | Windows; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
-| Hook entry | none of its own: `shell/boot/hook.py codex <event>`, the plugin's copy of the kit's one entry `boot/hook.py` | in the owner's unmarked session a tool `hosts.json` `hook.guarded_tools` leaves out passes before boot (`fast_path: unmarked`); else PreToolUse through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
+| Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | in the owner's unmarked session a tool `hosts.json` `hook.guarded_tools` leaves out passes before boot (`fast_path: unmarked`); else PreToolUse through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
 | Hook policy | `adapter/policy.py` | a marked session: unknown tools, other MCP servers' tools, `apply_patch` through the shell, calls the guard cannot fully judge (no named shell, cmd.exe, a TTY, fed input) and a read, test or lander role's edits in its own checkout refused |
-| Boot folder | `shell/boot/kitboot.py`, `shell/boot/hook.py`, `shell/hosts.json` | byte copies of `boot/kitboot.py` and `boot/hook.py`, and `hosts.json`'s Codex entry alone, drift-checked; a copied plugin verifies the kit it binds with them, and reads its hook data before the kit boots |
-| Agents, skills | `shell/agents/kit-<role>.toml`, `shell/skills/` | every role and skill, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills a byte copy until the live check below; the guard refuses a hand edit of either (docs/guard.md "Generated files"); review templates, not installed |
-| Manifests | `shell/plugin.json`, `shell/mcp.json`, `shell/hooks/hooks.json` | rendered from `kit.json` |
+| Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard.md "Generated files"); review templates, not installed |
+| Manifests | `shell/plugin.json`, `shell/mcp.json`; the hooks plugin's `shell/hooks-plugin/hooks/hooks.json` | `plugin.json` and `mcp.json` rendered from `kit.json`; the plugin export places `shell/plugin.json` at `.codex-plugin/plugin.json`, stamped, and its paths (`./content/skills/`, `mcp.json`) are from the export folder's root (docs/plugin-source.md "Codex"); it names no hooks. The hooks plugin is written by hand and pinned, held equal to the renderer's `hooks()` (tests/pluginsource/test_codex_hooks.py) |
 | Lock MCP | `shell/mcp/lock_server.py` | the lock's read tools, server `machine-lock`; the lock server has no write tools on any host (docs/lock-mcp.md "No write tools"), and `adapter/lock.py` lists and answers nothing else |
 | Hub MCP | `shell/mcp/hub_server.py` | the hub's tools (docs/hub-mcp.md), server `hub`; a marked session is refused them by `adapter/policy.py` |
 | Sessions | `adapter/sessions.py` | read-only app-server reads (`ADAPTER.sessions()`) |
 | Runtime broker | `adapter/runtime.py`, `dispatch.py`, `controller.py`, `launcher.py`, `workflow.py` | runs kit tools in a bound native thread's sandbox, every call held as an agent of the bound role with the role policy on; launch, controller and landing execution refuse |
 | Native checks | `shell/scripts/runtime_probe.py`, `command_canary.py`, `permissions_canary.py`, `workflow_canary.py` | run by hand against an installed `codex.exe`; none runs in the gate |
 
-The plugin root is `shell/`, so its hooks cannot name the kit's `boot/hook.py`: a plugin cache holds
-the plugin folder alone. That is why the plugin ships its own copy of the kit's boot folder and of its
-`hosts.json` entry (plan step 14 kept them for this reason). In a kit checkout its entries boot that
-kit; copied out of it (a plugin cache), they bind `PM_KIT_ROOT` and a pinned release
-`PM_KIT_RELEASE_ID`, verified by the plugin's own boot check (docs/kitboot.md).
+The `pm-kit` plugin root is the export folder, which holds `boot/` and `hosts.json`, so nothing is
+copied for Codex. Its hooks are a second plugin because Codex's hook trust covers the plugin's whole
+cache folder: in `pm-kit` they would ask the owner again at every refresh, while `pm-kit-hooks`
+never changes, so the owner trusts its four hooks once and each new kit version runs without asking.
 
 ## How a session is held
 
@@ -65,15 +63,16 @@ What the owner's session leaves unjudged (a trade-off: the owner keeps an intera
   (`adapter/content.py` `TOOLS`) are inferred. Agent spawning and messaging are refused in a marked
   session; the rendered roles say so where they name them. `adapter/evidence.py` checks a captured
   payload against a binding.
-- **Plugin loading.** The tested binary (0.162.0-alpha.17.2) found portable skills but not portable
-  hooks or MCP. Hook trust, cached paths and client refresh are untested.
-- **Skills from outside the plugin folder.** The default host's plugin loads its skills from the kit's
-  `content/skills/` itself; Codex keeps its byte copy in `shell/skills/` (decision 29 in
-  docs/multi-host-plan.md section 7) until a live install shows that a Codex plugin can name a
-  skills folder outside its plugin root (here `../../../content/skills/`) and that a plugin cache
-  copied out of the kit still carries it. The check: install the plugin with `plugin.json` naming
-  that folder, start a session, and list its skills; then do the same from a plugin cache. Until
-  both pass, `adapter/content.py` copies the skills and owns `shell/skills/`.
+- **Plugin loading.** Installed from the plugin export in a private `CODEX_HOME` on 0.165.0-alpha.1.2
+  (2026-10-29, docs/plugin-source.md "Codex"): the export's `.codex-plugin/plugin.json` gives the 20
+  skills from the export's `content/skills/` and both MCP servers, which start, all from the plugin
+  cache. With the hooks in `pm-kit`, each new version showed the four hooks as modified; with them in
+  `pm-kit-hooks` (2026-10-31), they stayed trusted across a new version with a changed
+  `boot/hook.py`. Not yet seen: a hook running in a model turn, and the owner's desktop install
+  loading the export.
+- **Skills from outside the plugin folder.** Settled by the export: the Codex plugin root is now the
+  export folder, so `./content/skills/` is inside it and a cache copy carries it. The old
+  `shell/skills/` and `shell/boot/` copies are retired (`adapter/content.py` `retired()`).
 - **Runtime.** The branch's canaries passed on that binary against fixtures; the native local Git
   preparation stayed refused (`workflow_canary` reports `complete=false`). Rerun them for any new
   binary. Live controller, store and lock contention, and landing are not accepted. A read or lander
@@ -87,7 +86,7 @@ What the owner's session leaves unjudged (a trade-off: the owner keeps an intera
   are refused in every marked session, and the launcher (`adapter/launcher.py`) plans a launch but
   runs nothing. The rendered roles name spawn_agent and send_message as not available to a Codex
   agent. On Codex the owner starts each agent session by hand.
-- Hook payloads carry no child identity (above), so a child is held as its parent's role.
+- `python <kit>/tools/plugin_refresh.py --apply`, from the owner's session, installs the export into Codex with `codex plugin add pm-kit@pm-kit`, then `codex plugin add pm-kit-hooks@pm-kit` when Codex does not hold its bytes, once config.toml names the export's `pm-kit` marketplace; it prints the switch steps while it names only the old `pm-kit-local` copy. That old copy is no longer refreshed (`adapter/plugin_copy.py`, the step `ADAPTER.plugin_copy` hands it; docs/plugin-source.md "Host plugin copies"). The owner trusts the four `pm-kit-hooks` hooks once; a new kit version asks nothing, and only a change to the hooks plugin's bytes asks again.
 - A main checkout with no `.kit.json` lets a force push to main through, as the shared guard does
   on every host today (baseline behaviour, not this host's). The runtime broker refuses every call
   while a `.kit.json` exists but does not load (`host-runtime-error`).
@@ -105,8 +104,6 @@ From the branch's `codex/` tree. Each is open work before activation.
   cached skill, hook and MCP discovery, read-only MCP start.
 - `scripts/package.py` and `scripts/shared_release.py`: the command lines over those and over
   `kitlib.kitrelease.store`.
-- The native-compat export the tested binary needs: `.codex-plugin/plugin.json` and `.mcp.json`,
-  generated at export from `plugin.json` and `mcp.json` (the portable root must then be absent).
 
 ## Checks
 

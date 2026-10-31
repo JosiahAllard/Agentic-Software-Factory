@@ -62,7 +62,7 @@ class Add(Case):
         self.assertEqual(self.field('FOO', 'effort'), ['s'])
         self.assertEqual(len(self.field('FOO', 'review')), 1)
         self.assertRegex(self.field('FOO', 'review')[0], r'^owner-hub \d{4}-\d{2}-\d{2}$')
-        self.assertTrue(self.field('FOO', 'summary')[0].startswith(SUMMARY + ' (found on'))
+        self.assertEqual(self.field('FOO', 'summary'), [SUMMARY])     # the finding is in the body
         log = self.repo.git('log', '-1', '--format=%B', smod.STORE_REF)
         self.assertIn('Session: owner-hub', log)
 
@@ -271,6 +271,58 @@ class Answer(Case):
         self.assertEqual(sorted(self.field('FOO', 'answer')), ['Q-101 ' + AT, 'Q-102 ' + LATER])
         self.assertEqual(self.field('FOO', 'state'), ['open'])
         self.assertTrue(any('UNPARKED' in line for line in out['lines']), out['lines'])
+
+
+class ConditionMet(Case):
+    """condition_met: the unblock-conditions job's write, one commit under Session: hub-condition,
+    and nothing on a second call."""
+
+    def setUp(self):
+        Case.setUp(self)
+        self.named()
+        self.seed(**rec('FOO', state='blocked', blocked_on='live-client',
+                        until='live-client todo:T-5 done'))
+
+    def tip(self):
+        return self.repo.git('rev-parse', smod.STORE_REF).strip()
+
+    def test_one_commit_under_its_own_session_then_nothing(self):
+        before = self.tip()
+        out = recordwrite.condition_met(self.repo.root, 'FOO', 'live-client', 'todo:T-5 done')
+        self.assertIs(out['unblocked'], True)
+        self.assertEqual(self.field('FOO', 'state'), ['open'])
+        self.assertEqual(self.field('FOO', 'until'), [])
+        self.assertEqual(self.repo.git('rev-parse', self.tip() + '~1').strip(), before)
+        log = self.repo.git('log', '-1', '--format=%B', smod.STORE_REF)
+        self.assertIn('Session: %s' % recordwrite.CONDITION_SESSION, log)
+        self.assertEqual(recordwrite.CONDITION_SESSION, 'hub-condition')
+        self.assertIn('condition met: todo:T-5 done', log)
+        tip = self.tip()
+        again = recordwrite.condition_met(self.repo.root, 'FOO', 'live-client', 'todo:T-5 done')
+        self.assertIs(again['unblocked'], False)
+        self.assertEqual(self.tip(), tip)
+
+    def test_a_committed_write_with_a_stale_index_is_written_not_a_store_error(self):
+        # errors.IndexStale: the commit landed, so the route reports it as written
+        from kitlib.backlog import errors
+        real = smod.Store.write
+
+        def stale(store, plan):
+            change, tip = real(store, plan)
+            raise errors.IndexStale('index not updated for FOO', commit=tip, paths=['FOO.md'])
+        before = self.tip()
+        with mock.patch.object(smod.Store, 'write', stale):
+            out = recordwrite.condition_met(self.repo.root, 'FOO', 'live-client', 'todo:T-5 done')
+        self.assertIs(out['unblocked'], True)
+        self.assertEqual(out['lines'][-1], 'WARNING: index not updated for FOO')
+        self.assertNotEqual(self.tip(), before)
+        self.assertEqual(self.field('FOO', 'state'), ['open'])
+
+    def test_free_text_is_invalid_and_writes_nothing(self):
+        tip = self.tip()
+        self.refused(lambda: recordwrite.condition_met(self.repo.root, 'FOO', 'live-client',
+                                                       'when it ships'), 'invalid')
+        self.assertEqual(self.tip(), tip)
 
 
 if __name__ == '__main__':

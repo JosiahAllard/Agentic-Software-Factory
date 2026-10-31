@@ -47,10 +47,15 @@ kitlib.host.hookmain.dispatch.
   push(settings)       the hub's push-notification delivery (hosts.claude.adapter.peer.HubPush:
                        a session's peer pipe; docs/action-hub.md "Push notifications"). Optional:
                        tools/hub.py asks for it with getattr, so a host without it has none
+  agent_models()       the subagent model reader (hosts.claude.adapter.agent_models.models) that
+                       tools/verdict.py add checks --reviewer-model with. Optional: verdict.py
+                       asks for it with getattr, so a host without it checks nothing
   managed_settings_path()   Claude Code's machine-wide managed settings file,
                        %ProgramW6432% (else %ProgramFiles%)\\ClaudeCode\\managed-settings.json, which every
                        account on the machine loads (docs/machine-setup.md "Managed settings");
-                       None when both are unset. Optional: kitlib.machinesetup.extras.Host.managed_path
+                       None when both are unset. On Linux LINUX_MANAGED_SETTINGS, Claude Code's
+                       system directory there (code.claude.com/docs/en/managed-settings, "Linux and
+                       WSL"). Optional: kitlib.machinesetup.extras.Host.managed_path
                        asks for it with getattr, so a host without it has no managed file
 
 MATCHER is the PreToolUse matcher: exactly the tools a guard rule can refuse (events.FILE_TOOLS,
@@ -64,6 +69,7 @@ from hosts.claude.adapter import events
 MATCHER = 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|mcp__.*'
 CONTEXT_EVENTS = ('SessionStart', 'SubagentStart')
 PARTS = ('coordinator', 'pm')
+LINUX_MANAGED_SETTINGS = '/etc/claude-code/managed-settings.json'      # managed_settings_path on Linux
 # A warned allow's reason as PreToolUse additionalContext (render). False: a warned allow renders
 # as nothing, as any allow did before rule modes (docs/guard.md "Rule modes").
 WARN_CONTEXT = True
@@ -190,6 +196,9 @@ class ClaudeAdapter(object):
 
     def managed_settings_path(self, environ=None):
         import os
+        from kitlib import platform
+        if platform.NAME == 'linux':
+            return LINUX_MANAGED_SETTINGS
         env = os.environ if environ is None else environ
         root = env.get('ProgramW6432') or env.get('ProgramFiles')      # the 64-bit folder, even from 32-bit Python
         return os.path.join(root, 'ClaudeCode', 'managed-settings.json') if root else None
@@ -203,6 +212,13 @@ class ClaudeAdapter(object):
             from kitlib.launcher import settings as launcher_settings
             settings = launcher_settings.load()
         return peer.HubPush(settings)
+
+    def agent_models(self):
+        """The subagent model reader tools/verdict.py add checks --reviewer-model with:
+        hosts.claude.adapter.agent_models.models (agent id -> sorted models its transcripts show,
+        [] for an agent id with no transcript, None for an id that is not one)."""
+        from hosts.claude.adapter import agent_models
+        return agent_models.models
 
 
 def _agent_start(kit, payload, environ):

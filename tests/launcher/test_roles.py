@@ -15,7 +15,7 @@ class RoleFor(unittest.TestCase):
     def test_the_mapping(self):
         self.assertEqual(window.role_for(None), 'plain')
         self.assertEqual(window.role_for('coordinator'), 'coordinator')
-        self.assertEqual(window.role_for('conductor'), 'coordinator')
+        self.assertEqual(window.role_for('conductor'), 'conductor')     # the retired old name: its own name
         self.assertEqual(window.role_for('lead', 'lead'), 'coordinator')
         self.assertEqual(window.role_for('deep-worker'), 'deep-worker')
         self.assertEqual(window.role_for('consultant'), 'consultant')
@@ -25,7 +25,7 @@ class RoleFor(unittest.TestCase):
         # docs/guard.md "Agent names": the mark never carries the prefix
         self.assertEqual(window.role_for(P + 'deep-worker'), 'deep-worker')
         self.assertEqual(window.role_for(P + 'consultant'), 'consultant')
-        self.assertEqual(window.role_for(P + 'conductor'), 'coordinator')
+        self.assertEqual(window.role_for(P + 'conductor'), 'conductor')
         self.assertEqual(window.role_for(P + 'analyst'), 'analyst')
         self.assertEqual(window.role_for(P + 'coordinator', P + 'coordinator'), 'coordinator')
         self.assertEqual(window.role_for('lead', P + 'lead'), 'coordinator')
@@ -101,7 +101,7 @@ class EveryKind(unittest.TestCase):
         self.assertEqual(role_of(text), 'consultant')
         self.assertIn("-n 'consultant-alpha'", text)
 
-    def test_after_reboot_marks_coordinators_plain_entries_and_the_pm(self):
+    def test_after_reboot_marks_plain_entries_and_the_pm_and_leaves_coordinators_to_the_hub(self):
         self.h.write_state('sessions.json', {
             '_note': 'skipped',
             'alpha': {'repo': 'alpha', 'agent': True, 'stem': 'alpha-coord', 'state': 's.md', 'account': 1,
@@ -112,7 +112,7 @@ class EveryKind(unittest.TestCase):
                                                'pm_account': 2})
         reboot.run(self.h.settings, self.host)
         roles = sorted(role_of(t) for t in self.host.opened)
-        self.assertEqual(roles, ['coordinator', 'plain', 'pm'])
+        self.assertEqual(roles, ['plain', 'pm'])
         pm = [t for t in self.host.opened if role_of(t) == 'pm'][0]
         self.assertIn("--resume 'abc-123'", pm)
         self.assertEqual(self.host.slept, [reboot.WAIT_SECONDS])

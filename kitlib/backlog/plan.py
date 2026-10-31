@@ -13,17 +13,22 @@ from kitlib import kitroot
 from kitlib.git import cmd, refs
 from kitlib import machinepaths
 
+from . import conditions as condmod
 from . import offer as omod
 from . import policy
 from . import record as rmod
 from . import scope as smod
-from .errors import Failure, NotFound, Refusal, Usage
+from .errors import Ended, Failure, NotFound, Refusal, Usage
 from .store import PLAIN_ID, Change, add_plan_note, id_refusal
 
 MIN_REASON = 12
 RULED_PRICE_BY = ('owner', 'pm')
 ADD_BODY = ('## Why this is here\n\nRecorded by `backlog.py add`. Unprioritised on purpose: '
             'prioritising it is a separate act by somebody not mid-discovery.\n')
+# The longest `--summary` the CLI's `add` takes: the summary is the record's title, one line a
+# list shows whole; the detail goes in the body (`--body-file`). The Action Hub's add is not held
+# to it (opener.planner passes it; recordwrite.add does not).
+SUMMARY_MAX = 120
 # Keys only a verb writes, each with the verb that does.
 WRITTEN_BY = {
     'id': 'nothing - the filename is the id; add the record under its new id and retire this one',
@@ -35,6 +40,7 @@ WRITTEN_BY = {
               '`clear-review ID --reason T`',
     'answer': 'the Action Hub, filing the owner\'s answer to a question bound to the record '
               '(the library\'s `plan_answer`)',
+    'until': '`block ID --on M --until "<condition>"`; `unblock --on M` drops it',
 }
 # Keys no verb writes any more: an owner gate is a role (kitlib/backlog/roles.py), not a cited
 # id. A record that carries one keeps it until `set ID --unset K` clears it (a price move drops
@@ -55,10 +61,14 @@ class Context(object):
     opener.open_store). `liveness` (None: no probe) is `liveness(branch) -> (why it is live, None)
     or (None, tip)`: whether the worktree on a pulled branch is dead, so a pull its holder left
     may be blocked or released by anybody (stop_pull; opener.open_store passes
-    kitlib.worktree.classify.branch_liveness, so this module imports nothing from worktree)."""
+    kitlib.worktree.classify.branch_liveness, so this module imports nothing from worktree).
+    `cap` (None: offer.DEFAULT_CAP; a callable: read on first use) is the most records `next` offers and `pull` takes in order
+    (`.kit.json` backlog.cap, opener.repo_cap); `next --cap` overrides it for that call.
+    `resources` (None: none; a callable: read on first use) is {name: capacity} (`.kit.json`
+    backlog.resources, opener.repo_resources)."""
 
     def __init__(self, store, root, remote='origin', main_branch='main', branch=None, today=None,
-                 code_main=None, code_remote=None, liveness=None):
+                 code_main=None, code_remote=None, liveness=None, cap=None, resources=None):
         self.store = store
         self.root = root
         self.remote = remote
@@ -68,6 +78,28 @@ class Context(object):
         self.branch = branch
         self.today = today
         self.liveness = liveness
+        self._cap = cap
+        self._resources = resources
+
+    @property
+    def cap(self):
+        """The cap, a callable given for it called on first read (opener.open_store: so only an
+        offer reads `.kit.json`, and a verb that makes none never fails on it)."""
+        if callable(self._cap):
+            self._cap = self._cap()
+        return omod.DEFAULT_CAP if self._cap is None else self._cap
+
+    @property
+    def resources(self):
+        """{name: capacity}, a callable given for it called on first read, as `cap`."""
+        if callable(self._resources):
+            self._resources = self._resources()
+        return self._resources or {}
+
+    def capacity(self, snap):
+        """`resources` when a record of `snap` names one, else {} with no config read: a store
+        with no `uses:` line behaves, and fails, exactly as it did without them."""
+        return self.resources if any(r.has('uses') for r in snap.readable) else {}
 
     @property
     def session(self):
@@ -104,9 +136,13 @@ def require(snap, rid):
     return rec
 
 
+_ENDS = {'closes': 'closed', 'retires': 'retired', 'deletes': 'deleted'}
+
+
 def require_shown(snap, ctx, rid):
-    """require() for `show`: a missing id's NotFound also says which store commit removed it
-    (sha, date, session, subject; never an author name), or that none ever did. A main store's
+    """require() for `show`: a missing id says which store commit removed it (closed, retired or
+    deleted; sha, date, session, subject, the reason; never an author name) as Ended, exit 0;
+    NotFound (exit 1) stays for an id no commit removed, or none that can be read. A main store's
     record whose file HEAD tracks and the worktree no longer holds says so (closed or retired
     here - MainBackend writes commit nothing - or removed by hand). An id that is
     not plain (a glob or path character) is not looked up, and a history git cannot read (an
@@ -115,6 +151,7 @@ def require_shown(snap, ctx, rid):
     if rec is not None:
         return rec
     plain = 'no record with `id: %s` in %s' % (rid, snap.where)
+    gone_in = '%s is no longer in %s' % (rid, snap.where)
     if not PLAIN_ID.match(rid):
         raise NotFound('%s\n  history not searched: `%s` is not a plain id' % (plain, rid))
     try:
@@ -123,18 +160,22 @@ def require_shown(snap, ctx, rid):
     except Failure as exc:
         raise NotFound('%s\n  the store\'s history could not be read: %s' % (plain, exc))
     if pending:
-        then = ('its file is tracked at HEAD but missing from this worktree (closed or retired '
-                'here, or removed by hand); no commit names it yet')
-    elif gone is None:
-        then = 'no commit in the store\'s history removed it: the id is unknown'
-    else:
-        then = 'removed by %s on %s (session %s): %s' % (gone.sha, gone.when, gone.session or '-',
-                                                       gone.subject)
-    raise NotFound('%s\n  %s' % (plain, then))
+        raise Ended('%s\n  its file is tracked at HEAD but missing from this worktree (closed or '
+                    'retired here, or removed by hand); no commit names it yet' % gone_in)
+    if gone is None:
+        raise NotFound('%s\n  no commit in the store\'s history removed it: the id is unknown'
+                       % plain)
+    how = _ENDS.get(gone.subject.split(' ', 1)[0], 'removed')
+    said = '%s\n  %s by %s on %s (session %s): %s' % (gone_in, how, gone.sha, gone.when,
+                                                   gone.session or '-', gone.subject)
+    why = re.match(r'(?:closes|retires|deletes) %s: (.+)$' % re.escape(rid), gone.subject)
+    raise Ended(said + ('\n  reason: %s' % why.group(1) if why else ''))
 
 
 def _text(pairs, body):
-    return rmod.render(pairs, body)
+    """The record text of `pairs` and `body`. An `until` line whose member left `blocked_on` is
+    dropped here (record.prune_until), so every write that clears a blocker drops its condition."""
+    return rmod.render(rmod.prune_until(pairs), body)
 
 
 def clears_owner_blocker(rec, after):
@@ -205,13 +246,27 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None):
     folded = _offer_folds(ctx, holding, own, diffs)
     result, refusals, _ranks = omod.next_offer(snap, taken, cap=cap, seeds=seeds,
                                                session=ctx.session, unmet=ctx.unmet(snap),
-                                               folded=folded)
+                                               folded=folded, capacity=ctx.capacity(snap),
+                                               branch=own)
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
 
 
-def current_offer(snap, ctx, branch=None):
+def batch_members(snap, branch):
+    """The ids of the open records batched for `branch` (`batch: <branch>`), in rank order: the
+    seeds of a topic session's pull (plan_pull)."""
+    mine = [r for r in snap.readable if r.get('batch') == branch and r.get('state') == 'open']
+    for r in mine:
+        if not rmod.is_band(r.get('priority')):
+            # rank_key reads a price; refuse as a plain pull of an unpriced record does
+            raise Refusal('`%s` is batched for %s but is `priority: %s`, and `pull` takes a priced '
+                          'record (`1`-`5`). Price it first: `set %s --priority N --priority-by '
+                          'agent`' % (r.id, branch, r.get('priority'), r.id))
+    return [r.id for r in sorted(mine, key=omod.rank_key)]
+
+
+def current_offer(snap, ctx, branch=None, seeds=()):
     """`(offers, passed, holding, also, notes)` for a pull onto `branch`: the offer `next` prints
     as that branch (offer_for), and `also`, the records `next` offers without it (as the main
     checkout prints it), [] when the two are the same. A pull takes a record either one offers,
@@ -219,18 +274,25 @@ def current_offer(snap, ctx, branch=None):
     `also` only widens what a pull takes: when it cannot be computed (one of the branch's own
     pulls has a scope that cannot be compared, which the branch's offer never reads) it is [],
     so a record `next` offered as the branch still pulls plainly and nothing else is let in;
-    `notes` then holds one NOTE naming why, for the pull to print."""
+    `notes` then holds one NOTE naming why, for the pull to print.
+    `seeds` (a topic session's batch, batch_members) go first in the branch's offer, as
+    `next --with` puts them, and the cap grows to hold them all."""
     diffs = []
-    offers, passed, holding, own = _offer(snap, ctx, branch, omod.DEFAULT_CAP, (), None, diffs)
+    cap = ctx.cap
+    if seeds and cap is not None:
+        cap = max(cap, len(seeds))
+    offers, passed, holding, own = _offer(snap, ctx, branch, cap, tuple(seeds), None, diffs)
     also, notes = [], []
     if own is not None and any(r.get('pulled_by') == own for r in holding):
         # The fold check `next` runs in the main checkout (no own branch, so the branch's own
         # diff counts too): `also` must be exactly that offer, or a record the main checkout
         # offers because a higher one folds into this branch would be refused here. The diffs
         # are read once for both offers (`diffs`).
-        result, refusals, _ranks = omod.next_offer(snap, holding, session=ctx.session,
+        result, refusals, _ranks = omod.next_offer(snap, holding, cap=ctx.cap,
+                                                   session=ctx.session,
                                                    unmet=ctx.unmet(snap),
-                                                   folded=_offer_folds(ctx, holding, None, diffs))
+                                                   folded=_offer_folds(ctx, holding, None, diffs),
+                                                   capacity=ctx.capacity(snap))
         if refusals:
             notes.append('NOTE: the offer without branch %s cannot be computed (%s); only the '
                          'offer as %s was checked' % (own, '; '.join(refusals), own))
@@ -255,9 +317,26 @@ def read_body_file(path):
 
 # --- add ------------------------------------------------------------------------------------------
 
+def _checked_uses(ctx, names):
+    """`names`, each once, or Usage: every one must be a resource name `.kit.json` declares (a
+    write may add no `check` error, and fail_findings reads no config, so the plan refuses it)."""
+    for name in names:
+        bad = rmod._uses(name)
+        if bad:
+            raise Usage('bad `--uses %s`: %s; `set ID --uses -` clears the list' % (name, bad))
+    names = list(dict.fromkeys(names))
+    unknown = [n for n in names if n not in ctx.resources]
+    if unknown:
+        raise Usage('`--uses %s`: .kit.json "backlog".resources does not declare it (declared: %s)'
+                    % (', '.join(unknown), ', '.join(sorted(ctx.resources)) or 'none'))
+    return names
+
+
 def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=False, session=None,
-             found_on=None, why_not_folded=None, review=None):
-    """One unprioritised record. `priority: -` always: pricing is a separate act.
+             found_on=None, why_not_folded=None, review=None, body=None, summary_max=None,
+             uses=()):
+    """One unprioritised record. `priority: -` always: pricing is a separate act. `uses` names
+    the resources it needs (docs/backlog.md "Resources").
 
     `review` (`<source> <YYYY-MM-DD>`, the library's alone: the Action Hub passes it, the CLI has
     no flag) writes the review mark: `pull` refuses the record and `next` never offers it until a
@@ -266,8 +345,12 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     The fold-in guard (docs/backlog.md, "The fold-in guard"): `found_on` is the branch the finding
     was made on, or `none`; `why_not_folded` says why it is not fixed there. A record whose scope
     overlaps that branch's diff from the code main (`ctx.code_main`), or the scope of a record the
-    branch holds pulled, is refused: it belongs on that branch, or after it lands. Both go into the
-    summary and the commit subject."""
+    branch holds pulled, is refused: it belongs on that branch, or after it lands. Both go into a
+    `## Found` body section, and the branch into the commit subject; the summary stays the title.
+
+    `body` (`--body-file`) opens the body, before the `## Found` and ADD_BODY sections.
+    `summary_max`: a longer summary is a usage error naming `--body-file` (the CLI passes
+    SUMMARY_MAX; None, the Action Hub's add, takes any length)."""
     why = snap.rules.id_error(rid)
     if why is not None:
         raise Usage('cannot add: %s' % why)
@@ -279,7 +362,12 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     if not (summary or '').strip():
         raise Usage('`add` requires a non-blank `--summary`')
     refuse_machine_paths('--summary', summary)
+    if summary_max is not None and len(summary.strip()) > summary_max:
+        raise Usage('`--summary` is %d characters; a summary is the record\'s title, at most %d: '
+                    'keep it to one short line and put the detail in the body (`--body-file F`)'
+                    % (len(summary.strip()), summary_max))
     refuse_machine_paths('--ref', ref)
+    refuse_machine_paths('--body-file', body)
     found_on, not_folded = _fold_arguments(ctx, found_on, why_not_folded)
     if not scopes:
         raise Usage('`add` requires at least one `--scope`; `none` (no tracked files) is written out')
@@ -287,6 +375,7 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
         bad = smod.scope_member_error(s)
         if bad:
             raise Usage('bad `--scope %s`: %s' % (s, bad))
+    uses = _checked_uses(ctx, uses)
     if effort is not None and rmod._effort(effort) is not None:
         raise Usage('bad `--effort %s`: %s' % (effort, rmod._effort(effort)))
     if review is not None and rmod._review(review) is not None:
@@ -299,13 +388,16 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
                       % (rid, prior))
     notes = [] if found_on == smod.NONE else _fold_overlap(snap, ctx, rid, found_on, scopes)
     where = 'no branch (or on a branch since landed)' if found_on == smod.NONE else found_on
-    summary = '%s (found on %s; not folded: %s)' % (summary.strip(), where, not_folded)
+    sections = [body.rstrip('\n') + '\n'] if (body or '').strip() else []
+    sections += ['## Found\n\nFound on %s; not folded: %s\n' % (where, not_folded), ADD_BODY]
+    summary = summary.strip()
     pairs = [('id', rid), ('area', smod.area_from_scope(scopes)), ('priority', '-'),
              ('priority_by', '-'), ('effort', effort or '-'), ('state', 'open'),
              ('blocked_on', '-')]
     if review is not None:
         pairs.append(('review', review))
     pairs += [('scope', s) for s in scopes]
+    pairs += [('uses', n) for n in uses]
     if session is not None:
         pairs.append(('session', session))
     if ref:
@@ -317,7 +409,10 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     if review is not None:
         lines.append('Marked for review: not pullable until a coordinator runs `clear-review %s '
                      '--reason T`.' % rid)
-    return Change({rid: _text(pairs, ADD_BODY)}, 'backlog: add %s, found on %s' % (rid, where),
+    lines.append('  body:       %s`## Found`, `## Why this is here`'
+                 % ('your `--body-file`, ' if len(sections) == 3 else ''))
+    return Change({rid: _text(pairs, '\n'.join(sections))},
+                  'backlog: add %s, found on %s' % (rid, where),
                   lines)
 
 
@@ -695,12 +790,13 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
              may_collide=False):
     """Edit fields and/or the body. `changes` is `[(key, [values])]`.
 
-    - Who may move an owner's or the PM's price, set or release a `-1` hold, or clear the owner
-      from `blocked_on` is the role check's (kitlib/backlog/roles.py: set-price-owner, set-hold,
-      unblock-owner). `role_checked` says the caller ran it (opener for tools/backlog.py, the
-      hub's owner routes); without it such a write refuses (refuse_top).
-    - An owner-held record's priority changes only with `priority_by` owner or pm, or by a
-      release from `-1` to `-`.
+    - Who may move an owner's or the PM's price, or clear the owner from `blocked_on`, is the
+      role check's (kitlib/backlog/roles.py: set-price-owner, unblock-owner). `role_checked`
+      says the caller ran it (opener for tools/backlog.py, the hub's owner routes); without it
+      such a write refuses (refuse_top).
+    - `--priority -1` is refused (record.RETIRED_PRIORITY): the owner hold is `blocked_on:
+      owner`, written by `block --on owner`.
+    - An owner-held record's priority changes only with `priority_by` owner or pm.
     - A price field moved drops the record's `priority_ruling` (it named the old price); so does
       a result of `priority_by: agent`.
     - No ruling id is taken: an owner gate is a role. Past `unset` every argument is a keyword,
@@ -719,6 +815,9 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
       free scope, are free. Each `--scope` value is checked first: a malformed member is USAGE,
       not a collision.
     - `scope` replaces the whole list; the output names each member it removed.
+    - `uses` replaces the whole list too, `-` alone clearing it, which frees a pulled record's
+      slot as narrowing frees scope. Every name must be declared. On a pulled record, a name it
+      did not hold whose resource live pulls fill is the same `set-widen-collision` row.
     """
     for key, vals in changes:
         refuse_machine_paths('--' + key, *vals)
@@ -744,11 +843,16 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
             raise Refusal('`%s` is written only by %s' % (key, WRITTEN_BY[key]))
         if key in rmod.SINGLE_VALUED and vals is not None and len(vals) > 1:
             raise Usage('`%s` takes one value and was given %d' % (key, len(vals)))
+    if rmod.RETIRED_PRIORITY in dict(changes).get('priority', []):
+        raise Usage('%s (`block %s --on owner --owner-ask "<the question>"`)'
+                    % (rmod.RETIRED_PRIORITY_WHY, rid))
     for s in dict(changes).get('scope', []):
         # Before the widening check, which counts a member it cannot compare as a collision.
         bad = smod.scope_member_error(s)
         if bad:
             raise Usage('bad `--scope %s`: %s; give one `--scope <path>` per path' % (s, bad))
+    changes = [(k, ([] if v == ['-'] else _checked_uses(ctx, v)) if k == 'uses' else v)
+               for k, v in changes]
 
     keys = [k for k, _ in changes]
     pairs = [(k, v) for k, v in rec.pairs() if k not in unset]
@@ -764,19 +868,13 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
     if not role_checked:
         refuse_top(rid, 'set', policy.sort('set', policy.given_of_set(changes, unset, body), rec))
 
-    new_priority = dict(changes).get('priority', [rec.get('priority')])[0]
-    minus_one_release = rec.get('priority') == rmod.OWNER_PRIORITY and new_priority == '-'
     new_by = dict(changes).get('priority_by', [None])[0]
-    if 'priority' in keys and rmod.is_owner_held(rec) and not minus_one_release \
-            and new_by not in RULED_PRICE_BY:
+    if 'priority' in keys and rmod.is_owner_held(rec) and new_by not in RULED_PRICE_BY:
         raise Refusal('`%s` is owner-held (%s), so its priority changes only with `--priority-by '
-                      'owner|pm`, or a release from `-1` to `-`'
-                      % (rid, rmod.owner_hold_label(rec)))
+                      'owner|pm`' % (rid, rmod.owner_hold_label(rec)))
 
     moved = [k for k in rmod.PRIORITY_KEYS if rec.all(k) != get(k)]
     priced = [k for k in moved if k != 'priority_ruling']
-    if minus_one_release and priced == ['priority']:
-        priced = []
     widen_hits, folds, notes, added = [], [], [], []
     if 'scope' in keys and was_pulled:
         added = widened_members(rec.all('scope'), get('scope'))
@@ -785,13 +883,24 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
             widen_hits = live_hits(added, holding, skip=rid, branch=rec.get('pulled_by'))
             # The fold-in guard, as `pull` runs it.
             folds, notes = _pull_fold_hits(ctx, added, holding, rec.get('pulled_by'))
-    if (widen_hits or folds) and not may_collide:
+    new_uses = [n for n in get('uses') if n not in rec.all('uses')]
+    full = []
+    if 'uses' in keys and was_pulled and new_uses:
+        holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+        full = resource_hits(new_uses, holding, ctx.resources, skip=rid,
+                             branch=rec.get('pulled_by'))
+    if (widen_hits or full or folds) and not may_collide:
         override = '%s: `set %s --scope <path> [--scope <path> ...]` (the whole new list)' \
             % (policy.row_text(WIDEN_ROW), rid)
         if widen_hits:
             raise Refusal('`%s` is pulled, and this widens its scope into a live pull: %s. '
                           'Narrowing is free; widening into a live pull is %s'
                           % (rid, '; '.join(widen_hits), override))
+        if full:
+            raise Refusal('`%s` is pulled, and this adds a resource live pulls fill: %s. Dropping '
+                          'a resource is free; taking a full one is %s: `set %s --uses <name> '
+                          '[--uses <name> ...]` (the whole new list)'
+                          % (rid, '; '.join(full), policy.row_text(WIDEN_ROW), rid))
         raise Refusal(_fold_message(rid, folds, override, 'widen'))
     dropped = dropped_why = None
     if get('priority_ruling') and (priced or get('priority_by') == ['agent']):
@@ -806,7 +915,7 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
                                            ' / '.join(rmod.values(pairs, key)) or '(absent)'))
     if body is not None:
         lines.append('  body:       replaced (%d bytes)' % len(body.encode('utf-8')))
-    lines += ['  widened into a live pull: %s' % h for h in widen_hits]
+    lines += ['  widened into a live pull: %s' % h for h in widen_hits + full]
     lines += ['  folds into the work of %s: %s'
               % (h.rpartition('(changed on ')[2].partition(')')[0], h) for h in folds]
     if 'scope' in keys:
@@ -822,17 +931,24 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
     if text == rec.text:
         return Change({}, subject, lines + ['  (no change)'])
     change = Change({rid: text}, subject, lines)
-    if widen_hits or folds:
+    if widen_hits or full or folds:
         _collision_change(change, 'set')
     return change
 
 
 # --- block / unblock ------------------------------------------------------------------------------
 
-def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None):
+def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
+               role_checked=False):
     """`block` ADDS `members` to `blocked_on`, in order, after the blockers already there (one
     already present is not repeated); it never removes one, so it never releases the owner's hold:
     removing a blocker is `unblock --on`'s job.
+    `until`, when given, is the end condition of the one member (exactly one `--on`, a member with
+    no space in it), written as `until: <member> <condition>` and replacing that member's line;
+    kitlib/backlog/conditions.py names the conditions the Action Hub checks, and an `owner` member
+    takes only an owner event (a to-do or a question). An `until` on `owner` schedules the owner's
+    hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
+    (refuse_top).
     `reason`, when given, goes into the commit subject and onto one line appended to the body
     (`Blocked on M (date): T`), so `show` says why the record is held; no header key is written
     for it. A PULLED record is blocked only by whoever may stop its pull (stop_pull), and only
@@ -859,6 +975,21 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None):
         raise Usage('`%s` cannot be blocked on itself' % rid)
     if 'owner' in members and not owner_ask and not rec.has('owner_ask'):
         raise Usage('blocking on the owner needs `--owner-ask "<the question>"`')
+    if until is not None:
+        until = ' '.join(until.split())
+        refuse_machine_paths('--until', until)
+        if not until:
+            raise Usage('`--until` needs the condition that ends the hold')
+        if len(members) != 1:
+            raise Usage('`--until` is the end condition of one blocker: give exactly one `--on`')
+        if len(members[0].split()) != 1:
+            raise Usage('`--until` needs a one-word member, and `--on %s` has a space in it'
+                        % members[0])
+        why = condmod.owner_error(members[0], until)
+        if why:
+            raise Usage('refused `--until %s`: %s' % (until, why))
+        if members[0] == 'owner' and not role_checked:
+            refuse_top(rid, 'block', ['unblock-owner'])
     stop = None
     if rec.get('state') == 'pulled':
         if reason is None:
@@ -882,12 +1013,25 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None):
     changes = [('state', ['blocked']), ('blocked_on', after)]
     if owner_ask:
         changes.append(('owner_ask', [owner_ask]))
+    # A member this block adds gets no `until` line it did not give: a line an older plugin left
+    # behind on a member it cleared would otherwise come live again.
+    fresh = [m for m in members if m not in old]
+    kept = [v for v in rec.all('until') if condmod.split(v)[0] not in fresh
+            and (until is None or condmod.split(v)[0] != members[0])]
+    if until is not None:
+        kept.append('%s %s' % (members[0], until))
+    if kept != rec.all('until'):
+        changes.append(('until', kept))
     if stop is not None:
         changes += [(k, []) for k in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(rec.pairs(), changes)
     lines = ['BLOCKED %s on %s' % (rid, ', '.join(members))]
     if old:
         lines.append('  blocked_on: %s -> %s' % (', '.join(old), ', '.join(after)))
+    if until is not None:
+        lines.append('  until: %s %s%s' % (members[0], until, '' if condmod.parse(until) else
+                                           ' (free text: no program checks it; clear it with '
+                                           '`unblock --on %s`)' % members[0]))
     if stop is not None:
         lines += stop[1]
     subject = 'backlog: block %s on %s' % (rid, ', '.join(members))
@@ -934,8 +1078,7 @@ def plan_unblock(snap, ctx, rid, on=None, reason=None, role_checked=False):
     unheld = clears_owner_blocker(rec, left)
     if unheld and not role_checked:
         refuse_top(rid, 'unblock', ['unblock-owner'])
-    drop = unheld and rec.get('priority') != rmod.OWNER_PRIORITY
-    pairs = [(k, v) for k, v in rec.pairs() if not (drop and k == 'owner_ask')]
+    pairs = [(k, v) for k, v in rec.pairs() if not (unheld and k == 'owner_ask')]
     restored, restore_lines, note = ([], [], '') if left else restore_pull(snap, ctx, rec)
     changes = [('blocked_on', left)] if left else [('state', ['open']), ('blocked_on', ['-'])]
     pairs = rmod.apply_changes(pairs, changes + restored)
@@ -944,7 +1087,7 @@ def plan_unblock(snap, ctx, rid, on=None, reason=None, role_checked=False):
     else:
         lines = ['UNBLOCKED %s - state: %s, blocked_on: -' % (rid, 'pulled' if restored else 'open')]
     lines += restore_lines
-    if drop and rec.has('owner_ask'):
+    if unheld and rec.has('owner_ask'):
         lines.append('  owner_ask dropped: nothing waits on the owner now. It was: %s' % rec.get('owner_ask'))
     subject = 'backlog: unblock %s' % rid
     if reason is not None:
@@ -952,6 +1095,35 @@ def plan_unblock(snap, ctx, rid, on=None, reason=None, role_checked=False):
         subject += '%s: %s' % (' from %s' % named if named else '', ' '.join(reason.split()))
     body = _append_line(rec.body, note) if note else rec.body
     return Change({rid: _text(pairs, body)}, subject, lines)
+
+
+CONDITION_MET = 'condition met: '      # the unblock reason plan_condition_met writes
+
+
+def plan_condition_met(snap, ctx, rid, member, cond):
+    """Clear blocker `member` of `rid` because its end condition `cond` is met: plan_unblock with
+    the reason `condition met: <cond>` (the commit subject). The caller checked the condition
+    (kitlib.hubjobs.unblock_conditions); this checks the record still holds it: `rid` blocked on
+    `member`, with the line `until: <member> <cond>`. When it does not (an unblock or a re-block
+    got there first), nothing is written, so a second run changes nothing. A condition that is
+    not one of conditions.py's forms is refused, and so is any but an owner event on `owner`:
+    only those clear the owner's hold (role_checked, the unblock-owner row: the owner's own act
+    ended it)."""
+    if condmod.parse(cond) is None:
+        raise Refusal('`%s`: `until: %s %s` is free text, which no program acts on; it is cleared '
+                      'by hand with `unblock --on %s`' % (rid, member, cond, member))
+    why = condmod.owner_error(member, cond)
+    if why:
+        raise Refusal('`%s`: %s' % (rid, why))
+    rec = require(snap, rid)
+    line = '%s %s' % (member, cond)
+    subject = 'backlog: unblock %s from %s: %s%s' % (rid, member, CONDITION_MET, cond)
+    if (rec.get('state') != 'blocked' or member not in rec.all('blocked_on')
+            or line not in rec.all('until')):
+        return Change({}, subject, ['%s no longer waits on `until: %s`: nothing to clear'
+                                    % (rid, line), '  (no change)'])
+    return plan_unblock(snap, ctx, rid, on=member, reason=CONDITION_MET + cond,
+                        role_checked=member == 'owner')
 
 
 # --- park / unpark -----------------------------------------------------------------------
@@ -1060,8 +1232,8 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     The record's wait ends only on the last answer: when `waiting` (the other questions bound to
     the record, still unanswered; the hub knows them) is empty and every question the wait names
     (_waits_on) has an answer line, a parked record is unparked (as plan_unpark) and the `owner`
-    blocker is cleared (as plan_unblock: other blockers stay, `owner_ask` goes unless
-    `priority: -1`), which is the `unblock-owner` row, so it needs `role_checked` (else a
+    blocker is cleared (as plan_unblock: other blockers stay, `owner_ask` goes), which is the
+    `unblock-owner` row, so it needs `role_checked` (else a
     Refusal: the owner's or the PM's role clears an owner blocker). A pulled or open record, or
     a wait no question names, only gets the answer.
     `other` (a free-text answer) also writes the review mark `review: owner-answer <date>`
@@ -1118,8 +1290,7 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
                           'kitlib/backlog/roles.py), and no role check ran: the Action Hub files '
                           'it from the owner\'s answer route, with role_checked' % (rid, qid))
         left = [m for m in rec.all('blocked_on') if m != 'owner']
-        if rec.get('priority') != rmod.OWNER_PRIORITY:
-            pairs = [(k, v) for k, v in pairs if k != 'owner_ask']
+        pairs = [(k, v) for k, v in pairs if k != 'owner_ask']
         restored, restore_lines, stop_note = (([], [], '') if left
                                               else restore_pull(snap, ctx, rec))
         changes = [('blocked_on', left)] if left else [('state', ['open']),
@@ -1154,25 +1325,35 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
 
 # --- pull / release -------------------------------------------------------------------------------
 
-def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
+def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batch=False):
     """Take an open, priced record and record the branch. One in `next`'s offer pulls plainly;
     one outside it needs `--reason` and records `preempt` and the `displaced` offer, computed
     here. In the offer means in `next`'s offer as the caller's branch prints it (its own pulls
     left out, so a record overlapping only them is offered) or as `next` prints it without a
     branch (current_offer).
-    A `priority: -1` record is refused, as tools/backlog.py's role check refuses `pull-held` to
-    every role: its hold is released first (`set ID --priority N`, the owner or the PM), then it
-    is pulled. One whose scope collides with a live pull on another branch (one on the caller's
+    A record held on the owner is `state: blocked`, so it is refused (as tools/backlog.py's role
+    check refuses `pull-held` to every role). One whose scope collides with a live pull on another branch (one on the caller's
     branch is no collision) is the `pull-collision` row (kitlib/backlog/roles.py): refused unless
     `may_collide` (the caller's role may take it), and then it needs `--reason`, recorded in
     `preempt`, and the Change names the row (_collision_change). An unmet `requires:` refuses.
     The fold-in guard (`_pull_fold_hits`): one whose scope overlaps a path another live pull's
     branch changed is that row too; `next` passes such a record over, so its refusal comes
-    before the not-offered one.
+    before the not-offered one. A `uses:` resource live pulls on other branches fill
+    (resource_hits) is the same row.
     A pulled record refuses, unless its pull is dead and it is this session's: see
-    `_plan_takeover`."""
+    `_plan_takeover`.
+    A record batched for another branch (`batch:`, offer.held_for_batch) refuses for every role:
+    a lead lifts the hold (`set ID --unset batch`) first. `batch` (a topic session's pull,
+    opener.planner): a record batched for this branch is offered with the whole batch first
+    (batch_members as current_offer's seeds), so its rank order is no refusal; no `preempt` is
+    written."""
     refuse_machine_paths('--reason', reason)
     rec = require(snap, rid)
+    held = rec.get('batch')
+    if held is not None and held != ctx.current_branch():
+        raise Refusal('`%s` is held for the batch on %s (`batch: %s`), and only that branch pulls '
+                      'it. A coordinator lifts the hold first, in its own step: `set %s --unset '
+                      'batch`' % (rid, held, held, rid))
     if reason is not None:
         reason = ' '.join(reason.split())
         if not reason:
@@ -1187,11 +1368,11 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
         raise Refusal('`%s` is marked for review (review: %s); a coordinator clears it with '
                       '`clear-review %s --reason T` before anyone pulls it'
                       % (rid, rec.get('review'), rid))
-    if rec.get('priority') == rmod.OWNER_PRIORITY:
-        raise Refusal('`%s` is `priority: -1` - the owner\'s question (%s) - so it is not pulled: '
-                      'the owner or the PM releases the hold first (`set %s --priority N '
-                      '--priority-by owner`), then it is pulled'
-                      % (rid, rec.get('owner_ask'), rid))
+    if rec.get('priority') == rmod.RETIRED_PRIORITY:
+        # a leftover owner hold: pricing it would lift the hold, so name the hold, not a price
+        raise Refusal('`%s` is `priority: -1`, a retired owner hold, never pulled or priced away: '
+                      'the owner or the PM moves it to `block %s --on owner --owner-ask "<the '
+                      'question>"`' % (rid, rid))
     if not rmod.is_band(rec.get('priority')):
         raise Refusal('`%s` is `priority: %s`, and `pull` takes a priced record (`1`-`5`). Price it '
                       'first: `set %s --priority N --priority-by agent`'
@@ -1204,9 +1385,11 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
     if missing:
         raise Refusal('`%s` requires %s, which is unmet: %s' % ((rid,) + missing[0]))
     branch = ctx.current_branch()
-    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch)
+    seeds = batch_members(snap, branch) if batch and held == branch else ()
+    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds)
     offered = rec in [o.rec for o in offers] or rec in also
     hits = live_hits(rec.all('scope'), holding, skip=rid, branch=branch)
+    full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)
     folds, notes = _pull_fold_hits(ctx, rec.all('scope'), holding, branch)
     # The fold refusal first: `next` passes a folding record over, so "not in the offer" would
     # hide the reason and the override that this one names.
@@ -1219,11 +1402,12 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
                       'owner\'s yes, runs `pull %s --reason "<why>"` (recorded); a worker stops '
                       'and reports%s'
                       % (rid, omod.not_offered_why(rec, passed, ctx.session), rid,
-                         '. Its scope collides with a live pull, so it is %s' % override
-                         if hits else ''))
-    if hits and (not may_collide or reason is None):
+                         '. Its %s with a live pull, so it is %s'
+                         % ('scope collides' if hits else 'resource collides', override)
+                         if hits or full else ''))
+    if (hits or full) and (not may_collide or reason is None):
         raise Refusal('`%s` collides with a live pull: %s. `--reason` alone never overrides it: '
-                      'pulling it anyway is %s' % (rid, '; '.join(hits), override))
+                      'pulling it anyway is %s' % (rid, '; '.join(hits + full), override))
     lines = offer_notes + notes + ['PULLED %s - state: open -> pulled' % rid, '  pulled_at:  %s' % ctx.date(),
                      '  pulled_by:  %s' % branch]
     resume = resume_line(rec.body)
@@ -1239,7 +1423,7 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
         if blocker is not None:
             recorded += ' (unblocks %s)' % blocker
         lines += _collisions(rec, holding)
-        lines += ['warning: %s' % f for f in folds]
+        lines += ['warning: %s' % f for f in full + folds]
         offers = [o for o in offers if o.rec is not rec]
         displaced = ['%s rank %s priority %s' % (o.rec.id, o.rank, o.rec.get('priority'))
                      for o in offers] or ['-']
@@ -1250,9 +1434,33 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None):
         subject += ', pre-empting %d offered item%s' % (len(offers), '' if len(offers) == 1 else 's')
     pairs = rmod.apply_changes(rec.pairs(), changes)
     change = Change({rid: _text(pairs, rec.body)}, subject, lines)
-    if hits or folds:
+    if hits or full or folds:
         _collision_change(change, 'pull')
     return change
+
+
+def resource_hits(names, holding, capacity, skip=None, branch=None):
+    """`resource X at capacity N, taken by ...` for each of `names` the live pulls of `holding`
+    fill, bar the record id `skip` and any pull by `branch` (live_hits' rule). An undeclared name
+    fills nothing."""
+    others = [r for r in holding
+              if r.id != skip and not (branch and r.get('pulled_by') == branch)]
+    load = omod.resource_load(others, capacity)
+    return [omod.capacity_why(n, capacity[n], [omod.live_label(r) for r in load[n]])
+            for n in dict.fromkeys(names) if n in capacity and len(load[n]) >= capacity[n]]
+
+
+def uses_shown(snap, ctx, rec):
+    """`show`'s `uses` line for a record that has one, None otherwise; a read, so a config that
+    cannot be read is said on the line, never an error."""
+    if not rec.has('uses'):
+        return None
+    try:
+        capacity = ctx.resources
+    except Failure as exc:
+        return 'uses %s (capacity not read: %s)' % (', '.join(omod.uses(rec)), exc)
+    holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    return omod.uses_line(rec, holding, capacity)
 
 
 def live_hits(scopes, holding, skip=None, branch=None):
@@ -1368,6 +1576,8 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
                       '%s); a coordinator clears it with `clear-review %s --reason T` before '
                       'anyone takes it over' % (rid, rec.get('review'), rid))
     hits = live_hits(rec.all('scope'), holding, skip=rid, branch=ctx.current_branch())
+    full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid,
+                         branch=ctx.current_branch())
     folds, notes = _pull_fold_hits(ctx, rec.all('scope'), holding, ctx.current_branch())
     given = [f for f, v in (('--reason', reason), ('--blocker', blocker)) if v is not None]
     if given:
@@ -1378,9 +1588,11 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
         raise Refusal('`%s` was pulled by %s, which has landed on %s (%s): close the record, do '
                       'not take it over' % (rid, old, ctx.main_branch, merge))
     override = '%s, with `pull %s`' % (policy.row_text('pull-collision'), rid)
-    if hits and not may_collide:
-        raise Refusal('`%s` is a dead pull of this session, and its scope collides with a live '
-                      'pull: %s. Taking it over anyway is %s' % (rid, '; '.join(hits), override))
+    if (hits or full) and not may_collide:
+        raise Refusal('`%s` is a dead pull of this session, and its %s with a live pull: %s. '
+                      'Taking it over anyway is %s'
+                      % (rid, 'scope collides' if hits else 'resource collides',
+                         '; '.join(hits + full), override))
     if folds and not may_collide:
         raise Refusal(_fold_message(rid, folds, override))
     branch = ctx.current_branch()
@@ -1393,11 +1605,11 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
     if resume:
         lines.append(resume)
     lines += _collisions(rec, holding)
-    lines += ['warning: %s' % f for f in folds]
+    lines += ['warning: %s' % f for f in full + folds]
     change = Change({rid: _text(pairs, rec.body)},
                     'backlog: pull %s onto %s, taking over a dead pull from %s' % (rid, branch, old),
                     lines)
-    if hits or folds:
+    if hits or full or folds:
         _collision_change(change, 'pull')
     return change
 
@@ -1508,8 +1720,6 @@ def _git_answer(got, what):
 def _restore_why_not(snap, ctx, rec, branch, tip):
     """Why the pull `block` stopped on `branch` at `tip` does not come back, None when it does.
     Failure when git cannot tell any of it."""
-    if rec.get('priority') == rmod.OWNER_PRIORITY:
-        return 'the record is held (`priority: -1`)'
     what = 'whether the pull of `%s` by %s comes back' % (rec.id, branch)
     names = _git_answer(omod.live_branches(ctx.root, ctx.remote), what)
     if branch not in names:
@@ -1552,8 +1762,7 @@ def restore_pull(snap, ctx, rec):
     `(changes, lines, note)`, all empty when there is none. The pull comes back (`state:
     pulled`, `pulled_by` the branch, `pulled_at` today) only while the branch is live by `next`'s
     test (offer.live_branches: a local, remote-tracking or worktree branch by that name), still
-    holds the stopped tip, which is on neither the local nor the remote main branch, the record
-    is not held (`priority: -1`), and its scope neither collides with another live pull nor folds
+    holds the stopped tip, which is on neither the local nor the remote main branch, and its scope neither collides with another live pull nor folds
     into one's work (those are a lead's call, the pull-collision row). Otherwise the record opens
     as before. `note` is the body line that says which, and ends the stopped pull's wait. A git
     that cannot say fails (_restore_why_not)."""

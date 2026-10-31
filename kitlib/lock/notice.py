@@ -18,9 +18,14 @@ A notice that cannot be written is said and never fails the run. A start notice 
 stays: its end notice follows from the wrapper even when the run's record on disk cannot be
 updated. A background run (it yields to others) writes none, and a wrapper killed outright writes
 no end notice: its slots free when the next look finds it gone.
+
+A run the lock itself asks to stop because it is stale (kitlib.lock.stale) gets a third notice,
+<run id>-stale.json (phase "stale"), whenever the folder is set, whatever its kind: the owner hears
+that the lock ended a run nobody had stopped. Its end notice follows only when it wrote a start one.
 """
 import os
 
+from kitlib.lock import kinds as kinds_mod
 from kitlib.lock import layout as lay
 from kitlib.lock import site
 from kitlib.lock.store import iso, local_text, parse_iso, write_json
@@ -32,13 +37,16 @@ KIND = "lock-window"
 def target(store, kind, k, L, whole=False):
     """The notice folder for a run of `kind` (its kinds-table entry k, layout L), or None for no
     notice. Heavy is a size: a kind whose cpu size (layout.kind_cores) reaches the heavy alias's,
-    agent_cap, whether the table says "heavy" or a measured whole number."""
+    agent_cap, whether the table says "heavy" or a measured whole number. A kind listed in the
+    machine config's notice kinds matches under its retired name too (kinds.canonical)."""
     n = site.notice(store)
     if n is None:
         return None
     d, kinds = n
     if kinds is not None:
-        return d if kind in kinds else None
+        al = kinds_mod.aliases(store.kinds_path)
+        want = kinds_mod.canonical(kind, table_aliases=al)
+        return d if any(kinds_mod.canonical(x, table_aliases=al) == want for x in kinds) else None
     heavy = lay.kind_cores(L, k) >= L["agent_cap"]
     return d if whole or heavy or (k.get("gpu") and not k.get("share")) else None
 
@@ -80,6 +88,14 @@ def end_doc(rec):
             "title": "%s ended: %s/%s (%s)" % (_what(rec), rec["repo"], rec["slug"], rec["kind"]),
             "text": "Run %s ended (%s, exit %s); its slots are free."
                     % (rec["id"], rec.get("how") or "ended", rec.get("code")),
+            "at": iso(), "repo": rec["repo"], "from": FROM, "kind": KIND}
+
+
+def stale_doc(rec, why):
+    return {"id": "L-%s-stale" % rec["id"], "phase": "stale", "run": rec["id"],
+            "title": "Lock ended a stale run: %s/%s (%s)" % (rec["repo"], rec["slug"], rec["kind"]),
+            "text": "Run %s: %s. The lock asked it to stop; its wrapper ends its process tree and "
+                    "its slots free when it ends." % (rec["id"], why),
             "at": iso(), "repo": rec["repo"], "from": FROM, "kind": KIND}
 
 
@@ -125,3 +141,14 @@ def ended(store, rec):
             _write(store, rec["notice"], end_doc(rec))
     except Exception as e:
         store.say("WARNING: run %s: no lock-window end notice: %s" % ((rec or {}).get("id"), e))
+
+
+def stale(store, rec, why):
+    """When the lock asked stale run rec to stop (kitlib.lock.stale.reap): its stale notice, when
+    the notice folder is set (whatever the run's kind). Never raises."""
+    try:
+        n = site.notice(store)
+        if n is not None:
+            _write(store, n[0], stale_doc(rec, why))
+    except Exception as e:
+        store.say("WARNING: run %s: no stale-run notice: %s" % ((rec or {}).get("id"), e))

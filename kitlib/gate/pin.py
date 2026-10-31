@@ -11,13 +11,14 @@ writes: the tool runs whole from one commit.
           names no main checkout; no remote-tracking main). A tool started from an export (the
           plugin's) pins through the main checkout its marker names, and so gets KIT_LIVE_ROOT
           like a start from that checkout: a run from the export itself would name the export
-          in every stub it checks and every command it prints
+          in every command it prints
   run     export the commit (once per commit, under the export root's refresh.pid), lease it,
           run the same tool from the export with the same arguments and wait: (exit code, None),
           or (None, warning) when it cannot, and the caller runs live (fail open)
 
 The exports live in <plugin export root>/pins/<sha12> (kitlib.pluginsource: the machine config's
-plugin.export_dir, default %LOCALAPPDATA%\\pm-kit\\plugin), apart from the plugin's own exports,
+plugin.export_dir, default pluginsource.default_export_dir: %LOCALAPPDATA%\\pm-kit\\plugin, on
+Linux <profile>/.local/share/pm-kit/plugin), apart from the plugin's own exports,
 which pluginsource.prune never confuses with them. A lease per running pinned tool,
 pins/leases/<sha12>-<pid>.json {sha, pid, ctime, child_pid, child_ctime}, keeps its export: each
 pin, under the lock, removes the exports no live lease holds, except the commit it runs.
@@ -81,7 +82,7 @@ def run(tool_file, argv, environ=None, wait_s=LOCK_WAIT_S):
         return None, None
     if not _same(checkout, checkout_of(tool_file)):
         # Started from an export: should the pin fail open, the tool runs live from the export,
-        # and what it names (stubs, printed commands) must still be the main checkout.
+        # and what it names (printed commands) must still be the main checkout.
         from kitlib import pluginsource
         env.setdefault(pluginsource.LIVE_ROOT_ENV, checkout)
     try:

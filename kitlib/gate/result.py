@@ -46,7 +46,8 @@ The record (SCHEMA 1), every key always present:
                   when it ended, or null while running (UTC, YYYY-MM-DDTHH:MM:SSZ)
   verdict         running; or final: pass, fail, refused, stuck, busy, usage, landed-ungated (an
                   old record's only: exit LANDED_UNGATED is retired, no landing writes it),
-                  not-run (a machine lock refusal), error (an exception or Ctrl+C ended the run)
+                  not-run (a machine lock refusal), error (an exception or Ctrl+C ended the run),
+                  stopped (a stop ended the gate before its verdict: kitlib.gate.stop)
   code            the exit code gate.py gives that outcome; null for running and error
   log             the run's log folder, or null
   summary         the outcome's verdict line, or the exception for error
@@ -64,6 +65,17 @@ The record (SCHEMA 1), every key always present:
                   a submitted landing's running records until the detached landing records
                   itself (kitlib.gate.submit restore), and a record written before the keys.
                   Added after the schema, like source
+  gate_once       a landing's final and error records: whether the base's config sets
+                  "landing".gate_once (Lander.gate_once); null for a branch gate, a running
+                  record, a landing that ended before it read the base's config, a record
+                  another writer finished (kitlib.gate.submit, finish_dead) and one written
+                  before the key. Added after the schema, like source
+  escalated       the same records: whether gate_once made the merged gate run --full
+                  (Lander.once_escalate); null where gate_once is
+
+The land ledger, `<result folder>/land-ledger.jsonl` (ledger_path): one JSON line per final or
+error land record Lander.run writes, with LEDGER_FIELDS, appended and never rewritten, so a
+retry that replaces the land record leaves the earlier outcome's line (append_ledger).
 
 wait() polls for the final record of a branch and kind at a tip. It writes one thing: a running
 record at that tip whose process has died (running_state 'dead') is finished `error`, "the
@@ -80,6 +92,7 @@ import time
 
 from kitlib import gate as G
 from kitlib.config import user as kuser
+from kitlib.fs import replace as fsreplace
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError
 from kitlib.records import gate_ok
 from kitlib.git import refs, repo
@@ -98,8 +111,12 @@ RUNNING = 'running'
 ERROR = 'error'
 TIMEOUT = 7         # gate.py wait-result: no final record at that tip within --timeout
 POLL_S = 2.0
-RETRIES = 5
-RETRY_SLEEP = 0.2
+RETRIES = 5         # tries of a record's os.replace while it fails with PermissionError
+RETRY_SLEEP = 0.2   # seconds between them
+# RETRIES as a wait for kitlib.fs.replace: try k starts at least k-1 pauses in, so the last (at
+# 0.8 s or later) is past this bound and the one before it (at 0.6 s) is not; the half pause is
+# the margin for a slow try.
+REPLACE_WAIT = (RETRIES - 1.5) * RETRY_SLEEP
 LOCK_WAIT_S = 10.0  # a record's lock is held for one read and one replace; past this, ResultError
 LOCK_PAUSE = 0.02
 MAX_STEM = 120      # longer stems are cut and given a hash, so the file name stays short
@@ -110,8 +127,12 @@ WHAT = {'land': 'landing', 'gate': 'gate'}
 SAFE = frozenset('abcdefghijklmnopqrstuvwxyz0123456789._-')
 DEVICES = frozenset(['con', 'prn', 'aux', 'nul'] + ['com%d' % i for i in range(10)]
                     + ['lpt%d' % i for i in range(10)])
+LEDGER = 'land-ledger.jsonl'
+LEDGER_FIELDS = ('branch', 'tip', 'run_id', 'started_at', 'finished_at', 'verdict', 'code',
+                 'summary', 'gate_once', 'escalated')
 VERDICTS = {G.OK: 'pass', G.FAILED: 'fail', G.USAGE: 'usage', G.STUCK: 'stuck',
-            G.REFUSED: 'refused', G.BUSY: 'busy', G.LANDED_UNGATED: 'landed-ungated'}
+            G.REFUSED: 'refused', G.BUSY: 'busy', G.LANDED_UNGATED: 'landed-ungated',
+            G.STOPPED: 'stopped'}
 
 
 class ResultError(Exception):
@@ -219,7 +240,7 @@ def source_of(rec):
 
 def build(branch, tip, base, kind, code, log=None, summary=None, gate_ok_record=None,
           finished_at=None, run_id=None, started_at=None, verdict=None, cleanup=None,
-          source=None, pid=None, ctime=None):
+          source=None, pid=None, ctime=None, gate_once=None, escalated=None):
     """A record. `verdict` defaults to verdict_of(code); RUNNING and ERROR carry no code."""
     verdict = verdict or verdict_of(code)
     now = gate_ok.utc()
@@ -228,7 +249,8 @@ def build(branch, tip, base, kind, code, log=None, summary=None, gate_ok_record=
             'finished_at': None if verdict == RUNNING else (finished_at or now),
             'verdict': verdict, 'code': None if verdict in (RUNNING, ERROR) else code,
             'log': log, 'summary': summary or '', 'gate_ok_record': gate_ok_record,
-            'cleanup': cleanup, 'source': source, 'pid': pid, 'ctime': ctime}
+            'cleanup': cleanup, 'source': source, 'pid': pid, 'ctime': ctime,
+            'gate_once': gate_once, 'escalated': escalated}
 
 
 def own_process():
@@ -237,16 +259,6 @@ def own_process():
         return os.getpid(), process.own_ctime()
     except Exception:       # noqa: BLE001 - the pid alone still names it
         return os.getpid(), None
-
-
-def _retry(fn, *args):
-    for i in range(RETRIES):
-        try:
-            return fn(*args)
-        except PermissionError:     # a reader holding the old file open (Windows)
-            if i == RETRIES - 1:
-                raise
-            time.sleep(RETRY_SLEEP)
 
 
 def lock_path(path):
@@ -284,15 +296,16 @@ def _held(path):
 
 
 def _put(path, record):
-    """Replace the record at `path` with `record`: a temp file, then os.replace. The caller
-    holds the record's lock."""
+    """Replace the record at `path` with `record`: a temp file, then os.replace, retried while a
+    reader holds the old file open (PermissionError; kitlib.fs.replace for REPLACE_WAIT). The
+    caller holds the record's lock."""
     folder = os.path.dirname(path)
     try:
         tmp = os.path.join(folder, '.%s.tmp' % secrets.token_hex(6))
         try:
             with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(json.dumps(record, sort_keys=True, indent=1) + '\n')
-            _retry(os.replace, tmp, path)
+            fsreplace.replace(tmp, path, wait=REPLACE_WAIT, pause=RETRY_SLEEP)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -312,9 +325,37 @@ def write(root, record, when=None):
     return path
 
 
+def ledger_path(root):
+    """`<result folder>/land-ledger.jsonl`: the land ledger of the repository `root` is in.
+    ResultError when the result folder cannot be worked out."""
+    return os.path.join(result_dir(root), LEDGER)
+
+
+def append_ledger(root, record):
+    """Append `record`'s LEDGER_FIELDS to the land ledger as one JSON line, in one write call
+    (landings are serialized by the landing lock; one write keeps a line whole all the same).
+    `(path, None)`, or `(None, warning line)` when it could not be appended: nothing here raises,
+    so a ledger that cannot be written never changes the landing's outcome."""
+    try:
+        path = ledger_path(root)
+        data = (json.dumps(dict((k, record.get(k)) for k in LEDGER_FIELDS)) + '\n').encode('utf-8')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_BINARY', 0))
+        try:
+            wrote = os.write(fd, data)
+        finally:
+            os.close(fd)
+        if wrote != len(data):
+            raise OSError('wrote %d of %d bytes' % (wrote, len(data)))
+    except Exception as e:      # noqa: BLE001 - the landing's outcome stands whatever happens here
+        return None, ('WARNING: the land ledger line could not be appended: %s: %s; the outcome '
+                      'stands' % (type(e).__name__, e))
+    return path, None
+
+
 def _summary(outcome):
     keys = ('LANDED ', 'NOT LANDED', 'CONFLICT ', 'STUCK:', 'REFUSED:', 'BUSY:', 'USAGE:',
-            'NOT RUN:')
+            'NOT RUN:', 'STOPPED:')
     for line in outcome.lines:      # a landing's verdict line (docs/gate.md "Exit codes")
         if line.startswith(keys):
             return line
@@ -333,6 +374,7 @@ class Run(object):
         self.run_id = secrets.token_hex(8)
         self.started_at = gate_ok.utc()
         self.pid, self.ctime = own_process()
+        self.last = None
 
     @classmethod
     def maybe(cls, root, kind, branch, tip, base=None):
@@ -342,10 +384,12 @@ class Run(object):
         return cls(root, kind, branch, tip, base)
 
     def _write(self, when=None, **kw):
+        self.last = None    # the record this write built (written or not), for the land ledger
         try:
-            rec = build(self.branch, self.tip, kw.pop('base', self.base), self.kind,
-                        kw.pop('code', None), run_id=self.run_id, started_at=self.started_at,
-                        pid=self.pid, ctime=self.ctime, **kw)
+            rec = self.last = build(self.branch, self.tip, kw.pop('base', self.base), self.kind,
+                                    kw.pop('code', None), run_id=self.run_id,
+                                    started_at=self.started_at, pid=self.pid, ctime=self.ctime,
+                                    **kw)
             path = write(self.root, rec, when=when)
         except Exception as e:      # noqa: BLE001 - the run's outcome stands whatever happens here
             return None, 'WARNING: the result record could not be written: %s' % e
@@ -359,22 +403,26 @@ class Run(object):
         return self._write(when=when, verdict=RUNNING, log=log,
                            summary='%s %s at %s started' % (self.kind, self.branch, self.tip[:10]))
 
-    def finish(self, outcome, base=None, log=None, source=None, when=None):
+    def finish(self, outcome, base=None, log=None, source=None, when=None, gate_once=None,
+               escalated=None):
+        """`gate_once`, `escalated`: a landing's (Lander.run); None for a branch gate."""
         try:
             facts = outcome.facts
             kw = dict(code=outcome.code, base=base or facts.get('base') or self.base,
                       log=log or facts.get('log_dir'), summary=_summary(outcome),
                       gate_ok_record=facts.get('record'),
                       cleanup=(facts.get('cleanup') or {}).get(self.branch),
-                      source=source or facts.get('source'))
+                      source=source or facts.get('source'), gate_once=gate_once,
+                      escalated=escalated)
         except Exception as e:      # noqa: BLE001
+            self.last = None
             return None, 'WARNING: the result record could not be written: %s' % e
         return self._write(when=when, **kw)
 
-    def error(self, exc, log=None):
+    def error(self, exc, log=None, gate_once=None, escalated=None):
         """`log`: the run's log folder, when it was made before `exc` ended the run."""
         return self._write(verdict=ERROR, log=log, summary='the %s stopped: %s: %s' % (
-            self.kind, type(exc).__name__, exc))
+            self.kind, type(exc).__name__, exc), gate_once=gate_once, escalated=escalated)
 
 
 def read_path(path):
@@ -500,6 +548,54 @@ def finish_dead(root, rec, why=None, unclaimed=False, path=None):
     return final
 
 
+def finish_stopped(rec, path, why):
+    """Finish the record `rec`, read from `path`, as `stopped` (exit G.STOPPED), its summary `why`:
+    a run a stop ended whose own process can no longer write it (kitlib.gate.stop). The record as
+    it is now, or None when it cannot be read. Only when the record on disk is still `rec`'s run
+    and running, or `error` (a waiter saw the process die first: finish_dead); anything else is
+    returned untouched. Read, judged and replaced under its lock, as finish_dead does, keeping the
+    run's run_id, started_at, tip, base, log, pid and ctime."""
+    try:
+        with _held(path):
+            now, _ = read_path(path)
+            if (not isinstance(now, dict) or now.get('verdict') not in (RUNNING, ERROR)
+                    or now.get('run_id') != rec.get('run_id')):
+                return now
+            final = build(now['branch'], now.get('tip'), now.get('base'), now['kind'], G.STOPPED,
+                          log=now.get('log'), summary=why, run_id=now.get('run_id'),
+                          started_at=now.get('started_at'), pid=now.get('pid'),
+                          ctime=now.get('ctime'))
+            _put(path, final)
+    except ResultError:
+        return read_path(path)[0]
+    return final
+
+
+def machine_records(kind):
+    """[(path, record)] of the `kind` records of every repository on this machine: how a run is
+    found from its process (pid, ctime) with no checkout to start from (kitlib.gate.stop). [] with
+    no result folder; a file that cannot be read is skipped, and the old folders are not read."""
+    try:
+        top = machine_root()
+        repos = sorted(os.listdir(top))
+    except (OSError, ResultError):
+        return []
+    found = []
+    for repo_name in repos:
+        folder = os.path.join(top, repo_name)
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            continue
+        for name in names:
+            if name.endswith('.%s.json' % kind):
+                path = os.path.join(folder, name)
+                rec, _ = read_path(path)
+                if isinstance(rec, dict) and rec.get('kind') == kind:
+                    found.append((path, rec))
+    return found
+
+
 def running_records(root, kind, run_id):
     """The running `kind` records of run `run_id`, every branch: a submitted batch shares one."""
     try:
@@ -522,6 +618,16 @@ def at_tip(rec, branch, kind, tip):
     got = rec.get('tip')
     return (rec.get('branch') == branch and rec.get('kind') == kind
             and isinstance(got, str) and got.lower().startswith(tip.lower()))
+
+
+def result_lines(rec, kind, branch):
+    """The two lines a waiter gives for the final record `rec` of `branch` and `kind`: `RESULT
+    <verdict> <kind> <branch> at <tip[:10]>: <summary> (<log>)`, then the record as one JSON
+    line (gate.py wait-result, and land.py --wait-result through kitlib.gate.submit.follow)."""
+    return ['RESULT %s %s %s at %s: %s (%s)' % (rec.get('verdict'), kind, branch,
+                                               str(rec.get('tip'))[:10], rec.get('summary'),
+                                               rec.get('log')),
+            json.dumps(rec, sort_keys=True)]
 
 
 def valid_timeout(timeout_s):

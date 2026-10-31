@@ -24,6 +24,7 @@ from tests.platforms import windows_only
 if os.name == "nt":
     from kitlib.lock import api
     from kitlib.lock import holds as hl
+    from kitlib.lock import kinds as lockkinds
     from kitlib.lock import layout as lay
     from kitlib.lock import run as rm
     from kitlib.lock import store as store_mod
@@ -133,6 +134,30 @@ class Slot(StoreCase):
         self.confine(1)
         code = rm.run_command([sys.executable, "-c", "import sys; sys.exit(4)"], "engine-test",
                               "kit", "t", cores=1, store=self.store, env=clean_env())
+        self.assertEqual(code, 4)
+        self.assertEqual(len(self.store.history_records()), 1)
+
+    def test_a_route_that_takes_the_run_books_nothing_here(self):
+        """route= (a load node, kitlib.loadnode.dispatch): its number is the run's exit code and
+        this machine books nothing; it is asked with the run's own arguments."""
+        self.confine(1)
+        asked = []
+
+        def route(cmd, kind, repo, slug, kw):
+            asked.append((cmd, kind, repo, slug, kw.get("cores"), kw.get("note")))
+            return 7
+        code = rm.run_command(["never-started.exe"], "engine-test", "kit", "t", cores=1,
+                              note="n", store=self.store, env=clean_env(), route=route)
+        self.assertEqual(code, 7)
+        self.assertEqual(asked, [(["never-started.exe"], "engine-test", "kit", "t", 1, "n")])
+        self.assertEqual(self.store.history_records(), [])
+        self.assertEqual(self.store.live_runs(), [])
+
+    def test_a_route_that_declines_runs_the_command_here(self):
+        self.confine(1)
+        code = rm.run_command([sys.executable, "-c", "import sys; sys.exit(4)"], "engine-test",
+                              "kit", "t", cores=1, store=self.store, env=clean_env(),
+                              route=lambda *a: None)
         self.assertEqual(code, 4)
         self.assertEqual(len(self.store.history_records()), 1)
 
@@ -527,6 +552,104 @@ class CoreRequests(StoreCase):
         self.confine(1)
         with rm.slot("one", "kit", "t", store=self.store, env=clean_env()) as launch:
             self.assertEqual(len(launch.cores), 1)
+
+
+class LandKindOnASmallMachine(StoreCase):
+    """On a machine whose agent_cap is under a land kind's size (kitlib/lock/kinds.json's
+    land-test, 4), the kit's own table still books: a land kind is left out of the cap check and
+    books the cap (layout.kind_cores), and every other kind books as before."""
+    HW = {"threads": 8, "smt": 2, "l3": 1}  # 4 cpu slots: agent_cap 2
+
+    code = Refusals.code
+    everything_held = CoreRequests.everything_held
+    ended = CoreRequests.ended
+
+    def setUp(self):
+        StoreCase.setUp(self)
+        with open(lockkinds.KINDS_FILE, encoding="utf-8") as f:
+            real = json.load(f)
+        self.assertEqual(real["kinds"]["land-test"]["cpu"], 4)
+        with open(self.kinds_path, "w", encoding="utf-8") as f:
+            json.dump(real, f)
+        self.assertEqual(self.layout()["agent_cap"], 2)
+
+    def test_test_and_land_test_both_book_and_land_test_books_the_cap(self):
+        self.everything_held()
+        self.assertEqual(self.code(kind="test", no_wait=True), 11)
+        self.assertEqual(self.code(kind="land-test", no_wait=True), 11)
+        need = {e["kind"]: e["need"]["cpu"] for e in self.ended()}
+        self.assertEqual(need, {"test": self.layout()["medium_cores"], "land-test": 2})
+        self.assertEqual(self.code(kind="land-test", cores=3, no_wait=True), 2)  # past the cap
+
+    def test_a_land_kind_is_left_out_of_the_cap_check_and_no_other_kind_is(self):
+        table = lockkinds.load(self.kinds_path, agent_cap=2)
+        self.assertEqual(table["land-test"]["cpu"], 4)
+        table["big"] = {"cpu": 3, "gpu": 0, "share": False, "warn_min": 30}
+        with self.assertRaises(lockkinds.KindsError):
+            lockkinds.check_cap(table, 2)
+
+
+class RepoKinds(StoreCase):
+    """book(checkout=) books a kind the repository declares in its main checkout's `.kit.json`
+    "kinds" section, at its size and capped by the layout; a kit kind or alias of the same name
+    wins, and with no checkout only the kit's kinds book."""
+
+    code = Refusals.code
+    everything_held = CoreRequests.everything_held
+    ended = CoreRequests.ended
+    ended_need = CoreRequests.ended_need
+
+    def setUp(self):
+        StoreCase.setUp(self)
+        from tests import gitfixture
+        self.repo = gitfixture.TempRepo(branch="main")
+        self.addCleanup(self.repo.cleanup)
+        self.wt = self.repo.worktree("kinds")
+        self.kit({"graph-build": {"cpu": "heavy", "gpu": 0, "warn_min": 120, "why": "graph"},
+                  "two": {"cpu": 2, "gpu": 0, "why": "small"},
+                  "test": {"cpu": 1, "gpu": 0, "why": "names a kit kind"}})
+
+    def kit(self, kinds):
+        self.repo.write(".kit.json", kinds if isinstance(kinds, str) else
+                        json.dumps({"kinds": kinds}))
+
+    def test_a_repo_kind_books_at_its_size_from_a_worktree(self):
+        self.everything_held()
+        self.assertEqual(self.code(kind="graph-build", checkout=self.wt, no_wait=True), 11)
+        self.assertEqual(self.ended_need(), 6)                 # heavy on the fake layout
+        self.assertEqual(self.ended()[0]["kind"], "graph-build")
+
+    def test_a_repo_kind_takes_cores_as_a_kit_kind_does(self):
+        self.everything_held()
+        self.assertEqual(self.code(kind="two", checkout=self.wt, cores=3, no_wait=True), 2)
+        self.assertEqual(self.code(kind="two", checkout=self.wt, cores=1, no_wait=True), 11)
+        self.assertEqual(self.ended_need(), 1)
+
+    def test_the_kit_kind_wins_even_over_a_broken_kit_json(self):
+        self.everything_held()
+        self.assertEqual(self.code(kind="test", checkout=self.wt, no_wait=True), 11)
+        self.assertEqual(self.ended_need(), 2)                 # the kit's medium, not 1
+        self.kit("{")
+        self.assertEqual(self.code(kind="engine-test", checkout=self.wt, no_wait=True), 11)
+        self.assertEqual([e["need"]["cpu"] for e in self.ended()], [2, 2])
+
+    def test_a_repo_kind_past_the_agent_cap_fails_closed(self):
+        self.kit({"big": {"cpu": 7, "gpu": 0, "why": "too big"}})
+        self.assertEqual(self.code(kind="big", checkout=self.wt), 10)
+        self.assertIsNone(self.store.read("queue.json"))
+
+    def test_a_broken_kit_json_refuses_a_repo_kind_with_10(self):
+        self.kit("{")
+        self.assertEqual(self.code(kind="graph-build", checkout=self.wt), 10)
+
+    def test_no_checkout_or_an_undeclared_name_is_unknown(self):
+        self.assertEqual(self.code(kind="graph-build"), 2)
+        with self.assertRaises(LockError) as cm:
+            rm.book("nope", "kit", "t", checkout=self.wt, store=self.store, env=clean_env())
+        self.assertEqual(cm.exception.code, 2)
+        self.assertIn('"kinds" section of the .kit.json in the main checkout of %s' % self.wt,
+                      str(cm.exception))
+        self.assertIsNone(self.store.read("queue.json"))
 
 
 CPU_FLAGS = ["-e", "CUDA_VISIBLE_DEVICES=", "-e", "JAX_PLATFORMS=cpu"]

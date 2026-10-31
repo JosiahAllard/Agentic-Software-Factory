@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "machine-lock": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "hosts/codex/shell/mcp/lock_server.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "PM_KIT_ROOT",
+        "PM_KIT_RELEASE_ID"
+      ]
+    },
+    "hub": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "hosts/codex/shell/mcp/hub_server.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "PM_KIT_ROOT",
+        "PM_KIT_RELEASE_ID"
+      ]
+    }
+  }
+}

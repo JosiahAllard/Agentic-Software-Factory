@@ -3,7 +3,6 @@ from pathlib import Path
 import copy
 import json
 import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -196,21 +195,23 @@ class Protocol(unittest.TestCase):
             run.assert_not_called()
 
 
-class RelocatedEntry(unittest.TestCase):
-    def test_cached_subtree_help_and_safe_preview_refusal(self):
+class InPlaceEntry(unittest.TestCase):
+    def test_the_entry_boots_the_kits_own_boot_help_and_safe_preview_refusal(self):
+        """scripts/workflow.py where the plugin (the export, or this checkout) holds it, with no
+        PM_KIT_ROOT: it boots through the kit's own boot/kitboot.py four folders up, prints its help,
+        and refuses a preview outside a coordinator checkout without a traceback or a home write."""
         from kitlib.proc import spawn
         from tests.gitfixture import fixture_env
         root = Path(__file__).resolve().parents[2]
-        with tempfile.TemporaryDirectory(prefix='local-workflow-cache-') as folder:
+        with tempfile.TemporaryDirectory(prefix='local-workflow-entry-') as folder:
             base = Path(folder)
-            plugin = base / 'published-cache'
-            shutil.copytree(root / 'hosts' / 'codex' / 'shell', plugin, ignore=shutil.ignore_patterns('__pycache__'))
             home = base / 'home'
             home.mkdir()
-            env = fixture_env({'PM_KIT_ROOT': str(root), 'HOME': str(home),
-                               'USERPROFILE': str(home), 'GIT_CEILING_DIRECTORIES': str(base),
-                               'PYTHONDONTWRITEBYTECODE': '1'})
-            entry = plugin / 'scripts' / 'workflow.py'
+            env = fixture_env({'HOME': str(home), 'USERPROFILE': str(home),
+                               'GIT_CEILING_DIRECTORIES': str(base), 'PYTHONDONTWRITEBYTECODE': '1'})
+            for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
+                env.pop(name, None)
+            entry = root / 'hosts' / 'codex' / 'shell' / 'scripts' / 'workflow.py'
             result = spawn.run([sys.executable, str(entry), '--help'], cwd=base, env=env,
                                shell=False, capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -321,7 +322,7 @@ class LocalAcceptance(fixtures.GateRepoCase):
                       self.repo.git('show', '-s', '--format=%B', result['tip']))
         self.assertIn('Closes: PROBE', self.repo.git('show', '-s', '--format=%B', result['tip']))
         self.assertEqual(self.repo.head(), self.main)
-        self.assertTrue(any(d.get('kind') == 'engine-test' for d in self.store.history_records(1)))
+        self.assertTrue(any(d.get('kind') == 'test' for d in self.store.history_records(1)))
         self.assertEqual(W.handoff(self.task, result['tip'], analyst)['tip'], result['tip'])
         checkout.write_text('value.txt', 'later uncommitted edit\n', root=self.task.worker)
         with self.assertRaisesRegex(W.Stopped, 'dirty'):

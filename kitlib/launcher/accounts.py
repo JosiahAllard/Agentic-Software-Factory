@@ -1,5 +1,6 @@
 """Claude accounts: which config folder a launch uses, whether it is signed in, how much of its
-usage windows is left, which account to pick (docs/launcher.md "Accounts"), and which account
+usage windows is left, which account to pick (docs/launcher.md "Accounts"; restart_pick for the
+hub's coordinator restart, docs/launcher.md "Hub restart"), and which account
 this session runs on (current_account, for the Action Hub's one copy per account).
 
 Every Claude session's status line writes usage-status.json into its account's config folder:
@@ -17,7 +18,7 @@ from kitlib.launcher.settings import LaunchError
 CREDENTIALS = '.credentials.json'
 USAGE_FILE = 'usage-status.json'
 WINDOWS = ('five_hour', 'seven_day')
-HEADROOM_LIMIT = 90      # deep and consultant launches refuse an account at or over this (the PM's headroom)
+HEADROOM_LIMIT = 95      # deep and consultant launches refuse an account at or over this % of either window, the band account picking also skips
 PICK_LIMIT = 95          # pick-account's default
 FRACTION = re.compile(r'\.\d{7,}')   # PowerShell ToString('o') writes 7 fraction digits
 
@@ -138,24 +139,25 @@ def check_headroom(settings, n, now, force, out, limit=HEADROOM_LIMIT):
         return
     msg = 'Account %s is at %s' % (n, ' and '.join(over))
     if not force:
-        raise LaunchError("%s; the last %d%% is the PM's headroom. Pick another account, wait for the "
-                          'reset, or pass --force.' % (msg, 100 - limit), out)
+        raise LaunchError("%s; it is at or over the %d%% limit. Pick another account, wait for the "
+                          'reset, or pass --force.' % (msg, limit), out)
     out.append('--force: starting on account %s anyway; it is at %s.' % (n, ' and '.join(over)))
 
 
 def week_rows(settings, now):
     """[(account, pct, reset)] of every signed-in account's seven-day window. A window whose
-    reset has passed is fresh (0%) and resets 7 days after the old time; no file reads as 0%,
-    resetting a week from now."""
+    reset has passed is fresh (0%) and resets 7 days after the old time. No file, or a file with
+    no seven-day window or no percentage in it, is unknown: pct and reset None, never 0%."""
     rows = []
     for n in settings.account_numbers():
         if not account_signed_in(settings, n):
             continue
-        pct, reset = 0, now + datetime.timedelta(days=7)
+        pct, reset = None, None
         _, data = newest_usage(settings, n)
         w = (data or {}).get('seven_day')
-        if isinstance(w, dict) and parse_time(w.get('resets_at')):
-            pct, reset = whole(w.get('used_percentage')), parse_time(w['resets_at'])
+        used = w.get('used_percentage') if isinstance(w, dict) else None
+        if isinstance(used, (int, float)) and not isinstance(used, bool) and parse_time(w.get('resets_at')):
+            pct, reset = whole(used), parse_time(w['resets_at'])
             while reset < now:
                 reset, pct = reset + datetime.timedelta(days=7), 0
         rows.append((n, pct, reset))
@@ -165,13 +167,55 @@ def week_rows(settings, now):
 def pick(settings, now, limit=PICK_LIMIT):
     """(account, rows): the signed-in account under `limit`% of its week whose week resets
     soonest (use up the allowance that expires first); when every one is over, the soonest reset
-    anyway, so something always runs. LaunchError when no account is signed in."""
+    anyway, so something always runs. An account whose week is unknown (no usage file) counts as
+    under the limit, resetting a week from now, as before. LaunchError when no account is signed in."""
     rows = week_rows(settings, now)
     if not rows:
         raise LaunchError('No account in launcher.accounts is signed in.')
-    ok = [r for r in rows if r[1] < limit]
-    chosen = min(ok or rows, key=lambda r: r[2])
+    unknown = now + datetime.timedelta(days=7)
+    ok = [r for r in rows if r[1] is None or r[1] < limit]
+    chosen = min(ok or rows, key=lambda r: unknown if r[2] is None else r[2])
     return chosen[0], rows
+
+
+def _fresh_week_reset(data, now, stale_minutes, limit):
+    """The seven-day reset of a reading that is fresh and under `limit`% in both windows, or None.
+    Fresh: an updated_at at most `stale_minutes` whole minutes old (kitlib.pmwatch's stale line).
+    A window whose reset has passed counts as 0% and its week moves on 7 days at a time; a window
+    with no percentage or no reset time is unknown, and unknown is never under the limit."""
+    if not isinstance(data, dict):
+        return None
+    upd = parse_time(data.get('updated_at'))
+    if upd is None or int((now - upd).total_seconds() // 60) > stale_minutes:
+        return None
+    resets = {}
+    for k in WINDOWS:
+        w = data.get(k)
+        reset = parse_time(w.get('resets_at')) if isinstance(w, dict) else None
+        if reset is None:
+            return None
+        if reset > now:
+            pct = w.get('used_percentage')
+            if not isinstance(pct, (int, float)) or isinstance(pct, bool) or pct >= limit:
+                return None
+        resets[k] = reset
+    week = resets['seven_day']
+    while week <= now:
+        week += datetime.timedelta(days=7)
+    return week
+
+
+def restart_pick(states, now, last, stale_minutes, limit=HEADROOM_LIMIT):
+    """The account the hub's coordinator restart starts on (docs/launcher.md "Hub restart"): of
+    `states` {account: (signed_in, usage data or None)}, the signed-in one with a fresh reading
+    under `limit`% of both windows whose week resets soonest; a tie goes to `last`, then the
+    lowest number. None when no account qualifies: a missing, stale or unknown reading never does."""
+    rows = []
+    for n, (signed, data) in states.items():
+        reset = _fresh_week_reset(data, now, stale_minutes, limit) if signed else None
+        if reset is not None:
+            rows.append((reset, str(n) != str(last), int(n) if str(n).isdigit() else float('inf'), str(n)))
+    return min(rows)[3] if rows else None
 
 
 DEFAULT_LABEL = 'default'    # current_account's answer with no launcher accounts or no match
@@ -226,5 +270,6 @@ def resolve_current(settings, now, environ=None):
 
 
 def explain(rows):
-    return ['account %s: %d%% of week, resets %s' % (n, pct, reset.astimezone().strftime('%a %b %d %H:%M'))
+    return ['account %s: week unknown (no usage reading)' % n if pct is None else
+            'account %s: %d%% of week, resets %s' % (n, pct, reset.astimezone().strftime('%a %b %d %H:%M'))
             for n, pct, reset in rows]

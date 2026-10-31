@@ -7,7 +7,7 @@ from tests.shipped import scan
 
 AGENTS = Path(__file__).resolve().parents[2] / "hosts" / "claude" / "shell" / "agents"
 EXPECTED = {"pm", "coordinator", "weak-worker", "worker", "senior-worker", "strong-worker", "deep-worker", "consultant",
-            "analyst", "lander", "docs-writer", "test-runner", "helper"}
+            "analyst", "lander", "docs-writer", "test-runner", "helper", "topic"}
 # the seven role files the specialty skills replaced (docs/specialty-skills.md): no host ships them
 RETIRED = ("asset-smith", "tech-artist", "sound-smith", "researcher", "reviewer", "records", "spec-writer")
 BULK_RULE = "Bulk work to the helper"

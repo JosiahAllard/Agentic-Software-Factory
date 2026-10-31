@@ -1,5 +1,5 @@
 """The `kit` command: `kit <tool> [arguments]` runs `<export>/tools/<tool>.py [arguments]` of the
-plugin export the machine uses now, in place of stubs (tools/kit.py is the entry point).
+plugin export the machine uses now (tools/kit.py is the entry point).
 
   resolve(here, settings)    (export folder, None) or (None, why): the folder the machine
                              config's plugin.export_dir holds and its marketplace names
@@ -9,7 +9,8 @@ plugin export the machine uses now, in place of stubs (tools/kit.py is the entry
   run(kit, name, args)       start it in the caller's directory, wait, and give its exit code
 
 Which kit: the machine config's `plugin.export_dir` (kitlib.pluginsource.load: the PM repo pointer,
-then that repository's .pm-kit/config.json; unset, %LOCALAPPDATA%\\pm-kit\\plugin, as for
+then that repository's .pm-kit/config.json; unset, kitlib.pluginsource.default_export_dir:
+%LOCALAPPDATA%\\pm-kit\\plugin, on Linux <profile>/.local/share/pm-kit/plugin, as for
 tools/plugin_refresh.py), and in it the folder <export_dir>/.claude-plugin/marketplace.json names
 (kitlib.pluginsource.current_folder), read at every call, so a refreshed export is used at the
 next one. That folder must be an export (it holds kitlib.pluginsource.MARKER) with a tools folder.
@@ -29,9 +30,8 @@ Exit codes: the tool's own (all 32 bits, kitlib.proc.spawn.exit_code); REFUSED 2
 usage error or refusal; INTERRUPTED 130 after Ctrl+C. The tool shares the console, so it gets the
 same Ctrl+C: the first one waits for the tool to end (its own cleanup runs), a second ends it.
 
-SHARED and KIT_ONLY are the partition of the kit's tools that kitlib.stubs (retiring) reads: SHARED
-act on a repository checkout, KIT_ONLY on the machine, the owner's files or the kit itself. `kit`
-runs either kind.
+SHARED and KIT_ONLY partition the kit's tools: SHARED act on a repository checkout, KIT_ONLY on
+the machine, the owner's files or the kit itself. `kit` runs either kind.
 """
 import os
 import re
@@ -46,24 +46,25 @@ REFUSED = 2
 INTERRUPTED = 130
 SELF = 'kit'                         # this command's own tool name, never run through itself
 
-# The kit tools a repository could run through stubs (the PM kit's SHARED commands; kitlib.stubs
-# re-exports this until it is removed). A name the kit has no command for yet is left out.
+# The kit tools that act on a repository checkout named by -C or the current directory. A name
+# the kit has no command for yet is left out.
 SHARED = (
-    'backlog', 'checkout_guard', 'codemap', 'commit', 'daily_full', 'doc_budget',
-    'doc_index', 'forbidden', 'gate', 'land', 'landed', 'ledger', 'machine_paths', 'new_worktree',
+    'backlog', 'checkout_guard', 'codemap', 'commit', 'coord_state', 'daily_full', 'doc_budget',
+    'doc_index', 'forbidden', 'gate', 'land', 'landed', 'ledger', 'machine_paths', 'module_map',
+    'new_worktree',
     'pieces', 'preflight', 'pytests', 'redfirst', 'review_pack', 'stack_skill',
     'sync_base', 'testlist', 'tool_deps', 'trailers', 'verdict', 'worktree_paths',
     'worktree_remove',
 )
 # The kit tools that act on the machine, the owner's files or the kit itself, not on a repository
 # checkout named by -C or the current directory. Every `tools/*.py` command but kit_stubs is in
-# exactly one of SHARED and KIT_ONLY (tests/stubs: a new tool fails until it is classified).
+# exactly one of SHARED and KIT_ONLY (tests/kitcmd: a new tool fails until it is classified).
 KIT_ONLY = (
     'agent_roster', 'agent_temp_init', 'agent_view', 'auto_tasks', 'allow_rules', 'backlog_audit',
     'maint_lint', 'branch_overlap', 'config_move', 'delegated', 'hub', 'kit',
     'kit_tests', 'launch', 'lock_release_check', 'machine_lock', 'machine_setup', 'no_window',
     'pending', 'pm_data', 'pm_watch', 'plugin_refresh', 'render_content', 'worktree_sweep_task',
-    'kit_release', 'stray_restore', 'ci_ratchet',
+    'kit_release', 'stray_restore', 'ci_ratchet', 'node', 'account_inventory',
 )
 
 REFRESH_FIX = 'refresh the plugin export (tools/plugin_refresh.py --apply; docs/plugin-source.md)'

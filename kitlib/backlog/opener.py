@@ -5,7 +5,11 @@ docs/backlog.md).
   open_repo(root)   -> (top, cfg, rules); Failure when `root` is no repository or its `.kit.json`
                        cannot be read
   open_store(root, fetch=True, session=None, branch=None) -> plan.Context over the store, its
-                       `liveness` probe the worktree classifier's (liveness)
+                       `liveness` probe the worktree classifier's (liveness), its `cap` repo_cap's;
+                       from a linked worktree naming no store, the PM data worktree's live store
+                       (store.worktree_live_store)
+  repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
+  repo_resources(top) -> the main checkout's `.kit.json` backlog.resources, {name: capacity}
   planner(args, ctx) -> the plan `Store.write` runs for `args.verb` (one of WRITES, `retarget` or
                        `uncite`); Usage for any other verb, raised before a plan exists
   retarget_dry(args, ctx) -> the Change `retarget` would write, checked as a write would be;
@@ -15,7 +19,9 @@ docs/backlog.md).
 `planner` and `retarget_dry` take an object with tools/backlog.py's argument names (`verb`, `id`,
 `f_<field>`, `old`, `new`...).
 """
+import kitlib.config as kconfig
 from kitlib.config import ConfigError, load as load_config
+from kitlib.config.types import is_note
 from kitlib.git import repo as gitrepo
 
 from . import plan as pmod
@@ -24,7 +30,7 @@ from . import pull_branch as pullmod
 from . import record as rmod
 from . import retarget as retmod
 from . import store as smod
-from .errors import Failure, Usage
+from .errors import Failure, Refusal, Usage
 
 # `set --<field>` for every field; plan_set refuses the ones a verb writes (plan.WRITTEN_BY).
 FIELD_FLAGS = list(rmod.FIELDS)
@@ -46,7 +52,16 @@ def open_repo(root):
 
 
 def open_store(root, fetch=True, session=None, branch=None):
+    """The plan.Context over the store `root`'s checkout opens. A linked worktree whose
+    `.kit.json` names no store opens the live store in its repository's PM data worktree, acting
+    as its own checked-out branch unless `branch` (`--as`) names one (store.worktree_live_store):
+    `-C <worktree>` then reads and writes what `-C <pm data> --as <its branch>` does."""
     top, cfg, rules = open_repo(root)
+    live = smod.worktree_live_store(top, cfg)
+    if live is not None:
+        pm_root, own = live
+        top, cfg, rules = open_repo(pm_root)
+        branch = branch or own
     section = cfg.section('backlog')
     backend = smod.open_backend(top, cfg, fetch=fetch)
     store = smod.Store(backend, rules, session=session)
@@ -58,8 +73,53 @@ def open_store(root, fetch=True, session=None, branch=None):
         code_main, code_remote = code_main or code.main_branch, code.remote
     ctx = pmod.Context(store, top, remote=cfg.remote, main_branch=cfg.main_branch,
                        branch=branch, code_main=code_main or cfg.main_branch,
-                       code_remote=code_remote, liveness=lambda name: liveness(top, name))
+                       code_remote=code_remote, liveness=lambda name: liveness(top, name),
+                       cap=lambda: repo_cap(top), resources=lambda: repo_resources(top))
     return ctx
+
+
+def repo_cap(top):
+    """The cap `next` offers up to and `pull` checks against (plan.Context.cap, read lazily, so
+    only an offer reads it): `.kit.json` "backlog".cap of the repository's main checkout, its
+    first worktree (as pull_branch._main_checkout finds it), whatever checkout `top` is. A worker
+    worktree cut before the owner set the cap, or the PM data worktree's data branch, would
+    otherwise read a value the main checkout's `next` does not. A bare first worktree: `top`'s
+    own. Main checkout config that cannot be read, or worktrees git cannot list, is a Failure
+    (ERROR), never a silent default; the schema refuses a value that is not a whole number >= 1
+    when the file loads (kitlib/config/schema.py), and checked_cap refuses one that reaches here
+    otherwise."""
+    section, main = _main_backlog(top, 'the backlog cap')
+    return checked_cap(section['cap'], main)
+
+
+def repo_resources(top):
+    """`{name: capacity}` from `.kit.json` "backlog".resources of the main checkout, read as
+    repo_cap reads the cap and for the same reason (plan.Context.resources). No key: {}."""
+    section, _main = _main_backlog(top, 'the backlog resources')
+    return {k: v for k, v in section['resources'].items() if not is_note(k)}
+
+
+def _main_backlog(top, what):
+    """`(the "backlog" section of the main checkout's .kit.json, that checkout)`; Failure naming
+    `what` when it cannot be read."""
+    wts, why = gitrepo.worktrees(top)
+    if not wts:
+        raise Failure('cannot read %s: git cannot list the worktrees of %s, so its main '
+                      'checkout\'s .kit.json is unknown (%s)' % (what, top, why))
+    main = top if wts[0].bare else wts[0].path
+    try:
+        cfg = kconfig.load(main)
+    except (kconfig.ConfigError, OSError) as exc:
+        raise Failure('cannot read %s from the main checkout %s: %s' % (what, main, exc))
+    return cfg.section('backlog'), main
+
+
+def checked_cap(cap, where):
+    """`cap` when it is a whole number >= 1, else a Refusal naming `where`."""
+    if type(cap) is not int or cap < 1:
+        raise Refusal('.kit.json "backlog".cap of %s is %r: it must be a whole number >= 1'
+                      % (where, cap))
+    return cap
 
 
 def liveness(top, branch):
@@ -78,9 +138,11 @@ def set_changes(args):
 def planner(args, ctx):
     v = args.verb
     if v == 'add':
+        body = pmod.read_body_file(args.body_file) if args.body_file else None
         return lambda s: pmod.plan_add(s, ctx, args.id, args.summary, args.scope, args.effort,
                                        args.ref, args.reopen, session=ctx.session,
-                                       found_on=args.found_on, why_not_folded=args.why_not_folded)
+                                       found_on=args.found_on, why_not_folded=args.why_not_folded,
+                                       body=body, summary_max=pmod.SUMMARY_MAX, uses=args.uses)
     if v == 'set':
         body = pmod.read_body_file(args.body_file) if args.body_file else None
         changes = set_changes(args)
@@ -90,7 +152,8 @@ def planner(args, ctx):
                                        role_checked=True, may_collide=may_collide)
     if v == 'block':
         return lambda s: pmod.plan_block(s, ctx, args.id, args.on, args.owner_ask,
-                                         reason=args.reason)
+                                         reason=args.reason, until=args.until,
+                                         role_checked=True)
     if v == 'retarget':
         return lambda s: retmod.plan_retarget(s, ctx, args.old, args.new)
     if v == 'uncite':
@@ -100,8 +163,9 @@ def planner(args, ctx):
                                            role_checked=True)
     if v == 'pull':
         may_collide = policy.may('pull-collision')
+        batch = policy.cli_role() == policy.TOPIC
         return lambda s: pullmod.plan_pull(s, ctx, args.id, args.reason, may_collide,
-                                           args.blocker)
+                                           args.blocker, batch=batch)
     if v == 'release':
         return lambda s: pmod.plan_release(s, ctx, args.id, args.reason)
     if v == 'close':

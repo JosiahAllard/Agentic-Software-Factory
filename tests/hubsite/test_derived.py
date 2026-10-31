@@ -111,9 +111,29 @@ class UsageTests(unittest.TestCase):
     def test_parsed_accounts(self):
         got = derived.usage(lambda: self.LINES, CLOCK)
         self.assertTrue(got['available'])
-        self.assertEqual(got['accounts'], {'1': {'five': 40, 'week': 71},
-                                           'codex': {'five': 0, 'week': 12}})
+        self.assertEqual(got['accounts'], {
+            '1': {'five': 40, 'week': 71, 'age': 3, 'stale': False, 'missing': False},
+            '2': {'five': None, 'week': None, 'age': None, 'stale': True, 'missing': True},
+            'codex': {'five': 0, 'week': 12, 'age': 5, 'stale': False, 'missing': False}})
         self.assertEqual(got['as_of'], CLOCK())
+
+    def test_stale_missing_and_unknown_readings_reach_the_hub_from_the_files(self):
+        # End to end: usage-status.json files -> kitlib.launcher.usage lines -> parse_usage -> the hub view.
+        import datetime
+        from kitlib.launcher import usage as launcher_usage
+        from tests.launcher.fakes import NOW, Home
+        h = Home(self, accounts=('1', '2', '3', '4'))
+        day = datetime.timedelta(days=1)
+        h.usage('1', week=(98, NOW + day), updated=NOW - datetime.timedelta(minutes=3735))   # five_hour null
+        h.usage('2', five=(8, NOW + day / 8), week=(18, NOW + 5 * day))
+        h.usage('3', five=(70, NOW - day), week=(None, NOW + day), updated=NOW - datetime.timedelta(minutes=668))
+        got = derived.usage(lambda: launcher_usage.report(h.settings, NOW), CLOCK)
+        self.assertTrue(got['available'])
+        acc = got['accounts']
+        self.assertEqual(acc['1'], {'five': None, 'week': 98, 'age': 3735, 'stale': True, 'missing': False})
+        self.assertEqual(acc['2'], {'five': 8, 'week': 18, 'age': 0, 'stale': False, 'missing': False})
+        self.assertEqual(acc['3'], {'five': 0, 'week': None, 'age': 668, 'stale': True, 'missing': False})
+        self.assertEqual(acc['4'], {'five': None, 'week': None, 'age': None, 'stale': True, 'missing': True})
 
     def test_no_source_is_not_available(self):
         got = derived.usage(None, CLOCK)
@@ -125,7 +145,9 @@ class UsageTests(unittest.TestCase):
         def boom():
             raise OSError('disk gone')
         self.assertIn('disk gone', derived.usage(boom, CLOCK)['reason'])
-        self.assertFalse(derived.usage(lambda: ['account 2: no usage file'], CLOCK)['available'])
+        self.assertFalse(derived.usage(lambda: ['current account: unknown'], CLOCK)['available'])
+        only = derived.usage(lambda: ['account 2: no usage file'], CLOCK)       # listed as missing, not dropped
+        self.assertEqual(only['accounts']['2']['missing'], True)
 
 
 class AgentsTests(Tmp):
@@ -158,6 +180,52 @@ class AgentsTests(Tmp):
         self.assertTrue(got['available'], (default, got))
         self.assertIn('worker', [a['name'] for a in got['agents']])
         self.assertIsNone(serve.agents_dir({registry.ENV: 'no-such-host'}))
+
+
+class SkillsTests(Tmp):
+    def tree(self):
+        self.put('s/builder/SKILL.md', '---\nname: builder\ndescription: Builds.\n---\n\n# Builder\n\nStep one.\n')
+        self.put('s/bare/SKILL.md', 'no frontmatter\n')
+        self.put('s/builder/extra.md', 'not a skill file')
+        self.put('s/stray.txt', 'a file, not a skill folder')
+        os.makedirs(os.path.join(self.d, 's', 'empty'))
+        return os.path.join(self.d, 's')
+
+    def test_the_list_is_the_sources_names_and_descriptions_with_no_body(self):
+        got = derived.skills(self.tree())
+        self.assertTrue(got['available'])
+        self.assertEqual(got['skills'], [{'name': 'bare', 'description': ''},
+                                         {'name': 'builder', 'description': 'Builds.'}])
+
+    def test_one_skill_has_its_body_and_only_a_listed_name_is_read(self):
+        root = self.tree()
+        got = derived.skill(root, 'builder')
+        self.assertEqual((got['name'], got['description']), ('builder', 'Builds.'))
+        self.assertEqual(got['body'].replace('\r\n', '\n'), '# Builder\n\nStep one.')
+        self.assertEqual(derived.skill(root, 'bare')['body'], 'no frontmatter')
+        self.put('secret/SKILL.md', 'outside')
+        for bad in ('empty', 'nope', '..', '../secret', '..' + os.sep + 'secret', 's', 'stray.txt', '', None, 7):
+            with self.subTest(name=bad):
+                self.assertIsNone(derived.skill(root, bad))
+        self.assertIsNone(derived.skill(os.path.join(self.d, 'nope'), 'builder'))
+
+    def test_missing_folder_is_not_available(self):
+        got = derived.skills(os.path.join(self.d, 'nope'))
+        self.assertFalse(got['available'])
+        self.assertIn('reason', got)
+
+    def test_the_server_reads_the_kits_content_skills_never_a_rendered_copy(self):
+        from kitlib.hubsite import serve
+        got = derived.skills(serve.skills_dir())
+        self.assertTrue(got['available'], got)
+        self.assertEqual(serve.skills_dir(), os.path.join(serve.pmstart.KIT_ROOT, 'content', 'skills'))
+        by = {s['name']: s for s in got['skills']}
+        self.assertIn('builder', by)
+        self.assertEqual(sorted(by['builder']), ['description', 'name'])
+        self.assertTrue(by['builder']['description'])
+        one = derived.skill(serve.skills_dir(), 'builder')
+        self.assertTrue(one['body'].startswith('# Builder'))
+        self.assertNotIn('name: builder', one['body'])
 
 
 class LintRunsTests(Tmp):

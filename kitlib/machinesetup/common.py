@@ -2,12 +2,36 @@
 import os
 import stat
 
+from kitlib import platform
+
 # The Claude shell in a kit checkout (hosts.json "shell"), and the folder it was before the hosts/
 # move (docs/multi-host-plan.md step 7). Settings and skill links written before the move name
 # MOVED_FROM paths; the settings and links steps re-point them into SHELL (docs/machine-setup.md
 # "Moved hook paths").
 SHELL = 'hosts/claude/shell'
 MOVED_FROM = 'claude'
+
+
+def make_folder(folder, mode=0o755):
+    """Make `folder` and any missing parents, then set each folder this call made to `mode`, so a
+    root umask of 027 or 077 cannot leave a root-owned folder (/etc/pm-kit) unreadable to the kit
+    user. A folder that was already there keeps its mode."""
+    made, p = [], folder
+    while p and not os.path.isdir(p):
+        made.append(p)
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    os.makedirs(folder, exist_ok=True)
+    for d in made:
+        os.chmod(d, mode)
+
+
+def python_name():
+    """The interpreter a printed hint names: `python3` on Linux (stock Ubuntu has no `python`),
+    `python` elsewhere. NAME is read at call time."""
+    return 'python3' if platform.NAME == 'linux' else 'python'
 
 
 def kit_file(kit, rel):

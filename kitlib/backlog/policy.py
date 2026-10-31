@@ -16,7 +16,10 @@ as the store holds it locally.
   read_argv(words)              what a backlog.py command line gives (the guard's reader), as an Argv
   check(args, ctx, snap, environ)
                                 tools/backlog.py's check: raises Refusal when its role may not
-                                take a row; else the rows it sorted
+                                take a row, or a topic session writes a record not batched for
+                                its branch (batch_refusal); else the rows it sorted
+  batch_refusal(role, verb, rid, rec, branch)
+                                why a topic session may not write `rid` (or `add` at all), or None
   may(name, environ)            True when the session tools/backlog.py runs in may take the row
                                 `name`: a row the plan finds (pull-collision, set-widen-collision)
   top_only(rows)                the rows of `rows` only the owner and the PM may take, which a
@@ -40,6 +43,9 @@ from . import roles
 from .errors import Refusal
 
 READS = roles.ACTIONS['read'].verbs
+# The topic session's mark (content/roles/topic.md): a builder whose writes name only the records
+# batched for its branch, and which files no records: its `add` is refused (check, batch_refusal).
+TOPIC = 'topic'
 UNKNOWN = 'unknown'
 # read_argv's readable mark for a word the shell passes as one word whose text the line does not
 # show (a double-quoted variable): read only as the value of an option whose value sorts nothing
@@ -64,12 +70,12 @@ def _owner_blocked(rec):
 
 
 def _price_rows(values, rec):
-    """The rows a `set` of priority to each of `values` takes on `rec` (None: not read)."""
+    """The rows a `set` of priority to each of `values` takes on `rec` (None: not read, so the
+    strictest: set-price-owner). A retired `-1` sorts as any low price, so the plan's refusal
+    (pointing at `block --on owner`) is what the caller reads, not a role refusal."""
     out = set()
     for value in values:
-        if value == roles.HOLD or rec is None or rec.get('priority') == roles.HOLD:
-            out.add('set-hold')                 # a hold set, a hold released, or a record not read
-        elif value in roles.PRICE_TOP or _owner_priced(rec) or _owner_blocked(rec):
+        if value in roles.PRICE_TOP or _owner_priced(rec) or _owner_blocked(rec):
             out.add('set-price-owner')
         else:
             out.add('set-price')
@@ -116,6 +122,17 @@ def _narrow(names):
     return [n for n in roles.ACTIONS if n in names and n not in over]
 
 
+def _until_rows(verb, given):
+    """`block --on owner --until C` sets the owner's hold to end on its own (the Action Hub's
+    unblock-conditions job clears it when C is met), so it is also the `unblock-owner` row, the
+    owner's and the PM's: a lead may block on the owner, never schedule the owner's hold to end.
+    An `--on` not read counts as `owner`."""
+    on = list(given.get('on') or ())
+    if verb == 'block' and given.get('until') and ('owner' in on or UNREAD in on or not on):
+        return {'unblock-owner'}
+    return set()
+
+
 def sort(verb, given=None, rec=None):
     """The ACTIONS rows (names) the command `verb` with `given` takes on the record `rec` (None: not
     read, so the strictest the record could make it), narrowed by `over`. A verb no row names takes
@@ -128,7 +145,8 @@ def sort(verb, given=None, rec=None):
     if verb in READS:
         return ['read']
     if given.get(UNKNOWN):                      # an unread word may be the --apply a dry run lacks
-        return _verb_rows(verb)
+        extra = _until_rows(verb, given)
+        return [n for n in roles.ACTIONS if n in extra or n in _verb_rows(verb)]
     if (verb in ('retarget', 'uncite') and not given.get('apply')) or \
             (verb == 'catch-up' and not given.get('apply')):
         return ['read']
@@ -159,6 +177,7 @@ def sort(verb, given=None, rec=None):
     elif verb == 'block':
         on = list(given.get('on') or ())
         rows.add('block-owner' if given.get('owner_ask') or 'owner' in on else 'block')
+        rows |= _until_rows(verb, given)
     elif verb == 'unblock':
         on = list(given.get('on') or ())
         owner = 'owner' in on or UNREAD in on or (not on and _owner_blocked(rec))
@@ -243,6 +262,7 @@ def given_of(args):
     on = getattr(args, 'on', None)
     given.update({
         'owner_ask': getattr(args, 'owner_ask', None) is not None,
+        'until': getattr(args, 'until', None) is not None,
         'on': on if isinstance(on, list) else [on] if on else [],
         'apply': (getattr(args, 'apply', None) is not None if args.verb == 'catch-up'
                   else bool(getattr(args, 'apply', None)))})     # `catch-up --apply` alone counts
@@ -261,6 +281,7 @@ def check(args, ctx, snap, environ=None):
     # `add` makes it, so it sorts as unheld and unpriced
     rows = sort(args.verb, given_of(args), _Absent() if rec is None and snap is not None else rec)
     facts = ()
+    branch = None
     if rec is not None:
         try:
             branch = ctx.current_branch()
@@ -271,7 +292,32 @@ def check(args, ctx, snap, environ=None):
     text = refusal(role, rows, facts)
     if text:
         raise Refusal('%s (kitlib/backlog/roles.py); ask a session whose role may' % text)
+    text = batch_refusal(role, args.verb, rid, rec, branch)
+    if text:
+        raise Refusal(text)
     return rows
+
+
+def batch_refusal(role, verb, rid, rec, branch):
+    """Why a topic session (TOPIC) may not write record `rid` as `branch`, or None: its writes
+    name only a record whose `batch:` is that branch (a lead sets it, `set ID --batch <branch>`).
+    A read and every other role's write are None. Its `add` is refused: a session the owner
+    drives files no records for its work, the owner does (or asks a coordinator to). `rec` None:
+    the store holds no such record, which the plan refuses by its own words."""
+    if role != TOPIC or verb in READS:
+        return None
+    if verb == 'add':
+        return ('a topic session files no records: the owner files the records for a session '
+                'the owner drives, or asks a coordinator to. Tell the owner what you found')
+    if not rid or rec is None:
+        return None
+    batch = rec.get('batch')
+    if batch is not None and batch == branch:
+        return None
+    return ('a topic session writes only the records batched for its branch: `%s` has %s, and '
+            'this branch is %s. A coordinator sets it with `set %s --batch <branch>`, or the '
+            'record is not this session\'s' % (rid, '`batch: %s`' % batch if batch else 'no `batch:`',
+                                                branch or '(unreadable)', rid))
 
 
 # The rows a plan finds (a collision with another branch's live pull), by verb, and the words a
@@ -313,11 +359,11 @@ def _set_options():
 
 
 OPTIONS = {
-    'next': None, 'show': None, 'list': None, 'check': None, 'stale': None, 'landable': None,
-    'add': {'--summary': True, '--scope': True, '--effort': True, '--ref': True, '--reopen': False,
-            '--found-on': True, '--why-not-folded': True},
+    'next': None, 'show': None, 'find': None, 'list': None, 'check': None, 'stale': None, 'landable': None,
+    'add': {'--summary': True, '--scope': True, '--uses': True, '--effort': True, '--ref': True, '--reopen': False,
+            '--found-on': True, '--why-not-folded': True, '--body-file': True},
     'set': None,                                # _set_options(), read when asked
-    'block': {'--on': True, '--reason': True, '--owner-ask': True},
+    'block': {'--on': True, '--reason': True, '--owner-ask': True, '--until': True},
     'unblock': {'--on': True, '--reason': True},
     'retarget': {'--apply': False},
     'uncite': {'--apply': False},
@@ -421,7 +467,7 @@ def read_argv(words):
 
 def _given_add(given, verb, name, value):
     key = name[2:].replace('-', '_')
-    if key in ('owner_ask', 'apply'):
+    if key in ('owner_ask', 'apply', 'until'):
         given[key] = True
     elif key == 'on':
         given['on'].append(value)

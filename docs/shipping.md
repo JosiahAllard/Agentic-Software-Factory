@@ -54,11 +54,12 @@ than the baseline fails, a file with no baseline fails on its first hit, and few
   coordinator-dispatch, flaky-test-triage, hub-ops, ledger-ops, land-branch (uses
   `tools/land.py`), machine-lock-run, mutation-testing, session-handoff,
   shell-and-worktree-traps, specialty-3d-assets, specialty-rigging,
-  specialty-tech-art, specialty-sound, specialty-review, specialty-research, specialty-docs.
+  specialty-tech-art, specialty-sound, specialty-review, specialty-research, specialty-docs,
+  topic-session.
   branch-review and coordinator-dispatch hold the
   coordinator's procedure, loaded only when needed. Skills name kit tools by path
-  (`tests/skills` checks each exists); `tools/doc_index.py`, `tools/doc_budget.py` and
-  `tools/gate.json` are each repository's own.
+  (`tests/skills` checks each exists); only `tools/gate.json` is the repository's own
+  (`REPO_FILES` in `tests/skills/test_skills.py`).
 - **Lock MCP server** (`mcp/lock_server.py`, docs/lock-mcp.md).
 - **Hub MCP server** (`mcp/hub_server.py`, docs/hub-mcp.md).
 

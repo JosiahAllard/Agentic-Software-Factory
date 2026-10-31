@@ -18,7 +18,8 @@ import unittest
 from unittest import mock
 
 from kitlib.config.types import ConfigError
-from kitlib.hubsite import access, auth, backlog, client, gitsync, httpd, serve, tunnel
+from kitlib.hubsite import access, auth, backlog, client, gitsync, httpd, selfrestart, serve
+from kitlib.hubsite import tunnel
 from kitlib.hubsite import settings as hub_settings
 from kitlib.hubsite.api import BASE
 from kitlib.hubsite.store import Store, StoreBusy
@@ -45,6 +46,7 @@ ANSWER = {'at': '2026-01-10T12:00:00+00:00', 'error': None, 'repos': [
     {'repo': 'beta', 'days': 30, 'error': 'git timed out', 'stale': True, 'fetched': None,
      'fetch_error': 'git timed out', 'open': [], 'parked': [], 'completed': []}]}
 SECRET = 'X:\\somewhere\\private'
+NOT_TASK = 'a test server is not the scheduled task\'s'   # what selfrestart.eligible says here
 REMOTE = 'https://someone:s3cret@git.example.test/team/data.git'
 WHY = "fatal: unable to access '%s/': Could not resolve host" % REMOTE     # git quotes the remote
 CREDENTIALS = ('someone', 's3cret')
@@ -227,6 +229,13 @@ class ServeCase(unittest.TestCase):
         self.lines = []
         self.made = []          # the arguments the sync factory was called with
         self.hub = None
+        # a hub that sees new code asks whether it may restart itself: here it may not (no
+        # PowerShell), and the asking runs in the test's thread
+        for name, value in (('eligible', lambda port, store: NOT_TASK),
+                            ('in_thread', selfrestart.run_now)):
+            patcher = mock.patch.object(selfrestart, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def log(self, level, text):
         self.lines.append((level, text))
@@ -886,7 +895,7 @@ class ViewsCase(ServeCase):
     def test_a_view_with_no_source_is_unavailable_and_the_rest_answer(self):
         hub = self.build()
         hub.start()
-        for name in ('backlog', 'completed', 'repos', 'agents'):
+        for name in ('backlog', 'completed', 'repos', 'agents', 'skills'):
             r = get(hub.port, '%s/%s' % (BASE, name), self.owner)
             self.assertEqual((r.status, r.code()), (503, 'unavailable'), name)
             self.assertEqual(r.json()['error']['field'], 'views')
@@ -896,7 +905,7 @@ class ViewsCase(ServeCase):
         r = get(hub.port, BASE + '/snapshot', self.owner)
         self.assertEqual(r.status, 200)
         self.assertEqual(sorted(r.json()['unavailable']), ['agents', 'backlog', 'completed',
-                                                           'repos'])
+                                                           'repos', 'skills'])
         h = get(hub.port, HEALTH, self.owner).json()
         self.assertEqual((h['backlog'], h['unavailable']), (None, {}))
         self.assertEqual(self.errors(), [])
@@ -912,7 +921,7 @@ class ViewsCase(ServeCase):
             return [{'name': 'alpha', 'aliases': []}]
 
         missing = os.path.join(self.root, 'no-agents-here')
-        hub = self.build(usage=usage, repos=repos, agents=missing,
+        hub = self.build(usage=usage, repos=repos, agents=missing, skills=os.path.join(self.root, 'no-skills-here'),
                          notices=os.path.join(self.root, 'no-notices-here'))
         hub.start()
         r = get(hub.port, BASE + '/usage', self.owner)
@@ -923,6 +932,10 @@ class ViewsCase(ServeCase):
         self.assertEqual((r.json()['items']['available'], r.json()['items']['reason']),
                          (False, serve.AGENTS_FAILED))
         self.assertNotIn('no-agents-here', r.body.decode('utf-8'))
+        r = get(hub.port, BASE + '/skills', self.owner)
+        self.assertEqual((r.json()['items']['available'], r.json()['items']['reason']),
+                         (False, serve.SKILLS_FAILED))
+        self.assertNotIn('no-skills-here', r.body.decode('utf-8'))
         r = get(hub.port, BASE + '/repos', self.owner)
         self.assertEqual(r.json()['items'], [{'name': 'alpha', 'aliases': []}])
         self.assertEqual(seen, [[]])
@@ -1205,11 +1218,125 @@ class ReasonCase(ServeCase):
             stamp[0] = (('serve.py', 2, 12),)
             hub.watch()
             hub.watch()
-            self.assertEqual(self.lines, [('error', serve.STALE_CODE)])
+            self.assertEqual(self.lines, self.warned())
             self.assertIn('restart', serve.STALE_CODE)
             stamp[0] = (('serve.py', 3, 14),)
             hub.watch()
-            self.assertEqual(len(self.lines), 1, 'said again for the same stale server')
+            self.assertEqual(len(self.lines), 3, 'said again for the same stale server')
+        hub.close()
+
+    def warned(self):
+        """The lines of a hub that is not its task's when it first sees new code."""
+        return [('note', selfrestart.CHANGED), ('note', selfrestart.NOT_HERE % NOT_TASK),
+                ('error', serve.STALE_CODE)]
+
+    def test_a_task_run_server_restarts_itself_on_new_code_and_shows_no_warning(self):
+        stamp = [(('serve.py', 1, 10),)]
+        started = []
+        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]), \
+                mock.patch.object(serve, 'CODE_LOOK_S', 0), \
+                mock.patch.object(selfrestart, 'SETTLE_S', 0), \
+                mock.patch.object(selfrestart, 'eligible', lambda port, store: None), \
+                mock.patch.object(selfrestart, 'check', lambda: (True, None)), \
+                mock.patch.object(selfrestart, 'launch',
+                                  lambda argv: started.append((argv, list(self.lines)))
+                                  or (4242, None)):
+            hub = self.build()
+            hub.start()
+            stamp[0] = (('serve.py', 2, 12),)
+            for _ in range(3):          # asked, checked, restarted: one turn each
+                hub.watch()
+            log = os.path.join(self.tokens, selfrestart.LOG_NAME)
+            self.assertEqual([argv for argv, _ in started],
+                             [selfrestart.restarter_argv(log, hub.port)])
+            self.assertEqual(self.lines[0], ('note', selfrestart.CHANGED))
+            old, new = selfrestart.digest((('serve.py', 1, 10),)), selfrestart.digest(stamp[0])
+            before = ('note', selfrestart.RESTARTING % (old, new))
+            self.assertEqual(started[0][1][-1], before, 'logged to the hub log before the start')
+            self.assertEqual(self.lines[-2:], [before, ('note', selfrestart.LAUNCHED % (
+                old, new, 4242, hub.port, log))])
+            self.assertEqual(self.errors(), [])
+            self.assertEqual(get(hub.port, HEALTH, self.owner).json()['code'],
+                             {'stale': False, 'restart': None})
+            self.assertTrue(os.path.isfile(log))
+        hub.close()
+
+    def test_a_hub_knows_its_token_folder_for_the_restart_log(self):
+        self.assertEqual(self.build().tokens, self.tokens)
+
+    def test_the_hub_code_is_its_package_its_jobs_and_the_settings_packages(self):
+        from kitlib import hubjobs, pmdata
+        folders = serve.code_folders()
+        for module in (serve, hubjobs, pmdata, user):
+            self.assertIn(os.path.dirname(os.path.abspath(module.__file__)), folders)
+        self.assertEqual(os.path.basename(folders[-1]), 'config')
+        self.assertEqual(len(set(folders)), 4)
+
+    def test_quiet_waits_for_every_request_in_flight_and_every_running_job(self):
+        class Lis(object):
+            busy = False
+
+            def drain(self, timeout=None):
+                assert timeout == 0, 'never waits'
+                return not self.busy
+
+        class Jobs(object):
+            blocks = {'a': {'running': False}}
+
+            def status(self):
+                if isinstance(self.blocks, Exception):
+                    raise self.blocks
+                return self.blocks
+
+        hub = self.build()
+        real = hub.listeners
+        hub.listeners = [Lis(), Lis()]
+        self.assertTrue(hub._quiet())
+        hub.listeners[1].busy = True
+        self.assertFalse(hub._quiet(), 'a request in flight')
+        hub.listeners[1].busy = False
+        hub.jobs = Jobs()
+        self.assertTrue(hub._quiet())
+        hub.jobs.blocks = {'a': {'running': False}, 'b': {'running': True}}
+        self.assertFalse(hub._quiet(), 'a job running')
+        hub.jobs.blocks = RuntimeError('gone')
+        self.assertFalse(hub._quiet(), 'jobs that cannot say are not known to be idle')
+        hub.jobs, hub.listeners = None, real
+        hub.close()
+
+    def test_quiet_is_false_while_a_request_is_being_answered(self):
+        hub = self.build()
+        hub.start()
+        lis = hub.listeners[0]
+        self.assertTrue(hub._quiet())
+        with lis._cond:
+            lis._active += 1            # a request in its handler
+        try:
+            self.assertFalse(hub._quiet())
+        finally:
+            with lis._cond:
+                lis._active -= 1
+        self.assertTrue(hub._quiet())
+        hub.close()
+
+    def test_a_self_restart_look_that_raises_shows_the_warning_and_the_server_goes_on(self):
+        class Broken(object):
+            stale = False
+
+            def look(self, stamp):
+                raise RuntimeError('broken look')
+
+        stamp = [(('serve.py', 1, 10),)]
+        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]), \
+                mock.patch.object(serve, 'CODE_LOOK_S', 0):
+            hub = self.build()
+            hub.self_restart = Broken()
+            hub.watch()
+            self.assertEqual(self.lines, [
+                ('error', 'the self-restart look failed: RuntimeError: broken look'),
+                ('error', serve.STALE_CODE)])
+            hub.watch()
+            self.assertEqual(len(self.lines), 3, 'the look is tried again, STALE_CODE not')
         hub.close()
 
     def test_health_and_snapshot_say_when_the_hub_code_on_disk_is_newer(self):
@@ -1258,7 +1385,7 @@ class ReasonCase(ServeCase):
             hub._looked -= serve.CODE_LOOK_S
             hub.watch()
             self.assertEqual(len(looks), 2)
-            self.assertEqual(self.lines, [('error', serve.STALE_CODE)])
+            self.assertEqual(self.lines, self.warned())
         hub.close()
 
     def test_watch_survives_a_code_look_that_fails(self):
@@ -1864,6 +1991,7 @@ class MachineCase(unittest.TestCase):
         self.assertEqual(src.static_dir, serve.STATIC_DIR)
         self.assertEqual(os.path.basename(serve.STATIC_DIR), 'web')
         self.assertEqual(os.path.split(src.agents)[1], 'agents')
+        self.assertEqual(src.skills, os.path.join(serve.pmstart.KIT_ROOT, 'content', 'skills'))
         self.assertIsNone(serve.machine_sources(self.home, sync=False).sync)
         # the machine lock's door, made now and opened on its first read (none here)
         from kitlib.hubsite import lockdoor
@@ -2142,6 +2270,31 @@ class ClientCase(ServeCase):
         self.assertEqual(serve.status_lines({'revision': 1, 'git': None, 'backlog': [],
                                              'backlog_at': None}, NOW),
                          ['revision 1', 'git: no answer', 'backlog: not read yet'])
+
+    def test_status_lines_say_the_code_and_the_jobs_before_the_tunnel(self):
+        from kitlib.hubsite import codestale
+        base = {'revision': 2, 'git': None, 'backlog': None, 'tunnel': 'on'}
+        health = dict(base, code=codestale.state(False), jobs=None)
+        self.assertEqual(serve.status_lines(health, NOW)[3:],
+                         ['code: current', 'jobs: none', 'tunnel: on'])
+        health['code'] = codestale.state(True)
+        self.assertEqual(serve.status_lines(health, NOW)[3], 'code: stale: ' + codestale.text())
+        long_note = 'n' * 100
+        health['jobs'] = {
+            'zeta': {'runs': 4, 'failures': 2, 'running': True, 'note': 'old note',
+                     'error': 'RefreshFailed: exited 1\nat https://user:pw@example.invalid/x'},
+            'alpha': {'runs': 1, 'failures': 0, 'running': False, 'note': long_note,
+                      'error': None},
+            'beta': {'runs': 0, 'failures': 0, 'running': False, 'note': None, 'error': None}}
+        self.assertEqual(serve.status_lines(health, NOW)[4], 'jobs: ' + '; '.join([
+            'alpha runs 1, failures 0: ' + 'n' * (serve.JOB_NOTE_MAX - 3) + '...',
+            'beta runs 0, failures 0',
+            'zeta runs 4, failures 2, running: RefreshFailed: exited 1 at '
+            'https://example.invalid/x']))
+        # an older server's answer, without the fields: neither line
+        self.assertEqual(serve.status_lines(base, NOW),
+                         ['revision 2', 'git: no answer', 'backlog: no source on this server',
+                          'tunnel: on'])
 
 
 class _Keys(object):
@@ -2441,6 +2594,8 @@ class TunnelCase(ServeCase):
                     self.assertEqual([s for s in said if s.startswith('tunnel')], [line], said)
                     # after the backlog line, the last line of a server with nothing missing
                     self.assertEqual(said[-1], line, said)
+                    # a real server's `code` and `jobs` (none built here) read as these lines
+                    self.assertEqual(said[-3:-1], ['code: current', 'jobs: none'], said)
                 self.assertIs(hub.close(), True)
         self.assertEqual(self.errors(), [])
 

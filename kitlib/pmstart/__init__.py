@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 
-from kitlib import kitroot
+from kitlib import kitroot, platform
 from kitlib.config import user as kuser
 from kitlib.ledger import files as ledger_files, rulebook
 from kitlib.host import registry
@@ -47,7 +47,12 @@ def _read(path):
 
 def list_processes(timeout=TIMEOUT):
     """All processes as dicts with Name, CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created (PowerShell Get-CimInstance).
-    subprocess.TimeoutExpired after `timeout` seconds (the session start's TIMEOUT by default)."""
+    subprocess.TimeoutExpired after `timeout` seconds (the session start's TIMEOUT by default).
+    On Linux the rows are read from /proc (kitlib.platform.linux.process.rows), with no timeout;
+    OSError when /proc cannot be listed."""
+    if platform.NAME == 'linux':
+        from kitlib.platform.linux import process as linux_process
+        return linux_process.rows()
     r = spawn.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS],
                   capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
@@ -237,7 +242,7 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
     key's own, without the value it refused (_without_values): key names, the rules, and the
     machine config's path when the settings name it; never a value written in the key. With a
     `stamp` (the checklist gives filed_stamp_file), the up server's lines carry the filed-answers
-    digest (filed_digest, one more ask) after the pending ones; with none, no digest."""
+    digest (filed_digest, two more asks) after the pending ones; with none, no digest."""
     try:
         site = (load or hub_settings)()      # looked up at the call, so a test can replace it
     except HubSettingsError as e:
@@ -286,6 +291,7 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
 
 FILED_STAMP_NAME = "pm-start-last.json"
 FILED_FALLBACK = datetime.timedelta(hours=24)
+HUB_DONE_BY = "hub"   # a question's done_by when the hub marked it done (kitlib.hubsite.api)
 
 
 def filed_stamp_file():
@@ -325,9 +331,11 @@ def filed_digest(hub, stamp, now=None):
     (docs/pm-start.md "Filed answers"): at most one line, and no push. `stamp` is the stamp file's
     path, or a function giving it (asked here, so a checklist whose hub is down reads no pm_watch
     config). The time since is the stamp's, or `now` less FILED_FALLBACK when the stamp is missing
-    or unreadable; the stamp is rewritten with `now` once the hub has answered, so a start whose
-    ask failed leaves it for the next start. One ask (GET /questions?status=filed&since=T): the
-    questions whose filed_at is at or after T are counted, and none is no line."""
+    or unreadable; the stamp is rewritten with `now` once the hub has answered both asks, so a
+    start whose ask failed leaves it for the next start. Two asks (GET /questions?status=filed and
+    status=done, each &since=T): the questions whose filed_at is at or after T are counted, of
+    the done ones only those the hub marked done once their asker had the answer (done_by `hub`,
+    kitlib.hubsite.push "Done by the hub"), which the line counts apart; none is no line."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     try:
         path = stamp() if callable(stamp) else stamp
@@ -335,24 +343,34 @@ def filed_digest(hub, stamp, now=None):
         return ["hub: answers filed since the last start not counted (%s)" % type(e).__name__]
     since = _read_stamp(path) or now - FILED_FALLBACK
     text = since.isoformat(timespec="seconds")
-    try:
-        items = hub.get("/questions", query={"status": "filed", "since": text},
-                        timeout=HUB_SITE_TIMEOUT_S).get("items")
-    except Exception as e:
-        return ["hub: answers filed since %s not asked (%s)" % (text, type(e).__name__)]
-    _write_stamp(path, now)
-    count = 0
-    for d in items if isinstance(items, list) else []:
+    got = {}
+    for status in ("filed", "done"):
         try:
-            at = datetime.datetime.fromisoformat((d or {}).get("filed_at"))
-        except (TypeError, ValueError, AttributeError):
-            continue
-        if at.tzinfo is not None and at >= since:
-            count += 1
-    if not count:
+            got[status] = hub.get("/questions", query={"status": status, "since": text},
+                                  timeout=HUB_SITE_TIMEOUT_S).get("items")
+        except Exception as e:
+            return ["hub: answers filed since %s not asked (%s)" % (text, type(e).__name__)]
+    _write_stamp(path, now)
+    count = {"filed": 0, "done": 0}
+    for status, items in got.items():
+        for d in items if isinstance(items, list) else []:
+            if status == "done" and (d or {}).get("done_by") != HUB_DONE_BY:
+                continue
+            try:
+                at = datetime.datetime.fromisoformat((d or {}).get("filed_at"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if at.tzinfo is not None and at >= since:
+                count[status] += 1
+    total, done = count["filed"] + count["done"], count["done"]
+    if not total:
         return []
-    return ["hub: %d answer(s) filed into records since %s, for your information: python \"%s\" "
-            "questions --status filed --since %s" % (count, text, HUB_TOOL, text)]
+    line = ("hub: %d answer(s) filed into records since %s, for your information: python \"%s\" "
+            "questions --status filed --since %s" % (total, text, HUB_TOOL, text))
+    if done:
+        line += ("; %d of them marked done by the hub once their asker had them (done_by hub):"
+                 " python \"%s\" questions --status done --since %s" % (done, HUB_TOOL, text))
+    return [line]
 
 
 def read_heartbeat():
@@ -380,7 +398,7 @@ def _created(p):
         return None
 
 
-def watcher(cfg, procs, beat=None, now=None):
+def watcher(cfg, procs, beat=None, now=None, job=None):
     """Steps: empty while pm_watch is alive and not streaming, else the step that (re)starts it.
 
     Alive means all of: the heartbeat pm_watch writes every pass (beat(), default read_heartbeat)
@@ -392,7 +410,10 @@ def watcher(cfg, procs, beat=None, now=None):
     its events, and the PM starts it again at once, then handles them (docs/pm-watch.md). A live
     watcher whose heartbeat says it streams, and a pm_watch_cmd with --stream, each add a line:
     a streaming watcher never exits, so its events reach no one. The configured command is
-    printed as written, never changed."""
+    printed as written, never changed. The hub's session-watch job stands in for pm_watch: while
+    its health block (job(), default kitlib.pmwatch.hub_session_job_block) covers
+    (kitlib.pmwatch.session_job_healthy: not failing, a success at most 300 s old) the watcher
+    counts as up and no (re)start step is given (docs/pm-watch.md "Hub session-watch job")."""
     running = {}
     for p in procs:
         name = (p.get("Name") or "").lower()
@@ -402,6 +423,10 @@ def watcher(cfg, procs, beat=None, now=None):
     now = time.time() if now is None else now
     cmd = _pm_watch_cmd(cfg)
     lines = _watcher_state(hb, running, now, cmd)
+    if lines:                       # the hub is asked only when pm_watch alone is not up
+        from kitlib import pmwatch
+        if pmwatch.session_job_healthy((job or pmwatch.hub_session_job_block)(), now):
+            lines = []
     if _STREAM_FLAG.search(cmd):
         lines.append("pm_start.pm_watch_cmd has --stream: a watcher started with it never exits, so "
                      "a background run reports no event; remove --stream from pm_watch_cmd")
@@ -481,7 +506,10 @@ _RC = re.compile(r"""(?:^|\s)--remote-control(?:\s+|=)(?:"([^"]*)"|'([^']*)'|(\S
 
 def session_images(path=None):
     """The process images a host's launched session runs as (each hosts.json profile's
-    session_process; claude.exe on Claude), matched exactly against a process's Name."""
+    session_process; claude.exe on Claude), matched exactly against a process's Name. On Linux the
+    running platform's process_names over every host (registry.process_names): claude, node, codex."""
+    if platform.NAME == 'linux':
+        return frozenset(registry.process_names(path))
     return frozenset(registry.union('session_process', path))
 
 
@@ -491,13 +519,53 @@ def rc_name(cmd):
     return next((g for g in m.groups() if g), None) if m else None
 
 
+def cli_names(path=None):
+    """((cli_program, cli_package), ...) of every host in hosts.json, for runs_cli."""
+    return tuple((p.cli_program, p.cli_package) for p in registry.profiles(path))
+
+
+def _in_package(parts, package):
+    """True when the path parts hold node_modules followed directly by the scoped package's two
+    parts (@scope, name), with the file below them."""
+    seg = package.split("/")
+    return any(parts[i] == "node_modules" and parts[i + 1:i + 1 + len(seg)] == seg
+               for i in range(len(parts) - len(seg) - 1))
+
+
+def runs_cli(cmd, clis):
+    """True when a Linux command line (/proc's arguments joined by spaces) runs one of `clis`,
+    ((program, scoped npm package), ...): its program, or the first word after it that is not an
+    option (node's script), has the program as its last path part or lies in the package
+    directly under a node_modules folder. `node app.js --remote-control x` runs none, nor
+    `node ~/src/claude-code/x.js`."""
+    words = (cmd or "").split()
+    script = next((w for w in words[1:] if not w.startswith("-")), "")
+    for word in words[:1] + [script]:
+        parts = word.split("/")
+        if any(parts[-1] == program or _in_package(parts, package) for program, package in clis):
+            return True
+    return False
+
+
+def linux_clis(path=None):
+    """cli_names() on Linux, for runs_a_cli; None elsewhere (a Windows image is the CLI's own)."""
+    return cli_names(path) if platform.NAME == 'linux' else None
+
+
+def runs_a_cli(row, clis):
+    """A process row runs a host's CLI: always when clis is None (linux_clis off Linux)."""
+    return clis is None or runs_cli(row.get("CommandLine"), clis)
+
+
 def live_session_names(procs):
-    """Remote Control names of launched sessions (session_images); the Store app (under WindowsApps) is not one."""
+    """Remote Control names of launched sessions (session_images); the Store app (under WindowsApps) is not one,
+    nor on Linux a process that runs no host's CLI (runs_cli)."""
     names = set()
     images = session_images()
+    clis = linux_clis()
     for p in procs:
         if (p.get("Name") in images and p.get("CommandLine")
-                and STORE_DIR not in (p.get("ExecutablePath") or "")):
+                and STORE_DIR not in (p.get("ExecutablePath") or "") and runs_a_cli(p, clis)):
             n = rc_name(p["CommandLine"])
             if n:
                 names.add(n)
@@ -514,18 +582,25 @@ def liveness(cfg, procs, read=None, account=None, repos=None):
     alive = live_session_names(procs)
     label = None
     out = []
-    for key, e in sessions.items():
-        if not isinstance(e, dict) or not e.get("name") or e.get("autostart") is False:
-            continue
-        if e["name"] not in alive:  # exact, case-sensitive, as kitlib.launcher.lookup.find_exact
-            if label is None:     # read once, and only when something is down
-                from kitlib.launcher import accounts
-                label = (account or current_account)()
-                # an unidentified account is left to the launcher's pick-account
-                label = "auto" if label == accounts.DEFAULT_LABEL else label
-            out.append("coordinator %s (%s) is not running: launch.py start --session %s --account %s"
-                       % (key, e["name"], key, label))
+    for key, e in down_entries(sessions, alive):
+        if label is None:     # read once, and only when something is down
+            from kitlib.launcher import accounts
+            label = (account or current_account)()
+            # an unidentified account is left to the launcher's pick-account
+            label = "auto" if label == accounts.DEFAULT_LABEL else label
+        out.append("coordinator %s (%s) is not running: launch.py start --session %s --account %s"
+                   % (key, e["name"], key, label))
     return out + _consultants_missing(sessions, alive, repos)
+
+
+def down_entries(sessions, alive):
+    """[(key, entry)] of the sessions.json entries that should run and do not: an object with a
+    name, `autostart` not false, and no live session of exactly that name in `alive` (exact,
+    case-sensitive, as kitlib.launcher.lookup.find_exact). The PM checklist's coordinator lines
+    and the hub's coordinator restart job (kitlib.hubjobs.coord_restart) both read it."""
+    return [(key, e) for key, e in sessions.items()
+            if isinstance(e, dict) and e.get("name") and e.get("autostart") is not False
+            and e["name"] not in alive]
 
 
 def _consultants_missing(sessions, alive, repos=None):
@@ -674,29 +749,6 @@ def launcher_repos():
     """{name: folder} of the machine config's launcher.repos (kitlib.launcher.settings)."""
     from kitlib.launcher import settings
     return settings.load().repos
-
-
-def stubs(repos=None, check=None):
-    """One line per repository in launcher.repos whose stubs are missing or stale (kitlib.stubs.problem_line),
-    none when all are current. Stubs are opt-in (decision 21 in docs/multi-host-plan.md section 7),
-    so a repository that uses none has no line. A folder that is not there, or a check that raises,
-    is that repo's own "could not check stubs" line."""
-    from kitlib import stubs as kstubs
-    check = check or kstubs.problem_line
-    repos = launcher_repos() if repos is None else repos
-    lines = []
-    for name in sorted(repos):
-        path = repos[name]
-        if not os.path.isdir(path):
-            lines.append("could not check stubs (%s): no repository folder %s" % (name, path))
-            continue
-        try:
-            line = check(path)
-        except Exception as e:
-            line = "could not check stubs (%s): %s: %s" % (name, type(e).__name__, e)
-        if line:
-            lines.append(line)
-    return lines
 
 
 def pm_memory_repo(cfg, main_top=None):
@@ -1086,6 +1138,7 @@ def checklist(cfg, now=None, procs=None, **fakes):
     today = (now or datetime.datetime.now()).date()
     lines = []
     box = {}
+    repos = {"repos": fakes["repos"]} if "repos" in fakes else {}
 
     def procs_once():
         if "p" not in box:
@@ -1108,18 +1161,13 @@ def checklist(cfg, now=None, procs=None, **fakes):
         # A plugin_current fake's settings and folders stand for this check's too.
         ("plugin_enabled", lambda: plugin_enabled(**fakes.get("plugin_enabled", {
             k: v for k, v in fakes.get("plugin_current", {}).items() if k in ("settings", "folders")}))),
-        ("stubs", lambda: stubs(**fakes.get("stubs", {}))),
-        # A stubs fake's repos stand for launcher.repos here too.
-        ("memory", lambda: memory(cfg, **fakes.get("memory", {k: v for k, v in fakes.get("stubs", {}).items()
-                                                              if k == "repos"}))),
-        ("allow_rules", lambda: allow_rules(cfg, **fakes.get("allow_rules", {k: v for k, v in fakes.get(
-            "stubs", {}).items() if k == "repos"}))),
+        # A repos fake stands for launcher.repos in each check that reads it.
+        ("memory", lambda: memory(cfg, **fakes.get("memory", repos))),
+        ("allow_rules", lambda: allow_rules(cfg, **fakes.get("allow_rules", repos))),
         ("repo_prep", lambda: repo_prep(**fakes.get("repo_prep", {}))),
         ("agent_temp", lambda: agent_temp_lines(**fakes.get("agent_temp", {}))),
         ("cdrive", lambda: cdrive_lines(**fakes.get("cdrive", {}))),
-        # A stubs fake's repos stand for launcher.repos here too.
-        ("worktree_sweep", lambda: worktree_sweep_lines(**fakes.get("worktree_sweep", {
-            k: v for k, v in fakes.get("stubs", {}).items() if k == "repos"}))),
+        ("worktree_sweep", lambda: worktree_sweep_lines(**fakes.get("worktree_sweep", repos))),
         ("console_tasks", lambda: consoletasks.check(cfg, **fakes.get("console_tasks", {}))),
         ("foreground_lock", lambda: fglock.check(cfg, **fakes.get("foreground_lock", {}))),
     ]

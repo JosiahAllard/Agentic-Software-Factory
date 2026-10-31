@@ -40,7 +40,7 @@ Missing any: say what you need, do nothing.
 1. Work from the main checkout on the main branch, never inside the worktree you are about to
    remove. Confirm its `git status` is clean.
 2. The branch need not contain main: the landing tool merges the main it finds at its turn
-   and gates the merged tree. A conflict is a `CONFLICT` verdict, nothing changed.
+   and gates the merged tree. A conflict is a `fail` result with a `CONFLICT` line, nothing changed.
 3. **Size check** any doc both sides touched: an auto-merge can silently restore
    text main deleted. The merged file's line count must equal main's count plus
    the branch's net lines for that file
@@ -59,21 +59,25 @@ Missing any: say what you need, do nothing.
    landing leaves dead; 1 CANNOT TELL, a bad branch name or unreadable ref, records or Closes and Part-of lines:
    report either, never widen scope at landing; scope is widened at fold-in, `python <kit>/tools/backlog.py -C <worktree> set <ID> --scope <path>`, and widening a pulled record into a
    live pull needs the PM's ruling, `<kit>/docs/backlog.md` "Owner gates"). Then submit the landing from the
-   main checkout, as one bare call:
-   `python <kit>/tools/land.py -C <main checkout> <branch> --expect-tip <tip> --submit [--summary <text>]`
-   (the repo's stub; `<kit>/tools/land.py` where the repo has none).
+   main checkout, as one bare call with `run_in_background`:
+   `python <kit>/tools/land.py -C <main checkout> <branch> --expect-tip <tip> [--summary <text>] --reviewed-by <reviewer id> --wait-result --submit`,
+   with the `reviewer_id` of the verdict queued at that tip; nothing follows `--submit`.
    A detached process lands it: it waits as one entry in the machine-lock queue (landings go
    ahead of ordinary runs), merges the main it finds with `--no-ff`, gates the merged tree,
    pushes, verifies with `ls-remote`, and undoes the merge on red. The call prints a `REVIEW` line for
-   each branch whose queued verdict is at the tip submitted, then the one
-   `SUBMITTED ... wait: ...` line, and exits 0 (no `SUBMITTED` line: report the output). Start the
-   `gate.py wait-result ... --kind land -C <main checkout>` command it prints, as it prints it, with `run_in_background`, and wait for the task
-   notification, never a polling loop (the classifier denies it); no Monitor either
-   (<kit>/docs/gate.md "Waiting on a gate: who arms what"). `python <kit>/tools/land.py -C <main checkout> --queue`
+   each branch whose queued verdict is at the tip submitted and the one `SUBMITTED ... wait: ...`
+   line (no `SUBMITTED` line: report the output), then waits for the landing and ends with its
+   outcome lines and the `RESULT` and JSON lines (<kit>/docs/gate.md "Submitting a landing",
+   "Waiting in the same call"). Wait for the task notification, never a polling loop (the
+   classifier denies it); no Monitor either (<kit>/docs/gate.md "Waiting on a gate: who arms
+   what"). Killed or stopped before its `RESULT` (the landing goes on): start the
+   `gate.py wait-result ... --kind land -C <main checkout>` command the `SUBMITTED` line names,
+   as it is, with `run_in_background`. `python <kit>/tools/land.py -C <main checkout> --queue`
    shows who holds and who waits. Never pass anything to jump the queue, and never
    break a landing lock: STUCK -> stop and report its lines. Do not truncate native output
-   through a pipe - in PowerShell, `Select-Object -First` fakes a non-zero exit code.
-6. The wait prints `RESULT <verdict> land <branch> at <tip>: <line> (<log>)`; act on the verdict:
+   through a first-N reader (`head`, or its PowerShell cmdlet): in bash without pipefail,
+   `cmd | head` returns head's 0 and hides a failure.
+6. The call ends with `RESULT <verdict> land <branch> at <tip>: <line> (<log>)`; act on the verdict:
    - `pass`, `LANDED ...`: landed.
    - `fail` with `CONFLICT <branch> with main <sha>: the author merges main`: nothing left behind; report it,
      the author merges main (never resolve it yourself).
@@ -113,7 +117,7 @@ preflight's leftover-worktree and stray-file lines (`--find lock`).
 ## Never
 
 - Never put the owner's personal details (email address, name, account names) in anything sent off this machine: no User-Agent, header, URL, query string or form field. Web fetches use a neutral User-Agent.
-- Search from a filesystem or drive root (`find /`, `Get-ChildItem C:\ -Recurse`, `dir /s C:\`): use Glob/Grep or a path scoped to the repo, worktree or a known folder, with a timeout.
+- Search from a filesystem or drive root (`find /`, or a recursive listing of a drive root): use Glob/Grep or a path scoped to the repo, worktree or a known folder, with a timeout.
 - Force-push, or push anything but the main branch through the landing command.
 - `git add -A`, `git commit -a`, or staging anything you did not change.
 - Remove a worktree other than the one you were told to land, or an untracked file the brief did not name.
@@ -134,12 +138,13 @@ Only when the profile's **Landing** section says batches are allowed and the bri
 lists them: up to the repo's `"landing".batch_max` branches, each with its own
 reviewer, reviewed range and LAND verdict. One call, in the brief's order, one
 `--expect-tip` per branch in the same order:
-`python <kit>/tools/land.py -C <main checkout> <a> <b> --expect-tip <tip-a> --expect-tip <tip-b> --submit`.
+`python <kit>/tools/land.py -C <main checkout> <a> <b> --expect-tip <tip-a> --expect-tip <tip-b> --reviewed-by <reviewer-a> --reviewed-by <reviewer-b> --wait-result --submit`,
+one `--reviewed-by` per branch in the same order; it ends with a `RESULT` line for each branch.
 The tool merges each with its own merge commit, gates the result once, and pushes
 once; a conflict or a red gate undoes the whole batch and lands nothing. Verify
 each branch tip is an ancestor of the remote main. Not landed: report; the
-coordinator re-queues the branches one at a time. A brief never batches a branch it
-marks high-risk.
+coordinator re-queues the branches one at a time. A strict-path or gate-config (`.kit.json`)
+branch never goes in a batch.
 
 ## Report
 

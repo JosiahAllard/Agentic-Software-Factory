@@ -3,7 +3,7 @@
 
   land.py BRANCH [BRANCH ...] --expect-tip SHA [--expect-tip SHA ...] [--expect-main SHA]
           [-C DIR] [--summary TEXT] [--full] [--fresh] [--wait SECONDS]
-          [--log-dir D] [--keep-branch] [--submit]
+          [--log-dir D] [--keep-branch] [--reviewed-by REVIEWER_ID ... [--wait-result] --submit]
       from the main checkout: take the landing's turn in the machine lock's queue (one booking,
       whose slot the merged gate runs in) and the landing lock, fetch, merge each branch onto
       <remote>/<main> as it is then (main moved on since --expect-main: said, never refused) with
@@ -21,9 +21,21 @@
       its merged gate runs --full --fresh whatever was passed (docs/gate.md "Strict paths").
       --submit: the same landing, started detached and windowless; prints a REVIEW line for each
       branch with a verdict queued at its tip, then the last line, SUBMITTED ... wait: <the
-      gate.py wait-result command that waits for its result record>, and exits 0
+      gate.py wait-result command that waits for its result record>, and exits 0. It needs one
+      --reviewed-by per branch, before --submit, in --expect-tip's order: the reviewer id of its
+      verdict queued at its tip. Missing or miscounted: USAGE (2) with an `Instead:` line, the
+      command with the queued ids; an id that is not the reviewer, or no verdict queued at the
+      tip: REFUSED (4); nothing written (docs/gate.md "Submitting a landing").
+      --wait-result (before --submit): once SUBMITTED is printed, wait for the landing to end
+      and print its outcome lines, then each branch's RESULT line and record as gate.py
+      wait-result prints them; the exit code is the last record's (kitlib.gate.submit.follow).
+      Run it as a background command: it lasts as long as the landing
   land.py --queue [-C DIR]
       read-only: the landing lock's holder and the landings in the machine lock's queue
+  land.py BRANCH [BRANCH ...] --check-strict [-C DIR]
+      read-only, before a reviewer is picked: per branch, `STRICT <branch>: <paths>: ...` (its
+      reviewer must be strong-tier, and it lands alone) or `NOT STRICT <branch>: ...`, by the
+      matcher a landing refuses by, against <remote>/<main> as last fetched; no lock, no verdict
   land.py --sweep-landed [--apply] [-C DIR]
       the same cleanup for every branch main already contains (docs/gate.md "Branch cleanup");
       a dry run names what would go, --apply cleans up
@@ -66,6 +78,7 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
         sys.exit(_code)
 
 from kitlib import gate as G                                       # noqa: E402
+from kitlib.coordstate import log as coordlog                       # noqa: E402
 from kitlib.gate import cleanup                                    # noqa: E402
 from kitlib.gate import land as landmod                            # noqa: E402
 from kitlib.gate import runner                                     # noqa: E402
@@ -104,15 +117,44 @@ def parser():
                    help='wait this long for the turn and the lock (default "landing".wait_s)')
     p.add_argument('--log-dir', help='where the merged gate\'s logs go')
     p.add_argument('--queue', action='store_true', help='print the landing lock and queue; land nothing')
+    p.add_argument('--check-strict', action='store_true',
+                   help='say whether each BRANCH changes a strict path; land nothing')
     p.add_argument('--keep-branch', action='store_true',
                    help='after landing, keep the remote branch, the worktree and the local branch')
     p.add_argument('--sweep-landed', action='store_true',
                    help='clean up every branch main already contains (a dry run without --apply)')
     p.add_argument('--apply', action='store_true', help='--sweep-landed: clean up, not a dry run')
+    p.add_argument('--reviewed-by', dest='reviewed_by', action='append', default=[],
+                   metavar='REVIEWER_ID',
+                   help='--submit: the reviewer id of each BRANCH\'s verdict queued at its tip, '
+                        'in the same order (required)')
+    p.add_argument('--wait-result', dest='wait_result', action='store_true',
+                   help='--submit: then wait for the landing\'s result and print it, as '
+                        'gate.py wait-result does, after the landing\'s own outcome lines')
     p.add_argument('--submit', action='store_true',
                    help='start the landing detached; print the wait-result command and exit 0')
     p.add_argument(submitmod.FLAG, dest='submitted', metavar='PAYLOAD', help=argparse.SUPPRESS)
     return p
+
+
+def again_args(a, root):
+    """This submission's arguments in the land permission rule's order (docs/allow-rules.md):
+    -C (absolute, forward slashes), the branches, --expect-tip, then the rest; for the Instead:
+    command of a submission that did not name its reviewers (submit.again_line)."""
+    args = ['-C', root.replace('\\', '/')] + list(a.branches)
+    for tip in a.expect_tip:
+        args += ['--expect-tip', tip]
+    if a.expect_main:
+        args += ['--expect-main', a.expect_main]
+    if a.summary:
+        args += ['--summary', a.summary]
+    if a.wait is not None:
+        args += ['--wait', str(a.wait)]
+    if a.log_dir:
+        args += ['--log-dir', a.log_dir]
+    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
+                                         ('--keep-branch', a.keep_branch),
+                                         ('--wait-result', a.wait_result)) if on]
 
 
 def child_args(a, root):
@@ -171,16 +213,27 @@ def main(argv):
     root = os.path.abspath(a.root)
     if a.apply and not a.sweep_landed:
         p.error('--apply goes with --sweep-landed')
+    if a.reviewed_by and not a.submit:
+        p.error('%s goes with --submit' % submitmod.REVIEWED_BY)
+    if a.wait_result and not a.submit:
+        p.error('--wait-result goes with --submit')
     if a.sweep_landed:
         if (a.branches or a.expect_main or a.expect_tip or a.queue or a.keep_branch or a.full
                 or a.fresh or a.summary or a.wait is not None or a.log_dir
-                or a.submit or a.submitted):
+                or a.submit or a.submitted or a.check_strict):
             p.error('--sweep-landed takes only --apply and -C')
         try:
             return emit(cleanup.sweep(root, apply=a.apply))
         except KeyboardInterrupt:
             print('Ctrl+C: the sweep stopped; run it again to finish')
             return 130
+    if a.check_strict:
+        if (a.expect_main or a.expect_tip or a.queue or a.keep_branch or a.full or a.fresh
+                or a.summary or a.wait is not None or a.log_dir or a.submit or a.submitted):
+            p.error('--check-strict takes only BRANCH ... and -C')
+        if not a.branches:
+            p.error('name the branch to check (or several)')
+        return emit(landmod.check_strict(root, a.branches))
     if a.queue:
         if a.branches or a.expect_main or a.expect_tip or a.submit or a.submitted:
             p.error('--queue takes only -C')
@@ -194,8 +247,20 @@ def main(argv):
     if a.submit and a.submitted:
         p.error('--submit starts the landing that --submitted runs; not both')
     if a.submit:
-        return emit(submitmod.submit(root, __file__, child_args(a, root), a.branches,
-                                     a.expect_tip, expect_main=a.expect_main))
+        out = submitmod.submit(
+            root, __file__, child_args(a, root), a.branches, a.expect_tip,
+            expect_main=a.expect_main, reviewed_by=a.reviewed_by,
+            again=lambda ids: submitmod.again_line('land.py', again_args(a, root), ids))
+        code = emit(out)        # flushed first: a killed wait leaves the wait-result command
+        coordlog.note_submit(out, a.branches, a.expect_tip, a.reviewed_by)   # docs/coord-state.md
+        if not a.wait_result or out.code != G.OK:
+            return code
+        try:
+            return emit(submitmod.follow(root, a.branches, a.expect_tip, out.facts.get('output')))
+        except KeyboardInterrupt:
+            wait = out.lines[-1].split(' wait: ', 1)[-1] if out.lines else 'gate.py wait-result'
+            print('Ctrl+C: the wait stopped; the landing goes on: %s' % wait, flush=True)
+            return 130
     submitted = None
     if a.submitted:
         submitted = restore(root, a)

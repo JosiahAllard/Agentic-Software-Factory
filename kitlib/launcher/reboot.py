@@ -79,10 +79,12 @@ def newest_transcript_mtime(settings, session_id):
     return best
 
 
-def run(settings, host, test=False, dry_run=False, say=None):
+def run(settings, host, test=False, dry_run=False, say=None, permission_mode=None):
     """The lines a run says (and logs). `say`, when given, takes each line as it happens (the
     caller's console) and the run returns none of them: the wait before anything starts is
-    WAIT_SECONDS, and a caller that prints only the returned list says nothing until it is over."""
+    WAIT_SECONDS, and a caller that prints only the returned list says nothing until it is over.
+    permission_mode None: today's command lines; else every session it starts, the PM included,
+    gets that mode (window.PERMISSION_MODES)."""
     out = []
 
     def tell(line):
@@ -149,7 +151,7 @@ def run(settings, host, test=False, dry_run=False, say=None):
                 '%s=%s' % (k, v) for k, v in sorted(args.items()) if v not in (None, '', False))))
             continue
         try:
-            S.start(settings, host, **args)
+            S.start(settings, host, permission_mode=permission_mode, **args)
         except Exception as e:                       # one failed window never skips the rest, sessions.json or the PM
             log('FAILED to start %s : %s' % (key, why(e)))
             continue
@@ -160,11 +162,11 @@ def run(settings, host, test=False, dry_run=False, say=None):
             state.write_json(state.path(settings, state.SESSIONS), sessions)
         except Exception as e:
             log('FAILED to write sessions.json : %s' % why(e))
-    out += resume_pm(settings, host, cfg, log, dry_run)
+    out += resume_pm(settings, host, cfg, log, dry_run, permission_mode)
     return out
 
 
-def resume_pm(settings, host, cfg, log, dry_run=False):
+def resume_pm(settings, host, cfg, log, dry_run=False, permission_mode=None):
     """Resume the PM session unless a check skips it. dry_run: every check runs and the decision
     is said ('would resume pm-session ...'), but no window opens."""
     sid, folder, pm_account = cfg.get('pm_session_id'), cfg.get('pm_folder'), cfg.get('pm_account')
@@ -189,7 +191,8 @@ def resume_pm(settings, host, cfg, log, dry_run=False):
     try:
         d = A.launch_dir(settings, str(pm_account))
         config_dir = None if settings.is_default(d) else d
-        cmd = window.claude_command('pm-session', PM_PROMPT, S.run_as(PM_AGENT), resume=sid)
+        cmd = window.claude_command('pm-session', PM_PROMPT, S.run_as(PM_AGENT), resume=sid,
+                                    permission_mode=permission_mode)
         text = window.script('pm-session', window.PM, folder, cmd, config_dir, host.env('AGENT_TEMP'))
         if dry_run:
             log('would resume pm-session (session %s, account %s) in %s' % (sid, pm_account, folder))

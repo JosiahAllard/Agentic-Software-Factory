@@ -101,8 +101,9 @@ class LiveTable(unittest.TestCase):
 
     def test_a_renamed_kind_keeps_its_size(self):
         table = kinds.load()
-        for k in ('test', 'app-run'):
-            self.assertEqual(table[k], {'cpu': 'medium', 'gpu': 0, 'share': False, 'warn_min': 30})
+        for k in ('test', 'app-run'):           # its size; its mem_mb floor is its own
+            self.assertEqual({x: table[k][x] for x in ('cpu', 'gpu', 'share', 'warn_min')},
+                             {'cpu': 'medium', 'gpu': 0, 'share': False, 'warn_min': 30})
 
 
 class GpuValues(KindsTest):

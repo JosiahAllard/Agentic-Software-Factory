@@ -60,6 +60,13 @@ sees it gone. Files, in the result folder (kitlib.gate.result.result_dir:
 output, the records' `log` until a merged gate names its own); each submission deletes the old
 ones (prune). Nothing here prints or exits.
 
+Folding (docs/gate.md "Folding queued submissions"; the protocol at `turn` below): the payload
+also keeps the landing's flags (flags_of). A submitted landing at its turn folds the submissions
+queued behind it into its batch (foldable, take: their records then name its run in folded_into
+and its pid), and gives back what it does not land (give_back). A folded landing's process, at
+its turn or when its booking fails, finds its records folded (turn: FOLDED), says so in its output
+and ends, writing nothing; follow then gives the outcome from the folding landing's output.
+
 Trust: `--submitted <payload>` is a flag any caller can pass, and the landing it runs writes the
 records and the output the payload names, so restore runs only a payload submit itself wrote for
 this landing. submit draws a token (secrets), writes its sha256 into the payload and gives the
@@ -94,6 +101,7 @@ from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
 from kitlib.lock import run as lockrun
 from kitlib.proc import process
+from kitlib.records import gate_ok
 
 FLAG = '--submitted'
 # The submission's naming of the review each branch lands on (named_review): shown on the command
@@ -441,6 +449,7 @@ def submit(root, tool_file, child_args, branches, tips, expect_main=None, enviro
     try:
         _write_json(payload, {'schema': SCHEMA, 'output': output, 'replaced': replaced,
                               'token_sha256': token_digest(token),
+                              'flags': flags_of(child_args),
                               'runs': [{'branch': rr.branch, 'tip': rr.tip, 'base': rr.base,
                                         'run_id': rr.run_id, 'started_at': rr.started_at}
                                        for rr in runs]})
@@ -538,6 +547,14 @@ def follow(root, branches, tips, output, exit_wait_s=EXIT_WAIT_S, poll_s=result.
                              % (pid, exit_wait_s, output))
                 break
             sleep(max(0.0, min(EXIT_POLL_S, end - clock())))
+    into = last.get('folded_into')
+    if into:            # landed in another landing's batch: its outcome is in that one's output
+        anchor = output_of_run(root, into)
+        lines.append('FOLDED: the landing of %s was folded into the batch of the landing run %s; '
+                     'its outcome, from that landing\'s output %s:' % (
+                         '+'.join(branches), into, anchor or '(not found)'))
+        if anchor:
+            output = anchor
     lines += outcome_block(output)
     for b, t in zip(branches[:-1], tips[:-1]):
         try:
@@ -693,15 +710,24 @@ def restore(root, payload, branches, tips, expect_main=None, environ=None):
         output = data.get('output')
         replaced = [r for r in data.get('replaced') or [] if isinstance(r, dict)]
         digest = data.get('token_sha256')
+        flags = data.get('flags') if isinstance(data.get('flags'), dict) else None
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
         raise SubmitError('cannot read the submission %s: %s' % (payload, e))
     why = untrusted_why(root, runs, output, digest, token, branches, tips, expect_main, rid,
                         want_output)
     if why:
         raise Untrusted(why, log=want_output)
-    for rr in runs:
-        rr.start(log=output)
-    return {'runs': runs, 'output': output, 'replaced': replaced}
+    mine = (None, os.getpid(), os.getppid())
+    for rr in runs:     # judged again under each record's lock: a landing may fold it meanwhile
+        path, _ = rr.start(log=output, when=lambda now: (
+            isinstance(now, dict) and now.get('verdict') == result.RUNNING
+            and now.get('run_id') == rid and not now.get('folded_into')
+            and not isinstance(now.get('pid'), bool) and now.get('pid') in mine))
+        if path is None:
+            raise Untrusted('the land record of %s changed while this landing claimed it (another '
+                            'landing folded it into its batch, or it was finished)' % rr.branch,
+                            log=want_output)
+    return {'runs': runs, 'output': output, 'replaced': replaced, 'flags': flags}
 
 
 def untrusted_why(root, runs, output, digest, token, branches, tips, expect_main, rid,
@@ -731,6 +757,9 @@ def untrusted_why(root, runs, output, digest, token, branches, tips, expect_main
         if rec.get('verdict') != result.RUNNING or rec.get('run_id') != rid:
             return 'the land record of %s is not this submission\'s running one (run %s, %s)' % (
                 rr.branch, rec.get('run_id'), rec.get('verdict'))
+        if rec.get('folded_into'):
+            return ('the land record of %s is folded into the batch of the landing run %s, which '
+                    'lands it' % (rr.branch, rec.get('folded_into')))
         pid = rec.get('pid')
         if isinstance(pid, bool) or pid not in mine:
             return 'the land record of %s is claimed by pid %s, not by this landing' % (
@@ -754,8 +783,9 @@ def abandon(root, payload, why):
     """The detached landing could not read its payload: finish the running land records of the
     submission (every branch's record with the run_id the payload is named by, run_id_of) as
     `refused`, note it in the submission's output file, and return the REFUSED Outcome. Each
-    record is finished only while it is still that run's and running, judged under its lock
-    (result.write's `when`): one finished meanwhile is left as it is."""
+    record is finished only while it is still that run's and running and folded into no other
+    landing's batch, judged under its lock (result.write's `when`): one finished or folded
+    meanwhile is left as it is."""
     out = G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % why])
     lines = []
     rid = run_id_of(payload)
@@ -765,7 +795,7 @@ def abandon(root, payload, why):
             rr.run_id, rr.started_at = rid, rec.get('started_at')
             lines.append(rr.finish(out, log=rec.get('log'), when=lambda now: (
                 isinstance(now, dict) and now.get('verdict') == result.RUNNING
-                and now.get('run_id') == rid))[1])
+                and now.get('run_id') == rid and not now.get('folded_into')))[1])
         _note(payload[:-len(PAYLOAD_EXT)] + OUTPUT_EXT, out.lines[-1])
     return G.Outcome(G.REFUSED, lines + out.lines)
 
@@ -781,3 +811,257 @@ def redirect_output(path):
             pass
     sys.stdout = sys.stderr = stream
     return stream
+
+
+# ---------------------------------------------------------------- folding
+# docs/gate.md "Folding queued submissions": a submitted landing at its turn folds the submissions
+# queued behind it into its batch (kitlib.gate.land Lander.fold_queued). Every record a fold
+# takes, gives back or marks is judged again under that record's lock (result.write's `when`), and
+# the batch's first record decides: a landing takes a submission only while that record has no
+# turn_at (its own landing has not had its turn), and a landing marks turn_at only while it is not
+# folded, so exactly one of the two wins.
+
+MINE, FOLDED, WAIT = 'mine', 'folded', 'wait'
+FLAG_VALUES = {'--summary': 'summary', '--log-dir': 'log_dir'}
+FLAG_SKIP = ('-C', '--expect-tip', '--expect-main', '--wait')
+FLAG_ON = {'--full': 'full', '--fresh': 'fresh', '--keep-branch': 'keep_branch'}
+
+
+def flags_of(args):
+    """The landing flags of the detached landing's arguments `args` (child_args) that a batch
+    shares, so a fold takes only a submission run as this one is: {summary, log_dir, full,
+    fresh, keep_branch}. Branches, tips, the base and --wait are not among them."""
+    got = {'summary': None, 'log_dir': None, 'full': False, 'fresh': False, 'keep_branch': False}
+    args, i = [str(a) for a in args], 0
+    while i < len(args):
+        a = args[i]
+        if a in FLAG_VALUES and i + 1 < len(args):
+            got[FLAG_VALUES[a]] = args[i + 1]
+            i += 2
+            continue
+        if a in FLAG_SKIP:
+            i += 2
+            continue
+        if a in FLAG_ON:
+            got[FLAG_ON[a]] = True
+        i += 1
+    return got
+
+
+def same_flags(a, b):
+    """True when the flags `a` and `b` (flags_of) land the same way; a log folder by its path."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+
+    def norm(f):
+        d = f.get('log_dir')
+        return (f.get('summary'), os.path.normcase(os.path.abspath(d)) if d else None,
+                f.get('full') is True, f.get('fresh') is True, f.get('keep_branch') is True)
+    return norm(a) == norm(b)
+
+
+def output_of_run(root, run_id):
+    """The output file of the submission `run_id` (<stem>.<run_id>.land.log), or None."""
+    try:
+        folder = result.result_dir(root)
+        names = sorted(os.listdir(folder))
+    except (OSError, result.ResultError):
+        return None
+    end = '.%s%s' % (run_id, OUTPUT_EXT)
+    for name in names:
+        if name.endswith(end):
+            return os.path.join(folder, name)
+    return None
+
+
+def _is_pid(pid):
+    return isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+
+
+def turn(root, runs, output, given=True, alive=None):
+    """Whose turn the submitted landing of `runs` (restore's, this process's) has: `(MINE, rec)`
+    when it lands its own branches, `(FOLDED, rec)` when another landing folded them into its
+    batch and lands them (this landing then writes nothing more and ends), `(WAIT, rec)` while
+    the landing they were folded into still runs (it may yet give them back). `rec` is the batch's
+    first record as read. `given` True: the landing holds its turn (its machine-lock slot), and
+    MINE marks the first record turn_at (under its lock, while it is not folded), so no landing
+    folds it from then on; False (the booking failed): nothing is marked, and a fold whose
+    landing still runs is FOLDED. A record that is not this submission's is MINE (the landing's
+    own checks decide). Folded into a landing that died: the records are taken back (folded_into
+    cleared, this process's pid) and it is this landing's turn. Each run's fold_dropped is set
+    from the record: a landing that gave it back from its batch said so."""
+    first = runs[0]
+    for _ in range(100):        # each pass changes or ends; a record changing that often: MINE
+        rec, _ = result.read(root, first.branch, 'land', legacy=False)
+        if not isinstance(rec, dict) or rec.get('run_id') != first.run_id:
+            return MINE, rec
+        for rr in runs:
+            rr.fold_dropped = rec.get('fold_dropped') is True
+        into = rec.get('folded_into')
+        if into:
+            if rec.get('verdict') != result.RUNNING:
+                return FOLDED, rec
+            if result.running_state(rec, alive=alive) != 'dead':
+                return (WAIT if given else FOLDED), rec
+            _reclaim(root, runs, output, into)
+            continue
+        if not given or rec.get('verdict') != result.RUNNING or rec.get('turn_at'):
+            return MINE, rec
+        first.turn_at = gate_ok.utc()
+        path, _ = first.start(log=output, when=lambda now: (
+            isinstance(now, dict) and now.get('verdict') == result.RUNNING
+            and now.get('run_id') == first.run_id and not now.get('folded_into')))
+        if path is not None:
+            return MINE, rec
+        first.turn_at = None    # folded or finished meanwhile: look again
+    return MINE, rec
+
+
+def _reclaim(root, runs, output, into):
+    """The records of `runs`, folded into the landing run `into` whose process died, taken back by
+    this process: folded_into cleared, its own pid; the first last (turn reads it)."""
+    for rr in list(runs[1:]) + [runs[0]]:
+        rr.folded_into = None
+        rr.start(log=output, when=lambda now, rr=rr: (
+            isinstance(now, dict) and now.get('verdict') == result.RUNNING
+            and now.get('run_id') == rr.run_id and now.get('folded_into') == into))
+
+
+def foldable(root, own_run_id, alive=None):
+    """The submissions a landing at its turn may fold, oldest first: each a dict {run_id,
+    branches, tips, base, started_at, output, replaced, flags, orig: (pid, ctime)} from its
+    payload, whose every land record is still running for its run_id at the tip it names and
+    folded into no landing, and whose first record has no turn_at, no fold_dropped and the live
+    pid of its own landing (claimed: restore). Older kits' payloads (no flags) are left out.
+    Oldest by started_at, then (one second) by when the payload was written. Read only."""
+    try:
+        folder = result.result_dir(root)
+        names = sorted(os.listdir(folder))
+    except (OSError, result.ResultError):
+        return []
+    units = []
+    for name in names:
+        if not name.endswith(PAYLOAD_EXT):
+            continue
+        payload = os.path.join(folder, name)
+        rid = run_id_of(payload)
+        if not rid or rid == own_run_id:
+            continue
+        unit = _unit(root, payload, rid, alive)
+        if unit is not None:
+            units.append(unit)
+    return sorted(units, key=lambda u: (u['started_at'] or '', u['queued_ns'], u['run_id']))
+
+
+def _unit(root, payload, rid, alive):
+    try:
+        with open(payload, encoding='utf-8') as f:
+            data = json.loads(f.read())
+        if data.get('schema') != SCHEMA or not isinstance(data.get('flags'), dict):
+            return None
+        items = [(i['branch'], i['tip'], i.get('base'), i['run_id'], i['started_at'])
+                 for i in data['runs']]
+        output = data.get('output')
+        replaced = [r for r in data.get('replaced') or [] if isinstance(r, dict)]
+        queued_ns = os.stat(payload).st_mtime_ns    # started_at is whole seconds: the tie
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    if not items or any(i[3] != rid for i in items):
+        return None
+    branches = [i[0] for i in items]
+    try:
+        want, want_output = files(root, branches, rid)
+    except result.ResultError:
+        return None
+    if not _same_path(payload, want) or not isinstance(output, str) \
+            or not _same_path(output, want_output):
+        return None
+    orig = None
+    for n, (b, t, _base, _rid, _at) in enumerate(items):
+        rec, _ = result.read(root, b, 'land', legacy=False)
+        if (not isinstance(rec, dict) or rec.get('verdict') != result.RUNNING
+                or rec.get('run_id') != rid or rec.get('tip') != t or rec.get('folded_into')):
+            return None
+        if n == 0:
+            if rec.get('turn_at') or rec.get('fold_dropped') is True or not _is_pid(rec.get('pid')):
+                return None
+            if result.running_state(rec, alive=alive) != 'live':
+                return None
+            ctime = rec.get('ctime')
+            orig = (rec['pid'], ctime if isinstance(ctime, int) else None)
+    return {'run_id': rid, 'branches': branches, 'tips': [i[1] for i in items],
+            'base': items[0][2], 'started_at': items[0][4], 'output': output,
+            'replaced': replaced, 'flags': data['flags'], 'orig': orig,
+            'queued_ns': queued_ns, 'items': items}
+
+
+def _runs_of(root, unit, base=None):
+    runs = []
+    for b, t, own_base, rid, at in unit['items']:
+        rr = result.Run(root, 'land', b, t, base=base or own_base)
+        rr.run_id, rr.started_at = rid, at
+        runs.append(rr)
+    return runs
+
+
+def take(root, unit, anchor_run_id, base, log):
+    """Fold the submission `unit` (foldable's) into the landing run `anchor_run_id` (this
+    process): each of its records written again with folded_into, this process's pid, the
+    landing's base and its output `log`, the first one first, only while it is as foldable read
+    it (running for its run_id, folded into none, no turn_at, no fold_dropped, its own landing's
+    pid) and each other one while it is running for its run_id and folded into none. Its
+    result.Run per branch, or None with nothing left taken (a record taken before one that
+    changed is given back)."""
+    runs = _runs_of(root, unit, base)
+    rid, (pid, _ctime) = unit['run_id'], unit['orig']
+    taken = []
+    for n, rr in enumerate(runs):
+        rr.folded_into = anchor_run_id
+
+        def ok(now, n=n, rr=rr):
+            if (not isinstance(now, dict) or now.get('verdict') != result.RUNNING
+                    or now.get('run_id') != rr.run_id or now.get('folded_into')):
+                return False
+            return n > 0 or (not now.get('turn_at') and now.get('fold_dropped') is not True
+                             and now.get('pid') == pid)
+        path, _ = rr.start(log=log, when=ok)
+        if path is None:
+            if taken:
+                give_back(root, unit, anchor_run_id, False, 'a record of it changed while it '
+                          'was folded', runs=taken)
+            return None
+        taken.append(rr)
+    return runs
+
+
+def give_back(root, unit, anchor_run_id, dropped, why, runs=None, alive=None):
+    """Give the submission `unit` back from the batch of the landing run `anchor_run_id`: while
+    its own landing process runs, each record written again as its own (its pid, its base and
+    output, folded_into cleared; `dropped` True sets fold_dropped, so no landing folds it again
+    and it lands alone), the first last, so a landing reading the first (turn) finds the rest
+    given back; once that process ended, each finished REFUSED, saying `why`. Only records still
+    folded into `anchor_run_id` and running (under each one's lock). `runs`: only those
+    (take's, part way). The lines to say."""
+    pid, ctime = unit['orig']
+    try:
+        up = (alive or process.alive)(pid, ctime)
+    except Exception:       # noqa: BLE001 - not surely gone: give it back
+        up = True
+    names = set(rr.branch for rr in runs) if runs is not None else None
+    back = [rr for rr in _runs_of(root, unit) if names is None or rr.branch in names]
+    lines = []
+    for rr in list(back[1:]) + back[:1]:
+        def still(now, rr=rr):
+            return (isinstance(now, dict) and now.get('verdict') == result.RUNNING
+                    and now.get('run_id') == rr.run_id and now.get('folded_into') == anchor_run_id)
+        if up:
+            rr.pid, rr.ctime, rr.fold_dropped = pid, ctime, bool(dropped)
+            lines.append(rr.start(log=unit['output'], when=still)[1])
+        else:
+            line = ('REFUSED: %s was folded into the batch of the landing run %s and given back '
+                    '(%s), and its own landing process (pid %s) has ended: submit it again; '
+                    'nothing was changed' % ('+'.join(unit['branches']), anchor_run_id, why, pid))
+            rr.pid, rr.ctime = pid, ctime
+            lines.append(rr.finish(G.Outcome(G.REFUSED, [line]), log=unit['output'],
+                                   when=still)[1])
+    return lines

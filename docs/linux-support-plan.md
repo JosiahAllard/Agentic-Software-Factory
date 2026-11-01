@@ -5,8 +5,9 @@ mostly built. Slices 1 to 14 have code in the tree (slices 3, 5, 6, 7, 9 and 12 
 note in section 8; 10, 11 and 14 are in kitlib/platform/linux/schedule.py, kitlib/launcher/linuxwin.py,
 kitlib/machinesetup/linuxbox.py and installer/machine-setup.sh). Open: slice 15 (peer messaging and
 the bridge, after parity), slice 17 (CI legs; there is no `.github`), the VM proofs that sections 8
-and 8.1 name as open, and the rest of slice 16 (AGENTS.md's "Windows only" line is owner-only). It extends, and for Linux supersedes, the
-section "6. Platform seam (later refactor: Linux and macOS)" of docs/multi-host-plan.md: that
+and 8.1 name as open, and the rest of slice 16 (AGENTS.md's "Windows only" line is owner-only).
+
+It extends, and for Linux supersedes, the section "6. Platform seam (later refactor: Linux and macOS)" of docs/multi-host-plan.md: that
 section set the seam's shape and four questions; this plan verifies the Windows-only surface,
 designs each backend, orders the work into branches and asks what only the owner can decide.
 
@@ -149,7 +150,7 @@ scheduled-task writers, with the bridge apart.
 
 ### 1.4 Shell text
 
-`git grep -il powershell -- content` matches 4 of the 13 roles (coordinator, docs-writer, lander,
+`git grep -il powershell -- content` matches 4 of the 14 roles (coordinator, docs-writer, lander,
 test-runner) and 1 of the 21 skills (shell-and-worktree-traps, 28 lines, all Windows-shell
 traps). In three of those roles the only match is the `powershell` entry of the capabilities
 list (a host tool, mapped by the renderer); lander also has one prose line. Windows-shell text
@@ -854,9 +855,6 @@ the report says which members kept beating after the call ended.
 
 ## 9. Risks and unknowns
 
-- Unknown: whether `from ctypes import wintypes` imports on Linux on the kit's Python (it raised
-  on some older versions); slice 2 checks, and makes it lazy or guarded either way in all nine
-  modules of section 1.1 (rule 3).
 - Unknown: Claude Code's Linux messaging address, its hook interpreter lookup, its managed
   settings path and its session file fields; slice 15 and 12 probe first.
 - Settled (the tree-kill probe, on the reference VM with Claude Code 2.1.312): Claude Code on

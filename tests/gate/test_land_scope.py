@@ -18,7 +18,7 @@ from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
 TRAILERS = 'Co-Authored-By: Test Model <noreply@anthropic.com>'
 OUTSIDE = 'outside the scopes of the records it holds'
 NO_RECORD = 'holds no pulled record; its paths were not checked against a scope'
-AREA = 'claude-pm-kit'      # a store shared by repositories names the kit's records so
+AREA = 'tool-kit'           # an area that names no folder of the repository under test
 
 
 class ScopeCase(StoreLandCase):

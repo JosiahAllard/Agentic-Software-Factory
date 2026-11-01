@@ -29,7 +29,7 @@
   - `cores` [{threads, smt, efficiency}].
   - `ccds` [{index, threads, cpu_slots, preferred, game_pick}], one per L3 domain. `preferred` marks the domain holding the best efficiency or scheduling class. `game_pick` marks the one game mode takes.
   - `preferred_threads`.
-  - `memory_mb` {total, free}.
+  - `memory_mb` {total, free, commit, commit_limit}: commit is the commit charge, commit_limit the commit limit, both read now and null where the platform gives none (see Memory admission).
   - `gpus` [{index, name, vendor, vendor_id, vram_mb, shared_mb, source, default_share}], any vendor, from DXGI or CIM on Windows, from sysfs on Linux.
   - `source` and `problems`.
 - **`layout`**: the layout in force.
@@ -64,6 +64,7 @@
   - The record's id, state, repo, slug, kind, note, pid, ctime, since, held_since, expect_s, expect_from, hold, parent, need, has, shares, pinned, pin, pin_note, threads, child, blocked_by, detached, session, releasing, log and moved.
   - `resource` and `priority`: the run's exclusive resource and its priority (`"land"`), or null; see Run resources and landing priority.
   - `within`: the thread list the run is confined to (`8-15`), or null; see Runs confined to a thread set.
+  - `need_mem_mb` and `mem_from`: the run's memory need in MB and where it came from (`flag`, `history`, `kind` or `default`); `mem_wait` {need_mb, headroom_mb} while the run waits on memory alone, else null. See Memory admission.
   - `stale`: why the lock takes the run as stale (a line), or null; see Stale runs. The snapshot only reads: it never writes a stop request. `status` prints a `stale:` line for each.
   - `pin` is "pinned", null (no pin) or "overridden": an outer job's affinity limit won, so `pinned` is false and `threads` is what the command really runs on (`kitlib.proc.job.Job.check_pin`).
   - `cores`, `gpus` and `tree` (the pid tree).
@@ -75,7 +76,7 @@
   - `moved` is {by, name, at, seq} when the owner moved the entry to the top (`move_to_top`), else null.
   - `resource` and `priority` are the entry's (`kitlib.lock.queue.entry_resource`, `entry_priority`), else null.
   - `within_slots` is the sorted cpu slots the entry may take (`kitlib.lock.queue.entry_within`), else null.
-  - `why` is the reason the entry waits. It names first any live run holding the resource the entry names (`resource R is held by ...`).
+  - `why` is the reason the entry waits. It names first a memory wait (`memory: need X MB, headroom Y MB`; see Memory admission), then any live run holding the resource the entry names (`resource R is held by ...`).
   - `entries` is null while the queue is unreadable. Then no run takes slots and a new run exits 10 (fail closed).
 - **`holds`**: [`kitlib.lock.holds.entry`], and `holds_error`.
   - The record (without ancestors, with its `job`), `start_local`, `end_local`, `covers`, `slots_fixed` and `live`.
@@ -186,6 +187,22 @@ A held run can hand back cpu slots its command no longer needs, while the comman
 - An entry written before these fields existed has neither key and plans as an ordinary run with no resource; a `priority` value on disk that is not in `PRIORITIES` plans as ordinary too.
 - The history line keeps `priority`, and `gate` (true for a gate's run, from `book(..., gate=True)`) (`kitlib/lock/store.py` `Store.HISTORY_KEYS`). The branch gate budget reads both, to count a branch's gate runs and leave its landings out (`kitlib/gate/budget.py`; `docs/gate.md` "The branch gate budget"). A line written before it kept them has neither. It also keeps `branch` (the branch a branch gate books for, from `book(..., branch=...)`; null when none was given), which the budget counts a branch's runs by; a line written before it kept `branch` has no such key. Tests: `tests/gate/test_gate_tree.py` (`test_the_history_line_keeps_gate_and_priority`), `tests/gate/test_gate_budget.py` (`test_the_gate_s_own_line_names_its_branch`).
 - Tests: `tests/lock/test_queue.py` (LandPriority, ResourceExclusion) and `tests/lock/test_run.py` (Resources).
+
+## Memory admission
+
+A run whose slots are free starts only when the machine's commit charge plus its memory need fits under the commit limit less a reserve: `commit + need <= limit - mem_reserve_mb` (`kitlib.lock.queue.mem_fits`, called from `kitlib.lock.run.acquire` and, for a background run's child, `kitlib.lock.background.run_background`).
+
+- The need (`kitlib.lock.run.mem_need`), kept on the record as `need_mem_mb` and `mem_from`: `machine_lock.py run --mem MB` (`book(..., mem_mb=)`, `flag`); else the p90 peak commit of the run's repo, kind and mode once that has `mem_min_runs` (5) finished runs (`Store.history_mem`, `history`); else its kind's `mem_mb` floor in kinds.json (`kind`); else `mem_default_mb` (`default`). `status` prints it on the run's line, as `needs N MB of memory (...)`.
+- Settings (`kitlib.lock.store.Settings`): `mem_reserve_mb` 8192, the commit a start always leaves free; `mem_default_mb` 4096, the need of a run with no flag, no history and no floor. The 4096 is above the median (3072 MB) of the measured kind floors other than graph-build, and half the reserve.
+- Read live: the commit and the limit are read at each admission (`kitlib.lock.store.memory_now`), never kept. Windows moves the commit limit when it grows or shrinks a page file. Test: `tests/lock/test_mem_admit.py` `test_the_limit_is_read_at_each_admission`.
+- Short of memory, the run keeps its queue entry, ticket and place, takes nothing, and looks again on the next poll. Its entry carries `mem_wait` (its need in MB). The queue row's `why`, its wait and `NOT ACQUIRED` lines, and the run row's `mem_wait` say `memory: need X MB, headroom Y MB`. A background run waiting to start its child gets a `background:` line in `status`. Nothing is paused or killed for a memory wait.
+- Landings get no exemption: a `priority` `"land"` run waits on memory like any run, and keeps its place (`test_a_landing_waits_for_memory_and_keeps_its_place`).
+- Exempt (`kitlib.lock.queue.mem_exempt`): a nested run (its entry has a `parent`), and any run when no other entry holds slots (a held run, or a background run whose child has its slots), so a memory wait never lasts with nothing running that could end it.
+- Not measured: where the platform gives no commit figures (Linux), a run is admitted on its slots alone.
+- `queue.plan` stays time-based: it reads no memory, so `est_start` for a run waiting on memory can say now.
+- Known limit: ramp-up race. Two runs admitted one after the other both see the commit as it was before the first one has grown, so together they can pass the reserve. Only the reserve absorbs this.
+- Known limit: starvation. Since the plan has no memory forecast, smaller runs behind a large run waiting on memory may start in its place while their need fits. The large run can wait until nothing else holds slots, when it is exempt.
+- Tests: `tests/lock/test_mem_admit.py`, `tests/lock/test_history_mem.py`.
 
 ## Runs confined to a thread set
 

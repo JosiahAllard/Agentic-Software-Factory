@@ -32,7 +32,10 @@ merged-tree gate, over base..merge) the selection is the same, and when a tools 
 
 The two `mentions` modes (the repositories' two selectors):
   "path"   (default) file-name edges are str constants ending in `Y.py`, followed transitively
-           with the imports; an unknown tools path selects ALL.
+           with the imports, except a text read: a module naming Y only as the path of a
+           text-mode `open()` (no other constant spells it, and the module calls no exec, eval,
+           compile or runpy) reads Y as text, so the edge is ONE hop and Y's own edges are not
+           followed through it. An unknown tools path selects ALL.
   "tokens" a `[\\w.-]+` token in a non-docstring str literal of a .py, or in the non-comment text
            of a script, names a file by its base name or by a tools subfolder holding it. Imports
            are followed transitively, a mention through a non-test source ONE hop (runner scripts
@@ -87,6 +90,8 @@ PYTESTS_KEYS = ('shards', 'serial', 'split_classes', 'jobs_max', 'jobs_divisor',
                 'unit_timeout')
 DEFAULTS = {k: v for k, v in schema.defaults(SECTION).items() if k not in PYTESTS_KEYS}
 _DYNAMIC = ('import_module', '__import__')
+_RUNS_TEXT = ('exec', 'eval', 'compile')         # the builtins (a Name, or builtins.<name>)
+_RUNS_FILE = ('run_path', 'run_module')            # runpy's
 _IMPORT_IN_TEXT = re.compile(r'\b(?:import|from)\s+([A-Za-z_]\w*)')
 TOKEN = re.compile(r'[\w.-]+')
 SCRIPT_COMMENT = re.compile(r'<#.*?#>|^[ \t]*(?:#|rem\b|::)[^\n]*', re.S | re.I | re.M)
@@ -195,13 +200,16 @@ class Graph(object):
     """`deps`: module -> set of modules it references directly (every rule; what "path" mode
     walks). `tests`: the test modules. `imports`: module -> the subset of `deps` reached by an
     import, a literal import_module/__import__, a `python -c` import or a `dynamic_imports` entry -
-    not by a file name. Only these count as a test testing a tool (`tested`). In "tokens" mode
-    `sources` holds, per repo-relative source path, (tokens it names, top-level names it imports)."""
+    not by a file name. Only these count as a test testing a tool (`tested`). `reads`: module ->
+    the subset of `deps` it names only as a text-mode open() path (`text_reads`): `closure` takes
+    such a module but not what it reaches. In "tokens" mode `sources` holds, per repo-relative
+    source path, (tokens it names, top-level names it imports)."""
 
-    def __init__(self, deps, tests, imports=None, cfg=None, tools_rel='tools', sources=None):
+    def __init__(self, deps, tests, imports=None, cfg=None, tools_rel='tools', sources=None, reads=None):
         self.deps = deps
         self.tests = frozenset(tests)
         self.imports = deps if imports is None else imports
+        self.reads = reads or {}
         self.cfg = cfg
         self.tools_rel = tools_rel
         self.sources = sources or {}
@@ -228,13 +236,20 @@ class Graph(object):
         return None
 
     def closure(self, name):
-        """Every module `name` reaches, transitively, itself excluded."""
-        seen, todo = set(), list(self.deps.get(name, ()))
+        """Every module `name` reaches, transitively, itself excluded. A module reached only by a
+        text read (`reads`) is in it, but what that module reaches is not: reading its text runs
+        none of its imports."""
+        seen, walked = set(), set()
+        todo = [(name, m) for m in self.deps.get(name, ())]
         while todo:
-            m = todo.pop()
-            if m not in seen and m != name:
-                seen.add(m)
-                todo.extend(self.deps.get(m, ()))
+            src, m = todo.pop()
+            if m == name:
+                continue
+            seen.add(m)
+            if m in walked or m in self.reads.get(src, ()):
+                continue
+            walked.add(m)
+            todo.extend((m, n) for n in self.deps.get(m, ()))
         return seen
 
     def dependents(self, name):
@@ -368,6 +383,58 @@ def module_edges(tree, names, imports_only=False):
     return out if names is None else {m for m in out if m in names}
 
 
+def _call_name(node):
+    f = node.func
+    return f.attr if isinstance(f, ast.Attribute) else getattr(f, 'id', None)
+
+
+def _runs_code(node):
+    """Whether `node` is a call that runs code it is given: exec, eval or compile (not
+    re.compile), or runpy's run_path or run_module."""
+    if not isinstance(node, ast.Call):
+        return False
+    f = node.func
+    if isinstance(f, ast.Name):
+        return f.id in _RUNS_TEXT
+    if isinstance(f, ast.Attribute):
+        return f.attr in _RUNS_FILE or (f.attr in _RUNS_TEXT and isinstance(f.value, ast.Name)
+                                        and f.value.id == 'builtins')
+    return False
+
+
+def _py_file_base(s):
+    """The module a str constant names as a file (`Y` for `Y.py` or `.../Y.py`), else None."""
+    base = re.split(r'[\\/]', s)[-1]
+    return base[:-3] if base.endswith('.py') else None
+
+
+def text_reads(tree, names):
+    """The modules in `names` that an ast names by file name ONLY as the path of a text-mode
+    `open()` (the constant inside its first argument; no mode, or a str mode without 'b'): the
+    module reads that file's text, which never runs the named module's imports. A module that
+    calls exec, eval, compile or runpy anywhere has none (it may run what it reads), and a name
+    any other constant also spells (an argv, a copy list, data) is not one."""
+    if any(_runs_code(n) for n in ast.walk(tree)):
+        return set()
+    inside = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and _call_name(node) == 'open' and node.args):
+            continue
+        mode = node.args[1] if len(node.args) > 1 else next(
+            (k.value for k in node.keywords if k.arg == 'mode'), None)
+        if mode is not None and not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)
+                                     and 'b' not in mode.value):
+            continue
+        inside.update(id(c) for c in ast.walk(node.args[0]) if isinstance(c, ast.Constant))
+    read, other = set(), set()
+    for c in ast.walk(tree):
+        if isinstance(c, ast.Constant) and isinstance(c.value, str):
+            m = _py_file_base(c.value)
+            if m in names:
+                (read if id(c) in inside else other).add(m)
+    return read - other
+
+
 def py_literal_tokens(tree):
     """Tokens inside the string literals a .py file's code uses - not docstrings, which name
     files for the reader, not for the run."""
@@ -468,25 +535,27 @@ def scan(tools_dir, cfg, root):
     names = {f[:-3] for f in os.listdir(tools_dir)
              if f.endswith('.py') and os.path.isfile(os.path.join(tools_dir, f))}
     declared_all = cfg['dynamic_imports']
-    deps, imports, tests, trees, texts = {}, {}, set(), {}, {}
+    deps, imports, reads, tests, trees, texts = {}, {}, {}, set(), {}, {}
     for name in names:
         text = _read(os.path.join(tools_dir, name + '.py')) or ''
         tree = _parse(text)
         texts[name], trees[name] = text, tree
         if tree is None:
-            deps[name], imports[name] = set(), set()
+            deps[name], imports[name], reads[name] = set(), set(), set()
             if name.startswith('test'):
                 tests.add(name)
             continue
         declared = set(declared_all.get(name, ((), ''))[0]) & names
         deps[name] = (module_edges(tree, names) | declared) - {name}
         imports[name] = (module_edges(tree, names, imports_only=True) | declared) - {name}
+        reads[name] = text_reads(tree, names) - imports[name] - {name}
         if _is_test_module(name, tree):
             tests.add(name)
     for name in deps:
         if name not in tests:
             deps[name] -= tests
             imports[name] -= tests
+        reads[name] &= deps[name]
     sources = None
     if cfg['mentions'] == 'tokens':
         sources = {}
@@ -504,7 +573,7 @@ def scan(tools_dir, cfg, root):
             tree = _parse(text) if rel.endswith('.py') else None
             raw = module_edges(tree, None, imports_only=True) if tree is not None else set()
             sources[rel] = (source_tokens(rel, text, tree), raw)
-    return Graph(deps, tests, imports, cfg=cfg, tools_rel=tools_rel, sources=sources)
+    return Graph(deps, tests, imports, cfg=cfg, tools_rel=tools_rel, sources=sources, reads=reads)
 
 
 # ---------------------------------------------------------------- selection

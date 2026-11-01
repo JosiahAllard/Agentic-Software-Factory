@@ -20,6 +20,8 @@ Three tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_dep
 - `--graph` prints every tools module and its direct edges.
 - `--check` audits the "tool_tests" tables and exits 1 on a problem.
 
+In "path" mode a file name in a str constant (`Y.py` or `.../Y.py`) is an edge, followed on through Y's own edges like an import. One exception: a module that names Y only as the path of a text-mode `open()` reads Y's text and does not run it, so the edge stops at Y. It is selected when Y changes, but not when something Y imports changes. The exception does not apply when any other constant in the module spells the name (an argv, a copy list) or when the module calls exec, eval, compile or runpy (kitlib/tooldeps/deps.py `text_reads`). The test audit's allowed reads follow the same closure.
+
 The tables are read from "tool_tests": `extra`, `pinned`, `patterns`, `whole_tree`, `untested`, `dynamic_imports`, `always_run`, `selector_files`, `ignore`, and the rest of that section. A `{"piece": ...}` or `{"solution": true}` pin needs a pieces table that the entry point does not pass, so it is refused when it is read.
 
 ## kit_tests

@@ -69,6 +69,43 @@ class SelfReviewWhy(unittest.TestCase):
                     self.assertIsNone(V.self_review_why(given('kit/a', tip, risk=risk, **over)))
 
 
+class TwoReviewers(unittest.TestCase):
+    """A review plus a separate architecture check (skill branch-review, step 3): one verdict names
+    both ids and the one model they both ran on; reviewers on two models, or a SEND BACK from
+    either, refuse it, and the refusal names only the reviewer to redo."""
+    TIERS = ({'opus'}, {'haiku', 'sonnet'}, None)
+
+    def setUp(self):
+        p = mock.patch('kitlib.gate.land.tier_models', return_value=self.TIERS)
+        p.start()
+        self.addCleanup(p.stop)
+        self.entry = given('kit/a', 'a' * 40, risk='High', reviewer='pm-kit:analyst',
+                           reviewer_id='agent-r1,agent-arch')
+
+    def mismatch(self, models):
+        return V.model_mismatch_why(self.entry, V.seen_models(self.entry, models.get))
+
+    def test_both_on_the_verdicts_model_are_queued(self):
+        self.assertIsNone(self.mismatch({'agent-r1': ['claude-opus-5-5'],
+                                         'agent-arch': ['claude-opus-5-5']}))
+        self.assertIsNone(V.tier_why(self.entry, True, lambda: self.TIERS))
+        said = {'agent-r1': (True, 'LAND'), 'agent-arch': (True, 'LAND WITH FOLLOW-UP')}
+        self.assertIsNone(V.reviewer_verdict_why(self.entry, V.seen_verdicts(self.entry, said.get)))
+
+    def test_the_architecture_reviewer_on_another_model_is_named_alone(self):
+        why = self.mismatch({'agent-r1': ['claude-opus-5-5'], 'agent-arch': ['claude-sonnet-5-5']})
+        self.assertIn('the reviewer agent-arch ran on claude-sonnet-5-5', why or '')
+        self.assertNotIn('agent-r1 ran', why)
+        self.assertIn('dispatch a fresh analyst with model opus in place of the reviewer agent-arch '
+                      '(one --reviewer-model covers every --reviewer-id)', why)
+
+    def test_a_send_back_from_the_architecture_reviewer_refuses_it(self):
+        said = {'agent-r1': (True, 'LAND'), 'agent-arch': (True, 'SEND BACK')}
+        why = V.reviewer_verdict_why(self.entry, V.seen_verdicts(self.entry, said.get))
+        self.assertIn('the reviewer agent-arch said SEND BACK', why or '')
+        self.assertNotIn('agent-r1 said', why)
+
+
 class FakeClock(object):
     """time.monotonic and time.sleep for the `with` of patched(): a sleep is recorded and moves
     the clock on at once, so a retry loop's tries and pauses are counted exactly."""

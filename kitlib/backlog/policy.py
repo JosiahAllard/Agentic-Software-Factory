@@ -267,12 +267,16 @@ def by_design_refusal(session, environ=None, tree=None):
     if (session or '').strip().lower() not in BY_DESIGN:
         return
     mark = sessionmark.mark(environ)
-    why = 'it is marked %r' % mark if mark is not None else unowned(tree)
-    if why:
-        raise Refusal('`--session %s` is the name of a kit writer whose store writes add no audit '
-                      'line by design (%s); only the owner\'s own unmarked shell may use it, and '
-                      'this session is not (%s): give your own session name'
-                      % (session, ', '.join(BY_DESIGN), why))
+    if mark is not None:
+        who = 'a marked session may not use it'
+    else:
+        why = unowned(tree)
+        if not why:
+            return
+        who = 'only the owner\'s own unmarked shell may use it, and this one is not (%s)' % why
+    raise Refusal('`--session %s` is the name of a kit writer whose store writes add no audit '
+                  'line by design (%s); %s: give your own session name'
+                  % (session, ', '.join(BY_DESIGN), who))
 
 
 def given_of_set(changes, unset=(), body=None):

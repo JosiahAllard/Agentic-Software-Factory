@@ -50,6 +50,7 @@ A coordinator reviews a branch itself when it is small and low risk: read every 
 docs and additive content. "Small" is the `.kit.json` key `landing.self_review_max_lines`
 (docs/kit-json.md): `tools/verdict.py add` refuses a coordinator's own review of a larger diff, so a
 larger diff needs an analyst review. Larger, Medium or High: a fresh reviewer.
+The kit's end-goal design is ARCHITECTURE.md; an architecture review reads it.
 Continue an agent 2-3 rounds per artefact, then reseed from a short written summary. Reseed a
 strong- or deep-tier coder whose context is above about 150k tokens.
 

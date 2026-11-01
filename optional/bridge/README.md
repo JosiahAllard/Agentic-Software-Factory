@@ -108,12 +108,12 @@ nominates no channel, and the other halves keep working.
   an adapter. `refused` holds `["codex", "codex"]`, the owner's decision; the Codex half's own
   checks below stay as a backstop at the write. The owner window applies the same rule
   (`OwnerControls`, given `host_pairs` by the controller): it lists no owner route in a refused
-  direction, and Connect chats refuses one (`host-pair-refused`, nothing written; the window says
-  the bridge does not connect these two kinds of chat). Disconnect chats still works on such a pair.
+  direction, and Connect refuses one (`host-pair-refused`, nothing written; the window says
+  the bridge does not connect these two kinds of chat). Stop still works on such a pair.
 - **Writer leases** (`core/owner.py` `WriterLeases`, `hosts/codex/runtime.py`). A Codex chat is
   written only by a Codex desktop chat in an active turn, which is the native executor. A sender
   of another host has none, so the owner may lend one: in the window, select a Codex desktop chat
-  (the writer) and then the Codex recipient, and click the lease button. The lease:
+  (the writer) and then the Codex recipient, and click "Grant lease". The lease:
   - names one writer for one recipient, and a new grant for that recipient replaces the old one
   - has no expiry: it ends when the owner clicks Stop, the PM revokes it (`OwnerControls.revoke`,
     a private port), the service restarts, or either chat's session is observed with a different
@@ -123,7 +123,7 @@ nominates no channel, and the other halves keep working.
     until Stop, a revoke or a restart. The window lists every lease with its grant time, marks one
     that cannot deliver now (a chat not listed, or failing its live check at the last full
     refresh: a failed check keeps a chat listed, and the 5 s re-read keeps the mark), and its
-    "Stop selected" stops it by reference
+    "Stop selected connection" stops it by reference
   - is logged: every grant, revoke and replacement appends one JSON line (`at`, `event`, `by`,
     `writer`, `recipient`; chat references only) to `writer-leases.log` beside `pairings.sqlite`.
     A grant that cannot be logged is refused, and a writer it would have replaced keeps its lease
@@ -208,7 +208,7 @@ nominates no channel, and the other halves keep working.
     the connect is refused (`sender-not-kit-launched`, `recipient-not-kit-launched`). The host-pair
     rule still applies, so Codex to Codex stays refused (`host-pair-refused`).
   - The owner's own row for a direction always wins. A direction the owner disconnected, by
-    Disconnect chats or by Stop on a PM route, is refused to the PM (`owner-disconnected`) until
+    Stop or by "Stop selected connection" on a PM route, is refused to the PM (`owner-disconnected`) until
     the owner connects it. A direction the owner connected is reported as the owner's and the PM
     makes nothing there.
   - A PM route is held for the exact chat bindings, in the service's memory only: it writes no row
@@ -228,7 +228,7 @@ nominates no channel, and the other halves keep working.
   - The owner window lists every PM route the owner's row does not decide ("A → B, connected by
     the PM since …", with "(cannot deliver now)" when a chat is not listed or no longer
     kit-launched) and re-reads the list every 5 s without discovery or live checks, keeping each
-    row's mark from the last full refresh. "Stop selected" stops one
+    row's mark from the last full refresh. "Stop selected connection" stops one
     direction and writes the owner's disconnect for it, even when a chat is not listed. The
     disconnect is written first; if it cannot be (for example `route-capacity`), the route is still
     stopped and the window says the PM could make it again, with the reason. The window's PM rows
@@ -249,6 +249,49 @@ nominates no channel, and the other halves keep working.
   - `bridge_events`
   - `bridge_poll_native` (refreshes a receipt and never resends)
   - `bridge_pm_chats`, `bridge_pm_connect`, `bridge_pm_disconnect` (PM only, above)
+
+## Connections window (`ui/window.py`)
+
+The window displays; only `OwnerControls` acts, with the same checks as before (who may connect,
+grant a lease or deliver is unchanged). Tests: tests/bridge/test_window_ux.py.
+- **Chat names.** Each chat is listed by the name its host already shows: a Claude terminal chat by
+  its session record's `name` field (`~/.claude/sessions/<pid>.json`), a Claude desktop chat by
+  its task title, a Codex chat by the last `thread_name` for its thread in the
+  Codex profile's `session_index.jsonl` (`hosts/codex/context.py` `thread_name`; read at each
+  bridge call, at most 4 MiB, display only). A chat with no name is "unnamed chat" and a short
+  label: the host half's `short` detail (an untitled Claude desktop task gives 8 characters of its
+  id after `local_`), else the first 8 characters of its session id. A name grants nothing and is
+  never part of a binding, so a rename changes no route.
+- **Buttons.** Select two chats, then Connect (both directions, or first to second, as the list
+  beside it says) or Stop. "Grant lease" and "Stop lease" act on a Codex writer and its recipient. Refresh runs
+  discovery and live-checks each chat once (`OwnerControls._live`, shared by the chat list and
+  the rows); the list re-reads every 5 s without either.
+- **State.** A full refresh marks a listed chat "not answering" when its live check fails (between
+  turns or closed); it stays listed, cannot deliver now, and the timed re-read keeps the mark.
+- **Current connections and leases.** One row per direction: "A → B, connected by you" (with
+  "delivered through W's lease" when a lease carries it; such a row can deliver only while W does
+  too, so it is marked when W does not answer), "Lease: W delivers to B for other apps,
+  granted by you since T", and "A → B, connected by the PM since T". A row whose chat cannot deliver
+  now says so; a chat no longer listed keeps its last name and says "(not listed: it needs a bridge
+  call, then Refresh)". "Stop selected connection" stops one row.
+- **What to do.** The line under the chat list says most chats are listed only after a bridge call
+  since the bridge started (Codex chats and Claude terminal chats; Claude desktop chats are listed
+  on Refresh), and that a chat running without calling the bridge cannot be seen: have it make a
+  bridge call (any bridge tool), then Refresh. The window's own text names no host (tests/bridge/
+  test_port.py `Layout`). After a restart the window counts the remembered connections
+  waiting for their chats (each direction once) and says to have each chat make a bridge call,
+  then Refresh; the connections come back by themselves, and leases must be granted again. A
+  Connect or Stop on a chat that left the list says the chat is no longer listed and how to bring
+  it back; one on a chat that does not answer says it is between turns or closed. Only a refusal
+  raised before anything is written says "Nothing was changed" (ui/window.py `BEFORE_WRITE`).
+  A Stop whose PM-route cleanup fails after the owner's row is written says the connection is
+  stopped but a PM connection may not be (`owner-change-partly-done`); any other failure says what
+  changed is not known and to click Refresh.
+- **Limits.** Stop on your own connection needs both chats listed and answering (the owner's
+  change is checked like a Connect); a PM row's Stop does not. The waiting count cannot tell the
+  host of a chat that is not listed, so it may count a remembered Codex-to-Codex row written
+  before the host-pair rule. A Codex index past 4 MiB gives no name, and two chats may share a
+  name (the short label is not shown then). No Codex-to-Codex feature is built (owner ruling).
 
 ## Configuration
 

@@ -155,6 +155,30 @@ class ClaudeRuntimeTests(unittest.TestCase):
         self.assertEqual(self.controller.pairs.owner_routes(),())
         self.assertFalse(self.controller.core.adapters)
 
+    def test_an_untitled_desktop_task_gives_a_short_label_without_its_local_prefix(self):
+        # The id format is Claude's, so this half supplies the label and core stays host-neutral.
+        self.data.pop('title')
+        self.write()
+        binding=self.sources.refresh()[0]
+        self.assertEqual(self.controller._describe(binding),{'short':self.task[6:14]})
+        self.assertEqual(self.controller.pairs.owner_routes(),())
+
+    def test_a_terminal_chat_is_listed_by_its_session_name_which_grants_nothing(self):
+        # The window showed bare ids for terminal chats: the session record's name is its title now.
+        from optional.bridge.core.messages import SenderAuthority
+        from optional.bridge.hosts.claude.sessions import ClaudeSession
+        sender=chat('terminal-chat')
+        class Calls:
+            def observe(calls,metadata): return SenderAuthority(sender,'root')
+            def require_live(calls,binding): return binding==sender
+        for name,expected in (('kit-coordinator-a1',{'title':'kit-coordinator-a1'}),(None,{})):
+            snapshot=ClaudeSession(self.cli,os.getpid(),own_ctime(),'terminal',r'\\.\pipe\x',str(self.root),
+                (0,0),'a'*64,name,Path(sys.executable))
+            with patch.object(self.sources,'_native',return_value=snapshot):
+                self.sources._cli_observe(object(),Calls(),{})
+            self.assertEqual(self.controller._describe(sender),expected)
+        self.assertEqual(self.controller.pairs.owner_routes(),())
+
     def test_desktop_native_source_ignores_model_meta_and_reuses_actual_original_task(self):
         _,native=self.frontend()
         source=self.sources(native)

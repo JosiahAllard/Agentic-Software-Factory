@@ -148,7 +148,10 @@ class ClaudeSources:
             if self._closed:raise DeliveryError('claude-provider-closed')
             self._desktop[binding.identity.session_id]=(binding,snapshot)
         # Never hold the runtime lock across controller -> pairing -> verifier.
-        description={'title':facts.title} if facts.title is not None else {}
+        # Display only. An untitled desktop task gets a short label without its 'local_' prefix.
+        session=binding.identity.session_id
+        description=({'title':facts.title} if facts.title is not None
+            else {'short':(session[6:] if session.startswith('local_') else session)[:8]})
         self.controller.enroll(binding,self._desktop_live,description)
         return binding
 
@@ -187,9 +190,11 @@ class ClaudeSources:
         except Exception:return False
 
     def _cli_observe(self,native,calls,metadata):
-        self._native(native)
+        snapshot=self._native(native)
         authority=calls.observe(metadata)  # Only private TerminalCall is accepted.
-        self.controller.enroll(authority.sender,lambda binding:self._cli_live(calls,binding))
+        # Display only: the session record's name (Claude Code's session name), never an identity.
+        description={'title':snapshot.title} if snapshot.title else {}
+        self.controller.enroll(authority.sender,lambda binding:self._cli_live(calls,binding),description)
         return authority
 
     def _cli_prepare(self,native,calls,request):

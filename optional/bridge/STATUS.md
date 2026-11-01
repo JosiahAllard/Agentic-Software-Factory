@@ -74,6 +74,17 @@ tested on fixtures only, with no live run. Limits:
 - A restart drops every PM route. The owner window's PM rows and its 5 s re-read have no test.
 - The owner window lists and connects no Codex-to-Codex route (README "Host pairs").
 
+Connections window (README "Connections window"): built and tested on fixtures and on a withdrawn
+Tk window (tests/bridge/test_window_ux.py); no live run yet. It lists chats by their host's name
+(Claude session name or desktop task title, Codex `thread_name` from `session_index.jsonl`),
+else "unnamed chat" and 8 characters of the id; marks a chat that fails its live check "not
+answering"; lists each connection with who made it and the lease it goes through, and each lease
+with who granted it; and says how to bring a chat back (a bridge call, then Refresh), including
+after a restart, when it counts the remembered connections waiting for their chats. Limits:
+- Stop on the owner's own connection still needs both chats listed and answering.
+- A chat that runs without calling the bridge is still not seen; the window says so.
+- The Codex name is read from a file the Codex app writes; its format is observed, not documented.
+
 Idle roster at frontend start: **one live probe so far (2026-10-31).** A kit-launched Claude
 session (`launch.py start --no-agent`) had its frontend running and was not listed until it
 called `bridge_connections`; the Codex frontend question below is not answered by it. A chat is

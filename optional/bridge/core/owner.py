@@ -166,10 +166,19 @@ class PmStop:
 
 @dataclass(frozen=True)
 class ChatChoice:
+    """One listed chat, for display. title: the name the chat's host gives it (a session name,
+    task title or chat title; README "Connections window"), else 'unnamed chat' and a short id. live:
+    with chats(check=True), whether it passed its live check then; None when not checked."""
     reference:str
     title:str
     runtime:str
     workspace:str
+    live:bool|None=None
+
+
+def short_id(session_id):
+    """The first 8 characters of a session id, without a desktop task id's 'local_' prefix."""
+    return session_id[6:14] if session_id.startswith('local_') else session_id[:8]
 
 
 class OwnerControls:
@@ -185,15 +194,18 @@ class OwnerControls:
         self.host_pairs=host_pairs
         if leases is not None: pairings.on_observe(self._chat_observed)
 
-    def chats(self):
+    def chats(self, *, check=False):
+        """The listed chats. check: also run each one's live check (display only; a full refresh)."""
         result=[]
         for binding in self.pairings.registered():
             try: detail=self.describe(binding) if self.describe is not None else {}
             except Exception: detail={}
             if type(detail) is not dict: detail={}
-            result.append(ChatChoice(binding.reference,display(detail.get('title'),binding.identity.session_id),
+            result.append(ChatChoice(binding.reference,
+                display(detail.get('title'),'unnamed chat '+short_id(binding.identity.session_id)),
                 display(detail.get('runtime'),binding.identity.adapter_id),
-                display(detail.get('workspace'),binding.identity.workspace.workspace_id)))
+                display(detail.get('workspace'),binding.identity.workspace.workspace_id),
+                self.pairings.live(binding) if check else None))
         return tuple(result)
 
     def _allowed(self,sender,recipient):
@@ -204,6 +216,21 @@ class OwnerControls:
         observed={peer.reference:peer for peer in self.pairings.registered()}
         return tuple(route for route in self.pairings.owner_routes()
             if all(ref in observed for ref in route) and self._allowed(observed[route[0]],observed[route[1]]))
+
+    def owner_rows(self, *, check=True):
+        """connections() as (sender, recipient, deliverable): with check, both chats pass their
+        live check now. Display only."""
+        observed={peer.reference:peer for peer in self.pairings.registered()}
+        return tuple((sender,recipient,not check or (self.pairings.live(observed[sender])
+            and self.pairings.live(observed[recipient]))) for sender,recipient in self.connections())
+
+    def waiting(self):
+        """How many of the owner's remembered connections (directions) are not listed now because
+        a chat of theirs is not listed: closed, or not yet seen since the bridge started. Each comes
+        back by itself once both chats are listed again."""
+        current={peer.logical_reference for peer in self.pairings.registered()}
+        return sum(1 for sender,recipient in self.pairings.remembered_routes()
+            if sender not in current or recipient not in current)
 
     def change(self,sender_ref,recipient_ref, *, enabled,bidirectional=True):
         for reference in (sender_ref,recipient_ref): digest(reference)

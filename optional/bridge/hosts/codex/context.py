@@ -27,6 +27,7 @@ MAX_ENTRIES, MAX_DIRECTORIES = 100000, 4096
 MAX_ROLLOUT_BYTES = 256*1024*1024
 MAX_AUTHORITY_BYTES = 128*1024
 RECORD_TRIES = 3
+MAX_INDEX_BYTES = 4*1024*1024  # session_index.jsonl, read for chat titles (display only)
 # A read that overlapped an append: the file changed, or it ended mid-line.
 RETRIED_READS = ('native-rollout-changed', 'native-rollout-incomplete')
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z')
@@ -332,6 +333,24 @@ class CodexObserver:
             raise
         except Exception:
             raise ContextError('native-evidence-unavailable') from None
+
+    def thread_name(self, thread):
+        """Display only, never identity: the chat's title, from the last session_index.jsonl entry
+        (id, thread_name) naming this thread in the profile, or None when there is none or the
+        index cannot be read whole."""
+        try:
+            path=self.root/'session_index.jsonl'
+            if _regular(path).st_size>MAX_INDEX_BYTES: return None
+            with path.open('rb') as stream: data=stream.read(MAX_INDEX_BYTES+1)
+            name=None
+            for line in data.splitlines():
+                try: entry=json.loads(line)
+                except ValueError: continue
+                if type(entry) is dict and entry.get('id')==thread and type(entry.get('thread_name')) is str:
+                    name=entry['thread_name'].strip() or None
+            return name
+        except Exception:
+            return None
 
     def observe(self, host_metadata):
         """Active caller only; metadata provenance belongs to the native frontend."""

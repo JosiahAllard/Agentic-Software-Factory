@@ -187,9 +187,11 @@ class ClaudeSources:
         except Exception:return False
 
     def _cli_observe(self,native,calls,metadata):
-        self._native(native)
+        snapshot=self._native(native)
         authority=calls.observe(metadata)  # Only private TerminalCall is accepted.
-        self.controller.enroll(authority.sender,lambda binding:self._cli_live(calls,binding))
+        # Display only: the session record's name (Claude Code's session name), never an identity.
+        description={'title':snapshot.title} if snapshot.title else {}
+        self.controller.enroll(authority.sender,lambda binding:self._cli_live(calls,binding),description)
         return authority
 
     def _cli_prepare(self,native,calls,request):

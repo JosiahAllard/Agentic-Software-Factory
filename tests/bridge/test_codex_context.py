@@ -139,3 +139,21 @@ class CodexContextTests(unittest.TestCase):
             with self.assertRaises(ContextError): self.observer.observe(self.meta)
         with patch('optional.bridge.hosts.codex.context.MAX_ROLLOUT_BYTES',1):
             with self.assertRaises(ContextError): self.observer.observe(self.meta)
+
+    def test_thread_name_is_the_last_index_entry_for_the_thread_and_never_identity(self):
+        # Codex keeps chat titles in session_index.jsonl, one JSON line per rename (display only).
+        index=self.root/'session_index.jsonl'
+        self.assertIsNone(self.observer.thread_name(self.thread))  # no index yet
+        other=str(uuid.uuid4())
+        lines=[{'id':self.thread,'thread_name':'first title','updated_at':'x'},
+            {'id':other,'thread_name':'another chat','updated_at':'x'},
+            {'id':self.thread,'thread_name':'kit coordinator','updated_at':'y'}]
+        index.write_bytes(b''.join(json.dumps(line).encode()+b'\n' for line in lines)+b'{broken\n')
+        self.assertEqual(self.observer.thread_name(self.thread),'kit coordinator')
+        self.assertIsNone(self.observer.thread_name(str(uuid.uuid4())))
+        before=self.observer.observe(self.meta).binding('test-host')
+        index.write_bytes(json.dumps({'id':self.thread,'thread_name':'renamed'}).encode()+b'\n')
+        self.assertEqual(self.observer.observe(self.meta).binding('test-host'),before)  # a rename changes no binding
+        from unittest.mock import patch
+        with patch('optional.bridge.hosts.codex.context.MAX_INDEX_BYTES',4):
+            self.assertIsNone(self.observer.thread_name(self.thread))

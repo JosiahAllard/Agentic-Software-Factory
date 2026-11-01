@@ -18,6 +18,7 @@ from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
 TRAILERS = 'Co-Authored-By: Test Model <noreply@anthropic.com>'
 OUTSIDE = 'outside the scopes of the records it holds'
 NO_RECORD = 'holds no pulled record; its paths were not checked against a scope'
+AREA = 'claude-pm-kit'      # a store shared by repositories names the kit's records so
 
 
 class ScopeCase(StoreLandCase):
@@ -330,6 +331,11 @@ class PmDataStore(ScopeCase):
         self.assertIn('backlog.py" -C "%s" set FOO --scope "a/**" --scope "b.py";'
                       % self.pm_root(wt), line)
 
+    def test_a_member_under_the_records_area_covers_its_path(self):
+        self.seeded(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
     def test_no_worktree_on_the_pm_data_branch_refuses(self):
         _, tip = self.branch('feature', {'a/x.py': 'x\n'})
         line = self.refused(self.land(tip))
@@ -386,6 +392,39 @@ class Warns(ScopeCase):
         with mock.patch.object(land.Lander, '_scope_of', side_effect=RuntimeError('boom')):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
+
+
+class AreaPrefix(ScopeCase):
+    """A store shared by repositories writes a member `<area>/<path>`: when the repository has no
+    top-level entry named as the record's area, the member is read without it."""
+    REFUSES = False
+    assert_warned = Warns.assert_warned
+
+    def test_a_file_member_under_the_area_lands_that_file_without_a_warning(self):
+        self.seed(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_a_folder_member_under_the_area_covers_the_files_under_it(self):
+        self.seed(pulled('FOO', area=AREA, scope=[AREA + '/k/lock', AREA + '/m/**']))
+        _, tip = self.branch('feature', {'k/lock/a.py': 'a\n', 'k/lock/sub/b.py': 'b\n',
+                                         'm/c.py': 'c\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_a_path_outside_still_warns_and_is_added_once_in_the_stores_form(self):
+        self.seed(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n', 'b.py': 'b\n'})
+        warn = self.assert_warned(self.land(tip), 'kit/feature changes 1 path(s) %s (FOO): b.py;'
+                                  % OUTSIDE)
+        self.assertIn(' set FOO --scope "%s/a/x.py" --scope "%s/b.py";' % (AREA, AREA), warn)
+        self.assertEqual(warn.count('--scope'), 2, warn)
+
+    def test_an_area_the_repository_has_as_a_folder_is_a_path(self):
+        self.seed(pulled('FOO', area='a', scope=['a/x.py']))
+        _, tip = self.branch('feature', {'a/y.py': 'y\n', 'x.py': 'x\n'})
+        warn = self.assert_warned(self.land(tip), 'changes 2 path(s) %s (FOO): a/y.py, x.py;'
+                                  % OUTSIDE)
+        self.assertIn(' set FOO --scope "a/x.py" --scope "a/y.py" --scope "x.py";', warn)
 
 
 class Default(unittest.TestCase):

@@ -170,6 +170,19 @@ class Stop(unittest.TestCase):
         host = self.host(procs)
         stop.stop(self.h.settings, host, 'x-a1', dry_run=True)
 
+    def test_a_topic_session_whose_brief_path_carries_the_pm_session_id_is_not_the_pm(self):
+        sid = 'c0f2d19a-ff63-4379-9d0a-a20deb309391'
+        self.h.write_state('coordinators.json', {'pm_session_id': sid})
+        procs = windowed('topic-x')                     # launch.py topic: the brief in the PM's scratchpad
+        procs[0]['CommandLine'] += (" 'Read your brief Z:\\AgentTemp\\claude\\Z--pm\\%s\\scratchpad\\brief.md first'"
+                                    % sid)
+        out = stop.stop(self.h.settings, self.host(procs), 'topic-x', dry_run=True)
+        self.assertEqual(out[-1], 'DryRun: nothing stopped.')
+        for form in (" --resume '%s'", ' --resume %s', ' -r "%s"', ' --session-id=%s'):
+            pm = windowed('x-a1')
+            pm[0]['CommandLine'] += form % sid
+            self.refused('PID 10 is the PM session', 'x-a1', pm)
+
     def test_a_pm_session_id_that_is_not_a_string_counts_as_unset(self):
         for value in (None, 12345, ['sid-1']):
             self.h.write_state('coordinators.json', {'pm_session_id': value})

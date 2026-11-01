@@ -1,7 +1,7 @@
 """kitlib.gate.land and the verdict every landing needs (docs/gate.md "Landing" step 4): a branch
 that changes no strict path lands too only with a verdict queued at its tip (kitlib.gate.verdicts)
-from a reviewer who is not its author; any reviewer model counts (the tier rule is the strict
-paths' alone), a carried verdict is checked again against the base, and each branch of a batch
+from a reviewer who is not its author; any reviewer model counts below High risk (the tier rule
+is the strict paths' and High risk's, test_review_tier), a carried verdict is checked again against the base, and each branch of a batch
 needs its own. Anything unreadable refuses (fail closed)."""
 import unittest
 
@@ -69,12 +69,13 @@ class EveryLandingNeedsAVerdict(VerdictCase):
 
 
 class AnyReviewerModel(VerdictCase):
-    """The tier rule (a strong-tier reviewer) is the strict paths' alone: a plain branch
-    lands with a review on any model by a reviewer who did not write it."""
+    """The tier rule (a strong-tier reviewer) is the strict paths' and High risk's alone: a plain
+    Medium branch lands with a review on any model by a reviewer who did not write it."""
 
     def lands_on(self, model):
         _, tip = self.plain()
-        self.queue(BRANCH, tip, reviewer_model=model, author='Kit Test / strong-worker')
+        self.queue(BRANCH, tip, risk='Medium', reviewer_model=model,
+                   author='Kit Test / strong-worker')
         lander, _ = self.lands(BRANCH, tip)
         self.assertIsNone(lander.strict_review)
 

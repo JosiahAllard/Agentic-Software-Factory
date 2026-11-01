@@ -181,6 +181,18 @@ class WriterLeaseTests(unittest.TestCase):
             self.pairs.observe(getattr(self,gone))
             self.assertEqual(self.owner.writers(),((self.a.reference,self.b.reference),))
 
+    def test_a_lease_whose_chat_fails_its_live_check_shows_it_cannot_deliver(self):
+        # A failed live check keeps the chat listed, so the lease row needs the live check.
+        self.owner.lease(self.a.reference,self.b.reference,enabled=True)
+        for gone in ('a','b'):
+            del self.live[gone]
+            self.assertIn(getattr(self,gone),self.pairs.registered())
+            self.assertEqual(self.owner.writer_grants(),((self.a.reference,self.b.reference,100.0,False),))
+            self.assertEqual(self.owner.writers(),())
+            self.assertEqual(self.owner.writer_grants(check=False),((self.a.reference,self.b.reference,100.0,True),))
+            self.live[gone]=getattr(self,gone)
+            self.assertEqual(self.owner.writer_grants(),((self.a.reference,self.b.reference,100.0,True),))
+
     def test_a_lease_survives_a_withdraw_and_the_chat_returning(self):
         # One discovery pass that misses a chat withdraws it; that is not a close either.
         self.owner.lease(self.a.reference,self.b.reference,enabled=True)

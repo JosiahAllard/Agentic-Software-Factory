@@ -82,8 +82,11 @@ a constructor argument, and the defaults read this machine.
   host_profile()     the kitlib.host.HostProfile of the host whose hook asked (the `profile`
                      argument, or a callable returning it, which kitlib.host.hookmain passes from
                      its adapter), else the one PM_KIT_HOST
-                     selects in hosts.json (kitlib.host.registry), read once. Only an MCP call
-                     reads it (rules.mcp_prefix).
+                     selects in hosts.json (kitlib.host.registry), read once. An MCP call reads
+                     it (rules.mcp_prefix), and host_capabilities.
+  host_capabilities()  the HostCapabilities of the hosts.json entry whose profile is
+                     host_profile()'s, read once, or None when no entry has it: an unmarked main
+                     session reads it (rules.agent_session).
 
 The pm_data argument replaces the machine-config read (a callable returning
 kitlib.pmdata.machine_settings's answer, or raising its errors). The pointer argument replaces the
@@ -109,6 +112,7 @@ ROLE_ENV = sessionmark.ENV
 OWNER = 'owner'
 SUBAGENT = 'subagent'
 LEDGER_KEYS = ('ledger_path', 'ledger_dir')     # the paths the ledger rule protects (_tolerant)
+_UNREAD = object()                              # Ctx.host_capabilities not read yet
 
 
 def default_session_role(action, environ):
@@ -261,6 +265,7 @@ class Ctx(object):
         self._lock_held = lock_held
         self._role = role_resolver or default_session_role
         self._profile = profile
+        self._caps = _UNREAD                     # host_capabilities' answer, read once
         self.tempdir = tempdir or self.environ.get('TEMP') or tempfile.gettempdir()
         self._places, self._configs, self._config_errors = {}, {}, {}
         self._raw_places = {}                    # key -> self._classify's answer, unadjusted
@@ -569,3 +574,12 @@ class Ctx(object):
             from kitlib.host import registry
             self._profile = registry.host(registry.selected(self.environ)).profile
         return self._profile
+
+    def host_capabilities(self):
+        """The kitlib.host.HostCapabilities of the host whose hook asked: those of the hosts.json
+        entry whose profile is host_profile()'s, read once; None when no entry has that profile."""
+        if self._caps is _UNREAD:
+            from kitlib.host import registry
+            profile = self.host_profile()
+            self._caps = next((h.capabilities for h in registry.load().values() if h.profile == profile), None)
+        return self._caps

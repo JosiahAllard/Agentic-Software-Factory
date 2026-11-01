@@ -14,6 +14,12 @@ The config folders searched: CLAUDE_CONFIG_DIR, then each `~/.claude*` folder
 read: a file is read a line at a time, only a line holding `"assistant"` is parsed, and a file is
 read no further once it shows MAX_MODELS distinct models. A host's task `.output` file is never
 read. Nothing here prints or writes.
+
+verdict() reads the same transcripts for the reviewer's final `Verdict:` line (tools/verdict.py
+add, through ADAPTER.agent_verdict(): kitlib.gate.verdicts.reviewer_verdict_why). A subagent's
+final report is the `message` of its SubagentHandback call, a tool_use block of an assistant
+record (observed in the kit machine's transcripts on 2026-10-31), or, where it has no such tool,
+the text of its last assistant turn.
 """
 import glob
 import json
@@ -25,6 +31,16 @@ from hosts.claude.adapter import claude_host
 AGENT_ID_RE = re.compile(r'^a[0-9a-f]{16}$')
 SKIP = frozenset(['<synthetic>'])     # a turn Claude Code made itself, no model ran
 MAX_MODELS = 2                        # more than one model already says the reviewer was not one
+HANDBACK = 'SubagentHandback'         # the tool a subagent hands its final report back with
+# A report's verdict line starts `Verdict:` at the line start, markdown decoration allowed
+# (`**Verdict:** LAND`, a list dash, backticks: `Verdict: SEND BACK` in code quotes). VERDICT_HEAD_RE
+# finds such a line; VERDICT_RE reads its verdict, LAND WITH FOLLOW-UP tried before LAND.
+VERDICT_HEAD_RE = re.compile(r'^[\s>*_#`-]*verdict[*_`]*\s*:', re.IGNORECASE)
+VERDICT_RE = re.compile(VERDICT_HEAD_RE.pattern + r'[*_`\s]*'
+                        r'(land\s+with\s+follow[- ]?up|land|send\s+back)(?![\w-])', re.IGNORECASE)
+# A verdict word in the text after the verdict read: `Verdict: LAND or SEND BACK` names two.
+OTHER_VERDICT_RE = re.compile(r'(?<![\w-])(land|send\s+back)(?![\w-])', re.IGNORECASE)
+UNREAD = 'unread'                     # verdict(): a transcript was found and cannot be read
 
 
 def is_agent_id(text):
@@ -89,6 +105,99 @@ def file_models(path):
     except OSError:
         return None
     return found
+
+
+def report_verdict(text):
+    """The verdict of the last `Verdict:` line of `text` (VERDICT_HEAD_RE), spelled LAND, LAND
+    WITH FOLLOW-UP or SEND BACK whatever its case; None when there is no such line, or the last
+    one names no verdict (VERDICT_RE) or more than one (a verdict word after the one read,
+    OTHER_VERDICT_RE: `Verdict: LAND or SEND BACK`). An earlier line never stands in for the last
+    one: a last line that cannot be read gives None. Pure."""
+    found = None
+    for line in (text or '').splitlines():
+        if not VERDICT_HEAD_RE.match(line):
+            continue
+        m = VERDICT_RE.match(line)
+        if not m or OTHER_VERDICT_RE.search(line, m.end()):
+            found = None
+            continue
+        said = m.group(1).upper()
+        found = ('LAND WITH FOLLOW-UP' if said.startswith('LAND WITH')
+                 else 'SEND BACK' if said.startswith('SEND') else 'LAND')
+    return found
+
+
+def _report_text(rec):
+    """The report text an assistant record carries: its text blocks, or the message of its
+    SubagentHandback call (how a subagent hands its final report back); None when it carries
+    neither (a tool call, thinking)."""
+    msg = rec.get('message')
+    content = msg.get('content') if isinstance(msg, dict) else None
+    if isinstance(content, str):
+        return content if content.strip() else None
+    if not isinstance(content, list):
+        return None
+    parts = []
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get('type') == 'text' and isinstance(b.get('text'), str):
+            parts.append(b['text'])
+        elif (b.get('type') == 'tool_use' and b.get('name') == HANDBACK
+              and isinstance(b.get('input'), dict) and isinstance(b['input'].get('message'), str)):
+            parts.append(b['input']['message'])
+    text = '\n'.join(parts)
+    return text if text.strip() else None
+
+
+def file_final_report(path):
+    """The report text of the last assistant record of the transcript `path` that carries one
+    (_report_text): '' when none does; None when the file cannot be read."""
+    last = ''
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if '"assistant"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(rec, dict) or rec.get('type') != 'assistant':
+                    continue
+                text = _report_text(rec)
+                if text is not None:
+                    last = text
+    except OSError:
+        return None
+    return last
+
+
+def verdict(agent_id, environ=None, home=None):
+    """What the subagent `agent_id` said in its final report: `(found, verdict)`. `found` is True
+    when a transcript of it was found; `verdict` is the final report's last `Verdict:` line
+    (report_verdict) or None, or UNREAD when a transcript found cannot be read (its time or its
+    text): fail closed, since the one unread may be the newest. The final report is the last
+    assistant turn carrying text or a SubagentHandback call, in the transcript last written when
+    there is more than one (a resumed subagent appends to its own). `(False, None)` when no
+    transcript is found; None when `agent_id` is not a Claude agent id."""
+    rid = agent_id.strip() if isinstance(agent_id, str) else agent_id
+    if not is_agent_id(rid):
+        return None
+    best = None
+    for p in transcripts(rid, environ, home):
+        try:
+            when = os.path.getmtime(p)
+        except OSError:
+            return (True, UNREAD)
+        text = file_final_report(p)
+        if text is None:
+            return (True, UNREAD)
+        if best is None or when >= best[0]:
+            best = (when, text)
+    if best is None:
+        return (False, None)
+    return (True, report_verdict(best[1]))
 
 
 def models(agent_id, environ=None, home=None):

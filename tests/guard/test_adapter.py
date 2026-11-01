@@ -140,7 +140,10 @@ class Layer(unittest.TestCase):
                     text = f.read()
                 for field in ('agent_id', 'agent_type', 'tool_input', 'tool_name', 'hookSpecificOutput',
                               'permissionDecision', "'Bash'", "'PowerShell'", "'Edit'", "'mcp__'"):
-                    if field in text:
+                    # a bare field name counts as a whole word: hosts.json's capability
+                    # subagent_identity_in_hooks (rules.agent_session) is not the payload's agent_id
+                    whole = r'(?<!\w)%s(?!\w)' % re.escape(field) if field.isidentifier() else re.escape(field)
+                    if re.search(whole, text):
                         found.append('%s: %s' % (name, field))
         self.assertEqual(found, [])
 

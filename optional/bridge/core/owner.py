@@ -17,6 +17,8 @@ from .pmroutes import PmRoutes,append_log,stamp
 
 MAX_LEASES=32
 LEASE_LOG='writer-leases.log'  # beside the pairings store, in the bridge state folder
+# change(): the owner's row was written, then ending a PM route on it failed.
+PARTLY_DONE='owner-change-partly-done'
 
 
 @dataclass(frozen=True)
@@ -166,10 +168,15 @@ class PmStop:
 
 @dataclass(frozen=True)
 class ChatChoice:
+    """One listed chat, for display. title: the name the chat's host gives it (a session name,
+    task title or chat title; README "Connections window"), else 'unnamed chat' and a short id (the
+    host's `short` detail, else the session id's first 8 characters). live:
+    with chats(check=True), whether it passed its live check then; None when not checked."""
     reference:str
     title:str
     runtime:str
     workspace:str
+    live:bool|None=None
 
 
 class OwnerControls:
@@ -185,15 +192,27 @@ class OwnerControls:
         self.host_pairs=host_pairs
         if leases is not None: pairings.on_observe(self._chat_observed)
 
-    def chats(self):
+    def _live(self,binding,live):
+        """binding's live check; live: a dict (reference -> result) shared by one refresh, so each
+        chat is checked once per refresh. Display only."""
+        if live is None: return self.pairings.live(binding)
+        if binding.reference not in live: live[binding.reference]=self.pairings.live(binding)
+        return live[binding.reference]
+
+    def chats(self, *, check=False,live=None):
+        """The listed chats. check: also run each one's live check (display only; a full refresh).
+        live: see _live."""
         result=[]
         for binding in self.pairings.registered():
             try: detail=self.describe(binding) if self.describe is not None else {}
             except Exception: detail={}
             if type(detail) is not dict: detail={}
-            result.append(ChatChoice(binding.reference,display(detail.get('title'),binding.identity.session_id),
+            result.append(ChatChoice(binding.reference,
+                display(detail.get('title'),'unnamed chat '
+                    +display(detail.get('short'),binding.identity.session_id[:8])[:16]),
                 display(detail.get('runtime'),binding.identity.adapter_id),
-                display(detail.get('workspace'),binding.identity.workspace.workspace_id)))
+                display(detail.get('workspace'),binding.identity.workspace.workspace_id),
+                self._live(binding,live) if check else None))
         return tuple(result)
 
     def _allowed(self,sender,recipient):
@@ -201,9 +220,35 @@ class OwnerControls:
 
     def connections(self):
         """Owner routes between listed chats; a direction the host-pair rule refuses is left out."""
-        observed={peer.reference:peer for peer in self.pairings.registered()}
+        return self._connections({peer.reference:peer for peer in self.pairings.registered()})
+
+    def _connections(self,observed):
         return tuple(route for route in self.pairings.owner_routes()
             if all(ref in observed for ref in route) and self._allowed(observed[route[0]],observed[route[1]]))
+
+    def owner_rows(self, *, check=True,live=None):
+        """connections() as (sender, recipient, deliverable), from one read of the listed chats.
+        Deliverable, with check: both chats pass their live check now and, when a writer lease
+        carries delivery to the recipient for this sender, that lease can deliver too (the writer
+        is checked at the write as well; README "Writer leases"). live: see _live. Display only."""
+        observed={peer.reference:peer for peer in self.pairings.registered()}
+        carried={recipient:(writer,deliverable) for writer,recipient,_granted,deliverable
+            in self._grants(observed,check,live)}
+        rows=[]
+        for sender,recipient in self._connections(observed):
+            deliverable=not check or (self._live(observed[sender],live) and self._live(observed[recipient],live))
+            lease=carried.get(recipient)
+            if lease is not None and lease[0]!=sender: deliverable=deliverable and lease[1]
+            rows.append((sender,recipient,deliverable))
+        return tuple(rows)
+
+    def waiting(self):
+        """How many of the owner's remembered connections (directions) are not listed now because
+        a chat of theirs is not listed: closed, or not yet seen since the bridge started. Each comes
+        back by itself once both chats are listed again."""
+        current={peer.logical_reference for peer in self.pairings.registered()}
+        return sum(1 for sender,recipient in self.pairings.remembered_routes()
+            if sender not in current or recipient not in current)
 
     def change(self,sender_ref,recipient_ref, *, enabled,bidirectional=True):
         for reference in (sender_ref,recipient_ref): digest(reference)
@@ -222,9 +267,13 @@ class OwnerControls:
         revision=self.pairings.owner_select(selection,self.decisions.mint(selection))
         if enabled is False and self.pm is not None:
             # The owner's disconnect also ends any PM route on these directions; the disabled
-            # rows just written keep the PM from making it again.
-            for left,right in [(sender_ref,recipient_ref)]+([(recipient_ref,sender_ref)] if bidirectional else []):
-                self.pm.stop(left,right,by='owner')
+            # rows just written keep the PM from making it again. A failure here comes after the
+            # owner's row was written, so it is reported as partly done, never as nothing changed.
+            try:
+                for left,right in [(sender_ref,recipient_ref)]+([(recipient_ref,sender_ref)] if bidirectional else []):
+                    self.pm.stop(left,right,by='owner')
+            except Exception:
+                raise PairingError(PARTLY_DONE) from None
         return revision
 
     def pm_routes(self, *, check=True):
@@ -270,18 +319,26 @@ class OwnerControls:
             return PmStop(removed,unblocked)
 
     def writers(self):
-        """Current writer leases between visible chats, as (writer, recipient) references."""
+        """Current writer leases that can deliver now (both chats listed and live), as
+        (writer, recipient) references."""
         return tuple(lease[:2] for lease in self.writer_grants() if lease[3])
 
-    def writer_grants(self):
-        """Every current writer lease, as (writer, recipient, grant time, both chats listed).
+    def writer_grants(self, *, check=True,live=None):
+        """Every current writer lease, as (writer, recipient, grant time, deliverable).
 
-        A lease whose chat is not listed (closed, between turns or missed by discovery)
-        is still returned, so the owner can see and Stop it; it cannot deliver.
+        Deliverable: both chats are listed and, with check, both pass their live check now. A
+        failed live check keeps a chat listed (PairingStore._live), so listing alone does not
+        show a closed chat. A lease that cannot deliver (closed, between turns or missed by
+        discovery) is still returned, so the owner can see and Stop it. live: see _live.
         """
+        return self._grants({peer.reference:peer for peer in self.pairings.registered()},check,live)
+
+    def _grants(self,observed,check,live):
         if self.leases is None: return ()
-        observed={peer.reference for peer in self.pairings.registered()}
-        return tuple((writer,recipient,granted,writer in observed and recipient in observed)
+        def deliverable(writer,recipient):
+            if writer not in observed or recipient not in observed: return False
+            return not check or (self._live(observed[writer],live) and self._live(observed[recipient],live))
+        return tuple((writer,recipient,granted,deliverable(writer,recipient))
             for writer,recipient,granted in self.leases.granted())
 
     def lease(self,writer_ref,recipient_ref, *, enabled):

@@ -18,11 +18,12 @@ RID2 = 'a082f4af73b3c82f2'
 
 
 def records(*models):
-    """Transcript records: a user turn, then one assistant turn per model of `models`."""
+    """Transcript records: a user turn, then one assistant turn per model of `models`, each ending
+    with a final `Verdict: LAND` line (a report with none is refused: test_reviewer_verdict)."""
     out = [{'type': 'user', 'agentId': RID, 'message': {'role': 'user', 'content': 'review it'}}]
     for m in models:
-        out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m,
-                                                     'content': [{'type': 'text', 'text': 'ok'}]}})
+        out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m, 'content': [
+            {'type': 'text', 'text': 'ok\nVerdict: LAND'}]}})
     return out
 
 
@@ -58,7 +59,7 @@ class ReviewerModel(GateRepoCase):
         self.assertEqual(code, 0, (out, err))
         lines = out.strip().splitlines()
         self.assertEqual(lines[-1], 'QUEUED kit/a %s' % self.tip)
-        self.assertEqual([l for l in lines if l.startswith('NOTE')],
+        self.assertEqual([l for l in lines if l.startswith('NOTE: --reviewer-model')],
                          ['NOTE: --reviewer-model opus is not checked: no transcript found for the '
                           'reviewer id %s' % n for n in notes])
 
@@ -81,14 +82,17 @@ class ReviewerModel(GateRepoCase):
         self.assertIn('REFUSED: --reviewer-model opus, but the reviewer %s ran on claude-haiku-5-5 '
                       '(its transcript)' % RID, out)
         self.assertIn('\nInstead: queue it with --reviewer-model haiku, the model it ran on; a '
-                      'branch land.py --check-strict calls STRICT needs a review on opus: dispatch '
-                      'a fresh analyst with model opus (skill branch-review)', out)
+                      'High-risk branch, or one land.py --check-strict calls STRICT, needs a '
+                      'review on opus: dispatch a fresh analyst with model opus (skill '
+                      'branch-review)', out)
 
     def test_the_model_it_ran_on_is_queued(self):
         self.plant(RID, 'claude-haiku-5-5')
         for typed in ('haiku', 'claude-haiku-5-5', 'HAIKU'):
-            code, out, err = self.add(**{'--reviewer-model': typed})
-            self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), (typed, err))
+            # Medium: a High-risk haiku review is refused by the tier rule (test_review_tier)
+            code, out, err = self.add(**{'--risk': 'Medium', '--reviewer-model': typed})
+            self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/a %s' % self.tip),
+                             (typed, err))
         self.plant(RID2, 'claude-opus-5-5')
         self.assert_queued(self.add(**{'--reviewer-id': RID2}))
         self.assert_refused(**{'--reviewer-id': RID2, '--reviewer-model': 'sonnet'})
@@ -116,8 +120,8 @@ class ReviewerModel(GateRepoCase):
         self.assertEqual(AM.models(RID), ['claude-haiku-5-5', 'claude-opus-5-5'])
         fresh = ('\nInstead: the review ran on more than one model (claude-haiku-5-5, '
                  'claude-opus-5-5), which no --reviewer-model can name: dispatch a fresh analyst '
-                 'with model %s, the model the verdict needs (opus for a branch land.py '
-                 '--check-strict calls STRICT; skill branch-review)')
+                 'with model %s, the model the verdict needs (opus for a High-risk branch or one '
+                 'land.py --check-strict calls STRICT; skill branch-review)')
         out = self.assert_refused()
         self.assertIn('but the reviewer %s ran on claude-haiku-5-5 and claude-opus-5-5' % RID, out)
         self.assertIn(fresh % 'opus', out)

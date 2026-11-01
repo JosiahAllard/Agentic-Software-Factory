@@ -17,6 +17,8 @@ installs from (docs/plugin-source.md).
                                    every in-use read succeeded); stale <sha12>.tmp folders removed
   prune_caches(folders, in_use)    old versions in each account's plugins cache (dry run by default)
   read_state / write_state         <root>/state.json: {sha, version, folder, exported_at, folders}
+  set_pending / clear_pending / pending
+                                   <root>/<label>.pending: a host copy step's deferred install
   RefreshLock                      <root>/refresh.pid, one refresh at a time
   pick_folders(folders, wanted)    the account folders --folder names, and the names that are not one
   refresh(...)                     the whole run tools/plugin_refresh.py makes (with copies, each
@@ -59,6 +61,7 @@ MARKER = '.pm-kit-export'            # in every export folder: this tool made it
 STATE = 'state.json'
 PIDFILE = 'refresh.pid'
 LOGFILE = 'refresh.log'
+PENDING = '.pending'                 # <root>/<label>.pending: a host copy step deferred (set_pending)
 KEEP = 3                             # newest export folders prune keeps, besides the named one
 YOUNG_DAYS = 7                       # prune keeps every export replaced less than this many days ago
 IN_USE_YOUNG_DAYS = 1                # ... cut to this when every in-use read succeeded (read_in_use)
@@ -567,6 +570,44 @@ def read_state(root):
 
 def write_state(root, state):
     _write_json(os.path.join(root, STATE), state)
+
+
+def set_pending(root, label, line):
+    """<root>/<label>.pending holds `line`: the host copy step `label` deferred its install (Codex:
+    the app was running). The hub's plugin job retries the refresh while one is there and
+    current_lines names it; the step clears it (clear_pending). OSError when it cannot be written."""
+    path = os.path.join(root, label + PENDING)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(line + '\n')
+    os.replace(tmp, path)
+
+
+def clear_pending(root, label):
+    """Remove <root>/<label>.pending; none there is no error. OSError when it cannot be removed."""
+    try:
+        os.remove(os.path.join(root, label + PENDING))
+    except FileNotFoundError:
+        pass
+
+
+def pending(root):
+    """{label: line} of each <root>/<label>.pending (set_pending); {} when there is none or the
+    root cannot be listed. A flag that cannot be read still counts, its line a placeholder."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return {}
+    out = {}
+    for n in names:
+        if not n.endswith(PENDING) or len(n) == len(PENDING):
+            continue
+        try:
+            with open(os.path.join(root, n), encoding='utf-8-sig') as fh:
+                out[n[:-len(PENDING)]] = fh.read().strip() or 'deferred'
+        except OSError as e:
+            out[n[:-len(PENDING)]] = 'deferred (%s)' % e
+    return out
 
 
 def _when(text):
@@ -1340,7 +1381,8 @@ def _marketplace_lines(export_dir, folders, managed):
 def current_lines(kit, s, folders=None, managed=_MACHINE):
     """pm_start lines: none when the export is at the kit's refs/remotes/<remote>/main, every
     account folder (`folders`, default claude.account_folders()) is migrated and its last refresh
-    succeeded, and the pm-kit marketplace points at the export. The refresh checks read the export
+    succeeded, no host copy step's install is pending (a line each: pending), and the pm-kit
+    marketplace points at the export. The refresh checks read the export
     state only: a folder's last refresh result stands in for what it has installed. No export yet,
     or a folder not migrated: the line names the migrate command, not --apply alone (which refuses
     such a folder). The marketplace check (marketplace_mismatches) reads each migrated folder's
@@ -1380,6 +1422,8 @@ def current_lines(kit, s, folders=None, managed=_MACHINE):
         else:
             lines.append('pm-kit plugin refresh failed in %s (claude %s exited %s at %s): %s'
                          % (f, r.get('step') or '?', r.get('rc'), r.get('at') or '?', refresh_cmd()))
+    for label, line in sorted(pending(s.export_dir).items()):
+        lines.append('pm-kit plugin %s copy not refreshed: %s' % (label, line))
     lines.extend(_marketplace_lines(s.export_dir, [f for f in folders if f not in todo], managed))
     return lines
 

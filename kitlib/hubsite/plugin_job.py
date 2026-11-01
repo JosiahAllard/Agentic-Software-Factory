@@ -6,8 +6,9 @@ refresh").
 
 Every EVERY_S the job reads the kit's refs/remotes/<remote>/main and the export's state.json,
 as pm_watch's check does (kitlib.pluginsource poll), and runs `<kit>/tools/plugin_refresh.py
---apply` as a child process, waiting for it, when the export is behind that main or a migrated
-account folder's last refresh at it did not go through. A child, not the library in this
+--apply` as a child process, waiting for it, when the export is behind that main, a migrated
+account folder's last refresh at it did not go through, or a host copy step left its install
+pending (kitlib.pluginsource pending: Codex deferred while it ran). A child, not the library in this
 process: the hub keeps the code it started with, and a landing that changes the refresh must be
 run by the new code. The child does the whole refresh, the host copy steps included (so the
 Codex copy too, except from a session PM_KIT_ROLE marks: docs/plugin-source.md "Codex").
@@ -18,7 +19,8 @@ no export yet, a folder not migrated, plugin.auto_refresh off, a live process ho
 A child that exits non-zero, or runs past REFRESH_TIMEOUT_S (then it is ended with every
 process it started), is a failure (jobs: its text in health, `failing` pushed at the third in a
 row); the same main is tried again RETRY_S after it failed, not sooner, and the runs between are
-skips (`waiting to retry`). The child's output is
+skips (`waiting to retry`). A child that exits 0 with a host copy still pending is no failure,
+but it too is tried again only RETRY_S later. The child's output is
 appended to <export root>/refresh.log, the file pm_watch's spawn writes, under a header line.
 """
 import datetime
@@ -135,11 +137,13 @@ class PluginJob(object):
             return jobs.Skip('not migrated in %s: %s' % (', '.join(todo), pluginsource.refresh_cmd(True)))
         behind = state.get('sha') != main
         failed = [f for f in folders if _rc(state, f) != 0]
-        if not behind and not failed:
+        deferred = sorted(pluginsource.pending(s.export_dir))
+        if not behind and not failed and not deferred:
             self._failed = None
             return 'current at %s' % main[:12]
         what = ('behind kit main %s' % main[:12] if behind
-                else 'not refreshed in %s' % ', '.join(failed))
+                else 'not refreshed in %s' % ', '.join(failed) if failed
+                else 'the %s copy deferred' % ', '.join(deferred))
         if not s.auto_refresh:
             return jobs.Skip('%s; plugin.auto_refresh is off: %s' % (what, pluginsource.refresh_cmd()))
         if pluginsource.lock_live(s.export_dir, self.alive):
@@ -163,6 +167,12 @@ class PluginJob(object):
                                                        (said or lines or ['no output'])[-1])
             self._failed = (main, self.clock(), text)
             raise RefreshFailed(text)
+        left = pluginsource.pending(s.export_dir)
+        if left:
+            # a host copy deferred (Codex running): not a failure, but tried again RETRY_S on
+            text = '; '.join(left[k] for k in sorted(left))
+            self._failed = (main, self.clock(), text)
+            return 'refreshed to %s; %s' % (main[:12], text)
         self._failed = None
         return 'refreshed to %s' % main[:12]
 

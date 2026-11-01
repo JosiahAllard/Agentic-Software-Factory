@@ -38,18 +38,57 @@ class RecipientReplyTests(DispatchTests):
         with self.assertRaisesRegex(DeliveryError, 'reply-route-not-selected'):
             self.core.reply('op', b'test-caller-proof')
 
-    def test_a_recipient_no_longer_live_is_not_reported_as_an_unselected_route(self):
-        # Both directions stay selected: a dead chat is a different refusal from a route off.
+    def test_a_recorded_reply_reads_after_the_recipients_observation_lapses(self):
+        # A Codex recipient fails its live check once its turn moves on (it stays listed,
+        # stale), or a discovery pass withdraws it (here); either way the reply it already
+        # recorded still belongs to the operation's sender.
         self.admit()
         self.adapter.response = NativeResult('op', self.b.reference, 'recipient-accepted', 'native-op')
         self.core.dispatch_once('op')
         self.proofs[b'recipient-proof'] = SenderAuthority(self.b, 'recipient-turn')
         self.core.reply_to('op', 'explicit reply', b'recipient-proof')
         del self.live['b']
+        self.pairings.withdraw('b')
+        self.assertNotIn(self.b, self.pairings.registered())
+        self.assertEqual(self.core.reply('op', b'test-caller-proof'), 'explicit reply')
+        self.assertEqual(self.core.reply('op', b'test-caller-proof'), 'explicit reply')
+
+    def test_a_recorded_reply_reads_while_the_recipient_fails_its_live_check(self):
+        self.admit()
+        self.adapter.response = NativeResult('op', self.b.reference, 'recipient-accepted', 'native-op')
+        self.core.dispatch_once('op')
+        self.proofs[b'recipient-proof'] = SenderAuthority(self.b, 'recipient-turn')
+        self.core.reply_to('op', 'explicit reply', b'recipient-proof')
+        del self.live['b']  # still listed, but its live check now fails
+        self.assertEqual(self.core.reply('op', b'test-caller-proof'), 'explicit reply')
+
+    def test_a_chat_that_did_not_send_the_operation_cannot_read_its_reply(self):
+        self.admit()
+        self.adapter.response = NativeResult('op', self.b.reference, 'recipient-accepted', 'native-op')
+        self.core.dispatch_once('op')
+        self.proofs[b'recipient-proof'] = SenderAuthority(self.b, 'recipient-turn')
+        self.core.reply_to('op', 'explicit reply', b'recipient-proof')
+        del self.live['b']
+        self.proofs[b'other-proof'] = SenderAuthority(self.c, self.root)
+        with self.assertRaisesRegex(DeliveryError, 'operation-caller-mismatch'):
+            self.core.reply('op', b'other-proof')
+        self.proofs[b'recipient-reads'] = SenderAuthority(self.b, self.root)
+        with self.assertRaisesRegex(DeliveryError, 'operation-caller-mismatch'):
+            self.core.reply('op', b'recipient-reads')
+
+    def test_a_sender_no_longer_live_still_cannot_read_the_reply(self):
+        # Today's behaviour kept: the reader itself must be observed live.
+        self.admit()
+        self.adapter.response = NativeResult('op', self.b.reference, 'recipient-accepted', 'native-op')
+        self.core.dispatch_once('op')
+        self.proofs[b'recipient-proof'] = SenderAuthority(self.b, 'recipient-turn')
+        self.core.reply_to('op', 'explicit reply', b'recipient-proof')
+        del self.live['a']
         with self.assertRaisesRegex(DeliveryError, 'reply-chat-not-observed'):
             self.core.reply('op', b'test-caller-proof')
         with self.assertRaisesRegex(DeliveryError, 'reply-chat-not-observed'):
-            self.core.reply('op', b'test-caller-proof')  # now dropped from the observed list too
+            self.core.reply('op', b'test-caller-proof')  # still listed, checked again, still refused
+        self.assertIn(self.a, self.pairings.registered())
 
     def test_a_route_that_is_off_is_reported_as_such_even_with_a_dead_chat(self):
         self.select(False)
@@ -63,7 +102,8 @@ class RecipientReplyTests(DispatchTests):
             self.core.reply('op', b'test-caller-proof')
         with self.assertRaisesRegex(DeliveryError, 'reply-route-not-selected'):
             self.core.reply_to('op', 'not allowed', b'recipient-proof')
-        self.assertNotIn(self.b, self.pairings.registered())  # a refused route still prunes a dead chat
+        # A failed live check no longer drops a chat (a Codex chat between turns is not gone).
+        self.assertIn(self.b, self.pairings.registered())
 
     def test_reply_to_from_a_sender_no_longer_live_names_that_refusal(self):
         self.admit()

@@ -116,8 +116,11 @@ class _Runtime:
                     if captured==previous:
                         captured=previous
                     self._captures[facts.thread_id]=captured
-                    detail={'title':facts.thread_id,'runtime':'codex-'+facts.kind,'mode':facts.mode,
-                        'workspace':facts.workspace}
+                    # The title is display only: the chat's name in the Codex profile, else none
+                    # (the window then shows a short id).
+                    detail={'runtime':'codex-'+facts.kind,'mode':facts.mode,'workspace':facts.workspace}
+                    name=self.observer.thread_name(facts.thread_id)
+                    if name is not None: detail['title']=name
                 def verify_epoch(binding):
                     return self.verify(binding,expected=captured)
                 self.controller.enroll(authority.sender,verify_epoch,detail)
@@ -414,8 +417,8 @@ class CodexSources:
             target_rollout=target.rollout_identity(message.recipient,expected=target_capture)
             def confirm():
                 # After the write: the delivery has started a new turn in the recipient, so
-                # recheck (exact captured turn, and _live, which drops a failed chat from the
-                # observed list) would refuse a write that landed. Identity only: the same
+                # recheck (exact captured turn, and _live, which fails for a turn that moved
+                # on) would refuse a write that landed. Identity only: the same
                 # app process, image and channels, the lease still granted and the
                 # recipient's same rollout with its captured turn followed by any newer one.
                 try:

@@ -36,11 +36,12 @@ An entry (every key always present):
   reviewer        the reviewer's agent type
   reviewer_model  the model the reviewer ran on; tools/verdict.py add checks it against the
                   reviewer's transcript where the host has a reader (model_mismatch_why)
-  reviewer_id     the reviewer's agent or session id
+  reviewer_id     the reviewer's agent or session id; tools/verdict.py add reads each agent id's
+                  final `Verdict:` line where the host has a reader (reviewer_verdict_why)
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
-                  picks no reviewer model: a strict branch needs a strong-tier reviewer
-                  whoever built it, and off the strict paths there is no tier rule
-                  (kitlib.gate.land, Lander.review_refusal)
+                  picks no reviewer model: a High-risk or strict branch needs a strong-tier
+                  reviewer whoever built it, and a Low or Medium branch off the strict paths has
+                  no tier rule (tier_why: add() and kitlib.gate.land, Lander.review_refusal)
   range           the range reviewed, `<base>..<tip>`; its right side is the tip or a prefix of
                   it (7 or more hex digits), so the review covered the commit queued
   session         the coordinator session that queued it
@@ -63,11 +64,18 @@ it reviewed itself (self_review_why), nothing read or written, or, with "landing
 self_review_max_lines given, a self-read of a branch over that many changed lines or one whose
 size cannot be told (self_review_size_why), nothing written; ModelMismatch (a BadEntry) when
 add() is given the models the reviewer's transcript shows (seen_models, the host's reader) and one
-is not the reviewer_model stated (model_mismatch_why), nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
+is not the reviewer_model stated (model_mismatch_why), nothing written; ReviewerSaid (a BadEntry)
+when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
+final report says SEND BACK or has no `Verdict:` line, or a transcript found cannot be read
+(reviewer_verdict_why), nothing written;
+LightReview (a BadEntry)
+when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
+nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
 CarryRefused when carry() finds the head does not carry the verdict, nothing written;
 OtherBranch when the file for the branch named holds another branch's entry (names that differ
 only in case share one file on Windows); VerdictError itself for a queue file that cannot be read
-or written, or is not an entry, the queue lock not had in time, or git giving no answer. Nothing
+or written, or is not an entry, the queue lock not had in time, git giving no answer, or (add())
+hosts.json "tiers" unread when the tier rule needs them, nothing written. Nothing
 here prints.
 
 Residual race (inference, not tested): two callers that find the same stale lock at once can
@@ -137,6 +145,17 @@ class SelfReview(BadEntry):
 class ModelMismatch(BadEntry):
     """The reviewer's transcript shows a model other than the reviewer_model given
     (model_mismatch_why): its text ends with an Instead: line. Nothing was read or written."""
+
+
+class ReviewerSaid(BadEntry):
+    """The reviewer's final report says SEND BACK, has no `Verdict:` line, or its transcript was
+    found and cannot be read (reviewer_verdict_why): its text ends with an Instead: line. Nothing
+    was read or written."""
+
+
+class LightReview(BadEntry):
+    """A High-risk verdict whose reviewer_model is not a strong-tier model (tier_why): its text
+    ends with the Instead: line (TIER_INSTEAD). Nothing was read or written."""
 
 
 class TipMismatch(VerdictError):
@@ -360,12 +379,104 @@ def model_mismatch_why(entry, seen):
         # the review ran on more than one model: no one --reviewer-model can name it
         return head + ('the review ran on more than one model (%s), which no --reviewer-model can '
                        'name: dispatch a fresh analyst with model %s, the model the verdict needs '
-                       '(%s for a branch land.py --check-strict calls STRICT; skill branch-review)'
-                       % (', '.join(every), typed, tier))
+                       '(%s for a High-risk branch or one land.py --check-strict calls '
+                       'STRICT; skill branch-review)' % (', '.join(every), typed, tier))
     use = 'queue it with --reviewer-model %s, the model it ran on' % (
         land.named_model(every[0], strong, weak) or every[0])
-    return head + ('%s; a branch land.py --check-strict calls STRICT needs a review on %s: '
-                   'dispatch a fresh analyst with model %s (skill branch-review)' % (use, tier, tier))
+    return head + ('%s; a High-risk branch, or one land.py --check-strict calls STRICT, needs a '
+                   'review on %s: dispatch a fresh analyst with model %s (skill branch-review)'
+                   % (use, tier, tier))
+
+
+SEND_BACK = 'SEND BACK'
+UNREAD = 'unread'           # a reviewer verdict reader's verdict: a transcript found cannot be read
+
+
+def seen_verdicts(entry, reader):
+    """`{id: (found, verdict)}`: for each id `entry`'s reviewer_id lists that `reader` takes as an
+    agent id, what its transcript says. `reader` is a host's reviewer verdict reader (on Claude
+    hosts.claude.adapter.agent_models.verdict): id -> `(found, verdict)`, `found` whether a
+    transcript was found, `verdict` its final report's `Verdict:` line (LAND, LAND WITH FOLLOW-UP,
+    SEND BACK) or None, or UNREAD when a transcript found cannot be read; None for an id that is
+    not an agent id, which is left out. {} when there
+    is no reader (a host with none, Codex) or the reviewer is the coordinator queueing it
+    (self_reader), as seen_models. `entry` is well formed (check)."""
+    if reader is None or self_reader(entry):
+        return {}
+    out = {}
+    for rid in _reviewer_ids(entry['reviewer_id']):
+        got = reader(rid)
+        if got is not None:
+            out[rid] = (bool(got[0]), got[1])
+    return out
+
+
+def reviewer_verdict_why(entry, said):
+    """Why add() refuses `entry` because of what its reviewer said, or None. `said` is
+    seen_verdicts(). Every verdict queued lands (VERDICTS), so a reviewer whose final `Verdict:`
+    line is SEND BACK refuses it: the Instead: line asks for a fresh review of the tip, never the
+    coordinator's own reading over it. A reviewer whose transcript was found but whose final
+    report has no `Verdict:` line refuses it too (docs/gate.md "Strict paths"): the Instead:
+    line asks to resume that reviewer for its line. So does one whose transcript was found but
+    cannot be read (UNREAD): fail closed, the Instead: line asks to retry or re-ask the reviewer.
+    An id with no transcript is not checked. `entry` is well formed (check). Pure."""
+    back = [rid for rid, (found, v) in sorted(said.items()) if found and v == SEND_BACK]
+    mute = [rid for rid, (found, v) in sorted(said.items()) if found and v is None]
+    unread = [rid for rid, (found, v) in sorted(said.items()) if found and v == UNREAD]
+    if not back and not mute and not unread:
+        return None
+    parts = (['the reviewer %s said SEND BACK (its final Verdict: line)' % rid for rid in back]
+             + ['the reviewer %s gave no final Verdict: line (its transcript)' % rid for rid in mute]
+             + ['a transcript of the reviewer %s was found but cannot be read' % rid
+                for rid in unread])
+    head = '--verdict %s, but %s; nothing was queued\nInstead: ' % (entry['verdict'], '; '.join(parts))
+    if back:
+        return head + ('dispatch a fresh review of the tip %s (skill branch-review) and queue its '
+                       'verdict: a disputed blocking claim is settled by a fresh strong-tier review, '
+                       'not by the coordinator\'s own reading' % entry['tip'])
+    if mute:
+        return head + ('resume the reviewer %s (SendMessage to its id), ask for its final Verdict: '
+                       'line, then queue again' % ', '.join(mute))
+    return head + ('run verdict.py add again once the transcript can be read, or resume the '
+                   'reviewer %s (SendMessage to its id) and ask for its final Verdict: line again'
+                   % ', '.join(unread))
+
+
+def said_lines(entry, said):
+    """`reviewer <id> said <verdict> at <tip>`, one per id of `said` (seen_verdicts) whose final
+    report has a `Verdict:` line, sorted by id. Pure."""
+    return ['reviewer %s said %s at %s' % (rid, v, entry['tip'])
+            for rid, (found, v) in sorted(said.items()) if found and v and v != UNREAD]
+
+
+TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hosts.json "tiers") '
+                'to review the branch (skill branch-review), then queue its verdict')
+
+
+def tier_why(entry, strict, tiers):
+    """Why `entry`'s reviewer is too light for its branch, or None: the one tier rule add() (at
+    queue time, `strict` False: strict comes from the diff, so the landing checks it) and
+    kitlib.gate.land (Lander.review_refusal, at landing) share. A branch that is High risk or
+    `strict` (changes a strict path) lands only on a review whose reviewer_model names a
+    strong-tier model (land.strong_alias), whoever built it; a Low or Medium one off the strict
+    paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives
+    land.tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed), and
+    an exception it raises passes through (add() raises VerdictError for unread tiers).
+    `entry` is well formed (check). Pure."""
+    if not (strict or entry['risk'] == 'High'):
+        return None
+    from kitlib.gate import land          # land imports this module: a late import
+    strong, weak, why = tiers()
+    if strong is None:
+        return 'the strong-tier models cannot be read: %s' % why
+    model = entry['reviewer_model']
+    if land.strong_alias(model, strong, weak) is not None:
+        return None
+    return ('the reviewer ran on %s, not a strong-tier model (%s, or a full model id naming it; '
+            'hosts.json "tiers"): %s lands only on a strong-tier review, whoever built it (its '
+            'author is %s)' % (model, ', '.join(sorted(strong - weak)) or 'none',
+                               'a branch that changes a strict path' if strict
+                               else 'a High-risk branch', entry['author']))
 
 
 def check(entry, stored=True):
@@ -565,7 +676,7 @@ def head_of(common_dir, branch):
 
 
 def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
-        seen=None):
+        seen=None, said=None):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
     whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
@@ -573,7 +684,12 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     one whose size cannot be told, when that cap ("landing".self_review_max_lines) is given
     (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
-    (model_mismatch_why). Nothing seen is stored. `now`: a datetime for queued_utc."""
+    (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
+    says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why). A High-risk
+    verdict whose reviewer_model is not a strong-tier model is
+    LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
+    (a configuration fault: nothing queued). Nothing seen or said is stored. `now`: a datetime for
+    queued_utc."""
     why = check(entry, stored=False)
     if why:
         raise BadEntry(why)
@@ -583,6 +699,20 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     why = model_mismatch_why(entry, seen) if seen else None
     if why:
         raise ModelMismatch(why)
+    why = reviewer_verdict_why(entry, said) if said else None
+    if why:
+        raise ReviewerSaid(why)
+    from kitlib.gate import land          # land imports this module: a late import
+
+    def tiers():
+        got = land.tier_models()
+        if got[0] is None:                # a configuration fault, not a light review
+            raise VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
+                               'nothing was queued' % got[2])
+        return got
+    why = tier_why(entry, False, tiers)
+    if why:
+        raise LightReview('%s; nothing was queued\n%s' % (why, TIER_INSTEAD))
     branch, tip = entry['branch'], entry['tip']
     path = entry_path(common_dir, branch)
     head = head_of(common_dir, branch)

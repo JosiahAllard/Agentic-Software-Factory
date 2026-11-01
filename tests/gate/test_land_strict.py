@@ -75,7 +75,8 @@ class NeedsAVerdict(StrictCase):
     def test_a_verdict_from_a_model_below_the_strong_tier_is_refused(self):
         _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
         for model in ('sonnet', 'haiku', 'account-default', 'claude-sonnet-4-6', 'gpt-5'):
-            self.queue(BRANCH, tip, reviewer_model=model)
+            # Medium: add() refuses a light review of a High-risk branch (test_review_tier)
+            self.queue(BRANCH, tip, risk='Medium', reviewer_model=model)
             _, out, _ = self.land_it(BRANCH, tip)
             self.assert_refused(out, 'the reviewer ran on %s, not a strong-tier model' % model)
 
@@ -187,8 +188,9 @@ class GateConfigLandsAlone(StrictCase):
 
 class ReviewerTierByAuthor(StrictCase):
     """A strict branch needs a strong-tier review whoever built it: a haiku review counts for
-    none, a worker or weak-worker build included. A plain branch built by worker lands on a haiku
-    review (no tier rule off the strict paths)."""
+    none, a worker or weak-worker build included, at any risk (Medium here: add() refuses a light
+    review of a High-risk branch, test_review_tier). A plain Medium branch built by worker lands
+    on a haiku review (no tier rule off the strict paths below High)."""
     GATE = LandsAloneFullFresh.GATE
 
     def lands(self, model, author):
@@ -204,7 +206,7 @@ class ReviewerTierByAuthor(StrictCase):
 
     def refused(self, model, author):
         _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
-        self.queue(BRANCH, tip, reviewer_model=model, author=author)
+        self.queue(BRANCH, tip, risk='Medium', reviewer_model=model, author=author)
         _, out, _ = self.land_it(BRANCH, tip)
         self.assert_refused(out, 'the reviewer ran on %s, not a strong-tier model' % model,
                             'a branch that changes a strict path lands only on a strong-tier '
@@ -218,7 +220,7 @@ class ReviewerTierByAuthor(StrictCase):
 
     def test_a_haiku_verdict_lands_a_plain_worker_build(self):
         _, tip = self.branch('feature', {'src/a.py': 'a\n'})
-        self.queue(BRANCH, tip, reviewer_model='haiku', author='Kit Test / worker')
+        self.queue(BRANCH, tip, risk='Medium', reviewer_model='haiku', author='Kit Test / worker')
         lander, out, said = self.land_it(BRANCH, tip)
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(self.remote_main(), out.merge)
@@ -254,7 +256,8 @@ class CommitRecordsLandGate(StrictCase):
             with self.subTest(path=path):
                 branch = 'kit/strict-%d' % n
                 _, tip = self.branch('strict-%d' % n, {path: 'x = 1\n'})
-                self.queue(branch, tip, reviewer_model='haiku', author='Kit Test / worker')
+                self.queue(branch, tip, risk='Medium', reviewer_model='haiku',
+                           author='Kit Test / worker')
                 _, out, _ = self.land_it(branch, tip)
                 self.assert_refused(out, '%s changes strict path %s' % (branch, path),
                                     'the reviewer ran on haiku, not a strong-tier model')

@@ -141,7 +141,7 @@ class Protocol(unittest.TestCase):
         with mock.patch.object(W, '_checkout'), mock.patch.object(W, '_claimed'), \
                 mock.patch.object(W, '_git', return_value=''), mock.patch.object(W, '_run') as run:
             with self.assertRaisesRegex(W.Stopped, 'do not replay'):
-                W.complete(task(), 'probe', host(), host('test-runner'), host('analyst'))
+                W.complete(task(), 'probe', host(), host('analyst'))
             run.assert_not_called()
 
     def test_dirty_or_changed_tip_has_no_review_handoff(self):
@@ -152,21 +152,24 @@ class Protocol(unittest.TestCase):
                 W.handoff(task(), 'a' * 40, host('analyst'))
             run.assert_not_called()
 
-    def test_ungated_tip_is_not_review_ready(self):
+    def test_tip_with_no_gate_record_is_handed_off_and_runs_no_gate(self):
+        """The one gate runs after review: hand-off neither needs a gate record nor runs a gate."""
         with mock.patch.object(W, '_checkout'), mock.patch.object(W, '_claimed'), \
                 mock.patch.object(W, '_head', return_value='a' * 40), \
                 mock.patch.object(W, '_git', return_value=''), \
-                mock.patch('kitlib.records.gate_ok.verify', return_value=(None, 'no record')), \
-                mock.patch.object(W, '_run') as run:
-            with self.assertRaisesRegex(W.Stopped, 'gate proof is missing'):
-                W.handoff(task(), 'a' * 40, host('analyst'))
-            run.assert_not_called()
+                mock.patch('kitlib.records.gate_ok.verify', return_value=(None, 'no record')) as verify, \
+                mock.patch('kitlib.git.refs.merge_base', return_value=('a' * 40, None)), \
+                mock.patch.object(W, '_run', return_value={'stdout': 'pack'}) as run:
+            result = W.handoff(task(), 'a' * 40, host('analyst'))
+        self.assertEqual(result['stage'], 'review_requested')
+        self.assertEqual(result['review_pack'], 'pack')
+        self.assertEqual([c.args[1] for c in run.call_args_list], ['review_pack'])
+        verify.assert_not_called()
 
     def test_tip_advancing_during_review_preparation_refuses_handoff(self):
         with mock.patch.object(W, '_checkout'), mock.patch.object(W, '_claimed'), \
                 mock.patch.object(W, '_head', side_effect=['a' * 40, 'b' * 40]), \
                 mock.patch.object(W, '_git', return_value=''), \
-                mock.patch('kitlib.records.gate_ok.verify', return_value=({'verdict': 'OK', 'base': 'a' * 40}, None)), \
                 mock.patch('kitlib.git.refs.merge_base', return_value=('a' * 40, None)), \
                 mock.patch.object(W, '_run', return_value={'stdout': 'pack'}):
             with self.assertRaisesRegex(W.Stopped, 'during review'):
@@ -187,7 +190,6 @@ class Protocol(unittest.TestCase):
         with mock.patch.object(W, '_checkout'), mock.patch.object(W, '_claimed'), \
                 mock.patch.object(W, '_head', return_value='a' * 40), \
                 mock.patch.object(W, '_git', return_value=''), \
-                mock.patch('kitlib.records.gate_ok.verify', return_value=({'base': 'b' * 40}, None)), \
                 mock.patch('kitlib.git.refs.merge_base', return_value=('b' * 40, None)), \
                 mock.patch.object(W, '_run') as run:
             with self.assertRaisesRegex(W.Stopped, 'not an ancestor'):
@@ -301,7 +303,7 @@ class LocalAcceptance(fixtures.GateRepoCase):
         self.task = W.plan(self.coordinator, 'codex/probe', 'PROBE', 'probe-session',
                            'gpt-6.1-sol', ('value.txt',))
 
-    def test_real_kit_local_workflow_and_exact_tip_handoff_without_providers(self):
+    def test_real_kit_local_workflow_hands_off_an_ungated_tip_without_providers(self):
         coordinator = LocalHost(self, 'coordinator', self.coordinator)
         prepared = W.prepare(self.task, coordinator)
         self.assertEqual(prepared['bridge'], 'not_required')
@@ -309,20 +311,25 @@ class LocalAcceptance(fixtures.GateRepoCase):
         from kitlib.git import checkout
         checkout.write_text('value.txt', 'after\n', root=self.task.worker)
         worker = LocalHost(self, 'worker', self.task.worker)
-        tester = LocalHost(self, 'test-runner', self.task.worker)
         analyst = LocalHost(self, 'analyst', self.task.worker)
-        result = W.complete(self.task, 'controlled acceptance fixture change', worker, tester, analyst)
+        result = W.complete(self.task, 'controlled acceptance fixture change', worker, analyst)
         self.assertEqual(result['stage'], 'review_requested')
         self.assertEqual(result['independent_review'], 'required')
         self.assertEqual(result['landing'], 'PM_only_disabled')
         self.assertEqual(worker.calls, ['commit'])
-        self.assertEqual(tester.calls, ['gate'])
         self.assertEqual(analyst.calls, ['review_pack'])
         self.assertIn('Co-Authored-By: Codex gpt-6.1-sol <noreply@openai.com>',
                       self.repo.git('show', '-s', '--format=%B', result['tip']))
         self.assertIn('Closes: PROBE', self.repo.git('show', '-s', '--format=%B', result['tip']))
         self.assertEqual(self.repo.head(), self.main)
-        self.assertTrue(any(d.get('kind') == 'test' for d in self.store.history_records(1)))
+        # The one gate runs after review: none was booked and the tip has no gate record.
+        self.assertFalse(any(d.get('kind') == 'test' for d in self.store.history_records(1)))
+        from kitlib.config import load
+        from kitlib.gate.runner import gate_config
+        from kitlib.records import gate_ok
+        record, _ = gate_ok.verify(self.task.worker, result['tip'],
+                                   gate_config=gate_config(load(self.task.worker)))
+        self.assertIsNone(record)
         self.assertEqual(W.handoff(self.task, result['tip'], analyst)['tip'], result['tip'])
         checkout.write_text('value.txt', 'later uncommitted edit\n', root=self.task.worker)
         with self.assertRaisesRegex(W.Stopped, 'dirty'):
@@ -334,39 +341,6 @@ class LocalAcceptance(fixtures.GateRepoCase):
         with self.assertRaisesRegex(W.Stopped, 'exists'):
             W.prepare(self.task, coordinator)
         self.assertEqual(coordinator.calls, ['new_worktree', 'backlog'])
-
-    def test_real_gate_of_same_tip_with_narrower_base_cannot_cover_task_review(self):
-        coordinator = LocalHost(self, 'coordinator', self.coordinator)
-        W.prepare(self.task, coordinator)
-        from kitlib.git import checkout
-        worker = LocalHost(self, 'worker', self.task.worker)
-        checkout.write_text('value.txt', 'intermediate task edit\n', root=self.task.worker)
-        W._run(self.task, 'commit', ('--model', self.task.model, '-m', 'intermediate fixture work',
-                                    'value.txt'), 'worker', self.task.worker, worker)
-        narrower_base = self.repo.head(self.task.worker)
-        checkout.write_text('value.txt', 'final task edit\n', root=self.task.worker)
-        tester = LocalHost(self, 'test-runner', self.task.worker)
-        analyst = LocalHost(self, 'analyst', self.task.worker)
-        result = W.complete(self.task, 'final controlled fixture work', worker, tester, analyst)
-        self.assertEqual(analyst.calls, ['review_pack'])
-        from kitlib.gate import runner
-        from kitlib.records import gate_ok
-        from kitlib.config import load
-        # Advance only the disposable remote's main, as a partial concurrent
-        # landing would. The kit correctly writes no record for a nondefault
-        # custom base; this makes the narrower base the real new default.
-        self.repo.git('push', '-q', 'origin', narrower_base + ':refs/heads/main')
-        gated = runner.branch_gate(self.task.worker, base=narrower_base,
-                                   book_kw=self.book_kw, log_dir=self.logs)
-        self.assertEqual(gated.code, 0, gated.lines)
-        record, why = gate_ok.verify(self.task.worker, result['tip'],
-                                    gate_config=runner.gate_config(load(self.task.worker)))
-        self.assertIsNone(why)
-        self.assertEqual(record['base'], narrower_base)
-        self.assertNotEqual(record['base'], self.task.base)
-        with self.assertRaisesRegex(W.Stopped, 'does not cover'):
-            W.handoff(self.task, result['tip'], analyst)
-        self.assertEqual(analyst.calls, ['review_pack'])
 
     def test_main_and_escaping_file_plans_are_refused(self):
         for cwd, paths in ((self.repo.root, ('value.txt',)),

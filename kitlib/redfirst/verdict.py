@@ -27,6 +27,7 @@ import xml.etree.ElementTree as ET
 from kitlib.guard.shell import cmd_unsafe
 
 RED, GREEN, NONE, ERROR = 'RED', 'GREEN', 'NONE', 'ERROR'
+TIMEOUT = 'TIMEOUT'         # the command ran past its limit and was killed: no verdict (run.py)
 EXIT_RED, EXIT_GREEN, EXIT_USAGE, EXIT_UNDECIDED, EXIT_LEFTOVER = 0, 1, 2, 3, 4
 KINDS = ('python', 'gradle', 'dotnet')
 NEEDS = {'gradle': ('dir', 'project'), 'dotnet': ('csproj',)}

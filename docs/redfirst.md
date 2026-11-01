@@ -11,13 +11,16 @@
   A runner's `args` are appended. The keys are listed in docs/kit-json.md under "`.kit.json` keys".
 - Runners not written (`kitlib/redfirst/run.py`, `runners_for`): the schema default `tests/*test_*.py`, then a python runner `<tools_dir>/*test_*.py` whose `pythonpath` is the tools folder (`"repo".tools_dir`), so a repo that keeps its tests in its tools folder needs no key. That runner imports those tests as top-level modules of the tools folder, so a test that does not import that way reports RED with the ImportError in its reason line. No glob is added when `tools_dir` is `.` or the glob equals one already listed. Written runners are used as they are; no glob is added.
 - A `--tests` path no runner takes is refused, exit 2, nothing made (`run.py`, `select` and `no_runner_text`): the refusal lists each glob tried with how many files committed at `--head` it matches, says whether the globs are the written ones or the defaults, and names `"redfirst".runners` as the key to set (`tests/redfirst/test_run.py`, `UnwrittenRunners`).
-- One line per selector: RED, GREEN, NONE (no test matched) or ERROR. A python test that does not import against the base is RED, with the final ImportError or ModuleNotFoundError line as its reason. A gradle or dotnet compile error is RED only when it names a copied test file; otherwise it is ERROR.
+- One line per selector: RED, GREEN, NONE (no test matched), ERROR or TIMEOUT. A run that books no machine lock is killed with its whole process tree (its kill-on-close job) once it has run its limit, said on the `timeout` line: in the kit `RUN_TIMEOUT`, kit_tests' per-unit limit (300, `kitlib.tooldeps.selfrun.UNIT_TIMEOUT`); in another repo pytests' own, its `.kit.json` "tool_tests".unit_timeout as committed at the base, else that key's schema default (3600, `kitlib/config/schema.py`) (`run.py`, `run_timeout`; a value the schema refuses is exit 2). That selector is TIMEOUT, never RED or GREEN, the run ends `REDFIRST TIMEOUT - ...` with exit 3, and both lines are in `summary.txt` (`run.py`, `default_run`; `tests/redfirst/test_timeout.py`). A python test that does not import against the base is RED, with the final ImportError or ModuleNotFoundError line as its reason. A gradle or dotnet compile error is RED only when it names a copied test file; otherwise it is ERROR.
 - Every line a run prints once its log folder exists is also written to `<log folder>/summary.txt`, and the last line, `summary   <that path>`, names it: read that file, not a redirect another run may share (`run.py`, `write_summary`; `tests/redfirst/test_run.py`, `SummaryFile`). A refusal before the log folder is made writes none.
 - Cleanup runs on every exit the process controls, Ctrl-C included:
   - It runs in a child process on its own console.
   - It puts back the base's copy of each `--also` file, then removes the tree with `kitlib.worktree.remove` (the checks and `git_remove` that `worktree_remove.py` uses), never forced.
   - A tree still held after `"redfirst".hold_wait` seconds is left in place, with the `worktree_remove.py` command that removes it.
 - Exit codes: 0 every selector RED, 1 any GREEN, 2 usage or refusal (`--help` too), 3 undecided, 4 throwaway left; 6, 8, 10, 11 or 12 when the machine lock refused the run ("The machine lock" below).
+
+Known limits:
+- A run that books the machine lock (`run.py`, `locked_run`: gradle, dotnet, or a runner's `lock`) is not timed: only the lock's stop ends its command, and past its kind's guide the lock warns but kills nothing.
 
 ## The machine lock
 

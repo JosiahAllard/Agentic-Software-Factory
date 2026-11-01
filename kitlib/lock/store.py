@@ -172,11 +172,15 @@ def memory_now(store):
     platform's memory_mb; a platform may give only the first two), or None: not measured. Read
     afresh on every call, never kept: Windows moves the commit limit when it grows or shrinks a
     page file (83.4 GB to 74.4 GB in about 10 minutes, 2026-11-01). A scratch store (tests) reads
-    only store.memory, a reader a test sets; unset, None."""
+    only store.memory, a reader a test sets; unset, None. A reader that raises is not measured
+    either (None): a failed look at the memory never refuses or stalls a run (fail open)."""
     fake = getattr(store, "memory", None)
-    if fake is not None:
-        return fake()
-    return None if store.testing else kitlib.platform.memory_mb()
+    try:
+        if fake is not None:
+            return fake()
+        return None if store.testing else kitlib.platform.memory_mb()
+    except Exception:                       # noqa: BLE001 - any failed read is "not measured"
+        return None
 
 
 _SA = []

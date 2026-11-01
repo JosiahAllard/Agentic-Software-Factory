@@ -384,9 +384,9 @@ def plan(L, q, now=None):
 
 def mem_exempt(q, e):
     """True when entry e starts without the memory check (mem_fits): it is nested in a held run
-    (its parent holds slots and waits for it), or no other entry of q holds anything (a held run,
-    or a background run whose child has its slots), so a run never waits on memory with nothing
-    running that could free it."""
+    (its entry has a parent, which waits for it), or no other entry of q is held (state "held",
+    with slots or not) and no background entry's child has slots, so a run never waits on memory
+    with nothing running that could free it."""
     if e.get("parent"):
         return True
     return not any(x["id"] != e["id"] and (x["state"] == "held" or (

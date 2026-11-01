@@ -4,6 +4,7 @@ MB). Short, it keeps its place and waits, its entry's mem_wait and status saying
 MB, headroom Y MB"; nothing is paused. Exempt: a run nested in a held run, and any run when
 nothing else holds slots, so it never waits for ever. The commit and the limit are read at each
 admission, never kept."""
+import os
 import sys
 import threading
 import time
@@ -17,7 +18,8 @@ try:
     from kitlib.lock import queue as qm
     from kitlib.lock import run as rm
     from kitlib.lock import status as st
-    from kitlib.lock.store import EXIT_BUSY, LockError, Settings
+    from kitlib.lock.store import EXIT_BUSY, LockError, Settings, memory_now
+    from kitlib.proc import process
 except ImportError:                 # not Windows: StoreCase skips
     pass
 
@@ -196,6 +198,40 @@ class Admission(MemCase):
         self.holder()
         self.mem = {"total_mb": 64 * GB, "free_mb": 1}          # no commit figures
         self.book("blind", mem_mb=60000, no_wait=True).release()
+
+    def test_a_reader_that_raises_is_not_measured_and_admits_on_slots(self):
+        self.holder()
+        calls = []
+
+        def broken():
+            calls.append(1)
+            raise OSError("GlobalMemoryStatusEx failed")
+        self.store.memory = broken
+        s = self.book("blind", mem_mb=60000, no_wait=True)
+        s.release()
+        self.assertTrue(calls)                                  # acquire did read, and fail
+        self.assertIsNone(memory_now(self.store))
+
+    def test_a_nested_run_joining_the_queue_starts_while_memory_is_short(self):
+        anc = process.own_ancestors()
+        pp, ct = os.getppid(), process.proc_ctime(os.getppid())
+        if ct is None or (pp, ct) not in anc:
+            self.skipTest("this process's parent cannot be read as an ancestor")
+        self.holder()
+        self.mem["commit_mb"] = 80000                           # headroom -4792 MB
+        res = "landing:q:\\repo\\.git"
+        self.assertIn("memory: need 4096 MB", self.busy("plain", resource=res).message)
+        prid = "r-20261006T120000Z-abcdef"
+        self.live_record(prid, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
+        env = clean_env(**{rm.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
+        s = self.book("child", env=env, resource=res, no_wait=True)     # its parent lacks res
+        try:
+            self.assertFalse(s.nested)                          # it went through acquire
+            [e] = [x for x in self.entries() if x["id"] == s.id]
+            self.assertEqual((e["state"], e["parent"]), ("held", prid))
+            self.assertNotIn("mem_wait", e)
+        finally:
+            s.release()
 
 
 class Landing(MemCase):

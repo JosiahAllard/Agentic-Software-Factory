@@ -63,6 +63,11 @@ kit landing tree). A conflict is
 to its author. Any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT RUN:`)
 is reported as it is, with the doc's recovery steps, and not retried. No batches.
 
+## Review
+No size set: the brief's risk decides who reviews (skill branch-review). End-goal design:
+ARCHITECTURE.md, else the README. None of those found: an architecture review reports a NOTE; it
+never reviews against nothing.
+
 ## Shared resources that must be serialised
 The machine lock (skill machine-lock-run): the gate takes it itself; other heavy work runs inside
 it. Never pre-empt a holder, and never end a process you did not start. Ports, devices, accounts

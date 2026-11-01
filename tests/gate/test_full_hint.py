@@ -4,6 +4,7 @@ runner.full_hint, land.full_needed): a FULL NEEDED line with the reason the land
 for, or a changed strict path; nothing extra when the record lands. --full and --only add no line,
 --plan says it, and a hint that cannot be told is a NOTE that never fails the gate."""
 import json
+import os
 
 from kitlib import gate as G
 from kitlib.gate import runner
@@ -177,3 +178,19 @@ class DocsOnlyBase(HintCase):
         _, tip, out = self.plain({'docs/guide.md': 'words\n'})
         self.quiet(out)
         self.lands(tip)
+
+
+class NoStepBase(HintCase):
+    """A base whose only step is limited to *.md: a plain gate of a.py selects no step and refuses
+    (runner.NO_STEP), and the refusal still says the tip needs --full."""
+    GATE = {'docs_only': {'globs': ['*.md'], 'steps': ['scrub']},
+            'steps': [tg._step('scrub', always=False, globs=['*.md'])]}
+    KIT = dict(test_land.LandCase.KIT, owner={'email': tg.ScopedCase.OWNER})
+
+    def test_the_no_step_refusal_carries_the_full_needed_line(self):
+        wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
+        out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=os.path.join(self.tmp, 'own'))
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertEqual(out.no_record, 'no gate step selected')
+        self.needs(out, 'the change is not docs-only, and the base %s sets no "gate".smoke_steps'
+                   % self.main[:10])

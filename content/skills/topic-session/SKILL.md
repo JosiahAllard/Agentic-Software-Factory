@@ -25,4 +25,4 @@ A session the owner drives creates no new records for the work it is given: it p
 
 ## When the session reports
 
-The session gates its tip and messages you the branch, the tip, the gate result and the records it covers. Send that to the repository's coordinator as work: it reviews the branch, gives its verdict, lands it and closes the records. Never land it yourself, and never let the session land.
+The session runs the touched tests and messages you the branch, the tip, the touched-test results and the records it covers; the one gate runs after review, when the coordinator asks. Send that to the repository's coordinator as work: it reviews the branch, gives its verdict, lands it and closes the records. Never land it yourself, and never let the session land.

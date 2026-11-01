@@ -361,9 +361,9 @@ def probe(codex_exe=None, profile=None, fixture_root=None):
             from .attribution import trailer
             if trailer(MODEL) not in body or 'Closes: ' + ITEM not in body:
                 raise RuntimeError('actual diagnostic attribution/closing trailer was lost')
-            _require_refusal(lambda: workflow.handoff(task, tip, reviewer), 'gate proof is missing')
-            gated = workflow._run(task, 'gate', ('--base', task.base), 'test-runner', task.worker, tester)
+            # Review comes first and needs no gate record; the one gate runs on the reviewed tip.
             handoff = workflow.handoff(task, tip, reviewer)
+            gated = workflow._run(task, 'gate', ('--base', task.base), 'test-runner', task.worker, tester)
             if _git(main, ('rev-parse', 'HEAD'), env) != task.base:
                 raise RuntimeError('fixture main changed')
             from kitlib.records import gate_ok
@@ -392,7 +392,7 @@ def probe(codex_exe=None, profile=None, fixture_root=None):
                     'bridge': 'not_required', 'webpage': 'not_required',
                     'active_settings_changed': False, 'hook_trust_changed': False,
                     'preparation': prepared,
-                    'native_remaining_operations': ['assigned edit', 'commit', 'gate', 'review_pack'],
+                    'native_remaining_operations': ['assigned edit', 'commit', 'review_pack', 'gate'],
                     'remaining_operations_verified': True}
     finally:
         try:

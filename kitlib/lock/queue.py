@@ -11,7 +11,9 @@ avoid_after, parent, resource, priority, moved, within}. It is read and written 
 names an exclusive resource the run holds for its whole life, priority "land" plans it ahead of
 ordinary waiting runs (plan). within is set only on the entry of a run booked with within
 (kitlib.lock.run.book, the CLI's --within): {pool: the only slots it may take}; an entry without
-it (or written before it existed) may take any slot.
+it (or written before it existed) may take any slot. mem_wait is set only while a run's slots are
+free but its memory need does not fit the headroom (mem_fits): that need in MB; status names it
+(busy_text), and plan does not read it.
 
 Planning (plan) gives each waiting entry, in queue order, the earliest time what it needs is free
 for its whole expected time, around what holders and runs planned ahead of it take. A run may
@@ -27,7 +29,7 @@ import os
 import time
 
 from kitlib.lock import layout as lay
-from kitlib.lock.store import local_text, write_json
+from kitlib.lock.store import local_text, memory_now, write_json
 
 POOLS = lay.POOLS
 PICK = {"cpu": "cores", "gpu": "gpus"}
@@ -380,6 +382,43 @@ def plan(L, q, now=None):
     return out, soft
 
 
+def mem_exempt(q, e):
+    """True when entry e starts without the memory check (mem_fits): it is nested in a held run
+    (its entry has a parent, which waits for it), or no other entry of q is held (state "held",
+    with slots or not) and no background entry's child has slots, so a run never waits on memory
+    with nothing running that could free it."""
+    if e.get("parent"):
+        return True
+    return not any(x["id"] != e["id"] and (x["state"] == "held" or (
+        x["state"] == "bg" and (x.get("cores") or x.get("gpus")))) for x in q["entries"])
+
+
+def headroom_mb(mem, reserve_mb):
+    """The commit a run may still add, in MB: memory reading mem's commit limit less reserve_mb
+    less its commit charge (negative when the charge is past limit - reserve); None when mem has
+    no commit figures (not measured: a run is then admitted on its slots alone)."""
+    c, lim = (mem or {}).get("commit_mb"), (mem or {}).get("commit_limit_mb")
+    if type(c) is not int or type(lim) is not int or lim <= 0:
+        return None
+    return lim - reserve_mb - c
+
+
+def mem_fits(store, q, e, need_mb):
+    """(fits, headroom) for entry e, whose run needs need_mb, about to take its slots: it fits when
+    it is mem_exempt, the memory is not measured, or commit + need_mb <= limit - reserve, read
+    now (store.memory_now, never a kept figure). headroom is None unless it was read."""
+    if mem_exempt(q, e):
+        return True, None
+    head = headroom_mb(memory_now(store), store.settings.mem_reserve_mb)
+    return head is None or need_mb <= head, head
+
+
+def mem_text(need_mb, headroom):
+    """'memory: need 4096 MB, headroom 1200 MB', how status names a memory wait."""
+    return "memory: need %d MB, headroom %s" % (
+        need_mb, "not measured" if headroom is None else "%d MB" % headroom)
+
+
 def barrier_guard(e, within):
     """What waiting entry e's planned start bars a run behind it from taking before it: None for
     every slot (the backfill rule), or {pool: slots} when it waits on its `within`: the slots it
@@ -399,12 +438,14 @@ def barrier_guard(e, within):
     return guard
 
 
-def busy_text(L, q, e, planned):
-    """Why entry e does not start now: the runs holding the resource it names, the holders of a
-    pool it is short of, what holds not its own cover, then the runs planned ahead of it."""
+def busy_text(L, q, e, planned, headroom=None):
+    """Why entry e does not start now: its memory wait (mem_wait, with headroom: the headroom
+    read last), the runs holding the resource it names, the holders of a pool it is short of,
+    what holds not its own cover, then the runs planned ahead of it."""
     held = holders(L, q, e["id"])
-    parts = ["resource %s is held by %s" % (entry_resource(e), run_text(x))
-             for x in resource_holders(q, e)]
+    parts = [mem_text(e["mem_wait"], headroom)] if type(e.get("mem_wait")) is int else []
+    parts += ["resource %s is held by %s" % (entry_resource(e), run_text(x))
+              for x in resource_holders(q, e)]
     for p in POOLS:
         if not entry_need(e, p):
             continue

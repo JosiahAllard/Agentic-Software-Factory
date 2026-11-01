@@ -153,6 +153,22 @@ class Cli(CliBase):
         self.assertEqual(code, 3, err)
         self.assertEqual(len(self.store.history_records()), 1)
 
+    def test_run_mem_reaches_the_record_and_a_bad_one_is_usage(self):
+        self.confine(1)
+        code, _, err = self.call("run", "--kind", "engine-test", "--repo", "kit", "--slug", "t",
+                                 "--cores", "1", "--no-wait", "--mem", "4096",
+                                 cmd=[sys.executable, "-V"])
+        self.assertEqual(code, 0, err)
+        [h] = self.store.history_records()
+        ended = self.store.read("ended/%s.json" % h["id"])
+        self.assertEqual((ended["need_mem_mb"], ended["mem_from"]), (4096, "flag"))
+        for bad in ("0", "-5", "4g", "1.5"):
+            with self.subTest(bad=bad):
+                code, _, err = self.call("run", "--kind", "engine-test", "--repo", "kit",
+                                         "--slug", "t", "--mem", bad, cmd=[sys.executable, "-V"])
+                self.assertEqual(code, 2)
+                self.assertIn("--mem", err)
+
     def test_a_bare_bash_with_no_git_bash_is_refused_before_it_detaches_or_books(self):
         with mock.patch("kitlib.proc.bash.git_bash", return_value=None), \
                 mock.patch.object(self.tool, "detach", return_value=0) as det:

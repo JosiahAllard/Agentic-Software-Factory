@@ -84,6 +84,12 @@ def parse_duration(s):
     return v
 
 
+def parse_mb(s):
+    if not (s.isascii() and s.isdigit()) or int(s) <= 0:
+        raise argparse.ArgumentTypeError("takes a whole number of MB (more than 0), not %r" % s)
+    return int(s)
+
+
 def parse_hhmm(s):
     try:
         return datetime.datetime.strptime(s.strip(), "%H:%M").time()
@@ -181,6 +187,9 @@ def parser():
     r.add_argument("--expect", dest="expect_s", type=parse_duration, metavar="D",
                    help="how long it expects to hold its slots (default: its history's median, "
                         "else its hold's end, else its kind's warn_min)")
+    r.add_argument("--mem", dest="mem_mb", type=parse_mb, metavar="MB",
+                   help="the memory it needs, in MB (default: the p90 of its history's peak "
+                        "commit, at least its kind's mem_mb); recorded, not yet admitted on")
     r.add_argument("--note")
     r.add_argument("--detach", action="store_true",
                    help="run outside this shell; prints '<run id> pid <n>'")
@@ -200,6 +209,7 @@ def parser():
     b.add_argument("--repo", required=True)
     b.add_argument("--slug", required=True)
     b.add_argument("--expect", dest="expect_s", type=parse_duration, metavar="D")
+    b.add_argument("--mem", dest="mem_mb", type=parse_mb, metavar="MB")
     b.add_argument("--note")
     b.add_argument("--detach", action="store_true")
     b.add_argument("--detached-id", help=argparse.SUPPRESS)
@@ -350,7 +360,7 @@ def cmd_run(a, cmd, store, argv):
     if a.detach and not a.detached_id:
         return detach(argv)
     common = dict(store=store, rid=a.detached_id, detached=bool(a.detached_id),
-                  expect_s=a.expect_s, note=a.note)
+                  expect_s=a.expect_s, note=a.note, mem_mb=a.mem_mb)
     if a.cmd == "background":
         return run_background(cmd, a.repo, a.slug, **common)
     router = dispatch.Router(node, a.artifact, registry_file=a.registry, out=job_out)

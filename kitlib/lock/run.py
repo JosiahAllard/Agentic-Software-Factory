@@ -1465,10 +1465,30 @@ def check_resource(resource):
         raise LockError(EXIT_USAGE, "usage: a resource is a non-empty string, not %r" % (resource,))
 
 
+def check_mem(mem_mb):
+    """book()'s mem_mb rule: None, or a whole number of MB from 1; anything else is LockError
+    usage (exit 2)."""
+    if mem_mb is not None and (type(mem_mb) is not int or mem_mb <= 0):
+        raise LockError(EXIT_USAGE, "usage: --mem must be a positive whole number of MB, not %r"
+                        % (mem_mb,))
+
+
+def mem_need(store, repo, kind, mode, mem_mb, floor):
+    """(need_mem_mb, mem_from) of a run: mem_mb (--mem) when given ("flag"); else the larger of
+    its history's need (Store.history_mem: "history") and its kind's mem_mb floor ("kind");
+    (None, "none") with neither."""
+    if mem_mb is not None:
+        return mem_mb, "flag"
+    hist = store.history_mem(repo, kind, mode)
+    if floor is not None and (hist is None or floor > hist):
+        return floor, "kind"
+    return (hist, "history") if hist is not None else (None, "none")
+
+
 def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, no_wait=False,
          expect_s=None, note=None, on_release_cmd=None, cmd=None, store=None, kinds_table=None,
          env=None, rid=None, detached=False, log=None, gate=False, resource=None, priority=None,
-         within=None, tree=None, branch=None, checkout=None):
+         within=None, tree=None, branch=None, checkout=None, mem_mb=None):
     """Waits for a run of kind `kind` for repo/slug to hold its slots and returns its Slot.
     Raises LockError (the CLI's exit code) when it does not. cores: fewer cpu slots than the
     kind's size, 1..that size, never more; the kind's size is its whole number of cores
@@ -1495,7 +1515,9 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     branch gate's, which kitlib.gate.budget counts its runs by), recorded as `branch` and kept in
     its history line. checkout: the folder the run is booked from (the CLI's current directory):
     a kind that is neither a kit kind nor a kit alias is looked up in the "kinds" section of its
-    repository's main checkout `.kit.json` (kitlib.lock.kinds.with_repo); None: kit kinds only."""
+    repository's main checkout `.kit.json` (kitlib.lock.kinds.with_repo); None: kit kinds only.
+    mem_mb: the memory the run needs, in MB (the CLI's --mem); the record keeps need_mem_mb and
+    mem_from (mem_need). It is recorded only: admission does not read it."""
     store = store or Store()
     env = dict(os.environ if env is None else env)
     try:
@@ -1521,6 +1543,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         raise LockError(EXIT_USAGE, "usage: --gpu-share training needs a kind whose gpu is shared")
     if expect_s is not None and not (isinstance(expect_s, (int, float)) and expect_s > 0):
         raise LockError(EXIT_USAGE, "usage: --expect must be a positive duration")
+    check_mem(mem_mb)
     if priority is not None and priority not in qm.PRIORITIES:
         raise LockError(EXIT_USAGE, "usage: unknown priority %r (known: %s)"
                         % (priority, ", ".join(qm.PRIORITIES)))
@@ -1580,11 +1603,14 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env, log)
         hist = None if expect_s is not None else store.history_expect(
             repo, kind, store.run_mode(priority, branch, gate))
+        need_mem, mem_from = mem_need(store, repo, kind, store.run_mode(priority, branch, gate),
+                                      mem_mb, k.get("mem_mb"))
         run.rec.update(expect_s=expect_s if expect_s is not None else hist if hist is not None
                        else k["warn_min"] * 60,
                        expect_from="--expect" if expect_s is not None else "history"
                        if hist is not None else "guide",
                        warn_s=k["warn_min"] * 60 * store.settings.warn_scale,
+                       need_mem_mb=need_mem, mem_from=mem_from,
                        need=own, has={p: n for p, n in has.items() if n}, hold=hold,
                        parent=parent["id"] if parent else None, gpu_share=gpu_share,
                        **({"gate": True} if gate else {}),

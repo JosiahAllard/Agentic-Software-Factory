@@ -96,8 +96,9 @@ def check_cap(table, agent_cap):
 
 
 def check_entry(name, e, agent_cap=None):
-    """{cpu, gpu, share, warn_min} of entry `e` of kind `name`, checked; KindsError when the lock
-    cannot size it (fail closed). Its other keys (a repo kind's `why`) are dropped."""
+    """{cpu, gpu, share, warn_min} of entry `e` of kind `name`, checked, plus mem_mb (a floor
+    under the memory need its history gives a run, in MB) when it has one; KindsError when the
+    lock cannot size it (fail closed). Its other keys (a repo kind's `why`) are dropped."""
     cpu, gpu = e.get("cpu"), e.get("gpu", 0)
     warn = e.get("warn_min", 60)
     if cpu not in ALIASES and not is_size(cpu):
@@ -108,8 +109,13 @@ def check_entry(name, e, agent_cap=None):
         raise KindsError("kind %s: gpu must be 0 or \"pool\", not %r" % (name, gpu))
     if type(warn) is not int or warn <= 0:
         raise KindsError("kind %s: warn_min must be a whole number of minutes" % name)
-    return {"cpu": cpu, "gpu": gpu, "share": bool(e.get("share")) and gpu == "pool",
-            "warn_min": warn}
+    out = {"cpu": cpu, "gpu": gpu, "share": bool(e.get("share")) and gpu == "pool",
+           "warn_min": warn}
+    if "mem_mb" in e:
+        if type(e["mem_mb"]) is not int or e["mem_mb"] <= 0:
+            raise KindsError("kind %s: mem_mb must be a whole number of MB" % name)
+        out["mem_mb"] = e["mem_mb"]
+    return out
 
 
 def repo_entry(kind, checkout):

@@ -925,3 +925,20 @@ class Store:
             return None
         m = ds[len(ds) // 2] if len(ds) % 2 else (ds[len(ds) // 2 - 1] + ds[len(ds) // 2]) / 2
         return max(s.history_min_s, int(round(m)))
+
+    def history_mem(self, repo, kind, mode="other"):
+        """Memory need in MB of a run of repo, kind and mode, as history_expect counts them: the
+        p90 (nearest rank) of the peak commit (peak_commit_mb) of its finished runs of that mode;
+        None with fewer than history_min_runs of them."""
+        from kitlib.lock import kinds as kinds_mod
+        al = kinds_mod.aliases(self.kinds_path)
+        kind = kinds_mod.canonical(kind, table_aliases=al)
+        ds = sorted(int(d["peak_commit_mb"]) for d in self.history_records()
+                    if d.get("repo") == repo and d.get("how") == "done"
+                    and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
+                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
+                    and isinstance(d.get("peak_commit_mb"), (int, float))
+                    and not isinstance(d["peak_commit_mb"], bool) and d["peak_commit_mb"] >= 0)
+        if len(ds) < self.settings.history_min_runs:
+            return None
+        return ds[(9 * len(ds) + 9) // 10 - 1]          # rank ceil(0.9 n)

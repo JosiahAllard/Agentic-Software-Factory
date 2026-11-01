@@ -72,8 +72,8 @@
                  merged. Last, the scope check (Lander.scope_check): every path the branch changes
                  in a scope of a record it holds (a member `<area>/<path>` read as <path> when
                  the repository has no top-level <area>), in SCOPE_ALWAYS or in a folder
-                 store's folder; a miss is a WARNING after the LANDED line while SCOPE_REFUSES is False, else
-                 REFUSED as above
+                 store's folder; a miss is a WARNING after the LANDED line while
+                 SCOPE_REFUSES is False, else REFUSED as above
   5b tree        the landing tree (prepare_tree): a detached linked worktree the kit owns, locked
                  with the reason TREE_LOCK, at <main checkout>/<worktrees_dir>/_landing
                  (Lander(tree=) names another place). Made the first time; reused when clean,
@@ -512,8 +512,8 @@ def is_author(entry):
 
 class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
-    for its store's write, area]; `read`, a store holding a record was read; `unread`, why a store
-    could not be; `folders`, folder stores' own folders (always allowed)."""
+    for its store's write, area]; `read`, a store holding a record was read; `unread`, why a
+    store could not be; `folders`, folder stores' own folders (always allowed)."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []

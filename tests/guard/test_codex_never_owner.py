@@ -1,4 +1,4 @@
-"""A Codex chat is never the owner (owner answer Q-1662; docs/guard.md "Session mark"): owner
+"""A Codex chat is never the owner (an owner answer; docs/guard.md "Session mark"): owner
 actions are done only from a Claude chat or by hand. rules.is_owner_session is false for every
 Codex chat, the unmarked main chat too, so each owner-only check refuses one; the owner's unmarked
 Claude chat still passes. Codex's hooks carry no subagent identity (hosts.json capabilities
@@ -87,7 +87,7 @@ class OwnerOnlyChecksRefuseACodexChat(Base):
         self.refused_on_codex_only(lambda a: self.write(a, target), 'owner-delegations')
 
     def test_a_hub_owner_verb(self):
-        cmd = 'python "%s" answer Q-1 --label yes' % W.fwd(os.path.join(self.w.kit_dir, 'tools', 'hub.py'))
+        cmd = 'python "%s" answer EX-1 --label yes' % W.fwd(os.path.join(self.w.kit_dir, 'tools', 'hub.py'))
         self.refused_on_codex_only(lambda a: self.shell(a, cmd), 'hub-owner-verb')
 
     def test_a_hub_secret_write(self):

@@ -590,8 +590,8 @@ def lock_mcp(event, ctx, tool, role):
 def is_owner_session(event, ctx):
     """True for the owner's own main session: no subagent and no launcher mark (docs/guard.md
     "Session mark"), on a host whose hooks tell a subagent apart (owner_host). Every owner-only
-    check reads it. A Codex chat is never the owner, the unmarked main chat too (owner answer
-    Q-1662): owner actions are done from the owner's chat on the default host, or by hand."""
+    check reads it. A Codex chat is never the owner, the unmarked main chat too (an owner
+    answer): owner actions are done from the owner's chat on the default host, or by hand."""
     return not subagent(event) and ctx.session_role(event) == context.OWNER and owner_host(ctx)
 
 

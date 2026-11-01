@@ -14,6 +14,7 @@ from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.config import schema as schemamod  # noqa: F401  (the key is checked on load below)
 
 from tests import inproc
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import (ADD_FLAGS, BRANCH, TODAY, StoreCase, kit_json_ref, messages,
                                    priced, record_text)

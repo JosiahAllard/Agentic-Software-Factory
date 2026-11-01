@@ -6,6 +6,7 @@ import os
 import unittest
 
 from kitlib.backlog import errors
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS
 

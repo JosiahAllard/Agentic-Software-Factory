@@ -14,6 +14,7 @@ from kitlib.backlog import pull_branch
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.git import cmd, refs
 
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli, test_verbs
 from tests.backlog.helpers import ADD_FLAGS, TODAY, StoreCase, kit_json_ref, priced
 from tests.realgit import real_git

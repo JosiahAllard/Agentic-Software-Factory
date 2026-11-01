@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from kitlib import strayrestore as sr
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.realgit import real_git
 from tests.strayrestore.helpers import ENV, Fixture
 

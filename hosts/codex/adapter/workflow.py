@@ -188,12 +188,14 @@ def _claimed(task):
         raise Stopped('claim', 'task is not held by this branch and session')
 
 
-def complete(task, subject, worker_host, test_host, reviewer_host):
-    """Commit caller edits, gate the exact tip, then request independent review.
+def complete(task, subject, worker_host, reviewer_host):
+    """Commit caller edits, then request independent review of that exact tip.
 
-    This is intentionally not idempotent. After interruption, use handoff() only
-    when the existing gate record proves the expected commit passed; otherwise
-    inspect/recover with the shared tools. No mutation is automatically replayed.
+    No gate runs here: the author runs the touched tests while building, and the
+    one gate runs on the reviewed tip before landing, where landing checks its
+    record. This is intentionally not idempotent. After interruption, use
+    handoff() for an already committed tip; otherwise inspect/recover with the
+    shared tools. No mutation is automatically replayed.
     """
     _checkout(task)
     _claimed(task)
@@ -206,31 +208,25 @@ def complete(task, subject, worker_host, test_host, reviewer_host):
     tip = _head(task.worker)
     if tip == before or _git(('status', '--porcelain'), task.worker):
         raise Stopped('commit', 'commit did not advance a clean checkout')
-    _run(task, 'gate', ('--base', task.base), 'test-runner', task.worker, test_host)
     return handoff(task, tip, reviewer_host)
 
 
 def handoff(task, expected_tip, reviewer_host):
-    """Read-only recovery/handoff for a clean, still-claimed, exactly gated tip."""
+    """Read-only recovery/handoff for a clean, still-claimed, committed tip.
+
+    Review needs no gate record: the one gate runs after review, on the
+    reviewed tip, and landing checks its record.
+    """
     from kitlib.git import refs
-    from kitlib.config import load
-    from kitlib.records import gate_ok
-    from kitlib.gate.runner import gate_config
     if not refs.is_sha(expected_tip):
         raise ValueError('a full expected commit hash is required')
     _checkout(task)
     _claimed(task)
     if _head(task.worker) != expected_tip or _git(('status', '--porcelain'), task.worker):
         raise Stopped('review', 'checkout changed or is dirty')
-    good, why = gate_ok.verify(task.worker, expected_tip,
-                               gate_config=gate_config(load(task.worker)))
-    if not good:
-        raise Stopped('review', 'exact tip gate proof is missing: ' + str(why))
     ancestor, why = refs.merge_base(task.base, expected_tip, task.worker)
     if ancestor != task.base:
         raise Stopped('review', 'prepared base is not an ancestor of the reviewed tip: ' + str(why))
-    if good.get('base') != ancestor:
-        raise Stopped('review', 'gate record base does not cover the prepared task scope')
     result = _run(task, 'review_pack', (task.branch, '--base', task.base),
                   'analyst', task.worker, reviewer_host)
     _checkout(task)
@@ -262,7 +258,7 @@ def describe(task):
             'item': task.item, 'session': task.session, 'model': task.model,
             'base': task.base, 'paths': list(task.paths),
             'operations': ['new_worktree', 'backlog pull', 'caller runtime edits',
-                           'commit', 'gate', 'review_pack'],
-            'execution': 'requires separate bound coordinator/worker/test/reviewer hosts',
+                           'commit', 'review_pack'],
+            'execution': 'requires separate bound coordinator/worker/reviewer hosts',
             'independent_review': 'required', 'landing': 'PM_only_disabled',
             'bridge': 'not_required', 'webpage': 'not_required'}

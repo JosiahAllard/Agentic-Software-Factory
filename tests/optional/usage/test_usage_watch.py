@@ -261,6 +261,17 @@ class StatuslineRoundTrip(unittest.TestCase):
             self.assertLessEqual({names["new"], names["other"], names["odd"], "sub", "usage-status.json"}, left)
             self.assertTrue(os.path.exists(os.path.join(d, "sub", "usage-status.json.1.tmp")))
 
+    def test_stale_sweep_compares_in_utc(self):
+        # No behaviour test is possible: .NET takes the zone from the system, not from TZ, and the
+        # script reads the clock itself. Local times repeat for an hour when daylight saving ends,
+        # so a local-time cutoff keeps a file written an hour earlier; the cutoff and the file's
+        # time must both be UTC.
+        with open(os.path.join(CODE, "statusline-usage.ps1"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotIn("LastWriteTime ", src)
+        self.assertIn("LastWriteTimeUtc -lt $stale", src)
+        self.assertIn("$stale = (Get-Date).ToUniversalTime().AddMinutes(-5)", src)
+
     def test_no_rate_limits_writes_nothing(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.run_statusline({"session_id": "s1", "model": {"display_name": "Opus"}}, d)

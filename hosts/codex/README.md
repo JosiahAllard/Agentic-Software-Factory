@@ -34,16 +34,28 @@ session as an agent of its mark's role (`kitlib.host.hookmain`, agent `unidentif
 main-checkout rule and the write jail apply to it as to a subagent on any host, and the role policy
 by its mode. A Codex PM or coordinator therefore cannot edit the main checkout or land from it:
 stricter than the default host, where a launched lead's main session may, and looser than the
-branch, which denied every marked call outright. The owner's **unmarked** session is judged by the
-shared rules alone, as on every host; the branch's hooks did nothing there. The runtime broker binds
-a role from native metadata, not the mark (`adapter/runtime.py`).
+branch, which denied every marked call outright. An **unmarked** chat, the one no launcher started,
+skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
+"Session mark"):
+
+- It is an agent session (`rules.agent_session`): the rules only agents are held to (kit-json, the
+  write jail, kill by name, lock state) refuse it as they refuse a subagent.
+- It is never the owner (owner answer Q-1662; `rules.is_owner_session` is false for every Codex
+  chat): every owner-only check refuses it. Those are machine config writes (`.pm-kit`), a commit
+  under the owner's identity, the owner's tools and delegation list, the hub's secrets and owner
+  verbs, the backlog's raw writes, the lock MCP's owner tool names and `gate.py allow`. Owner
+  actions are done from a Claude chat or by hand. Its refusals call the session "an unmarked Codex
+  chat, never the owner".
+
+Both read `hosts.json` `capabilities.subagent_identity_in_hooks` (false for Codex), not the host's
+name. The runtime broker binds a role from native metadata, not the mark (`adapter/runtime.py`).
 
 Codex agent files carry no tool list, so the hook policy holds a read, test or lander role (its role
 file's `mode`) to no edits in its own checkout (`host-role-edit`) whatever the repository's
 `guard.role_policy` says, as the branch's guard adapter did. Files its role file's `writes` names,
 and temp and scratch folders under the write jail, stay open to it.
 
-What the owner's session leaves unjudged (a trade-off: the owner keeps an interactive shell):
+What an unmarked chat leaves unjudged (a trade-off: the chat keeps an interactive shell):
 
 - A call with a TTY, input fed to a command, and text sent to a running process (`write_stdin`).
   The guard sees the command that starts a process, never what is typed into it later. A marked

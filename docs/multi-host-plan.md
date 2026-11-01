@@ -297,7 +297,7 @@ behaviour unchanged.
 | 10 | **Rebase `codex/robust-bridge-plan`** as `optional/bridge/`: promote the helpers, declare the port, move the host halves, delete the probe code, collapse the docs. **Done:** optional/bridge/README.md (layout, port, install, what was deleted) and STATUS.md. Claude and Codex are both served. | 9 |
 
 ## 4. What does not change
-- Standard library only and Windows only. No argparse or printing in kitlib.
+- Standard library only; Windows and Linux (macOS is out). No argparse or printing in kitlib.
 - Tool paths and exit codes. A merged flag keeps the old one as an alias for one release.
 - Guard semantics for Claude: every existing guard test passes through the adapter. Two
   changes are deliberate: the role policy (docs/guard.md "Role policy"), which runs only where a
@@ -362,8 +362,8 @@ The Windows-only inventory, the Linux mechanisms and the questions for the owner
 docs/linux-support-plan.md (sections 1 to 2 and 10).
 
 ### Shape
-- `kitlib/platform/`: one interface with `windows`, `linux` and `darwin` implementations,
-  chosen by `sys.platform`. It covers:
+- `kitlib/platform/`: one interface with `windows` and `linux` implementations (no `darwin`:
+  the seam names it unsupported), chosen by `sys.platform`. It covers:
   - spawning a hidden process
   - process groups and tree kills
   - process identity and parent chain
@@ -390,7 +390,7 @@ The §7 agenda was settled in a planning session with the owner. Steps 11-20 are
 | 17 | Where the role list lives | Only in `content/roles/`. `docs/ROSTER.md` is rendered. `KIT_AGENTS` and the `kitlib/backlog/roles.py` groupings are read from the role files' `mode:`. A role is added or removed with one file and a render. |
 | 18 | Showing what a role is given | `tools/agent_view.py <role> [--host <name>]`, built from the same code that renders and enforces, plus `content/README.md` ("where do I change X"). |
 | 19 | Generated files | Every rendered file opens with a "Generated from `content/...`: edit that, then render" banner. The guard refuses hand edits to rendered folders and points to the source. |
-| 20 | Hook entries | One shared `boot/hook.py <host> <event>` for every host. Each host's guarded tool list is data in `hosts.json`, so the fast path still skips unguarded calls without importing kitlib. A new host adds no hook scripts. |
+| 20 | Hook entries | One shared `boot/hook.py <host> <event>` for every host. Each host's guarded tool list is data in `hosts.json`, so on a host whose `fast_path` is `all` (Claude) the fast path skips unguarded calls without importing kitlib; on Codex it is `none` and every call reaches the guard. A new host adds no hook scripts. |
 | 21 | Tool stubs in repos | None. Skills and roles call `python <kit>/tools/<x>.py -C <worktree>`, using the kit header's path. |
 | 22 | `.kit.json` | Optional overrides only. Main branch from `origin/HEAD`, repo name from the remote or folder, owner from the machine config. The safe protections (no force push to main) are on with no file. |
 | 23 | Worktrees | They stay at each host's `worktrees_directory` (`.claude/worktrees/<slug>`). On first use the kit adds the anchored line (`/.claude/worktrees/`) to `.git/info/exclude`, which is local and never committed. The owner's condition: work in a worktree must still push to its remote branch. It does, because a worktree shares the repo's remotes and has its own index. The exclude only hides the folder from the main checkout's untracked list. A test proves the push. |

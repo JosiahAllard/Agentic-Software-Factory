@@ -468,10 +468,11 @@ On Linux a path is absolute when it starts with `/`; there are no drives, no MSY
 (the placer asks once per mount, read from /proc/self/mountinfo, and folds when in doubt, which
 refuses more). ledger_glob compares both sides the same way.
 
-What keeps Linux safe meanwhile is the front door, not the guard. **Until slice 14, tools/kit.py
-refuses Linux** (`the kit runs on Windows only`, verified in tools/kit.py main), and it keeps
-refusing WSL (its kernel release names Microsoft) until after native Linux parity, so there is no
-supported way to set up or launch the kit on a Linux box. The guard cannot be that stop: the
+What kept Linux safe while slices 2 to 13 were built was the front door, not the guard. **Before
+slice 14, tools/kit.py refused Linux**; it now lets Linux through and still refuses WSL (its kernel
+release names Microsoft, `kitlib.machinesetup.linuxbox.front_door`) until after native Linux
+parity, so until then there was no supported way to set up or launch the kit on a Linux box. The guard
+could not have been that stop: the
 Claude manifest's `pythonw` does not exist on Linux, and a hook command that cannot start is, for
 Claude Code, a non-blocking error (inferred from its hook contract), so the tool call goes ahead
 unguarded and no check inside hookmain ever runs. A plugin installed on Linux by hand, around
@@ -742,8 +743,8 @@ Creating the VM is an owner hand step, drafted only when slice 1 is ready for it
    `init.scope`, and a never-exec'd fork whose parent, not PID 1, is another user's), so (b) passes
    on the VM, and 50 of 50 runs of the free-tree test there came back free. Still open: ssh-agent, gpg-agent and a desktop's gcr agent stay unread processes,
    so a removal while one runs still falls to the owner (`describe` names it). (c) is open: the end-to-end landing tests skip on Linux ("the lock is
-   Windows only"; in tests/gate/test_land*.py only a few unit tests run) and tools/kit.py refuses Linux, so a landing cannot run end to end
-   there before slice 14.
+   Windows only"; in tests/gate/test_land*.py only a few unit tests run), so a landing has not run end to end
+   there (tools/kit.py has let Linux through since slice 14).
    Known limits:
    a bind mount over a tree's file system leaves its removals UNREAD; in a WSL2 distro (a PID
    namespace of its own) every removal is NOT_SEARCHED; /proc is listed once, so a process that

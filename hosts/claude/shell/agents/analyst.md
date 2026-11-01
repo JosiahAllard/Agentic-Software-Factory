@@ -34,6 +34,9 @@ reviewer-model rule, or to sonnet by the research rule, in its dispatch roster. 
   write is a long working note into your scratch folder, outside the checkout.
 - The report is your text reply, about 40 lines at most, never a report file (the host refuses subagent report files). A page for the owner is one HTML file in your scratch folder; your
   caller (the coordinator) publishes it.
+- A review report ends with one final `Verdict:` line, `LAND`, `LAND WITH FOLLOW-UP` or `SEND BACK`
+  (skill specialty-review, Report): the coordinator's `verdict.py add` reads it from your
+  transcript and refuses a LAND over a SEND BACK, or over a report with none.
 - Mark every inference as an inference: "the code does X" and "I expect Y" are different sentences.
 
 ## Never

@@ -18,11 +18,12 @@ RID2 = 'a082f4af73b3c82f2'
 
 
 def records(*models):
-    """Transcript records: a user turn, then one assistant turn per model of `models`."""
+    """Transcript records: a user turn, then one assistant turn per model of `models`, each ending
+    with a final `Verdict: LAND` line (a report with none is refused: test_reviewer_verdict)."""
     out = [{'type': 'user', 'agentId': RID, 'message': {'role': 'user', 'content': 'review it'}}]
     for m in models:
-        out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m,
-                                                     'content': [{'type': 'text', 'text': 'ok'}]}})
+        out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m, 'content': [
+            {'type': 'text', 'text': 'ok\nVerdict: LAND'}]}})
     return out
 
 
@@ -58,7 +59,7 @@ class ReviewerModel(GateRepoCase):
         self.assertEqual(code, 0, (out, err))
         lines = out.strip().splitlines()
         self.assertEqual(lines[-1], 'QUEUED kit/a %s' % self.tip)
-        self.assertEqual([l for l in lines if l.startswith('NOTE')],
+        self.assertEqual([l for l in lines if l.startswith('NOTE: --reviewer-model')],
                          ['NOTE: --reviewer-model opus is not checked: no transcript found for the '
                           'reviewer id %s' % n for n in notes])
 
@@ -90,7 +91,8 @@ class ReviewerModel(GateRepoCase):
         for typed in ('haiku', 'claude-haiku-5-5', 'HAIKU'):
             # Medium: a High-risk haiku review is refused by the tier rule (test_review_tier)
             code, out, err = self.add(**{'--risk': 'Medium', '--reviewer-model': typed})
-            self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), (typed, err))
+            self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/a %s' % self.tip),
+                             (typed, err))
         self.plant(RID2, 'claude-opus-5-5')
         self.assert_queued(self.add(**{'--reviewer-id': RID2}))
         self.assert_refused(**{'--reviewer-id': RID2, '--reviewer-model': 'sonnet'})

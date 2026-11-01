@@ -50,6 +50,9 @@ kitlib.host.hookmain.dispatch.
   agent_models()       the subagent model reader (hosts.claude.adapter.agent_models.models) that
                        tools/verdict.py add checks --reviewer-model with. Optional: verdict.py
                        asks for it with getattr, so a host without it checks nothing
+  agent_verdict()      the reviewer verdict reader (hosts.claude.adapter.agent_models.verdict)
+                       that tools/verdict.py add refuses LAND over a reviewer's SEND BACK with.
+                       Optional, asked for with getattr the same way
   managed_settings_path()   Claude Code's machine-wide managed settings file,
                        %ProgramW6432% (else %ProgramFiles%)\\ClaudeCode\\managed-settings.json, which every
                        account on the machine loads (docs/machine-setup.md "Managed settings");
@@ -219,6 +222,14 @@ class ClaudeAdapter(object):
         [] for an agent id with no transcript, None for an id that is not one)."""
         from hosts.claude.adapter import agent_models
         return agent_models.models
+
+    def agent_verdict(self):
+        """The reviewer verdict reader tools/verdict.py add refuses LAND over a SEND BACK with:
+        hosts.claude.adapter.agent_models.verdict (agent id -> `(found, verdict)`: whether a
+        transcript was found, and its final report's `Verdict:` line, None, or 'unread' when a
+        transcript found cannot be read; None for an id that is not an agent id)."""
+        from hosts.claude.adapter import agent_models
+        return agent_models.verdict
 
 
 def _agent_start(kit, payload, environ):

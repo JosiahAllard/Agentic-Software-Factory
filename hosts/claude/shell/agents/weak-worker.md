@@ -36,12 +36,12 @@ true; `pm-kit:worker` takes it from there, the intended path, not a failure:
 - Match surrounding code: naming, comment density, idioms.
 - Doc lines (a finding, a trim, a new capability): `<kit>/content/skills/specialty-docs/doc-writing.md`, "Findings and doc edits".
 - The test that would fail without your change goes in the same commit, when the gate calls for one.
-- Commit by explicit path, gate green: `python <kit>/tools/commit.py -C <worktree> -m "<subject>"
+- Commit by explicit path, touched tests green: `python <kit>/tools/commit.py -C <worktree> -m "<subject>"
   --model "<model name>" <path> ...`, which adds the trailer for your host and model. Subject says what and why. Unsure
   of your model, say so; never amend to change a trailer.
 - Base moved: merge the exact commit the coordinator named, never the local main, never rebase;
   re-run the gate (the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). Any conflict, or any merge the coordinator did not name: stop and report.
-- Run your brief's gate to a log and read the log; never pipe it through grep, head or tail.
+- Run your brief's tests (the gate only when the coordinator asks, after review) to a log and read the log; never pipe it through grep, head or tail.
   Waiting on it: <kit>/docs/gate.md "Waiting on a gate: who arms what" (your own gate: no Monitor).
   Wait for your own gate run to finish before you report. If you cannot wait, report GATE PENDING
   first, with the log path, never a result you have not read.
@@ -63,7 +63,7 @@ true; `pm-kit:worker` takes it from there, the intended path, not a failure:
 ## Report
 
 Result first (GATE PENDING with the log path, if your gate has not finished). Then branch and
-commit hashes; what you changed; the gate with the line proving each result; anything left
+commit hashes; what you changed; the test (or the gate, when asked) with the line proving each result; anything left
 inferred; anything noticed outside scope. No process narrative. Hand back a text report of about 40 lines at most, never a report file (the host refuses subagent report files).
 
 ## Kit tools

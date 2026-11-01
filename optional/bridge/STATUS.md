@@ -156,7 +156,7 @@ Observations; only the one marked fixed has been fixed since.
 - The recipient chat (the kit folder) dropped out of the window's list after its turns ended. Its
   routes vanished from Current connections, and the lease row showed the chat "(not listed) ...
   cannot deliver". It came back after a `bridge_connections` call.
-  Fixed (KIT-BRIDGE-CODEX-DROPOUT): the pairing store no longer drops a chat on a failed live
+  Fixed since: the pairing store no longer drops a chat on a failed live
   check (a Codex chat whose turn moved on). The chat stays listed and every use checks it again,
   so its routes stay in Current connections, and the lease row's note comes from a live check.
 - The appended line used CRLF while `notes.md` is LF.
@@ -260,7 +260,7 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
     listed is refused with `recipient-not-observed`. The second send below was accepted about 40
     seconds after the recipient's listing turn had ended. So the listing lasted past that turn's
     end; how long it lasts was not measured.
-    Since KIT-BRIDGE-CODEX-DROPOUT the pairing store no longer drops a chat on a failed live check:
+    Since 2026-10-31 the pairing store no longer drops a chat on a failed live check:
     it stays listed and every use checks it again.
   - First send: `bridge_connections` returned `{"chats":[]}`, and `bridge_send` was refused with
     `recipient-not-observed`. Nothing was queued.
@@ -282,7 +282,7 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
     recipient made no bridge call between U-2 and U-3, yet the send was accepted. So these runs
     do not support "a chat stays listed only for the turn in which it made a bridge call". What
     keeps a chat listed, and what drops it, is still open.
-    Since KIT-BRIDGE-CODEX-DROPOUT the pairing store no longer drops a chat on a failed live check:
+    Since 2026-10-31 the pairing store no longer drops a chat on a failed live check:
     it stays listed and every use checks it again.
   - Step 3 was not rerun.
 - **Step 3, 2026-10-26, new Codex recipient and writer chats: delivered and replied, task not

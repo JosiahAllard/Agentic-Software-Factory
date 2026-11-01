@@ -610,8 +610,9 @@ ONCE = 'GATE ONCE: '
 
 class GateOnce(ScopedCase):
     """A base that sets "landing".gate_once (docs/gate.md "Gate once at landing"): a default-mode
-    record lands a tip that changes no strict path and no gate config file, shared paths included,
-    and the merged gate runs --full (each step's full_cmd) once on the merged tree."""
+    record lands a tip that changes no gate config file, shared and strict paths included, and the
+    merged gate runs --full (each step's full_cmd) once on the merged tree (--full --fresh for a
+    strict tip)."""
     KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED, 'gate_once': True})
 
     def landed(self, tip, **kw):
@@ -634,11 +635,18 @@ class GateOnce(ScopedCase):
         _, _, merged = self.landed(tip)
         self.assertEqual(gate_ok.mode_of(merged), 'full')
 
-    def test_a_scoped_record_of_a_strict_branch_is_still_refused(self):
-        wt, tip, rec = self.gated({STRICT_FILE: 'x = 1\n'})
+    def test_a_scoped_record_of_a_strict_branch_lands_and_the_merge_runs_full_fresh(self):
+        _, tip, rec = self.gated({STRICT_FILE: 'x = 1\n'})
         self.assertEqual(gate_ok.mode_of(rec), 'select')
-        self.refused(wt, tip, 'without --full', 'the tip changes strict path %s' % STRICT_FILE,
-                     '"landing".gate_once')
+        from kitlib.gate import verdicts        # a strict tip lands on a strong-tier review
+        from kitlib.git import repo as repomod
+        verdicts.add(repomod.common_dir(self.repo.root)[0],
+                     dict(fixtures.REVIEW, branch=BRANCH, tip=tip, range='main..%s' % tip,
+                          risk='High', reviewer_model='opus'))
+        out, said, merged = self.landed(tip)
+        self.assertEqual(gate_ok.mode_of(merged), 'full')
+        self.assertTrue(any(l.startswith('STRICT: ') and l.endswith('--full --fresh')
+                            for l in said), said)
 
     def test_a_scoped_record_that_changes_the_gate_config_is_still_refused(self):
         wt = self.repo.worktree('feature')

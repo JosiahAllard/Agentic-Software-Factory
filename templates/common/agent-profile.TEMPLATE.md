@@ -26,10 +26,10 @@ success line and exit code, how to verify the push, what to do on each failure v
 whether batches are allowed.
 
 ## Review
-The diff size a coordinator may review itself, and standing review checks. Design docs: the
-repository's end-goal design (the doc an architecture review compares a change with; skill
-specialty-review) and the other design docs it reads, each by path; with none named, ARCHITECTURE.md
-and the README. A stale or outdated design is deleted, not listed here.
+The diff size a coordinator may review itself, and standing review checks. End-goal design: the
+doc an architecture review compares a change with (skill specialty-review), by path; none named:
+ARCHITECTURE.md, else the README. The other design docs it reads, each by path. A stale or
+outdated design is deleted, not listed here.
 
 ## Shared resources that must be serialised
 Locks, ports, devices, accounts and anything else two agents must not use at once, and how each

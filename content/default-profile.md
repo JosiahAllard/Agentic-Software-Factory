@@ -64,9 +64,9 @@ to its author. Any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUS
 is reported as it is, with the doc's recovery steps, and not retried. No batches.
 
 ## Review
-No size set: the brief's risk decides who reviews (skill branch-review). Design docs: the
-repository's ARCHITECTURE.md, its end-goal design, and its README, where they exist. An
-architecture review with neither reports that as a finding; it never reviews against nothing.
+No size set: the brief's risk decides who reviews (skill branch-review). End-goal design:
+ARCHITECTURE.md, else the README. None of those found: an architecture review reports a NOTE; it
+never reviews against nothing.
 
 ## Shared resources that must be serialised
 The machine lock (skill machine-lock-run): the gate takes it itself; other heavy work runs inside

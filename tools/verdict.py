@@ -21,8 +21,9 @@
       The same ids have the final `Verdict:` line of their final report read (the ADAPTER's
       optional agent_verdict(); Claude: hosts.claude.adapter.agent_models.verdict): a reviewer
       that said SEND BACK prints `REFUSED: ...` and an `Instead:` line naming a fresh review of
-      the tip; one whose transcript has no `Verdict:` line prints `REFUSED: ...` and an `Instead:`
-      line to resume it for its line (exit 2, nothing written; verdicts.reviewer_verdict_why); an
+      the tip; one whose transcript has no `Verdict:` line, or cannot be read, prints `REFUSED:
+      ...` and an `Instead:` line to resume it for its line (exit 2, nothing written;
+      verdicts.reviewer_verdict_why); an
       id with no transcript prints `NOTE: the reviewer's verdict is not checked: ...`. Before
       QUEUED, each verdict read prints `reviewer <id> said <verdict> at <tip>`.
       A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",

@@ -66,7 +66,8 @@ size cannot be told (self_review_size_why), nothing written; ModelMismatch (a Ba
 add() is given the models the reviewer's transcript shows (seen_models, the host's reader) and one
 is not the reviewer_model stated (model_mismatch_why), nothing written; ReviewerSaid (a BadEntry)
 when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
-final report says SEND BACK or has no `Verdict:` line (reviewer_verdict_why), nothing written;
+final report says SEND BACK or has no `Verdict:` line, or a transcript found cannot be read
+(reviewer_verdict_why), nothing written;
 LightReview (a BadEntry)
 when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
 nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
@@ -147,8 +148,9 @@ class ModelMismatch(BadEntry):
 
 
 class ReviewerSaid(BadEntry):
-    """The reviewer's final report says SEND BACK, or has no `Verdict:` line
-    (reviewer_verdict_why): its text ends with an Instead: line. Nothing was read or written."""
+    """The reviewer's final report says SEND BACK, has no `Verdict:` line, or its transcript was
+    found and cannot be read (reviewer_verdict_why): its text ends with an Instead: line. Nothing
+    was read or written."""
 
 
 class LightReview(BadEntry):
@@ -387,6 +389,7 @@ def model_mismatch_why(entry, seen):
 
 
 SEND_BACK = 'SEND BACK'
+UNREAD = 'unread'           # a reviewer verdict reader's verdict: a transcript found cannot be read
 
 
 def seen_verdicts(entry, reader):
@@ -394,7 +397,8 @@ def seen_verdicts(entry, reader):
     agent id, what its transcript says. `reader` is a host's reviewer verdict reader (on Claude
     hosts.claude.adapter.agent_models.verdict): id -> `(found, verdict)`, `found` whether a
     transcript was found, `verdict` its final report's `Verdict:` line (LAND, LAND WITH FOLLOW-UP,
-    SEND BACK) or None; None for an id that is not an agent id, which is left out. {} when there
+    SEND BACK) or None, or UNREAD when a transcript found cannot be read; None for an id that is
+    not an agent id, which is left out. {} when there
     is no reader (a host with none, Codex) or the reviewer is the coordinator queueing it
     (self_reader), as seen_models. `entry` is well formed (check)."""
     if reader is None or self_reader(entry):
@@ -413,28 +417,36 @@ def reviewer_verdict_why(entry, said):
     line is SEND BACK refuses it: the Instead: line asks for a fresh review of the tip, never the
     coordinator's own reading over it. A reviewer whose transcript was found but whose final
     report has no `Verdict:` line refuses it too (docs/gate.md "Strict paths"): the Instead:
-    line asks to resume that reviewer for its line. An id with no transcript is not checked.
-    `entry` is well formed (check). Pure."""
+    line asks to resume that reviewer for its line. So does one whose transcript was found but
+    cannot be read (UNREAD): fail closed, the Instead: line asks to retry or re-ask the reviewer.
+    An id with no transcript is not checked. `entry` is well formed (check). Pure."""
     back = [rid for rid, (found, v) in sorted(said.items()) if found and v == SEND_BACK]
     mute = [rid for rid, (found, v) in sorted(said.items()) if found and v is None]
-    if not back and not mute:
+    unread = [rid for rid, (found, v) in sorted(said.items()) if found and v == UNREAD]
+    if not back and not mute and not unread:
         return None
     parts = (['the reviewer %s said SEND BACK (its final Verdict: line)' % rid for rid in back]
-             + ['the reviewer %s gave no final Verdict: line (its transcript)' % rid for rid in mute])
+             + ['the reviewer %s gave no final Verdict: line (its transcript)' % rid for rid in mute]
+             + ['a transcript of the reviewer %s was found but cannot be read' % rid
+                for rid in unread])
     head = '--verdict %s, but %s; nothing was queued\nInstead: ' % (entry['verdict'], '; '.join(parts))
     if back:
         return head + ('dispatch a fresh review of the tip %s (skill branch-review) and queue its '
                        'verdict: a disputed blocking claim is settled by a fresh strong-tier review, '
                        'not by the coordinator\'s own reading' % entry['tip'])
-    return head + ('resume the reviewer %s (SendMessage to its id), ask for its final Verdict: '
-                   'line, then queue again' % ', '.join(mute))
+    if mute:
+        return head + ('resume the reviewer %s (SendMessage to its id), ask for its final Verdict: '
+                       'line, then queue again' % ', '.join(mute))
+    return head + ('run verdict.py add again once the transcript can be read, or resume the '
+                   'reviewer %s (SendMessage to its id) and ask for its final Verdict: line again'
+                   % ', '.join(unread))
 
 
 def said_lines(entry, said):
     """`reviewer <id> said <verdict> at <tip>`, one per id of `said` (seen_verdicts) whose final
     report has a `Verdict:` line, sorted by id. Pure."""
     return ['reviewer %s said %s at %s' % (rid, v, entry['tip'])
-            for rid, (found, v) in sorted(said.items()) if found and v]
+            for rid, (found, v) in sorted(said.items()) if found and v and v != UNREAD]
 
 
 TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hosts.json "tiers") '

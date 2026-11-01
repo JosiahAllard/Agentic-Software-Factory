@@ -226,8 +226,8 @@ class ClaudeAdapter(object):
     def agent_verdict(self):
         """The reviewer verdict reader tools/verdict.py add refuses LAND over a SEND BACK with:
         hosts.claude.adapter.agent_models.verdict (agent id -> `(found, verdict)`: whether a
-        transcript was found, and its final report's `Verdict:` line or None; None for an id that
-        is not an agent id)."""
+        transcript was found, and its final report's `Verdict:` line, None, or 'unread' when a
+        transcript found cannot be read; None for an id that is not an agent id)."""
         from hosts.claude.adapter import agent_models
         return agent_models.verdict
 

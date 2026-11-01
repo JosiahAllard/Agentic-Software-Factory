@@ -137,6 +137,47 @@ class ReviewerVerdict(GateRepoCase):
             self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
         self.assertIs(self.tool.verdict_reader(), AM.verdict)
 
+    def test_a_transcript_that_cannot_be_read_is_refused(self):
+        """Fail closed: a transcript found but unreadable may be the newest, so it is not skipped.
+        A folder where the transcript file should be makes open() raise an OSError."""
+        d = os.path.join(self.home, '.claude', 'projects', 'Q--repo', 'sess-1', 'subagents')
+        os.makedirs(os.path.join(d, 'agent-%s.jsonl' % RID))
+        self.assertEqual(AM.verdict(RID, home=self.home), (True, AM.UNREAD))
+        out = self.assert_refused()
+        self.assertIn('a transcript of the reviewer %s was found but cannot be read' % RID, out)
+        self.assertIn('\nInstead: run verdict.py add again once the transcript can be read, or resume '
+                      'the reviewer %s (SendMessage to its id) and ask for its final Verdict: line '
+                      'again' % RID, out)
+        self.assertNotIn(' said ', out)
+
+    def test_a_transcript_whose_time_cannot_be_read_is_refused(self):
+        self.plant(RID, handback_turn(report('LAND')))
+        with mock.patch.object(AM.os.path, 'getmtime', side_effect=OSError('denied')):
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, AM.UNREAD))
+
+    def test_the_newest_transcript_wins(self):
+        """Two config folders (two accounts) both hold a transcript of the id: the one last
+        written gives the verdict, whichever folder is listed first."""
+        paths = []
+        for cfg in ('.claude', '.claude-account1'):
+            d = os.path.join(self.home, cfg, 'projects', 'Q--repo', 'sess-1', 'subagents')
+            os.makedirs(d, exist_ok=True)
+            paths.append(os.path.join(d, 'agent-%s.jsonl' % RID))
+
+        def write(path, verdict, when):
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(handback_turn(report(verdict))) + '\n')
+            os.utime(path, (when, when))
+
+        first, second = paths          # CLAUDE_CONFIG_DIR's folder is listed first
+        for old, new in ((first, second), (second, first)):
+            write(old, 'LAND', 1700000000)
+            write(new, 'SEND BACK', 1700000600)
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'SEND BACK'), new)
+            write(old, 'SEND BACK', 1700000000)
+            write(new, 'LAND', 1700000600)
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'LAND'), new)
+
     def test_a_self_review_or_a_session_name_is_not_looked_up(self):
         self.plant('a' + '0' * 16, handback_turn(report('SEND BACK')))
         code, out, _ = self.add(**{'--risk': 'Low', '--reviewer': 'pm-kit:coordinator',
@@ -157,6 +198,14 @@ class ReadVerdict(unittest.TestCase):
             ('The verdict: LAND is wrong here', None),      # not anchored at the line start
             ('Verdict: maybe', None),
             ('Verdict: LANDED', None),
+            ('`Verdict: SEND BACK`', 'SEND BACK'),          # backticks around the line ...
+            ('Verdict: `LAND`', 'LAND'),                    # ... or around the verdict
+            ('**Verdict:** `LAND WITH FOLLOW-UP`', 'LAND WITH FOLLOW-UP'),
+            ('`Verdict`: send back', 'SEND BACK'),
+            ('Verdict: LAND or SEND BACK', None),            # two verdicts named: neither is read
+            ('Verdict: `LAND` / `SEND BACK`', None),
+            ('Verdict: LAND\nVerdict: LAND or SEND BACK', None),   # an earlier line never stands in
+            ('Verdict: SEND BACK\nVerdict: pending', None),
             ('', None),
         ]
         for text, want in cases:

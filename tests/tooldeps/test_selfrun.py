@@ -167,7 +167,7 @@ class Skips(TempHomeCase):
 
 class NearTimeout(TempHomeCase):
     """A unit past NEAR_TIMEOUT of the unit timeout is named, green or red, and the run's result
-    stands (KIT-TEST-NEAR-TIMEOUT)."""
+    stands: a module near the timeout is named before load times it out."""
     MODS = ['tests.a.test_slow', 'tests.a.test_fast', 'tests.a.test_hung']
 
     def run_secs(self, results):

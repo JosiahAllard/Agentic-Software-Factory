@@ -439,11 +439,16 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
     no_wait it waits only for background runs to yield. prefer: its hold's slots. within: {pool:
     the only slots it may take} (book's within): its entry carries it (kitlib.lock.queue.plan)
     and only holds over those slots park it. After its first look at the queue it moves dead
-    runs' records to ended/ (Store.live_runs prune), whether or not it then gets its slots."""
+    runs' records to ended/ (Store.live_runs prune), whether or not it then gets its slots.
+    Memory: with its slots free it still waits, in its place, while its need (need_mem_mb) does
+    not fit the commit headroom read at that look (kitlib.lock.queue.mem_fits; exempt nested in a
+    held run, or with nothing else held); its entry's mem_wait says so. Nothing is paused for it."""
     s, say = store.settings, store.say
     deadline = time.monotonic() + (0 if no_wait else math.inf if wait_s is None else wait_s)
     span, hid = run.rec["expect_s"], run.rec.get("hold")
     whole = run.rec.get("hold_scope") == "whole"
+    need_mem = run.rec.get("need_mem_mb") or s.mem_default_mb
+    mem_said = False
     told = said = seen = yielding = ypool = qbad = hbad = stale_at = None
     joined = back = reaped = False
     while True:
@@ -552,6 +557,16 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                 # read anew.
                 ready = info["now"] and not park and not any(in_way.values())
                 bg_only = info["now"] and not ready
+                # Its slots free, its memory need must fit the headroom read now; short, it keeps
+                # its entry, ticket and plan, takes nothing, and looks again.
+                fits, head = qm.mem_fits(store, q, e, need_mem) if ready else (True, None)
+                ready = ready and fits
+                if not fits:
+                    e["mem_wait"] = need_mem
+                else:
+                    e.pop("mem_wait", None)
+                if mem_said != (not fits):
+                    mem_said, said = not fits, None     # its next wait line names the change
                 if ready:
                     got = {p: info[PICK[p]] for p in POOLS}
                     moved = e.get("moved")
@@ -562,7 +577,7 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                 elif no_wait and bg_only and yielding is not None and time.monotonic() > yielding:
                     result, text = EXIT_BUSY, ("NOT ACQUIRED: %s; --no-wait, and the background "
                                                "run did not yield in time"
-                                               % qm.busy_text(L, q, e, planned))
+                                               % qm.busy_text(L, q, e, planned, head))
                 elif no_wait and bg_only:
                     if yielding is None:
                         ypool = next(p for p in ("gpu", "cpu") if in_way[p])
@@ -578,18 +593,18 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                         text = "NOT ACQUIRED: foreground work took the %s it %s: %s; --no-wait" % (
                             ypool if ypool in short else short[0],
                             "waited for" if ypool in short else "needs next",
-                            qm.busy_text(L, q, e, planned))
+                            qm.busy_text(L, q, e, planned, head))
                     else:
-                        text = "NOT ACQUIRED: %s; --no-wait" % qm.busy_text(L, q, e, planned)
+                        text = "NOT ACQUIRED: %s; --no-wait" % qm.busy_text(L, q, e, planned, head)
                 elif time.monotonic() >= deadline:
                     result, text = EXIT_TIMEOUT, "NOT ACQUIRED: %s; waited %s (its --max-wait)" % (
-                        qm.busy_text(L, q, e, planned), wait_text(wait_s))
+                        qm.busy_text(L, q, e, planned, head), wait_text(wait_s))
                 elif not park and said != info["position"]:
                     said = info["position"]
                     text = "run %s waits in the queue: position %d of %d, expected to start %s%s; %s" % (
                         run.id, info["position"], len(planned), qm.est_text(info),
                         " (ahead of its turn: it ends before the runs ahead of it start)"
-                        if info["backfill"] else "", qm.busy_text(L, q, e, planned))
+                        if info["backfill"] else "", qm.busy_text(L, q, e, planned, head))
                 if result is not None:
                     q["entries"].remove(e)
                 if json.dumps(q, sort_keys=True) != before:
@@ -1476,14 +1491,17 @@ def check_mem(mem_mb):
 def mem_need(store, repo, kind, mode, mem_mb, entry):
     """(need_mem_mb, mem_from) of a run: mem_mb (--mem) when given ("flag"); else its history's
     need (Store.history_mem, from entry's mem_since) once that has mem_min_runs runs ("history");
-    else its kind entry's mem_mb floor ("kind"); else (None, "none")."""
+    else its kind entry's mem_mb floor ("kind"); else settings.mem_default_mb ("default"), never
+    0: a run whose need nobody knows is not admitted as needing nothing."""
     if mem_mb is not None:
         return mem_mb, "flag"
     entry = entry or {}
     hist = store.history_mem(repo, kind, mode, entry.get("mem_since"))
     if hist is not None:
         return hist, "history"
-    return (entry["mem_mb"], "kind") if entry.get("mem_mb") is not None else (None, "none")
+    if entry.get("mem_mb") is not None:
+        return entry["mem_mb"], "kind"
+    return store.settings.mem_default_mb, "default"
 
 
 def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, no_wait=False,
@@ -1518,7 +1536,8 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     a kind that is neither a kit kind nor a kit alias is looked up in the "kinds" section of its
     repository's main checkout `.kit.json` (kitlib.lock.kinds.with_repo); None: kit kinds only.
     mem_mb: the memory the run needs, in MB (the CLI's --mem); the record keeps need_mem_mb and
-    mem_from (mem_need). It is recorded only: admission does not read it."""
+    mem_from (mem_need). With its slots free, it waits while that need does not fit the commit
+    headroom (acquire)."""
     store = store or Store()
     env = dict(os.environ if env is None else env)
     try:

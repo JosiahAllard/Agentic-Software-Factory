@@ -11,7 +11,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `CLAUDE.md` | Claude's pointer: imports AGENTS.md | always | kw: rules, claude
 - `AGENTS.md` | kit repo rules for every agent host (canonical) | always | kw: rules, agents
 - `README.md` | what the kit is | first look | kw: readme, overview
-- `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract
+- `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract, design, target
 - `docs/agent-profile.md` | this repo's profile for worker agents | starting a task | kw: profile, branches, build, test
 - `.claude/agent-profile.md` | stub: the profile moved to docs/agent-profile.md | an agent names the old path | kw: profile
 - `.codex/agent-profile.md` | stub: the profile is docs/agent-profile.md | an agent names the host's profile path | kw: profile
@@ -34,7 +34,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/gate.md` | gate.py | running the gate | kw: gate, test, stash
 - `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
 - `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
-- `docs/guard-v2.md` | guard v2 design: keep/cut list, target size, open guard records | planning guard cuts | kw: guard-v2, guard, cuts, refusals
+- `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
 - `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin
 - `docs/jev-fit-audit.md` | Jev fit audit step 1: the kit's routing and labelling decisions, cost and fit findings (desk study, no trial) | weighing a structured-decision model for kit decisions | kw: jev, fit-audit, audit, cost
@@ -42,7 +42,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/landed.md` | landed: has a branch landed | checking a branch | kw: landed
 - `docs/launcher.md` | launcher | starting sessions | kw: launcher, launch
 - `docs/ledger.md` | the rulings ledger | recording a ruling | kw: ledger, rulings
-- `docs/linux-support-plan.md` | Linux support plan (proposal): the platform seam, Linux backends, the guard's path review, CI, slices and owner questions | planning or building Linux support | kw: linux, platform, posix, cgroup, wsl, port
+- `docs/linux-support-plan.md` | Linux support plan (mostly built): the platform seam, Linux backends, the guard's path review, CI, slices and owner questions | planning or building Linux support | kw: linux, platform, posix, cgroup, wsl, port
 - `docs/load-nodes.md` | load nodes: the registry and its repos opt-in, setting up a node, node.py list, status, run, follow and stop, choosing a machine, lock runs on a node, exit codes | sending heavy runs to another box | kw: load-node, node.py, loadnode, registry, offload
 - `docs/lock-api.md` | machine lock API, runs on a load node | heavy runs | kw: lock, machine-lock
 - `docs/lock-mcp.md` | lock MCP server | lock from an agent | kw: lock-mcp, mcp
@@ -69,7 +69,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `docs/repo-checks.md` | forbidden, trailers, pieces | repo checks | kw: forbidden, trailers, pieces
 - `docs/review-pack.md` | review_pack | preparing a review | kw: review-pack, review
 - `docs/shipping.md` | what ships | changing the shipped set | kw: shipping, ships
-- `docs/specialty-skills.md` | decided spec (not built): specialties as skills, merged read and docs agent types (analyst, docs-writer) | changing the roster or a specialty skill | kw: specialty, skills, roster, roles, merge
+- `docs/specialty-skills.md` | decided and built spec: specialties as skills, merged read and docs agent types (analyst, docs-writer) | changing the roster or a specialty skill | kw: specialty, skills, roster, roles, merge
 - `docs/subtraction-audit.md` | kit subtraction audit: code, tools and config to remove or shrink, kept items, owner decisions | planning removals | kw: subtraction-audit, audit, removal
 - `docs/sync-base.md` | sync_base | main moved | kw: sync-base, merge
 - `docs/test-tools.md` | testlist, tool_deps, pytests | test selection | kw: testlist, tool_deps, pytests, tests

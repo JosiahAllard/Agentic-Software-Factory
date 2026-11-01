@@ -68,6 +68,8 @@ table per test package (result, tests, modules, summed unit seconds), then one s
 A unit that skipped tests says `N tests, K skipped` (unittest's `skipped=K`, `skipped_of`; the
 package row and the summary end carry the sum), and nothing extra when none were. A module in the
 selection table's `skip_fails` list FAILS when it skipped any test.
+A unit that took NEAR_TIMEOUT of its timeout or more gets a WARNING line and is named in the
+summary (`near the timeout: ...`); it never changes the run's result.
 """
 import itertools
 import json
@@ -94,6 +96,11 @@ CPUMASK_ENV = 'MACHINE_LOCK_CPUMASK'
 GIVE_ENV = 'MACHINE_LOCK_GIVE_BACK'
 FALLBACK_JOBS = 2
 UNIT_TIMEOUT = 300
+# A unit that took this share of its timeout or more is named in a WARNING line and in the summary,
+# green or not (report): half, since the units that timed out under load on 2026-11-01 had passed
+# in 215-219 s (a 1.4x stretch reached 300 s); at half, a unit is named while load would still
+# have to double its time to end it.
+NEAR_TIMEOUT = 0.5
 COUNT_TIMEOUT = 600
 INTERRUPTED = 130           # the exit status of a run stopped by Ctrl+C
 POLL = 0.5                  # seconds between checks for Ctrl+C while units run
@@ -585,7 +592,7 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     if record_times:
         save_times(times_path, done, split)
     return report(done, wall, jobs, len(alone), out, label,
-                  not_run=(total[0] - len(done)) if interrupted else None)
+                  not_run=(total[0] - len(done)) if interrupted else None, timeout=timeout)
 
 
 HEAVIEST = 3        # the units interpreters_line names by their process starts
@@ -611,9 +618,12 @@ def interpreters_line(stats, done, own, starts=None):
     return line
 
 
-def report(results, wall, jobs, n_serial, out, label='selected', not_run=None):
+def report(results, wall, jobs, n_serial, out, label='selected', not_run=None,
+           timeout=UNIT_TIMEOUT):
     """Write the failures, the per-package table and the summary; (exit status, summary).
-    `not_run` set: the run was interrupted with that many modules not run."""
+    `not_run` set: the run was interrupted with that many modules not run. A unit that took
+    NEAR_TIMEOUT of `timeout` or more without timing out gets a WARNING line and is named in the
+    summary (`near the timeout: ...`, before any `failed:` list); it never changes the status."""
     results = sorted(results, key=lambda r: r[0][0])
     bad = [r for r in results if r[1] != 'OK']
     for (module, _, _), status, ran, secs, text in bad:
@@ -644,6 +654,13 @@ def report(results, wall, jobs, n_serial, out, label='selected', not_run=None):
     skipped = sum(p['skipped'] for p in pkgs.values())
     if skipped:
         how += ', %d skipped' % skipped
+    near = [r for r in results if r[1] != 'TIMEOUT' and r[3] >= NEAR_TIMEOUT * timeout]
+    for (unit, _, _), _status, _ran, secs, _text in near:
+        out.write('kit_tests: WARNING: %s took %.0fs, past %d%% of the %ds unit timeout: load '
+                  'can time it out; split it\n' % (unit, secs, NEAR_TIMEOUT * 100, timeout))
+    if near:
+        how += '; near the timeout: ' + ', '.join('%s (%.0fs of %ds)' % (r[0][0], r[3], timeout)
+                                                   for r in near)
     failed = ', '.join('%s (%s)' % (r[0][0], r[1]) for r in bad)
     if not_run is not None:
         rc = INTERRUPTED

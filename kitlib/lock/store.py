@@ -75,12 +75,15 @@ class LockError(Exception):
 class Settings:
     """Every timing the lock uses, in seconds unless named otherwise. Settings(**overrides)
     changes some (tests); an unknown name raises TypeError. `pauses` maps a named point to
-    seconds a test wants the code to stop there (Store.pause)."""
+    seconds a test wants the code to stop there (Store.pause). mem_reserve_mb: the commit a run's
+    start always leaves free (it starts only when commit + its need <= limit - this;
+    kitlib.lock.queue.mem_fits). mem_default_mb: the memory need of a run with no --mem, no
+    history and no kind floor (kitlib.lock.run.mem_need)."""
     DEFAULTS = {
         "queue_poll_s": 0.25, "queue_read_s": 2.0, "queue_write_s": 30.0, "queue_lock_s": 10.0,
         "store_lock_s": 10.0, "usage_sample_s": 5.0, "ended_keep_s": 3 * 86400,
         "tmp_keep_s": 60.0, "history_keep_days": 90, "history_min_runs": 3,
-        "mem_min_runs": 5,
+        "mem_min_runs": 5, "mem_reserve_mb": 8192, "mem_default_mb": 4096,
         "history_min_s": 60, "max_span_s": 10 * 365 * 86400, "hold_grace_s": 600,
         "hold_max_s": 12 * 3600, "hold_ahead_s": 7 * 86400, "on_release_s": 60.0,
         "stop_s": 60.0, "warn_scale": 1.0, "bg_stale_s": 120.0, "bg_beat_s": 3.0,
@@ -162,6 +165,22 @@ def machine_home():
     tests (fence)."""
     fence("the store's home folder")
     return profile_dir()
+
+
+def memory_now(store):
+    """{total_mb, free_mb, commit_mb, commit_limit_mb} of the machine now (the running
+    platform's memory_mb; a platform may give only the first two), or None: not measured. Read
+    afresh on every call, never kept: Windows moves the commit limit when it grows or shrinks a
+    page file (83.4 GB to 74.4 GB in about 10 minutes, 2026-11-01). A scratch store (tests) reads
+    only store.memory, a reader a test sets; unset, None. A reader that raises is not measured
+    either (None): a failed look at the memory never refuses or stalls a run (fail open)."""
+    fake = getattr(store, "memory", None)
+    try:
+        if fake is not None:
+            return fake()
+        return None if store.testing else kitlib.platform.memory_mb()
+    except Exception:                       # noqa: BLE001 - any failed read is "not measured"
+        return None
 
 
 _SA = []
@@ -606,6 +625,7 @@ class Store:
         self.say = say or (lambda text: None)
         self.hardware = hardware            # kitlib.lock.layout: None = detect this machine
         self.kinds_path = kinds_path        # kitlib.lock.kinds: None = the kit's kinds.json
+        self.memory = None                  # memory_now: a test's reader; None = the machine's
         self._gpu_cache = None
         self._game_at = 0.0
 

@@ -21,7 +21,6 @@ import datetime
 import subprocess
 import time
 
-import kitlib.platform
 from kitlib.lock import game
 from kitlib.lock import holds as hl
 from kitlib.lock import kinds as kinds_mod
@@ -31,8 +30,8 @@ from kitlib.lock import stale as stale_mod
 from kitlib.lock import status as st
 from kitlib.lock.run import expected_end, request_stop
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_USAGE,
-                               ID_RE, LockError, Store, actor_host, caller, iso, owns, parse_iso,
-                               public, read_json, read_record, utc_now)
+                               ID_RE, LockError, Store, actor_host, caller, iso, memory_now, owns,
+                               parse_iso, public, read_json, read_record, utc_now)
 from kitlib.proc import process
 
 SCHEMA_VERSION = 1
@@ -168,7 +167,7 @@ def _hardware(store, L, hw):
         ccds.append({"index": i, "threads": dom, "cpu_slots": slots,
                      "preferred": bool(set(preferred) & set(dom)),
                      "game_pick": bool(slots) and set(slots) == set(game_pick)})
-    mem = kitlib.platform.memory_mb() if not store.testing else None   # the running platform's
+    mem = memory_now(store)                 # the running platform's, read now
     return {"threads": len(hw["threads"]), "thread_ids": hw["threads"], "groups": hw.get("groups") or [],
             "cores": [{"threads": c["threads"], "smt": c["smt"], "efficiency": c["efficiency"]}
                       for c in hw.get("cores") or []],
@@ -232,6 +231,10 @@ def snapshot(store=None, history_days=7, since=None, until=None):
     except OSError:
         snap = None
     gpu = gpu_use(store)
+    hwd = _hardware(store, L, hw)
+    head = qm.headroom_mb({"commit_mb": hwd["memory_mb"]["commit"],
+                           "commit_limit_mb": hwd["memory_mb"]["commit_limit"]},
+                          store.settings.mem_reserve_mb)
     run_rows = []
     for r in runs:
         e = ents.get(r["id"])
@@ -253,6 +256,8 @@ def snapshot(store=None, history_days=7, since=None, until=None):
                    expected_end=expected_end(start_at, r.get("expect_s")),
                    background=bool(r.get("background")),
                    stale=stale_mod.reason(store, r, now),
+                   mem_wait={"need_mb": e["mem_wait"], "headroom_mb": head}
+                   if e and type(e.get("mem_wait")) is int else None,
                    overrun=None)
         if r.get("state") == "held" and r.get("held_since") and r.get("expect_s"):
             try:
@@ -296,7 +301,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
             why = "parked: %s keeps it waiting" % "; ".join(
                 hl.text(h) for h in hs if h["id"] in ids) if ids else "parked behind a hold"
         else:
-            why = qm.busy_text(L, lq, e, planned)
+            why = qm.busy_text(L, lq, e, planned, head)
         queue_rows.append({
             "id": e["id"], "position": info.get("position"), "ticket": e.get("ticket"),
             "repo": e.get("repo"), "slug": e.get("slug"), "kind": e.get("kind"),
@@ -312,7 +317,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
         kinds, kerr = {}, str(e)
     gs = game.state(store, L, hs)
     return {"schema_version": SCHEMA_VERSION, "revision": rev, "at": iso(now), "store": store.root,
-            "hardware": _hardware(store, L, hw), "layout": _layout(store, lf, hw, runs),
+            "hardware": hwd, "layout": _layout(store, lf, hw, runs),
             "slots": slots, "runs": run_rows,
             "queue": {"entries": queue_rows if qerr is None else None, "error": qerr},
             "holds": [hl.entry(h, now) for h in hs], "holds_error": herr, "game": gs,

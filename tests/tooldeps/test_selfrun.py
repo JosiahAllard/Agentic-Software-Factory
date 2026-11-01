@@ -165,6 +165,48 @@ class Skips(TempHomeCase):
         self.assertEqual(rc, 0, out)
 
 
+class NearTimeout(TempHomeCase):
+    """A unit past NEAR_TIMEOUT of the unit timeout is named, green or red, and the run's result
+    stands: a module near the timeout is named before load times it out."""
+    MODS = ['tests.a.test_slow', 'tests.a.test_fast', 'tests.a.test_hung']
+
+    def run_secs(self, results):
+        def run_unit(unit, audit, timeout, root=None, cmd=None, env=None):
+            status, secs = results[unit[0]]
+            return unit, status, 3, secs, NO_SKIP
+        out = io.StringIO()
+        rc, summary = selfrun.run(sorted(results), tempfile.gettempdir(), 2, out=out,
+                                  run_unit=run_unit, label='full', counts={}, timeout=300)
+        return rc, summary, out.getvalue()
+
+    def test_the_fraction_is_half(self):
+        self.assertEqual(selfrun.NEAR_TIMEOUT, 0.5)
+
+    def test_a_green_run_warns_on_a_unit_past_half_the_timeout_and_stays_ok(self):
+        rc, summary, out = self.run_secs({'tests.a.test_slow': ('OK', 178.0),
+                                          'tests.a.test_fast': ('OK', 149.0)})
+        self.assertEqual(rc, 0, out)
+        self.assertIn('kit_tests: WARNING: tests.a.test_slow took 178s, past 50% of the 300s '
+                      'unit timeout', out)
+        self.assertNotIn('WARNING: tests.a.test_fast', out)
+        self.assertTrue(summary.startswith('kit_tests: OK in '), summary)
+        self.assertTrue(summary.endswith('; near the timeout: tests.a.test_slow (178s of 300s)'),
+                        summary)
+        self.assertLess(out.index('WARNING: tests.a.test_slow'), out.index(summary))
+
+    def test_a_red_run_names_it_before_the_failed_list_the_rerun_reads(self):
+        from kitlib.gate import rerun
+        rc, summary, out = self.run_secs({'tests.a.test_slow': ('OK', 150.0),
+                                          'tests.a.test_fast': ('FAILED', 1.0),
+                                          'tests.a.test_hung': ('TIMEOUT', 300.0)})
+        self.assertEqual(rc, 1, out)
+        self.assertIn('WARNING: tests.a.test_slow took 150s', out)
+        self.assertNotIn('WARNING: tests.a.test_hung', out)     # already failed by name
+        self.assertIn('; near the timeout: tests.a.test_slow (150s of 300s); failed: ', summary)
+        self.assertEqual(rerun.FAILED_LIST.match(summary).group(1),
+                         'tests.a.test_fast (FAILED), tests.a.test_hung (TIMEOUT)')
+
+
 class Order(TempHomeCase):
     # TempHomeCase: selfrun.run's run folder comes from user.make_temp (an empty machine config).
     MODS = ['tests.a.test_1', 'tests.a.test_2', 'tests.b.test_1', 'tests.b.test_2',

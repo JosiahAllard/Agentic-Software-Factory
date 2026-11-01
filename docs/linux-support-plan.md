@@ -1,8 +1,13 @@
 # Linux support plan
 
-Status: plan only (2026-10-25), revised 2026-10-26 to the owner's eleven answers (section 10).
-Nothing here is built. It extends, and for Linux supersedes, the
-section "6. Platform seam (later refactor: Linux and macOS)" of docs/multi-host-plan.md: that
+Status: planned 2026-10-25, revised 2026-10-26 to the owner's eleven answers (section 10), and
+mostly built. Slices 1 to 14 have code in the tree (slices 3, 5, 6, 7, 9 and 12 carry a "Built on"
+note in section 8; 10, 11 and 14 are in kitlib/platform/linux/schedule.py, kitlib/launcher/linuxwin.py,
+kitlib/machinesetup/linuxbox.py and installer/machine-setup.sh). Open: slice 15 (peer messaging and
+the bridge, after parity), slice 17 (CI legs; there is no `.github`), the VM proofs that sections 8
+and 8.1 name as open, and the rest of slice 16 (AGENTS.md's "Windows only" line is owner-only).
+
+It extends, and for Linux supersedes, the section "6. Platform seam (later refactor: Linux and macOS)" of docs/multi-host-plan.md: that
 section set the seam's shape and four questions; this plan verifies the Windows-only surface,
 designs each backend, orders the work into branches and asks what only the owner can decide.
 
@@ -21,24 +26,18 @@ needs it says so.
 
 ## 1. Where things stand
 
-### 1.1 The front doors refuse Linux
+### 1.1 The front doors
 
-- tools/kit.py:main refuses `the kit runs on Windows only` off win32 (verified).
-- kitlib/__init__.py installs the console hook only on nt (verified); kitlib/proc/__init__.py's
-  docstring says "Windows only".
-- kitlib/proc/win32.py builds `ctypes.WinDLL("kernel32")` (and ntdll, advapi32, iphlpapi) at
-  import (verified). Every module that imports it fails to import on Linux: process, cpu, job,
-  shield, winwatch, and through them lock/store, lock/run, lock/layout, records/inflight and the
-  test pool. kitlib/proc/pipe.py does the same at import, and so does kitlib/gate/outfile.py (an
-  unguarded `import msvcrt` and a module-level `ctypes.WinDLL('kernel32')`, the gate's claim on
-  its output file). A module-level `from ctypes import wintypes` is in nine kitlib modules
-  (gate/outfile, lock/layout, lock/store, proc/cpu, proc/pipe, proc/process, proc/shield,
-  proc/win32, proc/winwatch); whether it imports on Linux is unknown (section 9).
-- The committed Claude hook manifest (hosts/claude/shell/hooks/hooks.json) runs `pythonw`, and
-  kitlib/host/hookmain.py keeps `INTERPRETERS = {'windows': 'pythonw'}`; hosts.json lists
-  `"platforms": ["windows"]` for both hosts, with `.exe` process names (verified). Since slice 12:
-  INTERPRETERS adds `'linux': 'python3'`, both hosts list windows and linux, and each renders
-  hooks.linux.json beside its unchanged hooks.json.
+- tools/kit.py:main refuses only darwin and every other non-Windows, non-Linux platform, and WSL
+  (kitlib.machinesetup.linuxbox.front_door; plan question 11). Linux is let through (slice 14).
+- kitlib/proc/win32.py binds its DLLs lazily (kitlib.platform.dll.LazyDLL), so it and the modules
+  built on it import on any platform and a call off Windows raises PlatformUnsupported (slice 2).
+  `ctypes.wintypes` imports on Linux, so the module-level `from ctypes import wintypes` lines are
+  not a blocker.
+- The Claude hook manifest (hosts/claude/shell/hooks/hooks.json) runs `pythonw`;
+  kitlib/host/hookmain.py's INTERPRETERS adds `'linux': 'python3'`; hosts.json lists windows and
+  linux for both hosts, with per-platform `process_names`; each host renders hooks.linux.json
+  beside its unchanged hooks.json (slice 12).
 
 ### 1.2 The surface, counted
 
@@ -151,7 +150,7 @@ scheduled-task writers, with the bridge apart.
 
 ### 1.4 Shell text
 
-`git grep -il powershell -- content` matches 4 of the 13 roles (coordinator, docs-writer, lander,
+`git grep -il powershell -- content` matches 4 of the 14 roles (coordinator, docs-writer, lander,
 test-runner) and 1 of the 21 skills (shell-and-worktree-traps, 28 lines, all Windows-shell
 traps). In three of those roles the only match is the `powershell` entry of the capabilities
 list (a host tool, mapped by the renderer); lander also has one prose line. Windows-shell text
@@ -856,9 +855,6 @@ the report says which members kept beating after the call ended.
 
 ## 9. Risks and unknowns
 
-- Unknown: whether `from ctypes import wintypes` imports on Linux on the kit's Python (it raised
-  on some older versions); slice 2 checks, and makes it lazy or guarded either way in all nine
-  modules of section 1.1 (rule 3).
 - Unknown: Claude Code's Linux messaging address, its hook interpreter lookup, its managed
   settings path and its session file fields; slice 15 and 12 probe first.
 - Settled (the tree-kill probe, on the reference VM with Claude Code 2.1.312): Claude Code on

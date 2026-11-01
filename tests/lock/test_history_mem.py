@@ -1,8 +1,9 @@
 """A run's memory need: Store.history_mem is the p90 of the peak commit of
 the finished runs of its own repo, kind and mode, once there are mem_min_runs (5) of them since
 the kind's mem_since; until then the kinds table's optional mem_mb floor stands in; --mem (book's
-mem_mb) overrides both. The run record keeps need_mem_mb and mem_from (flag, history, kind or
-none). Nothing here changes admission."""
+mem_mb) overrides both; with none of them, the lock's default (settings.mem_default_mb). The run
+record keeps need_mem_mb and mem_from (flag, history, kind or default). Admission on that need:
+test_mem_admit."""
 import datetime
 import json
 import unittest
@@ -133,9 +134,9 @@ class BookNeed(HistoryCase):
         rec = self.booked(**kw)[0]
         return rec["need_mem_mb"], rec["mem_from"]
 
-    def test_none_with_no_flag_no_history_and_no_floor(self):
+    def test_the_default_with_no_flag_no_history_and_no_floor(self):
         self.confine(1)
-        self.assertEqual(self.need(), (None, "none"))
+        self.assertEqual(self.need(), (4096, "default"))
 
     def test_the_floor_until_five_runs_then_history_replaces_it(self):
         self.confine(1)
@@ -179,7 +180,7 @@ class BookNeed(HistoryCase):
         self.confine(1)
         for _ in range(4):
             self.add(2000)
-        self.assertEqual(self.need(), (None, "none"))
+        self.assertEqual(self.need(), (4096, "default"))
         self.add(2000)
         self.assertEqual(self.need(), (2000, "history"))
 
@@ -202,7 +203,7 @@ class BookNeed(HistoryCase):
         for _ in range(5):
             self.add(3000, **LAND)
         self.assertEqual(self.need(priority="land", gate=True), (3000, "history"))
-        self.assertEqual(self.need(), (None, "none"))
+        self.assertEqual(self.need(), (4096, "default"))
 
     def test_a_bad_mem_is_usage(self):
         for bad in (0, -1, 1.5, True, "4096"):
@@ -220,7 +221,8 @@ class BookNeed(HistoryCase):
         self.assertTrue(any("needs 4096 MB of memory (--mem)" in x for x in st.render(snap)),
                         st.render(snap))
         rec, snap = self.booked()
-        self.assertFalse(any("MB of memory" in x for x in st.render(snap)))
+        self.assertTrue(any("needs 4096 MB of memory (the lock's default)" in x
+                            for x in st.render(snap)), st.render(snap))
 
 
 if __name__ == "__main__":

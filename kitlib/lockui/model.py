@@ -193,7 +193,8 @@ def build(snap, history_rows=(), now=None, memo=None):
     """The window's view of snapshot `snap` and history lines at `now` (aware; default now):
     holds (owner and game, the schedule's boxes), agent_holds, colour {run id: colour}, strip,
     lanes, details / queue / bookings ([(text, tags)] for the side panels), cores {head, cpu,
-    gpu} (the slot map), memory {free_mb, total_mb} or None, warnings [text]. memo: a dict the
+    gpu} (the slot map), memory {free_mb, total_mb, commit_mb, commit_limit_mb} or None (the
+    commit charge and limit null when not measured), warnings [text]. memo: a dict the
     caller keeps between builds, so the strip's history items are made once for the same
     history_rows object (`is`) on the same local day and offset (_hist_items)."""
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone()
@@ -216,7 +217,8 @@ def build(snap, history_rows=(), now=None, memo=None):
     v["bookings"] = _bookings(agent_holds)
     v["cores"] = _cores(snap, {r.get("id"): r for r in runs}, {h["id"]: h for h in holds})
     mem = (snap.get("hardware") or {}).get("memory_mb") or {}
-    v["memory"] = {"free_mb": mem.get("free"), "total_mb": mem["total"]} if mem.get("total") else None
+    v["memory"] = {"free_mb": mem.get("free"), "total_mb": mem["total"], "commit_mb": mem.get("commit"),
+                   "commit_limit_mb": mem.get("commit_limit")} if mem.get("total") else None
     v["warnings"] = _warnings(snap)
     return v
 

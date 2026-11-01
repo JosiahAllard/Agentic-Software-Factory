@@ -80,6 +80,7 @@ class Settings:
         "queue_poll_s": 0.25, "queue_read_s": 2.0, "queue_write_s": 30.0, "queue_lock_s": 10.0,
         "store_lock_s": 10.0, "usage_sample_s": 5.0, "ended_keep_s": 3 * 86400,
         "tmp_keep_s": 60.0, "history_keep_days": 90, "history_min_runs": 3,
+        "mem_min_runs": 5,
         "history_min_s": 60, "max_span_s": 10 * 365 * 86400, "hold_grace_s": 600,
         "hold_max_s": 12 * 3600, "hold_ahead_s": 7 * 86400, "on_release_s": 60.0,
         "stop_s": 60.0, "warn_scale": 1.0, "bg_stale_s": 120.0, "bg_beat_s": 3.0,
@@ -837,7 +838,7 @@ class Store:
                     "expect_from", "since", "held_since", "ended", "code", "how", "cpu_s",
                     "peak_cpu_cores", "peak_mem_mb", "peak_commit_mb", "hold", "parent",
                     "pinned", "given_back", "tree", "gate", "priority", "session", "role",
-                    "stopped_by", "branch")
+                    "stopped_by", "branch", "need_mem_mb", "mem_from")
     DOCKER_EXEC_RE = re.compile(r"\bdocker(\.exe)?\b.*\bexec\b", re.I)
 
     def history_append(self, d):
@@ -925,3 +926,23 @@ class Store:
             return None
         m = ds[len(ds) // 2] if len(ds) % 2 else (ds[len(ds) // 2 - 1] + ds[len(ds) // 2]) / 2
         return max(s.history_min_s, int(round(m)))
+
+    def history_mem(self, repo, kind, mode="other", since=None):
+        """Memory need in MB of a run of repo, kind and mode, as history_expect counts them: the
+        p90 (nearest rank) of the peak commit (peak_commit_mb) of its finished runs of that mode
+        that ended on or after `since` (a kind's mem_since, "YYYY-MM-DD" UTC; None: all); None
+        with fewer than mem_min_runs of them, so the kind's mem_mb floor stands in until then."""
+        from kitlib.lock import kinds as kinds_mod
+        al = kinds_mod.aliases(self.kinds_path)
+        kind = kinds_mod.canonical(kind, table_aliases=al)
+        start = since and since + "T00:00:00Z"          # ended is "%Y-%m-%dT%H:%M:%SZ": sorts as text
+        ds = sorted(int(d["peak_commit_mb"]) for d in self.history_records()
+                    if d.get("repo") == repo and d.get("how") == "done"
+                    and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
+                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
+                    and (not start or d["ended"] >= start)
+                    and isinstance(d.get("peak_commit_mb"), (int, float))
+                    and not isinstance(d["peak_commit_mb"], bool) and d["peak_commit_mb"] >= 0)
+        if len(ds) < self.settings.mem_min_runs:
+            return None
+        return ds[(9 * len(ds) + 9) // 10 - 1]          # rank ceil(0.9 n)

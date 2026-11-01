@@ -2596,7 +2596,8 @@ ul.hist .sch-line{display:block}
       el("div", { class: "meta" }, el("span", { class: "chip", text: "Machine" })),
       el("h2", { text: cores.head ? String(cores.head) : "The machine" }),
       schBoxes(cores.cpu, "sch-cpu"), schBoxes(cores.gpu, "sch-gpu"),
-      m ? schLine(m.free_mb == null ? "Memory: " + schMb(m.total_mb) + " in all; free not measured yet" : "Memory: " + schMb(m.free_mb) + " free of " + schMb(m.total_mb)) : null,
+      m ? schLine(m.free_mb == null ? "Memory: " + schMb(m.total_mb) + " in all; free not measured yet" : "Memory: " + schMb(m.free_mb) + " free of " + schMb(m.total_mb),
+        m.commit_mb != null && m.commit_limit_mb ? "committed " + schMb(m.commit_mb) + " of its " + schMb(m.commit_limit_mb) + " limit" : "") : null,
       warns.length ? el("ul", { class: "warns" }, ...warns) : null,
       rows ? el("p", { class: "sch-line", id: "sch-stats", text: "Last " + (s.days === 1 ? "day" : s.days + " days") + ": " + sum("runs") + " runs, " + sum("done") + " done, " + (sum("failed") + sum("interrupted")) + " failed or stopped." })
         : s.statsWhy ? el("p", { class: "sch-line", id: "sch-stats", text: "The run history could not be read: " + s.statsWhy }) : null);

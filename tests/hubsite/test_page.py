@@ -3066,6 +3066,14 @@ class ScheduleTest(unittest.TestCase):
         quiet = self.sch("""return [text($("#n-sch")), $("#n-sch").classList.contains("hot")];""", sch_view())
         self.assertEqual(quiet, ["0", False])
 
+    def test_the_machine_card_shows_memory_and_the_commit_charge(self):
+        got = self.sch("""return $$("#sch-machine .sch-line").map(text).filter(t => t.startsWith("Memory"));""",
+                       sch_view(runs=[RUN1], memory={"free_mb": 16384, "total_mb": 65536, "commit_mb": 84480, "commit_limit_mb": 85400}))
+        self.assertEqual(got, ["Memory: 16.0 GB free of 64.0 GB · committed 82.5 GB of its 83.4 GB limit"])
+        bare = self.sch("""return $$("#sch-machine .sch-line").map(text).filter(t => t.startsWith("Memory"));""",
+                        sch_view(runs=[RUN1], memory={"free_mb": 16384, "total_mb": 65536, "commit_mb": None, "commit_limit_mb": None}))
+        self.assertEqual(bare, ["Memory: 16.0 GB free of 64.0 GB"])
+
     def test_the_history_is_closed_until_asked_and_filters_to_failed_or_stopped(self):
         got = self.sch("""
             const closed = { card: !!$("#sch-history"), row: text($("#row-hist h2")) };

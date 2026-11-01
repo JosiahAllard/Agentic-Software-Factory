@@ -13,6 +13,8 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
+from kitlib.config import schema
+from kitlib.content.oncommit import RENDER_TOOL
 from kitlib.proc import process
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
@@ -32,18 +34,20 @@ HANG = ('import os, subprocess, sys, time, unittest\n'
 
 
 class HangingTest(Case):
-    FROM = "kit_tests' UNIT_TIMEOUT"
+    """In the kit the limit is RUN_TIMEOUT: the run here takes the kit's place (is_kit)."""
+    FROM = "the kit: kit_tests' UNIT_TIMEOUT"
 
     def hang(self, limit):
         """Commit the fake test and run redfirst on it; `(rc, its lines, seconds it took, pids)`.
-        `limit`: RUN_TIMEOUT for the run, or None to leave it."""
+        `limit`: RUN_TIMEOUT for a run in the kit, or None for a repo that is not the kit."""
         pids = os.path.join(self.fx.base, 'pids.txt')
         self.commit({'tests/test_hang.py': HANG % (pids, SLEEP + 15, SLEEP)})
         out = io.StringIO()
         began = time.monotonic()
+        kit = mock.patch.object(R, 'is_kit', create=True, return_value=bool(limit))
         patch = (mock.patch.object(R, 'RUN_TIMEOUT', limit, create=True) if limit
                  else mock.patch.dict({}))
-        with patch, redirect_stdout(out):
+        with kit, patch, redirect_stdout(out):
             rc = tool.main(['-C', self.wt, '--log-dir', self.logs, '--tests', 'tests/test_hang.py'],
                            cleanup=self.here)
         return rc, out.getvalue(), time.monotonic() - began, pids
@@ -74,7 +78,7 @@ class HangingTest(Case):
 
 class ConfiguredLimit(HangingTest):
     """A repo whose `.kit.json` at the base sets "tool_tests".unit_timeout (pytests' per-unit
-    limit, default 3600) has its runs timed by that, not by RUN_TIMEOUT."""
+    limit, schema default 3600) has its runs timed by that."""
     KIT_JSON = dict(CONFIG, tool_tests={'unit_timeout': LIMIT})
     FROM = '.kit.json "tool_tests".unit_timeout at the base'
 
@@ -82,14 +86,21 @@ class ConfiguredLimit(HangingTest):
         rc, text, took, pids = self.hang(None)
         self.check(rc, text, took, pids)
 
-    def test_the_configured_limit_wins_over_run_timeout(self):
-        rc, text, took, pids = self.hang(3600)
-        self.check(rc, text, took, pids)
-
 
 class Limit(Case):
-    def test_a_repo_that_sets_none_gets_run_timeout(self):
-        self.assertEqual(R.run_timeout(self.wt, self.base)[0], R.RUN_TIMEOUT)
+    def test_a_repo_that_sets_none_gets_the_schema_default(self):
+        want = schema.defaults('tool_tests')['unit_timeout']
+        self.assertEqual(R.run_timeout(self.wt, self.base)[0], want)
+        self.assertNotEqual(want, R.RUN_TIMEOUT)
+
+    def test_a_kit_checkout_gets_run_timeout(self):
+        os.makedirs(os.path.join(self.wt, 'content', 'roles'))
+        tool_path = os.path.join(self.wt, *RENDER_TOOL.split('/'))
+        os.makedirs(os.path.dirname(tool_path), exist_ok=True)
+        with open(tool_path, 'w', encoding='utf-8') as fh:
+            fh.write('')
+        self.assertEqual(R.run_timeout(self.wt, self.base),
+                         (R.RUN_TIMEOUT, "the kit: kit_tests' UNIT_TIMEOUT"))
 
     def test_a_value_the_schema_refuses_is_a_usage_refusal(self):
         for bad in (0, 'ten', True):
@@ -100,10 +111,11 @@ class Limit(Case):
                     R.run_timeout(self.wt, head)
                 self.assertIn('unit_timeout', str(e.exception))
 
-    def test_the_kit_uses_run_timeout(self):
+    def test_the_kit_ignores_a_configured_value(self):
+        head = self.commit({'.kit.json': json.dumps(dict(CONFIG, tool_tests={
+            'unit_timeout': 7})) + '\n'})
         with mock.patch.object(R, 'is_kit', return_value=True, create=True):
-            self.assertEqual(R.run_timeout(self.wt, self.base),
-                             (R.RUN_TIMEOUT, "the kit: kit_tests' UNIT_TIMEOUT"))
+            self.assertEqual(R.run_timeout(self.wt, head)[0], R.RUN_TIMEOUT)
 
 
 if __name__ == '__main__':

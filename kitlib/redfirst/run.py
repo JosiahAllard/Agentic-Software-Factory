@@ -74,10 +74,10 @@ OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
 # Seconds one selector's command may run (default_run) before its whole process tree is killed
 # and the selector is TIMEOUT (KIT-REDFIRST-TIMEOUT: a run of tests.gate.test_land_fold hung 25 h
 # on 2026-10-31 and nothing stopped it). A python selector runs at most one test module, the unit
-# a test runner times, so the limit is that runner's per-unit one: the repo's own `.kit.json`
-# "tool_tests".unit_timeout (pytests' setting) read at the base (run_timeout); RUN_TIMEOUT, kit_tests'
-# UNIT_TIMEOUT (kitlib.tooldeps.selfrun), in the kit or a repo that sets none. Read at each call,
-# so a test sets a short one. A run that booked the machine lock (locked_run) is not timed here.
+# a test runner times, so the limit is that runner's per-unit one (run_timeout): in the kit,
+# RUN_TIMEOUT, kit_tests' UNIT_TIMEOUT (kitlib.tooldeps.selfrun); in another repo, pytests' own,
+# its `.kit.json` "tool_tests".unit_timeout read at the base, else that key's schema default
+# (kitlib.config.schema, 3600). RUN_TIMEOUT is read at each call, so a test sets a short one. A run that booked the machine lock (locked_run) is not timed here.
 RUN_TIMEOUT = UNIT_TIMEOUT
 KIT_JSON = '.kit.json'
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -307,14 +307,14 @@ def leftover_line(tw, landed, main):
 # ---- running ------------------------------------------------------------------------------------
 def run_timeout(top, base):
     """`(seconds, where it comes from)`: the limit of one test run (RUN_TIMEOUT's note). In the
-    kit, or when `.kit.json` at `base` is absent or sets no "tool_tests".unit_timeout, RUN_TIMEOUT;
-    else that value. V.Usage when `.kit.json` there cannot be read, is no JSON, or holds a value
+    kit, RUN_TIMEOUT. Elsewhere `.kit.json` "tool_tests".unit_timeout at `base`, or the key's
+    schema default when the file is absent or sets none (what pytests uses there). V.Usage when `.kit.json` there cannot be read, is no JSON, or holds a value
     the kit schema refuses."""
     if is_kit(top):
         return RUN_TIMEOUT, "the kit: kit_tests' UNIT_TIMEOUT"
     spec = '%s:%s' % (base, KIT_JSON)
-    default = (RUN_TIMEOUT, "kit_tests' UNIT_TIMEOUT: %s at the base sets no "
-               '"tool_tests".unit_timeout' % KIT_JSON)
+    default = (schema.defaults('tool_tests')['unit_timeout'],
+               "pytests' default: %s at the base sets no \"tool_tests\".unit_timeout" % KIT_JSON)
     if object_types(top, [spec]).get(spec) != 'blob':
         return default
     rc, out, err = git(top, 'show', spec)

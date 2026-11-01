@@ -138,7 +138,10 @@ def render(snap):
         out.append("hardware: %s" % p)
     m = hw.get("memory_mb") or {}
     if m.get("free") is not None and m.get("total"):
-        out.append("memory: %d MB free of %d MB" % (m["free"], m["total"]))
+        out.append("memory: %d MB free of %d MB%s" % (
+            m["free"], m["total"], "; committed %d MB of its %d MB limit" % (
+                m["commit"], m["commit_limit"]) if m.get("commit") is not None
+            and m.get("commit_limit") else ""))
     if snap["queue"]["error"]:
         out.append("%s; the slots below are from the run records. Until it reads again no run "
                    "takes slots, waiting runs keep their places and a new run exits 10"

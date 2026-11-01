@@ -268,6 +268,14 @@ class Process(unittest.TestCase):
         self.assertGreater(m["total_mb"], 0)
         self.assertLessEqual(m["free_mb"], m["total_mb"])
 
+    def test_memory_mb_gives_the_commit_charge_and_its_limit(self):
+        """The commit charge (what every process has committed, daemons and leaked handles
+        included) and the commit limit (physical memory plus the page files): the machine-wide
+        figures a run's own job object cannot see past."""
+        m = process.memory_mb()
+        self.assertGreater(m["commit_mb"], 0)
+        self.assertLessEqual(m["commit_mb"], m["commit_limit_mb"])
+
 
 if __name__ == "__main__":
     unittest.main()

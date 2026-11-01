@@ -12,9 +12,9 @@ and the exit is 4.
 The machine lock: a run whose command is heavy books it once, before the tree is made
 (lock_kind, book_slot: kitlib.lock.run.book for `<repo name>/redfirst-<base10>`), runs every
 command in the booked run's job (locked_run) and releases before the cleanup. The kind is the
-runner's `lock`, else the kind of the heavy-list entry its command matches
-(kitlib.config.heavy_match: build for gradle and dotnet, none for the python runner, which books
-nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
+runner's `lock`, else build for a command runner (COMMAND_LOCK), else the kind of the heavy-list
+entry its command matches (kitlib.config.heavy_match: build for gradle and dotnet, none for the
+python runner, which books nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
 inside one that holds less the lock refuses it. A refusal makes no tree and runs nothing (the log
 folder, made first, stays): exit 2 for the lock's usage refusals, the lock's own exit code for the
 others (LOCK_CODES). The booked run's record ends, before the cleanup, with the code the verdicts
@@ -413,7 +413,10 @@ def run_one(sel, n, tw, log_dir, files, run):
     log dir are deleted first: only this run's results are read."""
     argv, cwd, env = V.command(sel, tw, log_dir, n)
     log = os.path.join(log_dir, '%d-%s-%s.log' % (n, sel.kind, V.stem(sel.path)))
-    for stale in (log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None):
+    # A command runner's result file goes wherever it is: an earlier selector of this run may have
+    # written it (no {n} in its name), and a file the base tracks is refused in prepare.
+    for stale in (log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None,
+                  V.result_path(sel, tw, log_dir, n) if sel.kind == 'command' else None):
         try:
             if stale and os.path.lexists(stale):
                 os.remove(stale)
@@ -510,6 +513,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
         if at_base not in (None, 'blob'):
             raise V.Usage('refused: %s is a %s at base %s, not a file' % (f, at_base, base[:10]))
         (had if at_base else new).append(f)
+    refuse_tracked_results(top, base, sels, files)
     if head == rev(top, 'HEAD'):
         rc, out, err = git(top, 'status', '--porcelain', '--', *files)
         if rc != 0:
@@ -531,11 +535,39 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
                 timeout=timeout, timeout_from=timeout_from)
 
 
+_TREE = 'TREE'                                          # stands for the throwaway root
+_LOGS = os.path.join(os.path.abspath(os.sep), 'redfirst-logs')   # and for the log folder
+
+
+def refuse_tracked_results(top, base, sels, files):
+    """V.Usage when a command runner's `result` names a path in the throwaway tree that the base
+    holds, or a file the run checks out: the run deletes the result before each command, and a
+    file that was there before the run is no result of it."""
+    inside = {}
+    for n, sel in enumerate(sels, 1):
+        p = V.result_path(sel, _TREE, _LOGS, n) if sel.kind == 'command' else None
+        if p and p.startswith(_TREE + os.sep):
+            inside[p[len(_TREE) + 1:].replace(os.sep, '/')] = sel
+    if not inside:
+        return
+    types = object_types(top, ['%s:%s' % (base, rel) for rel in inside])
+    for rel, sel in inside.items():
+        if rel in files or types.get('%s:%s' % (base, rel)):
+            raise V.Usage('refused: --tests %r: the result %r of the runner for %r in %s is %s, so '
+                          'it is there before the run; nothing was run. Instead: name a result '
+                          'under {log_dir}'
+                          % (sel.text, rel, sel.runner.get('glob'), KEY,
+                             'a file the run checks out' if rel in files
+                             else 'in the tree at base %s' % base[:10]))
+
+
 # ---- the machine lock ---------------------------------------------------------------------------
 # The lock's refusals a run passes through as its own exit code (kitlib.lock.store): busy with
 # --no-wait, the wait ran out, the lock could not be read, an owner or game hold, an agent hold.
 # None is 0 or 1, which would read as RED or GREEN.
 LOCK_CODES = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_REQUIRE, EXIT_RESERVED, EXIT_HOLD)
+# The kind a command runner books when it names no `lock`: an engine test builds and runs a game.
+COMMAND_LOCK = 'build'
 
 
 def lock_kind(sel, heavy):
@@ -546,6 +578,9 @@ def lock_kind(sel, heavy):
     own = sel.runner.get('lock')
     if own:
         return own, 'the `lock` of the runner for glob %r in %s' % (sel.runner.get('glob'), KEY)
+    if sel.kind == 'command':
+        return COMMAND_LOCK, ('the command kind books %s unless its runner\'s `lock` in %s names '
+                              'another kind' % (COMMAND_LOCK, KEY))
     argv = V.command(sel, '.', '.', 1)[0]
     entry = heavy_match(argv[0], argv[1:], heavy)
     if entry is None:

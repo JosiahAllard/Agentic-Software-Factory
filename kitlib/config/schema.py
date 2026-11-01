@@ -135,14 +135,17 @@ DATA_ROOT = Obj({
 # A red-first runner (tools/redfirst.py, kitlib/redfirst/verdict.py): the first whose glob matches.
 RUNNER = Obj({
     'glob': Field(Str(), None, 'repo-relative test files it takes (fnmatch, case-blind, * crosses /)'),
-    'kind': Field(Enum('python', 'gradle', 'dotnet'), None, 'python unittest, a Gradle module test, a dotnet test project'),
+    'kind': Field(Enum('python', 'gradle', 'dotnet', 'command'), None, 'python unittest, a Gradle module test, a dotnet test project, or its own command'),
     'pythonpath': Field(RelPath(), None, 'python: the folder on PYTHONPATH, modules relative to it (default the root)'),
     'dir': Field(RelPath(), None, 'gradle: the module folder holding build/test-results'),
     'project': Field(Str(), None, 'gradle: the project path, :core say'),
     'csproj': Field(RelPath(), None, 'dotnet: the test project file'),
+    'command': Field(ListOf(Str(), nonempty=True), None, 'command: the argv words run, with {selector} {path} {stem} {tree} {log_dir} {n} filled in (docs/redfirst.md)'),
+    'result': Field(Str(), None, 'command: the JUnit XML file it writes, filled in the same way, under the throwaway root unless absolute (unset: the exit code gives the verdict)'),
+    'no_test': Field(Regex(), None, 'command: a log line meaning no test matched, the verdict NONE'),
     'args': Field(Strs, None, 'arguments appended to the command'),
-    'lock': Field(Str(pattern=NAME_RE, what='a kind name'), None, 'the kinds-table kind booked around its command (unset: the kind of the heavy-list entry the command matches - build for gradle and dotnet, none for python)'),
-}, required=('glob', 'kind'), what='{glob, kind, pythonpath, dir, project, csproj, args, lock}')
+    'lock': Field(Str(pattern=NAME_RE, what='a kind name'), None, 'the kinds-table kind booked around its command (unset: build for command, else the kind of the heavy-list entry the command matches - build for gradle and dotnet, none for python)'),
+}, required=('glob', 'kind'), what='{glob, kind, pythonpath, dir, project, csproj, command, result, no_test, args, lock}')
 
 SECTIONS = {
     'repo': {
@@ -301,7 +304,7 @@ SECTIONS = {
         'udp_ports': Field(ListOf(Int(0, 65535), length=2), None, '[low, high] ports checked free'),
     },
     'redfirst': {
-        'runners': Field(ListOf(RUNNER), [{'glob': 'tests/*test_*.py', 'kind': 'python'}], 'which runner takes a test file, first match wins; none written: this default, then <tools_dir>/*test_*.py as python with the tools folder as pythonpath, unless tools_dir is . or that glob is listed (docs/redfirst.md); a runner\'s lock is the kinds-table kind the run books around its command (unset: the kind of the heavy-list entry the command matches)'),
+        'runners': Field(ListOf(RUNNER), [{'glob': 'tests/*test_*.py', 'kind': 'python'}], 'which runner takes a test file, first match wins; none written: this default, then <tools_dir>/*test_*.py as python with the tools folder as pythonpath, unless tools_dir is . or that glob is listed (docs/redfirst.md); a runner\'s lock is the kinds-table kind the run books around its command (unset: build for a command runner, else the kind of the heavy-list entry the command matches)'),
         'hold_wait': Field(Int(0), 60, 'seconds a held throwaway tree is re-checked before it is left'),
     },
     'review_pack': {

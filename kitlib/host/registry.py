@@ -417,8 +417,9 @@ def unowned_images(path=None):
 def ancestor_images():
     """The lower-case image names of this process's ancestors, nearest first, as the machine
     lock's caller walks them (kitlib.lock.store.caller: one process snapshot, through an exited
-    ancestor a handle keeps openable). An ancestor with no listed name is left out. Raises when
-    the snapshot cannot be made."""
+    ancestor a handle keeps openable). An ancestor with no listed name is left out, and the walk
+    ends where the chain breaks (an exited ancestor no handle keeps): unowned_caller's known
+    limit. Raises when the snapshot cannot be made."""
     from kitlib.proc import process
     snap = process.snapshot()
     names = {p: n for p, _pp, n in snap}
@@ -432,8 +433,10 @@ def unowned_caller(tree=None, path=None):
     words for a refusal, else None. Read from the process tree (`tree`, default ancestor_images:
     a callable giving the ancestors' image names), never from what a caller says: one of those
     images anywhere above this process, or a tree or hosts.json that cannot be read (fail
-    closed). A run whose ancestry the walk cannot follow (a detached start whose launcher exited)
-    shows what it can reach; the owner's own shell and the default host's chats give None."""
+    closed). The owner's own shell and the default host's chats give None. The known limit: a run
+    whose ancestry the walk cannot follow (a detached start whose launcher has exited, no handle
+    keeping it openable) shows only what it can reach, so a broken chain with none of those
+    images left in it is taken as the owner's."""
     try:
         images = unowned_images(path)
         above = (tree or ancestor_images)()

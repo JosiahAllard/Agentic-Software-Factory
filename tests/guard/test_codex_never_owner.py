@@ -106,6 +106,13 @@ class OwnerOnlyChecksRefuseACodexChat(Base):
         self.assertIn('an unmarked Codex chat, never the owner', d.reason)
         self.assertNotIn('marked owner', d.reason)
 
+    def test_the_gate_allow_refusal_calls_the_codex_chat_unmarked(self):
+        cmd = 'python "%s" allow kit/x --runs 8 --why y' % W.fwd(os.path.join(self.w.kit_dir, 'tools', 'gate.py'))
+        self.refused_on_codex_only(lambda a: self.shell(a, cmd), 'gate-allow')
+        d = self.judge(CODEX, self.shell(CODEX, cmd))
+        self.assertIn('This session is an unmarked Codex chat, never the owner', d.reason)
+        self.assertNotIn('a session marked', d.reason)
+
 
 class TheOwnerTests(Base):
     """The predicates every owner-only check reads, on each host's profile."""

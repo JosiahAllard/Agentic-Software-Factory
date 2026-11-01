@@ -21,6 +21,7 @@ from kitlib.backlog.errors import Failure, Uncommitted, Usage
 from tools import backlog as backlog_tool
 
 from tests.backlog.helpers import ADD_FLAGS, ADD_NONE, BRANCH, priced
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.gitfixture import TempRepo, fixture_env
 from tests.home import temp_home
 

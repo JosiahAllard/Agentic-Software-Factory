@@ -15,7 +15,7 @@ error stopped --apply part way (the rest is LEAVE and the left lines still print
 git status failed (ERROR, and no left lines since git could not list them), 2 on a usage
 error, a refusal (the session's mark, a merge or rebase in progress) or a git failure before
 anything was touched. Run by the owner, the PM, a coordinator or the lander only (the session
-mark).
+mark; an unmarked process under a Codex chat is not the owner: strayrestore.why_not).
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.strayrestore, prints and
 exits.
@@ -71,9 +71,10 @@ def line(item, applied):
 def main(argv=None, environ=None):
     a = build_parser().parse_args(argv)
     mark = sessionmark.mark(environ)
-    if not sr.allowed(mark):
+    why = sr.why_not(mark)
+    if why:
         print_safe('REFUSED: stray_restore.py runs for the owner, the PM, a coordinator or the '
-                   'lander; this session is marked %r' % mark)
+                   'lander; %s' % why)
         return USAGE
     run = sr.apply(a.path, environ) if a.apply else sr.plan(a.path)
     if run.refused:

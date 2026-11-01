@@ -13,6 +13,7 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import roles as R
 from kitlib.backlog.errors import Refusal
 from tests import inproc
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, BRANCH, TODAY, StoreCase, kit_json_ref, priced, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 

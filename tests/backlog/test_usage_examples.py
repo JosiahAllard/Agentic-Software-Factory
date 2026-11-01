@@ -4,11 +4,12 @@ import importlib.util
 import os
 import shlex
 import subprocess
-import sys
 import tempfile
 import unittest
 
 from kitlib.backlog import record as rmod
+from tests.backlog import ownertree
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import StoreCase, kit_json_ref
 from tests.gitfixture import fixture_env, rmtree
 
@@ -40,7 +41,7 @@ class Errors(StoreCase):
         home = tempfile.mkdtemp(prefix='kit-home-')
         self.addCleanup(rmtree, home)
         env = fixture_env({'USERPROFILE': home, 'HOME': home})
-        p = subprocess.run([sys.executable, TOOL, '-C', self.repo.root] + list(args),
+        p = subprocess.run(ownertree.argv(TOOL, '-C', self.repo.root, *args),
                            capture_output=True, text=True, encoding='utf-8', env=env, timeout=120)
         return p.returncode, p.stdout + p.stderr
 

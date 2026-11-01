@@ -10,7 +10,9 @@ role file, `<kit>/content/roles/<role>.md` under the kit root the guard runs fro
 kitlib.content.role_mode, which reads an old name such as opus-worker as its new one). A role with neither, or whose role files are missing or unreadable, is judged as before.
 The role is the subagent's (config.policy.role_name: Action.agent_role when the roles table or a
 role file names it), else the main session's launcher mark when one of them names it, else `main`.
-The owner's own session (nothing marks it) is never held, and its calls read no config here.
+The owner's own session (rules.is_owner_session: nothing marks it, on a host that can run the
+owner's) is never held, and its calls read no config here; a host's unmarked chat that is never
+the owner's is `main`, held to the mode `main` is given.
 
   MODES   controller   a lead (pm, coordinator): shell and edits as before, plus the checks below
           write        a builder: the same
@@ -72,7 +74,6 @@ from . import jail
 from . import paths
 from . import rules
 from . import shell as sh
-from .context import OWNER
 
 NO_EDIT = ('read', 'test', 'lander')
 READ_ONLY_CHECKOUT = ('read', 'test')
@@ -141,13 +142,14 @@ def enabled(cfg):
 
 def mode(action, ctx):
     """(role, mode) of the Action, mode None when the policy is off for it: an action no rule
-    here judges (only edits, shell calls and the lock's MCP tools are), the owner's own session, a session outside any checkout's .kit.json, a .kit.json
+    here judges (only edits, shell calls and the lock's MCP tools are), the owner's own session
+    (rules.is_owner_session), a session outside any checkout's .kit.json, a .kit.json
     that does not turn the policy on, or a role with no mode in the roles table or its role file."""
     if action is None or action.kind not in ('edit', 'shell', 'mcp'):
         return None, None
     if action.kind == 'mcp' and lock_mcp_tool(action, ctx) is None:
         return None, None                       # an MCP call that is not the lock's: not judged here
-    if not getattr(action, 'agent', None) and ctx.session_role(action) == OWNER:
+    if rules.is_owner_session(action, ctx):
         return None, None                       # the owner's own session: no role, nothing read
     cwd = action.cwd or os.getcwd()
     cfg = ctx.config(cwd)

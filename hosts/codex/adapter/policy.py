@@ -2,8 +2,9 @@
 `screen`). The role policy every host shares is kitlib.guard.rolepolicy; this is what step 4 left in
 the Codex branch's guard_adapter and actions.py.
 
-It holds a session the kit marks (PM_KIT_ROLE set; kitlib.sessionmark). The owner's own session,
-which nothing marks, is held only by the shared rules, as on every host.
+It holds a session the kit marks (PM_KIT_ROLE set; kitlib.sessionmark). An unmarked chat is held
+only by the shared rules, which count it as an agent session and never as the owner's
+(kitlib.guard.rules agent_session, is_owner_session).
 
   screen(action, environ) -> Decision or None
     host-tool         a tool call outside ALLOWED_TOOLS (kind other), or an MCP tool other than the
@@ -103,7 +104,7 @@ def patch_in_shell(action):
 def screen(action, environ):
     mark = sessionmark.mark(environ)
     if mark is None:
-        return None                             # the owner's own session
+        return None                             # an unmarked chat: the shared rules alone
     refusal = getattr(action, 'refusal', '')
     if refusal:
         return _deny('host-shell', 'A Codex agent session runs only calls the kit guard can judge, and %s.' % refusal,

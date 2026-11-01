@@ -545,14 +545,17 @@ class HostConformance(object):
 
         def boom(*a, **k):
             raise RuntimeError('guard broke')
-        self.assertEqual(self.run_hook(hook.tool_event, payload, boom, boot=False), (0, ''),
-                         'skipped: no kit, no guard')
-        marked = self.run_hook(hook.tool_event, payload, boom, environ={'PM_KIT_ROLE': 'worker'})
         if hook.fast_path == 'all':
-            self.assertEqual(marked, (0, ''))
-        else:
-            self.assertEqual(self.read_output(marked[1], marked[0])[0], 'deny',
-                             'fast_path unmarked: a marked session\'s call reaches the host and the guard')
+            self.assertEqual(self.run_hook(hook.tool_event, payload, boom, boot=False), (0, ''),
+                             'skipped: no kit, no guard')
+            marked = self.run_hook(hook.tool_event, payload, boom, environ={'PM_KIT_ROLE': 'worker'})
+            self.assertEqual(marked, (0, ''), 'fast_path all: a marked session skips too')
+            return
+        for environ in ({}, {'PM_KIT_ROLE': 'worker'}):
+            with self.subTest(environ=environ):
+                code, out = self.run_hook(hook.tool_event, payload, boom, environ=environ)
+                self.assertEqual(self.read_output(out, code)[0], 'deny',
+                                 'fast_path none: every call reaches the host and the guard (failing closed)')
 
     def test_the_one_entry_adds_the_kit_header_at_every_start_event(self):
         text = header.text(self.KIT_ROOT)

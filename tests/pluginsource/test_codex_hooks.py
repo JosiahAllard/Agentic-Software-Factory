@@ -187,19 +187,22 @@ class Stub(unittest.TestCase):
                 self.assertTrue(err.rstrip('\n').endswith(FIX), err)
 
     def test_the_kits_own_hook_runs_through_it_as_it_runs_alone(self):
-        """The real boot/hook.py and hosts.json in the cache layout: its unmarked fast path allows a
-        read (exit 0, nothing written) and, marked, with no kit to boot, it blocks; the stub gives the
-        same exit code and output as running boot/hook.py itself."""
+        """The real boot/hook.py and hosts.json in the cache layout, with no kit to boot: Codex has no
+        fast path, so a read blocks in an unmarked chat as a write does in a marked one, and a start
+        event says the kit did not load (exit 0); the stub gives the same exit code and output as
+        running boot/hook.py itself."""
         folder = os.path.join(self.kits, '0.4.0-main.1')
         os.makedirs(os.path.join(folder, 'boot'))
         shutil.copy(os.path.join(ROOT, 'boot', 'hook.py'), os.path.join(folder, 'boot', 'hook.py'))
         shutil.copy(os.path.join(ROOT, 'hosts.json'), os.path.join(folder, 'hosts.json'))
         marked = dict(child_env(), PM_KIT_ROLE='worker')
-        for env, tool, want in ((child_env(), 'Read', 0), (marked, 'Write', 2)):
-            with self.subTest(tool=tool):
-                got = self.run_stub('PreToolUse', {'tool_name': tool}, env=env)
+        for env, event, tool, want in ((child_env(), 'PreToolUse', 'Read', 2), (marked, 'PreToolUse', 'Write', 2),
+                                       (child_env(), 'SessionStart', None, 0)):
+            with self.subTest(event=event, tool=tool):
+                payload = {'tool_name': tool} if tool else {}
+                got = self.run_stub(event, payload, env=env)
                 alone = subprocess.run([sys.executable, '-B', os.path.join(folder, 'boot', 'hook.py'),
-                                        'codex', 'PreToolUse'], input=json.dumps({'tool_name': tool}),
+                                        'codex', event], input=json.dumps(payload),
                                        capture_output=True, text=True, env=env, timeout=60)
                 self.assertEqual(got[0], want, got)
                 self.assertEqual(got, (alone.returncode, alone.stdout, alone.stderr))

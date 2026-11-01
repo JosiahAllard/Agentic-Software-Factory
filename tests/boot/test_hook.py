@@ -60,14 +60,15 @@ class BeforeBoot(Scratch):
             with self.subTest(tools=tools):
                 self.assertFalse(H.skips(dict(HOOK, guarded_tools=tools), read, {}))
 
-    def test_fast_path_unmarked_skips_only_an_unmarked_session(self):
-        hook = dict(HOOK, fast_path='unmarked')
+    def test_fast_path_none_skips_nothing_in_any_session(self):
+        """fast_path "none" (Codex): every call reaches the kit, the unmarked chat's too. Only "all"
+        skips; "unmarked", the value Codex had, is now unknown and skips nothing."""
         read = {'call': {'name': 'read'}}
-        for value, skip in ((None, True), ('', True), ('  ', True), ('worker', False), (' pm ', False)):
-            env = {} if value is None else {H.MARK: value}
-            self.assertEqual(H.skips(hook, read, env), skip, value)
-        self.assertTrue(H.skips(HOOK, read, {H.MARK: 'worker'}), 'fast_path all: any session')
-        self.assertFalse(H.skips(dict(HOOK, fast_path='never'), read, {}), 'an unknown value never skips')
+        for fast in ('none', 'unmarked', 'never'):
+            for env in ({}, {'PM_KIT_ROLE': ''}, {'PM_KIT_ROLE': '  '}, {'PM_KIT_ROLE': 'worker'}):
+                with self.subTest(fast=fast, env=env):
+                    self.assertFalse(H.skips(dict(HOOK, fast_path=fast), read, env))
+        self.assertTrue(H.skips(HOOK, read, {'PM_KIT_ROLE': 'worker'}), 'fast_path all: any session')
 
 
 class WhichKit(Scratch):

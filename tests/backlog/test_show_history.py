@@ -3,7 +3,6 @@
 and a record deleted on a merged side branch is still found (`--full-history`)."""
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -13,6 +12,8 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Ended, Failure, NotFound, Usage
 from kitlib.git import cmd
+from tests.backlog import ownertree
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, BRANCH, StoreCase, kit_json_ref, rec, record_text
 from tests.gitfixture import NAME, TempRepo, fixture_env, rmtree
 
@@ -235,7 +236,7 @@ class Cli(StoreCase):
         self.addCleanup(rmtree, home)
         env = fixture_env({'USERPROFILE': home, 'HOME': home})
         for args in (('next',), ('list',), ('list', '--needs-priority')):
-            p = subprocess.run([sys.executable, TOOL, '-C', self.repo.root] + list(args),
+            p = subprocess.run(ownertree.argv(TOOL, '-C', self.repo.root, *args),
                                capture_output=True, text=True, encoding='utf-8', env=env,
                                timeout=120)
             self.assertEqual(p.returncode, 0, (args, p.stdout + p.stderr))
@@ -248,7 +249,7 @@ class Cli(StoreCase):
         env = fixture_env({'USERPROFILE': home, 'HOME': home})
 
         def run(*args):
-            p = subprocess.run([sys.executable, TOOL, '-C', self.repo.root] + list(args),
+            p = subprocess.run(ownertree.argv(TOOL, '-C', self.repo.root, *args),
                                capture_output=True, text=True, encoding='utf-8', env=env,
                                timeout=120)
             return p.returncode, p.stdout + p.stderr

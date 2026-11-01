@@ -9,7 +9,9 @@ the blob at the same path in the tip of a local branch (refs/heads/*) or a remot
   apply(path, environ)  -> Run: plan(), then each restorable path is moved into a quarantine
                            folder, matched again from the moved bytes, and only then discarded
                            (restored to HEAD, or deleted when untracked). One log line per restore.
-  allowed(mark)         -> may a session with this mark run it (unmarked, pm, coordinator, lander).
+  why_not(mark, tree)   -> why a session with this mark may not run it, or None (unmarked and the
+                           owner's, pm, coordinator, lander may).
+  allowed(mark, tree)   -> why_not is None.
 
 Nothing here prints, parses arguments or exits.
 """
@@ -51,9 +53,23 @@ def _after_check(full):
     """A test seam: called with the work file's path between its check and its move."""
 
 
-def allowed(mark):
-    """True for an unmarked session (the owner's) and the pm, coordinator and lander marks."""
-    return mark is None or mark.strip().lower() in ROLES
+def why_not(mark, tree=None):
+    """Why a session with this mark may not run it, or None. Unmarked is the owner's, unless a
+    host whose chats are never the owner runs above it or the process tree cannot be read
+    (kitlib.host.registry.unowned_caller; `tree` stands in for this process's ancestors); the pm,
+    coordinator and lander marks may."""
+    if mark is None:
+        from kitlib.host import registry
+        why = registry.unowned_caller(tree)
+        return 'this session is unmarked but not the owner\'s: %s' % why if why else None
+    if mark.strip().lower() in ROLES:
+        return None
+    return 'this session is marked %r' % mark
+
+
+def allowed(mark, tree=None):
+    """True when why_not finds nothing."""
+    return why_not(mark, tree) is None
 
 
 def blob_id(data, fmt):

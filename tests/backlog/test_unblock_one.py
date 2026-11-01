@@ -8,6 +8,7 @@ from kitlib import kitroot
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal, Usage
 
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS, StoreCase, parse, rec
 

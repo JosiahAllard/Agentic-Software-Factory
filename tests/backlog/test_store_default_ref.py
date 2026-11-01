@@ -4,7 +4,6 @@ before (records written to a stale default ref were once lost to the live PM dat
 import json
 import os
 import subprocess
-import sys
 import unittest
 from unittest import mock
 
@@ -15,6 +14,8 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal
 
+from tests.backlog import ownertree
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, priced
 from tests.gitfixture import TempRepo, fixture_env
 from tests.home import temp_home
@@ -158,7 +159,7 @@ class DefaultRef(unittest.TestCase):
 
     def run_tool(self, *args):
         env = fixture_env({'USERPROFILE': self.home, 'HOME': self.home})
-        p = subprocess.run([sys.executable, TOOL, '-C', self.root] + list(args),
+        p = subprocess.run(ownertree.argv(TOOL, '-C', self.root, *args),
                            capture_output=True, text=True, encoding='utf-8', env=env, timeout=120)
         return p.returncode, p.stdout + p.stderr
 

@@ -5,13 +5,14 @@ test_bad_arguments_exit_2 run it as a real subprocess, so the process boundary s
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest import mock
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from tests.backlog import ownertree
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, TODAY, kit_json_ref, priced
 from tests import inproc
 from tests.gitfixture import TempRepo, fixture_env, rmtree
@@ -41,7 +42,7 @@ class Cli(unittest.TestCase):
 
     def run_process(self, *args):
         """backlog.py as a real child process: (exit code, stdout + stderr)."""
-        p = subprocess.run([sys.executable, TOOL, '-C', self.repo.root] + list(args),
+        p = subprocess.run(ownertree.argv(TOOL, '-C', self.repo.root, *args),
                            capture_output=True, text=True, encoding='utf-8', env=self.env,
                            timeout=120)
         return p.returncode, p.stdout + p.stderr

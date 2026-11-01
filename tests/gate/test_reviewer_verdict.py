@@ -142,7 +142,7 @@ class ReviewerVerdict(GateRepoCase):
         A folder where the transcript file should be makes open() raise an OSError."""
         d = os.path.join(self.home, '.claude', 'projects', 'Q--repo', 'sess-1', 'subagents')
         os.makedirs(os.path.join(d, 'agent-%s.jsonl' % RID))
-        self.assertEqual(AM.verdict(RID, home=self.home), (True, AM.UNREAD))
+        self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread'))
         out = self.assert_refused()
         self.assertIn('a transcript of the reviewer %s was found but cannot be read' % RID, out)
         self.assertIn('\nInstead: run verdict.py add again once the transcript can be read, or resume '
@@ -153,7 +153,7 @@ class ReviewerVerdict(GateRepoCase):
     def test_a_transcript_whose_time_cannot_be_read_is_refused(self):
         self.plant(RID, handback_turn(report('LAND')))
         with mock.patch.object(AM.os.path, 'getmtime', side_effect=OSError('denied')):
-            self.assertEqual(AM.verdict(RID, home=self.home), (True, AM.UNREAD))
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread'))
 
     def test_the_newest_transcript_wins(self):
         """Two config folders (two accounts) both hold a transcript of the id: the one last

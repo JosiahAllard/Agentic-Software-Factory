@@ -103,11 +103,16 @@ class Entries(unittest.TestCase):
         self.env['PM_KIT_ROOT'] = str(self.base / 'missing')
         r = self.run_entry(PLUGIN, HOOK, self.tool('Write', {'file_path': 'a'}), ('codex', 'PreToolUse'))
         self.assertEqual((r.returncode, r.stdout), (2, ''))
-        fast = self.run_entry(PLUGIN, HOOK, self.tool('Read', {}), ('codex', 'PreToolUse'))
-        self.assertEqual((fast.returncode, fast.stdout), (0, ''), 'the owner\'s read never boots the kit')
-        self.env['PM_KIT_ROLE'] = 'worker'
-        marked = self.run_entry(PLUGIN, HOOK, self.tool('Read', {}), ('codex', 'PreToolUse'))
-        self.assertEqual(marked.returncode, 2, 'a marked session boots the kit for every call')
+        # every Codex call boots the kit (fast_path none: a Codex chat is never the owner), so a
+        # Read blocks too, in the unmarked chat as in a marked session
+        for role in (None, 'worker'):
+            with self.subTest(role=role):
+                if role:
+                    self.env['PM_KIT_ROLE'] = role
+                else:
+                    self.env.pop('PM_KIT_ROLE', None)
+                read = self.run_entry(PLUGIN, HOOK, self.tool('Read', {}), ('codex', 'PreToolUse'))
+                self.assertEqual((read.returncode, read.stdout), (2, ''), 'every Codex call boots the kit')
         s = self.run_entry(PLUGIN, HOOK, '{}', ('codex', 'SessionStart'))
         self.assertEqual(s.returncode, 0, s.stderr)
         self.assertIn('the kit did not load', s.stdout)

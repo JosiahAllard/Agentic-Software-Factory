@@ -70,7 +70,10 @@ def may_allow(event, ctx):
 
 
 def who(event, ctx):
-    """The session as the refusal names it."""
+    """The session as the refusal names it: an unmarked chat of a host that never runs the
+    owner's as rules.unowned_name words it, not as a session marked owner."""
+    if rules.unowned_chat(event, ctx):
+        return rules.unowned_name(ctx)
     mark = session_mark(event, ctx)
     if mark is None:
         name = agentname.bare(getattr(event, 'agent_role', None) or '') or 'unnamed'

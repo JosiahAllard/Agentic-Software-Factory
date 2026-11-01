@@ -10,6 +10,10 @@
   profiles(path)              every host's HostProfile, in file order
   union(field, path)          a profile field's distinct values over every host, in file order
   process_names(path)         the running platform's agent images over every host, in file order
+  unowned_images(path)        {image: host's attribution name} of the hosts whose chats are never
+                              the owner (hooks with no subagent identity)
+  unowned_caller(tree, path)  why this process runs for such a host (one of its images above it,
+                              or a tree or registry that cannot be read), else None
   host_folders(path)          the repo folder each host keeps its own files in (".claude")
   state_path(home, *parts)    a path in the kit's per-user state folder (~/.claude)
 
@@ -65,10 +69,10 @@ _TRAILER_KEY = re.compile(r'[A-Za-z][A-Za-z0-9-]*\Z')
 _EMAIL = re.compile(r'[^\s<>@]+@[^\s<>@]+\Z')
 _MODULE = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z')
 _KEYS = {'adapter', 'shell', 'platforms', 'capabilities', 'profile', 'hook', 'tiers'}
-# How boot/hook.py's fast path may skip a call to a tool not in guarded_tools: in every session, or
-# only in a session no launcher marked (kitlib.sessionmark), for a host whose own policy (an
-# adapter's screen) must see every call of a marked session.
-FAST_PATHS = ('all', 'unmarked')
+# How boot/hook.py's fast path may skip a call to a tool not in guarded_tools: in every session
+# ("all"), or never ("none"), for a host whose every call the guard must see (one whose hooks cannot
+# tell a subagent apart: its chats are never the owner, so no session of it may skip the guard).
+FAST_PATHS = ('all', 'none')
 # The operating systems a host can declare it runs on (multi-host plan section 6). Windows is
 # the only one the kit supports today; the field says so per host instead of the code assuming it.
 PLATFORMS = ('windows', 'linux', 'macos')
@@ -86,7 +90,7 @@ class HookSpec:
     `tool_field` the dotted key of the tool's name in that event's payload ("tool_name",
     "call.name"). `guarded_tools` the tools a guard rule or the host's own policy can refuse, each
     a name or a prefix ending in `*` ("mcp__*"): a call to any other tool is allowed before the kit
-    boots, in every session or only in an unmarked one (`fast_path`, one of FAST_PATHS)."""
+    boots in every session, or goes to the guard like any other (`fast_path`, one of FAST_PATHS)."""
     tool_event: str
     tool_field: str
     guarded_tools: tuple
@@ -394,6 +398,55 @@ def process_names(path=None):
     for profile in profiles(path):
         out.extend(dict(profile.process_names).get(platform.NAME, ()))
     return tuple(dict.fromkeys(out))
+
+
+def unowned_images(path=None):
+    """{lower-case image: attribution name} of the running platform's agent processes of every
+    host whose hooks carry no subagent identity (capabilities.subagent_identity_in_hooks false):
+    a chat of such a host is never the owner (docs/guard.md "Session mark"), so a tool it runs
+    never acts as the owner. RegistryError as load()."""
+    from kitlib import platform
+    out = {}
+    for h in load(path).values():
+        if not h.capabilities.subagent_identity_in_hooks:
+            for image in dict(h.profile.process_names).get(platform.NAME, ()):
+                out.setdefault(image.lower(), h.profile.attribution.name)
+    return out
+
+
+def ancestor_images():
+    """The lower-case image names of this process's ancestors, nearest first, as the machine
+    lock's caller walks them (kitlib.lock.store.caller: one process snapshot, through an exited
+    ancestor a handle keeps openable). An ancestor with no listed name is left out, and the walk
+    ends where the chain breaks (an exited ancestor no handle keeps): unowned_caller's known
+    limit. Raises when the snapshot cannot be made."""
+    from kitlib.proc import process
+    snap = process.snapshot()
+    names = {p: n for p, _pp, n in snap}
+    chain, _exited = process.ancestry(os.getpid(), process.own_ctime(), {p: pp for p, pp, _n in snap},
+                                      through_exited=True)
+    return [(names.get(p) or '').lower() for p, _ct in chain if names.get(p)]
+
+
+def unowned_caller(tree=None, path=None):
+    """Why this process runs for a host whose chats are never the owner (unowned_images), in
+    words for a refusal, else None. Read from the process tree (`tree`, default ancestor_images:
+    a callable giving the ancestors' image names), never from what a caller says: one of those
+    images anywhere above this process, or a tree or hosts.json that cannot be read (fail
+    closed). The owner's own shell and the default host's chats give None. The known limit: a run
+    whose ancestry the walk cannot follow (a detached start whose launcher has exited, no handle
+    keeping it openable) shows only what it can reach, so a broken chain with none of those
+    images left in it is taken as the owner's."""
+    try:
+        images = unowned_images(path)
+        above = (tree or ancestor_images)()
+    except Exception as e:
+        return ("this process's tree or hosts.json could not be read (%s), so it is not taken as the owner's"
+                % type(e).__name__)
+    hit = next((i for i in above if i in images), None)
+    if hit is None:
+        return None
+    return 'it runs under %s, a %s chat, which is never the owner' % (hit, images[hit])
 
 
 def default_profile(path=None):

@@ -266,12 +266,12 @@ class Hook(unittest.TestCase):
         return hook
 
     def test_the_guarded_tools_are_every_tool_the_policy_or_a_rule_judges(self):
-        """The fast path skips a tool hosts.json's codex hook.guarded_tools leaves out, in the owner's
-        unmarked session only (fast_path unmarked: a marked session's every call meets the policy's
-        allowlist). What it skips is what the guard would allow: the read and bookkeeping tools."""
+        """Codex has no fast path (fast_path none): a Codex chat is never the owner, so every call,
+        the unmarked chat's too, reaches the guard. guarded_tools still names every tool the policy
+        or a rule judges, and leaves out the read and bookkeeping tools the policy allows."""
         from hosts.codex.adapter import events, policy
         spec = registry.host('codex').hook
-        self.assertEqual(spec.fast_path, 'unmarked')
+        self.assertEqual(spec.fast_path, 'none')
         judged = set(events.FILE_TOOLS) | set(events.SHELL_TOOLS) | {events.PATCH, events.STDIN}
         self.assertEqual(set(spec.guarded_tools), judged | {events.MCP + '*'})
         self.assertEqual([t for t in policy.READ_TOOLS | policy.BOOKKEEPING_TOOLS if spec.guarded(t)], [])
@@ -305,25 +305,27 @@ class Hook(unittest.TestCase):
         from hosts.codex.adapter.host import ADAPTER
         self.assertEqual(seen, {'deadline': ADAPTER.DEADLINE, 'started': 100.0, 'args': ['codex', 'PreToolUse']})
 
-    def test_the_entrys_fast_path_reads_the_mark_as_sessionmark_does(self):
-        """boot/hook.py reads the mark before the kit boots, so it cannot import kitlib.sessionmark:
-        its MARK and test are held to sessionmark.ENV and sessionmark.mark's None."""
+    def test_every_codex_call_reaches_the_kit_in_any_session(self):
+        """No fast path on Codex: a call to a tool guarded_tools leaves out (Read) boots the kit and
+        goes to the guard in an unmarked chat as in a marked one; a boot that fails blocks it."""
         import io
         import sys
         import types
         from kitlib import sessionmark
         hook = self.load_hook()
-        self.assertEqual(hook.MARK, sessionmark.ENV)
         boot = types.ModuleType('kitboot')
 
         def no_boot(here=None):
             raise RuntimeError('booted')
         boot.boot = no_boot
-        for value in ('', '   ', 'worker', ' reviewer ', 'owner', 'pm-kit:worker', 'pm-kit:'):
+        for value in (None, '', '   ', 'worker', 'pm'):
+            env = {} if value is None else {sessionmark.ENV: value}
             with self.subTest(value=value), unittest.mock.patch.dict(sys.modules, {'kitboot': boot}):
+                err = io.StringIO()
                 rc = hook.run(['codex', 'PreToolUse'], io.StringIO('{"tool_name": "Read"}'), io.StringIO(),
-                              io.StringIO(), {sessionmark.ENV: value})
-                self.assertEqual(rc, 0 if sessionmark.mark({sessionmark.ENV: value}) is None else 2)
+                              err, env)
+                self.assertEqual(rc, hook.BLOCK)
+                self.assertIn('booted', err.getvalue())
 
 
 import unittest.mock  # noqa: E402

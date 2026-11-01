@@ -13,6 +13,7 @@ import unittest
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal, Usage
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS, ADD_NONE, ADD_WHY, StoreCase, priced, rec
 

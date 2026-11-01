@@ -388,6 +388,37 @@ class TextReads(Fixture):
                 self.write('test_read.py', _reader(self.C_PATH, extra=extra))
                 self.assertIn('test_read', self.select('tools/a.py'))
 
+    def test_a_bare_runpy_or_importlib_call_stays_transitive(self):
+        for extra in ('from runpy import run_path\nrun_path("x")\n',
+                      'from runpy import run_module\nrun_module("x")\n',
+                      'from runpy import run_path as rp\nrp("x")\n',
+                      'import importlib.util\nimportlib.util.source_to_code(b"x = 1")\n',
+                      'import builtins\ngetattr(builtins, "exec")("x = 1")\n'):
+            with self.subTest(extra=extra):
+                self.write('test_read.py', _reader(self.C_PATH, extra=extra))
+                self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_io_codecs_and_tokenize_open_read_text_too(self):
+        for opener in ('io', 'codecs', 'tokenize'):
+            with self.subTest(opener=opener):
+                self.write('test_read.py', 'import %s\n' % opener +
+                           _reader(self.C_PATH).replace('open(', '%s.open(' % opener, 1))
+                self.assertNotIn('test_read', self.select('tools/a.py'))
+
+    def test_any_other_open_stays_transitive(self):
+        # What a fixture's or a method's open does with the path is unknown (it may run it).
+        cases = {
+            'attr': "class F:\n    def open(self, p, **k):\n        return p\nFIX = F()\n",
+            'import': 'from gzip import open\n',
+        }
+        for label, extra in cases.items():
+            with self.subTest(case=label):
+                text = _reader(self.C_PATH, extra=extra)
+                if label == 'attr':
+                    text = text.replace('with open(', 'with FIX.open(', 1)
+                self.write('test_read.py', text)
+                self.assertIn('test_read', self.select('tools/a.py'))
+
     def test_an_import_beside_the_read_stays_transitive(self):
         self.write('test_read.py', 'import c\n' + _reader(self.C_PATH))
         self.assertIn('test_read', self.select('tools/a.py'))
@@ -398,6 +429,18 @@ class TextReads(Fixture):
         self.write('test_read.py', 'import b\n' + _reader(self.C_PATH))
         self.assertEqual(self.graph().closure('test_read'), {'a', 'b', 'c'})
         self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_closure_expands_a_read_node_reached_by_an_import_in_either_pop_order(self):
+        # A diamond: t reads r's text and imports i; i imports r; r imports a. However the walk
+        # meets r first, t reaches a through i. Lists fix the order, so a walk that stops at an
+        # already SEEN node (rather than an already WALKED one) fails one of the two every time.
+        for first in (['r', 'i'], ['i', 'r']):
+            with self.subTest(order=first):
+                g = tool_deps.Graph({'t': first, 'i': ['r'], 'r': ['a'], 'a': []}, {'t'},
+                                    reads={'t': {'r'}})
+                self.assertEqual(g.closure('t'), {'a', 'i', 'r'})
+        g = tool_deps.Graph({'t': ['r'], 'r': ['a'], 'a': []}, {'t'}, reads={'t': {'r'}})
+        self.assertEqual(g.closure('t'), {'r'})
 
     def test_a_tool_that_reads_another_is_one_hop_for_its_tests_too(self):
         self.write('lister.py', 'import os\nHERE = os.path.dirname(__file__)\n'

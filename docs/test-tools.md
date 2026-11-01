@@ -20,7 +20,13 @@ Three tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_dep
 - `--graph` prints every tools module and its direct edges.
 - `--check` audits the "tool_tests" tables and exits 1 on a problem.
 
-In "path" mode a file name in a str constant (`Y.py` or `.../Y.py`) is an edge, followed on through Y's own edges like an import. One exception: a module that names Y only as the path of a text-mode `open()` reads Y's text and does not run it, so the edge stops at Y. It is selected when Y changes, but not when something Y imports changes. The exception does not apply when any other constant in the module spells the name (an argv, a copy list) or when the module calls exec, eval, compile or runpy (kitlib/tooldeps/deps.py `text_reads`). The test audit's allowed reads follow the same closure.
+In "path" mode a file name in a str constant (`Y.py` or `.../Y.py`) is an edge, followed on through Y's own edges like an import. One exception: a module that names Y only as the path of a text-mode `open()` (the builtin, or `io`, `codecs` or `tokenize` `.open`) reads Y's text and does not run it, so the edge stops at Y. It is selected when Y changes, but not when something Y imports changes. The module stays transitive when any of these holds (kitlib/tooldeps/deps.py `text_reads`):
+- the open is binary, or its mode is not a literal string;
+- any other constant in the module spells the name (an argv, a copy list);
+- it imports runpy (any form, an alias too), calls `run_path`, `run_module` or `source_to_code` (bare or as an attribute), or calls exec, eval or compile (bare, `builtins.` or through `getattr`);
+- it calls any other `open` (a fixture's, a method) or imports another module's `open`.
+
+The test audit's allowed reads (kitlib/pytests/child.py) follow the same closure, in "tokens" mode too. Known limit: a test that reads Y's text through such an open and then runs it in a child (`python -c` with the text built at run time, or the code on stdin) is not seen to run Y, so Y's imports do not select it.
 
 The tables are read from "tool_tests": `extra`, `pinned`, `patterns`, `whole_tree`, `untested`, `dynamic_imports`, `always_run`, `selector_files`, `ignore`, and the rest of that section. A `{"piece": ...}` or `{"solution": true}` pin needs a pieces table that the entry point does not pass, so it is refused when it is read.
 

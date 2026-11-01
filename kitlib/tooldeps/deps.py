@@ -33,9 +33,10 @@ merged-tree gate, over base..merge) the selection is the same, and when a tools 
 The two `mentions` modes (the repositories' two selectors):
   "path"   (default) file-name edges are str constants ending in `Y.py`, followed transitively
            with the imports, except a text read: a module naming Y only as the path of a
-           text-mode `open()` (no other constant spells it, and the module calls no exec, eval,
-           compile or runpy) reads Y as text, so the edge is ONE hop and Y's own edges are not
-           followed through it. An unknown tools path selects ALL.
+           text-mode `open()` (the builtin or io, codecs or tokenize's; no other constant spells
+           it; the module calls no exec, eval, compile, runpy, source_to_code or other open)
+           reads Y as text, so the edge is ONE hop and Y's own edges are not followed through
+           it. An unknown tools path selects ALL.
   "tokens" a `[\\w.-]+` token in a non-docstring str literal of a .py, or in the non-comment text
            of a script, names a file by its base name or by a tools subfolder holding it. Imports
            are followed transitively, a mention through a non-test source ONE hop (runner scripts
@@ -91,7 +92,8 @@ PYTESTS_KEYS = ('shards', 'serial', 'split_classes', 'jobs_max', 'jobs_divisor',
 DEFAULTS = {k: v for k, v in schema.defaults(SECTION).items() if k not in PYTESTS_KEYS}
 _DYNAMIC = ('import_module', '__import__')
 _RUNS_TEXT = ('exec', 'eval', 'compile')         # the builtins (a Name, or builtins.<name>)
-_RUNS_FILE = ('run_path', 'run_module')            # runpy's
+_RUNS_FILE = ('run_path', 'run_module', 'source_to_code')   # runpy's, importlib's: any form
+_TEXT_OPENERS = ('io', 'codecs', 'tokenize')       # <module>.open reads text like the builtin
 _IMPORT_IN_TEXT = re.compile(r'\b(?:import|from)\s+([A-Za-z_]\w*)')
 TOKEN = re.compile(r'[\w.-]+')
 SCRIPT_COMMENT = re.compile(r'<#.*?#>|^[ \t]*(?:#|rem\b|::)[^\n]*', re.S | re.I | re.M)
@@ -383,22 +385,44 @@ def module_edges(tree, names, imports_only=False):
     return out if names is None else {m for m in out if m in names}
 
 
-def _call_name(node):
-    f = node.func
-    return f.attr if isinstance(f, ast.Attribute) else getattr(f, 'id', None)
-
-
 def _runs_code(node):
-    """Whether `node` is a call that runs code it is given: exec, eval or compile (not
-    re.compile), or runpy's run_path or run_module."""
+    """Whether `node` is a call that runs code it is given: exec, eval or compile (bare,
+    builtins.<name> or getattr(<x>, '<name>'); not re.compile), or runpy's run_path or
+    run_module or importlib's source_to_code, bare or as an attribute."""
     if not isinstance(node, ast.Call):
         return False
     f = node.func
     if isinstance(f, ast.Name):
-        return f.id in _RUNS_TEXT
+        if f.id == 'getattr' and len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+            return node.args[1].value in _RUNS_TEXT
+        return f.id in _RUNS_TEXT or f.id in _RUNS_FILE
     if isinstance(f, ast.Attribute):
         return f.attr in _RUNS_FILE or (f.attr in _RUNS_TEXT and isinstance(f.value, ast.Name)
                                         and f.value.id == 'builtins')
+    return False
+
+
+def _opener(node):
+    """'text' for a call of the builtin open or io/codecs/tokenize.open, 'other' for any other
+    call named open (a fixture's, a method: what it does with the path is unknown), else None."""
+    if not isinstance(node, ast.Call):
+        return None
+    f = node.func
+    if isinstance(f, ast.Name) and f.id == 'open':
+        return 'text'
+    if isinstance(f, ast.Attribute) and f.attr == 'open':
+        return 'text' if isinstance(f.value, ast.Name) and f.value.id in _TEXT_OPENERS else 'other'
+    return None
+
+
+def _risky_import(node):
+    """Whether `node` imports runpy (any form, an alias too) or some other module's `open` under
+    the name open."""
+    if isinstance(node, ast.Import):
+        return any(a.name == 'runpy' for a in node.names)
+    if isinstance(node, ast.ImportFrom):
+        return node.module == 'runpy' or (node.module not in _TEXT_OPENERS + ('builtins',) and
+                                          any((a.asname or a.name) == 'open' for a in node.names))
     return False
 
 
@@ -410,15 +434,17 @@ def _py_file_base(s):
 
 def text_reads(tree, names):
     """The modules in `names` that an ast names by file name ONLY as the path of a text-mode
-    `open()` (the constant inside its first argument; no mode, or a str mode without 'b'): the
-    module reads that file's text, which never runs the named module's imports. A module that
-    calls exec, eval, compile or runpy anywhere has none (it may run what it reads), and a name
-    any other constant also spells (an argv, a copy list, data) is not one."""
-    if any(_runs_code(n) for n in ast.walk(tree)):
+    `open()` (the builtin, or io, codecs or tokenize's; the constant inside its first argument;
+    no mode, or a str mode without 'b'): the module reads that file's text, which never runs the
+    named module's imports. A module that imports runpy, calls exec, eval, compile or
+    source_to_code anywhere, calls any other open (a fixture's, a method) or imports another
+    module's open has none (it may run what it reads); a binary or non-literal mode, or a name any other constant
+    also spells (an argv, a copy list, data), is not one."""
+    if any(_risky_import(n) or _runs_code(n) or _opener(n) == 'other' for n in ast.walk(tree)):
         return set()
     inside = set()
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and _call_name(node) == 'open' and node.args):
+        if not (_opener(node) == 'text' and node.args):
             continue
         mode = node.args[1] if len(node.args) > 1 else next(
             (k.value for k in node.keywords if k.arg == 'mode'), None)

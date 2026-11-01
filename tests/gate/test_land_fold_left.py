@@ -68,7 +68,7 @@ class Left(FoldCase):
 class ConfigUnit(FoldCase):
     """A unit that changes a gate config file (here the hook module; .kit.json is owner-only)
     is never folded: it lands alone."""
-    KIT = {'hook': {'module': 'kit_hooks'}}
+    KIT = dict(FoldCase.KIT, hook={'module': 'kit_hooks'})
 
     def setUp(self):
         FoldCase.setUp(self)

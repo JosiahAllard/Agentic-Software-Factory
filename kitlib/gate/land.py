@@ -211,17 +211,18 @@ records); folded into one that still runs, it gives the turn back and books agai
 lands them or gives them back; else it marks the record turn_at, so no landing folds it from
 then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
 
-Folding (docs/gate.md "Folding queued submissions"): a submitted landing whose locked checks
+Folding (docs/gate.md "Folding queued submissions"), only in a repository whose .kit.json sets
+"landing".batch_max itself (the default folds nothing): a submitted landing whose locked checks
 passed, that changes no strict path and no gate config file, was not given back from a batch
-itself, and has room under "landing".batch_max, folds the submissions queued behind it into its
+itself, and has room under that batch_max, folds the submissions queued behind it into its
 batch, oldest first (Lander.fold_queued): whole submissions run with the same flags, each checked
 with the landing's own branches by the locked checks a batch passes, then the whole batch again
 (a miss gives them all back). Its own branches merge first. A folded batch releases or drops
 units, never refusing the landing for them: a folded submission that does not merge cleanly is
 given back, dropped (fold_dropped: it lands alone, at its own turn), and the rest merged again; a
 red merged gate gives back every folded submission dropped and gates the landing's own branches
-alone, in the same slot; any other outcome that does not land gives them back to land at their
-own turn.
+alone, in the same slot; any other outcome that does not land, an exception or Ctrl+C included,
+gives them back to land at their own turn.
 """
 import ast
 import itertools
@@ -2456,6 +2457,10 @@ class Lander(object):
                                                     self.phase == 'before'):
                 for line in out.lines:  # Ctrl+C undone and released (exit 130), or a bug
                     self.say(line)      # before the merge: raised again
+                try:                    # its folds land at their own turn, not as its error
+                    self.unfold_unlanded(out)
+                except BaseException:   # noqa: BLE001 - never replace the exception being raised
+                    pass
                 raise
             return self.unfold_unlanded(out)    # an exception or SystemExit after the merge
 
@@ -2512,16 +2517,25 @@ class Lander(object):
 
     # ---------------------------------------------------------------- folding
 
+    def fold_max(self):
+        """The most branches a fold may grow this batch to: "landing".batch_max as the
+        repository's .kit.json writes it, or None when it does not set it (the default folds
+        nothing; it still caps a named batch, config_refusal)."""
+        if self.cfg.raw('landing').get('batch_max') is None:
+            return None
+        return self.cfg.section('landing')['batch_max']
+
     def can_fold(self):
         """True when this landing, its locked checks passed, may fold queued submissions into
         its batch: a submitted landing with its flags (an older kit's payload has none), that
         changes no strict path and no gate config file, was not given back dropped from a batch
-        itself, with room under "landing".batch_max."""
+        itself, in a repository that sets "landing".batch_max, with room under it (fold_max)."""
         if not self.submitted or not isinstance(self.flags, dict) or self.was_dropped:
             return False
         if self.strict_hits or not self.anchor_run_id:
             return False
-        if len(self.branches) >= self.cfg.section('landing')['batch_max']:
+        most = self.fold_max()
+        if most is None or len(self.branches) >= most:
             return False
         hits, why = self.config_paths()
         return why is None and not hits
@@ -2536,7 +2550,7 @@ class Lander(object):
         scope_check again, or every fold is given back (to land at its own turn) and the landing
         goes on alone."""
         sub = submitmod()
-        room = self.cfg.section('landing')['batch_max'] - len(self.branches)
+        room = (self.fold_max() or 0) - len(self.branches)
         for unit in sub.foldable(self.root, self.anchor_run_id):
             if room <= 0:
                 break

@@ -26,6 +26,8 @@ class Queued(object):
 
 
 class FoldCase(SubmitCase):
+    KIT = {'landing': {'batch_max': 3}}     # folding is off unless the repository sets it
+
     def queued(self, names, files=None, extra=(), review=True, on=None):
         """Branches kit/<name> (each with `files[name]`, or a file of its own; `on`: a branch's
         worktree to build them in, stacked), submitted as one landing (`extra`: its flags) and
@@ -146,7 +148,7 @@ class Folds(FoldCase):
 
     def test_batch_max_caps_the_fold_and_the_rest_waits_its_turn(self):
         a = self.queued(['one'])
-        b = self.queued(['two', 'three'])       # 1 + 2 is the default batch_max (3)
+        b = self.queued(['two', 'three'])       # 1 + 2 is FoldCase's batch_max (3)
         c = self.queued(['four'])
         before = {'kit/four': self.record('kit/four')}
         said = []

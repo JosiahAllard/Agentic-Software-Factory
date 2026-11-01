@@ -31,8 +31,8 @@ from kitlib.lock import queue as qm
 from kitlib.lock import game
 from kitlib.lock.run import (BG_ENV, NEST_ENV, ORIGIN_ENV, PICK, POOLS, XLA_DEFAULT_FRACTION,
                              XLA_FRACTION_ENV, Run, ScriptArgError, child_code, claim_id,
-                             docker_cpu_env, end_sparing, export_threads, move_leftovers,
-                             pin_fields, script_command, settle)
+                             check_mem, docker_cpu_env, end_sparing, export_threads, mem_need,
+                             move_leftovers, pin_fields, script_command, settle)
 from kitlib.lock.store import EXIT_REQUIRE, EXIT_USAGE, LockError, Store, iso, write_json
 from kitlib.proc.job import Job, cores_text
 
@@ -101,14 +101,16 @@ def end_child(job, p, store, run, wait_s=10):
 
 
 def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=None, rid=None,
-                   detached=False, log=None):
+                   detached=False, log=None, mem_mb=None):
     """Runs cmd as a background run until it exits other than PAUSE_EXIT, stop ends it, or it
     yields late. Returns its exit code (1 for yield-late or a failed start, 130 on Ctrl+C).
     A .bat or .cmd, named or found for a name with no extension (./gradlew), starts through the
     cmd.exe line a foreground run starts it with (kitlib.lock.run script_command); an argument it
     cannot take is refused before the run's id is claimed: 1, no record. The record keeps cmd as
     given. Raises LockError (exit 2 with no gpu here or a rid not shaped as a run id, 10 when its
-    id is taken (run.claim_id) or the store or queue cannot be had before it joined)."""
+    id is taken (run.claim_id) or the store or queue cannot be had before it joined).
+    mem_mb: as book's (--mem; recorded as need_mem_mb and mem_from, admission does not read it)."""
+    check_mem(mem_mb)
     store = store or Store()
     s, say = store.settings, store.say
     L = lay.in_force(store)["layout"]
@@ -143,7 +145,9 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
     demand_since, fg_gpu, fg_cpu, qbad, unfreed, joined = None, [], [], None, False, False
     hs_known, hbad = None, None
     try:
-        run.rec.update(need=need, background=True, expect_s=expect_s, kind="background")
+        need_mem, mem_from = mem_need(store, repo, "background", "other", mem_mb, None)
+        run.rec.update(need=need, background=True, expect_s=expect_s, kind="background",
+                       need_mem_mb=need_mem, mem_from=mem_from)
         try:
             os.makedirs(ctl_dir, exist_ok=True)
             run.save(child="waiting", shares={"gpu": "medium"})

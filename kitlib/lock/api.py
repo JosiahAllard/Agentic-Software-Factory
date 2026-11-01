@@ -173,7 +173,9 @@ def _hardware(store, L, hw):
             "cores": [{"threads": c["threads"], "smt": c["smt"], "efficiency": c["efficiency"]}
                       for c in hw.get("cores") or []],
             "ccds": ccds, "preferred_threads": preferred,
-            "memory_mb": {"total": hw.get("memory_mb"), "free": (mem or {}).get("free_mb")},
+            "memory_mb": {"total": hw.get("memory_mb"), "free": (mem or {}).get("free_mb"),
+                          "commit": (mem or {}).get("commit_mb"),
+                          "commit_limit": (mem or {}).get("commit_limit_mb")},
             "gpus": [{k: g.get(k) for k in ("index", "name", "vendor", "vendor_id", "vram_mb",
                                             "shared_mb", "source", "default_share")}
                      for g in hw.get("gpus") or []],
@@ -243,7 +245,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
                                      "parent", "need", "has", "shares", "pinned", "pin", "pin_note",
                                      "threads", "child", "blocked_by", "detached", "session",
                                      "releasing", "log", "moved", "resource", "priority",
-                                     "within")}
+                                     "within", "need_mem_mb", "mem_from")}
         row.update(cores=qm.entry_holds(L, e, "cpu") if e else r.get("cores") or [],
                    gpus=qm.entry_holds(L, e, "gpu") if e else r.get("gpus") or [],
                    tree=tree, usage=_usage(r),

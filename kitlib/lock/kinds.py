@@ -16,6 +16,9 @@ only for a name that is neither a kit kind nor a kit alias: the kit wins a clash
 entry is ignored. It is read from the main checkout's `.kit.json` (where agents do not work),
 never a linked worktree's, so an agent's uncommitted worktree edit cannot size a run.
 """
+import datetime
+import re
+
 from kitlib.config import ConfigError, load as load_config, policy
 from kitlib.git import repo as gitrepo
 
@@ -96,8 +99,9 @@ def check_cap(table, agent_cap):
 
 
 def check_entry(name, e, agent_cap=None):
-    """{cpu, gpu, share, warn_min} of entry `e` of kind `name`, checked; KindsError when the lock
-    cannot size it (fail closed). Its other keys (a repo kind's `why`) are dropped."""
+    """{cpu, gpu, share, warn_min} of entry `e` of kind `name`, checked, plus mem_mb (the memory
+    need in MB of a run whose history is still thin) and mem_since (the date its history counts
+    from, YYYY-MM-DD) when it has them; KindsError when the lock cannot size it (fail closed). Its other keys (a repo kind's `why`) are dropped."""
     cpu, gpu = e.get("cpu"), e.get("gpu", 0)
     warn = e.get("warn_min", 60)
     if cpu not in ALIASES and not is_size(cpu):
@@ -108,8 +112,28 @@ def check_entry(name, e, agent_cap=None):
         raise KindsError("kind %s: gpu must be 0 or \"pool\", not %r" % (name, gpu))
     if type(warn) is not int or warn <= 0:
         raise KindsError("kind %s: warn_min must be a whole number of minutes" % name)
-    return {"cpu": cpu, "gpu": gpu, "share": bool(e.get("share")) and gpu == "pool",
-            "warn_min": warn}
+    out = {"cpu": cpu, "gpu": gpu, "share": bool(e.get("share")) and gpu == "pool",
+           "warn_min": warn}
+    if "mem_mb" in e:
+        if type(e["mem_mb"]) is not int or e["mem_mb"] <= 0:
+            raise KindsError("kind %s: mem_mb must be a whole number of MB" % name)
+        out["mem_mb"] = e["mem_mb"]
+    if "mem_since" in e:
+        if not is_day(e["mem_since"]):
+            raise KindsError("kind %s: mem_since must be a date, YYYY-MM-DD" % name)
+        out["mem_since"] = e["mem_since"]
+    return out
+
+
+def is_day(s):
+    """True for a "YYYY-MM-DD" date that exists."""
+    if not (isinstance(s, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", s)):
+        return False
+    try:
+        datetime.date.fromisoformat(s)
+    except ValueError:
+        return False
+    return True
 
 
 def repo_entry(kind, checkout):

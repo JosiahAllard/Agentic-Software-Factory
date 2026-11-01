@@ -1,4 +1,5 @@
 """kitlib.lock.kinds reads the table through kitlib.config.policy.kinds_table, its only reader."""
+import datetime
 import json
 import os
 import shutil
@@ -99,10 +100,18 @@ class LiveTable(unittest.TestCase):
         self.assertEqual(kinds.resolve('engine-test', table), 'test')
         self.assertEqual(kinds.resolve('engine-run', table), 'app-run')
 
+    def test_graph_build_history_before_its_start_does_not_count(self):
+        # Its peaks before a game repository's --no-daemon change missed the Gradle daemon: its
+        # floor is its recorded max, and its history counts only from a start not yet reached.
+        g = kinds.load()['graph-build']
+        self.assertEqual(g['mem_mb'], 26368)
+        self.assertGreater(g['mem_since'], datetime.date.today().isoformat())
+
     def test_a_renamed_kind_keeps_its_size(self):
         table = kinds.load()
-        for k in ('test', 'app-run'):
-            self.assertEqual(table[k], {'cpu': 'medium', 'gpu': 0, 'share': False, 'warn_min': 30})
+        for k in ('test', 'app-run'):           # its size; its mem_mb floor is its own
+            self.assertEqual({x: table[k][x] for x in ('cpu', 'gpu', 'share', 'warn_min')},
+                             {'cpu': 'medium', 'gpu': 0, 'share': False, 'warn_min': 30})
 
 
 class GpuValues(KindsTest):

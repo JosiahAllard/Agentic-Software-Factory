@@ -104,7 +104,7 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   its own background gate is waiting, not in flight, and wakes when the gate exits (<kit>/docs/gate.md
   "Waiting on a gate: who arms what"). A landing you submitted is not an agent: its one
   `land.py ... --wait-result --submit` background call is yours to keep running (skill `land-branch`). A gate whose
-  process is gone with no report -> fresh agent re-gates the branch (the final gate `<kit>/docs/gate.md` "The final gate" names (when unsure, `--full`)). Nothing
+  process is gone with no report -> fresh agent re-gates the branch (the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). Nothing
   re-wakes you later.
 - Each item goes to an end, as the owner ruled: landed (or submitted to land), blocked on its
   record with the reason and its branch kept (`backlog.py block`; an item waiting on a live slot

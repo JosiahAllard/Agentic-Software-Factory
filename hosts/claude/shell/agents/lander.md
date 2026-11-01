@@ -141,7 +141,11 @@ reviewer, reviewed range and LAND verdict. One call, in the brief's order, one
 `python <kit>/tools/land.py -C <main checkout> <a> <b> --expect-tip <tip-a> --expect-tip <tip-b> --reviewed-by <reviewer-a> --reviewed-by <reviewer-b> --wait-result --submit`,
 one `--reviewed-by` per branch in the same order; it ends with a `RESULT` line for each branch.
 The tool merges each with its own merge commit, gates the result once, and pushes
-once; a conflict or a red gate undoes the whole batch and lands nothing. Verify
+once; a batch you name stays all or nothing: a conflict or a red gate undoes the whole
+batch and lands nothing. Where the repo's `.kit.json` sets `"landing".batch_max`, a landing
+may also fold submissions queued behind it into its batch; such a batch drops or gives
+back a folded submission without the rest, and a submission folded into another's batch
+prints `FOLDED: ...` and that batch's outcome. Verify
 each branch tip is an ancestor of the remote main. Not landed: report; the
 coordinator re-queues the branches one at a time. A strict-path or gate-config (`.kit.json`)
 branch never goes in a batch.

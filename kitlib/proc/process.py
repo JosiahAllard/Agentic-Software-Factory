@@ -306,12 +306,16 @@ def process_working_set(h):
 
 
 def memory_mb():
-    """{total_mb, free_mb} of this machine's physical memory now, or None."""
+    """{total_mb, free_mb, commit_mb, commit_limit_mb} of this machine now, or None: its physical
+    memory, and its commit charge and commit limit (physical memory plus the page files), from
+    GlobalMemoryStatusEx ullTotalPageFile (the limit) less ullAvailPageFile (what is left)."""
     m = win32.MEMORYSTATUSEX()
     m.dwLength = ctypes.sizeof(m)
     if not K32.GlobalMemoryStatusEx(ctypes.byref(m)):
         return None
-    return {"total_mb": int(m.ullTotalPhys // 2**20), "free_mb": int(m.ullAvailPhys // 2**20)}
+    return {"total_mb": int(m.ullTotalPhys // 2**20), "free_mb": int(m.ullAvailPhys // 2**20),
+            "commit_mb": int((m.ullTotalPageFile - m.ullAvailPageFile) // 2**20),
+            "commit_limit_mb": int(m.ullTotalPageFile // 2**20)}
 
 
 def system_mask():

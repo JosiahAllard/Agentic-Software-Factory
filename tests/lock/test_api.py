@@ -8,12 +8,15 @@ import os
 import sys
 import threading
 import time
+import types
 import unittest
+from unittest import mock
 
 from .helpers import (OWNER, REPO, StoreCase, agent, claude_of, clean_env, under_agent_host,
                       unopenable)
 
 if os.name == "nt":
+    import kitlib.platform
     from kitlib.lock import api
     from kitlib.lock import game
     from kitlib.lock import holds as hl
@@ -127,6 +130,30 @@ class Snapshot(ApiCase):
         lines = st.render(self.snap())
         self.assertIn("6 cpu slots of 4 threads", lines[0])
         self.assertIn("the owner's division", lines[0])
+
+    def test_memory_shows_the_commit_charge_and_its_limit(self):
+        """The machine's commit charge and limit (kitlib.proc.process.memory_mb) go beside its
+        physical memory in the snapshot and in the status text."""
+        mem = {"total_mb": 65536, "free_mb": 16384, "commit_mb": 84480, "commit_limit_mb": 85400}
+        with mock.patch.object(kitlib.platform, "memory_mb", return_value=mem, create=True):
+            hw = api._hardware(types.SimpleNamespace(testing=False), self.layout(), self.hw)
+        self.assertEqual(hw["memory_mb"], {"total": self.hw.get("memory_mb"), "free": 16384,
+                                           "commit": 84480, "commit_limit": 85400})
+        s = self.snap()
+        s["hardware"]["memory_mb"] = dict(hw["memory_mb"], total=65536)
+        self.assertIn("memory: 16384 MB free of 65536 MB; committed 84480 MB of its 85400 MB "
+                      "limit", st.render(s))
+        # Read again at every snapshot, never kept: Windows moves the limit when it resizes the
+        # page file (83.4 GB to 74.4 GB within an hour, 2026-11-01).
+        later = dict(mem, commit_limit_mb=76186)
+        with mock.patch.object(kitlib.platform, "memory_mb", return_value=later, create=True):
+            hw = api._hardware(types.SimpleNamespace(testing=False), self.layout(), self.hw)
+        self.assertEqual(hw["memory_mb"]["commit_limit"], 76186)
+        # Neither figure known (a store under test, a platform that gives none): null, no line.
+        s = self.snap()
+        self.assertEqual((s["hardware"]["memory_mb"]["commit"],
+                          s["hardware"]["memory_mb"]["commit_limit"]), (None, None))
+        self.assertFalse(any("committed" in x for x in st.render(s)))
 
     def test_a_bad_kinds_table_is_reported(self):
         with open(self.kinds_path, "w", encoding="utf-8") as f:

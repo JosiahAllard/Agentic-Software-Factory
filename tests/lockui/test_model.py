@@ -182,7 +182,15 @@ class Build(unittest.TestCase):
         self.assertEqual(self.v["cores"]["gpu"][0]["title"], "gpu slot 0 (card 0)")
         self.assertIn("4 cpu slots", self.v["cores"]["head"])
         self.assertIn("at most 2", self.v["cores"]["head"])
-        self.assertEqual(self.v["memory"], {"free_mb": 16384, "total_mb": 65536})
+        self.assertEqual(self.v["memory"], {"free_mb": 16384, "total_mb": 65536,
+                                            "commit_mb": None, "commit_limit_mb": None})
+
+    def test_memory_carries_the_commit_charge_and_its_limit(self):
+        s = snap()
+        s["hardware"]["memory_mb"].update(commit=84480, commit_limit=85400)
+        self.assertEqual(m.build(s, now=NOW)["memory"],
+                         {"free_mb": 16384, "total_mb": 65536, "commit_mb": 84480,
+                          "commit_limit_mb": 85400})
 
     def test_holders_lists_holds_and_agent_work(self):
         hits = m.holders(self.v, NOW + dt.timedelta(minutes=60), NOW + dt.timedelta(minutes=90))
@@ -399,7 +407,8 @@ class ToJson(unittest.TestCase):
         self.assertIn(hist["lane"], range(out["lanes"]))
         self.assertEqual(out["queue"][0], ["", ["move:r-B"]])
         self.assertEqual(out["cores"]["cpu"][0]["holder"], "r-A")
-        self.assertEqual(out["memory"], {"free_mb": 16384, "total_mb": 65536})
+        self.assertEqual(out["memory"], {"free_mb": 16384, "total_mb": 65536,
+                                         "commit_mb": None, "commit_limit_mb": None})
         self.assertEqual(out["game"]["running"], {"exe": "Game.exe", "name": "Game"})
         # The games list carries pin, so the hub's games editor writes each line back as it was.
         self.assertEqual(out["game"]["games"], [{"name": "Game", "exe": "Game.exe", "anti_cheat": False, "pin": True}])

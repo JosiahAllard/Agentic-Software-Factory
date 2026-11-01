@@ -25,8 +25,8 @@ untracked generated file may be deleted first; a merge git refuses is reported. 
 worktree (a linked worktree of the repository), write nothing there: your task worktree is where you work.
 
 ## Build and test
-The gate is ONE command: `python <kit>/tools/gate.py -C <worktree>`. Before review and landing, on
-the exact tip, run `--full` (every step) for a branch that changes a strict path (`STRICT_DEFAULTS`
+The gate is ONE command: `python <kit>/tools/gate.py -C <worktree>`. The one gate runs after review, on the
+reviewed tip, when the coordinator asks: `--full` (every step) for a branch that changes a strict path (`STRICT_DEFAULTS`
 in `<kit>/kitlib/gate/strict_defaults.py`: it lands alone after a strong-tier review by someone other
 than its author, and its merged gate runs `--full --fresh`). Any other branch runs the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell); the optimized
 default gate is the no-flag run (diff selection and the smoke steps, plus reuse for a step whose config asks

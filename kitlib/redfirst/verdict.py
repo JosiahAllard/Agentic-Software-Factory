@@ -10,12 +10,22 @@ case-blind, `*` crosses `/`). Kinds:
            `<dir>/build/test-results/` (any test task's folder) written in this run
   dotnet   `dotnet test <csproj> --filter <filter>` (a bare name is `FullyQualifiedName~<name>`; no
            filter: `FullyQualifiedName~<FileName>`); the verdict from its .trx
+  command  the runner's own `command`, a list of argv words (an engine's test runner, say), each
+           word's placeholders filled (fill): {selector} the filter, else the file name without its
+           extension; {path} the repo-relative path; {stem}; {tree} the throwaway root; {log_dir};
+           {n} the selector's number. A first word with a slash that is not absolute is under the
+           throwaway root. The verdict from the JUnit XML file its `result` names (filled the same
+           way, under the throwaway root unless absolute) written in this run, else from the exit
+           code: 0 GREEN, 1 RED, any other ERROR. A log line its `no_test` regex matches is NONE.
 A runner's `args` are appended to its command (a gradle or dotnet no-reuse switch, say).
 
 gradlew.bat is a batch file, so Windows runs it in cmd.exe, which reads its command line again
 before gradle sees it: `--tests a&whoami` runs whoami. A gradle word after the program that holds
 one of cmd.exe's characters (kitlib.guard.shell.CMD_REPARSE: & | < > ^ % ! ( ) " CR LF) is
-refused when the selector is parsed (gradle_args), before anything is made or run.
+refused when the selector is parsed (gradle_args), before anything is made or run. A command
+runner whose program is a .bat or .cmd file is checked the same way, every word after it
+(command_argv). Any other program gets each word as one argument: the argv goes to the process
+as a list, never through a shell.
 """
 import fnmatch
 import glob
@@ -29,8 +39,8 @@ from kitlib.guard.shell import cmd_unsafe
 RED, GREEN, NONE, ERROR = 'RED', 'GREEN', 'NONE', 'ERROR'
 TIMEOUT = 'TIMEOUT'         # the command ran past its limit and was killed: no verdict (run.py)
 EXIT_RED, EXIT_GREEN, EXIT_USAGE, EXIT_UNDECIDED, EXIT_LEFTOVER = 0, 1, 2, 3, 4
-KINDS = ('python', 'gradle', 'dotnet')
-NEEDS = {'gradle': ('dir', 'project'), 'dotnet': ('csproj',)}
+KINDS = ('python', 'gradle', 'dotnet', 'command')
+NEEDS = {'gradle': ('dir', 'project'), 'dotnet': ('csproj',), 'command': ('command',)}
 
 
 class Usage(Exception):
@@ -89,6 +99,10 @@ def parse_selector(text, runners):
                 raise Usage('usage: --tests %r: not a .py file under %s, so no unittest module'
                             % (text, r.get('pythonpath') or '.'))
             return Selector(text, path, filt, r, mod)
+        if r['kind'] == 'command':
+            sel = Selector(text, path, filt, r, None)
+            command_argv(sel, '.', '.', 1)   # refuses here, before anything is made
+            return sel
         sel = Selector(text, path, filt, r, r['project'] if r['kind'] == 'gradle' else r['csproj'])
         if sel.kind == 'gradle':
             gradle_args(sel)                 # refuses here, before anything is made
@@ -124,12 +138,61 @@ def gradle_args(sel):
     return [task, '--offline', '--tests', filt] + extra
 
 
+PLACEHOLDERS = ('{selector}', '{path}', '{stem}', '{tree}', '{log_dir}', '{n}')
+
+
+def fill(word, sel, tw, log_dir, n):
+    """`word` with each placeholder of a command runner replaced (PLACEHOLDERS); other braces stay."""
+    values = {'{selector}': sel.filter or stem(sel.path), '{path}': sel.path,
+              '{stem}': stem(sel.path), '{tree}': tw, '{log_dir}': log_dir, '{n}': str(n)}
+    return re.sub('|'.join(re.escape(p) for p in PLACEHOLDERS), lambda m: values[m.group(0)], word)
+
+
+def _under(tw, path):
+    """`path` as it is when absolute, else under `tw`."""
+    return path if os.path.isabs(path) else os.path.join(tw, *path.replace('\\', '/').split('/'))
+
+
+def command_argv(sel, tw, log_dir, n):
+    """The argv of a command runner's selector, or Usage. A first word with a slash that is not
+    absolute is under `tw`. A .bat or .cmd program runs in cmd.exe, which reads its command line
+    again, so a later word that holds one of its characters is refused (cmd_unsafe)."""
+    runner = 'of the runner for %r in `.kit.json` "redfirst".runners' % sel.runner.get('glob')
+    words = [fill(w, sel, tw, log_dir, n) for w in sel.runner['command']]
+    words += list(sel.runner.get('args') or [])
+    prog = words[0].strip()
+    if not prog:
+        raise Usage('usage: the first word of the command %s names no program' % runner)
+    if '/' in prog or '\\' in prog:
+        prog = _under(tw, prog)
+    if prog.lower().endswith(('.bat', '.cmd')):
+        for word in words[1:]:
+            c = cmd_unsafe(word)
+            if c is not None:
+                raise Usage('refused: --tests %r: the word %r of the command %s holds %s, which '
+                            'cmd.exe reads again: %s runs in cmd.exe, so the word could run '
+                            'another command; nothing was run. Instead: change the filter or that '
+                            'runner, or name a program that is not a batch file'
+                            % (sel.text, word, runner, _CMD_CHAR_NAMES.get(c, c),
+                               os.path.basename(prog)))
+    return [prog] + words[1:]
+
+
+def result_path(sel, tw, log_dir, n):
+    """The file a command runner's `result` names for this selector, or None when it names none."""
+    if not sel.runner.get('result'):
+        return None
+    return os.path.normpath(_under(tw, fill(sel.runner['result'], sel, tw, log_dir, n)))
+
+
 def trx_path(sel, log_dir, n):
     return os.path.join(log_dir, '%d-%s.trx' % (n, stem(sel.path)))
 
 
 def command(sel, tw, log_dir, n, python=sys.executable):
     """(argv, cwd, env extra) for one selector run in the throwaway tree `tw`. Pure."""
+    if sel.kind == 'command':
+        return command_argv(sel, tw, log_dir, n), tw, {}
     if sel.kind == 'gradle':
         gradlew = os.path.join(tw, 'gradlew.bat' if os.name == 'nt' else 'gradlew')
         return [gradlew] + gradle_args(sel), tw, {}
@@ -241,6 +304,48 @@ def python_verdict(rc, log):
     return RED, 'failed (%d test(s) ran)' % ran
 
 
+def command_verdict(rc, log, runner, counts):
+    """(verdict, reason) of a command runner. `counts`: (tests, failures + errors) from this run's
+    result file, or None (absent, stale or unreadable); read only when the runner names a `result`.
+    A test that is not there, or a result that never came, never reads as RED: a `no_test` match is
+    NONE, a missing result ERROR, and with no result file only exit 1 is RED."""
+    if runner.get('no_test') and re.search(runner['no_test'], log, re.M):
+        return NONE, "the log says no test matched (the runner's no_test)"
+    if runner.get('result'):
+        if counts is None:
+            return ERROR, 'the command exited %d and wrote no readable result file in this run' % rc
+        tests, bad = counts
+        if tests == 0:
+            return NONE, 'no test ran'
+        if bad:
+            return RED, '%d of %d test(s) failed' % (bad, tests)
+        if rc == 0:
+            return GREEN, '%d test(s) passed' % tests
+        return ERROR, 'the command exited %d with every test passing' % rc
+    if rc == 0:
+        return GREEN, 'the command exited 0'
+    if rc == 1:
+        return RED, 'the command exited 1'
+    return ERROR, 'the command exited %d; only 0 (passed) and 1 (failed) give a verdict' % rc
+
+
+def junit_file_counts(path, since=0.0):
+    """(tests, failures + errors) of the one JUnit XML file `path`: its root's counts, else the sum
+    over its testsuite elements. None when absent, older than `since`, unparseable, or a count that
+    is no integer."""
+    try:
+        if os.path.getmtime(path) < since:
+            return None
+        root = ET.parse(path).getroot()
+        suites = ([root] if root.get('tests') is not None
+                  else [el for el in root.iter() if el.tag == 'testsuite'])
+        tests = sum(int(el.get('tests', 0)) for el in suites)
+        bad = sum(int(el.get('failures', 0)) + int(el.get('errors', 0)) for el in suites)
+    except (ET.ParseError, OSError, ValueError):
+        return None
+    return tests, bad
+
+
 def is_class_of(path, name):
     """Whether the Gradle JUnit file `path`, `TEST-<class>.xml`, is for the class `name` in any
     package (`<pkg>.<name>`, or bare `<name>`) or one nested in it (`<pkg>.<name>$<Inner>`)."""
@@ -300,6 +405,10 @@ def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0):
         results = os.path.join(tw, *sel.runner['dir'].replace('\\', '/').split('/'),
                                'build', 'test-results')
         return gradle_verdict(rc, log_text, junit_counts(results, since, stem(sel.path)), copied)
+    if sel.kind == 'command':
+        result = result_path(sel, tw, log_dir, n)
+        return command_verdict(rc, log_text, sel.runner,
+                               junit_file_counts(result, since) if result else None)
     if sel.kind == 'dotnet':
         return dotnet_verdict(rc, log_text, trx_counts(trx_path(sel, log_dir, n), since), copied)
     return python_verdict(rc, log_text)

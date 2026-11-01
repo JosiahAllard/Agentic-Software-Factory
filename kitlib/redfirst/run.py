@@ -12,9 +12,9 @@ and the exit is 4.
 The machine lock: a run whose command is heavy books it once, before the tree is made
 (lock_kind, book_slot: kitlib.lock.run.book for `<repo name>/redfirst-<base10>`), runs every
 command in the booked run's job (locked_run) and releases before the cleanup. The kind is the
-runner's `lock`, else the kind of the heavy-list entry its command matches
-(kitlib.config.heavy_match: build for gradle and dotnet, none for the python runner, which books
-nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
+runner's `lock`, else build for a command runner (COMMAND_LOCK), else the kind of the heavy-list
+entry its command matches (kitlib.config.heavy_match: build for gradle and dotnet, none for the
+python runner, which books nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
 inside one that holds less the lock refuses it. A refusal makes no tree and runs nothing (the log
 folder, made first, stays): exit 2 for the lock's usage refusals, the lock's own exit code for the
 others (LOCK_CODES). The booked run's record ends, before the cleanup, with the code the verdicts
@@ -413,7 +413,11 @@ def run_one(sel, n, tw, log_dir, files, run):
     log dir are deleted first: only this run's results are read."""
     argv, cwd, env = V.command(sel, tw, log_dir, n)
     log = os.path.join(log_dir, '%d-%s-%s.log' % (n, sel.kind, V.stem(sel.path)))
-    for stale in (log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None):
+    stales = [log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None]
+    result = V.result_path(sel, tw, log_dir, n) if sel.kind == 'command' else None
+    if result and os.path.normcase(result).startswith(os.path.normcase(os.path.join(log_dir, ''))):
+        stales.append(result)        # one in the tree is fresh with the tree, and may be tracked
+    for stale in stales:
         try:
             if stale and os.path.lexists(stale):
                 os.remove(stale)
@@ -536,6 +540,8 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
 # --no-wait, the wait ran out, the lock could not be read, an owner or game hold, an agent hold.
 # None is 0 or 1, which would read as RED or GREEN.
 LOCK_CODES = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_REQUIRE, EXIT_RESERVED, EXIT_HOLD)
+# The kind a command runner books when it names no `lock`: an engine test builds and runs a game.
+COMMAND_LOCK = 'build'
 
 
 def lock_kind(sel, heavy):
@@ -546,6 +552,9 @@ def lock_kind(sel, heavy):
     own = sel.runner.get('lock')
     if own:
         return own, 'the `lock` of the runner for glob %r in %s' % (sel.runner.get('glob'), KEY)
+    if sel.kind == 'command':
+        return COMMAND_LOCK, ('the command kind books %s unless its runner\'s `lock` in %s names '
+                              'another kind' % (COMMAND_LOCK, KEY))
     argv = V.command(sel, '.', '.', 1)[0]
     entry = heavy_match(argv[0], argv[1:], heavy)
     if entry is None:

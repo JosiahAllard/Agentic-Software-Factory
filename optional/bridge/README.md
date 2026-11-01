@@ -121,8 +121,9 @@ nominates no channel, and the other halves keep working.
     by one discovery pass ends nothing: the write-time checks below refuse while the chat is away.
     A closed chat keeps its lease (it cannot deliver, and it still holds one of the 32 slots)
     until Stop, a revoke or a restart. The window lists every lease with its grant time, marks one
-    that cannot deliver now (a chat not listed, or, on a full refresh, failing its live check: a
-    failed check keeps a chat listed), and its "Stop selected" stops it by reference
+    that cannot deliver now (a chat not listed, or failing its live check at the last full
+    refresh: a failed check keeps a chat listed, and the 5 s re-read keeps the mark), and its
+    "Stop selected" stops it by reference
   - is logged: every grant, revoke and replacement appends one JSON line (`at`, `event`, `by`,
     `writer`, `recipient`; chat references only) to `writer-leases.log` beside `pairings.sqlite`.
     A grant that cannot be logged is refused, and a writer it would have replaced keeps its lease
@@ -226,11 +227,12 @@ nominates no channel, and the other halves keep working.
     `pairings.sqlite`. A connect that cannot be logged is refused.
   - The owner window lists every PM route the owner's row does not decide ("A → B, connected by
     the PM since …", with "(cannot deliver now)" when a chat is not listed or no longer
-    kit-launched) and re-reads the list every 5 s without discovery. "Stop selected" stops one
+    kit-launched) and re-reads the list every 5 s without discovery or live checks, keeping each
+    row's mark from the last full refresh. "Stop selected" stops one
     direction and writes the owner's disconnect for it, even when a chat is not listed. The
     disconnect is written first; if it cannot be (for example `route-capacity`), the route is still
     stopped and the window says the PM could make it again, with the reason. The window's PM rows
-    have no test.
+    are tested only for the kept mark (tests/bridge/test_window_fill.py); Stop has no test.
   - The PM agent and its subagents share one frontend, so a subagent the PM starts carries the
     `pm` mark and may call the PM tools too.
   - The service detaches a frontend whose process has ended only when the next frame from any

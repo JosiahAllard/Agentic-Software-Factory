@@ -59,8 +59,9 @@ Writer lease limits:
 - Only Codex desktop chats in the same app and on the same account qualify, never a terminal.
 - A restart drops every lease. Leases are capped at 32 at a time.
 - A closed chat keeps its lease, and its slot, until Stop, a revoke or a restart; it cannot
-  deliver. The window still lists it, marked as unable to deliver (on a full refresh the lease
-  row live-checks both chats, so a closed chat that stays listed is marked too), and can Stop it.
+  deliver. The window still lists it, marked as unable to deliver (a full refresh live-checks
+  both chats, so a closed chat that stays listed is marked too, and the 5 s re-read keeps that
+  mark until the next full refresh), and can Stop it.
 - A correlated refusal still blocks the recipient's whole chat, which is its task root.
 - The owner window's lease buttons have no test.
 

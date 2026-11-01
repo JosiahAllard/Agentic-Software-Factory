@@ -105,7 +105,7 @@ class Window:
         self._rows={}  # reset before any row, so a failed refresh leaves no stale index map
         for source,target in self.owner.connections():
             self.routes.insert(tk.END,self._title(source)+' → '+self._title(target))
-        for writer,target,granted,listed in self.owner.writer_grants():
+        for writer,target,granted,listed in self.owner.writer_grants(check=check):
             self._rows[self.routes.size()]=('lease',writer,target)
             self.routes.insert(tk.END,self._title(writer)+' delivers to '+self._title(target)
                 +' for other apps, since '+_when(granted)+('' if listed else ' (a chat is not listed now; it cannot deliver)'))

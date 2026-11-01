@@ -59,9 +59,10 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   2. Built by worker or weak-worker -> no override: light as pinned.
   3. Otherwise -> raise to strong.
 
-  A light reviewer's "blocking" claim is verified before it holds a landing: read the cited code
-  path yourself or ask a strong-tier review. Haiku overstated severity twice in the reviewer A/B
-  (`<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
+  A light reviewer's "blocking" claim you dispute is settled by a fresh strong-tier review of the
+  tip, not by your own reading: `verdict.py add` refuses a LAND over the reviewer's final
+  `Verdict: SEND BACK` (`<kit>/docs/gate.md` "Strict paths"). Haiku overstated severity twice in the
+  reviewer A/B (`<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
 - Effort is not settable per dispatch: pick the role for it. High risk -> strong-worker, or
   senior-worker for the kinds the ladder names. Only when senior-worker has been defeated, or
   plainly will be, on a race or crash root-cause or subtle concurrency (never a build or a

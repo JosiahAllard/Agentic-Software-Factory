@@ -18,6 +18,14 @@
       `REFUSED: ...` and an `Instead:` line (exit 2, nothing written; verdicts.model_mismatch_why); an
       id with no transcript prints `NOTE: --reviewer-model <m> is not checked: ...` before QUEUED.
       A session name, a self-review and a host with no reader (Codex) are not looked up.
+      The same ids have the final `Verdict:` line of their final report read (the ADAPTER's
+      optional agent_verdict(); Claude: hosts.claude.adapter.agent_models.verdict): a reviewer
+      that said SEND BACK prints `REFUSED: ...` and an `Instead:` line naming a fresh review of
+      the tip; one whose transcript has no `Verdict:` line, or cannot be read, prints `REFUSED:
+      ...` and an `Instead:` line to resume it for its line (exit 2, nothing written;
+      verdicts.reviewer_verdict_why); an
+      id with no transcript prints `NOTE: the reviewer's verdict is not checked: ...`. Before
+      QUEUED, each verdict read prints `reviewer <id> said <verdict> at <tip>`.
       A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
       or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
       strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
@@ -46,7 +54,8 @@ A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.verdi
 exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot be read or written,
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
-entry add finds malformed, or a self-review or light review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
+entry add finds malformed, or a self-review, model mismatch, reviewer's SEND BACK or light
+review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
 there is no such branch; nothing written).
 """
 import argparse
@@ -121,15 +130,28 @@ def line(e):
                     + (['last=%s' % last[0]] if last else []))
 
 
+def _adapter_reader(name, environ):
+    """The selected host's ADAPTER.<name>() reader, or None when that host has no such method
+    (Codex) or hosts.json cannot be read."""
+    try:
+        make = getattr(_host.adapter_module(environ=environ).ADAPTER, name, None)
+    except (ImportError, AttributeError, registry.RegistryError):
+        return None
+    return make() if make is not None else None
+
+
 def transcript_reader(environ=None):
     """The selected host's subagent model reader, from its ADAPTER's optional `agent_models()`
     (docs/new-host.md; id -> sorted models, [] for an agent id with no transcript, None for an id
     that is not one), or None when that host has none (Codex) or hosts.json cannot be read."""
-    try:
-        make = getattr(_host.adapter_module(environ=environ).ADAPTER, 'agent_models', None)
-    except (ImportError, AttributeError, registry.RegistryError):
-        return None
-    return make() if make is not None else None
+    return _adapter_reader('agent_models', environ)
+
+
+def verdict_reader(environ=None):
+    """The selected host's reviewer verdict reader, from its ADAPTER's optional `agent_verdict()`
+    (docs/new-host.md; id -> `(found, verdict)`, None for an id that is not an agent id), or None
+    when that host has none (Codex) or hosts.json cannot be read."""
+    return _adapter_reader('agent_verdict', environ)
 
 
 def carry(a, common_dir):
@@ -174,13 +196,19 @@ def run(a, common_dir):
             return fail('NOT DONE', 'the kit configuration cannot be read: %s; nothing was queued'
                         % e, NOT_DONE)
         main, main_why = main_as_fetched(a.root) if cap is not None else (None, None)
-        seen = (verdicts.seen_models(entry, transcript_reader())
-                if not verdicts.check(entry, stored=False) else {})
+        well = not verdicts.check(entry, stored=False)
+        seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
+        said = verdicts.seen_verdicts(entry, verdict_reader()) if well else {}
         _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,
-                                 main_why=main_why, seen=seen)
+                                 main_why=main_why, seen=seen, said=said)
         for rid in sorted(r for r, models in seen.items() if not models):
             print('NOTE: --reviewer-model %s is not checked: no transcript found for the reviewer '
                   'id %s' % (stored['reviewer_model'], rid), flush=True)
+        for rid in sorted(r for r, (found, _) in said.items() if not found):
+            print('NOTE: the reviewer\'s verdict is not checked: no transcript found for the '
+                  'reviewer id %s' % rid, flush=True)
+        for text in verdicts.said_lines(stored, said):
+            print(text, flush=True)
         print('QUEUED %s %s' % (stored['branch'], stored['tip']), flush=True)
         return DONE
     if a.cmd == 'list':
@@ -218,7 +246,8 @@ def main(argv=None):
         return fail('NOT DONE', 'no git repository at %s: %s' % (root, why), NOT_DONE)
     try:
         return run(a, common_dir)
-    except (verdicts.SelfReview, verdicts.ModelMismatch, verdicts.LightReview) as e:
+    except (verdicts.SelfReview, verdicts.ModelMismatch, verdicts.ReviewerSaid,
+            verdicts.LightReview) as e:
         return fail('REFUSED', str(e), USAGE)
     except verdicts.BadEntry as e:
         p.print_usage(sys.stderr)

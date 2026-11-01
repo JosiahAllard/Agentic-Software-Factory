@@ -90,7 +90,8 @@ class Shared(HintCase):
 
 
 class Once(HintCase):
-    """"landing".gate_once: a shared path lands on the scoped gate; a strict one needs --full."""
+    """"landing".gate_once: a shared path lands on the scoped gate, and so does a strict one (its
+    merged gate runs --full --fresh); a gate config change still needs --full."""
     KIT = dict(tg.ScopedCase.KIT, landing={'shared_paths': tg.SHARED, 'gate_once': True})
 
     def test_a_shared_path_says_nothing_extra_and_lands(self):
@@ -98,10 +99,15 @@ class Once(HintCase):
         self.quiet(out)
         self.lands(tip)
 
-    def test_a_strict_path_needs_full(self):
-        wt, tip, out = self.plain({tg.STRICT_FILE: 'x = 1\n'})
-        self.needs(out, 'strict path %s' % tg.STRICT_FILE, '"landing".gate_once')
-        self.refused(wt, tip, 'strict path %s' % tg.STRICT_FILE)
+    def test_a_strict_path_says_nothing_extra(self):
+        _, _, out = self.plain({tg.STRICT_FILE: 'x = 1\n'})
+        self.quiet(out)
+
+    def test_a_gate_config_change_needs_full(self):
+        wt, tip = self.config_change()
+        out = self.gate(wt)
+        self.needs(out, "the tip changes the gate's config (.kit.json)")
+        self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
 
 
 class NothingSet(HintCase):

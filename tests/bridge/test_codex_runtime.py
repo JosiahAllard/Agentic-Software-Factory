@@ -100,6 +100,18 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertIsNone(self.factory.native_channel(authority.sender))
         self.assertNotIn('fixture-private-credential',repr(authority))
 
+    def test_an_observed_chat_is_described_by_its_index_name_and_by_none_without_one(self):
+        # The window lists a Codex chat by its title in session_index.jsonl (display only).
+        authority=self.observe()
+        self.assertNotIn('title',self.controller._describe(authority.sender))
+        (self.profile/'session_index.jsonl').write_text(json.dumps({'id':self.thread,
+            'thread_name':'kit writer','updated_at':'x'})+'\n',encoding='utf-8')
+        authority=self.observe()
+        detail=self.controller._describe(authority.sender)
+        self.assertEqual(detail['title'],'kit writer')
+        self.assertEqual(detail['runtime'],'codex-desktop')
+        self.assertEqual(self.controller.pairs.owner_routes(),())
+
     def test_real_frontend_server_consumes_native_meta_and_registers_without_owner_grant(self):
         server=self.controller.frontend(self.source.observe)
         server.handle({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2025-06-18'}})

@@ -155,6 +155,14 @@ class ClaudeRuntimeTests(unittest.TestCase):
         self.assertEqual(self.controller.pairs.owner_routes(),())
         self.assertFalse(self.controller.core.adapters)
 
+    def test_an_untitled_desktop_task_gives_a_short_label_without_its_local_prefix(self):
+        # The id format is Claude's, so this half supplies the label and core stays host-neutral.
+        self.data.pop('title')
+        self.write()
+        binding=self.sources.refresh()[0]
+        self.assertEqual(self.controller._describe(binding),{'short':self.task[6:14]})
+        self.assertEqual(self.controller.pairs.owner_routes(),())
+
     def test_a_terminal_chat_is_listed_by_its_session_name_which_grants_nothing(self):
         # The window showed bare ids for terminal chats: the session record's name is its title now.
         from optional.bridge.core.messages import SenderAuthority

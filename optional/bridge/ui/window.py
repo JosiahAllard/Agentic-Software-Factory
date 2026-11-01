@@ -11,7 +11,8 @@ import tkinter as tk
 from tkinter import ttk
 
 from optional.bridge.core.hostpairs import REFUSED as HOST_PAIR_REFUSED
-from optional.bridge.core.owner import OwnerControls
+from optional.bridge.core.owner import PARTLY_DONE,OwnerControls
+from optional.bridge.core.pairing import PairingError
 
 REREAD_MS=5000
 # How a chat that is not listed, or not answering, comes back (README "Connections window").
@@ -24,6 +25,12 @@ NOT_ANSWERING=('A chat marked "not answering" is between turns or closed: it sta
 # PairingError codes for a selected chat that is gone or replaced, and for one that failed its live check.
 GONE=('visible-chat-changed','chat-not-observed','selection-chat-changed')
 STALE=('chat-live-binding-unverified',)
+# Other codes a Connect, Stop or lease click raises before anything is written (a store write that
+# fails is rolled back, and a lease whose log line fails is undone).
+BEFORE_WRITE=('invalid-selection-options','invalid-owner-selection','same-chat-selection',
+    'owner-control-unverified','owner-decision-capacity','route-capacity','pairing-store-closed',
+    'writer-lease-unavailable','writer-lease-capacity','writer-lease-log-failed','pm-routes-unavailable')
+UNKNOWN=' Click Refresh to see what is connected now.'
 
 
 def refusal(error):
@@ -37,9 +44,15 @@ def refusal(error):
     if code in STALE:
         return ('A selected chat did not answer its live check: it is between turns or closed. Nothing was '
             'changed. To bring it back, '+COME_BACK+', then try again.')
+    if type(error) is not PairingError:
+        return 'Something failed ('+type(error).__name__+'); what was changed is not known.'+UNKNOWN
     reason=' (reason: '+code+')' if type(code) is str and code.replace('-','').isalnum() and len(code)<=64 else ''
-    return ('The selected chats changed or are unavailable'+reason+'. Nothing was changed. Click Refresh, '
-        'select the chats again and retry; a chat that is not listed must first make a bridge call.')
+    if code==PARTLY_DONE:
+        return 'The connection is stopped, but a PM connection on it may not be.'+UNKNOWN
+    if code in BEFORE_WRITE:
+        return ('That was refused'+reason+'. Nothing was changed. Click Refresh, select the chats again and '
+            'retry; a chat that is not listed must first make a bridge call.')
+    return 'That failed'+reason+'; what was changed is not known.'+UNKNOWN
 
 
 class Window:
@@ -124,7 +137,8 @@ class Window:
     def refresh(self):
         try:
             if self.refresh_callback is not None: self.refresh_callback()
-            choices=self.owner.chats(check=True)
+            live={}  # each chat's live check runs once in this refresh
+            choices=self.owner.chats(check=True,live=live)
             self.choices={choice.reference:choice for choice in choices}
             self._names.update((choice.reference,choice.title) for choice in choices)
             old=list(self._order)
@@ -134,7 +148,7 @@ class Window:
                     'ready' if choice.live is not False else 'not answering',choice.runtime,choice.workspace))
             self.table.selection_set([ref for ref in old if ref in self.choices])
             self.hint.set(hints(choices))
-            self._fill(check=True)
+            self._fill(check=True,live=live)
             self.waiting.set(waiting_line(self.owner.waiting()))
             if not self.preview and not choices: self.status.set('No chats are listed yet. '+NOT_LISTED_HELP)
             self._selection()
@@ -142,11 +156,13 @@ class Window:
             self.status.set('Chat discovery is unavailable. Existing connections are not changed by this refresh.')
             for button in (self.connect,self.disconnect,self.lend,self.unlend): button.configure(state='disabled')
 
-    def _fill(self, *, check):
+    def _fill(self, *, check,live=None):
         """Redraw the connection list, keeping the selected row. check: run the routes' and leases'
         live checks (a full refresh). The timed re-read runs none: a row keeps the
         result of the last full refresh, and a chat that is not listed now still marks it.
-        A failed live check keeps a chat listed, so listing alone cannot clear a mark."""
+        A failed live check keeps a chat listed, so listing alone cannot clear a mark. live: the
+        refresh's shared live-check results (OwnerControls._live)."""
+        if check and live is None: live={}
         selected=[self._rows.get(index) for index in self.routes.curselection()]
         self.routes.delete(0,tk.END)
         self._rows={}  # reset before any row, so a failed refresh leaves no stale index map
@@ -154,12 +170,12 @@ class Window:
         def can_deliver(row,deliverable):
             checked[row]=deliverable if check else previous.get(row,True)
             return deliverable and checked[row]
-        leases=tuple(self.owner.writer_grants(check=check))
+        leases=tuple(self.owner.writer_grants(check=check,live=live))
         through={target:writer for writer,target,_granted,_deliverable in leases}
         def via(source,target):
             writer=through.get(target)
             return '' if writer is None or writer==source else '; delivered through '+self._title(writer)+"'s lease"
-        for source,target,deliverable in self.owner.owner_rows(check=check):
+        for source,target,deliverable in self.owner.owner_rows(check=check,live=live):
             row=('owner',source,target)
             self._rows[self.routes.size()]=row
             self.routes.insert(tk.END,self._title(source)+' → '+self._title(target)+', connected by you'
@@ -190,7 +206,7 @@ class Window:
         choice=self.choices.get(reference)
         if choice is not None: return choice.title
         name=getattr(self,'_names',{}).get(reference)
-        return (name if name is not None else 'chat '+reference[:8])+' (not listed: it needs a bridge call, then Refresh)'
+        return (name if name is not None else 'unnamed chat '+reference[:8])+' (not listed: it needs a bridge call, then Refresh)'
 
     def _stop_selected(self):
         if self.preview: return
@@ -215,7 +231,7 @@ class Window:
             elif self.owner.lease(first,second,enabled=False): self.status.set('That lease is stopped.')
             else: self.status.set('That lease was already gone or replaced. Nothing was stopped.')
         except Exception as error:
-            self.status.set('It could not be stopped. '+refusal(error))
+            self.status.set('Stop selected connection: '+refusal(error))
         self.refresh()
 
     def _change(self,enabled):

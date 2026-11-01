@@ -2,8 +2,9 @@
 chat back (ui/window.py, core/owner.py). It displays; only OwnerControls acts."""
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
-from optional.bridge.core.owner import OwnerControls
+from optional.bridge.core.owner import PARTLY_DONE,OwnerControls
 from optional.bridge.core.pairing import PairingError,PairingStore
 from optional.bridge.ui import window as ui
 from tests.bridge import test_owner  # the module, so its tests are not collected twice
@@ -39,16 +40,18 @@ class ChatNameTests(unittest.TestCase):
     tearDown=test_owner.WriterLeaseTests.tearDown
 
     def test_a_chat_without_a_host_name_is_listed_by_a_short_id_not_its_whole_id(self):
+        # Core knows no host's id format: the host may give a short label, else the first 8 characters.
         desktop=chat('local_8a23be98-0000-4000-8000-000000000000')
         self.live[desktop.identity.session_id]=desktop
         self.pairs.observe(desktop)
         titles={choice.reference:choice.title for choice in self.owner.chats()}
-        self.assertEqual(titles[desktop.reference],'unnamed chat 8a23be98')
+        self.assertEqual(titles[desktop.reference],'unnamed chat local_8a')
         self.assertEqual(titles[self.a.reference],'unnamed chat a')
         named=OwnerControls(self.pairs,self.decisions,describe=lambda peer:{'title':'kit-coordinator'}
-            if peer==self.a else {})
+            if peer==self.a else {'short':'8a23be98'} if peer==desktop else {})
         titles={choice.reference:choice.title for choice in named.chats()}
         self.assertEqual(titles[self.a.reference],'kit-coordinator')
+        self.assertEqual(titles[desktop.reference],'unnamed chat 8a23be98')
 
     def test_a_full_refresh_marks_a_chat_that_does_not_answer_and_the_hint_says_how_to_bring_it_back(self):
         self.assertEqual({choice.live for choice in self.owner.chats()},{None})  # no check, no live call
@@ -103,6 +106,48 @@ class ConnectionListTests(unittest.TestCase):
         window._fill(check=True)
         self.assertNotIn('not answering',window.routes.rows[0])
 
+    def test_a_connection_carried_by_a_lease_cannot_deliver_while_the_writer_does_not_answer(self):
+        # The delivery checks the writer too (hosts/codex/runtime.py), so the row must not say ready.
+        owner,choices=self.named()
+        owner.change(self.a.reference,self.c.reference,enabled=True,bidirectional=False)
+        owner.lease(self.b.reference,self.c.reference,enabled=True)
+        self.live.pop('b')  # the writer closed or its turn ended; a and c still answer
+        self.assertEqual(owner.owner_rows(),((self.a.reference,self.c.reference,False),))
+        window=shown(owner,choices)
+        window._fill(check=True)
+        self.assertIn("delivered through codex writer's lease (a chat is not answering",window.routes.rows[0])
+        self.live['b']=self.b
+        self.assertEqual(owner.owner_rows(),((self.a.reference,self.c.reference,True),))
+        owner.change(self.b.reference,self.c.reference,enabled=True,bidirectional=False)
+        self.live.pop('a')  # the writer's own row is its own delivery and does not depend on a
+        rows={(sender,recipient):ok for sender,recipient,ok in owner.owner_rows()}
+        self.assertEqual(rows,{(self.a.reference,self.c.reference):False,(self.b.reference,self.c.reference):True})
+
+    def test_a_refresh_checks_each_chat_once(self):
+        owner,_choices=self.named()
+        owner.change(self.a.reference,self.c.reference,enabled=True,bidirectional=True)
+        owner.lease(self.b.reference,self.c.reference,enabled=True)
+        checks=[]
+        class Counted(dict):  # the fixture's live check reads self.live.get at every call
+            def get(self,key,default=None):
+                checks.append(key)
+                return dict.get(self,key,default)
+        self.live=Counted(self.live)
+        live={}
+        choices=owner.chats(check=True,live=live)  # what Window.refresh does
+        window=shown(owner,choices)
+        window._fill(check=True,live=live)
+        self.assertEqual(sorted(checks),['a','b','c'])
+        self.assertEqual(len(window.routes.rows),3)
+
+    def test_a_chat_observed_while_the_rows_are_read_gives_no_error(self):
+        owner,_choices=self.named()
+        owner.change(self.a.reference,self.c.reference,enabled=True,bidirectional=False)
+        full=self.pairs.registered()
+        before=tuple(peer for peer in full if peer!=self.c)  # c is observed just after the first read
+        with patch.object(self.pairs,'registered',side_effect=[before]+[full]*5):
+            self.assertEqual(owner.owner_rows(),())
+
     def test_a_lease_whose_chat_left_the_list_keeps_its_name_and_says_how_to_bring_it_back(self):
         owner,choices=self.named()
         owner.lease(self.b.reference,self.c.reference,enabled=True)
@@ -111,6 +156,8 @@ class ConnectionListTests(unittest.TestCase):
         window.choices.pop(self.c.reference)
         window._fill(check=True)
         self.assertIn('reviewer (not listed: it needs a bridge call, then Refresh)',window.routes.rows[0])
+        unknown='f'*64  # a chat this window never listed is named like any unnamed chat, not by a bare id
+        self.assertEqual(window._title(unknown),'unnamed chat ffffffff (not listed: it needs a bridge call, then Refresh)')
 
     def test_stop_selected_stops_the_owners_connection_in_that_direction_only(self):
         owner,choices=self.named()
@@ -169,11 +216,42 @@ class RestartTests(unittest.TestCase):
         self.assertIn('(reason: owner-decision-capacity)',ui.refusal(PairingError('owner-decision-capacity')))
         self.assertIn('does not connect these two kinds of chat',ui.refusal(PairingError('host-pair-refused')))
 
+    def test_only_a_refusal_before_any_write_says_nothing_was_changed(self):
+        self.assertIn('Nothing was changed',ui.refusal(PairingError('route-capacity')))
+        for error in (RuntimeError('boom'),PairingError('some-later-failure'),PairingError(PARTLY_DONE)):
+            line=ui.refusal(error)
+            self.assertNotIn('Nothing was changed',line)
+            self.assertNotIn('chats changed',line)
+            self.assertIn('Click Refresh to see what is connected now',line)
+        # A Stop whose PM-route cleanup fails after the owner's row was written: partly done.
+        self.owner.change(self.a.reference,self.b.reference,enabled=True,bidirectional=False)
+        class FailingPm:
+            def stop(self,*args,**kwargs): raise RuntimeError('pm log unavailable')
+        self.owner.pm=FailingPm()
+        with self.assertRaises(PairingError) as raised:
+            self.owner.change(self.a.reference,self.b.reference,enabled=False,bidirectional=False)
+        self.assertEqual(raised.exception.code,PARTLY_DONE)
+        with self.assertRaises(PairingError): self.pairs.require_selected(self.a,self.b)  # it is stopped
+        self.assertIn('The connection is stopped',ui.refusal(raised.exception))
+
 
 class RealWindowTests(unittest.TestCase):
     """The real Tk window, withdrawn: names, buttons and help lines."""
     setUp=test_owner.WriterLeaseTests.setUp
     tearDown=test_owner.WriterLeaseTests.tearDown
+
+    def test_a_chat_that_fails_its_check_shows_not_answering_in_the_real_window(self):
+        import tkinter as tk
+        try: root=tk.Tk()
+        except tk.TclError as error: self.skipTest('no Tk: '+str(error))
+        try:
+            root.withdraw()
+            self.live.pop('b')
+            window=ui.Window(root,self.owner)
+            states={item:window.table.item(item,'values')[1] for item in window.table.get_children()}
+            self.assertEqual(states,{self.a.reference:'ready',self.b.reference:'not answering',self.c.reference:'ready'})
+            self.assertIn('not answering',window.hint.get())
+        finally: root.destroy()
 
     def test_the_window_shows_names_connect_and_stop_buttons_and_the_help_line(self):
         import tkinter as tk

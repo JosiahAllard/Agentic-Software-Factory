@@ -255,19 +255,22 @@ nominates no channel, and the other halves keep working.
 The window displays; only `OwnerControls` acts, with the same checks as before (who may connect,
 grant a lease or deliver is unchanged). Tests: tests/bridge/test_window_ux.py.
 - **Chat names.** Each chat is listed by the name its host already shows: a Claude terminal chat by
-  its session record's `name` (`~/.claude/sessions/<pid>.json`, as `/rename` sets it), a Claude
-  desktop chat by its task title, a Codex chat by the last `thread_name` for its thread in the
+  its session record's `name` field (`~/.claude/sessions/<pid>.json`), a Claude desktop chat by
+  its task title, a Codex chat by the last `thread_name` for its thread in the
   Codex profile's `session_index.jsonl` (`hosts/codex/context.py` `thread_name`; read at each
-  bridge call, at most 4 MiB, display only). A chat with no name is "unnamed chat" and 8
-  characters of its id. A name grants nothing and is never part of a binding, so a rename changes
-  no route.
-- **Buttons.** Select two chats, then Connect (first to second, or both ways with the box) or
-  Stop. "Grant lease" and "Stop lease" act on a Codex writer and its recipient. Refresh runs
-  discovery and live-checks every chat; the list re-reads every 5 s without either.
+  bridge call, at most 4 MiB, display only). A chat with no name is "unnamed chat" and a short
+  label: the host half's `short` detail (an untitled Claude desktop task gives 8 characters of its
+  id after `local_`), else the first 8 characters of its session id. A name grants nothing and is
+  never part of a binding, so a rename changes no route.
+- **Buttons.** Select two chats, then Connect (both directions, or first to second, as the list
+  beside it says) or Stop. "Grant lease" and "Stop lease" act on a Codex writer and its recipient. Refresh runs
+  discovery and live-checks each chat once (`OwnerControls._live`, shared by the chat list and
+  the rows); the list re-reads every 5 s without either.
 - **State.** A full refresh marks a listed chat "not answering" when its live check fails (between
   turns or closed); it stays listed, cannot deliver now, and the timed re-read keeps the mark.
 - **Current connections and leases.** One row per direction: "A → B, connected by you" (with
-  "delivered through W's lease" when a lease carries it), "Lease: W delivers to B for other apps,
+  "delivered through W's lease" when a lease carries it; such a row can deliver only while W does
+  too, so it is marked when W does not answer), "Lease: W delivers to B for other apps,
   granted by you since T", and "A → B, connected by the PM since T". A row whose chat cannot deliver
   now says so; a chat no longer listed keeps its last name and says "(not listed: it needs a bridge
   call, then Refresh)". "Stop selected connection" stops one row.
@@ -279,12 +282,16 @@ grant a lease or deliver is unchanged). Tests: tests/bridge/test_window_ux.py.
   waiting for their chats (each direction once) and says to have each chat make a bridge call,
   then Refresh; the connections come back by themselves, and leases must be granted again. A
   Connect or Stop on a chat that left the list says the chat is no longer listed and how to bring
-  it back; one on a chat that does not answer says it is between turns or closed. Any other
-  refusal shows its reason code.
+  it back; one on a chat that does not answer says it is between turns or closed. Only a refusal
+  raised before anything is written says "Nothing was changed" (ui/window.py `BEFORE_WRITE`).
+  A Stop whose PM-route cleanup fails after the owner's row is written says the connection is
+  stopped but a PM connection may not be (`owner-change-partly-done`); any other failure says what
+  changed is not known and to click Refresh.
 - **Limits.** Stop on your own connection needs both chats listed and answering (the owner's
   change is checked like a Connect); a PM row's Stop does not. The waiting count cannot tell the
   host of a chat that is not listed, so it may count a remembered Codex-to-Codex row written
-  before the host-pair rule. No Codex-to-Codex feature is built (owner ruling).
+  before the host-pair rule. A Codex index past 4 MiB gives no name, and two chats may share a
+  name (the short label is not shown then). No Codex-to-Codex feature is built (owner ruling).
 
 ## Configuration
 

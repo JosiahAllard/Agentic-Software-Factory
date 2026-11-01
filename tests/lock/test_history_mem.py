@@ -147,23 +147,17 @@ class BookNeed(HistoryCase):
         self.assertEqual(self.need(), (2000, "history"))
         self.assertEqual(self.need(mem_mb=512), (512, "flag"))
 
-    def test_history_under_a_quarter_of_the_floor_names_the_gap(self):
+    def test_history_far_under_the_floor_adds_no_gap_note(self):
         self.confine(1)
         for _ in range(5):
             self.add(2000)
         self.floor(24576)
         rec, snap = self.booked()
-        gap = "mem need from history 2000 MB, floor 24576 MB: work outside the job?"
-        self.assertEqual((rec["need_mem_mb"], rec["mem_from"], rec["mem_gap"]),
-                         (2000, "history", gap))
+        self.assertEqual((rec["need_mem_mb"], rec["mem_from"]), (2000, "history"))
+        self.assertNotIn("mem_gap", rec)
         [row] = [r for r in snap["runs"] if r["id"] == rec["id"]]
-        self.assertEqual(row["mem_gap"], gap)
-        self.assertTrue(any(gap in x for x in st.render(snap)), st.render(snap))
-        self.floor(8000)                                # 2000 is a quarter: no gap
-        rec, snap = self.booked()
-        self.assertIsNone(rec["mem_gap"])
+        self.assertNotIn("mem_gap", row)
         self.assertFalse(any("work outside the job" in x for x in st.render(snap)))
-        self.assertIsNone(self.booked(mem_mb=100)[0]["mem_gap"])   # --mem: no gap to name
 
     def test_the_need_is_kept_in_the_history_line(self):
         self.confine(1)
@@ -172,9 +166,8 @@ class BookNeed(HistoryCase):
         self.floor(24576)
         rec = self.booked()[0]
         [h] = [d for d in self.store.history_records() if d["id"] == rec["id"]]
-        self.assertEqual((h["need_mem_mb"], h["mem_from"], h["mem_gap"]),
-                         (2000, "history", rec["mem_gap"]))
-        self.assertIn("work outside the job", h["mem_gap"])
+        self.assertEqual((h["need_mem_mb"], h["mem_from"]), (2000, "history"))
+        self.assertNotIn("mem_gap", h)
 
     def test_mem_reads_no_history(self):
         self.confine(1)

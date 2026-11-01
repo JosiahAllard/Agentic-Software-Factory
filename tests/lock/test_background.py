@@ -66,10 +66,9 @@ class Background(StoreCase):
                                  store=self.store, env=clean_env(), mem_mb=4096)
         self.assertEqual(code, 0)
         e = self.ended()
-        want = (4096, "flag", None)
-        self.assertEqual((e["need_mem_mb"], e["mem_from"], e["mem_gap"]), want)
+        self.assertEqual((e["need_mem_mb"], e["mem_from"]), (4096, "flag"))
         [h] = self.store.history_records()
-        self.assertEqual((h["need_mem_mb"], h["mem_from"], h["mem_gap"]), want)
+        self.assertEqual((h["need_mem_mb"], h["mem_from"]), (4096, "flag"))
         for bad in (0, -1, 1.5, True, "4096"):
             with self.subTest(bad=bad):
                 with self.assertRaises(LockError) as cm:

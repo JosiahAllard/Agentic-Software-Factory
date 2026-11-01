@@ -171,6 +171,8 @@ def render(snap):
                     ", not pinned" if p == "cpu" and r.get("pinned") is False else "",
                     ", needs %d MB of memory (%s)" % (r["need_mem_mb"], MEM_FROM.get(
                         r.get("mem_from"), r.get("mem_from"))) if r.get("need_mem_mb") else "")
+            if r and r.get("mem_gap"):
+                text += "; %s" % r["mem_gap"]
             h = holds.get(d["hold"])
             if h:
                 text += "; %s hold %s until %s" % (h["owner"], h["id"], h["end_local"])

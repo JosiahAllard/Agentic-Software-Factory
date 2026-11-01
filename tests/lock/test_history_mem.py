@@ -1,7 +1,8 @@
 """A run's memory need (KIT-LOCK-MEMORY S2): Store.history_mem is the p90 of the peak commit of
-the finished runs of its own repo, kind and mode; the kinds table's optional mem_mb is a floor
-under it; --mem (book's mem_mb) overrides both. The run record keeps need_mem_mb and mem_from
-(flag, history, kind or none). Nothing here changes admission."""
+the finished runs of its own repo, kind and mode, once there are mem_min_runs (5) of them since
+the kind's mem_since; until then the kinds table's optional mem_mb floor stands in; --mem (book's
+mem_mb) overrides both. The run record keeps need_mem_mb and mem_from (flag, history, kind or
+none). Nothing here changes admission."""
 import datetime
 import json
 import unittest
@@ -45,7 +46,7 @@ class HistoryMem(HistoryCase):
         self.assertEqual(self.store.history_mem("kit", "engine-test"), 1000)
 
     def test_each_mode_has_its_own_need(self):
-        for _ in range(3):
+        for _ in range(5):
             self.add(700, **LAND)
             self.add(720, **BRANCH)
             self.add(400)
@@ -54,15 +55,28 @@ class HistoryMem(HistoryCase):
         self.assertEqual(m("kit", "engine-test", "branch"), 720)
         self.assertEqual(m("kit", "engine-test", "other"), 400)
 
-    def test_a_thin_mode_has_none(self):
-        self.add(700)
-        self.add(700)
+    def test_a_mode_with_fewer_than_five_runs_has_none(self):
+        for _ in range(4):
+            self.add(700)
         for _ in range(5):
             self.add(700, **LAND)
         self.assertIsNone(self.store.history_mem("kit", "engine-test"))
+        self.add(700)
+        self.assertEqual(self.store.history_mem("kit", "engine-test"), 700)
+
+    def test_runs_that_ended_before_the_history_start_stay_out(self):
+        old = utc_now() - datetime.timedelta(days=3)
+        for _ in range(5):
+            self.add(205, ended=iso(old))
+        start = (utc_now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        self.assertEqual(self.store.history_mem("kit", "engine-test"), 205)
+        self.assertIsNone(self.store.history_mem("kit", "engine-test", since=start))
+        for _ in range(5):
+            self.add(9000)
+        self.assertEqual(self.store.history_mem("kit", "engine-test", since=start), 9000)
 
     def test_other_runs_and_lines_with_no_peak_stay_out(self):
-        for _ in range(3):
+        for _ in range(5):
             self.add(300)
         self.add(90000, how="stopped")
         self.add(None)
@@ -75,6 +89,15 @@ class HistoryMem(HistoryCase):
 
 
 class KindsFloor(unittest.TestCase):
+    def test_mem_since_is_an_optional_date(self):
+        self.assertEqual(kinds.check_entry("b", {"cpu": 2, "mem_since": "2026-11-15"})["mem_since"],
+                         "2026-11-15")
+        for bad in ("2026-13-01", "15/11/2026", "2026-11-15T00:00:00Z", 20261115, None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(kinds.KindsError) as e:
+                    kinds.check_entry("b", {"cpu": 2, "mem_since": bad})
+                self.assertIn("mem_since", str(e.exception))
+
     def test_mem_mb_is_an_optional_whole_number_of_mb(self):
         self.assertEqual(kinds.check_entry("b", {"cpu": 2, "mem_mb": 24576}),
                          {"cpu": 2, "gpu": 0, "share": False, "warn_min": 60, "mem_mb": 24576})
@@ -90,10 +113,11 @@ class KindsFloor(unittest.TestCase):
 class BookNeed(HistoryCase):
     """book records need_mem_mb and mem_from; status shows them."""
 
-    def floor(self, mb):
+    def floor(self, mb, **more):
         with open(self.kinds_path, encoding="utf-8") as f:
             doc = json.load(f)
         doc["kinds"]["engine-test"]["mem_mb"] = mb
+        doc["kinds"]["engine-test"].update(more)
         with open(self.kinds_path, "w", encoding="utf-8") as f:
             json.dump(doc, f)
 
@@ -112,16 +136,50 @@ class BookNeed(HistoryCase):
         self.confine(1)
         self.assertEqual(self.need(), (None, "none"))
 
-    def test_history_then_the_floor_then_the_flag(self):
+    def test_the_floor_until_five_runs_then_history_replaces_it(self):
         self.confine(1)
-        for _ in range(3):
+        self.floor(24576)
+        for _ in range(4):
             self.add(2000)
-        self.assertEqual(self.need(), (2000, "history"))
-        self.floor(1000)                                # under the history: history stands
-        self.assertEqual(self.need(), (2000, "history"))
-        self.floor(24576)                               # over it: the kind's floor
         self.assertEqual(self.need(), (24576, "kind"))
+        self.add(2000)                                  # the fifth: history, under the floor
+        self.assertEqual(self.need(), (2000, "history"))
         self.assertEqual(self.need(mem_mb=512), (512, "flag"))
+
+    def test_history_under_a_quarter_of_the_floor_names_the_gap(self):
+        self.confine(1)
+        for _ in range(5):
+            self.add(2000)
+        self.floor(24576)
+        rec, snap = self.booked()
+        gap = "mem need from history 2000 MB, floor 24576 MB: work outside the job?"
+        self.assertEqual((rec["need_mem_mb"], rec["mem_from"], rec["mem_gap"]),
+                         (2000, "history", gap))
+        [row] = [r for r in snap["runs"] if r["id"] == rec["id"]]
+        self.assertEqual(row["mem_gap"], gap)
+        self.assertTrue(any(gap in x for x in st.render(snap)), st.render(snap))
+        self.floor(8000)                                # 2000 is a quarter: no gap
+        rec, snap = self.booked()
+        self.assertIsNone(rec["mem_gap"])
+        self.assertFalse(any("work outside the job" in x for x in st.render(snap)))
+        self.assertIsNone(self.booked(mem_mb=100)[0]["mem_gap"])   # --mem: no gap to name
+
+    def test_history_without_a_floor_needs_five_runs_too(self):
+        self.confine(1)
+        for _ in range(4):
+            self.add(2000)
+        self.assertEqual(self.need(), (None, "none"))
+        self.add(2000)
+        self.assertEqual(self.need(), (2000, "history"))
+
+    def test_history_before_the_kinds_start_does_not_replace_the_floor(self):
+        self.confine(1)
+        for _ in range(6):
+            self.add(205)
+        self.floor(26368, mem_since="9999-12-31")       # a start not yet reached
+        self.assertEqual(self.need(), (26368, "kind"))
+        self.floor(26368, mem_since="2000-01-01")
+        self.assertEqual(self.need(), (205, "history"))
 
     def test_the_floor_alone(self):
         self.confine(1)
@@ -130,7 +188,7 @@ class BookNeed(HistoryCase):
 
     def test_history_is_read_in_the_runs_own_mode(self):
         self.confine(1)
-        for _ in range(3):
+        for _ in range(5):
             self.add(3000, **LAND)
         self.assertEqual(self.need(priority="land", gate=True), (3000, "history"))
         self.assertEqual(self.need(), (None, "none"))

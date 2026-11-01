@@ -245,7 +245,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
                                      "parent", "need", "has", "shares", "pinned", "pin", "pin_note",
                                      "threads", "child", "blocked_by", "detached", "session",
                                      "releasing", "log", "moved", "resource", "priority",
-                                     "within", "need_mem_mb", "mem_from")}
+                                     "within", "need_mem_mb", "mem_from", "mem_gap")}
         row.update(cores=qm.entry_holds(L, e, "cpu") if e else r.get("cores") or [],
                    gpus=qm.entry_holds(L, e, "gpu") if e else r.get("gpus") or [],
                    tree=tree, usage=_usage(r),

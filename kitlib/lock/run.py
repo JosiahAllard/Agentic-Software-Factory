@@ -1473,16 +1473,21 @@ def check_mem(mem_mb):
                         % (mem_mb,))
 
 
-def mem_need(store, repo, kind, mode, mem_mb, floor):
-    """(need_mem_mb, mem_from) of a run: mem_mb (--mem) when given ("flag"); else the larger of
-    its history's need (Store.history_mem: "history") and its kind's mem_mb floor ("kind");
-    (None, "none") with neither."""
+def mem_need(store, repo, kind, mode, mem_mb, entry):
+    """(need_mem_mb, mem_from, mem_gap) of a run: mem_mb (--mem) when given ("flag"); else its
+    history's need (Store.history_mem, from entry's mem_since) once that has mem_min_runs runs
+    ("history"); else its kind entry's mem_mb floor ("kind"); else (None, "none"). mem_gap names
+    a history need under a quarter of the floor (work outside the job object: a Gradle daemon,
+    MSBuild node reuse, VBCSCompiler), else None. Display only: it changes no need."""
     if mem_mb is not None:
-        return mem_mb, "flag"
-    hist = store.history_mem(repo, kind, mode)
-    if floor is not None and (hist is None or floor > hist):
-        return floor, "kind"
-    return (hist, "history") if hist is not None else (None, "none")
+        return mem_mb, "flag", None
+    entry = entry or {}
+    floor, hist = entry.get("mem_mb"), store.history_mem(repo, kind, mode, entry.get("mem_since"))
+    if hist is not None:
+        gap = ("mem need from history %d MB, floor %d MB: work outside the job?" % (hist, floor)
+               if floor and hist * 4 < floor else None)
+        return hist, "history", gap
+    return (floor, "kind", None) if floor is not None else (None, "none", None)
 
 
 def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, no_wait=False,
@@ -1516,8 +1521,8 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     its history line. checkout: the folder the run is booked from (the CLI's current directory):
     a kind that is neither a kit kind nor a kit alias is looked up in the "kinds" section of its
     repository's main checkout `.kit.json` (kitlib.lock.kinds.with_repo); None: kit kinds only.
-    mem_mb: the memory the run needs, in MB (the CLI's --mem); the record keeps need_mem_mb and
-    mem_from (mem_need). It is recorded only: admission does not read it."""
+    mem_mb: the memory the run needs, in MB (the CLI's --mem); the record keeps need_mem_mb,
+    mem_from and mem_gap (mem_need). It is recorded only: admission does not read it."""
     store = store or Store()
     env = dict(os.environ if env is None else env)
     try:
@@ -1603,14 +1608,14 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env, log)
         hist = None if expect_s is not None else store.history_expect(
             repo, kind, store.run_mode(priority, branch, gate))
-        need_mem, mem_from = mem_need(store, repo, kind, store.run_mode(priority, branch, gate),
-                                      mem_mb, k.get("mem_mb"))
+        need_mem, mem_from, mem_gap = mem_need(
+            store, repo, kind, store.run_mode(priority, branch, gate), mem_mb, k)
         run.rec.update(expect_s=expect_s if expect_s is not None else hist if hist is not None
                        else k["warn_min"] * 60,
                        expect_from="--expect" if expect_s is not None else "history"
                        if hist is not None else "guide",
                        warn_s=k["warn_min"] * 60 * store.settings.warn_scale,
-                       need_mem_mb=need_mem, mem_from=mem_from,
+                       need_mem_mb=need_mem, mem_from=mem_from, mem_gap=mem_gap,
                        need=own, has={p: n for p, n in has.items() if n}, hold=hold,
                        parent=parent["id"] if parent else None, gpu_share=gpu_share,
                        **({"gate": True} if gate else {}),

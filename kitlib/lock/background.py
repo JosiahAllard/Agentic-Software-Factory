@@ -145,9 +145,9 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
     demand_since, fg_gpu, fg_cpu, qbad, unfreed, joined = None, [], [], None, False, False
     hs_known, hbad = None, None
     try:
-        need_mem, mem_from = mem_need(store, repo, "background", "other", mem_mb, None)
+        need_mem, mem_from, mem_gap = mem_need(store, repo, "background", "other", mem_mb, None)
         run.rec.update(need=need, background=True, expect_s=expect_s, kind="background",
-                       need_mem_mb=need_mem, mem_from=mem_from)
+                       need_mem_mb=need_mem, mem_from=mem_from, mem_gap=mem_gap)
         try:
             os.makedirs(ctl_dir, exist_ok=True)
             run.save(child="waiting", shares={"gpu": "medium"})

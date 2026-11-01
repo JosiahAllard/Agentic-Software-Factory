@@ -1,5 +1,5 @@
 """A red-first test run that hangs is killed, its whole process tree with it, and reported TIMEOUT
-(kitlib.redfirst.run, RUN_TIMEOUT, run_timeout and default_run; KIT-REDFIRST-TIMEOUT: a run hung
+(kitlib.redfirst.run, RUN_TIMEOUT, run_timeout and default_run; a run hung
 25 h on 2026-10-31). The limit is set short here, through RUN_TIMEOUT or the repo's own `.kit.json`
 "tool_tests".unit_timeout at the base; the fake test sleeps well past it and starts a child of
 its own that sleeps longer still, so a run that is not stopped ends GREEN much later, and a kill of

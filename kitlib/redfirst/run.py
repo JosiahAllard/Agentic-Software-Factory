@@ -72,7 +72,7 @@ SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if
 OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                else {'start_new_session': True})
 # Seconds one selector's command may run (default_run) before its whole process tree is killed
-# and the selector is TIMEOUT (KIT-REDFIRST-TIMEOUT: a run of tests.gate.test_land_fold hung 25 h
+# and the selector is TIMEOUT (a run of tests.gate.test_land_fold hung 25 h
 # on 2026-10-31 and nothing stopped it). A python selector runs at most one test module, the unit
 # a test runner times, so the limit is that runner's per-unit one (run_timeout): in the kit,
 # RUN_TIMEOUT, kit_tests' UNIT_TIMEOUT (kitlib.tooldeps.selfrun); in another repo, pytests' own,

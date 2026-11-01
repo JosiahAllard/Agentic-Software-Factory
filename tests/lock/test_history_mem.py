@@ -1,4 +1,4 @@
-"""A run's memory need (KIT-LOCK-MEMORY S2): Store.history_mem is the p90 of the peak commit of
+"""A run's memory need: Store.history_mem is the p90 of the peak commit of
 the finished runs of its own repo, kind and mode, once there are mem_min_runs (5) of them since
 the kind's mem_since; until then the kinds table's optional mem_mb floor stands in; --mem (book's
 mem_mb) overrides both. The run record keeps need_mem_mb and mem_from (flag, history, kind or

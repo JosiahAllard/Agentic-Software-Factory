@@ -169,6 +169,18 @@ class Cli(CliBase):
                 self.assertEqual(code, 2)
                 self.assertIn("--mem", err)
 
+    def test_background_mem_reaches_run_background_and_a_bad_one_is_usage(self):
+        with mock.patch.object(self.tool, "run_background", return_value=0) as rb:
+            code, _, err = self.call("background", "--repo", "kit", "--slug", "t", "--mem",
+                                     "8192", cmd=[sys.executable, "-V"])
+            self.assertEqual(code, 0, err)
+            self.assertEqual(rb.call_args.kwargs["mem_mb"], 8192)
+            code, _, err = self.call("background", "--repo", "kit", "--slug", "t", "--mem", "0",
+                                     cmd=[sys.executable, "-V"])
+            self.assertEqual(code, 2)
+            self.assertIn("--mem", err)
+            self.assertEqual(rb.call_count, 1)
+
     def test_a_bare_bash_with_no_git_bash_is_refused_before_it_detaches_or_books(self):
         with mock.patch("kitlib.proc.bash.git_bash", return_value=None), \
                 mock.patch.object(self.tool, "detach", return_value=0) as det:

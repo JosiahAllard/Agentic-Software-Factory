@@ -6,6 +6,7 @@ none). Nothing here changes admission."""
 import datetime
 import json
 import unittest
+from unittest import mock
 
 from tests.lock.helpers import StoreCase, clean_env
 from tests.platforms import windows_only
@@ -163,6 +164,23 @@ class BookNeed(HistoryCase):
         self.assertIsNone(rec["mem_gap"])
         self.assertFalse(any("work outside the job" in x for x in st.render(snap)))
         self.assertIsNone(self.booked(mem_mb=100)[0]["mem_gap"])   # --mem: no gap to name
+
+    def test_the_need_is_kept_in_the_history_line(self):
+        self.confine(1)
+        for _ in range(5):
+            self.add(2000)
+        self.floor(24576)
+        rec = self.booked()[0]
+        [h] = [d for d in self.store.history_records() if d["id"] == rec["id"]]
+        self.assertEqual((h["need_mem_mb"], h["mem_from"], h["mem_gap"]),
+                         (2000, "history", rec["mem_gap"]))
+        self.assertIn("work outside the job", h["mem_gap"])
+
+    def test_mem_reads_no_history(self):
+        self.confine(1)
+        with mock.patch.object(type(self.store), "history_mem",
+                               side_effect=AssertionError("history read")):
+            self.assertEqual(self.need(mem_mb=512), (512, "flag"))
 
     def test_history_without_a_floor_needs_five_runs_too(self):
         self.confine(1)

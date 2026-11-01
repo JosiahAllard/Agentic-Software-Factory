@@ -1,6 +1,6 @@
 ---
 name: specialty-review
-description: Use when your brief says to load it - reviewing one branch you did not write against the brief its author was given, from a diff range and the author's touched-test logs, and reporting defects, scope creep and untested changes, most severe first. Read-only: never edit, build, run tests or land.
+description: Use when your brief says to load it - reviewing one branch you did not write against the brief its author was given, from a diff range and the author's touched-test logs, and reporting defects, scope creep, untested changes and (for a module or class added, moved or redesigned) contradictions of the design docs, most severe first. Read-only: never edit, build, run tests or land.
 ---
 
 # Specialty: branch review
@@ -15,6 +15,7 @@ You have no stake: you did not write the branch, you never review a change you w
 4. Read every hunk, plus enough of the surrounding file to know what calls the changed code and what it calls (`python <kit>/tools/codemap.py -C <worktree> --symbol NAME [path]` reads one Python symbol, not the whole file). The shell: the analyst role's Hard rules.
 5. Per change: does it do what the brief asked, and only that? What input or state makes it wrong? Is there a test that fails without it, and does that test reach the changed line - did it run, by the logs? Did an interface, wire format, schema or stored data change, with every reader updated? Was a check, assertion or test weakened? Is an error swallowed?
 6. Style, naming and formatting only where they hide a defect.
+7. Architecture: when the diff adds, moves or renames a module or class (`git diff -M --stat <base>...<tip>`; a new file with a module-level `class` or `def`), or changes which parts depend on which, read the repo's end-goal design and the design docs the profile's **Review** section names (none named: ARCHITECTURE.md and the README). Each contradiction is a finding: a layering break, a responsibility in the wrong module, a duplicate of an existing helper, a new dependency direction, a god-object, tangled control flow. A new design is checked for being accurate (the docs say what the code does) and clean. No end-goal design found: that is a finding; never review against nothing. A stale or outdated design doc is a finding whose fix is deleting it, or its stale passages (skill specialty-docs). Briefed for the architecture check only (skill branch-review, step 3): do this step, report its findings and still end with a `Verdict:` line.
 
 ## Never
 

@@ -1,10 +1,14 @@
 """kitlib.gate.land and strict paths (docs/gate.md "Strict paths"), split from test_land_strict so
 each module's real-git run stays well under the test pool's unit timeout: the reviewer's tier by
-the author's type, the commit, records and landing entry points as strict paths, and a branch that
-changes the gate's config landing alone. Fixtures: test_land_strict.StrictCase."""
+the author's type, the commit, records and landing entry points as strict paths, a branch that
+changes the gate's config landing alone, and a strict tip's scoped record with and without
+"landing".gate_once. Fixtures: test_land_strict.StrictCase."""
 import unittest
 
+import kitlib.config as kconfig
 from kitlib import gate as G
+from kitlib.gate import land, runner
+from kitlib.records import gate_ok
 from tests.gate import test_land, test_land_strict
 
 StrictCase = test_land_strict.StrictCase
@@ -115,6 +119,97 @@ class CommitRecordsLandGate(StrictCase):
                 _, out, _ = self.land_it(branch, tip)
                 self.assert_refused(out, '%s changes strict path %s' % (branch, path),
                                     'the reviewer ran on haiku, not a strong-tier model')
+
+
+class ScopedCase(StrictCase):
+    """Tips given a default-mode ("select") gate-OK record instead of the --full one lander()
+    would add (GATE_TIPS off)."""
+    GATE = FULL_GATE
+    GATE_TIPS = False
+
+    def scoped(self, tip):
+        rec = gate_ok.build(self.repo.root, tip, {}, {'version': 'test'}, 'test', gate_ok.utc(),
+                            [{'name': 'unit', 'result': 'pass'}], base=self.main)
+        gate_ok.write(self.repo.root, rec)
+        self.__dict__.setdefault('fixture_records', set()).add(tip + '.json')
+        self.assertEqual(gate_ok.mode_of(rec), 'select')
+
+    def full_needed(self, tip):
+        changed, why = runner.changed_between(self.repo.root, self.main, tip)
+        self.assertIsNotNone(changed, why)
+        return land.full_needed(self.repo.root, kconfig.load(self.repo.root), self.main, changed,
+                                False)
+
+
+class GateOnceStrict(ScopedCase):
+    """A base that sets "landing".gate_once (docs/gate.md "Gate once at landing"): the landing's
+    merged gate is a branch's one --full run, so a strict tip lands on a scoped record, alone,
+    under --full --fresh, and the plain gate's FULL NEEDED line no longer asks it for --full; a
+    gate config change still needs a --full record, strict or not."""
+    KIT = dict(test_land.LandCase.KIT, landing={'gate_once': True}, hook={'module': 'kit_hooks'})
+
+    def setUp(self):
+        ScopedCase.setUp(self)
+        self.on_main({'tools/kit_hooks.py': 'GATE_CHECKS = {}\n'}, 'hook module')
+
+    def test_a_strict_branch_with_a_scoped_record_lands_under_full_fresh(self):
+        _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
+        self.scoped(tip)
+        self.assertEqual(self.full_needed(tip), (None, None))
+        self.queue(BRANCH, tip)
+        lander, out, said = self.land_it(BRANCH, tip)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.remote_main(), out.merge)
+        self.assertTrue(lander.full and lander.fresh)
+        self.assertTrue(any(l.startswith('STRICT: %s changes strict path %s' % (BRANCH, STRICT))
+                            and l.endswith('the merged gate runs --full --fresh') for l in said),
+                        said)
+        merged, why = gate_ok.verify(self.repo.root, out.merge)
+        self.assertIsNone(why)
+        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
+                         ('full', ['unit']))
+
+    def test_a_plain_branch_with_a_scoped_record_lands_under_full(self):
+        _, tip = self.branch('feature', {'src/a.py': 'a\n'})
+        self.scoped(tip)
+        self.assertEqual(self.full_needed(tip), (None, None))
+        self.queue(BRANCH, tip)
+        lander, out, said = self.land_it(BRANCH, tip)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue(lander.full and lander.escalated)
+        self.assertFalse(lander.fresh)
+        self.assertEqual([l for l in said if l.startswith('STRICT')], [])
+
+    def test_a_strict_branch_that_changes_the_gate_config_still_needs_full(self):
+        _, tip = self.branch('feature', {STRICT: 'x = 1\n',
+                                         'tools/kit_hooks.py': 'GATE_CHECKS = {}  # x\n'})
+        self.scoped(tip)
+        config = "the tip changes the gate's config (tools/kit_hooks.py), which only a --full "
+        reason, why = self.full_needed(tip)
+        self.assertIsNone(why)
+        self.assertIn(config, reason or '')
+        self.queue(BRANCH, tip)
+        _, out, _ = self.land_it(BRANCH, tip)
+        self.assert_refused(out, 'has no full-gate OK record', config)
+
+
+class NoGateOnceStrict(ScopedCase):
+    """A base without "landing".gate_once keeps its rule: under "landing".shared_paths a strict
+    tip's scoped record is refused (its merged gate is the only whole run otherwise, and the
+    landing still needs the branch's --full), and the FULL NEEDED line says so."""
+    KIT = dict(test_land.LandCase.KIT, landing={'shared_paths': ['api/*']})
+
+    def test_a_strict_branch_with_a_scoped_record_is_refused(self):
+        _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
+        self.scoped(tip)
+        strict = 'the tip changes strict path %s, which only a --full record lands' % STRICT
+        reason, why = self.full_needed(tip)
+        self.assertIsNone(why)
+        self.assertIn(strict, reason or '')
+        self.queue(BRANCH, tip)
+        _, out, _ = self.land_it(BRANCH, tip)
+        self.assert_refused(out, 'has no full-gate OK record', strict,
+                            '"landing".shared_paths')
 
 
 if __name__ == '__main__':

@@ -586,7 +586,7 @@ def gate_line(top, branch, cfg=None, base=None):
                 'passes on this tip' % head)
     if gate_once(cfg):
         return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
-                ' a strict path or a gate config change still needs --full'
+                ' a gate config change still needs --full'
                 % (tip[:10], scoped.get('ended_utc')))
     return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s, steps not '
             're-checked' % (tip[:10], scoped.get('ended_utc')))

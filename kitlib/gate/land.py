@@ -49,8 +49,8 @@
                  "gate".docs_only and its steps all passed, or the base sets
                  "landing".shared_paths and the change touches none of them, no strict path and
                  no gate config file; docs/gate.md "Shared paths", or the base sets
-                 "landing".gate_once and the change touches no strict path and no gate config
-                 file, and the merged gate then runs --full unless the merge is docs-only;
+                 "landing".gate_once and the change touches no gate config file, a strict path
+                 included, and the merged gate then runs --full unless the merge is docs-only;
                  docs/gate.md "Gate once at landing"), or by none when the tip's
                  latest red --full run has a FLAKE targeted rerun (kitlib.gate.rerun.verify_flake);
                  a tip a test failed on, that failed twice on its branch, never lands
@@ -1056,8 +1056,9 @@ class Lander(object):
                   docs route), beside the config check above;
           once    when the base sets "landing".gate_once (docs/gate.md "Gate once at landing"),
                   a default-mode record lands whatever "gate".smoke_steps and "landing".shared_paths
-                  say: only a strict path (strict_refusal, before the docs route) or a gate config
-                  file refuses it, as the merged gate runs --full (once_escalate).
+                  say, a strict path included: only a gate config file refuses it, as the merged
+                  gate runs --full (once_escalate; --full --fresh for a strict tip,
+                  strict_escalate).
         The checks of the landing diff alone, in this order, are diff_refusal's."""
         why = self.no_route_refusal()
         if why:
@@ -1108,11 +1109,10 @@ class Lander(object):
         smoke = list(gate.get('smoke_steps') or [])
         shared = self.cfg.section('landing').get('shared_paths')
         once = self.gate_once()
-        if once:                        # before the docs-only route: a docs record too
-            why = self.strict_refusal(changed, '"landing".gate_once')
-            if why:
-                return why
-        elif shared is not None:
+        # gate_once: no strict check, as every merged gate of a strict tip runs --full (--fresh,
+        # strict_escalate); the gate config check below still refuses (docs/gate.md "Gate once
+        # at landing")
+        if not once and shared is not None:
             why = self.shared_refusal(shared, changed)
             if why:
                 return why
@@ -1140,8 +1140,9 @@ class Lander(object):
 
     def gate_once(self):
         """True when the base's config sets "landing".gate_once true (docs/gate.md "Gate once at
-        landing"): select_refusal takes a default-mode record of any tip that changes no strict
-        path and no gate config file, and once_escalate makes the merged gate --full."""
+        landing"): select_refusal takes a default-mode record of any tip that changes no gate
+        config file, a strict tip included (strict_escalate makes its merged gate --full --fresh),
+        and once_escalate makes the merged gate --full."""
         return self.cfg.section('landing').get('gate_once') is True
 
     def once_facts(self):
@@ -1184,8 +1185,8 @@ class Lander(object):
 
     def strict_refusal(self, changed, setting):
         """Why a record that is not --full does not land a landing diff `changed` under the base
-        setting `setting` that took it ("landing".shared_paths or "landing".gate_once), or None: a
-        changed strict path (strict_globs; a strict branch always ends on --full) refuses, and so
+        setting `setting` that took it ("landing".shared_paths; "landing".gate_once takes a strict
+        tip's record, diff_refusal), or None: a changed strict path (strict_globs) refuses, and so
         does a strict list that cannot be read."""
         paths = reuse.changed_list(changed)
         globs, why = self.strict_globs()
@@ -3240,12 +3241,16 @@ def full_needed(root, cfg, base, changed, docs):
     as a landing reads them. The reason is Lander.diff_refusal's, the tip check's own (steps that
     passed aside, as the gate has not run them yet), or else a changed strict path: the procedure
     ends a strict branch on --full even where the record check takes its default-mode record (the
-    merged gate runs --full --fresh; Strict paths). Reads only."""
+    merged gate runs --full --fresh; Strict paths), except under a base that sets
+    "landing".gate_once, whose merged gate of a strict tip is the branch's one --full run (Gate
+    once at landing). Reads only."""
     lander = Lander(root, [], None, [])
     lander.cfg, lander.expect_main = cfg, base
     why = lander.diff_refusal(changed, 'docs' if docs else 'select', None)
     if why:
         return why, None
+    if lander.gate_once():
+        return None, None
     globs, why = lander.strict_globs()
     if globs is None:
         return None, 'cannot read the strict paths from %s at %s: %s' % (

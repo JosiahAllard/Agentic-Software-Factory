@@ -329,6 +329,127 @@ class Selection(Fixture):
         self.assertIn('tools/tool_deps.py changed', tool_deps.selection({'tools/tool_deps.py'}, g)[1])
 
 
+def _reader(path_expr, mode="encoding='utf-8'", extra=''):
+    """A test module that reads a tools file's text through open(<path_expr>, <mode>)."""
+    return ('import os\nROOT = os.path.dirname(os.path.abspath(__file__))\n' + extra +
+            'def source():\n'
+            '    with open(%s, %s) as fh:\n'
+            '        return fh.read()\n' % (path_expr, mode) + TESTCASE)
+
+
+class TextReads(Fixture):
+    """"path" mode: a module naming Y.py only as a text-mode open() path reads Y and runs none of
+    its imports, so the edge is one hop: Y selects it, what Y imports does not."""
+
+    C_PATH = "os.path.join(ROOT, 'tools', 'c.py')"
+
+    def setUp(self):
+        super().setUp()
+        self.write('a.py', 'X = 1\n')
+        self.write('c.py', 'import a\n')
+        self.write('test_a.py', 'import a\n' + TESTCASE)
+        self.write('test_c.py', 'import c\n' + TESTCASE)
+        self.write('test_tool_deps.py', TESTCASE)
+
+    def test_a_text_read_is_selected_by_the_file_it_reads(self):
+        self.write('test_read.py', _reader(self.C_PATH))
+        self.assertIn('test_read', self.select('tools/c.py'))
+
+    def test_a_text_read_is_not_selected_by_what_the_read_file_imports(self):
+        self.write('test_read.py', _reader(self.C_PATH))
+        self.assertEqual(self.select('tools/a.py'), ['test_a', 'test_c', 'test_tool_deps'])
+        self.assertEqual(self.graph().closure('test_read'), {'c'})
+
+    def test_an_explicit_text_mode_reads_the_same(self):
+        for mode in ("'r'", "'rt', encoding='utf-8'", "mode='r'"):
+            with self.subTest(mode=mode):
+                self.write('test_read.py', _reader(self.C_PATH, mode))
+                self.assertNotIn('test_read', self.select('tools/a.py'))
+
+    def test_re_compile_does_not_count_as_running_code(self):
+        self.write('test_read.py', _reader(self.C_PATH, extra="import re\nPAT = re.compile('x')\n"))
+        self.assertNotIn('test_read', self.select('tools/a.py'))
+
+    def test_a_binary_or_unknown_mode_open_stays_transitive(self):
+        for mode in ("'rb'", 'MODE'):
+            with self.subTest(mode=mode):
+                self.write('test_read.py', _reader(self.C_PATH, mode, extra="MODE = 'r'\n"))
+                self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_the_same_name_in_any_other_constant_stays_transitive(self):
+        # The file is read AND run as a child: the child runs c's imports.
+        self.write('test_read.py', _reader(self.C_PATH, extra="CMD = ['python', 'tools/c.py']\n"))
+        self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_a_module_that_runs_code_stays_transitive(self):
+        for extra in ('exec(compile("x = 1", "c", "exec"))\n', 'import runpy\nrunpy.run_path("x")\n',
+                      'import builtins\nbuiltins.exec("x = 1")\n', 'eval("1")\n'):
+            with self.subTest(extra=extra):
+                self.write('test_read.py', _reader(self.C_PATH, extra=extra))
+                self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_a_bare_runpy_or_importlib_call_stays_transitive(self):
+        for extra in ('from runpy import run_path\nrun_path("x")\n',
+                      'from runpy import run_module\nrun_module("x")\n',
+                      'from runpy import run_path as rp\nrp("x")\n',
+                      'import importlib.util\nimportlib.util.source_to_code(b"x = 1")\n',
+                      'import builtins\ngetattr(builtins, "exec")("x = 1")\n'):
+            with self.subTest(extra=extra):
+                self.write('test_read.py', _reader(self.C_PATH, extra=extra))
+                self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_io_codecs_and_tokenize_open_read_text_too(self):
+        for opener in ('io', 'codecs', 'tokenize'):
+            with self.subTest(opener=opener):
+                self.write('test_read.py', 'import %s\n' % opener +
+                           _reader(self.C_PATH).replace('open(', '%s.open(' % opener, 1))
+                self.assertNotIn('test_read', self.select('tools/a.py'))
+
+    def test_any_other_open_stays_transitive(self):
+        # What a fixture's or a method's open does with the path is unknown (it may run it).
+        cases = {
+            'attr': "class F:\n    def open(self, p, **k):\n        return p\nFIX = F()\n",
+            'import': 'from gzip import open\n',
+        }
+        for label, extra in cases.items():
+            with self.subTest(case=label):
+                text = _reader(self.C_PATH, extra=extra)
+                if label == 'attr':
+                    text = text.replace('with open(', 'with FIX.open(', 1)
+                self.write('test_read.py', text)
+                self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_an_import_beside_the_read_stays_transitive(self):
+        self.write('test_read.py', 'import c\n' + _reader(self.C_PATH))
+        self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_a_module_read_here_and_imported_elsewhere_on_the_path_is_followed(self):
+        # test_read reads c.py's text but imports b, and b imports c: a change to a reaches it.
+        self.write('b.py', 'import c\n')
+        self.write('test_read.py', 'import b\n' + _reader(self.C_PATH))
+        self.assertEqual(self.graph().closure('test_read'), {'a', 'b', 'c'})
+        self.assertIn('test_read', self.select('tools/a.py'))
+
+    def test_closure_expands_a_read_node_reached_by_an_import_in_either_pop_order(self):
+        # A diamond: t reads r's text and imports i; i imports r; r imports a. However the walk
+        # meets r first, t reaches a through i. Lists fix the order, so a walk that stops at an
+        # already SEEN node (rather than an already WALKED one) fails one of the two every time.
+        for first in (['r', 'i'], ['i', 'r']):
+            with self.subTest(order=first):
+                g = tool_deps.Graph({'t': first, 'i': ['r'], 'r': ['a'], 'a': []}, {'t'},
+                                    reads={'t': {'r'}})
+                self.assertEqual(g.closure('t'), {'a', 'i', 'r'})
+        g = tool_deps.Graph({'t': ['r'], 'r': ['a'], 'a': []}, {'t'}, reads={'t': {'r'}})
+        self.assertEqual(g.closure('t'), {'r'})
+
+    def test_a_tool_that_reads_another_is_one_hop_for_its_tests_too(self):
+        self.write('lister.py', 'import os\nHERE = os.path.dirname(__file__)\n'
+                   "def head():\n    return open(os.path.join(HERE, 'c.py'), encoding='utf-8').readline()\n")
+        self.write('test_lister.py', 'import lister\n' + TESTCASE)
+        self.assertIn('test_lister', self.select('tools/c.py'))
+        self.assertNotIn('test_lister', self.select('tools/a.py'))
+
+
 @both_tables
 class PinnedInPieces(unittest.TestCase):
     """The "path" repository's in-piece pinned entries resolve through the pieces table: the same modules

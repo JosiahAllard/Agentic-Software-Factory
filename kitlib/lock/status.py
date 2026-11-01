@@ -5,10 +5,12 @@ the store or prints: the CLI prints these lines with its prefix, and `status --j
 snapshot itself.
 """
 from kitlib.lock import layout as lay
+from kitlib.lock import queue as qm
 from kitlib.lock.store import local_text, parse_iso
 
 POOLS = lay.POOLS
-MEM_FROM = {"flag": "--mem", "kind": "its kind's floor"}   # a run's mem_from, as status says it
+MEM_FROM = {"flag": "--mem", "kind": "its kind's floor",   # a run's mem_from, as status says it
+            "default": "the lock's default"}
 
 
 def _local(s):
@@ -182,6 +184,10 @@ def render(snap):
                 r["resource"], r["repo"], r["slug"], r["id"],
                 ", priority %s" % r["priority"] if r.get("priority") else ""))
     for r in snap["runs"]:
+        mw = r.get("mem_wait")
+        if r.get("background") and mw:
+            out.append("background: %s/%s (run %s) waits to start its child; %s" % (
+                r["repo"], r["slug"], r["id"], qm.mem_text(mw["need_mb"], mw["headroom_mb"])))
         if r.get("stale"):
             out.append("stale: run %s (%s/%s, %s): %s; the next booking's look asks it to stop "
                        "(docs/lock-api.md \"Stale runs\")" % (

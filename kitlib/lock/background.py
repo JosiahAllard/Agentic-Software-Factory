@@ -109,7 +109,9 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
     cannot take is refused before the run's id is claimed: 1, no record. The record keeps cmd as
     given. Raises LockError (exit 2 with no gpu here or a rid not shaped as a run id, 10 when its
     id is taken (run.claim_id) or the store or queue cannot be had before it joined).
-    mem_mb: as book's (--mem; recorded as need_mem_mb and mem_from, admission does not read it)."""
+    mem_mb: as book's (--mem; recorded as need_mem_mb and mem_from). The child starts only when
+    that need fits the commit headroom read then (kitlib.lock.queue.mem_fits); short, it waits,
+    its entry's mem_wait saying so."""
     check_mem(mem_mb)
     store = store or Store()
     s, say = store.settings, store.say
@@ -181,7 +183,7 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
             want_start = (p is None and stopping is None and not fg_gpu and not fg_cpu
                           and not mine and hbad is None
                           and (first or now - (free_since or now) >= s.bg_resume_s))
-            got, short = None, None
+            got, short, mem_short = None, None, None
             try:
                 with store.lock("queue", 2):
                     q = qm.load(store)
@@ -205,10 +207,17 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
                                      and i not in cover[p_] and i not in claimed[p_]]
                                 for p_ in POOLS}
                         short = [p_ for p_ in ("gpu", "cpu") if len(free[p_]) < need[p_]]
-                        if not short:
+                        fits, head = qm.mem_fits(store, q, e, need_mem) if not short else (True, None)
+                        if not fits:
+                            mem_short = head
+                        elif not short:
                             got = {p_: free[p_][:need[p_]] for p_ in POOLS}
                             e.update(cores=got["cpu"], gpus=got["gpu"], need=dict(need),
                                      held_at=time.time())
+                    if mem_short is None:
+                        e.pop("mem_wait", None)
+                    else:
+                        e["mem_wait"] = need_mem
                     if json.dumps(q, sort_keys=True) != before:
                         qm.save(store, q)
                 if qbad is not None:
@@ -263,6 +272,10 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
                         else "fewer than %s are free" % lay.need_text({"cpu": need["cpu"]}),
                         "one" if short[0] == "gpu" else "them"))
                     told = short
+                if mem_short is not None and told != ["memory"]:
+                    say("background run %s: %s; the child waits for its need to fit"
+                        % (run.id, qm.mem_text(need_mem, mem_short)))
+                    told = ["memory"]
                 if got is not None:
                     told = None
                     try:

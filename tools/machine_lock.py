@@ -42,8 +42,8 @@ from kitlib.lock import status as st                               # noqa: E402
 from kitlib.lock.background import run_background                  # noqa: E402
 from kitlib.lock.run import (ORIGIN_ENV, ScriptArgError, check_resource,  # noqa: E402
                              path_alias_line, run_command, script_command)
-from kitlib.lock.store import (EXIT_REQUIRE, EXIT_USAGE, LockError, Store,  # noqa: E402
-                               caller, iso, new_id, utc_now)
+from kitlib.lock.store import (EXIT_REQUIRE, EXIT_USAGE, LockError, Settings,  # noqa: E402
+                               Store, caller, iso, new_id, utc_now)
 from kitlib.loadnode import box, dispatch                          # noqa: E402
 from kitlib.proc import bash, process                              # noqa: E402
 # Not used here: loaded at start because kitlib.proc.daemons imports it inside functions that run
@@ -189,7 +189,10 @@ def parser():
                         "else its hold's end, else its kind's warn_min)")
     r.add_argument("--mem", dest="mem_mb", type=parse_mb, metavar="MB",
                    help="the memory it needs, in MB (default: the p90 of its history's peak "
-                        "commit, at least its kind's mem_mb); recorded, not yet admitted on")
+                        "commit once it has %d runs, else its kind's mem_mb, else %d); it "
+                        "starts only when the commit charge plus this fits under the commit "
+                        "limit less a %d MB reserve" % tuple(Settings.DEFAULTS[k] for k in (
+                            "mem_min_runs", "mem_default_mb", "mem_reserve_mb")))
     r.add_argument("--note")
     r.add_argument("--detach", action="store_true",
                    help="run outside this shell; prints '<run id> pid <n>'")

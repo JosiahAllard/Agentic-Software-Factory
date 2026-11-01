@@ -115,6 +115,18 @@ class Off(Base):
         # a marked main session with no named mark is `main`, and `main` can be given a mode
         self.assertEqual(rolepolicy.mode(a, w.ctx(environ={context.ROLE_ENV: 'plain'})), ('main', 'read'))
 
+    def test_an_unmarked_codex_chat_is_not_the_owner_and_is_held(self):
+        """A Codex chat is never the owner (docs/guard.md "Session mark"; rules.is_owner_session):
+        its unmarked main chat is `main`, held to the mode `main` is given, as a marked one is."""
+        from hosts.codex.adapter import ADAPTER as CODEX
+        w = W.World(kit=kit({'main': 'read'}))
+        self.addCleanup(w.cleanup)
+        a = Action('edit', tool='Write', path=os.path.join(w.wt, 'a.py'), cwd=w.wt)
+        ctx = w.ctx(environ={}, profile=CODEX.profile)
+        self.assertEqual(rolepolicy.mode(a, ctx), ('main', 'read'))
+        d = decide(a, ctx)
+        self.assertEqual((d.verdict, d.rule), ('deny', 'role-edit'), d.reason)
+
     def test_only_edits_and_shell_calls_are_read(self):
         w = W.World(kit=kit())
         self.addCleanup(w.cleanup)

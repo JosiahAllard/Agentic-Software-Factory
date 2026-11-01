@@ -3,24 +3,29 @@ refusal for a role that may not take one (docs/backlog.md "Roles"). roles.py is 
 this module reads it and never widens it.
 
 Two places ask. tools/backlog.py asks for its own session (cli_role: the session mark; unmarked is
-the owner) before a write plans, with the record the write reads. The guard asks for a subagent
-(its role is the hook payload's agent type, so a PM_KIT_ROLE the command sets changes nothing),
-from the command's words (read_argv) and, only when a builder's own pull could decide, the record
-as the store holds it locally.
+the owner, unless a host whose chats are never the owner runs above it or the process tree cannot
+be read: then unlisted) before a write plans, with the record the write reads. The guard asks for
+a subagent (its role is the hook payload's agent type, so a PM_KIT_ROLE the command sets changes
+nothing), from the command's words (read_argv) and, only when a builder's own pull could decide,
+the record as the store holds it locally.
 
   sort(verb, given, rec)        the row names a command takes, after each row's `over` narrowing
   refusal(role, rows, facts)    the text naming the first row `role` may not take, or None
   own_pull(rec, branch)         the OWN_PULL fact: `rec` is pulled by `branch`
-  cli_role(environ)             the role of the session tools/backlog.py runs in
+  cli_role(environ, tree)       the role of the session tools/backlog.py runs in
+  unowned(tree)                 why an unmarked session is not the owner's, or None
+  by_design_refusal(session, environ, tree)
+                                Refusal when --session names a by-design kit writer and the
+                                session is not the owner's own unmarked shell
   given_of(args)                what tools/backlog.py's parsed arguments give, for sort
   read_argv(words)              what a backlog.py command line gives (the guard's reader), as an Argv
-  check(args, ctx, snap, environ)
+  check(args, ctx, snap, environ, tree)
                                 tools/backlog.py's check: raises Refusal when its role may not
                                 take a row, or a topic session writes a record not batched for
                                 its branch (batch_refusal); else the rows it sorted
   batch_refusal(role, verb, rid, rec, branch)
                                 why a topic session may not write `rid` (or `add` at all), or None
-  may(name, environ)            True when the session tools/backlog.py runs in may take the row
+  may(name, environ, tree)      True when the session tools/backlog.py runs in may take the row
                                 `name`: a row the plan finds (pull-collision, set-widen-collision)
   top_only(rows)                the rows of `rows` only the owner and the PM may take, which a
                                 plan run without the role check refuses (kitlib/backlog/plan.py)
@@ -227,12 +232,47 @@ def refusal(role, rows, facts=()):
     return None
 
 
-def cli_role(environ=None):
-    """The role of the session tools/backlog.py runs in: its mark (kitlib.sessionmark), the
-    owner when nothing marks it."""
+def cli_role(environ=None, tree=None):
+    """The role of the session tools/backlog.py runs in: its mark (kitlib.sessionmark); when
+    nothing marks it, the owner, unless it is not the owner's (unowned: unlisted)."""
     from kitlib import sessionmark
     mark = sessionmark.mark(environ)
-    return roles.OWNER if mark is None else roles.role_of(mark, False)
+    if mark is not None:
+        return roles.role_of(mark, False)
+    return None if unowned(tree) else roles.OWNER
+
+
+_REAL_TREE = []     # this process's own answer, read once: its ancestors do not change
+
+
+def unowned(tree=None):
+    """Why an unmarked session is not the owner's, or None: a host above it whose chats are never
+    the owner, or a tree that could not be read (kitlib.host.registry.unowned_caller). `tree`
+    (a callable giving the ancestor image names) stands in for this process's own."""
+    from kitlib.host import registry
+    if tree is not None:
+        return registry.unowned_caller(tree)
+    if not _REAL_TREE:
+        _REAL_TREE.append(registry.unowned_caller())
+    return _REAL_TREE[0]
+
+
+def by_design_refusal(session, environ=None, tree=None):
+    """tools/backlog.py --session `session`: Refusal when it names a session whose store writes
+    add no audit line by design (audit_check.BY_DESIGN; docs/backlog.md "Audit log") and the
+    session running it is not the owner's own: a marked one, or an unmarked one that is unowned.
+    The tree is read only for such a name."""
+    from kitlib import sessionmark
+    from .audit_check import BY_DESIGN
+    if (session or '').strip().lower() not in BY_DESIGN:
+        return
+    mark = sessionmark.mark(environ)
+    why = 'it is marked %r' % mark if mark is not None else unowned(tree)
+    if why:
+        raise Refusal('`--session %s` is the name of a kit writer whose store writes add no audit '
+                      'line by design (%s); only the owner\'s own unmarked shell may use it, and '
+                      'this session is not (%s): give your own session name'
+                      % (session, ', '.join(BY_DESIGN), why))
 
 
 def given_of_set(changes, unset=(), body=None):
@@ -269,12 +309,12 @@ def given_of(args):
     return given
 
 
-def check(args, ctx, snap, environ=None):
+def check(args, ctx, snap, environ=None, tree=None):
     """tools/backlog.py's own check before a write plans: Refusal when the session's role
     (cli_role) may not take a row the write sorts into. `snap` (None for catch-up) gives the
     record; OWN_PULL holds when the record is pulled by the branch the write acts as. Returns the
     rows it sorted (sort's names), for the audit log (kitlib.backlog.audit)."""
-    role = cli_role(environ)
+    role = cli_role(environ, tree)
     rid = getattr(args, 'id', None)
     rec = snap.get(rid) if snap is not None and rid else None
     # a record the store does not hold: the plan refuses it by its own words (NOT FOUND), or
@@ -291,7 +331,10 @@ def check(args, ctx, snap, environ=None):
             facts = (roles.OWN_PULL,)
     text = refusal(role, rows, facts)
     if text:
-        raise Refusal('%s (kitlib/backlog/roles.py); ask a session whose role may' % text)
+        from kitlib import sessionmark
+        why = unowned(tree) if role is None and sessionmark.mark(environ) is None else None
+        raise Refusal('%s (kitlib/backlog/roles.py)%s; ask a session whose role may'
+                      % (text, '; unmarked but not the owner: %s' % why if why else ''))
     text = batch_refusal(role, args.verb, rid, rec, branch)
     if text:
         raise Refusal(text)
@@ -327,10 +370,10 @@ COLLISION_ROWS = {'pull': 'pull-collision', 'set': 'set-widen-collision'}
 COLLISION_MARK = ' (over a live pull)'
 
 
-def may(name, environ=None):
+def may(name, environ=None, tree=None):
     """True when the session tools/backlog.py runs in (cli_role) may take the row `name`: a row
     the plan finds rather than sort (pull-collision, set-widen-collision; no fact grants one)."""
-    return roles.allows(name, cli_role(environ))
+    return roles.allows(name, cli_role(environ, tree))
 
 
 class _Absent(object):

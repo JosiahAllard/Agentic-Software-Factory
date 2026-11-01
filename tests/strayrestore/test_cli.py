@@ -36,6 +36,21 @@ class TheCommandLine(Fixture):
         self.assertIn('REFUSED', out)
         self.assertEqual(self.get('docs/new.md'), b'new text\n')
 
+    def test_an_unmarked_codex_process_is_refused_and_says_why(self):
+        """A Codex chat is never the owner: unmarked under one, the command is refused, names the
+        reason and touches nothing."""
+        from kitlib.host import registry
+        self.branch('kit/a', {'docs/new.md': b'new text\n'})
+        self.put('docs/new.md', b'new text\n')
+        real = registry.unowned_caller
+        with mock.patch.object(registry, 'unowned_caller',
+                               lambda tree=None, path=None: real(lambda: ['python.exe', 'codex.exe'])):
+            code, out = run(['-C', self.top, '--apply'])
+        self.assertEqual(code, 2, out)
+        self.assertIn('REFUSED', out)
+        self.assertIn('codex.exe', out)
+        self.assertEqual(self.get('docs/new.md'), b'new text\n')
+
     def test_unmarked_and_pm_run(self):
         self.branch('kit/a', {'docs/new.md': b'new text\n'})
         self.put('docs/new.md', b'new text\n')

@@ -50,7 +50,7 @@ know-how. Every inference is marked "inference"; the rest is read from the code.
 | lander, test-runner, coordinator, pm, consultant, deep-worker | unchanged | unchanged | |
 
 Retired: asset-smith, tech-artist, sound-smith, researcher, reviewer, records, spec-writer (7 files);
-added: `analyst` and `docs-writer`. `content/roles/` holds 13 role files, the helper included.
+added: `analyst` and `docs-writer`. `content/roles/` holds 14 role files, the helper included.
 The analyst keeps the reviewer's light/high pin, so the "Reviewer model" rule is unchanged; `roster.md` raises a research dispatch to the standard tier.
 
 ## Specialty skills

@@ -344,7 +344,7 @@ existing Windows suite.
 
 Status: docs/linux-support-plan.md supersedes this section for Linux (its own status line says
 how much is built). `kitlib/platform/` has `windows` and `linux` folders and no `darwin`; both
-hosts in `hosts.json` still declare `platforms: ["windows"]`. macOS is not started.
+hosts in `hosts.json` declare `platforms: ["windows", "linux"]`. macOS is not started.
 
 ### Rules for the host work, starting now
 1. **No new Windows calls outside `kitlib/proc` and `kitlib/lock`.** This covers ctypes,
@@ -352,27 +352,14 @@ hosts in `hosts.json` still declare `platforms: ["windows"]`. macOS is not start
    `kitlib/content/`, `content/` and the renderer uses only portable standard library code.
 2. **The guard refactor (step 3) keeps today's path rules exactly**, but routes every path
    normalisation through one function. The OS refactor then changes one place.
-3. **`hosts.json` carries a `platforms` field per host**, set to `["windows"]` for now.
+3. **`hosts.json` carries a `platforms` field per host** (today `["windows", "linux"]` for both).
 4. **Rendered hook commands are written by one helper** that chooses the interpreter command
    line (`pythonw` today). No manifest or settings entry hard-codes `pythonw`.
 
 Planned, not built: Windows CI (GitHub Actions) for the gate. The repo has no `.github` folder.
 
-### What is Windows-only today
-| Area | Today | Linux / macOS equivalent | Size |
-|---|---|---|---|
-| Process control (`kitlib/proc`: job objects, pid shield, tree kills, CPU pinning, process start time and parent chain) | Win32 through ctypes | Process groups and `killpg`. Linux: cgroups v2 for memory and cores, `/proc` for identity. macOS: no cgroups and no core pinning, so a weaker model. | Large |
-| Machine lock (`kitlib/lock/store.py`, `run.py`) | Win32 mutex and the owning-thread rule | `fcntl.flock` on a lock file | Medium |
-| Guard path rules (`kitlib/guard`) | Drive letters, backslashes, case-insensitive paths, junctions, PowerShell tokenizing | POSIX paths (case-sensitive on Linux, usually not on macOS), symlinks, Bash tokenizing | Medium–large |
-| Hook and child launching | `pythonw`, `CREATE_NO_WINDOW` and similar | `python3` with no window flags | Small |
-| Installers | `installer/*.ps1` | Logic in Python (`machine_setup.py`), with thin `.ps1` and `.sh` wrappers | Medium |
-| Machine paths | `LOCALAPPDATA`, `APPDATA`, `USERPROFILE`, registry reads | `~/.local/state` and `~/.config`; `~/Library/Application Support` | Small |
-| Links | Junctions | Symlinks | Small–medium |
-| Scheduled work (sweep task, daily full, bridge startup) | Task Scheduler | systemd user timers or cron; launchd | Medium |
-| Folder holders (`worktree/holders.py`) | Finds processes that block deleting a folder | POSIX does not block deletes, so mostly a no-op | Small |
-| Small extras | Foreground-window lock, `msvcrt.locking`, `GetTickCount` | No-op, `fcntl`, `time.monotonic` | Small |
-| Launcher | Windows Terminal, `claude.exe` names | Terminal command and process names per OS | Medium |
-| Bridge | Named pipes with ACLs, AppContainer, the Codex Desktop pipe | Unix domain sockets (0600) with a peer-credential check | Unknown: needs a probe of what each host offers natively per OS |
+The Windows-only inventory, the Linux mechanisms and the questions for the owner are in
+docs/linux-support-plan.md (sections 1 to 2 and 10).
 
 ### Shape
 - `kitlib/platform/`: one interface with `windows`, `linux` and `darwin` implementations,
@@ -391,13 +378,6 @@ Planned, not built: Windows CI (GitHub Actions) for the gate. The repo has no `.
 - The rest of kitlib never checks `os.name` or `sys.platform`; a test enforces it.
 - Hosts declare their supported OSes in `hosts.json`.
 - CI is to run the suite on all three OSes (planned; docs/linux-support-plan.md section 4).
-
-### Questions for when this starts
-1. Which OS comes after Windows: Linux, macOS, or both together?
-2. On macOS, may the lock only limit how many heavy runs go at once, still killing the whole
-   tree, or must it give the same guarantees on every OS?
-3. Can GitHub Actions run Windows, Ubuntu and macOS runners for this repo?
-4. Does the bridge stay Windows-only at first?
 
 ## 7. Instructions, roles and zero repo setup
 

@@ -34,10 +34,13 @@ An entry (every key always present):
   verdict         LAND | LAND WITH FOLLOW-UP
   risk            Low | Medium | High
   reviewer        the reviewer's agent type
-  reviewer_model  the model the reviewer ran on; tools/verdict.py add checks it against the
-                  reviewer's transcript where the host has a reader (model_mismatch_why)
-  reviewer_id     the reviewer's agent or session id; tools/verdict.py add reads each agent id's
-                  final `Verdict:` line where the host has a reader (reviewer_verdict_why)
+  reviewer_model  the model the reviewer ran on, one for every id reviewer_id lists (a second,
+                  architecture reviewer runs on the same model: skill branch-review);
+                  tools/verdict.py add checks it against each reviewer's transcript where the
+                  host has a reader (model_mismatch_why)
+  reviewer_id     the reviewer's agent or session id, or several (`a,b`); tools/verdict.py add
+                  reads each agent id's final `Verdict:` line where the host has a reader
+                  (reviewer_verdict_why)
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
                   picks no reviewer model: a High-risk or strict branch needs a strong-tier
                   reviewer whoever built it, and a Low or Medium branch off the strict paths has
@@ -353,8 +356,9 @@ def model_mismatch_why(entry, seen):
     and outer space aside) or names the same tier model of hosts.json (land.named_model:
     `claude-haiku-5-5` names haiku). Refused when any model seen for any id does not match; an id
     with none seen (no transcript) is not checked. The Instead: line names the one model seen, or,
-    when the review ran on more than one, asks for a fresh review on reviewer_model: no one
-    reviewer_model could name it. `entry` is well formed (check)."""
+    when the review ran on more than one, asks for a fresh review on reviewer_model (in place of
+    each reviewer off it, when several reviewers were seen): no one reviewer_model could name it. Two reviewers (a review and an
+    architecture check) on one model pass. `entry` is well formed (check)."""
     from kitlib.gate import land          # land imports this module: a late import
     strong, weak, _ = land.tier_models()
     strong, weak = strong or set(), weak or set()
@@ -376,11 +380,16 @@ def model_mismatch_why(entry, seen):
             % (typed, said))
     every = sorted(set(m for models in seen.values() for m in models))
     if len(every) > 1:
-        # the review ran on more than one model: no one --reviewer-model can name it
+        # the review ran on more than one model: no one --reviewer-model can name it. With two
+        # reviewers (an architecture check beside the review), only the one off is redone.
+        which = ''
+        if sum(1 for models in seen.values() if models) > 1:
+            which = (' in place of the reviewer %s (one --reviewer-model covers every '
+                     '--reviewer-id)' % ' and '.join(rid for rid, _ in off))
         return head + ('the review ran on more than one model (%s), which no --reviewer-model can '
-                       'name: dispatch a fresh analyst with model %s, the model the verdict needs '
-                       '(%s for a High-risk branch or one land.py --check-strict calls '
-                       'STRICT; skill branch-review)' % (', '.join(every), typed, tier))
+                       'name: dispatch a fresh analyst with model %s%s, the model the verdict '
+                       'needs (%s for a High-risk branch or one land.py --check-strict calls '
+                       'STRICT; skill branch-review)' % (', '.join(every), typed, which, tier))
     use = 'queue it with --reviewer-model %s, the model it ran on' % (
         land.named_model(every[0], strong, weak) or every[0])
     return head + ('%s; a High-risk branch, or one land.py --check-strict calls STRICT, needs a '

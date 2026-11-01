@@ -35,6 +35,7 @@ class GateLine(GateLineCase):
         self.assertIn('tip %s: NO full-gate OK record' % tip[:10], line)
         self.assertIn('no gate-OK record for %s' % tip, line)
         self.assertIn('landing will refuse', line)
+        self.assertIn('the final gate runs after review', line)
 
     def test_a_default_mode_record_is_not_enough(self):
         tip = self.feature()

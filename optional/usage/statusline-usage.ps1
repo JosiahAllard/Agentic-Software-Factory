@@ -41,9 +41,10 @@ if ($limits) {
     }
     if (Test-Path -LiteralPath $tmp) { Remove-Item -Force -LiteralPath $tmp }
     # Sweep this script's own leftovers (older runs): one filter over this folder, no recursion.
-    $stale = (Get-Date).AddMinutes(-5)
+    # UTC both sides: local times repeat for an hour when daylight saving ends.
+    $stale = (Get-Date).ToUniversalTime().AddMinutes(-5)
     Get-ChildItem -LiteralPath $cfg -Filter 'usage-status.json.*.tmp' -File |
-        Where-Object { $_.Name -match '^usage-status\.json\.\d+\.tmp$' -and $_.LastWriteTime -lt $stale } |
+        Where-Object { $_.Name -match '^usage-status\.json\.\d+\.tmp$' -and $_.LastWriteTimeUtc -lt $stale } |
         Remove-Item -Force
     if ($limits.five_hour) { $parts += ('5h {0:N0}%' -f $limits.five_hour.used_percentage) }
     if ($limits.seven_day) { $parts += ('7d {0:N0}%' -f $limits.seven_day.used_percentage) }

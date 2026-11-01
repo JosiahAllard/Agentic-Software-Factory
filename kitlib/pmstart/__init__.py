@@ -465,7 +465,7 @@ HANDOFF_STRAY = "pm-handoff*.md"
 
 def handoff(cfg, globber=glob.glob, exists=os.path.isfile, pm_repo=None):
     """The PM's one hand-off file, edited in place (docs/pm-start.md "Hand-off file"): pm_start.handoff_file
-    (default HANDOFF.md; a relative name is in the PM repository's main checkout, `pm_repo`, default
+    (default HANDOFF.md; a relative name is in the PM repository's work tree, `pm_repo`, default
     pm_memory_repo). Its line is "read first: <file>", or a line saying it is missing. Any pm-handoff*.md
     left in pm_start.memory_dir (when set) is one more line: merge it into the file and delete it."""
     name = cfg.get("handoff_file") or HANDOFF_DEFAULT
@@ -751,16 +751,17 @@ def launcher_repos():
     return settings.load().repos
 
 
-def pm_memory_repo(cfg, main_top=None):
-    """The main checkout of the PM's own repository (the one holding sessions_file), or None when
-    sessions_file is not set or not there. `main_top` is kitlib.git.repo.main_checkout_toplevel
-    unless given."""
+def pm_memory_repo(cfg, top_of=None):
+    """The work tree of the PM's own repository (the one holding sessions_file): its own toplevel, so a
+    PM repository that is a linked worktree of another repository is that worktree, not the other's main
+    checkout. None when sessions_file is not set or not there, or git cannot place it. `top_of` is
+    kitlib.git.repo.toplevel (a path to `(top, why)`) unless given."""
     path = cfg.get("sessions_file")
     if not path or not os.path.isfile(path):
         return None
-    if main_top is None:
-        from kitlib.git.repo import main_checkout_toplevel as main_top
-    return main_top(os.path.dirname(os.path.abspath(path)))
+    if top_of is None:
+        from kitlib.git.repo import toplevel as top_of
+    return top_of(os.path.dirname(os.path.abspath(path)))[0]
 
 
 def _same_folder(a, b):

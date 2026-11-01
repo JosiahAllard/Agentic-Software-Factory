@@ -65,10 +65,10 @@ _TRAILER_KEY = re.compile(r'[A-Za-z][A-Za-z0-9-]*\Z')
 _EMAIL = re.compile(r'[^\s<>@]+@[^\s<>@]+\Z')
 _MODULE = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z')
 _KEYS = {'adapter', 'shell', 'platforms', 'capabilities', 'profile', 'hook', 'tiers'}
-# How boot/hook.py's fast path may skip a call to a tool not in guarded_tools: in every session, or
-# only in a session no launcher marked (kitlib.sessionmark), for a host whose own policy (an
-# adapter's screen) must see every call of a marked session.
-FAST_PATHS = ('all', 'unmarked')
+# How boot/hook.py's fast path may skip a call to a tool not in guarded_tools: in every session
+# ("all"), or never ("none"), for a host whose every call the guard must see (one whose hooks cannot
+# tell a subagent apart: its chats are never the owner, so no session of it may skip the guard).
+FAST_PATHS = ('all', 'none')
 # The operating systems a host can declare it runs on (multi-host plan section 6). Windows is
 # the only one the kit supports today; the field says so per host instead of the code assuming it.
 PLATFORMS = ('windows', 'linux', 'macos')
@@ -86,7 +86,7 @@ class HookSpec:
     `tool_field` the dotted key of the tool's name in that event's payload ("tool_name",
     "call.name"). `guarded_tools` the tools a guard rule or the host's own policy can refuse, each
     a name or a prefix ending in `*` ("mcp__*"): a call to any other tool is allowed before the kit
-    boots, in every session or only in an unmarked one (`fast_path`, one of FAST_PATHS)."""
+    boots in every session, or goes to the guard like any other (`fast_path`, one of FAST_PATHS)."""
     tool_event: str
     tool_field: str
     guarded_tools: tuple

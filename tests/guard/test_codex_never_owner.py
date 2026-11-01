@@ -141,5 +141,44 @@ class TheOwnerTests(Base):
         self.assertTrue(gaterole.may_allow(self.act(), self.ctx(CLAUDE)))
 
 
+class EveryCodexCallReachesTheGuard(Base):
+    """No fast path on Codex (hosts.json codex hook.fast_path "none"): boot/hook.py hands even a
+    tool guarded_tools leaves out to hookmain, in the unmarked chat as in a marked one; on the
+    default host (fast_path "all") that call still returns before the kit boots."""
+
+    def entry(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'never_owner_hook', os.path.join(os.path.dirname(rules.__file__), '..', '..', 'boot', 'hook.py'))
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        return hook
+
+    def dispatched(self, host, tool, environ):
+        """Whether boot/hook.py <host> PreToolUse reaches hookmain.dispatch for a call to `tool`."""
+        import io
+        import sys
+        import types
+        from unittest import mock
+        hook, seen = self.entry(), []
+        boot = types.ModuleType('kitboot')
+        boot.boot = lambda here=None: self.kit
+        with mock.patch.dict(sys.modules, {'kitboot': boot}),                 mock.patch('kitlib.host.hookmain.dispatch', lambda *a, **k: seen.append(a[1]) or 0):
+            rc = hook.main([host, 'PreToolUse'], io.StringIO('{"tool_name": "%s"}' % tool), io.StringIO(), environ)
+        self.assertEqual(rc, 0)
+        return seen == ['PreToolUse']
+
+    def test_an_unlisted_codex_tool_reaches_the_guard_in_any_session(self):
+        for tool in ('Read', 'update_plan', 'some_new_tool'):
+            for environ in ({}, {'PM_KIT_ROLE': ''}, {'PM_KIT_ROLE': 'worker'}):
+                with self.subTest(tool=tool, environ=environ):
+                    self.assertTrue(self.dispatched('codex', tool, environ))
+        self.assertFalse(self.dispatched('claude', 'TodoWrite', {}), 'the default host keeps its fast path')
+
+    def test_the_guard_allows_a_read_from_the_unmarked_chat(self):
+        d = self.judge(CODEX, self.payload('Read', {'file_path': os.path.join(self.w.wt, 'a.txt')}))
+        self.assertEqual(d.verdict, 'allow', d.reason)
+
+
 if __name__ == '__main__':
     unittest.main()

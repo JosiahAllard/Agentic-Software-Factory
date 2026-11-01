@@ -13,9 +13,8 @@ Before any kit code runs, with the standard library alone:
      boot/; docs/new-host.md `vendored` covers a host that would ship a copy). Never from the kit
      about to boot, which a pin has not checked yet.
   2. Fast path: a call of the host's hook.tool_event to a tool its hook.guarded_tools does not
-     name (skips) is allowed, exit 0 with nothing written, before the kit boots: in every session
-     (fast_path "all") or only in one no launcher marked ("unmarked": MARK unset or blank, as
-     kitlib.sessionmark reads it; a test holds the two equal).
+     name (skips) is allowed, exit 0 with nothing written, before the kit boots, on a host whose
+     fast_path is "all"; with "none" every call goes to the guard.
   3. boot/kitboot.py beside this file binds the kit (docs/kitboot.md): PM_KIT_ROOT when set, else
      the checkout this file is in (kit_here; its copy case serves only a host that would ship one).
 Then the adapter the entry names is imported and kitlib.host.hookmain.dispatch runs the event: the
@@ -34,7 +33,6 @@ ENTRY = os.path.abspath(__file__)
 HOSTS = os.path.join(os.path.dirname(HERE), 'hosts.json')
 SETTINGS = '--settings-entry'
 BLOCK = 2
-MARK = 'PM_KIT_ROLE'
 
 
 def entry_of(host, hosts=HOSTS):
@@ -55,8 +53,10 @@ def tool_of(payload, field):
 
 def skips(hook, payload, environ):
     """True for a call boot needs no kit for: a tool hook.guarded_tools does not name (an entry
-    ending in * is a prefix), in a session hook.fast_path lets through. Hook data of the wrong shape
-    (guarded_tools not a non-empty list of names) skips nothing: every call goes to the guard."""
+    ending in * is a prefix), on a host whose hook.fast_path is "all", in any session (`environ`,
+    the session's, decides nothing now). "none", or any other value, skips nothing. Hook data of
+    the wrong shape (guarded_tools not a non-empty list of names) skips nothing: every call goes
+    to the guard."""
     guarded = hook['guarded_tools']
     if not isinstance(guarded, (list, tuple)) or not guarded or not all(isinstance(g, str) and g for g in guarded):
         return False
@@ -64,7 +64,7 @@ def skips(hook, payload, environ):
     if not isinstance(tool, str) or any(tool.startswith(g[:-1]) if g.endswith('*') else tool == g
                                         for g in guarded):
         return False
-    return hook['fast_path'] == 'all' or hook['fast_path'] == 'unmarked' and not (environ.get(MARK) or '').strip()
+    return hook['fast_path'] == 'all'
 
 
 def kit_here(entry, root=None):

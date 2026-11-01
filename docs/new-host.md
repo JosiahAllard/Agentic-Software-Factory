@@ -126,6 +126,13 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   `None` for an id that is not a subagent's (a session name, not looked up). `verdict.py` asks
   for it with `getattr`; without it no reviewer model is checked (Codex; docs/gate.md "Strict
   paths"; Claude: `hosts/claude/adapter/agent_models.py` `models`).
+- `agent_verdict()` (optional): the reviewer verdict reader `tools/verdict.py add` refuses a
+  `LAND` over a reviewer's `SEND BACK` with, a function from a reviewer id to `(found, verdict)`:
+  `found` whether a transcript of that subagent was found (`add` queues with a NOTE when not),
+  `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND BACK`)
+  or `None` (refused); `None` for an id that is not a subagent's. Asked for with `getattr` the
+  same way; without it no reviewer verdict is checked (Codex; docs/gate.md "Strict paths";
+  Claude: `hosts/claude/adapter/agent_models.py` `verdict`).
 - The renderer's optional `vendored(root)`: `{path: bytes}` of kit files the host's plugin ships a
   copy of, read from the kit checkout `root` and drift-checked with the rest. A plugin root that is
   not the whole kit cannot reach the kit's `boot/` from a plugin cache, so it would ship

@@ -14,6 +14,12 @@ The config folders searched: CLAUDE_CONFIG_DIR, then each `~/.claude*` folder
 read: a file is read a line at a time, only a line holding `"assistant"` is parsed, and a file is
 read no further once it shows MAX_MODELS distinct models. A host's task `.output` file is never
 read. Nothing here prints or writes.
+
+verdict() reads the same transcripts for the reviewer's final `Verdict:` line (tools/verdict.py
+add, through ADAPTER.agent_verdict(): kitlib.gate.verdicts.reviewer_verdict_why). A subagent's
+final report is the `message` of its SubagentHandback call, a tool_use block of an assistant
+record (observed in the kit machine's transcripts on 2026-10-31), or, where it has no such tool,
+the text of its last assistant turn.
 """
 import glob
 import json
@@ -25,6 +31,11 @@ from hosts.claude.adapter import claude_host
 AGENT_ID_RE = re.compile(r'^a[0-9a-f]{16}$')
 SKIP = frozenset(['<synthetic>'])     # a turn Claude Code made itself, no model ran
 MAX_MODELS = 2                        # more than one model already says the reviewer was not one
+HANDBACK = 'SubagentHandback'         # the tool a subagent hands its final report back with
+# A report's verdict line: `Verdict: SEND BACK`, markdown decoration (`**Verdict:** LAND`, a list
+# dash) allowed, anchored at the line start; LAND WITH FOLLOW-UP is tried before LAND.
+VERDICT_RE = re.compile(r'^[\s>*_#-]*verdict[*_]*\s*:[*_\s]*'
+                        r'(land\s+with\s+follow[- ]?up|land|send\s+back)(?![\w-])', re.IGNORECASE)
 
 
 def is_agent_id(text):
@@ -89,6 +100,88 @@ def file_models(path):
     except OSError:
         return None
     return found
+
+
+def report_verdict(text):
+    """The verdict the last line of `text` matching VERDICT_RE names, spelled LAND, LAND WITH
+    FOLLOW-UP or SEND BACK whatever its case, or None when no line does. Pure."""
+    found = None
+    for line in (text or '').splitlines():
+        m = VERDICT_RE.match(line)
+        if m:
+            said = m.group(1).upper()
+            found = ('LAND WITH FOLLOW-UP' if said.startswith('LAND WITH')
+                     else 'SEND BACK' if said.startswith('SEND') else 'LAND')
+    return found
+
+
+def _report_text(rec):
+    """The report text an assistant record carries: its text blocks, or the message of its
+    SubagentHandback call (how a subagent hands its final report back); None when it carries
+    neither (a tool call, thinking)."""
+    msg = rec.get('message')
+    content = msg.get('content') if isinstance(msg, dict) else None
+    if isinstance(content, str):
+        return content if content.strip() else None
+    if not isinstance(content, list):
+        return None
+    parts = []
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get('type') == 'text' and isinstance(b.get('text'), str):
+            parts.append(b['text'])
+        elif (b.get('type') == 'tool_use' and b.get('name') == HANDBACK
+              and isinstance(b.get('input'), dict) and isinstance(b['input'].get('message'), str)):
+            parts.append(b['input']['message'])
+    text = '\n'.join(parts)
+    return text if text.strip() else None
+
+
+def file_final_report(path):
+    """The report text of the last assistant record of the transcript `path` that carries one
+    (_report_text): '' when none does; None when the file cannot be read."""
+    last = ''
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if '"assistant"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(rec, dict) or rec.get('type') != 'assistant':
+                    continue
+                text = _report_text(rec)
+                if text is not None:
+                    last = text
+    except OSError:
+        return None
+    return last
+
+
+def verdict(agent_id, environ=None, home=None):
+    """What the subagent `agent_id` said in its final report: `(found, verdict)`, `found` True when
+    a readable transcript of it was found, `verdict` the final report's last `Verdict:` line
+    (report_verdict) or None. The final report is the last assistant turn carrying text or a
+    SubagentHandback call, in the transcript last written when there is more than one (a resumed
+    subagent appends to its own). None when `agent_id` is not a Claude agent id."""
+    rid = agent_id.strip() if isinstance(agent_id, str) else agent_id
+    if not is_agent_id(rid):
+        return None
+    best = None
+    for p in transcripts(rid, environ, home):
+        try:
+            when = os.path.getmtime(p)
+        except OSError:
+            continue
+        text = file_final_report(p)
+        if text is not None and (best is None or when >= best[0]):
+            best = (when, text)
+    if best is None:
+        return (False, None)
+    return (True, report_verdict(best[1]))
 
 
 def models(agent_id, environ=None, home=None):

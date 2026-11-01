@@ -66,6 +66,7 @@ class Window:
         ttk.Label(frame,textvariable=self.status,wraplength=920).pack(anchor='w',pady=(8,0))
         self._order=[]
         self._rows={}  # list index -> ('lease'|'pm', first reference, second reference)
+        self._checked={}  # row -> deliverable, from the last full refresh's live checks
         self.refresh()
         # The PM makes routes while this window is open: re-read the list, without discovery.
         root.after(REREAD_MS,self._reread)
@@ -98,21 +99,31 @@ class Window:
             for button in (self.connect,self.disconnect,self.lend,self.unlend): button.configure(state='disabled')
 
     def _fill(self, *, check):
-        """Redraw the connection list, keeping the selected row. check: run the PM routes'
-        live checks (a full refresh); the timed re-read only lists."""
+        """Redraw the connection list, keeping the selected row. check: run the leases' and PM
+        routes' live checks (a full refresh). The timed re-read runs none: a row keeps the
+        result of the last full refresh, and a chat that is not listed now still marks it.
+        A failed live check keeps a chat listed, so listing alone cannot clear a mark."""
         selected=[self._rows.get(index) for index in self.routes.curselection()]
         self.routes.delete(0,tk.END)
         self._rows={}  # reset before any row, so a failed refresh leaves no stale index map
+        previous,checked=self._checked,{}  # only rows shown now are kept
+        def can_deliver(row,deliverable):
+            checked[row]=deliverable if check else previous.get(row,True)
+            return deliverable and checked[row]
         for source,target in self.owner.connections():
             self.routes.insert(tk.END,self._title(source)+' → '+self._title(target))
-        for writer,target,granted,listed in self.owner.writer_grants():
-            self._rows[self.routes.size()]=('lease',writer,target)
+        for writer,target,granted,deliverable in self.owner.writer_grants(check=check):
+            row=('lease',writer,target)
+            self._rows[self.routes.size()]=row
             self.routes.insert(tk.END,self._title(writer)+' delivers to '+self._title(target)
-                +' for other apps, since '+_when(granted)+('' if listed else ' (a chat is not listed now; it cannot deliver)'))
+                +' for other apps, since '+_when(granted)
+                +('' if can_deliver(row,deliverable) else ' (a chat is closed, between turns or not listed; it cannot deliver)'))
         for source,target,made,deliverable in self.owner.pm_routes(check=check):
-            self._rows[self.routes.size()]=('pm',source,target)
+            row=('pm',source,target)
+            self._rows[self.routes.size()]=row
             self.routes.insert(tk.END,self._title(source)+' → '+self._title(target)+', connected by the PM since '
-                +_when(made)+('' if deliverable else ' (cannot deliver now)'))
+                +_when(made)+('' if can_deliver(row,deliverable) else ' (cannot deliver now)'))
+        self._checked=checked
         for index,row in tuple(self._rows.items()):
             if row in selected: self.routes.selection_set(index)
 

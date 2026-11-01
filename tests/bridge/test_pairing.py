@@ -201,6 +201,31 @@ class PairingTests(unittest.TestCase):
         self.observe(self.b)
         self.store.require_selected(self.a, self.b)
 
+    def test_a_failed_live_check_keeps_the_chat_listed_and_refused_until_it_passes(self):
+        # A Codex chat fails its live check once its turn moves on; it is not gone.
+        self.select()
+        self.live.pop('b')
+        for _ in range(2):
+            with self.assertRaisesRegex(PairingError, 'chat-live-binding-unverified'):
+                self.store.require_selected(self.a, self.b)
+        self.assertIn(self.b, self.store.registered())
+        self.assertIn((self.a.reference, self.b.reference), self.store.owner_routes())
+        self.live['b'] = self.b  # passes again, with no fresh observation
+        self.store.require_selected(self.a, self.b)
+        self.store.require_selected(self.b, self.a)
+
+    def test_a_full_store_makes_room_only_from_chats_failing_their_live_check(self):
+        from unittest.mock import patch
+        d, e = chat('d'), chat('e')
+        with patch('optional.bridge.core.pairing.MAX_CHATS', 3):
+            self.live.pop('b')
+            self.observe(d)
+            self.assertEqual(set(self.store.registered()), {self.a, self.c, d})
+            self.live[e.identity.session_id] = e
+            with self.assertRaisesRegex(PairingError, 'chat-capacity'):
+                self.store.observe(e)
+            self.assertEqual(set(self.store.registered()), {self.a, self.c, d})
+
     def test_missing_live_verifier_cannot_enroll_a_self_claimed_chat(self):
         self.store.close()
         self.store = PairingStore(self.path)

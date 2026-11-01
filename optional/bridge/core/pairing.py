@@ -111,7 +111,7 @@ class PairingStore:
         # Kept so a sibling state file (the writer-lease log) is created the same way.
         self.prepare_new_file = prepare_new_file
         self._lock, self._peers, self._db, self._observers = threading.RLock(), {}, None, []
-        self._extension = None
+        self._extension = self._reply_extension = None
         if not self.path.is_absolute() or not self.path.parent.is_dir():
             raise PairingError('protected-absolute-state-path-required')
         try:
@@ -225,17 +225,18 @@ class PairingStore:
         with self._lock:
             self._observers.append(callback)
 
-    def extend_routes(self, check):
+    def extend_routes(self, check, reply_check=None):
         """Private service port, set once: check(sender, recipient) is True opens a direction
         that has no owner row (core/pmroutes.py, README "PM routes"). An owner row decides alone:
-        enabled passes, disabled refuses whatever check says. Runs under the store lock, so it
-        must not wait on anything that waits on this store."""
-        if not callable(check):
+        enabled passes, disabled refuses whatever check says. reply_check(replier, reader), when
+        given, decides instead for reading a reply already recorded (require_reply_read). Runs
+        under the store lock, so it must not wait on anything that waits on this store."""
+        if not callable(check) or reply_check is not None and not callable(reply_check):
             raise PairingError('invalid-verifier-port')
         with self._lock:
             if self._extension is not None:
                 raise PairingError('route-extension-set')
-            self._extension = check
+            self._extension, self._reply_extension = check, reply_check or check
 
     @contextmanager
     def held(self):
@@ -256,13 +257,14 @@ class PairingStore:
                                    (sender.logical_reference, recipient.logical_reference)).fetchone()
             return None if row is None else row[0] == 1
 
-    def _route_open(self, sender, recipient):
+    def _route_open(self, sender, recipient, *, reply=False):
         row = self._db.execute('SELECT enabled FROM routes WHERE sender=? AND recipient=?',
                                (sender.logical_reference, recipient.logical_reference)).fetchone()
         if row is not None:
             return row[0] == 1
+        extension = self._reply_extension if reply else self._extension
         try:
-            return self._extension is not None and self._extension(sender, recipient) is True
+            return extension is not None and extension(sender, recipient) is True
         except Exception:
             return False
 
@@ -287,14 +289,24 @@ class PairingStore:
                     raise PairingError('route-capacity')
 
     def _live(self, binding):
+        """A failed check refuses this use only. The chat stays listed, stale, and every later
+        use checks it again: a chat between turns (a Codex chat whose turn moved on) fails until
+        its next call, and is not gone. A different binding for the session replaces it
+        (observe), withdraw removes it, and a full store drops it (_make_room)."""
         try:
             verified = self._live_check is not None and self._live_check(binding) is True
         except Exception:
             verified = False
         if not verified:
-            if self._peers.get(binding.identity.session_id) == binding:
-                del self._peers[binding.identity.session_id]
             raise PairingError('chat-live-binding-unverified')
+
+    def _make_room(self):
+        """Drop the listed chats that fail a live check now."""
+        for session, peer in tuple(self._peers.items()):
+            try:
+                self._live(peer)
+            except PairingError:
+                del self._peers[session]
 
     def observe(self, binding):
         """Trusted adapter port; self-claimed identities are denied by default."""
@@ -306,7 +318,9 @@ class PairingStore:
             session = binding.identity.session_id
             previous = self._peers.get(session)
             if previous is None and len(self._peers) >= MAX_CHATS:
-                raise PairingError('chat-capacity')
+                self._make_room()
+                if len(self._peers) >= MAX_CHATS:
+                    raise PairingError('chat-capacity')
             self._peers[session] = binding
             self._promote_legacy()
             self._observed(binding)
@@ -318,7 +332,8 @@ class PairingStore:
             return binding.reference
 
     def registered(self):
-        """Observed metadata snapshot only; dispatch must freshly validate both chats."""
+        """Observed metadata snapshot only, stale chats included (_live); dispatch must
+        freshly validate both chats."""
         with self._lock:
             self._ready()
             return tuple(self._peers.values())
@@ -341,6 +356,17 @@ class PairingStore:
             current = {peer.logical_reference: peer.reference for peer in self._peers.values()}
             return tuple(sorted((current[left], current[right]) for left, right in self.remembered_routes()
                 if left in current and right in current))
+
+    def live(self, binding):
+        """Whether this exact binding is listed and passes its live check now. Display only: it
+        changes nothing and grants nothing."""
+        with self._lock:
+            self._ready()
+            try:
+                self._observed(binding)
+            except PairingError:
+                return False
+            return True
 
     def _observed(self, binding):
         if type(binding) is not ChatBinding or self._peers.get(binding.identity.session_id) != binding:
@@ -414,15 +440,8 @@ class PairingStore:
             if type(sender) is not ChatBinding or type(recipient) is not ChatBinding:
                 raise PairingError('chat-not-observed')
             # The route row first: a route that is off is refused as such, whatever the
-            # chats' liveness. The live checks still run, since they drop a dead chat from
-            # the observed list (the owner window's only prune for hosts with no withdraw).
-            # With no owner row, a route extension (PM routes) may open it.
+            # chats' liveness. With no owner row, a route extension (PM routes) may open it.
             if not self._route_open(sender, recipient):
-                for binding in (sender, recipient):
-                    try:
-                        self._observed(binding)
-                    except PairingError:
-                        pass
                 raise PairingError('chat-route-not-selected')
             self._observed(sender)
             self._observed(recipient)
@@ -431,16 +450,13 @@ class PairingStore:
         """The route gate for reading a reply already recorded: replier -> reader still
         open and the reader observed live. The replier need not be observed now: its reply
         passed the full gate when it was recorded, and a chat between turns can fail its
-        live check (a Codex chat whose turn moved on) and leave the observed list."""
+        live check (a Codex chat whose turn moved on) or be withdrawn. With no owner row, the
+        route extension's reply_check decides (PM routes: PmRoutes.allows_reply)."""
         with self._lock:
             self._ready()
             if type(replier) is not ChatBinding or type(reader) is not ChatBinding:
                 raise PairingError('chat-not-observed')
-            if not self._route_open(replier, reader):
-                try:
-                    self._observed(reader)
-                except PairingError:
-                    pass
+            if not self._route_open(replier, reader, reply=True):
                 raise PairingError('chat-route-not-selected')
             self._observed(reader)
 

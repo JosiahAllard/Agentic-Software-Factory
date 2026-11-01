@@ -270,18 +270,24 @@ class OwnerControls:
             return PmStop(removed,unblocked)
 
     def writers(self):
-        """Current writer leases between visible chats, as (writer, recipient) references."""
+        """Current writer leases that can deliver now (both chats listed and live), as
+        (writer, recipient) references."""
         return tuple(lease[:2] for lease in self.writer_grants() if lease[3])
 
-    def writer_grants(self):
-        """Every current writer lease, as (writer, recipient, grant time, both chats listed).
+    def writer_grants(self, *, check=True):
+        """Every current writer lease, as (writer, recipient, grant time, deliverable).
 
-        A lease whose chat is not listed (closed, between turns or missed by discovery)
-        is still returned, so the owner can see and Stop it; it cannot deliver.
+        Deliverable: both chats are listed and, with check, both pass their live check now. A
+        failed live check keeps a chat listed (PairingStore._live), so listing alone does not
+        show a closed chat. A lease that cannot deliver (closed, between turns or missed by
+        discovery) is still returned, so the owner can see and Stop it.
         """
         if self.leases is None: return ()
-        observed={peer.reference for peer in self.pairings.registered()}
-        return tuple((writer,recipient,granted,writer in observed and recipient in observed)
+        observed={peer.reference:peer for peer in self.pairings.registered()}
+        def deliverable(writer,recipient):
+            if writer not in observed or recipient not in observed: return False
+            return not check or (self.pairings.live(observed[writer]) and self.pairings.live(observed[recipient]))
+        return tuple((writer,recipient,granted,deliverable(writer,recipient))
             for writer,recipient,granted in self.leases.granted())
 
     def lease(self,writer_ref,recipient_ref, *, enabled):

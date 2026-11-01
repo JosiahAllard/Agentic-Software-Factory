@@ -59,7 +59,9 @@ Writer lease limits:
 - Only Codex desktop chats in the same app and on the same account qualify, never a terminal.
 - A restart drops every lease. Leases are capped at 32 at a time.
 - A closed chat keeps its lease, and its slot, until Stop, a revoke or a restart; it cannot
-  deliver. The window still lists it, marked as not listed, and can Stop it.
+  deliver. The window still lists it, marked as unable to deliver (a full refresh live-checks
+  both chats, so a closed chat that stays listed is marked too, and the 5 s re-read keeps that
+  mark until the next full refresh), and can Stop it.
 - A correlated refusal still blocks the recipient's whole chat, which is its task root.
 - The owner window's lease buttons have no test.
 
@@ -147,7 +149,7 @@ a relocated copy. Both need re-running against this layout before they count for
 
 ## Known problems seen in the 2026-10-31 sitting
 
-Observations only; none is fixed here.
+Observations; only the one marked fixed has been fixed since.
 - `bridge_read_reply` returned `reply-chat-not-observed` for `ping-20261031-005` and for
   `notes-append-20261031-002`, although each reply was pushed into the Claude chat.
 - One early send returned the frontend's catch-all "bridge connection unavailable", which hides
@@ -155,6 +157,9 @@ Observations only; none is fixed here.
 - The recipient chat (the kit folder) dropped out of the window's list after its turns ended. Its
   routes vanished from Current connections, and the lease row showed the chat "(not listed) ...
   cannot deliver". It came back after a `bridge_connections` call.
+  Fixed since: the pairing store no longer drops a chat on a failed live
+  check (a Codex chat whose turn moved on). The chat stays listed and every use checks it again,
+  so its routes stay in Current connections, and the lease row's note comes from a live check.
 - The appended line used CRLF while `notes.md` is LF.
 - Codex's own Windows sandbox failed some commands with `CreateProcessSecurityEnvironment`
   0x8007000F, probably because it cannot see drive Z:. This is in the owner's Codex
@@ -256,6 +261,8 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
     listed is refused with `recipient-not-observed`. The second send below was accepted about 40
     seconds after the recipient's listing turn had ended. So the listing lasted past that turn's
     end; how long it lasts was not measured.
+    Since 2026-10-31 the pairing store no longer drops a chat on a failed live check:
+    it stays listed and every use checks it again.
   - First send: `bridge_connections` returned `{"chats":[]}`, and `bridge_send` was refused with
     `recipient-not-observed`. Nothing was queued.
   - Before the second send, the owner wrote a standing approval in the Codex recipient chat
@@ -276,6 +283,8 @@ headed "Reply to bridge operation: ..." and carrying the full reply text.
     recipient made no bridge call between U-2 and U-3, yet the send was accepted. So these runs
     do not support "a chat stays listed only for the turn in which it made a bridge call". What
     keeps a chat listed, and what drops it, is still open.
+    Since 2026-10-31 the pairing store no longer drops a chat on a failed live check:
+    it stays listed and every use checks it again.
   - Step 3 was not rerun.
 - **Step 3, 2026-10-26, new Codex recipient and writer chats: delivered and replied, task not
   done.**

@@ -589,13 +589,33 @@ class MemoryTest(unittest.TestCase):
                                  pm_repo=lambda c: self.a)
         self.assertEqual(got, ["memory (b): add it", "could not check memory (PM repo): OSError: disk gone"])
 
-    def test_the_pm_repo_is_the_main_checkout_holding_the_sessions_file(self):
+    def test_the_pm_repo_is_the_work_tree_holding_the_sessions_file(self):
         self.assertIsNone(pmstart.pm_memory_repo(CFG))      # s.json is not there: no PM repo
         p = os.path.join(self.a, "sessions.json")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write("{}")
-        top = pmstart.pm_memory_repo(dict(CFG, sessions_file=p), main_top=lambda path: "T:\\pm")
-        self.assertEqual(top, "T:\\pm")
+        top = pmstart.pm_memory_repo(dict(CFG, sessions_file=p), top_of=lambda path: ("T:\pm", None))
+        self.assertEqual(top, "T:\pm")
+
+    def test_a_pm_repo_that_is_a_linked_worktree_of_another_repo_is_itself(self):
+        from kitlib.stubs import memory as kmemory
+        from tests import gitfixture
+        kit = gitfixture.TempRepo()
+        self.addCleanup(kit.cleanup)
+        pm = kit.worktree("pmdata", branch="pmdata")
+        sessions = kit.write("sessions.json", "{}", root=pm)
+        cfg = dict(CFG, sessions_file=sessions, memory_dir="X:/m")
+        norm = lambda x: os.path.normcase(os.path.normpath(x))
+        self.assertEqual(norm(pmstart.pm_memory_repo(cfg)), norm(pm))
+        line = pmstart.handoff(cfg, globber=lambda pat: [], exists=lambda f: False)[0]
+        self.assertIn(os.path.join(os.path.normpath(pm), "HANDOFF.md"), os.path.normpath(line))
+        self.assertNotIn(norm(os.path.join(kit.root, "HANDOFF.md")), norm(line))
+        seen = []
+        ok = kmemory.Memory(kmemory.OK, "p", "X:/m", "X:/m", None, None, None, None)
+        with mock.patch.object(kmemory, "survey", lambda top, *a, **k: seen.append(top) or ok):
+            got = pmstart.memory(cfg, repos={}, check=lambda path, label=None: None)
+        self.assertEqual([norm(x) for x in seen], [norm(pm)])
+        self.assertEqual(got, [])
 
     def test_in_the_checklist(self):
         fakes = dict(handoff=HANDOFF_FAKE, reminders={"read": lambda p: "[]"},

@@ -8,6 +8,7 @@ import unittest
 from kitlib.backlog import policy
 from kitlib.backlog import roles
 from tests import inproc
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, parse
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 

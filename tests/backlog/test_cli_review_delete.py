@@ -8,6 +8,7 @@ from unittest import mock
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import store as smod
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS, ADD_NONE
 

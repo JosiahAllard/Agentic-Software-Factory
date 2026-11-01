@@ -17,6 +17,7 @@ from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Failure, Refusal
 
 from tests import inproc
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS, StoreCase, kit_json_ref, record_text
 

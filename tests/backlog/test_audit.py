@@ -21,6 +21,7 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import roles
 from kitlib.backlog import store as smod
 from tests import inproc
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 from tests.home import PM_REPO_FENCE_ENV, machine_config, pm_repo

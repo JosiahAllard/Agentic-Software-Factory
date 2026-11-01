@@ -8,6 +8,7 @@ from unittest import mock
 
 from kitlib import strayrestore as sr
 from tests import gitfixture
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.realgit import real_git
 from tests.strayrestore.helpers import Fixture
 from tools import stray_restore
@@ -34,6 +35,21 @@ class TheCommandLine(Fixture):
         code, out = run(['-C', self.top, '--apply'], {'PM_KIT_ROLE': 'deep-worker'})
         self.assertEqual(code, 2)
         self.assertIn('REFUSED', out)
+        self.assertEqual(self.get('docs/new.md'), b'new text\n')
+
+    def test_an_unmarked_codex_process_is_refused_and_says_why(self):
+        """A Codex chat is never the owner: unmarked under one, the command is refused, names the
+        reason and touches nothing."""
+        from kitlib.host import registry
+        self.branch('kit/a', {'docs/new.md': b'new text\n'})
+        self.put('docs/new.md', b'new text\n')
+        real = registry.unowned_caller
+        with mock.patch.object(registry, 'unowned_caller',
+                               lambda tree=None, path=None: real(lambda: ['python.exe', 'codex.exe'])):
+            code, out = run(['-C', self.top, '--apply'])
+        self.assertEqual(code, 2, out)
+        self.assertIn('REFUSED', out)
+        self.assertIn('codex.exe', out)
         self.assertEqual(self.get('docs/new.md'), b'new text\n')
 
     def test_unmarked_and_pm_run(self):

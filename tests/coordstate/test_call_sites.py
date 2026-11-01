@@ -13,6 +13,7 @@ from kitlib.coordstate import log
 from kitlib.gate import submit as submitmod
 from tests import inproc
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.coordstate.helpers import TempAgentFolder
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 from tests.home import machine_config

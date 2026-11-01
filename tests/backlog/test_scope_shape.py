@@ -12,6 +12,7 @@ from kitlib.backlog import scope as smod
 from kitlib.backlog import store as stmod
 from kitlib.backlog.errors import Usage
 
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import ADD_FLAGS, StoreCase, priced, rec
 

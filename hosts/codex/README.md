@@ -11,7 +11,7 @@ rendered agent file says so in its header comment.
 | Part | Where | State |
 |---|---|---|
 | Registry entry | `hosts.json` `codex` | Windows; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
-| Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | in the owner's unmarked session a tool `hosts.json` `hook.guarded_tools` leaves out passes before boot (`fast_path: unmarked`); else PreToolUse through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
+| Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | no call passes before boot (`fast_path: none`: a Codex chat is never the owner, so even a tool `hosts.json` `hook.guarded_tools` leaves out goes to the guard); every PreToolUse goes through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
 | Hook policy | `adapter/policy.py` | a marked session: unknown tools, other MCP servers' tools, `apply_patch` through the shell, calls the guard cannot fully judge (no named shell, cmd.exe, a TTY, fed input) and a read, test or lander role's edits in its own checkout refused |
 | Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard.md "Generated files"); review templates, not installed |
 | Manifests | `shell/plugin.json`, `shell/mcp.json`; the hooks plugin's `shell/hooks-plugin/hooks/hooks.json` | `plugin.json` and `mcp.json` rendered from `kit.json`; the plugin export places `shell/plugin.json` at `.codex-plugin/plugin.json`, stamped, and its paths (`./content/skills/`, `mcp.json`) are from the export folder's root (docs/plugin-source.md "Codex"); it names no hooks. The hooks plugin is written by hand and pinned, held equal to the renderer's `hooks()` (tests/pluginsource/test_codex_hooks.py) |
@@ -34,16 +34,28 @@ session as an agent of its mark's role (`kitlib.host.hookmain`, agent `unidentif
 main-checkout rule and the write jail apply to it as to a subagent on any host, and the role policy
 by its mode. A Codex PM or coordinator therefore cannot edit the main checkout or land from it:
 stricter than the default host, where a launched lead's main session may, and looser than the
-branch, which denied every marked call outright. The owner's **unmarked** session is judged by the
-shared rules alone, as on every host; the branch's hooks did nothing there. The runtime broker binds
-a role from native metadata, not the mark (`adapter/runtime.py`).
+branch, which denied every marked call outright. An **unmarked** chat, the one no launcher started,
+skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
+"Session mark"):
+
+- It is an agent session (`rules.agent_session`): the rules only agents are held to (kit-json, the
+  write jail, kill by name, lock state) refuse it as they refuse a subagent.
+- It is never the owner (an owner answer; `rules.is_owner_session` is false for every Codex
+  chat): every owner-only check refuses it. Those are machine config writes (`.pm-kit`), a commit
+  under the owner's identity, the owner's tools and delegation list, the hub's secrets and owner
+  verbs, the backlog's raw writes, the lock MCP's owner tool names and `gate.py allow`. Owner
+  actions are done from the owner's chat on the default host, or by hand. Its refusals call the
+  session "an unmarked Codex chat, never the owner".
+
+Both read `hosts.json` `capabilities.subagent_identity_in_hooks` (false for Codex), not the host's
+name. The runtime broker binds a role from native metadata, not the mark (`adapter/runtime.py`).
 
 Codex agent files carry no tool list, so the hook policy holds a read, test or lander role (its role
 file's `mode`) to no edits in its own checkout (`host-role-edit`) whatever the repository's
 `guard.role_policy` says, as the branch's guard adapter did. Files its role file's `writes` names,
 and temp and scratch folders under the write jail, stay open to it.
 
-What the owner's session leaves unjudged (a trade-off: the owner keeps an interactive shell):
+What an unmarked chat leaves unjudged (a trade-off: the chat keeps an interactive shell):
 
 - A call with a TTY, input fed to a command, and text sent to a running process (`write_stdin`).
   The guard sees the command that starts a process, never what is typed into it later. A marked

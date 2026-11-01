@@ -3,13 +3,14 @@ moved since `files_at`. Ages are made deterministic with GIT_COMMITTER_DATE arou
 import datetime
 import os
 import subprocess
-import sys
 import tempfile
 from unittest import mock
 
 from kitlib.backlog import stale as stmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import record as rmod
+from tests.backlog import ownertree
+from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import helpers
 from tests.backlog.helpers import StoreCase, kit_json_ref, rec, TODAY
 from tests.gitfixture import TempRepo, fixture_env, rmtree
@@ -210,7 +211,7 @@ class StaleCli(StoreCase):
         home = tempfile.mkdtemp(prefix='kit-home-')
         self.addCleanup(rmtree, home)
         env = fixture_env({'USERPROFILE': home, 'HOME': home})
-        p = subprocess.run([sys.executable, TOOL, '-C', self.repo.root] + list(args),
+        p = subprocess.run(ownertree.argv(TOOL, '-C', self.repo.root, *args),
                            capture_output=True, text=True, encoding='utf-8', env=env, timeout=120)
         return p.returncode, p.stdout + p.stderr
 

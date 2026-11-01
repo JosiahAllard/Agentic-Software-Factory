@@ -36,6 +36,7 @@ Output goes through `say(line)`; nothing here prints or exits. execute also writ
 says to `<log folder>/summary.txt` and says a last `summary` line naming it (write_summary).
 """
 import datetime
+import functools
 import json
 import os
 import posixpath
@@ -48,7 +49,10 @@ import time
 from kitlib import kitroot
 from kitlib.config import heavy_match, heavy_programs
 from kitlib.config import load as load_config
+from kitlib.config import schema
 from kitlib.config.types import ConfigError
+from kitlib.config.types import check as check_type
+from kitlib.content.oncommit import is_kit
 from kitlib.gate import runner as grunner
 from kitlib.git import batch, cmd
 from kitlib.git import refs as gitrefs
@@ -68,12 +72,14 @@ SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if
 OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                else {'start_new_session': True})
 # Seconds one selector's command may run (default_run) before its whole process tree is killed
-# and the selector is TIMEOUT. It is kit_tests' per-unit limit (kitlib.tooldeps.selfrun
-# .UNIT_TIMEOUT): a python selector runs at most one test module, the unit kit_tests allows that
-# long, so one still running past it is hung (KIT-REDFIRST-TIMEOUT: a run of
-# tests.gate.test_land_fold hung 25 h on 2026-10-31 and nothing stopped it). Read at each call,
+# and the selector is TIMEOUT (KIT-REDFIRST-TIMEOUT: a run of tests.gate.test_land_fold hung 25 h
+# on 2026-10-31 and nothing stopped it). A python selector runs at most one test module, the unit
+# a test runner times, so the limit is that runner's per-unit one: the repo's own `.kit.json`
+# "tool_tests".unit_timeout (pytests' setting) read at the base (run_timeout); RUN_TIMEOUT, kit_tests'
+# UNIT_TIMEOUT (kitlib.tooldeps.selfrun), in the kit or a repo that sets none. Read at each call,
 # so a test sets a short one. A run that booked the machine lock (locked_run) is not timed here.
 RUN_TIMEOUT = UNIT_TIMEOUT
+KIT_JSON = '.kit.json'
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'redfirst.py')
 
@@ -299,14 +305,45 @@ def leftover_line(tw, landed, main):
 
 
 # ---- running ------------------------------------------------------------------------------------
-def default_run(argv, cwd, env, log):
+def run_timeout(top, base):
+    """`(seconds, where it comes from)`: the limit of one test run (RUN_TIMEOUT's note). In the
+    kit, or when `.kit.json` at `base` is absent or sets no "tool_tests".unit_timeout, RUN_TIMEOUT;
+    else that value. V.Usage when `.kit.json` there cannot be read, is no JSON, or holds a value
+    the kit schema refuses."""
+    if is_kit(top):
+        return RUN_TIMEOUT, "the kit: kit_tests' UNIT_TIMEOUT"
+    spec = '%s:%s' % (base, KIT_JSON)
+    default = (RUN_TIMEOUT, "kit_tests' UNIT_TIMEOUT: %s at the base sets no "
+               '"tool_tests".unit_timeout' % KIT_JSON)
+    if object_types(top, [spec]).get(spec) != 'blob':
+        return default
+    rc, out, err = git(top, 'show', spec)
+    if rc != 0:
+        raise V.Usage('refused: %s could not be read: %s' % (spec, err or 'exit %d' % rc))
+    try:
+        data = json.loads(out)
+    except ValueError as e:
+        raise V.Usage('refused: %s at the base is no JSON: %s' % (KIT_JSON, e))
+    section = data.get('tool_tests') if isinstance(data, dict) else None
+    value = section.get('unit_timeout') if isinstance(section, dict) else None
+    if value is None:
+        return default
+    where = '%s "tool_tests".unit_timeout at the base' % KIT_JSON
+    try:
+        check_type(schema.section_type('tool_tests'), {'unit_timeout': value}, where)
+    except ConfigError as e:
+        raise V.Usage('refused: %s' % e)
+    return value, where
+
+
+def default_run(argv, cwd, env, log, timeout=None):
     """Run one selector's command into `log` in a kill-on-close job (kitlib.proc.job); its exit
-    code (127: could not start). Still running after RUN_TIMEOUT seconds: the job ends the command
-    and every process it started, and TimedOut is raised. An interrupt ends the tree the same way
-    (closing the job)."""
+    code (127: could not start). Still running after `timeout` seconds (None: RUN_TIMEOUT): the job
+    ends the command and every process it started, and TimedOut is raised. An interrupt ends the
+    tree the same way (closing the job)."""
     full_env = cmd.scrubbed_env()
     full_env.update(env)
-    limit = RUN_TIMEOUT
+    limit = timeout or RUN_TIMEOUT
     with open(log, 'w', encoding='utf-8', errors='replace') as fh:
         try:
             job = Job(kill_on_close=True)
@@ -483,13 +520,15 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
     # No answer counts as not landed: the leftover line then names the --abandon command, which
     # keeps the tree's commits under a tag (the safe advice when it cannot be told).
     landed = gitrefs.is_ancestor(base, upstream, top)[0] is True
+    timeout, timeout_from = run_timeout(top, base)
     if not log_dir:
         log_dir = default_log_dir(cfg, main)
     return Plan(top=top, main=main, base=base, head=head, sels=sels, files=files, new=new, had=had,
                 landed=landed, log_dir=os.path.abspath(log_dir),
                 worktrees_dir=os.path.normpath(cfg.repo['worktrees_dir']),
                 tools_dir=cfg.tools_dir, hold_wait=section['hold_wait'],
-                lock=lock, lock_from=lock_from, repo=grunner.repo_name(cfg, main))
+                lock=lock, lock_from=lock_from, repo=grunner.repo_name(cfg, main),
+                timeout=timeout, timeout_from=timeout_from)
 
 
 # ---- the machine lock ---------------------------------------------------------------------------
@@ -733,8 +772,11 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
             slot, refused = book_slot(plan, say, ints, book_kw)
             if slot is None:
                 return refused
+        if slot is None:
+            say('timeout   %d s a test run (%s)' % (plan.timeout, plan.timeout_from))
         if run is None:
-            run = locked_run(slot, ints) if slot is not None else default_run
+            run = (locked_run(slot, ints) if slot is not None
+                   else functools.partial(default_run, timeout=plan.timeout))
         tw, why = make_tree(plan.main, plan.worktrees_dir, plan.base)
         if tw is None:
             say('failed    %s' % why)

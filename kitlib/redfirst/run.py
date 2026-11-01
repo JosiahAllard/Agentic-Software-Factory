@@ -56,8 +56,9 @@ from kitlib.git import repo as gitrepo
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_TIMEOUT,
                                EXIT_USAGE, LockError, Store)
-from kitlib.proc import spawn
+from kitlib.proc.job import Job
 from kitlib.redfirst import verdict as V
+from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
 from kitlib.worktree import holders, remove
 
 PREFIX = 'redfirst-'
@@ -66,6 +67,13 @@ CHILD_FLAG = '--cleanup-child'
 SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if s is not None)
 OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                else {'start_new_session': True})
+# Seconds one selector's command may run (default_run) before its whole process tree is killed
+# and the selector is TIMEOUT. It is kit_tests' per-unit limit (kitlib.tooldeps.selfrun
+# .UNIT_TIMEOUT): a python selector runs at most one test module, the unit kit_tests allows that
+# long, so one still running past it is hung (KIT-REDFIRST-TIMEOUT: a run of
+# tests.gate.test_land_fold hung 25 h on 2026-10-31 and nothing stopped it). Read at each call,
+# so a test sets a short one. A run that booked the machine lock (locked_run) is not timed here.
+RUN_TIMEOUT = UNIT_TIMEOUT
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'redfirst.py')
 
@@ -292,16 +300,40 @@ def leftover_line(tw, landed, main):
 
 # ---- running ------------------------------------------------------------------------------------
 def default_run(argv, cwd, env, log):
-    """Run one selector's command into `log`; its exit code (127: could not start)."""
+    """Run one selector's command into `log` in a kill-on-close job (kitlib.proc.job); its exit
+    code (127: could not start). Still running after RUN_TIMEOUT seconds: the job ends the command
+    and every process it started, and TimedOut is raised. An interrupt ends the tree the same way
+    (closing the job)."""
     full_env = cmd.scrubbed_env()
     full_env.update(env)
+    limit = RUN_TIMEOUT
     with open(log, 'w', encoding='utf-8', errors='replace') as fh:
         try:
-            return spawn.run(argv, cwd=cwd, env=full_env, stdout=fh,
-                             stderr=subprocess.STDOUT).returncode
-        except OSError as e:
-            fh.write('redfirst: could not start %s: %s\n' % (argv[0], e))
+            job = Job(kill_on_close=True)
+        except OSError as e:                # never run a command that could not then be killed
+            fh.write('redfirst: no job object for %s (%s); not run\n' % (argv[0], e))
             return 127
+        try:
+            try:
+                p = job.start(argv, cwd=cwd, env=full_env, stdin=subprocess.DEVNULL, stdout=fh,
+                              stderr=subprocess.STDOUT)
+            except OSError as e:            # JobError is an OSError
+                fh.write('redfirst: could not start %s: %s\n' % (argv[0], e))
+                return 127
+            try:
+                return p.wait(timeout=limit)
+            except subprocess.TimeoutExpired:
+                job.terminate()
+                p.wait()
+                why = 'still running after %d s; killed it and every process it started' % limit
+                fh.write('\nredfirst: TIMEOUT - %s\n' % why)
+                raise TimedOut(why)
+        finally:
+            job.close()
+
+
+class TimedOut(RuntimeError):
+    """default_run's command ran past RUN_TIMEOUT and its tree was ended: the selector is TIMEOUT."""
 
 
 class Cancelled(RuntimeError):
@@ -351,7 +383,10 @@ def run_one(sel, n, tw, log_dir, files, run):
         except OSError as e:
             return V.ERROR, 'an older result %s could not be deleted: %s' % (stale, e), log
     started = time.time() - 2          # file times are coarser than the clock
-    rc = run(argv, cwd, env, log)
+    try:
+        rc = run(argv, cwd, env, log)
+    except TimedOut as e:
+        return V.TIMEOUT, str(e), log
     try:
         with open(log, encoding='utf-8', errors='replace') as fh:
             text = fh.read()
@@ -632,8 +667,10 @@ def select(text, runners, written, top, head):
 
 FINAL = {V.EXIT_RED: 'REDFIRST OK - every named test is red at %s',
          V.EXIT_GREEN: 'REDFIRST NOT RED - a named test passes at %s',
-         V.EXIT_UNDECIDED: 'REDFIRST UNDECIDED - see the NONE/ERROR/stopped lines',
+         V.EXIT_UNDECIDED: 'REDFIRST UNDECIDED - see the NONE/ERROR/TIMEOUT/stopped lines',
          V.EXIT_LEFTOVER: 'REDFIRST LEFTOVER - verdicts above, the throwaway tree was not removed'}
+TIMED_OUT = ('REDFIRST TIMEOUT - a named test ran past its time limit and its process tree was '
+             'killed: no verdict for it (see the TIMEOUT line)')
 
 
 SUMMARY = 'summary.txt'
@@ -744,7 +781,10 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
         if not cleaned:
             say(leftover_line(tw, plan.landed, plan.main))
         rc = V.exit_code(verdicts, cleaned)
-        say(FINAL[rc] % plan.base[:10] if '%s' in FINAL[rc] else FINAL[rc])
+        if rc == V.EXIT_UNDECIDED and V.TIMEOUT in verdicts:
+            say(TIMED_OUT)
+        else:
+            say(FINAL[rc] % plan.base[:10] if '%s' in FINAL[rc] else FINAL[rc])
         return rc
     except (Exception, KeyboardInterrupt) as e:  # noqa: BLE001  (never Python's 1 = GREEN)
         say('failed    unexpected %s: %s' % (type(e).__name__, e))

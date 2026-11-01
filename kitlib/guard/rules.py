@@ -591,7 +591,7 @@ def is_owner_session(event, ctx):
     """True for the owner's own main session: no subagent and no launcher mark (docs/guard.md
     "Session mark"), on a host whose hooks tell a subagent apart (owner_host). Every owner-only
     check reads it. A Codex chat is never the owner, the unmarked main chat too (owner answer
-    Q-1662): owner actions are done from a Claude chat or by hand."""
+    Q-1662): owner actions are done from the owner's chat on the default host, or by hand."""
     return not subagent(event) and ctx.session_role(event) == context.OWNER and owner_host(ctx)
 
 
@@ -966,7 +966,8 @@ def hub_session(event, ctx):
 
 def unowned_name(ctx):
     """An unowned_chat as a refusal names it, with where owner actions are done."""
-    return ('an unmarked %s chat, never the owner: owner actions are done from a Claude chat or by hand'
+    return ("an unmarked %s chat, never the owner: owner actions are done from the owner's chat on the "
+            'default host, or by hand'
             % ctx.host_profile().attribution.name)
 
 

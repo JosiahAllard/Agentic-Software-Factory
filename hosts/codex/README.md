@@ -44,8 +44,8 @@ skips the hook policy but not the shared rules, and the guard holds it two ways 
   chat): every owner-only check refuses it. Those are machine config writes (`.pm-kit`), a commit
   under the owner's identity, the owner's tools and delegation list, the hub's secrets and owner
   verbs, the backlog's raw writes, the lock MCP's owner tool names and `gate.py allow`. Owner
-  actions are done from a Claude chat or by hand. Its refusals call the session "an unmarked Codex
-  chat, never the owner".
+  actions are done from the owner's chat on the default host, or by hand. Its refusals call the
+  session "an unmarked Codex chat, never the owner".
 
 Both read `hosts.json` `capabilities.subagent_identity_in_hooks` (false for Codex), not the host's
 name. The runtime broker binds a role from native metadata, not the mark (`adapter/runtime.py`).

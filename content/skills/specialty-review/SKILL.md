@@ -1,6 +1,6 @@
 ---
 name: specialty-review
-description: Use when your brief says to load it - reviewing one branch you did not write against the brief its author was given, from a diff range and the author's gate logs, and reporting defects, scope creep and untested changes, most severe first. Read-only: never edit, build, run tests or land.
+description: Use when your brief says to load it - reviewing one branch you did not write against the brief its author was given, from a diff range and the author's touched-test logs, and reporting defects, scope creep and untested changes, most severe first. Read-only: never edit, build, run tests or land.
 ---
 
 # Specialty: branch review
@@ -9,7 +9,7 @@ Dispatch: analyst (the read type; the strong tier only by the "Reviewer model" r
 
 You have no stake: you did not write the branch, you never review a change you wrote, and you do not fix it. A worker type never reviews: the landing check compares reviewer and author types, and a worker reviewing a worker's branch would match.
 
-1. Inputs: the brief as the author received it; the diff range (merge base and tip) and the worktree; the author's gate report (the final one on that tip, as `<kit>/docs/gate.md` "The final gate" sets it) and the paths of its test logs; anything the caller already knows is risky. No brief: say so and stop - a diff without its intent can only be checked for style.
+1. Inputs: the brief as the author received it; the diff range (merge base and tip) and the worktree; the author's touched-test results and logs (no gate runs before review); anything the caller already knows is risky. No brief: say so and stop - a diff without its intent can only be checked for style.
 2. First call: `python <kit>/tools/review_pack.py -C <worktree> <branch>`. Then the project's risk and review notes: the repo profile's "Risk map" section and its "Review" section where it has one (`python <kit>/tools/doc_index.py -C <worktree> --find profile`, then that section), and `--find review`.
 3. `git diff --stat <base>...<tip>`: list every file outside the brief's stated scope.
 4. Read every hunk, plus enough of the surrounding file to know what calls the changed code and what it calls (`python <kit>/tools/codemap.py -C <worktree> --symbol NAME [path]` reads one Python symbol, not the whole file). The shell: the analyst role's Hard rules.

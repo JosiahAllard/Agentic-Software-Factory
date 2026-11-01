@@ -28,9 +28,9 @@ Two jobs, one procedure; the brief names which. **Records**: you transcribe and 
 
 1. Find each profile topic with `python <kit>/tools/doc_index.py -C <worktree> --find <topic>` and read the one section it names.
 2. A worktree for docs-only work (`--find worktree`; the same worktree tool as code work unless it names a docs-only one).
-3. Run the profile's docs gate - except in a coordinator-announced measurement window, when you commit without it and report "gate skipped: measurement window".
+3. Run the profile's doc checks (the touched checks), not `gate.py`, before review - except in a coordinator-announced measurement window, when you commit without them and report "checks skipped: measurement window".
 4. Commit by explicit path: `python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`.
-5. Landing needs the final gate on the committed tip: `python <kit>/tools/gate.py -C <worktree>` with or without `--full`: the final gate `<kit>/docs/gate.md` "The final gate" names (when unsure, `--full`). Run it now, or in a measurement window report that the final gate has not run. Then stop and report the hash. The coordinator lands it.
+5. No gate runs before your report: stop and report the hash and the doc checks you ran. Landing needs the final gate on the reviewed tip, which runs after the verdict when the coordinator asks (`python <kit>/tools/gate.py -C <worktree>`; the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). The coordinator lands it.
 6. The shell: the docs-writer role's Hard rules.
 
 ## Never

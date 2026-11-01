@@ -858,7 +858,8 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     if not chosen and not empty:
         text = NO_STEP_FULL if full and not only else NO_STEP % len(changed)
         return G.Outcome(G.REFUSED, [text], record=None,
-                         no_record='no gate step selected', head=head, base=mb, changed=changed)
+                         no_record='no gate step selected', head=head, base=mb, changed=changed,
+                         full_hint=hint)
     entries, why = gitstatus.status(top)
     if entries is None:
         return G.Outcome(G.REFUSED, ['REFUSED: git status failed: %s' % why])

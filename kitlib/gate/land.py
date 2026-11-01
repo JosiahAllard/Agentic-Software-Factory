@@ -2452,17 +2452,14 @@ class Lander(object):
             if out.code in (G.STUCK, G.OK):  # Ctrl+C included: STUCK is exit 3, with what is
                 return out      # left; OK: stopped after the verified push, landed
             if isinstance(e, ConfigError) and out.code == G.REFUSED:
-                return self.unfold_unlanded(out)
+                return self.unfold_or_warn(out)
             if isinstance(e, KeyboardInterrupt) or (isinstance(e, Exception) and
                                                     self.phase == 'before'):
                 for line in out.lines:  # Ctrl+C undone and released (exit 130), or a bug
                     self.say(line)      # before the merge: raised again
-                try:                    # its folds land at their own turn, not as its error
-                    self.unfold_unlanded(out)
-                except BaseException:   # noqa: BLE001 - never replace the exception being raised
-                    pass
+                self.unfold_or_warn(out)  # its folds land at their own turn, not as its error
                 raise
-            return self.unfold_unlanded(out)    # an exception or SystemExit after the merge
+            return self.unfold_or_warn(out)     # an exception or SystemExit after the merge
 
     # ---------------------------------------------------------------- the turn of a submission
 
@@ -2638,6 +2635,23 @@ class Lander(object):
         if self.folds and out.code not in (G.OK, G.STUCK):
             self.unfold_all(False, 'the batch it was folded into did not land')
         return out
+
+    def unfold_or_warn(self, out):
+        """unfold_unlanded(out) on the exception path of _run, where a give-back that raises
+        never replaces `out` or the exception being raised: it says one WARNING line naming each
+        fold not given back (those end with this landing's records) and returns `out`."""
+        try:
+            return self.unfold_unlanded(out)
+        except BaseException as err:    # noqa: BLE001 - the landing's own outcome stands
+            left = '; '.join('%s (run %s)' % (', '.join(f['unit']['branches']),
+                                              f['unit']['run_id']) for f in self.folds)
+            try:
+                self.say('WARNING: folded submissions not given back (%s): %s; their records end '
+                         "with this landing's outcome, so submit each again"
+                         % (_what(err), left or 'none left'))
+            except BaseException:   # noqa: BLE001 - nor may the warning replace them
+                pass
+            return out
 
     def merge_batch(self):
         """do_merge, dropping each folded submission whose branch does not merge cleanly: given

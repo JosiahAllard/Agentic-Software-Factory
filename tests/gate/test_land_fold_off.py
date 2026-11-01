@@ -76,6 +76,17 @@ class Interrupted(FoldCase):
     def test_ctrl_c_before_the_merge_gives_the_folds_back(self):
         self.interrupted(KeyboardInterrupt)
 
+    def test_a_give_back_that_raises_is_named_and_never_replaces_the_exception(self):
+        a = self.queued(['one'])
+        b = self.queued(['two'])
+        said = []
+        with mock.patch.object(land.Lander, 'prior_records', side_effect=RuntimeError('bug')),                 mock.patch('kitlib.gate.submit.give_back', side_effect=OSError('disk')):
+            with self.assertRaisesRegex(RuntimeError, 'bug'):
+                self.landing(a, said).run()
+        self.assertIn('WARNING: folded submissions not given back (OSError: disk): kit/two '
+                      "(run %s); their records end with this landing's outcome, so submit each "
+                      'again' % b.run_id, said)
+
 
 if __name__ == '__main__':
     unittest.main()

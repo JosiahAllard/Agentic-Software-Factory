@@ -34,6 +34,6 @@ you report to; something it needs is missing -> say so to the PM rather than gue
 4. Follow `<kit>/content/skills/builder/SKILL.md` (skill builder) for commits, the gate and the
    report, with the PM as your caller. Do what the owner says in this session; ask the owner
    before touching files outside your brief's scope.
-5. Finish when the owner says the work is done: gate the tip, then `send_message (not available to a Codex agent: ask the PM)` the PM the branch, the tip sha, the gate result
-   and the records it covers. The coordinator reviews and lands it; you never land.
+5. Finish when the owner says the work is done: run the touched tests, then `send_message (not available to a Codex agent: ask the PM)` the PM the branch, the tip sha, the touched-test results
+   and the records it covers. No gate runs before review: the one gate runs on the reviewed tip when the coordinator asks. The coordinator reviews and lands it; you never land.
 """

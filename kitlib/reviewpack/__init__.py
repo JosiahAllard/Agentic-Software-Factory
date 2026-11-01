@@ -560,7 +560,7 @@ def gate_line(top, branch, cfg=None, base=None):
     rec, why = gate_ok.verify_full(top, tip)
     if rec is not None:
         return 'gate     tip %s: full gate OK, ended %s' % (tip[:10], rec.get('ended_utc'))
-    head = 'gate     tip %s: NO full-gate OK record (%s)' % (tip[:10], why)
+    head = 'gate     tip %s: NO full-gate OK record (%s; the final gate runs after review)' % (tip[:10], why)
     scoped = gate_ok.verify(top, tip)[0]
     mode = gate_ok.mode_of(scoped) if scoped is not None else None
     if mode not in ('select', 'docs'):

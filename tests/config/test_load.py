@@ -114,6 +114,40 @@ class RefusalTest(TreeCase):
         self.assertIn('an email address', self.refused({'owner': {'email': 'not-an-address'}}))
 
 
+class RedfirstCommandRunnerTest(TreeCase):
+    """The command runner's keys: command, result, no_test."""
+
+    RUNNER = {'glob': 'tools/engine_tests/*.cs', 'kind': 'command',
+              'command': ['godot', '--headless', '{selector}'],
+              'result': '{log_dir}/{n}-{stem}.xml', 'no_test': '^engine: no test named'}
+
+    def runners(self, **over):
+        return {'redfirst': {'runners': [dict(self.RUNNER, **over)]}}
+
+    def test_a_command_runner_loads(self):
+        got = self.load(self.runners()).section('redfirst')['runners'][0]
+        self.assertEqual((got['kind'], got['command'], got['result'], got['no_test']),
+                         ('command', ['godot', '--headless', '{selector}'],
+                          '{log_dir}/{n}-{stem}.xml', '^engine: no test named'))
+
+    def test_result_and_no_test_are_optional(self):
+        runner = {k: v for k, v in self.RUNNER.items() if k not in ('result', 'no_test')}
+        self.load({'redfirst': {'runners': [runner]}})
+
+    def test_an_empty_or_non_string_command_refuses(self):
+        self.assertIn('"redfirst".runners[0].command', self.refused(self.runners(command=[])))
+        self.assertIn('"redfirst".runners[0].command', self.refused(self.runners(command=['x', 3])))
+        self.assertIn('"redfirst".runners[0].command', self.refused(self.runners(command='godot')))
+
+    def test_a_bad_no_test_regex_or_a_non_string_result_refuses(self):
+        self.assertIn('does not compile', self.refused(self.runners(no_test='(')))
+        self.assertIn('"redfirst".runners[0].result must be a string',
+                      self.refused(self.runners(result=3)))
+
+    def test_an_unknown_kind_still_refuses(self):
+        self.assertIn('"redfirst".runners[0].kind', self.refused(self.runners(kind='shell')))
+
+
 class GateRulesTest(TreeCase):
 
     def steps(self, *steps):

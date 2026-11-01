@@ -23,8 +23,8 @@ gradlew.bat is a batch file, so Windows runs it in cmd.exe, which reads its comm
 before gradle sees it: `--tests a&whoami` runs whoami. A gradle word after the program that holds
 one of cmd.exe's characters (kitlib.guard.shell.CMD_REPARSE: & | < > ^ % ! ( ) " CR LF) is
 refused when the selector is parsed (gradle_args), before anything is made or run. A command
-runner whose program is a .bat or .cmd file is checked the same way, every word after it
-(command_argv). Any other program gets each word as one argument: the argv goes to the process
+runner whose program cmd.exe runs (runs_in_cmd: a .bat or .cmd, a trailing dot or space dropped,
+or cmd itself) is checked the same way, every word after it (command_argv). Any other program gets each word as one argument: the argv goes to the process
 as a list, never through a shell.
 """
 import fnmatch
@@ -121,21 +121,34 @@ def gradle_args(sel):
     task = '%s:test' % sel.target
     extra = list(sel.runner.get('args') or [])
     runner = 'of the runner for %r in `.kit.json` "redfirst".runners' % sel.runner.get('glob')
-    fix_filter = ('a gradle filter needs none of & | < > ^ %% ! ( ) " or a line break: write the '
+    fix_filter = ('a gradle filter needs none of & | < > ^ % ! ( ) " or a line break: write the '
                   'wildcard * in its place')
     fix_runner = 'change that runner'
     words = [(task, 'the project %r %s' % (sel.target, runner), fix_runner),
              (filt, ('the filter %r' if sel.filter else 'the default filter %r (from the file name)')
               % filt, fix_filter)]
     words += [(a, 'the "args" word %r %s' % (a, runner), fix_runner) for a in extra]
+    refuse_cmd_reparse(sel, 'gradlew.bat', words)
+    return [task, '--offline', '--tests', filt] + extra
+
+
+def refuse_cmd_reparse(sel, program, words):
+    """Usage for the first of `words`, `(word, what it is, the fix)`, that holds a character
+    cmd.exe reads again (cmd_unsafe): `program` runs in cmd.exe, so `a&whoami` would run whoami."""
     for word, what, fix in words:
         c = cmd_unsafe(word)
         if c is not None:
-            raise Usage(('refused: --tests %r: %s holds %s, which cmd.exe reads again: gradlew.bat '
-                         'runs in cmd.exe, so the word could run another command; nothing was run. '
-                         'Instead: ' + fix)
-                        % (sel.text, what, _CMD_CHAR_NAMES.get(c, c)))
-    return [task, '--offline', '--tests', filt] + extra
+            raise Usage(('refused: --tests %r: %s holds %s, which cmd.exe reads again: %s runs in '
+                         'cmd.exe, so the word could run another command; nothing was run. '
+                         'Instead: ') % (sel.text, what, _CMD_CHAR_NAMES.get(c, c), program) + fix)
+
+
+def runs_in_cmd(program):
+    """Whether Windows runs `program` in cmd.exe, which reads its command line again: a .bat or
+    .cmd file, a trailing dot or space dropped as Windows drops it (x.bat. starts x.bat, as
+    kitlib.lock.run script_command reads it), or cmd itself (`cmd /c x.bat`)."""
+    name = program.replace('\\', '/').rsplit('/', 1)[-1].rstrip(' .').lower()
+    return name.endswith(('.bat', '.cmd')) or name in ('cmd', 'cmd.exe')
 
 
 PLACEHOLDERS = ('{selector}', '{path}', '{stem}', '{tree}', '{log_dir}', '{n}')
@@ -155,8 +168,8 @@ def _under(tw, path):
 
 def command_argv(sel, tw, log_dir, n):
     """The argv of a command runner's selector, or Usage. A first word with a slash that is not
-    absolute is under `tw`. A .bat or .cmd program runs in cmd.exe, which reads its command line
-    again, so a later word that holds one of its characters is refused (cmd_unsafe)."""
+    absolute is under `tw`. A program cmd.exe runs (runs_in_cmd) reads its command line again, so
+    a later word that holds one of its characters is refused (refuse_cmd_reparse)."""
     runner = 'of the runner for %r in `.kit.json` "redfirst".runners' % sel.runner.get('glob')
     words = [fill(w, sel, tw, log_dir, n) for w in sel.runner['command']]
     words += list(sel.runner.get('args') or [])
@@ -165,16 +178,11 @@ def command_argv(sel, tw, log_dir, n):
         raise Usage('usage: the first word of the command %s names no program' % runner)
     if '/' in prog or '\\' in prog:
         prog = _under(tw, prog)
-    if prog.lower().endswith(('.bat', '.cmd')):
-        for word in words[1:]:
-            c = cmd_unsafe(word)
-            if c is not None:
-                raise Usage('refused: --tests %r: the word %r of the command %s holds %s, which '
-                            'cmd.exe reads again: %s runs in cmd.exe, so the word could run '
-                            'another command; nothing was run. Instead: change the filter or that '
-                            'runner, or name a program that is not a batch file'
-                            % (sel.text, word, runner, _CMD_CHAR_NAMES.get(c, c),
-                               os.path.basename(prog)))
+    if runs_in_cmd(prog):
+        fix = 'change the filter or that runner, or name a program that is not a batch file or cmd'
+        refuse_cmd_reparse(sel, os.path.basename(prog),
+                           [(w, 'the word %r of the command %s' % (w, runner), fix)
+                            for w in words[1:]])
     return [prog] + words[1:]
 
 

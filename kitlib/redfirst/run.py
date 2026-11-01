@@ -413,11 +413,10 @@ def run_one(sel, n, tw, log_dir, files, run):
     log dir are deleted first: only this run's results are read."""
     argv, cwd, env = V.command(sel, tw, log_dir, n)
     log = os.path.join(log_dir, '%d-%s-%s.log' % (n, sel.kind, V.stem(sel.path)))
-    stales = [log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None]
-    result = V.result_path(sel, tw, log_dir, n) if sel.kind == 'command' else None
-    if result and os.path.normcase(result).startswith(os.path.normcase(os.path.join(log_dir, ''))):
-        stales.append(result)        # one in the tree is fresh with the tree, and may be tracked
-    for stale in stales:
+    # A command runner's result file goes wherever it is: an earlier selector of this run may have
+    # written it (no {n} in its name), and a file the base tracks is refused in prepare.
+    for stale in (log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None,
+                  V.result_path(sel, tw, log_dir, n) if sel.kind == 'command' else None):
         try:
             if stale and os.path.lexists(stale):
                 os.remove(stale)
@@ -514,6 +513,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
         if at_base not in (None, 'blob'):
             raise V.Usage('refused: %s is a %s at base %s, not a file' % (f, at_base, base[:10]))
         (had if at_base else new).append(f)
+    refuse_tracked_results(top, base, sels, files)
     if head == rev(top, 'HEAD'):
         rc, out, err = git(top, 'status', '--porcelain', '--', *files)
         if rc != 0:
@@ -533,6 +533,32 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
                 tools_dir=cfg.tools_dir, hold_wait=section['hold_wait'],
                 lock=lock, lock_from=lock_from, repo=grunner.repo_name(cfg, main),
                 timeout=timeout, timeout_from=timeout_from)
+
+
+_TREE = 'TREE'                                          # stands for the throwaway root
+_LOGS = os.path.join(os.path.abspath(os.sep), 'redfirst-logs')   # and for the log folder
+
+
+def refuse_tracked_results(top, base, sels, files):
+    """V.Usage when a command runner's `result` names a path in the throwaway tree that the base
+    holds, or a file the run checks out: the run deletes the result before each command, and a
+    file that was there before the run is no result of it."""
+    inside = {}
+    for n, sel in enumerate(sels, 1):
+        p = V.result_path(sel, _TREE, _LOGS, n) if sel.kind == 'command' else None
+        if p and p.startswith(_TREE + os.sep):
+            inside[p[len(_TREE) + 1:].replace(os.sep, '/')] = sel
+    if not inside:
+        return
+    types = object_types(top, ['%s:%s' % (base, rel) for rel in inside])
+    for rel, sel in inside.items():
+        if rel in files or types.get('%s:%s' % (base, rel)):
+            raise V.Usage('refused: --tests %r: the result %r of the runner for %r in %s is %s, so '
+                          'it is there before the run; nothing was run. Instead: name a result '
+                          'under {log_dir}'
+                          % (sel.text, rel, sel.runner.get('glob'), KEY,
+                             'a file the run checks out' if rel in files
+                             else 'in the tree at base %s' % base[:10]))
 
 
 # ---- the machine lock ---------------------------------------------------------------------------

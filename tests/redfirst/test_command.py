@@ -27,8 +27,9 @@ ENGINE_RUNNER = {'glob': 'tools/engine_tests/*.cs', 'kind': 'command',
 
 # The fake engine: argv is <args file> <tree> <test path> <selector> [<result file>]. It writes its
 # argv to the args file, then runs the test named <selector> in the test file: a line
-# `test <name> needs <function>` passes when the tree's src/calc.py defines that function.
-ENGINE = r'''import json, os, re, sys
+# `test <name> needs <function>` passes when the tree's src/calc.py defines that function. A
+# result file it writes is dated a minute ahead, so only a delete keeps a later run from reading it.
+ENGINE = r'''import json, os, re, sys, time
 args_file, tree, path, selector = sys.argv[1:5]
 result = sys.argv[5] if len(sys.argv) > 5 else None
 with open(args_file, 'w', encoding='utf-8') as f:
@@ -45,6 +46,7 @@ if result and result != '-':
     with open(result, 'w', encoding='utf-8') as f:
         f.write('<testsuites><testsuite name="%s" tests="1" failures="%d" errors="0"/></testsuites>'
                 % (selector, 0 if ok else 1))
+    os.utime(result, (time.time() + 60, time.time() + 60))   # fresh to any later run's clock
 sys.exit(0 if ok else 1)
 '''
 TEST_FILE = 'test MulWorks needs mul\ntest AddWorks needs add\n'
@@ -90,6 +92,22 @@ class BatchFile(unittest.TestCase):
                 self.assertIn("the word 'a&whoami'", str(cm.exception))
                 self.assertIn('cmd.exe reads again', str(cm.exception))
                 self.assertIn('nothing was run', str(cm.exception))
+
+    def test_a_trailing_dot_or_space_and_cmd_itself_count_as_cmd_exe(self):
+        for command in (['tools/run_engine.bat.', '{selector}'], ['RUN.CMD ', '{selector}'],
+                        ['cmd', '/c', r'tools\run_test.bat', '{selector}'],
+                        [r'C:\Windows\System32\cmd.exe', '/c', 'run_test.bat', '{selector}'],
+                        ['CMD.EXE.', '/c', 'run_test.bat', '{selector}']):
+            runner = dict(ENGINE_RUNNER, command=command)
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(V.Usage, "the word 'a&whoami' .*cmd.exe reads again"):
+                    sel('tools/engine_tests/A.cs::a&whoami', runner)
+
+    def test_runs_in_cmd(self):
+        for prog in ('x.bat', 'x.BAT. .', 'a/b/x.cmd', 'cmd', r'C:\W\cmd.exe','cmd.exe '):
+            self.assertTrue(V.runs_in_cmd(prog), prog)
+        for prog in ('godot.exe', 'cmdtool.exe', 'x.bat.exe', 'tools/cmd/godot', 'batch'):
+            self.assertFalse(V.runs_in_cmd(prog), prog)
 
     def test_a_batch_program_with_plain_words_and_an_exe_with_any_word_are_taken(self):
         bat = dict(ENGINE_RUNNER, command=['tools/run_engine.bat', '{selector}'])
@@ -227,6 +245,45 @@ class EngineNoResult(EngineRun):
         self.assertIn('engine: MulWorks FAILED', self.log('1-command-CalcTest.log'))
         self.assertIn('wrote no readable result file in this run', out)
         self.assertNotIn('REDFIRST OK', out)
+
+
+class EngineSharedResult(EngineRun):
+    """Two selectors whose result path is the same file (no {n} in it)."""
+    RUNNER_EXTRA = {'result': '{log_dir}/shared.xml'}
+    RESULT_WORD = '{log_dir}/shared.xml'
+
+    def test_an_earlier_selector_s_result_is_deleted_and_never_read(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks',
+                                  'tools/engine_tests/CalcTest.cs::NoSuchTest')
+        self.assertRegex(out, r'(?m)^RED    tools/engine_tests/CalcTest.cs::MulWorks  1 of 1 ')
+        # The second writes no result: the first one's RED file, dated ahead, is gone.
+        self.assertRegex(out, r'(?m)^ERROR  tools/engine_tests/CalcTest.cs::NoSuchTest  the command '
+                              r'exited 1 and wrote no readable result file')
+        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
+        self.assertFalse(os.path.exists(os.path.join(self.logs, 'shared.xml')))
+
+
+class EngineTrackedResult(EngineRun):
+    """A result path in the tree that is there before the run."""
+    RUNNER_EXTRA = {'result': 'src/calc.py'}
+
+    def test_a_result_the_base_tracks_is_refused_before_anything_is_made(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
+        self.assertEqual(rc, V.EXIT_USAGE, out)
+        self.assertIn("the result 'src/calc.py' of the runner for 'tools/engine_tests/*.cs'", out)
+        self.assertIn('in the tree at base %s' % self.base[:10], out)
+        self.assertEqual((self.booked, self.throwaways()), ([], []))
+
+    def test_a_result_that_is_a_checked_out_file_is_refused(self):
+        runner = dict(self.KIT_JSON['redfirst']['runners'][0], result='{path}')
+        s = V.parse_selector('tools/engine_tests/CalcTest.cs::MulWorks', [runner])
+        with self.assertRaisesRegex(V.Usage, 'is a file the run checks out'):
+            R.refuse_tracked_results(self.wt, self.base, [s], [s.path])
+        R.refuse_tracked_results(self.wt, self.base,
+                                 [V.parse_selector('tools/engine_tests/CalcTest.cs',
+                                                   [dict(runner, result='out/{stem}.xml')])], [])
 
 
 if __name__ == '__main__':

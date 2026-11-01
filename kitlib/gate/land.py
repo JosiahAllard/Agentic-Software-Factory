@@ -66,7 +66,8 @@
                  kitlib.gate.carry passes it again here against the base); its
                  merged gate then runs --full --fresh. Then the verdict check
                  (Lander.verdict_check): every other branch, each of a batch, lands only with a
-                 verdict queued for its tip by any reviewer who is not its author, a carried one
+                 verdict queued for its tip by any reviewer who is not its author (a High-risk
+                 one: a strong-tier reviewer, verdicts.tier_why), a carried one
                  checked the same way. Any miss: REFUSED, the lock released, nothing
                  merged. Last, the scope check (Lander.scope_check): every path the branch changes
                  in a scope of a record it holds, in SCOPE_ALWAYS or in a folder store's folder;
@@ -1274,9 +1275,9 @@ class Lander(object):
     def verdict_check(self):
         """A locked check (docs/gate.md "Landing" step 4), after strict_check: every branch that
         changes no strict path lands too only with a verdict queued for its tip by a reviewer who
-        is not its author (review_refusal, without the tier rule), each branch of a batch on its
-        own entry. None, or why not for the first branch, in batch order, that misses (REFUSED,
-        nothing merged)."""
+        is not its author (review_refusal; the tier rule only for a High-risk one), each branch of
+        a batch on its own entry. None, or why not for the first branch, in batch order, that
+        misses (REFUSED, nothing merged)."""
         for b, t in self.pairs:
             if b in self.strict_hits:       # strict_check passed it, tier rule and all
                 continue
@@ -1296,9 +1297,10 @@ class Lander(object):
         landing: an entry that can be used, queued (not marked failed), at `t`, its reviewer not
         the author (is_author). A carried entry (verdicts.carry) lands only when
         kitlib.gate.carry.check passes again, from the commit reviewed to `t` against
-        self.expect_main. `strict` (a branch that changes a strict path) adds the tier rule
-        (strong_alias: a strong-tier reviewer, whoever built the branch) and sets self.strict_review to the entry and self.strict_carry
-        to the carry's facts, which strict_escalate reports."""
+        self.expect_main. The tier rule (verdicts.tier_why: a strong-tier reviewer, whoever built
+        the branch) holds for a High-risk entry and for `strict` (a branch that changes a strict
+        path), which also sets self.strict_review to the entry and self.strict_carry to the carry's
+        facts, which strict_escalate reports."""
         common, why = repo.common_dir(self.root)
         if not common:
             return 'its verdict queue cannot be found: %s' % (why or 'no git common dir')
@@ -1327,16 +1329,9 @@ class Lander(object):
                 return ('the verdict was given at %s and carried to %s, but the carry does not '
                         'hold against %s %s: %s; review and queue the tip'
                         % (reviewed[:10], t[:10], self.cfg.main_branch, self.expect_main[:10], why))
-        if strict:
-            strong, weak, why = tier_models()
-            if strong is None:
-                return 'the strong-tier models cannot be read: %s' % why
-            model = entry['reviewer_model']
-            if strong_alias(model, strong, weak) is None:
-                return ('the reviewer ran on %s, not a strong-tier model (%s, or a full model id '
-                        'naming it; hosts.json "tiers"): a branch that changes a strict path '
-                        'lands only on a strong-tier review, whoever built it (its author is %s)'
-                        % (model, ', '.join(sorted(strong - weak)) or 'none', entry['author']))
+        why = verdicts.tier_why(entry, strict, tier_models)
+        if why:
+            return why
         if is_author(entry):
             return ('the reviewer %s (%s) is its author (%s): it lands with a review by an agent '
                     'that did not write it' % (entry['reviewer_id'], entry['reviewer'],

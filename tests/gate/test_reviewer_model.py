@@ -81,13 +81,15 @@ class ReviewerModel(GateRepoCase):
         self.assertIn('REFUSED: --reviewer-model opus, but the reviewer %s ran on claude-haiku-5-5 '
                       '(its transcript)' % RID, out)
         self.assertIn('\nInstead: queue it with --reviewer-model haiku, the model it ran on; a '
-                      'branch land.py --check-strict calls STRICT needs a review on opus: dispatch '
-                      'a fresh analyst with model opus (skill branch-review)', out)
+                      'High-risk branch, or one land.py --check-strict calls STRICT, needs a '
+                      'review on opus: dispatch a fresh analyst with model opus (skill '
+                      'branch-review)', out)
 
     def test_the_model_it_ran_on_is_queued(self):
         self.plant(RID, 'claude-haiku-5-5')
         for typed in ('haiku', 'claude-haiku-5-5', 'HAIKU'):
-            code, out, err = self.add(**{'--reviewer-model': typed})
+            # Medium: a High-risk haiku review is refused by the tier rule (test_review_tier)
+            code, out, err = self.add(**{'--risk': 'Medium', '--reviewer-model': typed})
             self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), (typed, err))
         self.plant(RID2, 'claude-opus-5-5')
         self.assert_queued(self.add(**{'--reviewer-id': RID2}))
@@ -116,8 +118,8 @@ class ReviewerModel(GateRepoCase):
         self.assertEqual(AM.models(RID), ['claude-haiku-5-5', 'claude-opus-5-5'])
         fresh = ('\nInstead: the review ran on more than one model (claude-haiku-5-5, '
                  'claude-opus-5-5), which no --reviewer-model can name: dispatch a fresh analyst '
-                 'with model %s, the model the verdict needs (opus for a branch land.py '
-                 '--check-strict calls STRICT; skill branch-review)')
+                 'with model %s, the model the verdict needs (opus for a High-risk branch or one '
+                 'land.py --check-strict calls STRICT; skill branch-review)')
         out = self.assert_refused()
         self.assertIn('but the reviewer %s ran on claude-haiku-5-5 and claude-opus-5-5' % RID, out)
         self.assertIn(fresh % 'opus', out)

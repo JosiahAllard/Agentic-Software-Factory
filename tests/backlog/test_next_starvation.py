@@ -29,21 +29,26 @@ class Releasable(unittest.TestCase):
         return cmod.releasable(r, (statuses or {}).get, closed or (lambda rid: None))
 
     def test_an_owner_hold_whose_cited_question_is_answered_is_releasable(self):
-        got = self.judge(owner_held('AAA', 'Q-1635 until the PM sends its re-cut scope'),
+        got = self.judge(owner_held('AAA', 'Q-1635 until the PM sends its re-cut scope',
+                                    until='owner question:Q-1635 answered'),
                          {'Q-1635': 'answered'})
         self.assertEqual(got, [('owner', 'owner cites Q-1635 answered', 'Q-1635 answered')])
 
     def test_an_open_question_holds(self):
-        self.assertEqual(self.judge(owner_held('AAA', 'Q-1635 first'), {'Q-1635': 'open'}), [])
+        self.assertEqual(self.judge(owner_held('AAA', 'Q-1635 first',
+                                               until='owner question:Q-1635 answered'),
+                                    {'Q-1635': 'open'}), [])
 
     def test_every_cited_id_must_be_met(self):
-        self.assertEqual(self.judge(owner_held('AAA', 'Q-1 and T-2'),
-                                    {'Q-1': 'done', 'T-2': 'open'}), [])
-        got = self.judge(owner_held('AAA', 'Q-1 and T-2'), {'Q-1': 'done', 'T-2': 'done'})
+        r = rec('AAA', priority='2', priority_by='agent', state='blocked',
+                blocked_on='deliberate', until='deliberate after Q-1 and T-2')
+        self.assertEqual(self.judge(r, {'Q-1': 'done', 'T-2': 'open'}), [])
+        got = self.judge(r, {'Q-1': 'done', 'T-2': 'done'})
         self.assertEqual(got[0][2], 'Q-1 done, T-2 done')
 
     def test_an_unknown_or_unread_id_is_never_met(self):
-        self.assertEqual(self.judge(owner_held('AAA', 'Q-9 first'), {}), [])
+        self.assertEqual(self.judge(owner_held('AAA', 'Q-9 first',
+                                               until='owner question:Q-9 answered'), {}), [])
 
     def test_a_hold_that_cites_nothing_is_not_judged(self):
         self.assertEqual(self.judge(owner_held('AAA', 'will you pick a colour?')), [])
@@ -53,6 +58,18 @@ class Releasable(unittest.TestCase):
                 blocked_on='deliberate', until='deliberate after T-7 lands')
         self.assertEqual(self.judge(r, {'T-7': 'done'})[0][:2],
                          ('deliberate', 'deliberate cites T-7 done'))
+
+    def test_an_owner_hold_citing_the_answered_ruling_that_set_it_is_not_releasable(self):
+        # The citation block --on owner needs is often the answered question that set the hold
+        # (a "Defer" answer): it is the hold's ground, not its end.
+        r = owner_held('AAA', 'Owner deferred the read (Q-71, 2026-01-02). Resume when asked')
+        self.assertEqual(self.judge(r, {'Q-71': 'answered'}), [])
+
+    def test_an_owner_until_question_ends_the_hold_once_answered(self):
+        r = owner_held('AAA', 'Q-72: pick the colour', until='owner question:Q-72 answered')
+        self.assertEqual(self.judge(r, {'Q-72': 'open'}), [])
+        self.assertEqual(self.judge(r, {'Q-72': 'answered'}),
+                         [('owner', 'owner cites Q-72 answered', 'Q-72 answered')])
 
     def test_a_closed_item_blocker_is_releasable(self):
         r = rec('AAA', priority='2', priority_by='agent', state='blocked', blocked_on='item:BBB')
@@ -73,7 +90,8 @@ class Releasable(unittest.TestCase):
 class ReleasableHolds(unittest.TestCase):
 
     def test_the_line_names_the_pm_for_an_owner_hold(self):
-        s = snap(owner_held('AAA', 'Q-5 first'), priced('BBB'))
+        s = snap(owner_held('AAA', 'Q-5 first', until='owner question:Q-5 answered'),
+                 priced('BBB'))
         out, note = omod.releasable_holds(s, None, lambda rid: None,
                                           hub=lambda: ({'Q-5': 'answered'}, None))
         self.assertIsNone(note)
@@ -86,8 +104,13 @@ class ReleasableHolds(unittest.TestCase):
         hub = mock.Mock(side_effect=AssertionError('asked'))
         self.assertEqual(omod.releasable_holds(s, None, lambda rid: None, hub=hub), ([], None))
 
+    def test_the_hub_is_not_asked_for_an_id_cited_only_in_owner_ask(self):
+        s = snap(owner_held('AAA', 'Owner deferred the read (Q-73)'))
+        hub = mock.Mock(side_effect=AssertionError('asked'))
+        self.assertEqual(omod.releasable_holds(s, None, lambda rid: None, hub=hub), ([], None))
+
     def test_a_hub_that_cannot_be_read_is_one_note_and_item_ends_still_count(self):
-        s = snap(owner_held('AAA', 'Q-5 first'),
+        s = snap(owner_held('AAA', 'Q-5 first', until='owner question:Q-5 answered'),
                  rec('CCC', priority='3', priority_by='agent', state='blocked',
                      blocked_on='item:GONE'))
         out, note = omod.releasable_holds(
@@ -208,7 +231,8 @@ class NextCli(unittest.TestCase):
         self.publish({
             'AAA': record_text(id='AAA', priority='2', priority_by='agent', state='blocked',
                                blocked_on='owner', scope='a/aaa.py',
-                               owner_ask='Q-1635 until the PM sends its re-cut scope'),
+                               owner_ask='Q-1635 until the PM sends its re-cut scope',
+                               until='owner question:Q-1635 answered'),
             'BBB': record_text(id='BBB', priority='3', priority_by='agent', scope='a/bbb.py')})
 
     def test_an_answered_hold_is_releasable_and_counted(self):

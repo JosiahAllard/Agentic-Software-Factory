@@ -26,7 +26,7 @@ Any other text is free text: it is kept, and nothing acts on it (it is cleared b
   expand(path, environ)     a path's %VAR%s filled from `environ`; None when one is not set
   cited_ids(text)           the hub ids (Q-n, T-n) a free text cites, each once
   releasable(rec, status, closed)
-                            the blocked_on members of `rec` whose cited end is already met
+                            the blocked_on members of `rec` whose `until` end is already met
                             (`next`'s RELEASABLE lines; docs/backlog.md
                             "next: a short offer's causes")
 
@@ -167,10 +167,16 @@ def releasable(rec, status, closed):
 
       item:X    X is closed: `closed(X)` gives the short sha of the commit that closed it (None:
                 still live, never closed, or cannot tell)
-      any other the member cites at least one hub id (`owner_ask` for `owner`, and the member's
-                `until` text) and every one is met: a question answered, filed, logged or done
-                (ANSWERED), a to-do done. `status(id)` gives the hub status, or None (unknown,
-                or the hub was not read: never met). A member that cites nothing is not judged.
+      any other the member's `until` text cites at least one hub id and every one is met: a
+                question answered, filed, logged or done (ANSWERED), a to-do done. `status(id)`
+                gives the hub status, or None (unknown, or the hub was not read: never met). A
+                member with no `until` line, or one that cites no id, is not judged.
+
+    Only `until` states a hold's end. `owner_ask` and a block's reason carry the citation the hold
+    rests on (record.block_citation_error), which is often the answered question that set it (a
+    "Defer" answer), so an id there is the hold's ground, never its end. A question asked in
+    `owner_ask` and still open needs no reading here: its answer, filed on the record, clears the
+    `owner` hold itself (plan.plan_answer).
 
     `why` is what `next` prints, `reason` the `unblock --reason` it suggests."""
     out = []
@@ -182,10 +188,7 @@ def releasable(rec, status, closed):
             if sha:
                 out.append((member, '%s closed (%s)' % (member, sha), '%s closed' % target))
             continue
-        texts = [cond for m, cond in untils if m == member]
-        if member == 'owner':
-            texts.insert(0, rec.get('owner_ask') or '')
-        ids = cited_ids(' '.join(texts))
+        ids = cited_ids(' '.join(cond for m, cond in untils if m == member))
         if ids and all(_met(i, status) for i in ids):
             shown = ', '.join(_shown(i, status) for i in ids)
             out.append((member, '%s cites %s' % (member, shown), shown))

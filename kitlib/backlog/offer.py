@@ -496,10 +496,10 @@ def held_of(snap, session):
 
 
 def cites_hub(recs):
-    """True when any record in `recs` cites a hub id where conditions.releasable reads one."""
+    """True when any record in `recs` cites a hub id where conditions.releasable reads one: an
+    `until` line."""
     from . import conditions as cmod
-    return any(cmod.cited_ids(' '.join([r.get('owner_ask') or ''] + r.all('until')))
-               for r in recs)
+    return any(cmod.cited_ids(' '.join(r.all('until'))) for r in recs)
 
 
 def releasable_holds(snap, session, history, hub=None):

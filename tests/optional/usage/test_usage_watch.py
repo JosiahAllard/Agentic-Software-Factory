@@ -215,28 +215,54 @@ class StatuslineRoundTrip(unittest.TestCase):
             self.assertEqual(r["five_reset"], dt.datetime(2026, 10, 4, 15, 0, tzinfo=UTC))
             self.assertEqual([f for f in os.listdir(d) if f.endswith(".tmp")], [])
 
-    def test_failed_move_leaves_no_tmp(self):
-        # Hold the target open with no sharing, as a reader would: the move fails.
+    @contextlib.contextmanager
+    def held(self, target, share):
+        """Hold target open for reading with only `share` (FILE_SHARE_* bits), as a reader would."""
         import ctypes
         from ctypes import wintypes
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         k32.CreateFileW.restype = wintypes.HANDLE
         k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
                                     wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        h = k32.CreateFileW(target, 0x80000000, share, None, 3, 0x80, None)   # GENERIC_READ, OPEN_EXISTING
+        self.assertNotEqual(h, wintypes.HANDLE(-1).value)
+        try:
+            yield
+        finally:
+            k32.CloseHandle(h)
+
+    def write_while_held(self, share):
+        """Run the status line with the file held; (stdout, file text before, after, leftover .tmp)."""
         with tempfile.TemporaryDirectory() as d:
             target = os.path.join(d, "usage-status.json")
             status(target, 1, 1, "2026-10-04T12:00:00.0000000+00:00")
-            h = k32.CreateFileW(target, 0x80000000, 0, None, 3, 0x80, None)   # GENERIC_READ, share none
-            self.assertNotEqual(h, wintypes.HANDLE(-1).value)
-            try:
+            with open(target, encoding="utf-8") as f:
+                before = f.read()
+            with self.held(target, share):
                 five = int(dt.datetime(2026, 10, 4, 15, 0, tzinfo=UTC).timestamp())
                 p = self.run_statusline({"session_id": "s1", "model": {"display_name": "Opus"},
                                          "rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": five}}}, d)
                 self.assertEqual(p.returncode, 0, p.stderr)
-                self.assertEqual(p.stdout.strip(), "[Opus]  5h 42%")
-                self.assertEqual([f for f in os.listdir(d) if f.endswith(".tmp")], [])
-            finally:
-                k32.CloseHandle(h)
+                tmps = [f for f in os.listdir(d) if f.endswith(".tmp")]
+            with open(target, encoding="utf-8") as f:
+                after = f.read()
+            return p.stdout.strip(), before, after, tmps
+
+    def test_failed_move_leaves_no_tmp(self):
+        # Held with read sharing only: the status line reads and merges the file, but the move onto
+        # it fails, the retry too, and the temp file is removed.
+        out, before, after, tmps = self.write_while_held(1)            # FILE_SHARE_READ
+        self.assertEqual(out, "[Opus]  5h 42%")
+        self.assertEqual(tmps, [])
+        self.assertEqual(after, before)
+
+    def test_an_unreadable_file_is_never_overwritten(self):
+        # Held with delete sharing only: the file cannot be read, but it could be replaced, so only
+        # the script's own check keeps it from being overwritten unseen.
+        out, before, after, tmps = self.write_while_held(4)            # FILE_SHARE_DELETE
+        self.assertEqual(out, "[Opus]  5h 42%")
+        self.assertEqual(tmps, [])
+        self.assertEqual(after, before)
 
     def test_stale_tmp_swept_and_others_kept(self):
         five = int(dt.datetime(2026, 10, 4, 15, 0, tzinfo=UTC).timestamp())

@@ -9,7 +9,7 @@ from unittest import mock
 
 from kitlib import pmwatch as W
 from kitlib.hubjobs import session_watch as SW
-from kitlib.hubsite import jobs
+from kitlib.hubsite import jobs, push
 
 T0 = 1_800_000_000.0
 
@@ -142,8 +142,14 @@ class Pushes(Base):
 
     def test_push_of(self):
         self.assertEqual(SW.push_of(['STOPPED coord-a at 2026-10-29T06:00:00']), ('stopped', 'coord-a'))
-        self.assertEqual(SW.push_of(['USAGE account 2 seven_day 95% (now 96%)']), ('usage', '2'))
-        self.assertEqual(SW.push_of(['RESET account codex (weekly 90% -> 3%)']), ('reset', 'codex'))
+        # A usage or reset push names the account, the window and the percentage now, in
+        # push.field's characters, so the PM need not read the job's note.
+        self.assertEqual(SW.push_of(['USAGE account 2 seven_day 95% (now 96%)']), ('usage', '2:seven_day:96'))
+        self.assertEqual(SW.push_of(['USAGE account 1 five_hour 98% (now 98%)']), ('usage', '1:five_hour:98'))
+        self.assertEqual(SW.push_of(['RESET account codex (weekly 90% -> 3%)']), ('reset', 'codex:seven_day:3'))
+        self.assertEqual(SW.push_of(['RESET account 1 (weekly 95% -> 0%)']), ('reset', '1:seven_day:0'))
+        self.assertEqual(push.field(SW.push_of(['USAGE account 2 seven_day 95% (now 96%)'])[1]), '2:seven_day:96')
+        self.assertEqual(SW.push_of(['USAGE account 2 odd line']), ('usage', '2'))     # another shape: as before
         self.assertEqual(SW.push_of(['LOCKNOTICE n1 window']), ('locknotice', 'n1'))
         self.assertEqual(SW.push_of(['REMOTE pm link lost: x']), ('remote', 'pm'))
         self.assertEqual(SW.push_of(['ERROR idle check: boom']), ('error', 'idle'))

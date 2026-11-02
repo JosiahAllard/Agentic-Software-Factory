@@ -2,7 +2,8 @@
 session the write jail holds whose role may edit a main checkout (a coordinator or pm mark): the
 guard cannot tell where it writes, so it is unplaced (a warned allow by default, a deny when the
 rule denies), as a computed PowerShell target is (rules.ps_drive_jail); it was a silent allow.
-The owner's own session and the `plain` mark are not jailed and pass."""
+A .NET call's path is refused under write-jail at every mode (NET_FORM). The owner's own session
+and the `plain` mark are not jailed and pass."""
 import unittest
 from unittest import mock
 
@@ -14,6 +15,7 @@ from .claudehost import action, decide
 
 PS_FORMS = ("cd $x; [IO.File]::WriteAllText('x.txt', 'y')", 'cd $x; Set-Content x.txt y',
             'cd $x; New-Item x.txt', 'cd $x; Remove-Item x.txt', 'Set-Location $x; Set-Content x.txt y')
+NET_FORM = PS_FORMS[0]      # .NET reads the path against the process's directory: write-jail
 BASH_FORMS = ('cd $x && echo y > x.txt', 'cd "$x"; touch x.txt', 'cd $x && rm x.txt')
 # other moves the guard cannot follow (shell.cd_target gives None): a computed `( )`, pushd, an
 # environment variable
@@ -58,7 +60,8 @@ class JailedMainSession(Base):
                     with self.subTest(mark=mark, where=where, text=text):
                         d = self.judge(form, text, cwd, mark)
                         self.assertIsNotNone(d, 'allowed')
-                        self.assertEqual((d.verdict, d.rule), ('deny', rules.UNPLACED), d.reason)
+                        rule = 'write-jail' if text == NET_FORM else rules.UNPLACED
+                        self.assertEqual((d.verdict, d.rule), ('deny', rule), d.reason)
                         self.assertIn('cannot tell where it writes', d.reason)
 
     def test_a_warned_allow_at_the_default_mode(self):
@@ -67,7 +70,8 @@ class JailedMainSession(Base):
                 with self.subTest(text=text):
                     ev = (W.ps if form == 'ps' else W.bash)(text, self.w.wt, False)
                     d = guard.decide(action(ev), self.w.ctx(environ=marked('coordinator')))
-                    self.assertEqual((d.verdict, d.rule), ('allow', rules.WARNED), d.reason)
+                    want = ('deny', 'write-jail') if text == NET_FORM else ('allow', rules.WARNED)
+                    self.assertEqual((d.verdict, d.rule), want, d.reason)
                     self.assertIn('cannot tell where it writes', d.reason)
 
     def test_other_moves_it_cannot_follow(self):

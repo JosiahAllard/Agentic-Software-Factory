@@ -121,7 +121,9 @@ class Absolute(Base):
 
 class Computed(Base):
     """A path the line computes may be relative too: judged as a cmdlet's computed target is,
-    unplaced for an agent session from every location (W.deny_unplaced holds that rule at deny)."""
+    unplaced for an agent session from every location (W.deny_unplaced holds that rule at deny);
+    at the default mode, where unplaced only warns, refused under write-jail
+    (test_dotnet_var_write.py)."""
 
     COMPUTED = ("[IO.File]::WriteAllText($path, $text)", "$p = 'x.txt'; [IO.File]::WriteAllText($p, 'y')",
                 r"[IO.File]::WriteAllText([IO.Path]::Combine('a', 'x.txt'), 'y')")
@@ -131,16 +133,17 @@ class Computed(Base):
             with self.subTest(text=t):
                 d = self.denied(self.run_ps(t), 'unplaced')
                 self.assertIn('the guard cannot tell where it writes', d.reason)
-                self.denied(self.run_ps(t, env=COORDINATOR, sub=False), 'unplaced')
+                # a role that may edit a main checkout passes the unplaced check: write-jail refuses it
+                self.denied(self.run_ps(t, env=COORDINATOR, sub=False), 'write-jail')
                 self.denied(self.run_ps(t, cwd=self.w.main), 'unplaced')
 
     def test_the_owners_own_session_in_a_worktree(self):
         self.allowed(self.run_ps(self.COMPUTED[0], sub=False))
 
-    def test_by_default_a_warning(self):
+    def test_by_default_refused_under_write_jail(self):
         with mock.patch.dict(modes.DEFAULTS, {rules.UNPLACED: modes.WARN}):
             d = guard.decide(action(W.ps(self.text(self.COMPUTED[0]), self.w.wt, True)), self.w.ctx(environ={}))
-        self.assertEqual((d.verdict, d.rule), ('allow', rules.WARNED), d.reason)
+        self.assertEqual((d.verdict, d.rule), ('deny', 'write-jail'), d.reason)
         self.assertIn('[Environment]::CurrentDirectory', d.reason)
 
 

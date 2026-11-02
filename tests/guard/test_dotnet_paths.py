@@ -452,8 +452,10 @@ class LoosenedEdges(Base):
                     self.assertIn('cannot tell where it writes', d.reason)
 
     def test_after_a_move_to_an_unknown_location_by_default(self):
-        """At the rule's default mode (unplaced warns) the call goes ahead with the refusal as a
-        warning, as a cmdlet write there does; never a silent allow."""
+        """At the rule's default mode (unplaced warns) a call whose path the guard does not read goes
+        ahead with the refusal as a warning, as a cmdlet write there does; never a silent allow. A
+        path it reads is refused under write-jail (rules.ps_drive_jail): .NET reads it against the
+        process's directory."""
         from unittest import mock
         from kitlib import guard
         from kitlib.guard import modes, rules
@@ -462,7 +464,9 @@ class LoosenedEdges(Base):
             for text in self.UNKNOWN + (r"cd $x; Set-Content x.txt y",):
                 with self.subTest(text=text):
                     d = guard.decide(action(W.ps(text, self.w.wt, True)), self.w.ctx(environ={}))
-                    self.assertEqual((d.verdict, d.rule), ('allow', rules.WARNED), d.reason)
+                    read = 'Invoke' not in text and 'Set-Content' not in text
+                    want = ('deny', 'write-jail') if read else ('allow', rules.WARNED)
+                    self.assertEqual((d.verdict, d.rule), want, d.reason)
                     self.assertIn('the guard cannot tell where it writes' if 'Invoke' not in text
                                   else 'whose path the guard does not read', d.reason)
 

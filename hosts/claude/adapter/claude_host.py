@@ -1,4 +1,4 @@
-"""CLAUDE-SPECIFIC SEAM of kitlib.pmwatch (ARCHITECTURE "Hosts").
+"""CLAUDE-SPECIFIC SEAM of kitlib.pmwatch (ARCHITECTURE "Host split").
 
 Everything here knows how Claude Code lays out its files: the ~/.claude* config folders, their
 projects/<folder>/<id>.jsonl transcripts with subagent transcripts under <id>/, the

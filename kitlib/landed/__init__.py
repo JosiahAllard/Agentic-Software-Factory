@@ -59,6 +59,7 @@ def git(root, *args):
 
 NO_SUCH_REMOTE = 2      # `git remote get-url <name>` for a remote this clone does not have
 NOT_HERE = 'not in this clone'
+UNREAD = False          # remote_main's sha when the remote is unreachable and was never fetched
 
 
 class NoAnswer(Exception):
@@ -66,8 +67,9 @@ class NoAnswer(Exception):
 
 
 def remote_main(root, remote, main):
-    """`(sha or None, how)`: the remote's main branch ('' when it has none), or None when this
-    clone has no remote at all. NoAnswer when git cannot say whether it has the remote, or when
+    """`(sha or None, how)`: the remote's main branch ('' when it has none), None when this
+    clone has no remote at all, or UNREAD when the remote cannot be reached and has no fetched
+    tracking ref either (nothing to compare). NoAnswer when git cannot say whether it has the remote, or when
     `remote` is missing but other remotes exist.
 
     GOTCHA: any failure of `remote get-url` read as "no remote", so a
@@ -96,7 +98,7 @@ def remote_main(root, remote, main):
     if sha is not None:
         return sha, 'ls-remote %s' % remote
     tracked, _ = refs.remote_tip(remote, main, root)
-    return (tracked or ''), '%s unreachable: last fetched refs/remotes/%s/%s' % (remote, remote, main)
+    return (tracked or UNREAD), '%s unreachable: last fetched refs/remotes/%s/%s' % (remote, remote, main)
 
 
 def contains(root, tip, target):
@@ -236,10 +238,13 @@ def look(root, ref):
     else:
         out.append('remote     %s  %s/%s  (%s)' % ((target or '-')[:12], remote, main_branch, how))
         where = '%s/%s' % (remote, main_branch)
-    landed, why = contains(root, tip, target) if target else (None if target is None else False,
-                                                              None)
+    landed, why = contains(root, tip, target) if target else (
+        None if target is None or target is UNREAD else False, None)
     if target is None:
         out.append('contained  UNKNOWN: local %s could not be read' % main_branch)
+    elif target is UNREAD:
+        out.append('contained  UNKNOWN: %s could not be read: it is unreachable and %s was never '
+                   'fetched here' % (where, where))
     elif landed is None and why == NOT_HERE:
         out.append('contained  UNKNOWN: %s is not in this clone - `git fetch %s`, then re-run'
                    % (target[:12], remote))

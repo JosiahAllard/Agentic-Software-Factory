@@ -140,6 +140,16 @@ class Containment(Fixture):
         self.assertEqual(code, landed.LANDED, out)
         self.assertIn('origin unreachable: last fetched refs/remotes/origin/main', out)
 
+    def test_an_unreachable_remote_never_fetched_is_unknown_never_no(self):
+        """No tracking ref and no remote: there was no data, and it read `contained  no`."""
+        self.git('update-ref', '-d', 'refs/remotes/origin/main')
+        self.git('remote', 'set-url', 'origin', os.path.join(self.tmp, 'gone.git'))
+        code, out = self.look()
+        self.assertEqual(code, landed.NOT_YET, out)
+        self.assertNotIn('contained  no', out)
+        self.assertIn('contained  UNKNOWN: origin/main could not be read', out)
+        self.assertNotIn('LANDED', out.replace('NOT YET', ''))
+
     def test_a_remote_sha_this_clone_lacks_is_not_judged(self):
         other = os.path.join(self.tmp, 'other')
         self.git('clone', '-q', '-b', self.MAIN, self.fx.remote, other, cwd=self.tmp)

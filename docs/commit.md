@@ -19,7 +19,7 @@ It stages exactly the PATHs named and commits them in the work tree that DIR is 
 - No flag may be abbreviated.
 
 What it refuses (`kitlib/commit/__init__.py`, `_commit`):
-- **Explicit paths only.** A directory, `.`, `-A` or a glob is a usage error. A path outside the work tree is a usage error too.
+- **Explicit paths only.** A directory, `.`, `-A`, `--all` or a path with a `*` is a usage error (a `?` or `[` pattern is not tested). A path outside the work tree is a usage error too.
 - **Foreign staged files.** Anything already staged and not named is refused, because it may belong to another session.
   - With `"commit".merge_fold` on, during a merge with one MERGE_HEAD, the files the merge staged itself are exempt (`merge_owned`).
   - An owner-only file is exempt only when its staged state is exactly the merged branch's copy: the same mode and blob as `MERGE_HEAD`'s, or a deletion of a path `MERGE_HEAD` deleted (`carries_merged_copy`). That branch must have changed it from the merge base, so the merge is carrying the owner's change in, not undoing this branch's. Every commit the merge brings in (reachable from `MERGE_HEAD`, not from `HEAD`) that changes it must be authored by the owner or carry an owner approval the hub verifies, judged as `gate land` judges a branch (`non_owner_paths`, through `kitlib.guard.ownercommits.violations` against `HEAD`); when git cannot tell, it stays refused. A commit reachable from `<remote>/<main>` as last fetched is not judged again (`landed_main`, the ref pre-push trusts): it was judged when it landed, and an approved one's approval stops verifying 24 hours after the owner's decision, or whenever the hub is down. A conflict resolved to that copy counts too; any other staged state, an unresolved conflict, or an octopus merge stays refused.
@@ -37,7 +37,7 @@ What it refuses (`kitlib/commit/__init__.py`, `_commit`):
   - A HEAD git cannot read is refused too, except on an unborn branch.
 - **Machine paths.** A machine path in the subject or body is refused (`kitlib.machinepaths.find`), unless the commit is `--owner-authored`.
   - A machine path in the staged copy of any file being committed is refused too, under the repository's own `"machine_paths"` config. There is no owner exemption here. This check fails closed.
-  - Either refusal unstages what this call staged.
+  - The message check runs before anything is staged; the staged-copy refusal unstages what this call staged.
 - **Owner-only paths** (the `owner` section; the rule is in `kitlib/config/owner.py`) are committed only by the owner, with `--owner-authored`.
   - `--owner-authored` requires the author identity git will record (`git var GIT_AUTHOR_IDENT`) to be `"owner".email`. It must not be in `"owner".agent_emails`.
   - `--owner-approved` is required only when an owner-only path is in the commit.
@@ -48,13 +48,13 @@ What it refuses (`kitlib/commit/__init__.py`, `_commit`):
 The message is the subject, then the body, then the trailers:
 - The trailers are the owner-approval lines (`Owner-Approval: hub:A-<n>` first, with `--owner-approval`), then `Co-Authored-By: Claude <model> <noreply@anthropic.com>`.
 - An `--owner-authored` commit carries `Owner-Authored: yes` instead of `Co-Authored-By`.
-- The model comes from `--model`, else `CLAUDE_AGENT_MODEL`. A blank value counts as unset.
+- The model comes from `--model`, else `CLAUDE_AGENT_MODEL`. A blank value counts as unset; with none, or with `--model` and `--owner-authored` together, the call is a usage error.
 - `"Claude "` is added unless the name is a `"commit".coauthor_families` family, or starts with one followed by a space, `.` or `-`.
 - The session line comes last (`kitlib.commit.session_lines`). Lines of the form `<key>: <value>` that end the body, `<key>` being a host's `attribution.session_trailer` key in `hosts.json` (`Claude-Session`), are taken out of the body and written in the trailer block, where git reads them as trailers. This holds with or without the environment variable below, so a `-b "...~~Claude-Session: <url>"` is a trailer, not a body line. The same line anywhere else in the body stays in the body.
   - With no such line, an agent's commit on Claude gets `Claude-Session: https://claude.ai/code/<id>`, `<id>` being `CLAUDE_CODE_BRIDGE_SESSION_ID`. Nothing is written when that variable is unset, blank, or not a plain id (letters, digits, `_`, `-`).
   - The URL prefix and the variable name are harness facts observed on 2026-10-14, not a documented contract. A host change to either is a `hosts.json` edit.
   - An `--owner-authored` commit gets no session line from the environment. Codex has no session trailer (`"session_trailer": null`).
-- The body comes from `-b TEXT`, where a typed `\n` becomes a newline (`~~` also becomes a newline; for a literal `~~` use --body-file), or from `--body-file FILE`, read as UTF-8 with CRLF changed to LF.
+- The body comes from `-b TEXT`, where a typed `\n` becomes a newline (`~~` also becomes a newline; for a literal `~~` use --body-file), or from `--body-file FILE`, read as UTF-8 with a BOM dropped, CRLF changed to LF and trailing whitespace and leading blank lines trimmed; an unreadable, non-UTF-8 or empty file is a usage error.
   - `-m` takes the subject once; a second `-m` is a usage error (exit 2) pointing at `-b` / `--body-file`, and nothing is committed.
   - A `-b` whose whole value names an existing file, or looks like an absolute path, is a usage error.
 
@@ -63,7 +63,7 @@ The message is the subject, then the body, then the trailers:
 After a commit that includes a `.md` file or an owner-only file, it prints the doc-budget verdict.
 - The kit's `tools/doc_budget.py -C <root>` produces it, and `kitlib.verdict` judges it.
 - A `doc index` verdict follows (`kitlib.commit.doc_index_check`: `tools/doc_index.py -C <root>`, judged on `DOC INDEX OK` / `DOC INDEX FAILED`). Either failing prints the follow-up-commit notice. `.kit.json` "doc_index".enabled false prints nothing.
-- With no such tool, the verdict is `docs      NOT CHECKED - ...`.
+- With no such tool, the verdict is `docs      NOT CHECKED - ...`; with no `doc_index.py`, the doc index line is a NOT CHECKED line too.
 - A failing verdict leaves the commit in place. It only asks for a follow-up commit.
 
 | Code | Meaning |
@@ -87,7 +87,7 @@ Refused before anything is written (exit 1, `Nothing was written or committed.`)
 
 The same content (`kitlib.hubsite.approvals.same_content_error`): HEAD is the approval's `head`, or a descendant of it (`git merge-base --is-ancestor`) where every approved path has the same tree entry (mode, type and object id, or none) as at the `head`. The main branch may move on with other work after the owner approves: the change written on HEAD is still, path for path, the change the owner saw. An approved path edited, created, removed, renamed or given another mode since the `head` refuses, and the refusal names the first. Only the approved paths are compared (the owner's choice), not every owner-only path. The hub's verify route still checks the signed `head` exactly: the client proves the same content with git and asks the hub for the `head`.
 
-A staged file the call does not name refuses first, as for any commit.
+A staged file the call does not name refuses as for any commit: after the hub lookup and the render-source and merge refusals, before the pre-write checks.
 
 The work tree stays at the approval's base: never copy the approved content in first, or the call refuses (`prewrite_error`: the file is not its `base_blob`). `commit.py` writes the approved content from the hub.
 
@@ -97,7 +97,7 @@ The message carries `Owner-Approval: hub:A-<n>` first in its trailer block, then
 - The commit must carry that one `Owner-Approval` value, have one parent, and hold each changed path present as a regular file (`kitlib.guard.ownercommits.irregular`).
 - Its changed paths and their blobs go to the verify route, then to the consume route with the version the snapshot gave, then to the verify route again with the commit. An approval this commit consumed already is only verified again.
 - It prints `approval  hub:A-<n> consumed by <commit>`.
-- On any failure the commit stands and the call exits 1 with `refused: hub:A-<n> was not consumed: <why>.`, or, when the consume route consumed it and the verify after it fails, `refused: hub:A-<n> was consumed by <commit>, and the hub does not verify it for that commit: <why>.` (`approval.consume_refusal`), then the command that retries (for a consumed approval, it only asks the hub to verify again): `python <kit>/tools/commit.py --owner-approval hub:A-<n> --consume <commit>`, run in the same work tree. That form (`_consume`) runs only these steps, for a COMMIT that `git rev-parse` resolves in the work tree.
+- On any failure the commit stands and the call exits 1 with `refused: hub:A-<n> was not consumed: <why>.` (the `--consume` form below prints `refused: <why>. hub:A-<n> was not consumed.`), or, when the consume route consumed it and the verify after it fails, `refused: hub:A-<n> was consumed by <commit>, and the hub does not verify it for that commit: <why>.` (`approval.consume_refusal`), then the command that retries (for a consumed approval, it only asks the hub to verify again): `python <kit>/tools/commit.py --owner-approval hub:A-<n> --consume <commit>`, run in the same work tree. That form (`_consume`) runs only these steps, for a COMMIT that `git rev-parse` resolves in the work tree.
 
 Landing it: `gate land` and the pre-push hook (`kitlib.guard.ownercommits.violations`) pass a non-owner commit that changes an owner-only path only when it carries exactly one `Owner-Approval: hub:A-<n>`, has one parent (the approval's `head`, or a descendant of it with the same content, as above), changes exactly the approval's files to their approved blobs as regular files (mode 100644 or 100755: a symlink or gitlink entry refuses, `ownercommits.irregular`), and the hub verifies the approval as consumed by that commit. A merge, a root commit, or any doubt of the hub keeps it refused. An approval verifies until 24 hours after the owner's decision, consumed or not (`APPROVED_TTL_S`, `kitlib/hubsite/approvals.py`), so the branch must land within that time.
 
@@ -107,7 +107,7 @@ Elsewhere the trailer is shown and claims nothing. The review pack's co-author s
 
 ## machine_paths.py
 
-`machine_paths.py [-C DIR]` searches every file git tracks in the work tree (`kitlib.machinepaths.tracked_files`), never an untracked one. It looks for a drive-rooted machine folder, or a drive-rooted user profile, or a posix home (`/home/<name>`; a placeholder, `/home` alone and a path that merely contains `home` do not match). The machine folders are the machine config's `machine_path_folders` (docs/kit-json.md "Machine config keys"); the kit codes no folder name. Unset, only drive-rooted user-profile paths are searched, and the tree sweep prints a `NOTE:` line naming the key (`kitlib.machinepaths.UNSET_NOTE`). The tree sweep, the staged-file check of commit.py (`kitlib.machinepaths.scan_staged`), the message check of commit.py (`machine_path_error`) and the free-text check of backlog.py (`kitlib.backlog.plan.refuse_machine_paths`) all read it. A machine config that cannot be read does not stop any of them: user-profile paths are still searched, and each prints a `WARNING: machine config ...` line that names no value from the file: commit.py prints it once (the message check, or the staged-file check of an --owner-authored commit), and backlog.py adds it to a refusal or to the lines of the write (`kitlib.backlog.store.add_plan_note`). The `kitlib/machinepaths` docstring gives the pattern and the allow-list rules.
+`machine_paths.py [-C DIR]` (`--root` is an alias of `-C`) searches every file git tracks in the work tree (`kitlib.machinepaths.tracked_files`), never an untracked one. It looks for a drive-rooted machine folder, or a drive-rooted user profile, or a posix home (`/home/<name>`; a placeholder, `/home` alone and a path that merely contains `home` do not match). The machine folders are the machine config's `machine_path_folders` (docs/kit-json.md "Machine config keys"); the kit codes no folder name. Unset, only drive-rooted user-profile paths are searched, and the tree sweep prints a `NOTE:` line naming the key (`kitlib.machinepaths.UNSET_NOTE`). The tree sweep, the staged-file check of commit.py (`kitlib.machinepaths.scan_staged`), the message check of commit.py (`machine_path_error`) and the free-text check of backlog.py (`kitlib.backlog.plan.refuse_machine_paths`) all read it. A machine config that cannot be read does not stop any of them: user-profile paths are still searched, and each prints a `WARNING: machine config ...` line that names no value from the file: commit.py prints it once (the message check, or the staged-file check of an --owner-authored commit), and backlog.py adds it to a refusal or to the lines of the write (`kitlib.backlog.store.add_plan_note`). The `kitlib/machinepaths` docstring gives the pattern and the allow-list rules.
 
 | Code | Meaning |
 |---|---|
@@ -118,7 +118,7 @@ Elsewhere the trailer is shown and claims nothing. The review pack's co-author s
 ## `.kit.json` keys read
 
 docs/kit-json.md lists every key with its default.
-- `commit.merge_fold` and `commit.coauthor_families` are read by commit.py.
+- `commit.merge_fold` and `commit.coauthor_families` are read by commit.py, and also by sync_base.py (`merge_fold`) and the ledger's commits (`coauthor_families`).
 - `owner.*` (paths, paths_except, email, agent_emails, trailer) is read by commit.py. It comes from the working tree's `.kit.json`.
 - `checkout_guard.rule_pointer` is the refusal's pointer to where the rule is written down.
 - `repo.main_branch` is named in the `--lander-main-checkout` usage error.

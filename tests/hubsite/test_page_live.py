@@ -61,6 +61,31 @@ class NudgeTest(unittest.TestCase):
         self.assertIn("made while away", got["list"])
         self.assertEqual(got["waiting"], 1)                     # and the page waits again
 
+    def test_a_hidden_tab_holds_no_long_poll_and_reads_again_when_shown(self):
+        # each long-poll holds one of the browser's few connections to the hub: hidden tabs
+        # holding theirs can stall the owner's writes (KIT-HUB-COMPLETE-FREEZE)
+        got = dom("""
+            await start();
+            const reads = () => calls.filter(c => c.path === "/snapshot").length;
+            const polls = () => calls.filter(c => c.path.startsWith("/wait")).length;
+            const before = { waiting: waits.length, reads: reads(), polls: polls() };
+            await visible(false);
+            const hidden = { waiting: waits.length, reads: reads() - before.reads, polls: polls() - before.polls, sleeps: sleeps() };
+            server.snap.collections = { todos: { "T-1": { status: "open", title: "made while hidden", from: "pm" } } };
+            server.snap.revision++;
+            await fireTimers();
+            const still = { waiting: waits.length, reads: reads() - before.reads, polls: polls() - before.polls };
+            await visible(true);
+            return { before: before.waiting, hidden, still, shown: { waiting: waits.length, reads: reads() - before.reads },
+                     list: text($("#list")), err: text($("#loaderr")) };
+        """, snapshot(), hash="#todo")
+        self.assertEqual(got["before"], 1)
+        self.assertEqual(got["hidden"], {"waiting": 0, "reads": 0, "polls": 0, "sleeps": []})
+        self.assertEqual(got["still"], {"waiting": 0, "reads": 0, "polls": 0})
+        self.assertEqual(got["shown"], {"waiting": 1, "reads": 1})
+        self.assertIn("made while hidden", got["list"])
+        self.assertEqual(got["err"], "")
+
     def test_back_online_ends_a_wait_in_flight_with_nothing_said(self):
         got = dom("""
             await start();

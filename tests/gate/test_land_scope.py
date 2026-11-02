@@ -18,6 +18,7 @@ from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
 TRAILERS = 'Co-Authored-By: Test Model <noreply@anthropic.com>'
 OUTSIDE = 'outside the scopes of the records it holds'
 NO_RECORD = 'holds no pulled record; its paths were not checked against a scope'
+AREA = 'tool-kit'           # an area that names no folder of the repository under test
 
 
 class ScopeCase(StoreLandCase):
@@ -301,7 +302,7 @@ class FolderStore(ScopeCase):
         self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
 
 
-class PmDataStore(ScopeCase):
+class PmDataCase(ScopeCase):
     """The PM data branch's folder store (test_land_store.PmDataClose's set-up)."""
     pm_worktree = tls.PmDataClose.pm_worktree
     pm_root = tls.PmDataClose.pm_root
@@ -317,6 +318,8 @@ class PmDataStore(ScopeCase):
         self.repo.commit('seed the PM data store', 'kit/backlog', '.kit.json', cwd=wt)
         return wt
 
+
+class PmDataStore(PmDataCase):
     def test_a_record_held_there_counts(self):
         self.seeded(pulled('FOO', scope=['a/**']))
         _, tip = self.branch('feature', {'a/x.py': 'x\n'})
@@ -386,6 +389,88 @@ class Warns(ScopeCase):
         with mock.patch.object(land.Lander, '_scope_of', side_effect=RuntimeError('boom')):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
+
+
+def delete_on_branch(case, name, paths):
+    """The tip of branch kit/<name> after one commit deleting `paths`."""
+    wt = case.repo.worktree(name)
+    for p in paths:
+        case.repo.git('rm', '-q', p, cwd=wt)
+    case.repo.git('commit', '-q', '-m', 'delete', cwd=wt)
+    return case.repo.head(wt)
+
+
+class AreaPrefix(PmDataCase):
+    """The PM data branch's store, shared by repositories, writes a member `<area>/<path>`: when
+    the repository has no top-level entry named as the record's area, at the merge base or the
+    tip, the member is read without it."""
+    REFUSES = False
+    assert_warned = Warns.assert_warned
+
+    def test_a_file_member_under_the_area_lands_that_file_without_a_warning(self):
+        self.seeded(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_a_folder_member_under_the_area_covers_the_files_under_it(self):
+        self.seeded(pulled('FOO', area=AREA, scope=[AREA + '/k/lock', AREA + '/m/**']))
+        _, tip = self.branch('feature', {'k/lock/a.py': 'a\n', 'k/lock/sub/b.py': 'b\n',
+                                         'm/c.py': 'c\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_a_path_outside_still_warns_and_is_added_once_in_the_stores_form(self):
+        self.seeded(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n', 'b.py': 'b\n'})
+        warn = self.assert_warned(self.land(tip), 'kit/feature changes 1 path(s) %s (FOO): b.py;'
+                                  % OUTSIDE)
+        self.assertIn(' set FOO --scope "%s/a/x.py" --scope "%s/b.py";' % (AREA, AREA), warn)
+        self.assertEqual(warn.count('--scope'), 2, warn)
+
+    def test_an_area_the_repository_has_as_a_folder_is_a_path(self):
+        self.seeded(pulled('FOO', area='a', scope=['a/x.py']))
+        _, tip = self.branch('feature', {'a/y.py': 'y\n', 'x.py': 'x\n'})
+        warn = self.assert_warned(self.land(tip), 'changes 2 path(s) %s (FOO): a/y.py, x.py;'
+                                  % OUTSIDE)
+        self.assertIn(' set FOO --scope "a/x.py" --scope "a/y.py" --scope "x.py";', warn)
+
+    def test_an_area_folder_the_branch_deletes_is_still_a_path(self):
+        self.on_main({'legacy/x.py': 'x\n', 'legacy/y.py': 'y\n'})
+        self.seeded(pulled('FOO', area='legacy', scope=['legacy/**']))
+        tip = delete_on_branch(self, 'feature', ['legacy/x.py', 'legacy/y.py'])
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_top_level_entries_git_cannot_list_warn(self):
+        self.seeded(pulled('FOO', area=AREA, scope=[AREA + '/a/x.py']))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        real = land.cmd.run_text
+
+        def run_text(args, *a, **kw):
+            return (None, 'boom') if args[0] == 'ls-tree' else real(args, *a, **kw)
+        with mock.patch.object(land.cmd, 'run_text', side_effect=run_text):
+            out = self.land(tip)
+        warn = self.assert_warned(out, 'git cannot list the top-level entries of kit/feature at ')
+        self.assertIn('to read its records\' scopes as paths of this repository: boom;', warn)
+
+
+class LocalStoreArea(ScopeCase):
+    """A record of any store but the PM data branch's keeps every member as written: its area is
+    the first component of its first member (kitlib.backlog.scope.area_from_scope), not a
+    prefix."""
+    REFUSES = False
+    assert_warned = Warns.assert_warned
+
+    def test_a_folder_member_the_branch_deletes_covers_the_deletions(self):
+        self.on_main({'legacy/x.py': 'x\n', 'legacy/y.py': 'y\n'})
+        self.seed(pulled('FOO', area='legacy', scope=['legacy/**']))
+        tip = delete_on_branch(self, 'feature', ['legacy/x.py', 'legacy/y.py'])
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_a_member_keeps_its_first_component(self):
+        self.seed(pulled('FOO', area='legacy', scope=['legacy/docs/**', 'docs/new.md']))
+        _, tip = self.branch('feature', {'docs/new.md': 'n\n', 'docs/other.md': 'o\n'})
+        warn = self.assert_warned(self.land(tip), '(FOO): docs/other.md;')
+        self.assertIn(' set FOO --scope "legacy/docs/**" --scope "docs/new.md" --scope '
+                      '"docs/other.md";', warn)
 
 
 class Default(unittest.TestCase):

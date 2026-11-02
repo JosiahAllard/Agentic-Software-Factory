@@ -70,9 +70,10 @@
                  one: a strong-tier reviewer, verdicts.tier_why), a carried one
                  checked the same way. Any miss: REFUSED, the lock released, nothing
                  merged. Last, the scope check (Lander.scope_check): every path the branch changes
-                 in a scope of a record it holds, in SCOPE_ALWAYS or in a folder store's folder;
-                 a miss is a WARNING after the LANDED line while SCOPE_REFUSES is False, else
-                 REFUSED as above
+                 in a scope of a record it holds (a PM data store member `<area>/<path>` read
+                 as <path> when the repository has no top-level <area> at the merge base or
+                 the tip), in SCOPE_ALWAYS or in a folder store's folder; a miss is a WARNING
+                 after the LANDED line while SCOPE_REFUSES is False, else REFUSED as above
   5b tree        the landing tree (prepare_tree): a detached linked worktree the kit owns, locked
                  with the reason TREE_LOCK, at <main checkout>/<worktrees_dir>/_landing
                  (Lander(tree=) names another place). Made the first time; reused when clean,
@@ -386,6 +387,26 @@ def _covers(members, path):
     return False
 
 
+def _area_lead(area, tops):
+    """The area prefix a member of a record carries, `<area>/`, or '' when it carries none: the
+    store shared by repositories (the PM data branch's) writes a member `<area>/<path>`; `area`
+    is None for a record of any other store, and an area that names a top-level entry of the
+    repository (`tops`, casefolded) is a path. Pure."""
+    return area + '/' if area and area.casefold() not in tops else ''
+
+
+def _in_repo(members, area, tops):
+    """`members`, a record's scope, as paths of this repository: under an area prefix
+    (_area_lead) a member loses that first component; every other member is as it is. Pure."""
+    if not _area_lead(area, tops):
+        return list(members)
+    out = []
+    for m in members:
+        head, _, rest = m.partition('/')
+        out.append(rest if rest and head.casefold() == area.casefold() else m)
+    return out
+
+
 def _path_error(path):
     """None when the scope check can decide `path`, else why not: such a path is outside every
     scope and left out of the widening command. A comma or a wildcard character is decidable
@@ -499,20 +520,23 @@ def is_author(entry):
 
 class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
-    for its store's write]; `read`, a store holding a record was read; `unread`, why a store
-    could not be; `folders`, folder stores' own folders (always allowed)."""
+    for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
+    read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
+    allowed)."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
 
-    def hold(self, rid, members, command):
+    def hold(self, rid, members, command, area=None):
         if rid in self.held:
             self.held[rid][0].extend(m for m in members if m not in self.held[rid][0])
         else:
-            self.held[rid] = [list(members), command]
+            self.held[rid] = [list(members), command, area]
 
-    def members(self):
-        return [m for members, _ in self.held.values() for m in members]
+    def members(self, tops):
+        """Every member held, as paths of this repository (_in_repo)."""
+        return [m for members, _, area in self.held.values()
+                for m in _in_repo(members, area, tops)]
 
 
 class Lander(object):
@@ -1516,7 +1540,14 @@ class Lander(object):
                 self.scope_notes.append('NOTE: %s holds no pulled record; its paths were not '
                                         'checked against a scope' % b)
             return None
-        members = found.members()
+        tops = set()
+        for rev in [mb, t] if any(h[2] for h in found.held.values()) else []:
+            out, why = cmd.run_text(['ls-tree', '--name-only', '-z', rev], self.root, strip=False)
+            if out is None:
+                return ('git cannot list the top-level entries of %s at %s to read its records\' '
+                        'scopes as paths of this repository: %s' % (b, rev[:10], why))
+            tops.update(p.casefold() for p in out.split('\0') if p)
+        members = found.members(tops)
         outside = []
         for p in rest:
             if not _covers(members, p):
@@ -1527,25 +1558,30 @@ class Lander(object):
             return None
         if found.unread:            # a record it could not read may cover them
             return self._scope_unread(b, found)
-        return self._scope_miss(b, t, mb, found, outside)
+        return self._scope_miss(b, t, mb, found, outside, tops)
 
     def _scope_unread(self, b, found):
         return ('cannot read the backlog store to check %s\'s paths against the scopes of the '
                 'records it holds: %s' % (b, '; '.join(found.unread)))
 
-    def _scope_miss(self, b, t, mb, found, outside):
+    def _scope_miss(self, b, t, mb, found, outside, tops):
+        """The miss line; its `set` command keeps the record's members and adds each path
+        outside in the store's form: under the record's area prefix (_area_lead) when its
+        members carry it."""
         ids = sorted(found.held)
         shown = ['%s (%s)' % (p, err) if err else p for p, err in outside[:SCOPE_SHOWN]]
         more = len(outside) - len(shown)
         listed = ', '.join(shown) + (', and %d more (git diff --name-only --no-renames %s %s)'
                                      % (more, mb, t) if more else '')
-        members, command = found.held[ids[0]]
+        members, command, area = found.held[ids[0]]
+        lead = _area_lead(area, tops) if _in_repo(members, area, tops) != members else ''
         new = [p for p, err in outside if not err]
         if not new:
             how = 'land them on their own branch'
         else:
             if len(outside) > SCOPE_SHOWN:
                 new = ['<each path, or a folder/** that covers them>']
+            new = [lead + p for p in new]
             args = ['set', ids[0]] + ['--scope "%s"' % m
                                       for m in members + new if m != scmod.NONE]
             how = ('widen a record\'s scope first (set checks the new members against every live '
@@ -1601,14 +1637,16 @@ class Lander(object):
             found.unread.append('the PM data branch\'s store: %s' % why)
         elif records is not None:
             self._scope_take(found, where, records, b, named, (), last,
-                             lambda *args: at_landing.backlog_command(pm_root, *args))
+                             lambda *args: at_landing.backlog_command(pm_root, *args), True)
         return found
 
-    def _scope_take(self, found, where, records, b, named, gone, last, command):
+    def _scope_take(self, found, where, records, b, named, gone, last, command, shared=False):
         """Add to `found` the records of one store `b` holds: pulled by it, or pulled and in
         `named`; an id in `named` or `gone` the store no longer holds counts at its last version
         (`last(rid)`: the record before the commit that deleted it, or None). A store holding an
-        unreadable record is unread: that record may be the one that covers a path."""
+        unreadable record is unread: that record may be the one that covers a path. `shared`: the
+        store shared by repositories (the PM data branch's), whose records keep their area
+        (_area_lead)."""
         bad = sorted(r.stem for r in records if not r.readable)
         if bad:
             found.unread.append('%s: %d record(s) unreadable (%s)' % (
@@ -1624,7 +1662,7 @@ class Lander(object):
                 candidates.append(rec)
         for r in candidates:
             if r.get('state') == 'pulled' and (r.get('pulled_by') == b or r.stem in named):
-                found.hold(r.stem, r.all('scope'), command)
+                found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None)
 
     def _scope_last(self, root, rev, rel, rid):
         """The record `rid` as it was before the newest commit reachable from `rev` deleted

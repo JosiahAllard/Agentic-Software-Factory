@@ -32,7 +32,8 @@ from kitlib.lock import game
 from kitlib.lock.run import (BG_ENV, NEST_ENV, ORIGIN_ENV, PICK, POOLS, XLA_DEFAULT_FRACTION,
                              XLA_FRACTION_ENV, Run, ScriptArgError, child_code, claim_id,
                              check_mem, docker_cpu_env, end_sparing, export_threads, mem_need,
-                             move_leftovers, pin_fields, script_command, settle)
+                             move_leftovers, no_shared_daemons, pin_fields, script_command,
+                             settle)
 from kitlib.lock.store import EXIT_REQUIRE, EXIT_USAGE, LockError, Store, iso, write_json
 from kitlib.proc.job import Job, cores_text
 
@@ -138,6 +139,7 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
         env[BG_CONTROL_ENV], env[BG_DIR_ENV] = ctl, ctl_dir
         if not env.get(XLA_FRACTION_ENV):
             env[XLA_FRACTION_ENV] = XLA_DEFAULT_FRACTION
+        no_shared_daemons(env)
     except BaseException:
         mutex.release()
         raise

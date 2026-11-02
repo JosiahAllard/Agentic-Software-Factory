@@ -220,6 +220,23 @@ A run whose slots are free starts only when the machine's commit charge plus its
 
 `machine_lock.py run` exit codes: 0 or the command's own code; 1 no such record or not stopped; 2 usage or refused (with `--node NAME`, also a run a node cannot take); 6 busy (`--no-wait`; with `--node NAME`, also the node busy); 8 `--max-wait` ran out; 10 the lock cannot be had (fail closed; with `--node NAME`, the node could not be used before the job started: nothing ran); 11 a hold keeps it out; 12 the hold cannot be used. A run on a load node also: 9 the connection to the node was lost (the job runs on there; the follow and stop lines are said), 13 the job succeeded but its artifacts did not all come (none was copied in), 14 the node started the job but it ended with no exit code of its own or could not be followed, or the start request went out and no reply came back (it is never run again here), 130 Ctrl+C.
 
+## Build daemons under the lock
+
+The owner's decision: Gradle's daemon is off for every locked run, so the build stays pinned. Locked builds give up warm-daemon reuse: each Gradle build under the lock starts cold.
+
+Why: a Gradle client that finds an idle daemon in its registry hands the build to it over TCP. A daemon started outside any run, or one an earlier non-gate run left behind (docs/gate.md "Build daemons"), is outside the run's job, so the build and its test JVMs ran on every core while the lock counted the run's few.
+
+- Every run booked by `book()` (`machine_lock.py run`, a gate, a redfirst run, a landing's gate, a `slot()`) and every background run (`kitlib/lock/background.py` `run_background`) gets `-Dorg.gradle.daemon=false` in `GRADLE_OPTS` (`kitlib/lock/run.py` `NO_SHARED_DAEMON_ENV`, `no_shared_daemons`; `Slot.__init__` adds it to `Slot.env`, which every command of the run inherits).
+- It is added after the caller's own `GRADLE_OPTS`, which is kept. A value that already holds the flag as a word is left as it is, so a nested run, or a run started inside one, does not add it twice. A caller's own `-Dorg.gradle.daemon=true` comes first and loses: the JVM keeps the last `-D`.
+- With the daemon off, Gradle builds in the client, or forks a single-use daemon (when the build needs JVM options the client lacks) that is the client's child: in the run's job, pinned, and gone when the build ends.
+
+Known limits:
+
+- An explicit `--daemon` on a command line overrides the flag (Gradle's rule): that build starts or reuses a shared daemon as before.
+- A Kotlin compile daemon (`kotlin-daemon`) and an MSBuild node or the C#/VB compiler server are not turned off here. One started outside the run's job, or left unpinned by an earlier run, can still take a locked build's work; docs/gate.md "Build daemons" says which of them a gate stops.
+- A daemon already running when the flag landed is not ended; only new builds under the lock avoid it.
+- Tests: `tests/lock/test_run.py` (`NoSharedDaemons`, `SlotGradleOpts`), `tests/lock/test_background.py` (`test_its_child_gets_gradles_daemon_off_after_the_callers_opts`).
+
 ## Console windows
 
 A run booked by `book()` (`machine_lock.py run`, a gate, a `slot()`) watches for console windows from its first command's start to its release (`kitlib/lock/run.py` `Slot.start`; `Slot.watch_stop`, which the release calls before it ends the job; `kitlib/proc/winwatch.py`). A window is the run's when its program is in the run's job (`Slot.window_owner`, `Job.contains`). The ended record gets `windows` (a list of `at cls how title pid exe host_pid host_exe ours`, at most `winwatch.RECORD_CAP`, 50, with `windows_truncated` the count left out) when any window was seen, and `windows_error` when the monitor could not run or raised as it started (`Slot.watch_start`; the run goes on); the history line carries neither (`kitlib/lock/store.py` `Store.HISTORY_KEYS`). `machine_lock.py run` (`run_command`) says the report after the release (`Slot.window_lines`; the lines are in `docs/gate.md` "Console windows"); a gate says it itself; any other run says nothing. A window warns and never changes a run's exit code. `WATCH_WINDOWS = False` in `kitlib/lock/run.py` turns the monitor off.

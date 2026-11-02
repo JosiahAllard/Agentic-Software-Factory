@@ -77,6 +77,13 @@ NOT_JUDGED = "not judged "
 # What a `docker exec` run holding no gpu slot gets, so the process in the container keeps
 # off the gpus the lock gave other runs (the job cannot reach into the container).
 DOCKER_CPU_ENV = (("CUDA_VISIBLE_DEVICES", ""), ("JAX_PLATFORMS", "cpu"))
+# What every run's commands get so a build never runs on a daemon outside the run's job (the
+# owner's choice: off under the lock, warm-daemon reuse given up): a client that finds an idle
+# daemon in its registry hands the build to it, and that daemon, started outside any run or left
+# unpinned by an earlier one, builds on every core. Gradle's off switch: the build runs in the
+# client, or in a single-use daemon that is the client's child, so it stays in the job, pinned.
+# (variable, flag added to its value) - no_shared_daemons.
+NO_SHARED_DAEMON_ENV = (("GRADLE_OPTS", "-Dorg.gradle.daemon=false"),)
 # docker exec options that take a value as the next argument (`docker exec --help`).
 DOCKER_EXEC_VALUE_OPTS = ("-e", "--env", "--env-file", "-u", "--user", "-w", "--workdir",
                           "--detach-keys")
@@ -411,6 +418,19 @@ def docker_cpu_env(cmd, holds_gpu):
         if name not in given:
             add += ["-e", "%s=%s" % (name, value)]
     return list(cmd[:2]) + add + list(cmd[2:])
+
+
+def no_shared_daemons(env):
+    """Adds each NO_SHARED_DAEMON_ENV flag to its variable in env (a dict, changed in place): after
+    the caller's own value, which is kept, and only when that value does not hold the flag as a
+    word already, so a nested run or a run started inside one does not add it twice. A caller's
+    own -Dorg.gradle.daemon=true comes first and so loses (the JVM keeps the last -D); an
+    explicit --daemon on the command line still wins (Gradle's rule)."""
+    for name, flag in NO_SHARED_DAEMON_ENV:
+        have = env.get(name) or ""
+        if flag not in have.split():
+            env[name] = "%s %s" % (have.rstrip(), flag) if have.strip() else flag
+    return env
 
 
 def export_threads(env, job):
@@ -1024,7 +1044,7 @@ class Slot:
         self.warn_s = kind_entry["warn_min"] * 60 * store.settings.warn_scale
         self.kind = kind_entry
         self.usage = run.usage if run else Usage(L["cpu_slot_threads"], store.settings.usage_sample_s)
-        self.env = dict(env)
+        self.env = no_shared_daemons(dict(env))
         self.env.pop(ORIGIN_ENV, None)
         # Only the command start(give_back=True) starts may give slots back (kitlib.lock.giveback).
         self.env.pop(gbk.GIVE_ENV, None)

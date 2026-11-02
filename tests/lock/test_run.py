@@ -693,6 +693,75 @@ class DockerCpuEnv(unittest.TestCase):
         self.assertEqual(rm.docker_cpu_env(both, False), both)
 
 
+GRADLE_OFF = "-Dorg.gradle.daemon=false"
+WRITE_GRADLE_OPTS = ("import os,sys; open(sys.argv[1], 'w').write(os.environ.get('GRADLE_OPTS', "
+                     "'<unset>'))")
+
+
+@windows_only("the lock is Windows only")
+class NoSharedDaemons(unittest.TestCase):
+    """A run's commands get Gradle's off switch after the caller's own GRADLE_OPTS, once."""
+
+    def test_the_flag_is_added_after_the_callers_value(self):
+        for have, want in ((None, GRADLE_OFF), ("", GRADLE_OFF), ("  ", GRADLE_OFF),
+                           ("-Xmx2g", "-Xmx2g " + GRADLE_OFF),
+                           ("-Xmx2g -Dorg.gradle.daemon=true ",
+                            "-Xmx2g -Dorg.gradle.daemon=true " + GRADLE_OFF)):
+            with self.subTest(have=have):
+                env = {"PATH": "p"} if have is None else {"PATH": "p", "GRADLE_OPTS": have}
+                self.assertIs(rm.no_shared_daemons(env), env)
+                self.assertEqual(env, {"PATH": "p", "GRADLE_OPTS": want})
+
+    def test_a_value_that_holds_the_flag_is_left_as_it_is(self):
+        for have in (GRADLE_OFF, "-Xmx2g " + GRADLE_OFF, GRADLE_OFF + " -Xmx2g"):
+            with self.subTest(have=have):
+                env = {"GRADLE_OPTS": have}
+                rm.no_shared_daemons(rm.no_shared_daemons(env))
+                self.assertEqual(env, {"GRADLE_OPTS": have})
+
+
+class SlotGradleOpts(StoreCase):
+    """The slot's commands, and a run nested in it, get Gradle's daemon off: the build stays in
+    the run's job, pinned, never on an idle daemon outside it."""
+
+    def gradle_opts(self, launch):
+        seen = os.path.join(self.tmp, "gradle-opts-%d.txt" % len(os.listdir(self.tmp)))
+        self.assertEqual(launch.run([sys.executable, "-c", WRITE_GRADLE_OPTS, seen]), 0)
+        with open(seen, encoding="utf-8") as f:
+            return f.read()
+
+    def test_a_runs_commands_get_the_flag_and_keep_the_callers_opts(self):
+        self.confine(1)
+        bare = clean_env()
+        bare.pop("GRADLE_OPTS", None)
+        for given, want in ((bare, GRADLE_OFF),
+                            (dict(bare, GRADLE_OPTS="-Xmx2g"), "-Xmx2g " + GRADLE_OFF)):
+            with self.subTest(want=want), rm.slot("engine-test", "kit", "t", cores=1,
+                                                  store=self.store, env=given) as launch:
+                self.assertEqual(launch.env["GRADLE_OPTS"], want)
+                self.assertEqual(self.gradle_opts(launch), want)
+
+    def test_a_nested_run_does_not_add_it_twice(self):
+        anc = process.own_ancestors()
+        pp, ct = os.getppid(), process.proc_ctime(os.getppid())
+        if ct is None or (pp, ct) not in anc:
+            self.skipTest("this process's parent cannot be read as an ancestor")
+        prid = "r-20261006T120000Z-abcdef"
+        self.live_record(prid, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
+        env = clean_env(GRADLE_OPTS="-Xmx2g", **{rm.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
+        want = "-Xmx2g " + GRADLE_OFF
+        # A nested run gets the flag too, and one nested in it (its env: the first's) keeps it once.
+        for _depth in (1, 2):
+            s = rm.book("engine-test", "kit", "t", store=self.store, env=env)
+            try:
+                self.assertTrue(s.nested)
+                self.assertEqual(s.launcher.env["GRADLE_OPTS"], want)
+                self.assertEqual(self.gradle_opts(s.launcher), want)
+                env = dict(s.launcher.env)
+            finally:
+                s.release()
+
+
 class DockerRuns(StoreCase):
     """The foreground launcher passes the docker flags to the job; the runs prove the path."""
 

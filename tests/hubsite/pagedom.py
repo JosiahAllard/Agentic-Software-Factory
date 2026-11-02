@@ -167,6 +167,8 @@ globalThis.fetch = (url, init) => {
   calls.push(call);
   const own = server.route ? server.route(call) : undefined;
   if (own instanceof Error) return Promise.reject(own);
+  // `later`: a promise of the answer, so a test holds a call out until it gives that answer
+  if (own && own.later) return own.later.then(o => answer(o.status, o.body, o.headers, o.cut, o.type));
   if (own) return Promise.resolve(answer(own.status, own.body, own.headers, own.cut, own.type));
   // A long-poll (the hub's, or the machine lock's) hangs until the test answers it, or until the page gives up on it
   // through its signal.

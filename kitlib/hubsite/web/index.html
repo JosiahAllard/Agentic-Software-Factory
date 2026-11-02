@@ -494,11 +494,13 @@ ul.hist .sch-line{display:block}
   // Two things a card may know that the lists do not yet, each held by id with the question as the page
   // held it then (asIs): an answer that was sent and not read back (sent), and a refusal for a changed
   // question that could not be read again (unread). Each ends once the lists hold the question otherwise.
-  const sent = new Map(), unread = new Map();
+  // reading: the sent answers whose read-back is still out, so their card says sent, not that the read failed.
+  const sent = new Map(), unread = new Map(), reading = new Set();
   const asIs = d => JSON.stringify([d.version, d.status, d.answer || null]);
   const CHANGED = "Not sent: this question changed on the hub server while you were answering. Your draft is kept; check it against the question as it is now, then send again.";
   const CHANGED_UNREAD = "Not sent: this question changed on the hub server and could not be read again, so this card still shows it as it was. Your draft is kept; send again once the page has read the hub server.";
   const SENT_UNREAD = "Your answer was sent. The hub server could not be read again, so this card still shows the question as it was before your answer; it shows the answer once the server is read.";
+  const SENT_READING = "Your answer was sent. Reading it back from the hub server…";
 
   function el(tag, attrs, ...kids){
     const n = document.createElement(tag);
@@ -575,6 +577,10 @@ ul.hist .sch-line{display:block}
   window.addEventListener("hashchange", goRoute);
   // The detail pane: what the view being drawn opened (pickDetail), put there once, in place.
   let detailKids = [], drewSection = null;
+  // The sections whose views open a card in the detail pane (the views that call pickDetail), and the pane's empty state.
+  const hasDetail = sc => ["home", "questions", "todo", "topm", "approvals", "agents", "skills", "docs", "landings", "autotasks", "findings"].includes(sc)
+    || (sc === "info" && state.infotab !== "notices") || (sc === "backlog" && !state.rec);
+  const dempty = el("div", {class:"empty", id:"detail-empty"}, el("strong", {text:"Nothing selected"}), "A row's detail opens here once the list has one.");
   function draw(){
     detailKids = [];
     seenLine();
@@ -623,6 +629,9 @@ ul.hist .sch-line{display:block}
     $("#addform").hidden = sc !== "todo" || !ready;
     $("#rec-new").hidden = sc !== "backlog" || !ready;
     sc === "home" ? renderHome() : q ? renderQuestions() : sc === "inbox" ? renderInbox() : sc === "todo" ? renderTodos() : sc === "topm" ? renderToPm() : sc === "approvals" ? renderApprovals() : sc === "more" ? renderMore() : sc === "schedule" ? renderSchedule() : sc === "info" ? renderInfo() : sc === "agents" ? renderAgents() : sc === "skills" ? renderSkills() : sc === "docs" ? renderDocs() : sc === "landings" ? renderLandings() : sc === "autotasks" ? renderAutotasks() : sc === "findings" ? renderFindings() : renderBacklog();
+    // A section with a detail pane keeps its frame when nothing is open (an emptied list too), so the layout never jumps.
+    // A phone shows the pane in the list's place, so there it stays hidden until a row opens.
+    if (!detailKids.length && hasDetail(sc) && !phone()) detailKids = [dempty];
     place($("#pane-detail"), detailKids); $("#pane-detail").hidden = !detailKids.length;
   }
 
@@ -2969,9 +2978,12 @@ ul.hist .sch-line{display:block}
         try {
           // The choice is the option's place in the list, or "other" with a note; the server writes the label and the time.
           await hub.post("/questions/" + seg(d.id) + "/answer", { ...answerBody(d, draft), ...pin(d) });
-          // Sent. If the lists cannot be read again the card is still the question from before the answer:
-          // it says the answer was sent and offers no second send (which the server would refuse).
-          clearDraft(d.id); state.editing.delete(d.id); await refresh().catch(() => { sent.set(d.id, asIs(d)); }); render();
+          // Sent: the card says so at once and offers no second send (which the server would refuse), and the lists
+          // are read again behind it, as writeQuick does. The read draws the answer; if the lists cannot be read the
+          // card is still the question from before the answer, and says the answer was sent.
+          clearDraft(d.id); state.editing.delete(d.id); sent.set(d.id, asIs(d)); reading.add(d.id); render();
+          refresh().then(() => { reading.delete(d.id); if (sent.delete(d.id)) render(); },     // drawn by the read, or as read
+            () => { reading.delete(d.id); render(); });
         } catch (e) {
           // The question changed meanwhile: the lists are read again, so the card is the question as it is now
           // (and names its new version on the next send), with the draft still in it. If they cannot be read,
@@ -3003,7 +3015,7 @@ ul.hist .sch-line{display:block}
       if (keep) parts.push(el("label", {class:"opt", for: name + "-standing"}, keep, el("span", {class:"ol", text:"Make this a standing rule"}), el("span", {class:"od", text:"The PM logs it in the ledger, so the same question is not asked again."})));
       parts.push(acts);
     } else if (sent.has(d.id)) {
-      parts.push(el("p", {class:"gone", role:"status", text: SENT_UNREAD}));
+      parts.push(el("p", {class:"gone", role:"status", text: reading.has(d.id) ? SENT_READING : SENT_UNREAD}));
     } else if (d.answer) {
       const a = d.answer;
       const pick = a.choice === "other" ? "Something else" : (a.label || opts[a.choice]?.label || "—");
@@ -3273,9 +3285,14 @@ ul.hist .sch-line{display:block}
   // cache ends what the watch loop is waiting on (its long-poll or its sleep after a failure), and the snapshot is read
   // at once. A phone that slept may hold a long-poll on a connection that is gone, and a run of failures while the tab
   // was hidden may have it sleeping for a minute: either way the owner, back on the page, would see old lists.
-  let nudge = null;
+  // A tab hidden holds no long-poll: hiding it ends the wait too (away), and the loop waits for the tab to be shown
+  // again. Each wait holds one of the few connections a browser keeps to the hub, so several hidden tabs would stall
+  // the owner's writes behind them. A page opened in a tab that was never shown still reads once and waits.
+  // Shown again, the loop reads once: both visibilitychange listeners run before it resumes, so this poke only
+  // ends the wait it already left.
+  let nudge = null, away = false;
   const poke = () => { if (nudge) nudge.abort(); };
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) poke(); });
+  document.addEventListener("visibilitychange", () => { away = document.hidden; poke(); });
   window.addEventListener("online", poke);
   window.addEventListener("pageshow", e => { if (e && e.persisted) poke(); });
   const nap = (ms, stop) => new Promise(done => { if (stop.aborted) { done(); return; } const t = setTimeout(done, ms); stop.addEventListener("abort", () => { clearTimeout(t); done(); }); });
@@ -3284,8 +3301,9 @@ ul.hist .sch-line{display:block}
     // the top goes as soon as the server answers, not when the next change comes.
     let again = true;
     for (;;) {
+      if (away) { await shown(); again = true; }
       const stop = nudge = new AbortController();
-      let read = false;                                 // the snapshot read just before this wait answered
+      let read = false;                                // the snapshot read just before this wait answered
       try {
         if (again) { await refresh(); again = false; loadSay(""); countFindings(); }    // fails is kept: only a wait that answers ends the run of failures
         read = true;

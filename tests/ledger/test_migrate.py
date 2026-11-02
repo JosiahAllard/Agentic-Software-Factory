@@ -453,7 +453,7 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(r.stdout.split(), ['H-pm-' + '0001'])
         self.assertFalse(os.path.exists(os.path.join(self.dir, 'alpha.md')))
         shared = self.read(os.path.join(self.dir, 'rules', 'all.md'))
-        self.assertIn('Agents never merge an unreviewed branch. (from H-pm-0001)', shared)
+        self.assertIn('Agents never merge an unreviewed branch. (from H-pm-' + '0001)', shared)
         key = [l for l in shared.splitlines() if l.startswith('- ')][0].split(':')[0][2:]
         self.assertEqual(self.read(os.path.join(self.dir, 'pm.md')).count('[rule all.md %s set]' % key), 1)
         c = self.run_tool('check')

@@ -215,6 +215,17 @@ class Usage(unittest.TestCase):
         self.assertEqual(pmwatch.usage_events({'2': {'five': 40, 'week': 95}}, got),
                          ['RESET account 2 (weekly 95% -> 0%)'])
 
+    def test_a_passed_five_hour_reset_reads_reset_with_no_reading_after_it(self):
+        # The rule above is the weekly window's alone (pm_watch's RESET is weekly): a five-hour
+        # window that reset after the file's last write still reads reset, as launch.py usage and
+        # the hub Usage tab showed it before.
+        h = Home(self, accounts=('1',))
+        hour = datetime.timedelta(hours=1)
+        h.usage('1', five=(40, NOW - hour), week=(60, NOW + DAY), updated=NOW - 2 * hour)
+        line = usage.report(h.settings, NOW)[0]
+        self.assertTrue(line.startswith('account 1: five_hour=reset  seven_day=60% (resets '), line)
+        self.assertEqual(pmwatch.parse_usage(line)['1']['five'], 0)
+
     def test_a_window_without_a_figure_reads_unknown_and_is_not_dropped(self):
         h = Home(self, accounts=('1', '2'))
         h.usage('1', week=(98, NOW + DAY), updated=NOW - DAY)          # five_hour null, as the status line writes it

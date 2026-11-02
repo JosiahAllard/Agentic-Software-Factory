@@ -25,14 +25,17 @@ _CODEX = re.compile(r'"primary":\{"used_percent":([\d.]+),"window_minutes":\d+,"
 
 
 def _window(name, w, now, read_at):
-    """One window's text. read_at: the file's updated_at (None when unknown)."""
+    """One window's text. read_at: the file's updated_at (None when unknown). A passed weekly reset
+    with no reading after it is unknown (the RESET pm_watch logs is weekly); a passed five-hour
+    reset reads reset as before."""
     if not isinstance(w, dict):
         return '%s=?' % name
     reset = A.parse_time(w.get('resets_at'))
     if reset is None:
         return '%s=?' % name
     if reset < now:
-        return '%s=%s' % (name, 'reset' if read_at is not None and read_at >= reset else '?')
+        seen = name != 'seven_day' or (read_at is not None and read_at >= reset)
+        return '%s=%s' % (name, 'reset' if seen else '?')
     pct = w.get('used_percentage')
     if not isinstance(pct, (int, float)) or isinstance(pct, bool):
         return '%s=?' % name

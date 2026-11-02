@@ -42,17 +42,21 @@ class Merge(unittest.TestCase):
         self.path = os.path.join(self.dir, 'usage-status.json')
         self.t0 = now()
 
-    def write(self, five, week, session='s'):
-        """Run the status line as a session whose last rate_limits were five and week ((pct, reset))."""
+    def write(self, five, week, session='s', lock_ms=None):
+        """Run the status line as a session whose last rate_limits were five and week ((pct, reset)).
+        lock_ms: how long it waits for the lock (PMKIT_USAGE_LOCK_MS; the script's own is 2 s)."""
         limits = {}
         for k, v in (('five_hour', five), ('seven_day', week)):
             if v is not None:
                 limits[k] = {'used_percentage': v[0], 'resets_at': epoch(v[1])}
         env = dict(os.environ, CLAUDE_CONFIG_DIR=self.dir)
+        env.pop('PMKIT_USAGE_LOCK_MS', None)
+        if lock_ms is not None:
+            env['PMKIT_USAGE_LOCK_MS'] = str(lock_ms)
         p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SCRIPT],
                            input=json.dumps({'session_id': session, 'model': {'display_name': 'Opus'},
                                              'rate_limits': limits}),
-                           capture_output=True, text=True, timeout=60, env=env)
+                           capture_output=True, text=True, timeout=180, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         return p
 
@@ -106,8 +110,25 @@ class Merge(unittest.TestCase):
         self.write((50, self.t0 + HOUR), (60, reset))
         self.write((50, self.t0 + HOUR), (61, reset + dt.timedelta(seconds=40)))   # resets_at a few seconds off: same week
         self.assertEqual(self.week()[0], 61)
-        self.write((49, self.t0 + HOUR), (61, reset))
+        self.write((49, self.t0 + HOUR), (61, reset), 'other')
         self.assertEqual(self.file()['five_hour']['used_percentage'], 50)
+
+    def test_the_session_a_window_came_from_can_lower_it(self):
+        # A plan upgrade or raised limit: the same window's figure falls. The session whose reading
+        # the window holds read it after that reading, so its lower figure is taken; another
+        # session's lower figure may be stale and is not.
+        reset = self.t0 + 2 * DAY
+        self.write((50, self.t0 + HOUR), (60, reset), 'a')
+        before = self.file()['updated_at']
+        self.write((40, self.t0 + HOUR), (30, reset), 'b')
+        self.assertEqual((self.file()['five_hour']['used_percentage'], self.week()[0]), (50, 60))
+        self.assertEqual(self.file()['updated_at'], before)
+        self.write((45, self.t0 + HOUR), (31, reset), 'a')
+        self.assertEqual((self.file()['five_hour']['used_percentage'], self.week()[0]), (45, 31))
+        self.assertEqual(self.file()['seven_day']['session_id'], 'a')
+        self.assertGreater(A.parse_time(self.file()['updated_at']), A.parse_time(before))
+        self.write((40, self.t0 + HOUR), (30, reset), 'b')           # still not b's to lower
+        self.assertEqual(self.week()[0], 31)
 
     def test_an_equal_reading_is_written_so_an_active_session_stays_fresh(self):
         reset = self.t0 + 2 * DAY
@@ -126,8 +147,10 @@ class Merge(unittest.TestCase):
     def test_concurrent_writers_lose_no_reading_and_leave_nothing_behind(self):
         reset = self.t0 + 3 * DAY
         self.write((10, self.t0 + HOUR), (50, reset))
+        # A lock wait long enough for a loaded machine: a writer that gave up would lose its reading
+        # by design, not by a race, and this test is about the race.
         with concurrent.futures.ThreadPoolExecutor(8) as pool:
-            list(pool.map(lambda pct: self.write((10, self.t0 + HOUR), (pct, reset), 's%d' % pct),
+            list(pool.map(lambda pct: self.write((10, self.t0 + HOUR), (pct, reset), 's%d' % pct, lock_ms=120000),
                           range(51, 59)))
         self.assertEqual(self.week()[0], 58)
         self.assertEqual(sorted(os.listdir(self.dir)), ['.credentials.json', 'usage-status.json'])

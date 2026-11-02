@@ -5,20 +5,22 @@
 # default ~/.claude), read by the `coordinator` agent.
 # Every session on the account writes that one file, and an idle session's rate_limits go stale, so
 # the write merges (docs/launcher.md "Usage"): per window, a later resets_at (more than an hour on)
-# is a new window and replaces; the same window keeps the higher percentage; an earlier one is
-# dropped. A reading with any window dropped and none raised is stale: it writes nothing, so
-# updated_at stays the time of the newest reading that is not. Read, merge and write run under an
-# exclusive lock file (usage-status.json.lock, deleted on close), so concurrent sessions lose no
-# reading; the write is a temp file moved into place, so a reader never sees a part-written file.
+# is a new window and replaces; the same window keeps the higher percentage, and takes an equal one,
+# or a lower one from the session whose reading it holds (each window records its session_id; that
+# session's next figure is newer than its last: a plan or limit change); an earlier one is dropped.
+# A reading with any window dropped and none raised is stale: it writes nothing, so updated_at
+# stays the time of the newest reading that is not. Read, merge and write run under an exclusive
+# lock file (usage-status.json.lock, deleted on close), so concurrent sessions lose no reading; the
+# write is a temp file moved into place, so a reader never sees a part-written file.
 $ErrorActionPreference = 'SilentlyContinue'
 $raw = [Console]::In.ReadToEnd()
 try { $j = $raw | ConvertFrom-Json } catch { $j = $null }
 
-function Window($w) {
+function Window($w, $sid) {
     if ($null -eq $w) { return $null }
     $resets = $null
     if ($w.resets_at) { $resets = ([DateTimeOffset]::FromUnixTimeSeconds([long]$w.resets_at)).LocalDateTime.ToString('o') }
-    [ordered]@{ used_percentage = $w.used_percentage; resets_at = $resets }
+    [ordered]@{ used_percentage = $w.used_percentage; resets_at = $resets; session_id = $sid }
 }
 
 function ResetsOf($w) {
@@ -42,6 +44,9 @@ function Merge($old, $new) {
     $d = [double]$new.used_percentage - [double]$old.used_percentage
     if ($d -gt 0) { return 'newer', $new }
     if ($d -eq 0) { return 'same', $new }
+    # Lower: the session whose reading this window holds has read it again, so this one is newer
+    # (a plan upgrade, a raised limit); any other session's lower figure may be stale.
+    if ($new.session_id -and $new.session_id -eq $old.session_id) { return 'newer', $new }
     return 'older', $old
 }
 
@@ -56,9 +61,12 @@ if ($limits) {
     $path = Join-Path $cfg 'usage-status.json'
     $tmp = "$path.$PID.tmp"
     # The lock: no sharing, so a second session waits; the system closes (and deletes) it if this
-    # process dies. Not had in 2 s: this refresh writes nothing; the next one tries again.
+    # process dies. Not had in 2 s (PMKIT_USAGE_LOCK_MS, set by the tests): this refresh writes
+    # nothing; the next one tries again.
+    $tries = 40
+    if ($env:PMKIT_USAGE_LOCK_MS -match '^\d{1,6}$') { $tries = [Math]::Max(1, [int][Math]::Floor([int]$env:PMKIT_USAGE_LOCK_MS / 50)) }
     $lock = $null
-    for ($i = 0; $i -lt 40 -and $null -eq $lock; $i++) {
+    for ($i = 0; $i -lt $tries -and $null -eq $lock; $i++) {
         try {
             $lock = [IO.FileStream]::new("$path.lock", [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite,
                                          [IO.FileShare]::None, 1, [IO.FileOptions]::DeleteOnClose)
@@ -84,7 +92,7 @@ if ($limits) {
                 foreach ($k in 'five_hour', 'seven_day', 'spend_limit') {
                     $ow = $null
                     if ($old) { $ow = $old.$k }
-                    $r = Merge $ow (Window $limits.$k)
+                    $r = Merge $ow (Window $limits.$k $j.session_id)
                     if ($r[0] -eq 'older') { $stale = $true }
                     if ($r[0] -eq 'newer') { $rose = $true }
                     $out[$k] = $r[1]

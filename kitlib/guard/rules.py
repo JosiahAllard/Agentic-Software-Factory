@@ -4430,9 +4430,11 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
         if d:
             return d, searched
     # A computed PowerShell target, or a path read from a directory the guard cannot tell (after a
-    # `cd $x`): for a role main_checkout lets through, the jail cannot judge it either.
+    # `cd $x`): for a role main_checkout lets through, the jail cannot judge it either. A .NET
+    # call's path is refused under write-jail, not unplaced (ps_drive_jail).
     if computed or (target is None and runs_in is None):
-        d = ps_drive_jail(event, ctx, cwd, role, what, why, rewrite)
+        d = ps_drive_jail(event, ctx, cwd, role, what, why, rewrite, net=(w.start, w.end) in net,
+                          here=runs_in)
         if d:
             return d, searched
     return asked.first, searched
@@ -4537,20 +4539,31 @@ def execdir_swaps(f, cmd):
     return [(x, x.text.replace('dir', ''))]
 
 
-def ps_drive_jail(event, ctx, cwd, role, what, why, rewrite):
+def ps_drive_jail(event, ctx, cwd, role, what, why, rewrite, net=False, here=None):
     """An agent session's PowerShell write to a computed target ($p, a ( ) expression: _write_from),
     or any shell's write of a path read from a directory the guard cannot tell (after `cd $x`),
     by a role main_checkout lets through (it may edit a main checkout): the jail cannot judge a
-    place it cannot tell, so it refuses, as git_jail_unknown does for git."""
+    place it cannot tell, so it refuses, as git_jail_unknown does for git. With `net`, the path a
+    .NET call writes: refused under write-jail, not unplaced (whose default mode only warns), as
+    net_process_dir refuses a literal relative one, since .NET may read it against the process's
+    directory (a docs-writer's `cd <worktree>; $p='docs\\guard.md'; ...;
+    [IO.File]::WriteAllText($p,$t)` wrote the main checkout under a warning). Its alternative
+    aims at `here`, the PowerShell location, when that is a linked worktree the session may write
+    (the session's own folder may be the main checkout it cd'd out of)."""
     if not agent_session(event, ctx):
         return None
-    dest = jail.destination(jail_roots(event, ctx, cwd))
+    rule = 'write-jail' if net else UNPLACED
+    rs = jail_roots(event, ctx, cwd)
+    dest = jail.destination(rs)
+    there = dest.path if dest is not None else None
+    if net and here is not None and ctx.place(here).kind == repo.LINKED and jail.judge(here, rs)[0] is None:
+        there = here
     head = '%s: the guard cannot tell where it writes (%s). Write to a literal path inside the folders an ' \
-           'agent session may write.' % (what, why)
-    if dest is not None and rewrite is not None:
-        return refuse(UNPLACED, role, head + ' The same write in %s:' % fwd(dest.path),
-                      rewrite(fwd(dest.path) + '/<file>'))
-    return refuse(UNPLACED, role, head + ' To see where this session runs:', 'pwd')
+           'agent session may write%s.' % (what, why, '; an agent session gives .NET a literal absolute path'
+                                          if net else '')
+    if there is not None and rewrite is not None:
+        return refuse(rule, role, head + ' The same write in %s:' % fwd(there), rewrite(fwd(there) + '/<file>'))
+    return refuse(rule, role, head + ' To see where this session runs:', 'pwd')
 
 
 DUPS_RE = re.compile(r'(?:[ \t]*[0-9]*[<>]&[0-9-]+)+')

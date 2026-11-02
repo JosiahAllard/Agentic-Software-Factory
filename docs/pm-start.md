@@ -4,8 +4,7 @@
 `additionalContext`; logic `kitlib/pmstart`). A hook cannot call tools, so it lists steps for the
 PM. It always exits 0; a failed check becomes one "could not check X: reason" line.
 
-Checks: standing rules, eng_review flags, the hub, `pm_watch.py` running, the hand-off file ("Hand-off file"), reminders due, the rulebooks (one `rulebooks` line: the rules folder, each book with its rule count, and `ledger.py rules --all`, or `none` when no ledger or no book is there, or `unknown` when the machine config cannot be read; `kitlib.pmstart` `rulebook_lines`, docs/ledger.md "Rulebooks"), and coordinators not running (no `claude.exe`
-with the exact, case-sensitive `--remote-control` name, as `kitlib/launcher/lookup.py`); each such line names the
+Checks: standing rules, the machine config (`configcheck`), eng_review flags, the rulebooks (one `rulebooks` line: the rules folder, each book with its rule count, and `ledger.py rules --all`, or `none` when no ledger or no book is there, or `unknown` when the machine config cannot be read; `kitlib.pmstart` `rulebook_lines`, docs/ledger.md "Rulebooks"), the hub, `pm_watch.py` running, the hand-off file ("Hand-off file"), reminders due, and coordinators not running (no host session process, the images `hosts.json` names, with the exact, case-sensitive `--remote-control` name, as `kitlib/launcher/lookup.py`), then the sections below in order, with `worktree_sweep` between `cdrive` and `console_tasks`; each such line names the
 `launch.py start --session <key> --account <n>` that starts it (docs/launcher.md). A repository in sessions.json with no live `consultant-<repo>` session (and no consultant entry of its own) gets one `consultant-<repo> is not running: launch.py consultant --repo <repo> --repo-path <folder>` line, the folder from the machine config's `launcher.repos` or `<its checkout>` when it is not there (`kitlib.pmstart` `_consultants_missing`; no config switch). `<n>` is the account
 this PM session runs on (`kitlib.pmstart` `current_account`), not the entry's stored one, so the PM
 launches every coordinator, the kit's included, from whatever account it started on; when that
@@ -20,7 +19,7 @@ lines read the machine config's `hub` key (`kitlib.hubsite.settings`), or every 
 when there is no `hub` key. The check only asks the loopback server on `hub.port`, through
 `kitlib.hubsite.client`; it starts no process and never starts the server, and it imports
 `kitlib.hubsite.serve` only once the settings are read. Each ask (`GET /api/v1/health`,
-then `GET /api/v1/pending?for=pm`, then the filed answers' one, "Filed answers") waits at most `HUB_SITE_TIMEOUT_S` (1.5 seconds). The pending
+then `GET /api/v1/pending?for=pm`, then the filed answers' two, "Filed answers") waits at most `HUB_SITE_TIMEOUT_S` (1.5 seconds). The pending
 ask is the PM's items only, the list `hub.py pending --for pm` prints: an item routed to a creator
 that can still be reached is that session's to ack, and a PM ack would hide it from the creator's
 wait. The lines:
@@ -110,7 +109,7 @@ not a step.
 ## Kit currency (`kit_sync`)
 
 When the machine config sets `pm_data` (docs/pm-data-branch.md), the `kit_sync` check keeps the
-kit's main checkout current: it fetches `origin`'s `main` (`git fetch --no-tags`, explicit refspec, 3 second limit) and
+main checkout of the repository holding `pm_data.path` (the kit's) current: it fetches `origin`'s `main` (`git fetch --no-tags`, explicit refspec, 3 second limit) and
 fast-forwards local `main` ("kit updated to <short sha>"). It prints nothing when `main` already
 contains `origin/main`. It leaves the checkout alone, with one "kit not updated: ..." line, when it
 is not on `main`, has a merge, cherry-pick, revert or rebase in progress or uncommitted changes, when the landing lock is held, or
@@ -199,7 +198,7 @@ variable is unset. It changes nothing. Code: `kitlib/pmstart` `cdrive_lines`.
 
 ## Console tasks (`console_tasks`)
 
-After `agent_temp` and before the foreground lock check, always on and with no config key, the
+After `agent_temp`, `cdrive` and `worktree_sweep`, and before the foreground lock check, always on and with no config key, the
 `console_tasks` check reads every registered scheduled task's actions from
 `schtasks /Query /XML ONE` (4 second limit) and prints one line for each action of a kit task whose
 program is a console program (`python.exe`, `py.exe`, `powershell.exe`, `pwsh.exe`, `cmd.exe`,
@@ -233,8 +232,7 @@ only the file `pm_start.handoff_file` names and prints `read first: <file>`, or 
 <file>: create it ...` when it is not there. When `pm_start.memory_dir` is set and holds any
 `pm-handoff*.md`, one more line says `hand-off notes belong in <file>: merge and delete <those files>`.
 A relative `handoff_file` with no PM repository found (no readable `sessions_file`) is one `could not
-check handoff` line. The PM repository git-ignores
-`HANDOFF.md` (an owner decision): it is a working note and is never committed.
+check handoff` line.
 
 ## Config
 
@@ -243,7 +241,7 @@ The machine config (docs/kit-json.md "Machine config keys"), key `pm_start`; wit
 
 ```json
 {"pm_start": {
-  "pm_watch_cmd": "python -u <kit>/tools/pm_watch.py",
+  "pm_watch_cmd": "python -u \"<kit>/tools/pm_watch.py\"",
   "memory_dir": "<repo drive>/Agent-memory/<pm-repo>",
   "handoff_file": "HANDOFF.md",
   "reminders_file": "<config-dir>/reminders.json",

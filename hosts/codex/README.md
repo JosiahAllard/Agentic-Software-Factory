@@ -10,7 +10,7 @@ rendered agent file says so in its header comment.
 
 | Part | Where | State |
 |---|---|---|
-| Registry entry | `hosts.json` `codex` | Windows; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
+| Registry entry | `hosts.json` `codex` | Windows and Linux; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
 | Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | no call passes before boot (`fast_path: none`: a Codex chat is never the owner, so even a tool `hosts.json` `hook.guarded_tools` leaves out goes to the guard); every PreToolUse goes through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
 | Hook policy | `adapter/policy.py` | a marked session: unknown tools, other MCP servers' tools, `apply_patch` through the shell, calls the guard cannot fully judge (no named shell, cmd.exe, a TTY, fed input) and a read, test or lander role's edits in its own checkout refused |
 | Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard.md "Generated files"); review templates, not installed |

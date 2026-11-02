@@ -463,6 +463,24 @@ class PutBack(unittest.TestCase):
         with open(full) as f:
             self.assertEqual(f.read(), 'moved')
         self.assertFalse(os.path.exists(held))
+    def test_without_hard_links_windows_renames_back_but_never_over_a_file(self):
+        held, full = self._files()
+        with mock.patch.object(os, 'link', side_effect=OSError('no links')),                 mock.patch.object(os, 'name', 'nt'):
+            os.remove(full)
+            self.assertEqual(sr._put_back(held, full), '')
+        with open(full) as f:
+            self.assertEqual(f.read(), 'moved')
+        self.assertFalse(os.path.exists(held))
+
+    def test_without_hard_links_posix_keeps_the_file_in_quarantine(self):
+        held, full = self._files()
+        os.remove(full)
+        with mock.patch.object(os, 'link', side_effect=OSError('no links')),                 mock.patch.object(os, 'name', 'posix'):
+            note = sr._put_back(held, full)
+        self.assertEqual(note, '; the file is kept at %s' % held)
+        self.assertTrue(os.path.exists(held))
+        self.assertFalse(os.path.exists(full))
+
 
 
 if __name__ == '__main__':

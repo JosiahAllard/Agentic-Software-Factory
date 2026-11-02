@@ -375,10 +375,20 @@ def _put_back(held, full):
     """'' when the moved file is back at `full`, else a note naming where it is kept."""
     try:
         # A hard link never replaces a file written at `full` meanwhile, on any platform (POSIX
-        # rename would). Where links fail (a filesystem without them) the file stays in quarantine.
+        # rename would).
         os.link(held, full)
-    except OSError:
+    except FileExistsError:
         return '; the file is kept at %s' % held
+    except OSError:
+        # No hard links here (FAT, some shares). Windows rename refuses an existing target, so it
+        # is safe there; on POSIX the file stays in quarantine.
+        if os.name != 'nt':
+            return '; the file is kept at %s' % held
+        try:
+            os.rename(held, full)
+        except OSError:
+            return '; the file is kept at %s' % held
+        return ''
     try:
         os.unlink(held)
     except OSError:

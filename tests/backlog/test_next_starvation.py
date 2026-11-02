@@ -104,8 +104,13 @@ class ReleasableHolds(unittest.TestCase):
         hub = mock.Mock(side_effect=AssertionError('asked'))
         self.assertEqual(omod.releasable_holds(s, None, lambda rid: None, hub=hub), ([], None))
 
+    def test_the_hub_is_not_asked_for_an_id_cited_only_in_owner_ask(self):
+        s = snap(owner_held('AAA', 'Owner deferred the read (Q-73)'))
+        hub = mock.Mock(side_effect=AssertionError('asked'))
+        self.assertEqual(omod.releasable_holds(s, None, lambda rid: None, hub=hub), ([], None))
+
     def test_a_hub_that_cannot_be_read_is_one_note_and_item_ends_still_count(self):
-        s = snap(owner_held('AAA', 'Q-5 first'),
+        s = snap(owner_held('AAA', 'Q-5 first', until='owner question:Q-5 answered'),
                  rec('CCC', priority='3', priority_by='agent', state='blocked',
                      blocked_on='item:GONE'))
         out, note = omod.releasable_holds(

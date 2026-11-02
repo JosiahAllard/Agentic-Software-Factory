@@ -143,7 +143,7 @@ scheduled-task writers, with the bridge apart.
   delegations/run.py builds a child environment from HKLM/HKCU; links.py uses `cmd /c rmdir`.
   installer/machine-setup.ps1 only validates arguments and calls tools/machine_setup.py.
 - **Fails closed today** (good, and must stay so until replaced): records/landing.py `_proc`
-  (holder counts as alive), worktree/classify.py process_cwds, ledger/safepath.py owner check,
+  (holder counts as alive), worktree/classify.py process_cwds,
   guard/context.py `_default_lock_held` (heavy work never counts as held).
 - **Fails open today**: worktree/holders.py blockers returns [] off Windows (inferred: a sweep
   would not see a process using the worktree). Listed in slice 9.
@@ -459,8 +459,7 @@ before the fix.
 | 9 | machine-path scrub matches drive forms only | the machinepaths pattern | `/home/<name>` paths not caught in outgoing text |
 | 10 | symlinks | jail.real, git/repo.py real, check_write use realpath | a link into the main checkout is judged as main (good); a swap between check and use is a known limit, as with junctions |
 
-Already failing closed and to stay so: guard/context.py `_placed` (no drive, no ledger key),
-ledger/safepath.py (no owner check off Windows, refuses), `_default_lock_held`.
+Already failing closed and to stay so: guard/context.py `_placed` (no drive, no ledger key), `_default_lock_held`.
 
 The design: path text is parsed by the shell's grammar, then placed by a platform-aware placer.
 On Linux a path is absolute when it starts with `/`; there are no drives, no MSYS mapping and no

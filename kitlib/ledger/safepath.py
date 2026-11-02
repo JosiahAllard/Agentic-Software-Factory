@@ -7,7 +7,8 @@ caught. Three checks:
 
 - reparse: the file and every existing folder above it, except the drive root, must not be a
   reparse point (a junction, a symlink or any other tag), read with os.lstat's
-  st_file_attributes. A swapped-in junction or link would point the ledger somewhere else.
+  st_file_attributes. Off Windows, which has no reparse points, a symlink (S_ISLNK of st_mode)
+  is refused the same way. A swapped-in junction or link would point the ledger somewhere else.
 - hard links: the file must have one link (st_nlink); another name would be an unguarded path.
 - owner: the file and its own folder, where they exist, must be owned by this process's user,
   Administrators or SYSTEM (GetNamedSecurityInfoW). Off Windows the owner is os.lstat's st_uid,
@@ -45,7 +46,8 @@ def refusal(path):
             st = None
         except OSError as exc:
             return head + 'cannot check %s (%s): check that this user may read it' % (p, exc)
-        if st is not None and getattr(st, 'st_file_attributes', 0) & REPARSE_POINT:
+        if st is not None and (getattr(st, 'st_file_attributes', 0) & REPARSE_POINT
+                               or (os.name != 'nt' and stat.S_ISLNK(st.st_mode))):
             return head + ('%s is a reparse point (a junction, symlink or other tag); the ledger '
                            'file and every folder above it must be plain: %s' % (p, REPARSE_FIX))
         if st is not None and p == full and stat.S_ISREG(st.st_mode) and st.st_nlink > 1:

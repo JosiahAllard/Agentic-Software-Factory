@@ -151,6 +151,23 @@ class MoveTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(self.L.old_rules))
         self.assertTrue(os.path.isfile(self.L.old_digest))
 
+    def test_a_posix_owner_refusal_moves_nothing(self):
+        """The POSIX twin: os.name patched to posix, a foreign uid on one rulebook file."""
+        book = os.path.normcase(os.path.join(self.L.old_rules, 'notes.txt'))
+        real = safepath.owner_uid
+        me = os.lstat(book).st_uid          # this user's uid; 0 (root) on Windows
+
+        def owner(p):
+            return (me + 1001, None) if os.path.normcase(p) == book else real(p)
+        with mock.patch.object(safepath.os, 'name', 'posix'), \
+                mock.patch.object(safepath.os, 'getuid', lambda: me, create=True), \
+                mock.patch.object(safepath, 'owner_uid', owner):
+            with self.assertRaises(Refused) as cm:
+                move.apply(self.L.cfg)
+        self.assertIn('is owned by uid %d' % (me + 1001), str(cm.exception))
+        self.assertTrue(os.path.isdir(self.L.old_rules))
+        self.assertTrue(os.path.isfile(self.L.old_digest))
+
     def test_a_source_of_the_wrong_kind_is_refused(self):
         os.remove(self.L.old_digest)
         os.makedirs(self.L.old_digest)

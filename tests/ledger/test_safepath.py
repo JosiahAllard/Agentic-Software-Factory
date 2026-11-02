@@ -1,9 +1,11 @@
 """kitlib.ledger.safepath: the rulings ledger's path checks (docs/ledger.md "Path checks"), and
 every reader and writer of the ledger refusing through them."""
 import os
+import stat
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -167,8 +169,8 @@ class OwnerTest(Case):
                       why or '')
 
 
-class PosixOwnerTest(Case):
-    """The POSIX owner check, run on any platform: os.name is patched to posix, and os.getuid
+class PosixCase(Case):
+    """Base of the POSIX checks, run on any platform: os.name is patched to posix, and os.getuid
     (absent on Windows) and the owner_uid seam are patched where a test needs a uid."""
 
     def posix(self, me, owners=None):
@@ -184,6 +186,10 @@ class PosixOwnerTest(Case):
         for patch in stack:
             patch.start()
             self.addCleanup(patch.stop)
+
+
+class PosixOwnerTest(PosixCase):
+    """The POSIX owner check: st_uid is this process's uid or root."""
 
     def test_a_path_owned_by_this_uid_passes(self):
         """The fix: off Windows an existing ledger path is not refused for want of an owner SID."""
@@ -230,6 +236,45 @@ class PosixOwnerTest(Case):
         self.posix(os.lstat(self.real).st_uid)
         with mock.patch.object(safepath, 'owner_sid', lambda p: self.fail('owner_sid called')):
             self.assertIsNone(safepath.refusal(self.real))
+
+
+class PosixLinkTest(PosixCase):
+    """Off Windows there are no reparse points: a symlink, the file or a folder above it, is
+    refused as one. lstat is faked to report a link with no st_file_attributes, as on Linux; the
+    link's own owner is this uid, so only the link check can refuse it."""
+
+    def as_link(self, link):
+        """Patch os.lstat so `link` reads as a Linux symlink owned by uid 4242."""
+        real_lstat = os.lstat
+        fake = types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_nlink=1, st_uid=4242)
+
+        def lstat(p, *a, **k):
+            return fake if os.path.normcase(p) == os.path.normcase(link) else real_lstat(p, *a, **k)
+        patch = mock.patch.object(safepath.os, 'lstat', lstat)
+        patch.start()
+        self.addCleanup(patch.stop)
+        mine = {os.path.normcase(self.real): (4242, None),
+                os.path.normcase(os.path.dirname(self.real)): (4242, None)}
+        self.posix(4242, mine)
+
+    def test_a_symlinked_ledger_file_is_refused(self):
+        self.as_link(self.real)
+        why = safepath.refusal(self.real) or ''
+        self.assertIn('%s is a reparse point' % self.real, why)
+        self.assertIn(safepath.REPARSE_FIX, why)
+
+    def test_a_symlinked_folder_above_is_refused(self):
+        self.as_link(self.d)
+        self.assertIn('%s is a reparse point' % self.d, safepath.refusal(self.real) or '')
+
+    def test_a_real_symlink_is_refused(self):
+        link = os.path.join(self.d, 'real', 'LINK.md')
+        try:
+            os.symlink(self.real, link)
+        except OSError as e:
+            self.skipTest('cannot create a symlink here (no Developer Mode or privilege): %s' % e)
+        self.posix(os.lstat(link).st_uid)
+        self.assertIn('%s is a reparse point' % link, safepath.refusal(link) or '')
 
 
 class ConsumerTest(Case):

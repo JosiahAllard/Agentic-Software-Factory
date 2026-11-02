@@ -437,6 +437,25 @@ def set_affinity(pid, ctime, mask):
         K32.CloseHandle(h)
 
 
+def raise_to_normal():
+    """Raises this process to the normal priority class when it runs below it (idle or below
+    normal), never lowering it and never above normal. A process the Task Scheduler starts runs
+    below normal by default (task priority 7), and Windows gives a child of an idle or
+    below-normal process its parent's class, a child of any other the normal class: so what this
+    process starts after the call runs at normal too. "raised", "unchanged" (already normal or
+    above) or "failed" (the class could not be read or set); None off Windows, where it does
+    nothing."""
+    if kitlib.platform.NAME != "windows":
+        return None
+    me = K32.GetCurrentProcess()
+    now = K32.GetPriorityClass(me)
+    if not now:
+        return "failed"
+    if now not in (win32.IDLE_PRIORITY_CLASS, win32.BELOW_NORMAL_PRIORITY_CLASS):
+        return "unchanged"
+    return "raised" if K32.SetPriorityClass(me, win32.NORMAL_PRIORITY_CLASS) else "failed"
+
+
 # On Linux the process names read /proc instead (kitlib.platform.linux.process; docs/
 # linux-support-plan.md section 8, slice 4), with the same meanings and (pid, ctime) identity,
 # the ctime `(boot << 64) | starttime`. The handle, memory and affinity functions above stay

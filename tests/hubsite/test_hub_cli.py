@@ -50,8 +50,7 @@ class CliCase(unittest.TestCase):
         self.addCleanup(env.stop)
         # serve raises its own process to normal priority (kitlib.proc.process.raise_to_normal):
         # never this test process's, which may run below normal on purpose (ServePriorityCase).
-        priority = mock.patch('kitlib.proc.process.raise_to_normal', create=True,
-                              return_value='unchanged')
+        priority = mock.patch('kitlib.proc.process.raise_to_normal', return_value='unchanged')
         self.priority = priority.start()
         self.addCleanup(priority.stop)
         # The fenced PM repository, with no kit-pm-data.json record: no pm_data, as a machine

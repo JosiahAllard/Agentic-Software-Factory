@@ -23,6 +23,7 @@ import shutil
 import stat
 import time
 
+from kitlib import platform
 from kitlib.git import cmd, refs, repo
 
 DELETE = 'DELETE'           # untracked (??): the file is removed
@@ -382,7 +383,7 @@ def _put_back(held, full):
     except OSError:
         # No hard links here (FAT, some shares). Windows rename refuses an existing target, so it
         # is safe there; on POSIX the file stays in quarantine.
-        if os.name != 'nt':
+        if platform.NAME != 'windows':
             return '; the file is kept at %s' % held
         try:
             os.rename(held, full)

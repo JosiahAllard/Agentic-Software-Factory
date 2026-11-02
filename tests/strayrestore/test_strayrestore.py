@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from kitlib import platform
 from kitlib import strayrestore as sr
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.realgit import real_git
@@ -467,7 +468,7 @@ class PutBack(unittest.TestCase):
     def test_without_hard_links_windows_renames_the_file_back(self):
         held, full = self._files()
         with mock.patch.object(os, 'link', side_effect=OSError('no links')), \
-                mock.patch.object(os, 'name', 'nt'):
+                mock.patch.object(platform, 'NAME', 'windows'):
             os.remove(full)
             self.assertEqual(sr._put_back(held, full), '')
         with open(full) as f:
@@ -478,7 +479,7 @@ class PutBack(unittest.TestCase):
         held, full = self._files()
         os.remove(full)
         with mock.patch.object(os, 'link', side_effect=OSError('no links')), \
-                mock.patch.object(os, 'name', 'posix'):
+                mock.patch.object(platform, 'NAME', 'linux'):
             note = sr._put_back(held, full)
         self.assertEqual(note, '; the file is kept at %s' % held)
         self.assertTrue(os.path.exists(held))

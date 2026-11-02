@@ -1412,8 +1412,13 @@ ul.hist .sch-line{display:block}
     for (const r of state.repos.map(d => d.name || d.id)) if (r && String(r).toLowerCase() !== "all" && !seen.has(String(r).toLowerCase())) seen.set(String(r).toLowerCase(), String(r));
     return [...seen.values()].sort((a,b) => a.localeCompare(b, [], {sensitivity: "base"}));
   }
+  // A view's menu lists only the repos with items in that view (rows), plus the one chosen, so the filter never strands the owner.
+  function activeRepos(rows, chosen){
+    const has = new Set(rows.map(x => canonRepo(x.repo).toLowerCase()).filter(Boolean)), c = String(chosen || "").toLowerCase();
+    return knownRepos().filter(r => has.has(r.toLowerCase()) || r.toLowerCase() === c);
+  }
   function fillBrepo(){
-    const sel = $("#brepo"), want = ["", ...knownRepos()];
+    const sel = $("#brepo"), want = ["", ...activeRepos([...state.backlog, ...state.completed], state.brepo)];
     if ([...sel.options].map(o=>o.value).join("|") !== want.join("|")) sel.replaceChildren(...want.map(r => el("option", {value:r, text: r || "All backlogs"})));
     const hit = want.find(r => r && r.toLowerCase() === state.brepo.toLowerCase());
     state.brepo = hit || ""; sel.value = state.brepo;
@@ -1719,7 +1724,7 @@ ul.hist .sch-line{display:block}
   const inId = x => { const q = state.idq.trim().toLowerCase(); return !q || (String(x.id) + " " + String(x.title || "")).toLowerCase().includes(q); };
   $("#idq").addEventListener("input", e => { state.idq = e.target.value; render(); });
   function fillRepos(rows){
-    const sel = $("#repo"), want = ["", ...knownRepos()];
+    const sel = $("#repo"), want = ["", ...activeRepos(rows, state.repo)];
     if ([...sel.options].map(o=>o.value).join("|") !== want.join("|")) sel.replaceChildren(...want.map(r => el("option", {value:r, text: r || "All repos"})));
     state.repo = want.find(r => r && r.toLowerCase() === state.repo.toLowerCase()) || ""; sel.value = state.repo;
   }

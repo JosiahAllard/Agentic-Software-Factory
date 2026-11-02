@@ -1420,7 +1420,7 @@ Never stored; read from their sources (`kitlib.hubsite.derived`, `kitlib.hubsite
 ### Documents named in a question
 
 A question's context and its options' labels and descriptions show a named document as a link that opens in a new tab
-(`target=_blank`, `rel=noopener`): an `http(s)` URL (any other scheme stays text), and a word that is a listed page's id,
+(`target=_blank`, `rel="noopener noreferrer"`, so the tunnel origin is not sent as the Referer): an `http(s)` URL (any other scheme stays text), and a word that is a listed page's id (as a whole word, not inside a path),
 which links to the hub at `#doc=<id>` (the page opens that document's reader once the lists are read). The links are
 made as elements from the parsed URL or the encoded id, never from markup; everything else is a text node. A repo
 file path stays text: the hub serves no file by path and holds no repository's web address.

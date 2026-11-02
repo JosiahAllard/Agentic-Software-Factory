@@ -572,7 +572,7 @@ ul.hist .sch-line{display:block}
   // Back, Forward or a typed hash: show the route the address now names.
   function goRoute(){
     if (!$("#reader").hidden) return;                // the reader holds the page: the address is not followed under it
-    const wd = docHash(location.hash); if (wd !== null) { wantDoc = wd; render(); return; }
+    const wd = docHash(location.hash); if (wd !== null) { wantDoc = wd; try { history.replaceState(null, "", routeOf()); } catch (e) {} render(); return; }
     const r = route(location.hash); if (!r || sameRoute(location.hash)) return;
     if (r.sfilter && r.sfilter !== state.sfilter) state.rec = null;
     if (r.section === "backlog" && location.hash !== "#parked" && state.sfilter === "parked") { state.sfilter = "current"; state.rec = null; }
@@ -3057,8 +3057,6 @@ ul.hist .sch-line{display:block}
   // frame navigated away instead of scrolling (and :target never matched). Spelled about:srcdoc#x it is the
   // frame's own address, so the browser scrolls and sets :target. The sandbox and the policy are untouched.
   const docFragments = html => html.replace(/(<(?:a|area)\b[^<>]*?\shref\s*=\s*["'])#/gi, "$1about:srcdoc#");
-  // A card's refs, kept as keptRefs keeps them: a ref that is a listed document's id is a button that opens it
-  // in the reader, and any other ref is text. lead goes before them and sep between them.
   // Text that names a document, as nodes: an http(s) URL is a link, and so is a word that is a listed document's id
   // (to the hub at #doc=<id>); both open in a new tab. Every other piece, and any URL of another scheme, is a text
   // node. A link is made only with el(), from the parsed URL's own href or the encoded id: never from markup.
@@ -3068,11 +3066,14 @@ ul.hist .sch-line{display:block}
     let last = 0, m;
     const WEB = "http";   // in parts: the page text holds no literal web address (PageTextTest)
     const re = /https?:\/\/[^\s<>"'`]+|[A-Za-z0-9][A-Za-z0-9._-]*/g;
-    const link = (href, label) => el("a", {href, target:"_blank", rel:"noopener", text: label});
+    const link = (href, label) => el("a", {href, target:"_blank", rel:"noopener noreferrer", text: label});
     while ((m = re.exec(s))) {
       let tok = m[0].replace(/[.,;:!?)\]]+$/, ""), node = null;
       if (/^https?:/i.test(tok)) { try { const u = new URL(tok); if (u.protocol === WEB + ":" || u.protocol === WEB + "s:") node = link(u.href, tok); } catch (e) {} }
       else if (ids.has(tok)) node = link("#doc=" + encodeURIComponent(tok), tok);
+      // Linked only as a whole word: not inside a path (kitlib/design), a name or a longer token.
+      const before = s[m.index - 1], after = s[m.index + tok.length];
+      if (node && !/^https?:/i.test(tok) && !((before === undefined || /[\s(\["'`<,;:]/.test(before)) && (after === undefined || /[\s)\]"'`>,;:!?.]/.test(after)))) node = null;
       if (!node) continue;
       if (m.index > last) out.push(s.slice(last, m.index));
       out.push(node); last = m.index + tok.length; re.lastIndex = last;
@@ -3080,6 +3081,8 @@ ul.hist .sch-line{display:block}
     if (last < s.length) out.push(s.slice(last));
     return out;
   }
+  // A card's refs, kept as keptRefs keeps them: a ref that is a listed document's id is a button that opens it
+  // in the reader, and any other ref is text. lead goes before them and sep between them.
   function refsLine(refs, lead, sep){
     const kept = keptRefs(refs); if (!kept.length) return null;
     const ids = new Set(state.pages.map(p => p.id)), kids = lead ? [lead] : [];

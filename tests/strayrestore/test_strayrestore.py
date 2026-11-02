@@ -1,6 +1,8 @@
 """kitlib.strayrestore: a main-checkout stray is discarded only when a branch tip holds its exact
 bytes at the same path; everything else is LEAVE and never touched (docs/stray-restore.md)."""
 import os
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
@@ -431,6 +433,36 @@ class Roles(unittest.TestCase):
         self.assertIsNone(sr.why_not(None, tree=owner))
         self.assertTrue(sr.allowed('coordinator', tree=codex))
         self.assertIn("marked 'worker'", sr.why_not('worker', tree=owner))
+
+
+class PutBack(unittest.TestCase):
+    def _files(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        held, full = os.path.join(d, 'held'), os.path.join(d, 'full')
+        for p, text in ((held, 'moved'), (full, 'written meanwhile')):
+            with open(p, 'w') as f:
+                f.write(text)
+        return held, full
+
+    def test_a_file_written_at_the_path_meanwhile_is_never_replaced(self):
+        held, full = self._files()
+        # POSIX rename replaces silently; emulate it so the test bites on Windows too.
+        with mock.patch.object(os, 'rename', os.replace):
+            note = sr._put_back(held, full)
+        self.assertEqual(note, '; the file is kept at %s' % held)
+        with open(full) as f:
+            self.assertEqual(f.read(), 'written meanwhile')
+        with open(held) as f:
+            self.assertEqual(f.read(), 'moved')
+
+    def test_a_free_path_gets_the_file_back_and_the_moved_copy_goes(self):
+        held, full = self._files()
+        os.remove(full)
+        self.assertEqual(sr._put_back(held, full), '')
+        with open(full) as f:
+            self.assertEqual(f.read(), 'moved')
+        self.assertFalse(os.path.exists(held))
 
 
 if __name__ == '__main__':

@@ -374,10 +374,16 @@ def _log_safe(common, record):
 def _put_back(held, full):
     """'' when the moved file is back at `full`, else a note naming where it is kept."""
     try:
-        os.rename(held, full)            # never over a file written there meanwhile
-        return ''
+        # A hard link never replaces a file written at `full` meanwhile, on any platform (POSIX
+        # rename would). Where links fail (a filesystem without them) the file stays in quarantine.
+        os.link(held, full)
     except OSError:
         return '; the file is kept at %s' % held
+    try:
+        os.unlink(held)
+    except OSError:
+        pass                             # back at `full`; a leftover moved copy is harmless
+    return ''
 
 
 def _mark(environ):

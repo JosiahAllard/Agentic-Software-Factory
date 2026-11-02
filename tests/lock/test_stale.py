@@ -16,10 +16,11 @@ import time
 import unittest
 from unittest import mock
 
-from .helpers import StoreCase, clean_env
+from .helpers import OWNER, StoreCase, clean_env
 
 if os.name == "nt":
     from kitlib.lock import api, notice, stale
+    from kitlib.lock import holds as hl
     from kitlib.lock import run as rm
     from kitlib.lock import status as st
     from kitlib.lock import store as store_mod
@@ -372,8 +373,20 @@ class Shown(Base):
 
 
 class EndToEnd(Base):
+    # A reap pass can miss the run (its record read refused while the waiter's usage save
+    # replaces it); the next pass, stale_check_s later while the booking waits, takes it.
+    SETTINGS = {"stale_check_s": 0.2}
+
     def test_another_bookings_acquire_ends_a_stale_held_run(self):
-        self.confine(1)
+        ok = self.confine(1)
+        if len(ok) > 1:
+            # One free slot, so the next booking waits behind the stale run and keeps looking;
+            # one that got a free slot at once would make a single pass.
+            now = utc_now()
+            hl.create(self.store, self.layout(), {
+                "owner": "owner", "scope": "slots", "start": now,
+                "end": now + datetime.timedelta(hours=1), "slots": {"cpu": ok[1:], "gpu": []}},
+                OWNER, None)
         s = rm.book("engine-test", "kit", "stuck", cores=1, store=self.store, env=clean_env())
         p = s.start([sys.executable, "-c", "import time; time.sleep(120)"])
         self.addCleanup(lambda: p.poll() is None and p.kill())

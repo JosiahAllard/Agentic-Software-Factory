@@ -171,6 +171,7 @@ no kind.
   every default holds, so a trial run with `--store` never writes the key; the owner writes it only for
   the live store (docs/go-live.md "Switches"). The PM session-start checklist (docs/pm-start.md) runs its
   site checks with the key's settings or the defaults; writing the key does not switch it.
+- `hub.py serve` raises itself to normal priority at start (`kitlib.proc.process.raise_to_normal`), never lowering it or going above normal: the autostart task runs at Task Scheduler's default priority 7, below normal, and the git calls it starts would inherit that and starve while runs keep every core busy. A raise that fails is one NOTE line.
 - `hub.py status` prints the running server's health, one line each: `revision N`, `store ...`,
   `git: ...` (`running, branch B, nothing pending`, or what is pending, a failed pass, or `git sync is
   off on this server`), `backlog <repo>: fetched X ago`, `code: current` or `code: stale: ` and the
@@ -1415,6 +1416,14 @@ Never stored; read from their sources (`kitlib.hubsite.derived`, `kitlib.hubsite
   (an unknown or malformed name is a 404 or 400). Never a host's rendered copy.
 - findings: the maintenance lint's last result of each repo, never in the snapshot
   ("finding_marks/<fingerprint>").
+
+### Documents named in a question
+
+A question's context and its options' labels and descriptions show a named document as a link that opens in a new tab
+(`target=_blank`, `rel=noopener`): an `http(s)` URL (any other scheme stays text), and a word that is a listed page's id,
+which links to the hub at `#doc=<id>` (the page opens that document's reader once the lists are read). The links are
+made as elements from the parsed URL or the encoded id, never from markup; everything else is a text node. A repo
+file path stays text: the hub serves no file by path and holds no repository's web address.
 
 ## The record page
 One backlog record, read live and never part of the snapshot (`kitlib/hubsite/api.py` `record`,

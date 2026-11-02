@@ -3288,6 +3288,8 @@ ul.hist .sch-line{display:block}
   // A tab hidden holds no long-poll: hiding it ends the wait too (away), and the loop waits for the tab to be shown
   // again. Each wait holds one of the few connections a browser keeps to the hub, so several hidden tabs would stall
   // the owner's writes behind them. A page opened in a tab that was never shown still reads once and waits.
+  // Shown again, the loop reads once: both visibilitychange listeners run before it resumes, so this poke only
+  // ends the wait it already left.
   let nudge = null, away = false;
   const poke = () => { if (nudge) nudge.abort(); };
   document.addEventListener("visibilitychange", () => { away = document.hidden; poke(); });

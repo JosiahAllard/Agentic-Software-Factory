@@ -7,6 +7,7 @@ listener thread may outlive its test."""
 import _thread
 import copy
 import datetime
+import functools
 import json
 import os
 import shutil
@@ -1355,6 +1356,23 @@ class ReasonCase(ServeCase):
                 self.assertIn('hub.py" restart', code['restart'])
                 self.assertIn('hub.py" stop, then python', code['restart'])   # the fallback for a hub with no autostart task
                 self.assertIn('hub.py" serve', code['restart'])
+        hub.close()
+
+    def test_the_built_hub_files_an_answer_off_the_request_thread(self):
+        # without it the owner's answer waits for the record's fetch and push (docs/action-hub.md
+        # "Filing the answer", KIT-HUB-COMPLETE-FREEZE)
+        hub = self.build()
+        later = hub.api.file_later
+        self.assertIsInstance(later, functools.partial)
+        self.assertIs(later.func, serve._file_later)
+        ran, done = [], threading.Event()
+
+        def fn():
+            ran.append(threading.current_thread().name)
+            done.set()
+        later('Q-1', fn)
+        self.assertTrue(done.wait(10))
+        self.assertEqual(ran, ['hub-file-answer'])
         hub.close()
 
     def test_a_code_status_that_raises_or_is_none_gives_no_code_and_health_still_answers(self):

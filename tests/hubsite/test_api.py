@@ -2,6 +2,7 @@
 shape, versions, the views it borrows, wait, pending, snapshot and health. Who may call a route
 is tests/hubsite/test_api_roles.py."""
 import datetime
+import functools
 import inspect
 import json
 import os
@@ -4309,7 +4310,7 @@ class FilingTest(ApiCase):
         # the server's filing (serve._file_later): the record write's fetch and push run off
         # the request thread, so the owner's answer is not held for them (KIT-HUB-COMPLETE-FREEZE)
         lines = []
-        self.api.file_later = lambda fn: serve._file_later(lambda *a: lines.append(a), fn)
+        self.api.file_later = functools.partial(serve._file_later, lambda *a: lines.append(a))
         qid = self.bound()
         release, wrote = threading.Event(), threading.Event()
         slow = self.views.record_answer
@@ -4344,13 +4345,13 @@ class FilingTest(ApiCase):
         def log(*a):
             lines.append(a)
             done.set()
-        self.api.file_later = lambda fn: serve._file_later(log, fn)
+        self.api.file_later = functools.partial(serve._file_later, log)
         qid = self.bound()
         with mock.patch.object(api, 'file_answer', side_effect=RuntimeError('C:\\x')):
             got = self.answer(qid)
             self.assertTrue(done.wait(10))
         self.assertEqual(got['status'], 'answered')
-        self.assertEqual(lines, [('error', 'filing an answer failed: RuntimeError')])
+        self.assertEqual(lines, [('error', 'filing an answer to %s failed: RuntimeError' % qid)])
         self.assertEqual(self.refile()['filed'], [qid])
 
     def test_a_crash_after_the_record_write_is_mended_by_the_retry(self):

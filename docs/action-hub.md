@@ -115,7 +115,7 @@ shown again, the browser back online or the page restored from the back-forward 
 wait or back-off and reads at once. The tab hidden ends the wait too, and the page waits for it to be
 shown again: each wait holds one of the few connections a browser keeps to the hub, and hidden tabs
 holding theirs can stall the owner's writes behind them (a tab opened hidden and never shown still reads once and
-waits). An answer sent shows on its card at once ("Your answer was sent. Reading it back from the hub
+waits). Shown again, the page reads once. An answer sent shows on its card at once ("Your answer was sent. Reading it back from the hub
 server…") while the lists are read again behind it. A redirect is the tunnel's sign-in (Cloudflare Access) running
 out: the page says to reload it to sign in again, and tries every 45 s until then. A view the
 server cannot give says so at the top.
@@ -765,9 +765,11 @@ is mended there. An unbound question is never filed: the PM logs it as before.
 The hub server files off the answer's request (`Api.file_later`, set by `serve.build`: steps 2 and 3 on a
 daemon thread, `serve._file_later`), since step 2 fetches and pushes the backlog store, which can take
 seconds, up to a minute a try when the remote is slow. The answer route returns once step 1 is written,
-with status `answered` and no `filing`, and the page reads the `filed` mark, or the `filing` failure,
-through its wait and snapshot like any other change. A raise on that thread is an `error` line of the
-hub's log (`filing an answer failed: <type>`) and the question stays `answered` for the retries above.
+with status `answered` and no `filing`. The page's card then says `waiting to be filed in <record id>`
+until its wait and snapshot bring the `filed` mark, and the card says `filed in <record id>`. The page
+shows no `filing`: an answer whose filing failed keeps saying `waiting to be filed in <record id>`, and
+the PM, who has it pending, handles it. A raise on that thread is an `error` line of the
+hub's log (`filing an answer to <qid> failed: <type>`) and the question stays `answered` for the retries above.
 An `Api` with no `file_later` (the library's callers, the tests) files in the answer's own call: its answer
 then carries `filing` (`{id, filed, version, revision}`, `{id, filed: false, code, message}`, or `{id,
 filed: false, moved: true}`), and its `status`, `version` and `revision` are those of the last write.

@@ -1174,8 +1174,9 @@ def _job_line(log, text):
         pass
 
 
-def _file_later(log, fn):
-    """Api.file_later: fn, the filing of an owner's answer (kitlib.hubsite.api file_answer), on
+def _file_later(log, doc_id, fn):
+    """Api.file_later: fn, the filing of the owner's answer to question doc_id (kitlib.hubsite.api
+    file_answer), on
     a daemon thread of its own, so the answer route returns before the record's fetch and push.
     A raise is an 'error' line of the log; the question stays answered, and POST questions/file
     or the next hub start files it (docs/action-hub.md "Filing the answer")."""
@@ -1183,7 +1184,7 @@ def _file_later(log, fn):
         try:
             fn()
         except Exception as e:      # noqa: BLE001 - a thread's raise would reach no one
-            _job_line(log, 'filing an answer failed: %s' % type(e).__name__)
+            _job_line(log, 'filing an answer to %s failed: %s' % (doc_id, type(e).__name__))
     threading.Thread(target=run, name='hub-file-answer', daemon=True).start()
 
 

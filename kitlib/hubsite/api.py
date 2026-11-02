@@ -705,8 +705,9 @@ class Api(object):
         self.watcher_status = None  # PushWorker.watcher_status, set by the worker ("Watcher")
         self.code_status = None     # Hub.code_state, set by serve.build ("Code")
         self.jobs_status = None     # jobs.Jobs.status, set by serve.build ("Jobs")
-        # run(fn): fn, the filing of an owner's answer, off the request thread; set by
-        # serve.build. None files it in the answer's own call (questions_answer)
+        # run(qid, fn): fn, the filing of the owner's answer to qid, off the request
+        # thread; set by serve.build. None files it in the answer's own call
+        # (questions_answer)
         self.file_later = None
 
     def call(self, method, path, role, body=None, query=None, via='', raise_unexpected=False,
@@ -1259,7 +1260,7 @@ def questions_answer(api, req):
             # the answer returns now, stored, and its filing marks the question later, which
             # the page reads through its wait and snapshot (docs/action-hub.md "Filing the answer")
             via = _via(req)
-            api.file_later(lambda: file_answer(api, doc_id, via))
+            api.file_later(doc_id, lambda: file_answer(api, doc_id, via))
             return out
         got = file_answer(api, doc_id, _via(req), full=req.full)
         if got is not None:

@@ -573,8 +573,8 @@ store's git push (the `push` setting).
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its
-  subject (session, account, run or notice id, check) as the detail, several as `events` with their
-  count. The event lines are free text, so they go in its health `note` (the last 20 pushed, with
+  subject (session, run or notice id, check) as the detail, `usage` and `reset` with
+  `<account>:<window>:<percentage now>` (`2:seven_day:96`), several as `events` with their count. The event lines are free text, so they go in its health `note` (the last 20 pushed, with
   times), never in a push.
   `usage-crossover` (`kitlib/hubjobs/usage_crossover.py`, every 300 s, first at 60 s, before
   `coord-restart`'s first run) moves a session to another account as its account nears the weekly

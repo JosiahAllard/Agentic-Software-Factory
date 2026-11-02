@@ -245,11 +245,11 @@ def parse(text):
     return found, items, errs
 
 
-def plan(report_text, current_basis, split=False):
+def plan(report_text, current_basis):
     """`([Change], [error lines])` for `report_text`. Errors, all found before any write: no or a
     stale Basis; a malformed line; a line still marked `?`; a bad or doubled key; a MERGE group
-    across repos. `split` (ledger_dir set) is unused now that a shared rule is writable there. A CUT line is skipped. One Change per KEEP line and per MERGE group (the group's first
-    line carries it, every member's ids join it)."""
+    across repos. A CUT line is skipped. One Change per KEEP line and per MERGE group (the group's
+    first line carries it, every member's ids join it)."""
     found, items, errs = parse(report_text)
     if found is None:
         errs.append('the report has no Basis line')

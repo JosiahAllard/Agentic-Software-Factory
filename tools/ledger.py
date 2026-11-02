@@ -467,7 +467,7 @@ def do_rule_apply(a, found, repos):
     digest, why = standing.read_digest(found.digest)
     if digest is None:
         return fail(why or 'no standing digest at %s' % found.digest)
-    changes, errs = migrate.plan(report, migrate.basis(digest, retired), found.split)
+    changes, errs = migrate.plan(report, migrate.basis(digest, retired))
     books = write.load_books(found.rules)
     todo, landing = [], {}
     for c in changes:
@@ -478,13 +478,13 @@ def do_rule_apply(a, found, repos):
                         % (c.line, c.key, rulebook.file_name(spot[0]), landing[spot]))
             continue
         landing[spot] = c.line
+        log = migrate.log_repo(c, found.split)
         if not found.split:
             bad = fmt.repo_problem(c.repo, repos)
-        elif migrate.log_repo(c, True) in found.repos:
-            log = migrate.log_repo(c, True)
+        elif log in found.repos:
             bad = write.split_repo_problem(found.repos[log], log, list(found.repos))
         else:
-            bad = 'repo %r is not one of ledger_repos' % migrate.log_repo(c, True)
+            bad = 'repo %r is not one of ledger_repos' % log
         if bad:
             errs.append('line %d: rule %s: %s' % (c.line, c.key, bad))
         elif state == 'conflict':

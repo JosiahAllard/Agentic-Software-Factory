@@ -191,10 +191,8 @@ class PlanTest(unittest.TestCase):
             self.assertEqual(len(errs), 1, (cite, errs))
             self.assertIn('cites a ruling or question id', errs[0])
 
-    def test_shared_lines_plan_the_same_in_the_split_layout(self):
-        changes, errs = migrate.plan(reviewed(self.text), self.basis, split=True)
-        self.assertEqual(errs, [])
-        self.assertEqual(changes, migrate.plan(reviewed(self.text), self.basis)[0])
+    def test_a_shared_line_is_logged_for_pm_in_the_split_layout_only(self):
+        changes, _ = migrate.plan(reviewed(self.text), self.basis)
         shared = [c for c in changes if c.repo == 'all']
         self.assertTrue(shared)
         self.assertEqual({migrate.log_repo(c, True) for c in shared}, {'pm'})
@@ -463,6 +461,14 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertIn('skip %s (already in all.md)' % key, again.stdout)
         self.assertEqual(self.read(os.path.join(self.dir, 'pm.md')), log)
+
+    def test_a_shared_rule_is_refused_when_pm_is_not_a_ledger_repo(self):
+        machine_config(self.home, {'ledger_dir': self.dir, 'ledger_repos': ['alpha', 'zeta'],
+                                   'ledger_path': self.frozen}, case=self)
+        self.make_report(lambda t: t.replace('| alpha |', '| all |', 1))
+        r = self.apply()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("repo 'pm' is not one of ledger_repos", r.stderr)
 
     def test_two_repos_of_one_book_proposing_one_key_are_refused_before_any_write(self):
         self.put(os.path.join(self.dir, 'rules', 'pm.md'), '# T\nRepos: alpha, pm\n')

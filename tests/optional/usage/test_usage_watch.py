@@ -257,8 +257,9 @@ class StatuslineRoundTrip(unittest.TestCase):
         self.assertEqual(after, before)
 
     def test_an_unreadable_file_is_never_overwritten(self):
-        # Held with no sharing: the file cannot be read, so it is not merged, written or moved over.
-        out, before, after, tmps = self.write_while_held(0)
+        # Held with delete sharing only: the file cannot be read, but it could be replaced, so only
+        # the script's own check keeps it from being overwritten unseen.
+        out, before, after, tmps = self.write_while_held(4)            # FILE_SHARE_DELETE
         self.assertEqual(out, "[Opus]  5h 42%")
         self.assertEqual(tmps, [])
         self.assertEqual(after, before)

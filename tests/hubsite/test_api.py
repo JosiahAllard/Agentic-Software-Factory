@@ -4325,7 +4325,8 @@ class FilingTest(ApiCase):
         got = self.answer(qid)
         took = time.monotonic() - began
         release.set()
-        self.assertLess(took, 0.2, 'the answer waited %.3f s for the record write' % took)
+        # 20-60 ms measured here; the bound leaves a loaded machine room, well under the 2 s
+        self.assertLess(took, 0.5, 'the answer waited %.3f s for the record write' % took)
         self.assertEqual(got['status'], 'answered')
         self.assertNotIn('filing', got)
         self.assertTrue(wrote.wait(10))

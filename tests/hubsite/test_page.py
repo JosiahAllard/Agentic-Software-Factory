@@ -1643,6 +1643,33 @@ class DomTest(unittest.TestCase):
                 self.assertIn("Your answer: two", got["after"])                    # the read that came shows the answer
                 self.assertNotIn("Your answer was sent.", got["after"])
 
+    def test_a_sent_answer_shows_at_once_while_the_lists_are_read_back(self):
+        # the card does not wait for the read after the answer (KIT-HUB-COMPLETE-FREEZE), as writeQuick
+        got = dom("""
+            await start();
+            const pick = $("#q-Q-1-1"); pick.checked = true; await fire(pick, "change");
+            let open = null;
+            server.route = c => {
+              if (c.path === "/snapshot" && open === null) return { later: new Promise(r => { open = r; }) };
+              if (c.path !== "/questions/Q-1/answer") return undefined;
+              const d = server.snap.collections.questions["Q-1"]; server.snap.revision++;
+              d.version++; d.status = "answered"; d.answer = { choice: 1, label: "two", note: "" };
+              return { status: 200, body: { ok: true } };
+            };
+            await click(button($("#q-Q-1"), "Send answer"));
+            const held = { card: text($("#q-Q-1")), send: !!button($("#q-Q-1"), "Send answer"), status: text($("#q-Q-1 .status")) };
+            open({ status: 200, body: server.snap }); await settle();
+            await click($("#tabs [data-f=answered]"));
+            return { held, after: text($("#q-Q-1")), sent: calls.filter(c => c.path === "/questions/Q-1/answer").length };
+        """, snapshot(collections=LISTS))
+        self.assertIn("Your answer was sent. Reading it back from the hub server", got["held"]["card"])
+        self.assertNotIn("could not be read again", got["held"]["card"])
+        self.assertFalse(got["held"]["send"])                                       # no second send while it reads
+        self.assertNotIn("Sending", got["held"]["status"])
+        self.assertIn("Your answer: two", got["after"])
+        self.assertNotIn("Your answer was sent.", got["after"])
+        self.assertEqual(got["sent"], 1)
+
     def test_a_refused_answer_whose_reread_fails_does_not_point_at_the_old_question_as_the_new_one(self):
         got = dom("""
             await start();

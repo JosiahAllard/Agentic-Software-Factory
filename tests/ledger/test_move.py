@@ -18,6 +18,7 @@ from tests.guard import world as W
 from tests.guard.claudehost import decide
 from tests.guard.world import bash
 from tests.home import machine_config
+from tests.platforms import windows_only
 
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'ledger.py')
@@ -136,6 +137,7 @@ class MoveTest(unittest.TestCase):
         self.assertEqual((got.items, moved), ([], []))
         self.assertTrue(os.path.isfile(self.L.old_digest))
 
+    @windows_only('it fakes a foreign owner SID, which only the Windows owner check reads')
     def test_a_path_check_refusal_moves_nothing(self):
         book = os.path.normcase(os.path.join(self.L.old_rules, 'notes.txt'))
         real = safepath.owner_sid

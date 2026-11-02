@@ -1338,6 +1338,25 @@ class DomTest(unittest.TestCase):
         self.assertEqual(chip({"team": {"five": 5, "week": 50}}), {"chip": "50% wk · team", "hot": False})
         self.assertEqual(chip({}), {"chip": "–", "hot": False})
 
+    def test_a_repo_menu_lists_only_the_repos_with_items_in_the_view_and_keeps_the_chosen_one(self):
+        entry = lambda repo, items: {"repo": repo, "fetched_at": NOW, "error": None, "stale": False,               # noqa: E731
+                                     "fetch_error": None, "items": items}
+        views = {"repos": [{"name": "alpha"}, {"name": "beta"}, {"name": "idle"}],
+                 "backlog": [entry("alpha", [{"id": "B-1", "t": "one", "p": 1, "s": "open"}]), entry("beta", [])]}
+        got = dom("""
+            await start();
+            await click($("#sections [data-s=backlog]"));
+            const opts = () => $$("#brepo option").map(o => o.value);
+            const out = { first: opts() };
+            $("#brepo").value = "alpha"; await fire($("#brepo"), "change");
+            server.snap.views.backlog = []; server.snap.revision++;
+            await wake();
+            out.kept = opts();
+            return out;
+        """, snapshot(views=views))
+        self.assertEqual(got["first"], ["", "alpha"])        # beta has no items and idle has no entry: neither is listed
+        self.assertEqual(got["kept"], ["", "alpha"])         # the chosen repo stays when it empties
+
     def test_parked_is_a_tab_under_backlog_and_its_count_shows_on_the_backlog_section(self):
         item = lambda i, at: {"id": "B-%d" % i, "t": "parked %d" % i, "p": 1, "s": "parked", "parked_at": at}      # noqa: E731
         entry = lambda repo, items: {"repo": repo, "fetched_at": NOW, "error": None, "stale": False,               # noqa: E731

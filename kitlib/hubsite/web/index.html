@@ -413,6 +413,10 @@ ul.hist .sch-line{display:block}
   const route = h => Object.prototype.hasOwnProperty.call(ROUTES, h) ? ROUTES[h] : null;
   try { const it = localStorage.getItem("oq.infotab"); if (it === "usage" || it === "notices") state.infotab = it; } catch(e){}
   Object.assign(state, route(location.hash));
+  // #doc=<id> asks for a document's reader (a link in a question's text opens the hub there in a new tab): kept until
+  // the lists are read, then opened if that document is listed (render) and dropped either way.
+  const docHash = h => { const m = /^#doc=(.+)$/.exec(h); try { return m ? decodeURIComponent(m[1]) : null; } catch (e) { return null; } };
+  let wantDoc = docHash(location.hash);
   // ready: the server has answered once, so the lists are real and the owner's controls are shown.
   let ready = false, lastRead = 0;
 
@@ -553,6 +557,7 @@ ul.hist .sch-line{display:block}
     const b = a && a !== document.body ? (a.isConnected ? a : id ? document.getElementById(id) : null) : null;
     if (b && b !== document.activeElement) { b.focus(); if (caret) try { b.setSelectionRange(caret[0], caret[1]); } catch (e) {} }
     syncRoute();
+    if (wantDoc !== null && ready) { const id = wantDoc; wantDoc = null; if (state.pages.some(x => x.id === id)) openDoc(id); }
   }
   // The route of what is shown. The first draw only corrects the address (no history entry); each later change
   // of section or tab adds one, so Back returns to it. A redraw that changes nothing adds nothing.
@@ -567,6 +572,7 @@ ul.hist .sch-line{display:block}
   // Back, Forward or a typed hash: show the route the address now names.
   function goRoute(){
     if (!$("#reader").hidden) return;                // the reader holds the page: the address is not followed under it
+    const wd = docHash(location.hash); if (wd !== null) { wantDoc = wd; try { history.replaceState(null, "", routeOf()); } catch (e) {} render(); return; }
     const r = route(location.hash); if (!r || sameRoute(location.hash)) return;
     if (r.sfilter && r.sfilter !== state.sfilter) state.rec = null;
     if (r.section === "backlog" && location.hash !== "#parked" && state.sfilter === "parked") { state.sfilter = "current"; state.rec = null; }
@@ -2943,7 +2949,7 @@ ul.hist .sch-line{display:block}
       pmQBucket(d) === "other" ? el("span", {class:"chip need", text: "status: " + String(d.status)}) : null
     );
     const parts = [head, el("h2", {text: d.title || "(untitled)"})];
-    if (d.context) parts.push(el("p", {class:"ctx", text: d.context}));
+    if (d.context) parts.push(el("p", {class:"ctx"}, ...linkText(d.context)));
     const replies = inboxFor(d.id);
     if (replies.length) parts.push(el("div", {class:"links"}, el("button", {class:"link", type:"button", text: (replies.some(m => !m.read) ? "New answer from the PM" : "The PM's answer") + (replies.length > 1 ? "s (" + replies.length + ")" : "") + " in the Inbox", onclick: () => goInbox(d.id)})));
     parts.push(refsLine(d.refs, "Refs: ", ", "));
@@ -2958,8 +2964,8 @@ ul.hist .sch-line{display:block}
         radios.push(input);
         input.addEventListener("change", () => { draft.choice = i; saveDraft(d.id, draft); btn.disabled = false; });
         fs.append(el("label", {class:"opt", for: name + "-" + i}, input,
-          el("span", {class:"ol"}, o.label || ("Option " + (i+1)), i === rec ? el("span", {class:"chip rec", text:"Recommended"}) : null),
-          o.description ? el("span", {class:"od", text: o.description}) : null));
+          el("span", {class:"ol"}, ...(o.label ? linkText(o.label) : ["Option " + (i+1)]), i === rec ? el("span", {class:"chip rec", text:"Recommended"}) : null),
+          o.description ? el("span", {class:"od"}, ...linkText(o.description)) : null));
       });
       const otherIn = el("input", {type:"radio", name, value:"other", id: name + "-other", checked: draft.choice === "other"});
       otherIn.addEventListener("change", () => { draft.choice = "other"; saveDraft(d.id, draft); btn.disabled = !draft.note.trim(); });
@@ -3051,6 +3057,30 @@ ul.hist .sch-line{display:block}
   // frame navigated away instead of scrolling (and :target never matched). Spelled about:srcdoc#x it is the
   // frame's own address, so the browser scrolls and sets :target. The sandbox and the policy are untouched.
   const docFragments = html => html.replace(/(<(?:a|area)\b[^<>]*?\shref\s*=\s*["'])#/gi, "$1about:srcdoc#");
+  // Text that names a document, as nodes: an http(s) URL is a link, and so is a word that is a listed document's id
+  // (to the hub at #doc=<id>); both open in a new tab. Every other piece, and any URL of another scheme, is a text
+  // node. A link is made only with el(), from the parsed URL's own href or the encoded id: never from markup.
+  // Repo file paths are not linked: the hub holds no repository's web address, and serves no file by path.
+  function linkText(text){
+    const s = String(text == null ? "" : text), ids = new Set(state.pages.map(p => p.id)), out = [];
+    let last = 0, m;
+    const WEB = "http";   // in parts: the page text holds no literal web address (PageTextTest)
+    const re = /https?:\/\/[^\s<>"'`]+|[A-Za-z0-9][A-Za-z0-9._-]*/g;
+    const link = (href, label) => el("a", {href, target:"_blank", rel:"noopener noreferrer", text: label});
+    while ((m = re.exec(s))) {
+      let tok = m[0].replace(/[.,;:!?)\]]+$/, ""), node = null;
+      if (/^https?:/i.test(tok)) { try { const u = new URL(tok); if (u.protocol === WEB + ":" || u.protocol === WEB + "s:") node = link(u.href, tok); } catch (e) {} }
+      else if (ids.has(tok)) node = link("#doc=" + encodeURIComponent(tok), tok);
+      // Linked only as a whole word: not inside a path (kitlib/design), a name or a longer token.
+      const before = s[m.index - 1], after = s[m.index + tok.length];
+      if (node && !/^https?:/i.test(tok) && !((before === undefined || /[\s(\["'`<,;:]/.test(before)) && (after === undefined || /[\s)\]"'`>,;:!?.]/.test(after)))) node = null;
+      if (!node) continue;
+      if (m.index > last) out.push(s.slice(last, m.index));
+      out.push(node); last = m.index + tok.length; re.lastIndex = last;
+    }
+    if (last < s.length) out.push(s.slice(last));
+    return out;
+  }
   // A card's refs, kept as keptRefs keeps them: a ref that is a listed document's id is a button that opens it
   // in the reader, and any other ref is text. lead goes before them and sep between them.
   function refsLine(refs, lead, sep){

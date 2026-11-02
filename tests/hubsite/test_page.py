@@ -5017,8 +5017,10 @@ class PageTextTest(unittest.TestCase):
         self.assertEqual(self.p.count("<iframe"), 0)
 
     def test_no_attribute_that_loads_or_navigates_is_ever_set(self):
-        """The page builds no link, image or frame, so no server value can become an address the browser follows. Its
-        markup has no link but the stylesheet; the script has one fixed one, the Home machine line's (to #schedule)."""
+        """The page builds no image or frame, and one link site, so no server value can become an address the browser
+        follows. Its markup has no link but the stylesheet; the script has one fixed href, the Home machine line's (to
+        #schedule), and linkText's one `link` helper (shorthand href, so the patterns below do not see it), which is
+        pinned here: defined once, called with only a parsed URL's href or an encoded page id."""
         keys = r"(?:href|src|srcset|srcdoc|action|formaction|poster|background|ping|xlink:href)"
         self.assertEqual([re.sub(r"[\s{,]", "", m) for m in re.findall(r'[{,\s]"?%s"?\s*:\s*"[^"]*"' % keys, self.script)], ['href:"#schedule"'])
         self.assertEqual(re.findall(r'[{,\s]"?%s"?\s*:\s*[^"\s]' % keys, self.script), [])    # and no other: every value is a literal
@@ -5027,6 +5029,10 @@ class PageTextTest(unittest.TestCase):
         self.assertEqual(re.findall(r"\.%s\s*=[^=]" % keys.replace("srcdoc|", ""), self.script), [])
         self.assertEqual(re.findall(r"\.srcdoc\s*=[^=]", self.script), [".srcdoc = "])
         self.assertEqual(re.findall(r"<[^>]*\s%s\s*=[^>]*>" % keys, self.markup), ['<link rel="stylesheet" href="hub.css">'])
+        self.assertEqual(len(re.findall(r"const link = \(href, label\) => el\(", self.p)), 1)
+        self.assertEqual(sorted(re.findall(r"link\(([^;]*?), (?:tok|label)\)", self.p)),
+                         ['"#doc=" + encodeURIComponent(tok)', "u.href"])
+        self.assertEqual(len(re.findall(r"(?<![\w.])link\(", self.p)), 2)
         self.assertNotIn("location.assign", self.script)
         self.assertNotIn("location.replace", self.script)
         self.assertNotIn("window.open", self.script)
@@ -5678,6 +5684,86 @@ class VisualStyleTest(unittest.TestCase):
             with self.subTest(result=key):
                 marked = [c for c in got[key] if st in c[0].split()]
                 self.assertEqual([c[1] for c in marked], [word], got[key])
+
+
+def link_snap(context, options=None):
+    q = {"status": "open", "title": "which", "context": context, "version": 1, "asked_at": NOW,
+         "options": options or [{"label": "one"}], "recommended": 0}
+    return snapshot(collections={"questions": {"Q-1": q},
+                                 "pages": {"plan-1": {"title": "Plan", "repo": "alpha", "at": NOW, "version": 1}}})
+
+
+@unittest.skipUnless(NODE, "node is needed to run the page's logic")
+class DocLinksTest(unittest.TestCase):
+    """A question's context and options: a document they name is a link that opens in a new tab."""
+
+    LINKS = """
+        await start();
+        const links = $$("#list article a, #pane-detail article a").map(a => ({ text: text(a), href: a.attrs.href, target: a.attrs.target, rel: a.attrs.rel }));
+        return { links, sinks, shown: text($("#pane-detail")) + text($("#list")) };
+    """
+
+    def test_a_hub_page_id_is_a_link_to_the_hub_at_its_reader(self):
+        got = dom(self.LINKS, link_snap("Read plan-1 first, then plan-2."))
+        self.assertEqual(got["links"], [{"text": "plan-1", "href": "#doc=plan-1", "target": "_blank", "rel": "noopener noreferrer"}])
+        self.assertIn("Read plan-1 first, then plan-2.", got["shown"])        # the words around it are kept, an unlisted id stays text
+
+    def test_an_http_url_is_a_link_in_the_context_and_in_an_option(self):
+        got = dom(self.LINKS, link_snap("See https://example.test/a?b=1&c=2.",
+                                        [{"label": "go http://example.test/x", "description": "details at https://example.test/y"}]))
+        self.assertEqual([(l["text"], l["href"], l["target"], l["rel"]) for l in got["links"]],
+                         [("https://example.test/a?b=1&c=2", "https://example.test/a?b=1&c=2", "_blank", "noopener noreferrer"),
+                          ("http://example.test/x", "http://example.test/x", "_blank", "noopener noreferrer"),
+                          ("https://example.test/y", "https://example.test/y", "_blank", "noopener noreferrer")])
+
+    def test_a_repo_path_stays_plain_text_for_the_hub_knows_no_web_address(self):
+        got = dom(self.LINKS, link_snap("Edit docs/action-hub.md and kitlib/x.py."))
+        self.assertEqual(got["links"], [])
+        self.assertIn("Edit docs/action-hub.md and kitlib/x.py.", got["shown"])
+
+    def test_an_unsafe_scheme_or_markup_stays_plain_text(self):
+        ctx = 'javascript:alert(1) data:text/html,x ftp://x.test <a href="https://e.test">x</a> <img src=x onerror=alert(1)>'
+        got = dom(self.LINKS, link_snap(ctx))
+        self.assertFalse([l for l in got["links"] if not l["href"].startswith("https://")])
+        self.assertEqual(got["sinks"], [])
+        for part in ("javascript:alert(1)", "data:text/html,x", "ftp://x.test", "<img src=x onerror=alert(1)>"):
+            self.assertIn(part, got["shown"])
+
+    def test_a_page_id_inside_a_path_or_a_longer_word_is_not_linked(self):
+        got = dom(self.LINKS, link_snap("In kitlib/plan-1 and plan-1/x and xplan-1 and plan-1x, but (plan-1) and plan-1, yes."))
+        self.assertEqual([l["text"] for l in got["links"]], ["plan-1", "plan-1"])
+
+    def test_an_external_link_sends_no_referrer(self):
+        got = dom(self.LINKS, link_snap("https://example.test/a plan-1"))
+        self.assertEqual({l["rel"] for l in got["links"]}, {"noopener noreferrer"})
+
+    def test_an_unknown_doc_hash_opens_nothing(self):
+        got = dom("""
+            await start();
+            return { hidden: $("#reader").hidden, calls: calls.filter(c => c.path.startsWith("/pages/")).length };
+        """, link_snap("c"), hash="#doc=nope")
+        self.assertEqual(got, {"hidden": True, "calls": 0})
+
+    def test_a_doc_hash_typed_in_a_running_tab_opens_the_reader_and_back_does_not_reopen_it(self):
+        got = dom("""
+            server.route = c => c.path === "/pages/plan-1" ? { status: 200, body: { ok: true, id: "plan-1", html: "<p>x</p>", version: 1 } } : undefined;
+            await start();
+            await navigate("#doc=plan-1");
+            const opened = !$("#reader").hidden, addr = location.hash;
+            await click($("#reader-close"));
+            await back();
+            const reads = calls.filter(c => c.path === "/pages/plan-1").length;
+            return { opened, addr, hidden: $("#reader").hidden, reads, now: location.hash };
+        """, link_snap("c"))
+        self.assertEqual(got, {"opened": True, "addr": "#questions", "hidden": True, "reads": 1, "now": "#questions"})
+
+    def test_the_hash_of_a_page_id_opens_its_reader(self):
+        got = dom("""
+            server.route = c => c.path === "/pages/plan-1" ? { status: 200, body: { ok: true, id: "plan-1", html: "<p>x</p>", version: 1 } } : undefined;
+            await start();
+            return { open: !$("#reader").hidden, title: text($("#reader-title")) };
+        """, link_snap("c"), hash="#doc=plan-1")
+        self.assertEqual(got, {"open": True, "title": "Plan"})
 
 
 if __name__ == "__main__":

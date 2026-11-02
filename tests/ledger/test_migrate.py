@@ -191,11 +191,14 @@ class PlanTest(unittest.TestCase):
             self.assertEqual(len(errs), 1, (cite, errs))
             self.assertIn('cites a ruling or question id', errs[0])
 
-    def test_shared_lines_are_refused_in_the_split_layout_only(self):
-        _, errs = migrate.plan(reviewed(self.text), self.basis, split=True)
-        self.assertEqual(len(errs), 1)
-        self.assertIn('shared rule', errs[0])
-        self.assertIn('no writer path', errs[0])
+    def test_shared_lines_plan_the_same_in_the_split_layout(self):
+        changes, errs = migrate.plan(reviewed(self.text), self.basis, split=True)
+        self.assertEqual(errs, [])
+        self.assertEqual(changes, migrate.plan(reviewed(self.text), self.basis)[0])
+        shared = [c for c in changes if c.repo == 'all']
+        self.assertTrue(shared)
+        self.assertEqual({migrate.log_repo(c, True) for c in shared}, {'pm'})
+        self.assertEqual({migrate.log_repo(c, False) for c in shared}, {'all'})
 
 
 class CliTest(Base):
@@ -416,7 +419,7 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(os.listdir(os.path.join(self.dir, 'rules')), [])
 
     def test_a_refused_rule_apply_prints_a_REFUSED_line_and_exits_1(self):
-        self.make_report(lambda t: t.replace('| alpha |', '| all |', 1))
+        self.make_report()
         r = self.apply()
         self.assertEqual(r.returncode, 1, r.stdout)
         refused = [l for l in r.stderr.splitlines() if 'REFUSED' in l]
@@ -436,11 +439,30 @@ class SplitTest(unittest.TestCase):
         c = self.run_tool('check')
         self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
 
-    def test_a_shared_rule_is_refused_through_the_verb(self):
-        self.make_report(lambda t: t.replace('| alpha |', '| all |', 1))
-        r = self.apply()
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn('shared rule', r.stderr)
+    def test_a_shared_rule_is_logged_for_pm_and_set_in_all_md(self):
+        self.make_report(lambda t: t.replace('| alpha |', '| all |', 1).replace(
+            'KEEP | zeta', 'CUT | zeta').replace('KEEP | pm', 'CUT | pm'))
+        dry = self.apply()
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertIn('would set', dry.stdout)
+        self.assertIn('in all.md (log repo pm)', dry.stdout)
+        self.assertIn('dry run: 1 rule(s)', dry.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, 'rules', 'all.md')))
+        r = self.apply('--write', '--prov', 'selected', '--source', 'test')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.split(), ['H-pm-' + '0001'])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, 'alpha.md')))
+        shared = self.read(os.path.join(self.dir, 'rules', 'all.md'))
+        self.assertIn('Agents never merge an unreviewed branch. (from H-pm-0001)', shared)
+        key = [l for l in shared.splitlines() if l.startswith('- ')][0].split(':')[0][2:]
+        self.assertEqual(self.read(os.path.join(self.dir, 'pm.md')).count('[rule all.md %s set]' % key), 1)
+        c = self.run_tool('check')
+        self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
+        log = self.read(os.path.join(self.dir, 'pm.md'))
+        again = self.apply('--write', '--prov', 'selected', '--source', 'test')
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn('skip %s (already in all.md)' % key, again.stdout)
+        self.assertEqual(self.read(os.path.join(self.dir, 'pm.md')), log)
 
     def test_two_repos_of_one_book_proposing_one_key_are_refused_before_any_write(self):
         self.put(os.path.join(self.dir, 'rules', 'pm.md'), '# T\nRepos: alpha, pm\n')

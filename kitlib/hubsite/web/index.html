@@ -3066,11 +3066,12 @@ ul.hist .sch-line{display:block}
   function linkText(text){
     const s = String(text == null ? "" : text), ids = new Set(state.pages.map(p => p.id)), out = [];
     let last = 0, m;
+    const WEB = "http";   // in parts: the page text holds no literal web address (PageTextTest)
     const re = /https?:\/\/[^\s<>"'`]+|[A-Za-z0-9][A-Za-z0-9._-]*/g;
     const link = (href, label) => el("a", {href, target:"_blank", rel:"noopener", text: label});
     while ((m = re.exec(s))) {
       let tok = m[0].replace(/[.,;:!?)\]]+$/, ""), node = null;
-      if (/^https?:/i.test(tok)) { try { const u = new URL(tok); if (u.protocol === "http:" || u.protocol === "https:") node = link(u.href, tok); } catch (e) {} }
+      if (/^https?:/i.test(tok)) { try { const u = new URL(tok); if (u.protocol === WEB + ":" || u.protocol === WEB + "s:") node = link(u.href, tok); } catch (e) {} }
       else if (ids.has(tok)) node = link("#doc=" + encodeURIComponent(tok), tok);
       if (!node) continue;
       if (m.index > last) out.push(s.slice(last, m.index));

@@ -5,9 +5,12 @@
   current account: N            (the one whose file was written in the last 15 minutes)
   account codex: five_hour=reset  seven_day=Z% (resets ...)  [updated M min ago]
 
-A file refreshes only while a session on that account runs, so "updated" says how fresh it is; a
-window whose resets_at has passed reads `reset`; a window the file does not give (null, no
-resets_at, no percentage) reads `?`, which kitlib.pmwatch keeps as unknown, never 0. Each account's newest file by updated_at is read.
+A file refreshes only while a session on that account runs, so "updated" says how fresh it is (the
+status line keeps a stale session's reading out of the file, updated_at included: docs/launcher.md
+"Usage"). A window whose resets_at has passed reads `reset` only when the file's updated_at is at or
+after that time, else `?`: no reading since the reset is no evidence of it. A window the file does
+not give (null, no resets_at, no percentage) reads `?`, which kitlib.pmwatch keeps as unknown, never
+0. Each account's newest file by updated_at is read.
 Codex's weekly limit is the last rate_limits event of its newest session log; it has no five-hour
 window.
 """
@@ -21,14 +24,15 @@ FRESH_MINUTES = 15
 _CODEX = re.compile(r'"primary":\{"used_percent":([\d.]+),"window_minutes":\d+,"resets_at":(\d+)')
 
 
-def _window(name, w, now):
+def _window(name, w, now, read_at):
+    """One window's text. read_at: the file's updated_at (None when unknown)."""
     if not isinstance(w, dict):
         return '%s=?' % name
     reset = A.parse_time(w.get('resets_at'))
     if reset is None:
         return '%s=?' % name
     if reset < now:
-        return '%s=reset' % name
+        return '%s=%s' % (name, 'reset' if read_at is not None and read_at >= reset else '?')
     pct = w.get('used_percentage')
     if not isinstance(pct, (int, float)) or isinstance(pct, bool):
         return '%s=?' % name
@@ -44,7 +48,7 @@ def account_lines(settings, now):
             continue
         upd = A.parse_time(data.get('updated_at'))
         age = int((now - upd).total_seconds() // 60) if upd else None
-        parts = [_window(k, data.get(k), now) for k in A.WINDOWS]
+        parts = [_window(k, data.get(k), now, upd) for k in A.WINDOWS]
         out.append('account %s: %s  [updated %s min ago]' % (n, '  '.join(parts), '?' if age is None else age))
         if age is not None and age <= freshest:
             current, freshest = n, age

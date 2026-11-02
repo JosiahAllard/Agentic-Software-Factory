@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -4303,6 +4304,53 @@ class FilingTest(ApiCase):
         self.assertEqual((self.doc(logs)['status'], self.doc(dones)['status']), ('logged', 'done'))
         self.assertEqual(wait('kit-1'), [])
         self.assertEqual(wait('pm'), [(mine, True)])
+
+    def test_the_answer_returns_before_a_slow_record_write_and_is_filed_after(self):
+        # the server's filing (serve._file_later): the record write's fetch and push run off
+        # the request thread, so the owner's answer is not held for them (KIT-HUB-COMPLETE-FREEZE)
+        lines = []
+        self.api.file_later = lambda fn: serve._file_later(lambda *a: lines.append(a), fn)
+        qid = self.bound()
+        release, wrote = threading.Event(), threading.Event()
+        slow = self.views.record_answer
+
+        def record_answer(*a):
+            release.wait(2)             # a git fetch and push that take their time
+            try:
+                return slow(*a)
+            finally:
+                wrote.set()
+        self.views.record_answer = record_answer
+        began = time.monotonic()
+        got = self.answer(qid)
+        took = time.monotonic() - began
+        release.set()
+        self.assertLess(took, 0.2, 'the answer waited %.3f s for the record write' % took)
+        self.assertEqual(got['status'], 'answered')
+        self.assertNotIn('filing', got)
+        self.assertTrue(wrote.wait(10))
+        for _ in range(200):            # the mark is written just after the record write
+            if self.doc(qid)['status'] == 'filed':
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.doc(qid)['status'], 'filed')
+        self.assertEqual(self.views.lines, {('EX-1', qid): self.doc(qid)['answer']['at']})
+        self.assertEqual(lines, [])
+
+    def test_a_filing_off_the_request_thread_that_raises_is_logged_and_left_for_the_retry(self):
+        lines, done = [], threading.Event()
+
+        def log(*a):
+            lines.append(a)
+            done.set()
+        self.api.file_later = lambda fn: serve._file_later(log, fn)
+        qid = self.bound()
+        with mock.patch.object(api, 'file_answer', side_effect=RuntimeError('C:\\x')):
+            got = self.answer(qid)
+            self.assertTrue(done.wait(10))
+        self.assertEqual(got['status'], 'answered')
+        self.assertEqual(lines, [('error', 'filing an answer failed: RuntimeError')])
+        self.assertEqual(self.refile()['filed'], [qid])
 
     def test_a_crash_after_the_record_write_is_mended_by_the_retry(self):
         qid = self.bound()

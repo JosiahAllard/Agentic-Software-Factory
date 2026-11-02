@@ -1174,6 +1174,19 @@ def _job_line(log, text):
         pass
 
 
+def _file_later(log, fn):
+    """Api.file_later: fn, the filing of an owner's answer (kitlib.hubsite.api file_answer), on
+    a daemon thread of its own, so the answer route returns before the record's fetch and push.
+    A raise is an 'error' line of the log; the question stays answered, and POST questions/file
+    or the next hub start files it (docs/action-hub.md "Filing the answer")."""
+    def run():
+        try:
+            fn()
+        except Exception as e:      # noqa: BLE001 - a thread's raise would reach no one
+            _job_line(log, 'filing an answer failed: %s' % type(e).__name__)
+    threading.Thread(target=run, name='hub-file-answer', daemon=True).start()
+
+
 def _make_jobs(sources, pusher, notes, log):
     """The timed jobs of `sources` (Sources.jobs) as one kitlib.hubsite.jobs.Jobs, their events
     pushed through `pusher` when there is one; None with none. A job whose maker raises, gives
@@ -1254,6 +1267,7 @@ def build(settings, sources, log=None):
                        checkout=_checkout(views_b), lock=sources.lock, repo_name=repo_name,
                        kit_key=_kit_key(repo_name, remote_ids), kit_blob=_kit_blob(),
                        kit_text=_kit_text())
+        api.file_later = functools.partial(_file_later, log)    # the answer returns at once
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,

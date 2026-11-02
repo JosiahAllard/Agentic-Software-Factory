@@ -25,6 +25,10 @@ The case that prompted it: the agent-start block (`kitlib.agentstart`, default `
 - A load flake is a test defect, fixed by a seam or a marked tier, never by listing it under "Known flakes" (docs/agent-profile.md). A red `gate.py --full` gets the targeted rerun (docs/gate.md "Targeted rerun").
 - A sleep or an elapsed-time assert that flakes gets nothing on its first failure (the builder rule: a one-off flake waits for a second); a lint that counts them against a falling baseline is the follow-up if one does.
 
+## Load-sensitive tests
+
+- `tests/bridge/test_frontend_recovery.py` `FrontendRecoveryTests.test_fresh_actual_metadata_is_not_replaced_by_cached_previous_call`: on a loaded machine the first call after `restart()` can return the frontend's `-32603` "bridge connection unavailable" error frame (refused before it reached the broker), so `response['result']` raised `KeyError`. Fix: `retry_refused` retries that one call once (safe: the frontend's no-replay rule forbids retrying only a failed tool call), and every `['result']` read after a restart goes through `result()`, which asserts `'result'` is present with the whole response as the message, so a recurrence names `data.cause`. The tests that expect an error on the first call are not retried.
+
 ## Open
 
 - The Codex hook's `DEADLINE` (`hosts/codex/adapter/host.py`) is a fail-closed safety timeout: still deciding at the deadline is a `deny guard-timeout` (`kitlib/host/hookmain.py`). The fence does not touch it. Fencing it would change what a test sees of a safety check, so it is the owner's decision.

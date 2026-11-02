@@ -21,6 +21,16 @@ from kitlib.proc.process import own_ctime
 from tests.bridge.registered import no_refused_pairs
 
 
+def retry_refused(call):
+    """The first call after a restart can be refused before it reaches the broker, on a loaded
+    machine: the frontend answers -32603 and nothing was sent, so one retry is safe (its no-replay
+    rule forbids retrying a failed tool call, not a refused one). Any other reply is returned as is."""
+    response=call()
+    if 'result' not in response and response.get('error',{}).get('code')==-32603:
+        response=call()
+    return response
+
+
 class FrontendRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='frontend-recovery-')
@@ -119,6 +129,11 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.assertIn('result',response)
         self.send({'jsonrpc':'2.0','method':'notifications/initialized'})
 
+    def result(self,response):
+        # A recurrence names the frame, so its error data.cause shows.
+        self.assertIn('result',response,response)
+        return response['result']
+
     def connections(self,meta=None):
         return self.call('tools/call',{'name':'bridge_connections','arguments':{},
             '_meta':self.meta if meta is None else meta})
@@ -130,7 +145,7 @@ class FrontendRecoveryTests(unittest.TestCase):
         old_pid=self.frontend.pid
         self.restart()
         second=self.connections()
-        self.assertFalse(second['result']['isError'],second)
+        self.assertFalse(self.result(second)['isError'],second)
         self.assertEqual(self.frontend.pid,old_pid)
         self.assertEqual(len(self.supervisor.controller.pairs.registered()),1)
 
@@ -138,10 +153,10 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.initialize()
         self.assertFalse(self.connections()['result']['isError'])
         self.restart()
-        response=self.connections(meta={})
-        self.assertTrue(response['result']['isError'])
+        response=retry_refused(lambda:self.connections(meta={}))
+        self.assertTrue(self.result(response)['isError'],response)
         self.assertEqual(self.supervisor.controller.pairs.registered(),())
-        self.assertFalse(self.connections()['result']['isError'])
+        self.assertFalse(self.result(self.connections())['isError'])
 
     def test_failed_actual_request_is_not_retried_or_cached_during_recovery(self):
         self.initialize()
@@ -151,7 +166,7 @@ class FrontendRecoveryTests(unittest.TestCase):
             'operation_id':'never-replayed','recipient':'missing-recipient','text':'owned fixture body'},'_meta':self.meta})
         self.assertIn('error',response)
         self.start_broker()
-        self.assertFalse(self.connections()['result']['isError'])
+        self.assertFalse(self.result(self.connections())['isError'])
         self.assertIsNone(self.supervisor.controller.outbox.receipt('never-replayed'))
 
     def test_client_without_actual_initialized_notification_is_not_promoted_on_restart(self):
@@ -203,8 +218,8 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.assertEqual(self.supervisor.controller.pairs.registered(),())
         # This new actual call has different metadata; the failed call is absent.
         response=self.connections(meta={})
-        self.assertTrue(response['result']['isError'],response)
-        self.assertFalse(self.connections()['result']['isError'])
+        self.assertTrue(self.result(response)['isError'],response)
+        self.assertFalse(self.result(self.connections())['isError'])
         self.assertEqual(methods,['initialize','notifications/initialized',
             'notifications/initialized','tools/call','tools/call'])
         self.assertEqual(metadata,[{},self.meta])
@@ -226,7 +241,7 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.supervisor.service.server.handler=fail_once
         self.send({'jsonrpc':'2.0','method':'notifications/initialized'})
         response=self.connections()
-        self.assertFalse(response['result']['isError'],response)
+        self.assertFalse(self.result(response)['isError'],response)
         self.assertEqual(methods,['initialize','notifications/initialized',
             'notifications/initialized','tools/call'])
         self.assertEqual(len(self.supervisor.controller.pairs.registered()),1)
@@ -274,11 +289,38 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.assertEqual(self.supervisor.controller.outbox.run_dispatch('durable-unknown',lose_receipt).state,'unknown')
         self.restart()
         response=self.call('tools/call',{'name':'bridge_receipt','arguments':{'operation_id':'durable-queued'},'_meta':self.meta})
-        self.assertEqual(response['result']['structuredContent']['state'],'queued')
+        self.assertEqual(self.result(response)['structuredContent']['state'],'queued')
         response=self.call('tools/call',{'name':'bridge_receipt','arguments':{'operation_id':'durable-unknown'},'_meta':self.meta})
-        self.assertEqual(response['result']['structuredContent']['state'],'unknown')
+        self.assertEqual(self.result(response)['structuredContent']['state'],'unknown')
         self.assertEqual(effects,['durable-unknown'])
         self.assertEqual(self.supervisor.controller.outbox.pending(),('durable-queued',))
+
+
+class RetryRefusedTests(unittest.TestCase):
+    refused={'jsonrpc':'2.0','id':1,'error':{'code':-32603,'message':'bridge connection unavailable',
+        'data':{'cause':'OSError'}}}
+
+    def test_a_refused_frame_is_retried_once(self):
+        replies=[self.refused,{'jsonrpc':'2.0','id':2,'result':{'isError':True}}]
+        self.assertEqual(retry_refused(lambda:replies.pop(0))['result'],{'isError':True})
+        self.assertEqual(replies,[])
+
+    def test_a_second_refusal_is_returned_not_retried_again(self):
+        calls=[]
+        def call():
+            calls.append(1)
+            return self.refused
+        self.assertEqual(retry_refused(call),self.refused)
+        self.assertEqual(len(calls),2)
+
+    def test_a_result_or_another_error_is_not_retried(self):
+        for reply in ({'result':{}},{'error':{'code':-32602}}):
+            calls=[]
+            def call():
+                calls.append(1)
+                return reply
+            self.assertEqual(retry_refused(call),reply)
+            self.assertEqual(len(calls),1)
 
 
 class RecoveryProtocolTests(unittest.TestCase):

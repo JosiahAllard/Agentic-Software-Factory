@@ -3709,12 +3709,12 @@ class TriageListTest(unittest.TestCase):
             await click($("#row-Q-2"));
             const second = { card: !!$("#pane-detail #q-Q-2"), gone: !$("#q-Q-1"), focus: document.activeElement.id };
             await click($("#detail-close"));
-            const closed = { hidden: $("#pane-detail").hidden, focus: document.activeElement.id };
+            const closed = { hidden: $("#pane-detail").hidden, card: !!$("#pane-detail #q-Q-2"), focus: document.activeElement.id };
             return { first, second, closed };
         """, snapshot(collections=lists), hash="#questions")
         self.assertEqual(got["first"], {"rows": ["row-Q-1", "row-Q-2"], "detail": False, "card": True, "inList": False, "cur": ["row-Q-1"]})
         self.assertEqual(got["second"], {"card": True, "gone": True, "focus": "q-Q-2"})
-        self.assertEqual(got["closed"], {"hidden": True, "focus": "row-Q-2"})        # close gives the focus back to the row
+        self.assertEqual(got["closed"], {"hidden": False, "card": False, "focus": "row-Q-2"})        # the pane stays, empty; close gives the focus back to the row
 
     def test_on_a_phone_nothing_opens_by_itself_and_the_detail_replaces_the_list(self):
         got = dom(self.PHONE + """
@@ -5545,6 +5545,38 @@ def luminance(hex_):
 def contrast(a, b):
     la, lb = sorted((luminance(a), luminance(b)), reverse=True)
     return (la + 0.05) / (lb + 0.05)
+
+
+class DetailPaneStaysTest(unittest.TestCase):
+    """KIT-HUB-DETAIL-PANE-STAYS: a view with a detail pane keeps its frame, with an empty-state message, when its list is empty."""
+
+    VIEWS = ("#home", "#questions", "#todo", "#topm", "#approvals", "#backlog", "#parked", "#docs", "#autotasks",
+             "#findings", "#usage", "#agents", "#skills", "#landings")
+
+    @unittest.skipUnless(NODE, "node is needed to run the page's logic")
+    def test_every_view_with_a_detail_pane_keeps_it_with_an_empty_state_when_its_list_is_empty(self):
+        for h in self.VIEWS:
+            with self.subTest(view=h):
+                got = dom("""
+                    await start();
+                    const p = $("#pane-detail");
+                    return { hidden: p.hidden, empty: text($("#detail-empty")) };
+                """, snapshot(), hash=h)
+                self.assertFalse(got["hidden"])
+                self.assertIn("Nothing selected", got["empty"])
+
+    @unittest.skipUnless(NODE, "node is needed to run the page's logic")
+    def test_the_pane_stays_when_the_open_tab_is_emptied(self):
+        one = snapshot(collections={"todos": {"T-1": {"status": "open", "title": "t", "from": "pm"}}})
+        got = dom("""
+            await start();
+            const before = { hidden: $("#pane-detail").hidden, card: !!$("#pane-detail article") };
+            await click($("#ttabs [data-tf=done]"));       // the open tab is now empty
+            const after = { hidden: $("#pane-detail").hidden, empty: !!$("#detail-empty"), rows: $$("#list article.row").length };
+            return { before, after };
+        """, one, hash="#todo")
+        self.assertEqual(got["before"], {"hidden": False, "card": True})
+        self.assertEqual(got["after"], {"hidden": False, "empty": True, "rows": 0})
 
 
 class VisualStyleTest(unittest.TestCase):

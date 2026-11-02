@@ -467,7 +467,7 @@ def do_rule_apply(a, found, repos):
     digest, why = standing.read_digest(found.digest)
     if digest is None:
         return fail(why or 'no standing digest at %s' % found.digest)
-    changes, errs = migrate.plan(report, migrate.basis(digest, retired), found.split)
+    changes, errs = migrate.plan(report, migrate.basis(digest, retired))
     books = write.load_books(found.rules)
     todo, landing = [], {}
     for c in changes:
@@ -478,12 +478,13 @@ def do_rule_apply(a, found, repos):
                         % (c.line, c.key, rulebook.file_name(spot[0]), landing[spot]))
             continue
         landing[spot] = c.line
+        log = migrate.log_repo(c, found.split)
         if not found.split:
             bad = fmt.repo_problem(c.repo, repos)
-        elif c.repo in found.repos:
-            bad = write.split_repo_problem(found.repos[c.repo], c.repo, list(found.repos))
+        elif log in found.repos:
+            bad = write.split_repo_problem(found.repos[log], log, list(found.repos))
         else:
-            bad = None if c.repo == fmt.ALL_REPOS else 'repo %r is not one of ledger_repos' % c.repo
+            bad = 'repo %r is not one of ledger_repos' % log
         if bad:
             errs.append('line %d: rule %s: %s' % (c.line, c.key, bad))
         elif state == 'conflict':
@@ -501,12 +502,14 @@ def do_rule_apply(a, found, repos):
     for c in todo:
         name = rulebook.file_name(rulebook.target(books, c.repo))
         if not a.write:
-            print('would set %s in %s (log repo %s): %s' % (c.key, name, c.repo, c.text))
+            print('would set %s in %s (log repo %s): %s'
+                  % (c.key, name, migrate.log_repo(c, found.split), c.text))
             continue
         q, ans, decides = migrate.entry_text(c, standing.NAME)
         # Each rule's `checked` hash is taken from the books as they are now, after the last write.
-        rule = migrate.rule_change(found.rules, c, write.load_books(found.rules))
-        write_entry(argparse.Namespace(**dict(vars(a), repo=c.repo)), found, repos, q, ans, decides,
+        rule = migrate.rule_change(found.rules, c, write.load_books(found.rules), found.split)
+        log = migrate.log_repo(c, found.split)
+        write_entry(argparse.Namespace(**dict(vars(a), repo=log)), found, repos, q, ans, decides,
                     rule=rule)
     if not a.write:
         print('dry run: %d rule(s) to set; add --write to write them' % len(todo))

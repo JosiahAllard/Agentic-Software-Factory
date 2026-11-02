@@ -245,12 +245,11 @@ def parse(text):
     return found, items, errs
 
 
-def plan(report_text, current_basis, split=False):
+def plan(report_text, current_basis):
     """`([Change], [error lines])` for `report_text`. Errors, all found before any write: no or a
     stale Basis; a malformed line; a line still marked `?`; a bad or doubled key; a MERGE group
-    across repos; with `split` (ledger_dir set) a shared-book rule, which the writer cannot reach
-    there. A CUT line is skipped. One Change per KEEP line and per MERGE group (the group's first
-    line carries it, every member's ids join it)."""
+    across repos. A CUT line is skipped. One Change per KEEP line and per MERGE group (the group's
+    first line carries it, every member's ids join it)."""
     found, items, errs = parse(report_text)
     if found is None:
         errs.append('the report has no Basis line')
@@ -282,9 +281,6 @@ def plan(report_text, current_basis, split=False):
         seen.setdefault((it.repo, it.key), it.line)
         if not it.topic or not it.text:
             errs.append('line %d: the topic and the text must not be empty' % it.line)
-        if split and rulebook.normal(it.repo) == rulebook.SHARED:
-            errs.append('line %d: shared rule %s: with ledger_dir set no writer path reaches all.md '
-                        'yet; leave it for later' % (it.line, it.key))
         if CITES.search(it.text):
             errs.append("line %d: rule %s cites a ruling or question id in its text; the id belongs in "
                         "the entry's question only, so say the reason instead" % (it.line, it.key))
@@ -305,13 +301,29 @@ def status(books, change):
     return 'done' if old.text == rulebook.one_line(change.text) else 'conflict'
 
 
-def rule_change(folder, change, books):
+# With ledger_dir set `all` is not a log repo (write.split_repo_problem): a shared rule's entry is
+# logged for pm and the rule goes to all.md, as `add --repo pm --rule ... --book all` does.
+SHARED_LOG_REPO = 'pm'
+
+
+def is_shared(change, split):
+    """True when `change` is a shared rule in the split layout (its log repo is not `change.repo`)."""
+    return bool(split) and rulebook.normal(change.repo) == rulebook.SHARED
+
+
+def log_repo(change, split):
+    """The log repo whose file carries the entry of `change`."""
+    return SHARED_LOG_REPO if is_shared(change, split) else change.repo
+
+
+def rule_change(folder, change, books, split=False):
     """The RuleChange that sets `change` through kitlib.ledger.write `add`, its `checked` hash
-    taken now from `books` (freshly loaded for each rule). The one place a shared-book writer
-    would plug in."""
+    taken now from `books` (freshly loaded for each rule). A shared rule in the split layout names
+    book `all`, since its log repo (`log_repo`) would map elsewhere."""
     name = rulebook.target(books, change.repo)
     return write.RuleChange(folder, 'set', change.key, change.topic, change.text,
-                            rulebook.digest(books, name, change.topic, change.key, change.text))
+                            rulebook.digest(books, name, change.topic, change.key, change.text),
+                            book=rulebook.SHARED if is_shared(change, split) else None)
 
 
 def entry_text(change, source_name):

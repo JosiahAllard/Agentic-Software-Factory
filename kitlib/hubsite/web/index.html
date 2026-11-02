@@ -575,6 +575,10 @@ ul.hist .sch-line{display:block}
   window.addEventListener("hashchange", goRoute);
   // The detail pane: what the view being drawn opened (pickDetail), put there once, in place.
   let detailKids = [], drewSection = null;
+  // The sections whose views open a card in the detail pane (the views that call pickDetail), and the pane's empty state.
+  const hasDetail = sc => ["home", "questions", "todo", "topm", "approvals", "agents", "skills", "docs", "landings", "autotasks", "findings"].includes(sc)
+    || (sc === "info" && state.infotab !== "notices") || (sc === "backlog" && !state.rec);
+  const dempty = el("div", {class:"empty", id:"detail-empty"}, el("strong", {text:"Nothing selected"}), "A row's detail opens here once the list has one.");
   function draw(){
     detailKids = [];
     seenLine();
@@ -623,6 +627,9 @@ ul.hist .sch-line{display:block}
     $("#addform").hidden = sc !== "todo" || !ready;
     $("#rec-new").hidden = sc !== "backlog" || !ready;
     sc === "home" ? renderHome() : q ? renderQuestions() : sc === "inbox" ? renderInbox() : sc === "todo" ? renderTodos() : sc === "topm" ? renderToPm() : sc === "approvals" ? renderApprovals() : sc === "more" ? renderMore() : sc === "schedule" ? renderSchedule() : sc === "info" ? renderInfo() : sc === "agents" ? renderAgents() : sc === "skills" ? renderSkills() : sc === "docs" ? renderDocs() : sc === "landings" ? renderLandings() : sc === "autotasks" ? renderAutotasks() : sc === "findings" ? renderFindings() : renderBacklog();
+    // A section with a detail pane keeps its frame when nothing is open (an emptied list too), so the layout never jumps.
+    // A phone shows the pane in the list's place, so there it stays hidden until a row opens.
+    if (!detailKids.length && hasDetail(sc) && !phone()) detailKids = [dempty];
     place($("#pane-detail"), detailKids); $("#pane-detail").hidden = !detailKids.length;
   }
 

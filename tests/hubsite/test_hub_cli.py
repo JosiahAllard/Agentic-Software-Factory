@@ -48,6 +48,12 @@ class CliCase(unittest.TestCase):
         env = mock.patch.dict(os.environ, {'USERPROFILE': self.home, 'HOME': self.home})
         env.start()
         self.addCleanup(env.stop)
+        # serve raises its own process to normal priority (kitlib.proc.process.raise_to_normal):
+        # never this test process's, which may run below normal on purpose (ServePriorityCase).
+        priority = mock.patch('kitlib.proc.process.raise_to_normal', create=True,
+                              return_value='unchanged')
+        self.priority = priority.start()
+        self.addCleanup(priority.stop)
         # The fenced PM repository, with no kit-pm-data.json record: no pm_data, as a machine
         # config without the key had before pm_data was derived (a test's pm_data.path makes one).
         pm_repo(self, record=False)
@@ -545,6 +551,37 @@ class ServeCase(CliCase):
         self.assertIn('git sync is off for that run', doc)
         self.assertIn('An empty PATH is a usage error', doc)
         self.assertIn('It writes nothing else: never the machine config', doc)
+
+
+class ServePriorityCase(CliCase):
+    """serve raises itself to normal priority before anything else, so the git calls it starts
+    do not run below the agents' runs; a raise that fails is one NOTE line and serve goes on."""
+
+    def test_serve_raises_its_priority_first(self):
+        self.priority.side_effect = lambda: self.assertFalse(os.path.exists(self.store_dir),
+                                                             'raised after the store opened')
+        stop = threading.Event()
+        stop.set()
+        code, _out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
+                                       stop=stop)
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(self.priority.call_count, 1)
+
+    def test_a_refused_serve_has_raised_it_already(self):
+        code, _out, err = self.run_cli('serve', '--port', '0')
+        self.assertEqual(code, 1)
+        self.assertIn('REFUSED: no store folder', err)
+        self.assertEqual(self.priority.call_count, 1)
+
+    def test_a_failed_raise_is_one_note_and_serve_goes_on(self):
+        self.priority.return_value = 'failed'
+        stop = threading.Event()
+        stop.set()
+        code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
+                                      stop=stop)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, 'NOTE: %s\n' % HUB.PRIORITY_FAILED)
+        self.assertEqual(out.splitlines()[-1], HUB.CLOSED)
 
 
 class PushCase(CliCase):

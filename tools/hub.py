@@ -276,6 +276,7 @@ from kitlib.hubsite import control                                 # noqa: E402
 from kitlib.hubsite import pagecheck                               # noqa: E402
 from kitlib.hubsite import skilledits                              # noqa: E402
 from kitlib.hubsite import storecheck                              # noqa: E402
+from kitlib.proc import process                                    # noqa: E402
 
 START = 'python "%s" serve' % os.path.abspath(__file__)
 OPEN = 'python "%s" open' % os.path.abspath(__file__)
@@ -805,6 +806,8 @@ CLOSED = 'hub closed: the server ended cleanly and the store lock is released'
 CLOSE_CUT = ('interrupted during the close: the hub server did not close cleanly. The store '
              'lock is released, at the latest when this process ends')
 UNCLEAN = 'the hub server did not close cleanly: see the lines above'
+PRIORITY_FAILED = ('the hub server could not raise itself to normal priority: it serves below '
+                   'normal and can starve while runs keep every core busy')
 INTERRUPTED = 'interrupted'             # Ctrl+C anywhere else (a verb, or serve before it served)
 
 
@@ -846,6 +849,10 @@ def _push_delivery():
 
 
 def _serve(a, stop):
+    # First, so every git call it starts runs at normal too: the autostart task's default
+    # priority is below normal, and a server below the agents' runs starved under load.
+    if process.raise_to_normal() == 'failed':
+        _log('note', PRIORITY_FAILED)
     s = settings.load()
     if a.port is not None:
         s = s._replace(port=a.port)

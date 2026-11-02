@@ -28,6 +28,9 @@ PROCESS_SET_LIMITED_INFORMATION = 0x2000    # SetProcessDefaultCpuSets
 QUERY_LIMITED = PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 SYNCHRONIZE = 0x00100000
 MUTEX_MODIFY_STATE = 0x0001
+# Priority classes (GetPriorityClass, SetPriorityClass)
+IDLE_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS = 0x40, 0x4000
+NORMAL_PRIORITY_CLASS = 0x20
 CREATE_SUSPENDED = 0x4
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_CONSOLE = 0x10
@@ -134,6 +137,7 @@ K32_PROTOTYPES = {_n: (_r, _a) for _n, _r, _a in (
         ("K32EnumProcesses", BOOL, (ctypes.POINTER(DW), DW, ctypes.POINTER(DW))),
         ("WaitForSingleObject", DW, (H, DW)),
         ("OpenProcess", H, (DW, BOOL, DW)), ("GetCurrentProcess", H, ()),
+        ("GetPriorityClass", DW, (H,)), ("SetPriorityClass", BOOL, (H, DW)),
         ("GetProcessTimes", BOOL, (H,) + (ctypes.POINTER(FILETIME),) * 4),
         ("GetProcessAffinityMask", BOOL, (H, ctypes.POINTER(ctypes.c_size_t),
                                           ctypes.POINTER(ctypes.c_size_t))),

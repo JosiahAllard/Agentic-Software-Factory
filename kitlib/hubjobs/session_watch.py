@@ -18,8 +18,10 @@ reported twice. An unreadable one is a fresh baseline.
 
 Push: at most one per run, through ctx.event: one event gives its kind as the word (idle,
 stopped, usage, reset, bgfail, locknotice, remote, limit, error) and its subject (session, account, run
-or notice id, the failed check) as the detail; several give `events` with their count. The event
-lines themselves are free text, so they never go in a push: the run's note, health's
+or notice id, the failed check) as the detail; a usage or reset event's detail is
+<account>:<window>:<percentage now> (`2:seven_day:96`; a reset is always the weekly window), in
+push.field's characters. Several give `events` with their count. The event lines themselves are
+free text, so they never go in a push: the run's note, health's
 jobs.session-watch.note, lists the last RECENT_MAX pushed ones with their times, so a push the
 worker replaced before it was written hides nothing.
 
@@ -39,6 +41,7 @@ swallows the run's events.
 """
 import collections
 import importlib
+import re
 import time
 
 from kitlib import pmwatch as W
@@ -51,6 +54,9 @@ RECENT_MAX = 20                     # pushed event lines kept in the note
 STATE_SUFFIX = '.hub.json'
 HOST_MODULE = '%s_host'             # the watcher readers' module in the adapter package, by host name
 _SUBJECT_SKIP = ('account', 'run')
+# kitlib.pmwatch usage_events' lines: account, window, percentage now
+_USAGE = re.compile(r'USAGE account (\w+) (five_hour|seven_day) \d+% \(now (\d+)%\)$')
+_RESET = re.compile(r'RESET account (\w+) \(weekly \d+% -> (\d+)%\)$')
 
 
 def host_module():
@@ -75,6 +81,12 @@ def push_of(events):
     """(word, detail) of one run's push: module docstring "Push"."""
     if len(events) != 1:
         return 'events', str(len(events))
+    m = _USAGE.match(events[0])
+    if m:
+        return 'usage', '%s:%s:%s' % m.groups()
+    m = _RESET.match(events[0])
+    if m:
+        return 'reset', '%s:seven_day:%s' % m.groups()
     parts = events[0].split()
     rest = [p for p in parts[1:3] if p not in _SUBJECT_SKIP]
     return parts[0].lower(), (rest[0].rstrip(':') if rest else None)

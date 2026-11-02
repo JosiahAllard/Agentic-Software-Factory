@@ -199,6 +199,33 @@ class Usage(unittest.TestCase):
                           '2': {'five': 0, 'week': 30, 'age': 1440, 'stale': True, 'missing': False},
                           '3': unknown, 'codex': unknown})
 
+    def test_a_passed_reset_is_a_reset_only_with_a_reading_after_it(self):
+        # No reading since the week's reset (the 11-02 file, written before it): unknown, never
+        # 0%, so pm_watch keeps its last figure and logs no RESET. A reading after it: reset.
+        h = Home(self, accounts=('1', '2'))
+        hour = datetime.timedelta(hours=1)
+        h.usage('1', five=(40, NOW - 3 * hour), week=(95, NOW - hour), updated=NOW - 2 * hour)
+        h.usage('2', five=(40, NOW - 3 * hour), week=(95, NOW - hour), updated=NOW - hour / 2)
+        lines = usage.report(h.settings, NOW)
+        self.assertTrue(lines[0].startswith('account 1: five_hour=reset  seven_day=?  [updated 120 min'), lines[0])
+        self.assertTrue(lines[1].startswith('account 2: five_hour=reset  seven_day=reset  [updated 30 min'), lines[1])
+        got = pmwatch.parse_usage('\n'.join(lines))
+        self.assertEqual((got['1']['five'], got['1']['week']), (0, None))
+        self.assertEqual(pmwatch.usage_events({'1': {'five': 40, 'week': 95}}, got), [])
+        self.assertEqual(pmwatch.usage_events({'2': {'five': 40, 'week': 95}}, got),
+                         ['RESET account 2 (weekly 95% -> 0%)'])
+
+    def test_a_passed_five_hour_reset_reads_reset_with_no_reading_after_it(self):
+        # The rule above is the weekly window's alone (pm_watch's RESET is weekly): a five-hour
+        # window that reset after the file's last write still reads reset, as launch.py usage and
+        # the hub Usage tab showed it before.
+        h = Home(self, accounts=('1',))
+        hour = datetime.timedelta(hours=1)
+        h.usage('1', five=(40, NOW - hour), week=(60, NOW + DAY), updated=NOW - 2 * hour)
+        line = usage.report(h.settings, NOW)[0]
+        self.assertTrue(line.startswith('account 1: five_hour=reset  seven_day=60% (resets '), line)
+        self.assertEqual(pmwatch.parse_usage(line)['1']['five'], 0)
+
     def test_a_window_without_a_figure_reads_unknown_and_is_not_dropped(self):
         h = Home(self, accounts=('1', '2'))
         h.usage('1', week=(98, NOW + DAY), updated=NOW - DAY)          # five_hour null, as the status line writes it

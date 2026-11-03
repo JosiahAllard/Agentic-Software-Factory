@@ -13,9 +13,9 @@ files, the plugin manifests and docs/ROSTER.md's two tables; commit what it writ
 | Its model on one host | `model.<host>: <model>` in the front matter, over the tier's | render |
 | The model per tier | `hosts.json` `tiers` for that host | render (docs/ROSTER.md shows the table) |
 | Its line in docs/ROSTER.md | the role file's `summary` (its `description` when absent) | render |
-| What a role may write | the role file's `mode`, and its optional `writes` paths (the loader accepts them; no role file uses them today; docs/guard.md "Role policy"); a repository can override the mode with `.kit.json` `roles.<name>.mode` and turns the policy on with `guard.role_policy` | the guard reads them live; render too when `mode` changes, since Codex derives its sandbox from it (`sandbox_mode`) |
+| What a role may write | the role file's `mode`, and its optional `writes` paths (the loader accepts them; no role file uses them today; docs/guard.md "Role policy"); a repository can override the mode with `.kit.json` `roles.<name>.mode` and turns the policy on with `guard.role_policy` | the guard reads them live; render too when `mode` changes, since a host may derive its sandbox from it (`sandbox_mode`) |
 | The rules a mode is held to | `kitlib/guard/rolepolicy.py` (`RULES`, `LOCK_VERBS`) | nothing to render |
-| Its backlog rights | the role file's `mode`, `group` and `run` give its group; what each group may do is `kitlib/backlog/roles.py` (owner-only) | render when `mode` changes (Codex's `sandbox_mode`); nothing for `group` or `run` |
+| Its backlog rights | the role file's `mode`, `group` and `run` give its group; what each group may do is `kitlib/backlog/roles.py` (owner-only) | render when `mode` changes (a host's `sandbox_mode`); nothing for `group` or `run` |
 | A skill | `content/skills/<name>/` | nothing to render: every host loads it from there |
 | The profile a role reads when its repository has none | `content/default-profile.md` (docs/agent-profile.md); a repository's own is the file its host's `profile_path` token names | nothing to render |
 | A host's wording | the role's tokens (`{{name}}`, docs/content.md "Tokens"), filled from the host's table in `hosts/<name>/adapter/content.py` or its `hosts.json` profile | render |

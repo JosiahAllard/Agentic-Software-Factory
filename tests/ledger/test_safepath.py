@@ -1,13 +1,16 @@
 """kitlib.ledger.safepath: the rulings ledger's path checks (docs/ledger.md "Path checks"), and
 every reader and writer of the ledger refusing through them."""
 import os
+import stat
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 from tests.home import machine_config
+from tests.platforms import windows_only
 from kitlib.ledger import read, safepath, standing, write
 from kitlib.ledger.errors import Refused
 
@@ -111,6 +114,7 @@ class ReparseTest(Case):
         self.assertNotIn(os.path.normcase(root), seen)
 
 
+@windows_only('the owner check reads a Windows security descriptor (owner SID)')
 class OwnerTest(Case):
     def test_the_real_owner_of_a_new_file_is_this_user_or_administrators(self):
         me, why = safepath.user_sid()
@@ -163,6 +167,114 @@ class OwnerTest(Case):
             why = safepath.refusal(self.real)
         self.assertIn('cannot read the owner of %s (GetNamedSecurityInfoW returned 5)' % self.real,
                       why or '')
+
+
+class PosixCase(Case):
+    """Base of the POSIX checks, run on any platform: os.name is patched to posix, and os.getuid
+    (absent on Windows) and the owner_uid seam are patched where a test needs a uid."""
+
+    def posix(self, me, owners=None):
+        """Patch os.name to posix, os.getuid to `me`, and owner_uid to `owners` (path -> result)
+        where given; every other path keeps its real st_uid."""
+        stack = [mock.patch.object(safepath.os, 'name', 'posix'),
+                 mock.patch.object(safepath.os, 'getuid', lambda: me, create=True)]
+        if owners is not None:
+            real = safepath.owner_uid
+            stack.append(mock.patch.object(
+                safepath, 'owner_uid',
+                lambda p: owners.get(os.path.normcase(p)) or real(p)))
+        for patch in stack:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+
+class PosixOwnerTest(PosixCase):
+    """The POSIX owner check: st_uid is this process's uid or root."""
+
+    def test_a_path_owned_by_this_uid_passes(self):
+        """The fix: off Windows an existing ledger path is not refused for want of an owner SID."""
+        self.posix(os.lstat(self.real).st_uid)
+        self.assertIsNone(safepath.refusal(self.real))
+
+    def test_a_path_owned_by_this_uid_passes_by_the_seam(self):
+        mine = {os.path.normcase(self.real): (4242, None),
+                os.path.normcase(os.path.dirname(self.real)): (4242, None)}
+        self.posix(4242, mine)
+        self.assertIsNone(safepath.refusal(self.real))
+
+    def test_root_is_accepted(self):
+        root = {os.path.normcase(self.real): (0, None),
+                os.path.normcase(os.path.dirname(self.real)): (0, None)}
+        self.posix(4242, root)
+        self.assertIsNone(safepath.refusal(self.real))
+
+    def test_a_file_owned_by_another_uid_is_refused_naming_the_owner(self):
+        folder = os.path.normcase(os.path.dirname(self.real))
+        self.posix(4242, {os.path.normcase(self.real): (1001, None), folder: (4242, None)})
+        why = safepath.refusal(self.real) or ''
+        self.assertIn('%s is owned by uid 1001, not by this user (uid 4242) or root' % self.real, why)
+        self.assertIn(safepath.OWNER_FIX_POSIX, why)
+
+    def test_a_folder_owned_by_another_uid_is_refused(self):
+        folder = os.path.dirname(self.real)
+        self.posix(4242, {os.path.normcase(self.real): (4242, None),
+                          os.path.normcase(folder): (1001, None)})
+        self.assertIn('%s is owned by uid 1001' % folder, safepath.refusal(self.real) or '')
+
+    def test_an_owner_that_cannot_be_read_is_refused(self):
+        self.posix(4242, {os.path.normcase(self.real): (None, 'no such file')})
+        self.assertIn('cannot read the owner of %s (no such file)' % self.real,
+                      safepath.refusal(self.real) or '')
+
+    def test_the_seam_reads_lstat_st_uid(self):
+        self.assertEqual(safepath.owner_uid(self.real), (os.lstat(self.real).st_uid, None))
+        uid, why = safepath.owner_uid(self.real + '.absent')
+        self.assertIsNone(uid)
+        self.assertTrue(why)
+
+    def test_the_windows_owner_sid_is_not_asked_off_windows(self):
+        self.posix(os.lstat(self.real).st_uid)
+        with mock.patch.object(safepath, 'owner_sid', lambda p: self.fail('owner_sid called')):
+            self.assertIsNone(safepath.refusal(self.real))
+
+
+class PosixLinkTest(PosixCase):
+    """Off Windows there are no reparse points: a symlink, the file or a folder above it, is
+    refused as one. lstat is faked to report a link with no st_file_attributes, as on Linux; the
+    link's own owner is this uid, so only the link check can refuse it."""
+
+    def as_link(self, link):
+        """Patch os.lstat so `link` reads as a Linux symlink owned by uid 4242."""
+        real_lstat = os.lstat
+        fake = types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_nlink=1, st_uid=4242)
+
+        def lstat(p, *a, **k):
+            return fake if os.path.normcase(p) == os.path.normcase(link) else real_lstat(p, *a, **k)
+        patch = mock.patch.object(safepath.os, 'lstat', lstat)
+        patch.start()
+        self.addCleanup(patch.stop)
+        mine = {os.path.normcase(self.real): (4242, None),
+                os.path.normcase(os.path.dirname(self.real)): (4242, None)}
+        self.posix(4242, mine)
+
+    def test_a_symlinked_ledger_file_is_refused(self):
+        self.as_link(self.real)
+        why = safepath.refusal(self.real) or ''
+        self.assertIn('%s is a reparse point' % self.real, why)
+        self.assertIn(safepath.REPARSE_FIX, why)
+
+    def test_a_symlinked_folder_above_is_refused(self):
+        self.as_link(self.d)
+        self.assertIn('%s is a reparse point' % self.d, safepath.refusal(self.real) or '')
+
+    def test_a_real_symlink_is_refused(self):
+        link = os.path.join(self.d, 'real', 'LINK.md')
+        try:
+            os.symlink(self.real, link)
+        except OSError as e:
+            self.skipTest('cannot create a symlink here (no Developer Mode or privilege): %s' % e)
+        self.posix(os.lstat(link).st_uid)
+        self.assertIn('%s is a reparse point' % link, safepath.refusal(link) or '')
 
 
 class ConsumerTest(Case):

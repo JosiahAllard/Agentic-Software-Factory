@@ -18,6 +18,7 @@ from tests.guard import world as W
 from tests.guard.claudehost import decide
 from tests.guard.world import bash
 from tests.home import machine_config
+from tests.platforms import windows_only
 
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'ledger.py')
@@ -136,6 +137,7 @@ class MoveTest(unittest.TestCase):
         self.assertEqual((got.items, moved), ([], []))
         self.assertTrue(os.path.isfile(self.L.old_digest))
 
+    @windows_only('it fakes a foreign owner SID, which only the Windows owner check reads')
     def test_a_path_check_refusal_moves_nothing(self):
         book = os.path.normcase(os.path.join(self.L.old_rules, 'notes.txt'))
         real = safepath.owner_sid
@@ -146,6 +148,23 @@ class MoveTest(unittest.TestCase):
             with self.assertRaises(Refused) as cm:
                 move.apply(self.L.cfg)
         self.assertIn('is owned by S-1-5-21-1-2-3-9999', str(cm.exception))
+        self.assertTrue(os.path.isdir(self.L.old_rules))
+        self.assertTrue(os.path.isfile(self.L.old_digest))
+
+    def test_a_posix_owner_refusal_moves_nothing(self):
+        """The POSIX twin: os.name patched to posix, a foreign uid on one rulebook file."""
+        book = os.path.normcase(os.path.join(self.L.old_rules, 'notes.txt'))
+        real = safepath.owner_uid
+        me = os.lstat(book).st_uid          # this user's uid; 0 (root) on Windows
+
+        def owner(p):
+            return (me + 1001, None) if os.path.normcase(p) == book else real(p)
+        with mock.patch.object(safepath.os, 'name', 'posix'), \
+                mock.patch.object(safepath.os, 'getuid', lambda: me, create=True), \
+                mock.patch.object(safepath, 'owner_uid', owner):
+            with self.assertRaises(Refused) as cm:
+                move.apply(self.L.cfg)
+        self.assertIn('is owned by uid %d' % (me + 1001), str(cm.exception))
         self.assertTrue(os.path.isdir(self.L.old_rules))
         self.assertTrue(os.path.isfile(self.L.old_digest))
 

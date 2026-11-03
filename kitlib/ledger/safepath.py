@@ -7,10 +7,12 @@ caught. Three checks:
 
 - reparse: the file and every existing folder above it, except the drive root, must not be a
   reparse point (a junction, a symlink or any other tag), read with os.lstat's
-  st_file_attributes. A swapped-in junction or link would point the ledger somewhere else.
+  st_file_attributes. Off Windows, which has no reparse points, a symlink (S_ISLNK of st_mode)
+  is refused the same way. A swapped-in junction or link would point the ledger somewhere else.
 - hard links: the file must have one link (st_nlink); another name would be an unguarded path.
 - owner: the file and its own folder, where they exist, must be owned by this process's user,
-  Administrators or SYSTEM (GetNamedSecurityInfoW). An owner that cannot be read is a refusal.
+  Administrators or SYSTEM (GetNamedSecurityInfoW). Off Windows the owner is os.lstat's st_uid,
+  which must be this process's os.getuid() or 0 (root). An owner that cannot be read is a refusal.
 
 A part that does not exist yet is skipped: the writer creates the file, and its folder. Nothing
 here prints or exits.
@@ -28,6 +30,7 @@ _MISSING = (FileNotFoundError, NotADirectoryError)
 REPARSE_FIX = ('point ledger_path at the real target, or move the ledger off OneDrive (a cloud '
                'placeholder)')
 OWNER_FIX = 'check the owner (takeown, or icacls /setowner)'
+OWNER_FIX_POSIX = 'check the owner (chown)'
 LINK_FIX = 'remove the other links (fsutil hardlink list), or copy the file to a new one'
 
 
@@ -43,7 +46,8 @@ def refusal(path):
             st = None
         except OSError as exc:
             return head + 'cannot check %s (%s): check that this user may read it' % (p, exc)
-        if st is not None and getattr(st, 'st_file_attributes', 0) & REPARSE_POINT:
+        if st is not None and (getattr(st, 'st_file_attributes', 0) & REPARSE_POINT
+                               or (os.name != 'nt' and stat.S_ISLNK(st.st_mode))):
             return head + ('%s is a reparse point (a junction, symlink or other tag); the ledger '
                            'file and every folder above it must be plain: %s' % (p, REPARSE_FIX))
         if st is not None and p == full and stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
@@ -52,6 +56,11 @@ def refusal(path):
         p = os.path.dirname(p)
     for p in (full, os.path.dirname(full)):
         if not os.path.lexists(p):
+            continue
+        if os.name != 'nt':
+            why = _posix_owner_refusal(p)
+            if why:
+                return head + why
             continue
         sid, why = owner_sid(p)
         if sid is None:
@@ -62,6 +71,28 @@ def refusal(path):
         if sid not in (me, ADMINISTRATORS, SYSTEM):
             return head + ('%s is owned by %s, not by this user (%s), Administrators or SYSTEM: '
                            '%s' % (p, sid, me, OWNER_FIX))
+    return None
+
+
+# ------------------------------------------------------------------ POSIX owner
+
+def owner_uid(path):
+    """`(owner uid, None)` or `(None, why)` for a file or folder, off Windows. The tests' seam."""
+    try:
+        return os.lstat(path).st_uid, None
+    except OSError as exc:
+        return None, str(exc)
+
+
+def _posix_owner_refusal(p):
+    """None when `p` is owned by this process's uid or root; else why not, with the fix."""
+    uid, why = owner_uid(p)
+    if uid is None:
+        return 'cannot read the owner of %s (%s): %s' % (p, why, OWNER_FIX_POSIX)
+    me = os.getuid()
+    if uid not in (me, 0):
+        return ('%s is owned by uid %d, not by this user (uid %d) or root: %s'
+                % (p, uid, me, OWNER_FIX_POSIX))
     return None
 
 

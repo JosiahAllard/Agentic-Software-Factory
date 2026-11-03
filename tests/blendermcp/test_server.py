@@ -1,9 +1,10 @@
 """kitlib.blendermcp.server: the tools, their argument checks and results, over a stand-in bridge;
-and the snippets of kitlib.blendermcp.codes compile."""
+the snippets of kitlib.blendermcp.codes compile; and mcp/blender_server.py as a process."""
 import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -11,8 +12,11 @@ import unittest
 import warnings
 from unittest import mock
 
-from kitlib.blendermcp import TOOL_NAMES, codes, server
+from kitlib.blendermcp import SERVER_NAME, TOOL_NAMES, codes, server
 from kitlib.blendermcp.instance import BridgeError
+from tests.lock.helpers import REPO, clean_env
+
+ENTRY = os.path.join(REPO, 'mcp', 'blender_server.py')
 
 
 class StubBridge:
@@ -131,6 +135,43 @@ class Tools(unittest.TestCase):
         server.run(rfile, wfile, server.Server(b))
         self.assertTrue(b.watching and b.shut)
         self.assertEqual(json.loads(wfile.getvalue()), {'jsonrpc': '2.0', 'id': 1, 'result': {}})
+
+
+class EntryPoint(unittest.TestCase):
+    """mcp/blender_server.py as a process: it boots, lists its tools and lists no Blender with no
+    Blender and no lock (both are first touched by blender_open), and exits when stdin ends."""
+
+    def test_it_lists_its_tools_and_exits_at_the_end_of_stdin_starting_no_blender(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        nowhere = os.path.join(tmp, 'no-blender.exe')       # a Blender looked for would be refused
+        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+                     'params': {'protocolVersion': '2025-06-18', 'capabilities': {},
+                                'clientInfo': {'name': 'test', 'version': '0'}}},
+                    {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
+                    {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                     'params': {'name': 'blender_list', 'arguments': {}}}]
+        p = subprocess.run([sys.executable, ENTRY],
+                           input=''.join(json.dumps(r) + '\n' for r in requests),
+                           capture_output=True, text=True, encoding='utf-8', cwd=tmp, timeout=60,
+                           env=clean_env(PM_KIT_BLENDER=nowhere),
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        replies = [json.loads(line) for line in p.stdout.splitlines()]
+        self.assertEqual([r.get('id') for r in replies], [1, 2, 3], p.stdout)
+        self.assertEqual(replies[0]['result']['serverInfo']['name'], SERVER_NAME)
+        self.assertEqual(tuple(t['name'] for t in replies[1]['result']['tools']), TOOL_NAMES)
+        listed = replies[2]['result']
+        self.assertFalse(listed['isError'], listed)
+        self.assertEqual(listed['structuredContent'], {'ok': True, 'open': [], 'ended': []})
+        self.assertFalse(os.path.exists(nowhere))
+
+    def test_the_plugin_starts_this_server(self):
+        with open(os.path.join(REPO, '.claude-plugin', 'plugin.json'), encoding='utf-8') as f:
+            s = json.load(f)['mcpServers'][SERVER_NAME]
+        self.assertEqual((s['command'], s['args']), ('python', ['${CLAUDE_PLUGIN_ROOT}/mcp/blender_server.py']))
+        self.assertTrue(os.path.isfile(ENTRY))
 
 
 class Codes(unittest.TestCase):

@@ -28,7 +28,7 @@ from . import scope as scmod
 from . import store as smod
 from .errors import Failure
 
-# The fixed refusal (KIT-NEXT-NARROW-AUTO "Fixed refusal text"); its only Instead is the block.
+# The fixed refusal (docs/commit.md "A narrowed record"); its only Instead is the block.
 # `named` is the path, with the other side of a rename after it (RENAMED_FROM / RENAMED_TO).
 REFUSAL = ('REFUSED: needs %(named)s, held by %(other)s on %(branch)s (narrowed for %(rid)s). '
            'Stop and report "needs %(path)s, held by %(other)s". Instead: backlog.py block '

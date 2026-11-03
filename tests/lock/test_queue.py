@@ -73,6 +73,31 @@ class Plan(unittest.TestCase):
         self.assertEqual(got["r-big"]["start"], NOW + 500)
         self.assertEqual(got["r-small"]["start"], NOW)
 
+    def resource_head(self, held_at):
+        # H holds cores 0-1 and resource LAND (expect 1000). W, the head, needs all 4 cores and
+        # LAND; W2 names LAND too; T, a long 2-core run, is behind both.
+        h = holder("r-h", [0, 1], held_at, 1000)
+        h["resource"] = LAND
+        return self.plan([h, land("r-w", 4, 100, 2), land("r-w2", 1, 100, 3),
+                          waiter("r-t", 2, 2000, 4)])
+
+    def test_a_head_put_off_by_an_overrun_resource_holder_leaves_free_cores_to_backfill(self):
+        # H is overrun, so its end (now + 500) slides on every pass: W, put off by LAND alone,
+        # plans no slots at that start, and T takes the cores free now.
+        got = self.resource_head(NOW - 5000)
+        self.assertEqual((got["r-t"]["start"], got["r-t"]["cores"]), (NOW, [2, 3]))
+        self.assertTrue(got["r-t"]["now"])
+        self.assertEqual(got["r-w"]["start"], NOW + 500)        # its start and place unchanged
+        self.assertLess(got["r-w"]["position"], got["r-t"]["position"])
+        self.assertEqual(got["r-w2"]["start"], NOW + 600)       # resource order kept
+
+    def test_a_head_put_off_by_an_on_time_resource_holder_keeps_its_cores(self):
+        # H is on time (ends at now + 900): W reserves its cores there, so T waits for W.
+        got = self.resource_head(NOW - 100)
+        self.assertEqual(got["r-w"]["start"], NOW + 900)
+        self.assertFalse(got["r-t"]["now"])
+        self.assertGreaterEqual(got["r-t"]["start"], NOW + 1000)
+
     def test_own_turn_entries_plan_first(self):
         got = self.plan([waiter("r-a", 4, 100, 2), waiter("r-held", 4, 100, 3, hold="h-x")])
         self.assertEqual(got["r-held"]["position"], 1)

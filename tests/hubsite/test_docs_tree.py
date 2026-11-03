@@ -151,6 +151,26 @@ class DocsTreeTest(unittest.TestCase):
         self.assertIn("No documents yet", got["shown"])
         self.assertEqual(got["tree"], 0)
 
+    def test_odd_kind_names_get_the_muted_chip(self):
+        got = dom(SEE + """
+            await start();
+            return $$("#list article .chip").map(c => c.className + "|" + text(c)).filter(t => /constructor|__proto__/i.test(t));
+        """, snap({"c": card("c", "alpha", "constructor", "2026-10-01T00:00:00Z"), "p": card("p", "alpha", "__proto__", "2026-10-02T00:00:00Z")}), hash="#docs")
+        self.assertEqual(sorted(got), ["chip k-muted|Constructor", "chip k-muted|__proto__"])
+
+    def test_markup_in_kind_folder_title_and_summary_is_drawn_as_text(self):
+        bad = "<img src=x onerror=alert(1)>"
+        got = dom(SEE + """
+            await start();
+            await click(document.getElementById("row-m"));
+            return { shown: text($("#list")) + text($("#pane-detail")), sinks, tags: [...new Set(created)],
+                     attrs: all().flatMap(e => Object.keys(e.attrs).filter(k => k.startsWith("on")).map(k => e.tag + " " + k)) };
+        """, snap({"m": card(bad, "alpha", bad, "2026-10-01T00:00:00Z", folder=bad, summary=bad)}), hash="#docs")
+        self.assertIn(bad, got["shown"])
+        self.assertEqual(got["sinks"], [])
+        self.assertEqual(got["attrs"], [])
+        self.assertNotIn("img", got["tags"])
+
     def test_kind_and_folder_are_read_as_text(self):
         got = js("hubState(items).pages.map(p => [p.id, p.kind, p.folder, p.bytes])", snap(
             {"x": {"title": "t", "kind": ["no"], "folder": 5, "bytes": "9"}, "y": {"title": "t", "kind": "plan", "folder": "f/g", "bytes": 12}}))

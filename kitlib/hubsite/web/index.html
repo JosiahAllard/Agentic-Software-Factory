@@ -3306,7 +3306,7 @@ ul.hist .sch-line{display:block}
   const KIND_CHIP = { audit: "warn", plan: "accent", design: "rec", research: "ok", lint: "muted", other: "muted" };
   const docKind = p => p.kind.trim().toLowerCase();
   const kindName = k => k ? k[0].toUpperCase() + k.slice(1) : "Unsorted";
-  const kindChip = k => el("span", {class: "chip k-" + (KIND_CHIP[k] || "muted"), text: kindName(k)});
+  const kindChip = k => el("span", {class: "chip k-" + (Object.hasOwn(KIND_CHIP, k) ? KIND_CHIP[k] : "muted"), text: kindName(k)});
   const docSize = b => b < 1024 ? b + " B" : b < 1048576 ? Math.round(b / 1024) + " KB" : (b / 1048576).toFixed(1) + " MB";
   function docUiLoad(){
     if (docUi.loaded) return;

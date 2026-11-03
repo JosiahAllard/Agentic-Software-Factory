@@ -100,7 +100,7 @@ def parser():
     d.add_argument('--autocompact', type=int, default=start.DEEP_AUTOCOMPACT)
     d.add_argument('--model', default=start.LONG_MODEL)
     d.add_argument('--effort', default='xhigh')
-    d.add_argument('--force', action='store_true', help='start on an account at or over 90%%')
+    d.add_argument('--force', action='store_true', help='start on an account at or over ' + str(accounts.HEADROOM_LIMIT) + '%%')
     d.add_argument('--plan', action='store_true', help='print, start and write nothing')
     d.add_argument('--brief-dir')
     d.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
@@ -136,7 +136,7 @@ def parser():
     t.add_argument('--effort')
     t.add_argument('--autocompact', type=int, default=None,
                    help='compact window in tokens (default %d; 0: the CLI default)' % start.DEFAULT_AUTOCOMPACT)
-    t.add_argument('--force', action='store_true', help='start on an account at or over 90%%')
+    t.add_argument('--force', action='store_true', help='start on an account at or over ' + str(accounts.HEADROOM_LIMIT) + '%%')
     t.add_argument('--plan', action='store_true', help='print, start and write nothing')
     t.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
 

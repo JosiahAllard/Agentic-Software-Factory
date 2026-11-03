@@ -23,6 +23,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/action-hub.md` | Action Hub | the PM action list | kw: action-hub, hub
 - `docs/hub-mcp.md` | hub MCP server: the Action Hub's api as MCP tools, the owner's tools pinned | the hub from an agent | kw: hub-mcp, hub, mcp
 - `docs/hub-remote-access.md` | Hub remote access | reaching the hub from a phone | kw: hub, remote-access, tunnel, cloudflared
+- `docs/blender-mcp.md` | Blender MCP bridge: a live headless Blender per agent, booked through the machine lock, through the pinned Blender Lab MCP add-on | inspecting or rendering a scene from an agent | kw: blender-mcp, blender, mcp, render
 - `docs/backlog.md` | backlog.py | reading or changing backlog records | kw: backlog
 - `docs/backlog-store.md` | backlog store design | changing the store | kw: backlog-store, store
 - `docs/branch-overlap.md` | branch overlap: unmerged branches touching a file set | checking a sweep's exclusions | kw: branch_overlap, overlap

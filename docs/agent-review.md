@@ -92,7 +92,7 @@ Same 1,157 runs.
 
 - A run starts with 8k to 48k tokens of prompt, but its first turn costs $0.02 to $0.12, because most of it is a shared cached prefix. Start-up is cheap; later re-reads cost more. In dollars (computed): start-up 2.6%, growth after the first turn 49.6%, re-reading the start-up prompt 13.2%, cache-miss rewrites 23.5%, output 11.0%.
 - A cache-miss rewrite is a turn that writes more than half its prompt back to the cache after turn 1. There were 1,316 of them in 43k turns, in 438 of 1,157 runs. 70% of rewrite turns follow a gap of 5 to 60 minutes (median gap 587 s), which fits a 5-minute cache life. Of the rewrite cost after gaps of 5 minutes or more, about 66% came from agents resumed by a message after a hand-back or idle, and about 10% from waiting on a gate or test. 54% of late continuations (313 of 583) came 5 to 10 minutes after the last turn.
-- Subagents get a 5-minute cache even on a subscription; the main conversation gets one hour. The per-agent-definition setting `experimental: cacheTtl: 1h` is now in the rendered agents `strong-worker.md`, `weak-worker.md` and `worker.md` under `hosts/claude/shell/agents/` (docs/ROSTER.md "The one-hour prompt cache"; guarded by `tests/agents/test_agents.py`). The all-subagents setting `subagentPromptCacheTtl` (or `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`) is not used. No run's usage block has been read to confirm one-hour cache writes.
+- Subagents get a 5-minute cache even on a subscription; the main conversation gets one hour. The per-agent-definition setting `experimental: cacheTtl: 1h` is now in the rendered agents `strong-worker.md`, `weak-worker.md`, `worker.md` and `docs-writer.md` under `hosts/claude/shell/agents/` (docs/ROSTER.md "The one-hour prompt cache"; guarded by `tests/agents/test_agents.py`). The all-subagents setting `subagentPromptCacheTtl` (or `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`) is not used. No run's usage block has been read to confirm one-hour cache writes.
 
 Pricing computations, untested (assumed: every 5-to-60-minute rewrite becomes a full cache hit and nothing else changes): a one-hour cache for opus-worker nets about $174 a week; for strong-worker it costs about $74 a week more; for worker it nets about $45 a week; the whole fleet on one hour nets about $42 a week, near break-even. Late continuations that rewrite cost about $525 a week (computed, partly assumed); sending them sooner would save roughly half (I). Starting a fresh agent past a break-even context size saves at most about $114 a week (upper bound). Reading file ranges instead of whole large files targets tool-result growth of about $617 a week, a share of which is the saving; not measured separately. The "continue within 5 minutes or start fresh" and "read ranges" rules are in the coordinator-dispatch skill.
 
@@ -130,19 +130,19 @@ The definitions review found 13 cross-cutting findings and wrote one section per
 | Id | Finding (short) | Status at base and proof |
 |---|---|---|
 | A1 | Builders write only to a literal absolute path | Fixed for weak-worker (`content/roles/weak-worker.md` "Write targets are literal paths"); open for the other builders |
-| A2 | No `python -c` or stdin python; write a script file | Fixed: `content/skills/shell-and-worktree-traps/SKILL.md` item 5 (stdin here-string trap) |
+| A2 | No `python -c` or stdin python; write a script file | Open: `content/skills/shell-and-worktree-traps/SKILL.md` item 5 covers only the PowerShell here-string trap; no `python -c` ban and no "working directory resets" rule exists in `content/` |
 | A3 | No sleep or poll loops | Fixed: same skill, item 12 (a foreground `sleep` or poll loop is refused; wait as docs/gate.md says) |
 | A4 | Reviewer never checks out, switches, restores or resets | Open: `content/skills/specialty-review/SKILL.md` and `content/roles/analyst.md` carry no such ban |
 | A5 | Records may use backlog.py | Gone: the records type became the docs-writer |
-| A6 | Lander spawning a helper just to wait; keep the Agent tool? | Open: `content/roles/lander.md` front matter still lists `Agent` |
+| A6 | Lander spawning a helper just to wait; keep the Agent tool? | Open: the rendered `hosts/claude/shell/agents/lander.md:5` tools line still lists `Agent` |
 | A7 | A refused backlog write is reported, not retried with `--reason` | Fixed in part: skill `backlog-ops` "Refusals" (a refusal is final; one form-only retry by a fresh agent) |
 | A8 | Name `sync_base.py` for merges | Fixed: `content/skills/branch-sync/SKILL.md` step 3 |
 | A9 | Do not re-emit other agents' text | Open, not re-checked; no wording found |
-| A10 | "Gate green" on every commit becomes one full gate per branch | Fixed: `content/skills/builder/SKILL.md` item 11 (the gate comes after review, when the coordinator asks) |
+| A10 | "Gate green" on every commit becomes one full gate per branch | Fixed: `content/skills/builder/SKILL.md` item 7 (the gate comes after review, when the coordinator asks) |
 | B1 | Bare "Never" lines in 11 files | Not re-checked; the files were regenerated since |
 | B2 | Reword the pid-kill sentence to "do not kill; report" | Open, owner decision: "end only processes you started, by pid" is still in lander.md, weak-worker.md and test-runner.md |
-| B3 | One shared builder block | Fixed in part: skill `builder` is the shared builder text |
-| B4 | Reconcile lander.md with the land-branch skill | Not re-checked; lander.md runs `land.py ... --expect-tip <tip>` |
+| B3 | One shared builder block | Fixed in part: skill `builder` is the shared builder text. Moving rules out of a role lowers compliance on weaker tiers |
+| B4 | Reconcile lander.md with the land-branch skill | Not re-checked; lander.md runs `land.py ... --expect-tip <tip>`. Do not shorten lander.md without re-running the Haiku precedence test |
 | B5 | One rule for who closes a record | Not re-checked |
 | B6 | Stale names: `new_phase`, conventions digest, refusal-logging line | Fixed for `new_phase` (no match in `content/`); the consultant's conventions digest is now defined (`content/roles/consultant.md` step 1, via the profile's Records section) |
 | B7 | Duplicated art-agent text, GPU line | Gone: the art agents are `specialty-*` skills |
@@ -152,7 +152,7 @@ The definitions review found 13 cross-cutting findings and wrote one section per
 | C3 | Reviewer tier text for the owner's split | Fixed: roster.md "Reviewer model" (built 2026-10-18) |
 | C4 | Plan-shaped work on Opus coders: wording first, any tier move a trial | Fixed in part: plan-only goes to the worker (roster.md "Choosing"); no tier trial run |
 | C5 | Trim unused tools (AskUserQuestion, Artifact on coordinator; Agent and EnterWorktree on test-runner) | Open: `hosts/claude/shell/agents/coordinator.md` still lists AskUserQuestion and Artifact; test-runner lists EnterWorktree |
-| C6 | Deep-worker auto-compact window 500k against about 366k seen | Dropped: the deep-worker front matter no longer sets a window (launcher-set, "1M via launcher") |
+| C6 | Deep-worker auto-compact window 500k against about 366k seen | Open, unchanged: `content/roles/deep-worker.md:16` still says 500k and `content/roles/consultant.md:16` about 350k |
 | C7 | Test-runner has no effort key; note it in docs/ROSTER.md | Fixed: docs/ROSTER.md lists test-runner effort as `-` |
 | C8, C9 | No tier change for coordinator, consultant, deep-worker, builders; Haiku coding untouched | Unchanged |
 | D1, D2 | Worker's text routes networking to the wrong tier; "plan" means two things | Fixed: the worker, strong-worker and senior-worker descriptions now name each other's scope and send plan-only work to the worker |

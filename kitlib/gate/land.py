@@ -522,12 +522,16 @@ class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
     for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
     read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
-    allowed)."""
+    allowed); `narrowed`, the ids held that carry a `narrowed:` line (scope_check refuses their
+    branch's miss)."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
+        self.narrowed = set()
 
-    def hold(self, rid, members, command, area=None):
+    def hold(self, rid, members, command, area=None, narrowed=False):
+        if narrowed:
+            self.narrowed.add(rid)
         if rid in self.held:
             self.held[rid][0].extend(m for m in members if m not in self.held[rid][0])
         else:
@@ -1483,16 +1487,20 @@ class Lander(object):
         and the batch's earlier tips, so a stacked branch is checked on its own paths. A miss, a
         store it cannot read while some path is outside what it could read, or a check that
         stops: with SCOPE_REFUSES the refusal; else a WARNING kept for after the LANDED line, and
-        None. A branch holding no record while a store with records was read: a NOTE kept for
-        before the LANDED line."""
+        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate.md "The
+        scope check") is refused whatever SCOPE_REFUSES says; a store it cannot read, or a check
+        that stops, cannot tell, so that stays a WARNING. A branch holding no record while a store
+        with records was read: a NOTE kept for before the LANDED line."""
         for i, (b, t) in enumerate(self.pairs):
+            narrowed = []
             try:
-                why = self._scope_of(b, t, [self.expect_main] + self.tips[:i])
+                why = self._scope_of(b, t, [self.expect_main] + self.tips[:i], narrowed)
             except Exception as e:      # noqa: BLE001 - a check that cannot finish is a miss
                 why = 'the scope check of %s stopped (%s)' % (b, _what(e))
+                narrowed = []
             if not why:
                 continue
-            if SCOPE_REFUSES:
+            if SCOPE_REFUSES or narrowed:
                 return why
             self.scope_warnings.append(
                 'WARNING: %s; the landing went ahead: the scope check only warns for now '
@@ -1510,8 +1518,9 @@ class Lander(object):
             return out, None
         return None, r.err or 'git merge-base exited %s' % r.rc
 
-    def _scope_of(self, b, t, bases):
-        """None when branch `b` at `t` keeps to its scopes; else why not (scope_check)."""
+    def _scope_of(self, b, t, bases, narrowed=None):
+        """None when branch `b` at `t` keeps to its scopes; else why not (scope_check). A miss of
+        a branch holding a narrowed record adds those ids to the list `narrowed`."""
         mb, why = self._scope_base(t, bases)
         changed, why2 = runner.changed_between(self.root, mb, t) if mb else (None, why)
         if changed is None:
@@ -1558,6 +1567,8 @@ class Lander(object):
             return None
         if found.unread:            # a record it could not read may cover them
             return self._scope_unread(b, found)
+        if narrowed is not None:
+            narrowed.extend(sorted(found.narrowed))
         return self._scope_miss(b, t, mb, found, outside, tops)
 
     def _scope_unread(self, b, found):
@@ -1586,6 +1597,13 @@ class Lander(object):
                                       for m in members + new if m != scmod.NONE]
             how = ('widen a record\'s scope first (set checks the new members against every live '
                    'pull\'s scope): %s; or land them on their own branch' % command(*args))
+        if found.narrowed:
+            rid = sorted(found.narrowed)[0]
+            how = ('%s was narrowed by a pull (its narrowed: lines name each original member and '
+                   'the other record): a path given to the other record waits until that record '
+                   'lands, then restore the original member with %s; or %s' % (
+                       ', '.join(sorted(found.narrowed)),
+                       command('set', rid, '--scope "<original member>"'), how))
         return '%s changes %d path(s) outside the scopes of the records it holds (%s): %s; %s' % (
             b, len(outside), ', '.join(ids), listed, how)
 
@@ -1662,7 +1680,8 @@ class Lander(object):
                 candidates.append(rec)
         for r in candidates:
             if r.get('state') == 'pulled' and (r.get('pulled_by') == b or r.stem in named):
-                found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None)
+                found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None,
+                           bool(r.all('narrowed')))
 
     def _scope_last(self, root, rev, rel, rid):
         """The record `rid` as it was before the newest commit reachable from `rev` deleted

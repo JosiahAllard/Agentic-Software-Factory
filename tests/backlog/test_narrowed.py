@@ -1,0 +1,133 @@
+"""The `narrowed:` record line and commit.py's narrowed-record check (kitlib/backlog/narrowed.py;
+docs/commit.md "A narrowed record"): its shape, and which committed paths it refuses."""
+import unittest
+from unittest import mock
+
+from kitlib.backlog import narrowed as nmod
+from kitlib.backlog import record as rmod
+from tests.backlog.helpers import messages, record_text
+
+RULES = rmod.Rules()
+BRANCH = 'kit/c'
+OTHER = 'kit/l'
+
+
+def record(rid, **over):
+    return rmod.parse('backlog/%s.md' % rid, record_text(id=rid, **over), stem=rid)
+
+
+def pulled(rid, by, scope, **over):
+    return record(rid, state='pulled', pulled_at='2026-11-03', pulled_by=by, scope=scope, **over)
+
+
+def pair(c_scope=('kit/a/**',), l_state='pulled', c_narrowed='kit/** L-ONE kit/l'):
+    """C pulled on kit/c, narrowed off `kit/**` for L-ONE; L-ONE pulled on kit/l holding kit/b."""
+    c = pulled('C-ONE', BRANCH, list(c_scope), narrowed=c_narrowed)
+    if l_state == 'pulled':
+        other = pulled('L-ONE', OTHER, ['kit/b/**'], narrowed='kit/** C-ONE kit/c')
+    else:
+        other = record('L-ONE', state=l_state, scope='kit/b/**')
+    return [c, other]
+
+
+class TheLine(unittest.TestCase):
+
+    def test_a_well_formed_line_passes_check(self):
+        self.assertEqual(messages(narrowed='kitlib/backlog/** KIT-OTHER kit/other'), [])
+        self.assertEqual(messages(narrowed=['kitlib/** KIT-A kit/a', 'docs/x.md KIT-B kit/b']), [])
+
+    def test_a_member_with_a_space_splits_at_the_last_two_spaces(self):
+        self.assertEqual(rmod.split_narrowed('My Docs/** KIT-A kit/a'),
+                         ('My Docs/**', 'KIT-A', 'kit/a'))
+        self.assertEqual(messages(narrowed='My Docs/** KIT-A kit/a'), [])
+
+    def test_a_malformed_line_fails_check(self):
+        for bad in ('kitlib/**', 'kitlib/** KIT-A', 'kitlib/*.py KIT-A kit/a',
+                    'kitlib/** kit-a kit/a', 'none KIT-A kit/a', '/abs/** KIT-A kit/a',
+                    'kitlib/** KIT-A -kit/a'):
+            self.assertTrue(messages(narrowed=bad), bad)
+            self.assertIsNotNone(rmod._narrowed(bad, RULES), bad)
+
+    def test_narrowed_returns_the_lines_and_the_errors(self):
+        rec = record('C-ONE', narrowed=['kit/** L-ONE kit/l', 'kit/**'])
+        lines, errors = rmod.narrowed(rec, RULES)
+        self.assertEqual(lines, [('kit/**', 'L-ONE', 'kit/l')])
+        self.assertEqual(len(errors), 1)
+
+
+class Hits(unittest.TestCase):
+
+    def hits(self, paths, records=None, branch=BRANCH):
+        return nmod.hits(records if records is not None else pair(), branch, paths, RULES)
+
+    def test_a_path_given_to_the_live_other_record_is_refused_with_the_fixed_text(self):
+        refusal, warnings = self.hits(['kit/b/x.py'])
+        self.assertEqual(refusal, [
+            'REFUSED: needs kit/b/x.py, held by L-ONE on kit/l (narrowed for C-ONE). Stop and '
+            'report "needs kit/b/x.py, held by L-ONE". Instead: backlog.py block C-ONE --on '
+            'item:L-ONE --reason "needs kit/b/x.py"'])
+        self.assertEqual(warnings, [])
+
+    def test_both_sides_of_a_rename_across_are_each_refused(self):
+        refusal, _ = self.hits(['kit/a/x.py', 'kit/b/x.py', 'kit/b/y.py'])
+        self.assertEqual([l.split(',')[0] for l in refusal],
+                         ['REFUSED: needs kit/b/x.py', 'REFUSED: needs kit/b/y.py'])
+
+    def test_a_path_in_the_split_member_that_neither_record_holds_is_refused(self):
+        refusal, _ = self.hits(['kit/c/new.py'])
+        self.assertEqual(len(refusal), 1)
+        self.assertIn('needs kit/c/new.py, held by L-ONE', refusal[0])
+
+    def test_the_record_s_own_scope_and_paths_outside_every_original_member_pass(self):
+        self.assertEqual(self.hits(['kit/a/x.py', 'KIT/A/y.py', 'tools/x.py', 'docs/a.md']),
+                         ([], []))
+
+    def test_the_other_record_no_longer_pulled_lets_the_path_through(self):
+        for state in ('closed', 'open'):
+            self.assertEqual(self.hits(['kit/b/x.py'], pair(l_state=state)), ([], []), state)
+        self.assertEqual(self.hits(['kit/b/x.py'], pair()[:1]), ([], []))
+
+    def test_only_the_committing_branch_s_records_count(self):
+        self.assertEqual(self.hits(['kit/b/x.py'], branch='kit/other'), ([], []))
+        self.assertEqual(self.hits(['kit/b/x.py'], branch=''), ([], []))
+        # The other side, committing on kit/l, is refused on the part C took.
+        refusal, _ = self.hits(['kit/a/x.py'], branch=OTHER)
+        self.assertEqual(len(refusal), 1)
+        self.assertIn('held by C-ONE on kit/c (narrowed for L-ONE)', refusal[0])
+
+    def test_a_record_with_no_narrowed_line_is_not_checked(self):
+        records = [pulled('C-ONE', BRANCH, ['kit/a/**']), pair()[1]]
+        self.assertEqual(self.hits(['kit/b/x.py'], records), ([], []))
+
+    def test_a_malformed_line_on_the_branch_s_record_refuses_every_commit(self):
+        refusal, _ = self.hits(['tools/x.py'], pair(c_narrowed='kit/** L-ONE'))
+        self.assertEqual(len(refusal), 1)
+        self.assertTrue(refusal[0].startswith('REFUSED: C-ONE carries a narrowed: line'),
+                        refusal[0])
+
+    def test_an_unreadable_record_is_a_warning_not_a_refusal(self):
+        bad = rmod.unreadable('backlog/X-ONE.md', 'X-ONE', 'not utf-8')
+        refusal, warnings = self.hits(['tools/x.py'], pair() + [bad])
+        self.assertEqual(refusal, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('X-ONE', warnings[0])
+
+
+class FailOpen(unittest.TestCase):
+
+    def test_a_store_that_cannot_be_read_is_a_warning(self):
+        with mock.patch.object(nmod, 'read', side_effect=OSError('store down')):
+            refusal, warnings = nmod.check('.', ['kit/b/x.py'])
+        self.assertEqual(refusal, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertTrue(warnings[0].startswith('WARNING: the narrowed-record check could not '
+                                               'read the backlog store (OSError: store down)'),
+                        warnings[0])
+
+    def test_no_paths_reads_nothing(self):
+        with mock.patch.object(nmod, 'read', side_effect=AssertionError('read')):
+            self.assertEqual(nmod.check('.', []), ([], []))
+
+
+if __name__ == '__main__':
+    unittest.main()

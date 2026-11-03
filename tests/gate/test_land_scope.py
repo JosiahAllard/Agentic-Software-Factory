@@ -390,6 +390,33 @@ class Warns(ScopeCase):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
 
+    # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "The scope check") is
+    # refused on a miss even while SCOPE_REFUSES is False: the backstop for a plain git commit.
+
+    def test_a_narrowed_record_s_miss_is_refused(self):
+        before = self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'),
+                           pulled('BAR', by='kit/bar', scope=['b/**'],
+                                  narrowed='kit/** FOO kit/feature'))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n', 'b/y.py': 'y\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('kit/feature changes 1 path(s) %s (FOO): b/y.py; ' % OUTSIDE, line)
+        self.assertIn('FOO was narrowed by a pull (its narrowed: lines name each original member '
+                      'and the other record): a path given to the other record waits until that '
+                      'record lands, then restore the original member with ', line)
+        self.assertIn('set FOO --scope "<original member>"; or widen', line)
+        self.assertEqual(self.remote_store(), before)        # nothing closed
+
+    def test_a_narrowed_record_s_branch_in_scope_lands(self):
+        self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_an_unread_store_still_only_warns(self):
+        self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'),
+                  {'BAD': 'not a header line\n'})
+        _, tip = self.branch('feature', {'b.py': 'x\n'})
+        self.assert_warned(self.land(tip), 'cannot read the backlog store to check')
+
 
 def delete_on_branch(case, name, paths):
     """The tip of branch kit/<name> after one commit deleting `paths`."""

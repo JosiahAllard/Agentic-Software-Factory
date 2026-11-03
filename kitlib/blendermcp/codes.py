@@ -53,17 +53,24 @@ import bpy
 import mathutils
 
 _want = %(engines)r
-_have = {e.identifier for e in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items}
-_engine = next((e for e in _want if e in _have), None)
-if _engine is None:
-    raise RuntimeError("this Blender has none of the render engines %%s" %% (_want,))
 _sc = bpy.context.scene
 _r = _sc.render
 _saved = (_r.engine, _r.resolution_x, _r.resolution_y, _r.resolution_percentage, _r.filepath,
           _r.image_settings.file_format, _sc.camera)
+# The engine enum is dynamic (the type's enum_items lists none of them): try each name, and a
+# name this Blender lacks is refused with TypeError, leaving the engine as it was.
+_engine = None
+for _e in _want:
+    try:
+        _r.engine = _e
+    except TypeError:
+        continue
+    _engine = _e
+    break
+if _engine is None:
+    raise RuntimeError("this Blender has none of the render engines %%s" %% (_want,))
 _tmp = None
 try:
-    _r.engine = _engine
     _r.resolution_x, _r.resolution_y, _r.resolution_percentage = %(width)d, %(height)d, 100
     _r.image_settings.file_format = "PNG"
     _r.filepath = %(path)r

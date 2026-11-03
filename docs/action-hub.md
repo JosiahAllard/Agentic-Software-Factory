@@ -1276,7 +1276,7 @@ Known limits:
   nor the tool takes `--from`.
 
 `GET /api/v1/snapshot` carries the collection whole, and `strong`: true only on the strong owner's call.
-The page draws each pending request above the open questions (`approvalCard`), counted in the Approvals
+The page draws each request as a card in the Approvals section (`approvalCard`; Waiting and Decided tabs, "Using the hub"), the pending ones counted in the Approvals
 badge: its title, repo, head, reason and the stored diff as text. Approve and Deny post the decide route
 with the version the page read; they are disabled unless the snapshot says `strong`, and a refusal (a 403
 included) is shown on the card in the server's words.

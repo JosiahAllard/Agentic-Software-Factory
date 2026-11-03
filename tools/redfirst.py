@@ -16,8 +16,9 @@ they go red there - red-first evidence with no in-place mutant (docs/redfirst.md
 
 -C names the task worktree (default: here); a main checkout is refused. A thin entry point: it
 parses, calls kitlib.redfirst, prints and exits. One line per selector: RED, GREEN, NONE (no test
-matched), ERROR or TIMEOUT (killed with its tree past kitlib.redfirst.run.RUN_TIMEOUT). Exit: 0 every selector RED at the base; 1 at least one GREEN; 2 usage or a
-refusal (`--help` too, since 0 means RED); 3 undecided; 4 the throwaway worktree was left.
+matched), ERROR, TIMEOUT (killed with its tree past kitlib.redfirst.run.RUN_TIMEOUT) or
+INCONCLUSIVE (failed at the base, but not on an assertion: docs/redfirst.md "What counts as red"). Exit: 0 every selector RED at the base; 1 at least one GREEN; 2 usage or a
+refusal (`--help` too, since 0 means RED); 3 undecided (INCONCLUSIVE too); 4 the throwaway worktree was left.
 
 A run whose command is heavy (gradle, dotnet; or its runner names a `lock` kind) books the machine
 lock itself around its commands, and takes nothing more inside a run that already holds enough

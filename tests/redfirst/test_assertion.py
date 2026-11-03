@@ -199,6 +199,31 @@ class Dotnet(unittest.TestCase):
     def test_the_runner_s_assertion_pattern_names_more_assertions(self):
         self.assertEqual(self.verdict(XUNIT_NRE, assertion=r'NullReferenceException')[0], 'RED')
 
+    def failures(self, *results):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, '1-T.trx')
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write(trx(*results))
+            return V.trx_counts(p)[2]
+
+    def test_a_failed_result_with_no_message_reads_its_outcome_as_the_message(self):
+        failures = self.failures(('T.G', 'Failed', None), ('T.P', 'Passed', None))
+        self.assertEqual(failures, [('failure', '', 'Failed', 'T.G')])
+        # No exception type named and no `threw`: the bare outcome counts as an assertion.
+        self.assertEqual(V.dotnet_verdict(1, '', (2, 1, failures), [])[0], 'RED')
+
+    def test_an_outcome_other_than_failed_is_an_error_never_an_assertion(self):
+        for outcome in ('Error', 'Timeout', 'Aborted'):
+            with self.subTest(outcome=outcome):
+                # Even a message an assertion would write does not make it one.
+                failures = self.failures(('T.H', outcome, 'Assert.Equal() Failure'))
+                self.assertEqual(failures, [('error', '', 'Assert.Equal() Failure', 'T.H')])
+                v, reason = V.dotnet_verdict(1, '', (1, 1, failures), [])
+                self.assertEqual(v, INCONCLUSIVE, reason)
+                self.assertIn('T.H', reason)
+                self.assertEqual(self.failures(('T.I', outcome, None)),
+                                 [('error', '', outcome, 'T.I')])
+
 
 # Lines of the GriffBall log (Z:/kit-temp/griffball-gate/redfirst/20261103-125436-39028).
 GODOT_CRASH = '\n'.join([

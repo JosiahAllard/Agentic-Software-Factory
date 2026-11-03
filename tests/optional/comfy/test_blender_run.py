@@ -40,6 +40,10 @@ class Finding(unittest.TestCase):
         exe = touch(os.path.join(self.tmp, 'Blender Foundation', 'Blender 5.2', 'blender.exe'))
         got = B.install_candidates({'ProgramFiles': self.tmp, 'ProgramW6432': self.tmp}, 'win32')
         self.assertEqual(got, [exe])
+        self.assertEqual(B.install_candidates({'ProgramFiles': self.tmp}, 'linux'),
+                         [p for p in ['/snap/bin/blender'] if os.path.isfile(p)]
+                         + [p for p in B.glob.glob('/opt/blender*/blender') if os.path.isfile(p)])
+        self.assertIn(exe, B.install_candidates({'ProgramFiles': self.tmp}))   # no OS given
 
     def test_order_given_then_env_then_path_then_install(self):
         given = touch(os.path.join(self.tmp, 'given', 'blender.exe'))

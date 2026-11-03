@@ -71,16 +71,19 @@ def newest(paths):
 
 
 def install_candidates(env=None, platform=None):
-    """Blender binaries in the usual install folders, in no particular order."""
+    """Blender binaries in the usual install folders, in no particular order. `platform` 'win32'
+    or 'linux' looks in that system's folders only; None looks in both (the Windows ones come from
+    the ProgramFiles variables, which Linux does not set), so this file never asks the OS itself."""
     env = os.environ if env is None else env
-    platform = sys.platform if platform is None else platform
-    if platform.startswith("win"):
+    found = []
+    if platform is None or platform.startswith("win"):
         bases = {env.get(k) for k in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)")} - {None, ""}
-        found = []
         for base in sorted(bases):
             found += glob.glob(os.path.join(base, "Blender Foundation", "Blender*", "blender.exe"))
-        return found
-    return [p for p in ["/snap/bin/blender"] + glob.glob("/opt/blender*/blender") if os.path.isfile(p)]
+    if platform is None or not platform.startswith("win"):
+        found += [p for p in ["/snap/bin/blender"] + glob.glob("/opt/blender*/blender")
+                  if os.path.isfile(p)]
+    return found
 
 
 def find_blender(given=None, env=None, platform=None):

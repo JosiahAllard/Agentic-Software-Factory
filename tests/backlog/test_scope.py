@@ -74,7 +74,7 @@ class Complement(unittest.TestCase):
         self.assertEqual(smod.complement('kit/**', {'kit/[id].js'}, tree)[:1], ['kit/a,b.txt'])
 
     def test_malformed_input_raises(self):
-        for member, removed in (('kit/*.py', {'kit/a.py'}), ('kit/**', {'kit\a.py'}),
+        for member, removed in (('kit/*.py', {'kit/a.py'}), ('kit/**', {'kit\\a.py'}),
                                 ('kit/**', {'kit/sub/**'}), ('kit/**', {''})):
             with self.subTest(member=member, removed=removed):
                 with self.assertRaises(smod.UndecidableScope):

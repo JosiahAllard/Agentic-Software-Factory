@@ -280,6 +280,16 @@ class Modes(unittest.TestCase):
         self.assertEqual(R.onion_skin([first], bg)[:3], [1.0, 0, 0])
         self.assertEqual(R.onion_skin([], bg), [])
 
+    def test_onion_skin_on_a_transparent_background_makes_every_frame_opaque(self):
+        # tiles rendered with a transparent film: background (0, 0, 0, 0)
+        first = [0.6, 0.6, 0.6, 1.0,  0, 0, 0, 0]
+        last = [0, 0, 0, 0,  0.6, 0.6, 0.6, 1.0]
+        got = R.onion_skin([first, last], (0.0, 0.0, 0.0, 0.0))
+        self.assertAlmostEqual(got[0], 0.15)            # the first frame, faint
+        self.assertEqual(got[3], 1.0)
+        self.assertEqual(got[4:8], [0.6, 0.6, 0.6, 1.0])  # the last frame whole, opaque
+        self.assertEqual(R.onion_skin([[0, 0, 0, 0]], (0.0, 0.0, 0.0, 0.0)), [0.0, 0.0, 0.0, 0.0])
+
     def test_strip_tile_names(self):
         p = R.strip_tile_path(os.path.join('o', 'strip.png'), 3, 'hero', 'Walk Cycle', 12, True)
         self.assertEqual(os.path.basename(p), 'strip_hero_Walk-Cycle_f0012.png')

@@ -106,23 +106,25 @@ def frame_samples(start, end, n):
 
 def onion_skin(frames, bg, eps=0.02):
     """One flat RGBA float list overlaying `frames` (same-length flat RGBA lists, oldest first) on
-    the background colour `bg` (r, g, b): where a frame's pixel differs from `bg` by more than `eps`
-    in any channel it is blended in, weight rising from 0.25 for the first frame to 1 for the last,
-    so the last frame is drawn whole and earlier ones show through fainter."""
+    the background `bg` (r, g, b) or (r, g, b, a): where a frame's pixel differs from `bg` by more
+    than `eps` in any channel it is blended in, weight rising from 0.25 for the first frame to 1
+    for the last, so the last frame is drawn whole and earlier ones show through fainter. A pixel
+    keeps the largest alpha blended into it, so on a transparent background every frame shows."""
     if not frames:
         return []
     n = len(frames)
-    out = list(frames[0])
-    for i in range(0, len(out), 4):
-        out[i:i + 3] = bg
+    bg = tuple(bg)
+    out = []
+    for i in range(0, len(frames[0]), 4):
+        out += [bg[0], bg[1], bg[2], bg[3] if len(bg) > 3 else frames[0][i + 3]]
     for k, px in enumerate(frames):
         w = 1.0 if n == 1 else 0.25 + 0.75 * k / (n - 1)
         for i in range(0, len(px), 4):
-            r, g, b = px[i], px[i + 1], px[i + 2]
-            if abs(r - bg[0]) > eps or abs(g - bg[1]) > eps or abs(b - bg[2]) > eps:
-                out[i] += (r - out[i]) * w
-                out[i + 1] += (g - out[i + 1]) * w
-                out[i + 2] += (b - out[i + 2]) * w
+            if all(abs(px[i + c] - bg[c]) <= eps for c in range(len(bg))):
+                continue
+            for c in range(3):
+                out[i + c] += (px[i + c] - out[i + c]) * w
+            out[i + 3] = max(out[i + 3], px[i + 3])
     return out
 
 
@@ -369,7 +371,7 @@ def render_filmstrips(opts, stems):
             shots = [list(bpy.data.images.load(t).pixels) for t, _ in row]
             onion = strip_tile_path(opts.out, len(tiles) + cols - 1, stems[model], act.name, None,
                                     opts.keep_tiles)
-            _save_pixels("onion", onion_skin(shots, shots[0][:3]), onion)
+            _save_pixels("onion", onion_skin(shots, shots[0][:4]), onion)
             row += [(None, "")] * (cols - 1 - len(row))
             tiles += row + [(onion, f"{os.path.basename(model)} {act.name} onion {len(frames)} frames")]
             rows += 1

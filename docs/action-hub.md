@@ -47,7 +47,7 @@ under the title.
 - **Approvals.** What an agent asked to run or change. Waiting (pending, each with Approve and Deny,
   which need a strong session) and Decided (approved, denied, used or expired, newest first, no
   buttons). The count is the pending ones.
-- **To-dos.** Hand steps for you, each with the exact commands and a Copy button. Tick one when done.
+- **To-dos.** Hand steps for you. A card shows the detail as short paragraphs and bullets, and each command as a numbered step in its own block with its own Copy button (a `;` outside quotes breaks the line in the display only; Copy sends the command as stored). A step has its own tick box, view state for this page load only. Tick the card when done.
   You can add, edit and delete your own. Tabs: To do and Done.
 - **Backlog.** Open (each repository's open work under a heading per priority, with priority, status
   and text filters), Parked (items a coordinator parked waiting on you, with their age) and Completed

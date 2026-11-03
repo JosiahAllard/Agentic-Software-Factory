@@ -168,6 +168,14 @@ button.link:disabled{background:none;text-decoration:none}
 .cmd{display:flex;gap:8px;align-items:stretch;min-width:0}
 .cmd pre{margin:0;flex:1;min-width:0;overflow-x:auto;font:.8rem/1.5 var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-s);padding:8px 10px;white-space:pre}
 .cmd pre.diff{max-height:60vh;overflow:auto}
+.detail{display:grid;gap:6px;min-width:0}
+.detail ul{margin:0;padding-left:20px;max-width:68ch;overflow-wrap:anywhere}
+ol.steps{list-style:decimal;margin:0;padding-left:28px;display:grid;gap:8px;min-width:0}
+ol.steps > li{min-width:0;display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start}
+ol.steps > li::marker{font-weight:600;color:var(--muted)}
+ol.steps > li.done .cmd pre{opacity:.6;text-decoration:line-through}
+.stepchk{width:18px;height:18px;margin-top:6px;accent-color:var(--ok);cursor:pointer}
+ol.steps .cmd pre{white-space:pre-wrap;overflow-wrap:anywhere}
 .copy{font:600 .78rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:var(--r-s);padding:0 10px;cursor:pointer}
 form.add{display:grid;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
 form.add input[type=text]{font:inherit;padding:8px 10px;border-radius:var(--r-s);border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%;box-sizing:border-box}
@@ -1323,6 +1331,34 @@ ul.hist .sch-line{display:block}
     pickDetail(at, at && lost.length && phone() ? [el("p", {class:"gone", role:"status", id:"lost-note", text: (lost.length === 1 ? "An edit of a to-do that is gone is" : lost.length + " edits of to-dos that are gone are") + " in the list, with your text. Back to the list to copy it."})] : []);
   }
 
+  // View-only helpers for a to-do card. Steps ticked on this page (key "T-1#0"); not stored anywhere.
+  const stepTicks = new Set();
+  // A command as shown: split after each ";" outside quotes, one part a line. Only the display; Copy sends the command as it is.
+  function cmdShown(c){
+    let out = "", q = "";
+    for (let i = 0; i < c.length; i++) {
+      const ch = c[i]; out += ch;
+      if (q) { if (ch === q) q = ""; else if (ch === "\\" && q === '"' && i + 1 < c.length) out += c[++i]; }
+      else if (ch === '"' || ch === "'") q = ch;
+      else if (ch === ";" && c[i + 1] === " ") { out += "\n"; i++; }
+    }
+    return out;
+  }
+  // The detail as short paragraphs and bullet lists: a line starting "- ", "* " or "1." is a bullet, other text a paragraph
+  // of at most two sentences.
+  function detailParts(detail){
+    const out = []; let ul = null;
+    for (const raw of String(detail || "").split("\n")) {
+      const line = raw.trim();
+      if (!line) { ul = null; continue; }
+      const m = /^(?:[-*\u2022]|\d+[.)])\s+(.*)$/.exec(line);
+      if (m) { if (!ul) { ul = el("ul", {}); out.push(ul); } ul.append(el("li", {text: m[1]})); continue; }
+      ul = null;
+      const sent = line.split(/(?<=[.!?])\s+(?=[A-Z0-9`"'(])/);
+      for (let i = 0; i < sent.length; i += 2) out.push(el("p", {class:"ctx", text: sent.slice(i, i + 2).join(" ")}));
+    }
+    return out;
+  }
   // A to-do the owner wrote (from "you") is the owner's to mark urgent, edit and delete; an agent's open one the owner
   // can delete, never edit; anyone's can be ticked.
   function todoCard(t){
@@ -1341,16 +1377,26 @@ ul.hist .sch-line{display:block}
     const body = el("div", {class:"body"},
       el("div", {class:"meta"}, t.urgent ? el("span", {class:"chip urgent st-urgent", text:"Urgent"}) : null, el("span", {class:"id", text: t.id}), t.repo ? el("span", {class:"chip", text: t.repo}) : null, t.from ? el("span", {text: "from " + t.from}) : null, t.added_at ? el("span", {text: "added " + when(t.added_at)}) : null, isDone && t.done_at ? el("span", {class:"chip ok st-done", text: "done " + when(t.done_at)}) : null));
     body.append(el("h2", {}, el("label", {for: "t-" + t.id, text: t.title || "(untitled)"})));
-    if (t.detail) body.append(el("p", {class:"ctx", text: t.detail}));
-    for (const c of pmCommands(t)) {
-      const pre = el("pre", {}, el("code", {text: c}));
-      const btn = el("button", {class:"copy", type:"button", text:"Copy"});
-      btn.addEventListener("click", () => {
-        const ok = () => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1500); };
-        const sel = () => { const r = document.createRange(); r.selectNodeContents(pre); const w = getSelection(); w.removeAllRanges(); w.addRange(r); btn.textContent = "Selected"; };
-        try { navigator.clipboard.writeText(c).then(ok, sel); } catch(e){ sel(); }
+    { const d = detailParts(t.detail); if (d.length) body.append(el("div", {class:"detail"}, ...d)); }
+    const cmds = pmCommands(t);
+    if (cmds.length) {
+      const list = el("ol", {class:"steps"});
+      cmds.forEach((c, i) => {
+        const pre = el("pre", {}, el("code", {text: cmdShown(c)}));
+        const btn = el("button", {class:"copy", type:"button", text:"Copy", "aria-label":"Copy step " + (i + 1)});
+        btn.addEventListener("click", () => {
+          const ok = () => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1500); };
+          const sel = () => { const r = document.createRange(); r.selectNodeContents(pre); const w = getSelection(); w.removeAllRanges(); w.addRange(r); btn.textContent = "Selected"; };
+          try { navigator.clipboard.writeText(c).then(ok, sel); } catch(e){ sel(); }
+        });
+        // Ticking a step is view state only: kept for this page load, never sent to the hub server.
+        const key = t.id + "#" + i, on = stepTicks.has(key);
+        const tick = el("input", {type:"checkbox", class:"stepchk", checked: on, "aria-label":"Step " + (i + 1) + " done"});
+        const li = el("li", {class: on ? "done" : ""}, tick, el("div", {class:"cmd"}, pre, btn));
+        tick.addEventListener("change", () => { if (tick.checked) stepTicks.add(key); else stepTicks.delete(key); li.classList.toggle("done", tick.checked); });
+        list.append(li);
       });
-      body.append(el("div", {class:"cmd"}, pre, btn));
+      body.append(list);
     }
     { const refs = refsLine(t.refs, "Refs: ", ", "); if (refs) body.append(refs); }
     if (mine) {

@@ -564,6 +564,36 @@ class DomTest(unittest.TestCase):
         self.assertEqual(made & {"img", "script", "a", "iframe", "object", "embed", "link", "style", "base", "meta", "svg", "form"},
                          set())
 
+    def test_a_todo_with_many_commands_reads_as_numbered_steps_each_with_its_own_copy(self):
+        cmds = ["git status", "git add a.txt; git commit -m 'one; two'; git log -1", "python x.py --a 1", "echo \"a; b\"",
+                "python y.py", "git push origin kit/x"]
+        detail = ("Run these in order. The second one commits. Check the log before you push. Say so if it fails.\n"
+                  "- first bullet\n- second bullet")
+        got = dom("""
+            const copied = [];
+            Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: s => { copied.push(s); return Promise.resolve(); } } } });
+            await start();
+            const card = $("#todo-T-1"), steps = card.querySelectorAll("ol.steps li");
+            const buttons = card.querySelectorAll("button.copy");
+            for (const b of buttons) await click(b);
+            const pres = card.querySelectorAll("pre");
+            const ticks = card.querySelectorAll("input.stepchk");
+            await click(ticks[1]); ticks[1].checked = true; await fire(ticks[1], "change");
+            return { n: steps.length, buttons: buttons.length, copied, shown: pres.map(p => text(p)),
+                     paras: card.querySelectorAll(".detail p").map(p => text(p)), bullets: card.querySelectorAll(".detail li").map(l => text(l)),
+                     ticked: steps.map(l => l.classList.contains("done")), ticks: ticks.length };
+        """, snapshot(collections={"todos": {"T-1": {"status": "open", "title": "many", "from": "pm", "detail": detail,
+                                                      "commands": cmds}}}), hash="#todo")
+        self.assertEqual(got["n"], 6)
+        self.assertEqual(got["buttons"], 6)                                      # one Copy per command
+        self.assertEqual(got["ticks"], 6)
+        self.assertEqual(got["copied"], cmds)                                    # the copied text is the command, untouched
+        self.assertEqual(got["shown"][1], "git add a.txt;\ngit commit -m 'one; two';\ngit log -1")   # split at ; outside quotes, display only
+        self.assertEqual(got["shown"][3], 'echo "a; b"')
+        self.assertEqual(got["paras"], ["Run these in order. The second one commits.", "Check the log before you push. Say so if it fails."])
+        self.assertEqual(got["bullets"], ["first bullet", "second bullet"])
+        self.assertEqual(got["ticked"], [False, True, False, False, False, False])   # view state only
+
     def test_an_unpaired_browser_is_told_to_pair_again_and_reads_again_slowly_until_it_is(self):
         # The server answers a call that carries no session 403, naming the field `role`; it sends no 401.
         # A refusal at a hub server restart must not leave the page dead until it is reloaded: it reads again

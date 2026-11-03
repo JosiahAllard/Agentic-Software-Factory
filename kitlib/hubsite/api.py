@@ -39,9 +39,12 @@ that is not the file at head is `invalid`, field files), and the unified diff li
 shows are stored in the document as `diff`. POST approvals/{id}/decide (APPROVER) writes the
 owner's decision, signed with Api's approval_key; POST approvals/{id}/consume (AGENT) marks an
 approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
-and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still pending (not decided, not
-expired: else `conflict`, field status): the body gives `from` (the requester's claim, `pm` as
-approvals store none) and `if_version`, as a question's withdrawal does. GET approvals/{id}/verify
+and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
+expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
+requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
+does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
+waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
+decided`), and the withdrawal drops that line (unpark_item); an op request takes none. GET approvals/{id}/verify
 (AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
 {ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
 An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
@@ -179,7 +182,10 @@ which is also what an absent one is; any other is `invalid`, and the refusal nam
 keys, never the file; when sessions.json or the launcher's settings cannot be read, only `pm` is
 known and the refusal says the read failed, with the exception's class name. A new to-do's `steps` are made into its commands and detail here and are
 not kept (todo_steps); an agent's to-do is judged by the owner's to-do rules (kitlib.hubsite.
-todosteps.check) for every client. On the edit routes a null `repo` (and a to-do's
+todosteps.check) for every client. An agent's new to-do may give `record` {repo, id} (checked as
+a question's, _bound): the record waits on the owner until the to-do is done (park_item,
+`until: owner todo:T-n done`), and its withdrawal or the owner's deletion drops that line
+(unpark_item). The owner's to-do and every to-do edit take no record. On the edit routes a null `repo` (and a to-do's
 null `detail`) clears the field exactly as "" does; any other null field is read as absent.
 
 Creators. An agent edits (POST questions/{id}/edit, todos/{id}/edit) or withdraws (POST
@@ -715,9 +721,9 @@ class Api(object):
         # the request thread; set by serve.build. None runs it in the question's own call
         # (questions_add, questions_edit, questions_delete)
         self.park_later = None
-        # held by every record write a question drives (file_answer, park_question,
-        # unpark_question): each reads the question and writes the record as one step, so a park
-        # and the filing or withdrawal of the same question never interleave. serve.build sets a
+        # held by every record write an ask drives (file_answer, park_item, unpark_item): each
+        # reads the ask and writes the record as one step, so a park and the filing or
+        # withdrawal of the same ask never interleave. serve.build sets a
         # threading.RLock with file_later and park_later; without them every such write runs in
         # its request's own call, so a context that holds nothing does
         self.record_lock = contextlib.nullcontext()
@@ -1107,8 +1113,9 @@ def _holders(api, repo, rid):
     return held
 
 
-def _bound(api, value):
-    """The `record` a question is bound to, {repo, id}, after the configured repository's
+def _bound(api, value, what='question'):
+    """The `record` a question (or `what`: an agent's to-do, a file approval) is bound to, {repo,
+    id}, after the configured repository's
     backlog was read now through the `record` view (docs/action-hub.md "questions/Q-NNN"): repo
     is the configured name, whatever its case was as given. Refused, field record: `invalid` for
     another shape, a name that can be no repository or record id, and a completed record;
@@ -1117,7 +1124,7 @@ def _bound(api, value):
     that cannot be read). It fails closed: an answer is filed into this record, so a binding
     nobody checked is never stored. A record whose view says `writable` false (its repository
     names no backlog store the hub may write, kitlib.hubsite.backlog writable) is `invalid` too:
-    its answer could never be filed (recordwrite answer, `no_store`)."""
+    its answer could never be filed (recordwrite answer, `no_store`), nor its record parked."""
     if not isinstance(value, dict) or sorted(value) != ['id', 'repo'] or not all(
             isinstance(value[k], str) and value[k].strip() for k in ('repo', 'id')):
         raise _invalid(RECORD_SHAPE, 'record')
@@ -1136,20 +1143,23 @@ def _bound(api, value):
             raise HubError('not_found', "record %s: repo %s's backlog has no record %s%s"
                            % (named, repo, rid, '; the repo key that holds it is %s' % ', '.join(held)
                               if held else ''), 'record')
-        raise HubError('unavailable', 'record %s could not be checked: %s; ask again, or ask '
-                       'without a record' % (named, e.message), 'record')
+        raise HubError('unavailable', 'record %s could not be checked: %s; %s' % (
+            named, e.message, 'ask again, or ask without a record' if what == 'question'
+            else 'add it again, or add it without a record'), 'record')
     except Exception as e:          # noqa: BLE001 - a view is another module's code
         raise HubError('unavailable', 'record %s:%s could not be checked: the record view '
                        'failed: %s' % (repo, rid, _reason(e)), 'record')
     got = got if isinstance(got, dict) else {}
     name = got.get('repo') if isinstance(got.get('repo'), str) else repo
     if got.get('where') != 'open':
-        raise _invalid('record %s:%s is completed: bind a question to an open record'
-                       % (name, rid), 'record')
+        raise _invalid('record %s:%s is completed: bind a %s to an open record'
+                       % (name, rid, what), 'record')
     if got.get('writable') is False:
         raise _invalid('record %s:%s: repo %s names no backlog store the hub may write (.kit.json '
-                       '"backlog".store), so its answer could not be filed: ask without a record'
-                       % (name, rid, name), 'record')
+                       '"backlog".store), so %s: %s without a record'
+                       % (name, rid, name, 'its answer could not be filed' if what == 'question'
+                          else 'the hub could not park the record',
+                          'ask' if what == 'question' else 'add it'), 'record')
     return {'repo': name, 'id': rid}
 
 
@@ -1194,7 +1204,7 @@ def _session_from(api, who, what):
 
 def questions_add(api, req):
     """A new open question: `record` (the backlog record its answer is filed into) or `class`
-    (_class) is required. A bound question parks its record (park_question: blocked on the owner
+    (_class) is required. A bound question parks its record (park_item: blocked on the owner
     until it is answered), off the request when the server runs it later. A class-only question
     whose `refs` name a record pulled in a configured repository is stored, with a warning that
     the record goes on unparked (_pulled_refs)."""
@@ -1365,7 +1375,7 @@ def file_answer(api, doc_id, via='api', full=False):
     that code, nothing marked. A failure with the code and phrase the question's `filing` has
     already writes nothing: its version and revision are those it has. The record write is
     idempotent (kitlib.hubsite.recordwrite answer), so a crash anywhere in between is mended by
-    filing again. It runs under Api.record_lock, as park_question and unpark_question do."""
+    filing again. It runs under Api.record_lock, as park_item and unpark_item do."""
     with api.record_lock:
         return _file_answer(api, doc_id, via, full)
 
@@ -1424,10 +1434,11 @@ def questions_file(api, req):
     {ok, filed: [ids], failed: [{id, code, message}], parked, unparked, park_failed}; a
     question that moved meanwhile is in neither. An unknown `id` is `not_found`; one that is not
     answered or has no record files nothing. Each open bound question not parked yet is parked
-    (`parked` [ids]); without `id`, the lines of questions gone or bound elsewhere are dropped
-    (`unparked` [{id, record, unblocked}], _sweep_asks), and a hand-written line whose question
-    is gone is left and listed (`orphan_hand_lines` [{repo, id, q}]). A park or a drop not made
-    is in `park_failed` [{id, code, message}]."""
+    (`parked` [ids]); without `id`, so is each open bound to-do and pending bound approval
+    (park_item), the lines of asks gone or bound elsewhere are dropped (`unparked` [{id, record,
+    unblocked}], _sweep_asks), and a hand-written line whose ask is gone is left and listed
+    (`orphan_hand_lines` [{repo, id, q}]). A park or a drop not made is in `park_failed` [{id,
+    code, message}]."""
     b = _fields(req, ('id',))
     one = _text(b, 'id')
     if one is not None:
@@ -1446,68 +1457,110 @@ def questions_file(api, req):
             failed.append({'id': doc_id, 'code': got['code'], 'message': got['message']})
         # an open bound question whose park has not happened (the hub stopped first, or the
         # store could not be written) is parked now
-        got = park_question(api, doc_id, _via(req)) if _parks(api) else None
-        if got is None or got.get('moved'):
-            continue
-        code = _park_failed(got)
-        if code:
-            park_failed.append({'id': doc_id, 'code': code, 'message': got.get('message')})
-        else:
-            parked.append(doc_id)
+        if _parks(api):
+            _parked(park_item(api, doc_id, _via(req)), doc_id, parked, park_failed)
     unparked, hand = [], []
     if one is None and _parks(api):
+        for coll in ('todos', 'approvals'):     # a bound to-do's or approval's park, the same
+            docs = api.store.docs(coll)
+            for doc_id in sorted(docs, key=_natural):
+                if isinstance(docs[doc_id], dict) and isinstance(docs[doc_id].get('record'), dict):
+                    _parked(park_item(api, doc_id, _via(req)), doc_id, parked, park_failed)
         unparked, more, hand = _sweep_asks(api)
         park_failed += more
     return {'ok': True, 'filed': filed, 'failed': failed, 'parked': parked,
             'unparked': unparked, 'park_failed': park_failed, 'orphan_hand_lines': hand}
 
 
-# --- the hub as the owner's proxy: a bound question parks its record ------------------------------
+# --- the hub as the owner's proxy: a bound ask parks its record -----------------------------------
 
-# what a question's `park` says, by park's outcome (recordwrite.PARK_OUTCOMES) or the code its
-# write failed with: fixed phrases, as FILING_SAYS
-PARK_SAYS = {
-    'blocked': 'the record waits on this question: blocked on the owner until it is answered',
-    'already': 'the record waits on this question',
+# The asks that park the record they are bound to: {collection: (noun, the `until` condition the
+# record waits on, % the item's id; what ends it)}. A question is bound when it is asked or
+# edited; an agent's to-do (todos_add) and a file approval (approvals_add) only when added. The
+# owner's act ends each: an answer (filed into the record), a to-do marked done or an approval
+# decided (either way: denied counts), which the hub's unblock-conditions job reads
+# (kitlib.hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
+# job pushes the PM `approval-expired`.
+ASKS = {
+    'questions': ('question', 'question:%s answered', 'answered'),
+    'todos': ('to-do', 'todo:%s done', 'done'),
+    'approvals': ('approval', 'approval:%s decided', 'decided'),
+}
+
+# what an ask's `park` says, by park's outcome (recordwrite.PARK_OUTCOMES) or the code its write
+# failed with: fixed phrases, as FILING_SAYS, the ask's noun and end filled in (_park_says)
+_PARK_SAYS = {
+    'blocked': 'the record waits on this %(noun)s: blocked on the owner until it is %(end)s',
+    'already': 'the record waits on this %(noun)s',
     'held': 'the record was held on the owner already: that hold keeps its own end',
     'parked': 'the record is parked: the hub leaves a park as it is',
-    'gone': 'the record is completed or gone: nothing waits on this question',
-    'not_found': 'the record is completed or gone: nothing waits on this question',
+    'gone': 'the record is completed or gone: nothing waits on this %(noun)s',
+    'not_found': 'the record is completed or gone: nothing waits on this %(noun)s',
     'invalid': 'the backlog store refused to block the record: the PM handles it',
     'store': 'the backlog store could not be written now: the hub tries again',
     'unavailable': 'this hub cannot write a backlog store: the hub tries again',
     'no_store': 'this repository names no backlog store the hub may write (.kit.json '
                 '"backlog".store): the PM handles it',
 }
+PARK_SAYS = {k: v % {'noun': 'question', 'end': 'answered'} for k, v in _PARK_SAYS.items()}
 # the codes a later park tries again (POST questions/file; the hub runs it at start)
 PARK_RETRY = ('store', 'unavailable', 'internal')
-UNPARK_FAILED = ('the record still waits on this question, which is gone or bound elsewhere: the '
-                 'hub tries again at its next start or questions file call')
+_UNPARK_FAILED = ('the record still waits on this %s, which is gone or bound elsewhere: the hub '
+                  'tries again at its next start or questions file call')
+UNPARK_FAILED = _UNPARK_FAILED % 'question'
 
 
 def _parks(api):
-    """Whether this server parks a bound question's record: it has the record_park view."""
+    """Whether this server parks a bound ask's record: it has the record_park view."""
     return api.views is not None and callable(getattr(api.views, 'record_park', None))
 
 
+def _ask_coll(doc_id):
+    """The collection of ASKS whose id doc_id is (by its prefix), or None."""
+    prefix = doc_id.split('-', 1)[0].upper() if isinstance(doc_id, str) else ''
+    coll = hubvalidate.REF_COLLECTIONS.get(prefix)
+    return coll if coll in ASKS else None
+
+
 def _until(doc_id):
-    """The `until` condition a record parked on question doc_id waits on."""
-    return 'question:%s answered' % doc_id
+    """The `until` condition a record parked on the ask doc_id waits on."""
+    return ASKS[_ask_coll(doc_id) or 'questions'][1] % doc_id
 
 
-def park_question(api, doc_id, via='hub'):
-    """Block the record the open question doc_id is bound to on the owner, until it is
-    answered, through the `record_park` view (kitlib.hubsite.recordwrite park, Session: hub-park:
-    the hub as the owner's proxy), then mark the question `park` {at, code, message} (code park's
-    outcome, recordwrite.PARK_OUTCOMES, or the failure's; message a fixed phrase of PARK_SAYS).
-    None for a question that is gone, not open, bound to no record, or parked already (a `park`
-    whose code is not one to retry, PARK_RETRY); else {id, code, message, version, revision}, or
-    {id, moved: true} when the question changed before its mark. Under Api.record_lock: a
-    question withdrawn or answered meanwhile is read as it is now, so a late park never blocks a
-    record on an ask that is gone. The record write is idempotent, so a retry is safe."""
+def _park_says(coll, code):
+    noun, _, end = ASKS[coll]
+    said = _PARK_SAYS.get(code)
+    return (said % {'noun': noun, 'end': end} if said
+            else 'the record could not be parked (%s)' % code)
+
+
+def _asking(api, coll, d):
+    """Whether item d still asks the owner: an open question or to-do, an approval pending and
+    not expired (an expired one is never parked afresh; the line it parked stays)."""
+    if coll == 'approvals':
+        from . import approvals as ap
+        return ap.status_at(d, _when(api.clock(), '')) == ap.PENDING
+    return d.get('status') == 'open'
+
+
+def park_item(api, doc_id, via='hub'):
+    """Block the record the ask doc_id (a question, to-do or approval: ASKS) is bound to on the
+    owner, until the owner's act ends it, through the `record_park` view
+    (kitlib.hubsite.recordwrite park, Session: hub-park: the hub as the owner's proxy), then mark
+    the ask `park` {at, code, message} (code park's outcome, recordwrite.PARK_OUTCOMES, or the
+    failure's; message a fixed phrase, _park_says). The asker is the ask's `from` (`pm` when it
+    has none, as an approval never does). None for an ask that is gone, no longer asking
+    (_asking), bound to no record, or parked already (a `park` whose code is not one to retry,
+    PARK_RETRY); else {id, code, message, version, revision}, or {id, moved: true} when the ask
+    changed before its mark. Under Api.record_lock: an ask withdrawn or ended meanwhile is read
+    as it is now, so a late park never blocks a record on an ask that is gone. The record write
+    is idempotent, so a retry is safe."""
+    coll = _ask_coll(doc_id)
+    if coll is None:
+        return None
     with api.record_lock:
-        d = api.store.get('questions', doc_id)
-        if d is None or d.get('status') != 'open' or not isinstance(d.get('record'), dict):
+        d = api.store.get(coll, doc_id)
+        if d is None or not _asking(api, coll, d) or not isinstance(d.get('record'), dict):
             return None
         was = d.get('park') if isinstance(d.get('park'), dict) else None
         if was is not None and was.get('code') not in PARK_RETRY:
@@ -1522,12 +1575,12 @@ def park_question(api, doc_id, via='hub'):
             code = 'internal'
         else:
             code = got.get('park') if isinstance(got, dict) and got.get('park') else 'blocked'
-        message = PARK_SAYS.get(code, 'the record could not be parked (%s)' % code)
+        message = _park_says(coll, code)
         if was is not None and (was.get('code'), was.get('message')) == (code, message):
             return {'id': doc_id, 'code': code, 'message': message, 'version': _version(d),
                     'revision': api.store.revision}
         try:
-            r = api.store.update('questions', doc_id, {
+            r = api.store.update(coll, doc_id, {
                 'park': {'at': api.clock(), 'code': code, 'message': message}, 'via': via},
                 if_version=_version(d))
         except HubError as e:
@@ -1538,18 +1591,19 @@ def park_question(api, doc_id, via='hub'):
                 'revision': r.revision}
 
 
-def unpark_question(api, doc_id, record):
-    """The ask behind question doc_id is gone from `record` ({repo, id}): it was withdrawn or
-    deleted, or edited to another record or none. Drop the record's `until: owner
-    question:<doc_id> answered` line through the `record_unpark` view (recordwrite withdraw:
-    the last owner line clears the owner, reason `ask withdrawn`). Under Api.record_lock, and
-    only while the question is not bound to `record` now (a rebind back, or the answer's filing,
-    is left to its own write). None when nothing was asked of the view, else the view's
-    {lines, dropped, unblocked}, or {code} when it failed."""
-    if not isinstance(record, dict):
+def unpark_item(api, doc_id, record):
+    """The ask doc_id is gone from `record` ({repo, id}): withdrawn or deleted, or (a question)
+    edited to another record or none. Drop the record's `until: owner <condition>` line
+    (_until) through the `record_unpark` view (recordwrite withdraw: the last owner line clears
+    the owner, reason `ask withdrawn`). Under Api.record_lock, and only while the ask is not
+    bound to `record` now (a rebind back, or the answer's filing, is left to its own write).
+    None when nothing was asked of the view, else the view's {lines, dropped, unblocked}, or
+    {code} when it failed."""
+    coll = _ask_coll(doc_id)
+    if not isinstance(record, dict) or coll is None:
         return None
     with api.record_lock:
-        d = api.store.get('questions', doc_id)
+        d = api.store.get(coll, doc_id)
         if d is not None and d.get('record') == record:
             return None
         try:
@@ -1562,15 +1616,15 @@ def unpark_question(api, doc_id, record):
 
 
 def _park_now(api, doc_id, out, via):
-    """Park the record question doc_id was just bound to: off the request through park_later
+    """Park the record the ask doc_id was just bound to: off the request through park_later
     when the server set it, else here, its result on `out` as `park` (with the mark's version
-    and revision, the question's last write)."""
+    and revision, the ask's last write)."""
     if not _parks(api):
         return out
     if api.park_later is not None:
-        api.park_later(doc_id, lambda: _later_said(park_question(api, doc_id, via), 'parked'))
+        api.park_later(doc_id, lambda: _later_said(park_item(api, doc_id, via), 'parked'))
         return out
-    got = park_question(api, doc_id, via)
+    got = park_item(api, doc_id, via)
     if got is not None:
         out['park'] = got
         if 'version' in got:
@@ -1579,9 +1633,9 @@ def _park_now(api, doc_id, out, via):
 
 
 def _park_failed(got):
-    """The code of a park that was not made, from park_question's answer: a code to retry
-    (PARK_RETRY), or a mark that was not written (an answer with no version, the question gone
-    meanwhile, say). None for a park made or left alone, or a question that moved."""
+    """The code of a park that was not made, from park_item's answer: a code to retry
+    (PARK_RETRY), or a mark that was not written (an answer with no version, the ask gone
+    meanwhile, say). None for a park made or left alone, or an ask that moved."""
     if got is None or got.get('moved'):
         return None
     if got.get('code') in PARK_RETRY or 'version' not in got:
@@ -1589,23 +1643,35 @@ def _park_failed(got):
     return None
 
 
+def _parked(got, doc_id, parked, park_failed):
+    """Count park_item's answer for questions_file: into `parked` [ids] or `park_failed`."""
+    if got is None or got.get('moved'):
+        return
+    code = _park_failed(got)
+    if code:
+        park_failed.append({'id': doc_id, 'code': code, 'message': got.get('message')})
+    else:
+        parked.append(doc_id)
+
+
 def _later_said(got, what):
     """For serve's log, what a park (`what` 'parked') or its undoing ('unparked') run off the
     request failed with: 'record not <what>: <code>', or None. An undoing failed when
-    unpark_question answers a code; nothing retries it then but the sweep at the next hub start
+    unpark_item answers a code; nothing retries it then but the sweep at the next hub start
     (questions_file)."""
     code = _park_failed(got) if what == 'parked' else (got or {}).get('code')
     return 'record not %s: %s' % (what, code) if code else None
 
 
 def _sweep_asks(api):
-    """Drop the `until: owner question:<q> answered` lines the hub wrote (`parked`: the record's
-    body says the hub parked it on q) that no question will ever end: q is gone from the hub, or
-    bound now to another record or none (unpark_question, reason `ask withdrawn` on the last
-    line). The lines come from the `record_asks` view. A line a person wrote is never dropped,
-    so an owner's hold never ends on the hub's word: one whose question is gone is reported in
-    the third list for the PM to clear by hand. ([{id, record, unblocked}], [{id, code,
-    message}], [{repo, id, q}])."""
+    """Drop the `until: owner <condition>` lines the hub wrote for an ask (`parked`: the record's
+    body says the hub parked it on that ask: a question, a to-do or an approval) that no owner
+    act will ever end: the ask is gone from the hub, or bound now to another record or none
+    (unpark_item, reason `ask withdrawn` on the last line). An approval that expired undecided is
+    still there and keeps its line (it is withdrawn to drop it). The lines come from the
+    `record_asks` view. A line a person wrote is never dropped, so an owner's hold never ends on
+    the hub's word: one whose ask is gone is reported in the third list for the PM to clear by
+    hand. ([{id, record, unblocked}], [{id, code, message}], [{repo, id, q}])."""
     view = getattr(api.views, 'record_asks', None) if api.views is not None else None
     if not callable(view):
         return [], [], []
@@ -1616,32 +1682,35 @@ def _sweep_asks(api):
     done, failed, hand = [], [], []
     for a in lines:
         q, record = a.get('q'), {'repo': a.get('repo'), 'id': a.get('id')}
-        d = api.store.get('questions', q)
+        coll = _ask_coll(q)
+        if coll is None:
+            continue
+        d = api.store.get(coll, q)
         if not a.get('parked'):
             if d is None:
                 hand.append({'repo': record['repo'], 'id': record['id'], 'q': q})
             continue
         if d is not None and d.get('record') == record:
             continue
-        got = unpark_question(api, q, record)
+        got = unpark_item(api, q, record)
         if got is None:
             continue
         if got.get('code'):
-            failed.append({'id': q, 'code': got['code'], 'message': UNPARK_FAILED})
+            failed.append({'id': q, 'code': got['code'], 'message': _UNPARK_FAILED % ASKS[coll][0]})
         elif got.get('dropped'):
             done.append({'id': q, 'record': record, 'unblocked': bool(got.get('unblocked'))})
     return done, failed, hand
 
 
 def _unpark_now(api, doc_id, record, out):
-    """unpark_question for `record`, off the request through park_later when set."""
+    """unpark_item for `record`, off the request through park_later when set."""
     if not _parks(api) or not isinstance(record, dict):
         return out
     if api.park_later is not None:
-        api.park_later(doc_id, lambda: _later_said(unpark_question(api, doc_id, record),
+        api.park_later(doc_id, lambda: _later_said(unpark_item(api, doc_id, record),
                                                    'unparked'))
         return out
-    got = unpark_question(api, doc_id, record)
+    got = unpark_item(api, doc_id, record)
     if got is not None:
         out['unpark'] = got
     return out
@@ -1986,10 +2055,20 @@ def todo_steps(b, judge=True):
     return b
 
 
+def _no_record(req, why):
+    """Refused `invalid`, field record, when the body gives a `record` this route never takes."""
+    if isinstance(req.body, dict) and 'record' in req.body:
+        raise _invalid(why, 'record')
+
+
 def todos_add(api, req):
+    """A new open to-do. An agent's may give `record` {repo, id} (_bound, checked last): the
+    record waits on the owner until the to-do is done (park_item); the owner's takes none."""
     owner = req.role == OWNER
     names = ('title', 'detail', 'commands', 'steps', 'os', 'repo', 'refs', 'urgent')
-    b = _fields(req, names if owner else names + ('from',), required=('title',),
+    if owner:
+        _no_record(req, "the owner's to-do takes no record: only an agent's to-do parks one")
+    b = _fields(req, names if owner else names + ('from', 'record'), required=('title',),
                 flags=('urgent',))
     for name in ('title', 'detail', 'repo', 'from'):
         _text(b, name)
@@ -1998,8 +2077,13 @@ def todos_add(api, req):
         b['from'] = OWNER_FROM
     else:
         b['from'] = _agent_from(b.get('from') or '')
+    if 'record' in b:               # checked last: the one part that reads a backlog
+        b['record'] = _bound(api, b['record'], 'to-do')
     b.update(status='open', added_at=api.clock())
-    return api.add('todos', b, req)
+    out = api.add('todos', b, req)
+    if 'record' in b:
+        return _park_now(api, out['id'], out, _via(req))
+    return out
 
 
 def todos_done(api, req):
@@ -2122,6 +2206,8 @@ def questions_delete(api, req):
 def todos_edit(api, req):
     owner = req.role == OWNER
     names = ('title', 'detail', 'commands', 'repo', 'refs', 'urgent')
+    _no_record(req, "a to-do's record is given only when it is added: withdraw it and add it "
+                    "again to bind another")
     b = _fields(req, names + (('if_version',) if owner else ('from', 'if_version')),
                 required=() if owner else ('from',), flags=('urgent',),
                 blank=('repo', 'detail'))
@@ -2163,7 +2249,10 @@ def todos_delete(api, req):
     elif d.get('from') != OWNER_FROM:
         # the owner deletes a to-do of their own at any status, an agent's only while open
         _still_open(doc_id, d, 'deleted')
-    return _withdrawn(api, 'todos', doc_id, d)
+    out = _withdrawn(api, 'todos', doc_id, d)
+    # the ask is gone, so the record it parked no longer waits on it (`ask withdrawn` when it
+    # was the last line); a done to-do's line is the unblock-conditions job's to drop
+    return _unpark_now(api, doc_id, d.get('record'), out)
 
 
 def stories_list(api, req):
@@ -2443,16 +2532,20 @@ def _approval(make, *args):
 
 
 def approvals_add(api, req):
+    """A new pending request. A file request may give `record` {repo, id} (_bound, checked
+    last): the record waits on the owner until the approval is decided (park_item); an op
+    request takes none."""
     from . import approvals as ap
     kind = req.body.get('kind') if isinstance(req.body, dict) else None
     if kind is not None:
         if kind != ap.KIND_OP:
             raise _invalid('kind is %r or absent, not %r' % (ap.KIND_OP, kind), 'kind')
+        _no_record(req, 'an op approval takes no record: only a file approval parks one')
         b = _fields(req, ('kind', 'op', 'repo', 'line', 'title', 'reason', 'what'))
         doc = _approval(ap.new_op_doc, b.get('op'), b.get('repo'), b.get('line'), b.get('title'),
                         _when(api.clock(), ''), b.get('reason'), b.get('what'))
         return api.add(ap.COLLECTION, doc, req)
-    b = _fields(req, ('repo', 'title', 'head', 'files', 'reason'))
+    b = _fields(req, ('repo', 'title', 'head', 'files', 'reason', 'record'))
     doc = _approval(ap.new_doc, b.get('repo'), b.get('title'), b.get('head'), b.get('files'),
                     _when(api.clock(), ''), b.get('reason'))
     root = api.checkout(doc['repo'])
@@ -2465,7 +2558,12 @@ def approvals_add(api, req):
             raise _invalid('%s: %s' % (f['path'], why), 'files')
         lines.extend(ap.diff(f['path'], base, f['content']))
     doc['diff'] = lines
-    return api.add(ap.COLLECTION, doc, req)
+    if 'record' in b:               # checked last: the one part that reads a backlog
+        doc['record'] = _bound(api, b['record'], 'approval')
+    out = api.add(ap.COLLECTION, doc, req)
+    if 'record' in doc:
+        return _park_now(api, out['id'], out, _via(req))
+    return out
 
 
 def approvals_decide(api, req):
@@ -2498,8 +2596,10 @@ def approvals_consume(api, req):
 
 
 def approvals_delete(api, req):
-    """The requester takes back a pending request: the `from` is a claim checked as for a
-    question's withdrawal (an approval has none stored, so it is `pm`)."""
+    """The requester takes back an undecided request, pending or expired undecided
+    (approvals.withdraw_check): the `from` is a claim checked as for a question's withdrawal (an
+    approval has none stored, so it is `pm`). The line the request parked on its record is
+    dropped (unpark_item); the record's other lines stay."""
     from . import approvals as ap
     b = _fields(req, ('from', 'if_version'), required=('from',))
     _pin(b, required=True)
@@ -2508,7 +2608,8 @@ def approvals_delete(api, req):
     d = api.doc(ap.COLLECTION, doc_id, b)
     _creator(b, doc_id, d, 'withdraw')
     _approval(ap.withdraw_check, d, _when(api.clock(), ''))
-    return _withdrawn(api, ap.COLLECTION, doc_id, d)
+    out = _withdrawn(api, ap.COLLECTION, doc_id, d)
+    return _unpark_now(api, doc_id, d.get('record'), out)
 
 
 def approvals_verify(api, req):

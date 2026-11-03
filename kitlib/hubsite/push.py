@@ -121,8 +121,9 @@ snapshot's and GET health's `watcher` (Api.watcher_seen).
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked` and the usage crossover's words, is owed
-once per detail instead, beside the rest, and its text says what to do: each names one thing); the
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired` and the usage
+crossover's words, is owed once per detail instead, beside the rest, and its text says what to
+do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
 drops them, and the job pushes again when it fails again.
@@ -199,6 +200,11 @@ _PM_RESUMES = (' When detail is pm (you, the PM), no crossing of yours is open n
 JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
                          'record named in detail (<repo>:<ID>) is unblocked; `backlog.py show '
                          '<ID>` gives the commit. No reply is needed.',
+            'approval-expired': 'A hub approval expired undecided, and the record it was bound to '
+                                'stays blocked on the owner: detail is <repo>:<ID>:<A-n>. To '
+                                'drop its line, withdraw the approval (`hub.py approvals withdraw '
+                                '<A-n> --from pm --if-version N`); to ask again, add a new one '
+                                'with --record.',
             'crossing': _CROSSOVER + 'detail (<session>:a<account>) nears the weekly limit and the '
                         'hub is moving it there. Do not hand it off or stop it yourself: when it '
                         'replies ready, the hub runs the next step. No reply is needed. Detail '

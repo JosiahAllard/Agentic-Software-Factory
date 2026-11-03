@@ -1453,6 +1453,20 @@ class UnblockedPushTest(PushCase):
         self.worker.send_jobs()
         self.assertEqual(len(self.jobs_sent()), 1)
 
+    def test_an_expired_approval_is_one_push_per_line_saying_how_to_drop_it(self):
+        self.worker.job_event('unblock-conditions', 'approval-expired', 'kit:FOO:A-001')
+        self.worker.job_event('unblock-conditions', 'approval-expired', 'kit:FOO:A-001')
+        self.worker.job_event('unblock-conditions', 'approval-expired', 'kit:BAR:A-002')
+        self.worker.send_jobs()
+        self.assertEqual(sorted(t.splitlines()[0] for t in self.jobs_sent()), [
+            '[hub push] job unblock-conditions approval-expired detail:kit:BAR:A-002 route:pm '
+            'attempt:1',
+            '[hub push] job unblock-conditions approval-expired detail:kit:FOO:A-001 route:pm '
+            'attempt:1'])
+        for text in self.jobs_sent():
+            self.assertIn('expired undecided', text)
+            self.assertIn('hub.py approvals withdraw', text)
+
     def test_two_sessions_crossing_in_one_round_are_two_pushes_each_saying_what_it_is(self):
         self.push.states[push.PM_KEY] = push.NO_SESSION
         self.worker.job_event('usage-crossover', 'crossing', 'kit:a2')

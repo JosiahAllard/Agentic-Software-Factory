@@ -562,17 +562,22 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
   store commit under `Session: hub-condition` (`recordwrite.condition_met`, which re-reads the record
   and writes nothing when the line is gone) and pushes `unblocked` with detail `<repo>:<ID>`. An `owner`
   hold keeps one line per ask: a met line of several drops only that line, with no push (the note says
-  `line met, still held: <repo>:<ID>`), and the last one clears the member. A
-  to-do or question is read from its hub store document on disk, a record from the named
+  `line met, still held: <repo>:<ID>`), and the last one clears the member. An `approval:A-n decided`
+  line is met once the approval is approved, denied or consumed (`conditions.DECIDED`). One whose
+  approval expired undecided stays, and the job pushes `approval-expired`, detail `<repo>:<ID>:<A-n>`,
+  once per line while the hub runs (a hub restart pushes it again: a known limit); the push tells the
+  PM to withdraw the approval, which drops the line, or to request a new one with `--record`. A
+  to-do, question or approval is read from its hub store document on disk, a record from the named
   repository's store, a plugin folder under `pluginsource` `export_dir`. Free text, a member the
-  record is not blocked on, an `owner` member on anything but a to-do or a question, a condition
+  record is not blocked on, an `owner` member on anything but a to-do, a question or an approval
+  (`conditions.OWNER_KINDS`), a condition
   holding a machine path, a path that is not on a local drive after its `%VAR%` is filled (a UNC
   path, a `..` part; never probed), and a condition that cannot be read are never acted on; a
   record counts as closed only when a commit removed it. Nothing met is a skip, and a store that
@@ -706,7 +711,7 @@ refused `not_found`. Each of these is refused, field `record`, and nothing is wr
 An edit checks its asker and its status first, so a refused edit reads no backlog.
 
 Binding a question, when it is asked or by an edit, parks its record: the hub, as the owner's proxy,
-blocks it on `owner` until the question is answered (`kitlib.hubsite.api` `park_question`,
+blocks it on `owner` until the question is answered (`kitlib.hubsite.api` `park_item`,
 `kitlib.hubsite.recordwrite` `park`, one store commit under `Session: hub-park`). An open record gets
 the line `until: owner question:Q-n answered` and the body line `asked as Q-n on the Action Hub by
 <asker>`. A pulled record is blocked the same way with its pull stopped and its branch kept and named;
@@ -721,11 +726,23 @@ of the hub's log (`<qid>: record not parked: <code>`), and one whose code is `st
 `internal` is made again by `questions file` ("Filing the answer").
 
 Withdrawing or deleting an open bound question, or an edit that rebinds or unbinds it, drops its line
-from the old record (`unpark_question`, `recordwrite` `withdraw`); the last owner line unblocks the
+from the old record (`unpark_item`, `recordwrite` `withdraw`); the last owner line unblocks the
 record with the reason `ask withdrawn`, and a rebind then parks the new record. A drop that fails is
 logged (`<qid>: record not unparked: <code>`) and swept at the next hub start or the next `questions
 file` call without an id. A question asked with `class` whose `refs` name a pulled record is stored
 with a `refs-pulled-record` warning, field `refs`: ask it with `--record` so the hub parks the record.
+
+An agent's to-do and a file approval bind and park the same way, with the same checks and outcomes,
+but only when they are added (`todos add --record`, `approvals add --record`; MCP `hub_todo_add` and
+`hub_approval_request` `record`). The line is `until: owner todo:T-n done` or `until: owner
+approval:A-n decided`, and the body line names the asker, `pm` for an approval. The owner's own to-do,
+any to-do edit and an `op` approval take no `record` (`invalid`, field `record`). The hub's
+`unblock-conditions` job ends the hold when the to-do is done or the approval is decided, approved or
+denied ("Push notifications"); withdrawing or deleting the item drops its line. An approval that
+expires undecided keeps its line, and the job pushes the PM `approval-expired`; the requester may
+then withdraw it. `questions file` makes a failed park again and sweeps a gone item's line for all
+three kinds. Known limits: a hub restart pushes an expired approval's line again, and a reopened to-do
+does not park its record again.
 
 #### Binding the open questions
 `hub.py questions bind --dry-run | --apply` (`POST /api/v1/questions/bind`, agent, body `{from: "pm",
@@ -941,6 +958,8 @@ acknowledgement. `to-pm reply` sets `done`.
 | done_at | set when ticked |
 | urgent | true sorts it to the top; the owner can set it on their own items |
 | pm_ack | PM: set once it has followed up on a done item or picked up an owner-added one; takes it off the pending list |
+| record | agent: `{repo, id}`, the backlog record an agent's to-do is about; absent or null otherwise |
+| park | hub: `{at, code, message}`, what binding the to-do did to its record, as a question's `park` ("A question bound to a record") |
 
 A new to-do (`POST /todos`, so `hub.py todos add` and the MCP tool `hub_todo_add` alike) may also carry
 `steps`, which is not stored: `kitlib.hubsite.api.todo_steps` turns each step into a command appended
@@ -953,7 +972,9 @@ those rules. A raw worktree, branch, tag or ref delete has no carve-out: its ref
 `worktree_remove.py <slug> --abandon "<why>"`, which the coordinator runs on a ruling (docs/worktree-remove.md
 "Tools"); a ref delete's also says a ref outside `refs/heads`, `refs/tags`, `refs/stash` and
 `refs/backlog` the coordinator deletes itself, in its own repository (docs/guard.md "Rules",
-`git-shared-ref`).
+`git-shared-ref`). An agent's new to-do may carry `record` (`todos add --record REPO:ID`), which parks
+the record until the to-do is done ("A question bound to a record"); the owner's own to-do and an edit
+take none (`invalid`, field `record`).
 
 While a to-do is open its creator may change it (`POST /api/v1/todos/{id}/edit` with the agent's token:
 `hub.py todos edit`, the MCP tool `hub_todo_edit`) or withdraw it (`POST /api/v1/todos/{id}/delete`:
@@ -1225,12 +1246,16 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 | created_at | server | ISO time of the request |
 | decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only |
 | commit, consumed_at | server | once an agent consumes the approval for a commit |
+| record | agent | `{repo, id}`: the backlog record the change is for; absent or null on an unbound request |
+| park | server | `{at, code, message}`: what binding the request did to its record, as a question's `park` ("A question bound to a record") |
 
 Routes, below `/api/v1`:
 
-- POST `/approvals` (agent): body `repo`, `title`, `head`, `files`, optional `reason`; adds a pending
-  request. A repository this machine has no checkout of is refused (`invalid`, field `repo`), and so is a
-  `base_blob` that is not the file at `head` (field `files`).
+- POST `/approvals` (agent): body `repo`, `title`, `head`, `files`, optional `reason` and `record`; adds
+  a pending request. A repository this machine has no checkout of is refused (`invalid`, field `repo`),
+  and so is a `base_blob` that is not the file at `head` (field `files`). A `record` (`approvals add
+  --record REPO:ID`) parks the record until the request is decided ("A question bound to a record"); an
+  `op` approval takes none (`invalid`, field `record`).
 - POST `/approvals/{id}/decide` (role `approver`: the strong owner alone, docs/hub-remote-access.md "The
   strong owner"): body `decision` (`approve` or `deny`) and `if_version`. Only a pending request is
   decided.
@@ -1238,8 +1263,9 @@ Routes, below `/api/v1`:
   `approved` is consumed.
 - POST `/approvals/{id}/delete` (agent): the requester withdraws a request (`hub.py approvals withdraw A-n
   --from KEY --if-version V`), as `questions withdraw` does: the body gives `from` and `if_version`, both
-  required, and the document is deleted. Only a pending request that has not expired is withdrawn
-  (`conflict`, field `status` otherwise: a decided one is the owner's record). The `from` is a claim: an
+  required, and the document is deleted. Only an undecided request is withdrawn, pending or expired
+  undecided (`conflict`, field `status` otherwise: a decided one is the owner's record); one bound to a
+  record drops its line from the record. The `from` is a claim: an
   approval stores none, so it is `pm` (`forbidden`, field `from`, for another).
 - GET `/approvals/{id}/verify` (agent): query `repo`, `head`, `files` (JSON `{path: blob}`) and an
   optional `commit`; answers `{ok, valid, why}`, never the key or the sig. With `commit`, only an approval

@@ -78,6 +78,17 @@ _RECORD_SAYS = ("The backlog record the question is about: {repo, id}, repo a re
 _RECORD = {"type": "object", "description": _RECORD_SAYS,
            "properties": {"repo": {"type": "string"}, "id": {"type": "string"}},
            "required": ["repo", "id"], "additionalProperties": False}
+_WAITS_SAYS = ("The backlog record that waits on this %s: {repo, id}, as a question's record "
+               "is checked (the PM repository's folder name for the kit's own records). The "
+               "hub parks the record on the owner (an owner line `until %s`) until %s, and "
+               "refuses a repo it has not configured, a record that repo's backlog does not have "
+               "or has completed, and a record it cannot read (unavailable).%s")
+_TODO_RECORD = dict(_RECORD, description=_WAITS_SAYS % (
+    "to-do", "todo:T-n done", "the owner marks it done",
+    " An agent's to-do only; it cannot be changed by an edit."))
+_APPROVAL_RECORD = dict(_RECORD, description=_WAITS_SAYS % (
+    "request", "approval:A-n decided", "the owner approves or denies it",
+    " One that expires undecided keeps the record parked: withdraw it to drop the line."))
 _RECORD_EDIT = dict(_RECORD, type=["object", "null"],
                     description=_RECORD_SAYS + " null unbinds the question (with class, unless "
                                                "it has one).")
@@ -186,7 +197,8 @@ TOOLS = {
                                        "os names)."},
               "os": _one_of(todosteps.OSES, "The OS a per-OS run is rendered for (windows "
                                             "when absent)."),
-              "repo": _REPO, "refs": _REFS, "urgent": _URGENT, "from": _FROM}, ["title"]),
+              "repo": _REPO, "refs": _REFS, "urgent": _URGENT, "from": _FROM,
+              "record": _TODO_RECORD}, ["title"]),
         "POST", "/todos", AGENT),
     "hub_todo_ack": (
         "Marks an owner's to-do as read by the PM (POST /todos/<id>/ack).",
@@ -287,7 +299,7 @@ TOOLS = {
                                                         "(default: the checkout's origin)."},
               "head": {"type": "string", "description": "The base commit, 40 hex digits "
                                                         "(default: the checkout's HEAD)."},
-              "reason": {"type": "string"}},
+              "reason": {"type": "string"}, "record": _APPROVAL_RECORD},
              ["checkout", "title", "files"]), "POST", "/approvals", AGENT),
     "hub_handoff_ready": (
         "Records that this session checkpointed and stands down (POST /handoffs), beside its "
@@ -559,7 +571,8 @@ class Server:
             files.append((f["path"], self._readable(f["content_file"], "files", "an approval")))
         try:
             body = hubapprove.build(checkout, a["title"], files, repo=a.get("repo"),
-                                    head=a.get("head"), reason=a.get("reason"))
+                                    head=a.get("head"), reason=a.get("reason"),
+                                    record=a.get("record"))
         except hubapprove.RequestError as e:
             raise ToolError("invalid", e.message, e.field)
         return hubapprove.request(self.client(), body)

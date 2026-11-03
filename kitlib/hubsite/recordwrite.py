@@ -14,12 +14,13 @@ add, edit, delete and unblock from the record page (docs/action-hub.md "The reco
 condition_met is not an owner route: the hub's unblock-conditions job (kitlib.hubjobs
 .unblock_conditions) calls it when a record's `until` condition is met, and it commits under
 Session: hub-condition (CONDITION_SESSION), clearing that one member (plan.plan_condition_met:
-an `owner` member only on a to-do or a question, the owner's own act).
+an `owner` member only on a to-do, a question or an approval, the owner's own act).
 
-park and withdraw are no route either: the hub calls them itself when a question bound to a
-record is posted (park: the record waits on the owner, until the answer) and when it is
-withdrawn, deleted or unbound (withdraw), committing under Session: hub-park (PARK_SESSION) as
-the owner's proxy (kitlib.hubsite.api park_question, unpark_question).
+park and withdraw are no route either: the hub calls them itself when an ask bound to a record
+is posted, a question, an agent's to-do or a file approval (park: the record waits on the owner,
+until the answer, the to-do done or the approval decided) and when it is withdrawn, deleted or
+unbound (withdraw), committing under Session: hub-park (PARK_SESSION) as the owner's proxy
+(kitlib.hubsite.api park_item, unpark_item).
 
 Each opens the store `.kit.json` in `root` names (kitlib.backlog.opener open_store, fetched first)
 and writes through Store.write with the plan functions backlog.py runs (kitlib.backlog.plan
@@ -188,8 +189,9 @@ PARK_OUTCOMES = ('blocked', 'already', 'held', 'parked', 'gone')
 
 
 def park(root, rid, item_id, cond, asker):
-    """Block `rid` on `owner` until `cond` (`question:<item_id> answered`), as the owner's proxy:
-    an ask bound to a record means the record waits on the owner (docs/backlog.md "Owner gates").
+    """Block `rid` on `owner` until `cond` (`question:<item_id> answered`, `todo:<item_id> done`
+    or `approval:<item_id> decided`), as the owner's proxy: an ask bound to a record means the
+    record waits on the owner (docs/backlog.md "Owner gates").
     One store commit under Session: hub-park, by the record's state:
 
       open       blocked on owner, `until: owner <cond>`, body line `Blocked on owner (<date>):
@@ -241,12 +243,14 @@ def park(root, rid, item_id, cond, asker):
 
 
 def asks(root):
-    """The asks the store at `root` waits on: [{id, q, parked}], one per `until: owner
-    question:<q> answered` line of a record still blocked on the owner, `parked` true when the
-    record's body says the hub parked it on q (PARK_REASON). Read with no fetch, as the hub's
-    timed jobs read (kitlib.hubjobs.unblock_conditions open_snapshot); the implicit store holds
-    none. A store that cannot be read is a HubError `store`. For the hub's sweep of lines whose
-    question is gone (kitlib.hubsite.api questions_file)."""
+    """The asks the store at `root` waits on: [{id, q, kind, parked}], one per `until: owner
+    <condition>` line on an owner event (conditions.OWNER_KINDS: `question:<q> answered`,
+    `todo:<q> done`, `approval:<q> decided`; `kind` the condition's) of a record still blocked
+    on the owner, `parked` true when the record's body says the hub parked it on q
+    (PARK_REASON). Read with no fetch, as the hub's timed jobs read
+    (kitlib.hubjobs.unblock_conditions open_snapshot); the implicit store holds none. A store
+    that cannot be read is a HubError `store`. For the hub's sweep of lines whose ask is gone
+    (kitlib.hubsite.api questions_file)."""
     from kitlib.backlog import conditions as condmod
     from kitlib.backlog import record as rmod
     try:
@@ -262,9 +266,10 @@ def asks(root):
             continue
         for member, text in rmod.until_lines(rec):
             c = condmod.parse(text) if member == 'owner' else None
-            if c is None or c.kind != 'question' or text != 'question:%s answered' % c.target:
+            if (c is None or c.kind not in condmod.OWNER_KINDS
+                    or text != '%s:%s %s' % (c.kind, c.target, c.state)):
                 continue
-            out.append({'id': rec.id, 'q': c.target,
+            out.append({'id': rec.id, 'q': c.target, 'kind': c.kind,
                         'parked': ('asked as %s on the Action Hub' % c.target) in rec.body})
     return out
 

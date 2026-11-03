@@ -75,6 +75,9 @@ The document (collection `approvals`, ids A-<n>):
   created_at  ISO time with offset
   decision, decided_at, sig      once decided (sig on an approval only)
   commit, consumed_at            once consumed
+  record, park                   a file request bound to a backlog record {repo, id}, and the
+                                 mark of the record's park (kitlib.hubsite.api park_item); not
+                                 covered by the signature
 
 An op document has no head, files or diff; it holds instead:
   kind        'op' (a document with no kind is a file approval)
@@ -491,11 +494,16 @@ def decide_fields(key, doc_id, doc, decision, now):
 
 
 def withdraw_check(doc, now):
-    """Only a pending request that has not expired is withdrawn by its requester: ApprovalError
-    (code conflict, field status) for any other status, the owner's record by then."""
+    """Only an undecided request is withdrawn by its requester: one pending, or stored pending
+    and expired undecided (its withdrawal drops the line it parked on a record, which the expiry
+    keeps: kitlib.hubsite.api approvals_delete). ApprovalError (code conflict, field status) for
+    a decided one (approved, denied, consumed, or an approval expired after its decision), the
+    owner's record by then."""
     status = status_at(doc, now)
+    if status == EXPIRED and doc.get('status') == PENDING:
+        return
     if status != PENDING:
-        raise ApprovalError('only a pending approval can be withdrawn, not one that is %s'
+        raise ApprovalError('only an undecided approval can be withdrawn, not one that is %s'
                             % (status or 'malformed'), 'status', 'conflict')
 
 
@@ -791,12 +799,14 @@ class Verifier(object):
         return True, ''
 
 
-def request(client, repo, title, head, files, reason=None):
+def request(client, repo, title, head, files, reason=None, record=None):
     """Add a request for the owner (POST ROUTE, the agent's) and answer the server's reply; the
-    client's errors propagate. `files` as new_doc takes them."""
+    client's errors propagate. `files` as new_doc takes them; `record` the {repo, id} it binds."""
     body = {'repo': repo, 'title': title, 'head': head, 'files': files}
     if reason is not None:
         body['reason'] = reason
+    if record is not None:
+        body['record'] = record
     return client.post(ROUTE, AGENT, body)
 
 

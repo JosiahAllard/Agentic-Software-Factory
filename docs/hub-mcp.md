@@ -61,7 +61,7 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_question_done` | `id`, `why`, `if_version`; `unfiled` | `POST /questions/<id>/done` |
 | `hub_question_edit` | `id`, `from`, `if_version`; `title`, `context`, `options`, `recommended`, `refs`, `urgent`, `record`, `class` | `POST /questions/<id>/edit` |
 | `hub_question_withdraw` | `id`, `from`, `if_version` | `POST /questions/<id>/delete` |
-| `hub_todo_add` | `title`; `detail`, `commands`, `steps` ("To-do steps"), `os`, `repo`, `refs`, `urgent`, `from` | `POST /todos` |
+| `hub_todo_add` | `title`; `detail`, `commands`, `steps` ("To-do steps"), `os`, `repo`, `refs`, `urgent`, `from`, `record` | `POST /todos` |
 | `hub_todo_ack` | `id`; `if_version` | `POST /todos/<id>/ack` |
 | `hub_todo_edit` | `id`, `from`, `if_version`; `title`, `detail`, `commands`, `repo`, `refs`, `urgent` | `POST /todos/<id>/edit` |
 | `hub_todo_withdraw` | `id`, `from`, `if_version` | `POST /todos/<id>/delete` |
@@ -69,7 +69,7 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_to_pm_reply` | `id`; `reply`, `if_version` | `POST /to_pm/<id>/reply` |
 | `hub_inbox_post` | `text`; `title`, `ref`, `asked`, `repo`, `from`, `refs` | `POST /inbox` |
 | `hub_page_publish` | `id`, `title`, `html_file`; `summary`, `repo`, `from`, `refs`, `if_version` | `POST /pages` |
-| `hub_approval_request` | `checkout`, `title`, `files` (`[{path, content_file}]`); `repo`, `head`, `reason` | `POST /approvals` |
+| `hub_approval_request` | `checkout`, `title`, `files` (`[{path, content_file}]`); `repo`, `head`, `reason`, `record` | `POST /approvals` |
 | `hub_handoff_ready` | `kind` (`handoff`, `restart`, `stop`, `checkin`), `state_path`, `from` | `POST /handoffs` |
 
 `hub_handoff_ready` records a session's hand-off beside its ready reply to the PM (skill
@@ -84,7 +84,8 @@ newest record.
 checkout `checkout`, each file's base its blob at `head` (default: the checkout's HEAD; none for a
 new file) and its content the exact UTF-8 bytes of its `content_file`, and `repo` defaults to the
 checkout's origin. It only adds a request (no destructive hint): it never decides or consumes one,
-it cannot ask for a delete, and it takes no `from`, which the document has no field for. This
+it cannot ask for a delete, and it takes no `from`, which the document has no field for. Its
+`record`, given as is to the builder and posted, is bound as a to-do's is (below). This
 process reads each `content_file` outside the guard, so `checkout` and every `content_file` must
 be absolute and are judged by their real path as `html_file` is (`Server._readable`): never inside
 the hub's token folder or its store, or a token could be read back from the request. Those, a file
@@ -118,6 +119,16 @@ record the question is about (the kit's own records are bound under the PM repos
 unbinds it. A `record` that is no object is refused before any call (`invalid`, field `record`);
 the hub then reads the record and refuses what it cannot bind, failing closed when it cannot read
 it (docs/action-hub.md "A question bound to a record").
+
+The `record` of `hub_todo_add` and `hub_approval_request` is `{repo, id}` too, checked the same way:
+the backlog record that waits on the to-do or the request. The hub parks it on the owner, writing
+the owner line `until "todo:T-n done"` (from the to-do's `from`) or `until "approval:A-n decided"`
+(by pm) on it (docs/backlog.md, the `until` bullet "An ask parks its record"); the record leaves
+`next` until the to-do is done or the request is approved or denied, when the unblock job drops
+the line. Only an agent's to-do takes one (the owner's is refused `invalid`, field `record`), and
+`hub_todo_edit` cannot add, change or drop it. Withdrawing the to-do or the request drops the
+line. A request that expires undecided keeps the record parked, and the PM gets the
+`approval-expired` push: withdraw it to drop the line, or ask again with a new one.
 
 Every question has a `record` or a `class` (`rule`, `machine`, `cross-repo` or `go`), never
 both: `hub_ask` without either is refused (`invalid`, field `class`), as is a `class` on a bound

@@ -1,16 +1,19 @@
-"""kitlib.hubsite.api: a question bound to a record parks it (park_question: the record waits on
+"""kitlib.hubsite.api: a question bound to a record parks it (park_item: the record waits on
 the owner until the question is answered), off the request when the server says so; its
-withdrawal, deletion or rebinding undoes it (unpark_question); POST questions/file parks what
+withdrawal, deletion or rebinding undoes it (unpark_item); POST questions/file parks what
 a failure or a stop left unparked; a class-only question whose refs name a pulled record is
-stored with a warning."""
+stored with a warning. An agent's to-do and a file approval bound to a record park it the same
+way (AskParkTest), until the to-do is done or the approval decided."""
+import datetime
 import functools
 import threading
 import unittest
 
-from kitlib.hubsite import api, serve
+from kitlib.hubsite import api, approvals, serve
 from kitlib.hubsite.api import AGENT, OWNER
 from kitlib.hubsite.store import HubError
-from tests.hubsite.test_api import CLOCK, ApiCase, BindViews
+from tests.gitfixture import TempRepo
+from tests.hubsite.test_api import CLOCK, NOW, ApiCase, BindViews
 
 BIND = {'repo': 'kit', 'id': 'EX-1'}
 
@@ -22,11 +25,13 @@ class ParkViews(BindViews):
     def __init__(self):
         BindViews.__init__(self)
         self.parks, self.unparks, self.fail, self.unpark_fail = [], [], None, None
+        self.askers = []
         self.during = None          # run inside record_park: a write that races the park
         self.asks = []              # what record_asks answers
 
     def record_park(self, repo, id, qid, cond, asker):
         self.parks.append((repo, id, qid, cond))
+        self.askers.append(asker)
         if self.during is not None:
             self.during()
         if self.fail is not None:
@@ -170,7 +175,7 @@ class ParkTest(ApiCase):
             done.set()
         qid = self.ask(record=BIND, **{'from': 'pm'})['id']
         self.api.park_later = functools.partial(serve._park_later, log)
-        self.views.unpark_fail = HubError('store', 'C:\work is busy', '')
+        self.views.unpark_fail = HubError('store', 'C:\\work is busy', '')
         self.ok('POST', '/questions/%s/delete' % qid, AGENT,
                 {'from': 'pm', 'if_version': self.doc(qid)['version']})
         self.assertTrue(done.wait(10))
@@ -227,6 +232,141 @@ class ParkTest(ApiCase):
         out = self.ask(record=BIND)
         self.assertNotIn('park', out)
         self.assertNotIn('park', self.doc(out['id']))
+
+
+class AskParkTest(ApiCase):
+    """An agent's to-do (`todo:T-n done`) and a file approval (`approval:A-n decided`, by pm)
+    bound to a record park it; the owner's to-do, a to-do edit and an op approval take no
+    record; a withdrawal (or the owner's delete) drops the line, while done and decided are left
+    to the unblock-conditions job; an approval expired undecided keeps its line until withdrawn."""
+
+    KEY = 'k' * 64
+    URL = 'https://github.com/Owner/Repo.git'
+    LATER = (datetime.datetime.fromisoformat(NOW)
+             + datetime.timedelta(seconds=approvals.PENDING_TTL_S + 60)).isoformat()
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = TempRepo()
+        cls.addClassCleanup(cls.repo.cleanup)
+
+    def setUp(self):
+        ApiCase.setUp(self)
+        self.views = ParkViews()
+        self.now = NOW
+        url = approvals.repo_id(self.URL)
+        self.api = api.Api(self.store, views=self.views, clock=lambda: self.now,
+                           approval_key=lambda: self.KEY,
+                           checkout=lambda rid: self.repo.root if rid == url else None)
+
+    def todo(self, **kw):
+        return self.ok('POST', '/todos', AGENT,
+                       dict({'title': 't', 'commands': ['python t.py'], 'from': 'kit'}, **kw))
+
+    def approval(self, **kw):
+        body = {'repo': self.URL, 'title': 'Edit the readme', 'head': self.repo.initial,
+                'files': [{'path': 'docs/new.md', 'base_blob': None, 'content': 'fresh\n'}]}
+        return self.ok('POST', '/approvals', AGENT, dict(body, **kw))
+
+    def version(self, coll, doc_id):
+        return self.store.get(coll, doc_id)['version']
+
+    def test_an_agents_to_do_parks_its_record_until_done(self):
+        tid = self.todo(record=BIND)['id']
+        self.assertEqual((self.views.parks, self.views.askers),
+                         ([('kit', 'EX-1', tid, 'todo:%s done' % tid)], ['kit']))
+        d = self.store.get('todos', tid)
+        self.assertEqual((d['record'], d['park']['code'], d['park']['message']),
+                         (BIND, 'blocked', 'the record waits on this to-do: blocked on the owner '
+                                           'until it is done'))
+        self.ok('POST', '/todos/%s/done' % tid, OWNER, {'if_version': self.version('todos', tid)})
+        self.assertEqual(self.views.unparks, [], "done is the unblock-conditions job's to read")
+        self.views.asks = [{'repo': 'kit', 'id': 'EX-1', 'q': tid, 'kind': 'todo', 'parked': True}]
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual((got['unparked'], got['parked'], self.views.unparks), ([], [], []))
+        self.assertEqual(len(self.views.parks), 1, 'a done to-do is not parked again')
+
+    def test_a_to_do_bound_to_a_record_not_there_is_refused(self):
+        self.refused('not_found', 'record', 'POST', '/todos', AGENT,
+                     {'title': 't', 'commands': ['python t.py'], 'from': 'kit',
+                      'record': {'repo': 'kit', 'id': 'NO-1'}})
+        self.assertEqual(self.views.parks, [])
+
+    def test_the_owners_to_do_an_edit_and_an_op_approval_take_no_record(self):
+        self.refused('invalid', 'record', 'POST', '/todos', OWNER, {'title': 't', 'record': BIND})
+        tid = self.todo()['id']
+        self.refused('invalid', 'record', 'POST', '/todos/%s/edit' % tid, AGENT,
+                     {'from': 'kit', 'if_version': self.version('todos', tid), 'title': 'u',
+                      'record': BIND})
+        self.refused('invalid', 'record', 'POST', '/todos/%s/edit' % tid, OWNER,
+                     {'title': 'u', 'record': BIND})
+        self.refused('invalid', 'record', 'POST', '/approvals', AGENT,
+                     {'kind': 'op', 'op': 'D-001', 'repo': 'pm', 'line': 'python x.py',
+                      'title': 'Copy', 'record': BIND})
+        self.assertEqual(self.views.parks, [])
+
+    def test_withdrawing_or_the_owner_deleting_a_bound_to_do_drops_its_line(self):
+        tid = self.todo(record=BIND)['id']
+        self.ok('POST', '/todos/%s/delete' % tid, AGENT,
+                {'from': 'kit', 'if_version': self.version('todos', tid)})
+        other = self.todo(record=BIND)['id']
+        self.ok('POST', '/todos/%s/delete' % other, OWNER, {})
+        self.assertEqual(self.views.unparks, [('kit', 'EX-1', 'todo:%s done' % tid),
+                                              ('kit', 'EX-1', 'todo:%s done' % other)])
+
+    def test_a_file_approval_parks_its_record_by_pm_until_decided(self):
+        aid = self.approval(record=BIND)['id']
+        self.assertEqual((self.views.parks, self.views.askers),
+                         ([('kit', 'EX-1', aid, 'approval:%s decided' % aid)], ['pm']))
+        d = self.store.get('approvals', aid)
+        self.assertEqual((d['record'], d['park']['message']),
+                         (BIND, 'the record waits on this approval: blocked on the owner until '
+                                'it is decided'))
+        self.ok('POST', '/approvals/%s/decide' % aid, OWNER,
+                {'decision': 'deny', 'if_version': self.version('approvals', aid)}, strong=True)
+        self.assertEqual(self.views.unparks, [], "decided is the unblock-conditions job's to read")
+        self.refused('conflict', 'status', 'POST', '/approvals/%s/delete' % aid, AGENT,
+                     {'from': 'pm', 'if_version': self.version('approvals', aid)})
+        self.assertEqual(self.views.unparks, [])
+
+    def test_an_expired_approval_keeps_its_line_until_withdrawn(self):
+        aid = self.approval(record=BIND)['id']
+        self.now = self.LATER
+        self.views.asks = [{'repo': 'kit', 'id': 'EX-1', 'q': aid, 'kind': 'approval',
+                            'parked': True}]
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual((got['unparked'], got['parked'], self.views.unparks), ([], [], []))
+        self.ok('POST', '/approvals/%s/delete' % aid, AGENT,
+                {'from': 'pm', 'if_version': self.version('approvals', aid)})
+        self.assertEqual(self.views.unparks, [('kit', 'EX-1', 'approval:%s decided' % aid)])
+
+    def test_questions_file_parks_a_to_do_and_an_approval_whose_park_failed(self):
+        self.views.fail = HubError('store', 'the store is busy', '')
+        tid = self.todo(record=BIND)['id']
+        aid = self.approval(record=BIND)['id']
+        self.assertEqual((self.store.get('todos', tid)['park']['code'],
+                          self.store.get('approvals', aid)['park']['code']), ('store', 'store'))
+        self.views.fail = None
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual((sorted(got['parked']), got['park_failed']), (sorted([tid, aid]), []))
+        self.assertEqual(self.store.get('todos', tid)['park']['code'], 'blocked')
+
+    def test_the_sweep_drops_the_line_of_a_to_do_gone_without_its_unpark(self):
+        tid = self.todo(record=BIND)['id']
+        self.store.delete('todos', tid)
+        self.views.asks = [{'repo': 'kit', 'id': 'EX-1', 'q': tid, 'kind': 'todo', 'parked': True},
+                           {'repo': 'kit', 'id': 'EX-2', 'q': 'T-404', 'kind': 'todo',
+                            'parked': False}]
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual(got['unparked'], [{'id': tid, 'record': BIND, 'unblocked': True}])
+        self.assertEqual(got['orphan_hand_lines'], [{'repo': 'kit', 'id': 'EX-2', 'q': 'T-404'}])
+
+    def test_a_question_says_what_it_said_before(self):
+        self.assertEqual(api.PARK_SAYS['blocked'], 'the record waits on this question: blocked '
+                                                   'on the owner until it is answered')
+        self.assertEqual(api.UNPARK_FAILED, 'the record still waits on this question, which is '
+                                            'gone or bound elsewhere: the hub tries again at its '
+                                            'next start or questions file call')
 
 
 class FiledAs(unittest.TestCase):

@@ -18,6 +18,7 @@ from kitlib.commit import approval as consumer
 from kitlib.hubsite import api, auth, client
 from kitlib.hubsite import approvals as ap
 from kitlib.hubsite.api import AGENT, BASE, OWNER
+from kitlib.hubsite.store import HubError as HubStoreError
 from kitlib.hubsite.store import Store
 from tests.gitfixture import TempRepo
 from tests.realgit import real_git
@@ -50,6 +51,15 @@ def load():
 HUB = load()
 
 
+class Views(object):
+    """The record view, for a request bound to a record: kit's EX-1 is an open record."""
+
+    def record(self, repo, id):
+        if (repo, id) != ('kit', 'EX-1'):
+            raise HubStoreError('not_found', 'no such record', 'id')
+        return {'repo': 'kit', 'id': id, 'where': 'open'}
+
+
 class Hub(object):
     """A real api over a store in a temp folder, whose checkout of URL is `checkout`, and a real
     client.Client whose transport calls it in process. `asked` lists each call."""
@@ -64,7 +74,7 @@ class Hub(object):
         tokens = os.path.join(folder, 'tokens')
         auth.ensure_tokens(tokens)
         roles = {auth.read_token(tokens, AGENT): AGENT, auth.read_token(tokens, OWNER): OWNER}
-        self.api = api.Api(self.store, clock=CLOCK, approval_key=lambda: KEY,
+        self.api = api.Api(self.store, views=Views(), clock=CLOCK, approval_key=lambda: KEY,
                            checkout=lambda rid: checkout if rid == ap.repo_id(URL) else None)
         self.asked = []
 
@@ -193,6 +203,16 @@ class TheRequest(Case):
         self.assertEqual((got.exception.code, got.exception.field, got.exception.message),
                          ('invalid', 'repo', obj['error']['message']))
         self.assertEqual(self.hub.approvals(), {})
+
+    def test_a_record_is_carried_to_the_hub_and_bound(self):
+        bind = {'repo': 'kit', 'id': 'EX-1'}
+        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
+                                record=bind)
+        self.assertEqual(body['record'], bind)
+        self.assertNotIn('record', hubapprove.build(self.repo.root, 't',
+                                                    [('README.md', self.content('x\n'))]))
+        got = hubapprove.request(self.hub.client, body)
+        self.assertEqual(self.hub.approvals()[got['id']]['record'], bind)
 
     def test_request_only_posts_the_request(self):
         calls = []
@@ -464,6 +484,14 @@ class TheCommandLine(Case):
         self.assertEqual(([f['path'] for f in doc['files']], doc['reason'], doc['status']),
                          (['README.md', 'docs/new.md'], 'why', 'pending'))
         self.assertEqual(self.hub.asked, [('POST', BASE + '/approvals')])
+
+    def test_add_with_a_record_binds_it(self):
+        code, out, err = self.run_hub('approvals', 'add', '--checkout', self.repo.root, '--title', 't',
+                                      '--file', 'README.md', self.content('x\n'),
+                                      '--record', 'kit:EX-1')
+        self.assertEqual((code, err), (0, ''))
+        (doc_id, doc), = self.hub.approvals().items()
+        self.assertEqual(doc['record'], {'repo': 'kit', 'id': 'EX-1'})
 
     def test_a_local_refusal_posts_nothing(self):
         code, out, err = self.run_hub('approvals', 'add', '--checkout', self.repo.root, '--title', 't',

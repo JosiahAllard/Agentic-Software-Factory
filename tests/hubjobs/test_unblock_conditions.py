@@ -1,6 +1,7 @@
 """kitlib.hubjobs.unblock_conditions: the hub job that clears a hold whose `until` condition is met,
 run end to end against a ref store on a temporary repository with a bare remote, a temporary hub
 store folder and a flag file under a variable (docs/action-hub.md "Timed jobs")."""
+import datetime
 import json
 import os
 import tempfile
@@ -8,10 +9,12 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib.backlog import conditions as condmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.hubjobs import unblock_conditions as U
-from kitlib.hubsite import jobs, recordwrite
+from kitlib import hubvalidate
+from kitlib.hubsite import approvals, jobs, recordwrite
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
@@ -202,6 +205,89 @@ class SeveralAsks(Case):
         self.job()(ctx)
         self.assertEqual(ctx.events, [(U.EVENT, 'kit:ASK')])
         self.assertEqual(self.get('ASK').get('state'), 'open')
+
+
+def aid(n):
+    """An invented approval id, built as QID is (tests/scrub)."""
+    return 'A' + '-%d' % n
+
+
+class Approvals(Case):
+    """An `owner` line `approval:A-n decided` (the hub parks a record on a file approval bound
+    to it): approved or denied ends it (conditions.DECIDED); pending holds; one expired
+    undecided holds and is pushed to the PM once per line per job (approval-expired)."""
+
+    def setUp(self):
+        Case.setUp(self)
+        os.makedirs(os.path.join(self.hub, 'approvals'))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        old = now - datetime.timedelta(seconds=approvals.PENDING_TTL_S + 60)
+        self.seed(*[rec(rid, until='owner approval:%s decided' % aid(n), **OWNER)
+                    for rid, n in (('APR', 3), ('DEN', 4), ('EXP', 5), ('PEN', 6))])
+        self.approval(aid(3), now, status='approved', decision='approve',
+                      decided_at=now.isoformat())
+        self.approval(aid(4), now, status='denied', decision='deny', decided_at=now.isoformat())
+        self.approval(aid(5), old)
+        self.approval(aid(6), now)
+
+    def approval(self, doc_id, created, **fields):
+        d = approvals.new_doc('https://github.com/o/r', 'a draft', 'a' * 40,
+                              [{'path': 'x.md', 'base_blob': None, 'content': 'x\n'}], created)
+        d.update(fields, id=doc_id)
+        with open(os.path.join(self.hub, 'approvals', doc_id + '.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(d, f)
+
+    def test_decided_either_way_clears_and_an_expired_one_is_pushed_once_and_held(self):
+        ctx, job = Ctx(), self.job()
+        job(ctx)
+        self.assertEqual(sorted(ctx.events), [(U.EXPIRED_EVENT, 'kit:EXP:%s' % aid(5)),
+                                              (U.EVENT, 'kit:APR'), (U.EVENT, 'kit:DEN')])
+        for rid in ('APR', 'DEN'):
+            self.assertEqual(self.get(rid).get('state'), 'open', rid)
+        for rid, n in (('EXP', 5), ('PEN', 6)):
+            r = self.get(rid)
+            self.assertEqual((r.get('state'), r.all('until')),
+                             ('blocked', ['owner approval:%s decided' % aid(n)]), rid)
+        again = Ctx()
+        job(again)
+        self.assertEqual(again.events, [], 'pushed once per line while the job runs')
+        restarted = Ctx()
+        self.job()(restarted)           # a hub restart: a new job pushes it once more
+        self.assertEqual(restarted.events, [(U.EXPIRED_EVENT, 'kit:EXP:%s' % aid(5))])
+
+    def test_an_approval_line_on_another_member_ends_and_expires_the_same_way(self):
+        self.seed(rec('LIV', state='blocked', blocked_on='live-client',
+                      until='live-client approval:%s decided' % aid(4)),
+                  rec('LXP', state='blocked', blocked_on='live-client',
+                      until='live-client approval:%s decided' % aid(5)))
+        self.assertIsNone(condmod.owner_error('live-client', 'approval:%s decided' % aid(4)))
+        ctx = Ctx()
+        self.job()(ctx)
+        self.assertIn((U.EVENT, 'kit:LIV'), ctx.events)
+        self.assertIn((U.EXPIRED_EVENT, 'kit:LXP:%s' % aid(5)), ctx.events)
+        self.assertEqual(self.get('LIV').get('state'), 'open')
+        self.assertEqual((self.get('LXP').get('state'), self.get('LXP').all('blocked_on')),
+                         ('blocked', ['live-client']))
+
+    def test_decided_is_the_approvals_decided_statuses(self):
+        # kitlib.backlog may not import the hub, so its copy is pinned here
+        self.assertEqual(sorted(condmod.DECIDED),
+                         sorted((approvals.APPROVED, approvals.DENIED, approvals.CONSUMED)))
+        self.assertTrue(set(condmod.DECIDED) < set(hubvalidate.STATUSES['approvals']))
+        self.assertEqual(set(hubvalidate.STATUSES['approvals']) - set(condmod.DECIDED),
+                         {approvals.PENDING, approvals.EXPIRED})
+
+    def test_the_readers(self):
+        r = U.Readers(self.hub, self.plugins, None)
+        self.assertEqual([r.approval_status(aid(n)) for n in (3, 4, 5, 9)],
+                         ['approved', 'denied', 'pending', None])
+        self.assertEqual([r.approval_expired(aid(n)) for n in (3, 4, 5, 6, 9)],
+                         [False, False, True, False, False])
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+            seconds=approvals.PENDING_TTL_S + 60)
+        self.assertIs(r.approval_expired(aid(6), now=later), True)
+        self.assertIsNone(U.Readers(None, self.plugins, None).approval_status(aid(3)))
 
 
 class Watched(Case):

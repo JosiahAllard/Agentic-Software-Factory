@@ -16,8 +16,10 @@ from tests.backlog.helpers import ADD_FLAGS, StoreCase, messages, parse, rec
 class Readers(object):
     """conditions.evaluate's readers, answering from dicts (a missing key: cannot tell)."""
 
-    def __init__(self, todos=None, questions=None, records=None, paths=None, plugins=None):
+    def __init__(self, todos=None, questions=None, records=None, paths=None, plugins=None,
+                 approvals=None):
         self.todos, self.questions = todos or {}, questions or {}
+        self.approvals = approvals or {}
         self.records, self.paths, self.plugins = records or {}, paths or {}, plugins or {}
         self.asked = []
 
@@ -28,6 +30,10 @@ class Readers(object):
     def question_status(self, qid):
         self.asked.append(('question', qid))
         return self.questions.get(qid)
+
+    def approval_status(self, aid):
+        self.asked.append(('approval', aid))
+        return self.approvals.get(aid)
 
     def record_closed(self, repo, rid):
         self.asked.append(('record', repo, rid))
@@ -62,6 +68,14 @@ class Grammar(unittest.TestCase):
                          ('path', '%LOCALAPPDATA%\\a b\\c', 'absent'))
         self.assertEqual(condmod.parse('plugin:92637108e79f absent'),
                          ('plugin', '92637108e79f', 'absent'))
+        self.assertEqual(condmod.parse('approval:A-7 decided'), ('approval', 'A-7', 'decided'))
+
+    def test_an_approval_takes_only_decided(self):
+        self.assertEqual(condmod.parse('approval:A-7 decided'),
+                         condmod.Condition('approval', 'A-7', 'decided'))
+        for text in ('approval:A-7 approved', 'approval:A-7 done', 'approval:A-x decided',
+                     'approval:T-7 decided', 'approval:A-7 decided later'):
+            self.assertIsNone(condmod.parse(text), text)
 
     def test_anything_else_is_free_text(self):
         for text in ('when the client ships', 'todo:T-12 open', 'todo:T-x done', 'todo:T-1  done',
@@ -83,6 +97,23 @@ class Grammar(unittest.TestCase):
             self.assertIs(met('question:%s answered' % qid, r), True, qid)
         self.assertIs(met('question:Q-5 answered', r), False)
         self.assertIsNone(met('question:Q-6 answered', r))
+
+    def test_approval_met_once_decided_either_way(self):
+        # the PM's ruling: a denial ends the hold as an approval does; pending (expired or not)
+        # holds, and the stored status is read, so an approval past its window stays decided
+        r = Readers(approvals={'A-1': 'approved', 'A-2': 'denied', 'A-3': 'consumed',
+                               'A-4': 'pending'})
+        for aid in ('A-1', 'A-2', 'A-3'):
+            self.assertIs(met('approval:%s decided' % aid, r), True, aid)
+        self.assertIs(met('approval:A-4 decided', r), False)
+        self.assertIsNone(met('approval:A-5 decided', r))
+        self.assertIn(('approval', 'A-1'), r.asked)
+        self.assertEqual(condmod.DECIDED, ('approved', 'denied', 'consumed'))
+
+    def test_approval_cannot_be_told_by_readers_without_it(self):
+        class Old(object):
+            pass
+        self.assertIsNone(met('approval:A-1 decided', Old()))
 
     def test_record_met_and_not(self):
         r = Readers(records={('kit', 'GONE'): True, ('kit', 'HERE'): False})
@@ -115,9 +146,11 @@ class Grammar(unittest.TestCase):
         for text in ('path:%s exists' % ABS, 'record:kit:FOO closed', 'plugin:x absent',
                      'path:not-even-readable'):
             self.assertIn('owner event', condmod.owner_error('owner', text) or '', text)
-        for text in ('todo:T-1 done', 'question:Q-1 answered', 'free text'):
+        for text in ('todo:T-1 done', 'question:Q-1 answered', 'approval:A-1 decided',
+                     'free text'):
             self.assertIsNone(condmod.owner_error('owner', text), text)
         self.assertIsNone(condmod.owner_error('live-client', 'path:%s exists' % ABS))
+        self.assertIsNone(condmod.owner_error('live-client', 'approval:A-1 decided'))
 
 
 BLOCKED = dict(state='blocked', blocked_on='live-client')
@@ -220,6 +253,14 @@ class BlockUntil(StoreCase):
         self.verb('block', 'FOO', ['owner'], owner_ask='which one?', until='question:Q-9 answered',
                   role_checked=True)
         self.assertEqual(self.get('FOO').all('until'), ['owner question:Q-9 answered'])
+
+    def test_owner_takes_an_approval(self):
+        self.seed(rec('FOO'))
+        self.verb('block', 'FOO', ['owner'], owner_ask='is A-4 approved?',
+                  until='approval:A-4 decided', role_checked=True)
+        self.assertEqual(self.get('FOO').all('until'), ['owner approval:A-4 decided'])
+        # an owner event, not free text: the unblock-conditions job reads it
+        self.assertEqual(condmod.kind_of('approval:A-4 decided'), 'approval')
 
     def test_an_owner_until_is_added_beside_the_owners_others(self):
         self.seed(rec('FOO'))
@@ -325,6 +366,15 @@ class ConditionMet(StoreCase):
         self.assertIsNone(change.ruling)
         r = self.get('FOO')
         self.assertEqual((r.get('state'), r.get('owner_ask'), r.all('until')), ('open', None, []))
+
+    def test_owner_clears_on_an_approval_decided(self):
+        self.seed(rec('FOO', until=['owner approval:A-2 decided', 'owner todo:T-3 done'],
+                      **test_verbs.OWNER_BLOCKED))
+        change = self.verb('condition_met', 'FOO', 'owner', 'approval:A-2 decided')
+        self.assertIs(change.cleared, False)
+        self.assertEqual(self.get('FOO').all('until'), ['owner todo:T-3 done'])
+        self.verb('condition_met', 'FOO', 'owner', 'todo:T-3 done')
+        self.assertEqual(self.get('FOO').get('state'), 'open')
 
     def test_one_owner_line_of_several_drops_only_that_line(self):
         self.seed(rec('FOO', until=['owner question:Q-101 answered',

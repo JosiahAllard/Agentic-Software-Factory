@@ -23,6 +23,9 @@ consumer's staged check would refuse it), and whatever
 kitlib.hubsite.approvals.new_doc refuses, in its words (its limits: MAX_FILES, MAX_CONTENT_BYTES,
 MAX_PATH, MAX_TITLE, MAX_REASON). A delete cannot be requested: every file has content.
 
+build() passes `record` ({repo, id}) through unchecked: the hub checks it and parks that record
+on the owner until the request is decided (kitlib.hubsite.api approvals_add).
+
 request() only posts the request (POST /approvals); it never decides or consumes one. The
 client's errors propagate as they are. No argparse, no printing, no exits (AGENTS.md).
 """
@@ -116,12 +119,13 @@ def _run_text(args, cwd, stdin=None):
 
 
 def build(checkout, title, files, repo=None, head=None, reason=None, now=None, run=None,
-          cat=None):
+          cat=None, record=None):
     """The body of POST /approvals for the change `files`, a list of (path, content_file): path
     relative to the repository top with `/`, content_file the file holding its proposed text.
     `repo` defaults to the checkout's origin (ap.remote_id), `head` to its HEAD. `run` is
     _run_text (kitlib.git.cmd.run_text, which also takes stdin) and `cat` kitlib.git.batch.cat_file,
-    or stand-ins. RequestError for anything refused (module docstring); nothing is posted."""
+    or stand-ins. `record`, when given, is the {repo, id} the request binds (the hub checks it).
+    RequestError for anything refused (module docstring); nothing is posted."""
     run, cat = run or _run_text, cat or batch.cat_file
     top, why = run(['rev-parse', '--show-toplevel'], checkout)
     if not top:
@@ -194,6 +198,8 @@ def build(checkout, title, files, repo=None, head=None, reason=None, now=None, r
     body = {'repo': repo, 'title': title, 'head': head, 'files': out}
     if reason is not None:
         body['reason'] = reason
+    if record is not None:
+        body['record'] = record
     try:
         ap.new_doc(repo, title, head, out, now or datetime.datetime.now(datetime.timezone.utc),
                    reason)
@@ -206,4 +212,4 @@ def request(client, body):
     """Post the request `body` (build's) for the owner (approvals.request, the agent's route) and
     answer the server's reply: {ok, id, version, ...}. The client's errors propagate."""
     return ap.request(client, body['repo'], body['title'], body['head'], body['files'],
-                      body.get('reason'))
+                      body.get('reason'), record=body.get('record'))

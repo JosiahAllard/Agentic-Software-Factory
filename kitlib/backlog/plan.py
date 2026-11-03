@@ -948,8 +948,8 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     (an `owner` line is added beside the owner's others instead: one per ask, read as AND, so the
     hold ends when the last is met; the same line twice is written once);
     kitlib/backlog/conditions.py names the conditions the Action Hub checks, and an `owner` member
-    takes only an owner event (a to-do or a question). An `until` on `owner` schedules the owner's
-    hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
+    takes only an owner event (a to-do, a question or an approval). An `until` on `owner`
+    schedules the owner's hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
     (refuse_top).
     `reason`, when given, goes into the commit subject and onto one line appended to the body
     (`Blocked on M (date): T`), so `show` says why the record is held; no header key is written
@@ -1316,7 +1316,7 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     # answer drops its own line, and the hold ends when no owner line is left, whatever
     # `owner_ask` cites or `waiting` lists: the unblock-conditions job reads only the lines, so
     # the two writers agree, and a question still open whose park has not run parks the record
-    # again with its own line (kitlib.hubsite.api park_question).
+    # again with its own line (kitlib.hubsite.api park_item).
     owner_lines = [c for m, c in rmod.until_lines(rec) if m == condmod.SEVERAL]
     if state == 'blocked' and 'owner' in rec.all('blocked_on') and owner_lines:
         mine = 'question:%s answered' % qid

@@ -10,6 +10,7 @@ from unittest import mock
 from kitlib import commit as C
 from tests.backlog.helpers import record_text
 from tests.commit import test_commit
+from tests.commit import test_commit_approval as tca
 from tests.commit.test_commit import AGENT, OWNER, LinkedCase
 
 setUpModule = test_commit.setUpModule
@@ -67,7 +68,8 @@ class TheRefusal(NarrowedCase):
         head = self.head()
         code, out = self.commit('move it', 'kit/a/x.py', 'kit/b/x.py')
         self.assertEqual(code, 1, out)
-        self.assertIn('needs kit/b/x.py, held by L-ONE', out)
+        self.assertIn('REFUSED: needs kit/b/x.py (rename of kit/a/x.py), held by L-ONE on kit/l',
+                      out)
         self.assertEqual(self.head(), head)
 
     def test_a_rename_out_of_the_given_part_is_refused_on_its_old_side(self):
@@ -78,7 +80,8 @@ class TheRefusal(NarrowedCase):
         self.move('kit/b/x.py', 'kit/a/x.py')
         code, out = self.commit('move it', 'kit/a/x.py', 'kit/b/x.py')
         self.assertEqual(code, 1, out)
-        self.assertIn('needs kit/b/x.py, held by L-ONE', out)
+        self.assertIn('REFUSED: needs kit/b/x.py (renamed to kit/a/x.py), held by L-ONE on kit/l',
+                      out)
         self.assertNotIn('needs kit/a/x.py', out)
 
     def test_a_path_in_the_split_member_that_neither_record_holds_is_refused(self):
@@ -122,6 +125,63 @@ class WhatPasses(NarrowedCase):
         code, out = self.commit('mine', 'kit/a/x.py')
         self.assertEqual(code, 1, out)
         self.assertIn('REFUSED: C-ONE carries a narrowed: line', out)
+
+
+class WhoCommits(NarrowedCase):
+    """A narrowed-away path is a collision whoever commits it: the owner's own commit and an
+    owner-approved one are checked like any other."""
+
+    def test_an_owner_authored_commit_is_checked(self):
+        self.as_author(OWNER)
+        self.narrowed_pair()
+        self.put('kit/b/x.py', 'x\n')
+        head = self.head()
+        code, out = self.commit('the owner touches theirs', 'kit/b/x.py', owner_authored=True)
+        self.assertEqual(code, 1, out)
+        self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
+        self.assertEqual(self.head(), head)
+
+
+class AnApprovedCommit(NarrowedCase, tca.ApprovalCase):
+
+    def test_an_owner_approved_commit_is_checked_before_anything_is_written(self):
+        self.narrowed_pair()
+        self.approve({'CLAUDE.md': 'new rules\n', 'kit/b/x.py': 'x\n'})
+        head = self.head()
+        code, out = self.approved_commit('kit/b/x.py', 'CLAUDE.md')
+        self.assertEqual(code, 1, out)
+        self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
+        self.assertEqual(self.head(), head)
+        self.assertEqual(self.read('CLAUDE.md'), 'rules\n')
+        self.assertFalse(os.path.exists(os.path.join(self.wt, 'kit', 'b', 'x.py')))
+        self.assert_not_consumed()
+
+
+class AMerge(NarrowedCase, test_commit.MergeCase):
+
+    def setUp(self):
+        super().setUp()
+        self.configure(owner={'email': OWNER, 'agent_emails': [AGENT]},
+                       commit={'merge_fold': True}, backlog={'store': STORE})
+
+    def test_a_path_the_merge_carries_in_is_not_checked(self):
+        # main brings kit/b/m.txt, inside the part given to L-ONE: main's, so it is not refused.
+        self.narrowed_pair()
+        tip, base = self.start_merge(extra=('kit/b/m.txt',))
+        code, out = self.commit('merge main', 'work.txt')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, base])
+        self.assertIn('kit/b/m.txt', out)
+        self.assertNotIn('needs kit/b/m.txt', out)
+
+    def test_a_named_path_in_a_merge_is_checked(self):
+        self.narrowed_pair()
+        self.start_merge(extra=('kit/b/m.txt',))
+        self.put('kit/b/mine.txt', 'x\n')
+        code, out = self.commit('merge main', 'work.txt', 'kit/b/mine.txt')
+        self.assertEqual(code, 1, out)
+        self.assertIn('needs kit/b/mine.txt, held by L-ONE', out)
+        self.assertNotIn('needs kit/b/m.txt', out)
 
 
 class TheImportStaysLazy(unittest.TestCase):

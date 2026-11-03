@@ -1370,15 +1370,56 @@ def worktree_live_store(top, cfg):
     names it. Nothing is caught here: anything else pm_data_live_store raises is a defect, never
     a quiet fall back to the stale ref. The same resolution `-C <pm data> --as <branch>` spells
     out by hand (docs/backlog.md "The store a worktree opens")."""
+    return worktree_store(top, cfg)[0]
+
+
+def worktree_store(top, cfg):
+    """`(live, why)`: `live` is worktree_live_store's answer; `why`, when `live` is None only
+    because the PM data worktree cannot be found or its `.kit.json` read (pm_data_live_store's
+    `why`), says so, else None. A reader that must not take `top`'s own store for the live one
+    in silence (commit.py's narrowed-record check) reads `why`."""
     if cfg.written('backlog', 'store') is not None:
-        return None
+        return None, None
     branch = worktree_branch(top)
     if branch is None:
-        return None
+        return None, None
     pm_root, named, why = pm_data_live_store(top)
-    if pm_root is None or not named or why:
-        return None
-    return pm_root, branch
+    if why:
+        return None, (unreadable_kit_json(pm_root, why) if pm_root else why)
+    if pm_root is None or not named:
+        return None, None
+    return (pm_root, branch), None
+
+
+def open_repo(root):
+    """`(top, cfg, rules)` of the checkout `root` is in; Failure when `root` is no repository or
+    its `.kit.json` cannot be read (the ConfigError's text). opener.open_repo."""
+    from kitlib.config import ConfigError, load as load_config
+    top, why = gitrepo.toplevel(root)
+    if not top:
+        raise Failure(why)
+    try:
+        cfg = load_config(top)
+    except ConfigError as exc:
+        raise Failure(str(exc))
+    section = cfg.section('backlog')
+    return top, cfg, rmod.Rules(section['id_grammar'], section['phases'])
+
+
+def resolve_store(root, open_repo=open_repo):
+    """`(top, cfg, rules, branch, why)`: the checkout whose store a run from `root` opens and
+    its configuration (open_repo's, Failure as there); `branch`, the branch the run acts as when
+    that is the PM data worktree's live store (worktree_live_store), else None; `why`, when the
+    run keeps `root`'s own store only because the PM data worktree cannot be found or read
+    (worktree_store), else None. The one lookup opener.open_store and commit.py's
+    narrowed-record check share (docs/backlog.md "The store a worktree opens")."""
+    top, cfg, rules = open_repo(root)
+    live, why = worktree_store(top, cfg)
+    if live is None:
+        return top, cfg, rules, None, why
+    pm_root, branch = live
+    top, cfg, rules = open_repo(pm_root)
+    return top, cfg, rules, branch, None
 
 
 def worktree_branch(top):

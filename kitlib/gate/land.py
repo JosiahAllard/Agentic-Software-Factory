@@ -367,56 +367,12 @@ def _not_landed(lines):
             for l in lines]
 
 
-def _covers(members, path):
-    """True when a scope member in `members` covers `path`: one's components a prefix of the
-    other's, casefolded (the comparison of kitlib.backlog.scope.members_collide). Only the member
-    is read in the scope grammar; the path is a literal changed path, so a comma or a wildcard
-    character in it is an ordinary character. A member the grammar cannot read, and a path
-    _path_error refuses, cover nothing. Pure."""
-    if _path_error(path):
-        return False
-    have = path.casefold().split('/')
-    for m in members:
-        try:
-            want = scmod.scope_components(m)
-        except scmod.UndecidableScope:
-            continue
-        n = min(len(want), len(have))
-        if want[:n] == have[:n]:
-            return True
-    return False
-
-
-def _area_lead(area, tops):
-    """The area prefix a member of a record carries, `<area>/`, or '' when it carries none: the
-    store shared by repositories (the PM data branch's) writes a member `<area>/<path>`; `area`
-    is None for a record of any other store, and an area that names a top-level entry of the
-    repository (`tops`, casefolded) is a path. Pure."""
-    return area + '/' if area and area.casefold() not in tops else ''
-
-
-def _in_repo(members, area, tops):
-    """`members`, a record's scope, as paths of this repository: under an area prefix
-    (_area_lead) a member loses that first component; every other member is as it is. Pure."""
-    if not _area_lead(area, tops):
-        return list(members)
-    out = []
-    for m in members:
-        head, _, rest = m.partition('/')
-        out.append(rest if rest and head.casefold() == area.casefold() else m)
-    return out
-
-
-def _path_error(path):
-    """None when the scope check can decide `path`, else why not: such a path is outside every
-    scope and left out of the widening command. A comma or a wildcard character is decidable
-    (_unnamed). Pure."""
-    why = scmod.path_shape_error(path, 'path', tab_ok=True, comma_ok=True)
-    if why:
-        return why
-    if path.casefold() == scmod.NONE:
-        return 'a path that reads as the `none` sentinel'
-    return None
+# A changed path against a record's scope: one copy, shared with commit.py's narrowed-record check
+# (scope.covers, area_lead, in_repo, changed_path_error; all pure).
+_covers = scmod.covers
+_area_lead = scmod.area_lead
+_in_repo = scmod.in_repo
+_path_error = scmod.changed_path_error
 
 
 def _unnamed(path):
@@ -522,16 +478,17 @@ class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
     for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
     read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
-    allowed); `narrowed`, the ids held that carry a `narrowed:` line (scope_check refuses their
-    branch's miss)."""
+    allowed); `narrowed`, id -> its `narrowed:` values, for each id held that carries one
+    (scope_check refuses their branch's miss)."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
-        self.narrowed = set()
+        self.narrowed = {}
 
-    def hold(self, rid, members, command, area=None, narrowed=False):
+    def hold(self, rid, members, command, area=None, narrowed=()):
         if narrowed:
-            self.narrowed.add(rid)
+            self.narrowed.setdefault(rid, [])
+            self.narrowed[rid].extend(v for v in narrowed if v not in self.narrowed[rid])
         if rid in self.held:
             self.held[rid][0].extend(m for m in members if m not in self.held[rid][0])
         else:
@@ -1598,14 +1555,40 @@ class Lander(object):
             how = ('widen a record\'s scope first (set checks the new members against every live '
                    'pull\'s scope): %s; or land them on their own branch' % command(*args))
         if found.narrowed:
-            rid = sorted(found.narrowed)[0]
-            how = ('%s was narrowed by a pull (its narrowed: lines name each original member and '
-                   'the other record): a path given to the other record waits until that record '
-                   'lands, then restore the original member with %s; or %s' % (
-                       ', '.join(sorted(found.narrowed)),
-                       command('set', rid, '--scope "<original member>"'), how))
+            how = '%s; or %s' % (self._scope_restore(found), how)
         return '%s changes %d path(s) outside the scopes of the records it holds (%s): %s; %s' % (
             b, len(outside), ', '.join(ids), listed, how)
+
+    @staticmethod
+    def _scope_restore(found):
+        """The miss line's clause for the narrowed records held (found.narrowed): for each, the
+        original members its `narrowed:` lines name and the `set --scope` that restores them,
+        keeping each current member no original member holds (docs/commit.md "A narrowed
+        record")."""
+        parts = []
+        for rid in sorted(found.narrowed):
+            members, command, _area = found.held[rid]
+            lines = [rmod.split_narrowed(v) for v in found.narrowed[rid]]
+            lines = [x for x in lines if x is not None]
+            originals = [m for m, _o, _b in lines]
+            if not originals:
+                parts.append('%s carries a narrowed: line that cannot be read: a lead restores its '
+                             'original member by hand' % rid)
+                continue
+            others = sorted(set(o for _m, o, _b in lines))
+
+            def held_by_original(m):
+                try:
+                    return any(m == o or scmod.strictly_inside(m, o) for o in originals)
+                except scmod.UndecidableScope:
+                    return False
+            keep = originals + [m for m in members
+                                if m != scmod.NONE and not held_by_original(m)]
+            parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
+                         'then restore the original member with %s' % (
+                             rid, ', '.join(originals), ', '.join(others), ', '.join(others),
+                             command('set', rid, *['--scope "%s"' % m for m in keep])))
+        return '; '.join(parts)
 
     def _scope_stores(self, b, t, named, changed):
         """_Held: the records `b` holds in the configured store and the PM data branch's store,
@@ -1681,7 +1664,7 @@ class Lander(object):
         for r in candidates:
             if r.get('state') == 'pulled' and (r.get('pulled_by') == b or r.stem in named):
                 found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None,
-                           bool(r.all('narrowed')))
+                           r.all('narrowed'))
 
     def _scope_last(self, root, rev, rel, rid):
         """The record `rid` as it was before the newest commit reachable from `rev` deleted

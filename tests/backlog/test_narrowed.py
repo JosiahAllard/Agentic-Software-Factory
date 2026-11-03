@@ -105,12 +105,115 @@ class Hits(unittest.TestCase):
         self.assertTrue(refusal[0].startswith('REFUSED: C-ONE carries a narrowed: line'),
                         refusal[0])
 
+    def test_a_refused_rename_side_names_the_other(self):
+        renames = {'kit/b/x.py': ('kit/a/x.py', nmod.RENAMED_FROM),
+                   'kit/a/x.py': ('kit/b/x.py', nmod.RENAMED_TO)}
+        refusal, _ = nmod.hits(pair(), BRANCH, ['kit/a/x.py', 'kit/b/x.py'], RULES,
+                               renames=renames)
+        self.assertEqual(refusal, [
+            'REFUSED: needs kit/b/x.py (rename of kit/a/x.py), held by L-ONE on kit/l (narrowed '
+            'for C-ONE). Stop and report "needs kit/b/x.py, held by L-ONE". Instead: backlog.py '
+            'block C-ONE --on item:L-ONE --reason "needs kit/b/x.py"'])
+        refusal, _ = nmod.hits(pair(), BRANCH, ['kit/b/x.py'], RULES,
+                               renames={'kit/b/x.py': ('kit/a/x.py', nmod.RENAMED_TO)})
+        self.assertIn('needs kit/b/x.py (renamed to kit/a/x.py), held by L-ONE', refusal[0])
+
+    def test_paths_compare_as_the_landing_scope_check_compares_them(self):
+        # One copy: the landing check's comparisons are scope's own.
+        from kitlib.gate import land
+        self.assertIs(land._covers, nmod.scmod.covers)
+        self.assertIs(land._in_repo, nmod.scmod.in_repo)
+        # A path the grammar cannot decide is covered by no member: not refused here (the
+        # landing check lists it as undecidable).
+        self.assertEqual(self.hits(['kit/a/../b/x.py']), ([], []))
+
     def test_an_unreadable_record_is_a_warning_not_a_refusal(self):
         bad = rmod.unreadable('backlog/X-ONE.md', 'X-ONE', 'not utf-8')
         refusal, warnings = self.hits(['tools/x.py'], pair() + [bad])
         self.assertEqual(refusal, [])
         self.assertEqual(len(warnings), 1)
         self.assertIn('X-ONE', warnings[0])
+
+
+class TheAreaPrefix(unittest.TestCase):
+    """The PM data store (shared by repositories) writes a member `<area>/<path>`; the check reads
+    it as the landing check does (scope.in_repo)."""
+
+    def records(self):
+        c = pulled('C-ONE', BRANCH, ['game/src/a/**'], area='game',
+                   narrowed='game/src/** L-ONE kit/l')
+        other = pulled('L-ONE', OTHER, ['game/src/b/**'], area='game')
+        return [c, other]
+
+    def test_an_area_prefixed_member_covers_the_repository_path(self):
+        tops = {'src', 'docs'}
+        refusal, _ = nmod.hits(self.records(), BRANCH, ['src/b/x.py'], RULES, True, tops)
+        self.assertEqual(len(refusal), 1)
+        self.assertIn('needs src/b/x.py, held by L-ONE', refusal[0])
+        self.assertEqual(nmod.hits(self.records(), BRANCH, ['src/a/x.py', 'tools/x.py'], RULES,
+                                   True, tops), ([], []))
+
+    def test_an_area_that_names_a_top_level_entry_is_a_path(self):
+        tops = {'game', 'src'}
+        self.assertEqual(nmod.hits(self.records(), BRANCH, ['src/b/x.py'], RULES, True, tops),
+                         ([], []))
+        refusal, _ = nmod.hits(self.records(), BRANCH, ['game/src/b/x.py'], RULES, True, tops)
+        self.assertEqual(len(refusal), 1)
+
+    def test_another_store_keeps_its_members_as_written(self):
+        self.assertEqual(nmod.hits(self.records(), BRANCH, ['src/b/x.py'], RULES), ([], []))
+
+
+class TheStoreLookup(unittest.TestCase):
+    """read takes the store backlog.py opens (store.resolve_store); a PM data worktree it cannot
+    find or read is a WARNING, never a silent fall back to the worktree's own store."""
+
+    def test_a_pm_data_worktree_that_cannot_be_read_warns(self):
+        why = 'no worktree has the PM data branch pmdata checked out'
+        with mock.patch.object(nmod.gitrepo, 'toplevel', return_value=('/repo', None)), \
+                mock.patch.object(nmod.smod, 'resolve_store',
+                                  return_value=('/repo', None, RULES, None, why)), \
+                mock.patch.object(nmod.smod, 'open_backend',
+                                  side_effect=AssertionError('read the fallback')):
+            refusal, warnings = nmod.check('/repo', ['kit/b/x.py'])
+        self.assertEqual(refusal, [])
+        self.assertEqual(warnings, [nmod.UNREAD % ('Failure: the PM data worktree\'s store cannot '
+                                                   'be opened: %s' % why)])
+
+    def test_worktree_store_says_why_it_kept_the_own_store(self):
+        cfg = mock.Mock()
+        cfg.written.return_value = None
+        smod = nmod.smod
+        with mock.patch.object(smod, 'worktree_branch', return_value='kit/x'):
+            with mock.patch.object(smod, 'pm_data_live_store',
+                                   return_value=(None, None, 'cannot find it')):
+                self.assertEqual(smod.worktree_store('/wt', cfg), (None, 'cannot find it'))
+                self.assertIsNone(smod.worktree_live_store('/wt', cfg))
+            with mock.patch.object(smod, 'pm_data_live_store',
+                                   return_value=('/pm', None, 'bad json')):
+                live, why = smod.worktree_store('/wt', cfg)
+                self.assertIsNone(live)
+                self.assertIn('bad json', why)
+                self.assertIn('/pm', why)
+            with mock.patch.object(smod, 'pm_data_live_store',
+                                   return_value=('/pm', 'branch', None)):
+                self.assertEqual(smod.worktree_store('/wt', cfg), (('/pm', 'kit/x'), None))
+            with mock.patch.object(smod, 'pm_data_live_store', return_value=(None, None, None)):
+                self.assertEqual(smod.worktree_store('/wt', cfg), (None, None))
+
+    def test_the_live_store_is_read_as_shared(self):
+        records = TheAreaPrefix().records()
+        snap = mock.Mock(records=records)
+        backend = mock.Mock()
+        backend.load.return_value = snap
+        with mock.patch.object(nmod.gitrepo, 'toplevel', return_value=('/repo', None)), \
+                mock.patch.object(nmod.smod, 'resolve_store',
+                                  return_value=('/pm', mock.Mock(), RULES, BRANCH, None)), \
+                mock.patch.object(nmod.smod, 'open_backend', return_value=backend), \
+                mock.patch.object(nmod, 'top_entries', return_value={'src'}):
+            refusal, warnings = nmod.check('/repo', ['src/b/x.py'])
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(refusal), 1, refusal)
 
 
 class FailOpen(unittest.TestCase):

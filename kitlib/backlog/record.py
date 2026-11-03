@@ -267,10 +267,11 @@ def split_narrowed(v):
 
 
 def _narrowed(v, rules):
-    """`<original member> <other id> <other branch>`: a pull narrowed this record off its
-    original scope member for the other record, pulled on that branch (docs/commit.md "A
-    narrowed record"). One line per original member; commit.py (kitlib/backlog/narrowed.py) and
-    the landing scope check read them."""
+    """`<original member> <other id> <other branch>`: this record was narrowed off its original
+    scope member for the other record, pulled on that branch (docs/commit.md "A narrowed
+    record"). One line per original member. A lead's `set --narrowed` writes it today (the
+    `set-other` row); the pull will write it once it narrows (KIT-NEXT-NARROW-AUTO S3a).
+    commit.py (kitlib/backlog/narrowed.py) and the landing scope check read them."""
     shape = ('`%s` is not a narrowed line - `<original member> <other id> <other branch>`' % v)
     got = split_narrowed(v)
     if got is None:

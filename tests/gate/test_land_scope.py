@@ -393,18 +393,31 @@ class Warns(ScopeCase):
     # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "Landing", step 4) is
     # refused on a miss even while SCOPE_REFUSES is False: the backstop for a plain git commit.
 
-    def test_a_narrowed_record_s_miss_is_refused(self):
-        before = self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'),
-                           pulled('BAR', by='kit/bar', scope=['b/**'],
-                                  narrowed='kit/** FOO kit/feature'))
-        _, tip = self.branch('feature', {'a/x.py': 'x\n', 'b/y.py': 'y\n'})
+    def test_a_narrowed_record_s_miss_is_refused_naming_its_original_member(self):
+        before = self.seed(pulled('FOO', scope=['src/a/**', 'notes.md'],
+                                  narrowed='src/** BAR kit/bar'),
+                           pulled('BAR', by='kit/bar', scope=['src/b/**'],
+                                  narrowed='src/** FOO kit/feature'))
+        _, tip = self.branch('feature', {'src/a/x.py': 'x\n', 'src/b/y.py': 'y\n'})
         line = self.refused(self.land(tip))
-        self.assertIn('kit/feature changes 1 path(s) %s (FOO): b/y.py; ' % OUTSIDE, line)
-        self.assertIn('FOO was narrowed by a pull (its narrowed: lines name each original member '
-                      'and the other record): a path given to the other record waits until that '
-                      'record lands, then restore the original member with ', line)
-        self.assertIn('set FOO --scope "<original member>"; or widen', line)
+        self.assertIn('kit/feature changes 1 path(s) %s (FOO): src/b/y.py; ' % OUTSIDE, line)
+        # The restore keeps notes.md and drops src/a/**, which the original src/** holds.
+        self.assertIn('; FOO was narrowed off src/** for BAR: a path given to BAR waits until it '
+                      'lands, then restore the original member with ', line)
+        self.assertIn('set FOO --scope "src/**" --scope "notes.md"; or widen', line)
+        self.assertNotIn('<original member>', line)
         self.assertEqual(self.remote_store(), before)        # nothing closed
+
+    def test_every_narrowed_record_held_is_named_with_its_own_restore(self):
+        self.seed(pulled('FOO', scope=['src/a/**'], narrowed='src/** BAR kit/bar'),
+                  pulled('QUX', scope=['lib/a/**'],
+                         narrowed=['lib/** ZED kit/zed', 'doc/** ZED kit/zed']))
+        _, tip = self.branch('feature', {'other.py': 'x\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('FOO was narrowed off src/** for BAR: ', line)
+        self.assertIn('set FOO --scope "src/**"; QUX was narrowed off lib/**, doc/** for ZED: ',
+                      line)
+        self.assertIn('set QUX --scope "lib/**" --scope "doc/**"; or widen', line)
 
     def test_a_narrowed_record_s_branch_in_scope_lands(self):
         self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'))

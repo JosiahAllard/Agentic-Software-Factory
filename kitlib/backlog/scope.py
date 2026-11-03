@@ -197,3 +197,57 @@ def area_from_scope(scopes):
         if s != NONE:
             return s.split('/')[0]
     return NONE
+
+
+# --- a changed path against a record's scope (the landing scope check and commit.py's
+# narrowed-record check share these: kitlib.gate.land, kitlib.backlog.narrowed) ----------------
+
+def changed_path_error(path):
+    """None when a scope can be said to cover the literal changed path `path`, else why not:
+    such a path is covered by no member. A comma or a wildcard character is an ordinary
+    character in a changed path. Pure."""
+    why = path_shape_error(path, 'path', tab_ok=True, comma_ok=True)
+    if why:
+        return why
+    if path.casefold() == NONE:
+        return 'a path that reads as the `none` sentinel'
+    return None
+
+
+def covers(members, path):
+    """True when a scope member in `members` covers the literal changed path `path`: one's
+    components a prefix of the other's, casefolded (members_collide's comparison). Only the
+    member is read in the scope grammar. A member the grammar cannot read, `none`, and a path
+    changed_path_error refuses cover nothing. Pure."""
+    if changed_path_error(path):
+        return False
+    have = path.casefold().split('/')
+    for m in members:
+        try:
+            want = scope_components(m)
+        except UndecidableScope:
+            continue
+        n = min(len(want), len(have))
+        if want[:n] == have[:n]:
+            return True
+    return False
+
+
+def area_lead(area, tops):
+    """The area prefix a member of a record carries, `<area>/`, or '' when it carries none: the
+    store shared by repositories (the PM data branch's) writes a member `<area>/<path>`; `area`
+    is None for a record of any other store, and an area that names a top-level entry of the
+    repository (`tops`, casefolded) is a path. Pure."""
+    return area + '/' if area and area.casefold() not in tops else ''
+
+
+def in_repo(members, area, tops):
+    """`members`, a record's scope, as paths of this repository: under an area prefix
+    (area_lead) a member loses that first component; every other member is as it is. Pure."""
+    if not area_lead(area, tops):
+        return list(members)
+    out = []
+    for m in members:
+        head, _, rest = m.partition('/')
+        out.append(rest if rest and head.casefold() == area.casefold() else m)
+    return out

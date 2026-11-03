@@ -138,10 +138,8 @@ class UserConfigTest(unittest.TestCase):
             self.assertEqual(user.ledger_path(), self.ledger)
 
 
-class RetiredKeyTest(unittest.TestCase):
-    """A home-folder machine config written before a key was removed still loads as the move's
-    source (user.RETIRED, user.home_location): the key is dropped whatever it holds, and never
-    returned. The PM repository's config refuses it (user.DROPPED_KEYS)."""
+class FormerlyRetiredKeyTest(unittest.TestCase):
+    """Keys the machine config once dropped silently refuse as unknown."""
 
     setUp = UserConfigTest.setUp
 
@@ -150,71 +148,16 @@ class RetiredKeyTest(unittest.TestCase):
         with open(os.path.join(self.home, user.DIR_NAME, user.FILE_NAME), 'w', encoding='utf-8') as f:
             f.write(json.dumps(body))
 
-    def read(self):
-        return user.user_config(location=user.home_location(self.home))
+    def test_a_former_retired_key_refuses_as_unknown(self):
+        for key in ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint'):
+            with self.subTest(key=key):
+                self.write({'ledger_path': self.ledger, key: {}})
+                with self.assertRaises(config.ConfigError) as cm:
+                    user.user_config(location=user.home_location(self.home))
+                self.assertIn('unknown key(s) %s (allowed:' % key, str(cm.exception))
 
-    def test_a_retired_key_loads_and_is_not_returned(self):
-        self.assertIn('ledger_refs', user.RETIRED)
-        self.write({'ledger_path': self.ledger,
-                    'ledger_refs': {'repos': {'alpha': {'path': self.home, 'ref': 'origin/main'}},
-                                    'folders': {'notes': self.home}}})
-        got = self.read()
-        self.assertEqual(got['ledger_path'], self.ledger)
-        for key in user.RETIRED:
-            self.assertNotIn(key, got)
-
-    def test_the_retired_standing_delegation_still_loads_and_is_not_returned(self):
-        self.assertIn('standing_delegation', user.RETIRED)
-        self.write({'ledger_path': self.ledger, 'standing_delegation': 'R-' + '9168'})
-        got = self.read()
-        self.assertEqual(got['ledger_path'], self.ledger)
-        self.assertNotIn('standing_delegation', got)
-
-    def test_the_retired_backlog_lint_still_loads_and_is_not_returned(self):
-        self.assertIn('backlog_lint', user.RETIRED)
-        self.assertNotIn('backlog_lint', user.SCHEMA)
-        self.write({'ledger_path': self.ledger, 'backlog_lint': {'repos': {'kit': {'root': self.home}}}})
-        got = self.read()
-        self.assertEqual(got['ledger_path'], self.ledger)
-        self.assertNotIn('backlog_lint', got)
-
-    def test_the_retired_daily_red_ruling_still_loads_and_is_not_returned(self):
-        self.assertIn('daily_red_ruling', user.RETIRED)
-        self.assertNotIn('daily_red_ruling', user.SCHEMA)
-        self.write({'ledger_path': self.ledger, 'daily_red_ruling': 'R-' + '9168'})
-        got = self.read()
-        self.assertEqual(got['ledger_path'], self.ledger)
-        self.assertNotIn('daily_red_ruling', got)
-
-    def test_a_retired_key_loads_whatever_it_holds(self):
-        for value in ('not an object', 7, [], None, {'no_such_key': 1}):
-            self.write({'ledger_path': self.ledger, 'ledger_refs': value})
-            self.assertEqual(self.read()['ledger_path'], self.ledger, repr(value))
-
-    def test_the_pm_repositorys_config_loads_a_retired_key_and_does_not_return_it(self):
-        machine_config(self.home, {'ledger_path': self.ledger, 'ledger_refs': {}}, case=self)
-        self.assertNotIn('ledger_refs', user.user_config(self.home))
-
-    def test_no_schema_key_is_retired_and_no_doc_line_names_one(self):
-        for key in user.RETIRED:
-            self.assertNotIn(key, user.SCHEMA)
-            self.assertFalse([line for line in user.doc_lines() if line.startswith('- `%s`' % key)])
-
-    def test_failing_keys_never_names_a_retired_key(self):
-        self.assertEqual(user.failing_keys({'ledger_refs': 'x', 'ledger_ref': 1}), ['ledger_ref'])
-
-
-class RetiredKeyUnchangedTest(unittest.TestCase):
-    """What the retirement leaves as it was: an unknown key still refuses."""
-
-    setUp = UserConfigTest.setUp
-    write = RetiredKeyTest.write
-
-    def test_an_unknown_key_beside_a_retired_one_still_refuses(self):
-        self.write({'ledger_refs': {}, 'ledger_ref': {}})
-        with self.assertRaises(config.ConfigError) as cm:
-            user.user_config(location=user.home_location(self.home))
-        self.assertIn('unknown key(s) ledger_ref (allowed:', str(cm.exception))
+    def test_failing_keys_names_a_former_retired_key(self):
+        self.assertEqual(user.failing_keys({'ledger_refs': 'x', 'ledger_ref': 1}), ['ledger_ref', 'ledger_refs'])
 
 
 class DocTest(unittest.TestCase):

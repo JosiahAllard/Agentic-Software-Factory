@@ -38,9 +38,7 @@ class TempTree(object):
 # the gate keys the kit gate never implemented (python_tests, python_tests_floor, trailers) dropped.
 ALPHA_SHAPE = {
     'repo': {'name': 'alpha', 'main_branch': 'master'},
-    'backlog': {'store': 'docs/backlog', 'phases': ['L0', 'L1', 'X'], 'id_grammar': 'upper',
-                'ledger_repo': 'alpha', 'retired_docs': ['docs/DECISIONS.md'],
-                'rename_script': 'tools/backlog_rename_priority.py'},
+    'backlog': {'store': 'docs/backlog', 'phases': ['L0', 'L1', 'X'], 'id_grammar': 'upper'},
     'checkout_guard': {'rule_pointer': 'python tools/doc_index.py --find lock'},
     'worktree_remove': {'exempt': {'scratch-workspace': 'kept for a tool'}, 'build_output': ['build', '*.pyc'],
                         'keepers': ['*.jsonl']},
@@ -94,7 +92,7 @@ ALPHA_FILES = {
 
 BETA_SHAPE = {
     'repo': {'name': 'beta'},
-    'backlog': {'id_grammar': 'mixed', 'ledger_repo': 'beta'},
+    'backlog': {'id_grammar': 'mixed'},
     'worktree_remove': {'disposable_untracked': ['*.cs.uid'], 'archive_next_free': True,
                         'branch_template': 'phase/{slug}', 'build_output': ['.godot', '*.pyc']},
     'commit': {'merge_fold': True},

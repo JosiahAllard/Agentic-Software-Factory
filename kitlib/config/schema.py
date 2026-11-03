@@ -368,10 +368,7 @@ MAPS = {
 
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
 # dropped unchecked (not an unknown-key refusal), so an install written before the removal works.
-RETIRED = {'backlog': ('retired_docs', 'rename_script', 'ledger_repo'), 'landing': ('lanes', 'lock_file')}
-# Whole sections no tool reads any more. A config that still carries one loads: the section is
-# dropped unchecked, whatever it holds. Any other unknown section still refuses.
-RETIRED_SECTIONS = ('ruling_cites', 'stubs')
+RETIRED = {'landing': ('lanes', 'lock_file')}
 
 
 def section_type(name):

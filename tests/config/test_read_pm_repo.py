@@ -45,7 +45,7 @@ class KeySetsTest(unittest.TestCase):
 
     def test_every_schema_key_is_in_exactly_one_file_or_dropped(self):
         sets = (user.POLICY_KEYS, user.LOCAL_KEYS, user.DROPPED_KEYS)
-        for key in set(user.SCHEMA) | set(user.RETIRED):
+        for key in set(user.SCHEMA):
             self.assertEqual(sum(key in s for s in sets), 1, key)
         self.assertTrue(set(user.RELATIVE_KEYS) <= set(user.POLICY_KEYS))
 
@@ -83,20 +83,12 @@ class TwoFilesTest(_PmRepo):
             self.refused('conductor_start')
             os.remove(path)
 
-    def test_a_retired_key_in_either_file_loads_and_is_not_returned(self):
+    def test_a_former_retired_key_in_either_file_refuses(self):
         for path in (self.policy, self.local):
-            for key in user.RETIRED:
+            for key in ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint'):
                 self.write(path, {key: {}})
-                self.assertNotIn(key, user.user_config(self.home))
+                self.refused(key)
             os.remove(path)
-        self.write(self.policy, {'standing_delegation': RID, 'daily_red_ruling': RID,
-                                 'guard_mcp_prefix': 'mcp__x'})
-        cfg = user.user_config(self.home)
-        self.assertEqual(cfg['guard_mcp_prefix'], 'mcp__x')
-        self.assertNotIn('standing_delegation', cfg)
-        self.assertNotIn('daily_red_ruling', cfg)
-        self.assertIn('daily_red_ruling', user.DROPPED_KEYS)
-        self.assertNotIn('daily_red_ruling', user.SCHEMA)
 
     def test_pm_data_in_either_file_is_derived_never_read(self):
         for path in (self.policy, self.local):

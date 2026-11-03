@@ -12,8 +12,8 @@ is the implicit default one, the PM data branch's store is used instead
 (kitlib.backlog.at_landing.pm_data_store).
 
 The record is priced in the same call, always at priority 2, priority_by agent: an agent's own
-price never takes priority 1, and no machine config key changes it (the old `daily_red_ruling`
-is retired, kitlib.config.user RETIRED). The PM or the owner promotes it to 1.
+price never takes priority 1, and no machine config key changes it (the removed `daily_red_ruling`
+is refused as an unknown key). The PM or the owner promotes it to 1.
 
 Filing is idempotent. An id the store already holds is not added again, and a record already
 priced is never repriced. Nothing is filed without a prefix. Nothing here prints or exits: file()

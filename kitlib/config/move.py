@@ -9,8 +9,7 @@ The pointer (kitlib.config.pointer) names the PM repository; the move writes its
 - .gitignore, tracked: GITIGNORE;
 - owner-delegations.json (tracked), managed-settings.json and hub/* (git-ignored), byte for byte.
 
-Dropped (DROPPED): ledger_refs, standing_delegation, daily_red_ruling and backlog_lint (retired, user.RETIRED),
-and a pm_data that matches the pointer. A pm_data that does not match is a refusal. Never copied: NEVER_COPIED, named as files to delete.
+Dropped (DROPPED): a pm_data that matches the pointer. A pm_data that does not match is a refusal. Never copied: NEVER_COPIED, named as files to delete.
 
 survey() reads and plans and writes nothing; apply() writes what survey() planned and checks it
 (verify()). Nothing here deletes, commits or pushes: lines() prints the owner's commands. Messages
@@ -32,14 +31,14 @@ from . import pointer, user
 from .types import ConfigError, Obj, is_note, parse_json
 
 # Every machine config key in exactly one of these (tests/config/test_move.py checks the union is
-# user.SCHEMA plus user.RETIRED).
+# user.SCHEMA plus user.DROPPED_KEYS).
 POLICY = ('ledger_path', 'ledger_dir', 'ledger_repos', 'pending_path',
           'guard_rules', 'guard_mark_roots', 'guard_agent_marks',
           'guard_mcp_tools', 'guard_mcp_prefix', 'pm_start', 'coordinator_start', 'pm_watch',
           'machine_lock', 'temp_dir', 'agent_temp_sweep', 'machine_path_folders',
           'plugin')
 LOCAL = ('owner_email', 'scrub_patterns', 'launcher', 'hub', 'dev_drive')
-DROPPED = ('ledger_refs', 'pm_data', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')
+DROPPED = ('pm_data',)
 # The policy keys written relative to the PM repository when they lie inside it.
 RELATIVE_KEYS = ('ledger_dir', 'ledger_path', 'pending_path')
 
@@ -143,8 +142,6 @@ def split(data, pm, plan):
             plan.local[k] = v
         elif k in POLICY:
             plan.policy[k] = v
-        elif k in user.RETIRED:
-            plan.dropped.append((k, 'retired'))
         elif k == 'pm_data':
             why = pm_data_mismatch(v, pm)
             if why:

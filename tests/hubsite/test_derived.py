@@ -112,9 +112,11 @@ class UsageTests(unittest.TestCase):
         got = derived.usage(lambda: self.LINES, CLOCK)
         self.assertTrue(got['available'])
         self.assertEqual(got['accounts'], {
-            '1': {'five': 40, 'week': 71, 'age': 3, 'stale': False, 'missing': False},
+            '1': {'five': 40, 'week': 71, 'age': 3, 'stale': False, 'missing': False,
+                  'five_reset': '2026-01-04T10:00:00+00:00', 'week_reset': '2026-01-05T09:00:00+00:00'},
             '2': {'five': None, 'week': None, 'age': None, 'stale': True, 'missing': True},
-            'codex': {'five': 0, 'week': 12, 'age': 5, 'stale': False, 'missing': False}})
+            'codex': {'five': 0, 'week': 12, 'age': 5, 'stale': False, 'missing': False,
+                      'week_reset': '2026-01-06T09:00:00+00:00'}})
         self.assertEqual(got['as_of'], CLOCK())
 
     def test_stale_missing_and_unknown_readings_reach_the_hub_from_the_files(self):
@@ -129,11 +131,32 @@ class UsageTests(unittest.TestCase):
         h.usage('3', five=(70, NOW - day), week=(None, NOW + day), updated=NOW - datetime.timedelta(minutes=668))
         got = derived.usage(lambda: launcher_usage.report(h.settings, NOW), CLOCK)
         self.assertTrue(got['available'])
-        acc = got['accounts']
+        acc = {n: {k: v for k, v in a.items() if not k.endswith('_reset')} for n, a in got['accounts'].items()}
         self.assertEqual(acc['1'], {'five': None, 'week': 98, 'age': 3735, 'stale': True, 'missing': False})
         self.assertEqual(acc['2'], {'five': 8, 'week': 18, 'age': 0, 'stale': False, 'missing': False})
         self.assertEqual(acc['3'], {'five': 0, 'week': None, 'age': 668, 'stale': True, 'missing': False})
         self.assertEqual(acc['4'], {'five': None, 'week': None, 'age': None, 'stale': True, 'missing': True})
+
+    def test_next_resets_are_the_next_occurrence_after_as_of_in_utc(self):
+        # CLOCK is Fri 2026-01-02 03:04 (+00:00). Sun 10:00 is 2026-01-04, Mon 09:00 is 2026-01-05, Tue 09:00 is 2026-01-06.
+        acc = derived.usage(lambda: self.LINES, CLOCK)['accounts']
+        self.assertEqual((acc['1']['five_reset'], acc['1']['week_reset']),
+                         ('2026-01-04T10:00:00+00:00', '2026-01-05T09:00:00+00:00'))
+        self.assertEqual(acc['codex']['week_reset'], '2026-01-06T09:00:00+00:00')
+
+    def test_a_window_with_no_reset_time_has_none_never_a_guess(self):
+        acc = derived.usage(lambda: self.LINES, CLOCK)['accounts']
+        self.assertNotIn('five_reset', acc['codex'])           # five_hour=reset: no time printed
+        self.assertFalse({'five_reset', 'week_reset'} & set(acc['2']))   # no usage file
+        lines = ['account 3: five_hour=?  seven_day=50% (resets Mon 09:00)  [updated ? min ago]']
+        got = derived.usage(lambda: lines, CLOCK)['accounts']['3']
+        self.assertEqual((got.get('five_reset'), got.get('week_reset')), (None, '2026-01-05T09:00:00+00:00'))
+
+    def test_a_reset_within_the_current_minute_is_not_pushed_a_week_on(self):
+        clock = lambda: '2026-01-02T10:00:30+00:00'       # noqa: E731   Fri 10:00:30
+        lines = ['account 1: five_hour=10% (resets Fri 10:00)  seven_day=1% (resets Fri 10:00)  [updated 1 min ago]']
+        got = derived.usage(lambda: lines, clock)['accounts']['1']
+        self.assertEqual(got['five_reset'], '2026-01-02T10:00:00+00:00')
 
     def test_no_source_is_not_available(self):
         got = derived.usage(None, CLOCK)

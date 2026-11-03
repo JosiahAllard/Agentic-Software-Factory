@@ -15,6 +15,7 @@ each request (and may cache usage and agents for about a minute, which is the ca
   findings(lint_dir)            -> [row]    the maintenance lint's last findings, every repo
   lint_runs(lint_dir)           -> [run]    each repo's last lint run: started, ledger, skip
 """
+import datetime
 import os
 import re
 
@@ -23,6 +24,8 @@ from kitlib.hubsite import skilledits
 from kitlib.maintlint import result as lint_result
 
 _FINGERPRINT = re.compile(r'^[0-9a-f]{16}$')
+_RESET = re.compile(r'(five_hour|seven_day)=\d+%?\s*\(resets (Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d\d):(\d\d)\)')
+_DAYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _FM = re.compile(rb'\A---(\r?\n)(.*?)\r?\n---(?=\r?\n)', re.S)
 
 
@@ -72,6 +75,24 @@ def repos(cfg, stored=(), read=None, toplevel=None, kit_dir=None):
             for k in sorted(names, key=str.lower)]
 
 
+def _next_resets(line, now):
+    """{"five_reset", "week_reset"} (UTC ISO text) for the windows of one usage line that print a
+    reset time. The launcher prints it as `ddd HH:mm` in the server's local time (kitlib.launcher.
+    accounts.short) and only for a reset still to come, so it is the first such moment at or after
+    `now` (an aware datetime, whose offset is the local one), at most a week on. A window that
+    prints none (`?`, `reset`) gets no key: unknown, never a guess."""
+    out = {}
+    floor = now.replace(second=0, microsecond=0)
+    for m in _RESET.finditer(line):
+        ahead = (_DAYS.index(m.group(2)) - floor.weekday()) % 7
+        at = floor.replace(hour=int(m.group(3)), minute=int(m.group(4))) + datetime.timedelta(days=ahead)
+        if at < floor:
+            at += datetime.timedelta(days=7)
+        out['five_reset' if m.group(1) == 'five_hour' else 'week_reset'] = (
+            at.astimezone(datetime.timezone.utc).isoformat())
+    return out
+
+
 def usage(report, clock):
     """Every account's plan usage. `report` is a callable giving the lines kitlib.launcher.usage
     prints (or None when no launcher is configured); `clock` gives the as_of text. Available:
@@ -79,14 +100,26 @@ def usage(report, clock):
     (kitlib.pmwatch.parse_usage: five or week None is unknown, never 0; age is the reading's own
     age in minutes before as_of, so an old file is not shown as read at as_of; an account with no
     usage file is listed, missing); otherwise {"available": False, "reason", "as_of"} (no
-    source, the source raised, or it printed no account line)."""
+    source, the source raised, or it printed no account line). An account whose window prints a
+    reset time also has "five_reset" / "week_reset": that next reset as UTC ISO text, absent when
+    the window prints none."""
     as_of = clock()
     if report is None:
         return {"available": False, "reason": "no launcher usage source configured", "as_of": as_of}
     try:
-        accounts = pmwatch.parse_usage("\n".join(report()))
+        lines = list(report())
+        accounts = pmwatch.parse_usage("\n".join(lines))
     except (OSError, RuntimeError, ValueError) as e:
         return {"available": False, "reason": str(e) or e.__class__.__name__, "as_of": as_of}
+    try:
+        now = datetime.datetime.fromisoformat(as_of)
+    except (TypeError, ValueError):
+        now = None
+    if now is not None and now.tzinfo is not None:
+        for line in lines:
+            m = pmwatch.LINE.search(line)
+            if m and m.group(1) in accounts:
+                accounts[m.group(1)].update(_next_resets(line, now))
     return {"available": True, "accounts": accounts, "as_of": as_of}
 
 

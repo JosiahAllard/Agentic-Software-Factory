@@ -1024,6 +1024,13 @@ still carry; the page files such an item under this repo (case ignored). The ser
 repository and the optional `pm_start.repos`) with the aliases the store holds. An item whose repo is
 `all` is for every repo and shows under each one.
 
+The same list is the `repos` view of `GET /api/v1/snapshot`. Each entry of it also holds `web`, `branch` and `top` when the repository's checkout is on this machine and its
+`origin` remote is a GitHub or GitLab one (`github.com`, `gitlab.com`, a `gitlab.*` host; any other host, no origin or a
+local path, or a GitHub path other than `owner/repo`, gives none of the three; GitLab subgroups are kept and `/-/` ends the project path): `web` is the remote as an `https://host/owner/repo` address (credentials, port,
+query and fragment dropped), `branch` the main branch (`.kit.json` `repo.main_branch`, else `main`, else `master`) and
+`top` the names at the root of that branch, at most 64 (`kitlib/hubsite/repoweb.py`). Git is asked once per checkout and
+again when the config file changes (a linked worktree's is the common git folder's) or after 10 minutes, never per poll; repoweb's own git calls (remote, root names, the config path) are cut off after 5 seconds each. The main branch is found by the backlog's resolver (`kitlib.hubbacklog.main_branch`), with its own longer limits; its result is kept with the rest, so a slow lookup costs at most once per config change or each 600 seconds.
+
 ## schedules/<task>-<repo>
 When one of the kit's automatic tasks runs for one repo, set by the owner. The hub only stores and serves
 it: nothing in the hub runs a task, registers one or starts a process.
@@ -1495,7 +1502,13 @@ A question's context and its options' labels and descriptions show a named docum
 (`target=_blank`, `rel="noopener noreferrer"`, so the tunnel origin is not sent as the Referer): an `http(s)` URL (any other scheme stays text), and a word that is a listed page's id (as a whole word, not inside a path),
 which links to the hub at `#doc=<id>` (the page opens that document's reader once the lists are read). The links are
 made as elements from the parsed URL or the encoded id, never from markup; everything else is a text node. A repo
-file path stays text: the hub serves no file by path and holds no repository's web address.
+file path is a link to the repository's own host, `<web>/blob/<branch>/<path>` (the repos entry's `web` and `branch`,
+above), when the question's repo has them and the path has a `/`, one of the known extensions (`md`, `py`, `json`,
+`html`, `css`, `js`, `txt`, `yml`, `yaml`, `toml`, `ps1`, `sh`), no empty, `.` or `..` part, and a first part that is a
+name in `top`; otherwise it stays text. The link text is the path as written. The hub serves no file by path. Known
+limits: the link is to the main branch, so a file that is not on it (a new file on an unlanded branch) is a 404 there,
+and a private repository asks the viewer to sign in on the host; the hub cannot tell the two cases apart without a
+request to the host.
 
 ## The record page
 One backlog record, read live and never part of the snapshot (`kitlib/hubsite/api.py` `record`,

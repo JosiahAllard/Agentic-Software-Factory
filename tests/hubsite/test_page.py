@@ -5152,8 +5152,8 @@ class PageTextTest(unittest.TestCase):
         self.assertEqual(re.findall(r"<[^>]*\s%s\s*=[^>]*>" % keys, self.markup), ['<link rel="stylesheet" href="hub.css">'])
         self.assertEqual(len(re.findall(r"const link = \(href, label\) => el\(", self.p)), 1)
         self.assertEqual(sorted(re.findall(r"link\(([^;]*?), (?:tok|label)\)", self.p)),
-                         ['"#doc=" + encodeURIComponent(tok)', "u.href"])
-        self.assertEqual(len(re.findall(r"(?<![\w.])link\(", self.p)), 2)
+                         ['"#doc=" + encodeURIComponent(tok)', "repoHref(ent", "u.href"])
+        self.assertEqual(len(re.findall(r"(?<![\w.])link\(", self.p)), 3)
         self.assertNotIn("location.assign", self.script)
         self.assertNotIn("location.replace", self.script)
         self.assertNotIn("window.open", self.script)
@@ -5928,11 +5928,13 @@ class VisualStyleTest(unittest.TestCase):
                 self.assertEqual([c[1] for c in marked], [word], got[key])
 
 
-def link_snap(context, options=None):
-    q = {"status": "open", "title": "which", "context": context, "version": 1, "asked_at": NOW,
-         "options": options or [{"label": "one"}], "recommended": 0}
+def link_snap(context, options=None, repos=None, repo=None):
+    q = {"repo": repo} if repo else {}
+    q.update({"status": "open", "title": "which", "context": context, "version": 1, "asked_at": NOW,
+         "options": options or [{"label": "one"}], "recommended": 0})
     return snapshot(collections={"questions": {"Q-1": q},
-                                 "pages": {"plan-1": {"title": "Plan", "repo": "alpha", "at": NOW, "version": 1}}})
+                                 "pages": {"plan-1": {"title": "Plan", "repo": "alpha", "at": NOW, "version": 1}}},
+                    views={"repos": repos or []})
 
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
@@ -5958,10 +5960,43 @@ class DocLinksTest(unittest.TestCase):
                           ("http://example.test/x", "http://example.test/x", "_blank", "noopener noreferrer"),
                           ("https://example.test/y", "https://example.test/y", "_blank", "noopener noreferrer")])
 
-    def test_a_repo_path_stays_plain_text_for_the_hub_knows_no_web_address(self):
-        got = dom(self.LINKS, link_snap("Edit docs/action-hub.md and kitlib/x.py."))
+    WEB = "https" + "://git.test/o/r"
+    REPO = {"name": "alpha", "aliases": ["a"], "web": WEB, "branch": "main", "top": ["docs", "kitlib", ".claude"]}
+
+    def test_a_repo_path_stays_plain_text_for_a_repo_with_no_web_address(self):
+        got = dom(self.LINKS, link_snap("Edit docs/action-hub.md and kitlib/x.py.", repos=[{"name": "alpha", "aliases": []}], repo="alpha"))
         self.assertEqual(got["links"], [])
         self.assertIn("Edit docs/action-hub.md and kitlib/x.py.", got["shown"])
+        got = dom(self.LINKS, link_snap("Edit docs/action-hub.md."))          # a question with no repo
+        self.assertEqual(got["links"], [])
+
+    def test_a_repo_path_is_a_new_tab_link_to_the_repos_host_in_the_context_and_an_option(self):
+        got = dom(self.LINKS, link_snap("Read docs/gate.md, then (kitlib/a b/c.py).",
+                                        [{"label": "edit .claude/x.md", "description": "see docs/hub-mcp.md."}],
+                                        repos=[self.REPO], repo="a"))
+        self.assertEqual([(l["text"], l["href"], l["target"], l["rel"]) for l in got["links"]],
+                         [("docs/gate.md", self.WEB + "/blob/main/docs/gate.md", "_blank", "noopener noreferrer"),
+                          (".claude/x.md", self.WEB + "/blob/main/.claude/x.md", "_blank", "noopener noreferrer"),
+                          ("docs/hub-mcp.md", self.WEB + "/blob/main/docs/hub-mcp.md", "_blank", "noopener noreferrer")])
+        self.assertIn("Read docs/gate.md, then (kitlib/a b/c.py).", got["shown"])
+
+    def test_a_path_that_is_not_a_repo_file_stays_text(self):
+        ctx = "docs/x.exe docs/../x.md ../docs/x.md /docs/x.md README.md nodir/x.md docs//x.md kitlib/plan-1 docs/x.md/y"
+        got = dom(self.LINKS, link_snap(ctx, repos=[self.REPO], repo="alpha"))
+        self.assertEqual(got["links"], [])
+        self.assertIn(ctx, got["shown"])
+
+    def test_a_web_address_that_is_not_secure_web_or_has_credentials_makes_no_link(self):
+        for bad in ("ftp://git.test/o/r", "https://u:p@git.test/o/r", "javascript:alert(1)", "https://git.test/o/r?x=1", "nonsense"):
+            with self.subTest(web=bad):
+                got = dom(self.LINKS, link_snap("docs/gate.md", repos=[dict(self.REPO, web=bad)], repo="alpha"))
+                self.assertEqual(got["links"], [])
+
+    def test_a_branch_and_a_path_are_encoded_in_the_address(self):
+        got = dom(self.LINKS, link_snap("docs/a%b.md", repos=[dict(self.REPO, branch="rel/1 x")], repo="alpha"))
+        self.assertEqual(got["links"], [])                                    # % is no path character: not matched whole
+        got = dom(self.LINKS, link_snap("docs/a_b.md", repos=[dict(self.REPO, branch="rel/1 x")], repo="alpha"))
+        self.assertEqual([l["href"] for l in got["links"]], [self.WEB + "/blob/rel/1%20x/docs/a_b.md"])
 
     def test_an_unsafe_scheme_or_markup_stays_plain_text(self):
         ctx = 'javascript:alert(1) data:text/html,x ftp://x.test <a href="https://e.test">x</a> <img src=x onerror=alert(1)>'

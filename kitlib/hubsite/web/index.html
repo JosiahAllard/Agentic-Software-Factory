@@ -775,8 +775,12 @@ ul.hist .sch-line{display:block}
   // The verdicts a landing event carries (kitlib.gate.result): only pass is a clean pass; any other, a string this page
   // does not know included, is shown as it is and counts as not clean.
   const LANDING_SAID = { "pass": ["Passed", "ok"], "landed-ungated": ["Landed, not gated", "mid"], "fail": ["Failed", "bad"], "refused": ["Refused", "bad"],
-    "stuck": ["Stuck", "bad"], "busy": ["Busy", "bad"], "usage": ["Usage", "bad"], "error": ["Error", "bad"] };
-  const landingResult = d => LANDING_SAID[d.verdict] || [String(d.verdict || "?"), "bad"];
+    "stuck": ["Stuck", "bad"], "busy": ["Busy", "bad"], "usage": ["Usage", "bad"], "error": ["Error", "bad"], "stopped": ["Stopped", "bad"], "not-run": ["Not run", "bad"] };
+  // The lines the owner has open (by event id, and "<id>:raw" for the raw-event fold): each refresh draws the lines
+  // again, and an open one stays open.
+  const lnOpen = new Set();
+  const keepOpen = (node, key) => { if (lnOpen.has(key)) node.open = true; node.addEventListener("toggle", () => { if (node.open) lnOpen.add(key); else lnOpen.delete(key); }); return node; };
+  const landingResult = d => (Object.prototype.hasOwnProperty.call(LANDING_SAID, d.verdict) && LANDING_SAID[d.verdict]) || [String(d.verdict || "?"), "bad"];
   const landingClean = d => d.verdict === "pass";
   // "1 h ago", "yesterday", "4 d ago": read when the section is drawn, not kept up to date.
   function agoText(iso, now){
@@ -820,7 +824,7 @@ ul.hist .sch-line{display:block}
     const kv = (k, v) => el("p", {class:"kv"}, el("b", {text: k + ": "}), String(v));
     const sum = d.summary ? String(d.summary) : [d.verdict || "?", d.mode].filter(Boolean).join(", ");
     const closed = recs.length ? recs.map(id => title(d.repo, id) ? id + " " + title(d.repo, id) : id).join("; ") : sum;
-    return el("details", {class:"ln", id: "l-" + d.id},
+    return keepOpen(el("details", {class:"ln", id: "l-" + d.id},
       el("summary", {},
         el("span", {class:"br", text: String(d.branch || "(no branch)")}),
         el("span", {class:"cl", text: closed}),
@@ -828,7 +832,7 @@ ul.hist .sch-line{display:block}
       el("div", {class:"raw"},
         kv("Summary", sum), kv("Tip", short(d.tip) || "unknown"), kv("New " + (d.main_branch || "main"), short(d.main) || "unknown"), kv("Gate", d.mode || "unknown"),
         d.deploy ? kv("Deploy", d.deploy) : null,
-        el("details", {class:"rawev"}, el("summary", {text:"Raw event"}), el("pre", {text: JSON.stringify(d, null, 2)}))));
+        keepOpen(el("details", {class:"rawev"}, el("summary", {text:"Raw event"}), el("pre", {text: JSON.stringify(d, null, 2)})), d.id + ":raw"))), d.id);
   }
   function renderLandings(){
     const now = Date.now(), f = state.lf, all = state.landings;
@@ -843,7 +847,7 @@ ul.hist .sch-line{display:block}
     let body;
     // The hub holds the newest LANDINGS_SHOWN landings: a date range that reaches past the oldest of them is said so.
     const oldest = Math.min(...all.map(d => new Date(d.posted_at).getTime()).filter(t => !isNaN(t)));
-    const lo = f.from ? new Date(f.from + "T00:00:00").getTime() : f.range ? now - Number(f.range) * 3600000 : null;
+    const lo = f.from ? new Date(f.from + "T00:00:00").getTime() : f.to ? -Infinity : f.range ? now - Number(f.range) * 3600000 : null;
     const cut = all.length >= LANDINGS_SHOWN && lo != null && lo < oldest ? el("p", {class:"unote", id:"lf-cut", text:"The hub holds only the newest " + LANDINGS_SHOWN + " landings, and this range reaches past the oldest of them."}) : null;
     if (!rows.length) {
       body = el("div", {class:"empty"}, el("strong", {text:"No landings match these filters"}), "Clear a filter to see more.");

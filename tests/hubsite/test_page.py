@@ -5746,6 +5746,46 @@ class TriageViewsTest(unittest.TestCase):
         self.assertEqual(got["revisit_result"], "")                          # filters start fresh on a new visit
         self.assertEqual(len(got["revisit"]), 5)
 
+    def test_landings_to_only_filter_says_the_cap_and_odd_verdicts_do_not_throw(self):
+        import datetime
+        day_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        docs = {"L-%03d" % i: {"repo": "alpha", "branch": "b%d" % i, "tip": "t", "main": "m", "verdict": "pass", "records": [],
+                               "posted_at": day_ago, "version": 1} for i in range(1, 201)}
+        docs["L-201"] = {"repo": "alpha", "branch": "odd", "tip": "t", "main": "m", "verdict": "constructor", "records": [],
+                         "posted_at": day_ago, "version": 1}
+        docs["L-202"] = {"repo": "alpha", "branch": "stopd", "tip": "t", "main": "m", "verdict": "stopped", "records": [],
+                         "posted_at": day_ago, "version": 1}
+        got = dom("""
+            await start();
+            const out = { before: !!$("#lf-cut"), odd: text($("#l-L-201 summary")), stopped: text($("#l-L-202 summary")) };
+            $("#lf-to").value = "2999-01-01"; await fire($("#lf-to"), "change");
+            out.after = !!$("#lf-cut");
+            return out;
+        """, snapshot(collections={"landings": docs}), hash="#landings")
+        self.assertFalse(got["before"])
+        self.assertTrue(got["after"])
+        self.assertIn("constructor", got["odd"])
+        self.assertIn("Stopped", got["stopped"])
+
+    def test_landings_open_lines_stay_open_over_a_redraw_and_the_repo_menu_is_only_for_other_tabs(self):
+        got = dom("""
+            await start();
+            const out = { landings: $("#repo").hidden };
+            const line = $("#l-L-003"), raw = $("#l-L-003 .rawev");
+            line.open = true; await fire(line, "toggle"); raw.open = true; await fire(raw, "toggle");
+            $("#lf-repo").value = "beta"; await fire($("#lf-repo"), "change");
+            $("#lf-repo").value = ""; await fire($("#lf-repo"), "change");
+            out.open = !!$("#l-L-003").open; out.rawOpen = !!$("#l-L-003 .rawev").open; out.other = !!$("#l-L-001").open;
+            await click($("#sec-todo"));
+            out.todo = $("#repo").hidden;
+            return out;
+        """, self.landing_snapshot(), hash="#landings")
+        self.assertTrue(got["landings"])
+        self.assertTrue(got["open"])
+        self.assertTrue(got["rawOpen"])
+        self.assertFalse(got["other"])
+        self.assertFalse(got["todo"])
+
     def test_landings_empty_state_and_the_cap_note(self):
         got = dom("await start(); return text($('#list'));", snapshot(collections={"landings": {}}), hash="#landings")
         self.assertIn("No landings yet", got)

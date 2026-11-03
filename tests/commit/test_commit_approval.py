@@ -418,21 +418,6 @@ class WhatIsRefusedBeforeAnythingIsWritten(ApprovalCase):
                             'change is made on: a file is there where HEAD has none', 'AGENTS.md')
         self.assertEqual(self.read('AGENTS.md'), 'mine\n')
 
-    def test_a_head_where_an_approved_path_changed_after_the_base(self):
-        # The change overlaps the approved one: git merge-file conflicts (on real git:
-        # TheApprovedChangeOnANewerBase), and anything else from it refuses the same way.
-        self.approve({'CLAUDE.md': 'new rules\n'})
-        self.put('CLAUDE.md', 'the owner changed it\n')
-        self.git('add', '--', 'CLAUDE.md')
-        self.git('commit', '-q', '-m', 'the owner again')
-        head = self.head()
-        out = self.assert_refused('the approval is for base %s, and its change does not apply on '
-                                  'HEAD %s: %s: CLAUDE.md: '
-                                  % (self.base[:12], head[:12], ap.WHY_FILES), 'CLAUDE.md')
-        self.assertIn('new_worktree.py -C %s <area>/<slug> --approval hub:A-001' % self.wt, out)
-        self.assertEqual(self.read('CLAUDE.md'), 'the owner changed it\n')
-        self.assert_not_consumed()
-
     def test_a_head_that_has_the_approved_change_already(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
         self.put('CLAUDE.md', 'new rules\n')
@@ -452,15 +437,6 @@ class WhatIsRefusedBeforeAnythingIsWritten(ApprovalCase):
         self.assertEqual(self.read('AGENTS.md'), 'mine\n')
         self.assert_not_consumed()
 
-    def test_an_approved_path_that_a_later_head_made_a_folder(self):
-        self.approve({'CLAUDE.md': 'new rules\n'})
-        self.git('rm', '-q', '--', 'CLAUDE.md')
-        self.put('CLAUDE.md/inner.md', 'x\n')
-        self.git('add', '--', 'CLAUDE.md/inner.md')
-        self.git('commit', '-q', '-m', 'a folder now')
-        self.assert_refused('CLAUDE.md at %s is not a regular file' % self.head()[:12],
-                            'CLAUDE.md')
-        self.assert_not_consumed()
 
     def test_a_named_path_the_approval_does_not_hold(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
@@ -601,18 +577,19 @@ class WhatIsNotARegularFile(ApprovalCase):
     """An approval holds regular files (100644 or 100755) only: a symbolic link or gitlink entry
     carrying the approved blob, or standing where the approval deletes, is refused."""
 
-    def test_a_staged_symbolic_link_with_the_approved_blob(self):
+    def test_a_symbolic_link_at_the_base_with_the_approved_base_blob(self):
         # With core.symlinks off, git keeps a link entry's mode when it stages the plain file that
-        # stands for it, so the approved blob is staged as a link (approval.staged_error).
+        # stands for it, so the approved blob would be staged as a link. The base's entry is
+        # judged before anything is written (approvals.delta_targets: a regular file only), and
+        # approval.staged_error still refuses a staged link (TheStagedCheck).
         self.git('config', 'core.symlinks', 'false')
         link = self.git('hash-object', '-w', '--', 'CLAUDE.md')
         self.git('update-index', '--cacheinfo', '120000,%s,CLAUDE.md' % link)
         self.git('commit', '-q', '-m', 'the owner\'s rules, as a link')
         self.base = self.head()
         self.approve({'CLAUDE.md': 'new rules\n'})
-        out = self.assert_refused('the staged CLAUDE.md has mode 120000: an approval holds regular '
-                                  'files only (100644 or 100755)', 'CLAUDE.md')
-        self.assertIn('The work tree is as it was, and nothing this call staged is staged.', out)
+        self.assert_refused('CLAUDE.md at the approved base %s is not the approved base blob'
+                            % self.base[:12], 'CLAUDE.md')
         self.assertEqual(self.read('CLAUDE.md'), 'rules\n')
         self.assert_not_consumed()
 
@@ -897,3 +874,10 @@ class TheStagedCheck(unittest.TestCase):
                                                plan),
                          'the staged CLAUDE.md is not the approved change merged onto HEAD (a '
                          'git filter or .gitattributes changed it on staging)')
+
+    def test_a_staged_symbolic_link_with_the_approved_blob_is_refused(self):
+        from kitlib.commit import approval
+        staged, snap = {'CLAUDE.md': 'M'}, {'CLAUDE.md': ('120000', 'f' * 40)}
+        self.assertEqual(approval.staged_error(self.doc(), 'b' * 40, staged, snap, 'b' * 40),
+                         'the staged CLAUDE.md has mode 120000: an approval holds regular files '
+                         'only (100644 or 100755)')

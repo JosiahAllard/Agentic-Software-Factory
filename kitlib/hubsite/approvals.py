@@ -48,6 +48,11 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
   cat=None)                       (blob or None, None): what one file's approved change gives
                                   on a parent, or (None, why) (the delta rule, below)
+  delta_content(...)              the same arguments: (bytes or None, None), the content
+                                  itself, or (None, why)
+  delta_targets(checkout, doc, parent, call=None, cat=None)
+                                  ({path: (parent entry, blob, bytes)}, None): what the approval
+                                  gives on the commit `parent`, path by path, or (None, why)
   delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None)
                                   ({path: approved blob}, None) when a commit makes the approved
                                   change on its parent, or (None, why)
@@ -122,7 +127,9 @@ cleanly. B0:p must be the signed base_blob and P:p a regular file; C:p keeps P's
 server verifies the approved blobs for the signed base. A commit on main (as last fetched) that
 carries the approval spends it: a later commit with it is refused.
 
-The same-content rule (docs/commit.md "Owner approval"; the commit step's check): the server's
+The same-content rule, the delta rule's narrower forerunner: commit.py judges by the delta rule
+now (delta_targets), so same_content_error and Verifier.verify_on have no caller in the kit but
+their tests. The server's
 check compares `head` with the signed head, the approved base, exactly, and never reads git. A
 change made on another commit P counts as made on the approved base B when
 same_content_error(checkout, B, P, paths) is None: B is an ancestor of P (`git merge-base
@@ -795,12 +802,23 @@ def delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes
     which must be `approved_blob`'s, so the merge reads the bytes the owner saw. Fails closed on
     any git failure. `call` is kitlib.git.cmd.call and `cat` kitlib.git.batch.cat_file, or
     stand-ins."""
+    data, why = delta_content(checkout, base_blob, parent_blob, approved_blob, approved_bytes,
+                              call=call, cat=cat)
+    if why:
+        return None, why
+    return (None if data is None else blob_id(data)), None
+
+
+def delta_content(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
+                  cat=None):
+    """delta_result with the bytes: (D, None), D the content the approved change gives on the
+    parent (bytes, None for no file), or (None, why). What commit.py writes on a newer HEAD."""
     if approved_blob is not None and not (isinstance(approved_bytes, bytes)
                                           and blob_id(approved_bytes) == approved_blob):
         return None, 'the approved content is not its approved blob'
     if base_blob is None:
         if parent_blob is None or parent_blob == approved_blob:
-            return approved_blob, None
+            return (None if approved_blob is None else approved_bytes), None
         return None, 'the file the approval creates is already at the parent with other content'
     if approved_blob is None:
         if parent_blob is None or parent_blob == base_blob:
@@ -809,7 +827,7 @@ def delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes
     if parent_blob is None:
         return None, 'the file the approval changes is not at the parent'
     if parent_blob in (base_blob, approved_blob):
-        return approved_blob, None
+        return approved_bytes, None
     got, why = (cat or batch.cat_file)([parent_blob, base_blob], checkout)
     if got is None:
         return None, why or 'git could not read the blobs to merge'
@@ -829,7 +847,7 @@ def delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes
     if r.rc != 0:
         return None, ('the approved change does not merge cleanly onto the parent (git '
                       'merge-file exit %s)' % r.rc)
-    return blob_id(r.out), None
+    return bytes(r.out), None
 
 
 def spent(checkout, doc_id, rev, call=None):
@@ -887,26 +905,17 @@ def delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None):
     extra = sorted(p for p in (blobs if isinstance(blobs, dict) else ()) if p not in files)
     if extra:
         return None, '%s: %s is not in the approval' % (WHY_FILES, extra[0])
-    paths, head, call = sorted(files), doc['head'], call or cmd.call
-    found = []
-    for rev in (head, parent, commit):
-        got, why = _entries(checkout, rev, paths, call)
-        if got is None:
-            return None, why
-        found.append(got)
-    at_base, at_parent, at_commit = found
+    call = call or cmd.call
+    targets, why = delta_targets(checkout, doc, parent, call=call, cat=cat)
+    if targets is None:
+        return None, why
+    paths = sorted(files)
+    at_commit, why = _entries(checkout, commit, paths, call)
+    if at_commit is None:
+        return None, why
     for p in paths:
-        base, blob, content = files[p]
-        b, par, c = at_base.get(p), at_parent.get(p), at_commit.get(p)
-        if (b is None) != (base is None) or (b is not None and not _regular(b, base)):
-            return None, '%s: %s at the approved base %s is not the approved base blob' % (
-                WHY_HEAD, p, head[:12])
-        if par is not None and not _regular(par):
-            return None, '%s: %s at %s is not a regular file' % (WHY_FILES, p, parent[:12])
-        want, why = delta_result(checkout, base, None if par is None else par[2], blob, content,
-                                 call=call, cat=cat)
-        if why:
-            return None, '%s: %s: %s' % (WHY_FILES, p, why)
+        par, want, _data = targets[p]
+        c = at_commit.get(p)
         if want is None:                # the approved change leaves no file there
             if c is not None:
                 return None, '%s: %s at %s is not the approved change' % (
@@ -918,6 +927,41 @@ def delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None):
             return None, '%s: %s at %s changes its mode from %s to %s' % (
                 WHY_FILES, p, commit[:12], par[0], c[0])
     return {p: files[p][1] for p in paths}, None
+
+
+def delta_targets(checkout, doc, parent, call=None, cat=None):
+    """({path: (P entry or None, R blob or None, R bytes or None)}, None): what the approved
+    change of `doc` (the hub's snapshot document, not yet verified) gives on the commit `parent`
+    P, path by path, R by delta_content; else (None, why). At the approval's base each approved
+    path must be its base_blob, a regular file (or absent for a new file), and at P a regular
+    file or absent. P's entry is (mode, type, object id). The one reading of the delta rule's
+    base and parent: delta_error judges a commit by it, and commit.py writes R on a newer HEAD."""
+    files = approved_files(doc)
+    if files is None:
+        return None, WHY_BAD
+    paths, head, call = sorted(files), doc['head'], call or cmd.call
+    found = []
+    for rev in (head, parent):
+        got, why = _entries(checkout, rev, paths, call)
+        if got is None:
+            return None, why
+        found.append(got)
+    at_base, at_parent = found
+    out = {}
+    for p in paths:
+        base, blob, content = files[p]
+        b, par = at_base.get(p), at_parent.get(p)
+        if (b is None) != (base is None) or (b is not None and not _regular(b, base)):
+            return None, '%s: %s at the approved base %s is not the approved base blob' % (
+                WHY_HEAD, p, head[:12])
+        if par is not None and not _regular(par):
+            return None, '%s: %s at %s is not a regular file' % (WHY_FILES, p, parent[:12])
+        data, why = delta_content(checkout, base, None if par is None else par[2], blob, content,
+                                  call=call, cat=cat)
+        if why:
+            return None, '%s: %s: %s' % (WHY_FILES, p, why)
+        out[p] = (par, None if data is None else blob_id(data), data)
+    return out, None
 
 
 def _regular(entry, oid=None):

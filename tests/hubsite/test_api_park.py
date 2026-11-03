@@ -3,9 +3,11 @@ the owner until the question is answered), off the request when the server says 
 withdrawal, deletion or rebinding undoes it (unpark_question); POST questions/file parks what
 a failure or a stop left unparked; a class-only question whose refs name a pulled record is
 stored with a warning."""
+import functools
+import threading
 import unittest
 
-from kitlib.hubsite import api
+from kitlib.hubsite import api, serve
 from kitlib.hubsite.api import AGENT, OWNER
 from kitlib.hubsite.store import HubError
 from tests.hubsite.test_api import CLOCK, ApiCase, BindViews
@@ -19,17 +21,26 @@ class ParkViews(BindViews):
 
     def __init__(self):
         BindViews.__init__(self)
-        self.parks, self.unparks, self.fail = [], [], None
+        self.parks, self.unparks, self.fail, self.unpark_fail = [], [], None, None
+        self.during = None          # run inside record_park: a write that races the park
+        self.asks = []              # what record_asks answers
 
     def record_park(self, repo, id, qid, cond, asker):
         self.parks.append((repo, id, qid, cond))
+        if self.during is not None:
+            self.during()
         if self.fail is not None:
             raise self.fail
         return {'lines': [], 'park': 'blocked'}
 
     def record_unpark(self, repo, id, cond):
         self.unparks.append((repo, id, cond))
+        if self.unpark_fail is not None:
+            raise self.unpark_fail
         return {'lines': [], 'dropped': True, 'unblocked': True}
+
+    def record_asks(self):
+        return list(self.asks)
 
     def backlog(self, repo='', state='', fresh=False):
         return [{'repo': 'kit', 'items': [{'id': 'EX-9', 's': 'pulled'},
@@ -114,6 +125,73 @@ class ParkTest(ApiCase):
         self.ok('POST', '/questions/%s/edit' % qid, AGENT,      # a text edit moves nothing
                 {'from': 'pm', 'if_version': self.doc(qid)['version'], 'title': 'u'})
         self.assertEqual((len(self.views.parks), len(self.views.unparks)), (2, 2))
+
+    def line(self, qid, rid='EX-1', parked=True):
+        return {'repo': 'kit', 'id': rid, 'q': qid, 'parked': parked}
+
+    def test_a_delete_whose_unpark_failed_is_logged_and_swept_at_the_next_refile(self):
+        later = []
+        self.api.park_later = lambda doc_id, fn: later.append(fn)
+        qid = self.ask(record=BIND, **{'from': 'pm'})['id']
+        self.assertIsNone(later[0]())                           # parked
+        self.views.unpark_fail = HubError('store', 'C:\\work is busy', '')
+        self.ok('POST', '/questions/%s/delete' % qid, AGENT,
+                {'from': 'pm', 'if_version': self.doc(qid)['version']})
+        self.assertEqual(later[1](), 'record not unparked: store')     # serve logs it
+        self.views.asks = [self.line(qid)]
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual(got['park_failed'], [{'id': qid, 'code': 'store',
+                                               'message': api.UNPARK_FAILED}])
+        self.views.unpark_fail = None
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual((got['unparked'], got['park_failed']),
+                         ([{'id': qid, 'record': BIND, 'unblocked': True}], []))
+        self.assertEqual(self.views.unparks[-1], ('kit', 'EX-1', 'question:%s answered' % qid))
+
+    def test_a_rebind_whose_unpark_failed_is_swept_at_the_next_refile(self):
+        qid = self.ask(record=BIND, **{'from': 'pm'})['id']
+        self.views.unpark_fail = HubError('store', 'C:\\work is busy', '')
+        self.ok('POST', '/questions/%s/edit' % qid, AGENT,
+                {'from': 'pm', 'if_version': self.doc(qid)['version'],
+                 'record': {'repo': 'kit', 'id': 'EX-2'}})
+        self.views.unpark_fail = None
+        self.views.asks = [self.line(qid), self.line(qid, 'EX-2')]
+        before = len(self.views.unparks)
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual(got['unparked'], [{'id': qid, 'record': BIND, 'unblocked': True}])
+        self.assertEqual(self.views.unparks[before:],
+                         [('kit', 'EX-1', 'question:%s answered' % qid)])  # EX-2's line stays
+
+    def test_the_server_logs_a_withdraw_that_failed_off_the_request(self):
+        lines, done = [], threading.Event()
+
+        def log(*a):
+            lines.append(a)
+            done.set()
+        qid = self.ask(record=BIND, **{'from': 'pm'})['id']
+        self.api.park_later = functools.partial(serve._park_later, log)
+        self.views.unpark_fail = HubError('store', 'C:\work is busy', '')
+        self.ok('POST', '/questions/%s/delete' % qid, AGENT,
+                {'from': 'pm', 'if_version': self.doc(qid)['version']})
+        self.assertTrue(done.wait(10))
+        self.assertEqual(lines, [('error', '%s: record not unparked: store' % qid)])
+
+    def test_the_sweep_leaves_a_hand_written_line_on_a_live_question(self):
+        qid = self.ask(record={'repo': 'kit', 'id': 'EX-2'})['id']
+        self.views.asks = [self.line(qid, parked=False), self.line('Q-404', parked=False)]
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual([u['id'] for u in got['unparked']], ['Q-404'])    # a gone question's
+        self.assertEqual(self.ok('POST', '/questions/file', AGENT, {'id': qid})['unparked'], [])
+
+    def test_a_park_whose_mark_was_not_written_is_not_listed_parked(self):
+        self.views.fail = HubError('store', 'C:\\work is busy', '')
+        qid = self.ask(record=BIND)['id']
+        self.views.fail = None
+        self.views.during = lambda: self.store.delete('questions', qid)    # deleted meanwhile
+        self.views.asks = []
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual(got['parked'], [])
+        self.assertEqual([f['id'] for f in got['park_failed']], [qid])
 
     def test_a_class_only_question_naming_a_pulled_record_is_warned_not_refused(self):
         out = self.ask(refs=['kit:EX-9', 'EX-1'], **{'class': 'go'})

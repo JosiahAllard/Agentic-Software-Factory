@@ -240,6 +240,35 @@ def park(root, rid, item_id, cond, asker):
     return {'lines': list(change.lines), 'park': found.get('park')}
 
 
+def asks(root):
+    """The asks the store at `root` waits on: [{id, q, parked}], one per `until: owner
+    question:<q> answered` line of a record still blocked on the owner, `parked` true when the
+    record's body says the hub parked it on q (PARK_REASON). Read with no fetch, as the hub's
+    timed jobs read (kitlib.hubjobs.unblock_conditions open_snapshot); the implicit store holds
+    none. A store that cannot be read is a HubError `store`. For the hub's sweep of lines whose
+    question is gone (kitlib.hubsite.api questions_file)."""
+    from kitlib.backlog import conditions as condmod
+    from kitlib.backlog import record as rmod
+    try:
+        ctx = opener.open_store(root, fetch=False, session=PARK_SESSION)
+        if getattr(ctx.store.backend, 'implicit', False):
+            return []
+        snap = ctx.store.load()
+    except Failure as e:
+        raise HubError('store', str(e), 'repo')
+    out = []
+    for rec in snap.readable:
+        if rec.get('state') != 'blocked' or 'owner' not in rec.all('blocked_on'):
+            continue
+        for member, text in rmod.until_lines(rec):
+            c = condmod.parse(text) if member == 'owner' else None
+            if c is None or c.kind != 'question' or text != 'question:%s answered' % c.target:
+                continue
+            out.append({'id': rec.id, 'q': c.target,
+                        'parked': ('asked as %s on the Action Hub' % c.target) in rec.body})
+    return out
+
+
 def withdraw(root, rid, cond):
     """The ask behind `until: owner <cond>` on `rid` is gone (withdrawn or deleted, or the
     question no longer bound to it): drop that line under Session: hub-park; the last owner line

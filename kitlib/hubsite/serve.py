@@ -608,7 +608,8 @@ class SiteViews(object):
     exists: `backlog_views` for backlog, completed, record, record_template and the record
     writes (record_add, record_edit, record_delete, record_unblock, record_answer, the
     filing of a bound question's answer, and record_park, record_unpark and record_asks, the
-    hub's park of a record on a question bound to it, its undoing, and the lines a sweep reads),
+    hub's park of a record on an ask bound to it (a question, an agent's to-do, a file
+    approval), its undoing, and the lines a sweep reads),
     sources.repos, .agents and .skills
     for theirs. notices, findings, lint_runs, usage and health are always there
     (kitlib.hubsite.derived answers a missing notice or findings folder with none and a missing
@@ -765,8 +766,8 @@ class SiteViews(object):
         self._backlog.reread(name, root)
         return out
 
-    # The hub's own writes as the owner's proxy (Session: hub-park), from a question bound to a
-    # record (kitlib.hubsite.api park_question, unpark_question); no route calls them.
+    # The hub's own writes as the owner's proxy (Session: hub-park), from an ask bound to a
+    # record (kitlib.hubsite.api park_item, unpark_item); no route calls them.
     def _record_park(self, repo, id, qid, cond, asker):
         name, root = self._record_root(repo, id)
         out = recordwrite.park(root, id, qid, cond, asker)
@@ -782,7 +783,7 @@ class SiteViews(object):
         return out
 
     def _record_asks(self):
-        """[{repo, id, q, parked}]: the owner question lines of every configured repository's
+        """[{repo, id, q, kind, parked}]: the owner ask lines of every configured repository's
         store (recordwrite.asks), for the sweep at hub start (api questions_file). A repository
         with no checkout is skipped; one whose store cannot be read is skipped with a log line,
         and the next start reads it again."""
@@ -1229,11 +1230,11 @@ def _file_later(log, doc_id, fn):
 
 
 def _park_later(log, doc_id, fn):
-    """Api.park_later: fn, the park of the record question doc_id is bound to, or its undoing
-    (kitlib.hubsite.api park_question, unpark_question), on a daemon thread of its own, as
-    _file_later: the question route returns before the record's fetch and push. A raise, or the
+    """Api.park_later: fn, the park of the record the ask doc_id is bound to, or its undoing
+    (kitlib.hubsite.api park_item, unpark_item), on a daemon thread of its own, as
+    _file_later: the ask's route returns before the record's fetch and push. A raise, or the
     failure fn answers (a phrase with its code: api._later_said), is an 'error' line of the log;
-    the next hub start makes a park not made, and drops a line whose question is gone or bound
+    the next hub start makes a park not made, and drops a line whose ask is gone or bound
     elsewhere (POST questions/file)."""
     def run():
         try:
@@ -1572,8 +1573,8 @@ class Hub(object):
     def _refile(self):
         """File, once at start, each answer to a bound question that is not filed yet (kitlib.
         hubsite.api file_answer): one a crash or a failure left behind; and park the record of
-        each open bound question not parked yet (api.park_question); a hand-written owner line
-        whose question is gone is logged, never dropped (api._sweep_asks). A failure is logged as a
+        each open bound ask not parked yet (api.park_item: a question, a to-do, an approval);
+        a hand-written owner line whose ask is gone is logged, never dropped (api._sweep_asks). A failure is logged as a
         note, with its code and fixed phrase only, and the PM sees the question pending."""
         try:
             got = self.api.call('POST', _api.BASE + '/questions/file', _api.AGENT, {},

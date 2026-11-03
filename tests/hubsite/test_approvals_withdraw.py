@@ -49,13 +49,23 @@ class WithdrawRouteTest(test_api.ApiCase):
         path, role, body = self.delete(self.seed(), **{'from': 'someone'})
         self.refused('forbidden', 'from', 'POST', path, role, body)
 
-    def test_only_a_pending_approval_is_withdrawn(self):
+    def test_a_decided_approval_is_not_withdrawn(self):
         decided = self.seed(status='approved')
         path, role, body = self.delete(decided)
         self.refused('conflict', 'status', 'POST', path, role, body)
+        # decided, then expired: still the owner's record
+        old = self.NOW - datetime.timedelta(seconds=approvals.APPROVED_TTL_S + 60)
+        lapsed = self.seed(created=old, status='approved')
+        path, role, body = self.delete(lapsed)
+        self.refused('conflict', 'status', 'POST', path, role, body)
+        self.assertIsNotNone(self.store.get('approvals', lapsed))
+
+    def test_an_expired_undecided_approval_is_withdrawn(self):
+        # the PM's ruling: an expiry keeps the record's block, and the withdrawal drops it
         old = self.seed(created=self.NOW - datetime.timedelta(seconds=approvals.PENDING_TTL_S + 60))
         path, role, body = self.delete(old)
-        self.refused('conflict', 'status', 'POST', path, role, body)
+        self.assertEqual(self.ok('POST', path, role, body)['deleted'], True)
+        self.assertIsNone(self.store.get('approvals', old))
 
     def test_the_owner_has_no_route_of_its_own(self):
         path, _role, body = self.delete(self.seed())

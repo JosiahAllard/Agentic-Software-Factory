@@ -1,5 +1,6 @@
 """kitlib.hubsite.recordwrite park and withdraw: the hub as the owner's proxy blocks a record on
-the owner until the question bound to it is answered (Session: hub-park), by the record's state,
+the owner until the ask bound to it ends (a question answered, a to-do done, an approval
+decided; Session: hub-park), by the record's state,
 and drops that line when the ask is withdrawn; several asks are several `owner` lines, read as
 AND."""
 import unittest
@@ -121,16 +122,35 @@ class Park(Case):
                            waiting=['Q-102'])
         self.assertEqual(self.field('FOO', 'state'), ['blocked'])
 
-    def test_asks_lists_the_owner_question_lines_and_which_the_hub_wrote(self):
+    def test_asks_lists_the_owner_ask_lines_and_which_the_hub_wrote(self):
         self.seed(**dict(rec('FOO'), **dict(
             rec('BAR', state='blocked', blocked_on='owner',
                 until='owner question:Q-7 answered', owner_ask='by hand'),
-            **rec('BAZ', state='blocked', blocked_on='live-client',
-                  until='live-client question:Q-8 answered'))))
+            **dict(rec('BAZ', state='blocked', blocked_on='live-client',
+                       until='live-client question:Q-8 answered'), **rec('QUX')))))
         self.park('Q-101')
-        got = sorted(recordwrite.asks(self.repo.root), key=lambda a: a['id'])
-        self.assertEqual(got, [{'id': 'BAR', 'q': 'Q-7', 'parked': False},
-                               {'id': 'FOO', 'q': 'Q-101', 'parked': True}])
+        recordwrite.park(self.repo.root, 'QUX', 'T-5', 'todo:T-5 done', 'kit')
+        recordwrite.park(self.repo.root, 'QUX', 'A-6', 'approval:A-6 decided', 'pm')
+        got = sorted(recordwrite.asks(self.repo.root), key=lambda a: (a['id'], a['q']))
+        self.assertEqual(got, [{'id': 'BAR', 'q': 'Q-7', 'kind': 'question', 'parked': False},
+                               {'id': 'FOO', 'q': 'Q-101', 'kind': 'question', 'parked': True},
+                               {'id': 'QUX', 'q': 'A-6', 'kind': 'approval', 'parked': True},
+                               {'id': 'QUX', 'q': 'T-5', 'kind': 'todo', 'parked': True}])
+
+    def test_a_to_do_and_an_approval_park_as_a_question_does(self):
+        self.seed(**rec('FOO'))
+        out = recordwrite.park(self.repo.root, 'FOO', 'T-5', 'todo:T-5 done', 'kit')
+        self.assertEqual(out['park'], 'blocked')
+        out = recordwrite.park(self.repo.root, 'FOO', 'A-6', 'approval:A-6 decided', 'pm')
+        self.assertEqual(out['park'], 'blocked')
+        self.assertEqual(self.field('FOO', 'until'),
+                         ['owner todo:T-5 done', 'owner approval:A-6 decided'])
+        body = self.read('FOO')['body']
+        self.assertIn('asked as T-5 on the Action Hub by kit', body)
+        self.assertIn('asked as A-6 on the Action Hub by pm', body)
+        out = recordwrite.withdraw(self.repo.root, 'FOO', 'approval:A-6 decided')
+        self.assertEqual((out['dropped'], out['unblocked']), (True, False))
+        self.assertEqual(self.field('FOO', 'until'), ['owner todo:T-5 done'])
 
 
 if __name__ == '__main__':

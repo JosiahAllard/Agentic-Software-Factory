@@ -8,6 +8,8 @@ clears that member (plan.plan_condition_met). The conditions it reads:
 
   todo:T-n done                the hub to-do T-n is done
   question:Q-n answered        the hub question Q-n is answered (filed, logged or done count too)
+  approval:A-n decided         the hub approval A-n is decided: approved, denied or consumed
+                               (DECIDED); a request that expired undecided is never met
   record:<repo>:<ID> closed    record ID is gone from repo's store: a commit removed it (close,
                                retire or delete)
   path:<path> exists|absent    the file or folder is there, or not; <path> is absolute, or starts
@@ -15,8 +17,9 @@ clears that member (plan.plan_condition_met). The conditions it reads:
   plugin:<folder> absent       the plugin export folder <folder> is gone from the export root
 
 Any other text is free text: it is kept, and nothing acts on it (it is cleared by hand, with
-`unblock --on M`). An `owner` member ends only on an owner event, a to-do or a question
-(OWNER_KINDS): any other condition on `owner` is refused at block time, and the job skips one.
+`unblock --on M`). An `owner` member ends only on an owner event, a to-do, a question or an
+approval (OWNER_KINDS): any other condition on `owner` is refused at block time, and the job
+skips one.
 
   split(value)              (member, condition) of an until line; condition '' when it has none
   parse(text)               a Condition, or None when the text is not one of the forms
@@ -24,7 +27,7 @@ Any other text is free text: it is kept, and nothing acts on it (it is cleared b
   owner_error(member, text) None, or why `member` may not end on `text`
   evaluate(cond, readers)   True (met), False (not met) or None (cannot tell); only True acts
   expand(path, environ)     a path's %VAR%s filled from `environ`; None when one is not set
-  cited_ids(text)           the hub ids (Q-n, T-n) a free text cites, each once
+  cited_ids(text)           the hub ids (Q-n, T-n, A-n) a free text cites, each once
   releasable(rec, status, closed)
                             the blocked_on members of `rec` whose `until` end is already met
                             (`next`'s RELEASABLE lines; docs/backlog.md
@@ -37,22 +40,28 @@ import collections
 import os
 import re
 
-KINDS = ('todo', 'question', 'record', 'path', 'plugin')
-OWNER_KINDS = ('todo', 'question')      # the owner's own acts: the only end of an `owner` hold
+KINDS = ('todo', 'question', 'approval', 'record', 'path', 'plugin')
+# the owner's own acts: the only end of an `owner` hold
+OWNER_KINDS = ('todo', 'question', 'approval')
 # The one member that holds an `until` line per ask (each owner question bound to the record, say)
 # instead of one line; its lines read as AND: the hold ends when the last one is met.
 SEVERAL = 'owner'
 # The hub question statuses that hold the owner's answer (kitlib.hubvalidate STATUSES; the same
 # set as audit_check.ANSWERED).
 ANSWERED = ('answered', 'filed', 'logged', 'done')
+# The stored hub approval statuses that hold the owner's decision (kitlib.hubsite.approvals): a
+# request still stored `pending` is not decided, however long ago it expired (the PM's ruling: an
+# expired, undecided approval keeps its hold).
+DECIDED = ('approved', 'denied', 'consumed')
 
 Condition = collections.namedtuple('Condition', 'kind target state')
 
 _VAR = re.compile(r'%([A-Za-z_][A-Za-z0-9_]*)%')
-_CITED = re.compile(r'\b([QT]-[0-9]+)\b')
+_CITED = re.compile(r'\b([QTA]-[0-9]+)\b')
 _FORMS = {
     'todo': re.compile(r'^todo:(T-[0-9]+) (done)$'),
     'question': re.compile(r'^question:(Q-[0-9]+) (answered)$'),
+    'approval': re.compile(r'^approval:(A-[0-9]+) (decided)$'),
     'record': re.compile(r'^record:([A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9.-]*) '
                          r'(closed)$'),
     'path': re.compile(r'^path:(\S(?:.*\S)?) (exists|absent)$'),
@@ -89,7 +98,7 @@ def parse(text):
 
 def owner_error(member, text):
     """None, or why the hold `member` may not end on `text`: an `owner` hold ends only on an
-    owner event, a to-do or a question (OWNER_KINDS)."""
+    owner event, a to-do, a question or an approval (OWNER_KINDS)."""
     kind = kind_of(text)
     if member != 'owner' or kind is None or kind in OWNER_KINDS:
         return None
@@ -120,6 +129,8 @@ def evaluate(cond, readers):
 
       todo_status(tid)            the to-do's status, or None (no such to-do, unreadable)
       question_status(qid)        the question's status, or None
+      approval_status(aid)        the approval's stored status, or None (a readers object
+                                  without it cannot tell an approval)
       record_closed(repo, rid)    True (a commit removed it), False (still there), None
       path_exists(path)           True or False for an absolute path, None when unreadable
       plugin_present(folder)      True or False, None when the export root is not known
@@ -130,6 +141,10 @@ def evaluate(cond, readers):
     if cond.kind == 'question':
         status = readers.question_status(cond.target)
         return None if status is None else status in ANSWERED
+    if cond.kind == 'approval':
+        read = getattr(readers, 'approval_status', None)
+        status = read(cond.target) if callable(read) else None
+        return None if status is None else status in DECIDED
     if cond.kind == 'record':
         repo, _, rid = cond.target.partition(':')
         return readers.record_closed(repo, rid)
@@ -148,16 +163,21 @@ def evaluate(cond, readers):
 # --- releasable holds (`next`) --------------------------------------------------------------------
 
 def cited_ids(text):
-    """The hub ids (`Q-n`, `T-n`) `text` cites, in order, each once."""
+    """The hub ids (`Q-n`, `T-n`, `A-n`) `text` cites, in order, each once."""
     return list(dict.fromkeys(_CITED.findall(text or '')))
 
 
 def _met(hub_id, status):
-    """True when the hub item `hub_id` is answered (a question) or done (a to-do)."""
+    """True when the hub item `hub_id` is answered (a question), done (a to-do) or decided (an
+    approval)."""
     got = status(hub_id)
     if got is None:
         return False
-    return got in ANSWERED if hub_id.startswith('Q-') else got == 'done'
+    if hub_id.startswith('Q-'):
+        return got in ANSWERED
+    if hub_id.startswith('A-'):
+        return got in DECIDED
+    return got == 'done'
 
 
 def _shown(hub_id, status):
@@ -171,7 +191,8 @@ def releasable(rec, status, closed):
       item:X    X is closed: `closed(X)` gives the short sha of the commit that closed it (None:
                 still live, never closed, or cannot tell)
       any other the member's `until` text cites at least one hub id and every one is met: a
-                question answered, filed, logged or done (ANSWERED), a to-do done; an `owner`
+                question answered, filed, logged or done (ANSWERED), a to-do done, an approval
+                decided (DECIDED; `next` reads no approval, so one is never met there); an `owner`
                 hold's several lines (SEVERAL) are read together, so every ask must be met.
                 `status(id)` gives the hub status, or None (unknown, or the hub was not read:
                 never met). A member with no `until` line, or one that cites no id, is not judged.

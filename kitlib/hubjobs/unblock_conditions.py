@@ -19,7 +19,7 @@ one line per ask (conditions.SEVERAL, read as AND): a met line of several drops 
 and the hold stays, with no push (recordwrite.condition_met's "dropped"); its last line clears it.
 
 Never acted on: free text (not one of the forms), a member the record is not blocked on, an
-`owner` member with any condition but a to-do or a question (the owner's own act; the job never
+`owner` member with any condition but a to-do, a question or an approval (the owner's own act; the job never
 clears the owner's hold on its own reading), a condition holding a machine path
 (kitlib.machinepaths: the store refuses it in the unblock's reason), and a condition that cannot
 be told (a hub document, a store or the plugin export root that cannot be read, a path that is
@@ -27,8 +27,15 @@ not on a local drive after its %VAR% expansion or has a `..` part: conditions.ev
 learns of the opened record from coord_restart's backlog wake (a stopped coordinator whose offer
 gained it is restarted); a live one gets no push of its own.
 
-Where each condition is read: a to-do or question, the hub store's document on disk (read only,
-`<store>/todos/<T-n>.json`, `<store>/questions/<Q-n>.json`: the store writes each with
+An `approval:A-n decided` line is met when the approval is approved, denied or consumed
+(conditions.DECIDED). One whose approval expired undecided stays (the record stays blocked) and
+the job pushes the PM `approval-expired` (EXPIRED_EVENT), detail `<repo>:<ID>:<A-n>`, once per
+line per hub run: the memory of what was pushed is not kept, so a hub restart pushes each such
+line once more (a known limit). Withdrawing the approval drops the line (kitlib.hubsite.api).
+
+Where each condition is read: a to-do, question or approval, the hub store's document on disk
+(read only, `<store>/todos/<T-n>.json`, `<store>/questions/<Q-n>.json`,
+`<store>/approvals/<A-n>.json`: the store writes each with
 os.replace, so a read sees a whole document); a record, the named repository's store (closed: gone
 from it, with a commit that removed it: a file missing with no commit is not closed); a path,
 the file system; a plugin folder, the plugin
@@ -49,6 +56,7 @@ from kitlib.hubsite import jobs
 NAME = 'unblock-conditions'
 EVERY_S = 300
 EVENT = 'unblocked'
+EXPIRED_EVENT = 'approval-expired'      # an `approval:` line's approval expired undecided
 NOTE_MAX = 200
 # A path condition is read only on a local drive (a drive letter, a colon, then a slash or a
 # backslash): a UNC path (`\\host\share`) would
@@ -61,8 +69,8 @@ class ConditionsFailed(Exception):
 
 
 class Readers(object):
-    """conditions.evaluate's readers. `hub_store` is the hub store folder (None: to-dos and
-    questions cannot be told), `plugin_root` the plugin export root (None: plugin folders cannot
+    """conditions.evaluate's readers. `hub_store` is the hub store folder (None: to-dos,
+    questions and approvals cannot be told), `plugin_root` the plugin export root (None: plugin folders cannot
     be told), `record_closed(repo, rid)` True, False or None."""
 
     def __init__(self, hub_store, plugin_root, record_closed):
@@ -70,7 +78,7 @@ class Readers(object):
         self.plugin_root = plugin_root
         self.record_closed = record_closed
 
-    def _status(self, coll, doc_id):
+    def _doc(self, coll, doc_id):
         if not self.hub_store:
             return None
         try:
@@ -78,7 +86,11 @@ class Readers(object):
                 doc = json.load(f)
         except (OSError, ValueError):
             return None
-        status = doc.get('status') if isinstance(doc, dict) else None
+        return doc if isinstance(doc, dict) else None
+
+    def _status(self, coll, doc_id):
+        doc = self._doc(coll, doc_id)
+        status = doc.get('status') if doc is not None else None
         return status if isinstance(status, str) else None
 
     def todo_status(self, tid):
@@ -86,6 +98,22 @@ class Readers(object):
 
     def question_status(self, qid):
         return self._status('questions', qid)
+
+    def approval_status(self, aid):
+        """The approval's stored status (conditions.DECIDED ends the hold), or None."""
+        return self._status('approvals', aid)
+
+    def approval_expired(self, aid, now=None):
+        """True when approval `aid` is still stored `pending` and expired undecided
+        (kitlib.hubsite.approvals status_at at `now`, default the current time); its hold stays
+        (the PM's ruling) and the job pushes the PM once (EXPIRED_EVENT)."""
+        doc = self._doc('approvals', aid)
+        if doc is None or doc.get('status') != 'pending':
+            return False
+        import datetime
+        from kitlib.hubsite import approvals
+        when = now or datetime.datetime.now(datetime.timezone.utc)
+        return approvals.status_at(doc, when) == approvals.EXPIRED
 
     def path_exists(self, path):
         r"""True or False for a path on a local drive (conditions.evaluate expands its %VAR%
@@ -162,6 +190,20 @@ class UnblockJob(object):
         self.readers = readers
         self.write = write
         self.snapshot = snapshot or open_snapshot
+        # the (repo, rid, A-n) lines whose expiry this job has pushed: in memory, so a hub
+        # restart pushes each once more while its line stands (a known limit)
+        self.told = set()
+
+    def _expired(self, ctx, readers, repo, rid, cond):
+        """Push the PM once (EXPIRED_EVENT, detail `<repo>:<ID>:<A-n>`) for an `approval:` line
+        whose approval expired undecided: the line stays and the record stays blocked."""
+        c = cond and cond.kind == 'approval'
+        check = getattr(readers, 'approval_expired', None)
+        if not c or not callable(check) or (repo, rid, cond.target) in self.told:
+            return
+        if check(cond.target):
+            self.told.add((repo, rid, cond.target))
+            ctx.event(EXPIRED_EVENT, '%s:%s:%s' % (repo, rid, cond.target))
 
     def __call__(self, ctx):
         from kitlib.backlog import conditions as condmod
@@ -185,7 +227,11 @@ class UnblockJob(object):
                 continue
             for rid, member, cond in watched(snap):
                 count += 1
-                if condmod.evaluate(condmod.parse(cond), readers) is not True:
+                parsed = condmod.parse(cond)
+                met = condmod.evaluate(parsed, readers)
+                if met is False:
+                    self._expired(ctx, readers, repo, rid, parsed)
+                if met is not True:
                     continue
                 try:
                     out = write(root, rid, member, cond)

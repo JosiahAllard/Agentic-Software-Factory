@@ -948,8 +948,8 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     (an `owner` line is added beside the owner's others instead: one per ask, read as AND, so the
     hold ends when the last is met; the same line twice is written once);
     kitlib/backlog/conditions.py names the conditions the Action Hub checks, and an `owner` member
-    takes only an owner event (a to-do or a question). An `until` on `owner` schedules the owner's
-    hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
+    takes only an owner event (a to-do, a question or an approval). An `until` on `owner`
+    schedules the owner's hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
     (refuse_top).
     `reason`, when given, goes into the commit subject and onto one line appended to the body
     (`Blocked on M (date): T`), so `show` says why the record is held; no header key is written

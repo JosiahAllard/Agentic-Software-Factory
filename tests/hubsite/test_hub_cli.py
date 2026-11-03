@@ -1975,6 +1975,15 @@ class RecordArgumentCase(CliCase):
         self.assertEqual([b['record'] for b in self.sent],
                          [{'repo': 'pm', 'id': 'KIT-A:B'}, {'repo': 'kit', 'id': 'EX-1'}])
 
+    def test_an_agents_to_do_sends_its_record(self):
+        code, out, err = self.run_asking('todos', 'add', '--title', 't', '--command', 'x',
+                                         '--from', 'pm', '--record', 'kit:EX-1')
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(self.sent[-1]['record'], {'repo': 'kit', 'id': 'EX-1'})
+        self.assertEqual(self.run_asking('todos', 'add', '--title', 't', '--command', 'x',
+                                         '--from', 'pm')[0], 0)
+        self.assertNotIn('record', self.sent[-1])
+
     def test_no_record_sends_null_and_no_flag_sends_nothing(self):
         code, out, err = self.run_asking('questions', 'edit', 'Q-1000', '--from', 'pm',
                                          '--if-version', '1', '--no-record')

@@ -537,6 +537,16 @@ class Approvals(Case):
             "files": [{"path": "README.md", "base_blob": approvals.blob_id("hello\n"),
                        "content": "a\r\nb\n"}]})
 
+    def test_a_record_is_posted_with_the_request(self):
+        bind = {"repo": "kit", "id": "EX-1"}
+        payload, is_error = self.rpc(self.server(), "hub_approval_request",
+                                     self.args(record=bind))
+        self.assertFalse(is_error, payload)
+        call, = self.ask.calls
+        self.assertEqual(call["body"]["record"], bind)
+        self.rpc(self.server(), "hub_approval_request", self.args())
+        self.assertNotIn("record", self.ask.calls[-1]["body"])
+
     def test_what_the_builder_refuses_never_reaches_the_hub(self):
         said = self.refused("files", self.args(files=[
             {"path": "README.md", "content_file": self.content(b"hello\n")}]))
@@ -632,6 +642,19 @@ class Creator(Case):
         self.assertNotIn("records: pm", said["description"])
         self.assertIn("null unbinds",
                       srv.TOOLS["hub_question_edit"][1]["properties"]["record"]["description"])
+
+    def test_an_agents_to_do_takes_a_record_as_given_and_its_edit_takes_none(self):
+        bind = {"repo": "kit", "id": "EX-1"}
+        payload, is_error = self.rpc(self.server(), "hub_todo_add",
+                                     {"title": "t", "commands": ["x"], "record": bind})
+        self.assertFalse(is_error, payload)
+        self.assertEqual(self.ask.calls[-1]["body"]["record"], bind)
+        for name, cond in (("hub_todo_add", "todo:T-n done"),
+                           ("hub_approval_request", "approval:A-n decided")):
+            said = srv.TOOLS[name][1]["properties"]["record"]
+            self.assertEqual((said["type"], said["required"]), ("object", ["repo", "id"]))
+            self.assertIn("until %s" % cond, said["description"])
+        self.assertNotIn("record", srv.TOOLS["hub_todo_edit"][1]["properties"])
 
     def test_a_class_and_unfiled_are_passed_to_the_hub_as_given(self):
         said = srv.TOOLS["hub_ask"][1]["properties"]["class"]

@@ -143,11 +143,13 @@ the server alone decides what a role may do.
                                                      `ANSWERED Q-1 <label>`
   hub.py todos [--status S] [--repo R]              `T-1 open [repo] title` for each
   hub.py todos add --title T [--detail D] [--command C ...] [--steps F] [--repo R]
-        [--refs ID ...] [--urgent] [--from NAME | --owner]
+        [--refs ID ...] [--urgent] [--from NAME [--record REPO:ID] | --owner]
                                                      `ADDED T-2`; --owner: the owner's own to-do;
                                                      --steps F: a UTF-8 JSON file holding the
                                                      list of steps the hub makes into commands
-                                                     (docs/hub-mcp.md "To-do steps")
+                                                     (docs/hub-mcp.md "To-do steps"); --record:
+                                                     the record waits on the owner until the
+                                                     to-do is done (the hub parks it)
   hub.py todos done T-1 [--undo] [--if-version V]   (owner) `DONE T-1`, `REOPENED T-1`
   hub.py todos ack T-1                              `ACKED T-1`
   hub.py todos edit T-1 --from NAME --if-version V [--title T] [--detail D] [--command C ...]
@@ -186,17 +188,21 @@ the server alone decides what a role may do.
   hub.py approvals show A-1                         its status, repo, head, title and reason,
                                                      then `<path> <base_blob> -> <blob>` per file
   hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...] [--checkout DIR] [--repo R]
-        [--head SHA] [--reason TEXT]                 `REQUESTED A-001`: asks the owner to approve
+        [--head SHA] [--reason TEXT] [--record REPO:ID]
+                                                     `REQUESTED A-001`: asks the owner to approve
                                                      writing each PATH (relative to the repo top)
                                                      as CONTENT_FILE's exact UTF-8 bytes; its base
                                                      is PATH's blob at --head (default: HEAD of
                                                      the checkout DIR, default .), none for a new
                                                      file; --repo defaults to DIR's origin. It only
-                                                     asks: no delete, no --from (kitlib.hubapprove)
+                                                     asks: no delete, no --from (kitlib.hubapprove);
+                                                     --record: the record waits on the owner until
+                                                     the request is decided (the hub parks it)
   hub.py approvals withdraw A-1 --from KEY --if-version V    `WITHDRAWN A-1`
                                                      the requester takes back a request still
-                                                     pending (KEY is pm: approvals store no from);
-                                                     a decided or expired one is refused
+                                                     undecided, expired or not (KEY is pm:
+                                                     approvals store no from); a decided one is
+                                                     refused; its record's line is dropped
   hub.py handoffs [--from KEY]                      `C-1 restart from=KEY at=TIME PATH`: each
                                                      session's newest hand-off record, or KEY's
                                                      (docs/action-hub.md "handoffs/C-NNN")
@@ -612,6 +618,9 @@ def _client_verbs(sub):
     who = x.add_mutually_exclusive_group()
     who.add_argument('--from', dest='who', metavar='NAME')
     who.add_argument('--owner', action='store_true', help="the owner's own to-do")
+    x.add_argument('--record', type=_record, metavar='REPO:ID',
+                   help='the backlog record that waits on this to-do: the hub parks it until '
+                        "the to-do is done (an agent's to-do only; checked by the hub)")
     x = _leaf(t, 'done', 'mark a to-do done (the owner)')
     x.add_argument('id')
     x.add_argument('--undo', action='store_true')
@@ -737,7 +746,10 @@ def _client_verbs(sub):
     _repo(y)
     y.add_argument('--head', metavar='SHA', help="the base commit (default: the checkout's HEAD)")
     y.add_argument('--reason')
-    _creator(_leaf(x, 'withdraw', 'take back a request still pending'), 'KEY')
+    y.add_argument('--record', type=_record, metavar='REPO:ID',
+                   help='the backlog record that waits on this request: the hub parks it until '
+                        'the owner decides (checked by the hub)')
+    _creator(_leaf(x, 'withdraw', 'take back a request still undecided'), 'KEY')
 
     x = _asks(sub.add_parser('pending', help='the owner input the PM has not handled'))
     x.add_argument('--for', dest='for_key', metavar='KEY',
@@ -1329,7 +1341,8 @@ def _todos(a, stop):
     hub = _hub(a)
     if a.sub == 'add':
         body = _body(title=a.title, detail=a.detail, commands=a.commands,
-                     repo=getattr(a, 'repo', None), refs=a.refs, urgent=a.urgent)
+                     repo=getattr(a, 'repo', None), refs=a.refs, urgent=a.urgent,
+                     record=a.record)
         if a.steps_file:
             body['steps'] = _json_of(a.steps_file, 'steps')
         if a.who:
@@ -1512,7 +1525,8 @@ def _approvals(a, stop):
     if a.sub == 'add':
         try:
             body = hubapprove.build(a.checkout, a.title, [tuple(f) for f in a.files],
-                                    repo=getattr(a, 'repo', None), head=a.head, reason=a.reason)
+                                    repo=getattr(a, 'repo', None), head=a.head, reason=a.reason,
+                                    record=a.record)
         except hubapprove.RequestError as e:
             raise serve.ServeError(e.message)
         got = hubapprove.request(_hub(a), body)

@@ -20,7 +20,6 @@ docs/backlog.md).
 `f_<field>`, `old`, `new`...).
 """
 import kitlib.config as kconfig
-from kitlib.config import ConfigError, load as load_config
 from kitlib.config.types import is_note
 from kitlib.git import repo as gitrepo
 
@@ -39,16 +38,7 @@ WRITES = ('add', 'set', 'block', 'unblock', 'pull', 'release', 'close', 'retire'
 
 
 def open_repo(root):
-    top, why = gitrepo.toplevel(root)
-    if not top:
-        raise Failure(why)
-    try:
-        cfg = load_config(top)
-    except ConfigError as exc:
-        raise Failure(str(exc))
-    section = cfg.section('backlog')
-    rules = rmod.Rules(section['id_grammar'], section['phases'])
-    return top, cfg, rules
+    return smod.open_repo(root)
 
 
 def open_store(root, fetch=True, session=None, branch=None):
@@ -56,12 +46,9 @@ def open_store(root, fetch=True, session=None, branch=None):
     `.kit.json` names no store opens the live store in its repository's PM data worktree, acting
     as its own checked-out branch unless `branch` (`--as`) names one (store.worktree_live_store):
     `-C <worktree>` then reads and writes what `-C <pm data> --as <its branch>` does."""
-    top, cfg, rules = open_repo(root)
-    live = smod.worktree_live_store(top, cfg)
-    if live is not None:
-        pm_root, own = live
-        top, cfg, rules = open_repo(pm_root)
-        branch = branch or own
+    # `why` (the PM data worktree unread) is the write's to refuse (default_store_refusal).
+    top, cfg, rules, own, _why = smod.resolve_store(root, open_repo)
+    branch = branch or own
     section = cfg.section('backlog')
     backend = smod.open_backend(top, cfg, fetch=fetch)
     store = smod.Store(backend, rules, session=session)

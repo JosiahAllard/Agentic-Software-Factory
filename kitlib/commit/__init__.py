@@ -1339,6 +1339,14 @@ def _commit(req, lines):
                     'so it would make an empty root commit. Nothing was committed.')
     if foreign:
         raise _Stop(REFUSED, foreign_refusal(foreign, merge_why, len(heads) == 1))
+    # A path given to another record by a narrowing pull (docs/commit.md "A narrowed record"):
+    # every named path, both sides of a rename included; merge-owned paths are main's, unchecked.
+    # Imported here: kitlib.backlog is heavy, and most commits hold no narrowed record.
+    from kitlib.backlog import narrowed as narrowmod
+    refusal, warnings = narrowmod.check(root, sorted(named))
+    lines.extend(warnings)
+    if refusal:
+        raise _Stop(REFUSED, *(refusal + ['Nothing was committed.']))
     if hub:
         hub = _approval_before_write(root, hub, paths, status_before)
     approved = canonical_approved(rules, req.owner_approved, paths)

@@ -390,6 +390,73 @@ class Warns(ScopeCase):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
 
+    # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "Landing", step 4) is
+    # refused on a miss even while SCOPE_REFUSES is False: the backstop for a plain git commit.
+
+    def test_a_narrowed_record_s_miss_is_refused_naming_its_original_member(self):
+        before = self.seed(pulled('FOO', scope=['src/a/**', 'notes.md'],
+                                  narrowed='src/** BAR kit/bar'),
+                           pulled('BAR', by='kit/bar', scope=['src/b/**'],
+                                  narrowed='src/** FOO kit/feature'))
+        _, tip = self.branch('feature', {'src/a/x.py': 'x\n', 'src/b/y.py': 'y\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('kit/feature changes 1 path(s) %s (FOO): src/b/y.py; ' % OUTSIDE, line)
+        # The restore keeps notes.md and drops src/a/**, which the original src/** holds.
+        self.assertIn('; FOO was narrowed off src/** for BAR: a path given to BAR waits until it '
+                      'lands, then restore the original member with ', line)
+        self.assertIn('set FOO --scope "src/**" --scope "notes.md" --unset narrowed; or widen',
+                      line)
+        self.assertNotIn('<original member>', line)
+        self.assertEqual(self.remote_store(), before)        # nothing closed
+
+    def test_every_narrowed_record_held_is_named_with_its_own_restore(self):
+        self.seed(pulled('FOO', scope=['src/a/**'], narrowed='src/** BAR kit/bar'),
+                  pulled('QUX', scope=['lib/a/**'],
+                         narrowed=['lib/** ZED kit/zed', 'doc/** ZED kit/zed']))
+        _, tip = self.branch('feature', {'other.py': 'x\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('FOO was narrowed off src/** for BAR: ', line)
+        self.assertIn('set FOO --scope "src/**" --unset narrowed; QUX was narrowed off lib/**, '
+                      'doc/** for ZED: ', line)
+        self.assertIn('set QUX --scope "lib/**" --scope "doc/**" --unset narrowed; or widen', line)
+
+    def test_the_restore_keeps_a_line_it_cannot_read_as_next_s_restore_does(self):
+        self.seed(pulled('FOO', scope=['src/a/**'], narrowed=['src/** BAR kit/bar', 'broken']))
+        _, tip = self.branch('feature', {'other.py': 'x\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('set FOO --scope "src/**" --narrowed "broken"; or widen', line)
+
+    def test_a_narrowed_record_s_branch_in_scope_lands(self):
+        self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'))
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
+    def test_an_unread_store_still_only_warns(self):
+        self.seed(pulled('FOO', scope=['a/**']), {'BAD': 'not a header line\n'})
+        _, tip = self.branch('feature', {'b.py': 'x\n'})
+        self.assert_warned(self.land(tip), 'cannot read the backlog store to check')
+
+    def test_a_narrowed_record_s_miss_is_refused_beside_an_unreadable_record(self):
+        # The bad record may be one the branch holds, but the readable narrowed one still names
+        # a part given to BAR: a plain git commit into it is refused, not only warned.
+        before = self.seed(pulled('FOO', scope=['src/a/**'], narrowed='src/** BAR kit/bar'),
+                           pulled('BAR', by='kit/bar', scope=['src/b/**']),
+                           {'BAD': 'not a header line\n'})
+        _, tip = self.branch('feature', {'src/a/x.py': 'x\n', 'src/b/y.py': 'y\n'})
+        line = self.refused(self.land(tip))
+        self.assertIn('kit/feature changes 1 path(s) %s (FOO): src/b/y.py; ' % OUTSIDE, line)
+        self.assertIn('FOO was narrowed off src/** for BAR: ', line)
+        self.assertIn('; or land them on their own branch; the store also held a record it could '
+                      'not read, so a path in that record\'s scope may be counted outside: ', line)
+        self.assertIn('1 record(s) unreadable (BAD)', line)
+        self.assertEqual(self.remote_store(), before)
+
+    def test_a_narrowed_record_beside_an_unreadable_one_lands_in_scope(self):
+        self.seed(pulled('FOO', scope=['a/**'], narrowed='kit/** BAR kit/bar'),
+                  {'BAD': 'not a header line\n'})
+        _, tip = self.branch('feature', {'a/x.py': 'x\n'})
+        self.assertEqual(self.scope_lines(self.landed(self.land(tip))), [])
+
 
 def delete_on_branch(case, name, paths):
     """The tip of branch kit/<name> after one commit deleting `paths`."""

@@ -56,9 +56,10 @@ GET snapshot carries `strong`: true only on the strong owner's call (Request.str
 shows Approve and Deny as usable; the decide route checks the role itself all the same.
 
 Pages. POST pages (AGENT) publishes a page: the card `pages/<id>` and its body `page_html/<id>`.
-The body is {id, title, html, repo?, from?, summary?, refs?, if_version?}. The id is the
-caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>` with no
-letter or digit either side, anywhere, so a ref that names a page is never read as an item);
+The body is {id, title, html, repo?, from?, summary?, refs?, kind?, folder?, if_version?}. The
+id is the caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>`
+with no letter or digit either side, anywhere, so a ref that names a page is never read as an
+item);
 html is judged by kitlib.hubsite.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
 outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
 nothing written. Publishing over a page takes the card's `if_version`; without it, or with
@@ -68,10 +69,15 @@ both, and with the same pin
 it is `conflict` with nothing written. The body is put first and the card second, each pinned to
 the version read (0: not there yet), so a card never names a missing body; a card write that
 fails after its body leaves an orphan body, which kitlib.hubvalidate warns of and the next
-publish overwrites. The card carries title, repo, summary, refs, from (an agent's name, as a
-to-do's), `at` and `bytes`. GET pages lists the cards; GET pages/{id} gives {ok, id, html,
-version} of the body. GET snapshot leaves `page_html` out: the Docs tab reads a body when it is
-opened. POST pages/{id}/delete (OWNER, if_version optional) deletes the card, then the body; a
+publish overwrites. The card carries title, repo, summary, refs, kind, folder (each text, kind
+and folder optional), from (an agent's name, as a to-do's), `at` and `bytes`. POST
+pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folder?, repo?,
+if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
+stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
+kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
+GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out:
+the Docs tab reads a body when it is opened. POST pages/{id}/delete (OWNER, if_version
+optional) deletes the card, then the body; a
 body delete that fails leaves the card deleted and the body an orphan, as above. One process
 lock is enough: Store.open lets one process write a store (`_store.lock`).
 
@@ -2856,9 +2862,9 @@ def pages_list(api, req):
 
 
 def pages_publish(api, req):
-    b = _fields(req, ('id', 'title', 'html', 'repo', 'from', 'summary', 'refs', 'if_version'),
-                required=('id', 'title', 'html'))
-    for name in ('id', 'title', 'html', 'repo', 'from', 'summary'):
+    b = _fields(req, ('id', 'title', 'html', 'repo', 'from', 'summary', 'refs', 'kind', 'folder',
+                      'if_version'), required=('id', 'title', 'html'))
+    for name in ('id', 'title', 'html', 'repo', 'from', 'summary', 'kind', 'folder'):
         _text(b, name)
     pin = _pin(b)
     doc_id = b['id']
@@ -2892,7 +2898,10 @@ def _pages_write(api, req, b, doc_id, pin):
         raise HubError('conflict', 'there is no pages/%s at version %d: it is not there'
                        % (doc_id, pin), 'if_version')
     size = len(b['html'].encode('utf-8'))
-    fields = {k: b[k] for k in ('title', 'repo', 'summary', 'refs') if k in b}
+    fields = {k: b[k] for k in ('title', 'repo', 'summary', 'refs', 'kind', 'folder') if k in b}
+    for k in ('kind', 'folder'):        # put replaces the card: keep what place set ("Pages")
+        if k not in fields and card is not None and card.get(k) is not None:
+            fields[k] = card[k]
     fields.update({'from': _agent_from(b.get('from') or ''), 'at': api.clock(), 'bytes': size,
                    'via': _via(req)})
     # the body first, each write pinned to what was read under the lock: a card never names a
@@ -2901,6 +2910,25 @@ def _pages_write(api, req, b, doc_id, pin):
                           if_version=_version(body) if body is not None else 0)
     r = api.store.put('pages', doc_id, fields, if_version=_version(card) if card is not None else 0)
     return api.written(r, {'bytes': size, 'html_version': wrote.version})
+
+
+PAGE_PLACE_FIELDS = ('kind', 'folder', 'repo')
+
+
+def pages_place(api, req):
+    """Sets a card's kind, folder and repo, pinned by if_version; the body is never written
+    ("Pages")."""
+    b = _fields(req, PAGE_PLACE_FIELDS + ('if_version',), blank=PAGE_PLACE_FIELDS)
+    _pin(b, required=True)
+    for name in PAGE_PLACE_FIELDS:
+        _text(b, name)
+    changes = {k: b[k] for k in PAGE_PLACE_FIELDS if k in b}
+    if not changes:
+        raise _invalid('give at least one of %s to change' % ', '.join(PAGE_PLACE_FIELDS), 'body')
+    doc_id = req.params['id']
+    with PAGES_LOCK:        # no publish rewrites the card between this read and the write
+        d = api.doc('pages', doc_id, b)
+        return api.change('pages', doc_id, d, changes, req)
 
 
 def pages_get(api, req):
@@ -3742,6 +3770,7 @@ ROUTES = (
     _r('POST', '/pages', AGENT, pages_publish),
     _r('GET', '/pages/{id}', ANY, pages_get),
     _r('POST', '/pages/{id}/delete', OWNER, pages_delete),
+    _r('POST', '/pages/{id}/place', ANY, pages_place),
     _r('GET', '/schedules', ANY, schedules_list),
     _r('POST', '/schedules', OWNER, schedules_set),
     _r('POST', '/approvals', AGENT, approvals_add),

@@ -161,6 +161,108 @@ class ServedTest(httpfix.ListenerCase):
         self.assertEqual(get(lis.port, BASE + "/pages/plan-1", token=self.owner).status, 404)
 
 
+class PlaceTest(httpfix.ListenerCase):
+    """A page card's stored kind and folder (POST pages, POST pages/{id}/place): set at publish
+    or later by place, which changes the card only and is pinned by if_version."""
+
+    def setUp(self):
+        httpfix.ListenerCase.setUp(self)
+        self.lis = self.listener(static_dir=serve.STATIC_DIR)
+
+    def publish(self, **kw):
+        body = dict({"id": "plan-1", "title": "The plan", "html": "<p>body-mark</p>"}, **kw)
+        r = post(self.lis.port, BASE + "/pages", body, token=self.agent)
+        self.assertEqual(r.status, 200, r.body)
+        return r.json()
+
+    def card(self):
+        items = get(self.lis.port, BASE + "/pages", token=self.owner).json()["items"]
+        self.assertEqual(len(items), 1, items)
+        return items[0]
+
+    def place(self, body, token=None):
+        return post(self.lis.port, BASE + "/pages/plan-1/place", body, token=token or self.agent)
+
+    def test_a_publish_with_a_kind_and_folder_lists_them(self):
+        self.publish(kind="plan", folder="hub/docs")
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"]), ("plan", "hub/docs"))
+
+    def test_a_publish_without_them_still_works(self):
+        self.publish()
+        card = self.card()
+        self.assertNotIn("kind", card)
+        self.assertNotIn("folder", card)
+
+    def test_a_publish_with_a_kind_that_is_not_text_is_invalid(self):
+        for name in ("kind", "folder"):
+            with self.subTest(name=name):
+                r = post(self.lis.port, BASE + "/pages", {"id": "plan-1", "title": "t",
+                                                          "html": "<p>x</p>", name: 3},
+                         token=self.agent)
+                self.assertEqual((r.status, r.code(), r.json()["error"]["field"]),
+                                 (400, "invalid", name))
+        self.assertEqual(get(self.lis.port, BASE + "/pages", token=self.owner).json()["items"], [])
+
+    def test_place_sets_kind_folder_and_repo_and_leaves_the_body(self):
+        made = self.publish(repo="old")
+        was = self.card()
+        r = self.place({"kind": "spec", "folder": "hub/docs", "repo": "kit", "if_version": 1})
+        self.assertEqual(r.status, 200, r.body)
+        self.assertEqual(r.json()["version"], 2)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"], card["repo"]), ("spec", "hub/docs", "kit"))
+        for name in ("title", "at", "bytes", "from"):       # what the publish wrote stays
+            self.assertEqual(card[name], was[name], name)
+        body = get(self.lis.port, BASE + "/pages/plan-1", token=self.owner).json()
+        self.assertEqual((body["html"], body["version"]), ("<p>body-mark</p>", made["html_version"]))
+
+    def test_the_owner_may_place_too_and_one_field_is_enough(self):
+        self.publish(kind="plan", folder="a")
+        r = self.place({"folder": "b", "if_version": 1}, token=self.owner)
+        self.assertEqual(r.status, 200, r.body)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"]), ("plan", "b"))
+
+    def test_a_stale_pin_is_a_conflict_and_writes_nothing(self):
+        self.publish()
+        self.assertEqual(self.place({"kind": "plan", "if_version": 1}).status, 200)
+        r = self.place({"kind": "spec", "if_version": 1})
+        self.assertEqual((r.status, r.code()), (409, "conflict"))
+        self.assertEqual(self.card()["kind"], "plan")
+
+    def test_a_wrong_type_no_pin_or_no_field_is_invalid(self):
+        self.publish()
+        for body, field in (({"kind": 3, "if_version": 1}, "kind"),
+                            ({"folder": ["x"], "if_version": 1}, "folder"),
+                            ({"repo": True, "if_version": 1}, "repo"),
+                            ({"kind": "plan"}, "if_version"),
+                            ({"if_version": 1}, "body"),
+                            ({"kind": "plan", "title": "x", "if_version": 1}, "title")):
+            with self.subTest(body=body):
+                r = self.place(body)
+                self.assertEqual((r.status, r.code(), r.json()["error"]["field"]),
+                                 (400, "invalid", field))
+        self.assertEqual(self.card()["version"], 1)
+
+    def test_a_republish_keeps_a_placed_kind_and_folder_unless_it_gives_them(self):
+        self.publish()
+        self.assertEqual(self.place({"kind": "spec", "folder": "x", "if_version": 1}).status, 200)
+        r = post(self.lis.port, BASE + "/pages", {"id": "plan-1", "title": "Again",
+                                                  "html": "<p>b</p>", "if_version": 2},
+                 token=self.agent)
+        self.assertEqual(r.status, 200, r.body)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"], card["title"]), ("spec", "x", "Again"))
+        self.publish(kind="plan", if_version=3)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"]), ("plan", "x"))
+
+    def test_place_on_a_page_that_is_not_there_is_not_found(self):
+        r = self.place({"kind": "plan", "if_version": 1})
+        self.assertEqual((r.status, r.code()), (404, "not_found"))
+
+
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
 class LogicTest(unittest.TestCase):
     """The To PM rows and the freshness, on the page's pure block."""

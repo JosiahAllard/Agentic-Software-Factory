@@ -32,6 +32,14 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(codes(schema.check('to_pm', {'status': 'queued', 'kind': 'rant',
                                                       'text': 'x'})), [('kind', 'schema-field')])
 
+    def test_a_page_card_may_carry_kind_and_folder_as_text(self):
+        self.assertEqual(schema.check('pages', {'title': 't'}), [])     # an old card stays valid
+        self.assertEqual(schema.check('pages', {'title': 't', 'kind': 'plan',
+                                                'folder': 'hub/docs'}), [])
+        self.assertEqual(codes(schema.check('pages', {'title': 't', 'kind': 3,
+                                                      'folder': ['x']})),
+                         [('folder', 'schema-field'), ('kind', 'schema-field')])
+
     def test_an_unknown_collection_is_an_error(self):
         self.assertEqual(len(schema.check('parked', {})), 1)
 

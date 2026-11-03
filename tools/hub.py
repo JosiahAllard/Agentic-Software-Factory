@@ -173,7 +173,8 @@ the server alone decides what a role may do.
   hub.py inbox read M-1 [--undo] [--if-version V]   (owner) `READ M-1`, `UNREAD M-1`
   hub.py pages [--repo R]                           `ID v2 - [repo] title` for each published page
   hub.py pages publish ID --title T --html-file F [--repo R] [--summary S] [--refs ID ...]
-        [--from NAME] [--if-version V]               `PUBLISHED ID`; F is a UTF-8 HTML file the
+        [--kind K] [--folder F] [--from NAME]
+        [--if-version V]                             `PUBLISHED ID`; F is a UTF-8 HTML file the
                                                      hub's page check (kitlib.hubsite.pagecheck)
                                                      passes, checked here before it is sent;
                                                      over a page already published, --if-version
@@ -181,6 +182,10 @@ the server alone decides what a role may do.
                                                      "pages/<id> and page_html/<id>")
   hub.py pages show ID [--out F]                    the page's HTML, or with --out F written to F
                                                      as UTF-8 and `WROTE F` printed
+  hub.py pages place ID [--kind K] [--folder F] [--repo R] --if-version V
+                                                    `PLACED ID v3`: sets the card's kind, folder
+                                                     and repo (at least one); the body is
+                                                     unchanged
   hub.py approvals [--status S] [--repo R]          `A-1 pending [repo] title` for each request
                                                      for the owner's approval, its status read
                                                      now (an expired one says expired;
@@ -339,6 +344,7 @@ EXAMPLES = {
     'hub.py pages': 'hub.py pages',
     'hub.py pages publish': 'hub.py pages publish <id> --title "<title>" --html-file <file>',
     'hub.py pages show': 'hub.py pages show <id>',
+    'hub.py pages place': 'hub.py pages place <id> --kind plan --folder <folder> --if-version 2',
     'hub.py skill-edit': 'hub.py skill-edit --status submitted',
     'hub.py skill-edit show': 'hub.py skill-edit show E-1',
     'hub.py skill-edit done': 'hub.py skill-edit done E-1 --branch <branch> --if-version 3',
@@ -693,7 +699,7 @@ def _client_verbs(sub):
     x.add_argument('--from', dest='who', required=True, metavar='KEY',
                    help='your launcher session key')
 
-    g = _listed(sub, 'pages', 'list the published pages; publish, show')
+    g = _listed(sub, 'pages', 'list the published pages; publish, show, place')
     x = _leaf(g, 'publish', 'publish an HTML page to the hub')
     x.add_argument('id')
     x.add_argument('--title', required=True)
@@ -702,11 +708,19 @@ def _client_verbs(sub):
     _repo(x)
     x.add_argument('--summary')
     x.add_argument('--refs', nargs='+', metavar='ID')
+    x.add_argument('--kind', help='what kind of document it is (plan, spec, ...)')
+    x.add_argument('--folder', help='the folder the Docs tab files it under')
     x.add_argument('--from', dest='who', metavar='NAME')
     _pins(x)
     x = _leaf(g, 'show', "a page's HTML")
     x.add_argument('id')
     x.add_argument('--out', metavar='F', help='write the HTML to this file instead')
+    x = _leaf(g, 'place', "set a page card's kind, folder and repo; the body is unchanged")
+    x.add_argument('id')
+    x.add_argument('--kind')
+    x.add_argument('--folder')
+    _repo(x)
+    _pins(x, required=True)
 
     e = _listed(sub, 'skill-edit', "list the owner's edits of kit skills; show; done: the "
                 "text is committed on a branch; fail: it could not be", S['skill_edits'],
@@ -1443,8 +1457,14 @@ def _pages(a, stop):
             raise serve.ServeError('the page check refuses %s: %s' % (a.html_file, why))
         got = hub.post('/pages', client.AGENT, _body(
             id=a.id, title=a.title, html=html, repo=getattr(a, 'repo', None), summary=a.summary,
-            refs=a.refs, if_version=a.if_version, **{'from': a.who}))
+            refs=a.refs, kind=a.kind, folder=a.folder, if_version=a.if_version,
+            **{'from': a.who}))
         return _wrote(a, got, 'PUBLISHED %s' % got.get('id'))
+    if a.sub == 'place':
+        got = hub.post(_one('pages', a) + '/place', client.AGENT, _body(
+            kind=a.kind, folder=a.folder, repo=getattr(a, 'repo', None),
+            if_version=a.if_version))
+        return _wrote(a, got, 'PLACED %s v%s' % (got.get('id'), got.get('version')))
     if a.sub == 'show':
         got = hub.page(a.id)
         html = got.get('html') if isinstance(got.get('html'), str) else ''

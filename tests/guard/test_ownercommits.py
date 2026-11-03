@@ -704,6 +704,27 @@ class DeltaApprovals(DeltaCase):
         sha = self.agent_commit({'CLAUDE.md': LINES, 'AGENTS.md': 'agents 2\n'})
         self.refused(sha, 'CLAUDE.md at %s is not the approved change' % sha[:12])
 
+    def test_an_approved_delete_whose_commit_keeps_the_file_is_a_violation(self):
+        self.approve({'AGENTS.md': None, 'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'AGENTS.md at %s is not the approved change' % sha[:12])
+        self.assertEqual(self.route.asked, ['/snapshot'])     # the hub never verified it
+
+    def test_an_approved_delete_whose_commit_rewrites_the_file_is_a_violation(self):
+        self.approve({'AGENTS.md': None})
+        sha = self.agent_commit({'AGENTS.md': 'agents, rewritten\n'})
+        self.refused(sha, 'AGENTS.md at %s is not the approved change' % sha[:12])
+        self.assertEqual(self.route.asked, ['/snapshot'])
+
+    def test_an_approved_delete_of_a_file_gone_at_the_parent_that_the_commit_makes_is_refused(
+            self):
+        self.approve({'AGENTS.md': None})
+        self.repo.git('rm', '-q', '--', 'AGENTS.md')
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '-m', 'the owner deleted it')
+        sha = self.agent_commit({'AGENTS.md': 'an owner file nobody approved\n'})
+        self.refused(sha, 'AGENTS.md at %s is not the approved change' % sha[:12])
+        self.assertEqual(self.route.asked, ['/snapshot'])
+
     def test_a_new_file_the_parent_holds_otherwise_is_a_violation(self):
         self.approve({'.github/workflows/new.yml': 'on: push\n'})
         self.commit_as(OWNER, 'the owner wrote it first', {'.github/workflows/new.yml': 'x\n'})
@@ -787,6 +808,9 @@ class DeltaApprovals(DeltaCase):
     def test_the_trailer_is_the_guards(self):
         self.assertEqual(ap.TRAILER, oc.TRAILER)
 
+    def test_the_regular_modes_are_the_guards(self):
+        self.assertEqual(ap.REGULAR_MODES, oc.REGULAR_MODES)
+
     def test_the_seam_reads_each_approval_once(self):
         self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
         self.agent_commit({'CLAUDE.md': self.new})
@@ -796,6 +820,32 @@ class DeltaApprovals(DeltaCase):
         self.assertIsNone(why)
         self.assertEqual(len(found), 1)                   # the first commit left half undone
         self.assertEqual(self.route.asked.count('/snapshot'), 1)
+
+    def test_the_default_seam_is_made_once_per_call(self):
+        # two commits under one approval, judged with no seam given: one snapshot read and one
+        # spent lookup, so the default seam's caches hold across the commits
+        self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
+        self.agent_commit({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'AGENTS.md': 'agents 2\n'})
+        self.repo.git('update-ref', MAIN, self.main)        # main fetched: spent is looked up
+        route, made, looked = VerifyRoute(self.hub), [], []
+        real_spent = ap.spent
+
+        def seam():
+            made.append(1)
+            return oc.HubApprovals(client=route, repo=REPO, main=MAIN)
+
+        def spent(*args, **kwargs):
+            looked.append(args[1])
+            return real_spent(*args, **kwargs)
+        with mock.patch.object(oc, 'default_approvals', seam):
+            with mock.patch.object(ap, 'spent', spent):
+                found, why = oc.violations(self.repo.root, self.rules, sha, [self.main])
+        self.assertIsNone(why)
+        self.assertEqual(len(found), 1)                   # the first commit left half undone
+        self.assertEqual(made, [1])
+        self.assertEqual(route.asked.count('/snapshot'), 1)
+        self.assertEqual(looked, ['A-001'])
 
 
 @real_git('git merge-file: the fake has none')

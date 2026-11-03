@@ -481,7 +481,7 @@ def approval_decided(doc, now):
     consumed, while it still counts at `now` (an aware datetime); else None. An approval counts
     until approvals.status_at expires it (approvals.approval_end: APPROVAL_LIFE_S after
     decided_at, APPROVED_TTL_S for an op one); a denial, which never expires there, for
-    APPROVED_TTL_S after decided_at (the PM's ruling). A consumed,
+    approvals.DENIAL_PENDING_S after decided_at (the PM's ruling). A consumed,
     pending or expired one, a bad time and a naive `now` give None."""
     from . import approvals as ap   # approvals imports api, which imports this module
     status = ap.status_at(doc, now)
@@ -492,7 +492,7 @@ def approval_decided(doc, now):
     try:
         at = datetime.datetime.fromisoformat(doc.get('decided_at'))
         if at.tzinfo is not None and at <= now < at + datetime.timedelta(
-                seconds=ap.APPROVED_TTL_S):
+                seconds=ap.DENIAL_PENDING_S):
             return status
     except (TypeError, ValueError):
         pass

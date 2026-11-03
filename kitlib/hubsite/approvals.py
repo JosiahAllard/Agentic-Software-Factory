@@ -163,8 +163,9 @@ from .client import part as _part
 PENDING_TTL_S = 7 * 86400       # a request not decided within 7 days is expired
 PENDING_OP_TTL_S = 24 * 3600    # an op request not decided within 24 hours is expired
 APPROVAL_LIFE_S = 30 * 86400    # a file approval, used or not, holds 30 days (or until spent)
-APPROVED_TTL_S = 24 * 3600      # an op approval lasts 24 hours; also the hub's denial window
-                                # (kitlib.hubsite.store approval_decided)
+APPROVED_TTL_S = 24 * 3600      # an op approval lasts 24 hours
+DENIAL_PENDING_S = 24 * 3600    # a denial stays pending owner input this long after decided_at
+                                # (kitlib.hubsite.store.approval_decided; the PM's ruling)
 TRAILER = 'Owner-Approval'      # the trailer that carries one (kitlib.guard.ownercommits)
 
 PENDING, APPROVED, DENIED = 'pending', 'approved', 'denied'
@@ -904,7 +905,10 @@ def delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None):
                                  call=call, cat=cat)
         if why:
             return None, '%s: %s: %s' % (WHY_FILES, p, why)
-        if want is None and c is None:
+        if want is None:                # the approved change leaves no file there
+            if c is not None:
+                return None, '%s: %s at %s is not the approved change' % (
+                    WHY_FILES, p, commit[:12])
             continue
         if c is None or not _regular(c, want):
             return None, '%s: %s at %s is not the approved change' % (WHY_FILES, p, commit[:12])

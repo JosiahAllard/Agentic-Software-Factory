@@ -313,7 +313,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
     """`([Violation], None)`: the commits from `tip` not in `exclude` that change an owner-only path
     that landing `tip` on `exclude` would change (module docstring), are not authored by the
     owner and carry no owner approval the hub verifies (`approvals`: the seam, default
-    default_approvals()); `(None, why)` when git cannot tell."""
+    default_approvals(), made once per call so its reads are cached across the commits);
+    `(None, why)` when git cannot tell."""
     found, why = commits(root, tip, exclude, env)
     if found is None:
         return None, why
@@ -329,6 +330,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
     if plain is None:
         return None, why
     bad = []
+    if approvals is None:
+        approvals = default_approvals()
     for sha, parents, author, values in judged:
         paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env)
         if paths is None:

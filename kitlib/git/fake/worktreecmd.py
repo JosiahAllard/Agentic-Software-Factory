@@ -213,14 +213,21 @@ def _list(ctx, args):
     if opts.get('z') and not opts.get('porcelain'):
         raise die('the option \'-z\' requires \'--porcelain\'')
     repo = ctx.need_repo()
-    wts = _wts.all_worktrees(repo)
+    # A linked worktree another git process is adding or removing (add writes its gitdir before
+    # its HEAD; remove deletes its admin directory file by file): git leaves out one whose gitdir
+    # cannot be read, and lists one whose HEAD cannot be read as detached at the null oid
+    # (worktree.c get_linked_worktree, add_head_info).
+    wts = [w for w in _wts.all_worktrees(repo) if w.is_main or not w.gitdir_unread]
     for w in wts:
         if w.bare:
             raise Unsupported('worktree list of a bare repository')
-        if w.head_oid is None and w.head_ref is None:
-            raise Unsupported('worktree list with a worktree whose HEAD cannot be read')
+        if w.head_oid is None and w.head_ref is None and not w.detached:
+            if w.is_main:
+                raise Unsupported('worktree list with a main worktree whose HEAD cannot be read')
+            w.detached = True
         if not opts.get('porcelain') and (w.prunable or w.head_oid is None):
-            raise Unsupported('worktree list with a prunable or unborn worktree (not --porcelain)')
+            raise Unsupported('worktree list with a prunable, unborn or HEAD-less worktree '
+                              '(not --porcelain)')
     if opts.get('porcelain'):
         z = opts.get('z')
         t = '\0' if z else '\n'

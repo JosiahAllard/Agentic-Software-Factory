@@ -239,5 +239,93 @@ class MachineLockRerun(unittest.TestCase):
         fake_bpy.ops.wm.read_factory_settings.assert_not_called()
 
 
+class Modes(unittest.TestCase):
+    def test_turnaround_and_filmstrip_args(self):
+        o = R.parse_args(['--turnaround', 'out.png', 'a.glb'])
+        self.assertTrue(o.turnaround)
+        o = R.parse_args(['--filmstrip', '--frames', '6', '--clips', 'walk,run', 'out.png', 'a.glb'])
+        self.assertEqual((o.filmstrip, o.frames, o.clips, o.view), (True, 6, 'walk,run', 'side'))
+        self.assertEqual(R.parse_args(['--filmstrip', '--view', 'front', 'o.png', 'a.glb']).view, 'front')
+
+    def test_the_modes_exclude_each_other(self):
+        for args in (['--grid', '2', '--turnaround'], ['--turnaround', '--filmstrip'],
+                     ['--grid', '2', '--filmstrip']):
+            with self.subTest(args=args), mock.patch('sys.stderr', new_callable=io.StringIO):
+                with self.assertRaises(SystemExit):
+                    R.parse_args(args + ['out.png', 'a.glb'])
+
+    def test_turnaround_is_eight_views_45_degrees_apart_one_row_per_model(self):
+        tiles, cols, rows = R.plan(['a.glb', 'b.glb'], None, '3/4', turnaround=True)
+        self.assertEqual((cols, rows, len(tiles)), (8, 2, 16))
+        self.assertEqual([d for _, _, d in tiles[:8]], [0, 45, 90, 135, 180, 225, 270, 315])
+        self.assertEqual(tiles[9][:2], ('b.glb', 'az045'))
+        self.assertEqual(os.path.basename(R.tile_path('o/sheet.png', 1, 'a.glb', 'az045', True)),
+                         'sheet_a_az045.png')
+
+    def test_frame_samples(self):
+        self.assertEqual(R.frame_samples(1, 25, 4), [1, 9, 17, 25])
+        self.assertEqual(R.frame_samples(1, 3, 8), [1, 2, 3])
+        self.assertEqual(R.frame_samples(0.0, 10.0, 1), [0])
+        self.assertEqual(R.frame_samples(5, 5, 4), [5])
+
+    def test_onion_skin_draws_the_last_frame_whole_and_earlier_ones_fainter(self):
+        bg = (0.0, 0.0, 0.0)
+        first = [1.0, 0, 0, 1,  0, 0, 0, 1,  0, 0, 0, 1]
+        last = [0, 0, 0, 1,  0, 0, 0, 1,  0, 1.0, 0, 1]
+        got = R.onion_skin([first, last], bg)
+        self.assertAlmostEqual(got[0], 0.25)            # the first frame at weight 0.25
+        self.assertEqual(got[4:7], [0, 0, 0])           # background where no frame differs
+        self.assertEqual(got[8:11], [0, 1.0, 0])        # the last frame whole
+        self.assertEqual(got[3::4], [1, 1, 1])          # alpha kept
+        self.assertEqual(R.onion_skin([first], bg)[:3], [1.0, 0, 0])
+        self.assertEqual(R.onion_skin([], bg), [])
+
+    def test_onion_skin_on_a_transparent_background_makes_every_frame_opaque(self):
+        # tiles rendered with a transparent film: background (0, 0, 0, 0)
+        first = [0.6, 0.6, 0.6, 1.0,  0, 0, 0, 0]
+        last = [0, 0, 0, 0,  0.6, 0.6, 0.6, 1.0]
+        got = R.onion_skin([first, last], (0.0, 0.0, 0.0, 0.0))
+        self.assertAlmostEqual(got[0], 0.15)            # the first frame, faint
+        self.assertEqual(got[3], 1.0)
+        self.assertEqual(got[4:8], [0.6, 0.6, 0.6, 1.0])  # the last frame whole, opaque
+        self.assertEqual(R.onion_skin([[0, 0, 0, 0]], (0.0, 0.0, 0.0, 0.0)), [0.0, 0.0, 0.0, 0.0])
+
+    def test_strip_tile_names(self):
+        p = R.strip_tile_path(os.path.join('o', 'strip.png'), 3, 'hero', 'Walk Cycle', 12, True)
+        self.assertEqual(os.path.basename(p), 'strip_hero_Walk-Cycle_f0012.png')
+        p = R.strip_tile_path(os.path.join('o', 'strip.png'), 3, 'hero', 'walk', None, True)
+        self.assertEqual(os.path.basename(p), 'strip_hero_walk_onion.png')
+        self.assertEqual(R.strip_tile_path(os.path.join('o', 's.png'), 3, 'h', 'w', 1, False),
+                         os.path.join('o', '_tile_3.png'))
+        self.assertEqual(R.safe_name('../..'), 'clip')
+
+    def test_the_new_modes_write_only_inside_a_checkout(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        loose = os.path.join(tmp, 'sheet.png')
+        self.assertIsNone(R.out_refusal(R.parse_args([loose, 'a.glb'])))
+        for mode in ('--turnaround', '--filmstrip'):
+            self.assertIn('not inside a git checkout', R.out_refusal(R.parse_args([mode, loose, 'a.glb'])))
+        os.makedirs(os.path.join(tmp, '.git'))
+        self.assertIsNone(R.out_refusal(R.parse_args(['--turnaround', loose, 'a.glb'])))
+
+    def test_plain_python_finds_blender_and_relaunches_under_the_lock(self):
+        with mock.patch.object(R.B, 'find_blender', return_value='C:/B/blender.exe'), \
+                mock.patch.object(R, 'machine_lock_rerun', side_effect=SystemExit(0)) as rerun:
+            with self.assertRaises(SystemExit):
+                R.launch(['out.png', 'a.glb'])
+        self.assertEqual(rerun.call_args[0][1:], (['out.png', 'a.glb'], 'C:/B/blender.exe'))
+
+    def test_plain_python_without_blender_refuses(self):
+        with mock.patch.object(R.B, 'find_blender', side_effect=R.B.Refused('no Blender found')), \
+                mock.patch.object(R, 'machine_lock_rerun') as rerun, \
+                mock.patch('sys.stderr', new_callable=io.StringIO) as err:
+            with self.assertRaises(SystemExit) as e:
+                R.launch(['out.png', 'a.glb'])
+        self.assertEqual(e.exception.code, 2)
+        self.assertIn('no Blender found', err.getvalue())
+        rerun.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

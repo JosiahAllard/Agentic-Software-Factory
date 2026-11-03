@@ -19,7 +19,12 @@ What a commit changes:
                        (`git merge-tree --write-tree`), plus every path that merge conflicts on:
                        a merge that only joins two histories changes nothing of its own, and one
                        that edits an owner-only path (an "evil merge") or resolves a conflict in
-                       one is judged by its author like any other commit
+                       one is judged by its author like any other commit; with `exclude`, when a
+                       parent is an ancestor of an `exclude` commit, a path the merge holds
+                       exactly as (mode and blob, or absent) every `exclude` commit does is not
+                       counted: the merge holds main's current copy (a main sync), never an older
+                       one, and the branch's own commits that changed the path are still judged
+                       one by one; main moving the path again after the sync counts it again
   more parents         the union of its diffs against each parent (strict)
 
 The author email is git's `%ae` (never mailmapped), read with replace refs off (pushes do not carry
@@ -187,15 +192,45 @@ def net_change(root, tip, targets, env=None):
     return paths, None
 
 
-def changed(root, sha, parents, env=None):
-    """`(sorted paths the commit itself changes, None)` (module docstring), or `(None, why)`."""
+def _synced(root, parents, targets, env=None):
+    """`(True, None)` when a parent is an ancestor of a target, `(False, None)` when none is, or
+    `(None, why)`."""
+    for parent in parents:
+        for target in targets:
+            r = cmd.call(NOREPLACE + ['merge-base', '--is-ancestor', parent, target], root, env=env)
+            if r.rc not in (0, 1):
+                return None, 'git merge-base failed for %s and %s: %s' % (
+                    parent[:10], target[:10], r.err or 'exit %s' % r.rc)
+            if r.rc == 0:
+                return True, None
+    return False, None
+
+
+def changed(root, sha, parents, env=None, targets=()):
+    """`(sorted paths the commit itself changes, None)` (module docstring; `targets`: violations'
+    `exclude`), or `(None, why)`."""
     if len(parents) <= 1:
         out, why = _git(root, ['diff-tree', '-r', '--root', '--no-commit-id', '--name-only',
                                '--no-renames', '-z', sha], env)
         return (None, why) if out is None else (sorted(set(_paths(out))), None)
     if len(parents) == 2:
         paths, why = _against_merge(root, sha, parents[0], parents[1], env)
-        return (None, why) if paths is None else (sorted(paths), None)
+        if paths is None:
+            return None, why
+        if paths and targets:
+            synced, why = _synced(root, parents, targets, env)
+            if synced is None:
+                return None, why
+            if synced:
+                differs = set()
+                for target in targets:
+                    out, why = _git(root, ['diff', '--name-only', '--no-renames', '-z', target,
+                                           sha], env)
+                    if out is None:
+                        return None, why
+                    differs.update(_paths(out))
+                paths &= differs        # kept: held otherwise than some target holds it
+        return sorted(paths), None
     paths = set()
     for parent in parents:
         out, why = _git(root, ['diff', '--name-only', '--no-renames', '-z', parent, sha], env)
@@ -278,7 +313,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         return None, why
     bad = []
     for sha, parents, author, values in judged:
-        paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env)
+        paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env,
+                                                                     exclude)
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]

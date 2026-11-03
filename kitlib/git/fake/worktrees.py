@@ -8,7 +8,9 @@ from .repo import Repo, read_gitfile, slash
 class Worktree:
     """One worktree: `path` ('/' form, as git prints it), `gitdir` (os form), `head_ref` (the
     branch HEAD points at, or None), `head_oid` (None when unborn), `bare`, `detached`, `id`
-    (None for the main one), `locked` (None, or the reason text, '' for no reason)."""
+    (None for the main one), `locked` (None, or the reason text, '' for no reason),
+    `gitdir_unread` (a linked one whose admin gitdir file is missing or empty: `worktree list`
+    leaves it out, as git's get_worktrees does)."""
 
     def __init__(self, path, gitdir, wid=None, bare=False):
         self.path = path
@@ -20,6 +22,7 @@ class Worktree:
         self.detached = False
         self.locked = None
         self.prunable = None
+        self.gitdir_unread = False
 
     @property
     def is_main(self):
@@ -89,6 +92,7 @@ def linked_worktrees(repo):
             p = slash(p)
             path = p[:-len('/.git')] if p.endswith('/.git') else p
         w = Worktree(path, gd, wid)
+        w.gitdir_unread = not gitfile
         _head(repo, w)
         lk = _read(os.path.join(gd, 'locked'))
         w.locked = lk

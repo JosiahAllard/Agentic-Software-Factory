@@ -19,7 +19,8 @@ Planning (plan) gives each waiting entry, in queue order, the earliest time what
 for its whole expected time, around what holders and runs planned ahead of it take. A run may
 start ahead of its turn only when it ends before every run ahead of it is planned to start
 (backfill), but for a run ahead whose start its resource alone put off: that one keeps out only
-the runs naming its resource. How long a holder still holds is holder_end.
+the runs naming its resource, and keeps no slots when that resource's holder is overrun. How long
+a holder still holds is holder_end.
 """
 import contextlib
 import datetime
@@ -148,18 +149,21 @@ def holder_end(held_at, expect_s, now):
     let them go, seen at `now`. Before its expected end: that end. Past it (an overrun), or with
     no held_at: now + half its expected time, re-checked on every pass, so it keeps
     sliding ahead while the holder runs on and runs that fit before it can still backfill. The
-    one place an overrun is decided."""
+    overrun is decided in holder_overrun."""
+    exp = entry_expect({"expect_s": expect_s})
+    if holder_overrun(held_at, expect_s, now):
+        return now + max(1.0, exp / 2)
+    return float(held_at) + exp
+
+
+def holder_overrun(held_at, expect_s, now):
+    """True when a holder that took its slots at held_at and expects expect_s is past its
+    expected end at `now`, or has no held_at: holder_end then slides on every pass. The one place
+    an overrun is decided."""
     try:
-        exp = max(1.0, float(expect_s))
+        return float(held_at) + entry_expect({"expect_s": expect_s}) <= now
     except (TypeError, ValueError):
-        exp = 60.0
-    try:
-        end = float(held_at) + exp
-    except (TypeError, ValueError):
-        end = None
-    if end is not None and end > now:
-        return end
-    return now + max(1.0, exp / 2)
+        return True
 
 
 def run_text(r):
@@ -290,7 +294,11 @@ def plan(L, q, now=None):
     lowest. It may not start before a run planned ahead of it and still be running when that one
     starts (backfill), unless it is own_turn, or that one's start was put off by its resource
     alone (its slots were free at an earlier time; it is not parked): such a start bars only the
-    entries naming that resource, and the rest plan around its slots. A run waiting on its
+    entries naming that resource, and the rest plan around its slots, or take them when that
+    start follows a time the resource alone kept it from and a holder of the resource is overrun
+    (holder_overrun: its end slides on every pass, so slots kept there would sit idle; the
+    entry keeps its place, start and resource order, and may then wait for cores once the
+    resource is free). A run waiting on its
     `within` bars a run behind it from its within slots only (barrier_guard): that one may start
     first on slots outside them. A parked entry (holds not its own leave it too little now) is
     planned from clear_at, around avoid_after, so no run behind it passes it."""
@@ -340,7 +348,13 @@ def plan(L, q, now=None):
         within = {p: entry_within(e, p) for p in POOLS}
         times = {t0} | {iv[1] for iv in ivs if iv[1] > t0} | {s for s, _g in starts if s > t0}
         held_by_rsc = False         # an earlier time had its slots free and only its resource not
+        by_rsc = False              # so had the time tried last
+        # A resource whose holder is overrun ends at a guess that slides on every pass.
+        slid = rsc is not None and not e.get("parked") and any(
+            holder_overrun(x.get("held_at"), x.get("expect_s"), now)
+            for x in resource_holders(q, e))
         for t in sorted(times):
+            prev_rsc, by_rsc = by_rsc, False
             barred = {p: set() for p in POOLS}
             bars = [] if own else [g for s, g in starts if t < s < t + exp]
             if any(g is None for g in bars):
@@ -365,14 +379,18 @@ def plan(L, q, now=None):
                                  [:entry_need(e, p)])
             else:
                 if rsc_busy:
-                    held_by_rsc = True
+                    held_by_rsc = by_rsc = True
                     continue
                 info.update(start=t, cores=pick["cpu"], gpus=pick["gpu"], now=t <= now,
                             backfill=not own and any(t < s for s, _g in starts))
-                ivs.append((t, t + exp, {p: set(pick[p]) for p in POOLS}, rsc, e["id"]))
+                # A start set by that sliding end reserves no slots: held at a time that keeps
+                # moving, they would sit idle (only runs shorter than the slide fit before it).
+                keep = {p: set() if prev_rsc and slid else set(pick[p]) for p in POOLS}
+                ivs.append((t, t + exp, keep, rsc, e["id"]))
                 break
         # A start its resource put off (its slots were free earlier) is no backfill barrier: its
-        # slots are planned (ivs), so a run behind it that fits around them starts now; one
+        # slots are planned (ivs; none behind an overrun holder), so a run behind it that fits
+        # around them starts now; one
         # naming its resource is still kept out by ivs. A parked entry stays a barrier.
         if info["start"] is not None:
             if not held_by_rsc or e.get("parked"):
@@ -488,6 +506,11 @@ def short_pools(L, q, e):
         if entry_need(e, p) and len(room - fg) < entry_need(e, p):
             out.append(p)
     return out
+
+
+# What a planned entry's backfill flag means, as status and the wait line say it: planned before a
+# run ahead of it, which is no promise that it starts now.
+BACKFILL_TEXT = " (planned to start before a run ahead of it in the queue)"
 
 
 def est_text(info):

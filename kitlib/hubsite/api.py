@@ -103,7 +103,8 @@ if_version?}: status is one of hubvalidate.STATUSES['finding_marks'], the finger
 the lint shows (`not_found` otherwise), and the mark keeps the finding's repo, check, target and
 text as they were. Writing over a mark takes its `if_version`, as for a schedule. POST
 finding_marks/{id}/delete (OWNER, if_version optional) takes a mark back; GET finding_marks (ANY)
-lists them. POST to_pm with kind `act` passes a finding on to the PM: `finding` (its
+lists them, less any whose repo's last lint run no longer lists its finding (hidden, still stored;
+the snapshot's finding_marks likewise). POST to_pm with kind `act` passes a finding on to the PM: `finding` (its
 fingerprint, required, and refused for any other kind) prefills repo, refs (the fingerprint and
 the finding's target first) and, when none is given, text; the page marks the finding itself.
 POST to_pm/{id}/edit refuses to make an act note another kind or another note an act note.

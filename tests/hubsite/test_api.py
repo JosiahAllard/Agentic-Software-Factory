@@ -3707,6 +3707,15 @@ class FindingsTest(ApiCase):
         self.store.put('finding_marks', FP2, {'status': 'done'})    # a mark with no repo
         self.assertEqual(shown(), [FP2])
 
+    def test_a_findings_view_that_raises_keeps_every_mark(self):
+        self.mark()
+        self.views.lint_runs = lambda: [{'repo': 'kit', 'started': '2026-01-02T03:04:05Z',
+                                         'ledger': None, 'skip': None}]
+        self.views.fail = OSError('unreadable')
+        self.assertEqual([m['id'] for m in self.ok('GET', '/finding_marks', OWNER)['items']], [FP])
+        self.assertEqual(list(self.ok('GET', '/snapshot', OWNER)['collections']['finding_marks']),
+                         [FP])
+
     def test_marking_again_is_pinned_to_the_version_read(self):
         self.mark()
         self.refused('conflict', 'if_version', 'POST', '/finding_marks', OWNER,

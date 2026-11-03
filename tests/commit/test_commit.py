@@ -1916,6 +1916,179 @@ class MergeCarriesAnOwnerChange(MergeCase):
         self.assertNotIn('leave it out of your list', out)
 
 
+SEVEN = ''.join('line %d\n' % i for i in range(1, 8))     # edits on lines 1 and 7 merge cleanly
+
+
+class Approves(object):
+    """The approvals seam: the hub verifies exactly the ids in `ok`."""
+
+    def __init__(self, ok):
+        self.ok, self.asked = set(ok), []
+
+    def check(self, root, doc_id, head, blobs, commit):
+        self.asked.append(doc_id)
+        return (doc_id in self.ok), 'the hub has no %s for this commit' % doc_id
+
+
+class JoinCase(MergeCase):
+    """Both sides changed an owner-only file, each in a commit the owner approved (an agent's
+    commit carrying Owner-Approval: hub:A-<n>, verified by the hub): a merge whose staged copy is
+    exactly the clean merge of the two is carried unnamed (KIT-COMMIT-MERGE-APPROVED). Anything
+    beyond that clean merge stays refused."""
+
+    F = 'CLAUDE.md'
+
+    def approve(self, *ids):
+        seam = Approves(ids)
+        p = mock.patch.object(ownercommits, 'default_approvals', lambda: seam)
+        p.start()
+        self.addCleanup(p.stop)
+        return seam
+
+    def merge(self, main_text, branch_text, main_id='A-002', branch_id='A-001', path=None,
+              attributes=None, main_rename=None, main_author=AGENT):
+        """The base holds work.txt and `path` (SEVEN), and .gitattributes = `attributes` when
+        given. main sets the file to `main_text` (or `git mv`s it to `main_rename`) in an agent
+        commit carrying Owner-Approval: hub:`main_id` (None: no trailer); the branch sets it to
+        `branch_text` the same way with `branch_id`. Both change work.txt, so the merge stops on
+        it; work.txt is resolved in the work tree. (branch tip, main tip)."""
+        f = path or self.F
+        self.t.write('work.txt', 'base\n')
+        self.t.write(f, SEVEN)
+        names = ['work.txt', f]
+        if attributes:
+            self.t.write('.gitattributes', attributes)
+            names.append('.gitattributes')
+        self.t.commit('base', *names)
+        self.git('merge', '-q', '--ff-only', 'main')
+        self.t.write('work.txt', 'main\n')
+        if main_rename:
+            self.t.git('mv', '--', f, main_rename)
+        else:
+            self.t.write(f, main_text)
+            self.t.git('add', '--', f)
+        trailer = '\n\nOwner-Approval: hub:%s' % main_id if main_id else ''
+        self.main_commit('main edit' + trailer, ['work.txt'], main_author)
+        self.put('work.txt', 'branch\n')
+        self.git('commit', '-q', '-m', 'branch work', '--', 'work.txt')
+        self.put(f, branch_text)
+        trailer = '\n\nOwner-Approval: hub:%s' % branch_id if branch_id else ''
+        self.git('commit', '-q', '-m', 'branch edit' + trailer, '--author', 'Agent <%s>' % AGENT,
+                 '--', f)
+        tip, main = self.head(), self.git('rev-parse', 'main')
+        p = cmd.subprocess_run(('git', 'merge', '--no-edit', 'main'), cwd=self.wt,
+                               capture_output=True, text=True, env=gitfixture.fixture_env())
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.put('work.txt', 'resolved\n')
+        return tip, main
+
+    def top(self):
+        return SEVEN.replace('line 1\n', 'line 1, main\n')
+
+    def bottom(self):
+        return SEVEN.replace('line 7\n', 'line 7, branch\n')
+
+    def both(self):
+        return SEVEN.replace('line 1\n', 'line 1, main\n').replace('line 7\n', 'line 7, branch\n')
+
+
+
+@real_git('merge-tree, check-attr and merge-base --all over a three-way merge: the fake has none '
+          'of them')
+class MergeJoinsTwoApprovedChanges(JoinCase):
+
+    def test_the_clean_merge_of_two_approved_changes_is_committed(self):
+        seam = self.approve('A-001', 'A-002')
+        tip, main = self.merge(self.top(), self.bottom())
+        self.assertEqual(self.git('show', ':%s' % self.F) + '\n', self.both())
+        code, out = self.commit('merge main', 'work.txt')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.both())
+        self.assertIn('files     work.txt, CLAUDE.md', out)
+        self.assertEqual(sorted(set(seam.asked)), ['A-001', 'A-002'])
+
+    def test_the_merge_commit_passes_the_landing_check(self):
+        self.approve('A-001', 'A-002')
+        tip, main = self.merge(self.top(), self.bottom())
+        self.assertEqual(self.commit('merge main', 'work.txt')[0], 0)
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
+    def test_an_extra_edit_on_top_of_the_merge_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), self.bottom())
+        self.put(self.F, self.both() + 'and the agent\'s\n')
+        self.git('add', '--', self.F)
+        self.assert_refused_naming(self.F, tip)
+
+    def test_a_conflict_resolved_by_hand_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), SEVEN.replace('line 1\n', 'line 1, branch\n'))
+        self.put(self.F, SEVEN.replace('line 1\n', 'line 1, main and branch\n'))
+        self.git('add', '--', self.F)
+        self.assert_refused_naming(self.F, tip)
+
+    def test_an_unapproved_change_on_the_branch_is_refused(self):
+        self.approve('A-002')
+        tip, _ = self.merge(self.top(), self.bottom())
+        self.assertNotIn('could not', self.assert_refused_naming(self.F, tip))
+
+    def test_a_branch_change_with_no_approval_at_all_is_refused(self):
+        self.approve('A-002')
+        tip, _ = self.merge(self.top(), self.bottom(), branch_id=None)
+        self.assert_refused_naming(self.F, tip)
+
+    def test_an_unapproved_change_on_main_is_refused(self):
+        self.approve('A-001')
+        tip, _ = self.merge(self.top(), self.bottom())
+        self.assert_refused_naming(self.F, tip)
+
+    def test_an_owner_authored_side_joins_an_approved_one(self):
+        self.approve('A-001')
+        tip, main = self.merge(self.top(), self.bottom(), main_id=None, main_author=OWNER)
+        code, out = self.commit('merge main', 'work.txt')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.both())
+
+    def test_a_rename_is_refused(self):
+        self.approve('A-001', 'A-002')
+        old, new = '.github/workflows/a.yml', '.github/workflows/b.yml'
+        tip, _ = self.merge(None, self.bottom(), path=old, main_rename=new)
+        self.assertEqual(self.git('show', ':%s' % new) + '\n', self.bottom())
+        self.assert_refused_naming(new, tip)
+
+    def test_an_octopus_merge_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), self.bottom())
+        path = self.git('rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD')
+        with open(path, 'a', encoding='utf-8', newline='\n') as fh:
+            fh.write(tip + '\n')
+        self.assert_refused_naming(self.F, tip)
+
+    def test_the_helper_sync_base_calls_names_what_is_refused(self):
+        self.approve('A-002')
+        self.merge(self.top(), self.bottom())
+        self.git('add', '--', 'work.txt')
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([self.F], None))
+        self.approve('A-001', 'A-002')
+        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([], None))
+
+
+@gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
+                         'attribute')
+@real_git('check-attr and a merge driver: the fake has neither')
+class AMergeDriverIsRefused(JoinCase):
+
+    def test_a_merge_driver_attribute_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), self.bottom(), attributes='CLAUDE.md merge=union\n')
+        self.assertEqual(self.git('show', ':%s' % self.F) + '\n', self.both())
+        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assert_refused_naming(self.F, tip)
+
+
 # ---------------------------------------------------------------------------------- the command
 
 class TheCommandLine(LinkedCase):

@@ -1370,10 +1370,18 @@ is down, has no agent token on this machine, does not answer, or is older than t
 WARNING line in the landing's progress, and the event is dropped: no pending file, no retry. The landing's
 outcome and exit code never change.
 
-The page's Landings tab (`#landings`, under More on a phone) shows them newest first under a heading per
-new main (`<repo> <main_branch> at <main>`, so a batch's branches sit together), with the repo filter.
-A row's chips are the repo, the verdict, the mode and Deploy when the tip carried a deploy note; its card
-(`landingCard`) gives the tip, new main, verdict and summary, gate, records closed and the deploy note.
+The page's Landings tab (`#landings`, under More on a phone) is a summary, drawn in the list with no side pane: one
+card per repository (its landing count, and how many were not a clean pass), and in it one line per landing, newest
+first. A line is the branch, the records it closed (each id with its title, looked up from the open and the closed
+records the page already loads, by repo and id; the bare id when none is found), a result chip (Passed; Landed, not
+gated; Failed, Refused and the other verdicts; a verdict the page does not know is shown as it is, and counts as not
+clean), a Deploy chip when the tip carried a deploy note, and how long ago it was posted (read when the tab is drawn).
+A landing that closed no records shows its gate summary where the records would be. A line opens in place to the
+summary, tip, new main and gate (and the deploy note), with the event as posted in a "Raw event" fold; the event's data
+format is unchanged. The filters are the tab's own and client side, over the newest 200 events the page holds: repo,
+result (Passed, or Not a clean pass: any verdict but `pass`) and date (a quick range of 24 hours, 7 days or 30 days,
+or from and to dates, which clear each other); Clear resets them, and they start fresh each time the tab is shown. A
+date range that reaches past the oldest event held says the hub keeps only the newest 200.
 
 ## handoffs/C-NNN
 A session's hand-off record: written beside its ready reply to the PM (skill session-handoff step 5),

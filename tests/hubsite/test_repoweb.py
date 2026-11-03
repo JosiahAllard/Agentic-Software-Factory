@@ -1,10 +1,10 @@
 """kitlib.hubsite.repoweb: a repository's web address, main branch and root names for the page's repo-path links."""
 import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 
+from kitlib.git import cmd
 from kitlib.hubsite import repoweb
 from tests.realgit import real_git
 
@@ -28,7 +28,8 @@ class WebUrlTests(unittest.TestCase):
 
 
 def git(root, *args):
-    subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)
+    out, why = cmd.run(list(args), root)
+    assert out is not None, why
 
 
 @real_git('remote get-url, ls-tree and a ref store read by the code under test: a real repository')

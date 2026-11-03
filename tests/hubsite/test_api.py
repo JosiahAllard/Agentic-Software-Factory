@@ -3681,6 +3681,41 @@ class FindingsTest(ApiCase):
                 self.assertEqual(ids, [FP, FP2])
                 self.assertEqual(self.store.docs('finding_marks'), {})
 
+    def test_a_mark_whose_finding_the_last_run_no_longer_lists_is_hidden(self):
+        run = {'repo': 'kit', 'started': '2026-01-02T03:04:05Z', 'ledger': None, 'skip': None}
+        self.mark()
+        self.views.lint_runs = lambda: [run]
+
+        def shown():
+            got = [m['id'] for m in self.ok('GET', '/finding_marks', OWNER)['items']]
+            snap = sorted(self.ok('GET', '/snapshot', OWNER)['collections'].get('finding_marks', {}))
+            self.assertEqual(sorted(got), snap)         # the snapshot and the GET agree
+            return got
+        self.assertEqual(shown(), [FP])                 # still listed: stays
+        self.views.rows = [finding(fingerprint=FP2, repo='other', target='OT-1', new=False)]
+        self.assertEqual(shown(), [])                   # kit ran, FP gone: resolved
+        self.assertIsNotNone(self.store.get('finding_marks', FP))     # hidden, not deleted
+        self.views.rows = [finding()]                   # it comes back: handled again
+        self.assertEqual(shown(), [FP])
+        self.views.rows = []
+        for runs in ([], [dict(run, started=None, skip={'reason': 'busy', 'at': 'x'})],
+                     [dict(run, repo='other')]):        # no run of its repo, or a skip only
+            with self.subTest(runs=runs):
+                self.views.lint_runs = lambda runs=runs: runs
+                self.assertEqual(shown(), [FP])
+        self.views.lint_runs = lambda: [run]
+        self.store.put('finding_marks', FP2, {'status': 'done'})    # a mark with no repo
+        self.assertEqual(shown(), [FP2])
+
+    def test_a_findings_view_that_raises_keeps_every_mark(self):
+        self.mark()
+        self.views.lint_runs = lambda: [{'repo': 'kit', 'started': '2026-01-02T03:04:05Z',
+                                         'ledger': None, 'skip': None}]
+        self.views.fail = OSError('unreadable')
+        self.assertEqual([m['id'] for m in self.ok('GET', '/finding_marks', OWNER)['items']], [FP])
+        self.assertEqual(list(self.ok('GET', '/snapshot', OWNER)['collections']['finding_marks']),
+                         [FP])
+
     def test_marking_again_is_pinned_to_the_version_read(self):
         self.mark()
         self.refused('conflict', 'if_version', 'POST', '/finding_marks', OWNER,

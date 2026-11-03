@@ -228,18 +228,6 @@ class EngineExitCode(EngineRun):
         self.assertIn('REDFIRST INCONCLUSIVE', out)
         self.assertNotIn('REDFIRST OK', out)
 
-
-class EngineExitCodeNoPattern(EngineRun):
-    """A command runner that names no `assertion`: exit 1 cannot tell a crash from an assertion."""
-
-    def test_a_failing_test_is_inconclusive_and_the_reason_names_the_key(self):
-        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
-        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
-        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
-        self.assertRegex(out, r'(?m)^INCONCLUSIVE tools/engine_tests/CalcTest.cs::MulWorks  .*'
-                              r'names no assertion pattern')
-        self.assertNotIn('REDFIRST OK', out)
-
     def test_a_selector_that_names_no_test_is_none_never_red(self):
         self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
         rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::NoSuchTest')
@@ -254,6 +242,18 @@ class EngineExitCodeNoPattern(EngineRun):
         tree, path, selector = self.engine_args()[:3]
         self.assertEqual((path, selector), ('tools/engine_tests/CalcTest.cs', 'Mul "Works" & more'))
         self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)
+
+
+class EngineExitCodeNoPattern(EngineRun):
+    """A command runner that names no `assertion`: exit 1 cannot tell a crash from an assertion."""
+
+    def test_a_failing_test_is_inconclusive_and_the_reason_names_the_key(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
+        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
+        self.assertRegex(out, r'(?m)^INCONCLUSIVE tools/engine_tests/CalcTest.cs::MulWorks  .*'
+                              r'names no assertion pattern')
+        self.assertNotIn('REDFIRST OK', out)
 
 
 class EngineResultFile(EngineRun):

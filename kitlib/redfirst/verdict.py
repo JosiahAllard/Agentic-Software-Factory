@@ -16,8 +16,19 @@ case-blind, `*` crosses `/`). Kinds:
            {n} the selector's number. A first word with a slash that is not absolute is under the
            throwaway root. The verdict from the JUnit XML file its `result` names (filled the same
            way, under the throwaway root unless absolute) written in this run, else from the exit
-           code: 0 GREEN, 1 RED, any other ERROR. A log line its `no_test` regex matches is NONE.
+           code: 0 GREEN, 1 RED only when a log line matches its `assertion`, else INCONCLUSIVE,
+           any other code ERROR. A log line its `no_test` regex matches is NONE.
 A runner's `args` are appended to its command (a gradle or dotnet no-reuse switch, say).
+
+RED only on an assertion failure: a named test that fails at the base on anything else (a crash,
+an exception in setup, a missing asset) proves nothing about the change and is INCONCLUSIVE, never
+RED. Each failure is judged on its own (is_assertion), and one that is no assertion makes the
+selector INCONCLUSIVE: unittest's FAIL block is an assertion and its ERROR block is not, unless its
+exception names a module or name the base lacks (missing_name); a JUnit <error> is not, nor a
+<failure> or .trx message whose exception type is no assertion type (ASSERT_TYPE) or that says a
+method `threw`. A runner's `assertion` regex, matched against a failure's `<type>: <message>`
+(an exit-code command runner: against the log), names more failures that count as assertions.
+A test file that does not compile or import against the base stays RED: it names code the change adds.
 
 gradlew.bat is a batch file, so Windows runs it in cmd.exe, which reads its command line again
 before gradle sees it: `--tests a&whoami` runs whoami. A gradle word after the program that holds
@@ -37,6 +48,7 @@ import xml.etree.ElementTree as ET
 from kitlib.guard.shell import cmd_unsafe
 
 RED, GREEN, NONE, ERROR = 'RED', 'GREEN', 'NONE', 'ERROR'
+INCONCLUSIVE = 'INCONCLUSIVE'   # failed at the base, but not on an assertion: proves nothing
 TIMEOUT = 'TIMEOUT'         # the command ran past its limit and was killed: no verdict (run.py)
 EXIT_RED, EXIT_GREEN, EXIT_USAGE, EXIT_UNDECIDED, EXIT_LEFTOVER = 0, 1, 2, 3, 4
 KINDS = ('python', 'gradle', 'dotnet', 'command')
@@ -244,8 +256,65 @@ def compile_error_lines(log, copied):
     return [l for l in log.splitlines() if names_copied(l, copied)]
 
 
-def gradle_verdict(rc, log, counts, copied):
-    """(verdict, reason). `counts`: (tests, failures + errors) from this run's JUnit XML, or None."""
+# An exception type that is an assertion's: JUnit's AssertionFailedError and AssertionError, JUnit
+# 4's ComparisonFailure, MultipleFailuresError (assertAll), xUnit's XunitException (its asserts'
+# base), NUnit's AssertionException, MSTest's AssertFailedException, Python's AssertionError.
+ASSERT_TYPE = re.compile(r'(?i)assert|ComparisonFailure|MultipleFailures|XunitException')
+# The exception type a failure message starts with, or names before a colon on its first line:
+# xUnit/NUnit `System.X : msg`, `OneTimeSetUp: System.X : msg`, Java `java.lang.X: msg`.
+_TYPED = re.compile(r'(?:^|[\s:(])([A-Za-z_][\w.`+$]*(?:Exception|Error))\s*:')
+
+
+def _first_line(text):
+    return (text or '').strip().split('\n', 1)[0].replace('\r', '').strip()
+
+
+def failure_text(f):
+    """`<type>: <message>` of a failure `(tag, type, message, name)`, as a reason or an
+    `assertion` regex reads it."""
+    tag, typ, msg, name = f
+    return '%s: %s' % (typ, msg) if typ else (msg or '')
+
+
+def is_assertion(f, assertion=None):
+    """Whether the failure `f`, `(tag, type, message, name)`, is an assertion's: the runner's
+    `assertion` regex matches its text, else it is no <error> and its exception type (the type,
+    else the one its message names) is an assertion type, else its message names no exception
+    type and does not say a method threw (an assert's own text: xUnit's `Assert.Equal() Failure`,
+    a user's message)."""
+    tag, typ, msg, name = f
+    if assertion and re.search(assertion, failure_text(f), re.M):
+        return True
+    if tag == 'error':
+        return False
+    if typ:
+        return bool(ASSERT_TYPE.search(typ))
+    first = _first_line(msg)
+    m = _TYPED.search(first)
+    if m:
+        return bool(ASSERT_TYPE.search(m.group(1)))
+    return not re.search(r'\bthrew\b', first)
+
+
+def failures_verdict(bad, tests, failures, assertion):
+    """RED with `<bad> of <tests> test(s) failed` when every failure is an assertion's, else
+    INCONCLUSIVE naming the first that is not (or that the counted failures name none)."""
+    crashed = [f for f in failures if not is_assertion(f, assertion)]
+    if crashed:
+        f = crashed[0]
+        return INCONCLUSIVE, ('%s failed on %s, not on an assertion: a crash or setup error at the '
+                              'base proves nothing (%d of %d failure(s) are no assertion)'
+                              % (f[3] or 'a test', _first_line(failure_text(f)), len(crashed),
+                                 len(failures)))
+    if not failures:
+        return INCONCLUSIVE, ('%d of %d test(s) failed, but the result names no failure to read: '
+                              'no assertion failure is shown' % (bad, tests))
+    return RED, '%d of %d test(s) failed' % (bad, tests)
+
+
+def gradle_verdict(rc, log, counts, copied, assertion=None):
+    """(verdict, reason). `counts`: (tests, failures + errors, failures) from this run's JUnit XML,
+    or None; RED only when every failure is an assertion's (failures_verdict)."""
     if 'No tests found for given includes' in log:
         return NONE, 'no test matched the filter'
     if re.search(r'compile\w*Test\w*\s+FAILED|Execution failed for task \'[^\']*compile\w*Test', log):
@@ -255,9 +324,9 @@ def gradle_verdict(rc, log, counts, copied):
         return ERROR, 'a test compile failed, but no error line names a checked-out file'
     if counts is None:
         return ERROR, 'a JUnit result file of this run could not be read (gradle exited %d)' % rc
-    tests, bad = counts
+    tests, bad, failures = counts
     if tests and bad:
-        return RED, '%d of %d test(s) failed' % (bad, tests)
+        return failures_verdict(bad, tests, failures, assertion)
     if tests and rc == 0:
         return GREEN, '%d test(s) passed' % tests
     if rc == 0:
@@ -265,8 +334,9 @@ def gradle_verdict(rc, log, counts, copied):
     return ERROR, 'gradle exited %d with no test result' % rc
 
 
-def dotnet_verdict(rc, log, counts, copied):
-    """(verdict, reason). `counts`: (total, failed) from this run's .trx, or None."""
+def dotnet_verdict(rc, log, counts, copied, assertion=None):
+    """(verdict, reason). `counts`: (total, failed, failures) from this run's .trx, or None; RED
+    only when every failure is an assertion's (failures_verdict)."""
     if 'No test matches the given testcase filter' in log:
         return NONE, 'no test matched the filter'
     build_errors = [l for l in log.splitlines() if re.search(r'error CS\d+', l)]
@@ -277,17 +347,39 @@ def dotnet_verdict(rc, log, counts, copied):
         return ERROR, 'the build failed, but no error names a checked-out file: %s' % build_errors[0].strip()
     if counts is None:
         return ERROR, 'dotnet exited %d and wrote no readable .trx in this run' % rc
-    total, failed = counts
+    total, failed, failures = counts
     if total == 0:
         return NONE, 'no test ran'
     if failed:
-        return RED, '%d of %d test(s) failed' % (failed, total)
+        return failures_verdict(failed, total, failures, assertion)
     if rc == 0:
         return GREEN, '%d test(s) passed' % total
     return ERROR, 'dotnet exited %d with every test passing' % rc
 
 
-def python_verdict(rc, log):
+# One failure block of unittest's report: `FAIL: <name>` or `ERROR: <name>`, a dash line, then the
+# traceback up to the next block's `=` line or the closing dash line.
+_PY_BLOCK = re.compile(r'^(FAIL|ERROR): (.*?)\r?\n-{70}\r?\n(.*?)(?=^={70}\r?$|^-{70}\r?\nRan |\Z)',
+                       re.M | re.S)
+# An exception that names a module or a name the base lacks: what a test file that will not import
+# says (RED), raised inside the test instead.
+_MISSING_NAME = re.compile(r"^(?:ModuleNotFoundError: |ImportError: |AttributeError: module '[^']+' "
+                           r"has no attribute )")
+
+
+def py_exception(trace):
+    """The last exception line of a unittest traceback: the first unindented line after its last
+    `  File` frame (a chain's last exception), else its last line."""
+    lines = [l.rstrip('\r') for l in trace.splitlines()]
+    frames = [i for i, l in enumerate(lines) if l.startswith('  File ')]
+    for l in lines[frames[-1] + 1:] if frames else []:
+        if l.strip() and not l.startswith(' '):
+            return l.strip()
+    rest = [l.strip() for l in lines if l.strip()]
+    return rest[-1] if rest else ''
+
+
+def python_verdict(rc, log, assertion=None):
     m = re.findall(r'^Ran (\d+) tests? in', log, re.M)
     if not m:
         return ERROR, 'unittest printed no summary (exit %d)' % rc
@@ -309,38 +401,77 @@ def python_verdict(rc, log):
                 return RED, 'does not import against the base: %s' % why[-1]
             return RED, 'does not import against the base'
         return NONE, 'the filter names nothing in the test file'
-    return RED, 'failed (%d test(s) ran)' % ran
+    failed = missing = 0
+    for kind, name, trace in _PY_BLOCK.findall(log):
+        exc = py_exception(trace)
+        if kind == 'FAIL' or (assertion and re.search(assertion, exc, re.M)):
+            failed += 1
+        elif _MISSING_NAME.match(exc):
+            missing = missing or exc
+        else:
+            return INCONCLUSIVE, ('%s raised %s, not an assertion failure: a crash or setup error at '
+                                  'the base proves nothing' % (name.strip(), exc or 'an exception'))
+    if missing and not failed:
+        return RED, 'names what the base lacks: %s (%d test(s) ran)' % (missing, ran)
+    if failed or missing:
+        return RED, 'failed an assertion (%d test(s) ran)' % ran
+    return INCONCLUSIVE, ('unittest exited %d with no failed test (an unexpected success, say): no '
+                          'assertion failure is shown' % rc)
 
 
 def command_verdict(rc, log, runner, counts):
-    """(verdict, reason) of a command runner. `counts`: (tests, failures + errors) from this run's
-    result file, or None (absent, stale or unreadable); read only when the runner names a `result`.
-    A test that is not there, or a result that never came, never reads as RED: a `no_test` match is
-    NONE, a missing result ERROR, and with no result file only exit 1 is RED."""
+    """(verdict, reason) of a command runner. `counts`: (tests, failures + errors, failures) from
+    this run's result file, or None (absent, stale or unreadable); read only when the runner names
+    a `result`. A test that is not there, or a result that never came, never reads as RED: a
+    `no_test` match is NONE, a missing result ERROR. A failed test is RED only on an assertion: in
+    the result, every failure an assertion's (failures_verdict); with no result file, exit 1 and a
+    log line the runner's `assertion` matches. With no `assertion`, exit 1 cannot tell a crash from
+    a failed check and is INCONCLUSIVE."""
     if runner.get('no_test') and re.search(runner['no_test'], log, re.M):
         return NONE, "the log says no test matched (the runner's no_test)"
     if runner.get('result'):
         if counts is None:
             return ERROR, 'the command exited %d and wrote no readable result file in this run' % rc
-        tests, bad = counts
+        tests, bad, failures = counts
         if tests == 0:
             return NONE, 'no test ran'
         if bad:
-            return RED, '%d of %d test(s) failed' % (bad, tests)
+            return failures_verdict(bad, tests, failures, runner.get('assertion'))
         if rc == 0:
             return GREEN, '%d test(s) passed' % tests
         return ERROR, 'the command exited %d with every test passing' % rc
     if rc == 0:
         return GREEN, 'the command exited 0'
     if rc == 1:
-        return RED, 'the command exited 1'
+        if not runner.get('assertion'):
+            return INCONCLUSIVE, ('the command exited 1, but the runner names no assertion pattern '
+                                  '(`.kit.json` "redfirst".runners `assertion`), so a crash cannot '
+                                  'be told from a failed assertion')
+        hit = re.search(runner['assertion'], log, re.M)
+        if not hit:
+            return INCONCLUSIVE, ("the command exited 1, but no log line matches the runner's "
+                                  'assertion pattern: a crash or setup error at the base proves '
+                                  'nothing')
+        line = log[log.rfind('\n', 0, hit.start()) + 1:].split('\n', 1)[0].strip()
+        return RED, "the command exited 1 and a log line matches the runner's assertion: %s" % line[:200]
     return ERROR, 'the command exited %d; only 0 (passed) and 1 (failed) give a verdict' % rc
 
 
+def junit_failures(root):
+    """Each <failure> and <error> under a JUnit XML element: `(tag, type, message, test name)`."""
+    out = []
+    for case in root.iter('testcase'):
+        name = '.'.join(x for x in (case.get('classname'), case.get('name')) if x)
+        for el in case:
+            if el.tag in ('failure', 'error'):
+                out.append((el.tag, el.get('type') or '', el.get('message') or el.text or '', name))
+    return out
+
+
 def junit_file_counts(path, since=0.0):
-    """(tests, failures + errors) of the one JUnit XML file `path`: its root's counts, else the sum
-    over its testsuite elements. None when absent, older than `since`, unparseable, or a count that
-    is no integer."""
+    """(tests, failures + errors, failures) of the one JUnit XML file `path`: its root's counts,
+    else the sum over its testsuite elements, and each failure (junit_failures). None when absent,
+    older than `since`, unparseable, or a count that is no integer."""
     try:
         if os.path.getmtime(path) < since:
             return None
@@ -351,7 +482,7 @@ def junit_file_counts(path, since=0.0):
         bad = sum(int(el.get('failures', 0)) + int(el.get('errors', 0)) for el in suites)
     except (ET.ParseError, OSError, ValueError):
         return None
-    return tests, bad
+    return tests, bad, junit_failures(root)
 
 
 def is_class_of(path, name):
@@ -365,12 +496,13 @@ def is_class_of(path, name):
 
 
 def junit_counts(results_dir, since=0.0, cls=None):
-    """(tests, failures + errors) over the TEST-*.xml files at any depth under `results_dir`
+    """(tests, failures + errors, failures) over the TEST-*.xml files at any depth under `results_dir`
     (Gradle writes one folder per test task) written at or after `since`; with `cls`, only the
     files of that class and its nested classes (is_class_of) count. None when a fresh file of any
     class would not parse or holds a count that is no integer: skipping it could turn a failing
     suite into a GREEN made of the others, and a broken file of another class fails closed too."""
     tests = bad = 0
+    failures = []
     for f in sorted(set(glob.glob(os.path.join(glob.escape(results_dir), '**', 'TEST-*.xml'),
                                   recursive=True))):
         try:
@@ -387,19 +519,41 @@ def junit_counts(results_dir, since=0.0, cls=None):
         if cls is None or is_class_of(f, cls):
             tests += n
             bad += b
-    return tests, bad
+            failures += junit_failures(root)
+    return tests, bad, failures
+
+
+def _local(tag):
+    return tag.rsplit('}', 1)[-1]
+
+
+def trx_failures(root):
+    """Each UnitTestResult of a .trx that did not pass: `(tag, '', message, test name)`, tag
+    `failure` for the outcome Failed and `error` for any other (Error, Timeout, Aborted...)."""
+    out = []
+    for el in root.iter():
+        if _local(el.tag) != 'UnitTestResult':
+            continue
+        outcome = el.get('outcome') or ''
+        if outcome in ('Passed', 'NotExecuted', 'Inconclusive', 'PassedButRunAborted', ''):
+            continue
+        msg = next((m.text or '' for m in el.iter() if _local(m.tag) == 'Message'), '')
+        out.append(('failure' if outcome == 'Failed' else 'error', '', msg or outcome,
+                    el.get('testName') or ''))
+    return out
 
 
 def trx_counts(path, since=0.0):
-    """(total, failed + error) from the .trx at `path`, or None: absent, older than `since`,
-    unparseable, or a count that is no integer."""
+    """(total, failed + error, failures) from the .trx at `path` (trx_failures), or None: absent,
+    older than `since`, unparseable, or a count that is no integer."""
     try:
         if os.path.getmtime(path) < since:
             return None
         root = ET.parse(path).getroot()
         for el in root.iter():
             if el.tag.endswith('Counters'):
-                return int(el.get('total', 0)), int(el.get('failed', 0)) + int(el.get('error', 0))
+                return (int(el.get('total', 0)), int(el.get('failed', 0)) + int(el.get('error', 0)),
+                        trx_failures(root))
     except (ET.ParseError, OSError, ValueError):
         return None
     return None
@@ -412,14 +566,16 @@ def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0):
         # in the same build runs its whole suite. `since` keeps out an earlier run's XML.
         results = os.path.join(tw, *sel.runner['dir'].replace('\\', '/').split('/'),
                                'build', 'test-results')
-        return gradle_verdict(rc, log_text, junit_counts(results, since, stem(sel.path)), copied)
+        return gradle_verdict(rc, log_text, junit_counts(results, since, stem(sel.path)), copied,
+                              sel.runner.get('assertion'))
     if sel.kind == 'command':
         result = result_path(sel, tw, log_dir, n)
         return command_verdict(rc, log_text, sel.runner,
                                junit_file_counts(result, since) if result else None)
     if sel.kind == 'dotnet':
-        return dotnet_verdict(rc, log_text, trx_counts(trx_path(sel, log_dir, n), since), copied)
-    return python_verdict(rc, log_text)
+        return dotnet_verdict(rc, log_text, trx_counts(trx_path(sel, log_dir, n), since), copied,
+                              sel.runner.get('assertion'))
+    return python_verdict(rc, log_text, sel.runner.get('assertion'))
 
 
 def exit_code(verdicts, cleaned):

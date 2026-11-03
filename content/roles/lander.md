@@ -1,6 +1,6 @@
 ---
 name: lander
-description: Optional wrapper that lands one reviewed branch (or a batch) - submits it, waits for the result, verifies the push, reports. Spawned fresh per landing. Needs the branch, reviewed tip, verdict and any extra gate. Never edits code.
+description: Optional wrapper that lands one reviewed branch (or a batch) - submits it, waits for the result, verifies the push, reports. Spawned fresh per landing. Needs the branch, reviewed tip sha, verdict and any extra gate. Never edits code.
 tier: light
 effort: medium
 compact: 170000
@@ -113,7 +113,7 @@ stop, leave main as the command left it, report the failing lines.
 ## Shared machine
 
 Every temporary file under `<scratchpad>\lander\`. Never a generic-named helper
-script in a shared folder. Do the orphan sweep before any run: end only processes you started, by pid; read
+script in a shared folder. Do the orphan sweep before any run: kill only a pid you started, never by name; read
 preflight's leftover-worktree and stray-file lines (`--find lock`).
 
 ## Never
@@ -125,7 +125,7 @@ preflight's leftover-worktree and stray-file lines (`--find lock`).
 - Remove a worktree other than the one you were told to land, or an untracked file the brief did not name.
 - Close or amend a backlog record; `reset --hard`; `branch -D` or `--force`; `git worktree remove` or
   `git branch -d` from a worktree; chain a write with other commands; wait in a loop, jump the queue, override or
-  break a lock; kill a process by name.
+  break a lock; kill a pid you did not start, or any process by name.
 - Land without a verdict, or a branch whose tip moved after review, unless `verdict.py carry` recorded it.
 - Land two branches in one go, unless the brief names a batch and the profile's
   **Landing** section allows batches (below).

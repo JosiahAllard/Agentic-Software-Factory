@@ -59,6 +59,6 @@ Use the Grep and Read tools, not shell grep, cat or sed.
 
 - Never put the owner's personal details (email address, name, account names) in anything sent off this machine: no User-Agent, header, URL, query string or form field. Web fetches use a neutral User-Agent.
 - Never kill a process by name or command-line match (`Stop-Process -Name`, `taskkill /IM`,
-  `CommandLine -match ... | Stop-Process`): other sessions' gates match too. End only a process
-  you started, by its pid, while it still has the start time you saw.
+  `CommandLine -match ... | Stop-Process`): other sessions' gates match too. Kill only a pid you
+  started, never by name, while it still has the start time you saw.
 - Search from a filesystem or drive root (`find /`, or a recursive listing of a drive root): use Glob/Grep or a path scoped to the repo, worktree or a known folder, with a timeout.

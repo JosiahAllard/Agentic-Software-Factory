@@ -649,7 +649,7 @@ Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launche
 | recommended | PM | index into options, normally 0 |
 | urgent | PM | true sorts it to the top with an Urgent marker; only for items that block work or have a deadline |
 | refs, story | PM | ids it refers to; the story a follow-up question belongs to |
-| answer | owner | `{choice: index or "other", label, note, at}` |
+| answer | owner | `{choice: index or "other", label, note, at, via}` |
 | done_why, done_at | PM, asker, hub | why the answer needed no ruling, and when it was marked done (ISO time); the hub's is `filed into <repo>:<id>` |
 | done_by | hub | `hub` when the hub marked it done ("Done by the hub"), for the PM's audit; null otherwise, and cleared by a re-answer or a promote |
 | unfiled_why | PM | why an answer whose filing failed for good was logged or marked done anyway ("Filing the answer") |
@@ -665,7 +665,7 @@ While a question is open its asker may change it (`POST /api/v1/questions/{id}/e
 `hub.py questions edit`, the MCP tool `hub_question_edit`) or withdraw it (`POST
 /api/v1/questions/{id}/delete`: `questions withdraw`, `hub_question_withdraw`), which removes the
 document. Both take `from` and `if_version`, both required, and are refused `forbidden` unless `from` is
-the question's own (`pm` for a question with none), and `conflict` once it is answered or logged
+the question's own (`pm` for a question with none), and `conflict`, field `status`, once it is no longer open
 (`questions_edit`, `questions_delete`). An edit's fields replace the old ones; `options` replaces the
 whole list. The owner withdraws an open question with the card's Withdraw button (the same delete route,
 owner token, version optional) and never edits one. All agents share one token, so `from` is a claim

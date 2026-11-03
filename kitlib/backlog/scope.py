@@ -106,6 +106,47 @@ def colliding_pairs(scopes_a, scopes_b):
     return [(a, b) for a in scopes_a for b in scopes_b if members_collide(a, b)]
 
 
+COMPLEMENT_CAP = 30     # members `complement` returns at most; more is "cannot auto-narrow"
+
+
+def complement(member, removed, tree, cap=COMPLEMENT_CAP):
+    """The sorted sibling members that cover `member` minus the repo paths in `removed`, over
+    `tree` (the tracked paths at the code main; the caller supplies it): `dir/**` for a sibling
+    folder with nothing removed under it, a file by name for a sibling file, descent into a
+    folder that holds a removed path. `member` is a folder, a `dir/**` glob or a file. It is
+    returned as it is (a one-member list) when no removed path collides with it. None when the
+    result would exceed `cap` members, or when `member` is a single file holding a removed path
+    (a literal .md included): the caller cannot auto-narrow. Collision is `members_collide`."""
+    if member == NONE or not any(members_collide(member, r) for r in removed):
+        return [member]
+    base = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
+    below = base + '/'
+    if not member.endswith(GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
+        return None         # a single file
+    out = []
+
+    def descend(prefix):
+        names = {}
+        for p in tree:
+            if p.startswith(prefix + '/'):
+                head, _, rest = p[len(prefix) + 1:].partition('/')
+                names[head] = names.get(head, False) or bool(rest)
+        for name in sorted(names):
+            path = prefix + '/' + name
+            if names[name]:
+                if any(members_collide(path, r) for r in removed):
+                    descend(path)
+                else:
+                    out.append(path + GLOB_SUFFIX)
+            elif not any(members_collide(path, r) for r in removed):
+                out.append(path)
+            if len(out) > cap:
+                return
+
+    descend(base)
+    return None if len(out) > cap else sorted(out)
+
+
 def area_from_scope(scopes):
     """`area` is the first component of the first scope that is not `none`, else `none`."""
     for s in scopes:

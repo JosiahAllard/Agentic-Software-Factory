@@ -403,7 +403,7 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     if ref:
         pairs.append(('ref', ref))
     pairs.append(('summary', summary))
-    lines = notes + ['ADDED %s, found on %s' % (rid, where)]
+    lines = notes + broad_scope_warning(scopes, summary, body) + ['ADDED %s, found on %s' % (rid, where)]
     lines += ['  %-11s %s' % (k + ':', v) for k, v in pairs]
     lines.append('Unprioritised: not in `next` until somebody prices it (`list --needs-priority`).')
     if review is not None:
@@ -414,6 +414,32 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     return Change({rid: _text(pairs, '\n'.join(sections))},
                   'backlog: add %s, found on %s' % (rid, where),
                   lines)
+
+
+NAMED_FILE = re.compile(r'(?<![\w./-])[\w.-]+(?:/[\w.-]+)*/[\w-]+\.[\w-]+(?![\w/-])')
+
+
+def broad_scope_warning(scopes, summary, body=None):
+    """`[one WARNING: line]` for the members of `scopes` that are broader than the change needs,
+    else []. `add` prints it and still adds. A member is flagged when it is a one-component
+    top-level `<top>/**`, or is broad (`omod.is_broad`) and the summary or body names a file path
+    under it (the line suggests those paths)."""
+    named = []
+    for m in NAMED_FILE.findall((summary or '') + '\n' + (body or '')):
+        if m not in named:
+            named.append(m)
+    parts = []
+    for m in scopes:
+        if m == smod.NONE or not omod.is_broad(m):
+            continue
+        under = [p for p in named if m.endswith(smod.GLOB_SUFFIX) and smod.members_collide(m, p)]
+        top = m.endswith(smod.GLOB_SUFFIX) and '/' not in m[:-len(smod.GLOB_SUFFIX)]
+        if under:
+            parts.append('`%s` is broad and the text names %s: scope those paths instead'
+                         % (m, ', '.join('`%s`' % p for p in under[:5])))
+        elif top:
+            parts.append('`%s` is a whole top-level folder: scope what the change touches' % m)
+    return ['WARNING: ' + '; '.join(parts)] if parts else []
 
 
 def _fold_arguments(ctx, found_on, why_not_folded):

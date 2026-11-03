@@ -6,6 +6,9 @@ nothing was run (no coverage), so "no caller" means Grep found none. Line counts
 analyst measured them unless marked estimate. Items are numbered; the scrub test forbids record
 ids in tracked files, so records are named in words.
 
+Status at the base of 2026-11-03: candidates 1 to 8, 12 and 13 are DONE; 9, 10 and 11 are open, with
+no backlog record; the stale doc text is fixed.
+
 ## Candidates
 
 Verdict, area, what, why, size, risk. Risk: L low, M medium.
@@ -13,8 +16,7 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
 - **Candidate 1, DONE** (kitlib/hubsite, tools/hub.py). `kitlib/hubsite/migrate.py`, the
   `hub.py migrate` verb, `tests/hubsite/test_migrate.py`. Why: one-shot copy of the old artifact
   hub, done; finished migrations are deleted (git keeps them). Size: ~566 + 1106 test lines.
-  Risk: L. `docs/action-hub.md:766-781` still names gone tools; it goes with this (see Stale doc
-  text). Done: the copy-in, the verb and their tests are gone. The read-only half `hub.py
+  Risk: L. Done: the copy-in, the verb and their tests are gone. The read-only half `hub.py
   validate` uses is kept as `kitlib/hubsite/storecheck.py`, with its tests and the
   `recommended` rule's cases in `tests/hubsite/test_storecheck.py`.
 - **Candidate 2, DONE** (kitlib/backlog, tools/backlog.py). `kitlib/backlog/migrate.py`, the
@@ -41,10 +43,10 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
 - **Candidate 5, DONE** (kitlib/machinepaths, schema). `machine_paths.piece_fixtures`. Why:
   refuses any non-empty value; nothing sets it. Size: ~15 lines, 4 test hits. Risk: L.
   Done: the key and its refusal are gone, so a config that sets it fails as an unknown key.
-- **Candidate 6, REMOVE** (kitlib/hubsite). `settings.py` relay (44, 57, 105-107, 142, 152) and
-  the relay text at `user.py:146`. Why: only reader is `tests/hubsite/test_settings.py:62`; never
-  built. Size: ~15 lines. Risk: L. Re-add with the existing hub relay lock-writes record if it
-  ships.
+- **Candidate 6, DONE** (kitlib/hubsite). `settings.py` relay and the relay text in `user.py`.
+  Why: only reader was a test; never built. Size: ~15 lines. Risk: L. Done: `settings.py` drops a
+  `relay` key on load and ignores it (`kitlib/hubsite/settings.py:111-112`), and the `user.py` relay
+  text is gone.
 - **Candidate 7, DONE** (config schema). `schema.py:278` `'new_worktree': {}`. Why: a section
   with no keys; no repo sets it (inference: kept so an old config loads). Size: ~2 lines + a
   `docs/kit-json.md` line. Risk: L. Done: the section is gone, so a config that sets it fails
@@ -54,14 +56,18 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
   guard and gate-allow, the launcher's old state file name, old stem guard and old task name,
   and the former-name config key in `user.py`. Done: all removed; the old-name scrub test's
   `ALLOWED` list keeps only history lines.
-- **Candidate 9, SHRINK** (config schema). `schema.py:338` RETIRED backlog keys
-  (`retired_docs`, `rename_script`, `ledger_repo`), `:341` RETIRED_SECTIONS `ruling_cites`. Why: still set by two other repos' `.kit.json`. Size: ~20 lines.
-  Risk: L once the owner edits those files.
-- **Candidate 10, SHRINK** (machine config). `user.py:128` RETIRED `('ledger_refs',)`. Why: still
-  in the machine config. Size: ~5 lines. Risk: L once the owner drops the key.
-- **Candidate 11, SHRINK** (kitlib/config). The old config folder-name fallback at
-  `migration.py:12`. Why: old folder absent. Risk: L. Covered by the existing record for reading
-  config from the PM repo; no new record.
+- **Candidate 9, SHRINK, open, no record** (config schema). The RETIRED backlog keys
+  (`retired_docs`, `rename_script`, `ledger_repo`) at `kitlib/config/schema.py:371` and the
+  RETIRED_SECTIONS (`ruling_cites`, `stubs`) at `:374`. Why: still set by two other repos'
+  `.kit.json` (as measured then; not rechecked). Size: ~20 lines. Risk: L once the owner edits those
+  files.
+- **Candidate 10, SHRINK, open, no record** (machine config). `kitlib/config/user.py:151` RETIRED
+  is now `('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')`. Why: kept so
+  an old machine config loads. Risk: L once the owner drops the keys.
+- **Candidate 11, SHRINK, open, no record** (kitlib/config). The old config folder-name fallback,
+  the old-folder-name constant at `kitlib/config/migration.py:12`, still read while the new folder has no config.
+  Why: old folder absent (as measured then). Risk: L. The record it was filed under (config out of
+  the home folder) is closed.
 - **Candidate 12, DONE** (kitlib/records/landing). `landing.lock_file` `git:<name>` path
   (`landing.py:106-118`). Why: one other repo sets it, so it is live. Size: ~15 lines. Risk: M;
   switch that repo to the default only with no landing in flight. Done: that repo dropped the
@@ -75,10 +81,12 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
 
 - **Kept 14** kitlib/pytests, tools/pytests.py: live gate step in two repos and `kit_tests.py:74`.
 - **Kept 15** kitlib/dailyfull/bisect.py, gate.smoke_steps, gate.docs_only: ordered but switched
-  on nowhere; a config gap, not dead code (owner decision 2).
+  on nowhere; a config gap, not dead code (owner decision 2). Now switched on: the kit's
+  `.kit.json` sets `daily_full.bisect`, `smoke_steps` and `docs_only`.
 - **Kept 16** hosts/codex/adapter canaries: run by hand, documented as kept.
 - **Kept 17** kitlib/kitrelease, kitlib/packageexport: `boot/kitboot.py` VERIFIER imports them.
-- **Kept 18** optional/usage/*: kept by owner choice (`tool-audit.md:177-178`).
+- **Kept 18** optional/usage/*: kept by owner choice (the tool audit that said so is no longer in
+  the repository).
 - **Kept 19** tools/config_move.py, kitlib/config/move.py: a plan is in flight (the existing
   record for moving machine config out of the home folder).
 - **Kept 20** kitlib/git/fake/*: unit-test git under `KIT_FAKE_GIT=1`.
@@ -93,24 +101,18 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
 - The hub store folder (guard refused).
 - kitlib/guard depth.
 - Host runtime dispatch beyond `hosts.json`.
-- The origin of `landing.in_flight` and `ledger.pre_commit_check` (set nowhere).
+- The origin of `landing.in_flight` and `ledger.pre_commit_check` (set nowhere then). Both are
+  defined fields in `kitlib/config/schema.py` now, so they are not dead keys.
 - Candidate 3 line counts are estimated.
 - Nothing was run (no coverage); "no caller" = Grep + a read of dynamic dispatch.
 
 ## Owner decisions
 
-1. Candidate 13: configure `backlog_lint` or cut ~930 lines. Analyst default: cut.
+1. Candidate 13: configure `backlog_lint` or cut ~930 lines. Analyst default: cut. Done: cut.
 2. Kept 15: switch on bisect, smoke_steps and docs_only in the kit's `.kit.json`, or withdraw the
-   order and cut `bisect.py` (178 + 186 test lines). Default: switch on.
+   order and cut `bisect.py` (178 + 186 test lines). Default: switch on. Done: switched on.
 3. Candidates 9 and 10: approve dropping the retired keys from two other repos' `.kit.json` and
    from the machine config.
 4. Candidate 12: approve moving the other repo's landing lock to the default name, between
    landings. Done: approved, the key dropped there and the `git:<name>` form removed.
 5. Candidate 3: done; installed allow lines lose their lane lines, so each repo prints its lines again (docs/allow-rules.md).
-
-## Stale doc text
-
-The mirror and migrate passage of `docs/action-hub.md` went with Candidate 1; that file no
-longer names `tools/hub_mirror.py`, `kitlib.hubmirror` or `hub.py migrate`. Still stale:
-`docs/install.md`'s tool list names `hub_mirror.py`, and the Hub store row of
-`docs/pm-data-branch.md` says the old hub's data is copied in with `hub.py migrate`.

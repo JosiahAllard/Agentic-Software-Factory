@@ -593,13 +593,23 @@ def _restore(rec, ended, rules):
     """`(other ids, why, set command)` that gives `rec` back the original members of each
     `narrowed:` line whose other record holds its part no more (`ended(rid)` -> why or None,
     ended_reader), clearing those lines and keeping the rest (narrowed.restore_set, the landing
-    scope check's form too); None when no line names such a record."""
+    scope check's form too); None when no line names such a record. A member narrowed for
+    several records (one `narrowed:` line each, a split against several live pulls) comes back
+    only once every one of them has ended: given back while one still holds its part, the
+    member would cover that record's live paths again."""
     from . import narrowed as nmod
-    whys = {}
+    whys, by_member = {}, {}
+    for v in rec.all('narrowed'):
+        line, _err = rmod.narrowed_line(v, rules)
+        if line is not None:
+            by_member.setdefault(line[0], []).append(line[1])
+
+    def gone(rid):
+        whys.setdefault(rid, ended(rid))
+        return whys[rid] is not None
 
     def done(line):
-        whys.setdefault(line[1], ended(line[1]))
-        return whys[line[1]] is not None
+        return all(gone(o) for o in by_member.get(line[0], [line[1]]))
     got = nmod.restore_set(rec.id, rec.all('scope'), rec.all('narrowed'), rules, done)
     if got is None:
         return None
@@ -787,33 +797,14 @@ class Part(object):
 class Split(object):
     """A narrowing `next` shows and `pull` writes: the candidate narrowed clear of every live
     pull it collides with, one Part per live pull (`parts`). `keep` is the candidate's scope
-    after it, `c_changes` `[(member, dropped, kept)]` for each candidate member it changes.
-    `other`, `other_keep`, `l_changes` and `plan` read the one Part of a split against one live
-    pull, and raise ValueError on a split against several."""
+    after it, `c_changes` `[(member, dropped, kept)]` for each candidate member it changes."""
 
     def __init__(self, keep, c_changes, parts):
         self.keep, self.c_changes, self.parts = keep, c_changes, parts
 
-    def _one(self):
-        if len(self.parts) != 1:
-            raise ValueError('a split against %d live pulls has no one other side'
-                             % len(self.parts))
-        return self.parts[0]
-
-    other = property(lambda self: self._one().other)
-    other_keep = property(lambda self: self._one().other_keep)
-    l_changes = property(lambda self: self._one().l_changes)
-    plan = property(lambda self: self._one().plan)
-
     def narrows_other(self):
         """True when the split narrows a live pull's record too (a Part has l_changes)."""
         return any(p.l_changes for p in self.parts)
-
-
-def split(c_scopes, other, protected, tree, plan):
-    """split_all against the one live pull `other` (`protected` its T, `plan` that it has a
-    `## Files` section)."""
-    return split_all(c_scopes, [(other, protected, plan)], tree)
 
 
 def split_all(c_scopes, parts, tree):
@@ -877,7 +868,7 @@ def _split(c_scopes, parts, tree):
             return None, 'complement cannot narrow %s' % c
         c_kept.append((c, kept))
     l_kept_all = []
-    for other, l_scopes, pairs, prot, plan in sides:
+    for other, l_scopes, pairs, _prot, plan in sides:
         l_kept = []
         for l in l_scopes:
             cs = [c for c, ll in pairs if ll == l]
@@ -891,7 +882,7 @@ def _split(c_scopes, parts, tree):
             kept = smod.complement(l, sorted(set(removed)), tracked) if removed else [l]
             if kept is None:
                 return None, 'complement cannot narrow %s of %s' % (l, other.id)
-            extra = [t for t in prot if within(base(l), t)
+            extra = [t for t in prot_all if within(base(l), t)
                      and not any(rel(base(k), t) for k in kept)]
             l_kept.append((l, sorted(set(kept + extra))))
         l_kept_all.append(l_kept)

@@ -173,6 +173,14 @@ def seed_page(store):
     return 'plan-1'
 
 
+def seed_page_to_place(store):
+    # an id not yet used, so a store seeded again (tests.hubsite.test_httpd) starts at version 1
+    doc_id = 'place-%d' % (len(store.snapshot()[1].get('pages') or {}) + 1)
+    store.put('page_html', doc_id, {'html': '<p>x</p>'})
+    store.put('pages', doc_id, {'title': 't'})
+    return doc_id
+
+
 def seed_approval(store, decision=None):
     now = datetime.datetime.fromisoformat(CLOCK())
     doc = ap.new_doc(URL, 't', 'a' * 40, [{'path': 'x.md', 'base_blob': None,
@@ -258,6 +266,8 @@ ROWS = {
     ('POST', '/pages'): (None, {'id': 'plan-1', 'title': 't', 'html': '<p>x</p>'}, None),
     ('GET', '/pages/{id}'): (seed_page, None, None),
     ('POST', '/pages/{id}/delete'): (seed_page, None, None),
+    ('POST', '/pages/{id}/place'): (seed_page_to_place,
+                                    {'kind': 'plan', 'folder': 'f', 'if_version': 1}, None),
     ('GET', '/schedules'): (None, None, None),
     ('POST', '/schedules'): (seed_repo, SCHEDULE_BODY, None),
     ('GET', '/findings'): (None, None, None),
@@ -409,6 +419,8 @@ class RolesCase(unittest.TestCase):
                 # a session records its own hand-off; the owner and the PM read them
                 ('GET', '/handoffs'): ANY, ('POST', '/handoffs'): AGENT,
                 ('POST', '/pages'): AGENT, ('POST', '/pages/{id}/delete'): OWNER,
+                # a card's kind, folder and repo: the agent that files it or the owner
+                ('POST', '/pages/{id}/place'): ANY,
                 # the owner sets the kit's automatic tasks; an agent only reads them
                 ('GET', '/schedules'): ANY, ('POST', '/schedules'): OWNER,
                 ('POST', '/records/{repo}'): OWNER, ('POST', '/records/{repo}/{id}/edit'): OWNER,

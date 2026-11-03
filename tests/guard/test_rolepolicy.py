@@ -759,6 +759,48 @@ class LockMcp(Base):
                 self.assertEqual(rolepolicy.mode(a, self.w.ctx(load=load)), (None, None))
 
 
+class BlenderMcp(Base):
+    """The Blender bridge's two tools that run Python or write a file (blender_exec, blender_render:
+    rolepolicy.BLENDER_WRITES) are refused to every role that edits nothing (docs/blender-mcp.md
+    "Allow rules"); its other tools, and every tool for a write or controller role, pass."""
+
+    def mcp(self, name, role='reviewer', server='blender'):
+        fmt = self.w.ctx().host_profile().mcp_tool_format
+        tool = fmt.format(plugin='pm-kit', server=server, tool=name)
+        return Action('mcp', tool=tool, cwd=self.w.wt, agent='a1' if role else None, agent_role=role)
+
+    def test_exec_and_render_are_refused_to_the_no_edit_roles(self):
+        for name in ('blender_exec', 'blender_render'):
+            for role in ('reviewer', 'test-runner', 'lander'):
+                with self.subTest(name=name, role=role):
+                    d = self.denied(self.mcp(name, role), 'role-blender')
+                    self.assertIn(name, d.reason)
+                    self.assertIn(role, d.reason)
+
+    def test_a_write_or_controller_role_runs_them(self):
+        for name in ('blender_exec', 'blender_render'):
+            for role in ('senior-worker', 'pm'):
+                with self.subTest(name=name, role=role):
+                    self.assertIsNone(rolepolicy.check(self.mcp(name, role), self.w.ctx()))
+                    self.allowed(self.mcp(name, role))
+
+    def test_the_other_blender_tools_pass_every_role(self):
+        for name in ('blender_open', 'blender_list', 'blender_inspect', 'blender_close'):
+            for role in ('reviewer', 'test-runner', 'lander', 'senior-worker'):
+                with self.subTest(name=name, role=role):
+                    self.allowed(self.mcp(name, role))
+
+    def test_another_server_name_is_held_the_same(self):
+        self.denied(self.mcp('blender_exec', 'reviewer', server='renamed'), 'role-blender')
+        d = rolepolicy.check(Action('mcp', tool='mcp__other__blender_render', cwd=self.w.wt, agent='a1',
+                                    agent_role='test-runner'), self.w.ctx())
+        self.assertEqual((d.verdict, d.rule), ('deny', 'role-blender'))
+
+    def test_the_names_are_the_bridges(self):
+        from kitlib import blendermcp
+        self.assertLessEqual(set(rolepolicy.BLENDER_WRITES), set(blendermcp.TOOL_NAMES))
+
+
 class Switch(unittest.TestCase):
     """guard.role_policy is the one switch: off (false or unset), no mode holds any role."""
 
@@ -956,7 +998,14 @@ class Rules(Base):
                 self.denied(self.shell('Get-Location', role, workdir=self.w.plain), 'role-workdir')
                 self.denied(self.shell('python -i', role), 'role-shell')
                 self.denied(self.shell(LOCK + ' status --force', role), 'role-lock')
-                write = self.shell('Set-Content -LiteralPath a.txt -Value changed', role)
+                tool = self.w.ctx().host_profile().mcp_tool_format.format(plugin='pm-kit', server='blender',
+                                                                          tool='blender_exec')
+                exec_ = Action('mcp', tool=tool, cwd=self.w.wt, agent='a1', agent_role=role)
+                if 'role-blender' in held:
+                    self.denied(exec_, 'role-blender')
+                else:
+                    self.allowed(exec_)
+                write =self.shell('Set-Content -LiteralPath a.txt -Value changed', role)
                 if self.row(rolepolicy.READ_ONLY_CHECKOUT) in texts:
                     self.denied(write, 'write-jail')
                 else:

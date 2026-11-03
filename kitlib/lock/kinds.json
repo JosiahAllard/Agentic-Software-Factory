@@ -5,7 +5,7 @@
   "land-test": {"cpu": 4, "gpu": 0, "warn_min": 30, "mem_mb": 3584},
   "app-run": {"cpu": "medium", "gpu": 0, "warn_min": 30, "mem_mb": 1024},
   "build": {"cpu": "medium", "gpu": 0, "warn_min": 60, "mem_mb": 1280},
-  "graph-build": {"cpu": "heavy", "gpu": 0, "warn_min": 120, "mem_mb": 26368, "mem_since": "9999-12-31"},
+  "graph-build": {"cpu": "heavy", "gpu": 0, "warn_min": 120, "mem_mb": 12288, "mem_since": "9999-12-31"},
   "daily-full": {"cpu": "heavy", "gpu": 0, "warn_min": 120, "mem_mb": 5632},
   "cpu-eval": {"cpu": "heavy", "gpu": 0, "warn_min": 120, "mem_mb": 1792},
   "local-ai": {"cpu": "medium", "gpu": "pool", "share": true, "warn_min": 30},

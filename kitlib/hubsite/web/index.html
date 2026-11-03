@@ -3111,7 +3111,7 @@ ul.hist .sch-line{display:block}
       pmQBucket(d) === "other" ? el("span", {class:"chip need", text: "status: " + String(d.status)}) : null
     );
     const parts = [head, el("h2", {text: d.title || "(untitled)"})];
-    if (d.context) parts.push(el("p", {class:"ctx"}, ...linkText(d.context)));
+    if (d.context) parts.push(el("p", {class:"ctx"}, ...linkText(d.context, d.repo)));
     const replies = inboxFor(d.id);
     if (replies.length) parts.push(el("div", {class:"links"}, el("button", {class:"link", type:"button", text: (replies.some(m => !m.read) ? "New answer from the PM" : "The PM's answer") + (replies.length > 1 ? "s (" + replies.length + ")" : "") + " in the Inbox", onclick: () => goInbox(d.id)})));
     parts.push(refsLine(d.refs, "Refs: ", ", "));
@@ -3126,8 +3126,8 @@ ul.hist .sch-line{display:block}
         radios.push(input);
         input.addEventListener("change", () => { draft.choice = i; saveDraft(d.id, draft); btn.disabled = false; });
         fs.append(el("label", {class:"opt", for: name + "-" + i}, input,
-          el("span", {class:"ol"}, ...(o.label ? linkText(o.label) : ["Option " + (i+1)]), i === rec ? el("span", {class:"chip rec", text:"Recommended"}) : null),
-          o.description ? el("span", {class:"od"}, ...linkText(o.description)) : null));
+          el("span", {class:"ol"}, ...(o.label ? linkText(o.label, d.repo) : ["Option " + (i+1)]), i === rec ? el("span", {class:"chip rec", text:"Recommended"}) : null),
+          o.description ? el("span", {class:"od"}, ...linkText(o.description, d.repo)) : null));
       });
       const otherIn = el("input", {type:"radio", name, value:"other", id: name + "-other", checked: draft.choice === "other"});
       otherIn.addEventListener("change", () => { draft.choice = "other"; saveDraft(d.id, draft); btn.disabled = !draft.note.trim(); });
@@ -3222,17 +3222,36 @@ ul.hist .sch-line{display:block}
   // Text that names a document, as nodes: an http(s) URL is a link, and so is a word that is a listed document's id
   // (to the hub at #doc=<id>); both open in a new tab. Every other piece, and any URL of another scheme, is a text
   // node. A link is made only with el(), from the parsed URL's own href or the encoded id: never from markup.
-  // Repo file paths are not linked: the hub holds no repository's web address, and serves no file by path.
-  function linkText(text){
-    const s = String(text == null ? "" : text), ids = new Set(state.pages.map(p => p.id)), out = [];
+  // A repo file path is a link to the repository's own host (never to the hub, which serves no file by path) when
+  // the repo's entry holds a web address (web, branch, top: the names at its root on the main branch) and the path
+  // has a known extension, no empty, . or .. part, and a first part that is one of those names; else it is text.
+  const PATH_EXT = /\.(?:md|py|json|html|css|js|txt|yml|yaml|toml|ps1|sh)$/i;
+  function repoEntry(repo){
+    const k = String(repo || "").toLowerCase(); if (!k) return null;
+    const named = d => String(d.name || d.id).toLowerCase();
+    const hit = state.repos.find(d => named(d) === k) || state.repos.find(d => Array.isArray(d.aliases) && d.aliases.some(a => String(a).toLowerCase() === k));
+    return hit && typeof hit.web === "string" && typeof hit.branch === "string" && Array.isArray(hit.top) ? hit : null;
+  }
+  // The address of path in ent, or null; the web address must still parse as a secure web address of no other scheme.
+  function repoHref(ent, path){
+    const parts = path.split("/");
+    if (!PATH_EXT.test(path) || parts.length < 2 || parts.some(p => !p || p === "." || p === "..") || !ent.top.includes(parts[0])) return null;
+    try { const u = new URL(ent.web); if (u.protocol !== "http" + "s:" || u.username || u.password || u.search || u.hash) return null; }
+    catch (e) { return null; }
+    const enc = a => a.split("/").map(encodeURIComponent).join("/");
+    return ent.web.replace(/\/+$/, "") + "/blob/" + enc(ent.branch) + "/" + enc(path);
+  }
+  function linkText(text, repo){
+    const s = String(text == null ? "" : text), ids = new Set(state.pages.map(p => p.id)), out = [], ent = repoEntry(repo);
     let last = 0, m;
     const WEB = "http";   // in parts: the page text holds no literal web address (PageTextTest)
-    const re = /https?:\/\/[^\s<>"'`]+|[A-Za-z0-9][A-Za-z0-9._-]*/g;
+    const re = /https?:\/\/[^\s<>"'`]+|[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+|[A-Za-z0-9][A-Za-z0-9._-]*/g;
     const link = (href, label) => el("a", {href, target:"_blank", rel:"noopener noreferrer", text: label});
     while ((m = re.exec(s))) {
       let tok = m[0].replace(/[.,;:!?)\]]+$/, ""), node = null;
       if (/^https?:/i.test(tok)) { try { const u = new URL(tok); if (u.protocol === WEB + ":" || u.protocol === WEB + "s:") node = link(u.href, tok); } catch (e) {} }
       else if (ids.has(tok)) node = link("#doc=" + encodeURIComponent(tok), tok);
+      else if (ent && tok.includes("/") && repoHref(ent, tok)) node = link(repoHref(ent, tok), tok);
       // Linked only as a whole word: not inside a path (kitlib/design), a name or a longer token.
       const before = s[m.index - 1], after = s[m.index + tok.length];
       if (node && !/^https?:/i.test(tok) && !((before === undefined || /[\s(\["'`<,;:]/.test(before)) && (after === undefined || /[\s)\]"'`>,;:!?.]/.test(after)))) node = null;

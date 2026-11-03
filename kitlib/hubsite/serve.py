@@ -239,7 +239,7 @@ from . import api as _api
 from . import jobs as _jobs
 from . import push as _push
 from . import access, auth, backlog, codestale, derived, gitsync, httpd, recordwrite, tunnel
-from . import selfrestart, skilledits
+from . import repoweb, selfrestart, skilledits
 from .store import HubError, Store, StoreBusy
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
@@ -571,7 +571,8 @@ def machine_sources(home=None, sync=True):
         src.usage = report
     if cfg and cfg.get('sessions_file'):
         tops = _toplevels()         # one memo: the repo menu, the alias check, the backlog
-        src.repos = lambda stored: _repos_with_session_keys(cfg, stored, tops)
+        webs = repoweb.Webs(_repo_pairs(cfg, tops))     # each repo's web address, for repo-path links
+        src.repos = lambda stored: webs.annotate(_repos_with_session_keys(cfg, stored, tops))
         src.known_repos = _configured_repos(cfg, tops)
         src.backlog = lambda refresh_s: backlog.Views(_repo_pairs(cfg, tops), refresh_s)
     return src

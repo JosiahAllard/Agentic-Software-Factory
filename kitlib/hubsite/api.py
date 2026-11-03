@@ -382,6 +382,7 @@ data: a client that waits `since` it is told of any write the copy missed. GET h
 store's folder to the owner only.
 """
 import collections
+import contextlib
 import datetime
 import json
 import math
@@ -710,6 +711,16 @@ class Api(object):
         # thread; set by serve.build. None files it in the answer's own call
         # (questions_answer)
         self.file_later = None
+        # run(qid, fn): fn, the park (or its undoing) of the record a question is bound to, off
+        # the request thread; set by serve.build. None runs it in the question's own call
+        # (questions_add, questions_edit, questions_delete)
+        self.park_later = None
+        # held by every record write a question drives (file_answer, park_question,
+        # unpark_question): each reads the question and writes the record as one step, so a park
+        # and the filing or withdrawal of the same question never interleave. serve.build sets a
+        # threading.RLock with file_later and park_later; without them every such write runs in
+        # its request's own call, so a context that holds nothing does
+        self.record_lock = contextlib.nullcontext()
 
     def call(self, method, path, role, body=None, query=None, via='', raise_unexpected=False,
              agent_words=False, strong=False):
@@ -1183,7 +1194,10 @@ def _session_from(api, who, what):
 
 def questions_add(api, req):
     """A new open question: `record` (the backlog record its answer is filed into) or `class`
-    (_class) is required."""
+    (_class) is required. A bound question parks its record (park_question: blocked on the owner
+    until it is answered), off the request when the server runs it later. A class-only question
+    whose `refs` name a record pulled in a configured repository is stored, with a warning that
+    the record goes on unparked (_pulled_refs)."""
     b = _fields(req, ('repo', 'from', 'title', 'context', 'options', 'recommended', 'refs',
                       'urgent', 'story', 'record', 'class'), required=('title',))
     for name in ('repo', 'from', 'title', 'context', 'story'):
@@ -1196,7 +1210,15 @@ def questions_add(api, req):
         b['record'] = _bound(api, b['record'])
     b.setdefault('options', [])
     b.update(status='open', asked_at=api.clock())
-    return api.add('questions', b, req)
+    out = api.add('questions', b, req)
+    if 'record' in b:
+        return _park_now(api, out['id'], out, _via(req))
+    for rid in _pulled_refs(api, b.get('refs')):
+        out['warnings'].append({
+            'level': hubvalidate.WARN, 'rel': 'questions/%s' % out['id'], 'field': 'refs',
+            'code': 'refs-pulled-record',
+            'message': 'refs name pulled record %s: ask with --record so the hub parks it' % rid})
+    return out
 
 
 def questions_answer(api, req):
@@ -1313,7 +1335,8 @@ def _record_state(api, record):
 
 def _filed_as(before, after):
     """What a filed answer did to its record, from the record's state before and after the
-    filing (_record_state): `pulled` (someone is working on it), `freed` (it was parked or
+    filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
+    hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
     could not be read (the push then treats it as before this field: docs/action-hub.md "Push
     notifications")."""
@@ -1321,6 +1344,8 @@ def _filed_as(before, after):
         return 'pulled'
     if before is None or after is None:
         return None
+    if after == 'pulled':
+        return 'pulled'
     if before in ('parked', 'blocked') and after == 'open':
         return 'freed'
     return 'held'
@@ -1340,7 +1365,12 @@ def file_answer(api, doc_id, via='api', full=False):
     that code, nothing marked. A failure with the code and phrase the question's `filing` has
     already writes nothing: its version and revision are those it has. The record write is
     idempotent (kitlib.hubsite.recordwrite answer), so a crash anywhere in between is mended by
-    filing again."""
+    filing again. It runs under Api.record_lock, as park_question and unpark_question do."""
+    with api.record_lock:
+        return _file_answer(api, doc_id, via, full)
+
+
+def _file_answer(api, doc_id, via, full):
     d = api.store.get('questions', doc_id)
     if d is None or d.get('status') != 'answered':
         return None
@@ -1391,9 +1421,13 @@ def file_answer(api, doc_id, via='api', full=False):
 
 def questions_file(api, req):
     """File every answered question bound to a record (or only `id`) that is not filed yet:
-    {ok, filed: [ids], failed: [{id, code, message}]}; a question that moved meanwhile is in
-    neither. An unknown `id` is `not_found`; one that is not answered or has no record files
-    nothing."""
+    {ok, filed: [ids], failed: [{id, code, message}], parked, unparked, park_failed}; a
+    question that moved meanwhile is in neither. An unknown `id` is `not_found`; one that is not
+    answered or has no record files nothing. Each open bound question not parked yet is parked
+    (`parked` [ids]); without `id`, the lines of questions gone or bound elsewhere are dropped
+    (`unparked` [{id, record, unblocked}], _sweep_asks), and a hand-written line whose question
+    is gone is left and listed (`orphan_hand_lines` [{repo, id, q}]). A park or a drop not made
+    is in `park_failed` [{id, code, message}]."""
     b = _fields(req, ('id',))
     one = _text(b, 'id')
     if one is not None:
@@ -1401,16 +1435,243 @@ def questions_file(api, req):
         ids = [one]
     else:
         ids = sorted(api.store.docs('questions'), key=_natural)
-    filed, failed = [], []
+    filed, failed, parked, park_failed = [], [], [], []
     for doc_id in ids:
         got = file_answer(api, doc_id, _via(req), full=req.full)
         if got is None or got.get('moved'):
-            continue
-        if got['filed']:
+            pass
+        elif got['filed']:
             filed.append(doc_id)
         else:
             failed.append({'id': doc_id, 'code': got['code'], 'message': got['message']})
-    return {'ok': True, 'filed': filed, 'failed': failed}
+        # an open bound question whose park has not happened (the hub stopped first, or the
+        # store could not be written) is parked now
+        got = park_question(api, doc_id, _via(req)) if _parks(api) else None
+        if got is None or got.get('moved'):
+            continue
+        code = _park_failed(got)
+        if code:
+            park_failed.append({'id': doc_id, 'code': code, 'message': got.get('message')})
+        else:
+            parked.append(doc_id)
+    unparked, hand = [], []
+    if one is None and _parks(api):
+        unparked, more, hand = _sweep_asks(api)
+        park_failed += more
+    return {'ok': True, 'filed': filed, 'failed': failed, 'parked': parked,
+            'unparked': unparked, 'park_failed': park_failed, 'orphan_hand_lines': hand}
+
+
+# --- the hub as the owner's proxy: a bound question parks its record ------------------------------
+
+# what a question's `park` says, by park's outcome (recordwrite.PARK_OUTCOMES) or the code its
+# write failed with: fixed phrases, as FILING_SAYS
+PARK_SAYS = {
+    'blocked': 'the record waits on this question: blocked on the owner until it is answered',
+    'already': 'the record waits on this question',
+    'held': 'the record was held on the owner already: that hold keeps its own end',
+    'parked': 'the record is parked: the hub leaves a park as it is',
+    'gone': 'the record is completed or gone: nothing waits on this question',
+    'not_found': 'the record is completed or gone: nothing waits on this question',
+    'invalid': 'the backlog store refused to block the record: the PM handles it',
+    'store': 'the backlog store could not be written now: the hub tries again',
+    'unavailable': 'this hub cannot write a backlog store: the hub tries again',
+    'no_store': 'this repository names no backlog store the hub may write (.kit.json '
+                '"backlog".store): the PM handles it',
+}
+# the codes a later park tries again (POST questions/file; the hub runs it at start)
+PARK_RETRY = ('store', 'unavailable', 'internal')
+UNPARK_FAILED = ('the record still waits on this question, which is gone or bound elsewhere: the '
+                 'hub tries again at its next start or questions file call')
+
+
+def _parks(api):
+    """Whether this server parks a bound question's record: it has the record_park view."""
+    return api.views is not None and callable(getattr(api.views, 'record_park', None))
+
+
+def _until(doc_id):
+    """The `until` condition a record parked on question doc_id waits on."""
+    return 'question:%s answered' % doc_id
+
+
+def park_question(api, doc_id, via='hub'):
+    """Block the record the open question doc_id is bound to on the owner, until it is
+    answered, through the `record_park` view (kitlib.hubsite.recordwrite park, Session: hub-park:
+    the hub as the owner's proxy), then mark the question `park` {at, code, message} (code park's
+    outcome, recordwrite.PARK_OUTCOMES, or the failure's; message a fixed phrase of PARK_SAYS).
+    None for a question that is gone, not open, bound to no record, or parked already (a `park`
+    whose code is not one to retry, PARK_RETRY); else {id, code, message, version, revision}, or
+    {id, moved: true} when the question changed before its mark. Under Api.record_lock: a
+    question withdrawn or answered meanwhile is read as it is now, so a late park never blocks a
+    record on an ask that is gone. The record write is idempotent, so a retry is safe."""
+    with api.record_lock:
+        d = api.store.get('questions', doc_id)
+        if d is None or d.get('status') != 'open' or not isinstance(d.get('record'), dict):
+            return None
+        was = d.get('park') if isinstance(d.get('park'), dict) else None
+        if was is not None and was.get('code') not in PARK_RETRY:
+            return None
+        record = d['record']
+        try:
+            got = api._view('record_park')(record.get('repo'), record.get('id'), doc_id,
+                                           _until(doc_id), d.get('from') or AGENT_FROM)
+        except HubError as e:
+            code = e.code
+        except Exception:           # noqa: BLE001 - a view is another module's code
+            code = 'internal'
+        else:
+            code = got.get('park') if isinstance(got, dict) and got.get('park') else 'blocked'
+        message = PARK_SAYS.get(code, 'the record could not be parked (%s)' % code)
+        if was is not None and (was.get('code'), was.get('message')) == (code, message):
+            return {'id': doc_id, 'code': code, 'message': message, 'version': _version(d),
+                    'revision': api.store.revision}
+        try:
+            r = api.store.update('questions', doc_id, {
+                'park': {'at': api.clock(), 'code': code, 'message': message}, 'via': via},
+                if_version=_version(d))
+        except HubError as e:
+            if e.code == 'conflict':
+                return {'id': doc_id, 'moved': True}
+            return {'id': doc_id, 'code': e.code, 'message': AGENT_SAYS.get(e.code, e.message)}
+        return {'id': doc_id, 'code': code, 'message': message, 'version': r.version,
+                'revision': r.revision}
+
+
+def unpark_question(api, doc_id, record):
+    """The ask behind question doc_id is gone from `record` ({repo, id}): it was withdrawn or
+    deleted, or edited to another record or none. Drop the record's `until: owner
+    question:<doc_id> answered` line through the `record_unpark` view (recordwrite withdraw:
+    the last owner line clears the owner, reason `ask withdrawn`). Under Api.record_lock, and
+    only while the question is not bound to `record` now (a rebind back, or the answer's filing,
+    is left to its own write). None when nothing was asked of the view, else the view's
+    {lines, dropped, unblocked}, or {code} when it failed."""
+    if not isinstance(record, dict):
+        return None
+    with api.record_lock:
+        d = api.store.get('questions', doc_id)
+        if d is not None and d.get('record') == record:
+            return None
+        try:
+            return api._view('record_unpark')(record.get('repo'), record.get('id'),
+                                              _until(doc_id))
+        except HubError as e:
+            return {'code': e.code}
+        except Exception:           # noqa: BLE001 - a view is another module's code
+            return {'code': 'internal'}
+
+
+def _park_now(api, doc_id, out, via):
+    """Park the record question doc_id was just bound to: off the request through park_later
+    when the server set it, else here, its result on `out` as `park` (with the mark's version
+    and revision, the question's last write)."""
+    if not _parks(api):
+        return out
+    if api.park_later is not None:
+        api.park_later(doc_id, lambda: _later_said(park_question(api, doc_id, via), 'parked'))
+        return out
+    got = park_question(api, doc_id, via)
+    if got is not None:
+        out['park'] = got
+        if 'version' in got:
+            out.update(version=got['version'], revision=got['revision'])
+    return out
+
+
+def _park_failed(got):
+    """The code of a park that was not made, from park_question's answer: a code to retry
+    (PARK_RETRY), or a mark that was not written (an answer with no version, the question gone
+    meanwhile, say). None for a park made or left alone, or a question that moved."""
+    if got is None or got.get('moved'):
+        return None
+    if got.get('code') in PARK_RETRY or 'version' not in got:
+        return got.get('code') or 'internal'
+    return None
+
+
+def _later_said(got, what):
+    """For serve's log, what a park (`what` 'parked') or its undoing ('unparked') run off the
+    request failed with: 'record not <what>: <code>', or None. An undoing failed when
+    unpark_question answers a code; nothing retries it then but the sweep at the next hub start
+    (questions_file)."""
+    code = _park_failed(got) if what == 'parked' else (got or {}).get('code')
+    return 'record not %s: %s' % (what, code) if code else None
+
+
+def _sweep_asks(api):
+    """Drop the `until: owner question:<q> answered` lines the hub wrote (`parked`: the record's
+    body says the hub parked it on q) that no question will ever end: q is gone from the hub, or
+    bound now to another record or none (unpark_question, reason `ask withdrawn` on the last
+    line). The lines come from the `record_asks` view. A line a person wrote is never dropped,
+    so an owner's hold never ends on the hub's word: one whose question is gone is reported in
+    the third list for the PM to clear by hand. ([{id, record, unblocked}], [{id, code,
+    message}], [{repo, id, q}])."""
+    view = getattr(api.views, 'record_asks', None) if api.views is not None else None
+    if not callable(view):
+        return [], [], []
+    try:
+        lines = view() or []
+    except Exception:               # noqa: BLE001 - a view is another module's code
+        return [], [], []
+    done, failed, hand = [], [], []
+    for a in lines:
+        q, record = a.get('q'), {'repo': a.get('repo'), 'id': a.get('id')}
+        d = api.store.get('questions', q)
+        if not a.get('parked'):
+            if d is None:
+                hand.append({'repo': record['repo'], 'id': record['id'], 'q': q})
+            continue
+        if d is not None and d.get('record') == record:
+            continue
+        got = unpark_question(api, q, record)
+        if got is None:
+            continue
+        if got.get('code'):
+            failed.append({'id': q, 'code': got['code'], 'message': UNPARK_FAILED})
+        elif got.get('dropped'):
+            done.append({'id': q, 'record': record, 'unblocked': bool(got.get('unblocked'))})
+    return done, failed, hand
+
+
+def _unpark_now(api, doc_id, record, out):
+    """unpark_question for `record`, off the request through park_later when set."""
+    if not _parks(api) or not isinstance(record, dict):
+        return out
+    if api.park_later is not None:
+        api.park_later(doc_id, lambda: _later_said(unpark_question(api, doc_id, record),
+                                                   'unparked'))
+        return out
+    got = unpark_question(api, doc_id, record)
+    if got is not None:
+        out['unpark'] = got
+    return out
+
+
+def _pulled_refs(api, refs):
+    """The refs (`ID` or `repo:ID`) of a class-only question that name a record pulled in a
+    configured repository, read from the backlog view's held answer: [record id]. Empty when the
+    view is missing or fails: a warning only, never a refusal."""
+    names = [r.strip() for r in (refs if isinstance(refs, list) else [])
+             if isinstance(r, str) and r.strip()]
+    if not names:
+        return []
+    try:
+        entries = api._view('backlog')()
+    except Exception:               # noqa: BLE001 - no backlog read: no warning
+        return []
+    pulled = set()
+    for e in entries if isinstance(entries, list) else []:
+        repo = str(e.get('repo') or '').lower() if isinstance(e, dict) else ''
+        for i in (e.get('items') or []) if isinstance(e, dict) else []:
+            if isinstance(i, dict) and i.get('s') == 'pulled' and isinstance(i.get('id'), str):
+                pulled.add(i['id'])
+                pulled.add('%s:%s' % (repo, i['id'].lower()))
+    out = []
+    for r in names:
+        rid = r.rpartition(':')[2]
+        if (r in pulled or r.lower() in pulled) and rid not in out:
+            out.append(rid)
+    return out
 
 
 def _asked(text):
@@ -1827,7 +2088,18 @@ def questions_edit(api, req):
             _class({'class': changes['class'] if 'class' in changes else d.get('class')}, False)
     if changes.get('record'):       # only once the asker and the status passed: no git before
         changes['record'] = _bound(api, changes['record'])
-    return api.change('questions', doc_id, d, changes, req, {'status': 'open'})
+    old = d.get('record') if isinstance(d.get('record'), dict) else None
+    moved = 'record' in changes and changes['record'] != old
+    if moved and d.get('park') is not None:
+        changes['park'] = None      # parked afresh on the record it is bound to now
+    out = api.change('questions', doc_id, d, changes, req, {'status': 'open'})
+    if moved:
+        # the old record's line goes (the last one unblocks it: `ask withdrawn`), the new one's
+        # park follows; each reads the question as it is when it runs
+        _unpark_now(api, doc_id, old, out)
+        if changes['record']:
+            _park_now(api, doc_id, out, _via(req))
+    return out
 
 
 def questions_delete(api, req):
@@ -1841,7 +2113,10 @@ def questions_delete(api, req):
     if not owner:
         _creator(b, doc_id, d, 'withdraw')
     _still_open(doc_id, d, 'withdrawn')
-    return _withdrawn(api, 'questions', doc_id, d)
+    out = _withdrawn(api, 'questions', doc_id, d)
+    # the ask is gone, so the record it parked no longer waits on it (`ask withdrawn` when it was
+    # the last); an expiry, were there one, would keep the block (there is none for questions)
+    return _unpark_now(api, doc_id, d.get('record'), out)
 
 
 def todos_edit(api, req):

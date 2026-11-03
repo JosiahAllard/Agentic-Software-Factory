@@ -260,7 +260,7 @@ class Check(unittest.TestCase):
         from kitlib.hubsite import recordwrite
         self.assertEqual(audit_check.BY_DESIGN,
                          (at_landing.SESSION, recordwrite.SESSION, dailyfile.SLUG,
-                          recordwrite.CONDITION_SESSION))
+                          recordwrite.CONDITION_SESSION, recordwrite.PARK_SESSION))
 
     def test_a_role_not_in_the_map_is_unmapped(self):
         def line(role, utc='2026-10-20T13:05:06Z'):
@@ -350,7 +350,8 @@ class Check(unittest.TestCase):
         self.assertEqual([x.split()[0] for x in listed], ['BY', 'COVERED'], out)
         self.assertIn('session=daily-full', listed[0])
         self.assertIn('backlog: set FOO', listed[1])
-        self.assertIn('NOT LOGGED BY DESIGN: 1 (gate-land 0, owner-hub 0, daily-full 1, hub-condition 0)', out)
+        self.assertIn('NOT LOGGED BY DESIGN: 1 (gate-land 0, owner-hub 0, daily-full 1, hub-condition 0, '
+                      'hub-park 0)', out)
         rc, out, _err = self.run_check()
         self.assertEqual([x for x in out.splitlines() if x.startswith('  ')], [])
 

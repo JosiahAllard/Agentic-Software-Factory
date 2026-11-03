@@ -7,12 +7,19 @@ add, edit, delete and unblock from the record page (docs/action-hub.md "The reco
   unblock(root, rid, on=None, reason=None)                      -> {"lines"}
   answer(root, rid, qid, at, title, label, note=None, via=None, other=False, waiting=())
                                                                 -> {"lines"}
-  condition_met(root, rid, member, cond)                        -> {"lines", "unblocked"}
+  condition_met(root, rid, member, cond)                        -> {"lines", "unblocked", "dropped"}
+  park(root, rid, item_id, cond, asker)                         -> {"lines", "park"}
+  withdraw(root, rid, cond)                                     -> {"lines", "unblocked", "dropped"}
 
 condition_met is not an owner route: the hub's unblock-conditions job (kitlib.hubjobs
 .unblock_conditions) calls it when a record's `until` condition is met, and it commits under
 Session: hub-condition (CONDITION_SESSION), clearing that one member (plan.plan_condition_met:
 an `owner` member only on a to-do or a question, the owner's own act).
+
+park and withdraw are no route either: the hub calls them itself when a question bound to a
+record is posted (park: the record waits on the owner, until the answer) and when it is
+withdrawn, deleted or unbound (withdraw), committing under Session: hub-park (PARK_SESSION) as
+the owner's proxy (kitlib.hubsite.api park_question, unpark_question).
 
 Each opens the store `.kit.json` in `root` names (kitlib.backlog.opener open_store, fetched first)
 and writes through Store.write with the plan functions backlog.py runs (kitlib.backlog.plan
@@ -156,8 +163,128 @@ def answer(root, rid, qid, at, title, label, note=None, via=None, other=False, w
 def condition_met(root, rid, member, cond):
     """Clear blocker `member` of `rid`, whose `until` condition `cond` the caller found met
     (kitlib.hubjobs.unblock_conditions), in one store commit under Session: hub-condition
-    (plan.plan_condition_met). {"lines", "unblocked"}: unblocked False when the record no longer
-    holds that condition, and nothing was written."""
+    (plan.plan_condition_met). {"lines", "unblocked", "dropped"}: dropped when the line was
+    dropped, unblocked when that cleared the member (an `owner` member with other lines left
+    keeps its hold); both False when the record no longer holds that condition, and nothing was
+    written."""
     change = _change(root, lambda s, ctx: pmod.plan_condition_met(s, ctx, rid, member, cond),
                      session=CONDITION_SESSION)
-    return {'lines': list(change.lines), 'unblocked': bool(change.writes)}
+    wrote = bool(change.writes)
+    return {'lines': list(change.lines), 'dropped': wrote,
+            'unblocked': wrote and getattr(change, 'cleared', True)}
+
+
+# --- the hub as the owner's proxy: a record waits on the question bound to it --------------------
+
+# The Session: line of park's and withdraw's commits: the hub blocking a record on the owner as
+# the owner's proxy, never an agent (an audit by-design writer, audit_check.BY_DESIGN; its
+# policy.by_design_refusal keeps any agent's --session off it).
+PARK_SESSION = 'hub-park'
+PARK_REASON = 'asked as %s on the Action Hub by %s'
+PARK_ASK = '%s on the Action Hub (asked by %s)'
+WITHDRAWN = 'ask withdrawn'
+# What park found; `blocked` is the one that writes.
+PARK_OUTCOMES = ('blocked', 'already', 'held', 'parked', 'gone')
+
+
+def park(root, rid, item_id, cond, asker):
+    """Block `rid` on `owner` until `cond` (`question:<item_id> answered`), as the owner's proxy:
+    an ask bound to a record means the record waits on the owner (docs/backlog.md "Owner gates").
+    One store commit under Session: hub-park, by the record's state:
+
+      open       blocked on owner, `until: owner <cond>`, body line `Blocked on owner (<date>):
+                 asked as <item_id> on the Action Hub by <asker>`; `owner_ask` names the ask when
+                 the record has none
+      pulled     the same, and its pull stopped as its holder would (plan.stop_pull: the branch is
+                 kept and named in the body; answering the last ask restores the pull while that
+                 branch still holds its tip, plan.restore_pull)
+      blocked    owner added beside its blockers, with the line; a record already blocked on
+                 owner with lines adds its line (several read as AND)
+
+    Nothing is written for a record blocked on owner by hand with no owner `until` line (`held`:
+    that hold keeps its own end, and the answer filed on the record still ends it,
+    plan.plan_answer), one parked by hand (`parked`: the hub never touches a park), one with the
+    line already (`already`: a retry), or one gone (`gone`: closed). {"lines", "park": one of
+    PARK_OUTCOMES}."""
+    reason = PARK_REASON % (item_id, asker)
+    line = 'owner %s' % cond
+    found = {}
+
+    def plan(s, ctx):
+        rec = s.get(rid)
+        state = rec.get('state') if rec is not None else None
+        subject = 'backlog: block %s on owner: %s' % (rid, reason)
+        if rec is None:
+            found['park'] = 'gone'
+            return bstore.Change({}, subject, ['%s is gone: nothing waits on %s' % (rid, item_id)])
+        if state == 'parked':
+            found['park'] = 'parked'
+            return bstore.Change({}, subject, ['%s is parked: the hub leaves a park as it is'
+                                               % rid])
+        owner_lines = [v for v in rec.all('until') if v.split(' ', 1)[0] == 'owner']
+        if state == 'blocked' and line in rec.all('until'):
+            found['park'] = 'already'
+            return bstore.Change({}, subject, ['%s already waits on `until: %s`' % (rid, line)])
+        if state == 'blocked' and 'owner' in rec.all('blocked_on') and not owner_lines:
+            found['park'] = 'held'
+            return bstore.Change({}, subject, ['%s is held on the owner by hand: that hold keeps '
+                                               'its own end' % rid])
+        if state == 'pulled':
+            # the hub stops the pull as its holder would: the commit names the holder's branch
+            ctx.branch = rec.get('pulled_by')
+        found['park'] = 'blocked'
+        ask = None if rec.has('owner_ask') else PARK_ASK % (item_id, asker)
+        return pmod.plan_block(s, ctx, rid, ['owner'], owner_ask=ask, reason=reason, until=cond,
+                               role_checked=True)    # the owner's proxy (module docstring)
+    change = _change(root, plan, session=PARK_SESSION)
+    return {'lines': list(change.lines), 'park': found.get('park')}
+
+
+def asks(root):
+    """The asks the store at `root` waits on: [{id, q, parked}], one per `until: owner
+    question:<q> answered` line of a record still blocked on the owner, `parked` true when the
+    record's body says the hub parked it on q (PARK_REASON). Read with no fetch, as the hub's
+    timed jobs read (kitlib.hubjobs.unblock_conditions open_snapshot); the implicit store holds
+    none. A store that cannot be read is a HubError `store`. For the hub's sweep of lines whose
+    question is gone (kitlib.hubsite.api questions_file)."""
+    from kitlib.backlog import conditions as condmod
+    from kitlib.backlog import record as rmod
+    try:
+        ctx = opener.open_store(root, fetch=False, session=PARK_SESSION)
+        if getattr(ctx.store.backend, 'implicit', False):
+            return []
+        snap = ctx.store.load()
+    except Failure as e:
+        raise HubError('store', str(e), 'repo')
+    out = []
+    for rec in snap.readable:
+        if rec.get('state') != 'blocked' or 'owner' not in rec.all('blocked_on'):
+            continue
+        for member, text in rmod.until_lines(rec):
+            c = condmod.parse(text) if member == 'owner' else None
+            if c is None or c.kind != 'question' or text != 'question:%s answered' % c.target:
+                continue
+            out.append({'id': rec.id, 'q': c.target,
+                        'parked': ('asked as %s on the Action Hub' % c.target) in rec.body})
+    return out
+
+
+def withdraw(root, rid, cond):
+    """The ask behind `until: owner <cond>` on `rid` is gone (withdrawn or deleted, or the
+    question no longer bound to it): drop that line under Session: hub-park; the last owner line
+    clears the owner with the reason `ask withdrawn` (plan.plan_drop_until; a pull park stopped
+    comes back as plan.restore_pull says). Nothing is written when the record no longer holds the
+    line, or is gone. {"lines", "dropped", "unblocked"}."""
+    found = {}
+
+    def plan(s, ctx):
+        if s.get(rid) is None:
+            return bstore.Change({}, 'backlog: unblock %s from owner: %s' % (rid, WITHDRAWN),
+                                 ['%s is gone: nothing to drop' % rid])
+        change = pmod.plan_drop_until(s, ctx, rid, 'owner', cond, WITHDRAWN, role_checked=True)
+        found['cleared'] = change.cleared
+        return change
+    change = _change(root, plan, session=PARK_SESSION)
+    wrote = bool(change.writes)
+    return {'lines': list(change.lines), 'dropped': wrote,
+            'unblocked': wrote and bool(found.get('cleared'))}

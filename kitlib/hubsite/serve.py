@@ -606,8 +606,10 @@ def _record_call(fn, *args):
 class SiteViews(object):
     """The Api's `views` (module docstring, "Views"). A view is bound only where its source
     exists: `backlog_views` for backlog, completed, record, record_template and the record
-    writes (record_add, record_edit, record_delete, record_unblock, and record_answer, the
-    filing of a bound question's answer), sources.repos, .agents and .skills
+    writes (record_add, record_edit, record_delete, record_unblock, record_answer, the
+    filing of a bound question's answer, and record_park, record_unpark and record_asks, the
+    hub's park of a record on a question bound to it, its undoing, and the lines a sweep reads),
+    sources.repos, .agents and .skills
     for theirs. notices, findings, lint_runs, usage and health are always there
     (kitlib.hubsite.derived answers a missing notice or findings folder with none and a missing
     usage source with its own phrase). `sync` is the git
@@ -638,6 +640,9 @@ class SiteViews(object):
             self.record_delete = self._record_delete
             self.record_unblock = self._record_unblock
             self.record_answer = self._record_answer
+            self.record_park = self._record_park
+            self.record_unpark = self._record_unpark
+            self.record_asks = self._record_asks
         if sources.repos is not None:
             self.repos = self._repos
         if sources.agents:
@@ -758,6 +763,41 @@ class SiteViews(object):
         name, root = self._record_root(repo, id)
         out = recordwrite.answer(root, id, qid, at, title, label, note, via, other, waiting)
         self._backlog.reread(name, root)
+        return out
+
+    # The hub's own writes as the owner's proxy (Session: hub-park), from a question bound to a
+    # record (kitlib.hubsite.api park_question, unpark_question); no route calls them.
+    def _record_park(self, repo, id, qid, cond, asker):
+        name, root = self._record_root(repo, id)
+        out = recordwrite.park(root, id, qid, cond, asker)
+        if out.get('park') == 'blocked':
+            self._backlog.reread(name, root)
+        return out
+
+    def _record_unpark(self, repo, id, cond):
+        name, root = self._record_root(repo, id)
+        out = recordwrite.withdraw(root, id, cond)
+        if out.get('dropped'):
+            self._backlog.reread(name, root)
+        return out
+
+    def _record_asks(self):
+        """[{repo, id, q, parked}]: the owner question lines of every configured repository's
+        store (recordwrite.asks), for the sweep at hub start (api questions_file). A repository
+        with no checkout is skipped; one whose store cannot be read is skipped with a log line,
+        and the next start reads it again."""
+        out = []
+        for name, root in self._backlog.repos():
+            if not root:
+                continue
+            try:
+                got = recordwrite.asks(root)
+            except Exception as e:      # noqa: BLE001 - one store must not stop the others
+                if self._log is not None:
+                    self._log('note', 'reading the asks of %s failed: %s' % (
+                        name, getattr(e, 'code', type(e).__name__)))
+                continue
+            out += [dict(a, repo=name) for a in got]
         return out
 
     def _notices(self):
@@ -1188,6 +1228,24 @@ def _file_later(log, doc_id, fn):
     threading.Thread(target=run, name='hub-file-answer', daemon=True).start()
 
 
+def _park_later(log, doc_id, fn):
+    """Api.park_later: fn, the park of the record question doc_id is bound to, or its undoing
+    (kitlib.hubsite.api park_question, unpark_question), on a daemon thread of its own, as
+    _file_later: the question route returns before the record's fetch and push. A raise, or the
+    failure fn answers (a phrase with its code: api._later_said), is an 'error' line of the log;
+    the next hub start makes a park not made, and drops a line whose question is gone or bound
+    elsewhere (POST questions/file)."""
+    def run():
+        try:
+            said = fn()
+        except Exception as e:      # noqa: BLE001 - a thread's raise would reach no one
+            _job_line(log, 'parking the record of %s failed: %s' % (doc_id, type(e).__name__))
+            return
+        if isinstance(said, str):
+            _job_line(log, '%s: %s' % (doc_id, said))
+    threading.Thread(target=run, name='hub-park-record', daemon=True).start()
+
+
 def _make_jobs(sources, pusher, notes, log):
     """The timed jobs of `sources` (Sources.jobs) as one kitlib.hubsite.jobs.Jobs, their events
     pushed through `pusher` when there is one; None with none. A job whose maker raises, gives
@@ -1269,6 +1327,8 @@ def build(settings, sources, log=None):
                        kit_key=_kit_key(repo_name, remote_ids), kit_blob=_kit_blob(),
                        kit_text=_kit_text())
         api.file_later = functools.partial(_file_later, log)    # the answer returns at once
+        api.park_later = functools.partial(_park_later, log)    # the question returns at once
+        api.record_lock = threading.RLock()     # those threads and the requests write records
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,
@@ -1511,7 +1571,9 @@ class Hub(object):
 
     def _refile(self):
         """File, once at start, each answer to a bound question that is not filed yet (kitlib.
-        hubsite.api file_answer): one a crash or a failure left behind. A failure is logged as a
+        hubsite.api file_answer): one a crash or a failure left behind; and park the record of
+        each open bound question not parked yet (api.park_question); a hand-written owner line
+        whose question is gone is logged, never dropped (api._sweep_asks). A failure is logged as a
         note, with its code and fixed phrase only, and the PM sees the question pending."""
         try:
             got = self.api.call('POST', _api.BASE + '/questions/file', _api.AGENT, {},
@@ -1521,6 +1583,11 @@ class Hub(object):
             return
         for f in got.get('failed') or []:
             self._say('%s not filed: %s' % (f.get('id'), f.get('message')), 'note')
+        for f in got.get('park_failed') or []:
+            self._say('%s: record not parked: %s' % (f.get('id'), f.get('message')), 'note')
+        for h in got.get('orphan_hand_lines') or []:
+            self._say('%s:%s: owner line cites missing %s' % (h.get('repo'), h.get('id'),
+                                                              h.get('q')), 'note')
 
     def _step(self, what, timeout, fn, *args):
         """One step of the close: True when fn(*args) answered True, which is how a step says

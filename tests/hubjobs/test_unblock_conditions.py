@@ -179,6 +179,31 @@ class Pass(Case):
         self.assertEqual((r.get('state'), r.get('owner_ask'), r.all('until')), ('open', None, []))
 
 
+class SeveralAsks(Case):
+    """An `owner` hold with a line per ask (the hub parks a record on each question bound to
+    it): one met drops only its line, with no push; the last met clears the hold."""
+
+    def setUp(self):
+        Case.setUp(self)
+        self.other = 'Q' + '-5'
+        self.seed(rec('ASK', until=['owner question:%s answered' % QID,
+                                    'owner question:%s answered' % self.other], **OWNER))
+        self.doc('questions', QID, 'filed')
+        self.doc('questions', self.other, 'open')
+
+    def test_one_line_met_of_two_drops_it_and_pushes_nothing(self):
+        ctx = Ctx()
+        note = self.job()(ctx)
+        self.assertEqual((note, ctx.events), ('line met, still held: kit:ASK', []))
+        r = self.get('ASK')
+        self.assertEqual((r.get('state'), r.all('until')),
+                         ('blocked', ['owner question:%s answered' % self.other]))
+        self.doc('questions', self.other, 'answered')
+        self.job()(ctx)
+        self.assertEqual(ctx.events, [(U.EVENT, 'kit:ASK')])
+        self.assertEqual(self.get('ASK').get('state'), 'open')
+
+
 class Watched(Case):
 
     def test_watched_leaves_out_what_the_job_may_not_act_on(self):

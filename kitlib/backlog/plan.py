@@ -944,7 +944,9 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     already present is not repeated); it never removes one, so it never releases the owner's hold:
     removing a blocker is `unblock --on`'s job.
     `until`, when given, is the end condition of the one member (exactly one `--on`, a member with
-    no space in it), written as `until: <member> <condition>` and replacing that member's line;
+    no space in it), written as `until: <member> <condition>` and replacing that member's line
+    (an `owner` line is added beside the owner's others instead: one per ask, read as AND, so the
+    hold ends when the last is met; the same line twice is written once);
     kitlib/backlog/conditions.py names the conditions the Action Hub checks, and an `owner` member
     takes only an owner event (a to-do or a question). An `until` on `owner` schedules the owner's
     hold to end, so it is the `unblock-owner` row (policy.sort): without `role_checked` it refuses
@@ -1015,10 +1017,13 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
         changes.append(('owner_ask', [owner_ask]))
     # A member this block adds gets no `until` line it did not give: a line an older plugin left
     # behind on a member it cleared would otherwise come live again.
+    # `owner` keeps a line per ask (conditions.SEVERAL, read as AND): its `--until` adds a line;
+    # any other member's replaces its one line.
     fresh = [m for m in members if m not in old]
+    several = until is not None and members[0] == condmod.SEVERAL
     kept = [v for v in rec.all('until') if condmod.split(v)[0] not in fresh
-            and (until is None or condmod.split(v)[0] != members[0])]
-    if until is not None:
+            and (until is None or several or condmod.split(v)[0] != members[0])]
+    if until is not None and '%s %s' % (members[0], until) not in kept:
         kept.append('%s %s' % (members[0], until))
     if kept != rec.all('until'):
         changes.append(('until', kept))
@@ -1115,15 +1120,44 @@ def plan_condition_met(snap, ctx, rid, member, cond):
     why = condmod.owner_error(member, cond)
     if why:
         raise Refusal('`%s`: %s' % (rid, why))
+    return plan_drop_until(snap, ctx, rid, member, cond, CONDITION_MET + cond,
+                           role_checked=member == 'owner')
+
+
+def plan_drop_until(snap, ctx, rid, member, cond, reason, role_checked=False):
+    """Drop the line `until: <member> <cond>` of `rid` for `reason` (its condition is met, or
+    the ask it waits on was withdrawn). The member's last line clears the member, as plan_unblock
+    with `reason` (the commit subject); an `owner` member with other lines left
+    (conditions.SEVERAL, read as AND) stays, losing only that line: the body is not touched, so a
+    pull a block stopped still waits (blocked_pull). Either is the `unblock-owner` row on
+    `owner`: without `role_checked` it refuses (refuse_top). When the record no longer holds that
+    line (an unblock or a re-block got there first) nothing is written, so a second run changes
+    nothing. The Change's `cleared` says whether the member was cleared."""
     rec = require(snap, rid)
     line = '%s %s' % (member, cond)
-    subject = 'backlog: unblock %s from %s: %s%s' % (rid, member, CONDITION_MET, cond)
+    reason = ' '.join(reason.split())
+    subject = 'backlog: unblock %s from %s: %s' % (rid, member, reason)
     if (rec.get('state') != 'blocked' or member not in rec.all('blocked_on')
             or line not in rec.all('until')):
-        return Change({}, subject, ['%s no longer waits on `until: %s`: nothing to clear'
-                                    % (rid, line), '  (no change)'])
-    return plan_unblock(snap, ctx, rid, on=member, reason=CONDITION_MET + cond,
-                        role_checked=member == 'owner')
+        change = Change({}, subject, ['%s no longer waits on `until: %s`: nothing to clear'
+                                      % (rid, line), '  (no change)'])
+        change.cleared = False
+        return change
+    others = [v for v in rec.all('until') if v != line]
+    left = [condmod.split(v)[1] for v in others if condmod.split(v)[0] == member]
+    if not left:
+        change = plan_unblock(snap, ctx, rid, on=member, reason=reason, role_checked=role_checked)
+        change.cleared = True
+        return change
+    if member == 'owner' and not role_checked:
+        refuse_top(rid, 'unblock', ['unblock-owner'])
+    pairs = rmod.apply_changes(rec.pairs(), [('until', others)])
+    change = Change({rid: _text(pairs, rec.body)},
+                    '%s (still held on %s: %d more)' % (subject, member, len(left)),
+                    ['UNTIL %s - `until: %s` dropped (%s); still blocked on %s until %s'
+                     % (rid, line, reason, member, '; '.join(left))])
+    change.cleared = False
+    return change
 
 
 # --- park / unpark -----------------------------------------------------------------------
@@ -1234,8 +1268,12 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     (_waits_on) has an answer line, a parked record is unparked (as plan_unpark) and the `owner`
     blocker is cleared (as plan_unblock: other blockers stay, `owner_ask` goes), which is the
     `unblock-owner` row, so it needs `role_checked` (else a
-    Refusal: the owner's or the PM's role clears an owner blocker). A pulled or open record, or
-    a wait no question names, only gets the answer.
+    Refusal: the owner's or the PM's role clears an owner blocker). An owner hold with `until`
+    lines (one per ask: the hub parks a record on each question bound to it) ends on those
+    instead: the answer drops its own `owner question:<qid> answered` line, and the hold ends
+    when no owner line is left, `waiting` aside (a bound question whose park has not run parks
+    the record again itself). A pulled or open record, or a wait no
+    question names, only gets the answer.
     `other` (a free-text answer) also writes the review mark `review: owner-answer <date>`
     unless one stands, so `pull` refuses the record and `next` lists it to review until a
     coordinator's `clear-review`. The same `qid` and `at` again changes nothing, and so does an
@@ -1274,6 +1312,21 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     asked = _waits_on(rec)
     state = rec.get('state')
     pending = [q for q in asked if q not in done] + [w for w in waiting if w not in done]
+    # An owner hold with `until` lines (one per ask, conditions.SEVERAL) ends on those: this
+    # answer drops its own line, and the hold ends when no owner line is left, whatever
+    # `owner_ask` cites or `waiting` lists: the unblock-conditions job reads only the lines, so
+    # the two writers agree, and a question still open whose park has not run parks the record
+    # again with its own line (kitlib.hubsite.api park_question).
+    owner_lines = [c for m, c in rmod.until_lines(rec) if m == condmod.SEVERAL]
+    if state == 'blocked' and 'owner' in rec.all('blocked_on') and owner_lines:
+        mine = 'question:%s answered' % qid
+        left = [c for c in owner_lines if c != mine]
+        if left != owner_lines:
+            pairs = rmod.apply_changes(pairs, [('until', [
+                v for v in rec.all('until') if v != '%s %s' % (condmod.SEVERAL, mine)])])
+            lines.append('  until: owner %s dropped' % mine)
+        asked = [qid]
+        pending = ['`owner %s`' % c for c in left]
     stop_note = ''
     if not asked:
         lines.append('  state: %s, unchanged: its wait names no question' % state)

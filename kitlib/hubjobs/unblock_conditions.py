@@ -14,7 +14,9 @@ the forms kitlib/backlog/conditions.py reads, and is met, clears that member: on
 under Session: hub-condition with the reason `condition met: <condition>`
 (kitlib.hubsite.recordwrite.condition_met, which re-reads the record and writes nothing when the
 line is gone), then one `unblocked` job push to the PM, detail `<repo>:<ID>`. The commit drops the
-`until` line, so the next pass finds nothing to do: a rerun is idempotent.
+`until` line, so the next pass finds nothing to do: a rerun is idempotent. An `owner` member holds
+one line per ask (conditions.SEVERAL, read as AND): a met line of several drops only that line
+and the hold stays, with no push (recordwrite.condition_met's "dropped"); its last line clears it.
 
 Never acted on: free text (not one of the forms), a member the record is not blocked on, an
 `owner` member with any condition but a to-do or a question (the owner's own act; the job never
@@ -151,8 +153,9 @@ def watched(snap):
 
 class UnblockJob(object):
     """One pass per run. `roots()` -> ([(repo, root)], notes): the stores to read; `readers()`
-    -> a fresh Readers for the pass; `write(root, rid, member, cond)` -> {"lines", "unblocked"}
-    (recordwrite.condition_met); `snapshot(root)` -> (snapshot, store) (open_snapshot)."""
+    -> a fresh Readers for the pass; `write(root, rid, member, cond)` -> {"lines", "unblocked",
+    "dropped"} (recordwrite.condition_met); `snapshot(root)` -> (snapshot, store)
+    (open_snapshot)."""
 
     def __init__(self, roots, readers, write=None, snapshot=None):
         self.roots = roots
@@ -169,7 +172,7 @@ class UnblockJob(object):
             write = recordwrite.condition_met
         roots, notes = self.roots()
         readers = self.readers()
-        done, failed, count = [], [], 0
+        done, dropped, failed, count = [], [], [], 0
         for repo, root in roots:
             if ctx.stop.is_set():
                 break
@@ -192,11 +195,16 @@ class UnblockJob(object):
                 if out.get('unblocked'):
                     done.append('%s:%s' % (repo, rid))
                     ctx.event(EVENT, '%s:%s' % (repo, rid))
+                elif out.get('dropped'):
+                    # one `owner` line of several met: the line goes, the hold stays (no push)
+                    dropped.append('%s:%s' % (repo, rid))
         note = '; '.join(
-            (['unblocked %s' % ', '.join(done)] if done else []) + notes)[:NOTE_MAX]
+            (['unblocked %s' % ', '.join(done)] if done else [])
+            + (['line met, still held: %s' % ', '.join(dropped)] if dropped else [])
+            + notes)[:NOTE_MAX]
         if failed:
             raise ConditionsFailed('; '.join(failed + ([note] if note else []))[:NOTE_MAX * 2])
-        if not done:
+        if not done and not dropped:
             return jobs.Skip(('no condition met (%d watched)' % count
                               + ('; ' + note if note else ''))[:NOTE_MAX])
         return note

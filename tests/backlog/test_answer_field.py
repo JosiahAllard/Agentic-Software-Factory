@@ -99,6 +99,18 @@ class States(AnswerCase):
         self.assertEqual(r.all('answer'), ['Q-101 %s' % AT])
         self.assertIn('still waits on Q-102', '\n'.join(change.lines))
 
+    def test_an_owner_hold_with_a_line_per_ask_ends_on_the_last_answer(self):
+        self.seed(held('FOO', ask='Q-101 on the Action Hub',
+                       until=['owner question:Q-101 answered', 'owner question:Q-102 answered']))
+        change = self.answer('FOO')
+        r = self.get('FOO')
+        self.assertEqual((r.get('state'), r.all('until')),
+                         ('blocked', ['owner question:Q-102 answered']))
+        self.assertIn('still waits on `owner question:Q-102 answered`', '\n'.join(change.lines))
+        self.answer('FOO', 'Q-102', AT2)
+        r = self.get('FOO')
+        self.assertEqual((r.get('state'), r.all('until'), r.get('owner_ask')), ('open', [], None))
+
     def test_a_question_the_wait_does_not_name_leaves_the_state(self):
         self.seed(held('FOO', ask='Q-102: which way?'), parked('BAR', q=None))
         self.answer('FOO')

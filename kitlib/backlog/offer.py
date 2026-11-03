@@ -296,22 +296,24 @@ def held_for_batch(rec, branch):
 
 
 def _narrowed(rec, scopes, against, against_by, live_ids, narrow):
-    """The Split `narrow(rec, other)` gives when every entry of `against` (the members taken,
+    """The Split `narrow(rec, others)` gives when every entry of `against` (the members taken,
     `against_by[i]` the record that took `against[i]`) that collides with `scopes` was taken by
-    one record `other`, and `other` is a live pull (`live_ids`); else None (the record is passed
-    over as today). Judged by the record that took each entry, never by its string: a record
-    offered above may keep the very string a live pull holds. What `rec` keeps then collides
-    with nothing else taken: each kept member lies inside a member of `scopes`, so whatever it
-    collides with collides with that member too (members are compared by component prefix),
-    and every such entry is `other`'s, which Split.keep is clear of."""
+    a live pull (`live_ids`), `others` those live pulls, each record once, in the order first
+    hit; else None (the record is passed over as today). One hitter that is not a live pull
+    (a record offered above, another session's) is no narrowing. Judged by the record that
+    took each entry, never by its string: a record offered above may keep the very string a
+    live pull holds. What `rec` keeps then collides with nothing else taken: each kept member
+    lies inside a member of `scopes`, so whatever it collides with collides with that member
+    too (members are compared by component prefix), and every such entry is one of `others`',
+    all of which Split.keep is clear of."""
     hitters = []
     for m, by in zip(against, against_by):
         if any(smod.members_collide(c, m) for c in scopes) and not any(by is h for h in hitters):
             hitters.append(by)
-    if len(hitters) != 1 or id(hitters[0]) not in live_ids:
+    if not hitters or any(id(h) not in live_ids for h in hitters):
         return None
     try:
-        return narrow(rec, hitters[0])
+        return narrow(rec, hitters)
     except smod.UndecidableScope:
         return None
 
@@ -338,8 +340,8 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     declare is passed over, never offered and never a crash.
     `branch` is the branch the offer is for: a record batched for another branch
     (held_for_batch) is passed over as held for that batch, and takes no scope.
-    `narrow(rec, other)` -> a Split or None (None: no narrowing, as `pull` asks; only `next`
-    passes one): a record of `session` whose every collision is with the one live pull `other`
+    `narrow(rec, others)` -> a Split or None (None: no narrowing, as `pull` asks; only `next`
+    passes one): a record of `session` whose every collision is with live pulls (`others`)
     is offered at its rank with the Split when `narrow` gives one (Offer.split, the NARROWS line)
     and takes only the scope it keeps (Split.keep), which `folded(rec, scopes=)` then judges;
     without one it is passed over as today. Nothing is written."""
@@ -770,77 +772,129 @@ def files_section(body):
     return paths, None
 
 
-class Split(object):
-    """A narrowing `next` shows and `pull` writes. `keep` is the candidate's scope after it,
-    `other_keep` the live pull `other`'s. `c_changes` and `l_changes` are `[(member, dropped,
-    kept)]` for each member of either side it changes; `plan` says `other` has a `## Files`
-    section (without one, only the candidate is narrowed)."""
+class Part(object):
+    """One live pull's side of a Split: `other` the live pull, `other_keep` its scope after the
+    narrowing, `l_changes` `[(member, dropped, kept)]` for each member of it the narrowing
+    changes, `plan` that it has a `## Files` section (without one it is not narrowed), and
+    `c_members` the candidate's changed members that collided with it (each gets a `narrowed:`
+    line naming `other`)."""
 
-    def __init__(self, other, keep, other_keep, c_changes, l_changes, plan):
-        self.other, self.keep, self.other_keep = other, keep, other_keep
-        self.c_changes, self.l_changes, self.plan = c_changes, l_changes, plan
+    def __init__(self, other, other_keep, l_changes, plan, c_members):
+        self.other, self.other_keep, self.l_changes = other, other_keep, l_changes
+        self.plan, self.c_members = plan, c_members
+
+
+class Split(object):
+    """A narrowing `next` shows and `pull` writes: the candidate narrowed clear of every live
+    pull it collides with, one Part per live pull (`parts`). `keep` is the candidate's scope
+    after it, `c_changes` `[(member, dropped, kept)]` for each candidate member it changes.
+    `other`, `other_keep`, `l_changes` and `plan` read the one Part of a split against one live
+    pull, and raise ValueError on a split against several."""
+
+    def __init__(self, keep, c_changes, parts):
+        self.keep, self.c_changes, self.parts = keep, c_changes, parts
+
+    def _one(self):
+        if len(self.parts) != 1:
+            raise ValueError('a split against %d live pulls has no one other side'
+                             % len(self.parts))
+        return self.parts[0]
+
+    other = property(lambda self: self._one().other)
+    other_keep = property(lambda self: self._one().other_keep)
+    l_changes = property(lambda self: self._one().l_changes)
+    plan = property(lambda self: self._one().plan)
+
+    def narrows_other(self):
+        """True when the split narrows a live pull's record too (a Part has l_changes)."""
+        return any(p.l_changes for p in self.parts)
 
 
 def split(c_scopes, other, protected, tree, plan):
+    """split_all against the one live pull `other` (`protected` its T, `plan` that it has a
+    `## Files` section)."""
+    return split_all(c_scopes, [(other, protected, plan)], tree)
+
+
+def split_all(c_scopes, parts, tree):
     """`(Split, None)`, or `(None, why)` when the candidate whose scope is `c_scopes` cannot be
-    narrowed clear of the live pull `other`. `protected` is T, `other`'s protected set (the paths
-    its branch changed, its worktree's dirty paths and the paths its `## Files` names); `tree` is
-    the tracked paths at the code main; `plan` says `other` has a `## Files` section.
-    With a plan, each colliding member of the candidate loses T (scope.complement), and each
-    colliding member of `other` loses the tracked part of the overlap not in T, keeping every
-    path of T under it (a file it adds that the tree has not got included). Without one, only
-    the candidate is narrowed, and only off a whole member of `other` lying strictly inside a
-    broad member of its own. Fails closed: complement gives None, either side is left with no
-    scope, a member is not a legal scope, a comparison is undecidable, or what the candidate
-    keeps still touches T or `other`'s kept scope."""
+    narrowed clear of every live pull of `parts`, `[(other, protected, plan)]`, one per record.
+    `protected` is T, that live pull's protected set (the paths its branch changed, its
+    worktree's dirty paths and the paths its `## Files` names); `plan` says it has a `## Files`
+    section; `tree` is the tracked paths at the code main. Each colliding member of the
+    candidate loses, for each live pull it collides with, that pull's T (scope.complement) and,
+    for a pull without a plan, the whole of each of its colliding members, which must lie
+    strictly inside the candidate's member (inside its `/**` glob, or below it as a bare
+    folder). A live pull with a plan loses the tracked part of its overlap with the candidate
+    that is in no live pull's T (so no path one gives up is left held by nobody), keeping every
+    path of its own T under it (a file it adds that the tree has not got included). Fails
+    closed, for every part if for one: complement gives None, a side is left with no scope, a
+    member is not a legal scope, a comparison is undecidable, or what the candidate keeps still
+    touches any T or collides with any live pull's kept scope."""
     try:
-        return _split(c_scopes, other, protected, tree, plan)
+        return _split(c_scopes, parts, tree)
     except smod.UndecidableScope as exc:
         return None, 'undecidable: %s' % exc
 
 
-def _split(c_scopes, other, protected, tree, plan):
+def _split(c_scopes, parts, tree):
     base, rel, within = smod.member_base, smod.paths_related, smod.path_within
-    l_scopes = other.all('scope')
-    pairs = smod.colliding_pairs(c_scopes, l_scopes)
-    if not pairs:
-        return None, 'no collision with %s' % other.id
-    prot = sorted(set(protected))
-    pset = set(prot)
+    if not parts:
+        return None, 'no live pull to narrow against'
+    if len(set(id(o) for o, _t, _f in parts)) != len(parts):
+        return None, 'a live pull named twice'
+    sides = []      # (other, its scope, colliding pairs, its sorted T, plan)
+    for other, protected, plan in parts:
+        l_scopes = other.all('scope')
+        pairs = smod.colliding_pairs(c_scopes, l_scopes)
+        if not pairs:
+            return None, 'no collision with %s' % other.id
+        sides.append((other, l_scopes, pairs, sorted(set(protected)), plan))
+    prot_all = sorted(set(t for side in sides for t in side[3]))
+    pset_all = set(prot_all)
     tracked = list(tree)
-    c_kept = []
+    c_kept, c_hit = [], {}          # c_hit: candidate member -> the indexes of the sides it hits
     for c in c_scopes:
-        ls = [l for cc, l in pairs if cc == c]
-        if not ls:
+        removed = []
+        for i, (other, _l, pairs, prot, plan) in enumerate(sides):
+            ls = [l for cc, l in pairs if cc == c]
+            if not ls:
+                continue
+            c_hit.setdefault(c, []).append(i)
+            removed += [t for t in prot if rel(base(c), t)]
+            if not plan:
+                for l in ls:
+                    if not (smod.strictly_inside(l, c) or smod.inside_bare_folder(l, c)):
+                        return None, ('%s of %s is not inside %s, and %s has no `## Files`: '
+                                      'only a broad candidate is narrowed'
+                                      % (l, other.id, c, other.id))
+                    removed += [p for p in tracked if within(base(l), p)]
+        if c not in c_hit:
             c_kept.append((c, None))
             continue
-        removed = [t for t in prot if rel(base(c), t)]
-        if not plan:
-            for l in ls:
-                if not smod.strictly_inside(l, c):
-                    return None, ('%s of %s is not inside %s, and %s has no `## Files`: only a '
-                                  'broad candidate is narrowed' % (l, other.id, c, other.id))
-                removed += [p for p in tracked if within(base(l), p)]
         kept = smod.complement(c, sorted(set(removed)), tracked)
         if kept is None:
             return None, 'complement cannot narrow %s' % c
         c_kept.append((c, kept))
-    l_kept = []
-    for l in l_scopes:
-        cs = [c for c, ll in pairs if ll == l]
-        if not cs or not plan:
-            l_kept.append((l, None))
-            continue
-        removed = []
-        for c in cs:
-            region = base(smod.deeper_member(c, l))
-            removed += [p for p in tracked if within(region, p) and p not in pset]
-        kept = smod.complement(l, sorted(set(removed)), tracked) if removed else [l]
-        if kept is None:
-            return None, 'complement cannot narrow %s of %s' % (l, other.id)
-        extra = [t for t in prot if within(base(l), t)
-                 and not any(rel(base(k), t) for k in kept)]
-        l_kept.append((l, sorted(set(kept + extra))))
+    l_kept_all = []
+    for other, l_scopes, pairs, prot, plan in sides:
+        l_kept = []
+        for l in l_scopes:
+            cs = [c for c, ll in pairs if ll == l]
+            if not cs or not plan:
+                l_kept.append((l, None))
+                continue
+            removed = []
+            for c in cs:
+                region = base(smod.deeper_member(c, l))
+                removed += [p for p in tracked if within(region, p) and p not in pset_all]
+            kept = smod.complement(l, sorted(set(removed)), tracked) if removed else [l]
+            if kept is None:
+                return None, 'complement cannot narrow %s of %s' % (l, other.id)
+            extra = [t for t in prot if within(base(l), t)
+                     and not any(rel(base(k), t) for k in kept)]
+            l_kept.append((l, sorted(set(kept + extra))))
+        l_kept_all.append(l_kept)
 
     def flat(pairs_kept):
         out = []
@@ -849,44 +903,55 @@ def _split(c_scopes, other, protected, tree, plan):
                 if k not in out:
                     out.append(k)
         return out
-    keep, other_keep = flat(c_kept), flat(l_kept)
+    keep = flat(c_kept)
     if not keep:
         return None, 'nothing of the candidate\'s scope is left'
-    if not other_keep:
-        return None, 'nothing of %s\'s scope is left' % other.id
-    for m in keep + other_keep:
+    other_keeps = [flat(lk) for lk in l_kept_all]
+    for side, other_keep in zip(sides, other_keeps):
+        if not other_keep:
+            return None, 'nothing of %s\'s scope is left' % side[0].id
+    for m in keep + [m for ok in other_keeps for m in ok]:
         err = smod.scope_member_error(m)
         if err is not None:
             return None, '`%s` is not a scope: %s' % (m, err)
-    if smod.colliding_pairs(keep, other_keep):
-        return None, 'what is kept still collides with %s' % other.id
-    if any(rel(base(k), t) for k in keep for t in prot):
-        return None, 'what is kept still touches the protected set of %s' % other.id
-    c_changes = []
+    for side, other_keep in zip(sides, other_keeps):
+        if smod.colliding_pairs(keep, other_keep):
+            return None, 'what is kept still collides with %s' % side[0].id
+        if any(rel(base(k), t) for k in keep for t in side[3]):
+            return None, 'what is kept still touches the protected set of %s' % side[0].id
+    all_other_keep = [m for ok in other_keeps for m in ok]
+    c_changes, changed = [], []
     for c, kept in c_kept:
         if kept is None or kept == [c]:
             continue
-        dropped = [m for m in other_keep if rel(base(m), base(c))]
-        dropped += [t for t in prot if rel(base(c), t) and t not in dropped
+        changed.append(c)
+        dropped = []
+        for m in all_other_keep:
+            if rel(base(m), base(c)) and m not in dropped:
+                dropped.append(m)
+        dropped += [t for t in prot_all if rel(base(c), t) and t not in dropped
                     and not any(rel(base(m), t) for m in dropped)]
         c_changes.append((c, sorted(dropped), kept))
-    l_changes = []
-    for l, kept in l_kept:
-        if kept is None or kept == [l]:
-            continue
-        l_changes.append((l, sorted(m for m in keep if rel(base(m), base(l))), kept))
-    return Split(other, keep, other_keep, c_changes, l_changes, plan), None
+    out = []
+    for i, (side, l_kept, other_keep) in enumerate(zip(sides, l_kept_all, other_keeps)):
+        l_changes = [(l, sorted(m for m in keep if rel(base(m), base(l))), kept)
+                     for l, kept in l_kept if kept is not None and kept != [l]]
+        out.append(Part(side[0], other_keep, l_changes, side[4],
+                        [c for c in changed if i in c_hit.get(c, ())]))
+    return Split(keep, c_changes, out), None
 
 
 def narrows_line(offer):
-    """`next`'s NARROWS line for an offer made by narrowing (Offer.split): what each side drops
-    and keeps. `next` writes nothing; `pull` of the record recomputes the split and writes it
-    (plan.plan_pull)."""
+    """`next`'s NARROWS line for an offer made by narrowing (Offer.split): what the candidate,
+    then each live pull, drops and keeps. `next` writes nothing; `pull` of the record recomputes
+    the split and writes it (plan.plan_pull)."""
     s = offer.split
-    return 'NARROWS %s (rank %s) with %s on %s: %s %s; %s %s' % (
-        offer.rec.id, offer.rank, s.other.id, s.other.get('pulled_by') or '?',
+    return 'NARROWS %s (rank %s) with %s: %s %s; %s' % (
+        offer.rec.id, offer.rank,
+        ', '.join('%s on %s' % (p.other.id, p.other.get('pulled_by') or '?') for p in s.parts),
         offer.rec.id, side_text(s.c_changes, named=_named),
-        s.other.id, side_text(s.l_changes, s.plan, _named))
+        '; '.join('%s %s' % (p.other.id, side_text(p.l_changes, p.plan, _named))
+                  for p in s.parts))
 
 
 def side_text(changes, plan=True, named=', '.join):

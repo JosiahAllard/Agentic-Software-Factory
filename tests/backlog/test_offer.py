@@ -524,7 +524,7 @@ class NextNarrows(unittest.TestCase):
         self.assertEqual([o.rec.id for o in offers], ['FOO'])
         self.assertEqual(offers[0].split.keep, ['kit/b.py', 'kit/sub/d.py'])
         self.assertEqual(omod.narrows_line(offers[0]),
-                         'NARROWS FOO (rank 1) with HOLD on kit/b, HOLD2 on kit/c: FOO drops '
+                         'NARROWS FOO (rank 3) with HOLD on kit/b, HOLD2 on kit/c: FOO drops '
                          'kit/a.py, kit/sub/c.py from kit/** (keeps kit/b.py, kit/sub/d.py); '
                          'HOLD keeps its scope (no ## Files); HOLD2 keeps its scope (no ## Files)')
 

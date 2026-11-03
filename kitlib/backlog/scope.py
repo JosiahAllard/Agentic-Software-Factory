@@ -134,6 +134,15 @@ def strictly_inside(inner, outer):
     return outer.endswith(GLOB_SUFFIX) and len(ci) > len(co) and ci[:len(co)] == co
 
 
+def inside_bare_folder(inner, outer):
+    """Member `outer` is a bare path (no `/**`) and member `inner` lies strictly below it, so
+    `outer` is a folder that covers `inner` (members collide by component prefix). Narrowing
+    reads such an `outer` as broad (offer.split); `strictly_inside`, which the commit side
+    reads, stays the glob's alone. UndecidableScope when either is not a legal member."""
+    ci, co = scope_components(inner), scope_components(outer)
+    return not outer.endswith(GLOB_SUFFIX) and len(ci) > len(co) and ci[:len(co)] == co
+
+
 def deeper_member(a, b):
     """Of two colliding members, the one inside the other (`a` when they are as deep)."""
     return a if len(scope_components(a)) >= len(scope_components(b)) else b

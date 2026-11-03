@@ -20,6 +20,15 @@ AGENT = 'agent@example.invalid'
 KEY = 'k' * 64                                    # the approval key the stand-in hub signs with
 REPO = 'git.example.invalid/owner/repo'
 NOW = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
+MAIN = 'refs/remotes/origin/main'                 # main as last fetched: where spent looks
+LINES = ''.join('line %d\n' % n for n in range(1, 13))
+
+
+def edit(text, n, new):
+    """`text` with its line `n` (1-based) replaced by `new`."""
+    rows = text.splitlines(keepends=True)
+    rows[n - 1] = new + '\n'
+    return ''.join(rows)
 
 
 class OwnerCommitsCase(unittest.TestCase):
@@ -471,7 +480,9 @@ class OwnerApprovals(ApprovalsCase):
         self.assertEqual([(v.sha, v.paths) for v in found], [(sha, ['CLAUDE.md'])])
         self.assertIn('owner approval hub:A-001 refused: %s' % ap.WHY_COMMIT, found[0].why)
 
-    def test_an_approval_another_commit_consumed_is_refused(self):
+    def test_a_rebuild_of_an_approval_another_commit_consumed_is_not_a_violation(self):
+        # No exact binding: the same change made again (a rebuilt branch) still holds until it
+        # is on main (DeltaApprovals: spent) or the approval expires.
         doc_id = self.approve({'CLAUDE.md': 'approved\n'})
         first = self.commit_as(AGENT, approval_message('first', 'hub:A-001'),
                                {'CLAUDE.md': 'approved\n'})
@@ -480,7 +491,7 @@ class OwnerApprovals(ApprovalsCase):
         again = self.commit_as(AGENT, approval_message('again', 'hub:A-001'),
                                {'CLAUDE.md': 'approved\n'})
         self.assertEqual(self.judge(first), [])
-        self.assertIn(ap.WHY_COMMIT, self.judge(again)[0].why)
+        self.assertEqual(self.judge(again), [])
 
     def test_other_content_than_the_approved_is_refused(self):
         sha = self.approved_commit(files={'CLAUDE.md': 'something else\n'})
@@ -494,8 +505,8 @@ class OwnerApprovals(ApprovalsCase):
         self.assertEqual(sorted(self.hub.asked[0][2]), ['CLAUDE.md', 'a.py'])
 
     def test_the_server_alone_refuses_a_commit_on_another_base(self):
-        # The stand-in seam is the server's check, which compares the base exactly; a parent
-        # with the base's content passes only through HubApprovals (SameContentApprovals).
+        # The stand-in seam is the server's check, which compares the base exactly; another
+        # parent passes only through HubApprovals, judged by its delta (DeltaApprovals).
         self.commit_as(AGENT, 'agent work first', {'a.py': 'a\n'})
         sha = self.approved_commit()
         self.assertIn(ap.WHY_HEAD, self.judge(sha)[0].why)
@@ -551,17 +562,20 @@ class OwnerApprovals(ApprovalsCase):
 
     def test_the_hub_not_running_is_a_refusal_not_a_pass(self):
         sha = self.approved_commit()
-        found = self.judge(sha, approvals=oc.HubApprovals(client=Down(), repo=REPO))
+        found = self.judge(sha, approvals=oc.HubApprovals(client=Down(), repo=REPO, main=MAIN))
         self.assertIn(ap.WHY_SERVER % 'NotRunning', found[0].why)
 
     def test_the_hub_seam_asks_the_verify_route_with_the_commit(self):
         sha = self.approved_commit()
-        self.assertEqual(self.judge(sha, approvals=oc.HubApprovals(
-            client=VerifyRoute(self.hub), repo=REPO)), [])
+        seam = oc.HubApprovals(client=VerifyRoute(self.hub), repo=REPO, main=MAIN)
+        self.assertEqual(self.judge(sha, approvals=seam), [])
         self.assertEqual(self.hub.asked[-1][3], sha)
-        self.hub.docs['A-001']['commit'] = '0' * 40           # not this commit: the sig still holds
-        found = self.judge(sha, approvals=oc.HubApprovals(client=VerifyRoute(self.hub), repo=REPO))
-        self.assertIn(ap.WHY_COMMIT, found[0].why)
+        self.hub.docs['A-001']['commit'] = '0' * 40     # consumed by another: the sig still holds
+        seam = oc.HubApprovals(client=VerifyRoute(self.hub), repo=REPO, main=MAIN)
+        self.assertEqual(self.judge(sha, approvals=seam), [])
+        self.hub.docs['A-001']['status'] = ap.APPROVED  # never consumed: refused
+        seam = oc.HubApprovals(client=VerifyRoute(self.hub), repo=REPO, main=MAIN)
+        self.assertIn(ap.WHY_COMMIT, self.judge(sha, approvals=seam)[0].why)
 
     def test_the_default_seam_is_the_hub(self):
         self.assertIsInstance(oc.default_approvals(), oc.HubApprovals)
@@ -584,44 +598,259 @@ class OwnerApprovals(ApprovalsCase):
         self.assertEqual(self.hub.asked, [])
 
 
-class SameContentApprovals(ApprovalsCase):
-    """Through HubApprovals (the hub's seam): an approved commit whose parent descends from the
-    approval's base counts when every path it changes is at the parent as at the base
-    (approvals.same_content_error), and the hub verifies the signed base."""
+class DeltaCase(ApprovalsCase):
+    """main (the approval's base B0) holds the owner's CLAUDE.md as twelve lines and AGENTS.md;
+    the seam is HubApprovals on a stand-in hub client, with main as last fetched at MAIN."""
 
-    def seam(self):
+    def setUp(self):
+        ApprovalsCase.setUp(self)
+        self.main = self.commit_as(OWNER, 'owner rules', {'CLAUDE.md': LINES,
+                                                          'AGENTS.md': 'agents\n'})
+        self.new = edit(LINES, 2, 'two')
+
+    def seam(self, main=MAIN):
         self.route = VerifyRoute(self.hub)
-        return oc.HubApprovals(client=self.route, repo=REPO)
+        return oc.HubApprovals(client=self.route, repo=REPO, main=main)
 
-    def test_a_base_that_moved_on_with_other_work_is_not_a_violation(self):
-        self.commit_as(OWNER, 'main moves on', {'a.py': 'a\n'})
-        sha = self.approved_commit()
+    def agent_commit(self, files, deleted=(), doc_id='A-001', consume=True,
+                     subject='owner-approved edit'):
+        """An agent commit with `Owner-Approval: hub:<doc_id>` that writes `files` and removes
+        `deleted`, consumed by the hub unless told not to (or consumed already)."""
+        for rel, text in files.items():
+            self.repo.write(rel, text)
+        if files:
+            self.repo.git('add', '--', *files)
+        if deleted:
+            self.repo.git('rm', '-q', '--', *deleted)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '-m',
+                      approval_message(subject, 'hub:%s' % doc_id))
+        sha = self.repo.git('rev-parse', 'HEAD')
+        if consume and not self.hub.docs[doc_id].get('commit'):
+            self.consume(doc_id, sha)
+        return sha
+
+    def refused(self, sha, *parts, main=MAIN):
+        found = self.judge(sha, approvals=self.seam(main))
+        self.assertEqual([v.sha for v in found], [sha])
+        self.assertIn('owner approval hub:A-001 refused: ', found[0].why)
+        for part in parts:
+            self.assertIn(part, found[0].why)
+        return found[0].why
+
+
+class DeltaApprovals(DeltaCase):
+    """Through HubApprovals (the hub's seam) the approval is a delta: the commit's parent P may be
+    any commit, each approved file at the commit must be what the approved change gives on P
+    (approvals.delta_result), the commit changes no other path, and once a commit carrying the
+    approval is on main the approval is spent. Then the hub verifies the signed base and blobs.
+    None of these needs a merge: P holds each file as the base or the approved content."""
+
+    def test_the_approved_change_on_its_base_is_not_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
         self.assertEqual(self.judge(sha, approvals=self.seam()), [])
-        self.assertEqual(self.route.asked, ['/approvals/A-001/verify', '/snapshot',
-                                            '/approvals/A-001/verify'])
-        self.assertEqual(self.hub.asked[-1][1], self.main)
+        self.assertEqual(self.route.asked, ['/snapshot', '/approvals/A-001/verify'])
+        self.assertEqual(self.hub.asked, [('A-001', self.main, {
+            'CLAUDE.md': ap.blob_id(self.new)}, sha)])
 
-    def test_an_approved_path_the_owner_changed_after_the_base_is_a_violation(self):
-        moved = self.commit_as(OWNER, 'the owner again', {'CLAUDE.md': 'owner again\n'})
-        sha = self.approved_commit()
-        found = self.judge(sha, approvals=self.seam())
-        self.assertEqual([(v.sha, v.paths) for v in found], [(sha, ['CLAUDE.md'])])
-        self.assertIn('owner approval hub:A-001 refused: %s: CLAUDE.md at %s is not as the '
-                      'approved base %s has it' % (ap.WHY_HEAD, moved[:12], self.main[:12]),
-                      found[0].why)
-        self.assertEqual([a[1] for a in self.hub.asked], [moved])   # the base never verified
+    def test_a_rebuild_on_a_base_that_moved_on_elsewhere_is_not_a_violation(self):
+        did = self.approve({'CLAUDE.md': self.new})
+        self.consume(did, '0' * 40)                     # an earlier build of the branch used it
+        self.commit_as(OWNER, 'main moves on', {'a.py': 'a\n'})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+        self.assertEqual(self.hub.asked[-1][1], self.main)     # verified for the signed base
 
-    def test_a_base_the_parent_does_not_descend_from_is_a_violation(self):
+    def test_a_base_on_another_line_of_history_is_judged_by_its_delta(self):
         self.repo.git('checkout', '-q', '-b', 'side')
         side = self.commit_as(OWNER, 'another line', {'b.txt': 'b\n'})
         self.repo.git('checkout', '-q', 'main')
-        doc_id = self.approve({'CLAUDE.md': 'approved\n'}, head=side)
-        sha = self.commit_as(AGENT, approval_message('owner-approved edit', 'hub:A-001'),
-                             {'CLAUDE.md': 'approved\n'})
-        self.consume(doc_id, sha)
-        found = self.judge(sha, approvals=self.seam())
-        self.assertIn('the approved base %s is not an ancestor of %s'
-                      % (side[:12], self.main[:12]), found[0].why)
+        self.approve({'CLAUDE.md': self.new}, head=side)
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+        self.assertEqual(self.hub.asked[-1][1], side)
+
+    def test_finishing_a_delta_the_parent_already_began_is_not_a_violation(self):
+        self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
+        self.commit_as(OWNER, 'the owner made one half', {'CLAUDE.md': self.new})
+        sha = self.agent_commit({'AGENTS.md': 'agents 2\n'})
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+
+    def test_an_approved_delete_and_new_file_are_not_a_violation(self):
+        self.approve({'AGENTS.md': None, '.github/workflows/new.yml': 'on: push\n'})
+        sha = self.agent_commit({'.github/workflows/new.yml': 'on: push\n'}, deleted=['AGENTS.md'])
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+
+    def test_another_line_than_the_approved_ones_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new + 'line 13\n'})
+        self.refused(sha, ap.WHY_FILES, 'CLAUDE.md at %s is not the approved change'
+                     % sha[:12])
+        self.assertEqual(self.route.asked, ['/snapshot'])     # the hub never verified it
+
+    def test_a_path_the_approval_does_not_hold_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new, 'docs/x.md': 'x\n'})
+        self.refused(sha, ap.WHY_FILES, 'docs/x.md is not in the approval')
+
+    def test_an_unfinished_delta_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'AGENTS.md at %s is not the approved change' % sha[:12])
+
+    def test_a_partly_reverted_delta_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
+        self.commit_as(OWNER, 'the owner made one half', {'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': LINES, 'AGENTS.md': 'agents 2\n'})
+        self.refused(sha, 'CLAUDE.md at %s is not the approved change' % sha[:12])
+
+    def test_a_new_file_the_parent_holds_otherwise_is_a_violation(self):
+        self.approve({'.github/workflows/new.yml': 'on: push\n'})
+        self.commit_as(OWNER, 'the owner wrote it first', {'.github/workflows/new.yml': 'x\n'})
+        sha = self.agent_commit({'.github/workflows/new.yml': 'on: push\n'})
+        self.refused(sha, 'already at the parent')
+
+    def test_an_approval_whose_change_is_on_main_is_spent(self):
+        self.approve({'CLAUDE.md': self.new})
+        first = self.agent_commit({'CLAUDE.md': self.new})
+        self.repo.git('update-ref', MAIN, first)            # it landed: main as fetched holds it
+        self.repo.git('reset', '-q', '--hard', self.main)
+        again = self.agent_commit({'CLAUDE.md': self.new}, subject='the same edit, rebuilt')
+        self.refused(again, 'spent: landed in %s' % first[:12])
+        self.assertEqual(self.route.asked, [])               # spent first: the hub is not asked
+
+    def test_the_default_main_is_the_configured_remote_and_branch(self):
+        self.approve({'CLAUDE.md': self.new})
+        first = self.agent_commit({'CLAUDE.md': self.new})
+        self.repo.git('update-ref', 'refs/remotes/origin/main', first)
+        self.repo.git('reset', '-q', '--hard', self.main)
+        again = self.agent_commit({'CLAUDE.md': self.new}, subject='the same edit, rebuilt')
+        self.refused(again, 'spent: landed in %s' % first[:12], main=None)
+
+    def test_the_commit_that_landed_is_not_spent_by_itself(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.repo.git('update-ref', MAIN, sha)
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+
+    def test_no_main_fetched_is_nothing_landed(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        seam = self.seam(main='refs/remotes/origin/none')
+        self.assertEqual(self.judge(sha, approvals=seam), [])
+
+    def test_a_spent_lookup_git_cannot_answer_is_a_refusal(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.repo.git('update-ref', MAIN, self.main)
+        with mock.patch.object(ap, 'spent', return_value=(None, 'git log failed: boom')):
+            self.refused(sha, 'whether it is spent cannot be told: git log failed: boom')
+
+    def test_an_unknown_approval_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        del self.hub.docs['A-001']
+        self.refused(sha, ap.WHY_UNKNOWN)
+
+    def test_a_base_blob_the_signed_head_does_not_hold_is_refused(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.hub.docs['A-001']['files'][0]['base_blob'] = ap.blob_id('else\n')
+        self.refused(sha, 'CLAUDE.md at the approved base %s is not the approved base blob'
+                     % self.main[:12])
+        self.assertEqual(self.route.asked, ['/snapshot'])
+
+    def test_approved_content_that_is_not_its_blob_is_refused(self):
+        self.approve({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.hub.docs['A-001']['files'][0]['content'] = self.new + 'more\n'
+        self.refused(sha, 'not its approved blob')
+
+    def test_a_base_git_cannot_read_is_a_refusal(self):
+        did = self.approve({'CLAUDE.md': self.new})
+        doc = ap.new_doc(REPO, 'owner-only edit', '1' * 40, [
+            {'path': 'CLAUDE.md', 'base_blob': ap.blob_id(LINES), 'content': self.new}], NOW)
+        doc.update(ap.decide_fields(KEY, did, doc, ap.APPROVE, NOW))
+        self.hub.docs[did] = doc
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'git ls-tree')
+
+    def test_no_trailer_or_two_never_ask_the_hub(self):
+        plain = self.commit_as(AGENT, 'agent edits CLAUDE.md', {'CLAUDE.md': self.new})
+        self.assertEqual([v.why for v in self.judge(plain, approvals=self.seam())], [''])
+        self.repo.git('reset', '-q', '--hard', self.main)
+        two = self.commit_as(AGENT, approval_message('edit', 'hub:A-001', 'hub:A-002'),
+                             {'CLAUDE.md': self.new})
+        self.assertIn('is not one hub:A-<n>', self.judge(two, approvals=self.seam())[0].why)
+        self.assertEqual(self.route.asked, [])
+
+    def test_the_trailer_is_the_guards(self):
+        self.assertEqual(ap.TRAILER, oc.TRAILER)
+
+    def test_the_seam_reads_each_approval_once(self):
+        self.approve({'CLAUDE.md': self.new, 'AGENTS.md': 'agents 2\n'})
+        self.agent_commit({'CLAUDE.md': self.new})
+        sha = self.agent_commit({'AGENTS.md': 'agents 2\n'})
+        seam = self.seam()
+        found, why = oc.violations(self.repo.root, self.rules, sha, [self.main], approvals=seam)
+        self.assertIsNone(why)
+        self.assertEqual(len(found), 1)                   # the first commit left half undone
+        self.assertEqual(self.route.asked.count('/snapshot'), 1)
+
+
+@real_git('git merge-file: the fake has none')
+class DeltaMerges(DeltaCase):
+    """The parent moved on in an approved file since the base: the commit must hold the clean
+    three-way merge of the approved change onto it."""
+
+    def test_a_clean_merge_onto_a_newer_base_is_not_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        moved = edit(LINES, 11, 'eleven')
+        self.commit_as(OWNER, 'the owner edits a far line', {'CLAUDE.md': moved})
+        sha = self.agent_commit({'CLAUDE.md': edit(moved, 2, 'two')})
+        self.assertEqual(self.judge(sha, approvals=self.seam()), [])
+        self.assertEqual(self.hub.asked[-1][1:3], (self.main, {
+            'CLAUDE.md': ap.blob_id(self.new)}))
+
+    def test_the_approved_content_undoing_the_owners_later_line_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        self.commit_as(OWNER, 'the owner edits a far line', {'CLAUDE.md': edit(LINES, 11, 'eleven')})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'CLAUDE.md at %s is not the approved change' % sha[:12])
+
+    def test_an_owner_change_to_the_approved_line_is_a_conflict(self):
+        self.approve({'CLAUDE.md': self.new})
+        self.commit_as(OWNER, 'the owner edits that line', {'CLAUDE.md': edit(LINES, 2, 'TWO')})
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'CLAUDE.md', 'does not merge cleanly')
+
+
+@real_git('update-index --chmod and --cacheinfo with a symbolic link: the fake has neither')
+class DeltaModes(DeltaCase):
+    """An approval holds regular files in the mode they have: a commit that gives an approved
+    path another mode, or a parent that holds it as a symbolic link, is refused."""
+
+    def test_a_commit_that_changes_the_mode_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        self.repo.write('CLAUDE.md', self.new)
+        self.repo.git('add', 'CLAUDE.md')
+        self.repo.git('update-index', '--chmod=+x', 'CLAUDE.md')
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '-m',
+                      approval_message('owner-approved edit', 'hub:A-001'))
+        sha = self.repo.git('rev-parse', 'HEAD')
+        self.consume('A-001', sha)
+        self.refused(sha, 'CLAUDE.md at %s changes its mode from 100644 to 100755' % sha[:12])
+
+    def test_a_parent_that_holds_the_path_as_a_symbolic_link_is_a_violation(self):
+        self.approve({'CLAUDE.md': self.new})
+        self.repo.write('link.txt', 'AGENTS.md')
+        link = self.repo.git('hash-object', '-w', 'link.txt')
+        self.repo.git('update-index', '--cacheinfo', '120000,%s,CLAUDE.md' % link)
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '-m', 'the owner links it')
+        parent = self.repo.git('rev-parse', 'HEAD')
+        self.repo.git('rm', '-q', '--cached', 'CLAUDE.md')
+        sha = self.agent_commit({'CLAUDE.md': self.new})
+        self.refused(sha, 'CLAUDE.md at %s is not a regular file' % parent[:12])
 
 
 @real_git('update-index --cacheinfo with a symbolic link or gitlink mode: the fake has none')

@@ -30,10 +30,11 @@ approved; the change written on HEAD is still, path for path, the change the own
 
 The hub is asked through kitlib.hubsite (approvals.Verifier.verify_on, for the approval's base,
 and approvals.consume, the agent's calls); every failure to ask it is a refusal, never a pass.
-The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations: the
-approved commit has one parent (the approval's base, or a descendant of it with the same
-content), changes exactly the approval's files to their approved blobs, and is consumed by the
-hub for that commit.
+The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations, by
+the delta rule (kitlib.hubsite.approvals.delta_error): the approved commit has one parent, changes
+only the approval's files, makes the approved change on that parent (a clean merge onto it when the
+parent moved past the base), and is consumed by the hub, by it or an earlier build of it, and not
+spent. This step stays stricter: it writes the approved blobs on a HEAD with the same content.
 """
 import os
 

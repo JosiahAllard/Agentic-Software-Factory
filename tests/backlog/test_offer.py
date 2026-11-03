@@ -701,5 +701,34 @@ class NextCliNarrows(unittest.TestCase):
         self.assertEqual(self.repo.git('ls-remote', 'origin', smod.STORE_REF), before)
 
 
+class NextCliRestore(unittest.TestCase):
+    """Through tools/backlog.py `next`: the RESTORE line for a record whose narrowed: line names
+    a record the store's history closed, and the counts line's `| N restore`."""
+
+    def setUp(self):
+        test_cli.Cli.setUp(self)
+
+    def test_next_prints_the_restore_and_counts_it(self):
+        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        store = smod.Store(backend, rmod.Rules())
+        backend.publish(store.load(), {
+            'C-ONE': record_text(id='C-ONE', priority='3', priority_by='agent', state='pulled',
+                                 pulled_at=TODAY, pulled_by='kit/c', scope='brain/b.py',
+                                 narrowed='brain/** L-ONE kit/l'),
+            'L-ONE': record_text(id='L-ONE', priority='3', priority_by='agent', state='pulled',
+                                 pulled_at=TODAY, pulled_by='kit/l', scope='brain/a.py')},
+            'seed\n')
+        backend.publish(store.load(), {'L-ONE': None}, 'closes L-ONE: landed\n')
+        before = self.repo.git('ls-remote', 'origin', smod.STORE_REF)
+        rc, out = test_cli.Cli.run_tool(self, 'next')
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, r'RESTORE C-ONE: L-ONE landed \(closed in [0-9a-f]+\) -> '
+                              r'`set C-ONE --scope "brain/\*\*" --unset narrowed`')
+        counts = [line for line in out.splitlines() if line.startswith('counts: ')]
+        self.assertEqual(len(counts), 1, out)
+        self.assertTrue(counts[0].endswith(' | 1 restore'), out)
+        self.assertEqual(self.repo.git('ls-remote', 'origin', smod.STORE_REF), before)
+
+
 if __name__ == '__main__':
     unittest.main()

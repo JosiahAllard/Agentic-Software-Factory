@@ -30,6 +30,7 @@ import contextlib
 import os
 import re
 import socket
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -137,7 +138,7 @@ class Instance:
         self.handle, self.port, self.worktree, self.exe = handle, port, worktree, exe
         self.slot, self.proc, self.log_path = slot, proc, log_path
         self.mu = threading.RLock()
-        self.busy, self.ended = False, None
+        self.busy, self.ended, self.pycache = False, None, None
         self.opened, self.last, self.calls, self.renders = now, now, 0, 0
 
     def info(self, now):
@@ -193,15 +194,17 @@ class Bridge:
             raise BridgeError('setup', str(e))
         store = self._store()
         slot, port = self._book(store, _repo(worktree), _slug(worktree), wait_s)
-        proc = None
+        proc = pycache = None
         try:
             os.makedirs(self.out_dir, exist_ok=True)
             log_path = os.path.join(self.out_dir, '%s.log' % slot.id)
+            pycache = tempfile.mkdtemp(prefix='%s-pyc-' % slot.id, dir=self.out_dir)
             if not self.bindable(port):
                 raise BridgeError('port', 'port %d was taken after it was booked; try again' % port)
+            env = addon.launch_env(getattr(slot, 'env', None) or self.env or os.environ, pycache)
             with open(log_path, 'wb') as log:
                 proc = slot.start(self.argv(exe, port), stdin=subprocess.DEVNULL, stdout=log,
-                                  stderr=subprocess.STDOUT, cwd=worktree)
+                                  stderr=subprocess.STDOUT, cwd=worktree, env=env)
             self._wait_ready(slot, proc, port, log_path)
         except BaseException as e:
             with contextlib.suppress(Exception):
@@ -209,10 +212,13 @@ class Bridge:
             if proc is not None:
                 with contextlib.suppress(OSError, subprocess.TimeoutExpired):
                     proc.wait(EXIT_S)
+            if pycache is not None:
+                shutil.rmtree(pycache, ignore_errors=True)
             if isinstance(e, OSError):
                 raise BridgeError('start', 'Blender could not be started: %s' % e)
             raise
         inst = Instance(slot.id, port, worktree, exe, slot, proc, log_path, self.clock())
+        inst.pycache = pycache
         with self.mu:
             self.instances[inst.handle] = inst
         return inst.info(self.clock())
@@ -396,6 +402,8 @@ class Bridge:
                 inst.ended['code'] = inst.proc.poll()
             if isinstance(rec, dict):
                 inst.ended['run_how'] = rec.get('how')
+            if inst.pycache:
+                shutil.rmtree(inst.pycache, ignore_errors=True)
             if how == 'done' and code == 0:
                 with contextlib.suppress(OSError):
                     os.remove(inst.log_path)

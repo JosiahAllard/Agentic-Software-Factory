@@ -22,8 +22,10 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
   - `BLENDER_USER_EXTENSIONS` overrides both.
 - **The add-on is GPL and is never copied into the kit.** The bridge starts the owner's own install, and it checks that install against the reviewed one before every open (`addon.check`).
   - The pin is the add-on folder's tree hash, `addon.TREE_SHA256` (98960c57...c832de): SHA-256 over each file's relative path, a NUL, the file's own SHA-256 and a newline, in walk order, with `__pycache__` skipped. The zip it came from had SHA-256 A7A9DA81...43040707.
+  - How the pin was made: the same hash over the zip's own entries (sorted, `__pycache__` skipped) gave 98960c57...c832de, equal to the installed folder's tree hash. So the installed files are the reviewed zip's 9 files, byte for byte.
+  - `__pycache__` is outside the pin, and Blender writes one there. Python never reads it: the bridge starts Blender with `--python-use-system-env` and an environment (`addon.launch_env`) with no PYTHON* variable of the caller's, plus `PYTHONPYCACHEPREFIX` set to a fresh empty folder for that Blender, `PYTHONDONTWRITEBYTECODE` and `PYTHONNOUSERSITE`. Python then looks for byte code only under that folder, so a `.pyc` planted beside the add-on's sources is never run. The folder is removed when the Blender ends.
   - A different version, or an edited copy, is refused with the `setup` error. An update is reviewed and pinned again in `addon.py`.
-- **The command line:** `blender --background --online-mode --command blender_mcp --host 127.0.0.1 --port <port>` (`addon.launch_argv`). `--online-mode` is Blender's own option and must come before `--command`: the add-on's parser takes the rest of the line and refuses it. Blender runs in the worktree it was opened for.
+- **The command line:** `blender --background --python-use-system-env --online-mode --command blender_mcp --host 127.0.0.1 --port <port>` (`addon.launch_argv`). `--online-mode` is Blender's own option and must come before `--command`: the add-on's parser takes the rest of the line and refuses it. Blender runs in the worktree it was opened for.
 - **Codex:** the env vars the Codex manifest passes through are `PM_KIT_ROOT`, `PM_KIT_RELEASE_ID` and `PM_KIT_BLENDER`.
 
 ## Tools
@@ -135,8 +137,11 @@ set PM_KIT_BLENDER_LIVE=1 && python -m unittest tests.blendermcp.test_live
   - Opening them to Codex would loosen an existing guard, and that needs the owner's go.
 - **Linux is checked on Windows only.**
   - The code runs on Linux, but no Linux run was made.
-  - If the server dies there, the Blender is ended by the lock job's watchdog (`kitlib/lock/contain.py`), not by a kill-on-close job object; that path is untested with Blender.
+  - If the server dies there, the Blender is ended by the lock job's watchdog (`kitlib/platform/linux/contain.py`), not by a kill-on-close job object; that path is untested with Blender.
   - On Linux the listener table has no owners (`kitlib.proc.tcp` is Windows only), so any listener on the port counts as Blender's. Linux refuses a second listener on a port unless both set SO_REUSEPORT, which the add-on does not.
+- **Only this add-on is pinned.** Blender also loads the user's other enabled add-ons, and the bridge checks none of them; on this machine they are the ones Blender ships (`cycles`, the io_* importers, `pose_library`, `bl_pkg`).
+  - `--factory-startup --addons bl_ext.user_default.mcp` would load only this one: a probe found the command works that way.
+  - It is not used: `--factory-startup` skips the user's `userpref.blend`, which holds the Cycles GPU device, so Cycles would render on the CPU. This follows from Blender's documented behaviour; it was not measured.
 - **Renders only.** Blender runs headless (`--background`): there is no window and no viewport screenshot. Windows come later, and only if agents lack information without them.
 - **No interrupt.** The add-on cannot stop code that is running, so a call past its limit ends the Blender and loses its scene.
 - **One call at a time.** The server answers one request at a time, and the add-on serves one call at a time: a long render holds up every other tool of that session, `blender_list` included.

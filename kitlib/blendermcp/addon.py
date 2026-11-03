@@ -152,6 +152,19 @@ def launch_argv(exe, port):
     """The command that starts a background Blender serving the add-on on 127.0.0.1:port. The
     add-on needs Blender's --online-mode even on loopback. --command hands the rest of the line
     to the add-on's own parser, which refuses any option but --host and --port, so Blender's
-    options come before it and --command comes last."""
-    return [exe, '--background', '--online-mode', '--command', COMMAND, '--host', '127.0.0.1',
-            '--port', str(port)]
+    options come before it and --command comes last. --python-use-system-env lets Blender's
+    Python read the environment (launch_env), which it ignores by default."""
+    return [exe, '--background', '--python-use-system-env', '--online-mode', '--command', COMMAND,
+            '--host', '127.0.0.1', '--port', str(port)]
+
+
+def launch_env(env, pycache):
+    """The environment a Blender is started with: `env` without any PYTHON* variable, so the
+    caller's PYTHONPATH or PYTHONHOME never reaches Blender's Python, plus PYTHONPYCACHEPREFIX
+    `pycache` (a fresh empty folder), PYTHONDONTWRITEBYTECODE and PYTHONNOUSERSITE. Python then
+    reads byte code only under that prefix, never from a __pycache__ beside a source, so a .pyc
+    planted in the add-on's own __pycache__ (which the tree hash skips) is never run; it writes
+    none, and the user site-packages stay off, as Blender has them by default."""
+    out = {k: v for k, v in env.items() if not k.upper().startswith('PYTHON')}
+    out.update(PYTHONPYCACHEPREFIX=pycache, PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1')
+    return out

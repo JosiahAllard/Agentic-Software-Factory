@@ -197,8 +197,7 @@ def render(snap):
             plan = "queue position %s, expected to start %s%s" % (
                 w["position"], _local(w["est_start"]) if w.get("est_start")
                 else "once what keeps it waiting ends",
-                " (ahead of its turn: it ends before the runs ahead of it start)"
-                if w.get("backfill") else "")
+                qm.BACKFILL_TEXT if w.get("backfill") else "")
         else:
             plan = "not yet planned"
         mv = w.get("moved") or {}

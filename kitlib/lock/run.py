@@ -623,8 +623,8 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                     said = info["position"]
                     text = "run %s waits in the queue: position %d of %d, expected to start %s%s; %s" % (
                         run.id, info["position"], len(planned), qm.est_text(info),
-                        " (ahead of its turn: it ends before the runs ahead of it start)"
-                        if info["backfill"] else "", qm.busy_text(L, q, e, planned, head))
+                        qm.BACKFILL_TEXT if info["backfill"] else "",
+                        qm.busy_text(L, q, e, planned, head))
                 if result is not None:
                     q["entries"].remove(e)
                 if json.dumps(q, sort_keys=True) != before:

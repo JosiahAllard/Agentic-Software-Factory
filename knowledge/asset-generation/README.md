@@ -19,8 +19,14 @@ repository and win over this folder.
 ```
 python <kit>/optional/comfy/comfy_gen.py check
 python <kit>/optional/comfy/comfy_gen.py <image|edit|rembg|upscale|to3d|music|template> --help
-python <kit>/optional/comfy/render_glb.py  (run through Blender, see its docstring)
+python <kit>/optional/comfy/render_glb.py [--grid COLS | --turnaround | --filmstrip [--frames N] [--clips A,B]]
+                                          [--view front|3/4|side] [--keep-tiles] OUT.png MODEL.glb ...
 python <kit>/optional/comfy/compare_sheet.py OUT.html [LABEL=]IMAGE ... [--cols N]
+python <kit>/optional/comfy/blender_run.py SCRIPT.py --out DIR [--blender PATH] [-- SCRIPT ARGS]
+python <kit>/optional/comfy/art_score.py CONCEPT.png RENDER.png --palette STYLE.md|#hex,... --out DIR
+                                         [--name STEM] [--threshold N]
+python <kit>/optional/comfy/motion_check.py MODEL.glb|MODEL.blend --out DIR [--clips A,B] [--feet BONE,...]
+                                            [--step N] [--contact CM]
 ```
 
 - It only talks to ComfyUI on this machine (`127.0.0.1:8188`). Every generating command
@@ -40,6 +46,27 @@ python <kit>/optional/comfy/compare_sheet.py OUT.html [LABEL=]IMAGE ... [--cols 
   it lands. (Owner's rule.)
 - `<kit>/optional/comfy/comfy_api.py` converts any installed ComfyUI template into an API prompt, so a new
   workflow does not need hand-building: `comfy_gen.py template --template NAME --out DIR --name STEM --print-api`.
+- The Blender tools (`render_glb.py`, `blender_run.py`, `motion_check.py`) run from plain
+  python: each finds Blender (`--blender`, else `KIT_BLENDER`, else `blender` on PATH, else the
+  newest install in the usual folders) and runs in it under the machine lock, kind `render`, on
+  this machine. Never wrap them in `machine_lock.py run` yourself, and never run Blender bare.
+- `blender_run.py` runs a bpy script only once it is committed and unchanged, passes it
+  `--out DIR`, and fails the run (exit 3) when the script changed or added any file outside
+  `--out` that git sees. A file git ignores is not seen, and a change anything else makes in the
+  checkout during the run counts as the script's, so edit nothing there while it runs.
+- `render_glb.py --turnaround` renders 8 views 45 degrees apart per model; `--filmstrip` renders,
+  per animation clip, `--frames` frames from one fixed camera (default side view) and then an
+  onion-skin overlay of them. Both write only inside a git checkout.
+- `art_score.py` compares a render with its concept image, both PNG, on a 64 by 64 grid:
+  `palette_de`, the share-weighted CIEDE2000 distance of the render's dominant colours from the
+  nearest style-sheet colour (the `#rrggbb` codes in the file or list); `value_diff`, the mean
+  luminance difference (0 to 1), in which a transparent pixel counts as mid-grey (128), so score
+  a render against a concept with an opaque or matching background; `silhouette_iou`, the overlap of the two foreground masks (alpha,
+  else what differs from the border colour). It writes `<stem>_score.json`, `<stem>_diff.png` and
+  `<stem>_compare.html` (concept, render, difference) into `--out`.
+- `motion_check.py` writes `<model>_motion.json`: per clip, foot slide per contact in cm, jerk
+  spikes, the share of linear keys and the worst skin gap per LOD in cm; per LOD, the triangles.
+  Its docstring defines each number.
 
 ## Rules every agent follows
 

@@ -294,7 +294,7 @@ class PushWithOwnerMainCommits(OwnerCommitsCase):
         self.assertEqual(self.bad(push, exclude=[owner_edit]), [])
 
 
-class Merges(OwnerCommitsCase):
+class MergeCase(OwnerCommitsCase):
     """A branch at self.main; main gains the owner's CLAUDE.md edit; the agent merges main in."""
 
     def setUp(self):
@@ -308,6 +308,22 @@ class Merges(OwnerCommitsCase):
                       *extra, cwd=self.wt, check=not extra)
         return self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
 
+    def resolve(self, text=None, executable=False):
+        """Merge main into the branch, set CLAUDE.md to `text` (None: delete it), commit as the
+        agent; returns the merge."""
+        self.merge_main('--no-commit')
+        if text is None:
+            self.repo.git('rm', '-q', '-f', '--ignore-unmatch', '--', 'CLAUDE.md', cwd=self.wt)
+        else:
+            self.repo.write('CLAUDE.md', text, root=self.wt)
+            self.repo.git('add', 'CLAUDE.md', cwd=self.wt)
+        if executable:
+            self.repo.git('update-index', '--chmod=+x', 'CLAUDE.md', cwd=self.wt)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '--no-edit', cwd=self.wt)
+        return self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
+
+
+class Merges(MergeCase):
     def test_a_clean_merge_changes_nothing_of_its_own(self):
         merge = self.merge_main()
         self.assertEqual(self.bad(merge), [])
@@ -359,6 +375,55 @@ class Merges(OwnerCommitsCase):
         self.assertEqual(self.bad(edit, exclude=[self.owner_edit]),
                          [oc.Violation(edit, AGENT, ['CLAUDE.md'])])
 
+    def test_a_sync_merge_resolved_to_landed_mains_copy_passes(self):
+        # Seen in a game repository: both sides changed the path with the owner's approval, the agent's
+        # merge took main's copy, and a later approved branch commit keeps the path in the net.
+        self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
+                       cwd=self.wt)
+        merge = self.resolve('owner\n')
+        tip = self.commit_as(OWNER, 'owner edits it after the sync', {'CLAUDE.md': 'owner\nmore\n'},
+                             cwd=self.wt)
+        self.assertEqual(self.bad(tip, exclude=[self.owner_edit]), [])
+        self.assertEqual([v.sha for v in self.bad(tip, exclude=[])], [merge])    # no target
+
+    def test_a_failing_diff_against_a_target_is_an_error_not_a_pass(self):
+        self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
+                       cwd=self.wt)
+        merge = self.resolve('owner\n')
+        tip = self.commit_as(OWNER, 'owner edits it after the sync', {'CLAUDE.md': 'owner\nmore\n'},
+                             cwd=self.wt)
+        real, calls = oc.cmd.call, []
+
+        def call(args, *a, **kw):
+            if 'diff' in args and list(args[-2:]) == [self.owner_edit, merge]:
+                calls.append(list(args))
+                return oc.cmd.Result(128, b'', 'fatal: bad object')
+            return real(args, *a, **kw)
+        with mock.patch.object(oc.cmd, 'call', call):
+            self.assertEqual(oc.changed(self.repo.root, merge, [self.repo.git('rev-parse',
+                             merge + '^1'), self.owner_edit], targets=[self.owner_edit]),
+                             (None, 'git diff failed: fatal: bad object'))
+            found, why = oc.violations(self.repo.root, self.rules, tip, [self.owner_edit])
+        self.assertTrue(calls)                          # the diff against the target was reached
+        self.assertIsNone(found)
+        self.assertEqual(why, 'git diff failed: fatal: bad object')
+
+    def test_a_sync_merge_whose_resolution_edits_the_path_is_refused(self):
+        self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
+                       cwd=self.wt)
+        merge = self.resolve('the agent merged both\n')
+        tip = self.commit_as(OWNER, 'owner edits it after the sync', {'CLAUDE.md': 'owner\nmore\n'},
+                             cwd=self.wt)
+        self.assertEqual(self.bad(tip, exclude=[self.owner_edit]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_merge_matching_only_the_branch_parent_launders_nothing(self):
+        branch_edit = self.commit_as(AGENT, 'agent edits CLAUDE.md', {'CLAUDE.md': 'agent\n'},
+                                     cwd=self.wt)
+        merge = self.resolve('agent\n')
+        found = {v.sha: v.paths for v in self.bad(merge, exclude=[self.owner_edit])}
+        self.assertEqual(found, {merge: ['CLAUDE.md'], branch_edit: ['CLAUDE.md']})
+
     def test_an_owner_merge_is_not(self):
         self.repo.git('-c', 'user.email=%s' % OWNER, 'merge', '-q', '--no-ff', '--no-commit', 'main',
                       cwd=self.wt)
@@ -367,6 +432,61 @@ class Merges(OwnerCommitsCase):
         self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '--no-edit', cwd=self.wt)
         merge = self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
         self.assertEqual(self.bad(merge), [])
+
+
+@real_git('a modify/delete conflict, git rm -f of a staged path, update-index --chmod and '
+          'commit-tree: the fake has none')
+class MergesOnRealGit(MergeCase):
+    def test_a_sync_merge_resolved_to_a_landed_delete_passes(self):
+        self.merge_main()
+        self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
+                       cwd=self.wt)
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'rm', '-q', 'CLAUDE.md')
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '-m', 'owner deletes it')
+        deleted = self.repo.git('rev-parse', 'HEAD')
+        self.resolve(None)
+        tip = self.commit_as(OWNER, 'owner adds it back on the branch', {'CLAUDE.md': 'back\n'},
+                             cwd=self.wt)
+        self.assertEqual(self.bad(tip, exclude=[deleted]), [])
+
+    def test_a_merge_holding_old_mains_copy_through_an_old_main_parent_is_refused(self):
+        # main is initial -> owner_edit; the branch has owner_edit; a merge made with plumbing has
+        # the branch and the old main (initial) as parents and initial's copy (no CLAUDE.md).
+        branch = self.merge_main()
+        self.repo.git('rm', '-q', 'CLAUDE.md', cwd=self.wt)
+        tree = self.repo.git('write-tree', cwd=self.wt)
+        merge = self.repo.git('-c', 'user.email=%s' % AGENT, 'commit-tree', tree, '-p', branch,
+                              '-p', self.main, '-m', 'revert the owner through an old main parent',
+                              cwd=self.wt)
+        self.assertEqual(self.bad(merge, exclude=[self.owner_edit]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_merge_resolved_to_an_older_landed_tips_copy_is_refused(self):
+        self.merge_main()                       # the branch holds the owner's CLAUDE.md
+        other = self.repo.path('.claude', 'worktrees', 's')
+        self.repo.git('worktree', 'add', '-q', other, '-b', 'kit/s', self.main)   # before the owner
+        older = self.commit_as(AGENT, 'an earlier branch', {'s.txt': 's\n'}, cwd=other)
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'merge', '-q', '--no-ff', '--no-edit', 'kit/s')
+        landed = self.repo.git('rev-parse', 'HEAD')
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit', older,
+                      cwd=self.wt)
+        self.repo.git('rm', '-q', '-f', 'CLAUDE.md', cwd=self.wt)     # resolved to the older copy
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '--no-edit', cwd=self.wt)
+        merge = self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
+        self.assertEqual(self.bad(merge, exclude=[landed]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_merge_that_drops_mains_owner_change_is_refused(self):
+        merge = self.resolve(None)          # the branch side has no CLAUDE.md: main's add dropped
+        self.assertEqual(self.bad(merge, exclude=[self.owner_edit]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_sync_merge_that_changes_the_mode_is_refused(self):
+        self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
+                       cwd=self.wt)
+        merge = self.resolve('owner\n', executable=True)
+        self.assertEqual(self.bad(merge, exclude=[self.owner_edit]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
 
 
 class StandInHub(object):

@@ -13,6 +13,11 @@ unreadable line is never a way around a rule, and a plain line is never denied b
     The part of the line holding the name is read again first (named_reread): a hub owner verb, a
     lock owner-only write or a write of the list there gives that rule's own refusal; otherwise the reason says the line
     names the tool and the alternative is plainly()'s.
+  - the roles' tools by name, for a subagent only (named_runs): text naming tools/backlog.py, or
+    gate.py allow, that the rules have not read (_read_at: not a literal word of a literal,
+    non-runner command, so a commit message naming it is a mention) has its part of the line read
+    again and judged by backlogrole.runs or gaterole.shell; a part that still does not read, or
+    whose program is computed, is refused as backlog-role or gate-allow.
   - a git or root-search pattern that matches: the text from the match to the next ; | & or
     newline is read again as a command of its own and the rules run on it. A rule that denies it
     gives the deny, its real alternative included; none: the `unreadable` deny, whose advice is
@@ -191,6 +196,11 @@ NAMED = (
      "names the owner's delegation list, and a part of it the guard cannot read may write, move or delete it, "
      'which only the owner does.'),
 )
+# the tools a subagent's role decides by name (named_runs): tools/backlog.py (backlog-role) and
+# gate.py allow (gate-allow), as the script, -m tools.X or the kit command names them
+BACKLOG_NAME = re.compile(r'(?i)(?<![\w.-])backlog\.py\b|\btools\.backlog(?![\w.])|' + KIT_WORD + r'backlog(?![\w.-])')
+GATE_ALLOW_NAME = re.compile(r'(?i)(?:(?<![\w.-])gate\.py\b|\btools\.gate(?![\w.])|' + KIT_WORD + r'gate(?![\w.-]))'
+                             r'[^;&|\n]*?(?<![\w.-])allow(?![\w.-])')
 PARSED_RULES = ('owner_tool', 'wrapped_gate', 'root_search', 'heavy', 'git_rules', 'shell_writes')
 WHY = 'The guard could not read this command; write the program name literally. Why: %s.'
 # the alternative is a script file, never the line again nor a rewrite of it
@@ -301,6 +311,75 @@ def named_reread(event, ctx, text, shell, parsed, pos, cwd, role, rule):
     return None
 
 
+def _read_at(parsed, text, pos):
+    """True when text position `pos` lies in a part of the line the rules have already judged: a
+    literal word (or a literal heredoc or redirect target) of a top-level command whose program is
+    literal and runs no text (RUNNERS). A name there is a mention (a commit message) or a run the
+    rules read; a name in a computed word, a runner's text or a part no command holds is not."""
+    for c in parsed.commands:
+        if c.depth != 0 or c.source != text:
+            continue
+        inv = cm.invocation(c)
+        if inv is None or inv.dyn or (inv.name or '').lower() in RUNNERS:
+            continue
+        for w in c.words:
+            if w.start is not None and w.end is not None and w.start <= pos < w.end and not w.dyn:
+                return True
+        for r in c.redirects:
+            w = r.target
+            if w is not None and w.start is not None and w.end is not None and w.start <= pos < w.end:
+                return True                     # a file or heredoc body the program reads as data
+    return False
+
+
+def named_runs(event, ctx, text, parsed, cwd, role):
+    """A subagent's line the guard cannot read that names tools/backlog.py (BACKLOG_NAME), or runs
+    gate.py allow (GATE_ALLOW_NAME), where the rules have not read it (_read_at): the part of the
+    line holding the name (from the last ; | & or newline before it to the next) is read again and
+    judged by that rule (backlogrole.runs, gaterole.shell); a part that reads no more cleanly, or
+    whose program is computed, is refused under that rule, as the guard cannot judge the run for the
+    role. A main session, and a host's unidentified subagent for the backlog, are not judged here
+    (the tool's own check is theirs). None when nothing is refused."""
+    from . import backlogrole, gaterole
+    checks = []
+    if backlogrole._judged_subagent(event):
+        checks.append((backlogrole.ROLE_RULE, BACKLOG_NAME, backlogrole.runs,
+                       'names tools/backlog.py where the guard cannot read the run (%s), so it cannot judge the run '
+                       'for your role (kitlib/backlog/roles.py).', None))
+    if rules.subagent(event) and not gaterole.may_allow(event, ctx):
+        checks.append((gaterole.RULE, GATE_ALLOW_NAME, gaterole.shell,
+                       'names gate.py allow where the guard cannot read the run (%s): ' + gaterole.WHY,
+                       gaterole.INSTEAD))
+    if not checks:
+        return None
+    why = WHY % ('; '.join(parsed.unclean) or 'the parser gave no reason')
+    for rule, pat, judge, what, instead in checks:
+        if modes.mode(rule) == modes.OFF:
+            continue
+        for m in pat.finditer(text):
+            if _read_at(parsed, text, m.start()):
+                continue
+            where = cwd_at(parsed, m.start(), cwd) or cwd
+            p = cm.read(segment(text, segment_start(text, m.start())), parsed.shell, where,
+                        home=getattr(ctx, 'home', None))
+            unread = list(p.unclean)
+            for c in p.commands:
+                inv = cm.invocation(c)
+                d = judge(event, ctx, c, inv, where, role)
+                if d:
+                    return rules.reworded(d, '%s %s' % (why, d.reason))
+                if inv is not None and inv.dyn:
+                    unread.append('a program the text does not name (%s)' % inv.path)
+            if not unread:
+                continue                        # read whole, and the rule let it run
+            last, alt = plainly(ctx, parsed)
+            d = rules.refuse(rule, role, '%s Its text %s%s' % (why, what % '; '.join(unread), last),
+                             instead or alt)
+            if d:
+                return d
+    return None
+
+
 def check(event, ctx, text, cwd, role, parsed):
     why = WHY % ('; '.join(parsed.unclean) or 'the parser gave no reason')
     shell = parsed.shell
@@ -336,6 +415,9 @@ def check(event, ctx, text, cwd, role, parsed):
             why, what, rules.hub_session(event, ctx), last), alt)
         if d:
             return d                            # set to warn by the owner: the checks below still run
+    d = named_runs(event, ctx, text, parsed, cwd, role)
+    if d:
+        return d
 
     main_rules = set(r for r, _p in MAIN_ONLY + SUBAGENT_MAIN)
     for rule, pat in list(ANYWHERE) + list(MAIN_ONLY) + list(SUBAGENT_MAIN):

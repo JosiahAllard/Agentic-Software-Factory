@@ -1055,6 +1055,94 @@ class FolderStore(Base):
         self.allowed(self.write(os.path.join(self.w.wt, 'docs', 'other', 'X-1.md')))
 
 
+class Unread(Base):
+    """A subagent's run the line does not show plainly (docs/guard.md "Fallback", "Backlog roles"):
+    a part of an unreadable line that names tools/backlog.py is read again and judged, a part that
+    still does not read is refused; a computed script word ending in /backlog.py is the tool; a
+    script file it runs is read one level deep. A main session and a mention are never refused."""
+    BLOCK = 'block X-1 --on item:Y'
+
+    def script(self, name, body):
+        path = os.path.join(self.w.wt, name)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(body)
+        return W.fwd(path)
+
+    def test_a_nested_shell_whose_text_is_computed(self):
+        text = 'bash -c "cd $W && python tools/backlog.py %s"' % self.BLOCK
+        self.refused(self.cmd(text))
+        self.allowed(self.cmd('bash -c "cd $W && python tools/backlog.py show X-1"'))
+        self.allowed(self.cmd(text, sub=False, env=COORDINATOR))
+
+    def test_a_part_that_does_not_read_is_refused(self):
+        for text in ('bash -c "$PRE python tools/backlog.py %s"' % self.BLOCK,
+                     'bash -c "$C"; $PY tools/backlog.py show X-1',
+                     'eval "$X tools/backlog.py show X-1"'):
+            with self.subTest(text):
+                d = self.refused(self.cmd(text))
+                self.assertIn('cannot judge the run for your role', d.reason)
+        self.allowed(self.cmd('bash -c "$PRE python tools/backlog.py show X-1"', sub=False, env=COORDINATOR))
+
+    def test_a_mention_on_an_unreadable_line_runs(self):
+        commit = 'python "%s/tools/commit.py" -C "%s"' % (W.fwd(self.w.kit_dir), self.wt)
+        for text in ('%s -m "fix tools/backlog.py block; tests" a.py && bash -c "$C"' % commit,
+                     'cat > notes.md <<EOF\npython tools/backlog.py %s\nEOF\nbash -c "$C"' % self.BLOCK,
+                     'grep -n close tools/backlog.py; bash -c "$C"'):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    def test_a_computed_script_word_ending_in_backlog_py(self):
+        for text, tool in (('python "$K/tools/backlog.py" %s' % self.BLOCK, 'Bash'),
+                           ('python $env:K\\tools\\backlog.py %s' % self.BLOCK, 'PowerShell')):
+            with self.subTest(text):
+                self.refused(self.cmd(text, tool=tool))
+                self.allowed(self.cmd(text.replace(self.BLOCK, 'show X-1'), tool=tool))
+                self.allowed(self.cmd(text, tool=tool, sub=False, env=COORDINATOR))
+        self.allowed(self.cmd('python "$K/tools/other.py" %s' % self.BLOCK))
+
+    def test_a_shell_script_it_runs(self):
+        bad = self.script('x.sh', 'cd "%s"\npython tools/backlog.py %s\n' % (self.wt, self.BLOCK))
+        good = self.script('y.sh', 'python tools/backlog.py show X-1\n')
+        hidden = self.script('z.sh', 'bash -c "$C python tools/backlog.py show X-1"\n')
+        ps1 = self.script('x.ps1', 'python tools/backlog.py %s\n' % self.BLOCK)
+        for text, tool in (('bash "%s"' % bad, 'Bash'), ('sh x.sh', 'Bash'), ('source x.sh', 'Bash'),
+                           ('bash "%s"' % hidden, 'Bash'),
+                           ('powershell -NoProfile -File "%s"' % ps1, 'PowerShell'), ('& .\\x.ps1', 'PowerShell')):
+            with self.subTest(text):
+                d = self.refused(self.cmd(text, tool=tool))
+                self.assertIn(' runs ', d.reason)
+        self.allowed(self.cmd('bash "%s"' % good))
+        self.allowed(self.cmd('bash missing.sh'))
+        self.allowed(self.cmd('bash "%s"' % bad, sub=False, env=COORDINATOR))
+
+    def test_a_python_script_it_runs(self):
+        bad = self.script('x.py', 'import subprocess\nsubprocess.run(["python", "tools/backlog.py", "block", "X-1"])\n')
+        good = self.script('y.py', 'print("ok")\n')
+        self.refused(self.cmd('python "%s"' % bad), 'backlog-raw-write')
+        self.allowed(self.cmd('python "%s"' % good))
+        self.allowed(self.cmd('python "%s"' % bad, sub=False, env=COORDINATOR))
+
+    def test_the_kits_own_python_is_not_judged(self):
+        code = 'from kitlib.backlog import policy\n'
+        kit_tool = os.path.join(self.w.kit_dir, 'tools', 'audit.py')
+        checkout = os.path.join(self.w.wt, 'kitco')
+        for d in (os.path.dirname(kit_tool), os.path.join(checkout, 'kitlib'), os.path.join(checkout, 'tests')):
+            os.makedirs(d, exist_ok=True)
+        open(os.path.join(checkout, 'kit.json'), 'w').close()
+        for path in (kit_tool, os.path.join(checkout, 'tests', 'test_x.py')):
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(code)
+            with self.subTest(path):
+                self.allowed(self.cmd('python "%s"' % W.fwd(path)))
+        self.refused(self.cmd('python "%s"' % self.script('x.py', code)), 'backlog-raw-write')
+
+    def test_gate_allow_where_the_guard_cannot_read_it(self):
+        self.refused(self.cmd('bash -c "cd $W && python tools/gate.py allow kit/x"'), 'gate-allow')
+        self.allowed(self.cmd('bash -c "cd $W && python tools/gate.py --full"'))
+        self.allowed(self.cmd('python "%s/tools/commit.py" -m "docs: gate.py allow" a.md && bash -c "$C"'
+                              % W.fwd(self.w.kit_dir)))
+
+
 class PathStore(FolderStore):
     kit = {'repo': {'name': 'demo', 'push_block': True}, 'backlog': {'store': 'kit/backlog'}}
     folder = ('kit', 'backlog')

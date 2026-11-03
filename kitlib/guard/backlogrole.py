@@ -6,6 +6,9 @@
                      nothing. A builder's own pull (roles.OWN_PULL) is read from the store the
                      run's folder opens, as it is locally, only when it alone would decide; an
                      --as branch is its own from that branch's linked worktree (own_pull_refusal).
+                     A computed script word ending in /backlog.py is the tool
+                     (rules.computed_script). A script file a subagent runs is read one level
+                     deep, its first SCRIPT_CAP bytes (script_file).
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
                      python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
                      tools/backlog.py; any session's but the owner's python code naming the hub's
@@ -71,7 +74,12 @@ def read_record(root, rid):
 
 
 def shell(event, ctx, cmd, inv, cwd, role):
-    """The rules.shell_command rule: role_run, raw_code, then store_ref_write."""
+    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file."""
+    return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role)
+
+
+def runs(event, ctx, cmd, inv, cwd, role):
+    """shell's rules on the command itself, without reading a script file it runs."""
     return role_run(event, ctx, cmd, inv, cwd, role) or raw_code(event, ctx, cmd, inv, role) or \
         store_ref_write(event, ctx, cmd, inv, cwd, role)
 
@@ -113,8 +121,9 @@ def py_module(inv):
 def run_words(inv):
     """The Words after tools/backlog.py when `inv` runs it (rules.tool_run: the script, -m
     tools.backlog; runpy's module read as the script; the kit command's `kit backlog`:
-    rules.script_run), else None."""
-    run = rules.script_run(inv)
+    rules.script_run; a computed script word ending in /backlog.py: rules.computed_script), else
+    None."""
+    run = rules.script_run(inv) or rules.computed_script(inv)
     if run is None or run[0] != SCRIPT:
         return None
     return run[1]
@@ -428,6 +437,118 @@ def backlog_code(event, ctx, cmd, inv, role):
                         'and its role check, so it is a raw write (kitlib/backlog/roles.py). Run the tool\'s '
                         'verb:' % (rules.hub_line(rules.bare(cmd)), how),
                         'python %s -C <worktree> <verb> <arguments>' % rules.kit_tool(ctx, TOOL))
+
+
+# ---------------------------------------------------------------- a script file it runs
+
+SCRIPT_CAP = 256 * 1024                         # the most of a script file the guard reads
+SOURCERS = ('source', '.')
+PY_EXTS = ('.py', '.pyw')
+SH_EXTS = ('.sh', '.bash')
+
+
+def script_file_word(inv):
+    """(the Word naming the script file `inv` runs, the shell that reads it: shell.BASH, shell.PS
+    or 'py'), or None: a POSIX shell's script operand, a PowerShell shell's .ps1 (-File),
+    source or . of a file, python's script (rules.tool_run reads which word it is; -c, -m and
+    standard input are None), or a .sh, .bash, .ps1 or .py file run by its path. A computed word
+    is None."""
+    run = rules.tool_run(inv)
+    if run is None:
+        return None
+    base, rest = run
+    name = (inv.name or '').lower()
+    py = rules.PY_RUN_RE.match(name) is not None
+    if py or name in cm.BASH_SHELLS or name in cm.PS_SHELLS:
+        k = len(inv.args) - len(rest) - 1
+        if k < 0 or inv.args[k].dyn or cm.base_name(inv.args[k].text) != base:
+            return None                         # -m's module, the kit command's tool
+        return inv.args[k], 'py' if py else rules.sh.PS if name in cm.PS_SHELLS else rules.sh.BASH
+    if name in SOURCERS:
+        if not inv.args or inv.args[0].dyn:
+            return None
+        return inv.args[0], inv.cmd.shell
+    if inv.via or inv.word is None or inv.word.dyn:
+        return None
+    low = base.lower()
+    kind = 'py' if low.endswith(PY_EXTS) else rules.sh.PS if low.endswith('.ps1') else \
+        rules.sh.BASH if low.endswith(SH_EXTS) else None
+    return (inv.word, kind) if kind else None
+
+
+def _script_text(cmd, text):
+    """(the absolute path, its first SCRIPT_CAP bytes as text) of the script file `text` names
+    from the command's directory, or (path, None) when it does not read (missing, a folder,
+    unplaceable)."""
+    path = rules.sh.resolve_path(text, cmd.cwd, shell=cmd.shell, home=cmd.home) if cmd.cwd or \
+        os.path.isabs(text) else None
+    if not path:
+        return None, None
+    try:
+        with open(path, 'rb') as f:
+            data = f.read(SCRIPT_CAP)
+    except (OSError, ValueError):
+        return path, None
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        return path, data.decode('utf-16', 'replace')
+    return path, data.decode('utf-8-sig', 'replace')
+
+
+def _kit_code(ctx, path):
+    """True for a file of the kit: under the kit folder the guard runs from, or in a kit checkout (a
+    folder above it holds kit.json and kitlib/). The kit's own tools and tests import its library."""
+    from . import paths
+    here = paths.norm(path, absolute=True)
+    kit = getattr(ctx, 'kit', None)
+    if kit and jail.inside(here, paths.norm(kit, absolute=True)):
+        return True
+    d = os.path.dirname(here)
+    while True:
+        if os.path.isfile(os.path.join(d, 'kit.json')) and os.path.isdir(os.path.join(d, 'kitlib')):
+            return True
+        up = os.path.dirname(d)
+        if up == d:
+            return False
+        d = up
+
+
+def script_file(event, ctx, cmd, inv, cwd, role):
+    """A subagent's run of a script file (script_file_word), read one level deep, its first
+    SCRIPT_CAP bytes: a shell script is read as a command line in the shell that runs it and its
+    commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
+    fallback.named_runs as an unreadable line is; a python script is judged as backlog_code judges
+    -c code (CODE_RE), except the kit's own (_kit_code). A script it runs in turn, and a file that
+    does not read, are not read."""
+    if not _judged_subagent(event):
+        return None
+    found = script_file_word(inv)
+    if found is None:
+        return None
+    word, kind = found
+    path, text = _script_text(cmd, word.text)
+    if text is None:
+        return None
+    head = '`%s` runs %s' % (rules.hub_line(rules.bare(cmd)), rules.fwd(path))
+    if kind == 'py':
+        m = CODE_RE.search(text)
+        if not m or _kit_code(ctx, path):
+            return None
+        return rules.refuse(RAW_RULE, role, '%s, whose code names %s: code that reaches the backlog\'s library or '
+                            'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '
+                            'write (kitlib/backlog/roles.py). Run the tool\'s verb itself:' % (head, m.group(0)),
+                            'python %s -C <worktree> <verb> <arguments>' % rules.kit_tool(ctx, TOOL))
+    from . import fallback, gaterole
+    p = cm.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))
+    for c in p.commands:
+        ci = cm.invocation(c)
+        d = runs(event, ctx, c, ci, cwd, role) or gaterole.shell(event, ctx, c, ci, cwd, role)
+        if d:
+            return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
+    if not p.clean:
+        d = fallback.named_runs(event, ctx, text, p, cmd.cwd, role)
+        if d:
+            return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
+    return None
 
 
 # ---------------------------------------------------------------- the store's refs

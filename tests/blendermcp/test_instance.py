@@ -282,18 +282,20 @@ class Ending(BridgeCase):
 
 
 class Listeners(unittest.TestCase):
-    def test_proc_net_lines_name_a_listening_port(self):
+    def test_listening_reads_only_the_listener_table_on_every_platform(self):
+        # kitlib.proc.tcp.listeners holds the Linux /proc/net reading too: (local, None) rows
         from kitlib.blendermcp import instance
-        d = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, d, True)
-        path = os.path.join(d, 'tcp')
-        with open(path, 'w', encoding='ascii') as f:
-            f.write('  sl  local_address rem_address   st\n'
-                    '   0: 0100007F:2685 00000000:0000 0A 00000000\n'
-                    '   1: 0100007F:2686 0100007F:9C40 01 00000000\n')
-        self.assertTrue(instance._proc_net_listens(0x2685, (path,)))
-        self.assertFalse(instance._proc_net_listens(0x2686, (path,)), 'established, not listening')
-        self.assertFalse(instance._proc_net_listens(0x2687, (path, os.path.join(d, 'none'))))
+        from kitlib.proc import tcp
+        lo = b'\x7f\0\0\x01'
+        rows = [((4, lo, 9877), None), ((4, lo, 9878), 12), ((6, b'\0' * 16, 9878), 13)]
+        self.assertFalse(hasattr(instance, '_proc_net_listens'))
+        for name in ('windows', 'linux'):
+            with self.subTest(platform=name), mock.patch('kitlib.platform.NAME', name), \
+                    mock.patch.object(tcp, 'listeners', return_value=rows) as table:
+                self.assertEqual(instance.listening(9877), {None})
+                self.assertEqual(instance.listening(9878), {12, 13})
+                self.assertEqual(instance.listening(9879), set())
+                self.assertEqual(table.call_count, 3)
 
 
 if __name__ == '__main__':

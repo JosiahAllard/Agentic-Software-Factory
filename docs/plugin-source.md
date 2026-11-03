@@ -42,8 +42,8 @@ Without `claude` on PATH, the export is still made, no folder is refreshed, and 
 
 Before it removes anything, `tools/plugin_refresh.py --apply` reads what is in use (`kitlib.pluginsource` `read_in_use`):
 
-- every running process's command line and program path (one `Win32_Process` read, `kitlib.pmstart` `list_processes`);
-- every scheduled task's definition (`schtasks /Query /XML ONE`: program, arguments and working folder). A task that runs from an export folder breaks when the folder is removed. A non-elevated read works (observed 2026-10-19);
+- every running process's command line and program path (one `Win32_Process` read on Windows, the `/proc` rows on Linux; `kitlib.pmstart` `list_processes`);
+- every scheduled task's definition (`schtasks /Query /XML ONE`: program, arguments and working folder). A task that runs from an export folder breaks when the folder is removed. A non-elevated read works (observed 2026-10-19). `_tasks` has no Linux branch, so on Linux this read fails and the prune keeps the 7-day rule below;
 - the pin leases, `<root>\pins\leases\<sha12>-<pid>.json`, by file name, live or not (pluginsource imports nothing from `kitlib.gate`).
 
 A `<sha12>` is in use when one of these names it as a whole path part (`in_use_sha12s`), followed by a separator, a quote, `;`, `,`, `)` or `&`. A read that fails is printed (`prune: what is in use could not be read whole (...)`), and the others still count. An empty process list counts as a failed read, since a real one always holds the reader itself.
@@ -91,7 +91,7 @@ A host that loads the kit from a plugin copy of its own gives its adapter's `ADA
 
 ### Codex
 
-Codex installs the plugin from the same export as Claude Code. The Codex home is `<--home>\.codex` when `--home` is given, else `CODEX_HOME`, else `~\.codex`. The step (`hosts/codex/adapter/plugin_copy.py` `Step`, the install in `hosts/codex/adapter/plugin_install.py`):
+Codex installs the plugin from the same export as Claude Code. `native_codex` accepts only an absolute `.exe` path, so on Linux an install step prints the run-by-hand line (`codex: not installed (...)`). The Codex home is `<--home>\.codex` when `--home` is given, else `CODEX_HOME`, else `~\.codex`. The step (`hosts/codex/adapter/plugin_copy.py` `Step`, the install in `hosts/codex/adapter/plugin_install.py`):
 
 1. Writes `<export root>\.agents\plugins\marketplace.json`, the marketplace `pm-kit` whose plugins are `pm-kit`, `./<sha12>`, and `pm-kit-hooks`, `./<sha12>/hosts/codex/shell/hooks-plugin` (`marketplace`, `marketplace_body`), through a temp file and `os.replace`, unless the file already says that; a dry run prints `codex: would write ...`. A link or junction on the way is refused. A write that fails is a `codex: FAILED` line and nothing else runs, so Codex never installs from a marketplace naming an older folder. The file belongs to the export root, so a marked session writes it too.
 2. In a session `PM_KIT_ROLE` marks, prints `codex: skipped` and does nothing more: the install is the owner's. A PM's `pm_watch` auto refresh inherits the mark, and so does a hub server started from a marked session, whose "Hub refresh" child inherits it. Known limit: the guard does not refuse `plugin_refresh.py --apply` to an agent, and a subagent of the owner's own session is unmarked, so this check does not stop one.
@@ -132,7 +132,7 @@ OBSERVED (Codex CLI 0.165.0-alpha.1.2, a private `CODEX_HOME`, no login, 2026-10
   - A landing's push updates `refs/remotes/<remote>/main` (`kitlib/gate/land.py` `push`), so a kit landing is seen without a fetch.
   - The ref is read in the kit's source checkout: when the kit running the check is itself an export (it holds the marker), `kitlib.pluginsource` `source_kit` names the main checkout its marker records; an export whose marker names none that still exists is a failed check (pm_start prints `could not check the pm-kit plugin: ...`).
   - With no tracking ref, it prints nothing. A tracking ref that cannot be read, or a `state.json` that cannot be read, is a failed check; a check that fails three times running gives `ERROR plugin check`.
-- **Auto refresh.** With `plugin.auto_refresh: true` (default false), that first event also starts `tools/plugin_refresh.py --apply` itself, detached and windowless, and appends `(auto_refresh: started)`. While a live process holds `refresh.pid`, it starts nothing and appends `(auto_refresh: a refresh is already running)`. With no export, or a folder not migrated, it starts nothing and appends `(auto_refresh: not started: no export yet)` or `(auto_refresh: not started: not migrated in <folders>)`. The hub server's job ("Hub refresh") refreshes on the same switch; the two share `refresh.pid`, so only one refresh runs at a time.
+- **Auto refresh.** With `plugin.auto_refresh: true` (default false), that first event also starts `tools/plugin_refresh.py --apply` itself, detached and windowless, and appends `(auto_refresh: started)` (or `(auto_refresh: could not start it: <error>)`). While the hub's `plugin-refresh` job is up (GET health `jobs` names it; `kitlib.pmwatch` `plugin_check`, `hub_plugin_job_up`), the watcher treats `auto_refresh` as off and starts nothing: the hub owns the refresh. While a live process holds `refresh.pid`, it starts nothing and appends `(auto_refresh: a refresh is already running)`. With no export, or a folder not migrated, it starts nothing and appends `(auto_refresh: not started: no export yet)` or `(auto_refresh: not started: not migrated in <folders>)`. The hub server's job ("Hub refresh") refreshes on the same switch; the two share `refresh.pid`, so only one refresh runs at a time.
 
 ## Hub refresh
 

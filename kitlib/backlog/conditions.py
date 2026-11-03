@@ -39,6 +39,9 @@ import re
 
 KINDS = ('todo', 'question', 'record', 'path', 'plugin')
 OWNER_KINDS = ('todo', 'question')      # the owner's own acts: the only end of an `owner` hold
+# The one member that holds an `until` line per ask (each owner question bound to the record, say)
+# instead of one line; its lines read as AND: the hold ends when the last one is met.
+SEVERAL = 'owner'
 # The hub question statuses that hold the owner's answer (kitlib.hubvalidate STATUSES; the same
 # set as audit_check.ANSWERED).
 ANSWERED = ('answered', 'filed', 'logged', 'done')
@@ -167,10 +170,11 @@ def releasable(rec, status, closed):
 
       item:X    X is closed: `closed(X)` gives the short sha of the commit that closed it (None:
                 still live, never closed, or cannot tell)
-      any other the member's `until` text cites at least one hub id and every one is met: a
-                question answered, filed, logged or done (ANSWERED), a to-do done. `status(id)`
-                gives the hub status, or None (unknown, or the hub was not read: never met). A
-                member with no `until` line, or one that cites no id, is not judged.
+      any other each of the member's `until` lines cites at least one hub id and every one is
+                met: a question answered, filed, logged or done (ANSWERED), a to-do done.
+                `status(id)` gives the hub status, or None (unknown, or the hub was not read:
+                never met). A member with no `until` line, or with a line that cites no id (an
+                `owner` line in free text among its asks), is not judged.
 
     Only `until` states a hold's end. `owner_ask` and a block's reason carry the citation the hold
     rests on (record.block_citation_error), which is often the answered question that set it (a
@@ -188,8 +192,11 @@ def releasable(rec, status, closed):
             if sha:
                 out.append((member, '%s closed (%s)' % (member, sha), '%s closed' % target))
             continue
-        ids = cited_ids(' '.join(cond for m, cond in untils if m == member))
-        if ids and all(_met(i, status) for i in ids):
+        lines = [cited_ids(cond) for m, cond in untils if m == member]
+        if not lines or not all(lines):
+            continue
+        ids = list(dict.fromkeys(i for line in lines for i in line))
+        if all(_met(i, status) for i in ids):
             shown = ', '.join(_shown(i, status) for i in ids)
             out.append((member, '%s cites %s' % (member, shown), shown))
     return out

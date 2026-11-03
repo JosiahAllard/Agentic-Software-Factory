@@ -50,6 +50,13 @@ class Releasable(unittest.TestCase):
         self.assertEqual(self.judge(owner_held('AAA', 'Q-9 first',
                                                until='owner question:Q-9 answered'), {}), [])
 
+    def test_an_owner_hold_with_a_line_per_ask_needs_every_line_met(self):
+        r = owner_held('AAA', 'Q-1635 on the Action Hub',
+                       until=['owner question:Q-1635 answered', 'owner question:Q-1636 answered'])
+        self.assertEqual(self.judge(r, {'Q-1635': 'answered', 'Q-1636': 'open'}), [])
+        got = self.judge(r, {'Q-1635': 'answered', 'Q-1636': 'filed'})
+        self.assertEqual(got[0][2], 'Q-1635 answered, Q-1636 filed')
+
     def test_a_hold_that_cites_nothing_is_not_judged(self):
         self.assertEqual(self.judge(owner_held('AAA', 'will you pick a colour?')), [])
 

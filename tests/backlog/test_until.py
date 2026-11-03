@@ -139,6 +139,12 @@ class Checks(unittest.TestCase):
                        **BLOCKED)
         self.assertTrue(any('one line per member' in m for m in out), out)
 
+    def test_the_owner_holds_a_line_per_ask_but_not_the_same_one_twice(self):
+        asks = ['owner question:Q-101 answered', 'owner question:Q-102 answered']
+        self.assertEqual(messages(until=asks, **test_verbs.OWNER_BLOCKED), [])
+        out = messages(until=asks[:1] * 2, **test_verbs.OWNER_BLOCKED)
+        self.assertTrue(any('is there twice' in m for m in out), out)
+
     def test_the_shape(self):
         for value in ('live-client', '- todo:T-1 done', 'nobody todo:T-1 done'):
             self.assertNotEqual(messages(until=value, **BLOCKED), [], value)
@@ -214,6 +220,14 @@ class BlockUntil(StoreCase):
         self.verb('block', 'FOO', ['owner'], owner_ask='which one?', until='question:Q-9 answered',
                   role_checked=True)
         self.assertEqual(self.get('FOO').all('until'), ['owner question:Q-9 answered'])
+
+    def test_an_owner_until_is_added_beside_the_owners_others(self):
+        self.seed(rec('FOO'))
+        for q in ('Q-101', 'Q-102', 'Q-101'):       # the same ask again is written once
+            self.verb('block', 'FOO', ['owner'], owner_ask='which one?',
+                      until='question:%s answered' % q, role_checked=True)
+        self.assertEqual(self.get('FOO').all('until'),
+                         ['owner question:Q-101 answered', 'owner question:Q-102 answered'])
 
     def test_an_owner_until_with_no_role_check_is_refused(self):
         # the unblock-owner row (policy.sort): the role check decides it, not a library caller
@@ -311,6 +325,28 @@ class ConditionMet(StoreCase):
         self.assertIsNone(change.ruling)
         r = self.get('FOO')
         self.assertEqual((r.get('state'), r.get('owner_ask'), r.all('until')), ('open', None, []))
+
+    def test_one_owner_line_of_several_drops_only_that_line(self):
+        self.seed(rec('FOO', until=['owner question:Q-101 answered',
+                                    'owner question:Q-102 answered'], **test_verbs.OWNER_BLOCKED))
+        body = self.get('FOO').body
+        change = self.verb('condition_met', 'FOO', 'owner', 'question:Q-101 answered')
+        self.assertIs(change.cleared, False)
+        self.assertIn('still held on owner: 1 more', change.subject)
+        r = self.get('FOO')
+        self.assertEqual((r.get('state'), r.all('until'), r.body),
+                         ('blocked', ['owner question:Q-102 answered'], body))
+        change = self.verb('condition_met', 'FOO', 'owner', 'question:Q-102 answered')
+        self.assertIs(change.cleared, True)
+        self.assertEqual((self.get('FOO').get('state'), self.get('FOO').all('until')),
+                         ('open', []))
+
+    def test_dropping_one_owner_line_of_several_needs_the_role_check(self):
+        self.seed(rec('FOO', until=['owner question:Q-101 answered',
+                                    'owner question:Q-102 answered'], **test_verbs.OWNER_BLOCKED))
+        with self.assertRaises(Refusal):
+            self.verb('drop_until', 'FOO', 'owner', 'question:Q-101 answered', 'ask withdrawn')
+        self.assertEqual(len(self.get('FOO').all('until')), 2)
 
 
 class UntilCli(unittest.TestCase):

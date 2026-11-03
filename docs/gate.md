@@ -110,6 +110,8 @@ Several stacks in one checkout run every one's steps, in the table's order. Pyth
 
 ## Build daemons
 
+Every locked run's Gradle builds run with the daemon off (`-Dorg.gradle.daemon=false` in `GRADLE_OPTS`), so they start no shared Gradle daemon unless a command names `--daemon`, and reuse none: docs/lock-api.md "Build daemons under the lock". What follows applies to the daemons a gate's commands still leave in its job: a Kotlin daemon, a Gradle daemon started with `--daemon`, an MSBuild node, the compiler server.
+
 At the release of a gate run that ended "done", `kitlib/lock/run.py` `Slot.stop_daemons` stops the build daemons the gate's commands left in its job (policy: `machine_lock.daemons`, default `gates`, in `kitlib/lock/site.py`). A daemon is shared: any build on the machine may reuse one this gate started, so `kitlib/proc/daemons.py` `stop` ends one only when it is shown to serve the gate's job alone:
 
 - MSBuild nodes and the C#/VB compiler server (VBCSCompiler) are always left running: their clients reach them over named pipes, and which process holds the other end cannot be read from outside.

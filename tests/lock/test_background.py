@@ -61,6 +61,16 @@ class Background(StoreCase):
         self.assertEqual((e["how"], e["code"]), ("done", 0))
         self.assertEqual([d["id"] for d in self.store.history_records()], [e["id"]])
 
+    def test_its_child_gets_gradles_daemon_off_after_the_callers_opts(self):
+        seen = os.path.join(self.tmp, "gradle-opts.txt")
+        write = ("import os,sys; open(sys.argv[1], 'w').write(os.environ.get('GRADLE_OPTS', "
+                 "'<unset>'))")
+        code = bg.run_background([sys.executable, "-c", write, seen], "kit", "bg",
+                                 store=self.store, env=clean_env(GRADLE_OPTS="-Xmx2g"))
+        self.assertEqual(code, 0)
+        with open(seen, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "-Xmx2g -Dorg.gradle.daemon=false")
+
     def test_mem_is_recorded_and_kept_in_its_history_line_and_a_bad_one_is_usage(self):
         code = bg.run_background([sys.executable, "-c", "import sys; sys.exit(0)"], "kit", "bg",
                                  store=self.store, env=clean_env(), mem_mb=4096)

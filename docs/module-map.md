@@ -369,8 +369,10 @@ Known limits:
   read from the work tree: an uncommitted map edit changes the trees and commands a run uses on
   the committed code.
 - Ending a test's tree spares a build daemon another job may use (kitlib.lock.run `end_tree`),
-  so a Gradle or other build daemon the test started can survive it, still holding files in
-  the clone; the clone's removal then fails and the note line names it.
+  so a build daemon the test started can survive it, still holding files in the clone: a Kotlin
+  daemon, or a Gradle daemon only when a command named `--daemon` (locked runs turn Gradle's
+  daemon off, docs/lock-api.md "Build daemons under the lock"). The clone's removal then fails
+  and the note line names it.
 - Git LFS is not tested. The clone has no remote, so an LFS object it cannot find locally is
   not fetched: the checkout may fail (ERROR) or leave the pointer file.
 - The tree covers the paths of modules the map names; it does not hide the rest of the machine

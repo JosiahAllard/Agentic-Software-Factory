@@ -373,8 +373,8 @@ class Shown(Base):
 
 
 class EndToEnd(Base):
-    # A reap pass can miss the run (its record read refused while the waiter's usage save
-    # replaces it); the next pass, stale_check_s later while the booking waits, takes it.
+    # The booking waits behind the stale run and looks again every stale_check_s, as acquire
+    # does in use.
     SETTINGS = {"stale_check_s": 0.2}
 
     def test_another_bookings_acquire_ends_a_stale_held_run(self):
@@ -390,7 +390,10 @@ class EndToEnd(Base):
         s = rm.book("engine-test", "kit", "stuck", cores=1, store=self.store, env=clean_env())
         p = s.start([sys.executable, "-c", "import time; time.sleep(120)"])
         self.addCleanup(lambda: p.poll() is None and p.kill())
-        s.run.save(hosts=[self.exited()], held_since=ago(DUE_S + 600))
+        # role: the record takes its booker's (run_role, from this process's tree). Under the
+        # owner's tree (the scheduled daily run, no agent host above it) that is "owner", which
+        # stale.reason never ends; the stuck run stands for an agent's.
+        s.run.save(hosts=[self.exited()], held_since=ago(DUE_S + 600), role="agent")
         out = {}
 
         def waiter():

@@ -554,7 +554,7 @@ class Lander(object):
     `runs` (the result.Run per branch whose running records the submission wrote; every outcome
     finishes them), `output` (the file this process's output goes to) and `replaced` (the land
     records those running records replaced).
-    `node_route`: where the merged gate runs (step 2b), an object with kitlib.loadnode.landroute's
+    `node_route`: where the merged gate runs (step 3), an object with kitlib.loadnode.landroute's
     plan, route_line, recheck, same_tree_why, run_on_node and Fallback (None: that module).
     `hub`: the client the landing feed is posted with (post_landing; None: this machine's hub)."""
 

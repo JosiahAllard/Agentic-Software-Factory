@@ -27,7 +27,7 @@ Live since 2026-10-15, with landings in three repositories, and covered by tests
   docs/lock-api.md, docs/gate.md "The landing queue").
 - Also in use: worktree cleanup (`tools/worktree_remove.py`).
 
-Not done: Linux support is in progress (the kit still refuses Linux; docs/linux-support-plan.md),
+Not done: Linux support is in progress (the kit runs on Windows and Linux, as AGENTS.md says; docs/linux-support-plan.md),
 and the Codex bridge is not live yet. Codex is a supported host for the roles, hooks and commit
 tools; the bridge between agents is the part that is not.
 

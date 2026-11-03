@@ -680,6 +680,35 @@ class Restore(unittest.TestCase):
                 'RESTORE C-ONE: L-ONE %s (in def5678) -> `set C-ONE --scope "kitlib/**" '
                 '--unset narrowed`' % said])
 
+    def held_on_l(self):
+        return rec('C-ONE', priority='3', priority_by='agent', state='blocked',
+                   blocked_on='item:L-ONE', scope='kitlib/x/b.py',
+                   narrowed='kitlib/** L-ONE kit/l')
+
+    def restore_type(self, s, hist):
+        out, _note = omod.releasable_holds(s, None, hist)
+        return [line for _r, line in out if line.startswith('RESTORE')] + \
+            omod.restore_lines(s, None, hist)
+
+    def test_a_held_record_gets_one_restore_line_when_its_other_record_was_released(self):
+        s = snap(self.held_on_l(), rec('L-ONE', priority='3', priority_by='agent'))
+        self.assertEqual(self.restore_type(s, self.HIST), [
+            'RESTORE C-ONE: L-ONE released (open again) -> `set C-ONE --scope "kitlib/**" '
+            '--unset narrowed`'])
+
+    def test_a_held_record_gets_one_restore_line_when_its_other_record_was_retired_or_deleted(
+            self):
+        for verb, said in (('retires', 'retired'), ('deletes', 'deleted')):
+            hist = {'L-ONE': 'def5678 %s L-ONE: gone' % verb}.get
+            self.assertEqual(self.restore_type(snap(self.held_on_l()), hist), [
+                'RESTORE C-ONE: L-ONE %s (in def5678) -> `set C-ONE --scope "kitlib/**" '
+                '--unset narrowed`' % said])
+
+    def test_a_held_record_gets_one_restore_line_when_its_other_record_landed(self):
+        lines = self.restore_type(snap(self.held_on_l()), self.HIST)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith('RESTORE+RELEASABLE C-ONE'), lines)
+
     def test_a_blocked_other_record_or_an_unknown_history_does_not(self):
         s = snap(self.mine(), rec('L-ONE', priority='3', priority_by='agent', state='blocked',
                                   blocked_on='owner'))

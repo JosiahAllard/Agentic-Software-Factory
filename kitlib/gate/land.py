@@ -1528,7 +1528,11 @@ class Lander(object):
             return self._scope_unread(b, found)
         if narrowed is not None:
             narrowed.extend(sorted(found.narrowed))
-        return self._scope_miss(b, t, mb, found, outside, tops)
+        miss = self._scope_miss(b, t, mb, found, outside, tops)
+        if found.unread:            # refused for the narrowed record all the same
+            miss += ('; the store also held a record it could not read, so a path in that '
+                     'record\'s scope may be counted outside: %s' % '; '.join(found.unread))
+        return miss
 
     def _scope_unread(self, b, found):
         return ('cannot read the backlog store to check %s\'s paths against the scopes of the '

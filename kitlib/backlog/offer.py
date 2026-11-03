@@ -610,9 +610,12 @@ def restore_lines(snap, session, history):
     """`next`'s plain RESTORE lines: for each record of `session` carrying a `narrowed:` line
     whose other record holds its part no more - landed, retired, deleted or released
     (ended_reader; `_restore`) - the `set` that restores its original members and clears those
-    lines. A held record whose RELEASABLE line names that closed record is left out:
-    releasable_holds prints the two as one RESTORE+RELEASABLE line."""
-    ended = ended_reader(snap, history)
+    lines. A held record releasable_holds gives a RELEASABLE line on one of those records (an
+    `item:` hold on one now closed: conditions.releasable, read as it reads it) is left out:
+    releasable_holds prints the two as one RESTORE+RELEASABLE line. One whose other record was
+    released, retired or deleted has no such line, so it gets the plain RESTORE line."""
+    from . import conditions as cmod
+    ended, closed = ended_reader(snap, history), closed_reader(snap, history)
     out = []
     for rec in sorted(snap.readable, key=lambda r: r.id):
         if rec.get('session') != session or not rec.has('narrowed'):
@@ -620,9 +623,10 @@ def restore_lines(snap, session, history):
         restore = _restore(rec, ended, snap.rules)
         if restore is None:
             continue
-        if classify(rec)[0] == HELD and any('item:%s' % o in rec.all('blocked_on')
-                                            for o in restore[0]):
-            continue
+        if classify(rec)[0] == HELD:
+            listed = [m for m, _w, _r in cmod.releasable(rec, {}.get, closed)]
+            if any('item:%s' % o in listed for o in restore[0]):
+                continue
         out.append('RESTORE %s: %s -> `%s`' % (rec.id, restore[1], restore[2]))
     return out
 

@@ -446,6 +446,9 @@ class Warns(ScopeCase):
         line = self.refused(self.land(tip))
         self.assertIn('kit/feature changes 1 path(s) %s (FOO): src/b/y.py; ' % OUTSIDE, line)
         self.assertIn('FOO was narrowed off src/** for BAR: ', line)
+        self.assertIn('; or land them on their own branch; the store also held a record it could '
+                      'not read, so a path in that record\'s scope may be counted outside: ', line)
+        self.assertIn('1 record(s) unreadable (BAD)', line)
         self.assertEqual(self.remote_store(), before)
 
     def test_a_narrowed_record_beside_an_unreadable_one_lands_in_scope(self):

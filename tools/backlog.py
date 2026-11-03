@@ -262,8 +262,10 @@ def do_next(args, ctx, snap):
         say('DEAD PULL %s (pulled_by %s has no branch): %s`release %s --reason ...`'
             % (rec.id, rec.get('pulled_by'), taker, rec.id))
     # The offer `pull` checks against (plan.offer_for): the branch's own pulls take no scope.
+    # A record held only by one live pull's protected set is offered narrowed (NARROWS below);
+    # `next` writes nothing, and `pull` of it writes the narrowing.
     offers, passed, _holding, own = pmod.offer_for(snap, ctx, cap=cap, seeds=args.seeds,
-                                                   holding=holding)
+                                                   holding=holding, narrow=True)
     mine = [r.id for r in holding if own and r.get('pulled_by') == own]
     if mine:
         say('as branch %s: its own pulls (%s) take no scope here, so a record overlapping only '
@@ -273,7 +275,8 @@ def do_next(args, ctx, snap):
     say('NEXT (%d offered%s%s)' % (len(offers), ', session %s' % ctx.session if ctx.session else '',
                                    ', --all: no cap' if cap is None else ''))
     for o in offers:
-        say(row(o.rec, ranks) + ('  (--with)' if o.seeded else ''))
+        say(row(o.rec, ranks) + ('  (--with)' if o.seeded else '')
+            + ('  (narrows, below)' if o.split is not None else ''))
     for p in passed:
         say('  passed over %s (rank %s): %s' % (p.rec.id, p.rank, p.why))
     summary = omod.blocker_summary(passed)
@@ -286,14 +289,21 @@ def do_next(args, ctx, snap):
         say(hub_note)
     for line in [line for _, line in released]:
         say(line)
+    restores = omod.restore_lines(snap, ctx.session, ctx.history(snap))
+    for line in restores:
+        say(line)
     narrow = narrow_lines(ctx, passed, holding, own)
     for line in narrow:
         say(line)
+    narrows = [o for o in offers if o.split is not None]
+    for o in narrows:
+        say(omod.narrows_line(o))
     n, kinds = omod.pass_counts(passed)
     why = ', '.join('%d %s' % (c, k) for k, c in kinds if c)
-    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow'
+    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow%s%s'
         % (len(offers), b.count(omod.PULLABLE), n, ' (%s)' % why if why else '',
-           len(released), len(narrow)))
+           len(released), len(narrow), ' | %d narrows' % len(narrows) if narrows else '',
+           ' | %d restore' % len(restores) if restores else ''))
     return 0
 
 

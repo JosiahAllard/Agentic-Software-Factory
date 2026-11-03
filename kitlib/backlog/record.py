@@ -258,6 +258,57 @@ def _answer(v, rules=None):
     return shape if when.tzinfo is None else None
 
 
+def split_narrowed(v):
+    """`(original member, other id, other branch)` of one `narrowed:` value, split at its last two
+    spaces (a member may hold a space; an id and a branch never do), or None when it has fewer
+    than three parts. Not validated: _narrowed is."""
+    parts = v.rsplit(' ', 2)
+    return tuple(parts) if len(parts) == 3 and all(parts) else None
+
+
+def _narrowed(v, rules):
+    """`<original member> <other id> <other branch>`: this record was narrowed off its original
+    scope member for the other record, pulled on that branch (docs/commit.md "A narrowed
+    record"), one line per (original member, other id). `pull` of a record `next` offers by
+    narrowing writes it on both records (plan.plan_pull); a lead's `set --narrowed` writes it by
+    hand and `set --unset narrowed` clears it (the `set-other` row), as `next`'s RESTORE line says.
+    commit.py (kitlib/backlog/narrowed.py) and the landing scope check read them."""
+    shape = ('`%s` is not a narrowed line - `<original member> <other id> <other branch>`' % v)
+    got = split_narrowed(v)
+    if got is None:
+        return shape
+    member, rid, branch = got
+    err = scopemod.scope_member_error(member)
+    if err is None and member == scopemod.NONE:
+        err = '`none` is not a member a pull narrows'
+    if err is None:
+        err = rules.id_error(rid)
+    if err is None and (branch.startswith('-') or any(ord(ch) < 33 or ord(ch) == 127
+                                                      for ch in branch)):
+        err = '`%s` is not a branch name' % branch
+    return None if err is None else '%s: %s' % (shape, err)
+
+
+def narrowed(rec, rules):
+    """`(lines, errors)`: the record's `narrowed:` lines as `(original member, other id, other
+    branch)`, and why each malformed one is (_narrowed)."""
+    lines, errors = [], []
+    for v in rec.all('narrowed'):
+        line, err = narrowed_line(v, rules)
+        if err is None:
+            lines.append(line)
+        else:
+            errors.append(err)
+    return lines, errors
+
+
+def narrowed_line(v, rules):
+    """`(line, None)` for one well-formed `narrowed:` value, `line` its `(original member, other
+    id, other branch)`; `(None, why)` for a malformed one (_narrowed)."""
+    err = _narrowed(v, rules)
+    return (split_narrowed(v), None) if err is None else (None, err)
+
+
 def _until(v, rules):
     """`<member> <condition>`: the end condition of one `blocked_on` member, written by `block
     --on M --until C` (kitlib/backlog/conditions.py says which conditions a program checks; any
@@ -319,6 +370,7 @@ FIELDS = collections.OrderedDict([
     ('uses', (ANY, _uses)),
     ('files', (ANY, _path)),
     ('files_at', (AT_MOST_ONE, _free)),
+    ('narrowed', (ANY, _narrowed)),
     ('requires', (ANY, _free)),
     ('expect', (ANY, _free)),
     ('owner_ask', (AT_MOST_ONE, _free)),

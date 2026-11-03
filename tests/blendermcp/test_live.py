@@ -24,6 +24,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 ENTRY = os.path.join(REPO, 'mcp', 'blender_server.py')
 LIVE = os.environ.get('PM_KIT_BLENDER_LIVE') == '1'
 PNG = b'\x89PNG\r\n\x1a\n'
+WAIT_S = 600                # the lock is shared: wait for a slot as long as the bridge allows
 
 
 class Client:
@@ -76,7 +77,7 @@ class LiveBlender(unittest.TestCase):
 
     def test_open_build_render_close_then_a_call_past_its_limit(self):
         t0 = time.monotonic()
-        out, err = self.c.tool('blender_open', worktree=self.wt, wait_s=60)
+        out, err = self.c.tool('blender_open', worktree=self.wt, wait_s=WAIT_S)
         self.assertFalse(err, out)
         b = out['blender']
         print('\nopened Blender pid %s on port %d (run %s, gpu slot %s) in %.1f s'
@@ -115,7 +116,7 @@ class LiveBlender(unittest.TestCase):
         self.assertEqual((out['blender']['how'], out['blender']['code']), ('done', 0))
         self.assertTrue(self.gone(b['pid']))
 
-        out, err = self.c.tool('blender_open', worktree=self.wt, wait_s=60)
+        out, err = self.c.tool('blender_open', worktree=self.wt, wait_s=WAIT_S)
         self.assertFalse(err, out)
         b2 = out['blender']
         out, err = self.c.tool('blender_exec', handle=b2['handle'],

@@ -108,9 +108,11 @@ class Addon(unittest.TestCase):
             self.assertEqual(addon.ready(env), new)
 
     def test_the_launch_command(self):
+        # --online-mode is Blender's own option: after --command the add-on's parser gets it
+        # and refuses it (exit 2), as the live run found
         self.assertEqual(addon.launch_argv('b', 9877),
-                         ['b', '--background', '--command', 'blender_mcp', '--host', '127.0.0.1',
-                          '--port', '9877', '--online-mode'])
+                         ['b', '--background', '--online-mode', '--command', 'blender_mcp',
+                          '--host', '127.0.0.1', '--port', '9877'])
 
 
 if __name__ == '__main__':

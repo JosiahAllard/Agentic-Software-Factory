@@ -206,11 +206,13 @@ class Dotnet(unittest.TestCase):
                 f.write(trx(*results))
             return V.trx_counts(p)[2]
 
-    def test_a_failed_result_with_no_message_reads_its_outcome_as_the_message(self):
+    def test_a_failed_result_with_no_message_is_inconclusive(self):
         failures = self.failures(('T.G', 'Failed', None), ('T.P', 'Passed', None))
-        self.assertEqual(failures, [('failure', '', 'Failed', 'T.G')])
-        # No exception type named and no `threw`: the bare outcome counts as an assertion.
-        self.assertEqual(V.dotnet_verdict(1, '', (2, 1, failures), [])[0], 'RED')
+        self.assertEqual(failures, [('failure', '', '', 'T.G')])
+        # A real assertion always carries a message: one with none fails safe.
+        v, reason = V.dotnet_verdict(1, '', (2, 1, failures), [])
+        self.assertEqual(v, INCONCLUSIVE, reason)
+        self.assertIn('T.G failed on a failure with no message', reason)
 
     def test_an_outcome_other_than_failed_is_an_error_never_an_assertion(self):
         for outcome in ('Error', 'Timeout', 'Aborted'):

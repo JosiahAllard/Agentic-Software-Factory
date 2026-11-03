@@ -281,7 +281,7 @@ def is_assertion(f, assertion=None):
     `assertion` regex matches its text, else it is no <error> and its exception type (the type,
     else the one its message names) is an assertion type, else its message names no exception
     type and does not say a method threw (an assert's own text: xUnit's `Assert.Equal() Failure`,
-    a user's message)."""
+    a user's message). A failure with no type and no message is no assertion."""
     tag, typ, msg, name = f
     if assertion and re.search(assertion, failure_text(f), re.M):
         return True
@@ -290,6 +290,8 @@ def is_assertion(f, assertion=None):
     if typ:
         return bool(ASSERT_TYPE.search(typ))
     first = _first_line(msg)
+    if not first:
+        return False                    # a real assertion always says what it checked: fail safe
     m = _TYPED.search(first)
     if m:
         return bool(ASSERT_TYPE.search(m.group(1)))
@@ -304,7 +306,8 @@ def failures_verdict(bad, tests, failures, assertion):
         f = crashed[0]
         return INCONCLUSIVE, ('%s failed on %s, not on an assertion: a crash or setup error at the '
                               'base proves nothing (%d of %d failure(s) are no assertion)'
-                              % (f[3] or 'a test', _first_line(failure_text(f)), len(crashed),
+                              % (f[3] or 'a test', _first_line(failure_text(f)) or 'a failure with no message',
+                                 len(crashed),
                                  len(failures)))
     if not failures:
         return INCONCLUSIVE, ('%d of %d test(s) failed, but the result names no failure to read: '
@@ -529,7 +532,8 @@ def _local(tag):
 
 def trx_failures(root):
     """Each UnitTestResult of a .trx that did not pass: `(tag, '', message, test name)`, tag
-    `failure` for the outcome Failed and `error` for any other (Error, Timeout, Aborted...)."""
+    `failure` for the outcome Failed and `error` for any other (Error, Timeout, Aborted...); with
+    no message, a Failed result's is empty and any other's is its outcome."""
     out = []
     for el in root.iter():
         if _local(el.tag) != 'UnitTestResult':
@@ -538,7 +542,7 @@ def trx_failures(root):
         if outcome in ('Passed', 'NotExecuted', 'Inconclusive', 'PassedButRunAborted', ''):
             continue
         msg = next((m.text or '' for m in el.iter() if _local(m.tag) == 'Message'), '')
-        out.append(('failure' if outcome == 'Failed' else 'error', '', msg or outcome,
+        out.append(('failure' if outcome == 'Failed' else 'error', '', msg or ('' if outcome == 'Failed' else outcome),
                     el.get('testName') or ''))
     return out
 

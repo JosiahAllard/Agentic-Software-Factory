@@ -4,7 +4,7 @@ relaunches it at once when it exits, then handles the events, so no model turn i
 nothing happens and the heartbeat never goes stale. With --stream it never exits on an event: it
 prints each one and keeps polling, for a caller that reads its output line by line; the PM's
 background run does not use it (the PM start check warns on it). Every pass but a --once one writes a heartbeat, <state>.beat
-({pid, beat, stream, started}), that the PM session-start check reads (docs/pm-start.md).
+({pid, beat, stream, started, yielded}), that the PM session-start check reads (docs/pm-start.md).
 
 Events:
   BRANCH <repo> <ref> <hash>    a watched remote branch got a new tip (--branch, repeatable)
@@ -23,7 +23,8 @@ Events:
                                 (docs/pm-watch.md "Stopped sessions")
   LIMIT <name> account N stalled at the weekly limit until <iso> (pid P)
                                 a session stopped at its account's weekly limit, its process still
-                                running; once per stall, and never IDLE for it (docs/pm-watch.md)
+                                running; once per stall (docs/pm-watch.md); the idle check takes no
+                                limit input, so a stalled session can read IDLE too
   PLUGIN pm-kit plugin behind kit main <sha12>: python tools/plugin_refresh.py --apply
                                 the plugin export is not at the kit's refs/remotes/<remote>/main;
                                 once per main sha, reported on the first run too; with

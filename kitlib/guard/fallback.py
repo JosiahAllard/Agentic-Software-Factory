@@ -398,7 +398,7 @@ def named_runs(event, ctx, text, parsed, cwd, role, level=0):
     if backlogrole._judged_subagent(event):
         checks.append((backlogrole.ROLE_RULE, BACKLOG_NAME, backlogrole.runs,
                        'names tools/backlog.py where the guard cannot read the run (%s), so it cannot judge the run '
-                       'for your role (kitlib/backlog/roles.py). Run the tool\'s verb itself, its words literal:',
+                       'for your role (kitlib/backlog/roles.py). ' + backlogrole.LITERAL_WHY,
                        backlogrole.literal_form(ctx)))
     if rules.subagent(event) and not gaterole.may_allow(event, ctx):
         checks.append((gaterole.RULE, GATE_ALLOW_NAME, gaterole.shell,

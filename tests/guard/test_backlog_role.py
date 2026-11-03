@@ -1187,8 +1187,12 @@ class Unread(Base):
 
     def test_an_unread_run_names_the_tools_literal_form(self):
         d = self.refused(self.cmd('bash -c "$PRE python tools/backlog.py %s"' % self.BLOCK))
-        self.assertIn('backlog.py" -C <worktree> <verb> <arguments>, run directly', d.instead)
+        self.assertTrue(d.instead.endswith('backlog.py" -C <worktree> <verb> <arguments>'), d.instead)
+        self.assertTrue(d.instead.startswith('python "'), d.instead)
+        self.assertIn('directly as a command of its own:', d.reason)
         self.assertNotIn('script file', d.reason + d.instead)
+        d = self.refused(self.cmd('bash /dev/fd/0'))
+        self.assertTrue(d.instead.endswith('backlog.py" -C <worktree> <verb> <arguments>'), d.instead)
 
     def test_gate_allow_where_the_guard_cannot_read_it(self):
         self.refused(self.cmd('bash -c "cd $W && python tools/gate.py allow kit/x"'), 'gate-allow')

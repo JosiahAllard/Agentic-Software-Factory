@@ -603,10 +603,13 @@ def _kit_code(ctx, path):
         d = up
 
 
+LITERAL_WHY = 'Run the tool\'s verb itself, its words literal, directly as a command of its own:'
+
+
 def literal_form(ctx):
-    """The alternative to a run the guard cannot judge: the tool itself, its words literal."""
-    return 'python %s -C <worktree> <verb> <arguments>, run directly as a command of its own' % \
-        rules.kit_tool(ctx, TOOL)
+    """The alternative to a run the guard cannot judge: the tool itself, its words literal (the
+    reason ends with LITERAL_WHY; the alternative is the bare command)."""
+    return 'python %s -C <worktree> <verb> <arguments>' % rules.kit_tool(ctx, TOOL)
 
 
 def script_file(event, ctx, cmd, inv, cwd, role):
@@ -638,7 +641,7 @@ def script_file(event, ctx, cmd, inv, cwd, role):
         if text is NOT_REGULAR:
             return rules.refuse(ROLE_RULE, role, '`%s` runs %s, which is not a regular file, so the guard cannot '
                                 'read it to judge a run of tools/backlog.py in it for your role '
-                                '(kitlib/backlog/roles.py). Run the tool\'s verb itself:' % (line, rules.fwd(path)),
+                                '(kitlib/backlog/roles.py). %s' % (line, rules.fwd(path), LITERAL_WHY),
                                 literal_form(ctx))
         if text is not None:
             read.append((path, text))
@@ -662,7 +665,7 @@ def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1)
             return None
         return rules.refuse(RAW_RULE, role, '%s, whose code names %s: code that reaches the backlog\'s library or '
                             'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '
-                            'write (kitlib/backlog/roles.py). Run the tool\'s verb itself:' % (head, m.group(0)),
+                            'write (kitlib/backlog/roles.py). %s' % (head, m.group(0), LITERAL_WHY),
                             literal_form(ctx))
     from . import fallback, gaterole
     p = cm.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))

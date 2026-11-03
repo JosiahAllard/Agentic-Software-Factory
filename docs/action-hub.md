@@ -68,7 +68,7 @@ under the title.
   writes none.
   Above the cards a cluster map draws the selected tree node's children as a treemap (repos under All
   documents, kinds under a repo, months under a kind), sized by document count and coloured by kind; a
-  repo or kind cell selects that node, as the tree does, and a tree click redraws the map.
+  repo or kind cell selects that node, as the tree does, and a tree click redraws the map. Month cells are not clickable, and an Unsorted node shows months too.
 - **Usage** (`#info`). Usage (each account's 5-hour and weekly percentages) and Lock notices. A usage
   row opens its detail in the pane.
 - **Agents** (`#agents`, its own entry in More). Each agent's model and effort; a row opens its detail.

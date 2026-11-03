@@ -8,7 +8,7 @@ from tests.hubsite.test_notices_docs import dom, snapshot
 from tests.hubsite.test_page import NODE
 
 MAP = """
-    const cells = () => $$("#list .cmap .cell").map(c => [c.getAttribute("title"), c.classList.contains("on")]);
+    const cells = () => $$("#list .cmap .cell").map(c => c.getAttribute("title"));
     const cell = t => $$("#list .cmap .cell").find(c => c.getAttribute("title").startsWith(t + " "));
     const lit = () => nodes().filter(n => n[2]).map(n => n[0]);
 """
@@ -25,7 +25,7 @@ class DocsClusterTest(unittest.TestCase):
         """, snap(), hash="#docs")
         self.assertEqual(got["role"], "img")
         self.assertIn("All documents", got["label"])
-        self.assertEqual(got["cells"], [["alpha \u00b7 4 docs", False], ["beta \u00b7 1 doc", False], ["Unsorted \u00b7 1 doc", False]])
+        self.assertEqual(got["cells"], ["alpha \u00b7 4 docs", "beta \u00b7 1 doc", "Unsorted \u00b7 1 doc"])
         self.assertIn("k-", got["tone"])
 
     def test_a_cell_click_selects_the_node_in_the_tree_and_cards_and_redraws_the_map(self):
@@ -39,13 +39,13 @@ class DocsClusterTest(unittest.TestCase):
         """, snap(), hash="#docs")
         self.assertEqual(got["repo"]["lit"], ["alpha"])
         self.assertEqual(got["repo"]["cards"], ["row-a-bare", "row-a-plan-2", "row-a-design", "row-a-plan-1"])
-        self.assertEqual([c[0] for c in got["repo"]["cells"]], ["Plan \u00b7 2 docs", "Design \u00b7 1 doc", "Unsorted \u00b7 1 doc"])
+        self.assertEqual(got["repo"]["cells"], ["Plan \u00b7 2 docs", "Design \u00b7 1 doc", "Unsorted \u00b7 1 doc"])
         self.assertEqual(got["kind"]["lit"], ["Plan"])
         self.assertEqual(got["kind"]["cards"], ["row-a-plan-2", "row-a-plan-1"])
         self.assertEqual(got["kind"]["kept"], '["alpha","plan"]')
-        self.assertEqual(got["kind"]["cells"], [["2026-10 \u00b7 2 docs", False]])
+        self.assertEqual(got["kind"]["cells"], ["2026-10 \u00b7 2 docs"])
 
-    def test_a_tree_click_redraws_the_map_and_the_cell_of_the_selected_child_is_marked(self):
+    def test_a_tree_click_redraws_the_map_and_a_repo_with_one_kind_shows_that_kind(self):
         got = dom(SEE + MAP + """
             await start();
             await click(node("beta"));
@@ -53,7 +53,7 @@ class DocsClusterTest(unittest.TestCase):
             await click(node("All documents"));
             return { beta, all: cells().length };
         """, snap(), hash="#docs")
-        self.assertEqual(got["beta"], [["Research \u00b7 1 doc", False]])
+        self.assertEqual(got["beta"], ["Research \u00b7 1 doc"])
         self.assertEqual(got["all"], 3)
 
     def test_the_map_follows_search_and_is_absent_in_the_empty_state(self):
@@ -64,7 +64,7 @@ class DocsClusterTest(unittest.TestCase):
             await type($("#idq"), "zzz");
             return { one, none: $$("#list .cmap").length };
         """, snap(), hash="#docs")
-        self.assertEqual(got["one"], [["beta \u00b7 1 doc", False]])
+        self.assertEqual(got["one"], ["beta \u00b7 1 doc"])
         self.assertEqual(got["none"], 0)
 
     def test_markup_in_a_repo_name_is_drawn_as_text_and_300_cards_draw_a_small_map(self):
@@ -73,7 +73,7 @@ class DocsClusterTest(unittest.TestCase):
         pages["m"] = card("m", bad, "plan", "2026-10-01T00:00:00Z")
         got = dom(SEE + MAP + """
             await start();
-            const all = { cards: cards().length, cells: cells().map(c => c[0]) };
+            const all = { cards: cards().length, cells: cells() };
             await click(cell("repo1"));
             return { all, repo: cells().length, sinks, tags: [...new Set(created)] };
         """, snap(pages), hash="#docs")

@@ -618,6 +618,51 @@ class ProtectedSet(StoreCase):
 
 
 
+class Restore(unittest.TestCase):
+    """`next`'s RESTORE line (KIT-NEXT-NARROW-AUTO S3a): once the record a `narrowed:` line names
+    is closed, the `set` that gives the narrowed record its original member back and clears that
+    line; merged with RELEASABLE when the record is also held on the closed one."""
+
+    HIST = {'L-ONE': 'abc1234 closes L-ONE: landed'}.get
+
+    def test_a_held_record_s_restore_merges_with_its_releasable_line(self):
+        s = snap(rec('C-ONE', priority='3', priority_by='agent', state='blocked',
+                     blocked_on='item:L-ONE', scope='kitlib/x/b.py',
+                     narrowed='kitlib/** L-ONE kit/l'))
+        out, _note = omod.releasable_holds(s, None, self.HIST)
+        self.assertEqual([line for _r, line in out], [
+            'RESTORE+RELEASABLE C-ONE (rank 1): L-ONE landed (closed in abc1234) -> `set C-ONE '
+            '--scope "kitlib/**" --unset narrowed`; `unblock C-ONE --on item:L-ONE --reason '
+            '"L-ONE closed"`'])
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
+
+    def test_a_record_not_held_gets_the_plain_restore_line(self):
+        s = snap(rec('C-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/c', scope='kitlib/x/b.py',
+                     narrowed='kitlib/** L-ONE kit/l'))
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [
+            'RESTORE C-ONE: L-ONE landed (closed in abc1234) -> `set C-ONE --scope "kitlib/**" '
+            '--unset narrowed`'])
+
+    def test_lines_naming_a_live_record_stay(self):
+        s = snap(rec('C-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/c', scope=['kitlib/x/b.py', 'docs/a.md'],
+                     narrowed=['kitlib/** L-ONE kit/l', 'docs/** M-ONE kit/m']),
+                 rec('M-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/m', scope='docs/b.md'))
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [
+            'RESTORE C-ONE: L-ONE landed (closed in abc1234) -> `set C-ONE --scope "kitlib/**" '
+            '--scope "docs/a.md" --narrowed "docs/** M-ONE kit/m"`'])
+
+    def test_no_line_while_the_other_record_is_live(self):
+        s = snap(rec('C-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/c', scope='kitlib/x/b.py',
+                     narrowed='kitlib/** L-ONE kit/l'),
+                 rec('L-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/l', scope='kitlib/x/a.py'))
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
+
+
 class NextCliNarrows(unittest.TestCase):
     """Through tools/backlog.py `next`: the offer row's `(narrows, below)`, the NARROWS line and
     the counts line's `| N narrows`."""

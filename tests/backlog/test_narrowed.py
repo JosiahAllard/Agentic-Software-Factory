@@ -234,3 +234,33 @@ class FailOpen(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MergeLines(unittest.TestCase):
+    """nmod.merge_lines: a record narrowed again keeps one line per (original member, other id)."""
+
+    def test_a_new_line_replaces_the_old_one_for_the_same_member_and_other(self):
+        self.assertEqual(nmod.merge_lines(['kit/** L-ONE kit/old', 'docs/** M-ONE kit/m'],
+                                          [('kit/**', 'L-ONE', 'kit/l')]),
+                         ['kit/** L-ONE kit/l', 'docs/** M-ONE kit/m'])
+
+    def test_a_line_for_another_member_or_other_is_added(self):
+        self.assertEqual(nmod.merge_lines(['kit/** L-ONE kit/l'],
+                                          [('kit/**', 'M-ONE', 'kit/m'), ('src/**', 'L-ONE', 'kit/l')]),
+                         ['kit/** L-ONE kit/l', 'kit/** M-ONE kit/m', 'src/** L-ONE kit/l'])
+
+    def test_a_malformed_old_line_is_kept_and_duplicates_collapse(self):
+        self.assertEqual(nmod.merge_lines(['kit/**'], [('a/**', 'L-ONE', 'kit/l'),
+                                                       ('a/**', 'L-ONE', 'kit/l')]),
+                         ['kit/**', 'a/** L-ONE kit/l'])
+
+
+class RestoredScope(unittest.TestCase):
+    """nmod.restored_scope: the original members back, plus every member they do not hold."""
+
+    def test_the_originals_come_back_and_members_inside_them_go(self):
+        self.assertEqual(nmod.restored_scope(['src/a/**', 'src/b.py', 'docs/x.md'], ['src/**']),
+                         ['src/**', 'docs/x.md'])
+
+    def test_none_is_dropped(self):
+        self.assertEqual(nmod.restored_scope(['none'], ['src/**']), ['src/**'])

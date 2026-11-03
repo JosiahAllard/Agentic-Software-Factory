@@ -104,6 +104,41 @@ class ReposTests(unittest.TestCase):
             derived.repos({}, read=self.READ)
 
 
+class _UsEastern(datetime.tzinfo):
+    """US Eastern rules without an IANA database (the kit is stdlib-only): -04:00 from the 2nd Sunday
+    of March 02:00 to the 1st Sunday of November 02:00 local, else -05:00; PEP 495 folds."""
+    H = datetime.timedelta(hours=1)
+
+    @staticmethod
+    def _sunday(year, month, nth):
+        first = datetime.datetime(year, month, 1)
+        return first + datetime.timedelta(days=(6 - first.weekday()) % 7 + 7 * (nth - 1))
+
+    def _edges(self, year):
+        return (self._sunday(year, 3, 2).replace(hour=2),            # wall clock, standard time
+                self._sunday(year, 11, 1).replace(hour=1))           # the repeated hour starts here
+
+    def utcoffset(self, dt):
+        start, amb = self._edges(dt.year)
+        n = dt.replace(tzinfo=None)
+        dst = start <= n < amb or (amb <= n < amb + self.H and not dt.fold)
+        return datetime.timedelta(hours=-4 if dst else -5)
+
+    def dst(self, dt):
+        return self.utcoffset(dt) + datetime.timedelta(hours=5)
+
+    def tzname(self, dt):
+        return 'EDT' if self.dst(dt) else 'EST'
+
+    def fromutc(self, dt):
+        start, amb = self._edges(dt.year)
+        u = dt.replace(tzinfo=None)
+        start_utc, end_utc = start + 5 * self.H, amb + 5 * self.H     # end: 02:00 EDT = 06:00Z
+        if start_utc <= u < end_utc:
+            return (u - 4 * self.H).replace(tzinfo=self)
+        return (u - 5 * self.H).replace(tzinfo=self, fold=int(end_utc <= u < end_utc + self.H))
+
+
 class UsageTests(unittest.TestCase):
     LINES = ['account 1: five_hour=40% (resets Sun 10:00)  seven_day=71% (resets Mon 09:00)  [updated 3 min ago]',
              'account 2: no usage file',
@@ -166,8 +201,7 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(got['five_reset'], '2026-01-02T10:00:00+00:00')
 
     def test_resets_across_a_clock_change_are_not_an_hour_off(self):
-        import zoneinfo
-        ny = zoneinfo.ZoneInfo('America/New_York')
+        ny = _UsEastern()
         def reset(as_of, text):
             lines = ['account 1: five_hour=10%% (resets %s)  seven_day=1%% (resets %s)  [updated 1 min ago]' % (text, text)]
             return derived.usage(lambda: lines, lambda: as_of, tz=ny)['accounts']['1']['five_reset']

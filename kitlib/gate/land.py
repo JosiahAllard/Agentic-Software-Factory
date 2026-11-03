@@ -1487,8 +1487,8 @@ class Lander(object):
         and the batch's earlier tips, so a stacked branch is checked on its own paths. A miss, a
         store it cannot read while some path is outside what it could read, or a check that
         stops: with SCOPE_REFUSES the refusal; else a WARNING kept for after the LANDED line, and
-        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate.md "The
-        scope check") is refused whatever SCOPE_REFUSES says; a store it cannot read, or a check
+        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate.md
+        "Landing", step 4) is refused whatever SCOPE_REFUSES says; a store it cannot read, or a check
         that stops, cannot tell, so that stays a WARNING. A branch holding no record while a store
         with records was read: a NOTE kept for before the LANDED line."""
         for i, (b, t) in enumerate(self.pairs):

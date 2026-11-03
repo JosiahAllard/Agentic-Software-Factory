@@ -390,7 +390,7 @@ class Warns(ScopeCase):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
 
-    # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "The scope check") is
+    # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "Landing", step 4) is
     # refused on a miss even while SCOPE_REFUSES is False: the backstop for a plain git commit.
 
     def test_a_narrowed_record_s_miss_is_refused(self):

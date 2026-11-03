@@ -14,6 +14,7 @@ repositories read without its area prefix (scope.in_repo).
   check(root, paths)          `(refusal lines, warnings)` for the commit in `root` naming `paths`
   hits(records, branch, ...)  the same over records already read (pure)
   merge_lines(values, new)    a record's `narrowed:` lines with `new` merged in (pure)
+  restore_set(rid, ...)       the `set` that restores a record's original members (pure)
   restored_scope(members, originals)  the scope that gives a record its original members back
 """
 import os
@@ -190,6 +191,31 @@ def merge_lines(values, new):
             at[key] = len(out)
             out.append(line)
     return out
+
+
+def restore_set(rid, members, values, rules, done=None):
+    """`(originals, other ids, set args)` of the `set` that gives record `rid` (scope `members`,
+    `narrowed:` values `values`) back the original member of each line `done(line)` picks (every
+    well-formed line when `done` is None): `--scope` of restored_scope, then each other value
+    kept as `--narrowed`, or `--unset narrowed` when none is left. Lines are read with
+    record.narrowed_line; a malformed one is kept as written. None when no line is picked. The
+    one form of `next`'s RESTORE line (offer._restore) and the landing scope check's restore
+    clause (kitlib/gate/land.py); the `set` of `narrowed` is a lead's (set-other)."""
+    originals, others, rest = [], [], []
+    for v in values:
+        line, _err = rmod.narrowed_line(v, rules)
+        if line is None or (done is not None and not done(line)):
+            rest.append(v)
+            continue
+        if line[0] not in originals:
+            originals.append(line[0])
+        if line[1] not in others:
+            others.append(line[1])
+    if not originals:
+        return None
+    args = ['set', rid] + ['--scope "%s"' % m for m in restored_scope(members, originals)]
+    args += ['--narrowed "%s"' % v for v in rest] if rest else ['--unset narrowed']
+    return originals, others, args
 
 
 def restored_scope(members, originals):

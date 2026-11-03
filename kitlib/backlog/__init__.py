@@ -15,7 +15,9 @@ docs/backlog-store.md). Logic only: no argparse, no printing, no exit.
   retarget  `backlog.py retarget`: a moved path rewritten across every record in one commit
   landable  may a branch land without leaving a dead pull
   at_landing  the store at `gate.py land`: the ancestry refusal and closing the landed pulls
-  narrowed  commit.py's narrowed-record check: a path a narrowing gave to another live pull
+  narrowed  the `narrowed:` lines: commit.py's check (a path a narrowing gave to another live
+            pull), merge_lines (a record narrowed again), restore_set and restored_scope (the
+            `set` that gives the original members back, for next's RESTORE and the landing)
   opener    open_repo, open_store (the configured store from a worktree), planner (verb -> plan),
             retarget_dry (the Change a `retarget` without `--apply` would write)
 

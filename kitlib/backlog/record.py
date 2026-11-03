@@ -294,12 +294,19 @@ def narrowed(rec, rules):
     branch)`, and why each malformed one is (_narrowed)."""
     lines, errors = [], []
     for v in rec.all('narrowed'):
-        err = _narrowed(v, rules)
+        line, err = narrowed_line(v, rules)
         if err is None:
-            lines.append(split_narrowed(v))
+            lines.append(line)
         else:
             errors.append(err)
     return lines, errors
+
+
+def narrowed_line(v, rules):
+    """`(line, None)` for one well-formed `narrowed:` value, `line` its `(original member, other
+    id, other branch)`; `(None, why)` for a malformed one (_narrowed)."""
+    err = _narrowed(v, rules)
+    return (split_narrowed(v), None) if err is None else (None, err)
 
 
 def _until(v, rules):

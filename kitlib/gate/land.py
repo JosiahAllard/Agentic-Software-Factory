@@ -298,6 +298,7 @@ SCOPE_REFUSES = False
 # cannot import tools/ to learn them, so a rendering change needs them in a record's scope.
 SCOPE_ALWAYS = ('tests/**', 'docs/INDEX.md')
 SCOPE_SHOWN = 10        # outside paths a scope-check line names; more are counted
+NARROWED_RULES = rmod.Rules('mixed')    # reads every store's `narrowed:` ids (_scope_restore)
 # The strict paths (Lander.strict_check; docs/gate.md "Strict paths"): the globs of this file's
 # STRICT_DEFAULTS, owner-authored, read from the base with `git show` and parsed, never imported
 # from the branch; a base without the file (a repository that is not the kit) has the running
@@ -1523,7 +1524,7 @@ class Lander(object):
                                 'no scope member can name it' if _unnamed(p) else None))
         if not outside:
             return None
-        if found.unread:            # a record it could not read may cover them
+        if found.unread and not found.narrowed:     # a record it could not read may cover them
             return self._scope_unread(b, found)
         if narrowed is not None:
             narrowed.extend(sorted(found.narrowed))
@@ -1563,25 +1564,24 @@ class Lander(object):
     @staticmethod
     def _scope_restore(found):
         """The miss line's clause for the narrowed records held (found.narrowed): for each, the
-        original members its `narrowed:` lines name and the `set --scope` that restores them,
-        keeping each current member no original member holds (docs/commit.md "A narrowed
-        record")."""
+        original members its `narrowed:` lines name and the `set` that restores them: `next`'s
+        RESTORE form (narrowed.restore_set: each current member no original member holds kept, the
+        lines cleared, a malformed one kept as written; docs/commit.md "A narrowed record").
+        Lines are read with the `mixed` id grammar, which takes every store's ids: they come from
+        more than one store, and a record's own store checked them when they were written."""
         parts = []
         for rid in sorted(found.narrowed):
             members, command, _area = found.held[rid]
-            lines = [rmod.split_narrowed(v) for v in found.narrowed[rid]]
-            lines = [x for x in lines if x is not None]
-            originals = [m for m, _o, _b in lines]
-            if not originals:
+            got = nmod.restore_set(rid, members, found.narrowed[rid], NARROWED_RULES)
+            if got is None:
                 parts.append('%s carries a narrowed: line that cannot be read: a lead restores its '
                              'original member by hand' % rid)
                 continue
-            others = sorted(set(o for _m, o, _b in lines))
-            keep = nmod.restored_scope(members, originals)
+            originals, others, args = got
             parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
                          'then restore the original member with %s' % (
                              rid, ', '.join(originals), ', '.join(others), ', '.join(others),
-                             command('set', rid, *['--scope "%s"' % m for m in keep])))
+                             command(*args)))
         return '; '.join(parts)
 
     def _scope_stores(self, b, t, named, changed):
@@ -1639,23 +1639,25 @@ class Lander(object):
         """Add to `found` the records of one store `b` holds: pulled by it, or pulled and in
         `named`; an id in `named` or `gone` the store no longer holds counts at its last version
         (`last(rid)`: the record before the commit that deleted it, or None). A store holding an
-        unreadable record is unread: that record may be the one that covers a path. `shared`: the
-        store shared by repositories (the PM data branch's), whose records keep their area
-        (_area_lead)."""
+        unreadable record is unread: that record may be the one that covers a path, so of its
+        readable records only the narrowed ones are taken (their branch's miss is refused all the
+        same: scope_check). `shared`: the store shared by repositories (the PM data branch's),
+        whose records keep their area (_area_lead)."""
         bad = sorted(r.stem for r in records if not r.readable)
         if bad:
             found.unread.append('%s: %d record(s) unreadable (%s)' % (
                 where, len(bad), ', '.join(bad[:5])))
-            return
-        if records:
+        if records and not bad:
             found.read = True
         stems = set(r.stem for r in records)
-        candidates = list(records)
+        candidates = [r for r in records if r.readable]
         for rid in sorted((set(named) | set(gone)) - stems):
             rec = last(rid) if smod.PLAIN_ID.match(rid) else None
             if rec is not None and rec.readable:
                 candidates.append(rec)
         for r in candidates:
+            if bad and not r.all('narrowed'):
+                continue
             if r.get('state') == 'pulled' and (r.get('pulled_by') == b or r.stem in named):
                 found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None,
                            r.all('narrowed'))

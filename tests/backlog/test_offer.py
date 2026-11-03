@@ -662,6 +662,30 @@ class Restore(unittest.TestCase):
                      pulled_at=TODAY, pulled_by='kit/l', scope='kitlib/x/a.py'))
         self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
 
+    def mine(self, **kw):
+        return rec('C-ONE', priority='3', priority_by='agent', state='pulled', pulled_at=TODAY,
+                   pulled_by='kit/c', scope='kitlib/x/b.py', narrowed='kitlib/** L-ONE kit/l',
+                   **kw)
+
+    def test_a_released_other_record_restores(self):
+        s = snap(self.mine(), rec('L-ONE', priority='3', priority_by='agent'))
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [
+            'RESTORE C-ONE: L-ONE released (open again) -> `set C-ONE --scope "kitlib/**" '
+            '--unset narrowed`'])
+
+    def test_a_retired_or_deleted_other_record_restores(self):
+        for verb, said in (('retires', 'retired'), ('deletes', 'deleted')):
+            hist = {'L-ONE': 'def5678 %s L-ONE: gone' % verb}.get
+            self.assertEqual(omod.restore_lines(snap(self.mine()), None, hist), [
+                'RESTORE C-ONE: L-ONE %s (in def5678) -> `set C-ONE --scope "kitlib/**" '
+                '--unset narrowed`' % said])
+
+    def test_a_blocked_other_record_or_an_unknown_history_does_not(self):
+        s = snap(self.mine(), rec('L-ONE', priority='3', priority_by='agent', state='blocked',
+                                  blocked_on='owner'))
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
+        self.assertEqual(omod.restore_lines(snap(self.mine()), None, lambda rid: None), [])
+
 
 class NextCliNarrows(unittest.TestCase):
     """Through tools/backlog.py `next`: the offer row's `(narrows, below)`, the NARROWS line and

@@ -552,11 +552,11 @@ def releasable_holds(snap, session, history, hub=None):
         statuses, why = (hub or hub_statuses)()
         if statuses is None:
             statuses, note = {}, 'releasable: hub not read (%s); Q-/T- holds not checked' % why
-    closed = closed_reader(snap, history)
+    closed, ended = closed_reader(snap, history), ended_reader(snap, history)
     ranks = ranked(snap)
     out = []
     for rec in held:
-        restore = _restore(rec, closed)
+        restore = _restore(rec, ended, snap.rules)
         merged = False
         for member, why, reason in cmod.releasable(rec, statuses.get, closed):
             rank = rank_label(rec, ranks)
@@ -570,42 +570,54 @@ def releasable_holds(snap, session, history, hub=None):
     return out, note
 
 
-def _restore(rec, closed):
+def ended_reader(snap, history):
+    """`ended(rid)`: why the other record of a `narrowed:` line holds its part no more - `landed
+    (closed in <sha>)`, `retired (in <sha>)` or `deleted (in <sha>)` by the store's history, or
+    `released (open again)` for one back to open; None while it is pulled, blocked or parked (its
+    branch may go on) or when the history cannot say."""
+    def ended(rid):
+        rec = snap.get(rid)
+        if rec is not None:
+            return 'released (open again)' if rec.get('state') == 'open' else None
+        m = re.match(r'^(\S+) (closes|retires|deletes) ', history(rid) or '')
+        if m is None:
+            return None
+        return ('landed (closed in %s)' if m.group(2) == 'closes' else
+                ('retired' if m.group(2) == 'retires' else 'deleted') + ' (in %s)') % m.group(1)
+    return ended
+
+
+def _restore(rec, ended, rules):
     """`(other ids, why, set command)` that gives `rec` back the original members of each
-    `narrowed:` line whose other record is closed (`closed(rid)` -> short sha or None,
-    closed_reader), clearing those lines and keeping the rest (narrowed.restored_scope); None
-    when no line names a closed record. The `set` of `narrowed` is a lead's (set-other)."""
+    `narrowed:` line whose other record holds its part no more (`ended(rid)` -> why or None,
+    ended_reader), clearing those lines and keeping the rest (narrowed.restore_set, the landing
+    scope check's form too); None when no line names such a record."""
     from . import narrowed as nmod
-    done, rest, others = [], [], []
-    for v in rec.all('narrowed'):
-        parts = rmod.split_narrowed(v)
-        sha = closed(parts[1]) if parts else None
-        if not sha:
-            rest.append(v)
-            continue
-        done.append(parts[0])
-        if parts[1] not in [o for o, _s in others]:
-            others.append((parts[1], sha))
-    if not done:
+    whys = {}
+
+    def done(line):
+        whys.setdefault(line[1], ended(line[1]))
+        return whys[line[1]] is not None
+    got = nmod.restore_set(rec.id, rec.all('scope'), rec.all('narrowed'), rules, done)
+    if got is None:
         return None
-    keep = nmod.restored_scope(rec.all('scope'), done)
-    args = ['--scope "%s"' % m for m in keep]
-    args += ['--narrowed "%s"' % v for v in rest] if rest else ['--unset narrowed']
-    why = ', '.join('%s landed (closed in %s)' % o for o in others)
-    return [o for o, _s in others], why, 'set %s %s' % (rec.id, ' '.join(args))
+    _originals, others, args = got
+    why = ', '.join('%s %s' % (o, whys[o]) for o in others)
+    return others, why, ' '.join(args)
 
 
 def restore_lines(snap, session, history):
     """`next`'s plain RESTORE lines: for each record of `session` carrying a `narrowed:` line
-    whose other record is closed (`_restore`), the `set` that restores its original members and
-    clears those lines. A held record whose RELEASABLE line names that closed record is left
-    out: releasable_holds prints the two as one RESTORE+RELEASABLE line."""
-    closed = closed_reader(snap, history)
+    whose other record holds its part no more - landed, retired, deleted or released
+    (ended_reader; `_restore`) - the `set` that restores its original members and clears those
+    lines. A held record whose RELEASABLE line names that closed record is left out:
+    releasable_holds prints the two as one RESTORE+RELEASABLE line."""
+    ended = ended_reader(snap, history)
     out = []
     for rec in sorted(snap.readable, key=lambda r: r.id):
         if rec.get('session') != session or not rec.has('narrowed'):
             continue
-        restore = _restore(rec, closed)
+        restore = _restore(rec, ended, snap.rules)
         if restore is None:
             continue
         if classify(rec)[0] == HELD and any('item:%s' % o in rec.all('blocked_on')
@@ -867,16 +879,22 @@ def narrows_line(offer):
     and keeps. `next` writes nothing; `pull` of the record recomputes the split and writes it
     (plan.plan_pull)."""
     s = offer.split
-
-    def side(rid, changes, note=''):
-        if not changes:
-            return '%s keeps its scope%s' % (rid, note)
-        return '%s %s' % (rid, '; '.join('drops %s from %s (keeps %s)' % (
-            _named(d) or 'nothing', m, _named(k) or 'nothing') for m, d, k in changes))
-    return 'NARROWS %s (rank %s) with %s on %s: %s; %s' % (
+    return 'NARROWS %s (rank %s) with %s on %s: %s %s; %s %s' % (
         offer.rec.id, offer.rank, s.other.id, s.other.get('pulled_by') or '?',
-        side(offer.rec.id, s.c_changes),
-        side(s.other.id, s.l_changes, '' if s.plan else ' (no ## Files)'))
+        offer.rec.id, side_text(s.c_changes, named=_named),
+        s.other.id, side_text(s.l_changes, s.plan, _named))
+
+
+def side_text(changes, plan=True, named=', '.join):
+    """One side of a narrowing (Split.c_changes or l_changes): `drops D from M (keeps K)` per
+    member changed, or `keeps its scope` (` (no ## Files)` when `plan` is False: only the
+    candidate is narrowed). `named(paths)` lists D and K. The one text of `next`'s NARROWS line
+    (_named, cut short) and `pull`'s NARROWED lines (plan._apply_split, every path)."""
+    if not changes:
+        return 'keeps its scope%s' % ('' if plan else ' (no ## Files)')
+    return '; '.join('drops %s from %s (keeps %s)' % (named(d) or 'nothing', m,
+                                                      named(k) or 'nothing')
+                     for m, d, k in changes)
 
 
 def pass_counts(passed):

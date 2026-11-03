@@ -1684,9 +1684,7 @@ def _apply_split(split, rec, branch, changes, writes, subject):
     other, by = split.other, split.other.get('pulled_by')
 
     def said(rid, oid, obranch, side):
-        return 'NARROWED %s for %s on %s: %s' % (rid, oid, obranch, '; '.join(
-            'drops %s from %s (keeps %s)' % (', '.join(d) or 'nothing', m, ', '.join(k) or 'nothing')
-            for m, d, k in side))
+        return 'NARROWED %s for %s on %s: %s' % (rid, oid, obranch, omod.side_text(side))
     lines = []
     new = [(m, other.id, by) for m, _d, _k in split.c_changes]
     changes.append(('scope', list(split.keep)))
@@ -1696,7 +1694,7 @@ def _apply_split(split, rec, branch, changes, writes, subject):
     lines += ['  scope:      %s' % m for m in split.keep]
     lines += ['  narrowed:   %s %s %s' % n for n in new]
     if not split.l_changes:
-        lines.append('%s keeps its scope%s' % (other.id, '' if split.plan else ' (no ## Files)'))
+        lines.append('%s %s' % (other.id, omod.side_text([], split.plan)))
         return lines, subject
     new = [(m, rec.id, branch) for m, _d, _k in split.l_changes]
     pairs = rmod.apply_changes(other.pairs(), [

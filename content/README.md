@@ -3,7 +3,7 @@
 `content/` holds every role and skill, written once for every host (docs/content.md). This file maps
 where each thing a role is given or held to comes from; the renderer reads only `roles/` and
 `skills/`. "Render" means `python tools/render_content.py --write`, which rewrites every host's agent
-and skill files and docs/ROSTER.md's tables; commit what it writes.
+files, the plugin manifests and docs/ROSTER.md's two tables; commit what it writes.
 
 | To change | Edit | Then |
 |---|---|---|
@@ -13,10 +13,10 @@ and skill files and docs/ROSTER.md's tables; commit what it writes.
 | Its model on one host | `model.<host>: <model>` in the front matter, over the tier's | render |
 | The model per tier | `hosts.json` `tiers` for that host | render (docs/ROSTER.md shows the table) |
 | Its line in docs/ROSTER.md | the role file's `summary` (its `description` when absent) | render |
-| What a role may write | the role file's `mode`, and its optional `writes` paths (the loader accepts them; no role file uses them today; docs/guard.md "Role policy"); a repository can override the mode with `.kit.json` `roles.<name>.mode` and turns the policy on with `guard.role_policy` | the guard reads them live; render too, since a host may derive the role's sandbox from its mode |
+| What a role may write | the role file's `mode`, and its optional `writes` paths (the loader accepts them; no role file uses them today; docs/guard.md "Role policy"); a repository can override the mode with `.kit.json` `roles.<name>.mode` and turns the policy on with `guard.role_policy` | the guard reads them live; render too when `mode` changes, since a host may derive its sandbox from it (`sandbox_mode`) |
 | The rules a mode is held to | `kitlib/guard/rolepolicy.py` (`RULES`, `LOCK_VERBS`) | nothing to render |
-| Its backlog rights | the role file's `mode`, `group` and `run` give its group; what each group may do is `kitlib/backlog/roles.py` (owner-only) | render |
-| A skill | `content/skills/<name>/` | render |
+| Its backlog rights | the role file's `mode`, `group` and `run` give its group; what each group may do is `kitlib/backlog/roles.py` (owner-only) | render when `mode` changes (a host's `sandbox_mode`); nothing for `group` or `run` |
+| A skill | `content/skills/<name>/` | nothing to render: every host loads it from there |
 | The profile a role reads when its repository has none | `content/default-profile.md` (docs/agent-profile.md); a repository's own is the file its host's `profile_path` token names | nothing to render |
 | A host's wording | the role's tokens (`{{name}}`, docs/content.md "Tokens"), filled from the host's table in `hosts/<name>/adapter/content.py` or its `hosts.json` profile | render |
 | What a session gets at start | the kit header is `kitlib/host/header.py`; the PM and coordinator start checks are `kitlib/pmstart`, `kitlib/coordinatorstart` and `kitlib/hoststart`, run by each host's start hooks | nothing to render |

@@ -170,7 +170,9 @@ class Hub(object):
         test.addCleanup(self.store.close)
         toks = tokens(test)
         roles = {auth.read_token(toks, AGENT): AGENT, auth.read_token(toks, OWNER): OWNER}
-        self.api = api.Api(self.store, clock=CLOCK)
+        # the configured repositories by remote: the event names the repo, an approval its remote
+        names = {'github.com/o/kit': 'kit', 'github.com/o/other': 'other'}
+        self.api = api.Api(self.store, clock=CLOCK, repo_name=names.get)
 
         def ask(port, method, path, token=None, body=None, timeout=None):
             parts = urllib.parse.urlsplit(path)
@@ -255,7 +257,7 @@ class RoundTripTest(unittest.TestCase):
     def test_an_event_marks_each_approval_it_put_on_main_spent_once(self):
         landed, first = 'c' * 40, 'd' * 40
         self.approval('A-001')
-        self.approval('A-002', status='approved')
+        self.approval('A-002', commit='f' * 40)
         self.approval('A-003', spent=first, spent_at='2025-12-01T00:00:00+00:00')
         self.approval('A-004', kind='op', op='o', line='l', args_sha256='e' * 64)
         ids = ['A-001', 'A-002', 'A-003', 'A-004', 'A-009']
@@ -267,10 +269,29 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual([(got[i].get('spent'), got[i].get('spent_at')) for i in sorted(got)],
                          [(landed, NOW), (landed, NOW),
                           (first, '2025-12-01T00:00:00+00:00'), (None, None)])
-        self.assertEqual([got[i]['status'] for i in sorted(got)],
-                         ['consumed', 'approved', 'consumed', 'consumed'], 'display only')
+        self.assertEqual([got[i]['status'] for i in sorted(got)], ['consumed'] * 4,
+                         'display only')
         self.assertEqual(self.hub.store.docs('landings')['L-001']['approvals'],
                          {i: landed for i in ids})
+
+    def test_only_a_consumed_approval_of_the_events_repo_is_marked(self):
+        # an agent token posts the event: it cannot mark an approval it never used, nor one of
+        # another repository
+        for n, status in enumerate(('pending', 'approved', 'denied', 'expired'), 1):
+            self.approval('A-%03d' % n, status=status)
+        self.approval('A-005', status='approved', commit=None)
+        self.approval('A-006', repo='github.com/o/other')
+        self.approval('A-007', repo='github.com/o/unconfigured')
+        self.approval('A-008')
+        ids = ['A-%03d' % n for n in range(1, 9)]
+        status, obj = self.call('POST', '/landings', AGENT,
+                                event(approvals={i: TIP for i in ids}))
+        self.assertEqual((status, obj['spent']), (200, ['A-008']), obj)
+        got = self.hub.store.docs('approvals')
+        self.assertEqual([i for i in sorted(got) if got[i].get('spent')], ['A-008'])
+        status, obj = self.call('POST', '/landings', AGENT,
+                                event(repo='other', approvals={'A-006': TIP, 'A-008': TIP}))
+        self.assertEqual((status, obj['spent']), (200, ['A-006']), obj)
         status, obj = self.call('POST', '/landings', AGENT, event())
         self.assertEqual((status, obj['spent']), (200, []))
 

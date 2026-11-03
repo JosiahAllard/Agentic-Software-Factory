@@ -494,9 +494,13 @@ def merge_owned(root, rules, staged, heads, landed=()):
 
 def merge_attribute_unset(root, path):
     """True when git says the `merge` attribute of `path` is unspecified, read from the work tree
-    and from the index (`git check-attr`); anything else, or a git that cannot say, is False: a
-    merge driver (merge=union, -merge, a custom one) makes a result merge-tree's alone does not
-    prove."""
+    and from the index (`git check-attr`), and no `merge.default` is configured (git applies that
+    driver to every path whose attribute is unspecified); anything else, or a git that cannot
+    say, is False: a merge driver (merge=union, -merge, a custom one) makes a result
+    merge-tree's alone does not prove."""
+    rc, _, _ = _git(root, 'config', '--get', 'merge.default')
+    if rc != 1:                     # 0: a driver is set; any other code: git could not say
+        return False
     for extra in ((), ('--cached',)):
         rc, out, _ = _git(root, 'check-attr', '-z', *extra, 'merge', '--', path)
         fields = out.split('\0') if rc == 0 else []
@@ -508,8 +512,9 @@ def merge_attribute_unset(root, path):
 def clean_owner_merge(root, rules, paths, head, bases, landed=()):
     """`(paths, None)`: those of the owner-only `paths` (staged exactly as the clean merge of HEAD
     and `head` has them, and not conflicted there: merge_owned's test) that the merge in progress
-    carries as the join of both sides' changes: each is a regular file under the same name at
-    HEAD, at `head` and at every merge base in `bases` (no rename, add or delete), its `merge`
+    carries as the join of both sides' changes: each is a regular file of one mode (as staged)
+    under the same name at HEAD, at `head` and at every merge base in `bases` (no rename, add,
+    delete or mode change), its `merge`
     attribute is unspecified (merge_attribute_unset), and no commit on either side that changes it,
     other than those reachable from `landed`, lacks the owner as author or an approval the hub
     verifies (non_owner_paths for `head`'s side; the same check of HEAD's against `head` for
@@ -522,7 +527,7 @@ def clean_owner_merge(root, rules, paths, head, bases, landed=()):
         known, staged = index_entry(root, p)
         entries = [tree_entry(root, rev, p) for rev in ['HEAD', head] + list(bases)]
         if (known and staged and staged[0] in REGULAR_MODES
-                and all(k and e and e[0] in REGULAR_MODES for k, e in entries)
+                and all(k and e and e[0] == staged[0] for k, e in entries)
                 and merge_attribute_unset(root, p)):
             fit.add(p)
     if not fit:
@@ -562,19 +567,22 @@ def _unapproved_paths(root, rules, tip, exclude, which):
     return {p for v in bad for p in v.paths}, None
 
 
-def merge_owner_refusal(root, rules, landed=()):
+def merge_owner_refusal(root, rules, landed=(), fold=True):
     """`(paths, why)` for a merge in progress about to be committed with everything it staged
     (kitlib.syncbase): the staged owner-only paths merge_owned does not carry, sorted ([]: none),
-    and why git could not tell when it could not (those paths are then all of them). An octopus
-    merge carries none."""
+    with `why` None. When git could not tell, `why` says so and the paths are those merge_owned
+    had not carried when it stopped (`(None, why)` when the staged paths could not be read); a
+    caller refuses on any `why`. `fold` False (`"commit".merge_fold` off, as commit.py reads it)
+    or an octopus merge carries none."""
     try:
         staged = staged_status(root)
+        locked = {p for p in staged if rules.is_locked(p)}
+        heads = merge_heads(root) if (fold and locked) else []
     except _Stop as stop:
         return None, ' '.join(stop.lines)
-    locked = {p for p in staged if rules.is_locked(p)}
     if not locked:
         return [], None
-    owned, why = merge_owned(root, rules, locked, merge_heads(root), landed)
+    owned, why = merge_owned(root, rules, locked, heads, landed)
     return sorted(locked - owned), why
 
 

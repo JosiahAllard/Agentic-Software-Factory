@@ -247,16 +247,20 @@ def in_flight_reader(top, cfg):
 def owner_refusal(top, cfg, full):
     """The refusal lines, or None, for the clean merge of `full` in progress in `top`, before it
     is committed: an owner-only path it changes is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal, with <remote>/<main> as last fetched judged already). On a
-    refusal the merge is aborted."""
+    (kitlib.commit.merge_owner_refusal, with <remote>/<main> as last fetched judged already; with
+    `"commit".merge_fold` off, as in commit.py, a merge carries none). On a refusal the merge is
+    aborted."""
     from kitlib import commit as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
+        fold = kcommit.settings(cfg)['merge_fold']
     except ConfigError as e:
         bad, why = None, 'kit configuration: %s' % e
     else:
         bad, why = kcommit.merge_owner_refusal(
-            top, rules, kcommit.landed_main(top, cfg.remote, cfg.main_branch))
+            top, rules, kcommit.landed_main(top, cfg.remote, cfg.main_branch), fold=fold)
+        if bad and not why and not fold:
+            why = '.kit.json "commit".merge_fold is off, so no merge carries an owner-only path'
     if bad == [] and not why:
         return None
     rc, _, err = _git(top, 'merge', '--abort', timeout=MERGE_TIMEOUT)

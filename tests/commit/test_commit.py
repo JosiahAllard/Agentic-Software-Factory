@@ -1946,9 +1946,10 @@ class JoinCase(MergeCase):
         return seam
 
     def merge(self, main_text, branch_text, main_id='A-002', branch_id='A-001', path=None,
-              attributes=None, main_rename=None, main_author=AGENT):
+              attributes=None, main_rename=None, main_author=AGENT, main_mode=None):
         """The base holds work.txt and `path` (SEVEN), and .gitattributes = `attributes` when
-        given. main sets the file to `main_text` (or `git mv`s it to `main_rename`) in an agent
+        given. main sets the file to `main_text` (as index mode `main_mode` when given; or
+        `git mv`s it to `main_rename`) in an agent
         commit carrying Owner-Approval: hub:`main_id` (None: no trailer); the branch sets it to
         `branch_text` the same way with `branch_id`. Both change work.txt, so the merge stops on
         it; work.txt is resolved in the work tree. (branch tip, main tip)."""
@@ -1967,6 +1968,9 @@ class JoinCase(MergeCase):
         else:
             self.t.write(f, main_text)
             self.t.git('add', '--', f)
+            if main_mode:
+                blob = self.t.git('rev-parse', ':%s' % f)
+                self.t.git('update-index', '--cacheinfo', '%s,%s,%s' % (main_mode, blob, f))
         trailer = '\n\nOwner-Approval: hub:%s' % main_id if main_id else ''
         self.main_commit('main edit' + trailer, ['work.txt'], main_author)
         self.put('work.txt', 'branch\n')
@@ -2057,6 +2061,19 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         tip, _ = self.merge(None, self.bottom(), path=old, main_rename=new)
         self.assertEqual(self.git('show', ':%s' % new) + '\n', self.bottom())
         self.assert_refused_naming(new, tip)
+
+    def test_a_merge_default_driver_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), self.bottom())
+        self.git('config', 'merge.default', 'union')
+        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assert_refused_naming(self.F, tip)
+
+    def test_a_mode_change_on_one_side_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.merge(self.top(), self.bottom(), main_mode='100755')
+        self.assertEqual(self.git('ls-files', '-s', '--', self.F).split()[0], '100755')
+        self.assert_refused_naming(self.F, tip)
 
     def test_an_octopus_merge_is_refused(self):
         self.approve('A-001', 'A-002')

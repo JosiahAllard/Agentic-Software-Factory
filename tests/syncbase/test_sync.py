@@ -840,15 +840,11 @@ class Approves(object):
         return (doc_id in self.ok), 'the hub has no %s for this commit' % doc_id
 
 
-@real_fixture('a committed .gitattributes with merge=union: the fake git refuses the attribute')
-@real_git('merge-tree, check-attr and merge-base --all over a three-way merge: the fake has none '
-          'of them')
-class OwnerOnlyFiles(SyncCase):
-    """A clean merge that changes an owner-only file is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal): here, the clean join of two approved changes; anything
-    else aborts the merge (KIT-COMMIT-MERGE-APPROVED)."""
+class OwnerCase(SyncCase):
+    """An owner-only file changed on both sides; no tests of its own."""
 
-    CONFIG = {'repo': {'main_branch': 'master'}, 'owner': {'email': OWNER}}
+    CONFIG = {'repo': {'main_branch': 'master'}, 'owner': {'email': OWNER},
+              'commit': {'merge_fold': True}}
     F = 'CLAUDE.md'
 
     def approve(self, *ids):
@@ -859,11 +855,14 @@ class OwnerOnlyFiles(SyncCase):
         return seam
 
     def stage(self, branch_text, base_text=None, branch_id='A-001', path=None, rename=None,
-              attributes=None):
+              attributes=None, base_mode=None, branch_file=None, criss_cross=False):
         """master gets `path` (SEVEN) and .gitattributes = `attributes`; the branch `work` sets
         the file to `branch_text` in a commit carrying Owner-Approval: hub:`branch_id` (None: no
-        trailer); master then sets it to `base_text` (or `git mv`s it to `rename`) with
-        hub:A-002, pushed. Returns that master commit."""
+        trailer), or `branch_file` (another path) to `branch_text` when given; master then sets
+        it to `base_text` (or `git mv`s it to `rename`) with hub:A-002, as mode `base_mode` when
+        given (an index entry: 100755, or 120000 for a symlink), pushed. `criss_cross`: before
+        that, each side merges the other's first commit, so the final merge has two merge bases.
+        Returns that master commit."""
         f = path or self.F
         names = [f]
         self.write(f, SEVEN)
@@ -873,13 +872,28 @@ class OwnerOnlyFiles(SyncCase):
         self.git('add', '--', *names)
         self.git('commit', '-q', '-m', 'owner file')
         self.push_base()
-        self.git('switch', '-q', '-c', 'work')
+        if criss_cross:
+            self.git('switch', '-q', '-c', 'work')
+            w1 = self.add_commit('docs/w.md', 'w\n', 'branch side')
+            self.git('switch', '-q', self.BASE)
+            m1 = self.add_commit('docs/m.md', 'm\n', 'base side')
+            self.git('merge', '-q', '--no-edit', w1)
+            self.git('switch', '-q', 'work')
+            self.git('merge', '-q', '--no-edit', m1)
+        else:
+            self.git('switch', '-q', '-c', 'work')
         trailer = '\n\nOwner-Approval: hub:%s' % branch_id if branch_id else ''
-        self.add_commit(f, branch_text, 'branch edit' + trailer)
+        self.add_commit(branch_file or f, branch_text, 'branch edit' + trailer)
         self.git('switch', '-q', self.BASE)
         if rename:
             self.git('mv', '--', f, rename)
             self.git('commit', '-q', '-m', 'base move\n\nOwner-Approval: hub:A-002')
+        elif base_mode:
+            self.write(f, base_text)
+            blob = self.git('hash-object', '-w', '--', f)
+            self.git('update-index', '--cacheinfo', '%s,%s,%s' % (base_mode, blob, f))
+            self.git('commit', '-q', '-m', 'base edit\n\nOwner-Approval: hub:A-002')
+            self.git('checkout', '-f', '-q', 'HEAD')
         else:
             self.add_commit(f, base_text, 'base edit\n\nOwner-Approval: hub:A-002')
         target = self.head()
@@ -902,6 +916,15 @@ class OwnerOnlyFiles(SyncCase):
 
     def bottom(self):
         return SEVEN.replace('line 7\n', 'line 7, branch\n')
+
+
+@real_fixture('a committed .gitattributes with merge=union: the fake git refuses the attribute')
+@real_git('merge-tree, check-attr and merge-base --all over a three-way merge: the fake has none '
+          'of them')
+class OwnerOnlyFiles(OwnerCase):
+    """A clean merge that changes an owner-only file is committed only as commit.py would carry it
+    (kitlib.commit.merge_owner_refusal): here, the clean join of two approved changes; anything
+    else aborts the merge (KIT-COMMIT-MERGE-APPROVED)."""
 
     def test_the_clean_merge_of_two_approved_changes_is_committed(self):
         seam = self.approve('A-001')
@@ -936,6 +959,93 @@ class OwnerOnlyFiles(SyncCase):
     def test_a_merge_driver_attribute_is_refused(self):
         self.approve('A-001')
         target = self.stage(self.bottom(), self.top(), attributes='CLAUDE.md merge=union\n')
+        tip = self.head()
+        self.assert_refused(self.sync(target), self.F, tip)
+
+    def test_a_change_main_alone_made_is_committed_unjudged(self):
+        seam = self.approve()           # master's commit is landed already: never asked
+        target = self.stage('branch\n', self.top(), branch_file='docs/branch-only.md')
+        tip = self.head()
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.OK, self.out(done))
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, target])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.top())
+        self.assertEqual(seam.asked, [])
+
+    def test_a_criss_cross_merge_with_two_bases_is_committed(self):
+        self.approve('A-001')
+        target = self.stage(self.bottom(), self.top(), criss_cross=True)
+        self.assertEqual(len(self.git('merge-base', '--all', 'HEAD', target).split()), 2)
+        tip = self.head()
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.OK, self.out(done))
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, target])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n',
+                         self.top().replace('line 7\n', 'line 7, branch\n'))
+
+    def test_a_mode_change_is_refused(self):
+        self.approve('A-001')
+        target = self.stage(self.bottom(), self.top(), base_mode='100755')
+        tip = self.head()
+        self.assert_refused(self.sync(target), self.F, tip)
+
+    def test_a_symlink_on_one_side_stops_on_the_conflict_and_commits_nothing(self):
+        self.approve('A-001')
+        target = self.stage(self.bottom(), 'elsewhere', base_mode='120000')
+        tip = self.head()
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.FAILED, self.out(done))
+        self.assertNotIn('refused: merging', self.out(done))      # git's own conflict, not ours
+        self.assertEqual(self.head(), tip)
+
+    def test_a_git_failure_inside_the_check_refuses(self):
+        self.approve('A-001')
+        target = self.stage(self.bottom(), self.top())
+        tip = self.head()
+        with mock.patch.object(ownercommits, 'violations', lambda *a, **k: (None, 'git died')):
+            done = self.sync(target)
+        self.assert_refused(done, self.F, tip)
+        self.assertIn('git died', self.out(done))
+
+    def test_an_abort_that_fails_says_the_merge_is_left_in_progress(self):
+        self.approve()
+        target = self.stage(self.bottom(), self.top())
+        tip = self.head()
+        real = syncbase._git
+
+        def no_abort(root, *args, **kw):
+            if args[:2] == ('merge', '--abort'):
+                return 1, '', 'cannot abort'
+            return real(root, *args, **kw)
+        with mock.patch.object(syncbase, '_git', no_abort):
+            done = self.sync(target)
+        text = self.out(done)
+        self.assertEqual(done.code, syncbase.FAILED, text)
+        self.assertIn('owner-only %s' % self.F, text)
+        self.assertIn('The merge could not be aborted (cannot abort): it is left in progress', text)
+        self.assertEqual(self.head(), tip)
+        self.assertEqual(self.rc('rev-parse', '-q', '--verify', 'MERGE_HEAD'), 0)
+
+
+@real_fixture('the same fixture as OwnerOnlyFiles')
+@real_git('merge-tree, check-attr and merge-base --all over a three-way merge')
+class OwnerOnlyFilesWithMergeFoldOff(OwnerCase):
+    """With "commit".merge_fold off, commit.py lets no merge carry an owner-only path, so neither
+    does sync_base: even the clean join of two approved changes is refused."""
+
+    CONFIG = {'repo': {'main_branch': 'master'}, 'owner': {'email': OWNER}}
+
+    def test_the_clean_merge_of_two_approved_changes_is_refused(self):
+        self.approve('A-001')
+        target = self.stage(self.bottom(), self.top())
+        tip = self.head()
+        done = self.sync(target)
+        self.assert_refused(done, self.F, tip)
+        self.assertIn('"commit".merge_fold is off', self.out(done))
+
+    def test_a_change_main_alone_made_is_refused(self):
+        self.approve()
+        target = self.stage('branch\n', self.top(), branch_file='docs/branch-only.md')
         tip = self.head()
         self.assert_refused(self.sync(target), self.F, tip)
 

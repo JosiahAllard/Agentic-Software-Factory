@@ -15,10 +15,11 @@ import time
 from urllib.parse import urlsplit
 
 from kitlib import hubbacklog
-from kitlib.git import cmd, refs
+from kitlib.git import cmd
 
 REFRESH_S = 600
 MAX_TOP = 64
+GIT_S = 5               # each git call here; the library default is 30 s
 
 _SCP = re.compile(r'^(?:[^@/\s]+@)?([^:/\s]+):(?!//)([^\s]+)$')
 _PART = re.compile(r'^[A-Za-z0-9._-]+$')
@@ -52,37 +53,51 @@ def web_url(remote):
     if path.endswith('.git'):
         path = path[:-4]
     parts = path.split('/')
-    if not _host_ok(host) or len(parts) < 2 or not all(_PART.match(p) and p not in ('.', '..')
-                                                       for p in parts):
+    if host.startswith('gitlab.') or host == 'gitlab.com':
+        if '-' in parts:                    # GitLab's own routes start at /-/: not part of the project
+            parts = parts[:parts.index('-')]
+        deep = True
+    else:
+        deep = False
+    if (not _host_ok(host) or len(parts) < 2 or (not deep and len(parts) != 2)
+            or not all(_PART.match(p) and p not in ('.', '..', '-') for p in parts)):
         return None
     return 'https://%s/%s' % (host, '/'.join(parts))
 
 
 def _main_branch(root):
-    named = (hubbacklog.kit_json(root).get('repo') or {}).get('main_branch')
-    for b in ([named] if named else ['main', 'master']):
-        commit, _ = refs.ref_commit('refs/heads/%s' % b, root)
-        if commit:
-            return b
-    return None
+    try:
+        return hubbacklog.main_branch(root, hubbacklog.kit_json(root))
+    except RuntimeError:
+        return None
 
 
 def _read(root):
     """{web, branch, top} of the checkout at `root`, or {}: no origin, not a web address of a
     known host, no main branch, or git failed."""
-    url, _ = cmd.run_text(['remote', 'get-url', 'origin'], root)
+    url, _ = cmd.run_text(['remote', 'get-url', 'origin'], root, timeout=GIT_S)
     web = web_url(url) if url else None
     branch = _main_branch(root) if web else None
     if not branch:
         return {}
-    out, _ = cmd.run_text(['ls-tree', '--name-only', branch], root)
+    out, _ = cmd.run_text(['ls-tree', '--name-only', branch], root, timeout=GIT_S)
     top = sorted({n.strip('"') for n in (out or '').split('\n') if n})[:MAX_TOP]
     return {'web': web, 'branch': branch, 'top': top}
 
 
-def _stamp(root):
+def _config_path(root):
+    """The config file the origin is read from: <root>/.git/config, or for a linked worktree
+    (where .git is a file) the common git folder's, which git names."""
+    dot = os.path.join(root, '.git')
+    if os.path.isdir(dot):
+        return os.path.join(dot, 'config')
+    out, _ = cmd.run_text(['rev-parse', '--git-common-dir'], root, timeout=GIT_S)
+    return os.path.join(root, out, 'config') if out else None
+
+
+def _stamp(path):
     try:
-        return os.stat(os.path.join(root, '.git', 'config')).st_mtime_ns
+        return os.stat(path).st_mtime_ns if path else None
     except OSError:
         return None
 
@@ -94,12 +109,13 @@ class Webs(object):
         self._pairs, self._clock, self._read, self._kept = pairs, clock, read, {}
 
     def _info(self, root):
-        stamp, now = _stamp(root), self._clock()
-        kept = self._kept.get(root)
+        now, kept = self._clock(), self._kept.get(root)
+        path = kept[3] if kept else _config_path(root)      # git is asked for it once per root
+        stamp = _stamp(path)
         if kept and kept[0] == stamp and now - kept[1] < REFRESH_S:
             return kept[2]
         info = self._read(root)
-        self._kept[root] = (stamp, now, info)
+        self._kept[root] = (stamp, now, info, path)
         return info
 
     def annotate(self, repos):

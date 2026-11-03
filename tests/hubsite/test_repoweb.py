@@ -19,10 +19,15 @@ class WebUrlTests(unittest.TestCase):
         self.assertEqual(repoweb.web_url('git@gitlab.com:g/sub/r.git'), 'https://gitlab.com/g/sub/r')
         self.assertEqual(repoweb.web_url('https://gitlab.example.org/g/r'), 'https://gitlab.example.org/g/r')
 
+    def test_gitlab_keeps_subgroups_but_stops_at_its_own_routes(self):
+        self.assertEqual(repoweb.web_url('https://gitlab.com/g/s/r/-/tree/main'), 'https://gitlab.com/g/s/r')
+        self.assertIsNone(repoweb.web_url('https://gitlab.com/-/x'))
+
     def test_another_host_a_local_path_or_junk_has_no_address(self):
         for remote in ('https://bitbucket.org/o/r', 'git@example.org:o/r', 'Z:/repos/r', '/srv/git/r', 'file:///x/r',
                        'https://github.com/onlyowner', 'https://github.com/o/../r', 'https://github.com/o/r r',
-                       '', None, 5, 'ftp://github.com/o/r', 'https://evilgitlab.com/o/r'):
+                       '', None, 5, 'ftp://github.com/o/r', 'https://evilgitlab.com/o/r',
+                       'https://github.com/o/r/x', 'https://github.com/o/r/tree/main', 'https://github.com/o/r/-/x'):
             with self.subTest(remote=remote):
                 self.assertIsNone(repoweb.web_url(remote))
 
@@ -88,6 +93,26 @@ class WebsTests(unittest.TestCase):
         now[0] = repoweb.REFRESH_S + 1
         webs.annotate([{'name': 'c', 'aliases': []}])
         self.assertEqual(len(reads), 3)
+
+    def test_a_linked_worktree_refreshes_when_the_common_config_changes(self):
+        main = self.repo('w', 'https://github.com/o/r')
+        tree = os.path.join(self.d, 'w-tree')
+        git(main, 'worktree', 'add', '-q', '-b', 'side', tree)
+        self.assertTrue(os.path.isfile(os.path.join(tree, '.git')))
+        now, reads = [0.0], []
+
+        def read(r):
+            reads.append(r)
+            return {}
+        webs = repoweb.Webs(lambda: [('w', tree)], clock=lambda: now[0], read=read)
+        for _ in range(2):
+            webs.annotate([{'name': 'w', 'aliases': []}])
+        self.assertEqual(len(reads), 1)
+        cfg = os.path.join(main, '.git', 'config')
+        st = os.stat(cfg)
+        os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+        webs.annotate([{'name': 'w', 'aliases': []}])
+        self.assertEqual(len(reads), 2)
 
     def test_a_named_main_branch_and_the_cap_on_root_names(self):
         root = self.repo('m', 'https://github.com/o/r', branch='trunk')

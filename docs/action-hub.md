@@ -1024,12 +1024,12 @@ still carry; the page files such an item under this repo (case ignored). The ser
 repository and the optional `pm_start.repos`) with the aliases the store holds. An item whose repo is
 `all` is for every repo and shows under each one.
 
-Each entry of that list also holds `web`, `branch` and `top` when the repository's checkout is on this machine and its
+The same list is the `repos` view of `GET /api/v1/snapshot`. Each entry of it also holds `web`, `branch` and `top` when the repository's checkout is on this machine and its
 `origin` remote is a GitHub or GitLab one (`github.com`, `gitlab.com`, a `gitlab.*` host; any other host, no origin or a
-local path gives none of the three): `web` is the remote as an `https://host/owner/repo` address (credentials, port,
+local path, or a GitHub path other than `owner/repo`, gives none of the three; GitLab subgroups are kept and `/-/` ends the project path): `web` is the remote as an `https://host/owner/repo` address (credentials, port,
 query and fragment dropped), `branch` the main branch (`.kit.json` `repo.main_branch`, else `main`, else `master`) and
 `top` the names at the root of that branch, at most 64 (`kitlib/hubsite/repoweb.py`). Git is asked once per checkout and
-again when `.git/config` changes or after 10 minutes, never per poll.
+again when the config file changes (a linked worktree's is the common git folder's) or after 10 minutes, never per poll; each call is cut off after 5 seconds.
 
 ## schedules/<task>-<repo>
 When one of the kit's automatic tasks runs for one repo, set by the owner. The hub only stores and serves

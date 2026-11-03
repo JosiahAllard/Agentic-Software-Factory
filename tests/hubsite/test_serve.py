@@ -2101,6 +2101,28 @@ class MachineCase(unittest.TestCase):
         self.assertEqual(len(asked), 2, asked)      # the two folders, once each, for every call
         self.assertEqual(asked[0], os.path.dirname(path))
 
+    def test_a_repo_with_a_github_origin_carries_its_web_address_branch_and_root_names(self):
+        """Real git (the fake models no ls-tree): the entry a machine's sources give has web, branch and top."""
+        from kitlib.git import cmd
+        root = os.path.join(self.home, 'webrepo')
+        os.makedirs(os.path.join(root, 'docs'))
+        with open(os.path.join(root, 'docs', 'gate.md'), 'w') as f:
+            f.write('x')
+        pm = pm_repo(self)
+        path = os.path.join(pm, 's.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(json.dumps({'w': {'repo': 'webrepo'}}))
+        self.config({'pm_start': {'sessions_file': path, 'repo_paths': {'webrepo': root}}})
+        with mock.patch.dict(os.environ, {'KIT_FAKE_GIT': '0'}):
+            for args in (['init', '-q', '-b', 'main'], ['remote', 'add', 'origin', 'git@github.com:o/r.git'],
+                         ['add', '-A'], ['-c', 'user.name=t', '-c', 'user.email=t@t.test', 'commit', '-q', '-m', 'i']):
+                out, why = cmd.run(args, root)
+                self.assertIsNotNone(out, why)
+            src = serve.machine_sources(self.home)
+            got = {r['name']: r for r in src.repos([])}['webrepo']
+        self.assertEqual((got['web'], got['branch'], got['top']), ('https://github.com/o/r', 'main', ['docs']))
+        self.assertEqual(got['aliases'], ['w'])
+
     def test_a_session_key_is_an_alias_of_its_repo_so_its_tag_has_no_warning(self):
         self.sessions(json.dumps({'kit': {'repo': 'kitrepo'}, 'pm-kit': {'repo': 'kitrepo'}}))
         with mock.patch.object(serve.pmstart, '_toplevel', lambda d: 'kitrepo'):

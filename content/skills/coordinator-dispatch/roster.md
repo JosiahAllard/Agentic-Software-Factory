@@ -17,7 +17,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
 - docs-writer: the docs type - settled facts into docs and specs extended from the owner's answers (skill `specialty-docs`). Docs only.
 - test-runner: runs test tiers in a given worktree; reports PASS/FAIL plus failing lines.
 - helper: light, read+edit only; dispatched by builders for bulk menial reads and mechanical bulk writes (a mechanical rename across 10 or more files included: the helper edits each listed file, any script stays with the builder; weak-worker still never does renames), never by a coordinator for a story.
-- Specialty skills, loaded by the role the brief names: `specialty-review`, `specialty-research` (analyst); `specialty-docs` (docs-writer); `specialty-tech-art`, `specialty-3d-assets`, `specialty-rigging`, `specialty-sound` (a worker type, see `creative.md` beside the skill).
+- Specialty skills, loaded by the role the brief names: `specialty-review`, `specialty-research`, `specialty-art-critique` (analyst); `specialty-docs` (docs-writer); `specialty-tech-art`, `specialty-3d-assets`, `specialty-rigging`, `specialty-sound` (a worker type, see `creative.md` beside the skill).
 - consultant: a long-lived launched session per repository that answers engineering questions.
 
 ## Choosing
@@ -43,7 +43,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
 - Tier and effort per role are pinned in each role's front matter (`<kit>/docs/ROSTER.md` is rendered from it).
   A kit role is dispatched with no model of its own choosing. Override only upward for risk, and
   say so in status; never the lander (light as pinned, whatever is being landed), and the analyst
-  only by the reviewer rule and the research rule below. Never a model above the strong tier's for any dispatch, reviews
+  only by the reviewer rule, the research rule and the art-critic rule below. Never a model above the strong tier's for any dispatch, reviews
   included, unless the owner asks on that task: the deep-worker session is the step up.
 - The host's built-in agents (a general-purpose agent, an explorer, a planner), where it has
   them, pin nothing -> dispatch each on the standard tier, never strong. Work that needs the
@@ -58,13 +58,13 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   1. Built by strong-worker, senior-worker or deep-worker -> raise to strong.
   2. Built by worker or weak-worker -> no override: light as pinned.
   3. Otherwise -> raise to strong.
-- **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier at high
-  effort, whoever built the area (it judges a look, not a diff); it is read-only.
 
   A light reviewer's "blocking" claim you dispute is settled by a fresh strong-tier review of the
   tip, not by your own reading: `verdict.py add` refuses a LAND over the reviewer's final
   `Verdict: SEND BACK` (`<kit>/docs/gate.md` "Strict paths"). Haiku overstated severity twice in the
   reviewer A/B (`<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
+- **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier, whoever
+  built the area (it judges a look, not a diff).
 - Effort is not settable per dispatch: pick the role for it. High risk -> strong-worker, or
   senior-worker for the kinds the ladder names. Only when senior-worker has been defeated, or
   plainly will be, on a race or crash root-cause or subtle concurrency (never a build or a

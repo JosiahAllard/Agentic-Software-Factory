@@ -28,9 +28,8 @@ Read from skill `coordinator-dispatch`, "Creative dispatches".
   direction mode) takes the owner-picked concept to a style sheet and asset sheet; the builders
   (senior-worker + `specialty-tech-art` for scenes, shaders and lighting, `specialty-3d-assets` for
   props, `specialty-rigging` for rigs and animation), one per area, build from them and never edit
-  the sheet; the critic (the analyst with skill `specialty-art-critique`, strong tier, high effort,
-  read-only, a fresh dispatch each round, never the builder) scores each round. You re-dispatch the
+  the sheet; the critic (skill `specialty-art-critique`; tier in the roster file) scores each round,
+  a fresh dispatch each time. You re-dispatch the
   builder with the critic's top 3 gaps until the verdict is PASS.
 - Round cap: 4 rounds per area. Then the owner gets the best round, with its scores and open gaps,
-  through the PM. The builder's brief
-  carries the cap and the "Visual loop" section of `specialty-tech-art/creative.md`.
+  through the PM. The builder's brief carries the cap and the "Visual loop" section of `specialty-tech-art/creative.md`.

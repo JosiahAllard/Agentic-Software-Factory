@@ -29,9 +29,9 @@ For a generated character; the numbered rules above still hold. Caps (faces, tex
 1. The owner picks an A-pose sheet (front and side, plain ground). TRELLIS.2 makes the mesh.
 2. A cleanup script remeshes to one continuous mesh with loops at the joints (rule 3), bakes the texture and a normal map onto it, and makes LODs by scripted Decimate. Never sculpt by hand.
 3. Rig: a Rigify metarig built by script and renamed to the bone map, automatic weights, then rules 5 and 6 (normalised, capped, none unweighted, pose sweep for gaps). Fall back to a bone list.
-4. Locomotion: mocap, CMU BVH first (Mixamo only from clips the owner downloads), imported with the bundled BVH add-on and retargeted through the bone map by constraints, then baked. A text-to-motion model is an optional route, only once its licence is cleared.
+4. Locomotion: mocap, CMU BVH first (Mixamo only from clips the owner downloads), imported with the bundled BVH add-on and retargeted through the bone map by constraints, then baked. A text-to-motion model is an optional route, only a model the owner has approved in MODELS.md.
 5. Keyed motion: Bezier easing, never linear; arcs and holds; overlap and follow-through by scripted phase offsets along each chain; tails, cloth and antennae by scripted damped springs, baked.
-6. Motion loop (`creative.md`, "Visual loop"): an 8-view turnaround and a filmstrip per clip (fixed camera, sampled frames, onion skin), plus the motion numbers: foot slide per contact, jerk spikes, share of linear keys, worst skin gap per pose. The critic reads stills, so the filmstrips are its input; the owner gets playable clips.
+6. Motion loop (`creative.md`, "Visual loop"): an 8-view turnaround and a filmstrip per clip (fixed camera, sampled frames, onion skin), plus the `motion_check.py` numbers. The critic reads stills, so the filmstrips are its input; the owner gets playable clips.
 
 ## Never
 

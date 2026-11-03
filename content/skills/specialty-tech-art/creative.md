@@ -82,14 +82,13 @@ For art that ships on screen (scenes, props, characters), once the owner has pic
 style sheet exists (skill `specialty-tech-art`, "Direction mode"):
 
 1. Render from the style sheet's camera under the profile's lock, and build a side-by-side sheet:
-   concept, render, difference. Add the numbers `art_score.py` measures (palette distance,
-   value-map difference, silhouette overlap). A character adds an 8-view turnaround, a filmstrip per
-   clip and the motion numbers (skill `specialty-rigging`).
-2. A critic scores the round by skill `specialty-art-critique`; it is a fresh dispatch each round and
-   never the builder. Your report names the sheet and numbers it should read.
+   concept, render, difference. Add the `art_score.py` numbers. A character adds an 8-view
+   turnaround, a filmstrip per clip and the `motion_check.py` numbers (skill `specialty-rigging`).
+2. A critic scores the round (skill `specialty-art-critique`). Your report names the sheet and
+   numbers it should read.
 3. Loop until the critic's verdict is PASS, fixing the gaps it names, up to the round cap the
    coordinator gives. Never edit the style sheet or the concept to pass.
-4. Live Blender: when the Blender MCP bridge is available (docs/blender-mcp.md), you may iterate in
+4. Live Blender: when the kit's Blender MCP bridge exists, you may iterate in
    your own Blender with its full tools. The committed headless script stays the build: before
    review, write every live change back into the script and re-run it headless; the review
    compares that render with the live one, and a `.blend` edited live is never committed.

@@ -1,6 +1,7 @@
 """The machine's established TCP connections, each with the pid that owns it: which local process
 is at the other end of a connection on this machine (kitlib.proc.daemons asks it of a build
-daemon).
+daemon). And its listening sockets, each with its owner: which processes listen on a port
+(kitlib.blendermcp asks it of its Blender's port).
 
 An end is (family, address bytes, port): family 4 or 6, the address in network order, the port
 a number. An IPv4-mapped IPv6 address (::ffff:a.b.c.d) is named as the IPv4 end it is, so both
@@ -9,6 +10,7 @@ ends of one connection are named alike whichever table each sits in.
 import ctypes
 import struct
 
+LISTEN = 2                              # MIB_TCP_STATE_LISTEN
 ESTABLISHED = 5                         # MIB_TCP_STATE_ESTAB
 _V4_ROW = struct.Struct("<6I")          # MIB_TCPROW_OWNER_PID
 _V6_ROW = struct.Struct("<16sII16sIIII")  # MIB_TCP6ROW_OWNER_PID
@@ -27,25 +29,27 @@ def _end6(addr, port):
     return (6, addr, _port(port))
 
 
-def parse_v4(buf):
-    """[(local, remote, pid)] of the established rows of a MIB_TCPTABLE_OWNER_PID buffer."""
+def parse_v4(buf, want=ESTABLISHED):
+    """[(local, remote, pid)] of the rows of a MIB_TCPTABLE_OWNER_PID buffer in state `want`
+    (default the established ones)."""
     n = struct.unpack_from("<I", buf, 0)[0]
     out = []
     for i in range(n):
         state, la, lp, ra, rp, pid = _V4_ROW.unpack_from(buf, 4 + i * _V4_ROW.size)
-        if state == ESTABLISHED:
+        if state == want:
             out.append(((4, struct.pack("<I", la), _port(lp)),
                         (4, struct.pack("<I", ra), _port(rp)), int(pid)))
     return out
 
 
-def parse_v6(buf):
-    """[(local, remote, pid)] of the established rows of a MIB_TCP6TABLE_OWNER_PID buffer."""
+def parse_v6(buf, want=ESTABLISHED):
+    """[(local, remote, pid)] of the rows of a MIB_TCP6TABLE_OWNER_PID buffer in state `want`
+    (default the established ones)."""
     n = struct.unpack_from("<I", buf, 0)[0]
     out = []
     for i in range(n):
         la, _ls, lp, ra, _rs, rp, state, pid = _V6_ROW.unpack_from(buf, 4 + i * _V6_ROW.size)
-        if state == ESTABLISHED:
+        if state == want:
             out.append((_end6(la, lp), _end6(ra, rp), int(pid)))
     return out
 
@@ -78,6 +82,16 @@ def connections():
     OSError when a table cannot be read."""
     from . import win32
     return parse_v4(_table(win32.AF_INET)) + parse_v6(_table(win32.AF_INET6))
+
+
+def listeners():
+    """[(local, pid)] of every listening TCP socket now, IPv4 and IPv6: local is the end it
+    listens on (an any-address listener has the all-zero address). Two sockets that both set
+    SO_REUSEADDR can listen on one port, so a port can have more than one row. Raises OSError
+    when a table cannot be read."""
+    from . import win32
+    rows = parse_v4(_table(win32.AF_INET), LISTEN) + parse_v6(_table(win32.AF_INET6), LISTEN)
+    return [(local, pid) for local, _remote, pid in rows]
 
 
 def peers(pids, conns):

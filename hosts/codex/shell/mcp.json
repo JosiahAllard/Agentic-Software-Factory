@@ -23,6 +23,19 @@
         "PM_KIT_ROOT",
         "PM_KIT_RELEASE_ID"
       ]
+    },
+    "blender": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "hosts/codex/shell/mcp/blender_server.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "PM_KIT_ROOT",
+        "PM_KIT_RELEASE_ID",
+        "PM_KIT_BLENDER"
+      ]
     }
   }
 }

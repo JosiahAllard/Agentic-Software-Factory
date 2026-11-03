@@ -47,6 +47,7 @@ import re
 
 from kitlib import agentname
 from kitlib.host import hookmain, registry
+from kitlib.blendermcp import SERVER_NAME as BLENDER_NAME
 from kitlib.hubmcp import SERVER_NAME as HUB_NAME
 from kitlib.lockmcp import SERVER_NAME
 from kitlib.host.content import ContentError, banner, role_source, substitute
@@ -85,7 +86,10 @@ MCP_SERVERS = {SERVER_NAME: {'type': 'stdio', 'command': 'python',
                                 'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
                HUB_NAME: {'type': 'stdio', 'command': 'python',
                           'args': [SHELL_REL + '/mcp/hub_server.py'], 'cwd': '.',
-                          'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']}}
+                          'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
+               BLENDER_NAME: {'type': 'stdio', 'command': 'python',
+                              'args': [SHELL_REL + '/mcp/blender_server.py'], 'cwd': '.',
+                              'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID', 'PM_KIT_BLENDER']}}
 
 
 def mcp_servers(platform='windows'):

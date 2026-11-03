@@ -63,7 +63,7 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
    the PM's brief) and price the rest 2-5 (`set <ID> --priority <n> --priority-by agent`), by
    skill `backlog-pricing` (the checks that close a record, what each priority means). One that needs the owner (priority 1, a
    pre-emption, an owner-held area, a question only the owner can answer) goes on the Action Hub
-   as a question from your session key bound to the record, which the hub parks itself (The owner,
+   as a question from your session key bound to the record, which the hub blocks on the owner until it is answered (The owner,
    below), posted with the other
    owner questions (Look ahead); never ask the owner directly.
 7. Fill your slots (Slots, below). A tree `--classify` puts in L is live or kept: never
@@ -107,7 +107,7 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   re-wakes you later.
 - Each item goes to an end, as the owner ruled: landed (or submitted to land), blocked on its
   record with the reason and its branch kept (`backlog.py block`; an item waiting on a live slot
-  is blocked on that slot), parked on an owner question (a question bound to it, which the hub parks), or
+  is blocked on that slot), held by the hub on an owner question bound to it, or
   released with its worktree removed. Never leave one stopped halfway: pull nothing new while one
   of yours sits stopped with none of these ends.
 - **Successors.** A successor comes only for context or account reasons, never to get more work,
@@ -166,8 +166,8 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   (skill `hub-ops`: questions, to-dos, pages; you run no background hub wait, the hub pushes the
   answers to you). Every question is asked with `--record <repo>:<ID>` or `--class <C>` (skill
   hub-ops). A question about one of your records is asked with `--record <repo>:<ID>`;
-  the hub parks the record itself (withdrawing the question drops that hold); then move
-  on, with no relay to the PM. The hub files the answer into the record and ends the park; take
+  the hub blocks the record on the owner itself until it is answered (withdrawing the question drops that hold); then move
+  on, with no relay to the PM. The hub files the answer into the record and, when no other question bound to it is open, ends the hold; take
   the item up from the record and mark the question done (skill hub-ops). Anything else that needs the owner (a typed go, a
   step for another repo) goes to the PM by send_message (not available to a Codex agent: ask the PM) with the exact text or commands, working
   directory and order; a request left only in your chat waits unseen. The owner still types a go

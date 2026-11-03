@@ -1,7 +1,5 @@
 # Doc tools: doc_budget, doc_index, codemap
 
-Held for the joint review: no hook, gate or settings entry runs them yet; preflight, commit and review_pack run the tools as below.
-
 | Entry point | Logic | Tests |
 |---|---|---|
 | `tools/doc_budget.py` | `kitlib/docs/budget.py` | `tests/docs/test_budget.py`, `tests/docs/test_cli.py` |
@@ -21,7 +19,7 @@ python tools/doc_budget.py [-C DIR] [--base REF] [--head REF] [--worktree] [--re
 - **Budgets** (`over budget`). Each `.md` with a cap (`budget_for`: a literal `budgets` key, then a glob key, then `uncapped_dirs`, then `default`) fails when it is over its cap on the branch and bigger than on the base (`budget_verdict`). A file the branch did not change since the merge base never fails, and a file over its cap that the run did not fail is a WARNING. Nothing projects the merge: a repo whose gate runs this check as a `cmd` step (docs/gate.md "Not ported") checks the real merged tree when it lands.
 - **Retired paths** (`retired path`, `retired_paths`) and **stale keys** (`stale budget key`: a `budgets` literal or `state_docs` entry naming no file).
 
-The budgets applied are the head's `.kit.json` (the file on disk with `--worktree`). A configuration that does not read at the head fails the branch; one the base already carries is a WARNING.
+The budgets applied are the head's `.kit.json` (the file on disk with `--worktree`), with note keys (`_...`, `comment`) dropped. A configuration that does not read at the head fails the branch; one the base already carries is a WARNING.
 
 Not checked here: owner-only paths (`tools/commit.py` and `kitlib/guard/ownercommits.py`, docs/guard.md "Owner-only commits") and the doc index listing (`tools/doc_index.py`, below).
 
@@ -39,7 +37,7 @@ Other tools run it as `[sys.executable, <kit>/tools/doc_budget.py, -C, <repo>]` 
 
 ### `.kit.json` keys
 
-`doc_budget`: `default`, `budgets` (a path or glob mapped to bytes, or `null` for uncapped), `uncapped_dirs`, `capped`, `retired_paths`, `shard_indexes`, `state_docs`, `stale_days` (the last three are read by doc_index). `doc_index`: `index`, `enabled`. docs/kit-json.md lists each key with its type and default.
+The keys are the `doc_budget` section (`default`, `budgets`, `uncapped_dirs`, `capped`, `retired_paths`, `shard_indexes`, `state_docs`, `stale_days`; doc_index reads `shard_indexes`, `state_docs` and `stale_days`) and the `doc_index` section. docs/kit-json.md lists each key with its type and default.
 
 With `capped` set, only the listed docs may carry a cap, each needs an integer one, and `default` is refused (`config_errors`, exit 2). The PM kit's own caps in that form:
 
@@ -91,9 +89,9 @@ python tools/codemap.py [-C DIR] [--dir DIR | --find NAME | --file PATH | --symb
 - **`--dir`.** That folder's files and their types.
 - **`--find`.** Types (by substring) and members (by exact name).
 - **`--file`.** One file's types and members, with line numbers.
-- **`--symbol`.** One Python function or class (`Class.method` too) as numbered source; PATH narrows it. Not found or ambiguous: exit 1.
+- **`--symbol`.** One Python function or class (`Class.method` too) as numbered source; PATH narrows it.
 
-It reads tracked and untracked-but-not-ignored files (`git ls-files -co --exclude-standard`). Exit 0, or 2 when git cannot list the files. There are no `.kit.json` keys.
+It reads tracked and untracked-but-not-ignored files (`git ls-files -co --exclude-standard`). Exit 0; 1 for `--symbol` not found or ambiguous; 2 when git cannot list the files (`--file` lists no files). There are no `.kit.json` keys.
 
 ## Not ported, and why
 
@@ -103,11 +101,3 @@ It reads tracked and untracked-but-not-ignored files (`git ls-files -co --exclud
 - **The legacy config reader** and its tests (`cfgs_at`, `KIT_JSON`, `DuplicateKey`, the one-git-process config read). Config reads belong to `kitlib.config.load` and `load_at`. A key written twice is their `ConfigError`.
 - **trace2 git process counts.** `tests/docs/test_budget.py` counts `budget.git` calls instead.
 - **The unparseable `cat-file` reply test.** `kitlib.git.batch` tests its own parsing.
-
-## Behaviour that differs from the PM kit
-
-- **The configuration on disk.** One that does not read (broken JSON, an unknown key, a duplicate key) refuses with exit 2. The PM kit failed or warned. A landing check run from a base checkout whose `.kit.json` repeats a key therefore refuses until the base is fixed.
-- **A failed `git show` of the configuration at a ref** refuses with exit 2 instead of warning.
-- **No merge projection, owner-only check or index listing in doc_budget.** The caps are checked on the real merge at the landing gate; owner-only paths are `tools/commit.py` and `kitlib/guard/ownercommits.py`'s; the listing check is doc_index's.
-- **The index path** comes from `doc_index.index`, not a fixed `docs/INDEX.md`.
-- **Note keys** (`_...`, `comment`) are dropped from the section and from `budgets` before measuring.

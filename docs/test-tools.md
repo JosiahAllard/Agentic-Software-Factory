@@ -1,14 +1,15 @@
 # Test tools
 
-Three tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_deps.py` and `tools/pytests.py`. All three are not live. Each one takes `-C DIR`, the checkout, default here. Each exits 2 on USAGE or on a refused configuration or checkout. Their keys are `.kit.json` "testlist" and "tool_tests"; the defaults are in `kitlib/config/schema.py`, and docs/kit-json.md lists them.
+Tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_deps.py`, `tools/pytests.py`, `tools/kit_tests.py` and `tools/ci_ratchet.py`. Each takes `-C DIR`, the checkout, default here, and exits 2 on USAGE or on a refused configuration or checkout. Their keys are `.kit.json` "testlist" and "tool_tests"; the defaults are in `kitlib/config/schema.py`, and docs/kit-json.md lists them.
 
 ## testlist
 
 `tools/testlist.py` (kitlib/testlist) lists the test names in a tree's result files, so that a move or rename that loses a test shows.
 
-- `--save FILE` before the change, then `--diff FILE` after it. The diff lists removed (`  - `) and added (`  + `) names.
+- `--names` prints the names; `--save FILE` before the change, then `--diff FILE` after it. The diff lists removed (`  - `) and added (`  + `) names.
 - `--against NEW` diffs two saved lists.
-- `--status` adds passed, failed or skipped to each line.
+- `--status` adds passed, failed or skipped to each line (tab-separated).
+- `--dir DIR` reads the result files there, not under the checkout.
 - Result globs: "testlist" `junit` and `trx`.
 - Exit codes: 0 same, listed or saved; 1 the names differ; 2 nothing found, or no result newer than the saved list.
 

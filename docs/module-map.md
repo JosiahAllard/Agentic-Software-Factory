@@ -21,8 +21,7 @@ The `.kit.json` `modules` section names two files (docs/kit-json.md):
 ```
 
 - `map`: the map file. `--check` refuses to run unless `owner.paths` locks it, so only the
-  owner changes what is allowed. `.kit.local.json` and the machine config cannot repoint the
-  section.
+  owner changes what is allowed.
 - `ceilings`: the plain ceilings file (below). It is not an owner path: agents lower ceilings.
 - `page`: optional, the architecture page generated from the map ("The architecture page").
 
@@ -118,8 +117,7 @@ with `RAISED  ratchet ID  ceiling N, the base REV has M: ...` when a ceiling is 
 allowed = max(the base's ceiling (0 when it has none), the map's raise entry's ceiling)
 ```
 
-The map is an owner path, so only the owner writes a raise entry. Two rules, settled with the
-coordinator inside the approved design, for the owner to see:
+The map is an owner path, so only the owner writes a raise entry. Two rules:
 
 - A raise entry is `{ratchet, ceiling, why, approval?}`: one entry per ratchet, its `ceiling`
   the highest the ceilings file may hold. Once the base holds that ceiling the entry is spent,
@@ -214,7 +212,8 @@ aside) with `PAGE STALE  <page> does not exist|does not match the map: run modul
 
 `--scope [--base REV]` prints what a change touches (`kitlib/modulemap/scope.py`). The change is
 the merge base of REV (default: the main branch, docs/gate.md "Default base") and HEAD against
-the work tree, plus untracked files git does not ignore. It prints one `  path -> module` line
+the work tree, plus untracked files git does not ignore. It prints a header
+`module_map scope: base REV (merge base), N changed path(s) in M module(s)`, one `  path -> module` line
 per changed path, then one `widen: M <- C  why` line per module M the change widens to:
 
 - `via edge KIND: WHY`: M has an allowed edge into the changed module C;

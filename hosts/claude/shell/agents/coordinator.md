@@ -172,7 +172,7 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   the item up from the record and mark the question done (skill hub-ops). Anything else that needs the owner (a typed go, a
   step for another repo) goes to the PM by SendMessage with the exact text or commands, working
   directory and order; a request left only in your chat waits unseen. The owner still types a go
-  in your window where one is required. Pass answers on as a paraphrase, no ruling id.
+  in your window where one is required.
 - You decide and land anything that does not alter agent definitions, settings, hooks or project
   instructions and is not on the Owner list of the coordinator profile; you set priorities 2-5.
   Owner decisions only for priority 1, a pre-emption or `.claude/`, plus that list (its

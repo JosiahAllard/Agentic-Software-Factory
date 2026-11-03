@@ -235,6 +235,7 @@ import time
 
 from kitlib import gate as G
 from kitlib.backlog import at_landing
+from kitlib.backlog import narrowed as nmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as scmod
 from kitlib.backlog import store as smod
@@ -1576,14 +1577,7 @@ class Lander(object):
                              'original member by hand' % rid)
                 continue
             others = sorted(set(o for _m, o, _b in lines))
-
-            def held_by_original(m):
-                try:
-                    return any(m == o or scmod.strictly_inside(m, o) for o in originals)
-                except scmod.UndecidableScope:
-                    return False
-            keep = originals + [m for m in members
-                                if m != scmod.NONE and not held_by_original(m)]
+            keep = nmod.restored_scope(members, originals)
             parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
                          'then restore the original member with %s' % (
                              rid, ', '.join(originals), ', '.join(others), ', '.join(others),

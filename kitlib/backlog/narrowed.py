@@ -1,8 +1,8 @@
 """commit.py's narrowed-record check (docs/commit.md "A narrowed record").
 
 A narrowing writes a `narrowed: <original member> <other id> <other branch>` line on each of two
-colliding records (kitlib/backlog/record.py; a lead's `set --narrowed` today, the pull once it
-narrows). A commit on the branch holding one of them may not record a path inside an original
+colliding records (kitlib/backlog/record.py): `pull` of a record `next` offers by narrowing
+(plan.plan_pull), or a lead's `set --narrowed`. A commit on the branch holding one of them may not record a path inside an original
 member that its record no longer covers while the other record is still pulled: that part was
 given to the other branch. Both sides of a rename are named paths of the commit, so each is
 checked; a refused side names the other only for a rename with its content unchanged (the same
@@ -13,6 +13,8 @@ repositories read without its area prefix (scope.in_repo).
 
   check(root, paths)          `(refusal lines, warnings)` for the commit in `root` naming `paths`
   hits(records, branch, ...)  the same over records already read (pure)
+  merge_lines(values, new)    a record's `narrowed:` lines with `new` merged in (pure)
+  restored_scope(members, originals)  the scope that gives a record its original members back
 """
 import os
 
@@ -163,3 +165,46 @@ def check(root, paths):
         if renames:
             refusal, warnings = hits(records, branch, paths, rules, shared, tops, renames)
     return refusal, warnings
+
+
+def merge_lines(values, new):
+    """The `narrowed:` values of a record narrowed again: `values` (its current lines) with each
+    `(member, other id, other branch)` of `new` written in, one line per (member, other id), a
+    new line replacing the old one for the same pair in its place. A line that cannot be read is
+    kept as written, for check's refusal to name."""
+    out, at = [], {}
+    for v in values:
+        parts = rmod.split_narrowed(v)
+        key = tuple(parts[:2]) if parts else None
+        if key is not None and key in at:
+            continue
+        if key is not None:
+            at[key] = len(out)
+        out.append(v)
+    for member, other, branch in new:
+        line = '%s %s %s' % (member, other, branch)
+        key = (member, other)
+        if key in at:
+            out[at[key]] = line
+        else:
+            at[key] = len(out)
+            out.append(line)
+    return out
+
+
+def restored_scope(members, originals):
+    """The scope that gives a narrowed record its `originals` back (the members of the
+    `narrowed:` lines restored): each original, then each current member of `members` none of
+    them holds (equal or strictly inside; one that cannot be compared is kept). `none` is
+    dropped. Shared by `next`'s RESTORE line (offer.restore_lines) and the landing scope check's
+    restore clause (kitlib/gate/land.py)."""
+    def held(m):
+        try:
+            return any(m == o or scmod.strictly_inside(m, o) for o in originals)
+        except scmod.UndecidableScope:
+            return False
+    keep = []
+    for m in list(originals) + [m for m in members if m != scmod.NONE and not held(m)]:
+        if m not in keep:
+            keep.append(m)
+    return keep

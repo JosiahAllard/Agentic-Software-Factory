@@ -18,12 +18,13 @@ from kitlib.git import repo as gitrepo
 from kitlib import machinepaths
 
 from . import conditions as condmod
+from . import narrowed as nmod
 from . import offer as omod
 from . import policy
 from . import record as rmod
 from . import scope as smod
 from .errors import Ended, Failure, NotFound, Refusal, Usage
-from .store import PLAIN_ID, Change, add_plan_note, id_refusal
+from .store import PLAIN_ID, Change, MainBackend, RefBackend, add_plan_note, id_refusal
 
 MIN_REASON = 12
 RULED_PRICE_BY = ('owner', 'pm')
@@ -237,14 +238,15 @@ def offer_for(snap, ctx, branch=None, cap=omod.DEFAULT_CAP, seeds=(), holding=No
     here unless the caller passes the live pulls it already read). A record whose scope folds
     into another live pull's branch (`_offer_folds`, the fold-in guard `pull` runs) is passed
     over, not offered. `next` and `pull` both build their offer here, so they cannot disagree on
-    it. `narrow` (`next` only, until `pull` can write a narrowing): a record held only by one
-    live pull's protected set is offered with the Split that clears it (`_narrower`)."""
+    it. `narrow` (`next`, and `pull` through current_offer): a record held only by one live
+    pull's protected set is offered with the Split that clears it (`_narrower`)."""
     offers, passed, holding, own = _offer(snap, ctx, branch, cap, seeds, holding, narrow=narrow)
     return offers, passed, holding, own
 
 
-def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False):
-    """offer_for; `diffs` is the diff cache `_offer_folds` shares with current_offer's `also`."""
+def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False, whys=None):
+    """offer_for; `diffs` is the diff cache `_offer_folds` shares with current_offer's `also`,
+    `whys` the dict `_narrower` notes why a narrowing failed in."""
     own = own_branch(ctx, branch)
     if holding is None:
         holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
@@ -255,51 +257,84 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False):
                                                session=ctx.session, unmet=ctx.unmet(snap),
                                                folded=folded, capacity=ctx.capacity(snap),
                                                branch=own,
-                                               narrow=_narrower(ctx, live) if narrow
+                                               narrow=_narrower(ctx, live, whys) if narrow
                                                else None)
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
 
 
-def _narrower(ctx, live):
+def _narrower(ctx, live, whys=None):
     """The `narrow(rec, other)` an offer (`omod.next_offer`) narrows with: the Split that clears
     `rec` of the live pull `other` (omod.split), or None. `other`'s protected set T is the paths
     its branch changed since its merge base with the code main (`live`, the `_live_reader` the
     fold check shares, so each branch is diffed once per offer), the dirty paths of its one
     worktree (`_dirty_paths`) and the paths its `## Files` names (omod.files_section), over the
     tracked tree at the code main (`_tracked_tree`). Fails closed: when any part of T or the
-    tree cannot be read, None, and `rec` is passed over as today. Each worktree's status and
-    the tree are read from git on first use only."""
+    tree cannot be read, None, and `rec` is passed over as today. A split that narrows `other`
+    too is None when the store is not shared (`_shared_store`): `pull` could not write `other`'s
+    narrowing where its branch reads it, so `next` does not offer it either. Each worktree's
+    status and the tree are read from git on first use only. `whys` (a dict) gets
+    `{rec.id: why}` for each None."""
     cache = {}
 
     def read(key, fn):
         if key not in cache:
             try:
-                cache[key] = fn()
-            except (Failure, Usage):
-                cache[key] = None
+                cache[key] = (fn(), None)
+            except (Failure, Usage) as exc:
+                cache[key] = (None, str(exc))
         return cache[key]
+
+    def failed(rec, why):
+        if whys is not None:
+            whys[rec.id] = why
+        return None
 
     def narrow(rec, other):
         name = other.get('pulled_by') or ''
-        files, _why = omod.files_section(other.body)
-        if not name or files is None:
-            return None
+        files, why = omod.files_section(other.body)
+        if not name:
+            return failed(rec, '%s names no branch' % other.id)
+        if files is None:
+            return failed(rec, 'the `## Files` of %s cannot be read: %s' % (other.id, why))
         changes, _notes, unknown = live()
         tips = changes.get(name)
         if name in unknown or not tips:
-            return None
-        dirty = read(('dirty', name), lambda: _dirty_paths(ctx, name))
-        tree = read('tree', lambda: _tracked_tree(ctx))
-        if dirty is None or not tree:
-            return None
+            return failed(rec, 'the diff of %s cannot be read' % name)
+        dirty, why = read(('dirty', name), lambda: _dirty_paths(ctx, name))
+        if dirty is None:
+            return failed(rec, why)
+        tree, why = read('tree', lambda: _tracked_tree(ctx))
+        if not tree:
+            return failed(rec, why or 'the code main tree is empty')
         protected = set(files) | set(dirty)
         for _label, paths in tips:
             protected.update(paths)
-        out, _why = omod.split(rec.all('scope'), other, sorted(protected), tree, bool(files))
+        out, why = omod.split(rec.all('scope'), other, sorted(protected), tree, bool(files))
+        if out is None:
+            return failed(rec, why)
+        if out.l_changes and not _shared_store(ctx):
+            return failed(rec, 'the backlog store here is this checkout\'s own copy, so a '
+                               'narrowing of %s would not reach %s' % (other.id, name))
         return out
     return narrow
+
+
+def _shared_store(ctx):
+    """True when a write to `ctx.store` reaches every branch: a ref store, or a folder store in
+    the PM data worktree (its write commits on the PM data branch). A folder store in any other
+    checkout is that checkout's own copy (a branch carries its records), so another branch's
+    record narrowed there never reaches that branch; a store that cannot be told is not shared."""
+    backend = getattr(getattr(ctx, 'store', None), 'backend', None)
+    if isinstance(backend, RefBackend):
+        return True
+    if isinstance(backend, MainBackend):
+        try:
+            return backend.commit_branch() is not None
+        except Failure:
+            return False
+    return False
 
 
 def _dirty_paths(ctx, branch):
@@ -346,11 +381,13 @@ def batch_members(snap, branch):
     return [r.id for r in sorted(mine, key=omod.rank_key)]
 
 
-def current_offer(snap, ctx, branch=None, seeds=()):
+def current_offer(snap, ctx, branch=None, seeds=(), whys=None):
     """`(offers, passed, holding, also, notes)` for a pull onto `branch`: the offer `next` prints
-    as that branch (offer_for), and `also`, the records `next` offers without it (as the main
-    checkout prints it), [] when the two are the same. A pull takes a record either one offers,
-    so a coordinator's `next` and a worker's `pull` never disagree on what is in order.
+    as that branch (offer_for, narrowing as `next` does, so an offer's `split` is the one `next`
+    shows, recomputed from git now; `whys` gets why a narrowing failed, `_narrower`), and `also`,
+    the records `next` offers without it (as the main checkout prints it, never narrowed), []
+    when the two are the same. A pull takes a record either one offers, so a coordinator's
+    `next` and a worker's `pull` never disagree on what is in order.
     `also` only widens what a pull takes: when it cannot be computed (one of the branch's own
     pulls has a scope that cannot be compared, which the branch's offer never reads) it is [],
     so a record `next` offered as the branch still pulls plainly and nothing else is let in;
@@ -361,7 +398,8 @@ def current_offer(snap, ctx, branch=None, seeds=()):
     cap = ctx.cap
     if seeds and cap is not None:
         cap = max(cap, len(seeds))
-    offers, passed, holding, own = _offer(snap, ctx, branch, cap, tuple(seeds), None, diffs)
+    offers, passed, holding, own = _offer(snap, ctx, branch, cap, tuple(seeds), None, diffs,
+                                          narrow=True, whys=whys)
     also, notes = [], []
     if own is not None and any(r.get('pulled_by') == own for r in holding):
         # The fold check `next` runs in the main checkout (no own branch, so the branch's own
@@ -1518,7 +1556,14 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     a lead lifts the hold (`set ID --unset batch`) first. `batch` (a topic session's pull,
     opener.planner): a record batched for this branch is offered with the whole batch first
     (batch_members as current_offer's seeds), so its rank order is no refusal; no `preempt` is
-    written."""
+    written.
+    A record `next` offers by narrowing (NARROWS, an offer's `split`) is pulled with the split
+    current_offer recomputes from git now, so T grown since `next` keeps less (printed), and a
+    split that no longer holds refuses as not offered, naming why. The pull takes `split.keep`
+    and writes a `narrowed:` line per member given up; when the live pull gives up a member too
+    (it has a `## Files`), its record is narrowed in the same store write, which is the
+    `pull-collision` row (refused unless `may_collide`; no `--reason` needed, as the offer
+    named it). Takeover never narrows (`_plan_takeover`)."""
     refuse_machine_paths('--reason', reason)
     rec = require(snap, rid)
     held = rec.get('batch')
@@ -1558,16 +1603,24 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
         raise Refusal('`%s` requires %s, which is unmet: %s' % ((rid,) + missing[0]))
     branch = ctx.current_branch()
     seeds = batch_members(snap, branch) if batch and held == branch else ()
-    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds)
+    whys = {}
+    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds, whys)
     offered = rec in [o.rec for o in offers] or rec in also
-    hits = live_hits(rec.all('scope'), holding, skip=rid, branch=branch)
+    split = next((o.split for o in offers if o.rec is rec), None)
+    scopes, others = rec.all('scope'), holding
+    if split is not None:
+        # what the pull takes is what the narrowing leaves it, clear of `other` by construction
+        scopes, others = split.keep, [r for r in holding if r is not split.other]
+    hits = live_hits(scopes, others, skip=rid, branch=branch)
     full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)
-    folds, notes = _pull_fold_hits(ctx, rec.all('scope'), holding, branch)
+    folds, notes = _pull_fold_hits(ctx, scopes, holding, branch)
     # The fold refusal first: `next` passes a folding record over, so "not in the offer" would
     # hide the reason and the override that this one names.
     override = '%s, with `pull %s --reason "<why>"`' % (policy.row_text('pull-collision'), rid)
+    unnarrowed = ('. No narrowing clears it (if `next` showed one, that narrowing no longer '
+                  'holds): %s' % whys[rid] if rid in whys and split is None else '')
     if folds and (not may_collide or reason is None):
-        raise Refusal(_fold_message(rid, folds, override))
+        raise Refusal(_fold_message(rid, folds, override) + unnarrowed)
     if not offered and reason is None:
         raise Refusal('`%s` is not in `next`\'s offer - %s. An out-of-order pull is a pre-emption, '
                       'the owner\'s decision: a coordinator asks it through the PM and, on the '
@@ -1576,7 +1629,12 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
                       % (rid, omod.not_offered_why(rec, passed, ctx.session), rid,
                          '. Its %s with a live pull, so it is %s'
                          % ('scope collides' if hits else 'resource collides', override)
-                         if hits or full else ''))
+                         if hits or full else '') + unnarrowed)
+    if split is not None and split.l_changes and not may_collide:
+        raise Refusal('`%s` is offered by narrowing the live pull %s on %s (NARROWS), and '
+                      'writing the narrowing of %s is %s. A worker stops and reports; a lead '
+                      'runs `pull %s`' % (rid, split.other.id, split.other.get('pulled_by'),
+                                          split.other.id, policy.row_text('pull-collision'), rid))
     if (hits or full) and (not may_collide or reason is None):
         raise Refusal('`%s` collides with a live pull: %s. `--reason` alone never overrides it: '
                       'pulling it anyway is %s' % (rid, '; '.join(hits + full), override))
@@ -1604,11 +1662,51 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
         lines.append('  preempt:    %s' % recorded)
         lines += ['  displaced:  %s' % d for d in displaced]
         subject += ', pre-empting %d offered item%s' % (len(offers), '' if len(offers) == 1 else 's')
+    writes = {}
+    if split is not None:
+        more, subject = _apply_split(split, rec, branch, changes, writes, subject)
+        lines += more
     pairs = rmod.apply_changes(rec.pairs(), changes)
-    change = Change({rid: _text(pairs, rec.body)}, subject, lines)
-    if hits or full or folds:
+    writes[rid] = _text(pairs, rec.body)
+    change = Change(writes, subject, lines)
+    if hits or full or folds or (split is not None and split.l_changes):
         _collision_change(change, 'pull')
     return change
+
+
+def _apply_split(split, rec, branch, changes, writes, subject):
+    """The narrowing `pull` of `rec` onto `branch` writes (an offer's Split, omod.split): `rec`
+    takes `split.keep` and a `narrowed:` line per member it gave up (added to `changes`); when
+    the live pull `split.other` gives up a member too (it has a `## Files`), its record takes
+    `split.other_keep` and its own lines, in `writes`, so both records go in one store write.
+    A record narrowed again keeps one line per (member, other id) (narrowed.merge_lines).
+    `(lines to print, subject)`."""
+    other, by = split.other, split.other.get('pulled_by')
+
+    def said(rid, oid, obranch, side):
+        return 'NARROWED %s for %s on %s: %s' % (rid, oid, obranch, '; '.join(
+            'drops %s from %s (keeps %s)' % (', '.join(d) or 'nothing', m, ', '.join(k) or 'nothing')
+            for m, d, k in side))
+    lines = []
+    new = [(m, other.id, by) for m, _d, _k in split.c_changes]
+    changes.append(('scope', list(split.keep)))
+    if new:
+        changes.append(('narrowed', nmod.merge_lines(rec.all('narrowed'), new)))
+        lines.append(said(rec.id, other.id, by, split.c_changes))
+    lines += ['  scope:      %s' % m for m in split.keep]
+    lines += ['  narrowed:   %s %s %s' % n for n in new]
+    if not split.l_changes:
+        lines.append('%s keeps its scope%s' % (other.id, '' if split.plan else ' (no ## Files)'))
+        return lines, subject
+    new = [(m, rec.id, branch) for m, _d, _k in split.l_changes]
+    pairs = rmod.apply_changes(other.pairs(), [
+        ('scope', list(split.other_keep)),
+        ('narrowed', nmod.merge_lines(other.all('narrowed'), new))])
+    writes[other.stem] = _text(pairs, other.body)
+    lines.append(said(other.id, rec.id, branch, split.l_changes))
+    lines += ['  scope:      %s' % m for m in split.other_keep]
+    lines += ['  narrowed:   %s %s %s' % n for n in new]
+    return lines, subject + ', narrowing %s' % other.id
 
 
 def resource_hits(names, holding, capacity, skip=None, branch=None):

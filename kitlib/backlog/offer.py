@@ -556,9 +556,63 @@ def releasable_holds(snap, session, history, hub=None):
     ranks = ranked(snap)
     out = []
     for rec in held:
+        restore = _restore(rec, closed)
+        merged = False
         for member, why, reason in cmod.releasable(rec, statuses.get, closed):
-            out.append((rec, releasable_line(rec, rank_label(rec, ranks), member, why, reason)))
+            rank = rank_label(rec, ranks)
+            if restore and not merged and member in ['item:%s' % o for o in restore[0]]:
+                merged = True
+                out.append((rec, 'RESTORE+RELEASABLE %s (rank %s): %s -> `%s`; `unblock %s --on %s '
+                                 '--reason "%s"`' % (rec.id, rank, restore[1], restore[2], rec.id,
+                                                     member, reason)))
+                continue
+            out.append((rec, releasable_line(rec, rank, member, why, reason)))
     return out, note
+
+
+def _restore(rec, closed):
+    """`(other ids, why, set command)` that gives `rec` back the original members of each
+    `narrowed:` line whose other record is closed (`closed(rid)` -> short sha or None,
+    closed_reader), clearing those lines and keeping the rest (narrowed.restored_scope); None
+    when no line names a closed record. The `set` of `narrowed` is a lead's (set-other)."""
+    from . import narrowed as nmod
+    done, rest, others = [], [], []
+    for v in rec.all('narrowed'):
+        parts = rmod.split_narrowed(v)
+        sha = closed(parts[1]) if parts else None
+        if not sha:
+            rest.append(v)
+            continue
+        done.append(parts[0])
+        if parts[1] not in [o for o, _s in others]:
+            others.append((parts[1], sha))
+    if not done:
+        return None
+    keep = nmod.restored_scope(rec.all('scope'), done)
+    args = ['--scope "%s"' % m for m in keep]
+    args += ['--narrowed "%s"' % v for v in rest] if rest else ['--unset narrowed']
+    why = ', '.join('%s landed (closed in %s)' % o for o in others)
+    return [o for o, _s in others], why, 'set %s %s' % (rec.id, ' '.join(args))
+
+
+def restore_lines(snap, session, history):
+    """`next`'s plain RESTORE lines: for each record of `session` carrying a `narrowed:` line
+    whose other record is closed (`_restore`), the `set` that restores its original members and
+    clears those lines. A held record whose RELEASABLE line names that closed record is left
+    out: releasable_holds prints the two as one RESTORE+RELEASABLE line."""
+    closed = closed_reader(snap, history)
+    out = []
+    for rec in sorted(snap.readable, key=lambda r: r.id):
+        if rec.get('session') != session or not rec.has('narrowed'):
+            continue
+        restore = _restore(rec, closed)
+        if restore is None:
+            continue
+        if classify(rec)[0] == HELD and any('item:%s' % o in rec.all('blocked_on')
+                                            for o in restore[0]):
+            continue
+        out.append('RESTORE %s: %s -> `%s`' % (rec.id, restore[1], restore[2]))
+    return out
 
 
 def releasable_line(rec, rank, member, why, reason):
@@ -701,7 +755,7 @@ def files_section(body):
 
 
 class Split(object):
-    """A narrowing `next` shows and does not write. `keep` is the candidate's scope after it,
+    """A narrowing `next` shows and `pull` writes. `keep` is the candidate's scope after it,
     `other_keep` the live pull `other`'s. `c_changes` and `l_changes` are `[(member, dropped,
     kept)]` for each member of either side it changes; `plan` says `other` has a `## Files`
     section (without one, only the candidate is narrowed)."""
@@ -810,8 +864,8 @@ def _split(c_scopes, other, protected, tree, plan):
 
 def narrows_line(offer):
     """`next`'s NARROWS line for an offer made by narrowing (Offer.split): what each side drops
-    and keeps. Nothing is written, and `pull` does not narrow yet: it passes the record over
-    as before."""
+    and keeps. `next` writes nothing; `pull` of the record recomputes the split and writes it
+    (plan.plan_pull)."""
     s = offer.split
 
     def side(rid, changes, note=''):

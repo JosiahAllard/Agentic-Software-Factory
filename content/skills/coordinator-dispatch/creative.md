@@ -32,5 +32,5 @@ Read from skill `coordinator-dispatch`, "Creative dispatches".
   read-only, a fresh dispatch each round, never the builder) scores each round. You re-dispatch the
   builder with the critic's top 3 gaps until the verdict is PASS.
 - Round cap: 4 rounds per area. Then the owner gets the best round, with its scores and open gaps,
-  through the PM. Also escalate when a gap repeats unchanged across two rounds. The builder's brief
+  through the PM. The builder's brief
   carries the cap and the "Visual loop" section of `specialty-tech-art/creative.md`.

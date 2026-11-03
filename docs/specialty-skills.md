@@ -67,6 +67,7 @@ and names start with a letter (`_NAME` in `kitlib/host/content.py`).
 | specialty-rigging | - (new) | senior-worker | scripted rig to the repo's body contract, weight and bend checks, contact sheet, skins on one shared rig |
 | specialty-tech-art | tech-artist | senior-worker | art that is code, checked by rendering, art-direction stop |
 | specialty-sound | sound-smith | worker; senior-worker for design | measure clips, ends in a question for the owner |
+| specialty-art-critique | art-critic | analyst; strong tier, high effort | rubric of 0-4 axes, top 3 gaps, PASS or ITERATE, read-only |
 | specialty-review | reviewer | analyst | brief + diff range + logs, report format |
 | specialty-research | researcher | analyst | concepts with evidence, spec-writer hand-off |
 | specialty-docs | records, spec-writer | docs-writer | records: transcribe, never decide; spec: findings first, defaults labelled, inferences marked |

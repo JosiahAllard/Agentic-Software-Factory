@@ -104,7 +104,7 @@ class LiveTable(unittest.TestCase):
         # Its peaks before a game repository's --no-daemon change missed the Gradle daemon: its
         # floor is its recorded max, and its history counts only from a start not yet reached.
         g = kinds.load()['graph-build']
-        self.assertEqual(g['mem_mb'], 26368)
+        self.assertEqual(g['mem_mb'], 12288)
         self.assertGreater(g['mem_since'], datetime.date.today().isoformat())
 
     def test_a_renamed_kind_keeps_its_size(self):

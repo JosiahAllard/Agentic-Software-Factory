@@ -4524,6 +4524,7 @@ class FilingTest(ApiCase):
                          ('logged', 'the record is closed'))
         self.assertEqual(self.refile(), {'ok': True, 'filed': [], 'failed': [], 'parked': [],
                                          'unparked': [], 'park_failed': [],
+                                         'orphan_hand_lines': [],
                                          'revision': self.store.revision})
         self.assertEqual(len(self.views.filed), 1, 'a logged question is never filed')
 

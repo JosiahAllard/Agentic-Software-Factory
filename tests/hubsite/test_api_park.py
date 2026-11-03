@@ -176,12 +176,32 @@ class ParkTest(ApiCase):
         self.assertTrue(done.wait(10))
         self.assertEqual(lines, [('error', '%s: record not unparked: store' % qid)])
 
-    def test_the_sweep_leaves_a_hand_written_line_on_a_live_question(self):
+    def test_the_sweep_never_drops_a_hand_written_line(self):
+        # a line a person wrote is their hold: one on a live question bound elsewhere is left,
+        # and one on a missing question is left and listed for the PM to clear by hand
         qid = self.ask(record={'repo': 'kit', 'id': 'EX-2'})['id']
+        before = len(self.views.unparks)
         self.views.asks = [self.line(qid, parked=False), self.line('Q-404', parked=False)]
         got = self.ok('POST', '/questions/file', AGENT, {})
-        self.assertEqual([u['id'] for u in got['unparked']], ['Q-404'])    # a gone question's
-        self.assertEqual(self.ok('POST', '/questions/file', AGENT, {'id': qid})['unparked'], [])
+        self.assertEqual((got['unparked'], got['park_failed']), ([], []))
+        self.assertEqual(got['orphan_hand_lines'], [{'repo': 'kit', 'id': 'EX-1', 'q': 'Q-404'}])
+        self.assertEqual(len(self.views.unparks), before)               # nothing written
+        self.views.asks = [self.line('Q-404')]                          # the hub's own line
+        got = self.ok('POST', '/questions/file', AGENT, {})
+        self.assertEqual(([u['id'] for u in got['unparked']], got['orphan_hand_lines']),
+                         (['Q-404'], []))
+
+    def test_the_hub_start_logs_a_hand_line_on_a_missing_question(self):
+        said = []
+
+        class Timer(object):
+            def start(self):
+                pass
+        self.views.asks = [self.line('Q-404', parked=False)]
+        hub = serve.Hub(None, self.store, self.api, self.views, None, [], None, Timer(), [],
+                        log=lambda level, text: said.append((level, text)))
+        hub._refile()
+        self.assertEqual(said, [('note', 'kit:EX-1: owner line cites missing Q-404')])
 
     def test_a_park_whose_mark_was_not_written_is_not_listed_parked(self):
         self.views.fail = HubError('store', 'C:\\work is busy', '')

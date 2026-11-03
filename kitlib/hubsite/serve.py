@@ -1572,7 +1572,8 @@ class Hub(object):
     def _refile(self):
         """File, once at start, each answer to a bound question that is not filed yet (kitlib.
         hubsite.api file_answer): one a crash or a failure left behind; and park the record of
-        each open bound question not parked yet (api.park_question). A failure is logged as a
+        each open bound question not parked yet (api.park_question); a hand-written owner line
+        whose question is gone is logged, never dropped (api._sweep_asks). A failure is logged as a
         note, with its code and fixed phrase only, and the PM sees the question pending."""
         try:
             got = self.api.call('POST', _api.BASE + '/questions/file', _api.AGENT, {},
@@ -1584,6 +1585,9 @@ class Hub(object):
             self._say('%s not filed: %s' % (f.get('id'), f.get('message')), 'note')
         for f in got.get('park_failed') or []:
             self._say('%s: record not parked: %s' % (f.get('id'), f.get('message')), 'note')
+        for h in got.get('orphan_hand_lines') or []:
+            self._say('%s:%s: owner line cites missing %s' % (h.get('repo'), h.get('id'),
+                                                              h.get('q')), 'note')
 
     def _step(self, what, timeout, fn, *args):
         """One step of the close: True when fn(*args) answered True, which is how a step says

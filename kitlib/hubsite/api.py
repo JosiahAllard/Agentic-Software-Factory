@@ -1425,8 +1425,9 @@ def questions_file(api, req):
     question that moved meanwhile is in neither. An unknown `id` is `not_found`; one that is not
     answered or has no record files nothing. Each open bound question not parked yet is parked
     (`parked` [ids]); without `id`, the lines of questions gone or bound elsewhere are dropped
-    (`unparked` [{id, record, unblocked}], _sweep_asks). A park or a drop not made is in
-    `park_failed` [{id, code, message}]."""
+    (`unparked` [{id, record, unblocked}], _sweep_asks), and a hand-written line whose question
+    is gone is left and listed (`orphan_hand_lines` [{repo, id, q}]). A park or a drop not made
+    is in `park_failed` [{id, code, message}]."""
     b = _fields(req, ('id',))
     one = _text(b, 'id')
     if one is not None:
@@ -1453,12 +1454,12 @@ def questions_file(api, req):
             park_failed.append({'id': doc_id, 'code': code, 'message': got.get('message')})
         else:
             parked.append(doc_id)
-    unparked = []
+    unparked, hand = [], []
     if one is None and _parks(api):
-        unparked, more = _sweep_asks(api)
+        unparked, more, hand = _sweep_asks(api)
         park_failed += more
     return {'ok': True, 'filed': filed, 'failed': failed, 'parked': parked,
-            'unparked': unparked, 'park_failed': park_failed}
+            'unparked': unparked, 'park_failed': park_failed, 'orphan_hand_lines': hand}
 
 
 # --- the hub as the owner's proxy: a bound question parks its record ------------------------------
@@ -1598,23 +1599,29 @@ def _later_said(got, what):
 
 
 def _sweep_asks(api):
-    """Drop the `until: owner question:<q> answered` lines no question will ever end: q is gone
-    from the hub, or the hub parked the record on q and q is now bound to another record or none
-    (unpark_question, reason `ask withdrawn` on the last line). The lines come from the
-    `record_asks` view; a hand-written line on a question that lives is left alone. ([{id,
-    record, unblocked}], [{id, code, message}])."""
+    """Drop the `until: owner question:<q> answered` lines the hub wrote (`parked`: the record's
+    body says the hub parked it on q) that no question will ever end: q is gone from the hub, or
+    bound now to another record or none (unpark_question, reason `ask withdrawn` on the last
+    line). The lines come from the `record_asks` view. A line a person wrote is never dropped,
+    so an owner's hold never ends on the hub's word: one whose question is gone is reported in
+    the third list for the PM to clear by hand. ([{id, record, unblocked}], [{id, code,
+    message}], [{repo, id, q}])."""
     view = getattr(api.views, 'record_asks', None) if api.views is not None else None
     if not callable(view):
-        return [], []
+        return [], [], []
     try:
         lines = view() or []
     except Exception:               # noqa: BLE001 - a view is another module's code
-        return [], []
-    done, failed = [], []
+        return [], [], []
+    done, failed, hand = [], [], []
     for a in lines:
         q, record = a.get('q'), {'repo': a.get('repo'), 'id': a.get('id')}
         d = api.store.get('questions', q)
-        if d is not None and (not a.get('parked') or d.get('record') == record):
+        if not a.get('parked'):
+            if d is None:
+                hand.append({'repo': record['repo'], 'id': record['id'], 'q': q})
+            continue
+        if d is not None and d.get('record') == record:
             continue
         got = unpark_question(api, q, record)
         if got is None:
@@ -1623,7 +1630,7 @@ def _sweep_asks(api):
             failed.append({'id': q, 'code': got['code'], 'message': UNPARK_FAILED})
         elif got.get('dropped'):
             done.append({'id': q, 'record': record, 'unblocked': bool(got.get('unblocked'))})
-    return done, failed
+    return done, failed, hand
 
 
 def _unpark_now(api, doc_id, record, out):

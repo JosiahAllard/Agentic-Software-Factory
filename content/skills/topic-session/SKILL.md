@@ -7,7 +7,7 @@ description: Use as the PM when the owner wants to drive one topic's work direct
 
 A topic session is a plain session (no agent) the owner drives directly, launched with the session mark `topic` and named `topic-<slug>`. It builds one batch of records on one branch in its own linked worktree. Its backlog rights are a builder's: it reads, pulls, and edits text on (its scope included), releases or blocks its own pulls. It never adds, prices, closes, lands or merges. Every write naming a record is refused unless that record's `batch:` is its branch (`<kit>/docs/backlog.md` "Roles").
 
-A session the owner drives creates no new records for the work it is given: it pulls the existing records batched for it, and when the owner says it is done it lands through the coordinator. The owner files any new record for it, or asks a coordinator to; its `add` is refused.
+It pulls the existing records batched for it and files none: the owner files any new record for it, or asks a coordinator to.
 
 ## Starting one (the PM)
 

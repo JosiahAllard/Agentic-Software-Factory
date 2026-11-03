@@ -6,7 +6,7 @@ effort: high
 sandbox: workspace-write
 mode: write
 run: session
-summary: Own launched plain session the owner drives (never dispatched). Builds the records batched for its branch, in its own worktree; pulls each, gates, reports to the PM; never lands.
+summary: Own launched plain session the owner drives (never dispatched). Builds the records batched for its branch, in its own worktree; pulls each, runs the touched tests, reports to the PM; never lands.
 capabilities: all
 ---
 

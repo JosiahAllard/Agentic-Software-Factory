@@ -132,9 +132,10 @@ Landings (docs/action-hub.md "landings/L-NNN"). POST landings (AGENT) adds one e
 landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
 record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
-main, approvals.landed), and the hub sets posted_at. Each file approval an event names is marked
-spent (that sha) and spent_at, once: display only, for the page; its status stays, op approvals
-and unknown ids are skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
+main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
+whose repo is the event's (repo_name of its remote) is marked spent (that sha) and spent_at,
+once: display only, for a later page (none reads it yet); its status stays, any other is
+skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
 lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX); GET snapshot
 carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
 changes or deletes one.
@@ -2491,17 +2492,20 @@ def landings_add(api, req):
                        'approvals')
     b['posted_at'] = api.clock()
     out = api.add('landings', b, req)
-    out['spent'] = _mark_spent(api, landed or {}, b['posted_at'], req)
+    out['spent'] = _mark_spent(api, landed or {}, b['repo'], b['posted_at'], req)
     return out
 
 
-def _mark_spent(api, landed, now, req):
-    """The ids of the file approvals in `landed` ({id: sha}) marked spent now: each that has no
-    spent yet. Display only (the page's "on main"); one that changed meanwhile is left."""
-    marked = []
+def _mark_spent(api, landed, repo, now, req):
+    """The ids of the file approvals in `landed` ({id: sha}) marked spent now: each consumed
+    one, of the event's `repo` (api.repo_name of its remote; none when that is unknown), with no
+    spent yet. The event is any agent's: it cannot mark an approval no commit used, or another
+    repository's. Display only, for a later page; one that changed meanwhile is left."""
+    marked, repo = [], str(repo).strip().lower()
     for doc_id in sorted(landed, key=_natural):
         d = api.store.get('approvals', doc_id)
-        if not isinstance(d, dict) or d.get('kind') is not None or d.get('spent'):
+        if not (isinstance(d, dict) and d.get('kind') is None and d.get('status') == 'consumed'
+                and not d.get('spent') and _repo_name_of(api, d.get('repo')) == repo):
             continue
         try:
             api.store.update('approvals', doc_id,
@@ -2511,6 +2515,15 @@ def _mark_spent(api, landed, now, req):
             continue
         marked.append(doc_id)
     return marked
+
+
+def _repo_name_of(api, repo_id):
+    """The configured repository name (lower case) of the remote `repo_id`, or None."""
+    try:
+        name = api.repo_name(repo_id) if isinstance(repo_id, str) and repo_id else None
+    except Exception:           # noqa: BLE001 - no name: nothing is marked
+        return None
+    return name.strip().lower() if isinstance(name, str) and name.strip() else None
 
 
 # hand-offs ("Hand-offs"): the record a session writes beside its ready reply to the PM

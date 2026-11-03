@@ -41,10 +41,6 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   (text, None) of a file at head, read with git and checked to
                                   be base_blob, or (None, why)
   diff(path, base, content)       the unified diff lines the page shows for one file
-  same_content_error(checkout, base, parent, paths, call=None)
-                                  why a change made on the commit `parent` is not made on the
-                                  same content as on the approved base `base`, for `paths`, or
-                                  None (the same-content rule, below)
   delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
   cat=None)                       (blob or None, None): what one file's approved change gives
                                   on a parent, or (None, why) (the delta rule, below)
@@ -64,10 +60,7 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   carry, as spent reads one, or (None, why): what a landing puts
                                   on main (kitlib.gate.land.Lander.post_landing)
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
-                                  through the verify route; fails closed. .verify_on(checkout,
-                                  doc_id, repo, parent, blobs, commit=None, base=None): the same
-                                  for a change made on the commit `parent`, which may descend
-                                  from the approved base (the same-content rule).
+                                  through the verify route; fails closed.
                                   .approved_doc(doc_id) -> (doc, why) from the snapshot
   request(client, repo, title, head, files, reason=None) / consume(client, doc_id, commit,
   if_version)                     the agent's add and consume calls
@@ -131,18 +124,8 @@ cleanly. B0:p must be the signed base_blob and P:p a regular file; C:p keeps P's
 server verifies the approved blobs for the signed base. A commit on main (as last fetched) that
 carries the approval spends it: a later commit with it is refused.
 
-The same-content rule, the delta rule's narrower forerunner: commit.py judges by the delta rule
-now (delta_targets), so same_content_error and Verifier.verify_on have no caller in the kit but
-their tests. The server's
-check compares `head` with the signed head, the approved base, exactly, and never reads git. A
-change made on another commit P counts as made on the approved base B when
-same_content_error(checkout, B, P, paths) is None: B is an ancestor of P (`git merge-base
---is-ancestor`), and every one of `paths` (the paths the change touches) has the same tree entry
-at P as at B: the same mode, type and object id, or no entry at either. The client proves that
-with git, then asks the server to verify the change for B (Verifier.verify_on). So the change
-against P is, path for path, the change the owner saw against B: a path edited, created,
-removed, renamed or given another mode between B and P refuses. Owner-only paths the change does
-not touch are not compared (the owner's choice: the approved paths only).
+The server's check compares `head` with the signed head, the approved base, exactly, and never
+reads git: the client judges the parent and the commit with git (delta_error).
 
 Expiry is read, never written by a timer: a pending request expires PENDING_TTL_S after
 created_at; a file approval APPROVAL_LIFE_S after decided_at, consumed or not, and an op approval
@@ -165,12 +148,18 @@ import json
 import os
 import re
 import tempfile
+import urllib.parse
 
 from kitlib import hubvalidate
 from kitlib.git import batch, cmd
 
 from .api import AGENT
-from .client import part as _part
+
+
+def _part(doc_id):
+    """`doc_id` as one segment of a path, as client.part gives it: not imported from there, so
+    this module loads without the client and the server it imports."""
+    return urllib.parse.quote(str(doc_id), safe='')
 
 # How long an approval counts, as the owner chose them (approval_end reads the last two).
 PENDING_TTL_S = 7 * 86400       # a request not decided within 7 days is expired
@@ -763,39 +752,6 @@ def _entries(checkout, rev, paths, call):
     return found, None
 
 
-def same_content_error(checkout, base, parent, paths, call=None):
-    """None when a change made on the commit `parent` of the git checkout `checkout` is made on
-    the same content as on the approval's base commit `base`, for every one of `paths`; else why
-    not (the same-content rule, module docstring). `base` == `parent` is None at once. Otherwise
-    `base` must be an ancestor of `parent`, and each path must have the same tree entry (mode,
-    type, object id) at both, or none at either; the first that differs is named. Any git failure
-    is a why: it fails closed. `call` is kitlib.git.cmd.call or a stand-in."""
-    if isinstance(base, str) and base == parent:
-        return None
-    if not (isinstance(base, str) and _HEX40.match(base) and isinstance(parent, str)
-            and _HEX40.match(parent)):
-        return 'the base and the commit the change is made on are not both commit ids'
-    paths = sorted(set(paths))
-    if not paths:
-        return 'the change touches no path'
-    call = call or cmd.call
-    r = call(_NOREPLACE + ['merge-base', '--is-ancestor', base, parent], checkout)
-    if r.rc == 1:
-        return 'the approved base %s is not an ancestor of %s' % (base[:12], parent[:12])
-    if r.rc != 0:
-        return 'git merge-base failed: %s' % (r.err or 'exit %s' % r.rc)
-    at_base, why = _entries(checkout, base, paths, call)
-    if at_base is None:
-        return why
-    at_parent, why = _entries(checkout, parent, paths, call)
-    if at_parent is None:
-        return why
-    for p in paths:
-        if at_base.get(p) != at_parent.get(p):
-            return '%s at %s is not as the approved base %s has it' % (p, parent[:12], base[:12])
-    return None
-
-
 REGULAR_MODES = ('100644', '100755')    # the tree modes of a regular file
 
 
@@ -1007,7 +963,7 @@ class Verifier(object):
     """Asks the hub server whether a change is the approved one. `client` is a
     kitlib.hubsite.client.Client (or a stand-in with its get()); the call is the agent's.
     verify() fails closed: any error of the call (NotRunning, Refused, ServeError, anything
-    else) or an answer without a verdict is (False, why); verify_on() too."""
+    else) or an answer without a verdict is (False, why)."""
 
     def __init__(self, client):
         self.client = client
@@ -1029,34 +985,6 @@ class Verifier(object):
             return None, WHY_UNKNOWN
         doc = docs[doc_id]
         return (doc, None) if isinstance(doc, dict) else (None, WHY_BAD)
-
-    def approved_head(self, doc_id):
-        """The `head` the hub's snapshot gives the approval `doc_id` (40 hex), or None on any
-        failure. Not trusted as it stands: verify() for it checks it against the signature."""
-        doc = self.approved_doc(doc_id)[0]
-        head = doc.get('head') if isinstance(doc, dict) else None
-        return head if isinstance(head, str) and _HEX40.match(head) else None
-
-    def verify_on(self, checkout, doc_id, repo, parent, blobs, commit=None, base=None):
-        """verify() for a change made on the commit `parent` of `checkout`: `blobs` and `commit`
-        as verify() takes them. `base`: the approval's base as the caller read it, or None to ask
-        the server for `parent` first and, only when it answers WHY_HEAD, the snapshot for the
-        base. When the base is not `parent`, same_content_error must be None for the paths of
-        `blobs` (else (False, WHY_HEAD and why)), and the server must verify the change for the
-        base: its signature binds the base, so a wrong one never verifies."""
-        if base is None:
-            ok, why = self.verify(doc_id, repo, parent, blobs, commit=commit)
-            if ok or why != WHY_HEAD:
-                return ok, why
-            base = self.approved_head(doc_id)
-            if base is None or base == parent:
-                return False, WHY_HEAD
-        if base != parent:
-            why = same_content_error(checkout, base, parent,
-                                     blobs if isinstance(blobs, dict) else ())
-            if why:
-                return False, '%s: %s' % (WHY_HEAD, why)
-        return self.verify(doc_id, repo, base, blobs, commit=commit)
 
     def verify(self, doc_id, repo, head, blobs, commit=None):
         """(True, '') only when the server answers valid true for this change (and, given a

@@ -1255,7 +1255,7 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 | created_at | server | ISO time of the request |
 | decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only |
 | commit, consumed_at | server | once an agent consumes the approval for a commit |
-| spent, spent_at | server | the commit on main that carries the approval and when the hub learned it: set once, from a landing feed event's `approvals` ("landings/L-NNN"), on a file approval only. Display only, for the page's "on main": the status stays, and whether an approval is used up is read from main itself (`approvals.spent`). An approval that reached main some other way than `tools/land.py` has none |
+| spent, spent_at | server | the commit on main that carries the approval and when the hub learned it: set once, from a landing feed event's `approvals` ("landings/L-NNN"), on a consumed file approval of the event's repo only. Display only, for a later page (no page reads them yet): the status stays, and whether an approval is used up is read from main itself (`approvals.spent`). An approval that reached main some other way than `tools/land.py` has none |
 | record | agent | `{repo, id}`: the backlog record the change is for; absent or null on an unbound request |
 | park | server | `{at, code, message}`: what binding the request did to its record, as a question's `park` ("A question bound to a record") |
 
@@ -1321,7 +1321,7 @@ the decision (`approvals.APPROVAL_LIFE_S`, through `approvals.approval_end`); an
 hours (`approvals.APPROVED_TTL_S`). Spent: a commit that main as last fetched
 (`refs/remotes/<remote>/<main>`) reaches carries its `Owner-Approval: hub:A-<n>` trailer
 (`approvals.spent`), so the change is on main; the guard refuses any other commit that carries it then. The hub
-learns of it from the landing feed (`spent` and `spent_at`, "landings/L-NNN"), for its page only.
+learns of it from the landing feed (`spent` and `spent_at`, "landings/L-NNN"), for a later page only.
 The guard judges a commit by its delta, not its exact parent: at the approval's base each approved path
 is its base blob, and at the commit each is what the approved change gives on the commit's parent
 (`approvals.delta_result`: the approved blob where the parent is the base or already the approved
@@ -1385,8 +1385,10 @@ ledger line's fields (`result.LEDGER_FIELDS`, picked from the same land record) 
 
 Routes, below `/api/v1`: POST `/landings` (agent) adds one event: repo, branch, tip and main are required,
 any other field is refused, and posted_at is the server's. Each file approval `approvals` names
-that has no `spent` yet is marked `spent` (its sha) and `spent_at` (the post's time); an op approval or
-an unknown id is skipped, and the answer's `spent` lists the ids marked. GET `/landings` (any role) lists them newest
+that is `consumed`, is of the event's repo (the hub's repo name for its `repo` remote) and has no
+`spent` yet is marked `spent` (its sha) and `spent_at` (the post's time); any other (not consumed,
+another repo's or one the hub cannot name, an op approval, an unknown id) is skipped, since any agent
+token may post an event, and the answer's `spent` lists the ids marked. GET `/landings` (any role) lists them newest
 first, filtered by `repo`, at most `limit` (default `FEED_MAX`, 200). No route changes or deletes one.
 
 Every event is kept; `GET /api/v1/snapshot` and the page carry the newest 200. An event is never pending

@@ -1,9 +1,11 @@
 # Doc index
 
-Every tracked `.md` file is named in backticks on an entry line of this file; `tools/doc_index.py`
-(run by preflight, commit and review_pack) fails when one is not. Find by topic with
-`python tools/doc_index.py --find <topic>` (`--tools` for the Tools section) and read one section with
-`--section "<title>"`. Add a new doc's line in the same commit that adds the doc.
+Every tracked `.md` file should be named in backticks on an entry line of this file. `tools/doc_index.py`
+(run by preflight, commit and review_pack) checks that, but only where `doc_index.enabled` is not false;
+this repository's `.kit.json` sets it false, so here the listing is a convention, kept by hand (an entry
+without a `kw:` field still fails). Find by topic with `python tools/doc_index.py --find <topic>`
+(`--tools` for the Tools section) and read one section with `--section "<title>"` (a heading, not a
+bold bullet label). Add a new doc's line in the same commit that adds the doc.
 
 ## Docs
 
@@ -14,6 +16,7 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract, design, target
 - `docs/agent-profile.md` | this repo's profile for worker agents | starting a task | kw: profile, branches, build, test
 - `.claude/agent-profile.md` | stub: the profile moved to docs/agent-profile.md | an agent names the old path | kw: profile
+- `.claude/coordinator-profile.md` | this repo's coordinator profile: risk map pointer, agent types, owner decisions | coordinating the kit | kw: coordinator, profile
 - `.codex/agent-profile.md` | stub: the profile is docs/agent-profile.md | an agent names the host's profile path | kw: profile
 - `docs/ROSTER.md` | agent roster | choosing an agent | kw: roster, agents
 - `docs/allow-rules.md` | allow rules for landing: the permission lines allow_rules.py prints, what each lets through | letting an agent submit a landing without a prompt | kw: allow-rules, allow_rules, permissions
@@ -137,12 +140,19 @@ Every tracked `.md` file is named in backticks on an entry line of this file; `t
 - `tools/ci_ratchet.py` | the suite's failing tests held to a platform baseline (`docs/test-tools.md`) | kw: ci_ratchet, ratchet, baseline
 - `tools/machine_paths.py` | refuse a hard-coded machine path (`docs/commit.md`) | kw: machine_paths
 - `tools/machine_setup.py` | set up a machine (guard entry, plugin, owner email, agent temp), switch from an older kit clone, or the committed repo setup with --repo (`docs/machine-setup.md`) | kw: machine_setup, fresh, owner email, repo setup
-- `tools/agent_temp_init.py` | set up the agents' temp folder alone (`docs/machine-setup.md` "Agent temp init") | kw: agent_temp_init, agent temp
+- `tools/agent_temp_init.py` | set up the agents' temp folder alone (`docs/machine-setup.md` "Extras") | kw: agent_temp_init, agent temp
 - `tools/plugin_refresh.py` | export pushed kit main and refresh the plugin in every account folder (`docs/plugin-source.md`) | kw: plugin_refresh, plugin
 - `tools/pieces.py` | the path-to-piece table (`docs/repo-checks.md`) | kw: pieces
 - `tools/pm_data.py` | make or re-link the PM-data branch (`docs/pm-data-branch.md`) | kw: pm_data
 - `tools/trailers.py` | fail a commit with no agent trailer (`docs/repo-checks.md`) | kw: trailers
 - `tools/worktree_paths.py` | which path a worktree write may go to (`docs/worktree-paths.md`) | kw: worktree_paths
 - `tools/worktree_sweep_task.py` | nightly worktree sweep scheduled task (`docs/worktree-remove.md`) | kw: worktree_sweep_task, sweep
-- `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Automatic tasks task") | kw: auto_tasks, tick, schedules, kit-automatic-tasks
+- `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Extras") | kw: auto_tasks, tick, schedules, kit-automatic-tasks
 - `tools/no_window.py` | run a program with no console window, for a scheduled task (`docs/daily-full.md` "The schedule") | kw: no_window, console window, scheduled task
+- `tools/account_inventory.py` | read-only: how far each Claude account folder has drifted from the shared setup (`docs/machine-setup.md` "Account inventory") | kw: account_inventory, account, inventory
+- `tools/config_move.py` | move the machine config from the home folder into the PM repository; dry run, `--apply` copies (`docs/kit-json.md` "Moving the machine config into the PM repo") | kw: config_move, machine config
+- `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it (`docs/action-hub.md`) | kw: hub, serve
+- `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
+- `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node
+- `tools/stack_skill.py` | copy a stack's skills into a repository (`docs/install.md`) | kw: stack_skill, stack
+- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate.md` "The landing queue") | kw: verdict, queue

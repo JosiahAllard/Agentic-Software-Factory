@@ -508,6 +508,11 @@ def short_pools(L, q, e):
     return out
 
 
+# What a planned entry's backfill flag means, as status and the wait line say it: planned before a
+# run ahead of it, which is no promise that it starts now.
+BACKFILL_TEXT = " (planned to start before a run ahead of it in the queue)"
+
+
 def est_text(info):
     """When a planned entry is expected to start, local time."""
     if not info or info.get("start") is None:

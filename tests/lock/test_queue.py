@@ -4,9 +4,13 @@ import os
 import unittest
 from tests.platforms import windows_only
 
+from .helpers import StoreCase
+
 if os.name == "nt":
+    from kitlib.lock import api
     from kitlib.lock import layout as lay
     from kitlib.lock import queue as qm
+    from kitlib.lock import status as st
 
 NOW = 1_800_000_000.0
 
@@ -463,6 +467,30 @@ class ResourceExclusion(unittest.TestCase):
         rec2["id"] = "r-y"
         e2 = qm.join(q, rec2, {"cpu": 1, "gpu": 0})
         self.assertEqual((e2["resource"], e2["priority"]), (None, None))
+
+
+@windows_only("the lock is Windows only")
+class BackfillLabel(StoreCase):
+    """What status (and the wait line, which shares queue.BACKFILL_TEXT) says of a backfill:
+    planned before a run ahead of it, never that it starts now."""
+
+    def test_status_says_a_backfill_is_planned_before_a_run_ahead_of_it(self):
+        snap = api.snapshot(self.store)
+        row = {"id": "r-t", "position": 2, "repo": "kit", "slug": "t", "kind": "test",
+               "needs": {"cpu": 2, "gpu": 0}, "since": None, "est_start": None,
+               "backfill": True, "moved": None, "resource": None, "priority": None,
+               "within_slots": None, "why": ""}
+        snap["queue"]["entries"] = [row, dict(row, id="r-u", position=3, backfill=False)]
+        lines = [x for x in st.render(snap) if x.startswith("waiting: ")]
+        self.assertEqual(len(lines), 2, lines)
+        self.assertTrue(lines[0].endswith(
+            "queue position 2, expected to start once what keeps it waiting ends "
+            "(planned to start before a run ahead of it in the queue)"), lines[0])
+        self.assertTrue(lines[1].endswith(
+            "queue position 3, expected to start once what keeps it waiting ends"), lines[1])
+        self.assertFalse(any("ahead of its turn" in x for x in lines))
+        self.assertEqual(qm.BACKFILL_TEXT,
+                         " (planned to start before a run ahead of it in the queue)")
 
 
 if __name__ == "__main__":

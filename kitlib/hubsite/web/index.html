@@ -3296,7 +3296,7 @@ ul.hist .sch-line{display:block}
     const bytes = nodeRows.reduce((n, p) => n + (p.bytes || 0), 0), known = nodeRows.some(p => p.bytes != null);
     const head = el("div", {class:"dochead"}, el("strong", {text: docNodeLabel(docUi.node)}),
       el("span", {class:"muted", text: nodeRows.length + (nodeRows.length === 1 ? " doc" : " docs") + (known ? " · " + docSize(bytes) : "")}));
-    show([], docNav(tree, searching), head, groups.flatMap(([t, rs]) => [el("h3", {class:"blk", text: t + " · " + rs.length}), ...rs.map(p => drawn(docRow, p))]));
+    show([], docNav(tree, searching), head, docMap(tree, nodeRows, docUi.node), groups.flatMap(([t, rs]) => [el("h3", {class:"blk", text: t + " · " + rs.length}), ...rs.map(p => drawn(docRow, p))]));
     pickDetail(at);
   }
   // The Docs tree: All documents > repo > kind, a count on each node. A node is [] (all), [repo], [repo, kind] (kind ""
@@ -3341,10 +3341,58 @@ ul.hist .sch-line{display:block}
     return !!r && (n.length === 1 || r.kinds.some(k => k[0] === n[1]));
   }
   const docNodeLabel = n => !n.length ? "All documents" : n[0] === "" ? "Unsorted" : n.length === 1 ? n[0] : n[0] + " / " + kindName(n[1]);
+  // Select a node (from the tree or from a cell of the cluster map): the same state, saved, and drawn again.
+  function docPick(n){ docUi.node = n; if (n.length && n[0] !== "") docUi.open.add(n[0]); docUiSave(); render(); }
+  // The cluster map: a treemap of the selected node's children (repos under All, kinds under a repo, months under a
+  // kind), each cell sized by its documents and coloured by its kind (a repo by its largest kind). A repo or kind cell
+  // selects that node, as a click in the tree does; a month cell is only a picture. Cells are placed by percent in a
+  // box, so the map scales with the pane; it is one img for a reader (the tree is the keyboard path).
+  function docCells(t, rows, node){
+    const tone = k => Object.hasOwn(KIND_CHIP, k) ? KIND_CHIP[k] : "muted";
+    const big = kinds => tone([...kinds].sort((a, b) => b[1] - a[1])[0][0]);
+    const month = p => { const d = new Date(p.updated_at || p.at); return isNaN(d) ? "Undated" : d.toISOString().slice(0, 7); };
+    let cs;
+    if (!node.length) {
+      cs = t.repos.map(r => ({ label: r.repo, n: r.n, tone: big(r.kinds), go: [r.repo] }));
+      if (t.loose) cs.push({ label: "Unsorted", n: t.loose, tone: "muted", go: [""], last: true });
+    } else if (node.length === 1 && node[0] !== "") {
+      cs = t.repos.find(r => r.repo === node[0]).kinds.map(([k, n]) => ({ label: kindName(k), n, tone: tone(k), go: [node[0], k], last: k === "" }));
+    } else {
+      const by = new Map(), k = node[1];
+      for (const p of rows) by.set(month(p), (by.get(month(p)) || 0) + 1);
+      cs = [...by].map(([label, n]) => ({ label, n, tone: node.length > 1 ? tone(k) : tone(docKind(rows.find(p => month(p) === label))) }));
+      cs.sort((a, b) => b.label.localeCompare(a.label));
+      return cs;
+    }
+    return cs.sort((a, b) => b.n - a.n || (a.last || false) - (b.last || false) || a.label.localeCompare(b.label));
+  }
+  // Slice and dice: split the sorted cells into two halves of about equal weight, across the longer side, and recurse.
+  function docLayout(cs, x, y, w, h, out){
+    if (cs.length === 1) { out.push([cs[0], x, y, w, h]); return out; }
+    const sum = a => a.reduce((s, c) => s + c.n, 0), half = sum(cs) / 2;
+    let i = 1, acc = cs[0].n;
+    while (i < cs.length - 1 && acc + cs[i].n / 2 < half) acc += cs[i++].n;
+    const a = cs.slice(0, i), b = cs.slice(i), f = acc / sum(cs);
+    if (w >= h) { docLayout(a, x, y, w * f, h, out); docLayout(b, x + w * f, y, w * (1 - f), h, out); }
+    else { docLayout(a, x, y, w, h * f, out); docLayout(b, x, y + h * f, w, h * (1 - f), out); }
+    return out;
+  }
+  function docMap(t, rows, node){
+    const cs = docCells(t, rows, node), pct = v => (Math.round(v * 100) / 100) + "%";
+    const kids = docLayout(cs, 0, 0, 100, 100, []).map(([c, x, y, w, h]) => {
+      const title = c.label + " · " + c.n + (c.n === 1 ? " doc" : " docs");
+      const inner = [el("span", {class:"cl", text: c.label}), el("span", {class:"n", text: String(c.n)})];
+      const at = {class: "cell k-" + c.tone, title};
+      const cell = c.go ? el("button", {...at, type: "button", tabindex: "-1", onclick: () => docPick(c.go)}, ...inner) : el("span", at, ...inner);
+      Object.assign(cell.style, {left: pct(x), top: pct(y), width: pct(w), height: pct(h)});    // set on the node: the page allows no style attribute
+      return cell;
+    });
+    return el("div", {class:"cmap", role:"img", "aria-label": "Cluster map of " + docNodeLabel(node) + ": " + cs.map(c => c.label + " " + c.n).join(", ")}, ...kids);
+  }
   function docNav(t, searching){
     let i = 0;
     const same = n => JSON.stringify(n) === JSON.stringify(docUi.node);
-    const pick = n => { docUi.node = n; if (n.length && n[0] !== "") docUi.open.add(n[0]); docUiSave(); render(); };
+    const pick = docPick;
     const node = (n, label, count, cls) => el("button", {class: "tn " + cls + (same(n) ? " on" : ""), type: "button", id: "dn-" + i++, "aria-current": same(n) ? "true" : null, onclick: () => pick(n)},
       el("span", {text: label}), el("span", {class:"n", text: String(count)}));
     const kids = [node([], "All documents", t.total, "l0")];

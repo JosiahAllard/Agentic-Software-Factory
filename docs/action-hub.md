@@ -66,6 +66,9 @@ under the title.
   Close or Esc (focus outside the document) shuts it. A ref on any card that names a listed document
   opens it the same way. Delete (pressed twice) removes a document; agents publish them, the page
   writes none.
+  Above the cards a cluster map draws the selected tree node's children as a treemap (repos under All
+  documents, kinds under a repo, months under a kind), sized by document count and coloured by kind; a
+  repo or kind cell selects that node, as the tree does, and a tree click redraws the map.
 - **Usage** (`#info`). Usage (each account's 5-hour and weekly percentages) and Lock notices. A usage
   row opens its detail in the pane.
 - **Agents** (`#agents`, its own entry in More). Each agent's model and effort; a row opens its detail.

@@ -25,7 +25,7 @@ class DocsClusterTest(unittest.TestCase):
         """, snap(), hash="#docs")
         self.assertEqual(got["role"], "img")
         self.assertIn("All documents", got["label"])
-        self.assertEqual(got["cells"], [["alpha \u00b7 4 docs", False], ["Unsorted \u00b7 1 doc", False], ["beta \u00b7 1 doc", False]])
+        self.assertEqual(got["cells"], [["alpha \u00b7 4 docs", False], ["beta \u00b7 1 doc", False], ["Unsorted \u00b7 1 doc", False]])
         self.assertIn("k-", got["tone"])
 
     def test_a_cell_click_selects_the_node_in_the_tree_and_cards_and_redraws_the_map(self):

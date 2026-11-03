@@ -45,17 +45,23 @@ class EventTest(unittest.TestCase):
         ev = event()
         self.assertEqual({k: ev[k] for k in result.LEDGER_FIELDS},
                          {k: RECORD[k] for k in result.LEDGER_FIELDS})
-        self.assertEqual(sorted(ev), sorted(landings.FIELDS))
+        # approvals only when the landing put one on main: a hub older than the field still
+        # takes every other event
+        self.assertEqual(sorted(ev), sorted(f for f in landings.FIELDS if f != 'approvals'))
         for k in ('kind', 'pid', 'merge', 'lines'):       # the record's other fields stay home
             self.assertNotIn(k, ev)
         self.assertEqual((ev['repo'], ev['main_branch'], ev['main'], ev['records'], ev['mode'],
                           ev['deploy']), ('kit', 'main', MAIN, ['ONE'], 'full', None))
         self.assertEqual(landings.event({}, 'kit', 'main', MAIN)['records'], [])
+        self.assertNotIn('approvals', landings.event({}, 'kit', 'main', MAIN, approvals={}))
+        self.assertEqual(landings.event({}, 'kit', 'main', MAIN,
+                                        approvals={'A-001': TIP})['approvals'], {'A-001': TIP})
 
     def test_the_api_takes_the_fields_an_event_has_and_the_schema_types_them(self):
         self.assertEqual(set(landings.FIELDS), set(api.LANDING_FIELDS))
         self.assertEqual(set(schema.FIELDS['landings'][1]), set(landings.FIELDS) | {'posted_at'})
         self.assertEqual(schema.check('landings', event(deploy='restart')), [])
+        self.assertEqual(schema.check('landings', event(approvals={'A-001': TIP})), [])
         self.assertEqual([f.field for f in schema.check('landings', event(code='0', records='x'))],
                          ['code', 'records'])
         self.assertEqual(json.loads(json.dumps(event())), event())
@@ -218,7 +224,12 @@ class RoundTripTest(unittest.TestCase):
                  (dict(event(), posted_at=NOW), 'posted_at'),
                  (dict(event(), records=['']), 'records'),
                  (dict(event(), records='ONE'), 'records'),
-                 (dict(event(), code='0'), 'code')]
+                 (dict(event(), code='0'), 'code'),
+                 (dict(event(), approvals=['A-001']), 'approvals'),
+                 (dict(event(), approvals={'A-001': 'x'}), 'approvals'),
+                 (dict(event(), approvals={'A-001': TIP.upper()}), 'approvals'),
+                 (dict(event(), approvals={'Q-001': TIP}), 'approvals'),
+                 (dict(event(), approvals={'A-1x': TIP}), 'approvals')]
         for body, field in cases:
             with self.subTest(field=field):
                 status, obj = self.call('POST', '/landings', AGENT, body)
@@ -231,6 +242,34 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual(self.hub.store.docs('landings'), {})
         status, obj = self.call('GET', '/landings', OWNER, query={'limit': '9' * 9})
         self.assertEqual((status, obj['items']), (200, []))
+
+    def approval(self, doc_id, **kw):
+        doc = {'status': 'consumed', 'repo': 'github.com/o/kit', 'title': 't',
+               'created_at': NOW, 'head': MAIN, 'files': [], 'commit': TIP}
+        doc.update(kw)
+        self.hub.store.put('approvals', doc_id, doc)
+
+    def test_an_event_marks_each_approval_it_put_on_main_spent_once(self):
+        landed, first = 'c' * 40, 'd' * 40
+        self.approval('A-001')
+        self.approval('A-002', status='approved')
+        self.approval('A-003', spent=first, spent_at='2025-12-01T00:00:00+00:00')
+        self.approval('A-004', kind='op', op='o', line='l', args_sha256='e' * 64)
+        ids = ['A-001', 'A-002', 'A-003', 'A-004', 'A-009']
+        status, obj = self.call('POST', '/landings', AGENT,
+                                event(approvals={i: landed for i in ids}))
+        self.assertEqual(status, 200, obj)
+        self.assertEqual(obj['spent'], ['A-001', 'A-002'])
+        got = self.hub.store.docs('approvals')
+        self.assertEqual([(got[i].get('spent'), got[i].get('spent_at')) for i in sorted(got)],
+                         [(landed, NOW), (landed, NOW),
+                          (first, '2025-12-01T00:00:00+00:00'), (None, None)])
+        self.assertEqual([got[i]['status'] for i in sorted(got)],
+                         ['consumed', 'approved', 'consumed', 'consumed'], 'display only')
+        self.assertEqual(self.hub.store.docs('landings')['L-001']['approvals'],
+                         {i: landed for i in ids})
+        status, obj = self.call('POST', '/landings', AGENT, event())
+        self.assertEqual((status, obj['spent']), (200, []))
 
     def test_an_unknown_repo_is_kept_with_the_stores_warning(self):
         self.hub.store.put('repos', 'kit', {'name': 'kit'})

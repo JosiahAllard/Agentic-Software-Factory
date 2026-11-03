@@ -168,5 +168,43 @@ class Spent(DeltaCase):
         self.assertTrue(why)
 
 
+class Landed(DeltaCase):
+    """landed(checkout, base, tip): {A-<n>: sha} of the commits `tip` reaches and `base` does not
+    that carry exactly one `Owner-Approval: hub:A-<n>`: what a landing puts on main (its feed
+    event, kitlib.gate.land.Lander.post_landing)."""
+
+    landed = Spent.landed
+
+    def test_the_approvals_a_range_lands_each_with_its_commit(self):
+        before = self.landed('edit\n\nOwner-Approval: hub:A-001\n')
+        one = self.landed('edit again\n\nOwner-Approval: hub:A-002\n')
+        self.landed('later work\n')
+        two = self.landed('more\n\nOwner-Approval: hub:A-003\n')
+        self.assertEqual(ap.landed(self.root, before, 'main'), ({'A-002': one, 'A-003': two}, None))
+        self.assertEqual(ap.landed(self.root, two, 'main'), ({}, None))
+
+    def test_only_one_exact_hub_value_counts(self):
+        base = self.landed('start\n')
+        self.landed('names hub:A-100 in passing\n')
+        self.landed('two\n\nOwner-Approval: hub:A-4\nOwner-Approval: hub:A-5\n')
+        self.landed('not the hub\n\nOwner-Approval: A-6\n')
+        self.landed('not an id\n\nOwner-Approval: hub:Q-7\n')
+        self.assertEqual(ap.landed(self.root, base, 'main'), ({}, None))
+
+    def test_the_newest_commit_of_one_approval_is_its_commit(self):
+        base = self.landed('start\n')
+        self.landed('first\n\nOwner-Approval: hub:A-001\n')
+        newer = self.landed('rebuilt\n\nOwner-Approval: hub:A-001\n')
+        self.assertEqual(ap.landed(self.root, base, 'main'), ({'A-001': newer}, None))
+
+    def test_a_range_git_cannot_read_is_a_why(self):
+        for base, tip in (('1' * 40, 'main'), ('main', 'refs/remotes/origin/nothing'),
+                          ('-x', 'main'), ('main', None)):
+            with self.subTest(base=base, tip=tip):
+                got, why = ap.landed(self.root, base, tip)
+                self.assertIsNone(got)
+                self.assertTrue(why)
+
+
 if __name__ == '__main__':
     unittest.main()

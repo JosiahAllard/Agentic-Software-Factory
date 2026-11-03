@@ -5020,5 +5020,22 @@ class AnswerNoStoreTest(trw.Case):
         self.assertEqual(self.store.docs('questions'), {})
 
 
+
+class EachModuleImportsFirst(unittest.TestCase):
+    """Each of the hub server's modules imports in a fresh interpreter as the first one: a cycle
+    (approvals -> client -> serve -> push -> approvals) breaks whichever is imported first, and
+    the test runner's own import order hides it."""
+
+    def test_each_module_imports_on_its_own(self):
+        import subprocess
+        import sys
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for name in ('api', 'approvals', 'client', 'landings', 'push', 'serve', 'store'):
+            with self.subTest(module=name):
+                r = subprocess.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
+                                   cwd=root, capture_output=True, text=True, timeout=60)
+                self.assertEqual(r.returncode, 0, r.stderr[-600:])
+
+
 if __name__ == '__main__':
     unittest.main()

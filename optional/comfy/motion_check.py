@@ -23,7 +23,7 @@ Per clip (each action; --clips picks them by name):
 - skin gap per LOD, cm: the worst opening, in any sampled pose (every --step frames, default 2),
   between vertices that touch at rest: vertices of one mesh at the same place (split seams), or
   of two meshes within --contact cm. Measured as the pose distance less the rest distance.
-Per LOD: the triangles. A mesh's LOD is the number after "LOD" in its name; a mesh without one
+Per LOD: the triangles. Meshes used as a bone's display shape are left out. A mesh's LOD is the number after "LOD" in its name; a mesh without one
 is LOD0.
 
 Scene units are taken as metres times the scene's unit scale. Exit codes: 0 written, 2 refused.
@@ -244,7 +244,9 @@ def measure(opts):
     contact = opts.contact / unit_cm
     fps = scene.render.fps / (scene.render.fps_base or 1.0)
     arms = [o for o in scene.objects if o.type == "ARMATURE"]
-    meshes = [o for o in scene.objects if o.type == "MESH"]
+    # bone display shapes (the glTF importer adds an Icosphere) are not the character
+    shapes = {pb.custom_shape.name for a in arms for pb in a.pose.bones if pb.custom_shape}
+    meshes = [o for o in scene.objects if o.type == "MESH" and o.name not in shapes]
     lods = {}
     for o in meshes:
         lods.setdefault(lod_of(o.name), []).append(o)

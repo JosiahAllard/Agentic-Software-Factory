@@ -178,7 +178,6 @@ import time
 
 from kitlib import pmwatch
 from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
-from kitlib.hubsite import approvals as ap
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
@@ -285,6 +284,7 @@ def approval_phase(doc, now):
     if status is None:
         return None
     if status == 'approved':
+        from kitlib.hubsite import approvals as ap   # here: approvals -> client -> serve -> push
         end = ap.expires_at(doc)
         if end is not None and now >= end - datetime.timedelta(seconds=EXPIRING_LEAD_S):
             return 'expiring'

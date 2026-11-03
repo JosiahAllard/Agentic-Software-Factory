@@ -59,6 +59,10 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   spent(checkout, doc_id, rev, call=None)
                                   (sha, None) of the newest commit `rev` reaches that carries the
                                   approval (TRAILER), (None, None), or (None, why)
+  landed(checkout, base, tip, call=None)
+                                  ({doc id: sha}, None) of the approvals the commits base..tip
+                                  carry, as spent reads one, or (None, why): what a landing puts
+                                  on main (kitlib.gate.land.Lander.post_landing)
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
                                   through the verify route; fails closed. .verify_on(checkout,
                                   doc_id, repo, parent, blobs, commit=None, base=None): the same
@@ -739,6 +743,8 @@ def diff(path, base, content):
                                      '/dev/null' if content is None else 'b/' + path))
 
 
+APPROVAL_ID = re.compile(r'A-[0-9]+\Z')   # a file or op approval's doc id
+SHA = re.compile(r'[0-9a-f]{40}\Z')       # a commit id, as git log gives it
 _NOREPLACE = ['--no-replace-objects']     # replace refs do not travel: judge the real objects
 
 
@@ -869,6 +875,33 @@ def spent(checkout, doc_id, rev, call=None):
         if sha and want in [v.strip() for v in fields[i + 1].split('\x01')]:
             return sha, None
     return None, None
+
+
+def landed(checkout, base, tip, call=None):
+    """({doc id: sha}, None): each approval a commit `tip` reaches and `base` does not carries, as
+    the only `Owner-Approval: hub:<id>` value of that commit, with the newest such commit; else
+    (None, why). What a landing from `base` (main before it) to `tip` puts on main, for the hub
+    page (the landing feed); spent stays the check that counts."""
+    for rev in (base, tip):
+        if not (isinstance(rev, str) and rev and not rev.startswith('-')):
+            return None, 'not a rev: %r' % (rev,)
+    r = (call or cmd.call)(_NOREPLACE + [
+        'log', '--no-use-mailmap',
+        '--format=%%H%%x00%%(trailers:key=%s,valueonly,separator=%%x01)%%x00' % TRAILER,
+        '%s..%s' % (base, tip), '--'], checkout)
+    if r.rc != 0:
+        return None, 'git log %s..%s failed: %s' % (base, tip, r.err or 'exit %s' % r.rc)
+    out = {}
+    fields = cmd.text(r.out).split('\0')
+    for i in range(0, len(fields) - 1, 2):
+        sha, values = fields[i].strip(), [v.strip() for v in fields[i + 1].split('\x01')]
+        values = [v for v in values if v]
+        if not (sha and len(values) == 1 and values[0].startswith('hub:')):
+            continue
+        doc_id = values[0][len('hub:'):]
+        if APPROVAL_ID.match(doc_id):
+            out.setdefault(doc_id, sha)          # git log lists the newest first
+    return out, None
 
 
 def approved_files(doc):

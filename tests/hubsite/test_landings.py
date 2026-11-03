@@ -189,13 +189,16 @@ class RoundTripTest(unittest.TestCase):
         return status, obj
 
     def test_a_posted_event_is_stored_as_sent_with_posted_at_and_read_newest_first(self):
-        evs = [event(), event(branch='kit/y', records=[], deploy='restart the hub'),
+        evs = [event(), event(branch='kit/y', records=[], deploy='restart the hub',
+                              approvals={'A-001': TIP}),
                event(branch='kit/z', repo='other')]
         self.assertEqual(landings.post(evs, client=self.hub.client), [])
         docs = self.hub.store.docs('landings')
         self.assertEqual(sorted(docs), ['L-001', 'L-002', 'L-003'])
         for doc_id, ev in zip(('L-001', 'L-002', 'L-003'), evs):
-            self.assertEqual({k: docs[doc_id].get(k) for k in landings.FIELDS}, ev)
+            # an event without approvals stores none (the field is optional, landings.event)
+            self.assertEqual({k: docs[doc_id].get(k) for k in landings.FIELDS
+                              if k in ev or k in docs[doc_id]}, ev)
             self.assertEqual(docs[doc_id]['posted_at'], NOW)
         got = self.hub.client.listing('landings')
         self.assertEqual([d['id'] for d in got], ['L-003', 'L-002', 'L-001'])

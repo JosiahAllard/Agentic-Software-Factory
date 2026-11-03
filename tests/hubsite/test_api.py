@@ -5027,12 +5027,12 @@ class EachModuleImportsFirst(unittest.TestCase):
     the test runner's own import order hides it."""
 
     def test_each_module_imports_on_its_own(self):
-        import subprocess
         import sys
+        from kitlib.proc import spawn
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         for name in ('api', 'approvals', 'client', 'landings', 'push', 'serve', 'store'):
             with self.subTest(module=name):
-                r = subprocess.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
+                r = spawn.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
                                    cwd=root, capture_output=True, text=True, timeout=60)
                 self.assertEqual(r.returncode, 0, r.stderr[-600:])
 

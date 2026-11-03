@@ -367,7 +367,7 @@ class Merges(MergeCase):
                          [oc.Violation(edit, AGENT, ['CLAUDE.md'])])
 
     def test_a_sync_merge_resolved_to_landed_mains_copy_passes(self):
-        # Seen in Retribution: both sides changed the path with the owner's approval, the agent's
+        # Seen in a game repository: both sides changed the path with the owner's approval, the agent's
         # merge took main's copy, and a later approved branch commit keeps the path in the net.
         self.commit_as(OWNER, 'owner edits CLAUDE.md on the branch', {'CLAUDE.md': 'branch\n'},
                        cwd=self.wt)

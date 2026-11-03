@@ -2,8 +2,14 @@
 and the snippets of kitlib.blendermcp.codes compile."""
 import io
 import json
+import os
+import shutil
+import sys
+import tempfile
+import types
 import unittest
 import warnings
+from unittest import mock
 
 from kitlib.blendermcp import TOOL_NAMES, codes, server
 from kitlib.blendermcp.instance import BridgeError
@@ -138,6 +144,70 @@ class Codes(unittest.TestCase):
         self.assertIn(repr('C:\\t\\x.png'), codes.render('C:\\t\\x.png', 64, 32))
         with self.assertRaises(ValueError):
             codes.render('/t/x.png', 64, 32, 'povray')
+
+    def test_render_picks_the_engine_by_setting_it_and_puts_the_settings_back(self):
+        """Blender's engine enum is dynamic: on the type it lists nothing (the live run's 5.2
+        refused workbench that way), so the snippet tries each name on the scene's settings."""
+        tmp = tempfile.mkdtemp(prefix='blendermcp-')
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for engine, want in (('workbench', 'BLENDER_WORKBENCH'), ('eevee', 'BLENDER_EEVEE_NEXT')):
+            with self.subTest(engine):
+                bpy, r, sc = fake_bpy()
+                path = os.path.join(tmp, engine + '.png')
+                ns = {}
+                with mock.patch.dict(sys.modules, {'bpy': bpy, 'mathutils': types.ModuleType('mathutils')}):
+                    exec(compile(codes.render(path, 64, 32, engine, 'Cam'), 'render', 'exec'), ns)
+                self.assertEqual((ns['result']['engine'], ns['result']['bytes']), (want, 3))
+                self.assertEqual(r.rendered_with, (want, 64, 32, path, 'PNG', 'Cam'))
+                self.assertEqual((r.engine, r.resolution_x, r.filepath, r.image_settings.file_format,
+                                  sc.camera), ('CYCLES', 1920, '//out', 'JPEG', None))
+        bpy, r, sc = fake_bpy(engines=('CYCLES',))
+        with mock.patch.dict(sys.modules, {'bpy': bpy, 'mathutils': types.ModuleType('mathutils')}):
+            with self.assertRaisesRegex(RuntimeError, 'none of the render engines'):
+                exec(compile(codes.render(os.path.join(tmp, 'x.png'), 64, 32), 'render', 'exec'), {})
+        self.assertEqual(r.engine, 'CYCLES')
+
+
+def fake_bpy(engines=('BLENDER_WORKBENCH', 'BLENDER_EEVEE_NEXT', 'CYCLES')):
+    """A bpy with just what the render snippet touches, for a scene with a camera named Cam: its
+    render settings refuse an engine this Blender lacks, as Blender's do (TypeError)."""
+    class Render:
+        rendered_with = None
+
+        def __init__(self):
+            self._engine = 'CYCLES'
+            self.resolution_x, self.resolution_y, self.resolution_percentage = 1920, 1080, 50
+            self.filepath = '//out'
+            self.image_settings = types.SimpleNamespace(file_format='JPEG')
+
+        @property
+        def engine(self):
+            return self._engine
+
+        @engine.setter
+        def engine(self, value):
+            if value not in engines:
+                raise TypeError('bpy_struct: item.attr = val: enum "%s" not found' % value)
+            self._engine = value
+
+    r = Render()
+    cam = types.SimpleNamespace(name='Cam', type='CAMERA')
+    sc = types.SimpleNamespace(render=r, camera=None, objects=[cam])
+
+    def render(write_still):
+        r.rendered_with = (r.engine, r.resolution_x, r.resolution_y, r.filepath,
+                           r.image_settings.file_format, sc.camera.name)
+        with open(r.filepath, 'wb') as f:
+            f.write(b'png')
+
+    bpy = types.ModuleType('bpy')
+    bpy.context = types.SimpleNamespace(scene=sc)
+    bpy.data = types.SimpleNamespace(objects={'Cam': cam})
+    bpy.ops = types.SimpleNamespace(render=types.SimpleNamespace(render=render))
+    engine_prop = types.SimpleNamespace(enum_items=[])      # a dynamic enum, seen on the type
+    bpy.types = types.SimpleNamespace(RenderSettings=types.SimpleNamespace(
+        bl_rna=types.SimpleNamespace(properties={'engine': engine_prop})))
+    return bpy, r, sc
 
 
 if __name__ == '__main__':

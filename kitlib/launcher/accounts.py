@@ -18,7 +18,7 @@ from kitlib.launcher.settings import LaunchError
 CREDENTIALS = '.credentials.json'
 USAGE_FILE = 'usage-status.json'
 WINDOWS = ('five_hour', 'seven_day')
-HEADROOM_LIMIT = 95      # deep and consultant launches refuse an account at or over this % of either window, the band account picking also skips
+HEADROOM_LIMIT = 95      # deep, consultant and topic launches refuse an account at or over this % of either window, the band account picking also skips
 PICK_LIMIT = 95          # pick-account's default
 FRACTION = re.compile(r'\.\d{7,}')   # PowerShell ToString('o') writes 7 fraction digits
 

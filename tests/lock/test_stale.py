@@ -411,5 +411,42 @@ class EndToEnd(Base):
         self.assertTrue(any("ended by the lock" in x for x in self.said), self.said)
 
 
+class StopReadLate(Base):
+    def test_a_stop_file_finished_after_the_first_read_still_names_the_lock(self):
+        # The stop file is there but not yet readable when the wrapper first reads it (its
+        # writer has not finished); the writer finishes on the reader's first retry pause, the
+        # only sleep read_record makes. A read made once, with no wait, never sees the reason.
+        self.confine(1)
+        s = rm.book("engine-test", "kit", "stuck", cores=1, store=self.store, env=clean_env())
+        p = s.start([sys.executable, "-c", "import time; time.sleep(120)"])
+        self.addCleanup(lambda: p.poll() is None and p.kill())
+        path = self.store.path("active", s.id + ".stop")
+        doc = {"by_pid": os.getpid(), "at": iso(), "by": stale.BY, "session": None,
+               "why": "its booking session has ended"}
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"by_pid": ')                     # half written
+        me, done = threading.current_thread(), []
+
+        class LateTime:
+            def __getattr__(self, name):
+                return getattr(time, name)
+
+            def sleep(self, secs):
+                if threading.current_thread() is me and not done:
+                    done.append(True)
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(doc, f)
+                time.sleep(secs)
+
+        with mock.patch.object(store_mod, "time", LateTime()):
+            got = s.wait(p)
+        s.release(*got)
+        self.assertEqual(got, (1, "cancelled"))
+        self.assertTrue(done, "the reader never paused to read the stop file again")
+        self.assertTrue(any("was ended by the lock: its booking session has ended" in x
+                            for x in self.said), self.said)
+        self.assertFalse(any("cancelled by stop" in x for x in self.said), self.said)
+
+
 if __name__ == "__main__":
     unittest.main()

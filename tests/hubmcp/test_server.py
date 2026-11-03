@@ -484,6 +484,11 @@ class Pages(Case):
         route, _ = api.match("POST", api.BASE + "/pages/plan/place")
         self.assertEqual(route.role, api.ANY)
 
+    def test_the_cards_and_their_versions_are_listed(self):
+        self.rpc(self.server(), "hub_list", {"collection": "pages"})
+        self.assertEqual((self.ask.calls[-1]["method"], self.ask.calls[-1]["path"]),
+                         ("GET", api.BASE + "/pages"))
+
     def test_place_needs_its_pin(self):
         payload, is_error = self.rpc(self.server(), "hub_page_place", {"id": "plan",
                                                                        "kind": "spec"})
@@ -505,7 +510,8 @@ class Pages(Case):
 
     def test_no_tool_deletes_a_page(self):
         for name, (_, _, method, path, _) in srv.TOOLS.items():
-            self.assertFalse(path.startswith("/pages/") and method != "GET", name)
+            if path.startswith("/pages/") and method != "GET":    # place changes a card only
+                self.assertEqual(path, "/pages/{id}/place", name)
             self.assertNotIn("delete", name)
         self.assertNotIn("hub_page_delete", hubmcp.OWNER_ONLY)
 

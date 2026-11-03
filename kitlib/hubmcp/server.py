@@ -41,7 +41,7 @@ SERVER_VERSION = "0.1.0"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")    # newest first
 WAIT_MAX_S = hubapi.WAIT_MAX_S                              # one tools/call waits at most this long
 WAIT_DEFAULT_S = 30
-LISTS = ("questions", "todos", "stories", "to_pm")
+LISTS = ("questions", "todos", "stories", "to_pm", "pages")
 VIEWS = ("notices", "repos", "usage", "agents")
 ANY, AGENT = hubclient.ANY, hubclient.AGENT
 PAGE_SUFFIXES = (".html", ".htm")                           # the files hub_page_publish reads
@@ -103,6 +103,12 @@ _UNFILED = {"type": "string", "description": "Why a question bound to a record i
                                              "the filing can still be retried."}
 
 
+_PAGE_KIND = {"type": "string", "description": "What kind of document the page is (plan, spec, "
+                                               "research, ...): text, stored on its card."}
+_PAGE_FOLDER = {"type": "string", "description": "The folder the Docs tab files the page under: "
+                                                 "text, stored on its card."}
+
+
 def _obj(props, required=()):
     return {"type": "object", "properties": props, "required": list(required),
             "additionalProperties": False}
@@ -131,8 +137,8 @@ TOOLS = {
               "timeout_s": {"type": "number", "description": "Seconds to wait, at most 55."},
               "pending": {"type": "boolean"}, "for": _FOR}), "GET", "/wait", ANY),
     "hub_list": (
-        "The documents of one collection (GET /<collection>): questions, todos, stories or to_pm, "
-        "as {ok, items}; each item carries its id and version.",
+        "The documents of one collection (GET /<collection>): questions, todos, stories, to_pm or "
+        "pages (the page cards, no body), as {ok, items}; each item carries its id and version.",
         _obj({"collection": _one_of(LISTS, "The collection."),
               "status": {"type": "string", "description": "Only this status (all: every one)."},
               "repo": _REPO}, ["collection"]), "GET", "/{collection}", ANY),
@@ -268,7 +274,8 @@ TOOLS = {
         "a meta only charset utf-8 or name (%s) with content, a title only plain text; no on* "
         "handler, no URL that leaves the page (links are #fragments, images data: URIs, CSS "
         "url() data: or #); Mermaid must be rendered to inline svg first. Over a page already "
-        "published, give its version as if_version."
+        "published, give its version as if_version. kind and folder file it in the Docs tab "
+        "(hub_page_place changes them later)."
         % (pagecheck.MAX_BYTES, ', '.join(pagecheck.META_NAMES)),
         _obj({"id": {"type": "string", "description": "The page's id: letters, digits, . _ -; "
                                                       "never shaped like a hub item or a ruling "
@@ -277,10 +284,19 @@ TOOLS = {
               "html_file": {"type": "string", "description": "The absolute path of a UTF-8 HTML "
                                                              "file: the page's body."},
               "summary": {"type": "string"}, "repo": _REPO, "from": _FROM, "refs": _REFS,
+              "kind": _PAGE_KIND, "folder": _PAGE_FOLDER,
               "if_version": {"type": "integer", "description": "The version of the page you "
                                                                "are publishing over (absent for "
                                                                "a new page)."}},
              ["id", "title", "html_file"]), "POST", "/pages", AGENT),
+    "hub_page_place": (
+        "Sets a published page card's kind, folder and repo (POST /pages/<id>/place), at least "
+        "one of them; the body is never rewritten. if_version is the card's version (hub_list "
+        "collection pages, or the version hub_page_publish gave): a stale one is refused "
+        "(conflict).",
+        _obj({"id": {"type": "string", "description": "The page's id."},
+              "kind": _PAGE_KIND, "folder": _PAGE_FOLDER, "repo": _REPO, "if_version": _PIN},
+             ["id", "if_version"]), "POST", "/pages/{id}/place", AGENT),
     "hub_approval_request": (
         "Asks the owner to approve a change to files (POST /approvals), built here from a git "
         "checkout (kitlib.hubapprove): each file's base is its blob at head (none for a new "

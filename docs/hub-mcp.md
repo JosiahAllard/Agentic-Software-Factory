@@ -31,7 +31,7 @@ Endpoints are below `/api/v1` (`kitlib.hubsite.api.BASE`).
 |---|---|---|
 | `hub_pending` | `for` | `GET /pending` |
 | `hub_wait` | `since`, `timeout_s` (default 30, at most 55: `api.WAIT_MAX_S`), `pending`, `for` | `GET /wait` through `Client.wait` |
-| `hub_list` | `collection` (questions, todos, stories or to_pm), `status`, `repo` | `GET /<collection>` |
+| `hub_list` | `collection` (questions, todos, stories, to_pm or pages: the page cards, no body), `status`, `repo` | `GET /<collection>` |
 | `hub_inbox` | none | `GET /snapshot`, its inbox as `{ok, items}` (the api has no inbox list route) |
 | `hub_backlog` | `repo`, `state`, `fresh` | `GET /backlog` |
 | `hub_completed` | `repo`, `days` | `GET /completed` |
@@ -68,7 +68,8 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_story_set` | `id`, `status` (`api.AGENT_STORY_STATUSES`), `if_version`; `reviewer`, `review_note`, `backlog_id`, `closed_note` | `POST /stories/<id>` |
 | `hub_to_pm_reply` | `id`; `reply`, `if_version` | `POST /to_pm/<id>/reply` |
 | `hub_inbox_post` | `text`; `title`, `ref`, `asked`, `repo`, `from`, `refs` | `POST /inbox` |
-| `hub_page_publish` | `id`, `title`, `html_file`; `summary`, `repo`, `from`, `refs`, `if_version` | `POST /pages` |
+| `hub_page_publish` | `id`, `title`, `html_file`; `summary`, `repo`, `from`, `refs`, `kind`, `folder`, `if_version` | `POST /pages` |
+| `hub_page_place` | `id`, `if_version`; `kind`, `folder`, `repo` (at least one) | `POST /pages/<id>/place` |
 | `hub_approval_request` | `checkout`, `title`, `files` (`[{path, content_file}]`); `repo`, `head`, `reason`, `record` | `POST /approvals` |
 | `hub_handoff_ready` | `kind` (`handoff`, `restart`, `stop`, `checkin`), `state_path`, `from` | `POST /handoffs` |
 
@@ -102,8 +103,11 @@ relative path, a file that cannot be read or is not UTF-8 is `invalid`, field `h
 the file is opened or any call is made; a body `kitlib.hubsite.pagecheck.check` refuses is
 `invalid`, field `html`, also before any call (`Server._t_hub_page_publish`). Publishing over a page needs
 its card's version as `if_version`. What a body may hold, and why Mermaid must be drawn as svg
-first, is docs/action-hub.md "pages/<id> and page_html/<id>". No tool deletes a page: that is the
-owner's, in the Docs tab.
+first, is docs/action-hub.md "pages/<id> and page_html/<id>". `kind` and `folder` are text the
+card stores, for the Docs tab to file the page by; `hub_page_place` sets a card's `kind`, `folder`
+and `repo` later, pinned by its version (`hub_list` collection `pages` lists the cards with
+theirs; a stale pin is `conflict`), and never writes the body (`kitlib.hubsite.api.pages_place`).
+No tool deletes a page: that is the owner's, in the Docs tab.
 
 The `from` of `hub_ask` is the session the answer goes back to: a launcher session key or `pm`,
 the default when it is absent or blank. The hub refuses any other value, a free-text name

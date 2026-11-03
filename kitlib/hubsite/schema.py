@@ -53,7 +53,8 @@ FIELDS = {
         'status': _STR, 'repo': _STR, 'title': _STR, 'story': _STR, 'urgent': _BOOL,
         'from': _STR, 'submitted_at': _STR, 'reviewer': _STR, 'review_note': _STR,
         'backlog_id': _STR, 'added_at': _STR, 'closed_note': _STR, 'closed_at': _STR}),
-    'pages': (('title',), {'title': _STR}),
+    # kitlib.hubsite.api, "Pages": kind and folder, given at publish or by place
+    'pages': (('title',), {'title': _STR, 'kind': _STR, 'folder': _STR}),
     'page_html': (('html',), {'html': _STR}),
     'repos': ((), {'name': _STR, 'added_at': _STR, 'aliases': _LIST}),
     # kitlib.hubsite.approvals, "The document"; BY_KIND adds the fields of each kind

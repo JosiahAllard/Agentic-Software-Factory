@@ -110,7 +110,7 @@ class Webs(object):
 
     def _info(self, root):
         now, kept = self._clock(), self._kept.get(root)
-        path = kept[3] if kept else _config_path(root)      # git is asked for it once per root
+        path = kept[3] if kept and kept[3] else _config_path(root)   # git is asked once per root, again if it failed
         stamp = _stamp(path)
         if kept and kept[0] == stamp and now - kept[1] < REFRESH_S:
             return kept[2]

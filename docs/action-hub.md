@@ -1029,7 +1029,7 @@ The same list is the `repos` view of `GET /api/v1/snapshot`. Each entry of it al
 local path, or a GitHub path other than `owner/repo`, gives none of the three; GitLab subgroups are kept and `/-/` ends the project path): `web` is the remote as an `https://host/owner/repo` address (credentials, port,
 query and fragment dropped), `branch` the main branch (`.kit.json` `repo.main_branch`, else `main`, else `master`) and
 `top` the names at the root of that branch, at most 64 (`kitlib/hubsite/repoweb.py`). Git is asked once per checkout and
-again when the config file changes (a linked worktree's is the common git folder's) or after 10 minutes, never per poll; each call is cut off after 5 seconds.
+again when the config file changes (a linked worktree's is the common git folder's) or after 10 minutes, never per poll; repoweb's own git calls (remote, root names, the config path) are cut off after 5 seconds each. The main branch is found by the backlog's resolver (`kitlib.hubbacklog.main_branch`), with its own longer limits; its result is kept with the rest, so a slow lookup costs at most once per config change.
 
 ## schedules/<task>-<repo>
 When one of the kit's automatic tasks runs for one repo, set by the owner. The hub only stores and serves

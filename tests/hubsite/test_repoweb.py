@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from kitlib.git import cmd
 from kitlib.hubsite import repoweb
@@ -113,6 +114,23 @@ class WebsTests(unittest.TestCase):
         os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
         webs.annotate([{'name': 'w', 'aliases': []}])
         self.assertEqual(len(reads), 2)
+
+    def test_a_failed_config_lookup_is_asked_again_and_the_branch_lookup_runs_once_per_config(self):
+        main = self.repo('f', 'https://github.com/o/r')
+        tree = os.path.join(self.d, 'f-tree')
+        git(main, 'worktree', 'add', '-q', '-b', 'side', tree)
+        reads, asked = [], []
+        real = repoweb._config_path
+
+        def flaky(root):
+            asked.append(root)
+            return None if len(asked) == 1 else real(root)
+        webs = repoweb.Webs(lambda: [('f', tree)], clock=lambda: 0.0, read=lambda r: reads.append(r) or {})
+        with mock.patch.object(repoweb, '_config_path', flaky):
+            for _ in range(3):
+                webs.annotate([{'name': 'f', 'aliases': []}])
+        self.assertEqual(len(asked), 2)             # the failed lookup was asked again, the good one kept
+        self.assertEqual(len(reads), 2)             # None stamp, then the real one; then no more reads
 
     def test_a_named_main_branch_and_the_cap_on_root_names(self):
         root = self.repo('m', 'https://github.com/o/r', branch='trunk')

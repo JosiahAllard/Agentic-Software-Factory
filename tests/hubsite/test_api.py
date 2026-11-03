@@ -5022,9 +5022,9 @@ class AnswerNoStoreTest(trw.Case):
 
 
 class EachModuleImportsFirst(unittest.TestCase):
-    """Each of the hub server's modules imports in a fresh interpreter as the first one: a cycle
-    (approvals -> client -> serve -> push -> approvals) breaks whichever is imported first, and
-    the test runner's own import order hides it."""
+    """Each of the hub server's modules imports in a fresh interpreter as the first one: an
+    import cycle (once approvals -> client -> serve -> push -> approvals) breaks whichever is
+    imported first, and the test runner's own import order hides it."""
 
     def test_each_module_imports_on_its_own(self):
         import sys

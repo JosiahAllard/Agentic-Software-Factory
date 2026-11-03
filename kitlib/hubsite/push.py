@@ -284,7 +284,7 @@ def approval_phase(doc, now):
     if status is None:
         return None
     if status == 'approved':
-        from kitlib.hubsite import approvals as ap   # here: approvals -> client -> serve -> push
+        from kitlib.hubsite import approvals as ap   # local: no cycle needs it now; kept
         end = ap.expires_at(doc)
         if end is not None and now >= end - datetime.timedelta(seconds=EXPIRING_LEAD_S):
             return 'expiring'

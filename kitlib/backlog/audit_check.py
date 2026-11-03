@@ -59,10 +59,11 @@ from .errors import Failure, Refusal
 OK, FINDINGS, NOT_CHECKED = 0, 1, 2
 
 # The sessions whose store writes add no line by design: kitlib.backlog.at_landing.SESSION,
-# kitlib.hubsite.recordwrite.SESSION, kitlib.dailyfull.file.SLUG and
-# kitlib.hubsite.recordwrite.CONDITION_SESSION (the hub's unblock of a met `until` condition;
-# tests/backlog/test_audit.py holds them equal).
-BY_DESIGN = ('gate-land', 'owner-hub', 'daily-full', 'hub-condition')
+# kitlib.hubsite.recordwrite.SESSION, kitlib.dailyfull.file.SLUG,
+# kitlib.hubsite.recordwrite.CONDITION_SESSION (the hub's unblock of a met `until` condition) and
+# kitlib.hubsite.recordwrite.PARK_SESSION (the hub's block of a record on a question bound to it,
+# as the owner's proxy; tests/backlog/test_audit.py holds them equal).
+BY_DESIGN = ('gate-land', 'owner-hub', 'daily-full', 'hub-condition', 'hub-park')
 
 # The one writer of an `answer:` line (kitlib.hubsite.recordwrite.SESSION), the commit subject
 # that may carry one it left uncommitted (store.catch_up), and the hub question statuses that hold

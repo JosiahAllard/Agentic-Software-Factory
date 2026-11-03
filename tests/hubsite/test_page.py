@@ -245,6 +245,19 @@ class PlaceTest(httpfix.ListenerCase):
                                  (400, "invalid", field))
         self.assertEqual(self.card()["version"], 1)
 
+    def test_a_republish_keeps_a_placed_kind_and_folder_unless_it_gives_them(self):
+        self.publish()
+        self.assertEqual(self.place({"kind": "spec", "folder": "x", "if_version": 1}).status, 200)
+        r = post(self.lis.port, BASE + "/pages", {"id": "plan-1", "title": "Again",
+                                                  "html": "<p>b</p>", "if_version": 2},
+                 token=self.agent)
+        self.assertEqual(r.status, 200, r.body)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"], card["title"]), ("spec", "x", "Again"))
+        self.publish(kind="plan", if_version=3)
+        card = self.card()
+        self.assertEqual((card["kind"], card["folder"]), ("plan", "x"))
+
     def test_place_on_a_page_that_is_not_there_is_not_found(self):
         r = self.place({"kind": "plan", "if_version": 1})
         self.assertEqual((r.status, r.code()), (404, "not_found"))

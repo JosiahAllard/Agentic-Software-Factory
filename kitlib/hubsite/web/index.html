@@ -78,6 +78,7 @@ input[type=search]{font:500 .8125rem var(--f-body);padding:5px 10px;border-radiu
 .meter{display:grid;gap:4px}
 .meter .lab{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--muted)}
 .meter .pct{font:600 .9rem var(--f-mono);font-variant-numeric:tabular-nums;color:var(--fg)}
+.meter .rst{font-size:.75rem;color:var(--muted)}
 .meter .track{height:8px;border-radius:999px;background:var(--line);overflow:hidden}
 .meter .fill{height:100%;border-radius:999px;background:var(--accent)}
 .meter.high .fill{background:var(--rec)} .meter.high .pct{color:var(--rec)}
@@ -653,14 +654,23 @@ ul.hist .sch-line{display:block}
   const usageChip = t => t.pct < 0 ? "–" : t.pct + "% " + t.win + " · " + (/^\d+$/.test(t.account) ? "acct " + t.account : t.account) + (t.stale ? " · stale" : "");
   function pctOf(v){ const n = typeof v === "number" ? v : parseFloat(v); return isNaN(n) ? -1 : Math.round(n); }
   // An unknown reading is "?" with an empty bar, never 0%; a stale one keeps its figure, dimmed and marked.
-  function meter(label, v, stale){
+  function meter(label, v, stale, resetAt){
     const n = pctOf(v), shown = (n < 0 ? (v === "reset" ? "0%" : "?") : n + "%") + (stale && n >= 0 ? " (stale)" : ""), w = n < 0 ? 0 : Math.min(100, n);
     const fill = el("div", {class:"fill"}); fill.style.width = w + "%";      // set through the style object, so the page has no inline style attribute
     return el("div", {class: "meter" + (n >= 95 ? " crit" : n >= 90 ? " high" : "") + (stale ? " stale" : "")},
       el("div", {class:"lab"}, el("span", {text: label}), el("span", {class:"pct", text: shown})),
+      el("div", {class:"rst", "data-reset": typeof resetAt === "string" ? resetAt : "", text: resetText(resetAt, Date.now())}),
       el("div", {class:"track", role:"meter", "aria-label": label, "aria-valuemin":"0", "aria-valuemax":"100", "aria-valuenow": String(w)}, fill));
   }
+  // The page redraws only when something changed, so a countdown would outlive its reset: every 30 s each shown reset is
+  // worked out again from the clock (a reset that has passed turns to "reset unknown").
+  function tickResets(){
+    for (const n of document.querySelectorAll(".meter .rst[data-reset]")) n.textContent = resetText(n.getAttribute("data-reset"), Date.now());
+    setTimeout(tickResets, 30000);
+  }
+  let resetTick = false;
   function renderUsage(){
+    if (!resetTick) { resetTick = true; setTimeout(tickResets, 30000); }
     const rows = state.usage.filter(u => u.account).sort((a,b) => String(a.account).localeCompare(String(b.account), [], {numeric:true}));
     if (!rows.length) { show(["usage"], state.gone.usage ? null : el("div", {class:"empty"}, el("strong", {text: ready ? "No usage to show" : "Usage needs the hub server"}), "Each account's five-hour and weekly usage is read on this machine when the page loads.")); return; }
     const at = settle(rows.map(u => ["usage", { ...u, id: u.account }]));
@@ -678,8 +688,8 @@ ul.hist .sch-line{display:block}
     const stale = u.stale || age == null || age > 60;      // 60: kitlib.pmwatch STALE_MINUTES
     return el("article", {class: "acct", id: "u-" + u.account},
       el("h3", {}, el("span", {text: /^\d+$/.test(String(u.account)) ? "Account " + u.account : String(u.account)})),
-      meter("Five-hour", u.five_hour, u.stale),
-      meter("Weekly", u.seven_day, u.stale),
+      meter("Five-hour", u.five_hour, u.stale, u.five_reset),
+      meter("Weekly", u.seven_day, u.stale, u.week_reset),
       el("div", {class: "foot" + (stale ? " stale" : ""), text: u.missing ? "No usage file: no session on this account has written one" : u.measured_at ? "Measured " + when(u.measured_at) + (age != null && age > 60 ? " (" + (age >= 1440 ? Math.round(age / 1440) + " d" : Math.round(age / 60) + " h") + " old, stale)" : "") : "Measurement time unknown"}));
   }
 
@@ -1065,7 +1075,7 @@ ul.hist .sch-line{display:block}
     // Each reading carries its own age (minutes before as_of): an old usage file is shown as old, not as read now. No
     // age (unknown, or a server from before ages) leaves the time unknown, or as_of for an older server's payload.
     const readAt = v => { if (!("age" in v)) return u.as_of; const t = Date.parse(u.as_of); return Number.isInteger(v.age) && !isNaN(t) ? new Date(t - v.age * 60000).toISOString() : null; };
-    const usage = Object.entries(obj(u.accounts)).map(([account, v]) => ({ id: account, account, five_hour: pct(obj(v).five), seven_day: pct(obj(v).week), measured_at: readAt(obj(v)), ...(obj(v).stale === true ? {stale: true} : {}), ...(obj(v).missing === true ? {missing: true} : {}) }));
+    const usage = Object.entries(obj(u.accounts)).map(([account, v]) => ({ id: account, account, five_hour: pct(obj(v).five), seven_day: pct(obj(v).week), measured_at: readAt(obj(v)), ...(obj(v).five_reset !== undefined ? {five_reset: obj(v).five_reset} : {}), ...(obj(v).week_reset !== undefined ? {week_reset: obj(v).week_reset} : {}), ...(obj(v).stale === true ? {stale: true} : {}), ...(obj(v).missing === true ? {missing: true} : {}) }));
     const agents = list(a.agents).map(x => ({ id: String(x.name || ""), model: x.model, effort: x.effort === "-" ? "" : x.effort, role: x.description }));
     const skills = list(sk.skills).map(x => ({ id: String(x.name || ""), description: x.description }));
     const pages = pageRows(col);
@@ -1103,6 +1113,15 @@ ul.hist .sch-line{display:block}
   const hubDone = d => !!d && d.status === "done" && d.done_by === "hub";
   // A filed answer the owner may still make a standing rule: the same route with standing and no choice.
   const canPromote = d => qBound(d) && (d.status === "filed" || hubDone(d)) && !d.standing;
+  // The next reset of a usage window: local time and a countdown, from the UTC time the hub serves. A missing, unreadable
+  // or already-past time is "reset unknown": a reset that has gone by is not the next one.
+  const resetText = (iso, nowMs) => {
+    const t = typeof iso === "string" && iso ? Date.parse(iso) : NaN, ms = t - nowMs;
+    if (isNaN(t) || !(ms > 0)) return "reset unknown";
+    const m = Math.round(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    const left = m < 60 ? m + " m" : h < 48 ? h + " h " + (m % 60) + " m" : d + " d " + (h % 24) + " h";
+    return "resets " + new Date(t).toLocaleString([], {weekday:"short", hour:"2-digit", minute:"2-digit"}) + " · in " + left;
+  };
   // pm-pure:end
 
   // An act note keeps its kind (the server refuses a change to or from act): its form offers no kind and its Save

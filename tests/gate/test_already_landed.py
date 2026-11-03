@@ -11,6 +11,7 @@ no longer produced. A STUCK report (a push git cannot settle) never says reset.
 The merged gate is injected: it plays the owner, committing in the main checkout and pushing.
 Scratch repositories with a bare remote in temp and the scratch lock store only."""
 import os
+import re
 import sys
 import unittest
 from unittest import mock
@@ -23,6 +24,15 @@ from tests.gate.test_land import BRANCH
 from tests.gate.test_land_store import StoreLandCase, pulled
 from tests.gate.test_stuck import _Stuck, commands, joined
 from tests.realgit import real_git
+
+# `reset` as a word of its own: a checkout path such as `.../worktrees/x-reset` is not a printed
+# git reset (the break-lock command carries the checkout path).
+RESET = re.compile(r'(?<![\w\\/.-])reset\b', re.I)
+
+
+def says_reset(text):
+    return bool(RESET.search(text))
+
 
 GREEN = G.Outcome(G.OK, ['GATE OK'], verdict='GATE OK', results=[])
 RED = G.Outcome(G.FAILED, ['GATE FAILED: unit (unit: exit 1)'], verdict='GATE FAILED: unit',
@@ -86,7 +96,7 @@ class _OnTop(_Stuck):
         self.assertTrue(out.lines[-1].startswith('NOT LANDED: '), out.lines)
         self.assertFalse([l for l in out.lines if l.startswith(('LANDED', 'STUCK', 'WARNING'))],
                          out.lines)
-        self.assertNotIn('reset', text.lower(), out.lines)
+        self.assertFalse(says_reset(text), out.lines)
         self.assertEqual(self.remote_main(), self.extra)
         self.assertEqual(self.repo.git('rev-parse', 'refs/remotes/origin/main'), self.extra)
         self.assertTrue(out.merge)
@@ -101,7 +111,7 @@ class _OnTop(_Stuck):
         that already holds the merge (the hub-validate landing printed `reset --keep <base>`). The
         lock is left at phase stuck."""
         self.assertEqual(out.code, G.STUCK, out.lines)
-        self.assertNotIn('reset', joined(out).lower(), out.lines)
+        self.assertFalse(says_reset(joined(out)), out.lines)
         self.assertEqual(self.lock().read()['phase'], 'stuck')
 
     def run_printed(self, out):
@@ -193,7 +203,7 @@ class OwnerWorkKept(_OnTop):
         self.assertEqual(out.code, G.FAILED, out.lines)
         self.assertTrue(out.lines[-1].startswith('NOT LANDED: '), out.lines)
         self.assertNotIn('without a passing', joined(out))
-        self.assertNotIn('reset', joined(out).lower())
+        self.assertFalse(says_reset(joined(out)), out.lines)
         self.assertEqual(self.records(), [])
         self.assertEqual(self.main_now(), self.extra)
         self.assertEqual(self.remote_main(), self.extra)

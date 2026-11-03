@@ -364,6 +364,28 @@ class StateTest(unittest.TestCase):
         self.assertEqual(got["usage"], [{"id": "one", "account": "one", "five_hour": 12, "seven_day": 95, "measured_at": NOW}])
         self.assertEqual([(a["id"], a["role"], a["model"], a["effort"]) for a in got["agents"]], [("worker", "builds", "m", "")])
 
+    def test_usage_reset_times_pass_through_only_when_given(self):
+        got = js("hubState(items).usage", snapshot(views={"usage": {"available": True, "as_of": NOW, "accounts": {
+            "one": {"five": 12, "week": 95, "five_reset": "2026-10-07T15:00:00+00:00", "week_reset": None},
+            "two": {"five": 1, "week": 2}}}}))
+        rows = {u["id"]: u for u in got}
+        self.assertEqual((rows["one"]["five_reset"], rows["one"]["week_reset"]), ("2026-10-07T15:00:00+00:00", None))
+        self.assertNotIn("five_reset", rows["two"])
+
+    def test_reset_text_shows_local_time_and_a_countdown(self):
+        def rt(iso, now="Date.parse('%s')" % NOW):
+            return node_json(block() + "\nconsole.log(JSON.stringify(resetText(%s, %s)));" % (json.dumps(iso), now))
+        known = rt("2026-10-07T15:20:00Z")
+        self.assertTrue(known.startswith("resets "), known)
+        self.assertTrue(known.endswith(" · in 3 h 20 m"), known)
+        self.assertTrue(rt("2026-10-07T12:45:00Z").endswith(" · in 45 m"))
+        self.assertTrue(rt("2026-10-10T15:00:00Z").endswith(" · in 3 d 3 h"))
+
+    def test_reset_text_is_unknown_for_a_missing_unreadable_or_past_time(self):
+        for bad in (None, "", "not a time", "2026-10-07T11:59:00Z", NOW):
+            got = node_json(block() + "\nconsole.log(JSON.stringify(resetText(%s, Date.parse('%s'))));" % (json.dumps(bad), NOW))
+            self.assertEqual(got, "reset unknown", bad)
+
     def test_the_pm_line_is_information(self):
         seen = lambda **kw: dict({"waited": None, "pulled": None, "waiting": 0}, **kw)   # noqa: E731
         say = lambda s: js("pmSeenText(items, %s)" % NOW_MS, s)                           # noqa: E731
@@ -1817,6 +1839,40 @@ class DomTest(unittest.TestCase):
         self.assertIn("stale", got["oneFoot"])
         self.assertEqual(got["two"], ["?", "?"])
         self.assertEqual(got["twoFoot"], "No usage file: no session on this account has written one")
+
+    def test_each_usage_meter_shows_its_next_reset_or_unknown(self):
+        accounts = {"1": {"five": 40, "week": 71, "age": 0, "five_reset": "2099-01-01T10:00:00+00:00", "week_reset": "2000-01-01T10:00:00+00:00"},
+                    "2": {"five": None, "week": None, "age": None, "stale": True, "missing": True}}
+        got = dom("""
+            await start();
+            const out = {};
+            await click($("#row-1")); out.one = $$("#pane-detail .meter .rst").map(text);
+            await click($("#row-2")); out.two = $$("#pane-detail .meter .rst").map(text);
+            return out;
+        """, snapshot(views={"usage": {"available": True, "as_of": NOW, "accounts": accounts}}), hash="#usage")
+        self.assertTrue(got["one"][0].startswith("resets ") and " · in " in got["one"][0], got["one"])
+        self.assertEqual(got["one"][1], "reset unknown")          # a reset already past is not shown as the next one
+        self.assertEqual(got["two"], ["reset unknown", "reset unknown"])
+
+    def test_the_reset_countdown_follows_the_clock_between_redraws(self):
+        accounts = {"1": {"five": 40, "week": 71, "age": 0, "five_reset": "2099-01-01T10:00:00+00:00", "week_reset": "2099-01-01T10:00:00+00:00"}}
+        got = dom("""
+            Date.now = () => Date.parse("2099-01-01T09:20:00Z");
+            await start();
+            await click($("#row-1"));
+            const rst = () => $$("#pane-detail .meter .rst").map(text);
+            const out = { before: rst() };
+            Date.now = () => Date.parse("2099-01-01T09:50:00Z");
+            timers.filter(t => t.fn.name === "tickResets").forEach(t => t.fn());
+            out.later = rst();
+            Date.now = () => Date.parse("2099-01-01T10:01:00Z");
+            timers.filter(t => t.fn.name === "tickResets").forEach(t => t.fn());
+            out.after = rst();
+            return out;
+        """, snapshot(views={"usage": {"available": True, "as_of": NOW, "accounts": accounts}}), hash="#usage")
+        self.assertTrue(got["before"][0].endswith("· in 40 m"), got["before"])
+        self.assertTrue(got["later"][0].endswith("· in 10 m"), got["later"])
+        self.assertEqual(got["after"], ["reset unknown", "reset unknown"])
 
     def test_a_usage_tie_goes_to_the_weekly_window_whichever_account_has_it(self):
         def chip(accounts):

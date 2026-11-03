@@ -150,7 +150,8 @@ def ready(env=None, which=shutil.which, globber=glob.glob, run=None, platform=No
 
 def launch_argv(exe, port):
     """The command that starts a background Blender serving the add-on on 127.0.0.1:port. The
-    add-on needs --online-mode even on loopback; --command takes the rest of the line, so it
-    comes last."""
-    return [exe, '--background', '--command', COMMAND, '--host', '127.0.0.1', '--port', str(port),
-            '--online-mode']
+    add-on needs Blender's --online-mode even on loopback. --command hands the rest of the line
+    to the add-on's own parser, which refuses any option but --host and --port, so Blender's
+    options come before it and --command comes last."""
+    return [exe, '--background', '--online-mode', '--command', COMMAND, '--host', '127.0.0.1',
+            '--port', str(port)]

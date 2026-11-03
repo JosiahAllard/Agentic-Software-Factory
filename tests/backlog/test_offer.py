@@ -311,6 +311,16 @@ class FilesSection(unittest.TestCase):
                 self.assertIsNone(paths)
                 self.assertTrue(why)
 
+    def test_a_list_item_of_another_shape_cannot_be_read(self):
+        # Read as prose, a `+` or numbered item would leave a partial plan.
+        for item in ('+ `kit/b.py`', '1. `kit/b.py`', '2) kit/b.py', '+'):
+            with self.subTest(item=item):
+                paths, why = omod.files_section('## Files\n- kit/a.py\n%s\n' % item)
+                self.assertIsNone(paths)
+                self.assertIn('another list shape', why)
+        self.assertEqual(omod.files_section('## Files\n- kit/a.py\n2026 was the year.\n'),
+                         (['kit/a.py'], None))
+
     def test_an_item_that_is_not_one_path_cannot_be_read(self):
         # Reading `edit` or `kitlib/x/b.py:` as the path would leave the real file unprotected.
         for item in ('- edit `kitlib/x/b.py`', '- kitlib/x/b.py: rewrite', '- kit/a.py the reason',
@@ -401,11 +411,11 @@ class NextNarrows(unittest.TestCase):
     """`next_offer(narrow=...)`: a record whose only collision is one live pull is offered with
     the split, at its rank, taking only the scope it keeps."""
 
-    def narrow(self, protected, plan=True, seen=None):
+    def narrow(self, protected, plan=True, seen=None, tree=TREE):
         def narrow(rec, other):
             if seen is not None:
                 seen.append((rec.id, other.id))
-            return omod.split(rec.all('scope'), other, protected, TREE, plan)[0]
+            return omod.split(rec.all('scope'), other, protected, tree, plan)[0]
         return narrow
 
     def offer(self, s, holding, **kw):
@@ -441,6 +451,22 @@ class NextNarrows(unittest.TestCase):
                                 {'kit/b': [('kit/b', ['kit/a.py'])]}, {})
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith('NARROW FOO (rank 2): kit/a.py collides'), lines)
+
+    def test_a_record_offered_above_keeping_a_live_pulls_string_is_its_own_holder(self):
+        # HOLD's plan is all under other/: R (rank 1) is narrowed and keeps kit/**, the very
+        # string HOLD holds. C then hits kit/** twice, HOLD's and R's: judged by who took each
+        # entry, not by the string, so C is not narrowed onto R's kit/.
+        tree = TREE + ['other/x.py', 'other/y.py']
+        s = snap(live(scope=['kit/**', 'other/**']),
+                 priced('R', priority='1', scope='kit/**'),
+                 priced('C', priority='3', scope='kit/a.py'))
+        seen = []
+        offers, passed = self.offer(s, [s.get('HOLD')],
+                                    narrow=self.narrow(['other/x.py'], seen=seen, tree=tree))
+        self.assertEqual([o.rec.id for o in offers], ['R'])
+        self.assertEqual(offers[0].split.keep, ['kit/**'])
+        self.assertEqual(seen, [('R', 'HOLD')])
+        self.assertIn('C', passed)
 
     def test_a_member_two_live_pulls_hold_is_no_narrowing(self):
         s = snap(live(), live('HOLD2', scope='kit/**', by='kit/c'),

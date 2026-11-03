@@ -150,6 +150,7 @@ class Grammar(unittest.TestCase):
                      'free text'):
             self.assertIsNone(condmod.owner_error('owner', text), text)
         self.assertIsNone(condmod.owner_error('live-client', 'path:%s exists' % ABS))
+        self.assertIsNone(condmod.owner_error('live-client', 'approval:A-1 decided'))
 
 
 BLOCKED = dict(state='blocked', blocked_on='live-client')

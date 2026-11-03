@@ -721,9 +721,9 @@ class Api(object):
         # the request thread; set by serve.build. None runs it in the question's own call
         # (questions_add, questions_edit, questions_delete)
         self.park_later = None
-        # held by every record write a question drives (file_answer, park_question,
-        # unpark_question): each reads the question and writes the record as one step, so a park
-        # and the filing or withdrawal of the same question never interleave. serve.build sets a
+        # held by every record write an ask drives (file_answer, park_item, unpark_item): each
+        # reads the ask and writes the record as one step, so a park and the filing or
+        # withdrawal of the same ask never interleave. serve.build sets a
         # threading.RLock with file_later and park_later; without them every such write runs in
         # its request's own call, so a context that holds nothing does
         self.record_lock = contextlib.nullcontext()
@@ -1204,7 +1204,7 @@ def _session_from(api, who, what):
 
 def questions_add(api, req):
     """A new open question: `record` (the backlog record its answer is filed into) or `class`
-    (_class) is required. A bound question parks its record (park_question: blocked on the owner
+    (_class) is required. A bound question parks its record (park_item: blocked on the owner
     until it is answered), off the request when the server runs it later. A class-only question
     whose `refs` name a record pulled in a configured repository is stored, with a warning that
     the record goes on unparked (_pulled_refs)."""
@@ -1375,7 +1375,7 @@ def file_answer(api, doc_id, via='api', full=False):
     that code, nothing marked. A failure with the code and phrase the question's `filing` has
     already writes nothing: its version and revision are those it has. The record write is
     idempotent (kitlib.hubsite.recordwrite answer), so a crash anywhere in between is mended by
-    filing again. It runs under Api.record_lock, as park_question and unpark_question do."""
+    filing again. It runs under Api.record_lock, as park_item and unpark_item do."""
     with api.record_lock:
         return _file_answer(api, doc_id, via, full)
 
@@ -1591,9 +1591,6 @@ def park_item(api, doc_id, via='hub'):
                 'revision': r.revision}
 
 
-park_question = park_item           # the name a question's park was first known by
-
-
 def unpark_item(api, doc_id, record):
     """The ask doc_id is gone from `record` ({repo, id}): withdrawn or deleted, or (a question)
     edited to another record or none. Drop the record's `until: owner <condition>` line
@@ -1616,9 +1613,6 @@ def unpark_item(api, doc_id, record):
             return {'code': e.code}
         except Exception:           # noqa: BLE001 - a view is another module's code
             return {'code': 'internal'}
-
-
-unpark_question = unpark_item
 
 
 def _park_now(api, doc_id, out, via):

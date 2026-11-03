@@ -9,9 +9,11 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib.backlog import conditions as condmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.hubjobs import unblock_conditions as U
+from kitlib import hubvalidate
 from kitlib.hubsite import approvals, jobs, recordwrite
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
@@ -253,6 +255,28 @@ class Approvals(Case):
         restarted = Ctx()
         self.job()(restarted)           # a hub restart: a new job pushes it once more
         self.assertEqual(restarted.events, [(U.EXPIRED_EVENT, 'kit:EXP:%s' % aid(5))])
+
+    def test_an_approval_line_on_another_member_ends_and_expires_the_same_way(self):
+        self.seed(rec('LIV', state='blocked', blocked_on='live-client',
+                      until='live-client approval:%s decided' % aid(4)),
+                  rec('LXP', state='blocked', blocked_on='live-client',
+                      until='live-client approval:%s decided' % aid(5)))
+        self.assertIsNone(condmod.owner_error('live-client', 'approval:%s decided' % aid(4)))
+        ctx = Ctx()
+        self.job()(ctx)
+        self.assertIn((U.EVENT, 'kit:LIV'), ctx.events)
+        self.assertIn((U.EXPIRED_EVENT, 'kit:LXP:%s' % aid(5)), ctx.events)
+        self.assertEqual(self.get('LIV').get('state'), 'open')
+        self.assertEqual((self.get('LXP').get('state'), self.get('LXP').all('blocked_on')),
+                         ('blocked', ['live-client']))
+
+    def test_decided_is_the_approvals_decided_statuses(self):
+        # kitlib.backlog may not import the hub, so its copy is pinned here
+        self.assertEqual(sorted(condmod.DECIDED),
+                         sorted((approvals.APPROVED, approvals.DENIED, approvals.CONSUMED)))
+        self.assertTrue(set(condmod.DECIDED) < set(hubvalidate.STATUSES['approvals']))
+        self.assertEqual(set(hubvalidate.STATUSES['approvals']) - set(condmod.DECIDED),
+                         {approvals.PENDING, approvals.EXPIRED})
 
     def test_the_readers(self):
         r = U.Readers(self.hub, self.plugins, None)

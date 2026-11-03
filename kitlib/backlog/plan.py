@@ -1316,7 +1316,7 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     # answer drops its own line, and the hold ends when no owner line is left, whatever
     # `owner_ask` cites or `waiting` lists: the unblock-conditions job reads only the lines, so
     # the two writers agree, and a question still open whose park has not run parks the record
-    # again with its own line (kitlib.hubsite.api park_question).
+    # again with its own line (kitlib.hubsite.api park_item).
     owner_lines = [c for m, c in rmod.until_lines(rec) if m == condmod.SEVERAL]
     if state == 'blocked' and 'owner' in rec.all('blocked_on') and owner_lines:
         mine = 'question:%s answered' % qid

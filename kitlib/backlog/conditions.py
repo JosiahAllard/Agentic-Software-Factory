@@ -76,8 +76,9 @@ def split(value):
 
 
 def kind_of(text):
-    """The form `text` names by its prefix (`todo`, `question`, `record`, `path`, `plugin`), or
-    None: read before the text is parsed, so a malformed `path:...` is still a path condition."""
+    """The form `text` names by its prefix (`todo`, `question`, `approval`, `record`, `path`,
+    `plugin`), or None: read before the text is parsed, so a malformed `path:...` is still a path
+    condition."""
     prefix, sep, _ = (text or '').partition(':')
     return prefix if sep and prefix in KINDS else None
 

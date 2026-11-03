@@ -46,6 +46,9 @@ the owner's is `main`, held to the mode `main` is given.
                   name the shell or code builds at run time: the rule catches mistakes, not an
                   adversary. A lock MCP tool (lock_mcp_tool) whose verb (MCP_VERBS) is outside the
                   mode's verbs, or that the lock server does not have, is refused too
+    role-blender  a Blender bridge tool that runs Python or writes a file (BLENDER_WRITES:
+                  blender_exec, blender_render; blender_mcp_tool) called by a read, test or lander
+                  role, under the bridge's server name or any other (docs/blender-mcp.md)
   context(action, ctx)  the Ctx the shared rules then use: for a read, test or lander role, a view
                   whose .kit.json guard.data_roots also hold, read-only, every host's owner paths
                   (hosts.json profile owner_paths) in the session's checkout, and for a read or test
@@ -88,6 +91,8 @@ RULES = (
     ('role-shell', MODES, 'no interactive interpreter: a shell, cmd, PowerShell or python is given '
                           'the script or command to run'),
     ('role-lock', MODES, 'the machine lock only through its mode\'s verbs, and never with --force'),
+    ('role-blender', NO_EDIT, 'no blender_exec or blender_render: they run Python and write files as '
+                              'the session\'s user'),
     ('write-jail', READ_ONLY_CHECKOUT, 'its checkout is read-only to the shell'),
     ('write-jail', OWNER_PATHS_READ_ONLY, 'every host\'s owner paths in its checkout are read-only'),
 )
@@ -109,6 +114,9 @@ MCP_VERBS = {'lock_snapshot': ('status',), 'lock_wait_change': ('status',), 'loc
              'lock_hold_edit': ('hold', 'edit'), 'lock_hold_end': ('hold', 'end'),
              'lock_set_game_mode': ('game', 'on'), 'lock_set_games': ('game', 'set'),
              'lock_set_division': ('division', 'set'), 'lock_end_run': ('stop',)}
+# The Blender bridge's tools (kitlib.blendermcp.TOOL_NAMES) that run any Python in a Blender or write
+# a file anywhere: refused to a role that edits nothing (rule role-blender).
+BLENDER_WRITES = ('blender_exec', 'blender_render')
 REAL_NOT_FORCE = ('--for',)   # a lock CLI option of its own (hold edit, window_args), not --force cut short
 STDIN_OPS = ('<', '<<', '<<<')
 # What an interpreter's own options say (shell_gap): it runs a script or command and ends, it reads
@@ -142,12 +150,12 @@ def enabled(cfg):
 
 def mode(action, ctx):
     """(role, mode) of the Action, mode None when the policy is off for it: an action no rule
-    here judges (only edits, shell calls and the lock's MCP tools are), the owner's own session
+    here judges (only edits, shell calls, the lock's MCP tools and BLENDER_WRITES are), the owner's own session
     (rules.is_owner_session), a session outside any checkout's .kit.json, a .kit.json
     that does not turn the policy on, or a role with no mode in the roles table or its role file."""
     if action is None or action.kind not in ('edit', 'shell', 'mcp'):
         return None, None
-    if action.kind == 'mcp' and lock_mcp_tool(action, ctx) is None:
+    if action.kind == 'mcp' and lock_mcp_tool(action, ctx) is None and blender_mcp_tool(action, ctx) is None:
         return None, None                       # an MCP call that is not the lock's: not judged here
     if rules.is_owner_session(action, ctx):
         return None, None                       # the owner's own session: no role, nothing read
@@ -176,6 +184,13 @@ def check(action, ctx):
         return None
     tag = rules.tag_role(action)
     if action.kind == 'mcp':
+        blender = blender_mcp_tool(action, ctx)
+        if blender is not None:
+            if m not in NO_EDIT:
+                return None
+            return _deny('role-blender', tag, 'The Blender tool %s runs Python or writes a file as the session\'s '
+                         'user, and the %s role (mode %s) edits nothing: report what to render or run to '
+                         'your caller. To look at the scene:' % (blender, role, m), 'blender_inspect')
         name = lock_mcp_tool(action, ctx)
         said = MCP_VERBS.get(name)
         if said is not None and verb_allowed(list(said), LOCK_VERBS[m]):
@@ -493,6 +508,17 @@ def lock_mcp_tool(action, ctx):
     sep = rules.host_mcp_separator(ctx.host_profile())
     tail = tool.rsplit(sep, 1)[-1] if sep else tool
     return tail if tail in MCP_VERBS else None
+
+
+def blender_mcp_tool(action, ctx):
+    """The Blender bridge tool in BLENDER_WRITES an MCP Action calls, or None: the tool's name after
+    the host's separator (rules.host_mcp_separator), under the bridge's server name or any other."""
+    tool = action.tool or ''
+    if action.kind != 'mcp' or not tool:
+        return None
+    sep = rules.host_mcp_separator(ctx.host_profile())
+    tail = tool.rsplit(sep, 1)[-1] if sep else tool
+    return tail if tail in BLENDER_WRITES else None
 
 
 def rules_for(m):

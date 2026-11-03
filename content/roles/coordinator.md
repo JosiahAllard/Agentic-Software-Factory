@@ -7,7 +7,7 @@ sandbox: workspace-write
 mode: controller
 run: session
 summary: Main session, never a subagent. Splits work, dispatches agents, reviews branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code.
-capabilities: [dispatch, message, list-agents, stop-task, read, search, find, edit, write, powershell, bash, monitor, tool-search, skill, ask-owner, artifact, cron-create, cron-list, cron-delete]
+capabilities: [dispatch, message, list-agents, stop-task, read, search, find, edit, write, powershell, bash, monitor, tool-search, skill, cron-create, cron-list, cron-delete]
 ---
 
 You coordinate; agents build. Repo instructions ({{instructions_file}} or equivalent) load on top of this

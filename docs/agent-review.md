@@ -134,13 +134,13 @@ The definitions review found 13 cross-cutting findings and wrote one section per
 | A3 | No sleep or poll loops | Fixed: same skill, item 12 (a foreground `sleep` or poll loop is refused; wait as docs/gate.md says) |
 | A4 | Reviewer never checks out, switches, restores or resets | Open: `content/skills/specialty-review/SKILL.md` and `content/roles/analyst.md` carry no such ban |
 | A5 | Records may use backlog.py | Gone: the records type became the docs-writer |
-| A6 | Lander spawning a helper just to wait; keep the Agent tool? | Open: the rendered `hosts/claude/shell/agents/lander.md:5` tools line still lists `Agent` |
+| A6 | Lander spawning a helper just to wait; keep the Agent tool? | Kept: the lander keeps `Agent`, because it dispatches the test-runner |
 | A7 | A refused backlog write is reported, not retried with `--reason` | Fixed in part: skill `backlog-ops` "Refusals" (a refusal is final; one form-only retry by a fresh agent) |
 | A8 | Name `sync_base.py` for merges | Fixed: `content/skills/branch-sync/SKILL.md` step 3 |
 | A9 | Do not re-emit other agents' text | Open, not re-checked; no wording found |
 | A10 | "Gate green" on every commit becomes one full gate per branch | Fixed: `content/skills/builder/SKILL.md` item 7 (the gate comes after review, when the coordinator asks) |
 | B1 | Bare "Never" lines in 11 files | Not re-checked; the files were regenerated since |
-| B2 | Reword the pid-kill sentence to "do not kill; report" | Open, owner decision: "end only processes you started, by pid" is still in lander.md, weak-worker.md and test-runner.md |
+| B2 | Reword the pid-kill sentence to "do not kill; report" | Done: kill only a pid you started, never by name |
 | B3 | One shared builder block | Fixed in part: skill `builder` is the shared builder text. Moving rules out of a role lowers compliance on weaker tiers |
 | B4 | Reconcile lander.md with the land-branch skill | Not re-checked; lander.md runs `land.py ... --expect-tip <tip>`. Do not shorten lander.md without re-running the Haiku precedence test |
 | B5 | One rule for who closes a record | Not re-checked |
@@ -151,14 +151,14 @@ The definitions review found 13 cross-cutting findings and wrote one section per
 | C2 | Lander: keep haiku, medium | Kept: `hosts/claude/shell/agents/lander.md` is haiku, medium; never overridden |
 | C3 | Reviewer tier text for the owner's split | Fixed: roster.md "Reviewer model" (built 2026-10-18) |
 | C4 | Plan-shaped work on Opus coders: wording first, any tier move a trial | Fixed in part: plan-only goes to the worker (roster.md "Choosing"); no tier trial run |
-| C5 | Trim unused tools (AskUserQuestion, Artifact on coordinator; Agent and EnterWorktree on test-runner) | Open: `hosts/claude/shell/agents/coordinator.md` still lists AskUserQuestion and Artifact; test-runner lists EnterWorktree |
+| C5 | Trim unused tools (AskUserQuestion, Artifact on coordinator; Agent and EnterWorktree on test-runner) | Done for the coordinator. The test-runner keeps EnterWorktree, because its first step enters the given worktree |
 | C6 | Deep-worker auto-compact window 500k against about 366k seen | Open, unchanged: `content/roles/deep-worker.md:16` still says 500k and `content/roles/consultant.md:16` about 350k |
 | C7 | Test-runner has no effort key; note it in docs/ROSTER.md | Fixed: docs/ROSTER.md lists test-runner effort as `-` |
 | C8, C9 | No tier change for coordinator, consultant, deep-worker, builders; Haiku coding untouched | Unchanged |
 | D1, D2 | Worker's text routes networking to the wrong tier; "plan" means two things | Fixed: the worker, strong-worker and senior-worker descriptions now name each other's scope and send plan-only work to the worker |
 | D3 | Coordinator description said it "serialises landings" | Fixed: `content/roles/coordinator.md` says it queues every LAND verdict at once |
 | D4 | Coordinator has no fallback if dispatched as a subagent | Open, not re-checked |
-| D5 | Lander description lists the reviewed tip sha; reviewer description lists the gate report paths | Open for the lander description (it omits the tip); the reviewer is gone |
+| D5 | Lander description lists the reviewed tip sha; reviewer description lists the gate report paths | Done; the reviewer is gone |
 | F1 | The kit has no `.claude/coordinator-profile.md` | Fixed: `.claude/coordinator-profile.md` exists |
 
 Dropped on check at the review: the state note is covered by `docs/ops/*.local.md` in the ignore file (still true at the base).

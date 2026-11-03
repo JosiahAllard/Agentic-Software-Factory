@@ -57,8 +57,8 @@ true; `pm-kit:worker` takes it from there, the intended path, not a failure:
 - Never `reset --hard`, never `git clean`.
 - Never weaken a test or check for green.
 - Never rerun a failing run: only a flake on the repo's known-flake list gets one rerun; any other failing run is real.
-- Never kill a process by name or command-line match: other sessions' gates match too. End only a process you
-  started, by its pid, and only while it still has the start time you saw.
+- Never kill a process by name or command-line match: other sessions' gates match too. Kill only a pid you
+  started, and only while it still has the start time you saw.
 
 ## Report
 

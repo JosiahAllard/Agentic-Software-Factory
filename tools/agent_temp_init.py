@@ -1,5 +1,5 @@
 """agent_temp_init.py: set up the agents' temp folder alone, without the rest of a machine setup
-(docs/machine-setup.md "Agent temp init").
+(docs/machine-setup.md "Extras").
 
   agent_temp_init.py                 DRY RUN: print the plan (the folder, AGENT_TEMP, the
                                      agent_temp_sweep config key, the sweep task, the folder's ACL)

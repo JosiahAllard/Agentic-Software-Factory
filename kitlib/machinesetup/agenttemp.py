@@ -1,4 +1,4 @@
-"""The agents' temp folder (docs/machine-setup.md "Agent temp init"): the folder itself, the user
+"""The agents' temp folder (docs/machine-setup.md "Extras"): the folder itself, the user
 environment variable AGENT_TEMP naming it, the machine config's `agent_temp_sweep` key the sweep
 (optional/agenttemp/agent_temp_sweep.py) reads, and the scheduled task that runs the sweep. Each is
 read first and planned only when it differs. An existing config key or another AGENT_TEMP value is

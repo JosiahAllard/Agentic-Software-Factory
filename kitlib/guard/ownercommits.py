@@ -19,7 +19,11 @@ What a commit changes:
                        (`git merge-tree --write-tree`), plus every path that merge conflicts on:
                        a merge that only joins two histories changes nothing of its own, and one
                        that edits an owner-only path (an "evil merge") or resolves a conflict in
-                       one is judged by its author like any other commit
+                       one is judged by its author like any other commit; with `exclude`, a path
+                       the merge holds exactly as (mode and blob, or absent) a parent that is an
+                       ancestor of an `exclude` commit does is not counted: the merge took the
+                       copy already on main (a main sync), and the branch's own commits that
+                       changed the path are still judged one by one
   more parents         the union of its diffs against each parent (strict)
 
 The author email is git's `%ae` (never mailmapped), read with replace refs off (pushes do not carry
@@ -187,15 +191,43 @@ def net_change(root, tip, targets, env=None):
     return paths, None
 
 
-def changed(root, sha, parents, env=None):
-    """`(sorted paths the commit itself changes, None)` (module docstring), or `(None, why)`."""
+def _landed(root, parents, targets, env=None):
+    """`([parents that are an ancestor of a target], None)`, or `(None, why)`."""
+    found = []
+    for parent in parents:
+        for target in targets:
+            r = cmd.call(NOREPLACE + ['merge-base', '--is-ancestor', parent, target], root, env=env)
+            if r.rc not in (0, 1):
+                return None, 'git merge-base failed for %s and %s: %s' % (
+                    parent[:10], target[:10], r.err or 'exit %s' % r.rc)
+            if r.rc == 0:
+                found.append(parent)
+                break
+    return found, None
+
+
+def changed(root, sha, parents, env=None, targets=()):
+    """`(sorted paths the commit itself changes, None)` (module docstring; `targets`: violations'
+    `exclude`), or `(None, why)`."""
     if len(parents) <= 1:
         out, why = _git(root, ['diff-tree', '-r', '--root', '--no-commit-id', '--name-only',
                                '--no-renames', '-z', sha], env)
         return (None, why) if out is None else (sorted(set(_paths(out))), None)
     if len(parents) == 2:
         paths, why = _against_merge(root, sha, parents[0], parents[1], env)
-        return (None, why) if paths is None else (sorted(paths), None)
+        if paths is None:
+            return None, why
+        if paths and targets:
+            landed, why = _landed(root, parents, targets, env)
+            if landed is None:
+                return None, why
+            for parent in landed:
+                out, why = _git(root, ['diff', '--name-only', '--no-renames', '-z', parent, sha],
+                                env)
+                if out is None:
+                    return None, why
+                paths &= set(_paths(out))       # kept: what differs from that landed parent too
+        return sorted(paths), None
     paths = set()
     for parent in parents:
         out, why = _git(root, ['diff', '--name-only', '--no-renames', '-z', parent, sha], env)
@@ -278,7 +310,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         return None, why
     bad = []
     for sha, parents, author, values in judged:
-        paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env)
+        paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env,
+                                                                     exclude)
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]

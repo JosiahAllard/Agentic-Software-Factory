@@ -377,7 +377,8 @@ Notes on the table:
 - `hub.py pending` lists the owner input not yet handled: questions answered and not logged or done,
   stories submitted, To PM items sent, to-dos done or added by the owner without `pm_ack`, and
   approvals the owner decided that are not consumed (`kitlib.hubsite.store.pending_items`; an approved
-  one until it is consumed or expires 24 hours after the decision, a denied one for 24 hours after it).
+  one until it is consumed or expires, 30 days after the decision (24 hours for an op approval), a
+  denied one for 24 hours after it).
   Each item carries `from`, the session key it is for, and `route`, the key that is to handle it now
   (the line's `from=` and `to=`). A question or to-do is for the launcher session key it was posted
   `--from` while that key is still in sessions.json; everything else (a to-do's free-text `from`, the
@@ -456,8 +457,9 @@ store's git push (the `push` setting).
   "A standing rule"), a to-do done (or done again), a done to-do reopened, a to-do the owner added (to the
   PM only), a story the owner submitted (`submitted`, PM only), a skill edit the owner submitted
   (`submitted`), a note to the PM the owner sent (`sent`, PM only), an approval the owner approved or denied (`decided`), and an approval still approved and not
-  consumed 20 hours after the decision (`expiring`, `push.EXPIRING_S`), the one reminder before it
-  expires at 24 hours. Each item has a fingerprint (a question's phase, `answer.at`, a digest of the
+  consumed 4 hours before it expires (`expiring`, `push.EXPIRING_LEAD_S` before `approvals.expires_at`:
+  30 days after the decision for a file approval, 24 hours for an op one), the one reminder. A phase
+  that goes back from `expiring` to `decided` (an approval whose life grew, at a deploy) fires nothing. Each item has a fingerprint (a question's phase, `answer.at`, a digest of the
   answer and, once a standing rule, `standing.at`; a to-do's status and `done_at`; a story's status and
   `submitted_at`, and a skill edit's too; a note's status and `sent_at`; an approval's status, `decided_at` and phase, `decided`
   then `expiring`, read at the worker's clock each round), and only a changed fingerprint fires, so
@@ -1275,8 +1277,9 @@ Routes, below `/api/v1`:
   record drops its line from the record. The `from` is a claim: an
   approval stores none, so it is `pm` (`forbidden`, field `from`, for another).
 - GET `/approvals/{id}/verify` (agent): query `repo`, `head`, `files` (JSON `{path: blob}`) and an
-  optional `commit`; answers `{ok, valid, why}`, never the key or the sig. With `commit`, only an approval
-  consumed by that commit is valid.
+  optional `commit`; answers `{ok, valid, why}`, never the key or the sig. With `commit`, only a consumed
+  approval is valid, consumed by that commit or another: a rebuilt branch keeps its approval (the
+  approval's `commit` stays the first one consumed it).
 
 An approval of kind `op` approves one run of a delegated operation (docs/delegations.md "Hub approvals"),
 not a change. It has no `head`, `files` or `diff`, and holds instead:
@@ -1311,13 +1314,22 @@ diff. `delegated.py request` asks for one, and `delegated.py run --approval` ver
 The agent's side of an approval is `commit.py --owner-approval hub:A-<n>` (docs/commit.md "Owner
 approval"): it verifies, writes and commits the approved files, then consumes the approval for that commit
 and verifies it with the commit; `gate land` and the pre-push hook verify it again
-(`kitlib.guard.ownercommits`). An approval verifies for 24 hours after the decision, consumed or not
-(`approvals.APPROVED_TTL_S`).
+(`kitlib.guard.ownercommits`). A file approval, used or not, holds until it is spent or 30 days after
+the decision (`approvals.APPROVAL_LIFE_S`, through `approvals.approval_end`); an op approval for 24
+hours (`approvals.APPROVED_TTL_S`). Spent: a commit that main as last fetched
+(`refs/remotes/<remote>/<main>`) reaches carries its `Owner-Approval: hub:A-<n>` trailer
+(`approvals.spent`), so the change is on main; the guard refuses any other commit that carries it then.
+The guard judges a commit by its delta, not its exact parent: at the approval's base each approved path
+is its base blob, and at the commit each is what the approved change gives on the commit's parent
+(`approvals.delta_result`: the approved blob where the parent is the base or already the approved
+blob, else a clean `git merge-file` of the parent, the base and the approved content), as a regular
+file in the parent's mode (`approvals.delta_error`). So a branch rebuilt on a moved main still lands,
+and a commit that undoes or adds to the approved change does not.
 
 A decided approval that is not consumed is pending owner input ("Who handles a pending item"): for the
 coordinator of its repository and for the PM, until it is consumed or expires, and a denied one for 24
 hours after the decision. The server pushes it to both at the decision and, if it is still approved and
-not consumed, once more 20 hours after it ("Push notifications").
+not consumed, once more 4 hours before it expires ("Push notifications").
 
 An agent asks for one with `hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...]
 [--checkout DIR] [--repo R] [--head SHA] [--reason TEXT]`, or the MCP tool `hub_approval_request`

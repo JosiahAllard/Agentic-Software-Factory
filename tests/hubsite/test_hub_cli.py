@@ -1277,7 +1277,7 @@ class ApprovalsCase(VerbCase):
     def setUp(self):
         VerbCase.setUp(self)
         now = datetime.datetime.now(datetime.timezone.utc)
-        old = now - datetime.timedelta(seconds=approvals.APPROVED_TTL_S + 60)
+        old = now - datetime.timedelta(seconds=approvals.APPROVAL_LIFE_S + 60)
         files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'},
                  {'path': 'gone.md', 'base_blob': 'c' * 40, 'content': None}]
         live = approvals.new_doc('https://github.com/o/r', 'live one', 'a' * 40, files, now,

@@ -281,7 +281,8 @@ class VerifyOnTest(GitCase):
         doc = self.hub.docs['A-1']
         doc.update(ap.consume_fields(KEY, 'A-1', doc, commit, NOW))
         self.assertEqual(self.verify_on(parent, commit=commit), (True, ''))
-        self.assertEqual(self.verify_on(parent, commit='d' * 40), (False, ap.WHY_COMMIT))
+        # a rebuilt commit keeps the approval: consumed by any commit
+        self.assertEqual(self.verify_on(parent, commit='d' * 40), (True, ''))
 
 
 if __name__ == '__main__':

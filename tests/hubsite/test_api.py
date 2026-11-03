@@ -2975,7 +2975,7 @@ class ApprovalRouteTest(ApiCase):
                           query={'repo': self.URL, 'head': self.repo.initial, 'files': files})
             self.assertEqual((obj['valid'], obj['why']), (False, approvals.WHY_FILES), files)
 
-    def test_verify_with_a_commit_needs_the_approval_consumed_by_it(self):
+    def test_verify_with_a_commit_needs_the_approval_consumed(self):
         doc_id = self.add()['id']
         self.decide(doc_id)
         self.assertEqual(self.verify(doc_id, commit=self.COMMIT)['why'], approvals.WHY_COMMIT)
@@ -2984,7 +2984,9 @@ class ApprovalRouteTest(ApiCase):
         self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
                 {'commit': self.COMMIT, 'if_version': 2})
         self.assertIs(self.verify(doc_id, commit=self.COMMIT)['valid'], True)
-        self.assertEqual(self.verify(doc_id, commit='d' * 40)['why'], approvals.WHY_COMMIT)
+        # a rebuilt commit keeps the approval: consumed by any commit (spent is the client's)
+        self.assertIs(self.verify(doc_id, commit='d' * 40)['valid'], True)
+        self.assertEqual(self.store.get('approvals', doc_id)['commit'], self.COMMIT)
 
     def test_the_snapshot_carries_approvals(self):
         doc_id = self.add()['id']

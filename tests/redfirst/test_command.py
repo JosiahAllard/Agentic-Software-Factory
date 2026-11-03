@@ -1,8 +1,10 @@
 """The command runner kind (kitlib.redfirst.verdict command_argv, command_verdict; run.lock_kind):
 a test the repo's own command runs, an engine test say, with {selector} and the other
 placeholders filled in. The selector reaches the program as one argument, a batch file's words
-are refused as gradlew.bat's are, a run that names no test or writes no result is never RED, and
-the run books the machine lock as build unless the runner names another kind.
+are refused as gradlew.bat's are, a run that names no test or writes no result is never RED, a
+test that crashes is INCONCLUSIVE (exit 1 is RED only on a log line the runner's `assertion`
+matches, or a result file's assertion failure), and the run books the machine lock as build
+unless the runner names another kind.
 
 The end-to-end cases run a fake engine (ENGINE, a python script outside the fixture repository)
 that reads the test file and the base's src/calc.py in the throwaway tree, and book on the
@@ -27,7 +29,8 @@ ENGINE_RUNNER = {'glob': 'tools/engine_tests/*.cs', 'kind': 'command',
 
 # The fake engine: argv is <args file> <tree> <test path> <selector> [<result file>]. It writes its
 # argv to the args file, then runs the test named <selector> in the test file: a line
-# `test <name> needs <function>` passes when the tree's src/calc.py defines that function. A
+# `test <name> needs <function>` passes when the tree's src/calc.py defines that function, and
+# fails an assertion when it does not; a line `test <name> crashes` dies on an exception. A
 # result file it writes is dated a minute ahead, so only a delete keeps a later run from reading it.
 ENGINE = r'''import json, os, re, sys, time
 args_file, tree, path, selector = sys.argv[1:5]
@@ -35,21 +38,26 @@ result = sys.argv[5] if len(sys.argv) > 5 else None
 with open(args_file, 'w', encoding='utf-8') as f:
     json.dump(sys.argv[2:], f)
 with open(os.path.join(tree, *path.split('/')), encoding='utf-8') as f:
-    tests = dict(re.findall(r'^test (\S+) needs (\w+)$', f.read(), re.M))
+    tests = dict(re.findall(r'^test (\S+) (?:needs )?(\w+)$', f.read(), re.M))
 if selector not in tests:
     print('engine: no test named %s' % selector)
     sys.exit(1)
+crash = tests[selector] == 'crashes'
 with open(os.path.join(tree, 'src', 'calc.py'), encoding='utf-8') as f:
-    ok = re.search(r'^def %s\(' % tests[selector], f.read(), re.M) is not None
-print('engine: %s %s' % (selector, 'passed' if ok else 'FAILED'))
+    ok = not crash and re.search(r'^def %s\(' % tests[selector], f.read(), re.M) is not None
+print('engine: %s %s' % (selector, 'passed' if ok else 'CRASHED: NullReferenceException: boom'
+                         if crash else 'FAILED: expected 6, got None'))
 if result and result != '-':
+    case = ('' if ok else '<error type="NullReferenceException" message="boom"/>' if crash
+            else '<failure type="AssertionError" message="expected 6, got None"/>')
     with open(result, 'w', encoding='utf-8') as f:
-        f.write('<testsuites><testsuite name="%s" tests="1" failures="%d" errors="0"/></testsuites>'
-                % (selector, 0 if ok else 1))
+        f.write('<testsuites><testsuite name="%s" tests="1" failures="%d" errors="%d">'
+                '<testcase name="%s">%s</testcase></testsuite></testsuites>'
+                % (selector, 0 if ok or crash else 1, 1 if crash else 0, selector, case))
     os.utime(result, (time.time() + 60, time.time() + 60))   # fresh to any later run's clock
 sys.exit(0 if ok else 1)
 '''
-TEST_FILE = 'test MulWorks needs mul\ntest AddWorks needs add\n'
+TEST_FILE = 'test MulWorks needs mul\ntest AddWorks needs add\ntest MulCrashes crashes\n'
 
 
 def sel(text, runner=ENGINE_RUNNER):
@@ -118,13 +126,17 @@ class BatchFile(unittest.TestCase):
 
 class Verdicts(unittest.TestCase):
     PLAIN = {'command': ['x']}
+    ASSERTION = {'command': ['x'], 'assertion': r'^engine: \S+ FAILED'}
     NO_TEST = {'command': ['x'], 'no_test': r'^engine: no test named'}
     RESULT = {'command': ['x'], 'result': '{log_dir}/r.xml'}
 
-    def test_with_no_result_file_only_exit_1_is_red(self):
-        for rc, want in ((0, V.GREEN), (1, V.RED), (2, V.ERROR), (127, V.ERROR), (-1, V.ERROR)):
-            with self.subTest(rc=rc):
-                self.assertEqual(V.command_verdict(rc, '', self.PLAIN, None)[0], want)
+    def test_with_no_result_file_only_exit_1_with_an_assertion_line_is_red(self):
+        failed = 'engine: MulWorks FAILED: expected 6\n'
+        for rc, runner, want in ((0, self.PLAIN, V.GREEN), (1, self.PLAIN, 'INCONCLUSIVE'),
+                                 (1, self.ASSERTION, V.RED), (2, self.ASSERTION, V.ERROR),
+                                 (127, self.PLAIN, V.ERROR), (-1, self.PLAIN, V.ERROR)):
+            with self.subTest(rc=rc, runner=runner):
+                self.assertEqual(V.command_verdict(rc, failed, runner, None)[0], want)
 
     def test_a_log_that_says_no_test_matched_is_none(self):
         v, reason = V.command_verdict(1, 'engine: no test named X\n', self.NO_TEST, None)
@@ -132,8 +144,10 @@ class Verdicts(unittest.TestCase):
         self.assertIn('no_test', reason)
 
     def test_a_named_result_file_gives_the_verdict_and_its_absence_is_never_red(self):
-        for rc, counts, want in ((1, None, V.ERROR), (0, None, V.ERROR), (1, (0, 0), V.NONE),
-                                 (1, (3, 1), V.RED), (0, (3, 0), V.GREEN), (1, (3, 0), V.ERROR)):
+        failed = [('failure', 'AssertionError', 'x', 'T.a')]
+        for rc, counts, want in ((1, None, V.ERROR), (0, None, V.ERROR), (1, (0, 0, []), V.NONE),
+                                 (1, (3, 1, failed), V.RED), (0, (3, 0, []), V.GREEN),
+                                 (1, (3, 0, []), V.ERROR)):
             with self.subTest(rc=rc, counts=counts):
                 self.assertEqual(V.command_verdict(rc, '', self.RESULT, counts)[0], want)
 
@@ -145,8 +159,8 @@ class Verdicts(unittest.TestCase):
                         '<testsuite tests="3" failures="0" errors="1"/></testsuites>')
             with open(flat, 'w') as f:
                 f.write('<testsuite tests="4" failures="0" errors="0"/>')
-            self.assertEqual(V.junit_file_counts(wrapped), (5, 2))
-            self.assertEqual(V.junit_file_counts(flat), (4, 0))
+            self.assertEqual(V.junit_file_counts(wrapped), (5, 2, []))
+            self.assertEqual(V.junit_file_counts(flat), (4, 0, []))
             self.assertIsNone(V.junit_file_counts(flat, since=os.path.getmtime(flat) + 60))
             self.assertIsNone(V.junit_file_counts(os.path.join(d, 'none.xml')))
 
@@ -186,14 +200,14 @@ class EngineRun(LockCase):
 
 
 class EngineExitCode(EngineRun):
-    RUNNER_EXTRA = {'no_test': r'^engine: no test named'}
+    RUNNER_EXTRA = {'no_test': r'^engine: no test named', 'assertion': r'^engine: \S+ FAILED'}
 
     def test_a_test_that_fails_on_the_base_is_red_and_books_build(self):
         self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
         rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
         self.assertEqual(rc, V.EXIT_RED, out)
         self.assertRegex(out, r'(?m)^RED    tools/engine_tests/CalcTest.cs::MulWorks  the command '
-                              r'exited 1 ')
+                              r'exited 1 and a log line matches the runner.s assertion')
         self.assertIn('engine: MulWorks FAILED', self.log('1-command-CalcTest.log'))
         self.assertEqual(self.booked, [('build', 'fixture', self.slug)])
         self.assertIn('lock      build holds cpu slot', out)
@@ -204,6 +218,27 @@ class EngineExitCode(EngineRun):
         rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::AddWorks')
         self.assertEqual(rc, V.EXIT_GREEN, out)
         self.assertIn('REDFIRST NOT RED', out)
+
+    def test_a_test_that_crashes_on_the_base_is_inconclusive_not_ok(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulCrashes')
+        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
+        self.assertRegex(out, r'(?m)^INCONCLUSIVE tools/engine_tests/CalcTest.cs::MulCrashes  the '
+                              r'command exited 1, but no log line matches')
+        self.assertIn('REDFIRST INCONCLUSIVE', out)
+        self.assertNotIn('REDFIRST OK', out)
+
+
+class EngineExitCodeNoPattern(EngineRun):
+    """A command runner that names no `assertion`: exit 1 cannot tell a crash from an assertion."""
+
+    def test_a_failing_test_is_inconclusive_and_the_reason_names_the_key(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
+        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
+        self.assertRegex(out, r'(?m)^INCONCLUSIVE tools/engine_tests/CalcTest.cs::MulWorks  .*'
+                              r'names no assertion pattern')
+        self.assertNotIn('REDFIRST OK', out)
 
     def test_a_selector_that_names_no_test_is_none_never_red(self):
         self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
@@ -232,6 +267,13 @@ class EngineResultFile(EngineRun):
         self.assertRegex(out, r'(?m)^RED    tools/engine_tests/CalcTest.cs::MulWorks  1 of 1 '
                               r'test\(s\) failed ')
         self.assertTrue(os.path.isfile(os.path.join(self.logs, '1-CalcTest.xml')))
+
+    def test_a_crash_in_the_result_file_is_inconclusive(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulCrashes')
+        self.assertEqual(rc, V.EXIT_UNDECIDED, out)
+        self.assertRegex(out, r'(?m)^INCONCLUSIVE tools/engine_tests/CalcTest.cs::MulCrashes  .*'
+                              r'NullReferenceException')
 
 
 class EngineNoResult(EngineRun):

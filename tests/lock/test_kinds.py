@@ -102,7 +102,7 @@ class LiveTable(unittest.TestCase):
 
     def test_graph_build_history_before_its_start_does_not_count(self):
         # Its peaks before a game repository's --no-daemon change missed the Gradle daemon: its
-        # floor is its recorded max, and its history counts only from a start not yet reached.
+        # floor is its -Xmx10g heap plus 2 GB (measured peak 11157 MB), and its history counts only from a start not yet reached.
         g = kinds.load()['graph-build']
         self.assertEqual(g['mem_mb'], 12288)
         self.assertGreater(g['mem_since'], datetime.date.today().isoformat())

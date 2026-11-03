@@ -1209,7 +1209,10 @@ class Slot:
             if self.offer is not None:
                 self.serve_give_back()
             if self.stop_asked():
-                req, _there = read_record(self.store.path("active", self.id + ".stop"))
+                # Read again for queue_read_s: a stop file being written (or swapped in) can
+                # refuse its first read, and its why is the only way to tell the lock's stop.
+                req, _there = read_record(self.store.path("active", self.id + ".stop"),
+                                          self.store.settings.queue_read_s)
                 if isinstance(req, dict) and req.get("by") == stale.BY and req.get("why"):
                     self.store.say("run %s was ended by the lock: %s; its process tree is ended"
                                    % (self.id, req["why"]))

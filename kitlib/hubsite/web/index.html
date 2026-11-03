@@ -1121,6 +1121,7 @@ ul.hist .sch-line{display:block}
   function pageRows(col){
     const rows = col("pages").map(d => ({ id: d.id, title: pageStr(d.title), repo: pageStr(d.repo), from: pageStr(d.from), summary: pageStr(d.summary),
       refs: Array.isArray(d.refs) ? d.refs.filter(r => typeof r === "string") : [], at: pageStr(d.at), updated_at: pageStr(d.updated_at),
+      kind: pageStr(d.kind), folder: pageStr(d.folder), bytes: Number.isInteger(d.bytes) && d.bytes >= 0 ? d.bytes : null,
       version: Number.isInteger(d.version) ? d.version : null }));
     const k = p => p.updated_at || p.at;
     rows.sort((a, b) => k(b).localeCompare(k(a)) || a.id.localeCompare(b.id));
@@ -3283,21 +3284,96 @@ ul.hist .sch-line{display:block}
       show([], el("div", {class:"empty"}, el("strong", {text: ready ? msg[0] : NOT_READY}), ready ? msg[1] : NOT_READY_WHY));
       return;
     }
+    // The tree is built from the rows the repo menu and the search box leave, so its counts are those of what they find.
+    docUiLoad();
+    const tree = docTree(rows), searching = !!state.idq.trim();
+    if (!docNodeIn(tree, docUi.node)) docUi.node = [];
+    const nodeRows = rows.filter(p => docInNode(p, docUi.node));
     // This week and Earlier, by the document's last change (updated_at, else at); one with no time stated is Earlier.
     const week = Date.now() - 7 * 86400000, recent = p => { const t = new Date(p.updated_at || p.at); return !isNaN(t) && t >= week; };
-    const groups = [["This week", rows.filter(recent)], ["Earlier", rows.filter(p => !recent(p))]].filter(g => g[1].length);
+    const groups = [["This week", nodeRows.filter(recent)], ["Earlier", nodeRows.filter(p => !recent(p))]].filter(g => g[1].length);
     const at = settle(groups.flatMap(g => g[1].map(p => ["doc", p])));
-    show([], groups.flatMap(([t, rs]) => [el("h3", {class:"blk", text: t + " · " + rs.length}), ...rs.map(p => drawn(docRow, p))]));
+    const bytes = nodeRows.reduce((n, p) => n + (p.bytes || 0), 0), known = nodeRows.some(p => p.bytes != null);
+    const head = el("div", {class:"dochead"}, el("strong", {text: docNodeLabel(docUi.node)}),
+      el("span", {class:"muted", text: nodeRows.length + (nodeRows.length === 1 ? " doc" : " docs") + (known ? " · " + docSize(bytes) : "")}));
+    show([], docNav(tree, searching), head, groups.flatMap(([t, rs]) => [el("h3", {class:"blk", text: t + " · " + rs.length}), ...rs.map(p => drawn(docRow, p))]));
     pickDetail(at);
   }
-  const docRow = p => rowCard("doc", p, [p.repo ? el("span", {class:"chip", text: String(p.repo)}) : null, p.from ? el("span", {class:"chip", text: "from " + p.from}) : null],
-    p.updated_at || p.at ? when(p.updated_at || p.at) : "");
+  // The Docs tree: All documents > repo > kind, a count on each node. A node is [] (all), [repo], [repo, kind] (kind ""
+  // is Unsorted: a card with no kind) or [""] (Unsorted: a card with no repo). The selected node and the open repos are
+  // kept in localStorage; a search shows every repo open, so no hit is hidden under a closed one.
+  const docUi = { node: [], open: new Set(), loaded: false };
+  const KIND_CHIP = { audit: "warn", plan: "accent", design: "rec", research: "ok", lint: "muted", other: "muted" };
+  const docKind = p => p.kind.trim().toLowerCase();
+  const kindName = k => k ? k[0].toUpperCase() + k.slice(1) : "Unsorted";
+  const kindChip = k => el("span", {class: "chip k-" + (Object.hasOwn(KIND_CHIP, k) ? KIND_CHIP[k] : "muted"), text: kindName(k)});
+  const docSize = b => b < 1024 ? b + " B" : b < 1048576 ? Math.round(b / 1024) + " KB" : (b / 1048576).toFixed(1) + " MB";
+  function docUiLoad(){
+    if (docUi.loaded) return;
+    docUi.loaded = true;
+    try {
+      const n = JSON.parse(localStorage.getItem("oq.docnode") || "null"), o = JSON.parse(localStorage.getItem("oq.docopen") || "null");
+      if (Array.isArray(n) && n.length <= 2 && n.every(x => typeof x === "string")) docUi.node = n;
+      if (Array.isArray(o)) docUi.open = new Set(o.filter(x => typeof x === "string"));
+    } catch(e){}
+  }
+  function docUiSave(){
+    try { localStorage.setItem("oq.docnode", JSON.stringify(docUi.node)); localStorage.setItem("oq.docopen", JSON.stringify([...docUi.open])); } catch(e){}
+  }
+  const docInNode = (p, n) => !n.length || (n[0] === "" ? !p.repo.trim() : p.repo === n[0] && (n.length < 2 || docKind(p) === n[1]));
+  // {loose, repos: [{repo, n, kinds: [[kind, n]]}]}: repos by name, kinds by name with Unsorted last.
+  function docTree(rows){
+    const by = new Map();
+    let loose = 0;
+    for (const p of rows) {
+      if (!p.repo.trim()) { loose++; continue; }
+      if (!by.has(p.repo)) by.set(p.repo, { repo: p.repo, n: 0, kinds: new Map() });
+      const r = by.get(p.repo), k = docKind(p);
+      r.n++; r.kinds.set(k, (r.kinds.get(k) || 0) + 1);
+    }
+    const order = ([a], [b]) => (a === "") - (b === "") || a.localeCompare(b);
+    return { loose, total: rows.length, repos: [...by.values()].sort((a, b) => a.repo.localeCompare(b.repo)).map(r => ({ ...r, kinds: [...r.kinds].sort(order) })) };
+  }
+  function docNodeIn(t, n){
+    if (!n.length) return true;
+    if (n[0] === "") return n.length === 1 && t.loose > 0;
+    const r = t.repos.find(x => x.repo === n[0]);
+    return !!r && (n.length === 1 || r.kinds.some(k => k[0] === n[1]));
+  }
+  const docNodeLabel = n => !n.length ? "All documents" : n[0] === "" ? "Unsorted" : n.length === 1 ? n[0] : n[0] + " / " + kindName(n[1]);
+  function docNav(t, searching){
+    let i = 0;
+    const same = n => JSON.stringify(n) === JSON.stringify(docUi.node);
+    const pick = n => { docUi.node = n; if (n.length && n[0] !== "") docUi.open.add(n[0]); docUiSave(); render(); };
+    const node = (n, label, count, cls) => el("button", {class: "tn " + cls + (same(n) ? " on" : ""), type: "button", id: "dn-" + i++, "aria-current": same(n) ? "true" : null, onclick: () => pick(n)},
+      el("span", {text: label}), el("span", {class:"n", text: String(count)}));
+    const kids = [node([], "All documents", t.total, "l0")];
+    for (const r of t.repos) {
+      const open = searching || docUi.open.has(r.repo);
+      const flip = () => { if (docUi.open.has(r.repo)) docUi.open.delete(r.repo); else docUi.open.add(r.repo); docUiSave(); render(); };
+      kids.push(el("div", {class:"tr"},
+        el("button", {class:"tt", type: "button", id: "dn-" + i++, "aria-expanded": open ? "true" : "false", "aria-label": (open ? "Collapse " : "Expand ") + r.repo, text: open ? "▾" : "▸", onclick: flip}),
+        node([r.repo], r.repo, r.n, "l0")));
+      if (open) for (const [k, n] of r.kinds) kids.push(node([r.repo, k], kindName(k), n, "l1"));
+    }
+    if (t.loose) kids.push(node([""], "Unsorted", t.loose, "l0"));
+    const legend = el("div", {class:"legend", "aria-label": "Kinds"}, ...Object.keys(KIND_CHIP).map(kindChip));
+    return el("div", {class:"docnav"}, el("nav", {class:"doctree", "aria-label": "Documents by repo and kind"}, ...kids), legend);
+  }
+  const docRow = p => {
+    const row = rowCard("doc", p, [p.kind.trim() ? kindChip(docKind(p)) : null, p.repo ? el("span", {class:"chip", text: String(p.repo)}) : null, p.from ? el("span", {class:"chip", text: "from " + p.from}) : null,
+      p.bytes != null ? el("span", {text: docSize(p.bytes)}) : null], p.updated_at || p.at ? when(p.updated_at || p.at) : "");
+    if (p.summary) row.append(el("p", {class:"dsum", text: p.summary}));
+    return row;
+  };
   // The detail of a document: its summary is the excerpt (the body is read only by Read full screen), its refs, and the
   // buttons. Ask the PM puts a line about the document in the Message the PM form; nothing is sent.
   function docCard(p){
     const head = el("div", {class:"meta"},
       el("span", {class:"id", text: p.id}),
+      p.kind.trim() ? kindChip(docKind(p)) : null,
       p.repo ? el("span", {class:"chip", text: p.repo}) : null,
+      p.folder ? el("span", {class:"mono", text: p.folder}) : null,
       p.from ? el("span", {text: "from " + p.from}) : null,
       p.updated_at || p.at ? el("span", {text: when(p.updated_at || p.at)}) : null);
     const parts = [head, el("h2", {text: p.title || "(untitled)"})];

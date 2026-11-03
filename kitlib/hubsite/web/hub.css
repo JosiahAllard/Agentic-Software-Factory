@@ -30,3 +30,22 @@ header{display:grid;gap:4px}
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
 /* One focus ring on every control: 2px of the accent, 2px from the edge. */
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Docs: the tree (All > repo > kind) above the cards of the selected node, the kind chips and the legend. */
+.docnav{display:grid;gap:8px}
+.doctree{background:var(--side);border:1px solid var(--line);border-radius:var(--r);padding:8px;max-height:min(46vh,420px);overflow:auto;display:grid;gap:1px}
+.doctree .tr{display:flex;align-items:center}
+.doctree .tt{flex:none;width:26px;height:26px;padding:0;border:0;background:none;color:var(--muted);cursor:pointer;border-radius:var(--r-s)}
+.doctree .tn{display:flex;gap:6px;align-items:center;width:100%;text-align:left;padding:5px 8px;border:0;border-radius:var(--r-s);background:none;color:var(--fg);font:inherit;font-size:.88rem;cursor:pointer}
+.doctree .tr .tn{flex:1;min-width:0}
+.doctree .tn:hover,.doctree .tt:hover{background:var(--hover)}
+.doctree .tn.l0{font-weight:600}
+.doctree .tn.l1{margin-left:26px;width:calc(100% - 26px);font-size:.82rem;color:var(--muted)}
+.doctree .tn.on{background:var(--accent-soft);color:var(--accent)}
+.doctree .tn .n{margin-left:auto;font:600 .72rem var(--f-mono);color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px}
+.chip.k-warn{background:var(--warn-soft);color:var(--warn)}.chip.k-accent{background:var(--accent-soft);color:var(--accent)}.chip.k-rec{background:var(--rec-soft);color:var(--rec)}.chip.k-ok{background:var(--ok-soft);color:var(--ok)}.chip.k-muted{background:var(--hover);color:var(--muted)}
+.dochead{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.dsum{margin:4px 0 0;font-size:.85rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:700px){.doctree{max-height:none}}
+.mono{font:500 .75rem var(--f-mono);font-variant-numeric:tabular-nums}

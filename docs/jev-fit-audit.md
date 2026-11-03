@@ -2,7 +2,7 @@
 
 Purpose: find the kit's routing and labelling decisions and say whether a structured-decision model could make them cheaper.
 
-This is step 1 only: a desk study over 14 days of agent transcripts. There was no trial, because there is no TypeSafe account.
+This is step 1 only: a desk study over 14 days of agent transcripts. There was no trial, because there is no TypeSafe account. Status at the base of 2026-11-03: unchanged. Step 2 is held for the owner (set up an account, or retire the audit) in the Jev fit audit backlog record. No code in the kit calls Jev, and the figures below are as measured then.
 
 ## What Jev is
 
@@ -93,4 +93,4 @@ Do not put Jev inside the agent loop. On the measured numbers it costs more than
 
 The only fit is an out-of-loop notification pre-filter, worth at most about $124 per 14 days. Build and measure a rule-based filter first. Run step 2 only if the rule leaves a real gap.
 
-This ranks below the listing trim, code-aware search, cache-gap and start-up work in the cost audit, each worth more and needing no outside service.
+This ranks below the listing trim, code-aware search, cache-gap and start-up work of the cost audit (not in this repository), each worth more and needing no outside service.

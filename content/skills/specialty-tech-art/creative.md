@@ -22,8 +22,11 @@ something the owner already approved skips to the fix.
 
 0. **Step 0, cheap and wide.** One labelled sheet of 5-10 very different designs that differ in
    kind (silhouette, concept, source), not in tint or proportion. Built from the owner's
-   inspiration where the owner sent some, naming what each takes from which. Publish it and stop:
-   the owner narrows it.
+   inspiration where the owner sent some, naming what each takes from which. The families on offer
+   are toon or cel bands and flat-shaded low-poly, plus higher-detail ones (stylized PBR,
+   hand-painted textures over sculpted forms); each stays inside the frame budget, LODs and
+   normal-map bakes carrying the detail. Photoreal is refused. Publish it and stop: the owner
+   narrows it.
 1. **Intent, before building.** In your scratch note: what it must feel like in play, what reads
    at gameplay distance (or in the mix), and what you take from each reference.
 2. **Takes.** From the narrowed set, about three takes that differ in kind, on one page, same
@@ -72,6 +75,27 @@ narrow them:
 - **Pages, renders and clips stay where you wrote them**: who deletes them is the profile's
   **Shared resources** section's call; list each path in your report for the PM. Renders are never
   committed.
+
+## Visual loop
+
+For art that ships on screen (scenes, props, characters), once the owner has picked a look and a
+style sheet exists (skill `specialty-tech-art`, "Direction mode"):
+
+1. Render from the style sheet's camera under the profile's lock, and build a side-by-side sheet:
+   concept, render, difference. Add the numbers `art_score.py` measures (palette distance,
+   value-map difference, silhouette overlap). A character adds an 8-view turnaround, a filmstrip per
+   clip and the motion numbers (skill `specialty-rigging`).
+2. A critic scores the round by skill `specialty-art-critique`; it is a fresh dispatch each round and
+   never the builder. Your report names the sheet and numbers it should read.
+3. Loop until the critic's verdict is PASS, fixing the gaps it names, up to the round cap the
+   coordinator gives. Never edit the style sheet or the concept to pass.
+4. Live Blender: when the Blender MCP bridge is available (docs/blender-mcp.md), you may iterate in
+   your own Blender with its full tools. The committed headless script stays the build: before
+   review, write every live change back into the script and re-run it headless; the review
+   compares that render with the live one, and a `.blend` edited live is never committed.
+
+Generated first: a shipped image or mesh comes from the approved generators and a cleanup script
+(`<kit>/knowledge/asset-generation/README.md`); build procedurally only where nothing generated fits.
 
 ## Critique before you report
 

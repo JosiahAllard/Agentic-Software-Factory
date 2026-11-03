@@ -17,9 +17,19 @@ Read `creative.md` beside this file first. You work inside the art direction whe
 6. Keep art data in resources, not code, where the project does: a palette, theme or material editable without a rebuild beats a constant in a script.
 7. Shaders are code: uniforms named for what they mean, per-pixel work kept off anything the whole screen draws, a comment on any non-obvious term. Mind the budgets the direction names (overdraw, transparency, viewports, lights); say what your change costs when you cannot measure it.
 8. Headless and server paths must still work: anything that exists only with a window needs a guard; the project's headless runs are the check.
-9. Look at what you made: render a frame the way the project allows, under the profile's lock, after the orphan sweep. `<kit>/optional/comfy/render_glb.py` is a kit lock wrapper, run directly (skill machine-lock-run). Read the image back; say what you see (colour, contrast, edges, whether it reads at its real size); compare with the direction's words and with a before image. For anything animated, describe its first, peak and last frames.
+9. Look at what you made, and loop until the critic passes (`creative.md`, "Visual loop"): render a frame the way the project allows, under the profile's lock, after the orphan sweep. `<kit>/optional/comfy/render_glb.py` is a kit lock wrapper, run directly (skill machine-lock-run). Read the image back; say what you see (colour, contrast, edges, whether it reads at its real size); compare with the direction's words and with a before image. For anything animated, describe its first, peak and last frames.
 10. Cannot render: say so plainly and mark every visual claim unverified. Never describe a result you have not seen.
 11. Critique (`creative.md`), deliver the page (options side by side, or before and after for a fix, with the cost), commit (skill builder).
+
+## Direction mode
+
+Dispatched as art director: after the owner picks a concept, you write the style sheet beside it and the builders never edit it. Flow: Step 0 sheet, the owner narrows, takes, the owner picks, then the style sheet and the asset sheet. Template:
+
+- Palette: 6-10 hex entries, each with its role.
+- Camera: FOV, height, pitch, framing.
+- Lighting rig: sun azimuth and elevation, ambient, fog, tonemap, exposure.
+- Materials: per material, roughness, rim, toon bands or the PBR notes.
+- Asset sheet: each element alone, centred on plain mid-grey, from the shippable image generator (`<kit>/knowledge/asset-generation/MODELS.md`); only the composed reference concept may come from a reference-only model. The owner picks the whole sheet once per theme, before any image-to-3D run.
 
 ## Never
 

@@ -567,7 +567,9 @@ store's git push (the `push` setting).
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
   store commit under `Session: hub-condition` (`recordwrite.condition_met`, which re-reads the record
-  and writes nothing when the line is gone) and pushes `unblocked` with detail `<repo>:<ID>`. A
+  and writes nothing when the line is gone) and pushes `unblocked` with detail `<repo>:<ID>`. An `owner`
+  hold keeps one line per ask: a met line of several drops only that line, with no push (the note says
+  `line met, still held: <repo>:<ID>`), and the last one clears the member. A
   to-do or question is read from its hub store document on disk, a record from the named
   repository's store, a plugin folder under `pluginsource` `export_dir`. Free text, a member the
   record is not blocked on, an `owner` member on anything but a to-do or a question, a condition
@@ -656,6 +658,7 @@ Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launche
 | filing | hub | `{at, code, message}`: why the last filing of the answer failed; null once filed or answered again |
 | filed_at | hub | when the answer was filed into the record (ISO time); null after a re-answer |
 | filed_as | hub | what the filing did to the record: `pulled`, `freed`, `held`, or null when the record's state could not be read; null after a re-answer ("Filing the answer") |
+| park | hub | `{at, code, message}`: what binding the question did to its record ("A question bound to a record"): `blocked`, `already`, `held`, `parked` or `gone`, or the code of a park that failed (`store`, `unavailable` and `internal` are tried again); `message` is a fixed phrase (`PARK_SAYS`); null after an unbind |
 | standing | owner | `{at, via}`: the owner made the answer a standing rule, for the PM to log ("A standing rule"); null after a re-answer without the box |
 
 While a question is open its asker may change it (`POST /api/v1/questions/{id}/edit`, agent only:
@@ -702,6 +705,28 @@ refused `not_found`. Each of these is refused, field `record`, and nothing is wr
 
 An edit checks its asker and its status first, so a refused edit reads no backlog.
 
+Binding a question, when it is asked or by an edit, parks its record: the hub, as the owner's proxy,
+blocks it on `owner` until the question is answered (`kitlib.hubsite.api` `park_question`,
+`kitlib.hubsite.recordwrite` `park`, one store commit under `Session: hub-park`). An open record gets
+the line `until: owner question:Q-n answered` and the body line `asked as Q-n on the Action Hub by
+<asker>`. A pulled record is blocked the same way with its pull stopped and its branch kept and named;
+the answer that ends the hold restores the pull while that branch still holds its tip. A blocked record
+gains `owner` beside its other blockers. Several asks on one record are several lines, read as AND
+(docs/backlog.md "block --until"). Nothing is written to a record parked by hand (`parked`: the hub
+never touches a park), one held on the owner by hand with no owner line (`held`: that hold keeps its
+own end, and the filed answer still ends it), one that has the line already (`already`) or one that is
+gone (`gone`). The outcome is the question's `park`. The hub server parks off the request
+(`Api.park_later`, a daemon thread, `serve._park_later`). A park that fails there is an `error` line
+of the hub's log (`<qid>: record not parked: <code>`), and one whose code is `store`, `unavailable` or
+`internal` is made again by `questions file` ("Filing the answer").
+
+Withdrawing or deleting an open bound question, or an edit that rebinds or unbinds it, drops its line
+from the old record (`unpark_question`, `recordwrite` `withdraw`); the last owner line unblocks the
+record with the reason `ask withdrawn`, and a rebind then parks the new record. A drop that fails is
+logged (`<qid>: record not unparked: <code>`) and swept at the next hub start. A question asked with
+`class` whose `refs` name a pulled record is stored with a `refs-pulled-record` warning, field `refs`:
+ask it with `--record` so the hub parks the record.
+
 #### Binding the open questions
 `hub.py questions bind --dry-run | --apply` (`POST /api/v1/questions/bind`, agent, body `{from: "pm",
 apply}`; refused `forbidden`, field `from`, for any other `from`, as `questions done`) pairs the
@@ -727,14 +752,16 @@ The hub files the owner's answer to a bound question into the record itself, in 
 2. The record is written through the backlog library (`kitlib.hubsite.recordwrite` `answer`, the store's
    `plan_answer`, with the role check made: the hub files only the answer the owner gave, whoever's call
    starts it): an `answer: <qid> <at>` line, a `## Owner answer (Action Hub, <at>)` body section, and,
-   when no other question bound to the record is still open, the record's park or owner blocker ends. The
+   when no other question bound to the record is still open, the record's park or owner blocker ends
+   (an owner hold kept as `until` lines ends when its last line drops, docs/backlog.md `answer:`). The
    store's compare-and-swap plans the write again after a lost race. The same question and `at` again
    changes nothing, and an older `at` never overwrites a newer answer, so this step can be repeated after
    a crash.
 3. The question is marked `filed`, with `filed_at` and `filed_as`, pinned to the version of step 1.
    `filed_as` is what the answer did to the record, from its `state` read through the record view just
    before step 2 and again after it (`_record_state`, `_filed_as`): `pulled` when it was pulled before
-   (someone is working on it), `freed` when it was parked or blocked and is now open (a free-text Other
+   (someone is working on it) or the answer ended a hold that had stopped its pull, which is back,
+   `freed` when it was parked or blocked and is now open (a free-text Other
    answer that ends the wait frees it too), `held` otherwise (it still waits on more, or it was open), and
    null when a read that decides it cannot tell (no record view, a view that raised, no fields, a
    completed record). The push reads it to choose who hears. A filed question stays pending for its
@@ -760,10 +787,19 @@ keeps the first `at`, so it moves no version an asker's `--if-version` holds. A 
 done meanwhile, and the call that moved it does its own filing.
 
 Every answered, bound question not filed yet is filed again by `hub.py questions file [Q-1]` (`POST
-/api/v1/questions/file`, agent, optional `{id}`; it answers `{filed: [ids], failed: [{id, code,
-message}]}`) and once at each hub start, on a thread after the listeners start (`Hub._refile`, which logs
-each failure as a note), whatever code its last filing failed with. A crash after step 1 or after step 2
-is mended there. An unbound question is never filed: the PM logs it as before.
+/api/v1/questions/file`, agent, optional `{id}`; it answers `{filed, failed, parked, unparked,
+park_failed, orphan_hand_lines}`) and once at each hub start, on a thread after the listeners start
+(`Hub._refile`, which logs each failure as a note), whatever code its last filing failed with. A crash
+after step 1 or after step 2 is mended there. An unbound question is never filed: the PM logs it as
+before. `filed` lists the ids filed and `failed` `[{id, code, message}]`. The same call parks each open
+bound question whose park is not made yet (`parked`, ids); a park not made, or one whose mark was not
+written, is in `park_failed` `[{id, code, message}]`. Without `id` it also sweeps every repository's
+owner `question:Q-n answered` lines (`_sweep_asks`, read with no fetch): a line the hub wrote (the
+body says `asked as Q-n on the Action Hub`) whose question is gone, or now bound to another record or
+none, is dropped as a withdraw drops it (`unparked` `[{id, record, unblocked}]`; a drop that fails is
+in `park_failed`). A line a person wrote is never dropped: one whose question is gone is listed in
+`orphan_hand_lines` `[{repo, id, q}]` and logged at start (`<repo>:<ID>: owner line cites missing
+Q-n`), for the PM to clear by hand.
 
 The hub server files off the answer's request (`Api.file_later`, set by `serve.build`: steps 2 and 3 on a
 daemon thread, `serve._file_later`), since step 2 fetches and pushes the backlog store, which can take

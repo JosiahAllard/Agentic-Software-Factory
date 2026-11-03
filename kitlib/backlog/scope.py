@@ -126,7 +126,16 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
     result would exceed `cap` members, or when `member` is a single file holding a removed path
     (a literal .md included), or when `tree` has nothing for it (empty tree, letter-case
     mismatch): the caller cannot auto-narrow. `[]` means every tracked file under the member
-    was removed; test `is None`, never `not out`. Collision is `members_collide`."""
+    was removed; test `is None`, never `not out`. A malformed `member`, or a `removed` entry that
+    is not a plain repo path, raises UndecidableScope; `tree` is not checked."""
+    err = scope_member_error(member, tab_ok=True)
+    if err is not None:
+        raise UndecidableScope('%s: %s' % (member, err))
+    for r in removed:
+        err = ('a glob, not a path' if r.endswith(GLOB_SUFFIX)
+               else path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
+        if err is not None:
+            raise UndecidableScope('%s: %s' % (r, err))
     base = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
     if member == NONE or not any(_related(base, r) for r in removed):
         return [member]

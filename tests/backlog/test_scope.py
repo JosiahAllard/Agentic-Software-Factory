@@ -73,6 +73,13 @@ class Complement(unittest.TestCase):
                                'kit/sub/**'])
         self.assertEqual(smod.complement('kit/**', {'kit/[id].js'}, tree)[:1], ['kit/a,b.txt'])
 
+    def test_malformed_input_raises(self):
+        for member, removed in (('kit/*.py', {'kit/a.py'}), ('kit/**', {'kit\a.py'}),
+                                ('kit/**', {'kit/sub/**'}), ('kit/**', {''})):
+            with self.subTest(member=member, removed=removed):
+                with self.assertRaises(smod.UndecidableScope):
+                    smod.complement(member, removed, TREE)
+
     def test_no_tracked_data_for_the_member_is_none(self):
         self.assertIsNone(smod.complement('kit/**', {'kit/a.py'}, []))
         self.assertIsNone(smod.complement('Kit/**', {'kit/a.py'}, TREE))

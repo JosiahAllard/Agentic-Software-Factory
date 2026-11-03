@@ -41,6 +41,10 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
   (tests/platform/test_no_os_checks.py ALLOWED, 23 entries). The list only shrinks.
 - The end-to-end landing tests skip on Linux ("the lock is Windows only"; in tests/gate/test_land*.py
   only a few unit tests run), so a landing has not run end to end there (slice 9, open proof c).
+- Build-daemon sparing and the TCP connection table: kitlib/proc/tcp.py has only the Windows reader
+  (GetExtendedTcpTable) and kitlib/proc/daemons.py is Windows only, so on Linux the end-of-run
+  check (lock/run.py, `daemons.find`) only warns and kills the tree. The planned form reads
+  /proc/net/tcp and tcp6, whose parsers after the table are portable. Open, in no slice.
 - No CI workflow (slice 17). The ratchet (tools/ci_ratchet.py) is run by hand.
 
 ### 1.3 Shields
@@ -98,7 +102,7 @@ Rules:
 
 ### 2.2 Windows mechanism to Linux mechanism
 
-The mapping is built; the module docstrings in kitlib/platform/linux/ carry it. The decisions that
+The mapping is built, except the TCP connection table (section 1.2); the module docstrings in kitlib/platform/linux/ carry it. The decisions that
 are not obvious from the code:
 
 - Identity is (pid, ctime). On Linux the seam's ctime is `(boot << 64) | starttime`, where `boot`
@@ -178,7 +182,9 @@ carrier scope placed by busctl AttachProcessesToUnit, because a systemd user sco
 about 84 ms on the VM against about 17 ms attached; the limit is that stopping the carrier, or
 systemd-oomd choosing it, ends every short job of the process.
 
-Not yet namespace-aware (each safe today; a later record): queue entries and background runs
+Not yet namespace-aware (each safe today; a later record). A pid is a number in one namespace, so
+a lock run record names its wrapper's namespace (`pidns`) and a run nested in a W1 job names the
+job's (`jobns`); contain.py's docstring (W1, NsJob) says how they are read. Queue entries and background runs
 carry no `pidns` and no `jobns` (on Linux the run lock decides a queue entry; bg_ancestor fails
 closed); resource.py, giveback.py and the lock status (api.py: tree, GPU memory) read a record's pid
 as this namespace's; the holders search does not look inside a W1 job.

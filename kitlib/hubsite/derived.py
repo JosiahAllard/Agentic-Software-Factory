@@ -75,25 +75,38 @@ def repos(cfg, stored=(), read=None, toplevel=None, kit_dir=None):
             for k in sorted(names, key=str.lower)]
 
 
-def _next_resets(line, now):
+def _next_resets(line, now, tz=None):
     """{"five_reset", "week_reset"} (UTC ISO text) for the windows of one usage line that print a
-    reset time. The launcher prints it as `ddd HH:mm` in the server's local time (kitlib.launcher.
-    accounts.short) and only for a reset still to come, so it is the first such moment at or after
-    `now` (an aware datetime, whose offset is the local one), at most a week on. A window that
-    prints none (`?`, `reset`) gets no key: unknown, never a guess."""
+    reset time. The launcher prints it as `ddd HH:mm` in the server's local zone (kitlib.launcher.
+    accounts.short) and only for a reset still to come, so it is the first such wall-clock moment
+    at or after `now` (an aware datetime), at most a week on. The wall clock is read and built in
+    the zone itself (`tz`, a tzinfo; None is the machine's own zone), each candidate converted per
+    instant, so a day with a clock change is not an hour off; a repeated hour offers both of its
+    instants and the first one not before `now` wins. A window that prints none (`?`, `reset`)
+    gets no key: unknown, never a guess."""
     out = {}
-    floor = now.replace(second=0, microsecond=0)
+    floor = now.astimezone(datetime.timezone.utc).replace(second=0, microsecond=0)
+    here = now.astimezone(tz)
     for m in _RESET.finditer(line):
-        ahead = (_DAYS.index(m.group(2)) - floor.weekday()) % 7
-        at = floor.replace(hour=int(m.group(3)), minute=int(m.group(4))) + datetime.timedelta(days=ahead)
-        if at < floor:
-            at += datetime.timedelta(days=7)
-        out['five_reset' if m.group(1) == 'five_hour' else 'week_reset'] = (
-            at.astimezone(datetime.timezone.utc).isoformat())
+        hh, mm, day = int(m.group(3)), int(m.group(4)), _DAYS.index(m.group(2))
+        best = None
+        for ahead in range(8):
+            wall = datetime.datetime.combine(here.date() + datetime.timedelta(days=ahead),
+                                             datetime.time(hh, mm))
+            if wall.weekday() != day:
+                continue
+            for fold in (0, 1):
+                w = wall.replace(fold=fold)
+                at = (w.replace(tzinfo=tz) if tz is not None else w.astimezone()).astimezone(
+                    datetime.timezone.utc)
+                if at >= floor and (best is None or at < best):
+                    best = at
+        if best is not None:
+            out['five_reset' if m.group(1) == 'five_hour' else 'week_reset'] = best.isoformat()
     return out
 
 
-def usage(report, clock):
+def usage(report, clock, tz=None):
     """Every account's plan usage. `report` is a callable giving the lines kitlib.launcher.usage
     prints (or None when no launcher is configured); `clock` gives the as_of text. Available:
     {"available": True, "accounts": {name: {"five", "week", "age", "stale", "missing"}}, "as_of"}
@@ -102,7 +115,8 @@ def usage(report, clock):
     usage file is listed, missing); otherwise {"available": False, "reason", "as_of"} (no
     source, the source raised, or it printed no account line). An account whose window prints a
     reset time also has "five_reset" / "week_reset": that next reset as UTC ISO text, absent when
-    the window prints none."""
+    the window prints none. `tz` is the zone the launcher printed them in (None: the machine's own;
+    a tzinfo for a test)."""
     as_of = clock()
     if report is None:
         return {"available": False, "reason": "no launcher usage source configured", "as_of": as_of}
@@ -119,7 +133,7 @@ def usage(report, clock):
         for line in lines:
             m = pmwatch.LINE.search(line)
             if m and m.group(1) in accounts:
-                accounts[m.group(1)].update(_next_resets(line, now))
+                accounts[m.group(1)].update(_next_resets(line, now, tz))
     return {"available": True, "accounts": accounts, "as_of": as_of}
 
 

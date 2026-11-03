@@ -1,5 +1,6 @@
 """kitlib.hubsite.derived: notices, repos, usage and agents are read from their source on every call,
 stored nowhere, and nothing is written. Temp folders and fakes only."""
+import datetime
 import json
 import os
 import shutil
@@ -9,6 +10,7 @@ from unittest import mock
 
 from kitlib.hubsite import derived
 
+UTC = datetime.timezone.utc
 CLOCK = lambda: '2026-01-02T03:04:05+00:00'      # noqa: E731
 
 
@@ -109,7 +111,7 @@ class UsageTests(unittest.TestCase):
              'account codex: five_hour=reset  seven_day=12% (resets Tue 09:00)  [updated 5 min ago]']
 
     def test_parsed_accounts(self):
-        got = derived.usage(lambda: self.LINES, CLOCK)
+        got = derived.usage(lambda: self.LINES, CLOCK, tz=UTC)
         self.assertTrue(got['available'])
         self.assertEqual(got['accounts'], {
             '1': {'five': 40, 'week': 71, 'age': 3, 'stale': False, 'missing': False,
@@ -129,9 +131,14 @@ class UsageTests(unittest.TestCase):
         h.usage('1', week=(98, NOW + day), updated=NOW - datetime.timedelta(minutes=3735))   # five_hour null
         h.usage('2', five=(8, NOW + day / 8), week=(18, NOW + 5 * day))
         h.usage('3', five=(70, NOW - day), week=(None, NOW + day), updated=NOW - datetime.timedelta(minutes=668))
-        got = derived.usage(lambda: launcher_usage.report(h.settings, NOW), CLOCK)
+        got = derived.usage(lambda: launcher_usage.report(h.settings, NOW), lambda: NOW.isoformat())
         self.assertTrue(got['available'])
         acc = {n: {k: v for k, v in a.items() if not k.endswith('_reset')} for n, a in got['accounts'].items()}
+        iso = lambda d: d.isoformat()      # noqa: E731
+        self.assertEqual({n: {k: v for k, v in a.items() if k.endswith('_reset')} for n, a in got['accounts'].items() if n != 'codex'},   # codex: the machine's own
+                         {'1': {'week_reset': iso(NOW + day)},
+                          '2': {'five_reset': iso(NOW + day / 8), 'week_reset': iso(NOW + 5 * day)},
+                          '3': {}, '4': {}})   # 3: week has no percentage, so no time
         self.assertEqual(acc['1'], {'five': None, 'week': 98, 'age': 3735, 'stale': True, 'missing': False})
         self.assertEqual(acc['2'], {'five': 8, 'week': 18, 'age': 0, 'stale': False, 'missing': False})
         self.assertEqual(acc['3'], {'five': 0, 'week': None, 'age': 668, 'stale': True, 'missing': False})
@@ -139,24 +146,40 @@ class UsageTests(unittest.TestCase):
 
     def test_next_resets_are_the_next_occurrence_after_as_of_in_utc(self):
         # CLOCK is Fri 2026-01-02 03:04 (+00:00). Sun 10:00 is 2026-01-04, Mon 09:00 is 2026-01-05, Tue 09:00 is 2026-01-06.
-        acc = derived.usage(lambda: self.LINES, CLOCK)['accounts']
+        acc = derived.usage(lambda: self.LINES, CLOCK, tz=UTC)['accounts']
         self.assertEqual((acc['1']['five_reset'], acc['1']['week_reset']),
                          ('2026-01-04T10:00:00+00:00', '2026-01-05T09:00:00+00:00'))
         self.assertEqual(acc['codex']['week_reset'], '2026-01-06T09:00:00+00:00')
 
     def test_a_window_with_no_reset_time_has_none_never_a_guess(self):
-        acc = derived.usage(lambda: self.LINES, CLOCK)['accounts']
+        acc = derived.usage(lambda: self.LINES, CLOCK, tz=UTC)['accounts']
         self.assertNotIn('five_reset', acc['codex'])           # five_hour=reset: no time printed
         self.assertFalse({'five_reset', 'week_reset'} & set(acc['2']))   # no usage file
         lines = ['account 3: five_hour=?  seven_day=50% (resets Mon 09:00)  [updated ? min ago]']
-        got = derived.usage(lambda: lines, CLOCK)['accounts']['3']
+        got = derived.usage(lambda: lines, CLOCK, tz=UTC)['accounts']['3']
         self.assertEqual((got.get('five_reset'), got.get('week_reset')), (None, '2026-01-05T09:00:00+00:00'))
 
     def test_a_reset_within_the_current_minute_is_not_pushed_a_week_on(self):
         clock = lambda: '2026-01-02T10:00:30+00:00'       # noqa: E731   Fri 10:00:30
         lines = ['account 1: five_hour=10% (resets Fri 10:00)  seven_day=1% (resets Fri 10:00)  [updated 1 min ago]']
-        got = derived.usage(lambda: lines, clock)['accounts']['1']
+        got = derived.usage(lambda: lines, clock, tz=UTC)['accounts']['1']
         self.assertEqual(got['five_reset'], '2026-01-02T10:00:00+00:00')
+
+    def test_resets_across_a_clock_change_are_not_an_hour_off(self):
+        import zoneinfo
+        ny = zoneinfo.ZoneInfo('America/New_York')
+        def reset(as_of, text):
+            lines = ['account 1: five_hour=10%% (resets %s)  seven_day=1%% (resets %s)  [updated 1 min ago]' % (text, text)]
+            return derived.usage(lambda: lines, lambda: as_of, tz=ny)['accounts']['1']['five_reset']
+        # Fall back (2026-11-01 02:00 EDT -> 01:00 EST): the second 01:30 is 06:30Z, 45 minutes on.
+        self.assertEqual(reset('2026-11-01T01:45:00-04:00', 'Sun 01:30'), '2026-11-01T06:30:00+00:00')
+        # ... and the first 01:30 (05:30Z) while it is still to come.
+        self.assertEqual(reset('2026-11-01T01:15:00-04:00', 'Sun 01:30'), '2026-11-01T05:30:00+00:00')
+        # Across the change: Sat evening to Sun 09:00 EST is 14:00Z (not 13:00Z).
+        self.assertEqual(reset('2026-10-31T20:00:00-04:00', 'Sun 09:00'), '2026-11-01T14:00:00+00:00')
+        # Spring forward (2026-03-08 02:00 EST -> 03:00 EDT): Sun 09:00 is EDT, 13:00Z.
+        self.assertEqual(reset('2026-03-07T20:00:00-05:00', 'Sun 09:00'), '2026-03-08T13:00:00+00:00')
+        self.assertEqual(reset('2026-03-08T01:45:00-05:00', 'Sun 03:30'), '2026-03-08T07:30:00+00:00')
 
     def test_no_source_is_not_available(self):
         got = derived.usage(None, CLOCK)

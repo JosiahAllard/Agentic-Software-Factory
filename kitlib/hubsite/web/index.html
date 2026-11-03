@@ -659,10 +659,18 @@ ul.hist .sch-line{display:block}
     const fill = el("div", {class:"fill"}); fill.style.width = w + "%";      // set through the style object, so the page has no inline style attribute
     return el("div", {class: "meter" + (n >= 95 ? " crit" : n >= 90 ? " high" : "") + (stale ? " stale" : "")},
       el("div", {class:"lab"}, el("span", {text: label}), el("span", {class:"pct", text: shown})),
-      el("div", {class:"rst", text: resetText(resetAt, Date.now())}),
+      el("div", {class:"rst", "data-reset": typeof resetAt === "string" ? resetAt : "", text: resetText(resetAt, Date.now())}),
       el("div", {class:"track", role:"meter", "aria-label": label, "aria-valuemin":"0", "aria-valuemax":"100", "aria-valuenow": String(w)}, fill));
   }
+  // The page redraws only when something changed, so a countdown would outlive its reset: every 30 s each shown reset is
+  // worked out again from the clock (a reset that has passed turns to "reset unknown").
+  function tickResets(){
+    for (const n of document.querySelectorAll(".meter .rst[data-reset]")) n.textContent = resetText(n.getAttribute("data-reset"), Date.now());
+    setTimeout(tickResets, 30000);
+  }
+  let resetTick = false;
   function renderUsage(){
+    if (!resetTick) { resetTick = true; setTimeout(tickResets, 30000); }
     const rows = state.usage.filter(u => u.account).sort((a,b) => String(a.account).localeCompare(String(b.account), [], {numeric:true}));
     if (!rows.length) { show(["usage"], state.gone.usage ? null : el("div", {class:"empty"}, el("strong", {text: ready ? "No usage to show" : "Usage needs the hub server"}), "Each account's five-hour and weekly usage is read on this machine when the page loads.")); return; }
     const at = settle(rows.map(u => ["usage", { ...u, id: u.account }]));

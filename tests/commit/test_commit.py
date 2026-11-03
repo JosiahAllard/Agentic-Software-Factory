@@ -1933,7 +1933,7 @@ class Approves(object):
 class JoinCase(MergeCase):
     """Both sides changed an owner-only file, each in a commit the owner approved (an agent's
     commit carrying Owner-Approval: hub:A-<n>, verified by the hub): a merge whose staged copy is
-    exactly the clean merge of the two is carried unnamed (KIT-COMMIT-MERGE-APPROVED). Anything
+    exactly the clean merge of the two is carried unnamed. Anything
     beyond that clean merge stays refused."""
 
     F = 'CLAUDE.md'

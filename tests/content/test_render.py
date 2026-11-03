@@ -177,7 +177,7 @@ class ManifestTest(unittest.TestCase):
         `python`); plugin.json, the Windows file, keeps `python`. Nothing else differs."""
         windows = self.load('.claude-plugin', 'plugin.json')
         linux = self.load('.claude-plugin', 'plugin.linux.json')
-        self.assertEqual(sorted(linux['mcpServers']), ['hub', 'machine-lock'])
+        self.assertEqual(sorted(linux['mcpServers']), ['blender', 'hub', 'machine-lock'])
         for name, server in windows['mcpServers'].items():
             self.assertEqual(server['command'], 'python')
             self.assertEqual(linux['mcpServers'][name], dict(server, command='python3'))

@@ -1,5 +1,6 @@
 """Tests for kitlib.proc.tcp: the connection table's rows parsed, both ends of a loopback
-connection paired, and a real connection this test opens (port 0) found with its owner."""
+connection paired, a real connection this test opens (port 0) found with its owner, and a real
+listener found with its owner."""
 import os
 import socket
 import struct
@@ -37,6 +38,16 @@ class Parse(unittest.TestCase):
             + v6_row(5, MAPPED, 7000, MAPPED, 8000, 11)
         self.assertEqual(tcp.parse_v6(buf), [((6, LO6, 5000), (6, LO6, 6000), 10),
                                              ((4, LO4, 7000), (4, LO4, 8000), 11)])
+
+    def test_the_listening_rows_when_asked_for(self):
+        any4 = b"\0" * 4
+        buf = struct.pack("<I", 3) + v4_row(5, LO4, 5000, LO4, 6000, 10) \
+            + v4_row(2, LO4, 5000, any4, 0, 10) + v4_row(2, any4, 7000, any4, 0, 12)
+        self.assertEqual(tcp.parse_v4(buf, tcp.LISTEN),
+                         [((4, LO4, 5000), (4, any4, 0), 10), ((4, any4, 7000), (4, any4, 0), 12)])
+        six = struct.pack("<I", 2) + v6_row(2, LO6, 5000, b"\0" * 16, 0, 10) \
+            + v6_row(5, LO6, 5000, LO6, 6000, 10)
+        self.assertEqual(tcp.parse_v6(six, tcp.LISTEN), [((6, LO6, 5000), (6, b"\0" * 16, 0), 10)])
 
     def test_loopback(self):
         self.assertTrue(tcp.is_loopback((4, b"\x7f\x05\0\x01", 1)))
@@ -82,6 +93,16 @@ class RealTable(unittest.TestCase):
         self.assertEqual(len(mine), 2, mine)
         ours = [c for c in conns if port in (c[0][2], c[1][2])]
         self.assertEqual(tcp.peers({os.getpid()}, ours), [(os.getpid(), os.getpid())] * 2)
+
+    def test_a_listener_this_test_opens_is_found_with_its_owner(self):
+        srv = socket.socket()
+        self.addCleanup(srv.close)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        self.assertNotIn(((4, LO4, port), os.getpid()), tcp.listeners(), "not listening yet")
+        srv.listen(1)
+        self.assertIn(((4, LO4, port), os.getpid()), tcp.listeners())
+        self.assertEqual([pid for end, pid in tcp.listeners() if end[2] == port], [os.getpid()])
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ and approvals.consume, the agent's calls); every failure to ask it is a refusal,
 The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations, by
 the delta rule (kitlib.hubsite.approvals.delta_error): the approved commit has one parent, changes
 only the approval's files, makes the approved change on that parent (a clean merge onto it when the
-parent moved past the base), and is consumed by the hub, by it or an earlier build of it, and not
+parent moved past the base), and is consumed by the hub, by any commit, and not
 spent. This step stays stricter: it writes the approved blobs on a HEAD with the same content.
 """
 import os

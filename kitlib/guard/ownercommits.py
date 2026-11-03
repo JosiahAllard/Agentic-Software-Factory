@@ -40,8 +40,8 @@ the commit has one parent P, any commit; it changes no path the approval does no
 approved path is at the commit what the approved change gives on P (approvals.delta_result: the
 approved content where P holds the base or the approved content, the clean `git merge-file` of
 the change onto P where P moved on, a refusal on a conflict), a regular file in P's mode; and
-the hub server verifies the approved blobs for the signed base, consumed (by this commit or an
-earlier build of it: there is no exact binding). A merge, a root commit, a path the commit holds
+the hub server verifies the approved blobs for the signed base, consumed (by any commit: there
+is no exact binding). A merge, a root commit, a path the commit holds
 as anything but a regular file (a symbolic link, a gitlink: blobs_at), a value that is not one
 hub:A-<n>, and any doubt of git or the hub (not running, no answer) keep the violation, with why
 in its `why`.

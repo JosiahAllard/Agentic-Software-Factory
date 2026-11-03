@@ -54,7 +54,8 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   (kitlib.commit.approval; docs/commit.md "Owner approval"). The paths named must be exactly the
   approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
   content is written, staged and checked blob for blob, committed with `Owner-Approval: hub:A-<n>`
-  before Co-Authored-By, and the approval consumed for that commit. A refusal after the write
+  before Co-Authored-By, and the approval consumed, recording that commit (a rebuild of it needs
+  no new approval: docs/commit.md "Owner approval"). A refusal after the write
   puts the work tree back and unstages what this call staged. A consume that fails leaves the
   commit (REFUSED, naming the retry): --owner-approval hub:A-<n> --consume <commit> consumes it.
 - Otherwise the trailer is `Co-Authored-By: Claude <model> <noreply@anthropic.com>`, "Claude "

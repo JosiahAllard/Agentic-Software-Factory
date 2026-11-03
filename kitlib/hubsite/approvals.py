@@ -11,6 +11,8 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   PENDING_TTL_S, APPROVAL_LIFE_S  how long a request waits for a decision, and how long a file
                                   approval holds, used or not (the owner's choice: 7 days, 30
                                   days; APPROVED_TTL_S, 24 hours, for an op approval)
+  DENIAL_PENDING_S                how long a denial stays pending owner input after its decision
+                                  (24 hours; kitlib.hubsite.store.approval_decided)
   approval_end(doc)               when a decided approval stops counting: the one place its
                                   lifetime is computed
   blob_id(content)                git's blob id of the content (SHA-1 object format)

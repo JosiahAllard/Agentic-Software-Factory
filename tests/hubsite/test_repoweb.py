@@ -115,22 +115,30 @@ class WebsTests(unittest.TestCase):
         webs.annotate([{'name': 'w', 'aliases': []}])
         self.assertEqual(len(reads), 2)
 
-    def test_a_failed_config_lookup_is_asked_again_and_the_branch_lookup_runs_once_per_config(self):
+    def test_a_failed_config_lookup_is_asked_again_only_after_the_window(self):
         main = self.repo('f', 'https://github.com/o/r')
         tree = os.path.join(self.d, 'f-tree')
         git(main, 'worktree', 'add', '-q', '-b', 'side', tree)
-        reads, asked = [], []
+        reads, asked, now = [], [], [0.0]
         real = repoweb._config_path
 
         def flaky(root):
             asked.append(root)
-            return None if len(asked) == 1 else real(root)
-        webs = repoweb.Webs(lambda: [('f', tree)], clock=lambda: 0.0, read=lambda r: reads.append(r) or {})
+            return None if len(asked) <= 2 else real(root)
+        webs = repoweb.Webs(lambda: [('f', tree)], clock=lambda: now[0], read=lambda r: reads.append(r) or {})
         with mock.patch.object(repoweb, '_config_path', flaky):
+            for _ in range(5):
+                webs.annotate([{'name': 'f', 'aliases': []}])
+            self.assertEqual((len(asked), len(reads)), (1, 1))      # a persistent failure: one call in the window
+            now[0] = repoweb.REFRESH_S + 1
             for _ in range(3):
                 webs.annotate([{'name': 'f', 'aliases': []}])
-        self.assertEqual(len(asked), 2)             # the failed lookup was asked again, the good one kept
-        self.assertEqual(len(reads), 2)             # None stamp, then the real one; then no more reads
+            self.assertEqual(len(asked), 2)                          # one more after it, still failing
+            now[0] = 2 * repoweb.REFRESH_S + 2
+            for _ in range(3):
+                webs.annotate([{'name': 'f', 'aliases': []}])
+            self.assertEqual(len(asked), 3)                          # it works now: kept from then on
+            self.assertEqual(len(reads), 3)
 
     def test_a_named_main_branch_and_the_cap_on_root_names(self):
         root = self.repo('m', 'https://github.com/o/r', branch='trunk')

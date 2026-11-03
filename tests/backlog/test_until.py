@@ -71,6 +71,8 @@ class Grammar(unittest.TestCase):
         self.assertEqual(condmod.parse('approval:A-7 decided'), ('approval', 'A-7', 'decided'))
 
     def test_an_approval_takes_only_decided(self):
+        self.assertEqual(condmod.parse('approval:A-7 decided'),
+                         condmod.Condition('approval', 'A-7', 'decided'))
         for text in ('approval:A-7 approved', 'approval:A-7 done', 'approval:A-x decided',
                      'approval:T-7 decided', 'approval:A-7 decided later'):
             self.assertIsNone(condmod.parse(text), text)
@@ -256,6 +258,8 @@ class BlockUntil(StoreCase):
         self.verb('block', 'FOO', ['owner'], owner_ask='is A-4 approved?',
                   until='approval:A-4 decided', role_checked=True)
         self.assertEqual(self.get('FOO').all('until'), ['owner approval:A-4 decided'])
+        # an owner event, not free text: the unblock-conditions job reads it
+        self.assertEqual(condmod.kind_of('approval:A-4 decided'), 'approval')
 
     def test_an_owner_until_is_added_beside_the_owners_others(self):
         self.seed(rec('FOO'))

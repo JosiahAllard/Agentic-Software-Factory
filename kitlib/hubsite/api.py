@@ -382,13 +382,13 @@ data: a client that waits `since` it is told of any write the copy missed. GET h
 store's folder to the owner only.
 """
 import collections
+import contextlib
 import datetime
 import json
 import math
 import ntpath
 import os
 import re
-import threading
 import time
 
 from kitlib import hubvalidate
@@ -717,8 +717,10 @@ class Api(object):
         self.park_later = None
         # held by every record write a question drives (file_answer, park_question,
         # unpark_question): each reads the question and writes the record as one step, so a park
-        # and the filing or withdrawal of the same question never interleave
-        self.record_lock = threading.RLock()
+        # and the filing or withdrawal of the same question never interleave. serve.build sets a
+        # threading.RLock with file_later and park_later; without them every such write runs in
+        # its request's own call, so a context that holds nothing does
+        self.record_lock = contextlib.nullcontext()
 
     def call(self, method, path, role, body=None, query=None, via='', raise_unexpected=False,
              agent_words=False, strong=False):

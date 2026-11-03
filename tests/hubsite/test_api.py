@@ -4522,8 +4522,8 @@ class FilingTest(ApiCase):
                 {'if_version': d['version'], 'unfiled': 'the record is closed'})
         self.assertEqual((self.doc(qid)['status'], self.doc(qid)['unfiled_why']),
                          ('logged', 'the record is closed'))
-        self.assertEqual(self.refile(), {'ok': True, 'filed': [], 'failed': [],
-                                         'revision': self.store.revision})
+        self.assertEqual(self.refile(), {'ok': True, 'filed': [], 'failed': [], 'parked': [],
+                                         'park_failed': [], 'revision': self.store.revision})
         self.assertEqual(len(self.views.filed), 1, 'a logged question is never filed')
 
     def test_a_server_with_no_record_write_leaves_the_answer_to_the_pm(self):

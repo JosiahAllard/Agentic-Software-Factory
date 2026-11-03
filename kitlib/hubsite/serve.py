@@ -1303,6 +1303,7 @@ def build(settings, sources, log=None):
                        kit_text=_kit_text())
         api.file_later = functools.partial(_file_later, log)    # the answer returns at once
         api.park_later = functools.partial(_park_later, log)    # the question returns at once
+        api.record_lock = threading.RLock()     # those threads and the requests write records
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,

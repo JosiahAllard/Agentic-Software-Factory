@@ -28,7 +28,9 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   .kit.json "commit".merge_fold, during a merge in progress (one MERGE_HEAD), the files the merge
   staged itself (merge_owned), so only the resolved conflicts are named. An owner-only path is the
   merge's only when its staged state is exactly the merged branch's copy and that branch changed
-  it (a deletion included; a conflict resolved to that copy too); named, it is refused as below.
+  it (a deletion included; a conflict resolved to that copy too), or when it is exactly the clean
+  merge of both sides' changes and every one of those is the owner's or approved
+  (clean_owner_merge); named, it is refused as below.
   An owner-only path the merged branch changed but the merge commits as HEAD's copy (a
   `git checkout HEAD -- <path>`) is one WARNING line (dropped_owner_changes); nothing is refused.
 - The commit records only the paths this call named, rendered or let a merge carry (commit_only):
@@ -446,7 +448,7 @@ def dropped_owner_changes(root, rules, heads):
     return dropped
 
 
-def merge_owned(root, rules, staged, heads, landed=()):
+def merge_owned(root, rules, staged, heads, landed=(), join=True):
     """`(paths, why)`: the staged paths a merge in progress put there itself. An ordinary path
     counts only when its staged content equals the clean merge result (`git merge-tree
     --write-tree`) and merge-tree does not list it as conflicted. An owner-only path counts only
@@ -455,9 +457,12 @@ def merge_owned(root, rules, staged, heads, landed=()):
     of a path the merged branch deleted), whether the merge took it cleanly or a conflict was
     resolved to it, and every commit the merge brings that changes it, other than those reachable
     from `landed` (landed_main), is the owner's or carries an approval the hub verifies
-    (non_owner_paths); any other staged state of an owner-only path is never the merge's. No
-    merge, or an octopus one, gives `(set(), None)`; a git failure gives `(set(), why)` (or the
-    ordinary paths and `why`, when only the authors could not be checked)."""
+    (non_owner_paths). An owner-only path both sides changed counts too when it passes the
+    ordinary test and clean_owner_merge (same name and regular file throughout, no merge driver,
+    every commit on both sides approved), unless `join` is False. Any other staged state of an owner-only path is never
+    the merge's. No merge, or an octopus one, gives `(set(), None)`; a git failure gives
+    `(set(), why)` (or the paths found so far and `why`, when only the authors could not be
+    checked)."""
     candidates = set(staged)
     if len(heads) != 1 or not candidates:
         return set(), None
@@ -478,7 +483,57 @@ def merge_owned(root, rules, staged, heads, landed=()):
             return owned, why
         bases = merge_bases(root, heads[0])
         owned |= {p for p in locked - foreign if carries_merged_copy(root, p, heads[0], bases)}
+        joined = (locked - foreign - owned) - differs - conflicted
+        if joined and join:
+            joined, why = clean_owner_merge(root, rules, joined, heads[0], bases, landed)
+            if joined is None:
+                return owned, why
+            owned |= joined
     return owned, None
+
+
+def merge_attribute_unset(root, path):
+    """True when git says the `merge` attribute of `path` is unspecified, read from the work tree
+    and from the index (`git check-attr`), and no `merge.default` is configured (git applies that
+    driver to every path whose attribute is unspecified); anything else, or a git that cannot
+    say, is False: a merge driver (merge=union, -merge, a custom one) makes a result
+    merge-tree's alone does not prove."""
+    rc, _, _ = _git(root, 'config', '--get', 'merge.default')
+    if rc != 1:                     # 0: a driver is set; any other code: git could not say
+        return False
+    for extra in ((), ('--cached',)):
+        rc, out, _ = _git(root, 'check-attr', '-z', *extra, 'merge', '--', path)
+        fields = out.split('\0') if rc == 0 else []
+        if len(fields) < 3 or fields[0] != path or fields[2] != 'unspecified':
+            return False
+    return True
+
+
+def clean_owner_merge(root, rules, paths, head, bases, landed=()):
+    """`(paths, None)`: those of the owner-only `paths` (staged exactly as the clean merge of HEAD
+    and `head` has them, and not conflicted there: merge_owned's test) that the merge in progress
+    carries as the join of both sides' changes: each is a regular file of one mode (as staged)
+    under the same name at HEAD, at `head` and at every merge base in `bases` (no rename, add,
+    delete or mode change), its `merge`
+    attribute is unspecified (merge_attribute_unset), and no commit on either side that changes it,
+    other than those reachable from `landed`, lacks the owner as author or an approval the hub
+    verifies (non_owner_paths for `head`'s side; the same check of HEAD's against `head` for
+    HEAD's). `(None, why)` when git cannot tell (docs/commit.md "Owner approval")."""
+    from kitlib.guard.ownercommits import REGULAR_MODES     # here: as in _unapproved_paths
+    if not bases:
+        return set(), None
+    fit = set()
+    for p in paths:
+        known, staged = index_entry(root, p)
+        entries = [tree_entry(root, rev, p) for rev in ['HEAD', head] + list(bases)]
+        if (known and staged and staged[0] in REGULAR_MODES
+                and all(k and e and e[0] == staged[0] for k, e in entries)
+                and merge_attribute_unset(root, p)):
+            fit.add(p)
+    if not fit:
+        return set(), None
+    ours, why = _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
+    return (None, why) if ours is None else (fit - ours, None)
 
 
 def landed_main(root, remote, main):
@@ -499,11 +554,37 @@ def non_owner_paths(root, rules, head, landed=()):
     on main is not asked of the hub again: its approval was verified when it landed, and stops
     verifying once past its lifetime or while the hub is down. A merged copy one of those paths carries is not the owner's,
     so it is never the merge's."""
+    return _unapproved_paths(root, rules, head, ['HEAD'] + list(landed), 'merged')
+
+
+def _unapproved_paths(root, rules, tip, exclude, which):
+    """`(paths, None)`: the owner-only paths of ownercommits.violations(tip, exclude), or
+    `(None, why)` naming `which` commits could not be checked."""
     from kitlib.guard import ownercommits     # here: kitlib.guard reaches back into this module
-    bad, why = ownercommits.violations(root, rules, head, ['HEAD'] + list(landed))
+    bad, why = ownercommits.violations(root, rules, tip, list(exclude))
     if bad is None:
-        return None, 'the authors of the merged commits could not be checked: %s' % why
+        return None, 'the authors of the %s commits could not be checked: %s' % (which, why)
     return {p for v in bad for p in v.paths}, None
+
+
+def merge_owner_refusal(root, rules, landed=(), fold=True):
+    """`(paths, why)` for a merge in progress about to be committed with everything it staged
+    (kitlib.syncbase): the staged owner-only paths merge_owned does not carry, sorted ([]: none),
+    with `why` None. When git could not tell, `why` says so and the paths are those merge_owned
+    had not carried when it stopped (`(None, why)` when the staged paths could not be read); a
+    caller refuses on any `why`. `fold` False (`"commit".merge_fold` off) carries no path both
+    sides changed (clean_owner_merge is not asked), but still a path only the merged side changed
+    (merge_owned's merged-copy test); an octopus merge carries none."""
+    try:
+        staged = staged_status(root)
+        locked = {p for p in staged if rules.is_locked(p)}
+        heads = merge_heads(root) if locked else []
+    except _Stop as stop:
+        return None, ' '.join(stop.lines)
+    if not locked:
+        return [], None
+    owned, why = merge_owned(root, rules, locked, heads, landed, join=fold)
+    return sorted(locked - owned), why
 
 
 def foreign_refusal(foreign, merge_why=None, in_merge=False):

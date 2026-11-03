@@ -688,6 +688,30 @@ def script_run(inv):
     return run
 
 
+# a computed script word whose text ends in a literal file name after a slash or backslash
+# (`$K/tools/backlog.py`): its folder is computed, its file is not
+COMPUTED_TAIL_RE = re.compile(r'[/\\]([\w.-]+\.py)$')
+
+
+def computed_script(inv):
+    """(the file's lower-case name, the Words after it) when python runs a script whose word is
+    computed but ends in a literal file name after a slash or backslash (`python
+    "$K/tools/backlog.py" block X-1`), which tool_run gives as None; else None. The options before
+    the script are python's own, read as tool_run reads them; -c, -m and standard input are None."""
+    if inv is None or inv.dyn or not PY_RUN_RE.match(inv.name or ''):
+        return None
+    args, k = list(inv.args), 0
+    while k < len(args) and not args[k].dyn:
+        t = args[k].text
+        if t == '-' or PY_FLAG_RE.match(t) or not t.startswith('-'):
+            return None                                 # -c, -m, stdin, or a literal script: tool_run's
+        k += 2 if t in cm.PY_VALUE_OPTS else 1
+    if k >= len(args):
+        return None
+    m = COMPUTED_TAIL_RE.search(args[k].text)
+    return (m.group(1).lower(), args[k + 1:]) if m else None
+
+
 def _tool_run(inv):
     if inv is None or inv.dyn:
         return None

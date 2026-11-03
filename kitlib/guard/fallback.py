@@ -15,9 +15,10 @@ unreadable line is never a way around a rule, and a plain line is never denied b
     names the tool and the alternative is plainly()'s.
   - the roles' tools by name, for a subagent only (named_runs): text naming tools/backlog.py, or
     gate.py allow, that the rules have not read (_read_at: not a literal word of a literal,
-    non-runner command, so a commit message naming it is a mention) has its part of the line read
-    again and judged by backlogrole.runs or gaterole.shell; a part that still does not read, or
-    whose program is computed, is refused as backlog-role or gate-allow.
+    non-runner command, so a commit message naming it is a mention, unless its output is piped
+    into a runner: _pipe_runner, _piped_text) has its part of the line read again and judged by
+    backlogrole.runs or gaterole.shell; a part that still does not read, or whose program is
+    computed, is refused as backlog-role or gate-allow, its alternative the tool's literal form.
   - a git or root-search pattern that matches: the text from the match to the next ; | & or
     newline is read again as a command of its own and the rules run on it. A rule that denies it
     gives the deny, its real alternative included; none: the `unreadable` deny, whose advice is
@@ -312,10 +313,11 @@ def named_reread(event, ctx, text, shell, parsed, pos, cwd, role, rule):
 
 
 def _read_at(parsed, text, pos):
-    """True when text position `pos` lies in a part of the line the rules have already judged: a
-    literal word (or a literal heredoc or redirect target) of a top-level command whose program is
-    literal and runs no text (RUNNERS). A name there is a mention (a commit message) or a run the
-    rules read; a name in a computed word, a runner's text or a part no command holds is not."""
+    """The top-level command holding text position `pos` in a part of the line the rules have
+    already judged, or None: a literal word (or a literal heredoc or redirect target) of a command
+    whose program is literal and runs no text (RUNNERS). A name there is a mention (a commit
+    message) or a run the rules read, unless the command's output is piped into a runner
+    (_pipe_runner); a name in a computed word, a runner's text or a part no command holds is not."""
     for c in parsed.commands:
         if c.depth != 0 or c.source != text:
             continue
@@ -324,28 +326,80 @@ def _read_at(parsed, text, pos):
             continue
         for w in c.words:
             if w.start is not None and w.end is not None and w.start <= pos < w.end and not w.dyn:
-                return True
+                return c
         for r in c.redirects:
             w = r.target
             if w is not None and w.start is not None and w.end is not None and w.start <= pos < w.end:
-                return True                     # a file or heredoc body the program reads as data
-    return False
+                return c                        # a file or heredoc body the program reads as data
+    return None
 
 
-def named_runs(event, ctx, text, parsed, cwd, role):
+def _pipe_runner(parsed, c):
+    """(the runner, the kind it reads its code in: shell.BASH, shell.PS, shell.CMD or 'py') when
+    `c`'s output reaches, through its pipeline, a command that runs text (RUNNERS) or python with
+    no script, -c or -m of its own (backlogrole.reads_stdin: its own code reads standard input as
+    data); else None."""
+    from . import backlogrole
+    seen = {id(c)}
+    cur = c
+    while True:
+        nxt = next((x for x in parsed.commands if x.pipe_from is cur and id(x) not in seen), None)
+        if nxt is None:
+            return None
+        seen.add(id(nxt))
+        inv = cm.invocation(nxt)
+        name = (inv.name or '').lower() if inv is not None and not inv.dyn else ''
+        if inv is not None and inv.dyn:
+            return nxt, nxt.shell               # a program the text does not name: fail closed
+        if name in cm.BASH_SHELLS or name == 'eval' or name in ('source', '.'):
+            return nxt, sh.BASH if name in cm.BASH_SHELLS else nxt.shell
+        if name in cm.PS_SHELLS or name in ('iex', 'invoke-expression'):
+            return nxt, sh.PS
+        if name == 'cmd':
+            return nxt, sh.CMD
+        if rules.PY_RUN_RE.match(name) and backlogrole.reads_stdin(inv) == 'py':
+            return nxt, 'py'
+        cur = nxt
+
+
+def _piped_text(c, level):
+    """The code `c` pipes into a runner, as written, or None when the text cannot be seen: its
+    heredoc or here-string, or, at level 0, the files `cat F` or `Get-Content F` reads (at most
+    SCRIPT_CAP of each, regular files only), joined by newlines."""
+    from . import backlogrole
+    for r in c.redirects:
+        if r.op in ('<<', '<<<') and r.target is not None:
+            return r.target.text
+    files = None if level else backlogrole.reader_files(c)
+    if not files:
+        return None
+    texts = []
+    for f in files:
+        _path, t = backlogrole._script_text(c, f)
+        if not isinstance(t, str):
+            return None
+        texts.append(t)
+    return '\n'.join(texts) if texts else None
+
+
+def named_runs(event, ctx, text, parsed, cwd, role, level=0):
     """A subagent's line the guard cannot read that names tools/backlog.py (BACKLOG_NAME), or runs
     gate.py allow (GATE_ALLOW_NAME), where the rules have not read it (_read_at): the part of the
     line holding the name (from the last ; | & or newline before it to the next) is read again and
     judged by that rule (backlogrole.runs, gaterole.shell); a part that reads no more cleanly, or
     whose program is computed, is refused under that rule, as the guard cannot judge the run for the
-    role. A main session, and a host's unidentified subagent for the backlog, are not judged here
-    (the tool's own check is theirs). None when nothing is refused."""
+    role. A name in what a command pipes into a runner (_pipe_runner) is that runner's code: its
+    heredoc, here-string or the files cat or Get-Content reads (_piped_text, files at `level` 0
+    only) are judged as a script file is (backlogrole.judge_text), and text it cannot see is
+    refused. A main session, and a host's unidentified subagent for the backlog, are not judged
+    here (the tool's own check is theirs). None when nothing is refused."""
     from . import backlogrole, gaterole
     checks = []
     if backlogrole._judged_subagent(event):
         checks.append((backlogrole.ROLE_RULE, BACKLOG_NAME, backlogrole.runs,
                        'names tools/backlog.py where the guard cannot read the run (%s), so it cannot judge the run '
-                       'for your role (kitlib/backlog/roles.py).', None))
+                       'for your role (kitlib/backlog/roles.py). Run the tool\'s verb itself, its words literal:',
+                       backlogrole.literal_form(ctx)))
     if rules.subagent(event) and not gaterole.may_allow(event, ctx):
         checks.append((gaterole.RULE, GATE_ALLOW_NAME, gaterole.shell,
                        'names gate.py allow where the guard cannot read the run (%s): ' + gaterole.WHY,
@@ -357,7 +411,22 @@ def named_runs(event, ctx, text, parsed, cwd, role):
         if modes.mode(rule) == modes.OFF:
             continue
         for m in pat.finditer(text):
-            if _read_at(parsed, text, m.start()):
+            held = _read_at(parsed, text, m.start())
+            pipe = held is not None and _pipe_runner(parsed, held)
+            if pipe:
+                runner, kind = pipe
+                code = _piped_text(held, level)
+                head = '`%s` pipes into %s' % (rules.hub_line(rules.bare(held)), rules.bare(runner))
+                if code is None:
+                    d = rules.refuse(rule, role, '%s %s, text the guard cannot see; its text %s' % (
+                        why, head, what % 'a command piped into a runner'), instead)
+                else:
+                    d = backlogrole.judge_text(event, ctx, held, cwd, role, kind, code, head, level=level + 1)
+                    d = d and rules.reworded(d, '%s %s' % (why, d.reason))
+                if d:
+                    return d
+                continue
+            if held is not None:
                 continue
             where = cwd_at(parsed, m.start(), cwd) or cwd
             p = cm.read(segment(text, segment_start(text, m.start())), parsed.shell, where,
@@ -372,9 +441,8 @@ def named_runs(event, ctx, text, parsed, cwd, role):
                     unread.append('a program the text does not name (%s)' % inv.path)
             if not unread:
                 continue                        # read whole, and the rule let it run
-            last, alt = plainly(ctx, parsed)
-            d = rules.refuse(rule, role, '%s Its text %s%s' % (why, what % '; '.join(unread), last),
-                             instead or alt)
+            # the tool's own literal form, never a script file: a script file it runs is read too
+            d = rules.refuse(rule, role, '%s Its text %s' % (why, what % '; '.join(unread)), instead)
             if d:
                 return d
     return None

@@ -7,8 +7,9 @@
                      run's folder opens, as it is locally, only when it alone would decide; an
                      --as branch is its own from that branch's linked worktree (own_pull_refusal).
                      A computed script word ending in /backlog.py is the tool
-                     (rules.computed_script). A script file a subagent runs is read one level
-                     deep, its first SCRIPT_CAP bytes (script_file).
+                     (rules.computed_script). A script file a subagent runs, or feeds a shell
+                     on standard input, is read one level deep, its first SCRIPT_CAP bytes, a
+                     path that is not a regular file refused (script_file).
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
                      python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
                      tools/backlog.py; any session's but the owner's python code naming the hub's
@@ -451,8 +452,8 @@ def script_file_word(inv):
     """(the Word naming the script file `inv` runs, the shell that reads it: shell.BASH, shell.PS
     or 'py'), or None: a POSIX shell's script operand, a PowerShell shell's .ps1 (-File),
     source or . of a file, python's script (rules.tool_run reads which word it is; -c, -m and
-    standard input are None), or a .sh, .bash, .ps1 or .py file run by its path. A computed word
-    is None."""
+    standard input are None: stdin_files), or a .sh, .bash, .ps1 or .py file run by its path. A
+    computed word is None."""
     run = rules.tool_run(inv)
     if run is None:
         return None
@@ -476,14 +477,94 @@ def script_file_word(inv):
     return (inv.word, kind) if kind else None
 
 
+BASH_C_RE = re.compile(r'^-[A-Za-z]*c')        # bash -c, -xc: the code is a word, not standard input
+
+
+PS_CODE_OPTS = ('-file', '-f', '-command', '-c', '-encodedcommand', '-enc', '-e', '-ec')
+FILE_READERS = {'cat', 'get-content', 'gc', 'type'}     # a command whose output is the files it names
+PS_PATH_OPTS = ('-path', '-literalpath', '-raw')
+
+
+def reads_stdin(inv):
+    """The kind (shell.BASH, shell.PS or 'py') a POSIX shell, PowerShell shell or python reads its
+    code from standard input in, when it has no script, -c, -m or -Command text of its own (a
+    PowerShell shell given `-` reads it); else None."""
+    if inv is None or inv.dyn:
+        return None
+    name = (inv.name or '').lower()
+    py = rules.PY_RUN_RE.match(name) is not None
+    ps = name in cm.PS_SHELLS
+    if not (py or ps or name in cm.BASH_SHELLS):
+        return None
+    if ps and any(w.text == '-' for w in inv.args):
+        return rules.sh.PS
+    for w in inv.args:
+        t = w.text
+        if w.dyn or not t.startswith('-'):
+            return None
+        if rules.PY_FLAG_RE.match(t) if py else t.lower() in PS_CODE_OPTS if ps else BASH_C_RE.match(t):
+            return None
+    return 'py' if py else rules.sh.PS if ps else rules.sh.BASH
+
+
+def reader_files(cmd):
+    """The literal files `cmd` writes out whole (cat F, Get-Content F, -Path F), or None: another
+    program, an option it does not read, a computed word, or none named (it copies its own input)."""
+    inv = cm.invocation(cmd)
+    if inv is None or inv.dyn or (inv.name or '').lower() not in FILE_READERS:
+        return None
+    files, skip = [], False
+    for w in inv.args:
+        if w.dyn:
+            return None
+        low = w.text.lower()
+        if skip:                                # -Encoding's value
+            skip = False
+        elif low == '-encoding':
+            skip = True
+        elif low in PS_PATH_OPTS:               # -Path F, -LiteralPath F: F is the next word; -Raw
+            continue
+        elif low.startswith('-'):
+            return None                         # an option it does not read, or cat - (its input)
+        else:
+            files.append(w.text)
+    return files or None
+
+
+def stdin_files(inv):
+    """(the files, the kind they are read in) a shell or python reading its code from standard
+    input (reads_stdin) is given: a literal `<` file (`bash < x.sh`), or the files a command piped
+    straight into it writes out (`cat x.sh | bash`, `Get-Content x.ps1 | powershell -`:
+    reader_files); else None."""
+    kind = reads_stdin(inv)
+    if kind is None:
+        return None
+    for r in inv.cmd.redirects:
+        if r.op == '<' and r.target is not None and not r.target.dyn:
+            return [r.target.text], kind
+    src = inv.cmd.pipe_from
+    files = reader_files(src) if src is not None else None
+    return (files, kind) if files else None
+
+
+NOT_REGULAR = object()                          # _script_text: a FIFO, a device, standard input
+
+
 def _script_text(cmd, text):
     """(the absolute path, its first SCRIPT_CAP bytes as text) of the script file `text` names
-    from the command's directory, or (path, None) when it does not read (missing, a folder,
-    unplaceable)."""
+    from the command's directory; (path, None) when it does not read (missing, unplaceable);
+    (path, NOT_REGULAR) for a path that is there but is not a regular file (a FIFO, a folder,
+    /dev/stdin), which is never opened: what it gives is not a file the guard can read."""
+    if text == '/dev/null' or text.lower() == 'nul':
+        return text, ''                         # empty: it runs nothing
+    if text in cm.SOURCED_STDIN or text.startswith(('/dev/', '/proc/')):
+        return text, NOT_REGULAR
     path = rules.sh.resolve_path(text, cmd.cwd, shell=cmd.shell, home=cmd.home) if cmd.cwd or \
         os.path.isabs(text) else None
     if not path:
         return None, None
+    if not os.path.isfile(path):
+        return path, (NOT_REGULAR if os.path.exists(path) else None)
     try:
         with open(path, 'rb') as f:
             data = f.read(SCRIPT_CAP)
@@ -494,49 +575,85 @@ def _script_text(cmd, text):
     return path, data.decode('utf-8-sig', 'replace')
 
 
+KIT_CODE = ('tools', 'tests', 'kitlib', 'boot', 'hosts', 'githooks')   # the kit's code folders
+
+
 def _kit_code(ctx, path):
-    """True for a file of the kit: under the kit folder the guard runs from, or in a kit checkout (a
-    folder above it holds kit.json and kitlib/). The kit's own tools and tests import its library."""
+    """True for a file in a code folder of the kit (KIT_CODE): of the kit folder the guard runs
+    from, or of a kit checkout (a folder above it holds kit.json and kitlib/). The kit's own tools
+    and tests import its library; a script saved anywhere else in a checkout is judged."""
     from . import paths
     here = paths.norm(path, absolute=True)
+
+    def in_code(root):
+        rel = os.path.relpath(here, root).replace('\\', '/').split('/')
+        return len(rel) > 1 and rel[0] in KIT_CODE
     kit = getattr(ctx, 'kit', None)
-    if kit and jail.inside(here, paths.norm(kit, absolute=True)):
-        return True
+    if kit:
+        root = paths.norm(kit, absolute=True)
+        if jail.inside(here, root):
+            return in_code(root)
     d = os.path.dirname(here)
     while True:
         if os.path.isfile(os.path.join(d, 'kit.json')) and os.path.isdir(os.path.join(d, 'kitlib')):
-            return True
+            return in_code(d)
         up = os.path.dirname(d)
         if up == d:
             return False
         d = up
 
 
+def literal_form(ctx):
+    """The alternative to a run the guard cannot judge: the tool itself, its words literal."""
+    return 'python %s -C <worktree> <verb> <arguments>, run directly as a command of its own' % \
+        rules.kit_tool(ctx, TOOL)
+
+
 def script_file(event, ctx, cmd, inv, cwd, role):
-    """A subagent's run of a script file (script_file_word), read one level deep, its first
-    SCRIPT_CAP bytes: a shell script is read as a command line in the shell that runs it and its
-    commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
-    fallback.named_runs as an unreadable line is; a python script is judged as backlog_code judges
-    -c code (CODE_RE), except the kit's own (_kit_code). A script it runs in turn, and a file that
-    does not read, are not read."""
+    """A subagent's run of a script file (script_file_word), or of the files its standard input
+    is given (stdin_files), read one level deep, each one's first SCRIPT_CAP bytes, and judged by
+    judge_text; a path that is there but is not a regular file (a FIFO, /dev/stdin) is refused, as
+    the guard cannot read it. A missing file is not judged."""
     if not _judged_subagent(event):
         return None
     found = script_file_word(inv)
-    if found is None:
+    names, kind = ([found[0].text], found[1]) if found else stdin_files(inv) or (None, None)
+    if not names:
         return None
-    word, kind = found
-    path, text = _script_text(cmd, word.text)
-    if text is None:
-        return None
-    head = '`%s` runs %s' % (rules.hub_line(rules.bare(cmd)), rules.fwd(path))
+    line = rules.hub_line(rules.bare(cmd) if found or cmd.pipe_from is None else
+                          rules.bare(cmd.pipe_from) + ' | ' + rules.bare(cmd))
+    read = []
+    for name in names:
+        path, text = _script_text(cmd, name)
+        if text is NOT_REGULAR:
+            return rules.refuse(ROLE_RULE, role, '`%s` runs %s, which is not a regular file, so the guard cannot '
+                                'read it to judge a run of tools/backlog.py in it for your role '
+                                '(kitlib/backlog/roles.py). Run the tool\'s verb itself:' % (line, rules.fwd(path)),
+                                literal_form(ctx))
+        if text is not None:
+            read.append((path, text))
+    for path, text in read:
+        d = judge_text(event, ctx, cmd, cwd, role, kind, text, '`%s` runs %s' % (line, rules.fwd(path)), path)
+        if d:
+            return d
+    return None
+
+
+def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1):
+    """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`:
+    shell.BASH, shell.PS or 'py'): a shell's text is read as a command line in the shell that runs
+    it and its commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
+    fallback.named_runs at `level` (past level 0 it reads no file the text names); a judged
+    subagent's python is judged as backlog_code judges -c code (CODE_RE), except the kit's own
+    (_kit_code of `path`). A refusal is reworded to begin with `head`."""
     if kind == 'py':
-        m = CODE_RE.search(text)
-        if not m or _kit_code(ctx, path):
+        m = CODE_RE.search(text) if _judged_subagent(event) else None
+        if not m or (path and _kit_code(ctx, path)):
             return None
         return rules.refuse(RAW_RULE, role, '%s, whose code names %s: code that reaches the backlog\'s library or '
                             'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '
                             'write (kitlib/backlog/roles.py). Run the tool\'s verb itself:' % (head, m.group(0)),
-                            'python %s -C <worktree> <verb> <arguments>' % rules.kit_tool(ctx, TOOL))
+                            literal_form(ctx))
     from . import fallback, gaterole
     p = cm.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))
     for c in p.commands:
@@ -545,7 +662,7 @@ def script_file(event, ctx, cmd, inv, cwd, role):
         if d:
             return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
     if not p.clean:
-        d = fallback.named_runs(event, ctx, text, p, cmd.cwd, role)
+        d = fallback.named_runs(event, ctx, text, p, cmd.cwd, role, level=level)
         if d:
             return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
     return None

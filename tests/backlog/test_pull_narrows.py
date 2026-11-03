@@ -130,6 +130,67 @@ class PullNarrows(StoreCase):
                          ['kitlib/** FOO %s' % BRANCH, 'docs/** BAR kit/bar'])
 
 
+class PullNarrowsTwoHolders(StoreCase):
+    """MOVEMENT-S5's shape: FOO's one broad member is hit by two live pulls, HOLD on kit/holder
+    (kitlib/x/**, changed kitlib/x/a.py, added kitlib/x/new.py) and HOLD2 on kit/holder2
+    (kitlib/y/**, changed kitlib/y/c.py); the pull narrows all three in one store write."""
+
+    def setUp(self):
+        super().setUp()
+        for p in ('kitlib/x/a.py', 'kitlib/x/b.py', 'kitlib/y/c.py', 'kitlib/y/d.py'):
+            self.repo.write(p, 'x\n')
+        self.repo.commit('code', 'kitlib')
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.wt = self.repo.worktree('holder', 'kit/holder')
+        self.repo.write('kitlib/x/a.py', 'changed\n', root=self.wt)
+        self.repo.commit('work', 'kitlib/x/a.py', cwd=self.wt)
+        self.repo.write('kitlib/x/new.py', 'new\n', root=self.wt)          # untracked, dirty
+        self.wt2 = self.repo.worktree('holder2', 'kit/holder2')
+        self.repo.write('kitlib/y/c.py', 'changed\n', root=self.wt2)
+        self.repo.commit('work', 'kitlib/y/c.py', cwd=self.wt2)
+
+    def seed_three(self, files2='## Files\n- kitlib/y/c.py\n'):
+        self.seed(priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/holder',
+                         scope='kitlib/x/**', body='## Files\n- kitlib/x/a.py\n'),
+                  priced('HOLD2', state='pulled', pulled_at=TODAY, pulled_by='kit/holder2',
+                         scope='kitlib/y/**', body=files2),
+                  priced('FOO', priority='3', scope='kitlib/**'))
+        return self.remote_tip()
+
+    def test_the_pull_narrows_every_record_in_one_store_write(self):
+        before = self.seed_three()
+        change = self.verb('pull', 'FOO', None, True)
+        foo, hold, hold2 = self.get('FOO'), self.get('HOLD'), self.get('HOLD2')
+        self.assertEqual(foo.get('state'), 'pulled')
+        self.assertEqual(foo.all('scope'), ['kitlib/x/b.py', 'kitlib/y/d.py'])
+        self.assertEqual(foo.all('narrowed'), ['kitlib/** HOLD kit/holder',
+                                               'kitlib/** HOLD2 kit/holder2'])
+        self.assertEqual(hold.all('scope'), ['kitlib/x/a.py', 'kitlib/x/new.py'])
+        self.assertEqual(hold.all('narrowed'), ['kitlib/x/** FOO %s' % BRANCH])
+        self.assertEqual(hold2.all('scope'), ['kitlib/y/c.py'])
+        self.assertEqual(hold2.all('narrowed'), ['kitlib/y/** FOO %s' % BRANCH])
+        after = self.remote_tip()
+        self.assertEqual(self.repo.git('rev-list', '--count', '%s..%s' % (before, after)), '1')
+        self.assertEqual(sorted(self.repo.git('diff-tree', '--no-commit-id', '--name-only', '-r',
+                                              after).split()),
+                         ['backlog/FOO.md', 'backlog/HOLD.md', 'backlog/HOLD2.md'])
+        self.assertIn('NARROWED HOLD2 for FOO on %s: drops kitlib/y/d.py from kitlib/y/** '
+                      '(keeps kitlib/y/c.py)' % BRANCH, change.lines)
+        self.assertEqual(change.rows, [policy.COLLISION_ROWS['pull']])
+
+    def test_one_holder_that_cannot_be_narrowed_narrows_nothing(self):
+        # HOLD2's `## Files` cannot be read: no narrowing, though HOLD alone would narrow.
+        before = self.seed_three(files2='## Files\n- kitlib/y/**\n')
+        offers, passed, _h, _o = pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        self.assertEqual(offers, [])
+        self.assertIsNotNone([p for p in passed if p.rec.id == 'FOO'][0].pair)
+        with self.assertRaises(Refusal) as cm:
+            self.verb('pull', 'FOO', None, True)
+        self.assertIn('HOLD2', str(cm.exception))
+        self.assertEqual(self.remote_tip(), before)
+        self.assertEqual(self.get('HOLD').all('scope'), ['kitlib/x/**'])
+
+
 class SharedStore(StoreCase):
     """`_shared_store`: a ref store is read by every branch; a folder store in a checkout that
     is not the PM data worktree is that checkout's own copy."""

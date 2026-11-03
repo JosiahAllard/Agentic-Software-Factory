@@ -5,7 +5,9 @@ colliding records (kitlib/backlog/record.py; a lead's `set --narrowed` today, th
 narrows). A commit on the branch holding one of them may not record a path inside an original
 member that its record no longer covers while the other record is still pulled: that part was
 given to the other branch. Both sides of a rename are named paths of the commit, so each is
-checked, and a refused side names the other; one hit refuses the whole commit. Paths and members
+checked; a refused side names the other only for a rename with its content unchanged (the same
+blob: rename_pairs), and an edited move names only the refused side. One hit refuses the whole
+commit. Paths and members
 compare as the landing scope check compares them (scope.covers), a member of the store shared by
 repositories read without its area prefix (scope.in_repo).
 

@@ -426,7 +426,7 @@ def broad_scope_warning(scopes, summary, body=None):
     under it (the line suggests those paths)."""
     named = []
     for m in NAMED_FILE.findall((summary or '') + '\n' + (body or '')):
-        if m not in named:
+        if m not in named and smod.path_shape_error(m) is None:
             named.append(m)
     parts = []
     for m in scopes:

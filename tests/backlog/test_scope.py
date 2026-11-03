@@ -66,6 +66,11 @@ class Complement(unittest.TestCase):
     def test_none_is_unchanged(self):
         self.assertEqual(smod.complement('none', {'kit/a.py'}, TREE), ['none'])
 
+    def test_no_tracked_data_for_the_member_is_none(self):
+        self.assertIsNone(smod.complement('kit/**', {'kit/a.py'}, []))
+        self.assertIsNone(smod.complement('Kit/**', {'kit/a.py'}, TREE))
+        self.assertIsNone(smod.complement('nowhere/**', {'nowhere/a.py'}, TREE))
+
     def test_removing_every_file_leaves_nothing(self):
         self.assertEqual(smod.complement('docs/**', {'docs/x.md', 'docs/y.md'}, TREE), [])
 
@@ -97,6 +102,16 @@ class AddBroadScope(StoreCase):
         change = self.add('fix the warning', ['kitlib/backlog/**'],
                           body='The defect is in kitlib/backlog/scope.py.\n')
         self.assertIn('kitlib/backlog/scope.py', self.warnings(change)[0])
+
+    def test_a_dotted_path_in_the_body_does_not_fail_the_add(self):
+        change = self.add('fix the warning', ['kitlib/backlog/**'],
+                          body='See ./kitlib/backlog/a.py and ../docs/x.md.\n')
+        self.assertEqual(self.warnings(change), [])
+        self.assertIsNotNone(self.get('NEW'))
+
+    def test_a_literal_md_member_does_not_warn(self):
+        change = self.add('fix docs/backlog.md', ['docs/backlog.md'])
+        self.assertEqual(self.warnings(change), [])
 
     def test_a_narrow_scope_does_not_warn(self):
         change = self.add('fix kitlib/backlog/plan.py', ['kitlib/backlog/plan.py'])

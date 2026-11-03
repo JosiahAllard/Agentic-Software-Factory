@@ -116,11 +116,16 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
     folder that holds a removed path. `member` is a folder, a `dir/**` glob or a file. It is
     returned as it is (a one-member list) when no removed path collides with it. None when the
     result would exceed `cap` members, or when `member` is a single file holding a removed path
-    (a literal .md included): the caller cannot auto-narrow. Collision is `members_collide`."""
+    (a literal .md included), or when `tree` has nothing for it (empty tree, letter-case
+    mismatch): the caller cannot auto-narrow. `[]` means every tracked file under the member
+    was removed; test `is None`, never `not out`. Collision is `members_collide`."""
     if member == NONE or not any(members_collide(member, r) for r in removed):
         return [member]
     base = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
     below = base + '/'
+    under = [p for p in tree if members_collide(member, p)]
+    if not under or any(not (p == base or p.startswith(below)) for p in under):
+        return None         # no tracked data for it, or a letter-case mismatch: do not guess
     if not member.endswith(GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
         return None         # a single file
     out = []

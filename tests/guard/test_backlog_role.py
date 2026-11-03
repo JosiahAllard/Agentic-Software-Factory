@@ -1179,6 +1179,11 @@ class Unread(Base):
                 self.allowed(self.cmd(text, sub=False, env=COORDINATOR))
         self.allowed(self.cmd('bash missing.sh'))
         self.allowed(self.cmd('bash < /dev/null'))
+        self.script('x.sh', 'python tools/backlog.py %s\n' % self.BLOCK)
+        self.refused(self.cmd('cat x.sh | source /dev/stdin'))
+        self.refused(self.cmd('bash /dev/stdin <<< "python tools/backlog.py %s"' % self.BLOCK))
+        self.allowed(self.cmd('bash /dev/stdin <<< "python tools/backlog.py show X-1"'))
+        self.allowed(self.cmd('source /dev/stdin <<EOF\ngit status\nEOF'))
 
     def test_an_unread_run_names_the_tools_literal_form(self):
         d = self.refused(self.cmd('bash -c "$PRE python tools/backlog.py %s"' % self.BLOCK))

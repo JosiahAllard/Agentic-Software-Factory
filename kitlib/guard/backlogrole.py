@@ -622,6 +622,16 @@ def script_file(event, ctx, cmd, inv, cwd, role):
         return None
     line = rules.hub_line(rules.bare(cmd) if found or cmd.pipe_from is None else
                           rules.bare(cmd.pipe_from) + ' | ' + rules.bare(cmd))
+    if found and names[0] in cm.SOURCED_STDIN:
+        # /dev/stdin: its text is the line's heredoc or here-string, or the files piped in
+        here = next((r.target.text for r in cmd.redirects if r.op in ('<<', '<<<') and r.target is not None), None)
+        if here is not None:
+            return judge_text(event, ctx, cmd, cwd, role, kind, here, '`%s` runs its standard input' % line)
+        files = reader_files(cmd.pipe_from) if cmd.pipe_from is not None else None
+        if files:
+            names = files
+        elif cmd.pipe_from is not None and (inv.name or '').lower() in SOURCERS:
+            return None                         # commands reads a sourced pipe (echo) or flags it unread
     read = []
     for name in names:
         path, text = _script_text(cmd, name)

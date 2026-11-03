@@ -36,7 +36,6 @@ import tempfile
 import threading
 import time
 
-import kitlib.platform
 from kitlib.lock import queue as queue_mod
 from kitlib.lock import run as run_mod
 from kitlib.lock.store import EXIT_BUSY, LockError, Store, iso
@@ -77,27 +76,10 @@ def bindable(port):
 
 
 def listening(port):
-    """The pids that listen on TCP `port` now (any address). On Linux, {None} when anything
-    listens there (its owner is not read), else empty."""
-    if kitlib.platform.NAME == 'windows':
-        from kitlib.proc import tcp
-        return {pid for end, pid in tcp.listeners() if end[2] == port}
-    return {None} if _proc_net_listens(port) else set()
-
-
-def _proc_net_listens(port, paths=('/proc/net/tcp', '/proc/net/tcp6')):
-    want = '%04X' % port
-    for path in paths:
-        try:
-            with open(path, encoding='ascii') as f:
-                lines = f.read().splitlines()[1:]
-        except OSError:
-            continue
-        for line in lines:
-            cols = line.split()
-            if len(cols) > 3 and cols[3] == '0A' and cols[1].rsplit(':', 1)[-1].upper() == want:
-                return True
-    return False
+    """The pids that listen on TCP `port` now (any address; kitlib.proc.tcp.listeners). On Linux
+    the table names no owner, so it is {None} when anything listens there, else empty."""
+    from kitlib.proc import tcp
+    return {pid for end, pid in tcp.listeners() if end[2] == port}
 
 
 def ports_booked(store):

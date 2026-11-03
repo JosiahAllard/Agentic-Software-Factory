@@ -282,6 +282,30 @@ ul.hist .sch-line{display:block}
 @media (prefers-reduced-motion:no-preference){
   .q,.t,.pk,label.opt,.sec,.tab,.fchip,.tb,.morerow,button.primary,.copy{transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s}
 }
+/* Landings: a card per repository, a line per landing that opens in place. */
+.chip.bad{background:var(--warn-soft);color:var(--warn)} .chip.mid{background:var(--rec-soft);color:var(--rec)}
+.lpage{display:grid;gap:14px}
+.lpage .sum{margin:0;color:var(--muted);font-size:.85rem}
+.lfilters{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.lfilters label{display:grid;gap:2px;font-size:.75rem;color:var(--muted)}
+.lfilters select,.lfilters input{font:500 .8125rem var(--f-body);padding:5px 8px;border-radius:var(--r-s);border:1px solid var(--line);background:var(--surface);color:var(--fg);min-height:32px}
+.lout{display:grid;gap:14px}
+.lgrp{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.lgrp h2{margin:0;padding:10px 14px;font-size:.95rem;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.lgrp h2 .n{font:600 .72rem var(--f-mono);background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:0 7px}
+.lgrp h2 .n.bad{background:var(--warn-soft);color:var(--warn)}
+.ln{border-bottom:1px solid var(--line)} .ln:last-child{border-bottom:0}
+.ln>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 14px;min-height:44px;box-sizing:border-box;align-items:center}
+.ln>summary::-webkit-details-marker{display:none}
+.ln>summary:hover{background:var(--hover)}
+.ln .br{font:600 .85rem var(--f-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln .cl{grid-column:1;font-size:.8rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln .rt{grid-row:1 / span 2;grid-column:2;display:flex;gap:8px;align-items:center;font-size:.75rem;color:var(--muted);white-space:nowrap}
+.ln .raw{padding:4px 14px 12px;display:grid;gap:6px}
+.ln .raw .kv{margin:0;font-size:.8rem}
+.ln .raw pre{margin:0;font:.72rem var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-s);padding:8px;overflow:auto}
+.ln .raw summary{cursor:pointer;font-size:.8rem;color:var(--accent)}
+@media (max-width:560px){.ln>summary{grid-template-columns:1fr}.ln .rt{grid-row:auto;grid-column:1}}
 </style>
 </head>
 <body>
@@ -408,7 +432,7 @@ ul.hist .sch-line{display:block}
 <script>
 (function(){
   const $ = s => document.querySelector(s);
-  const state = { docs: [], inbox: [], ifilter: "unread", todos: [], stories: [], backlog: [], completed: [], period: 7, bprio: new Set(["1", "2", "3"]), bstat: new Set(["open", "blocked", "parked", "pulled"]), bq: "", idq: "", usage: [], agents: [], skills: [], skilledits: [], landings: [], skEdit: new Map(), notices: [], parked: [], gone: {}, partial: {}, seen: null, repos: [], brepo: "", sfilter: "current", rec: null, infotab: "usage", inboxtab: "questions", afilter: "waiting", lintOpen: null, topm: [], approvals: [], decided: [], strong: false, pages: [], pfilter: "queued", pmOlder: false, pmEdit: new Map(), todoEdit: new Map(), stale: {}, section: "questions", filter: "open", tfilter: "open", repo: "", editing: new Set(), sel: null,
+  const state = { docs: [], inbox: [], ifilter: "unread", todos: [], stories: [], backlog: [], completed: [], period: 7, bprio: new Set(["1", "2", "3"]), bstat: new Set(["open", "blocked", "parked", "pulled"]), bq: "", idq: "", usage: [], agents: [], skills: [], skilledits: [], landings: [], lf: { repo: "", result: "", range: "", from: "", to: "" }, skEdit: new Map(), notices: [], parked: [], gone: {}, partial: {}, seen: null, repos: [], brepo: "", sfilter: "current", rec: null, infotab: "usage", inboxtab: "questions", afilter: "waiting", lintOpen: null, topm: [], approvals: [], decided: [], strong: false, pages: [], pfilter: "queued", pmOlder: false, pmEdit: new Map(), todoEdit: new Map(), stale: {}, section: "questions", filter: "open", tfilter: "open", repo: "", editing: new Set(), sel: null,
     // The Schedule view: its tab, the History filters, the Week grid's pick and shift, the reserve note and the run asked once.
     sch: { tab: "now", repo: "", kind: "", result: "", histOpen: false, shift: 0, pick: null, note: "", confirm: null, stats: null, days: 7, statsRev: null, statsWhy: "", status: "", bad: false, busy: false,
       // The open forms, each holding what is typed so a redraw never loses it: New hold, a hold's Edit (by its id), the games list, the division.
@@ -593,7 +617,7 @@ ul.hist .sch-line{display:block}
   // The detail pane: what the view being drawn opened (pickDetail), put there once, in place.
   let detailKids = [], drewSection = null;
   // The sections whose views open a card in the detail pane (the views that call pickDetail), and the pane's empty state.
-  const hasDetail = sc => ["home", "questions", "todo", "topm", "approvals", "agents", "skills", "docs", "landings", "autotasks", "findings"].includes(sc)
+  const hasDetail = sc => ["home", "questions", "todo", "topm", "approvals", "agents", "skills", "docs", "autotasks", "findings"].includes(sc)
     || (sc === "info" && state.infotab !== "notices") || (sc === "backlog" && !state.rec);
   const dempty = el("div", {class:"empty", id:"detail-empty"}, el("strong", {text:"Nothing selected"}), "A row's detail opens here once the list has one.");
   function draw(){
@@ -603,6 +627,7 @@ ul.hist .sch-line{display:block}
     const sc = state.section, q = sc === "questions";
     if (sc === "autotasks" && drewSection !== "autotasks") sched.read = false;     // the schedules are read again each time the section is shown
     if (sc === "findings" && drewSection !== "findings") lint.read = false;        // and so are the findings
+    if (sc === "landings" && drewSection !== "landings") state.lf = lfNew();     // the Landings filters start fresh each visit
     drewSection = sc;
     const inb = q || sc === "inbox";
     // The phone's More tab holds every section the other four tabs do not.
@@ -632,7 +657,7 @@ ul.hist .sch-line{display:block}
     $("#n-p").textContent = state.parked.length; $("#n-p").classList.toggle("hot", state.parked.length > 0);
     $("#n-sp").textContent = state.parked.length + " parked"; $("#n-sp").hidden = !state.parked.length;
     const pb = pmBadge(state.topm); $("#n-pm").textContent = pb.n; $("#n-pm").classList.toggle("hot", pb.hot);
-    $("#repo").hidden = sc === "home" || sc === "info" || sc === "agents" || sc === "skills" || sc === "backlog" || sc === "topm" || sc === "autotasks" || sc === "findings" || sc === "approvals" || sc === "more" || sc === "schedule";
+    $("#repo").hidden = sc === "home" || sc === "landings" || sc === "info" || sc === "agents" || sc === "skills" || sc === "backlog" || sc === "topm" || sc === "autotasks" || sc === "findings" || sc === "approvals" || sc === "more" || sc === "schedule";
     $("#n-d").textContent = state.pages.length;
     $("#n-l").textContent = state.landings.length;
     schCounts();
@@ -738,36 +763,99 @@ ul.hist .sch-line{display:block}
       el("h2", {text: a.role || "(no description)"}), kv("Model", a.model || "inherit"), kv("Effort", a.effort || "default"));
   }
 
-  // Landings: the event tools/land.py posts for each branch it landed (docs/action-hub.md "landings/L-NNN"), newest
-  // first, the latest LANDINGS_SHOWN (api.FEED_MAX), under a heading per new main: a batch is one main, many branches.
+  // Landings: the event tools/land.py posts for each branch it landed (docs/action-hub.md "landings/L-NNN"), as one
+  // card per repository and one line per landing, newest first, the latest LANDINGS_SHOWN (api.FEED_MAX). A line opens
+  // in place to its gate summary, tip and new main, and the event as it was posted. The filters (state.lf) are the
+  // page's own and start fresh each time the section is shown.
   const LANDINGS_SHOWN = 200;
   const lnum = d => parseInt(String(d.id).replace(/^\D+/, ""), 10) || 0;
   const short = c => String(c || "").slice(0, 10);
-  function renderLandings(){
-    fillRepos(state.landings);
-    const rows = state.landings.filter(inR).sort((a, b) => lnum(b) - lnum(a)).slice(0, LANDINGS_SHOWN);
-    if (!rows.length) { const at = settle([]); show([], el("div", {class:"empty"}, el("strong", {text: !ready ? NOT_READY : state.repo ? "No landings for this repo" : "No landings yet"}), ready ? "Each branch tools/land.py lands is posted here once its push is verified." : NOT_READY_WHY)); pickDetail(at); return; }
-    const at = settle(rows.map(d => ["landing", d]));
-    const landingRow = d => rowCard("landing", { ...d, title: String(d.branch || "(no branch)") }, [d.repo ? el("span", {class:"chip", text: String(d.repo)}) : null,
-      el("span", {class: "chip" + (d.verdict === "pass" ? " ok" : ""), text: String(d.verdict || "?")}), d.mode ? el("span", {class:"chip", text: String(d.mode)}) : null,
-      d.deploy ? el("span", {class:"chip need", text:"Deploy"}) : null], d.posted_at ? "landed " + when(d.posted_at) : "");
-    const kids = []; let main = null;
-    for (const d of rows) {
-      if (d.main !== main) { main = d.main; kids.push(el("p", {class:"unote", text: (d.repo ? d.repo + " " : "") + (d.main_branch || "main") + " at " + short(d.main)})); }
-      kids.push(drawn(landingRow, d));
-    }
-    show([], kids);
-    pickDetail(at);
+  const lfNew = () => ({ repo: "", result: "", range: "", from: "", to: "" });
+  const LF_RANGES = [["", "Any time"], ["24", "Last 24 hours"], ["168", "Last 7 days"], ["720", "Last 30 days"]];
+  // The verdicts a landing event carries (kitlib.gate.result): only pass is a clean pass; any other, a string this page
+  // does not know included, is shown as it is and counts as not clean.
+  const LANDING_SAID = { "pass": ["Passed", "ok"], "landed-ungated": ["Landed, not gated", "mid"], "fail": ["Failed", "bad"], "refused": ["Refused", "bad"],
+    "stuck": ["Stuck", "bad"], "busy": ["Busy", "bad"], "usage": ["Usage", "bad"], "error": ["Error", "bad"], "stopped": ["Stopped", "bad"], "not-run": ["Not run", "bad"] };
+  // The lines the owner has open (by event id, and "<id>:raw" for the raw-event fold): each refresh draws the lines
+  // again, and an open one stays open.
+  const lnOpen = new Set();
+  const keepOpen = (node, key) => { if (lnOpen.has(key)) node.open = true; node.addEventListener("toggle", () => { if (node.open) lnOpen.add(key); else lnOpen.delete(key); }); return node; };
+  const landingResult = d => (Object.prototype.hasOwnProperty.call(LANDING_SAID, d.verdict) && LANDING_SAID[d.verdict]) || [String(d.verdict || "?"), "bad"];
+  const landingClean = d => d.verdict === "pass";
+  // "1 h ago", "yesterday", "4 d ago": read when the section is drawn, not kept up to date.
+  function agoText(iso, now){
+    const t = new Date(iso).getTime(); if (!iso || isNaN(t)) return "";
+    const m = Math.max(0, Math.floor((now - t) / 60000));
+    return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.floor(m / 60) + " h ago" : m < 2880 ? "yesterday" : Math.floor(m / 1440) + " d ago";
   }
-  function landingCard(d){
+  // A record's title, for the ids a landing closed: the open and the closed records the page already holds, by repo and
+  // id, then by id alone; an id found nowhere stays the bare id.
+  function landingTitles(){
+    const byRepo = new Map(), byId = new Map();
+    for (const b of [...state.completed, ...state.backlog]) {
+      if (!b.item || !b.title) continue;
+      byRepo.set(String(b.repo).toLowerCase() + ":" + b.item, b.title);
+      if (!byId.has(b.item)) byId.set(b.item, b.title);
+    }
+    return (repo, id) => byRepo.get(String(repo || "").toLowerCase() + ":" + id) || byId.get(id) || "";
+  }
+  function landingKeeps(d, f, now){
+    if (f.repo && String(d.repo || "") !== f.repo) return false;
+    if (f.result === "pass" && !landingClean(d)) return false;
+    if (f.result === "other" && landingClean(d)) return false;
+    const t = new Date(d.posted_at).getTime();
+    if (f.range && (isNaN(t) || t < now - Number(f.range) * 3600000)) return false;
+    if (f.from) { const a = new Date(f.from + "T00:00:00").getTime(); if (!isNaN(a) && (isNaN(t) || t < a)) return false; }
+    if (f.to) { const z = new Date(f.to + "T23:59:59.999").getTime(); if (!isNaN(z) && (isNaN(t) || t > z)) return false; }
+    return true;
+  }
+  function landingFilters(repos){
+    const f = state.lf, set = (k, v) => { f[k] = v; if (k === "range" && v) f.from = f.to = ""; if ((k === "from" || k === "to") && v) f.range = ""; render(); };
+    const pick = (k, label, opts) => { const s = el("select", {id: "lf-" + k, onchange: e => set(k, e.target.value)}, opts.map(([val, txt]) => el("option", {value: val, text: txt}))); s.value = f[k]; return el("label", {}, label, s); };
+    const date = (k, label) => { const i = el("input", {type:"date", id: "lf-" + k, onchange: e => set(k, e.target.value)}); i.value = f[k]; return el("label", {}, label, i); };
+    return el("div", {class:"lfilters", id:"lf"},
+      pick("repo", "Repo", [["", "All repos"], ...repos.map(r => [r, r])]),
+      pick("result", "Result", [["", "All results"], ["pass", "Passed"], ["other", "Not a clean pass"]]),
+      pick("range", "Quick range", LF_RANGES), date("from", "From"), date("to", "To"),
+      el("button", {class:"link", type:"button", id:"lf-clear", text:"Clear", onclick: () => { state.lf = lfNew(); render(); }}));
+  }
+  function landingLine(d, title, now){
+    const [said, cls] = landingResult(d), recs = Array.isArray(d.records) ? d.records : [];
     const kv = (k, v) => el("p", {class:"kv"}, el("b", {text: k + ": "}), String(v));
-    const recs = Array.isArray(d.records) ? d.records : [];
-    return el("article", {class:"q", id: "l-" + d.id},
-      el("div", {class:"meta"}, el("span", {class:"id", text: d.id}), d.repo ? el("span", {class:"chip", text: String(d.repo)}) : null, d.posted_at ? el("span", {text: when(d.posted_at)}) : null),
-      el("h2", {text: String(d.branch || "(no branch)")}),
-      kv("Tip", short(d.tip)), kv("New " + (d.main_branch || "main"), short(d.main)), kv("Verdict", (d.verdict || "?") + (d.summary ? " · " + d.summary : "")),
-      kv("Gate", d.mode || "unknown"), kv("Records closed", recs.length ? recs.join(", ") : "none"),
-      d.deploy ? kv("Deploy", d.deploy) : null);
+    const sum = d.summary ? String(d.summary) : [d.verdict || "?", d.mode].filter(Boolean).join(", ");
+    const closed = recs.length ? recs.map(id => title(d.repo, id) ? id + " " + title(d.repo, id) : id).join("; ") : sum;
+    return keepOpen(el("details", {class:"ln", id: "l-" + d.id},
+      el("summary", {},
+        el("span", {class:"br", text: String(d.branch || "(no branch)")}),
+        el("span", {class:"cl", text: closed}),
+        el("span", {class:"rt"}, el("span", {class:"chip " + cls, text: said}), d.deploy ? el("span", {class:"chip mid", text:"Deploy"}) : null, el("span", {text: agoText(d.posted_at, now)}))),
+      el("div", {class:"raw"},
+        kv("Summary", sum), kv("Tip", short(d.tip) || "unknown"), kv("New " + (d.main_branch || "main"), short(d.main) || "unknown"), kv("Gate", d.mode || "unknown"),
+        d.deploy ? kv("Deploy", d.deploy) : null,
+        keepOpen(el("details", {class:"rawev"}, el("summary", {text:"Raw event"}), el("pre", {text: JSON.stringify(d, null, 2)})), d.id + ":raw"))), d.id);
+  }
+  function renderLandings(){
+    const now = Date.now(), f = state.lf, all = state.landings;
+    const repos = [...new Set(all.map(d => String(d.repo || "")).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (f.repo && !repos.includes(f.repo)) f.repo = "";
+    if (!all.length) { show([], el("div", {class:"empty"}, el("strong", {text: !ready ? NOT_READY : "No landings yet"}), ready ? "Each branch tools/land.py lands is posted here once its push is verified." : NOT_READY_WHY)); return; }
+    const rows = all.filter(d => landingKeeps(d, f, now)).sort((a, b) => lnum(b) - lnum(a)).slice(0, LANDINGS_SHOWN);
+    const bad = rows.filter(d => !landingClean(d)).length, byRepo = new Map();
+    for (const d of rows) { const r = String(d.repo || "(no repo)"); if (!byRepo.has(r)) byRepo.set(r, []); byRepo.get(r).push(d); }
+    const title = landingTitles();
+    const head = el("p", {class:"sum", id:"lf-sum", text: rows.length + (rows.length === 1 ? " landing" : " landings") + " in " + byRepo.size + (byRepo.size === 1 ? " repo" : " repos") + " · " + bad + " not a clean pass"});
+    let body;
+    // The hub holds the newest LANDINGS_SHOWN landings: a date range that reaches past the oldest of them is said so.
+    const oldest = Math.min(...all.map(d => new Date(d.posted_at).getTime()).filter(t => !isNaN(t)));
+    const lo = f.from ? new Date(f.from + "T00:00:00").getTime() : f.to ? -Infinity : f.range ? now - Number(f.range) * 3600000 : null;
+    const cut = all.length >= LANDINGS_SHOWN && lo != null && lo < oldest ? el("p", {class:"unote", id:"lf-cut", text:"The hub holds only the newest " + LANDINGS_SHOWN + " landings, and this range reaches past the oldest of them."}) : null;
+    if (!rows.length) {
+      body = el("div", {class:"empty"}, el("strong", {text:"No landings match these filters"}), "Clear a filter to see more.");
+    } else {
+      body = el("div", {class:"lout"}, [...byRepo].map(([r, ds]) => { const nb = ds.filter(d => !landingClean(d)).length;
+        return el("section", {class:"lgrp"}, el("h2", {}, r, " ", el("span", {class:"n", text: String(ds.length)}), nb ? el("span", {class:"n bad", text: nb + " not pass"}) : null), ds.map(d => drawn(x => landingLine(x, title, now), d))); }));
+    }
+    show([], el("div", {class:"lpage"}, head, landingFilters(repos), cut, body));
   }
 
   // Skills: the kit's skill sources (content/skills/<name>/SKILL.md). A row is a skill's name and description; its
@@ -1913,7 +2001,7 @@ ul.hist .sch-line{display:block}
     if (!at) return;
     const [kind, d, extra] = at;
     openId = d.id;
-    const make = { approval: approvalCard, todo: todoCard, schedule: scheduleCard, finding: findingCard, item: b => itemCard(b, false), parked: b => itemCard(b, true), done: doneCard, doc: docCard, pm: pmCard, usage: usageCard, agent: agentCard, skill: skillCard, landing: landingCard }[kind] || card;
+    const make = { approval: approvalCard, todo: todoCard, schedule: scheduleCard, finding: findingCard, item: b => itemCard(b, false), parked: b => itemCard(b, true), done: doneCard, doc: docCard, pm: pmCard, usage: usageCard, agent: agentCard, skill: skillCard }[kind] || card;
     const c = drawn(make, d, extra);
     c.tabIndex = -1;
     place(dview, [dlinks, ...(notes || []), c]);

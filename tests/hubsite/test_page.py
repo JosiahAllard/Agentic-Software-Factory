@@ -5654,33 +5654,154 @@ class TriageViewsTest(unittest.TestCase):
         self.assertEqual(got["agents"]["detail"][0][0], "a-pm")
         self.assertIn("plans", got["agents"]["detail"][0][1])
 
-    def test_landings_are_newest_first_under_a_heading_per_new_main_and_filter_by_repo(self):
-        def ev(i, repo, branch, main, **kw):
-            d = {"repo": repo, "branch": branch, "tip": "t%d" % i * 8, "main": main, "main_branch": "main", "verdict": "pass",
-                 "code": 0, "mode": "full", "records": [], "posted_at": NOW, "version": 1}
+    def landing_snapshot(self):
+        """Landing events posted 2 h, 5 h, 30 h, 4 d and 40 d ago (so the quick ranges hold on any day): two repos, one
+        failed, one landed ungated, one with a deploy note, one that closed no record."""
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc)
+        ago = lambda **kw: (now - datetime.timedelta(**kw)).strftime("%Y-%m-%dT%H:%M:%SZ")     # noqa: E731
+
+        def ev(i, repo, branch, posted, **kw):
+            d = {"repo": repo, "branch": branch, "tip": "t%d" % i * 8, "main": "m%d" % i * 8, "main_branch": "main", "verdict": "pass",
+                 "code": 0, "mode": "full", "summary": "gate OK", "records": [], "posted_at": posted, "version": 1}
             d.update(kw)
             return "L-%03d" % i, d
-        # L-002 and L-003 are one batch (one new main); ids sort by number, not as text (L-010 is newest)
-        docs = dict([ev(1, "alpha", "kit/one", "m1" * 10), ev(2, "alpha", "kit/two", "m2" * 10, records=["B-2"]),
-                     ev(3, "alpha", "kit/three", "m2" * 10, deploy="restart the hub"),
-                     ev(10, "beta", "kit/four", "m3" * 10, verdict="landed-ungated", mode=None)])
+        docs = dict([ev(1, "alpha", "kit/old", ago(days=40), records=["A-OLD"]),
+                     ev(2, "beta", "feat/four-days", ago(days=4), records=["B-1"]),
+                     ev(3, "alpha", "kit/deploys", ago(hours=30), records=["A-1"], deploy="restart the hub"),
+                     ev(4, "beta", "feat/broken", ago(hours=5), verdict="fail", code=1, summary="post-merge gate failed: 2 tests"),
+                     ev(10, "alpha", "kit/ungated", ago(hours=2), verdict="landed-ungated", mode=None, records=["A-9", "A-404"],
+                        summary="landed; gate skipped")])
+        backlog = [{"repo": "alpha", "items": [{"id": "A-1", "t": "Alpha one", "p": 3, "s": "open"}]}]
+        completed = [{"repo": "alpha", "days": 90, "items": [{"id": "A-9", "t": "Nine closed", "d": ago(hours=2)},
+                                                             {"id": "A-OLD", "t": "Old one", "d": ago(days=40)}]},
+                     {"repo": "beta", "days": 90, "items": [{"id": "B-1", "t": "Beta one", "d": ago(days=4)}]}]
+        return snapshot(collections={"landings": docs}, views={"repos": [{"name": "alpha", "aliases": []}, {"name": "beta", "aliases": []}],
+                                                               "backlog": backlog, "completed": completed})
+
+    def test_landings_are_a_card_per_repo_and_a_line_per_landing_with_titles_and_chips(self):
         got = dom("""
             await start();
-            const kids = () => [...$("#list").children].map(n => n.classList.contains("row") ? n.id : "h:" + text(n));
-            const all = { kids: kids(), count: text($("#n-l")), detail: $$("#pane-detail article").map(a => [a.id, text(a)]) };
-            await click($("#row-L-003"));
-            all.deploy = $$("#pane-detail article").map(a => text(a));
-            $("#repo").value = "beta"; await fire($("#repo"), "change");
-            all.beta = kids();
-            return all;
-        """, snapshot(collections={"landings": docs}, views={"repos": [{"name": "alpha", "aliases": []}, {"name": "beta", "aliases": []}]}),
-            hash="#landings")
-        self.assertEqual(got["kids"], ["h:beta main at m3m3m3m3m3", "row-L-010", "h:alpha main at m2m2m2m2m2", "row-L-003", "row-L-002",
-                                       "h:alpha main at m1m1m1m1m1", "row-L-001"])
-        self.assertEqual(got["count"], "4")
-        self.assertEqual(got["detail"][0][0], "l-L-010")
-        self.assertIn("Deploy: restart the hub", got["deploy"][0])
-        self.assertEqual(got["beta"], ["h:beta main at m3m3m3m3m3", "row-L-010"])
+            return { sum: text($("#lf-sum")), count: text($("#n-l")), heads: $$(".lgrp h2").map(h => text(h)), ids: $$(".ln").map(n => n.id),
+              l10: text($("#l-L-010 summary")), l3: text($("#l-L-003 summary")), l4: text($("#l-L-004 summary")), l2: text($("#l-L-002 summary")),
+              l10d: text($("#l-L-010 .raw")), l3d: text($("#l-L-003 .raw")), raw: text($("#l-L-004 pre")), pane: $("#pane-detail").hidden };
+        """, self.landing_snapshot(), hash="#landings")
+        self.assertEqual(got["sum"], "5 landings in 2 repos · 2 not a clean pass")
+        self.assertEqual(got["count"], "5")
+        self.assertEqual(got["ids"], ["l-L-010", "l-L-003", "l-L-001", "l-L-004", "l-L-002"])      # alpha, then beta; newest first
+        self.assertEqual(len(got["heads"]), 2)
+        self.assertIn("alpha", got["heads"][0])
+        self.assertIn("1 not pass", got["heads"][0])
+        self.assertIn("kit/ungated", got["l10"])
+        self.assertIn("A-9 Nine closed; A-404", got["l10"])                  # a title found, and the bare id when none is
+        self.assertNotIn("A-404 ", got["l10"])
+        self.assertIn("Landed, not gated", got["l10"])
+        self.assertIn("2 h ago", got["l10"])
+        self.assertIn("A-1 Alpha one", got["l3"])                            # an open record's title too
+        self.assertIn("Deploy", got["l3"])
+        self.assertIn("yesterday", got["l3"])
+        self.assertIn("post-merge gate failed: 2 tests", got["l4"])         # no record closed: the gate summary stands in
+        self.assertIn("Failed", got["l4"])
+        self.assertIn("4 d ago", got["l2"])
+        self.assertIn("Tip: t3t3t3t3t3", got["l3d"])
+        self.assertIn("Deploy: restart the hub", got["l3d"])
+        self.assertIn("New main: m10m10m10m", got["l10d"])
+        self.assertIn('"verdict": "fail"', got["raw"])
+        self.assertTrue(got["pane"])                                         # the view is in place: no side pane
+
+    def test_landings_filters_by_repo_result_and_date_and_reset_on_each_visit(self):
+        got = dom("""
+            await start();
+            const ids = () => $$(".ln").map(n => n.id);
+            const set = async (id, v) => { $(id).value = v; await fire($(id), "change"); };
+            const day = n => { const d = new Date(Date.now() - n * 864e5), p = x => String(x).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
+            const out = {};
+            await set("#lf-repo", "beta"); out.beta = ids(); out.sum = text($("#lf-sum"));
+            await set("#lf-repo", ""); await set("#lf-result", "other"); out.other = ids();
+            await set("#lf-result", "pass"); out.pass = ids();
+            await set("#lf-result", ""); await set("#lf-range", "24"); out.h24 = ids();
+            await set("#lf-range", "168"); out.d7 = ids();
+            await set("#lf-range", "720"); out.d30 = ids();
+            await set("#lf-from", day(5)); out.range_cleared = $("#lf-range").value; out.from5 = ids();
+            await set("#lf-to", day(3)); out.window = ids();
+            await set("#lf-from", day(60)); await set("#lf-to", day(50)); out.none = text($("#list"));
+            await click($("#lf-clear")); out.cleared = ids();
+            await set("#lf-result", "other");
+            await click($("#sec-home")); await click($("#sec-landings"));
+            out.revisit = ids(); out.revisit_result = $("#lf-result").value;
+            return out;
+        """, self.landing_snapshot(), hash="#landings")
+        self.assertEqual(got["beta"], ["l-L-004", "l-L-002"])
+        self.assertEqual(got["sum"], "2 landings in 1 repo · 1 not a clean pass")
+        self.assertEqual(got["other"], ["l-L-010", "l-L-004"])
+        self.assertEqual(got["pass"], ["l-L-003", "l-L-001", "l-L-002"])
+        self.assertEqual(got["h24"], ["l-L-010", "l-L-004"])
+        self.assertEqual(got["d7"], ["l-L-010", "l-L-003", "l-L-004", "l-L-002"])
+        self.assertEqual(got["d30"], got["d7"])
+        self.assertEqual(got["range_cleared"], "")                            # a date replaces the quick range
+        self.assertEqual(got["from5"], got["d7"])
+        self.assertEqual(got["window"], ["l-L-002"])
+        self.assertIn("No landings match these filters", got["none"])
+        self.assertEqual(len(got["cleared"]), 5)
+        self.assertEqual(got["revisit_result"], "")                          # filters start fresh on a new visit
+        self.assertEqual(len(got["revisit"]), 5)
+
+    def test_landings_to_only_filter_says_the_cap_and_odd_verdicts_do_not_throw(self):
+        import datetime
+        day_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        docs = {"L-%03d" % i: {"repo": "alpha", "branch": "b%d" % i, "tip": "t", "main": "m", "verdict": "pass", "records": [],
+                               "posted_at": day_ago, "version": 1} for i in range(1, 201)}
+        docs["L-201"] = {"repo": "alpha", "branch": "odd", "tip": "t", "main": "m", "verdict": "constructor", "records": [],
+                         "posted_at": day_ago, "version": 1}
+        docs["L-202"] = {"repo": "alpha", "branch": "stopd", "tip": "t", "main": "m", "verdict": "stopped", "records": [],
+                         "posted_at": day_ago, "version": 1}
+        got = dom("""
+            await start();
+            const out = { before: !!$("#lf-cut"), odd: text($("#l-L-201 summary")), stopped: text($("#l-L-202 summary")) };
+            $("#lf-to").value = "2999-01-01"; await fire($("#lf-to"), "change");
+            out.after = !!$("#lf-cut");
+            return out;
+        """, snapshot(collections={"landings": docs}), hash="#landings")
+        self.assertFalse(got["before"])
+        self.assertTrue(got["after"])
+        self.assertIn("constructor", got["odd"])
+        self.assertIn("Stopped", got["stopped"])
+
+    def test_landings_open_lines_stay_open_over_a_redraw_and_the_repo_menu_is_only_for_other_tabs(self):
+        got = dom("""
+            await start();
+            const out = { landings: $("#repo").hidden };
+            const line = $("#l-L-003"), raw = $("#l-L-003 .rawev");
+            line.open = true; await fire(line, "toggle"); raw.open = true; await fire(raw, "toggle");
+            $("#lf-repo").value = "beta"; await fire($("#lf-repo"), "change");
+            $("#lf-repo").value = ""; await fire($("#lf-repo"), "change");
+            out.open = !!$("#l-L-003").open; out.rawOpen = !!$("#l-L-003 .rawev").open; out.other = !!$("#l-L-001").open;
+            await click($("#sec-todo"));
+            out.todo = $("#repo").hidden;
+            return out;
+        """, self.landing_snapshot(), hash="#landings")
+        self.assertTrue(got["landings"])
+        self.assertTrue(got["open"])
+        self.assertTrue(got["rawOpen"])
+        self.assertFalse(got["other"])
+        self.assertFalse(got["todo"])
+
+    def test_landings_empty_state_and_the_cap_note(self):
+        got = dom("await start(); return text($('#list'));", snapshot(collections={"landings": {}}), hash="#landings")
+        self.assertIn("No landings yet", got)
+        import datetime
+        day_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        docs = {"L-%03d" % i: {"repo": "alpha", "branch": "b%d" % i, "tip": "t", "main": "m", "verdict": "pass", "records": [],
+                               "posted_at": day_ago, "version": 1} for i in range(1, 201)}
+        got = dom("""
+            await start();
+            const none = text($("#list"));
+            $("#lf-range").value = "720"; await fire($("#lf-range"), "change");
+            return [none, text($("#list"))].join("|");
+        """, snapshot(collections={"landings": docs}), hash="#landings")
+        before, after = got.split("|")
+        self.assertNotIn("holds only the newest 200", before)
+        self.assertIn("holds only the newest 200", after)
 
 
 def css_tokens(css, head):
@@ -5705,7 +5826,7 @@ class DetailPaneStaysTest(unittest.TestCase):
     """KIT-HUB-DETAIL-PANE-STAYS: a view with a detail pane keeps its frame, with an empty-state message, when its list is empty."""
 
     VIEWS = ("#home", "#questions", "#todo", "#topm", "#approvals", "#backlog", "#parked", "#docs", "#autotasks",
-             "#findings", "#usage", "#agents", "#skills", "#landings")
+             "#findings", "#usage", "#agents", "#skills")
 
     @unittest.skipUnless(NODE, "node is needed to run the page's logic")
     def test_every_view_with_a_detail_pane_keeps_it_with_an_empty_state_when_its_list_is_empty(self):

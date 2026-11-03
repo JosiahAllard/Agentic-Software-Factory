@@ -33,8 +33,7 @@ inherits the parent's `PM_KIT_ROLE`. So the kit holds every edit, shell and MCP 
 session as an agent of its mark's role (`kitlib.host.hookmain`, agent `unidentified`): the
 main-checkout rule and the write jail apply to it as to a subagent on any host, and the role policy
 by its mode. A Codex PM or coordinator therefore cannot edit the main checkout or land from it:
-stricter than the default host, where a launched lead's main session may, and looser than the
-branch, which denied every marked call outright. An **unmarked** chat, the one no launcher started,
+stricter than the default host, where a launched lead's main session may. An **unmarked** chat, the one no launcher started,
 skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
 "Session mark"):
 
@@ -52,7 +51,7 @@ name. The runtime broker binds a role from native metadata, not the mark (`adapt
 
 Codex agent files carry no tool list, so the hook policy holds a read, test or lander role (its role
 file's `mode`) to no edits in its own checkout (`host-role-edit`) whatever the repository's
-`guard.role_policy` says, as the branch's guard adapter did. Files its role file's `writes` names,
+`guard.role_policy` says. Files its role file's `writes` names,
 and temp and scratch folders under the write jail, stay open to it.
 
 What an unmarked chat leaves unjudged (a trade-off: the chat keeps an interactive shell):
@@ -76,8 +75,8 @@ What an unmarked chat leaves unjudged (a trade-off: the chat keeps an interactiv
   session; the rendered roles say so where they name them. `adapter/evidence.py` checks a captured
   payload against a binding.
 - **Plugin loading.** Installed from the plugin export in a private `CODEX_HOME` on 0.165.0-alpha.1.2
-  (2026-10-29, docs/plugin-source.md "Codex"): the export's `.codex-plugin/plugin.json` gives the 20
-  skills from the export's `content/skills/` and both MCP servers, which start, all from the plugin
+  (2026-10-29, docs/plugin-source.md "Codex"): the export's `.codex-plugin/plugin.json` gives the
+  skills of the export's `content/skills/` and both MCP servers, which start, all from the plugin
   cache. With the hooks in `pm-kit`, each new version showed the four hooks as modified; with them in
   `pm-kit-hooks` (2026-10-31), they stayed trusted across a new version with a changed
   `boot/hook.py`. Not yet seen: a hook running in a model turn, and the owner's desktop install
@@ -121,4 +120,4 @@ From the branch's `codex/` tree. Each is open work before activation.
 
     python tools/render_content.py --check
     python -m unittest tests.host.test_conformance_codex
-    python tools/kit_tests.py tests/codex
+    python -m unittest discover -s tests/codex -t .

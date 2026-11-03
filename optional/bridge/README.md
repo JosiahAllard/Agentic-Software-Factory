@@ -25,12 +25,12 @@ This is the bridge from `codex/robust-bridge-plan`, ported as plan step 10
 
 | Path | What |
 |---|---|
-| `core/` | Host-neutral and Win32-free: `messages` (records, `DeliveryError`), `outbox` (durable SQLite store), `dispatch` (`CoreBroker`), `pairing` (owner-selected routes), `hostpairs` (`HostPairs`, the host-pair rule), `owner` (owner decisions), `callers` (one-use caller proofs), `mcp` (the MCP tool server), `prompt` (delivered text header), `jsonwire` (bounded JSON lines), `contracts` (`AdapterDescription`, `Capability`, identities) |
+| `core/` | Host-neutral and Win32-free: `messages` (records, `DeliveryError`), `outbox` (durable SQLite store), `dispatch` (`CoreBroker`), `pairing` (owner-selected routes), `pmroutes` (the PM's routes, which need the PM launch mark), `hostpairs` (`HostPairs`, the host-pair rule), `owner` (owner decisions), `callers` (one-use caller proofs), `mcp` (the MCP tool server), `prompt` (delivered text header), `jsonwire` (bounded JSON lines), `contracts` (`AdapterDescription`, `Capability`, identities) |
 | `port.py` | The port a host's half implements (below) |
 | `peers.json` | The bridge's peers (`peers`) and the host pairs it refuses (`refused`, as `[sender, recipient]`) |
 | `registry.py` | Which peers are served: `peers.json` names that have a half; `host_pairs()` reads the rule |
 | `paths.py` | The entry scripts' kit paths, which the service verifies by command line |
-| `win/` | The Windows service: `runtime` (config, assembly, `run_service`), `lifecycle` (supervisor, private state root, service marker), `leader` (singleton mutex and pipe), `controller`, `service` (private RPC handler), `rpc`/`rpcworker`/`worker`/`transport` (owned helper processes over named pipes), `frontend` (the MCP stdio frontend and its kernel verification), `channel` (an inherited native app channel), `hosts` (native image sets), `evidence` (bounded stable file reads), `install` (installation preparation), `startup` (startup task), `owner_view`, `launch` (`-I -B`) |
+| `win/` | The Windows service: `runtime` (config, assembly, `run_service`), `lifecycle` (supervisor, private state root, service marker), `leader` (singleton mutex and pipe), `controller`, `service` (private RPC handler), `rpc`/`rpcworker`/`worker`/`transport` (owned helper processes over named pipes), `frontend` (the MCP stdio frontend and its kernel verification), `channel` (an inherited native app channel), `hosts` (native image sets), `evidence` (bounded stable file reads), `ancestry` (process ancestry read one process at a time), `install` (installation preparation), `startup` (startup task), `owner_view`, `launch` (`-I -B`) |
 | `ui/window.py` | The owner's connection window (tkinter) |
 | `mcp_frontend.py` | The MCP server entry a host runs: `python -I -B <kit>/optional/bridge/mcp_frontend.py <marker>` |
 | `tools/` | `bridge_service.py` (the service), `bridge_prepare.py` (installation), `bridge_connections.py` (open the owner window), and the two private helper entries `bridge_rpc_worker.py` and `bridge_pipe_worker.py` |
@@ -401,7 +401,7 @@ Four helpers were load-bearing and moved instead:
 | `kitlib/bridgeprobe/winpipe.py` | `kitlib/proc/pipe.py`. Its probe-only JSON `send` and `frames_until_close` went to the test helper `tests/bridge/pipes.py`. |
 | `bridgeprobe.runtime.ProbeError` | `kitlib.proc.errors.ProcError` |
 | `bridge/bootstrap.identifier`, `digest` and `integer` | `kitlib/ident.py` (`IdentError` replaces `BootstrapError` for these) |
-| `claude/bridge_phase0.read_record` | `hosts/claude/records.py` |
+| `claude/bridge_phase0.read_record` | `optional/bridge/hosts/claude/records.py` |
 
 `codex/pmkit_codex/bridge_client.py` is now `hosts/codex/client.py`, and the bridge owns it. It is
 the Codex plugin's client of this frontend. The Codex host (`hosts/codex/`, plan step 9) keeps no copy of

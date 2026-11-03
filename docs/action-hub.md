@@ -22,7 +22,7 @@ ends them all too. A browser that is not paired is told on the page to run `pyth
 open` in the kit folder. The server's health is `GET /api/v1/health`.
 
 The sidebar lists the sections in groups: Home on its own; Your work (Questions, To-dos, Approvals);
-Projects (Backlog, Schedule, Docs); More (Message the PM, Usage, Agents, Skills); Upkeep (Lint findings,
+Projects (Backlog, Schedule, Docs, Landings); More (Message the PM, Usage, Agents, Skills); Upkeep (Lint findings,
 Automatic tasks). A count sits at the right edge of an entry and is highlighted for what waits on
 you: any pending approval, urgent question or to-do. Lint findings shows a dash until the page has
 read `GET /api/v1/findings` once (at the start and after each wait wake). On a phone the sidebar
@@ -122,7 +122,7 @@ server cannot give says so at the top.
 
 Links ending `#home`, `#questions`, `#inbox`, `#approvals`, `#more`, `#todo`, `#topm`, `#backlog` (or
 `#stories`), `#parked`, `#docs`, `#schedule`, `#autotasks`, `#findings` or `#info` open that section;
-`#agents` opens Agents, `#skills` Skills; `#usage` and `#notices` open that Info tab. The Questions, Answers, To do and Docs lists
+`#agents` opens Agents, `#skills` Skills, `#landings` Landings; `#usage` and `#notices` open that Info tab. The Questions, Answers, To do and Docs lists
 filter by repository; Questions, To do and Docs also by id or title. Automatic tasks lists the
 schedules ("schedules/") under "Schedules", and the two PC-set sweeps (`worktree-sweep`,
 `agent-temp-sweep`, which machine setup registers with Windows) under "Set on the PC": read-only, with
@@ -1276,7 +1276,7 @@ Known limits:
   nor the tool takes `--from`.
 
 `GET /api/v1/snapshot` carries the collection whole, and `strong`: true only on the strong owner's call.
-The page draws each pending request above the open questions (`approvalCard`), counted in the Approvals
+The page draws each request as a card in the Approvals section (`approvalCard`; Waiting and Decided tabs, "Using the hub"), the pending ones counted in the Approvals
 badge: its title, repo, head, reason and the stored diff as text. Approve and Deny post the decide route
 with the version the page read; they are disabled unless the snapshot says `strong`, and a refusal (a 403
 included) is shown on the card in the server's words.

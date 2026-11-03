@@ -1,4 +1,4 @@
-"""render_content.py: write each host's agents, skills and plugin manifests from content/ and kit.json,
+"""render_content.py: write each host's agents and plugin manifests from content/ and kit.json,
 and docs/ROSTER.md's tables from content/roles and every host's tier map (docs/content.md).
 
   render_content.py [--check]   list every rendered file that differs, is missing or is stale; exit 1 if any

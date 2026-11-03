@@ -66,6 +66,13 @@ class Complement(unittest.TestCase):
     def test_none_is_unchanged(self):
         self.assertEqual(smod.complement('none', {'kit/a.py'}, TREE), ['none'])
 
+    def test_odd_tracked_names_do_not_raise(self):
+        tree = TREE + ['pages/[id].js', 'pages/a,b.txt', 'kit/[id].js', 'kit/a,b.txt']
+        out = smod.complement('kit/**', {'kit/a.py'}, tree)
+        self.assertEqual(out, ['kit/[id].js', 'kit/a,b.txt', 'kit/b.py', 'kit/deep/**',
+                               'kit/sub/**'])
+        self.assertEqual(smod.complement('kit/**', {'kit/[id].js'}, tree)[:1], ['kit/a,b.txt'])
+
     def test_no_tracked_data_for_the_member_is_none(self):
         self.assertIsNone(smod.complement('kit/**', {'kit/a.py'}, []))
         self.assertIsNone(smod.complement('Kit/**', {'kit/a.py'}, TREE))

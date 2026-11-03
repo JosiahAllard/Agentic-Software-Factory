@@ -2870,8 +2870,24 @@ def _lint_runs(api):
     return out
 
 
+def _unresolved_marks(api, marks):
+    """The finding marks (id -> doc) still to show: one whose repo has a lint run with a `started`
+    time that no longer lists its fingerprint is resolved and left out (hidden, never deleted: a
+    finding that comes back with the same fingerprint is marked again). A mark with no repo, a
+    repo with no run or only a skip marker, or no findings view keeps its mark."""
+    try:
+        listed = {f.get('fingerprint') for f in api.shown('findings') if isinstance(f, dict)}
+    except Exception:               # noqa: BLE001 - no findings read: hide nothing
+        return marks
+    ran = {r['repo'].lower() for r in _lint_runs(api) if r['started'] is not None}
+    return {i: m for i, m in marks.items()
+            if not (isinstance(m, dict) and isinstance(m.get('repo'), str)
+                    and m['repo'].lower() in ran and i not in listed)}
+
+
 def finding_marks_list(api, req):
-    return {'items': [_seen(m, req) for m in api.items('finding_marks', req)]}
+    shown = _unresolved_marks(api, {m['id']: m for m in api.items('finding_marks', req)})
+    return {'items': [_seen(m, req) for m in shown.values()]}
 
 
 def finding_marks_set(api, req):
@@ -3120,6 +3136,8 @@ def snapshot(api, req):
         for doc_id, m in list(marks.items()):
             if isinstance(m, dict):
                 marks[doc_id] = _seen(m, req)
+    if docs.get('finding_marks'):   # the marks GET finding_marks gives: resolved ones hidden
+        docs['finding_marks'] = _unresolved_marks(api, docs['finding_marks'])
     views, missing = {}, {}
     for name in VIEWS:
         try:

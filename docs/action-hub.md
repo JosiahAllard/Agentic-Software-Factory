@@ -137,7 +137,9 @@ after each mark. A row gives the check, the repo, the target, the text and its a
 three groups, each headed with its count and left out when empty: New this run (the lint's `new` flag:
 its fingerprint was not in that repo's previous run, so false on a repo's first run and true again for
 a finding that went away and came back), Still open, and Handled (the marked ones, muted, each tagged
-Passed on, Dismissed or Done). Above the rows, each repo's last run gives its ledger as counts, and
+Passed on, Dismissed or Done; a mark whose repo's last run no longer lists the finding is hidden, in
+`GET finding_marks` and the snapshot alike, and stays stored: a finding that comes back with the same
+fingerprint is shown as handled again, a known limit). Above the rows, each repo's last run gives its ledger as counts, and
 "last run skipped: <reason>, <time>" only when the server names a skip later than that run
 ("finding_marks/<fingerprint>"). The card of an unmarked finding offers:
 

@@ -4,7 +4,7 @@ pointer names (kitlib.config.pointer; docs/kit-json.md "Machine config").
 With a good pointer (locate OK) the config is two files in `<PM repo>/.pm-kit`: FILE_NAME, tracked,
 holds the policy keys (POLICY_KEYS), and LOCAL_FILE_NAME, git-ignored, the machine-local and
 personal keys (LOCAL_KEYS); a key in the other file, or one the move drops (DROPPED_KEYS), is a
-ConfigError (except a RETIRED key, which is ignored). `pm_data` is never read from a file: it is derived from the pointer and its
+ConfigError. `pm_data` is never read from a file: it is derived from the pointer and its
 repository's kit-pm-data.json record. RELATIVE_KEYS paths written relative are read against the PM
 repository. Either file absent is empty.
 
@@ -146,10 +146,6 @@ MARK_ROOT = Obj({
     'why': Field(Str(), None, 'the reason, a ruling or a measurement'),
 }, required=('path', 'mode'), what='{path, mode, why}')
 
-# Keys the machine config no longer has, dropped whatever they hold (none now: kitlib.config.move
-# and kitlib.config.copies still read the name). An unknown key is refused.
-RETIRED = ()
-
 # One line per key. A key another module owns is registered as Owned(<that module>), which checks it.
 SCHEMA = {
     'owner_email': Field(Email(), None, 'the author email of the owner\'s own commits, for every repository whose .kit.json sets no "owner".email; unset there too: no commit is provable as the owner\'s, so every owner-only change is refused (docs/kit-json.md "With no file"); older kit copies reject the key'),
@@ -186,9 +182,8 @@ POLICY_KEYS = ('ledger_path', 'ledger_dir', 'ledger_repos', 'pending_path',
                'machine_lock', 'temp_dir', 'agent_temp_sweep',
                'machine_path_folders', 'plugin')
 LOCAL_KEYS = ('owner_email', 'scrub_patterns', 'launcher', 'hub', 'dev_drive')
-# Never in the PM repository's files: a ConfigError there, except a RETIRED key, which is ignored
-# (`pm_data` is derived: locate).
-DROPPED_KEYS = ('ledger_refs', 'pm_data', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')
+# Never in the PM repository's files: a ConfigError there (`pm_data` is derived: locate).
+DROPPED_KEYS = ('pm_data',)
 # POLICY_KEYS paths that may be written relative to the PM repository (resolved).
 RELATIVE_KEYS = ('ledger_dir', 'ledger_path', 'pending_path')
 
@@ -911,8 +906,6 @@ def _read_home(path):
     data = _read_object(path)
     if data is None:
         return {}
-    if isinstance(data, dict):
-        data = {k: v for k, v in data.items() if k not in RETIRED}
     errs = []
     Obj(SCHEMA, what='machine config').check(data, path, errs)
     if not errs:
@@ -936,7 +929,7 @@ def _read_pm(loc):
             continue
         kept = {}
         for k, v in data.items():
-            if is_note(k) or k in RETIRED:
+            if is_note(k):
                 continue
             if k in DROPPED_KEYS:
                 errs.append(_dropped(k, path))
@@ -1020,7 +1013,7 @@ def failing_keys(data):
     appear (kitlib.preflight.configline)."""
     out = []
     for k, v in data.items():
-        if is_note(k) or k in RETIRED:
+        if is_note(k):
             continue
         f = SCHEMA.get(k)
         errs = []

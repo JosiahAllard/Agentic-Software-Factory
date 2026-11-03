@@ -246,8 +246,7 @@ def _build(root, where, reader, home=None, machine=None):
     text = reader(None)
     top = {} if text is None else _parse(text, where)
     errs = []
-    bad = sorted(k for k in top if k not in schema.SECTIONS and not is_note(k)
-                 and k not in schema.RETIRED_SECTIONS)
+    bad = sorted(k for k in top if k not in schema.SECTIONS and not is_note(k))
     if bad:
         errs.append('%s: unknown section(s) %s (known: %s)'
                     % (where, ', '.join(bad), ', '.join(sorted(schema.SECTIONS))))

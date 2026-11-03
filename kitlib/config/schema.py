@@ -369,8 +369,6 @@ MAPS = {
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
 # dropped unchecked (not an unknown-key refusal), so an install written before the removal works.
 RETIRED = {'landing': ('lanes', 'lock_file')}
-# Whole sections no tool reads any more (none now: kitlib/config/load.py still reads the name).
-RETIRED_SECTIONS = ()
 
 
 def section_type(name):

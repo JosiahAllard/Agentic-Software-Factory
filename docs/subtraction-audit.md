@@ -56,18 +56,19 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
   guard and gate-allow, the launcher's old state file name, old stem guard and old task name,
   and the former-name config key in `user.py`. Done: all removed; the old-name scrub test's
   `ALLOWED` list keeps only history lines.
-- **Candidate 9, SHRINK, open, no record** (config schema). The RETIRED backlog keys
+- **Candidate 9, SHRINK, DONE** (config schema). The RETIRED backlog keys
   (`retired_docs`, `rename_script`, `ledger_repo`) at `kitlib/config/schema.py:371` and the
   RETIRED_SECTIONS (`ruling_cites`, `stubs`) at `:374`. Why: still set by two other repos'
   `.kit.json` (as measured then; not rechecked). Size: ~20 lines. Risk: L once the owner edits those
-  files.
-- **Candidate 10, SHRINK, open, no record** (machine config). `kitlib/config/user.py:151` RETIRED
+  files. Done: the backlog keys and both sections are gone and now refuse as unknown.
+- **Candidate 10, SHRINK, DONE** (machine config). `kitlib/config/user.py:151` RETIRED
   is now `('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')`. Why: kept so
-  an old machine config loads. Risk: L once the owner drops the keys.
+  an old machine config loads. Risk: L once the owner drops the keys. Done: `RETIRED` is gone and the four keys refuse as unknown.
 - **Candidate 11, SHRINK, open, no record** (kitlib/config). The old config folder-name fallback,
   the old-folder-name constant at `kitlib/config/migration.py:12`, still read while the new folder has no config.
   Why: old folder absent (as measured then). Risk: L. The record it was filed under (config out of
-  the home folder) is closed.
+  the home folder) is closed. Part done: `MOVE_STEPS` and `differing_keys` are gone; the old-folder
+  fallback itself is still there, owed to a follow-up record.
 - **Candidate 12, DONE** (kitlib/records/landing). `landing.lock_file` `git:<name>` path
   (`landing.py:106-118`). Why: one other repo sets it, so it is live. Size: ~15 lines. Risk: M;
   switch that repo to the default only with no landing in flight. Done: that repo dropped the

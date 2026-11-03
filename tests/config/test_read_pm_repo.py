@@ -45,7 +45,7 @@ class KeySetsTest(unittest.TestCase):
 
     def test_every_schema_key_is_in_exactly_one_file_or_dropped(self):
         sets = (user.POLICY_KEYS, user.LOCAL_KEYS, user.DROPPED_KEYS)
-        for key in set(user.SCHEMA) | set(user.RETIRED):
+        for key in set(user.SCHEMA):
             self.assertEqual(sum(key in s for s in sets), 1, key)
         self.assertTrue(set(user.RELATIVE_KEYS) <= set(user.POLICY_KEYS))
 
@@ -84,7 +84,6 @@ class TwoFilesTest(_PmRepo):
             os.remove(path)
 
     def test_a_former_retired_key_in_either_file_refuses(self):
-        self.assertEqual(user.RETIRED, ())
         for path in (self.policy, self.local):
             for key in ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint'):
                 self.write(path, {key: {}})

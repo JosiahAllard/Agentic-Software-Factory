@@ -139,7 +139,7 @@ class UserConfigTest(unittest.TestCase):
 
 
 class FormerlyRetiredKeyTest(unittest.TestCase):
-    """Keys the machine config once dropped silently (user.RETIRED, now empty) refuse as unknown."""
+    """Keys the machine config once dropped silently refuse as unknown."""
 
     setUp = UserConfigTest.setUp
 
@@ -149,7 +149,6 @@ class FormerlyRetiredKeyTest(unittest.TestCase):
             f.write(json.dumps(body))
 
     def test_a_former_retired_key_refuses_as_unknown(self):
-        self.assertEqual(user.RETIRED, ())
         for key in ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint'):
             with self.subTest(key=key):
                 self.write({'ledger_path': self.ledger, key: {}})

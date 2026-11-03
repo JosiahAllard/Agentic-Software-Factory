@@ -110,9 +110,18 @@ class Addon(unittest.TestCase):
     def test_the_launch_command(self):
         # --online-mode is Blender's own option: after --command the add-on's parser gets it
         # and refuses it (exit 2), as the live run found
+        # --python-use-system-env lets Blender's Python read launch_env's PYTHONPYCACHEPREFIX
         self.assertEqual(addon.launch_argv('b', 9877),
-                         ['b', '--background', '--online-mode', '--command', 'blender_mcp',
-                          '--host', '127.0.0.1', '--port', '9877'])
+                         ['b', '--background', '--python-use-system-env', '--online-mode', '--command',
+                          'blender_mcp', '--host', '127.0.0.1', '--port', '9877'])
+
+    def test_the_launch_env_keeps_python_off_the_add_ons_own_pycache(self):
+        # a .pyc planted in the add-on's __pycache__ (outside the tree hash) is never read: Python
+        # reads and writes its caches only under the prefix, a fresh empty folder per Blender
+        got = addon.launch_env({'PATH': 'p', 'PYTHONPATH': 'x', 'pythonhome': 'y', 'PYTHONPYCACHEPREFIX': 'old',
+                                'MACHINE_LOCK_RUN': 'r'}, 'C:/cache')
+        self.assertEqual(got, {'PATH': 'p', 'MACHINE_LOCK_RUN': 'r', 'PYTHONPYCACHEPREFIX': 'C:/cache',
+                               'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1'})
 
 
 if __name__ == '__main__':

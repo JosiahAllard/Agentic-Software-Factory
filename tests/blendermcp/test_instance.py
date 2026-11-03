@@ -107,6 +107,23 @@ class Opening(BridgeCase):
             self.bridge.call('r-nope', 'result = {}', 5)
         self.assertEqual(cm.exception.code, 'unknown')
 
+    def test_blender_reads_its_python_caches_only_from_a_fresh_folder_of_its_own(self):
+        a = self.bridge.open(self.wt)
+        code = ('import os, sys\n'
+                'result = {"prefix": sys.pycache_prefix, "write": sys.dont_write_bytecode,\n'
+                '          "python": sorted(k for k in os.environ if k.upper().startswith("PYTHON")),\n'
+                '          "run": os.environ.get("MACHINE_LOCK_RUN", "")}')
+        got = self.bridge.call(a['handle'], code, 10)['result']
+        prefix = got['prefix']
+        self.assertTrue(prefix and os.path.isdir(prefix), got)
+        self.assertEqual(os.listdir(prefix), [])
+        self.assertEqual(os.path.dirname(prefix), os.path.join(self.tmp, 'out'))
+        self.assertTrue(got['write'])
+        self.assertEqual(got['python'], ['PYTHONDONTWRITEBYTECODE', 'PYTHONNOUSERSITE', 'PYTHONPYCACHEPREFIX'])
+        self.assertTrue(got['run'].startswith(a['handle']), got)      # the lock's own env is kept
+        self.bridge.close(a['handle'])
+        self.assertFalse(os.path.exists(prefix))
+
     def test_with_no_gpu_slot_free_an_open_is_refused_at_once_and_leaves_nothing(self):
         a = self.bridge.open(self.wt)
         b = self.bridge.open(self.wt)

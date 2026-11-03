@@ -170,11 +170,11 @@ def releasable(rec, status, closed):
 
       item:X    X is closed: `closed(X)` gives the short sha of the commit that closed it (None:
                 still live, never closed, or cannot tell)
-      any other each of the member's `until` lines cites at least one hub id and every one is
-                met: a question answered, filed, logged or done (ANSWERED), a to-do done.
+      any other the member's `until` text cites at least one hub id and every one is met: a
+                question answered, filed, logged or done (ANSWERED), a to-do done; an `owner`
+                hold's several lines (SEVERAL) are read together, so every ask must be met.
                 `status(id)` gives the hub status, or None (unknown, or the hub was not read:
-                never met). A member with no `until` line, or with a line that cites no id (an
-                `owner` line in free text among its asks), is not judged.
+                never met). A member with no `until` line, or one that cites no id, is not judged.
 
     Only `until` states a hold's end. `owner_ask` and a block's reason carry the citation the hold
     rests on (record.block_citation_error), which is often the answered question that set it (a
@@ -192,11 +192,8 @@ def releasable(rec, status, closed):
             if sha:
                 out.append((member, '%s closed (%s)' % (member, sha), '%s closed' % target))
             continue
-        lines = [cited_ids(cond) for m, cond in untils if m == member]
-        if not lines or not all(lines):
-            continue
-        ids = list(dict.fromkeys(i for line in lines for i in line))
-        if all(_met(i, status) for i in ids):
+        ids = cited_ids(' '.join(cond for m, cond in untils if m == member))
+        if ids and all(_met(i, status) for i in ids):
             shown = ', '.join(_shown(i, status) for i in ids)
             out.append((member, '%s cites %s' % (member, shown), shown))
     return out

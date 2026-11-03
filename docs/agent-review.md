@@ -125,7 +125,7 @@ None built or tested: an automatic log of refusals and classifier denials using 
 
 ## Findings and their status
 
-The definitions review found 13 cross-cutting findings and wrote one section per file. Row-level cause attributions in it are partly inference. Status is read at the base (main 13771e0b, 2026-11-03). "Gone" means the definition the finding was about no longer exists. Findings marked "open" have no backlog record; the owner has not ruled on any of them.
+The definitions review found 13 cross-cutting findings and wrote one section per file. Row-level cause attributions in it are partly inference. Status is read at the base (the main base of 2026-11-03). "Gone" means the definition the finding was about no longer exists. Findings marked "open" have no backlog record; the owner has not ruled on any of them.
 
 | Id | Finding (short) | Status at base and proof |
 |---|---|---|

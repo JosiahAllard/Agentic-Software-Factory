@@ -65,7 +65,7 @@ Verdict, area, what, why, size, risk. Risk: L low, M medium.
   is now `('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')`. Why: kept so
   an old machine config loads. Risk: L once the owner drops the keys.
 - **Candidate 11, SHRINK, open, no record** (kitlib/config). The old config folder-name fallback,
-  `OLD_DIR_NAME` at `kitlib/config/migration.py:12`, still read while the new folder has no config.
+  the old-folder-name constant at `kitlib/config/migration.py:12`, still read while the new folder has no config.
   Why: old folder absent (as measured then). Risk: L. The record it was filed under (config out of
   the home folder) is closed.
 - **Candidate 12, DONE** (kitlib/records/landing). `landing.lock_file` `git:<name>` path

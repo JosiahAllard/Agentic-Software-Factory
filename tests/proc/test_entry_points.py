@@ -68,12 +68,15 @@ ENTRY_EXEMPT = {
     'boot/kitboot.py': BOOT_KITBOOT,
     'kitlib/tooldeps/pool_worker.py': POOL_WORKER,
     'optional/comfy/compare_sheet.py': STARTS_NOTHING + COMFY,
-    'optional/comfy/render_glb.py': COMFY + ', and it runs inside Blender\'s own Python, where '
-                                            'no kit is on sys.path. Its one start, subprocess.call '
-                                            'of the machine lock '
-                                            'tool to run itself again under the lock, hands on '
-                                            'its own console, so the child shows no window of '
-                                            'its own (test_spawn_sites EXEMPT, STANDALONE)',
+    'optional/comfy/render_glb.py': ('a standalone optional tool for the owner\'s Blender, standard '
+                                     'library only. It mostly runs inside Blender\'s own Python, '
+                                     'where no kit is on sys.path, so it imports no kitlib itself; '
+                                     'run by plain python it gets kitlib only through its sibling '
+                                     'blender_run.py, which imports it when not inside Blender. '
+                                     'Its one start, subprocess.call of the machine lock tool to '
+                                     'run itself again under the lock, hands on its own console, '
+                                     'so the child shows no window of its own (test_spawn_sites '
+                                     'EXEMPT, STANDALONE)'),
     'optional/procwatch/procwatch.py': PROCWATCH,
     'optional/usage/agent_costs.py': USAGE,
     'optional/usage/api_cost.py': USAGE,

@@ -33,8 +33,10 @@ Rules of thumb that have held up. Add a rule only once a lesson has repeated in 
   (licence region exclusions). Pixal3D only as a third opinion.
 - **Hunyuan3D needs the object alone:** cut out, cropped, centred on white. `comfy_gen.py`
   does this automatically. Giving it the raw image produces a flat plate.
-- **Keep `--faces` at 50000 or less and `--texture` at 2048 or less.** The template defaults
+- **Keep `--faces` at 50,000 faces or less and `--texture` at 2048 or less.** The template defaults
   (700k faces, 4096² textures) make 20+ MB files that need heavy reduction anyway.
+- **Hero characters get their own budget (props keep the cap above):** LOD0 up to about 60,000
+  faces (triangles), LOD1 50% of that, LOD2 20%, 4096² textures with baked normal maps, inside the frame budget.
 - **Glow does not survive** as emission: generated textures bake it into colour. Rebuild
   glowing parts as their own emissive material.
 - **A 3D model is never checked by reading its numbers.** Render it from at least front, three

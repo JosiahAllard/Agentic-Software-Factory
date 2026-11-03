@@ -8,6 +8,7 @@
 - With `.kit.json` "landing".`in_flight` set (default off), before the fetch it waits for a landing in flight as `tools/new_worktree.py` does ([new-worktree.md](new-worktree.md), "Waiting for a landing in flight"); `--no-wait` says so and goes on. It still merges exactly `<hash>`; when the fetched `<remote>/<base>` is past it, one line says so: `note      origin/main is at <tip>, past <hash>: ask the coordinator whether to sync to it`.
 - The main checkout is refused (`kitlib.git.checkout.main_refusal`), as is a dirty tree.
 - Doc conflicts get the per-line audit from `syncbase.conflict_advice()`; a clean merge is checked for regrowth (text the base deleted that came back).
+- Before a clean merge is committed, every owner-only path it changes must be one `commit.py` would let the merge carry (`syncbase.owner_refusal`, calling `kitlib.commit.merge_owner_refusal`: the rule in docs/commit.md "Owner approval", "A merge of approved changes"). Anything else (an unapproved or unverifiable commit on this branch, a rename, a `merge` attribute) is refused with exit 1: the merge is aborted (`git merge --abort`), nothing is merged, and the line names the paths. Base commits on the fetched `<remote>/<base>` are not judged again.
 - Exit codes are in the `tools/sync_base.py` docstring: 0 merged, 1 refused or a finding, 2 usage, configuration or the main checkout, 130 Ctrl+C.
 
 Tests: `tests/syncbase`.

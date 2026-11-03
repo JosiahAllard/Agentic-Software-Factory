@@ -31,7 +31,7 @@ With `"daily_full".bisect` set (docs/kit-json.md), a red run looks for the commi
 
 When a probe reproduced the red and `prefix` is set, the red is filed through the backlog library, every store check included, as `<prefix>-DAILY-RED-<SHA10>` (`kitlib/dailyfull/file.py`). SHA10 is the culprit's, or S's when only a range was found. The scope is the paths the culprit changed against its first parent, or `none`. A repository on the implicit default store files in the PM data branch's store. Filing is idempotent: an id already held is not added again, and a priced record is never priced again.
 
-The record is always priced at priority 2, `priority_by` agent, in the same call: an agent's own price never takes priority 1, and the PM or the owner promotes it. No machine config key changes the price; the old `daily_red_ruling` is retired, still accepted and never read (docs/kit-json.md "Machine config keys"). Tests: `tests/dailyfull/test_bisect.py`.
+The record is always priced at priority 2, `priority_by` agent, in the same call: an agent's own price never takes priority 1, and the PM or the owner promotes it. No machine config key changes the price; the removed `daily_red_ruling` is refused as an unknown key (docs/kit-json.md "Machine config keys"). Tests: `tests/dailyfull/test_bisect.py`.
 
 ## The schedule
 

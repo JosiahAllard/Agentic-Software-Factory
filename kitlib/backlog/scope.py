@@ -68,8 +68,7 @@ def scope_components(member):
         raise UndecidableScope('%s: %s' % (member, err))
     if member == NONE:
         raise UndecidableScope('`none` has no components; it collides with nothing')
-    body = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
-    return body.casefold().strip('/').split('/')
+    return member_base(member).casefold().strip('/').split('/')
 
 
 def members_collide(a, b):
@@ -106,9 +105,149 @@ def colliding_pairs(scopes_a, scopes_b):
     return [(a, b) for a in scopes_a for b in scopes_b if members_collide(a, b)]
 
 
+COMPLEMENT_CAP = 30     # members `complement` returns at most; more is "cannot auto-narrow"
+
+
+def member_base(member):
+    """`member` without its `/**` glob suffix: the folder a glob covers, else the member."""
+    return member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
+
+
+def paths_related(a, b):
+    """`members_collide` on two paths without validating them: a tracked path such as
+    `pages/[id].js` or `a,b.txt` is not a legal scope member but is a real file."""
+    ca, cb = a.casefold().split('/'), b.casefold().split('/')
+    n = min(len(ca), len(cb))
+    return ca[:n] == cb[:n]
+
+
+def path_within(base, path):
+    """`path` is `base` or lies under it, spelled exactly (letter case included): what a tracked
+    path must be to count as inside a member's base."""
+    return path == base or path.startswith(base + '/')
+
+
+def strictly_inside(inner, outer):
+    """Member `inner` lies inside member `outer`'s `/**` glob and is not `outer` itself.
+    UndecidableScope when either is not a legal member."""
+    ci, co = scope_components(inner), scope_components(outer)
+    return outer.endswith(GLOB_SUFFIX) and len(ci) > len(co) and ci[:len(co)] == co
+
+
+def deeper_member(a, b):
+    """Of two colliding members, the one inside the other (`a` when they are as deep)."""
+    return a if len(scope_components(a)) >= len(scope_components(b)) else b
+
+
+def complement(member, removed, tree, cap=COMPLEMENT_CAP):
+    """The sorted sibling members that cover `member` minus the repo paths in `removed`, over
+    `tree` (the tracked paths at the code main; the caller supplies it): `dir/**` for a sibling
+    folder with nothing removed under it, a file by name for a sibling file, descent into a
+    folder that holds a removed path. `member` is a folder, a `dir/**` glob or a file. It is
+    returned as it is (a one-member list) when no removed path collides with it. None when the
+    result would exceed `cap` members, or when `member` is a single file holding a removed path
+    (a literal .md included), or when `tree` has nothing for it (empty tree, letter-case
+    mismatch): the caller cannot auto-narrow. `[]` means every tracked file under the member
+    was removed; test `is None`, never `not out`. A malformed `member`, or a `removed` entry that
+    is not a plain repo path, raises UndecidableScope; `tree` is not checked."""
+    err = scope_member_error(member, tab_ok=True)
+    if err is not None:
+        raise UndecidableScope('%s: %s' % (member, err))
+    for r in removed:
+        err = ('a glob, not a path' if r.endswith(GLOB_SUFFIX)
+               else path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
+        if err is not None:
+            raise UndecidableScope('%s: %s' % (r, err))
+    base = member_base(member)
+    if member == NONE or not any(paths_related(base, r) for r in removed):
+        return [member]
+    below = base + '/'
+    under = [p for p in tree if paths_related(base, p)]
+    if not under or any(not path_within(base, p) for p in under):
+        return None         # no tracked data for it, or a letter-case mismatch: do not guess
+    if not member.endswith(GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
+        return None         # a single file
+    out = []
+
+    def descend(prefix):
+        names = {}
+        for p in tree:
+            if p.startswith(prefix + '/'):
+                head, _, rest = p[len(prefix) + 1:].partition('/')
+                names[head] = names.get(head, False) or bool(rest)
+        for name in sorted(names):
+            path = prefix + '/' + name
+            if names[name]:
+                if any(paths_related(path, r) for r in removed):
+                    descend(path)
+                else:
+                    out.append(path + GLOB_SUFFIX)
+            elif not any(paths_related(path, r) for r in removed):
+                out.append(path)
+            if len(out) > cap:
+                return
+
+    descend(base)
+    return None if len(out) > cap else sorted(out)
+
+
 def area_from_scope(scopes):
     """`area` is the first component of the first scope that is not `none`, else `none`."""
     for s in scopes:
         if s != NONE:
             return s.split('/')[0]
     return NONE
+
+
+# --- a changed path against a record's scope (the landing scope check and commit.py's
+# narrowed-record check share these: kitlib.gate.land, kitlib.backlog.narrowed) ----------------
+
+def changed_path_error(path):
+    """None when a scope can be said to cover the literal changed path `path`, else why not:
+    such a path is covered by no member. A comma or a wildcard character is an ordinary
+    character in a changed path. Pure."""
+    why = path_shape_error(path, 'path', tab_ok=True, comma_ok=True)
+    if why:
+        return why
+    if path.casefold() == NONE:
+        return 'a path that reads as the `none` sentinel'
+    return None
+
+
+def covers(members, path):
+    """True when a scope member in `members` covers the literal changed path `path`: one's
+    components a prefix of the other's, casefolded (members_collide's comparison). Only the
+    member is read in the scope grammar. A member the grammar cannot read, `none`, and a path
+    changed_path_error refuses cover nothing. Pure."""
+    if changed_path_error(path):
+        return False
+    have = path.casefold().split('/')
+    for m in members:
+        try:
+            want = scope_components(m)
+        except UndecidableScope:
+            continue
+        n = min(len(want), len(have))
+        if want[:n] == have[:n]:
+            return True
+    return False
+
+
+def area_lead(area, tops):
+    """The area prefix a member of a record carries, `<area>/`, or '' when it carries none: the
+    store shared by repositories (the PM data branch's) writes a member `<area>/<path>`; `area`
+    is None for a record of any other store, and an area that names a top-level entry of the
+    repository (`tops`, casefolded) is a path. Pure."""
+    return area + '/' if area and area.casefold() not in tops else ''
+
+
+def in_repo(members, area, tops):
+    """`members`, a record's scope, as paths of this repository: under an area prefix
+    (area_lead) a member loses that first component; every other member is as it is. Pure."""
+    if not area_lead(area, tops):
+        return list(members)
+    out = []
+    for m in members:
+        head, _, rest = m.partition('/')
+        out.append(rest if rest and head.casefold() == area.casefold() else m)
+    return out

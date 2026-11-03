@@ -419,10 +419,12 @@ def parse_porcelain_z(out):
     return entries
 
 
-def status(cwd, untracked='all'):
+def status(cwd, untracked='all', renames=True):
     """`([(xy, path)], None)` for the work tree at `cwd` (`??` marks untracked; ignored files are
-    left out), or `(None, why)`. `untracked` is git's --untracked-files value."""
-    data, why = cmd.run(['status', '--porcelain', '-z', '--untracked-files=%s' % untracked], cwd)
+    left out), or `(None, why)`. `untracked` is git's --untracked-files value. `renames=False`
+    passes --no-renames: a rename is then its deleted old path and its new one, two entries."""
+    args = ['status', '--porcelain', '-z', '--untracked-files=%s' % untracked]
+    data, why = cmd.run(args + ([] if renames else ['--no-renames']), cwd)
     if data is None:
         return None, why
     return parse_porcelain_z(data.decode('utf-8', 'replace')), None

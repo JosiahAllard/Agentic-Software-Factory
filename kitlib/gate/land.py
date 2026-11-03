@@ -235,6 +235,7 @@ import time
 
 from kitlib import gate as G
 from kitlib.backlog import at_landing
+from kitlib.backlog import narrowed as nmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as scmod
 from kitlib.backlog import store as smod
@@ -297,6 +298,7 @@ SCOPE_REFUSES = False
 # cannot import tools/ to learn them, so a rendering change needs them in a record's scope.
 SCOPE_ALWAYS = ('tests/**', 'docs/INDEX.md')
 SCOPE_SHOWN = 10        # outside paths a scope-check line names; more are counted
+NARROWED_RULES = rmod.Rules('mixed')    # reads every store's `narrowed:` ids (_scope_restore)
 # The strict paths (Lander.strict_check; docs/gate.md "Strict paths"): the globs of this file's
 # STRICT_DEFAULTS, owner-authored, read from the base with `git show` and parsed, never imported
 # from the branch; a base without the file (a repository that is not the kit) has the running
@@ -367,56 +369,12 @@ def _not_landed(lines):
             for l in lines]
 
 
-def _covers(members, path):
-    """True when a scope member in `members` covers `path`: one's components a prefix of the
-    other's, casefolded (the comparison of kitlib.backlog.scope.members_collide). Only the member
-    is read in the scope grammar; the path is a literal changed path, so a comma or a wildcard
-    character in it is an ordinary character. A member the grammar cannot read, and a path
-    _path_error refuses, cover nothing. Pure."""
-    if _path_error(path):
-        return False
-    have = path.casefold().split('/')
-    for m in members:
-        try:
-            want = scmod.scope_components(m)
-        except scmod.UndecidableScope:
-            continue
-        n = min(len(want), len(have))
-        if want[:n] == have[:n]:
-            return True
-    return False
-
-
-def _area_lead(area, tops):
-    """The area prefix a member of a record carries, `<area>/`, or '' when it carries none: the
-    store shared by repositories (the PM data branch's) writes a member `<area>/<path>`; `area`
-    is None for a record of any other store, and an area that names a top-level entry of the
-    repository (`tops`, casefolded) is a path. Pure."""
-    return area + '/' if area and area.casefold() not in tops else ''
-
-
-def _in_repo(members, area, tops):
-    """`members`, a record's scope, as paths of this repository: under an area prefix
-    (_area_lead) a member loses that first component; every other member is as it is. Pure."""
-    if not _area_lead(area, tops):
-        return list(members)
-    out = []
-    for m in members:
-        head, _, rest = m.partition('/')
-        out.append(rest if rest and head.casefold() == area.casefold() else m)
-    return out
-
-
-def _path_error(path):
-    """None when the scope check can decide `path`, else why not: such a path is outside every
-    scope and left out of the widening command. A comma or a wildcard character is decidable
-    (_unnamed). Pure."""
-    why = scmod.path_shape_error(path, 'path', tab_ok=True, comma_ok=True)
-    if why:
-        return why
-    if path.casefold() == scmod.NONE:
-        return 'a path that reads as the `none` sentinel'
-    return None
+# A changed path against a record's scope: one copy, shared with commit.py's narrowed-record check
+# (scope.covers, area_lead, in_repo, changed_path_error; all pure).
+_covers = scmod.covers
+_area_lead = scmod.area_lead
+_in_repo = scmod.in_repo
+_path_error = scmod.changed_path_error
 
 
 def _unnamed(path):
@@ -522,12 +480,17 @@ class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
     for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
     read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
-    allowed)."""
+    allowed); `narrowed`, id -> its `narrowed:` values, for each id held that carries one
+    (scope_check refuses their branch's miss)."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
+        self.narrowed = {}
 
-    def hold(self, rid, members, command, area=None):
+    def hold(self, rid, members, command, area=None, narrowed=()):
+        if narrowed:
+            self.narrowed.setdefault(rid, [])
+            self.narrowed[rid].extend(v for v in narrowed if v not in self.narrowed[rid])
         if rid in self.held:
             self.held[rid][0].extend(m for m in members if m not in self.held[rid][0])
         else:
@@ -1483,16 +1446,20 @@ class Lander(object):
         and the batch's earlier tips, so a stacked branch is checked on its own paths. A miss, a
         store it cannot read while some path is outside what it could read, or a check that
         stops: with SCOPE_REFUSES the refusal; else a WARNING kept for after the LANDED line, and
-        None. A branch holding no record while a store with records was read: a NOTE kept for
-        before the LANDED line."""
+        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate.md
+        "Landing", step 4) is refused whatever SCOPE_REFUSES says; a store it cannot read, or a check
+        that stops, cannot tell, so that stays a WARNING. A branch holding no record while a store
+        with records was read: a NOTE kept for before the LANDED line."""
         for i, (b, t) in enumerate(self.pairs):
+            narrowed = []
             try:
-                why = self._scope_of(b, t, [self.expect_main] + self.tips[:i])
+                why = self._scope_of(b, t, [self.expect_main] + self.tips[:i], narrowed)
             except Exception as e:      # noqa: BLE001 - a check that cannot finish is a miss
                 why = 'the scope check of %s stopped (%s)' % (b, _what(e))
+                narrowed = []
             if not why:
                 continue
-            if SCOPE_REFUSES:
+            if SCOPE_REFUSES or narrowed:
                 return why
             self.scope_warnings.append(
                 'WARNING: %s; the landing went ahead: the scope check only warns for now '
@@ -1510,8 +1477,9 @@ class Lander(object):
             return out, None
         return None, r.err or 'git merge-base exited %s' % r.rc
 
-    def _scope_of(self, b, t, bases):
-        """None when branch `b` at `t` keeps to its scopes; else why not (scope_check)."""
+    def _scope_of(self, b, t, bases, narrowed=None):
+        """None when branch `b` at `t` keeps to its scopes; else why not (scope_check). A miss of
+        a branch holding a narrowed record adds those ids to the list `narrowed`."""
         mb, why = self._scope_base(t, bases)
         changed, why2 = runner.changed_between(self.root, mb, t) if mb else (None, why)
         if changed is None:
@@ -1556,9 +1524,15 @@ class Lander(object):
                                 'no scope member can name it' if _unnamed(p) else None))
         if not outside:
             return None
-        if found.unread:            # a record it could not read may cover them
+        if found.unread and not found.narrowed:     # a record it could not read may cover them
             return self._scope_unread(b, found)
-        return self._scope_miss(b, t, mb, found, outside, tops)
+        if narrowed is not None:
+            narrowed.extend(sorted(found.narrowed))
+        miss = self._scope_miss(b, t, mb, found, outside, tops)
+        if found.unread:            # refused for the narrowed record all the same
+            miss += ('; the store also held a record it could not read, so a path in that '
+                     'record\'s scope may be counted outside: %s' % '; '.join(found.unread))
+        return miss
 
     def _scope_unread(self, b, found):
         return ('cannot read the backlog store to check %s\'s paths against the scopes of the '
@@ -1586,8 +1560,33 @@ class Lander(object):
                                       for m in members + new if m != scmod.NONE]
             how = ('widen a record\'s scope first (set checks the new members against every live '
                    'pull\'s scope): %s; or land them on their own branch' % command(*args))
+        if found.narrowed:
+            how = '%s; or %s' % (self._scope_restore(found), how)
         return '%s changes %d path(s) outside the scopes of the records it holds (%s): %s; %s' % (
             b, len(outside), ', '.join(ids), listed, how)
+
+    @staticmethod
+    def _scope_restore(found):
+        """The miss line's clause for the narrowed records held (found.narrowed): for each, the
+        original members its `narrowed:` lines name and the `set` that restores them: `next`'s
+        RESTORE form (narrowed.restore_set: each current member no original member holds kept, the
+        lines cleared, a malformed one kept as written; docs/commit.md "A narrowed record").
+        Lines are read with the `mixed` id grammar, which takes every store's ids: they come from
+        more than one store, and a record's own store checked them when they were written."""
+        parts = []
+        for rid in sorted(found.narrowed):
+            members, command, _area = found.held[rid]
+            got = nmod.restore_set(rid, members, found.narrowed[rid], NARROWED_RULES)
+            if got is None:
+                parts.append('%s carries a narrowed: line that cannot be read: a lead restores its '
+                             'original member by hand' % rid)
+                continue
+            originals, others, args = got
+            parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
+                         'then restore the original member with %s' % (
+                             rid, ', '.join(originals), ', '.join(others), ', '.join(others),
+                             command(*args)))
+        return '; '.join(parts)
 
     def _scope_stores(self, b, t, named, changed):
         """_Held: the records `b` holds in the configured store and the PM data branch's store,
@@ -1644,25 +1643,28 @@ class Lander(object):
         """Add to `found` the records of one store `b` holds: pulled by it, or pulled and in
         `named`; an id in `named` or `gone` the store no longer holds counts at its last version
         (`last(rid)`: the record before the commit that deleted it, or None). A store holding an
-        unreadable record is unread: that record may be the one that covers a path. `shared`: the
-        store shared by repositories (the PM data branch's), whose records keep their area
-        (_area_lead)."""
+        unreadable record is unread: that record may be the one that covers a path, so of its
+        readable records only the narrowed ones are taken (their branch's miss is refused all the
+        same: scope_check). `shared`: the store shared by repositories (the PM data branch's),
+        whose records keep their area (_area_lead)."""
         bad = sorted(r.stem for r in records if not r.readable)
         if bad:
             found.unread.append('%s: %d record(s) unreadable (%s)' % (
                 where, len(bad), ', '.join(bad[:5])))
-            return
-        if records:
+        if records and not bad:
             found.read = True
         stems = set(r.stem for r in records)
-        candidates = list(records)
+        candidates = [r for r in records if r.readable]
         for rid in sorted((set(named) | set(gone)) - stems):
             rec = last(rid) if smod.PLAIN_ID.match(rid) else None
             if rec is not None and rec.readable:
                 candidates.append(rec)
         for r in candidates:
+            if bad and not r.all('narrowed'):
+                continue
             if r.get('state') == 'pulled' and (r.get('pulled_by') == b or r.stem in named):
-                found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None)
+                found.hold(r.stem, r.all('scope'), command, r.get('area') if shared else None,
+                           r.all('narrowed'))
 
     def _scope_last(self, root, rev, rel, rid):
         """The record `rid` as it was before the newest commit reachable from `rev` deleted

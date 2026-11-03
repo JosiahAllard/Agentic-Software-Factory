@@ -54,7 +54,8 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
   - `start`: Blender exited or never listened. The message carries its log tail.
   - `stopped`: the lock stopped the run while Blender started.
   - `timeout`: the call ran past its limit.
-  - `ended`: the Blender has ended.
+  - `ended`: the Blender has ended, or is closing.
+  - `busy`: `blender_close` while a call runs in that Blender; close it once the call returns.
   - `unknown`: no such handle.
   - `wire`: the socket failed.
   - `internal`: a bug, with a short trace.
@@ -74,10 +75,11 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
 - **Ends:**
   - `blender_close`, or 20 minutes with no call (`kitlib.blendermcp.IDLE_S`), stops the add-on's server. Blender then exits 0, and the booking is released as `done`.
   - A Blender that does not exit within 15 s is ended with its job (`cancelled`).
+  - Neither stops a Blender in a call: `blender_close` is refused (`busy`), and the idle close checks for a running call under the Blender's lock and leaves it be. Once a close begins, no new call starts, and a call is refused at once rather than waiting for the close.
   - A watcher thread looks every 5 s:
     - It ends a Blender whose run the lock was asked to stop (by the owner, or by the lock's stale check).
     - It releases one that exited by itself.
-  - When stdin ends (the session went away) the server closes every Blender it opened.
+  - When stdin ends (the session went away) the server closes every Blender it opened. One still in a call is ended with its job, since nothing is left to take the reply.
   - If the server process dies instead, the run's job ends Blender (a Windows job object is kill-on-close), and the lock drops the booking of a dead wrapper.
 - **Files:** each Blender's log is `<temp>/pm-kit-blender/<run id>.log`. It is removed after a clean exit and kept after any other end. A render with no `path` writes into the same folder.
 
@@ -138,7 +140,7 @@ set PM_KIT_BLENDER_LIVE=1 && python -m unittest tests.blendermcp.test_live
 - **Linux is checked on Windows only.**
   - The code runs on Linux, but no Linux run was made.
   - If the server dies there, the Blender is ended by the lock job's watchdog (`kitlib/platform/linux/contain.py`), not by a kill-on-close job object; that path is untested with Blender.
-  - On Linux the listener table has no owners (`kitlib.proc.tcp` is Windows only), so any listener on the port counts as Blender's. Linux refuses a second listener on a port unless both set SO_REUSEPORT, which the add-on does not.
+  - On Linux the listener table has no owners (`kitlib.proc.tcp` `listeners` reads `/proc/net/tcp` and `tcp6`, which name none), so any listener on the port counts as Blender's. Linux refuses a second listener on a port unless both set SO_REUSEPORT, which the add-on does not.
 - **Only this add-on is pinned.** Blender also loads the user's other enabled add-ons, and the bridge checks none of them; on this machine they are the ones Blender ships (`cycles`, the io_* importers, `pose_library`, `bl_pkg`).
   - `--factory-startup --addons bl_ext.user_default.mcp` would load only this one: a probe found the command works that way.
   - It is not used: `--factory-startup` skips the user's `userpref.blend`, which holds the Cycles GPU device, so Cycles would render on the CPU. This follows from Blender's documented behaviour; it was not measured.

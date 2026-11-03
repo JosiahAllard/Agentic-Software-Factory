@@ -22,8 +22,12 @@ closes every one. If this process dies instead, the run's job ends Blender (a Wi
 is kill-on-close; on Linux the job's watchdog does it, docs/blender-mcp.md "Known limits") and the
 lock drops the booking of a dead wrapper.
 
-Linux: there is no listener table with owners here (kitlib.proc.tcp is Windows only), so a
-listener on the port counts as Blender's. Linux refuses a second listener on a port unless both
+A close and the idle close never stop a Blender in a call: blender_close is refused (busy), the
+idle close looks at busy under the instance's lock and lets it be, and a close that has begun
+refuses every new call. shutdown ends one still in a call with its job.
+
+Linux: the listener table (/proc/net, kitlib.proc.tcp.listeners) names no owner, so a listener on
+the port counts as Blender's. Linux refuses a second listener on a port unless both
 set SO_REUSEPORT, which the add-on does not.
 """
 import contextlib
@@ -114,13 +118,16 @@ def _tail(path):
 
 
 class Instance:
-    """One open Blender. mu orders a call against an end; busy is set while a call runs."""
+    """One open Blender. mu orders a call against an end and is held only briefly, never across a
+    call or a wait for Blender's exit; busy is set while a call runs, closing once a close has
+    begun (no call starts after it); done is set once it has ended."""
 
     def __init__(self, handle, port, worktree, exe, slot, proc, log_path, now):
         self.handle, self.port, self.worktree, self.exe = handle, port, worktree, exe
         self.slot, self.proc, self.log_path = slot, proc, log_path
         self.mu = threading.RLock()
-        self.busy, self.ended, self.pycache = False, None, None
+        self.busy, self.closing, self.ended, self.pycache = False, False, None, None
+        self.done = threading.Event()
         self.opened, self.last, self.calls, self.renders = now, now, 0, 0
 
     def info(self, now):
@@ -316,6 +323,8 @@ class Bridge:
         with inst.mu:
             if inst.ended:
                 raise BridgeError('ended', 'Blender %s has ended: %s' % (handle, inst.ended['why']))
+            if inst.closing:
+                raise BridgeError('ended', 'Blender %s is closing' % handle)
             self._check_port(inst)
             inst.busy = True
         try:
@@ -367,6 +376,13 @@ class Bridge:
         with inst.mu:
             if inst.ended:
                 return inst.ended
+            try:
+                return self._end_once(inst, why, kill)
+            finally:
+                inst.done.set()
+
+    def _end_once(self, inst, why, kill):
+        with inst.mu:
             code = inst.proc.poll()
             how = 'cancelled' if kill or code is None else 'done'
             inst.ended = {'ended': iso(), 'why': why, 'how': how, 'code': code}
@@ -393,17 +409,42 @@ class Bridge:
 
     def close(self, handle, why='closed by blender_close'):
         """Stops Blender `handle` (the add-on's stop, then its exit) and releases its booking; a
-        Blender that does not exit within EXIT_S is ended with its job. Its info, ended."""
+        Blender that does not exit within EXIT_S is ended with its job. Its info, ended. Refused
+        (BridgeError busy) while a call runs in it; a close another thread began is waited for."""
         inst = self._live(handle)
+        self._close(inst, why)
+        return inst.info(self.clock())
+
+    def _close(self, inst, why, idle_s=None):
+        """close, for inst. idle_s: the watcher's idle close, which does nothing (False) unless,
+        when it takes inst.mu, no call runs and none ended within idle_s. True once inst ended."""
         with inst.mu:
-            if not inst.ended:
-                if inst.proc.poll() is None:
-                    with contextlib.suppress(wire.WireError):
-                        wire.call(inst.port, codes.STOP, STOP_S)
-                    with contextlib.suppress(subprocess.TimeoutExpired):
-                        inst.proc.wait(EXIT_S)
-                self._end(inst, why)
-            return inst.info(self.clock())
+            if inst.ended:
+                return True
+            if not inst.closing:
+                if inst.busy:
+                    if idle_s is not None:
+                        return False
+                    raise BridgeError('busy', 'Blender %s is running a call; close it once the call '
+                                      'returns' % inst.handle)
+                if idle_s is not None and self.clock() - inst.last < idle_s:
+                    return False
+                inst.closing = True
+                mine = True
+            else:
+                mine = False
+        if not mine:                    # another thread's close: its stop and wait are bounded
+            inst.done.wait(STOP_S + 2 * EXIT_S + 5)
+            return bool(inst.ended)
+        try:
+            if inst.proc.poll() is None:
+                with contextlib.suppress(wire.WireError):
+                    wire.call(inst.port, codes.STOP, STOP_S)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    inst.proc.wait(EXIT_S)
+        finally:
+            self._end(inst, why)
+        return True
 
     def list(self):
         """{open: [info], ended: [info]} of this server's Blenders, ended ones newest last."""
@@ -420,15 +461,18 @@ class Bridge:
             live = list(self.instances.values())
         for inst in live:
             try:
+                with inst.mu:
+                    if inst.closing or inst.ended:  # its close ends it, with its own why
+                        continue
                 if inst.slot.stop_asked():
                     self._end(inst, 'the machine lock stopped run %s' % inst.slot.id, kill=True)
                     continue
                 code = inst.proc.poll()
                 if code is not None:
                     self._end(inst, 'Blender exited by itself (code %s)' % code)
-                elif not inst.busy and now - inst.last >= self.idle_s:
-                    self.close(inst.handle, 'idle for %d min, so it was closed'
-                               % (self.idle_s // 60))
+                elif now - inst.last >= self.idle_s:    # _close looks again, under inst.mu
+                    self._close(inst, 'idle for %d min, so it was closed' % (self.idle_s // 60),
+                                idle_s=self.idle_s)
             except BridgeError:
                 pass
             except Exception:           # one Blender's failure must not stop the watcher
@@ -442,10 +486,16 @@ class Bridge:
         self.watcher.start()
 
     def shutdown(self, why='the bridge ended (its MCP client went away)'):
-        """Stops the watcher and closes every open Blender."""
+        """Stops the watcher and closes every open Blender; one still in a call is ended with its
+        job, as nothing is left to take the call's reply."""
         self.stopping.set()
         with self.mu:
-            handles = list(self.instances)
-        for handle in handles:
+            live = list(self.instances.values())
+        for inst in live:
             with contextlib.suppress(Exception):
-                self.close(handle, why)
+                try:
+                    self._close(inst, why)
+                except BridgeError as e:
+                    if e.code != 'busy':
+                        raise
+                    self._end(inst, why, kill=True)

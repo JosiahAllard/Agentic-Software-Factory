@@ -6,6 +6,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -258,6 +259,104 @@ class Ending(BridgeCase):
         end = self.ended(a['handle'])
         self.assertEqual((end['how'], end['code']), ('done', 0))
         self.assertIn('idle', end['why'])
+        self.assertTrue(self.gone(a['pid']))
+        self.assertEqual(self.ports_held(), [])
+
+    def call_in_thread(self, handle, code, timeout_s=20):
+        """Starts bridge.call in a thread; returns (thread, out) once that call is running, out
+        getting 'reply' or 'error'."""
+        out = {}
+
+        def run():
+            try:
+                out['reply'] = self.bridge.call(handle, code, timeout_s)
+            except BridgeError as e:
+                out['error'] = e
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        inst = self.bridge.instances[handle]
+        deadline = time.monotonic() + 10
+        while not inst.busy and t.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(inst.busy, out)
+        return t, out
+
+    def test_the_idle_close_skips_a_blender_whose_call_began_after_the_watcher_looked(self):
+        a = self.bridge.open(self.wt)
+        inst = self.bridge.instances[a['handle']]
+        started = []
+
+        class Racing:
+            """inst.mu, a call started in another thread the first time the watcher takes it."""
+            def __init__(self, inner, test):
+                self.inner, self.test, self.watcher = inner, test, threading.current_thread()
+
+            def __enter__(self):
+                if not started and threading.current_thread() is self.watcher:
+                    started.append(self.test.call_in_thread(
+                        a['handle'], 'import time\ntime.sleep(1)\nresult = {"ran": 1}'))
+                return self.inner.__enter__()
+
+            def __exit__(self, *exc):
+                return self.inner.__exit__(*exc)
+        inst.mu = Racing(inst.mu, self)
+        self.now += 61
+        self.bridge.tick()
+        self.assertTrue(started, 'the watcher never took the lock')
+        t, out = started[0]
+        t.join(20)
+        self.assertEqual(out.get('reply', {}).get('result'), {'ran': 1}, out)
+        self.assertEqual([i['handle'] for i in self.bridge.list()['open']], [a['handle']])
+
+    def test_closing_a_blender_mid_call_is_refused_and_the_call_goes_on(self):
+        a = self.bridge.open(self.wt)
+        t, out = self.call_in_thread(a['handle'], 'import time\ntime.sleep(1.5)\nresult = {"ran": 1}')
+        t0 = time.monotonic()
+        with self.assertRaises(BridgeError) as cm:
+            self.bridge.close(a['handle'])
+        self.assertEqual(cm.exception.code, 'busy')
+        self.assertLess(time.monotonic() - t0, 1.0)
+        t.join(20)
+        self.assertEqual(out.get('reply', {}).get('result'), {'ran': 1}, out)
+        self.assertEqual(len(self.bridge.list()['open']), 1)
+        self.assertEqual(self.bridge.close(a['handle'])['how'], 'done')
+
+    def test_a_call_while_blender_is_closing_is_refused_without_waiting_for_the_close(self):
+        self.opts = ['--ignore-stop']
+        a = self.bridge.open(self.wt)
+        inst = self.bridge.instances[a['handle']]
+        out, waiting, wait = {}, threading.Event(), inst.proc.wait
+
+        def waits(*args, **kw):          # the close is past its stop call, waiting for the exit
+            waiting.set()
+            return wait(*args, **kw)
+        inst.proc.wait = waits
+
+        def close():
+            out['end'] = self.bridge.close(a['handle'])
+        with mock.patch.object(instance, 'EXIT_S', 3.0):
+            t = threading.Thread(target=close, daemon=True)
+            t.start()
+            self.assertTrue(waiting.wait(10), 'the close never waited for the exit')
+            t0 = time.monotonic()
+            with self.assertRaises(BridgeError) as cm:
+                self.bridge.call(a['handle'], 'result = {}', 5)
+            waited = time.monotonic() - t0
+            t.join(20)
+        self.assertEqual(cm.exception.code, 'ended')
+        self.assertLess(waited, 1.0, 'the call waited for the close')
+        self.assertEqual(out['end']['how'], 'cancelled')
+        self.assertEqual(self.ports_held(), [])
+
+    def test_shutdown_ends_a_blender_mid_call_with_its_job(self):
+        a = self.bridge.open(self.wt)
+        t, out = self.call_in_thread(a['handle'], 'import time\ntime.sleep(30)\nresult = {}', 60)
+        t0 = time.monotonic()
+        self.bridge.shutdown()
+        self.assertLess(time.monotonic() - t0, 8.0)
+        t.join(20)
+        self.assertEqual(out['error'].code, 'ended', out)
+        self.assertEqual(self.ended(a['handle'])['how'], 'cancelled')
         self.assertTrue(self.gone(a['pid']))
         self.assertEqual(self.ports_held(), [])
 

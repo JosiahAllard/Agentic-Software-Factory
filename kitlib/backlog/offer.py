@@ -295,10 +295,11 @@ def held_for_batch(rec, branch):
     return batch if batch is not None and batch != branch else None
 
 
-def _narrowed(rec, hit, against, live_of, narrow):
+def _narrowed(rec, hit, live_of, narrow):
     """The Split `narrow(rec, other)` gives when every pair of `hit` is a member of one live pull
-    `other` (`live_of`: {member: [live pulls holding it]}) and what `rec` keeps collides with
-    nothing else in `against`; else None (the record is passed over as today)."""
+    `other` (`live_of`: {member: [live pulls holding it]}); else None (the record is passed over
+    as today). What `rec` keeps then collides with nothing else taken: it lies inside `rec`'s
+    scope, which collided with `other` alone, and Split.keep is clear of `other`."""
     others = set()
     for _mine, taken in hit:
         recs = live_of.get(taken) or []
@@ -310,17 +311,6 @@ def _narrowed(rec, hit, against, live_of, narrow):
     other = live_of[hit[0][1]][0]
     try:
         out = narrow(rec, other)
-    except smod.UndecidableScope:
-        return None
-    if out is None:
-        return None
-    rest = list(against)
-    for m in other.all('scope'):
-        if m in rest:
-            rest.remove(m)
-    try:
-        if smod.colliding_pairs(out.keep, rest):
-            return None
     except smod.UndecidableScope:
         return None
     return out
@@ -418,7 +408,7 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
             continue
         split = None
         if hit and narrow is not None and own(rec):
-            split = _narrowed(rec, hit, against, live_of, narrow)
+            split = _narrowed(rec, hit, live_of, narrow)
         if hit and split is None:
             if own(rec):
                 holder, who = holders.get(hit[0][1]) or (None, None)
@@ -653,28 +643,49 @@ def narrowings(passed, holding, changes, unknown):
 
 # --- NARROWS: a record held only by a live pull's protected set ---------------------------------
 
-FILES_HEADING = '## files'
+FILES_HEADING = 'files'
+_HEADING = re.compile(r'^(#{1,6})(?:\s+(.*?))?\s*#*\s*$')
+_FENCE = ('```', '~~~')
+# One list item: exactly one backticked path, which a ` - note` or ` — note` may follow, or one
+# bare path with nothing after it.
+_FILES_ITEM = re.compile(r'^[-*]\s+(?:`([^`\s]+)`(?:\s+[-\u2014]\s+\S.*)?|([^`\s]+))$')
 
 
 def files_section(body):
     """`(paths, None)`: the paths the list items (`- ` or `* `) of a record body's `## Files`
     section name, each once, in order; `[]` when there is no such section or it lists nothing
-    (no plan). An item's path is its first backticked token, else its first word. `(None, why)`
-    when an item is not a plain repo path (a glob, a backslash, an absolute path, nothing): the
-    plan cannot be read, so nothing is narrowed by it."""
-    paths, inside = [], False
+    (no plan). The section runs from a level-2 `## Files` heading (any letter case) to the next
+    heading of level 1 or 2; a heading inside a code fence is not one. Lines that are not list
+    items are prose and are skipped. An item is exactly one backticked path, which a ` - note`
+    or ` — note` may follow, or one bare path with nothing after it. `(None, why)` when the plan
+    cannot be read, so nothing is narrowed by it: an item of any other shape (a word before
+    the backticked path, `- a.py: rewrite`), a path that is not a plain repo path (a glob, a
+    backslash, an absolute path), or a deeper heading or a code fence inside the section."""
+    paths, inside, fenced = [], False, False
     for line in (body or '').split('\n'):
         s = line.strip()
-        if s.startswith('#'):
+        if s.startswith(_FENCE):
             if inside:
+                return None, '`## Files` holds a code fence (`%s`)' % s
+            fenced = not fenced
+            continue
+        h = None if fenced else _HEADING.match(s)
+        if h:
+            level = len(h.group(1))
+            if inside and level <= 2:
                 break
-            inside = ' '.join(s.split()).casefold() == FILES_HEADING
+            if inside:
+                return None, '`## Files` holds a subheading (`%s`)' % s
+            inside = level == 2 and ' '.join((h.group(2) or '').split()).casefold() == \
+                FILES_HEADING
             continue
         if not inside or not (s[:2] in ('- ', '* ') or s in ('-', '*')):
             continue
-        item = s[1:].strip()
-        m = re.match(r'^`([^`]*)`', item)
-        path = m.group(1) if m else (item.split() or [''])[0]
+        m = _FILES_ITEM.match(s)
+        if m is None:
+            return None, ('`## Files` item `%s`: not one path (one backticked path, or one bare '
+                          'path with nothing after it)' % s)
+        path = m.group(1) or m.group(2)
         err = ('a glob, not a path' if any(c in path for c in smod.WILDCARD_CHARS)
                else smod.path_shape_error(path, 'path', comma_ok=True))
         if err is not None:
@@ -693,27 +704,6 @@ class Split(object):
     def __init__(self, other, keep, other_keep, c_changes, l_changes, plan):
         self.other, self.keep, self.other_keep = other, keep, other_keep
         self.c_changes, self.l_changes, self.plan = c_changes, l_changes, plan
-
-
-def _base(member):
-    return member[:-len(smod.GLOB_SUFFIX)] if member.endswith(smod.GLOB_SUFFIX) else member
-
-
-def _beneath(base, path):
-    """`path` is `base` or lies under it, ignoring letter case."""
-    b, p = base.casefold(), path.casefold()
-    return p == b or p.startswith(b + '/')
-
-
-def _strictly_under(inner, outer):
-    """Member `inner` lies inside member `outer`'s glob and is not `outer` itself."""
-    ci, co = smod.scope_components(inner), smod.scope_components(outer)
-    return outer.endswith(smod.GLOB_SUFFIX) and len(ci) > len(co) and ci[:len(co)] == co
-
-
-def _deeper(a, b):
-    """Of two colliding members, the one inside the other (`a` when they are equal)."""
-    return a if len(smod.scope_components(a)) >= len(smod.scope_components(b)) else b
 
 
 def split(c_scopes, other, protected, tree, plan):
@@ -735,6 +725,7 @@ def split(c_scopes, other, protected, tree, plan):
 
 
 def _split(c_scopes, other, protected, tree, plan):
+    base, rel, within = smod.member_base, smod.paths_related, smod.path_within
     l_scopes = other.all('scope')
     pairs = smod.colliding_pairs(c_scopes, l_scopes)
     if not pairs:
@@ -748,13 +739,13 @@ def _split(c_scopes, other, protected, tree, plan):
         if not ls:
             c_kept.append((c, None))
             continue
-        removed = [t for t in prot if smod._related(_base(c), t)]
+        removed = [t for t in prot if rel(base(c), t)]
         if not plan:
             for l in ls:
-                if not _strictly_under(l, c):
+                if not smod.strictly_inside(l, c):
                     return None, ('%s of %s is not inside %s, and %s has no `## Files`: only a '
                                   'broad candidate is narrowed' % (l, other.id, c, other.id))
-                removed += [p for p in tracked if _beneath(_base(l), p)]
+                removed += [p for p in tracked if within(base(l), p)]
         kept = smod.complement(c, sorted(set(removed)), tracked)
         if kept is None:
             return None, 'complement cannot narrow %s' % c
@@ -767,13 +758,13 @@ def _split(c_scopes, other, protected, tree, plan):
             continue
         removed = []
         for c in cs:
-            region = _base(_deeper(c, l))
-            removed += [p for p in tracked if _beneath(region, p) and p not in pset]
+            region = base(smod.deeper_member(c, l))
+            removed += [p for p in tracked if within(region, p) and p not in pset]
         kept = smod.complement(l, sorted(set(removed)), tracked) if removed else [l]
         if kept is None:
             return None, 'complement cannot narrow %s of %s' % (l, other.id)
-        extra = [t for t in prot if _beneath(_base(l), t)
-                 and not any(smod._related(_base(k), t) for k in kept)]
+        extra = [t for t in prot if within(base(l), t)
+                 and not any(rel(base(k), t) for k in kept)]
         l_kept.append((l, sorted(set(kept + extra))))
 
     def flat(pairs_kept):
@@ -794,27 +785,28 @@ def _split(c_scopes, other, protected, tree, plan):
             return None, '`%s` is not a scope: %s' % (m, err)
     if smod.colliding_pairs(keep, other_keep):
         return None, 'what is kept still collides with %s' % other.id
-    if any(smod._related(_base(k), t) for k in keep for t in prot):
+    if any(rel(base(k), t) for k in keep for t in prot):
         return None, 'what is kept still touches the protected set of %s' % other.id
     c_changes = []
     for c, kept in c_kept:
         if kept is None or kept == [c]:
             continue
-        dropped = [m for m in other_keep if smod._related(_base(m), _base(c))]
-        dropped += [t for t in prot if smod._related(_base(c), t) and t not in dropped
-                    and not any(smod._related(_base(m), t) for m in dropped)]
+        dropped = [m for m in other_keep if rel(base(m), base(c))]
+        dropped += [t for t in prot if rel(base(c), t) and t not in dropped
+                    and not any(rel(base(m), t) for m in dropped)]
         c_changes.append((c, sorted(dropped), kept))
     l_changes = []
     for l, kept in l_kept:
         if kept is None or kept == [l]:
             continue
-        l_changes.append((l, sorted(m for m in keep if smod._related(_base(m), _base(l))), kept))
+        l_changes.append((l, sorted(m for m in keep if rel(base(m), base(l))), kept))
     return Split(other, keep, other_keep, c_changes, l_changes, plan), None
 
 
 def narrows_line(offer):
     """`next`'s NARROWS line for an offer made by narrowing (Offer.split): what each side drops
-    and keeps. Nothing is written; `pull` recomputes it."""
+    and keeps. Nothing is written, and `pull` does not narrow yet: it passes the record over
+    as before."""
     s = offer.split
 
     def side(rid, changes, note=''):

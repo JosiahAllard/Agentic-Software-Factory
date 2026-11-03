@@ -68,8 +68,7 @@ def scope_components(member):
         raise UndecidableScope('%s: %s' % (member, err))
     if member == NONE:
         raise UndecidableScope('`none` has no components; it collides with nothing')
-    body = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
-    return body.casefold().strip('/').split('/')
+    return member_base(member).casefold().strip('/').split('/')
 
 
 def members_collide(a, b):
@@ -109,12 +108,35 @@ def colliding_pairs(scopes_a, scopes_b):
 COMPLEMENT_CAP = 30     # members `complement` returns at most; more is "cannot auto-narrow"
 
 
-def _related(a, b):
+def member_base(member):
+    """`member` without its `/**` glob suffix: the folder a glob covers, else the member."""
+    return member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
+
+
+def paths_related(a, b):
     """`members_collide` on two paths without validating them: a tracked path such as
     `pages/[id].js` or `a,b.txt` is not a legal scope member but is a real file."""
     ca, cb = a.casefold().split('/'), b.casefold().split('/')
     n = min(len(ca), len(cb))
     return ca[:n] == cb[:n]
+
+
+def path_within(base, path):
+    """`path` is `base` or lies under it, spelled exactly (letter case included): what a tracked
+    path must be to count as inside a member's base."""
+    return path == base or path.startswith(base + '/')
+
+
+def strictly_inside(inner, outer):
+    """Member `inner` lies inside member `outer`'s `/**` glob and is not `outer` itself.
+    UndecidableScope when either is not a legal member."""
+    ci, co = scope_components(inner), scope_components(outer)
+    return outer.endswith(GLOB_SUFFIX) and len(ci) > len(co) and ci[:len(co)] == co
+
+
+def deeper_member(a, b):
+    """Of two colliding members, the one inside the other (`a` when they are as deep)."""
+    return a if len(scope_components(a)) >= len(scope_components(b)) else b
 
 
 def complement(member, removed, tree, cap=COMPLEMENT_CAP):
@@ -136,12 +158,12 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
                else path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
         if err is not None:
             raise UndecidableScope('%s: %s' % (r, err))
-    base = member[:-len(GLOB_SUFFIX)] if member.endswith(GLOB_SUFFIX) else member
-    if member == NONE or not any(_related(base, r) for r in removed):
+    base = member_base(member)
+    if member == NONE or not any(paths_related(base, r) for r in removed):
         return [member]
     below = base + '/'
-    under = [p for p in tree if _related(base, p)]
-    if not under or any(not (p == base or p.startswith(below)) for p in under):
+    under = [p for p in tree if paths_related(base, p)]
+    if not under or any(not path_within(base, p) for p in under):
         return None         # no tracked data for it, or a letter-case mismatch: do not guess
     if not member.endswith(GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
         return None         # a single file
@@ -156,11 +178,11 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
         for name in sorted(names):
             path = prefix + '/' + name
             if names[name]:
-                if any(_related(path, r) for r in removed):
+                if any(paths_related(path, r) for r in removed):
                     descend(path)
                 else:
                     out.append(path + GLOB_SUFFIX)
-            elif not any(_related(path, r) for r in removed):
+            elif not any(paths_related(path, r) for r in removed):
                 out.append(path)
             if len(out) > cap:
                 return

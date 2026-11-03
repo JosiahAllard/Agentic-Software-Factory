@@ -5,6 +5,8 @@ Failure) or returns the records to write, and never touches a file, a ref or the
 store runs it again after a lost race, so a plan is a pure function of the snapshot and its
 arguments (plus the git probes it names: branch liveness, the `Context.liveness` probe of a
 pulled branch's worktree, `requires: commit:`, and the diff of the branch `add --found-on` names).
+`next`'s narrowing (`_narrower`) reads three more, all read-only: the worktree list, the status
+of a live pull's worktree, and the tracked tree (`ls-tree`) of the code main.
 """
 import datetime
 import os
@@ -247,25 +249,28 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False):
     if holding is None:
         holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
     taken = [r for r in holding if not (own and r.get('pulled_by') == own)]
-    folded = _offer_folds(ctx, holding, own, diffs)
+    live = _live_reader(ctx, holding, own, diffs)
+    folded = _offer_folds(ctx, holding, own, live=live)
     result, refusals, _ranks = omod.next_offer(snap, taken, cap=cap, seeds=seeds,
                                                session=ctx.session, unmet=ctx.unmet(snap),
                                                folded=folded, capacity=ctx.capacity(snap),
                                                branch=own,
-                                               narrow=_narrower(ctx, holding, own) if narrow
+                                               narrow=_narrower(ctx, live) if narrow
                                                else None)
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
 
 
-def _narrower(ctx, holding, own):
+def _narrower(ctx, live):
     """The `narrow(rec, other)` an offer (`omod.next_offer`) narrows with: the Split that clears
     `rec` of the live pull `other` (omod.split), or None. `other`'s protected set T is the paths
-    its branch changed since its merge base with the code main (`_live_changes`), the dirty paths
-    of its one worktree (`_dirty_paths`) and the paths its `## Files` names (omod.files_section),
-    over the tracked tree at the code main. Fails closed: when any part of T or the tree cannot
-    be read, None, and `rec` is passed over as today. Git is read on the first call only."""
+    its branch changed since its merge base with the code main (`live`, the `_live_reader` the
+    fold check shares, so each branch is diffed once per offer), the dirty paths of its one
+    worktree (`_dirty_paths`) and the paths its `## Files` names (omod.files_section), over the
+    tracked tree at the code main (`_tracked_tree`). Fails closed: when any part of T or the
+    tree cannot be read, None, and `rec` is passed over as today. Each worktree's status and
+    the tree are read from git on first use only."""
     cache = {}
 
     def read(key, fn):
@@ -281,10 +286,7 @@ def _narrower(ctx, holding, own):
         files, _why = omod.files_section(other.body)
         if not name or files is None:
             return None
-        live = read('live', lambda: _live_changes(ctx, holding, own))
-        if live is None:
-            return None
-        changes, _notes, unknown = live
+        changes, _notes, unknown = live()
         tips = changes.get(name)
         if name in unknown or not tips:
             return None
@@ -301,9 +303,10 @@ def _narrower(ctx, holding, own):
 
 
 def _dirty_paths(ctx, branch):
-    """The paths `git status` shows as changed or untracked in the one worktree that has `branch`
-    checked out (spelled exactly as `pulled_by` is). Failure when there is no such worktree, more
-    than one, it is prunable or gone, or git cannot read its status."""
+    """The paths `git status` shows as changed, deleted or untracked in the one worktree that
+    has `branch` checked out (spelled exactly as `pulled_by` is); a rename counts as its two
+    paths (refs.status, renames off). Failure when there is no such worktree, more than one, it
+    is prunable or gone, or git cannot read its status."""
     wts, why = gitrepo.worktrees(ctx.root)
     if wts is None:
         raise Failure('cannot list the worktrees: %s' % why)
@@ -313,11 +316,10 @@ def _dirty_paths(ctx, branch):
     w = mine[0]
     if w.prunable or not os.path.isdir(w.path):
         raise Failure('the worktree of %s at %s is gone' % (branch, w.path))
-    data, why = cmd.run(['status', '--porcelain', '-z', '--untracked-files=all',
-                         '--no-renames'], w.path)
-    if data is None:
+    entries, why = refs.status(w.path, renames=False)
+    if entries is None:
         raise Failure('cannot read the status of %s: %s' % (w.path, why))
-    return sorted(set(p for _xy, p in refs.parse_porcelain_z(cmd.text(data))))
+    return sorted(set(p for _xy, p in entries))
 
 
 def _tracked_tree(ctx):
@@ -791,24 +793,37 @@ def _pull_fold_hits(ctx, scopes, holding, branch):
     return _change_hits(scopes, changes), notes
 
 
-def _offer_folds(ctx, holding, own, diffs=None):
-    """The `folded(rec, scopes=None)` check an offer (`omod.next_offer`) passes over with: the
-    reason `rec`'s scope (`scopes` when given: what a narrowed record keeps) folds into another
-    live pull's branch than `own` (any letter case), None when it does not. The branches are diffed on the first call only, and never when no candidate asks. A
-    branch git cannot answer for passes every candidate over with a "cannot tell" note instead
-    of failing `next`; `pull` still fails on it (`_pull_fold_hits`). `diffs`, a list two checks
-    share (current_offer), caches every live branch's diff, `own`'s too, and each check leaves
-    its own branch out of it; without it only the other branches are diffed."""
+def _live_reader(ctx, holding, own, diffs=None):
+    """`live()` -> `(changes, notes, unknown)` of `_live_changes` for the live pulls of another
+    branch than `own` (any letter case), read from git on the first call only. `diffs`, a list
+    two checks share (current_offer), caches every live branch's diff, `own`'s too, and each
+    reader leaves its own branch out of it; without it only the other branches are diffed."""
     seen = [] if diffs is None else diffs
 
-    def folded(rec, scopes=None):
+    def live():
         if not seen:
             seen.append(_live_changes(ctx, holding, own if diffs is None else None))
-        changes, _notes, unknown = seen[0]
+        changes, notes, unknown = seen[0]
         if diffs is not None and own:
             mine = own.lower()
             changes = dict((k, v) for k, v in changes.items() if k.lower() != mine)
             unknown = dict((k, v) for k, v in unknown.items() if k.lower() != mine)
+        return changes, notes, unknown
+    return live
+
+
+def _offer_folds(ctx, holding, own, diffs=None, live=None):
+    """The `folded(rec, scopes=None)` check an offer (`omod.next_offer`) passes over with: the
+    reason `rec`'s scope (`scopes` when given: what a narrowed record keeps) folds into another
+    live pull's branch than `own` (any letter case), None when it does not. The branches are
+    diffed on the first call only (`_live_reader`, or the `live` reader the caller shares with
+    `_narrower`, so each live branch is diffed once), and never when no candidate asks. A
+    branch git cannot answer for passes every candidate over with a "cannot tell" note instead
+    of failing `next`; `pull` still fails on it (`_pull_fold_hits`)."""
+    live = live or _live_reader(ctx, holding, own, diffs)
+
+    def folded(rec, scopes=None):
+        changes, _notes, unknown = live()
         hits = _change_hits(scopes or rec.all('scope'), changes)
         if hits:
             where = _fold_where(hits)

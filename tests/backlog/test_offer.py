@@ -8,7 +8,8 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 
-from tests.backlog.helpers import TODAY, StoreCase, priced, rec
+from tests.backlog import test_cli
+from tests.backlog.helpers import TODAY, StoreCase, priced, rec, record_text
 
 
 def snap(*records, rules=None):
@@ -286,9 +287,38 @@ def live(rid='HOLD', scope='kit/**', body='', by='kit/b'):
 class FilesSection(unittest.TestCase):
 
     def test_the_list_items_of_the_section_are_its_paths(self):
-        body = ('## Observed\n- kit/no.py\n\n## Files\nIntro prose.\n- `kit/a.py` the reason\n'
-                '* kit/b.py\n\n## Next\n- kit/z.py\n')
-        self.assertEqual(omod.files_section(body), (['kit/a.py', 'kit/b.py'], None))
+        body = ('## Observed\n- kit/no.py\n\n## Files\nIntro prose.\n- `kit/a.py` - the reason\n'
+                '* kit/b.py\n- `kit/c.py` — a note\n- `kit/a.py`\n\n## Next\n- kit/z.py\n')
+        self.assertEqual(omod.files_section(body), (['kit/a.py', 'kit/b.py', 'kit/c.py'], None))
+
+    def test_the_section_ends_only_at_a_heading_of_level_one_or_two(self):
+        self.assertEqual(omod.files_section('## Files\n- kit/a.py\n# Top\n- kit/b.py\n'),
+                         (['kit/a.py'], None))
+        self.assertEqual(omod.files_section('## files\n- kit/a.py\n## Next\n- kit/b.py\n'),
+                         (['kit/a.py'], None))
+
+    def test_a_heading_inside_a_fence_before_the_section_is_not_one(self):
+        body = '```\n## Files\n- kit/no.py\n```\n## Files\n- kit/a.py\n'
+        self.assertEqual(omod.files_section(body), (['kit/a.py'], None))
+        self.assertEqual(omod.files_section('```\n## Files\n- kit/no.py\n```\n'), ([], None))
+
+    def test_a_subheading_or_a_fence_inside_the_section_cannot_be_read(self):
+        for body in ('## Files\n- kit/a.py\n### More\n- kit/b.py\n',
+                     '## Files\n- kit/a.py\n```\n# not a heading\n```\n- kit/b.py\n',
+                     '## Files\n~~~\n- kit/a.py\n~~~\n'):
+            with self.subTest(body=body):
+                paths, why = omod.files_section(body)
+                self.assertIsNone(paths)
+                self.assertTrue(why)
+
+    def test_an_item_that_is_not_one_path_cannot_be_read(self):
+        # Reading `edit` or `kitlib/x/b.py:` as the path would leave the real file unprotected.
+        for item in ('- edit `kitlib/x/b.py`', '- kitlib/x/b.py: rewrite', '- kit/a.py the reason',
+                     '- `kit/a.py` the reason', '- `kit/a.py` `kit/b.py`', '- `kit/a.py` -'):
+            with self.subTest(item=item):
+                paths, why = omod.files_section('## Files\n%s\n' % item)
+                self.assertIsNone(paths)
+                self.assertIn('not one path', why)
 
     def test_no_section_or_an_empty_one_is_no_plan(self):
         self.assertEqual(omod.files_section('## Observed\n- kit/a.py\n'), ([], None))
@@ -412,6 +442,24 @@ class NextNarrows(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith('NARROW FOO (rank 2): kit/a.py collides'), lines)
 
+    def test_a_member_two_live_pulls_hold_is_no_narrowing(self):
+        s = snap(live(), live('HOLD2', scope='kit/**', by='kit/c'),
+                 priced('FOO', priority='3', scope='kit/**'))
+        seen = []
+        offers, passed = self.offer(s, [s.get('HOLD'), s.get('HOLD2')],
+                                    narrow=self.narrow(['kit/a.py'], seen=seen))
+        self.assertEqual((offers, seen), ([], []))
+        self.assertIn('FOO', passed)
+
+    def test_a_collision_with_a_record_offered_above_is_no_narrowing(self):
+        s = snap(live(scope='kit/sub/**'), priced('TOP', priority='1', scope='kit/b.py'),
+                 priced('FOO', priority='3', scope='kit/**'))
+        seen = []
+        offers, passed = self.offer(s, [s.get('HOLD')],
+                                    narrow=self.narrow(['kit/sub/c.py'], seen=seen))
+        self.assertEqual(([o.rec.id for o in offers], seen), (['TOP'], []))
+        self.assertIn('FOO', passed)
+
     def test_two_live_pulls_in_the_way_is_no_narrowing(self):
         s = snap(live(), live('HOLD2', scope='kit/sub/**', by='kit/c'),
                  priced('FOO', priority='3', scope='kit/**'))
@@ -509,6 +557,27 @@ class ProtectedSet(StoreCase):
         self.assertEqual(offers, [])
         self.assertIsNotNone(passed['FOO'].pair)
 
+    def test_dirty_paths_count_both_sides_of_a_rename_and_a_staged_delete(self):
+        self.repo.git('mv', 'kitlib/y/d.py', 'kitlib/y/e.py', cwd=self.wt)
+        self.repo.git('rm', '-q', 'kitlib/x/b.py', cwd=self.wt)
+        self.assertEqual(pmod._dirty_paths(self.ctx, 'kit/holder'),
+                         ['kitlib/x/b.py', 'kitlib/x/new.py', 'kitlib/y/d.py', 'kitlib/y/e.py'])
+
+    def test_each_live_branch_is_diffed_once_per_offer(self):
+        calls = []
+        real = pmod._live_changes
+
+        def counted(*a, **kw):
+            calls.append(a)
+            return real(*a, **kw)
+        self.seed(priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/holder',
+                         scope='kitlib/**', body='## Files\n- kitlib/y/c.py\n'),
+                  priced('FOO', priority='3', scope='kitlib/**'),
+                  priced('BAR', priority='4', scope='kitlib/x/**'))
+        with mock.patch.object(pmod, '_live_changes', counted):
+            pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        self.assertEqual(len(calls), 1)
+
     def test_a_status_git_cannot_run_keeps_the_pass_over(self):
         real = pmod.cmd.run
 
@@ -520,6 +589,45 @@ class ProtectedSet(StoreCase):
             offers, passed = self.offer()
         self.assertEqual(offers, [])
         self.assertIsNotNone(passed['FOO'].pair)
+
+
+
+class NextCliNarrows(unittest.TestCase):
+    """Through tools/backlog.py `next`: the offer row's `(narrows, below)`, the NARROWS line and
+    the counts line's `| N narrows`."""
+
+    def setUp(self):
+        test_cli.Cli.setUp(self)
+        for p in ('brain/a.py', 'brain/b.py', 'brain/c.py'):
+            self.repo.write(p, 'x\n')
+        self.repo.commit('code', 'brain')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt = self.repo.worktree('holder')
+        self.repo.write('brain/a.py', 'changed\n', root=wt)
+        self.repo.commit('work', 'brain/a.py', cwd=wt)
+
+    def test_next_shows_the_narrowing_and_writes_nothing(self):
+        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        store = smod.Store(backend, rmod.Rules())
+        backend.publish(store.load(), {
+            'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
+                                pulled_at=TODAY, pulled_by='kit/holder', scope='brain/**',
+                                body='## Files\n- `brain/c.py`\n'),
+            'FOO': record_text(id='FOO', priority='3', priority_by='agent', scope='brain/**')},
+            'seed\n')
+        before = self.repo.git('ls-remote', 'origin', smod.STORE_REF)
+        rc, out = test_cli.Cli.run_tool(self, 'next')
+        self.assertEqual(rc, 0, out)
+        rows = [line for line in out.splitlines() if 'FOO' in line and '(narrows, below)' in line]
+        self.assertEqual(len(rows), 1, out)
+        self.assertIn('NARROWS FOO (rank 2) with HOLD on kit/holder: FOO drops brain/a.py, '
+                      'brain/c.py from brain/** (keeps brain/b.py); HOLD drops brain/b.py from '
+                      'brain/** (keeps brain/a.py, brain/c.py)', out)
+        self.assertNotIn('NARROW FOO', out)
+        self.assertTrue(out.rstrip('\n').endswith(
+            'counts: 1 offered | 1 pullable | 0 passed over | 0 releasable | 0 narrow '
+            '| 1 narrows'), out)
+        self.assertEqual(self.repo.git('ls-remote', 'origin', smod.STORE_REF), before)
 
 
 if __name__ == '__main__':

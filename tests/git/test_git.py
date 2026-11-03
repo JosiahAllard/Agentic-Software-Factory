@@ -738,6 +738,12 @@ class WorkTreeStateTest(unittest.TestCase):
         entries, _ = git.status(self.r.root)
         self.assertEqual(entries, [('R ', 'READ ME.md'), ('??', 'z.txt')])
 
+    def test_renames_off_gives_both_paths_of_a_rename(self):
+        self.r.git('mv', 'README.md', 'READ ME.md')
+        entries, why = refs.status(self.r.root, renames=False)
+        self.assertIsNone(why)
+        self.assertEqual(sorted(entries), [('A ', 'READ ME.md'), ('D ', 'README.md')])
+
     def test_merge_in_progress_is_per_work_tree(self):
         wt = self.r.worktree('side')
         self.r.write('README.md', 'side\n', root=wt)

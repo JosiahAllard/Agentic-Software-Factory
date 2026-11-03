@@ -73,7 +73,8 @@ publish overwrites. The card carries title, repo, summary, refs, kind, folder (e
 and folder optional), from (an agent's name, as a to-do's), `at` and `bytes`. POST
 pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folder?, repo?,
 if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
-stale one is `conflict`) under PAGES_LOCK; it never writes the body. GET pages lists the cards;
+stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
+kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
 GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out:
 the Docs tab reads a body when it is opened. POST pages/{id}/delete (OWNER, if_version
 optional) deletes the card, then the body; a
@@ -2898,6 +2899,9 @@ def _pages_write(api, req, b, doc_id, pin):
                        % (doc_id, pin), 'if_version')
     size = len(b['html'].encode('utf-8'))
     fields = {k: b[k] for k in ('title', 'repo', 'summary', 'refs', 'kind', 'folder') if k in b}
+    for k in ('kind', 'folder'):        # put replaces the card: keep what place set ("Pages")
+        if k not in fields and card is not None and card.get(k) is not None:
+            fields[k] = card[k]
     fields.update({'from': _agent_from(b.get('from') or ''), 'at': api.clock(), 'bytes': size,
                    'via': _via(req)})
     # the body first, each write pinned to what was read under the lock: a card never names a

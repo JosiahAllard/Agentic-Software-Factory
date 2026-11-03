@@ -107,6 +107,8 @@ first, is docs/action-hub.md "pages/<id> and page_html/<id>". `kind` and `folder
 card stores, for the Docs tab to file the page by; `hub_page_place` sets a card's `kind`, `folder`
 and `repo` later, pinned by its version (`hub_list` collection `pages` lists the cards with
 theirs; a stale pin is `conflict`), and never writes the body (`kitlib.hubsite.api.pages_place`).
+A `hub_page_publish` over a page that gives no `kind` or `folder` keeps the card's stored one; one
+it gives replaces it (`_pages_write`).
 No tool deletes a page: that is the owner's, in the Docs tab.
 
 The `from` of `hub_ask` is the session the answer goes back to: a launcher session key or `pm`,

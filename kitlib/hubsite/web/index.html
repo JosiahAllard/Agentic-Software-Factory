@@ -1918,12 +1918,16 @@ ul.hist .sch-line{display:block}
   // last_run, last_outcome and next_due are the server's (api.py schedules_list); next_due is the hub machine's local time.
   const lastRunText = s => s.last_run ? when(s.last_run) : s.last_outcome === "failed" ? "failed, the tick could not start it" : s.last_outcome === "skipped" ? "skipped, the tick passed it over" : "never";
   const nextDueText = s => s.cadence === "off" ? "not scheduled (off)" : s.next_due ? when(s.next_due) + " (the hub machine's time)" : "not known";
+  // One short line per schedule (next run in the owner's local time, then the last result); the schedule as the server
+  // holds it, raw, is under a Details fold.
   const scheduleRow = s => {
     const pc = PC_TASKS.includes(s.task);
+    const next = s.cadence === "off" ? "off" : s.next_due ? when(s.next_due) : "not known";
     const row = rowCard("schedule", { ...s, title: taskName(s.task) + " for " + String(s.repo || "?") },
       [pc ? lockIcon() : null, el("span", {class: "chip" + (s.cadence === "off" ? "" : " ok"), text: cadenceText(s)}),
-       s.last_run ? el("span", {class: "chip", text: "ran " + when(s.last_run)}) : null,
        s.last_outcome === "failed" ? el("span", {class: "chip need st-failed", text: "failed"}) : null], s.set_at ? "set " + when(s.set_at) : "");
+    row.append(el("p", {class: "sch-line sch-sum", text: "Next: " + next + " · Last: " + lastRunText(s)}),
+      el("details", {class: "sch-raw"}, el("summary", {text: "Details"}), el("pre", {class: "diff", text: JSON.stringify(s, null, 2)})));
     return row;
   };
   // A sweep the hub holds no schedule for: a plain row, no times (the hub cannot know the PC's).

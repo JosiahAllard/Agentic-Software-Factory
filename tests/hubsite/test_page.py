@@ -3989,6 +3989,22 @@ class AutoTasksTest(unittest.TestCase):
         self.assertTrue(got["card"])
         self.assertEqual(got["gets"], ["GET"])
 
+    def test_a_schedule_row_is_one_summary_line_with_the_raw_text_folded(self):
+        items = [{"id": "maint-lint-alpha", "task": "maint-lint", "repo": "alpha", "cadence": "daily", "at": "03:00",
+                  "set_at": NOW, "via": "web", "version": 2, "last_run": NOW, "next_due": "2026-10-24T03:00"}]
+        got = self.run_page("""
+            await start();
+            const r = $("#row-maint-lint-alpha"), d = r.querySelector("details.sch-raw");
+            const fmt = iso => new Date(iso).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+            return { line: text(r.querySelector(".sch-sum")), want: "Next: " + fmt("2026-10-24T03:00") + " · Last: " + fmt(NOW_ISO),
+                     fold: d && text(d.querySelector("summary")), raw: d && d.querySelector("pre").textContent, open: !!(d && d.open),
+                     outside: text(r.querySelector("h2")) + text(r.querySelector(".sch-sum")) };
+        """.replace("NOW_ISO", json.dumps(NOW)), sched=schedules(items))
+        self.assertEqual(got["line"], got["want"])
+        self.assertEqual((got["fold"], got["open"]), ("Details", False))
+        self.assertIn('"id": "maint-lint-alpha"', got["raw"])
+        self.assertNotIn('"id"', got["outside"])
+
     def test_a_tick_not_seen_recently_is_said(self):
         for last, said in ((None, "it has never been seen on this machine"), (NOW, "it was last seen ")):
             got = self.run_page("await start(); return [text($('#tick-line')), $('#tick-line').className];",
@@ -4075,7 +4091,7 @@ class AutoTasksTest(unittest.TestCase):
         self.assertTrue(got["one"][0].startswith("Last run: ") and "never" not in got["one"][0], got["one"])
         self.assertTrue(got["one"][1].startswith("Next due: ") and "hub machine's time" in got["one"][1], got["one"])
         self.assertEqual(got["two"], ["Last run: failed, the tick could not start it", "Next due: not scheduled (off)"])
-        self.assertTrue(any(c.startswith("ran ") for c in got["chipsA"]), got["chipsA"])
+        self.assertEqual(got["chipsA"], ["Daily at 03:00"])                     # the last run is in the summary line, not a chip
         self.assertIn("failed", got["chipsB"])
 
     def test_a_schedule_whose_latest_tick_record_is_skipped_does_not_say_never(self):

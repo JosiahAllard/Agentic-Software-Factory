@@ -1030,8 +1030,9 @@ class OwnerOnlyFiles(OwnerCase):
 @real_fixture('the same fixture as OwnerOnlyFiles')
 @real_git('merge-tree, check-attr and merge-base --all over a three-way merge')
 class OwnerOnlyFilesWithMergeFoldOff(OwnerCase):
-    """With "commit".merge_fold off, commit.py lets no merge carry an owner-only path, so neither
-    does sync_base: even the clean join of two approved changes is refused."""
+    """With "commit".merge_fold off (the default) sync_base never commits the join of both sides'
+    changes to an owner-only path, even two approved ones; a change main alone made (landed
+    already) is still synced."""
 
     CONFIG = {'repo': {'main_branch': 'master'}, 'owner': {'email': OWNER}}
 
@@ -1043,11 +1044,15 @@ class OwnerOnlyFilesWithMergeFoldOff(OwnerCase):
         self.assert_refused(done, self.F, tip)
         self.assertIn('"commit".merge_fold is off', self.out(done))
 
-    def test_a_change_main_alone_made_is_refused(self):
-        self.approve()
+    def test_a_change_main_alone_made_is_committed(self):
+        seam = self.approve()
         target = self.stage('branch\n', self.top(), branch_file='docs/branch-only.md')
         tip = self.head()
-        self.assert_refused(self.sync(target), self.F, tip)
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.OK, self.out(done))
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, target])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.top())
+        self.assertEqual(seam.asked, [])
 
 
 class BadConfiguration(SyncCase):

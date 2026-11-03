@@ -448,7 +448,7 @@ def dropped_owner_changes(root, rules, heads):
     return dropped
 
 
-def merge_owned(root, rules, staged, heads, landed=()):
+def merge_owned(root, rules, staged, heads, landed=(), join=True):
     """`(paths, why)`: the staged paths a merge in progress put there itself. An ordinary path
     counts only when its staged content equals the clean merge result (`git merge-tree
     --write-tree`) and merge-tree does not list it as conflicted. An owner-only path counts only
@@ -459,7 +459,7 @@ def merge_owned(root, rules, staged, heads, landed=()):
     from `landed` (landed_main), is the owner's or carries an approval the hub verifies
     (non_owner_paths). An owner-only path both sides changed counts too when it passes the
     ordinary test and clean_owner_merge (same name and regular file throughout, no merge driver,
-    every commit on both sides approved). Any other staged state of an owner-only path is never
+    every commit on both sides approved), unless `join` is False. Any other staged state of an owner-only path is never
     the merge's. No merge, or an octopus one, gives `(set(), None)`; a git failure gives
     `(set(), why)` (or the paths found so far and `why`, when only the authors could not be
     checked)."""
@@ -484,7 +484,7 @@ def merge_owned(root, rules, staged, heads, landed=()):
         bases = merge_bases(root, heads[0])
         owned |= {p for p in locked - foreign if carries_merged_copy(root, p, heads[0], bases)}
         joined = (locked - foreign - owned) - differs - conflicted
-        if joined:
+        if joined and join:
             joined, why = clean_owner_merge(root, rules, joined, heads[0], bases, landed)
             if joined is None:
                 return owned, why
@@ -572,17 +572,18 @@ def merge_owner_refusal(root, rules, landed=(), fold=True):
     (kitlib.syncbase): the staged owner-only paths merge_owned does not carry, sorted ([]: none),
     with `why` None. When git could not tell, `why` says so and the paths are those merge_owned
     had not carried when it stopped (`(None, why)` when the staged paths could not be read); a
-    caller refuses on any `why`. `fold` False (`"commit".merge_fold` off, as commit.py reads it)
-    or an octopus merge carries none."""
+    caller refuses on any `why`. `fold` False (`"commit".merge_fold` off) carries no path both
+    sides changed (clean_owner_merge is not asked), but still a path only the merged side changed
+    (merge_owned's merged-copy test); an octopus merge carries none."""
     try:
         staged = staged_status(root)
         locked = {p for p in staged if rules.is_locked(p)}
-        heads = merge_heads(root) if (fold and locked) else []
+        heads = merge_heads(root) if locked else []
     except _Stop as stop:
         return None, ' '.join(stop.lines)
     if not locked:
         return [], None
-    owned, why = merge_owned(root, rules, locked, heads, landed)
+    owned, why = merge_owned(root, rules, locked, heads, landed, join=fold)
     return sorted(locked - owned), why
 
 

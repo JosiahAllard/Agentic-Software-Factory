@@ -66,7 +66,7 @@ class Move(unittest.TestCase):
     def test_every_config_key_has_exactly_one_class(self):
         classes = move.POLICY + move.LOCAL + move.DROPPED
         self.assertEqual(len(classes), len(set(classes)))
-        self.assertEqual(set(classes), set(user.SCHEMA) | set(user.RETIRED))
+        self.assertEqual(set(classes), set(user.SCHEMA) | set(user.DROPPED_KEYS))
         self.assertTrue(set(move.RELATIVE_KEYS) <= set(move.POLICY))
 
     # --- dry run and apply
@@ -159,29 +159,13 @@ class Move(unittest.TestCase):
         self.assertNotEqual(code, move.OK, out)
         self.assertIn('REFUSE  the machine config fails its schema in key(s) conductor_start', out)
 
-    def test_ledger_refs_is_dropped(self):
-        self.config({'ledger_refs': ['x']})
-        code, out = self.run_move()
-        self.assertEqual(code, move.OK, out)
-        self.assertIn('drop    ledger_refs (retired)', out)
-
-    def test_standing_delegation_is_dropped(self):
-        self.config({'standing_delegation': 'R-' + '9168'})
-        code, out = self.run_move()
-        self.assertEqual(code, move.OK, out)
-        self.assertIn('drop    standing_delegation (retired)', out)
-
-    def test_daily_red_ruling_is_dropped(self):
-        self.config({'daily_red_ruling': 'R-' + '9168'})
-        code, out = self.run_move()
-        self.assertEqual(code, move.OK, out)
-        self.assertIn('drop    daily_red_ruling (retired)', out)
-
-    def test_backlog_lint_is_dropped(self):
-        self.config({'backlog_lint': {'repos': {}}})
-        code, out = self.run_move()
-        self.assertEqual(code, move.OK, out)
-        self.assertIn('drop    backlog_lint (retired)', out)
+    def test_a_former_retired_key_is_refused_as_unknown(self):
+        for key in ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint'):
+            with self.subTest(key=key):
+                self.config({key: {}})
+                code, out = self.run_move()
+                self.assertNotEqual(code, move.OK, out)
+                self.assertIn('fails its schema in key(s) %s' % key, out)
 
     def pm_data(self, **change):
         value = {'path': self.pm, 'branch': 'main', 'remote': 'origin'}

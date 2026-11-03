@@ -305,65 +305,27 @@ class DuplicateKeyTest(TreeCase):
                       self.refused({'tool_tests': 'tt.json'}, {'tt.json': '{"mentions": "path", "mentions": "tokens"}'}))
 
     def test_the_same_key_in_two_objects_is_fine(self):
-        cfg = self.load('{"repo": {"name": "a"}, "backlog": {"ledger_repo": "a"}, "commit": {"merge_fold": true}}')
+        cfg = self.load('{"repo": {"name": "a"}, "backlog": {"phases": ["L0"]}, "commit": {"merge_fold": true}}')
         self.assertEqual(cfg.section('repo')['name'], 'a')
 
 
-class RetiredKeyTest(TreeCase):
+class FormerlyRetiredKeyTest(TreeCase):
+    """Keys that were once retired and ignored (backlog retired_docs, rename_script, ledger_repo; the
+    sections ruling_cites and stubs) now refuse as unknown."""
 
-    def test_a_config_still_carrying_a_retired_key_loads_without_it(self):
-        cfg = self.load({'backlog': {'phases': ['L0'], 'retired_docs': ['docs/D.md'],
-                                     'rename_script': 'tools/r.py'}})
-        self.assertEqual(cfg.section('backlog')['phases'], ['L0'])
-        self.assertNotIn('retired_docs', cfg.section('backlog'))
-        self.assertNotIn('rename_script', cfg.section('backlog'))
+    def test_a_former_retired_backlog_key_refuses(self):
+        for key in ('retired_docs', 'rename_script', 'ledger_repo'):
+            with self.subTest(key=key):
+                self.assertIn('unknown key(s) %s' % key, self.refused({'backlog': {'phases': ['L0'], key: 'x'}}))
 
-    def test_a_retired_key_in_a_backlog_section_file_loads_without_it(self):
-        cfg = self.load({'backlog': 'b.json'},
-                        {'b.json': {'phases': ['L0'], 'retired_docs': ['docs/D.md'],
-                                    'rename_script': 'tools/r.py'}})
-        self.assertEqual(cfg.section_file('backlog'), 'b.json')
-        self.assertEqual(cfg.section('backlog')['phases'], ['L0'])
-        self.assertNotIn('retired_docs', cfg.section('backlog'))
-        self.assertNotIn('rename_script', cfg.section('backlog'))
+    def test_a_former_retired_key_in_a_backlog_section_file_refuses(self):
+        self.assertIn('unknown key(s) ledger_repo',
+                      self.refused({'backlog': 'b.json'}, {'b.json': {'ledger_repo': 3}}))
 
-    def test_a_retired_key_is_not_a_schema_field(self):
-        from kitlib.config import schema
-        self.assertNotIn('retired_docs', schema.SECTIONS['backlog'])
-        self.assertNotIn('rename_script', schema.SECTIONS['backlog'])
-
-    def test_a_typo_beside_a_retired_key_still_refuses(self):
-        self.assertIn('unknown key(s) phasez',
-                      self.refused({'backlog': {'retired_docs': [], 'phasez': []}}))
-
-
-class RetiredLedgerRepoTest(TreeCase):
-    """`backlog.ledger_repo` named the repository to a reader that is gone: the key is retired, so
-    a config that still carries it loads, whatever its value."""
-
-    def test_a_config_still_carrying_ledger_repo_loads_without_it(self):
-        for value in ('alpha', '', 3, ['alpha']):
-            with self.subTest(value=value):
-                cfg = self.load({'backlog': {'phases': ['L0'], 'ledger_repo': value}})
-                self.assertEqual(cfg.section('backlog')['phases'], ['L0'])
-                self.assertNotIn('ledger_repo', cfg.section('backlog'))
-
-    def test_ledger_repo_in_a_backlog_section_file_loads_without_it(self):
-        cfg = self.load({'backlog': 'b.json'}, {'b.json': {'ledger_repo': 3}})
-        self.assertNotIn('ledger_repo', cfg.section('backlog'))
-
-    def test_ledger_repo_is_retired_and_not_a_schema_field(self):
-        self.assertIn('ledger_repo', schema.RETIRED['backlog'])
-        self.assertNotIn('ledger_repo', schema.SECTIONS['backlog'])
-        self.assertFalse(any('ledger_repo' in line for line in schema.doc_lines()))
-
-
-class RetiredLedgerRepoUnchangedTest(TreeCase):
-    """What the retirement leaves as it was."""
-
-    def test_a_typo_beside_ledger_repo_still_refuses(self):
-        why = self.refused({'backlog': {'ledger_repo': 'alpha', 'ledger_repoz': 'alpha'}})
-        self.assertIn('unknown key(s) ledger_repoz', why)
+    def test_a_former_retired_section_refuses(self):
+        for name in ('ruling_cites', 'stubs'):
+            with self.subTest(section=name):
+                self.assertIn('unknown section(s) %s' % name, self.refused({name: {'repo': 'r'}}))
 
 
 class RetiredLandingLanesTest(TreeCase):
@@ -390,37 +352,6 @@ class RetiredLandingLanesTest(TreeCase):
     def test_a_typo_beside_lanes_still_refuses(self):
         why = self.refused({'landing': {'lanes': {}, 'lanez': {}}})
         self.assertIn('unknown key(s) lanez', why)
-
-
-class RetiredSectionTest(TreeCase):
-    """A whole section no tool reads any more (schema.RETIRED_SECTIONS): a config that still
-    carries it loads, the section dropped unchecked."""
-
-    def test_a_config_still_carrying_a_retired_section_loads_without_it(self):
-        for name in schema.RETIRED_SECTIONS:
-            for body in ({'repo': 'r', 'skip': ['docs/old/*']}, {'tools': ['gate', 'land']},
-                         {'no_such_key': 1}, 'tools/gone.json', 3):
-                with self.subTest(section=name, body=body):
-                    cfg = self.load({'repo': {'name': 'r'}, name: body})
-                    self.assertEqual(cfg.section('repo')['name'], 'r')
-                    self.assertFalse(cfg.has(name))
-                    self.assertIsNone(cfg.section_file(name))
-
-    def test_a_retired_section_is_not_a_schema_section(self):
-        self.assertEqual(schema.RETIRED_SECTIONS, ('ruling_cites', 'stubs'))
-        for name in schema.RETIRED_SECTIONS:
-            self.assertNotIn(name, schema.SECTIONS)
-            self.assertNotIn(name, schema.FILE_OK)
-            self.assertFalse(any(line.startswith('- `%s' % name) for line in schema.doc_lines()))
-
-
-class RetiredSectionUnchangedTest(TreeCase):
-    """What the retirement leaves as it was."""
-
-    def test_an_unknown_section_beside_a_retired_one_still_refuses(self):
-        why = self.refused({'ruling_cites': {'repo': 'r'}, 'ruling_cite': {}, 'repos': {}})
-        self.assertIn('unknown section(s) repos, ruling_cite (known:', why)
-        self.assertNotIn('ruling_cites', why)
 
 
 class HookAndOwnerTest(TreeCase):

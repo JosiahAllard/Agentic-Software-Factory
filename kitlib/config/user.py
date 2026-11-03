@@ -146,9 +146,9 @@ MARK_ROOT = Obj({
     'why': Field(Str(), None, 'the reason, a ruling or a measurement'),
 }, required=('path', 'mode'), what='{path, mode, why}')
 
-# Keys the machine config no longer has. A file written before the removal still loads: the key
-# is dropped whatever it holds, never refused and never returned. An unknown key is still refused.
-RETIRED = ('ledger_refs', 'standing_delegation', 'daily_red_ruling', 'backlog_lint')
+# Keys the machine config no longer has, dropped whatever they hold (none now: kitlib.config.move
+# and kitlib.config.copies still read the name). An unknown key is refused.
+RETIRED = ()
 
 # One line per key. A key another module owns is registered as Owned(<that module>), which checks it.
 SCHEMA = {

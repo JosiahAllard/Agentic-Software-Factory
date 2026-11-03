@@ -658,7 +658,7 @@ Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launche
 | filing | hub | `{at, code, message}`: why the last filing of the answer failed; null once filed or answered again |
 | filed_at | hub | when the answer was filed into the record (ISO time); null after a re-answer |
 | filed_as | hub | what the filing did to the record: `pulled`, `freed`, `held`, or null when the record's state could not be read; null after a re-answer ("Filing the answer") |
-| park | hub | `{at, code, message}`: what binding the question did to its record ("A question bound to a record"): `blocked`, `already`, `held`, `parked` or `gone`, or the code of a park that failed (`store`, `unavailable` and `internal` are tried again); `message` is a fixed phrase (`PARK_SAYS`); null after an unbind |
+| park | hub | `{at, code, message}`: what binding the question did to its record ("A question bound to a record"): `blocked`, `already`, `held`, `parked` or `gone`, or the code of a park that failed (`store`, `unavailable` and `internal` are tried again); `message` is a fixed phrase (`PARK_SAYS`); null after an unbind or a rebind; a rebind parks the new record |
 | standing | owner | `{at, via}`: the owner made the answer a standing rule, for the PM to log ("A standing rule"); null after a re-answer without the box |
 
 While a question is open its asker may change it (`POST /api/v1/questions/{id}/edit`, agent only:
@@ -723,9 +723,9 @@ of the hub's log (`<qid>: record not parked: <code>`), and one whose code is `st
 Withdrawing or deleting an open bound question, or an edit that rebinds or unbinds it, drops its line
 from the old record (`unpark_question`, `recordwrite` `withdraw`); the last owner line unblocks the
 record with the reason `ask withdrawn`, and a rebind then parks the new record. A drop that fails is
-logged (`<qid>: record not unparked: <code>`) and swept at the next hub start. A question asked with
-`class` whose `refs` name a pulled record is stored with a `refs-pulled-record` warning, field `refs`:
-ask it with `--record` so the hub parks the record.
+logged (`<qid>: record not unparked: <code>`) and swept at the next hub start or the next `questions
+file` call without an id. A question asked with `class` whose `refs` name a pulled record is stored
+with a `refs-pulled-record` warning, field `refs`: ask it with `--record` so the hub parks the record.
 
 #### Binding the open questions
 `hub.py questions bind --dry-run | --apply` (`POST /api/v1/questions/bind`, agent, body `{from: "pm",

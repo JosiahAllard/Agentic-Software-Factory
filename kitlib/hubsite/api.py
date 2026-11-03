@@ -1482,7 +1482,7 @@ PARK_SAYS = {
 # the codes a later park tries again (POST questions/file; the hub runs it at start)
 PARK_RETRY = ('store', 'unavailable', 'internal')
 UNPARK_FAILED = ('the record still waits on this question, which is gone or bound elsewhere: the '
-                 'hub tries again at its next start')
+                 'hub tries again at its next start or questions file call')
 
 
 def _parks(api):

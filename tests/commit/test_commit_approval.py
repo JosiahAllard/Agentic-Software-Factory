@@ -201,6 +201,26 @@ class TheApprovedChange(ApprovalCase):
         self.assertEqual(oc.violations(self.wt, rules, 'HEAD', [moved], approvals=seam),
                          ([], None))
 
+    def test_on_a_rebuilt_line_that_does_not_descend_from_the_base_it_is_committed(self):
+        # The branch was rebuilt: HEAD is on another line that holds CLAUDE.md as the base does.
+        self.approve({'CLAUDE.md': 'new rules\n'})
+        self.git('checkout', '-q', '-b', 'side', self.base + '~1')
+        self.put('CLAUDE.md', 'rules\n')
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the same rules on another line')
+        side = self.head()
+        self.assertEqual(self.blob('CLAUDE.md', 'HEAD'), self.blob('CLAUDE.md'))
+        code, out = self.approved_commit('CLAUDE.md')
+        self.assertEqual(code, 0, out)
+        head = self.head()
+        self.assertEqual(self.git('rev-parse', 'HEAD~1'), side)
+        self.assertEqual(self.git('show', 'HEAD:CLAUDE.md'), 'new rules')
+        self.assertEqual(self.hub.docs['A-001']['commit'], head)
+        rules = ownermod.Rules(owner_email=OWNER, agent_emails=[AGENT])    # and it would land
+        seam = oc.HubApprovals(client=self.hub, repo=REPO)
+        self.assertEqual(oc.violations(self.wt, rules, 'HEAD', [side], approvals=seam),
+                         ([], None))
+
     def test_an_ordinary_path_in_the_approval_is_committed_the_same_way(self):
         self.approve({'CLAUDE.md': 'new rules\n', 'notes.md': 'why\n'})
         code, out = self.approved_commit('notes.md', 'CLAUDE.md')
@@ -212,6 +232,119 @@ class TheApprovedChange(ApprovalCase):
 @real_git('the Owner-Approval trailer, the blobs and the changed paths read back as git\'s own')
 class TheApprovedChangeRealGit(TheApprovedChange):
     pass
+
+
+@real_git('git merge-file: the fake has none')
+class TheApprovedChangeOnANewerBase(ApprovalCase):
+    """HEAD moved past the approval's base and changed an approved path since: what is written
+    and committed is the approved change merged onto HEAD's copy (approvals.delta_targets, the
+    delta rule the land check judges), and anything that does not merge cleanly is refused."""
+
+    TEXT = 'one\ntwo\nthree\nfour\nfive\n'
+
+    def setUp(self):
+        super().setUp()
+        self.put('CLAUDE.md', self.TEXT)
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner\'s longer rules')
+        self.base = self.head()
+
+    def owner_edit(self, text):
+        self.put('CLAUDE.md', text)
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner again')
+        return self.head()
+
+    def lands(self, since):
+        rules = ownermod.Rules(owner_email=OWNER, agent_emails=[AGENT])
+        seam = oc.HubApprovals(client=self.hub, repo=REPO)
+        return oc.violations(self.wt, rules, 'HEAD', [since], approvals=seam)
+
+    def test_a_change_elsewhere_in_the_file_is_merged_committed_and_consumed(self):
+        self.approve({'CLAUDE.md': self.TEXT.replace('two', 'TWO')})
+        moved = self.owner_edit(self.TEXT.replace('five', 'FIVE'))
+        code, out = self.approved_commit('CLAUDE.md')
+        self.assertEqual(code, 0, out)
+        head, merged = self.head(), 'one\nTWO\nthree\nfour\nFIVE\n'
+        self.assertEqual(self.git('rev-parse', 'HEAD~1'), moved)
+        self.assertEqual(self.read('CLAUDE.md'), merged)
+        self.assertEqual(self.blob('CLAUDE.md', 'HEAD'), ap.blob_id(merged))
+        self.assertEqual(self.message(), 'apply the owner\'s approval\n\n'
+                         'Owner-Approval: hub:A-001\n' + COAUTHOR)
+        self.assertEqual(self.hub.docs['A-001']['commit'], head)
+        self.assertIn('approval  hub:A-001 consumed by %s' % head[:12], out)
+        self.assertEqual(self.lands(moved), ([], None))
+
+    def test_a_change_that_overlaps_is_refused_and_nothing_is_written(self):
+        self.approve({'CLAUDE.md': self.TEXT.replace('three', 'THREE')})
+        text = self.TEXT.replace('three', '3')
+        moved = self.owner_edit(text)
+        out = self.assert_refused('the approval is for base %s, and its change does not apply on '
+                                  'HEAD %s: %s: CLAUDE.md: the approved change does not merge '
+                                  'cleanly onto the parent (git merge-file exit 1)'
+                                  % (self.base[:12], moved[:12], ap.WHY_FILES), 'CLAUDE.md')
+        self.assertIn('new_worktree.py -C %s <area>/<slug> --approval hub:A-001' % self.wt, out)
+        self.assertEqual(self.read('CLAUDE.md'), text)
+        self.assert_not_consumed()
+
+    def test_an_edit_of_heads_copy_in_the_work_tree_is_refused(self):
+        self.approve({'CLAUDE.md': self.TEXT.replace('two', 'TWO')})
+        self.owner_edit(self.TEXT.replace('five', 'FIVE'))
+        self.put('CLAUDE.md', 'my own edit\n')
+        self.assert_refused('CLAUDE.md in the work tree is not HEAD\'s copy', 'CLAUDE.md')
+        self.assertEqual(self.read('CLAUDE.md'), 'my own edit\n')
+        self.assert_not_consumed()
+
+    def test_a_failed_consume_of_the_merged_commit_is_retried_the_same_way(self):
+        self.approve({'CLAUDE.md': self.TEXT.replace('two', 'TWO')})
+        moved = self.owner_edit(self.TEXT.replace('five', 'FIVE'))
+        self.hub.consume_fails = serve.NotRunning(1)
+        code, out = self.approved_commit('CLAUDE.md')
+        self.assertEqual(code, 1, out)
+        head = self.head()
+        self.assertEqual(self.git('rev-parse', 'HEAD~1'), moved)
+        self.assertNotIn('commit', self.hub.docs['A-001'])
+        self.hub.consume_fails = None
+        out = C.commit(C.request(self.wt, None, [], owner_approval='hub:A-001', consume=head,
+                                 hub=self.hub, cwd=self.wt))
+        self.assertEqual(out.code, 0, out.lines)
+        self.assertEqual(self.hub.docs['A-001']['commit'], head)
+        self.assertEqual(self.lands(moved), ([], None))
+
+    def test_a_consume_of_a_commit_that_is_not_the_merge_is_refused(self):
+        # Made by hand, past commit.py's own checks: the approved blob committed whole on a
+        # parent that changed CLAUDE.md since the base would undo the parent's change.
+        self.approve({'CLAUDE.md': self.TEXT.replace('two', 'TWO')})
+        parent = self.owner_edit(self.TEXT.replace('five', 'FIVE'))
+        self.put('CLAUDE.md', self.TEXT.replace('two', 'TWO'))
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'by hand\n\nOwner-Approval: hub:A-001')
+        sha = self.head()
+        out = C.commit(C.request(self.wt, None, [], owner_approval='hub:A-001', consume=sha,
+                                 hub=self.hub, cwd=self.wt))
+        self.assertEqual(out.code, 1, out.lines)
+        self.assertIn('refused: hub:A-001 refused: %s: CLAUDE.md at %s is not the approved '
+                      'change. hub:A-001 was not consumed.' % (ap.WHY_FILES, sha[:12]),
+                      out.lines)
+        self.assertNotEqual(parent, sha)
+        self.assert_not_consumed()
+
+    def test_a_consume_of_a_commit_whose_parent_conflicts_is_refused(self):
+        # Made by hand: the owner changed the approved line after the base, and the approved
+        # content was committed on top. The change does not merge onto the parent: refused.
+        self.approve({'CLAUDE.md': self.TEXT.replace('three', 'THREE')})
+        self.owner_edit(self.TEXT.replace('three', '3'))
+        self.put('CLAUDE.md', self.TEXT.replace('three', 'THREE'))
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'by hand\n\nOwner-Approval: hub:A-001')
+        sha = self.head()
+        out = C.commit(C.request(self.wt, None, [], owner_approval='hub:A-001', consume=sha,
+                                 hub=self.hub, cwd=self.wt))
+        self.assertEqual(out.code, 1, out.lines)
+        self.assertIn('refused: hub:A-001 refused: %s: CLAUDE.md: the approved change does not '
+                      'merge cleanly onto the parent (git merge-file exit 1). hub:A-001 was not '
+                      'consumed.' % ap.WHY_FILES, out.lines)
+        self.assert_not_consumed()
 
 
 class ApiClient(object):
@@ -273,40 +406,60 @@ class WhatIsRefusedBeforeAnythingIsWritten(ApprovalCase):
     def test_a_drifted_base(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
         self.put('CLAUDE.md', 'my own edit\n')
-        self.assert_refused('CLAUDE.md is not the approved base', 'CLAUDE.md')
+        self.assert_refused('CLAUDE.md in the work tree is not HEAD\'s copy, the one the approved '
+                            'change is made on: it was changed', 'CLAUDE.md')
         self.assertEqual(self.read('CLAUDE.md'), 'my own edit\n')
         self.assert_not_consumed()
 
     def test_a_new_file_that_is_already_there(self):
         self.approve({'AGENTS.md': 'agents\n'})
         self.put('AGENTS.md', 'mine\n')
-        self.assert_refused('AGENTS.md is not the approved base', 'AGENTS.md')
+        self.assert_refused('AGENTS.md in the work tree is not HEAD\'s copy, the one the approved '
+                            'change is made on: a file is there where HEAD has none', 'AGENTS.md')
         self.assertEqual(self.read('AGENTS.md'), 'mine\n')
 
     def test_a_head_where_an_approved_path_changed_after_the_base(self):
+        # The change overlaps the approved one: git merge-file conflicts (on real git:
+        # TheApprovedChangeOnANewerBase), and anything else from it refuses the same way.
         self.approve({'CLAUDE.md': 'new rules\n'})
         self.put('CLAUDE.md', 'the owner changed it\n')
         self.git('add', '--', 'CLAUDE.md')
         self.git('commit', '-q', '-m', 'the owner again')
         head = self.head()
-        out = self.assert_refused('the approval is for base %s, and HEAD is %s: CLAUDE.md at %s '
-                                  'is not as the approved base %s has it'
-                                  % (self.base[:12], head[:12], head[:12], self.base[:12]),
-                                  'CLAUDE.md')
+        out = self.assert_refused('the approval is for base %s, and its change does not apply on '
+                                  'HEAD %s: %s: CLAUDE.md: '
+                                  % (self.base[:12], head[:12], ap.WHY_FILES), 'CLAUDE.md')
         self.assertIn('new_worktree.py -C %s <area>/<slug> --approval hub:A-001' % self.wt, out)
         self.assertEqual(self.read('CLAUDE.md'), 'the owner changed it\n')
         self.assert_not_consumed()
 
-    def test_a_head_that_does_not_descend_from_the_base(self):
+    def test_a_head_that_has_the_approved_change_already(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
-        self.git('checkout', '-q', '-b', 'side', self.base + '~1')
-        self.put('CLAUDE.md', 'rules\n')
+        self.put('CLAUDE.md', 'new rules\n')
         self.git('add', '--', 'CLAUDE.md')
-        self.git('commit', '-q', '-m', 'the same rules on another line')
-        self.assertEqual(self.blob('CLAUDE.md', 'HEAD'), self.blob('CLAUDE.md'))
-        out = self.assert_refused('the approved base %s is not an ancestor of %s'
-                                  % (self.base[:12], self.head()[:12]), 'CLAUDE.md')
-        self.assertIn('--approval hub:A-001', out)
+        self.git('commit', '-q', '-m', 'the owner made it so')
+        self.assert_refused('HEAD %s holds the approved change of CLAUDE.md already: there is '
+                            'nothing to commit' % self.head()[:12], 'CLAUDE.md')
+        self.assert_not_consumed()
+
+    def test_a_new_file_that_a_later_head_holds_with_other_content(self):
+        self.approve({'AGENTS.md': 'agents\n'})
+        self.put('AGENTS.md', 'mine\n')
+        self.git('add', '--', 'AGENTS.md')
+        self.git('commit', '-q', '-m', 'someone else made it')
+        self.assert_refused('AGENTS.md: the file the approval creates is already at the parent '
+                            'with other content', 'AGENTS.md')
+        self.assertEqual(self.read('AGENTS.md'), 'mine\n')
+        self.assert_not_consumed()
+
+    def test_an_approved_path_that_a_later_head_made_a_folder(self):
+        self.approve({'CLAUDE.md': 'new rules\n'})
+        self.git('rm', '-q', '--', 'CLAUDE.md')
+        self.put('CLAUDE.md/inner.md', 'x\n')
+        self.git('add', '--', 'CLAUDE.md/inner.md')
+        self.git('commit', '-q', '-m', 'a folder now')
+        self.assert_refused('CLAUDE.md at %s is not a regular file' % self.head()[:12],
+                            'CLAUDE.md')
         self.assert_not_consumed()
 
     def test_a_named_path_the_approval_does_not_hold(self):
@@ -545,27 +698,6 @@ class TheConsume(ApprovalCase):
         self.assertEqual(out.code, 0, out.lines)
         self.assertEqual(self.hub.docs['A-001']['commit'], head)
 
-    def test_a_consume_of_a_commit_whose_parent_changed_an_approved_path_is_refused(self):
-        # Made by hand, past commit.py's own checks: the owner changed CLAUDE.md after the base,
-        # and the approved content was committed on top. The hub would verify the blobs for the
-        # base; the consume refuses because the parent does not hold CLAUDE.md as the base does.
-        self.approve({'CLAUDE.md': 'new rules\n'})
-        self.put('CLAUDE.md', 'the owner changed it\n')
-        self.git('add', '--', 'CLAUDE.md')
-        self.git('commit', '-q', '-m', 'the owner again')
-        parent = self.head()
-        self.put('CLAUDE.md', 'new rules\n')
-        self.git('add', '--', 'CLAUDE.md')
-        self.git('commit', '-q', '-m', 'by hand\n\nOwner-Approval: hub:A-001')
-        sha = self.head()
-        out = C.commit(C.request(self.wt, None, [], owner_approval='hub:A-001', consume=sha,
-                                 hub=self.hub, cwd=self.wt))
-        self.assertEqual(out.code, 1, out.lines)
-        self.assertIn('refused: hub:A-001 refused: %s: CLAUDE.md at %s is not as the approved '
-                      'base %s has it. hub:A-001 was not consumed.'
-                      % (ap.WHY_HEAD, parent[:12], self.base[:12]), out.lines)
-        self.assert_not_consumed()
-
     def test_a_consume_the_hub_then_does_not_verify_says_it_was_consumed(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
         self.hub.commit_verify_fails = 'a stand-in refusal'
@@ -752,3 +884,16 @@ class TheStagedCheck(unittest.TestCase):
         self.assertEqual(approval.staged_error(self.doc(), 'a' * 40, staged, snap, 'b' * 40),
                          'HEAD is %s, not %s, the commit the approval was checked on'
                          % ('a' * 12, 'b' * 12))
+
+    def test_on_a_newer_base_the_staged_blob_is_the_merged_one(self):
+        # `plan` (approval.prewrite): the approved change merged onto HEAD's copy, not the
+        # approved blob itself.
+        from kitlib.commit import approval
+        staged, plan = {'CLAUDE.md': 'M'}, {'CLAUDE.md': ('e' * 40, b'merged\n')}
+        merged, whole = {'CLAUDE.md': ('100644', 'e' * 40)}, {'CLAUDE.md': ('100644', 'f' * 40)}
+        self.assertIsNone(approval.staged_error(self.doc(), 'b' * 40, staged, merged, 'b' * 40,
+                                                plan))
+        self.assertEqual(approval.staged_error(self.doc(), 'b' * 40, staged, whole, 'b' * 40,
+                                               plan),
+                         'the staged CLAUDE.md is not the approved change merged onto HEAD (a '
+                         'git filter or .gitattributes changed it on staging)')

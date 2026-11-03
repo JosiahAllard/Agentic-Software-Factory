@@ -113,6 +113,16 @@ class Merges(DeltaCase):
         got, why = self.result(self.blob(LINES), self.blob(moved), ap.blob_id(new), new)
         self.assertEqual((got, why), (ap.blob_id(edit(moved, 2, 'two')), None))
 
+    def test_delta_content_gives_the_merged_bytes_that_commit_py_writes(self):
+        new = edit(LINES, 2, 'two')
+        moved = edit(LINES, 11, 'eleven')
+        b0, par = self.blob(LINES), self.blob(moved)
+        self.assertEqual(ap.delta_content(self.root, b0, par, ap.blob_id(new), new.encode()),
+                         (edit(moved, 2, 'two').encode(), None))
+        self.assertEqual(ap.delta_content(self.root, b0, b0, ap.blob_id(new), new.encode()),
+                         (new.encode(), None))
+        self.assertEqual(ap.delta_content(self.root, b0, b0, None, None), (None, None))
+
     def test_a_change_to_the_same_line_is_a_conflict(self):
         new = edit(LINES, 2, 'two')
         got, why = self.result(self.blob(LINES), self.blob(edit(LINES, 2, 'TWO')),

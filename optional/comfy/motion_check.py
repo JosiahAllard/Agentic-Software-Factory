@@ -101,7 +101,8 @@ def foot_slide(points, tol, unit_cm):
 
 
 def jerk(points, dt):
-    """|third difference| / dt^3 of `points` [(x, y, z)] sampled every `dt` seconds: one value per
+    """|third difference| / dt^3 of `points` [(x, y, z)] sampled every `dt` seconds, in the points'
+    units per s^3 (measure() scales scene units to metres): one value per
     window of four frames, the value at index i covering frames i..i+3."""
     out = []
     for i in range(len(points) - 3):
@@ -110,7 +111,12 @@ def jerk(points, dt):
     return out
 
 
-def spikes(values, factor=SPIKE_FACTOR, floor=SPIKE_FLOOR):
+def jerk_metres(points, dt, unit_cm):
+    """jerk() of `points` in scene units, as m/s^3 (`unit_cm` cm per scene unit)."""
+    return [v * unit_cm / 100.0 for v in jerk(points, dt)]
+
+
+def spikes(values,factor=SPIKE_FACTOR, floor=SPIKE_FLOOR):
     """Indices of `values` over `factor` times their median and over `floor`."""
     if not values:
         return []
@@ -305,7 +311,7 @@ def measure(opts):
         worst_slide = max([c["slide_cm"] for cs in slide.values() for c in cs], default=0.0)
         n_spikes, worst_j = 0, None
         for key, pts in bones.items():
-            js = jerk(pts, 1.0 / fps)
+            js = jerk_metres(pts, 1.0 / fps, unit_cm)
             hits = spikes(js)
             n_spikes += len(hits)
             for i in hits:

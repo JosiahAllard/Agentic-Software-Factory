@@ -60,7 +60,8 @@ python <kit>/optional/comfy/motion_check.py MODEL.glb|MODEL.blend --out DIR [--c
 - `art_score.py` compares a render with its concept image, both PNG, on a 64 by 64 grid:
   `palette_de`, the share-weighted CIEDE2000 distance of the render's dominant colours from the
   nearest style-sheet colour (the `#rrggbb` codes in the file or list); `value_diff`, the mean
-  luminance difference (0 to 1); `silhouette_iou`, the overlap of the two foreground masks (alpha,
+  luminance difference (0 to 1), in which a transparent pixel counts as mid-grey (128), so score
+  a render against a concept with an opaque or matching background; `silhouette_iou`, the overlap of the two foreground masks (alpha,
   else what differs from the border colour). It writes `<stem>_score.json`, `<stem>_diff.png` and
   `<stem>_compare.html` (concept, render, difference) into `--out`.
 - `motion_check.py` writes `<model>_motion.json`: per clip, foot slide per contact in cm, jerk

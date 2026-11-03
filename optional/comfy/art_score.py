@@ -459,6 +459,9 @@ def main(argv=None):
     diff_path = os.path.join(out, stem + "_diff.png")
     html_path = os.path.join(out, stem + "_compare.html")
     try:
+        if not stem or ".." in stem or any(c in stem for c in "/\\:"):
+            raise ScoreError(f"--name {stem!r} must be a plain file stem: no folder separator, "
+                             "drive colon or '..', so every file stays in --out")
         why = blender_run.out_refusal(out) or compare_sheet.out_refusal(
             html_path, [("concept", args.concept), ("render", args.render)])
         if why:

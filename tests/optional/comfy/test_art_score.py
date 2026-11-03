@@ -249,6 +249,17 @@ class Cli(unittest.TestCase):
         self.assertIn('not inside a git checkout', err)
         self.assertFalse(os.path.exists(out))
 
+    def test_a_name_that_leaves_out_refuses_and_writes_nothing(self):
+        out = os.path.join(self.repo, 'art', 'o')
+        for name in ('../../x', '..', 'a/b', 'a\\b', 'C:x'):
+            with self.subTest(name=name):
+                code, _, err = self.run_main(self.concept, self.render, '--palette', '#ffffff',
+                                             '--out', out, '--name', name)
+                self.assertEqual(code, 2)
+                self.assertIn('plain file stem', err)
+        self.assertFalse(os.path.exists(out))
+        self.assertEqual(sorted(os.listdir(self.tmp)), ['repo'])
+
     def test_a_non_png_refuses(self):
         bad = os.path.join(self.repo, 'notes.png')
         with open(bad, 'w') as f:

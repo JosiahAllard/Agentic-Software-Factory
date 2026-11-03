@@ -67,6 +67,11 @@ class Jerk(unittest.TestCase):
         self.assertAlmostEqual(got[3], 0.03 * 27000)
         self.assertEqual(M.jerk(pts[:3], 1 / 30), [])
 
+    def test_jerk_is_reported_in_metres_whatever_the_scene_unit(self):
+        pts = [((t / 10) ** 3, 0, 0) for t in range(5)]           # jerk 6 scene units/s^3
+        self.assertAlmostEqual(M.jerk_metres(pts, 0.1, 100.0)[0], 6.0)   # units of 1 m
+        self.assertAlmostEqual(M.jerk_metres(pts, 0.1, 1.0)[0], 0.06)    # units of 1 cm
+
     def test_spikes_are_over_five_medians_and_the_floor(self):
         self.assertEqual(M.spikes([1, 1, 1, 2, 30, 1]), [4])
         self.assertEqual(M.spikes([0.1, 0.1, 0.9]), [])          # under the 1 m/s^3 floor

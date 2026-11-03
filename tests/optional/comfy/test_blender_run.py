@@ -95,6 +95,30 @@ class Checks(unittest.TestCase):
         self.assertIn('not inside a git checkout', B.out_refusal(os.path.join(self.tmp, 'loose')))
         self.assertIn('.git folder', B.out_refusal(os.path.join(self.repo, '.git', 'x')))
 
+    def link(self, link, target):
+        """A directory symlink, else (Windows without the privilege) a junction; skip if neither."""
+        try:
+            os.symlink(target, link, target_is_directory=True)
+            return
+        except (OSError, NotImplementedError, AttributeError):
+            pass
+        if sys.platform.startswith('win'):
+            import subprocess
+            done = subprocess.run(['cmd', '/c', 'mklink', '/J', link, target], capture_output=True,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if done.returncode == 0:
+                return
+        self.skipTest('this OS cannot make a directory link here')
+
+    def test_an_out_through_a_link_is_judged_where_it_lands(self):
+        outside = os.path.join(self.tmp, 'outside')
+        os.makedirs(outside)
+        self.link(os.path.join(self.repo, 'escape'), outside)
+        self.assertIn('not inside a git checkout',
+                      B.out_refusal(os.path.join(self.repo, 'escape', 'art')))
+        self.link(os.path.join(self.repo, 'sneak'), os.path.join(self.repo, '.git'))
+        self.assertIn('.git folder', B.out_refusal(os.path.join(self.repo, 'sneak', 'x')))
+
     def test_a_script_must_be_tracked_and_clean(self):
         script = touch(os.path.join(self.repo, 'tools', 'job.py'))
         calls = []
@@ -126,7 +150,7 @@ class Checks(unittest.TestCase):
 
 class Main(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.mkdtemp()
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.repo = os.path.join(self.tmp, 'repo')
         os.makedirs(os.path.join(self.repo, '.git'))
@@ -140,6 +164,7 @@ class Main(unittest.TestCase):
         self.call = mock.patch('subprocess.call', return_value=0).start()
         self.addCleanup(mock.patch.stopall)
         self.statuses = []
+        self.git_fails = ()
 
     def git(self, root, *args):
         if args[0] == 'ls-files':
@@ -147,6 +172,8 @@ class Main(unittest.TestCase):
         if args[:2] == ('status', '--porcelain') and args[2] == '--':
             return 0, ''
         self.statuses.append(args)
+        if len(self.statuses) in self.git_fails:
+            return 128, ''
         return 0, '' if len(self.statuses) == 1 else self.after
 
     def run_main(self, *args):
@@ -164,15 +191,37 @@ class Main(unittest.TestCase):
         self.assertIn('render', cmd)
         tail = cmd[cmd.index('BLENDER'):]
         self.assertIn('--factory-startup', tail)
-        self.assertEqual(tail[-5:], ['--', '--out', os.path.abspath(self.out), '--size', '2'])
-        self.assertEqual(kw['cwd'], os.path.abspath(self.out))
-        self.assertEqual(kw['env']['BLENDER_RUN_OUT'], os.path.abspath(self.out))
+        self.assertEqual(tail[-5:], ['--', '--out', os.path.realpath(self.out), '--size', '2'])
+        self.assertEqual(kw['cwd'], os.path.realpath(self.out))
+        self.assertEqual(kw['env']['BLENDER_RUN_OUT'], os.path.realpath(self.out))
         self.assertTrue(os.path.isdir(self.out))
         self.assertIn('OUT ', text)
 
-    def test_the_run_code_is_returned(self):
+    def test_the_run_code_is_returned_and_out_is_printed_only_on_success(self):
         self.call.return_value = 1
-        self.assertEqual(self.run_main(self.script, '--out', self.out)[0], 1)
+        code, text, _ = self.run_main(self.script, '--out', self.out)
+        self.assertEqual(code, 1)
+        self.assertNotIn('OUT ', text)
+
+    def test_out_at_the_checkout_top_refuses(self):
+        code, _, err = self.run_main(self.script, '--out', self.repo)
+        self.assertEqual(code, 2)
+        self.assertIn("checkout's top folder", err)
+        self.assertEqual(self.call.call_count, 0)
+
+    def test_git_status_failing_before_the_run_refuses(self):
+        self.git_fails = (1,)
+        code, _, err = self.run_main(self.script, '--out', self.out)
+        self.assertEqual(code, 2)
+        self.assertIn('git status failed', err)
+        self.assertEqual(self.call.call_count, 0)
+
+    def test_git_status_failing_after_the_run_fails_closed(self):
+        self.git_fails = (2,)
+        code, text, err = self.run_main(self.script, '--out', self.out)
+        self.assertEqual(code, 3)
+        self.assertIn('could not be checked', err)
+        self.assertNotIn('OUT ', text)
 
     def test_a_write_outside_out_fails_the_run(self):
         self.after = '?? art/o/a.png\n?? stray.glb\n'

@@ -103,8 +103,9 @@ def find_blender(given=None, env=None, platform=None):
 
 def checkout_root(path):
     """The top folder of the git checkout holding `path` (the nearest folder above it with a .git
-    entry), or None. `path` need not exist yet."""
-    p = os.path.abspath(path)
+    entry), or None. `path` need not exist yet; links and junctions in it are resolved first, so
+    the checkout is the one the path really lands in."""
+    p = os.path.realpath(path)
     while True:
         if os.path.lexists(os.path.join(p, ".git")):
             return p
@@ -115,12 +116,14 @@ def checkout_root(path):
 
 
 def _inside(path, folder):
-    path, folder = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(folder))
+    path, folder = os.path.normcase(os.path.realpath(path)), os.path.normcase(os.path.realpath(folder))
     return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
 def out_refusal(out):
-    """Why `out` may not take output, or None: it must be inside a git checkout and not in .git."""
+    """Why `out` may not take output, or None: it must be inside a git checkout and not in .git,
+    judged where it really lands (links and junctions resolved)."""
+    out = os.path.realpath(out)
     root = checkout_root(out)
     if root is None:
         return (f"--out {out} is not inside a git checkout: output goes into the worktree the asset "
@@ -285,7 +288,12 @@ def stray_writes(before, after, out_rel):
 
 
 def _status(root, git=_git):
-    return git(root, "status", "--porcelain", "--untracked-files=all")[1]
+    """`git status --porcelain` of the checkout; Refused when git fails (never an empty answer,
+    which would read as "nothing changed")."""
+    code, out = git(root, "status", "--porcelain", "--untracked-files=all")
+    if code != 0:
+        raise Refused(f"git status failed in {root} (exit {code})")
+    return out
 
 
 def parse_args(argv):
@@ -308,31 +316,39 @@ def main(argv=None, git=_git):
         opts = parse_args(sys.argv[1:] if argv is None else argv)
     except SystemExit as e:
         return 2 if e.code else 0
-    out = os.path.abspath(opts.out)
+    out = os.path.realpath(opts.out)    # where it really lands: links and junctions resolved
     try:
         for why in (script_refusal(opts.script, git), out_refusal(out)):
             if why:
                 raise Refused(why)
+        root = checkout_root(out)
+        if os.path.normcase(out) == os.path.normcase(root):
+            raise Refused(f"--out {out} is the checkout's top folder; name a folder inside it, "
+                          "or no write could be told apart from the script's output")
         binary = find_blender(opts.blender)
         need_tool(MACHINE_LOCK_TOOL)
         python = lock_python(binary)
+        before = _status(root, git)
     except Refused as e:
         print(f"REFUSED: {e}", file=sys.stderr)
         return 2
     os.makedirs(out, exist_ok=True)
-    root = checkout_root(out)
-    before = _status(root, git)
     command = blender_argv(binary, opts.script, ["--out", out] + opts.script_args, factory=True)
     cmd = lock_cmd(python, MACHINE_LOCK_TOOL, slug("blender", opts.script), command)
     code = subprocess.call(cmd, cwd=out, env=dict(os.environ, BLENDER_RUN_OUT=out), creationflags=0)
-    stray = stray_writes(before, _status(root, git),
-                         os.path.relpath(out, root).replace(os.sep, "/"))
+    try:
+        after = _status(root, git)
+    except Refused as e:
+        print(f"REFUSED: {e}; the run's writes could not be checked", file=sys.stderr)
+        return 3
+    stray = stray_writes(before, after, os.path.relpath(out, root).replace(os.sep, "/"))
     for path in stray:
         print(f"OUTSIDE --out: {path}", file=sys.stderr)
     if stray:
         print(f"REFUSED: the script wrote {len(stray)} path(s) outside {out}; remove them", file=sys.stderr)
         return 3
-    print(f"OUT {out}")
+    if code == 0:
+        print(f"OUT {out}")
     return code
 
 

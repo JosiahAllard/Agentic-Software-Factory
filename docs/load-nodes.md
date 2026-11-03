@@ -34,12 +34,17 @@ repository ignores it.
 
 ## Setting up a node
 
-On the box, once, by its owner: `sudo sh setup-node.sh <main-ip> '<main public key line>'` from
-`optional/loadnode/`. Its header lists the options: `--kit-src` for the kit tar, `--allow-user`
-for the admin account, and `--dry-run`. The script makes the `pmnode` account and its forced-command
-key line, locks sshd and the firewall to main's address, and installs Python 3.14 and the kit at
-`/opt/pm-kit`. A re-run with the same arguments changes nothing. Toolchains a job needs (compilers,
-SDKs) are the owner's to install.
+On an Ubuntu 24.04 box, once, by its owner: `sudo sh setup-node.sh <main-ip> '<main public key
+line>'` from `optional/loadnode/`. The script makes the `pmnode` account and its forced-command key
+line, locks sshd and the firewall (ufw) to main's address, installs Python 3.14 (from the
+deadsnakes PPA, beside the system Python) and the kit at `/opt/pm-kit`, and adds a `user@.service`
+drop-in that delegates the cpu, cpuset, io and memory cgroup controllers to users, so the node's
+jobs can be contained and pinned. Its options (the header lists them): `--kit-src` for the kit tar
+or folder (the kit arrives only this way; re-run with it to update the kit), `--allow-user` for an
+account that keeps ssh login (the account running sudo must be one, or give up ssh with
+`--no-sudo-user-ssh`), `--admin-src` for another address that may reach port 22, and `--dry-run`.
+A re-run with the same arguments changes nothing. Toolchains a job needs (compilers, SDKs) are
+the owner's to install.
 
 ## node.py list and status
 
@@ -267,13 +272,13 @@ forced command serves the push with no job, and the mirror refuses deletes and n
 
 `kitlib.gate.land` (`Lander`):
 
-- **Before the booking** (step 2b) it plans the route and says `gating on load node <n>: <why>`
+- **Before the booking** (in step 3) it plans the route and says `gating on load node <n>: <why>`
   or `gating here: <why>`; nothing is said when the plan is quiet (a kit checkout, no registry,
   no node opted in, a kind the lock does not name).
-- **The booking** (step 3) is the gate kind for the landing, holding the landing resource at
+- **The booking** (step 3, `Lander.book_turn`) is the gate kind for the landing, holding the landing resource at
   priority `land`, as always. Routed to a node, it books `cores=1`: the landing's own work (fetch,
   merge, record, push) needs one slot while the node runs the gate.
-- **At the merged gate** (step 7), in this order:
+- **At the merged gate** (step 6), in this order:
   - `same_tree_why` gives a reason: the gate runs on main.
   - Otherwise `recheck` asks the nodes again. No node qualifies: the gate runs on main. Another
     node qualifies where the planned one does not: that node takes it, said as
@@ -323,7 +328,7 @@ forced command serves the push with no job, and the mirror refuses deletes and n
   landing gates on main.
 - The plan and the 1-slot booking use the config read before the landing's turn. A base whose
   config names another `"gate".kind` is asked of the nodes again at that kind's size, and main's
-  gate books that kind again (docs/gate.md "Landing", step 6), but a node's gate keeps the 1-slot
+  gate books that kind again (docs/gate.md "Landing", step 4), but a node's gate keeps the 1-slot
   run booked at the old kind.
 - A 1-slot landing run's held time goes into the `land` mode of the kind's expected times
   (`history_expect`), beside the full runs.

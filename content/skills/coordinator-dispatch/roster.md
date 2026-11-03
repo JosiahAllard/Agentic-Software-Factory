@@ -58,6 +58,8 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   1. Built by strong-worker, senior-worker or deep-worker -> raise to strong.
   2. Built by worker or weak-worker -> no override: light as pinned.
   3. Otherwise -> raise to strong.
+- **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier at high
+  effort, whoever built the area (it judges a look, not a diff); it is read-only.
 
   A light reviewer's "blocking" claim you dispute is settled by a fresh strong-tier review of the
   tip, not by your own reading: `verdict.py add` refuses a LAND over the reviewer's final

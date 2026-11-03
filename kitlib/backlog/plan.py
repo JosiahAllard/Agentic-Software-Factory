@@ -1270,8 +1270,9 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     `unblock-owner` row, so it needs `role_checked` (else a
     Refusal: the owner's or the PM's role clears an owner blocker). An owner hold with `until`
     lines (one per ask: the hub parks a record on each question bound to it) ends on those
-    instead: the answer drops its own `owner question:<qid> answered` line, and the hold ends only
-    when no owner line is left and `waiting` is empty. A pulled or open record, or a wait no
+    instead: the answer drops its own `owner question:<qid> answered` line, and the hold ends
+    when no owner line is left, `waiting` aside (a bound question whose park has not run parks
+    the record again itself). A pulled or open record, or a wait no
     question names, only gets the answer.
     `other` (a free-text answer) also writes the review mark `review: owner-answer <date>`
     unless one stands, so `pull` refuses the record and `next` lists it to review until a
@@ -1312,8 +1313,10 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
     state = rec.get('state')
     pending = [q for q in asked if q not in done] + [w for w in waiting if w not in done]
     # An owner hold with `until` lines (one per ask, conditions.SEVERAL) ends on those: this
-    # answer drops its own line, and the hold ends when no owner line is left (nor a `waiting`
-    # question), whatever `owner_ask` cites.
+    # answer drops its own line, and the hold ends when no owner line is left, whatever
+    # `owner_ask` cites or `waiting` lists: the unblock-conditions job reads only the lines, so
+    # the two writers agree, and a question still open whose park has not run parks the record
+    # again with its own line (kitlib.hubsite.api park_question).
     owner_lines = [c for m, c in rmod.until_lines(rec) if m == condmod.SEVERAL]
     if state == 'blocked' and 'owner' in rec.all('blocked_on') and owner_lines:
         mine = 'question:%s answered' % qid
@@ -1323,7 +1326,7 @@ def plan_answer(snap, ctx, rid, qid, at, title, label, note=None, via=None, othe
                 v for v in rec.all('until') if v != '%s %s' % (condmod.SEVERAL, mine)])])
             lines.append('  until: owner %s dropped' % mine)
         asked = [qid]
-        pending = ['`owner %s`' % c for c in left] + [w for w in waiting if w not in done]
+        pending = ['`owner %s`' % c for c in left]
     stop_note = ''
     if not asked:
         lines.append('  state: %s, unchanged: its wait names no question' % state)

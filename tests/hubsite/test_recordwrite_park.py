@@ -103,6 +103,35 @@ class Park(Case):
         self.assertEqual((self.field('FOO', 'state'), self.field('FOO', 'until')), (['open'], []))
         self.assertEqual(self.field('FOO', 'owner_ask'), [])
 
+    def test_an_ask_whose_park_has_not_run_does_not_keep_a_hold_with_no_line(self):
+        # Q-102 is bound to FOO and open, but its park failed or has not run: the answer to
+        # Q-101 ends the hold on its last line, and Q-102's own park blocks FOO again on its line
+        self.seed(**rec('FOO'))
+        self.park('Q-101')
+        recordwrite.answer(self.repo.root, 'FOO', 'Q-101', AT, 'Which one?', 'first',
+                           waiting=['Q-102'])
+        self.assertEqual((self.field('FOO', 'state'), self.field('FOO', 'until')), (['open'], []))
+        self.assertEqual(self.park('Q-102')['park'], 'blocked')
+        self.assertEqual((self.field('FOO', 'state'), self.field('FOO', 'until')),
+                         (['blocked'], ['owner question:Q-102 answered']))
+
+    def test_a_manual_owner_hold_with_no_line_still_waits_on_the_open_questions(self):
+        self.seed(**rec('FOO', state='blocked', blocked_on='owner', owner_ask='Q-101 and Q-102'))
+        recordwrite.answer(self.repo.root, 'FOO', 'Q-101', AT, 'Which one?', 'first',
+                           waiting=['Q-102'])
+        self.assertEqual(self.field('FOO', 'state'), ['blocked'])
+
+    def test_asks_lists_the_owner_question_lines_and_which_the_hub_wrote(self):
+        self.seed(**dict(rec('FOO'), **dict(
+            rec('BAR', state='blocked', blocked_on='owner',
+                until='owner question:Q-7 answered', owner_ask='by hand'),
+            **rec('BAZ', state='blocked', blocked_on='live-client',
+                  until='live-client question:Q-8 answered'))))
+        self.park('Q-101')
+        got = sorted(recordwrite.asks(self.repo.root), key=lambda a: a['id'])
+        self.assertEqual(got, [{'id': 'BAR', 'q': 'Q-7', 'parked': False},
+                               {'id': 'FOO', 'q': 'Q-101', 'parked': True}])
+
 
 if __name__ == '__main__':
     unittest.main()

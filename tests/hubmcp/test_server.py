@@ -28,7 +28,7 @@ READS = {"hub_pending", "hub_wait", "hub_list", "hub_inbox", "hub_backlog", "hub
          "hub_view", "hub_health", "hub_page"}
 CREATOR = {"hub_question_edit", "hub_question_withdraw", "hub_todo_edit", "hub_todo_withdraw"}
 WRITES = {"hub_ask", "hub_question_log", "hub_question_done", "hub_todo_add", "hub_todo_ack", "hub_story_set",
-          "hub_to_pm_reply", "hub_inbox_post", "hub_page_publish",
+          "hub_to_pm_reply", "hub_inbox_post", "hub_page_publish", "hub_page_place",
           "hub_approval_request", "hub_handoff_ready"} | CREATOR
 
 
@@ -101,7 +101,8 @@ class Pinned(Case):
         additive = {"hub_ask", "hub_todo_add", "hub_inbox_post", "hub_approval_request",
                     "hub_handoff_ready"}
         changes = {"hub_question_log", "hub_question_done", "hub_todo_ack", "hub_story_set",
-                   "hub_to_pm_reply", "hub_page_publish"} | CREATOR    # publish replaces a page
+                   "hub_to_pm_reply", "hub_page_publish", "hub_page_place"} | CREATOR
+        # publish replaces a page; place changes a card
         self.assertEqual(additive | changes, WRITES)
         for t in self.server().tool_list():
             ann = t["annotations"]
@@ -461,6 +462,34 @@ class Pages(Case):
             "id": "plan", "title": "t", "html_file": self.page(html)})
         self.assertFalse(is_error, payload)
         self.assertEqual(self.ask.calls[-1]["body"]["html"], html)
+
+    def test_kind_and_folder_go_with_a_publish(self):
+        payload, is_error = self.rpc(self.server(), "hub_page_publish", {
+            "id": "plan", "title": "t", "html_file": self.page("<p>x</p>"), "kind": "plan",
+            "folder": "hub/docs"})
+        self.assertFalse(is_error, payload)
+        body = self.ask.calls[-1]["body"]
+        self.assertEqual((body["kind"], body["folder"]), ("plan", "hub/docs"))
+
+    def test_place_posts_the_card_fields_to_its_route(self):
+        payload, is_error = self.rpc(self.server(), "hub_page_place", {
+            "id": "plan 1", "kind": "spec", "folder": "hub/docs", "repo": "kit",
+            "if_version": 3})
+        self.assertFalse(is_error, payload)
+        call = self.ask.calls[-1]
+        self.assertEqual((call["method"], call["path"], call["token"]),
+                         ("POST", api.BASE + "/pages/plan%201/place", self.agent))
+        self.assertEqual(call["body"], {"kind": "spec", "folder": "hub/docs", "repo": "kit",
+                                        "if_version": 3})
+        route, _ = api.match("POST", api.BASE + "/pages/plan/place")
+        self.assertEqual(route.role, api.ANY)
+
+    def test_place_needs_its_pin(self):
+        payload, is_error = self.rpc(self.server(), "hub_page_place", {"id": "plan",
+                                                                       "kind": "spec"})
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "invalid")
+        self.assertEqual(self.ask.calls, [])
 
     def test_the_hubs_refusal_comes_back(self):
         self.ask.answer = (409, api.error_body("conflict", "pages/plan exists", "if_version"))

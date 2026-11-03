@@ -258,6 +258,8 @@ ROWS = {
     ('POST', '/pages'): (None, {'id': 'plan-1', 'title': 't', 'html': '<p>x</p>'}, None),
     ('GET', '/pages/{id}'): (seed_page, None, None),
     ('POST', '/pages/{id}/delete'): (seed_page, None, None),
+    ('POST', '/pages/{id}/place'): (seed_page, {'kind': 'plan', 'folder': 'f',
+                                                'if_version': 1}, None),
     ('GET', '/schedules'): (None, None, None),
     ('POST', '/schedules'): (seed_repo, SCHEDULE_BODY, None),
     ('GET', '/findings'): (None, None, None),
@@ -409,6 +411,8 @@ class RolesCase(unittest.TestCase):
                 # a session records its own hand-off; the owner and the PM read them
                 ('GET', '/handoffs'): ANY, ('POST', '/handoffs'): AGENT,
                 ('POST', '/pages'): AGENT, ('POST', '/pages/{id}/delete'): OWNER,
+                # a card's kind, folder and repo: the agent that files it or the owner
+                ('POST', '/pages/{id}/place'): ANY,
                 # the owner sets the kit's automatic tasks; an agent only reads them
                 ('GET', '/schedules'): ANY, ('POST', '/schedules'): OWNER,
                 ('POST', '/records/{repo}'): OWNER, ('POST', '/records/{repo}/{id}/edit'): OWNER,

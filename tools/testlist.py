@@ -13,7 +13,8 @@ lists, with no freshness check. --status makes each line `<name><TAB>passed|fail
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.testlist, prints and exits.
 Exit codes: 0 no difference / listed / saved, 1 names differ, 2 USAGE, nothing found, no result
-newer than the saved list, or a refused configuration or checkout.
+newer than the saved list, a list that cannot be read or written, or a refused configuration or
+checkout.
 """
 import argparse
 import os
@@ -61,7 +62,12 @@ def main(argv=None, out=None):
         say('USAGE: --against goes with --diff')
         return USAGE
     if a.against:
-        lines, code = results.diff(results.read_list(a.diff), results.read_list(a.against))
+        try:
+            old, new = results.read_list(a.diff), results.read_list(a.against)
+        except OSError as e:
+            say('testlist: refused: cannot read a list: %s' % e)
+            return USAGE
+        lines, code = results.diff(old, new)
         for line in lines:
             say(line)
         return code
@@ -88,14 +94,24 @@ def main(argv=None, out=None):
         out.write('\n'.join(tests) + '\n')
         return 0
     if a.save:
-        results.write_list(a.save, tests)
+        try:
+            results.write_list(a.save, tests)
+        except OSError as e:
+            say('testlist: refused: cannot write %s: %s' % (a.save, e))
+            return USAGE
         say('saved %d test names to %s' % (len(tests), a.save))
         return 0
-    if newest <= os.path.getmtime(a.diff):
+    try:
+        stamp = os.path.getmtime(a.diff)
+        old = results.read_list(a.diff)
+    except OSError as e:
+        say('testlist: refused: cannot read %s: %s' % (a.diff, e))
+        return USAGE
+    if newest <= stamp:
         say('refused: no test result is newer than %s - no test has run since --save. '
             'Run the gate, then --diff.' % a.diff)
         return USAGE
-    lines, code = results.diff(results.read_list(a.diff), tests)
+    lines, code = results.diff(old, tests)
     for line in lines:
         say(line)
     return code

@@ -11,7 +11,7 @@ Tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_deps.py`,
 - `--status` adds passed, failed or skipped to each line (tab-separated).
 - `--dir DIR` reads the result files there, not under the checkout.
 - Result globs: "testlist" `junit` and `trx`.
-- Exit codes: 0 same, listed or saved; 1 the names differ; 2 nothing found, or no result newer than the saved list.
+- Exit codes: 0 same, listed or saved; 1 the names differ; 2 nothing found, no result newer than the saved list, or a list file that cannot be read or written (`testlist: refused: ...`).
 
 ## tool_deps
 

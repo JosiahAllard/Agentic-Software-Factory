@@ -90,6 +90,26 @@ class TestNames(Tree):
         self.assertEqual(code, 2)
         self.assertIn('no test result is newer', text)
 
+    def test_a_missing_diff_list_refuses_with_exit_2(self):
+        code, text = self.run_main('--diff', os.path.join(self.top, 'nope.txt'))
+        self.assertEqual(code, 2)
+        self.assertEqual(text.count('\n'), 1)
+        self.assertIn('testlist: refused', text)
+
+    def test_a_missing_against_list_refuses_with_exit_2(self):
+        there = self.put('there.txt', 'a\n')
+        code, text = self.run_main('--diff', there, '--against',
+                                   os.path.join(self.top, 'nope.txt'), top=False, here=False)
+        self.assertEqual(code, 2)
+        self.assertEqual(text.count('\n'), 1)
+        self.assertIn('testlist: refused', text)
+
+    def test_an_unwritable_save_refuses_with_exit_2(self):
+        code, text = self.run_main('--save', os.path.join(self.top, 'no', 'such', 'dir', 'x.txt'))
+        self.assertEqual(code, 2)
+        self.assertEqual(text.count('\n'), 1)
+        self.assertIn('testlist: refused', text)
+
     def test_nothing_found_is_exit_2(self):
         empty = tempfile.mkdtemp(prefix='testlist_empty_')
         self.addCleanup(rmtree, empty)

@@ -1340,10 +1340,13 @@ def catch_up(backend, paths, session):
 class Worktrees(object):
     """git's worktree list of one repository, asked once however many callers want it: a
     callable with gitrepo.worktrees' signature, for one run (opener.open_store) over checkouts of
-    one repository, whose answer is the same from any of them. Never kept past that run."""
+    one repository, whose answer is the same from any of them. Never kept past that run.
+    `common` is that repository's git common dir (gitrepo.common_dir's answer) once
+    resolve_store has read it, else None."""
 
     def __init__(self):
         self._got = None
+        self.common = None
 
     def __call__(self, path):
         if self._got is None:
@@ -1439,6 +1442,8 @@ def resolve_store(root, worktrees=None):
     Worktrees the caller keeps to reuse the list; git is asked each of its questions of `root`
     once."""
     top, cfg, rules, place = _open_repo(root)
+    if worktrees is not None:
+        worktrees.common = place.common
     live, why = worktree_store(top, cfg, place, worktrees)
     if live is None:
         return top, cfg, rules, None, why

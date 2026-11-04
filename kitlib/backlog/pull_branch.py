@@ -52,7 +52,9 @@ def _main_checkout(root, worktrees=None):
     any other checkout, or when the PM data record cannot be read (no data branch is known); None
     when it is a PM data repository whose worktrees git cannot list. `worktrees` is a stand-in
     for gitrepo.worktrees (store.Worktrees) when the caller has the list."""
-    common, _why = gitrepo.common_dir(root)
+    common = getattr(worktrees, 'common', None)      # store.Worktrees: read once for the run
+    if common is None:
+        common, _why = gitrepo.common_dir(root)
     if common is None:
         return ''
     try:

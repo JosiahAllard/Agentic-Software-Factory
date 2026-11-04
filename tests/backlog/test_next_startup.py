@@ -24,9 +24,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TOOL = os.path.join(ROOT, 'tools', 'backlog.py')
 STORE = 'kit/backlog'
 BRANCH = 'kit/wk'
-# 13 before the change; what is left is each distinct question once (`worktree list -z` once,
-# `rev-parse --git-dir --git-common-dir` once, `branch --show-current` once) plus the offer's own.
-MAX_GIT_CALLS = 9
+# 13 before the change; 8 now: the git dirs of the worker worktree and of the PM data worktree,
+# the branch, the worktree list twice (the known offer.py repeat), the branch list and two
+# `rev-parse --verify` of the offer.
+MAX_GIT_CALLS = 8
 
 
 def load_tool():
@@ -70,12 +71,26 @@ class NextStartup(unittest.TestCase):
         self.assertIn('NEXT', out.getvalue())
         listing = '\n'.join(' '.join(c) for c, _cwd in calls)
         self.assertLessEqual(len(calls), MAX_GIT_CALLS, listing)
-        asked = collections.Counter((c, os.path.normcase(os.path.abspath(cwd))) for c, cwd in calls)
-        again = [' '.join(c) for (c, _cwd), n in asked.items() if n > 1]
-        self.assertEqual(again, [], 'asked twice of one checkout:\n' + listing)
-        # The worktree list is the repository's, so one answer serves every checkout of it.
-        lists = [c for c, _cwd in calls if c[:2] == ('worktree', 'list') and '-z' in c]
-        self.assertEqual(len(lists), 1, listing)
+
+        def question(c, cwd):
+            # Any `worktree list` form is the repository's one question; any rev-parse of the git
+            # dirs is one question per checkout; the rest are told apart by their words.
+            if c[:2] == ('worktree', 'list'):
+                return 'worktree list'
+            where = os.path.normcase(os.path.abspath(cwd))
+            if c[:1] == ('rev-parse',) and '--git-common-dir' in c:
+                return 'git dirs of ' + where
+            return ' '.join(c) + ' in ' + where
+
+        asked = collections.Counter(question(c, cwd) for c, cwd in calls)
+        # KNOWN: offer.live_branches asks `worktree list --porcelain` again, beside the cached
+        # `-z` list; fixed in a follow-up once kit/next-narrow-dirty (offer.py) has landed.
+        # Then this allowance goes and the list is asked once.
+        allowed = {'worktree list': 2}
+        again = sorted(q for q, n in asked.items() if n > allowed.get(q, 1))
+        self.assertEqual(again, [], 'asked more often than allowed:\n' + listing)
+        self.assertEqual(sum(1 for c, _cwd in calls if c[:2] == ('worktree', 'list') and '-z' in c),
+                         1, listing)
 
     def test_importing_the_tool_leaves_out_check_and_audit(self):
         code = ('import importlib.util, sys\n'

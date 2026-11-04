@@ -1209,6 +1209,28 @@ class Job(JobBase):
         self.run_job()
         self.assertEqual(self.calls[0][:3], ['stop', '--name', OLD.name])
 
+    def test_asked_to_ready_to_stall_stop_stops_in_the_same_run(self):
+        self.mode = 'full'
+        self.run_job()
+        self.assertEqual(self.crossing()['phase'], U.ASKED)
+        self.newest = {'kit': record(6, 'handoff')}
+        self.stall(OLD.name, OLD.pid, '1')
+        self.now += 300
+        self.run_job()      # two state changes, then the stop: no run lost between them
+        self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--pid', '11']])
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+
+    def test_ready_to_starting_to_started_to_stall_stop_stops_in_the_same_run(self):
+        self.mode = 'full'
+        self.put(crossing(U.READY, new_name=NEW.name))
+        self.write('sessions.json', {'kit': MOVED})
+        self.live = [OLD, NEW]
+        self.stall(OLD.name, OLD.pid, '1')
+        self.run_job()      # three state changes, then the stop: no run lost between them
+        self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--successor', NEW.name,
+                                       '--pid', '11']])
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+
     def test_one_acting_step_per_run_a_stop_before_an_ask(self):
         other = U.Live('zed-coord-a2', 33, CREATED)
         self.write('sessions.json', {'kit': MOVED, 'zed': dict(ENTRY, stem='zed-coord', name=other.name,
@@ -1506,6 +1528,18 @@ class PmJob(JobBase):
         self.assertEqual(self.sent, [])
         self.assertEqual(self.calls, [['pm-crossover', '--account', '2', '--name', 'pm-a2']])
         self.assertTrue(self.crossing(U.PM_DOC)['stalled'])
+
+    def test_asked_to_ready_to_stalled_ready_starts_in_the_same_run(self):
+        self.mode = 'full'
+        self.run_job()
+        self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.ASKED)
+        self.newest = {'pm': self.note(7, NOW + 30)}
+        self.stall('pm-session', 40, '1')
+        self.now += 300
+        self.run_job()      # two state changes, then the start: no run lost between them
+        self.assertEqual([c[0] for c in self.calls], ['pm-crossover'])
+        c = self.saved_at_child['crossings'][U.PM_DOC]
+        self.assertEqual((c['phase'], c['stalled']), (U.STARTING, True))
 
     def test_a_stall_on_normal_is_pushed_and_left(self):
         self.usage['1'] = reading(20)

@@ -1220,6 +1220,17 @@ class Job(JobBase):
         self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--pid', '11']])
         self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
 
+    def test_ready_to_starting_to_started_to_stall_stop_stops_in_the_same_run(self):
+        self.mode = 'full'
+        self.put(crossing(U.READY, new_name=NEW.name))
+        self.write('sessions.json', {'kit': MOVED})
+        self.live = [OLD, NEW]
+        self.stall(OLD.name, OLD.pid, '1')
+        self.run_job()      # three state changes, then the stop: no run lost between them
+        self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--successor', NEW.name,
+                                       '--pid', '11']])
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+
     def test_one_acting_step_per_run_a_stop_before_an_ask(self):
         other = U.Live('zed-coord-a2', 33, CREATED)
         self.write('sessions.json', {'kit': MOVED, 'zed': dict(ENTRY, stem='zed-coord', name=other.name,

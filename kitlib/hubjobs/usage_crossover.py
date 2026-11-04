@@ -1231,7 +1231,8 @@ class CrossoverJob(object):
             if _pm_entry(key, entry, coordinators) or any(l.name in pm for l in live):
                 continue
             d = step(key, entry, live)
-            for _ in range(2):          # asked -> ready -> stall-stop: state changes, no acting step
+            for _ in range(3):          # state changes, no acting step; the longest chain:
+                # ready (successor up and moved) -> starting -> started -> stall-stop or stopping
                 if d.action != ADVANCE:
                     break
                 run.advance(key, d)

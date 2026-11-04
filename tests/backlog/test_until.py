@@ -271,11 +271,12 @@ class BlockUntil(StoreCase):
                          ['owner question:Q-101 answered', 'owner question:Q-102 answered'])
 
     def test_an_owner_until_with_no_role_check_is_refused(self):
-        # the unblock-owner row (policy.sort): the role check decides it, not a library caller
+        # the unblock-owner row (policy.sort): the role check decides it, not a library caller;
+        # an owner-event form is a lead's (policy.lead_until), so only another one is that row
         self.seed(rec('FOO', **test_verbs.OWNER_BLOCKED))
         tip = self.remote_tip()
         with self.assertRaises(Refusal) as ctx:
-            self.verb('block', 'FOO', ['owner'], until='todo:T-1 done')
+            self.verb('block', 'FOO', ['owner'], until='todo:T-1 started')
         self.assertIn('unblock-owner', str(ctx.exception))
         self.assertEqual((self.remote_tip(), self.get('FOO').all('until')), (tip, []))
         self.verb('block', 'FOO', ['live-client'], until='todo:T-1 done')   # not the owner's

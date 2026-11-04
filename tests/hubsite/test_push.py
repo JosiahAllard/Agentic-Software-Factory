@@ -528,7 +528,28 @@ class RestartTest(PushCase):
         self.assertNotIn('question:%s' % q2, self.worker._outbox)
         self.later(push.SCHEDULE_S[0])
         self.assertEqual(self.attempts('kit'), [1, 1, 2])
-        self.assertNotIn(q2, ''.join(self.push.to('kit')[2:]))
+        self.assertNotIn(q2, ''.join(self.push.to('kit')[1:]))
+
+    def test_outbox_entries_with_a_bad_repo_from_status_or_first_at_are_dropped(self):
+        ids = [self.ask(**{'from': 'kit'}) for _ in range(5)]
+        for qid in ids:
+            self.answer(qid)
+        self.worker.poll()
+        path = os.path.join(self.folder, push.OUTBOX)
+        with open(path, encoding='utf-8') as f:
+            outbox = json.load(f)
+        keys = ['question:%s' % q for q in ids]
+        del outbox[keys[1]]['repo']
+        outbox[keys[2]]['from'] = 5
+        outbox[keys[3]]['status'] = 5
+        del outbox[keys[4]]['first_at']
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(outbox, f)
+        self.worker = self.make()
+        self.assertEqual(sorted(self.worker._outbox), [keys[0]])
+        self.later(push.SCHEDULE_S[0])
+        self.assertEqual(self.attempts('kit'), [1] * 5 + [2])
+        self.assertNotIn(ids[1], ''.join(self.push.to('kit')[1:]))
 
     def test_a_superseded_approval_is_not_read_again_at_every_round(self):
         # red proof: _tick rebuilding the phase without `superseded` reads 'decided' while the

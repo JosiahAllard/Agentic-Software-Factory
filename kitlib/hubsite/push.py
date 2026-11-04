@@ -1243,7 +1243,7 @@ class PushWorker(object):
 
     # ------------------------------------------------------------------ files
     def _prints(self, docs):
-        """Every item's fingerprint, and (kept for _tick) each approval's kind."""
+        """Every item's fingerprint, and (kept for _tick) each approval's kind and `superseded` note."""
         out, now = {}, (self._at() if docs.get('approvals') else None)
         self._kinds, self._superseded = {}, {}
         for coll, kind in COLLECTIONS.items():
@@ -1334,4 +1334,7 @@ def _entry_ok(key, e):
         if (not isinstance(st, dict) or type(st.get('attempt')) is not int
                 or not isinstance(st.get('next_at'), (int, float)) or isinstance(st.get('next_at'), bool)):
             return False
-    return e.get('first_at') is None or isinstance(e.get('first_at'), (int, float))
+    if 'first_at' not in e:
+        return False                # _send_due reads it as a key
+    return e['first_at'] is None or (isinstance(e['first_at'], (int, float))
+                                     and not isinstance(e['first_at'], bool))

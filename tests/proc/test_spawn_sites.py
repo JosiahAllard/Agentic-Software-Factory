@@ -155,16 +155,6 @@ HAZARD_EXEMPT = {
         1, 'start-bridge.ps1 starts the bridge service with Start-Process -WindowStyle Hidden; '
            'the owner installs it by hand.' + OPEN + 'python.exe gets a console of its own, '
            'hidden after the fact; it wants pythonw'),
-    ('optional/comfy/comfy_gen.py', '_launch', 'DETACHED_PROCESS'): (
-        2, 'a standalone optional tool that imports nothing of the kit starts ComfyUI with '
-           'CREATE_NO_WINDOW | DETACHED_PROCESS.' + OPEN + 'with DETACHED_PROCESS the no-window '
-           'flag is ignored, and a console child of ComfyUI opens its own window (two finds: '
-           'the getattr string and the `flags` name it is bound to, used in the start)'),
-    ('optional/comfy/comfy_gen.py', '_ensure_watcher', 'DETACHED_PROCESS'): (
-        2, 'a standalone optional tool that imports nothing of the kit starts its watcher with '
-           'sys.executable and CREATE_NO_WINDOW | DETACHED_PROCESS.' + OPEN + 'python.exe '
-           'detached has no console, so any console program it starts opens a window (two '
-           'finds: the getattr string and the `flags` name it is bound to, used in the start)'),
     ('tests/guard/extra_rows.py', '<module>', 'Start-Process'): (2, GUARD_TEST),
     ('tests/guard/shell_rows.py', '<module>', 'Start-Process'): (122, GUARD_TEST),
     ('tests/guard/shell_rows.py', '<module>', 'cmd /c start'): (2, GUARD_TEST),

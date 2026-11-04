@@ -18,6 +18,7 @@ repository and win over this folder.
 
 ```
 python <kit>/optional/comfy/comfy_gen.py check
+python <kit>/optional/comfy/comfy_gen.py up [--for SECONDS] | down
 python <kit>/optional/comfy/comfy_gen.py <image|edit|rembg|upscale|to3d|music|template> --help
 python <kit>/optional/comfy/render_glb.py [--grid COLS | --turnaround | --filmstrip [--frames N] [--clips A,B]]
                                           [--view front|3/4|side] [--keep-tiles] OUT.png MODEL.glb ...
@@ -29,9 +30,19 @@ python <kit>/optional/comfy/motion_check.py MODEL.glb|MODEL.blend --out DIR [--c
                                             [--step N] [--contact CM]
 ```
 
-- It only talks to ComfyUI on this machine (`127.0.0.1:8188`). Every generating command
-  starts ComfyUI if it is down and stops it again if the tool started it; a ComfyUI the owner
-  started is left running. Agents never install, download or update anything in it.
+- It only talks to ComfyUI on this machine (`127.0.0.1:8188`; env `COMFY_URL` names another
+  port). The tool starts ComfyUI itself, headless: the local install's own Python runs
+  `ComfyUI/main.py` (no Comfy Desktop app, no window). **Agents never ask the owner to open
+  Comfy Desktop**; when the tool cannot start ComfyUI, report its message as it is.
+- For an art run, `comfy_gen.py up` first: it books one local-ai machine-lock run (and the
+  port), starts ComfyUI, waits for it (up to 5 minutes for a cold start) and prints the run id.
+  Generating commands then use it and book nothing more. `comfy_gen.py down` when the run ends;
+  the session also ends itself after 10 idle minutes, its `--for` time (default an hour), or
+  when ComfyUI crashes. Without `up`, each generating command starts ComfyUI for itself and
+  it stops with that command.
+- A ComfyUI the owner started (it already answers) is used and left running. Something else
+  holding the port is refused, by name; nothing is started beside it. Agents never install,
+  download or update anything in ComfyUI.
 - It takes the machine-wide GPU lock for each generating command (see below) and writes a sidecar
   `<file>.json` next to every output: model, licence, prompt, seed, settings, date and
   seconds taken. Copy those fields into the repository's attribution record.
@@ -74,8 +85,8 @@ python <kit>/optional/comfy/motion_check.py MODEL.glb|MODEL.blend --out DIR [--c
    licence check first. Templates or nodes marked as API, partner or "requires credits" are
    paid cloud services and are never used.
 2. **Share the machine.** Generation uses the same GPU as the game engine and render runs.
-   The tool holds the GPU lock for one command at a time, so keep each command to one
-   slice of about 10 minutes at most. Do not generate during a measurement window. Batch
+   The tool holds the GPU lock for one command at a time, or for the `up` session, so keep
+   each command to one slice of about 10 minutes at most, and `down` as soon as the run ends. Do not generate during a measurement window. Batch
    generation into quiet periods when the coordinator says the machine is not busy, rather
    than interleaving it with engine and network test runs, because heavy generation slows
    those test runs.

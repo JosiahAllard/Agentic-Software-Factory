@@ -39,7 +39,8 @@ something the owner already approved skips to the fix.
 - Which generator makes which asset is the repo's call (the profile's **Art** or **Audio**
   section). Before using the kit's local generators (`python <kit>/optional/comfy/comfy_gen.py`),
   read `<kit>/knowledge/asset-generation/README.md`, with `MODELS.md` and `BEST_PRACTICES.md`
-  beside it, and follow its rules.
+  beside it, and follow its rules. The tool starts ComfyUI itself (`up` for a session, `down`
+  after); never ask the owner to open Comfy Desktop.
 - A generator outage stops the run: report it; start and install nothing.
 - Your session record goes as keyword lines where the profile's **Art** or **Audio** section
   says, failures included, never in your host's user folder.

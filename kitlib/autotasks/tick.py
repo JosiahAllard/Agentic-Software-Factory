@@ -72,13 +72,18 @@ def tool_path(name, kit):
     return os.path.join(kit, *task.tool)
 
 
+def _console_python():
+    """The python.exe beside this interpreter; off Windows there is none, so this interpreter."""
+    return spawn.console_python() or (sys.executable if sys.platform != 'win32' else None)
+
+
 def argv(name, kit, main=None, python=None):
     """The command line of the task `name`: `python` (default the python.exe beside this one), its
     tool under `kit`, `-C main` for a task that runs for one repository, then its fixed arguments.
     UnknownTask for a name TASKS does not hold; ValueError for a per-repository task with no `main`."""
     tool = tool_path(name, kit)
     task = TASKS[name]
-    out = [python or spawn.console_python(), tool]
+    out = [python or _console_python(), tool]
     if task.per_repo:
         if not main:
             raise ValueError('task %s needs a repository' % name)
@@ -384,7 +389,7 @@ def _tick_locked(folder, kit, now, schedules, start, repos, python):
             continue
         else:
             machine_wide.add(name)
-        exe = python or spawn.console_python()
+        exe = python or _console_python()
         if not exe:
             why = 'no python.exe beside %s to run it with' % sys.executable
             records[k] = {'at': _stamp(now), 'what': SKIPPED, 'slot': slot, 'why': why}

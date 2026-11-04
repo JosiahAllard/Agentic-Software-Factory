@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib.config import migration, user
+from kitlib.config import user
 from kitlib.preflight import configline
 from tests.home import PM_REPO_FENCE_ENV, pm_repo
 
@@ -27,7 +27,6 @@ class ConfigLineTest(unittest.TestCase):
         self.policy = '%s/%s' % (self.shown, user.FILE_NAME)
         self.local = '%s/%s' % (self.shown, user.LOCAL_FILE_NAME)
         self.home_name = '~/%s/%s' % (user.DIR_NAME, user.FILE_NAME)
-        self.old_name = '~/%s/%s' % (migration.OLD_DIR_NAME, user.FILE_NAME)
 
     def put(self, data, name=user.FILE_NAME, folder=None):
         folder = folder or self.folder
@@ -66,16 +65,13 @@ class ConfigLineTest(unittest.TestCase):
 
     def test_a_home_file_beside_the_pm_repositorys_is_broken_naming_its_removal(self):
         self.put({})
-        for name in (migration.OLD_DIR_NAME, user.DIR_NAME):
-            with self.subTest(name):
-                self.put_home({'pending_path': os.path.join(self.home, SECRET)}, name)
-                out = self.line()
-                self.assertTrue(out.startswith('config    BROKEN the machine config moved to the PM '
-                                               'repository'), out)
-                # DIR_NAME's file, once there, is the one named (kitlib.config.user _leftover)
-                left = os.path.join(self.home, name, user.FILE_NAME)
-                self.assertIn("Remove-Item -LiteralPath '%s'" % left, out)
-                self.assertNotIn(SECRET, out)
+        self.put_home({'pending_path': os.path.join(self.home, SECRET)}, user.DIR_NAME)
+        out = self.line()
+        self.assertTrue(out.startswith('config    BROKEN the machine config moved to the PM '
+                                       'repository'), out)
+        left = os.path.join(self.home, user.DIR_NAME, user.FILE_NAME)
+        self.assertIn("Remove-Item -LiteralPath '%s'" % left, out)
+        self.assertNotIn(SECRET, out)
 
     def test_a_home_file_that_was_never_moved_is_broken(self):
         self.put_home({'pending_path': os.path.join(self.home, SECRET)})

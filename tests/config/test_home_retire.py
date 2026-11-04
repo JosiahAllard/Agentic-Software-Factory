@@ -9,7 +9,7 @@ temp PM repository."""
 import os
 import unittest
 
-from kitlib.config import ConfigError, migration
+from kitlib.config import ConfigError
 from kitlib.config import user as kuser
 from kitlib.git.cmd import Result
 from kitlib.preflight import configline
@@ -52,16 +52,13 @@ class Case(unittest.TestCase):
 
 class LocateTest(Case):
     def test_a_home_file_beside_the_pm_repositorys_is_leftover_an_error_naming_its_removal(self):
-        for name in (kuser.DIR_NAME, migration.OLD_DIR_NAME):
-            with self.subTest(name):
-                left = self.leave(name)
-                loc = kuser.locate(self.home)
-                self.assertEqual((loc.state, loc.path, loc.folder, loc.leftover),
-                                 (kuser.LEFTOVER, self.pm_file, self.folder, left))
-                self.assertEqual(loc.error, kuser.LEFTOVER_WHY % (self.pm_file, left, left, kuser.MOVE_DOC))
-                self.assertIn('moved to the PM repository', loc.error)
-                self.assertIn("Remove-Item -LiteralPath '%s'" % left, loc.error)
-                os.remove(left)
+        left = self.leave(kuser.DIR_NAME)
+        loc = kuser.locate(self.home)
+        self.assertEqual((loc.state, loc.path, loc.folder, loc.leftover),
+                         (kuser.LEFTOVER, self.pm_file, self.folder, left))
+        self.assertEqual(loc.error, kuser.LEFTOVER_WHY % (self.pm_file, left, left, kuser.MOVE_DOC))
+        self.assertIn('moved to the PM repository', loc.error)
+        self.assertIn("Remove-Item -LiteralPath '%s'" % left, loc.error)
 
     def test_every_reader_fails_with_the_leftover_error_and_none_reads_the_pm_file(self):
         left = self.leave()

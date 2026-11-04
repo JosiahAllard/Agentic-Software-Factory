@@ -7,7 +7,6 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib.config import migration
 from kitlib.guard import context, delegfile, jail, prepush
 
 from tests.realgit import real_git
@@ -146,8 +145,7 @@ class PointerFolder(Base):
         # T12
         self.pointer = os.path.join('relative', 'pm')
         ctx = self.ctx()
-        self.assertEqual(jail.config_dirs(ctx), [os.path.join(self.w.home, '.pm-kit'),
-                                                 os.path.join(self.w.home, migration.OLD_DIR_NAME)])
+        self.assertEqual(jail.config_dirs(ctx), [os.path.join(self.w.home, '.pm-kit')])
         self.assert_refused(self.writes(os.path.join(self.w.wt, '.pm-kit', 'config.json'), self.w.wt), 'by name')
 
 

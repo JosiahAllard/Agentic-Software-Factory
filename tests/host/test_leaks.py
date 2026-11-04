@@ -15,11 +15,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 HOST_WORDS = re.compile(r'claude|codex|anthropic|openai', re.I)
 
 # What is left and why. Later step-6 waves: launcher, pluginsource, machinesetup and guard (the guard
-# refactor). Prose in help strings, and the retired config folder's fixed name, stay. Step 9
+# refactor). Prose in help strings stays. Step 9
 # registered Codex in hosts.json and removed its placeholders (attribution, lock, owner paths).
 ALLOWED = {
     'kitlib/commit/__init__.py':           1,    # an example family in an error message
-    'kitlib/config/migration.py':          1,    # OLD_DIR_NAME, a retired folder's name on disk
     'kitlib/config/schema.py':             2,    # a key's help text; the owner-guarded managed-settings template
     'kitlib/config/user.py':               1,    # a key's help text
     'kitlib/guard/rules.py':               3,    # the guard refactor

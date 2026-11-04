@@ -216,14 +216,6 @@ class OwnerOnlyTest(Base):
                 self.assertTrue(whys and all(w.startswith('%s: owner-only (%s ' % (text, label))
                                              for w in whys), whys)
 
-    def test_the_retired_config_folder_is_refused_too(self):
-        home = self.d('home')
-        loc = kuser.home_location(home)
-        text = os.path.dirname(loc.old)
-        self.assertNotEqual(text, os.path.dirname(loc.new))
-        self.assertEqual(self.check({'p': text}, home=home),
-                         [place.WHY_OWNER % (text, 'the machine config folder', text)])
-
     def test_the_pm_repos_config_folder_is_refused(self):
         folder = machine_config(self.home, {'dev_drive': self.dev}, case=self)
         places, _whys = place.owner_only(self.cfg, self.home, self.kit, {})

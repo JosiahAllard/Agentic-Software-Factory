@@ -24,7 +24,6 @@ import os
 import re
 
 from kitlib.config import user as kuser
-from kitlib.config.migration import OLD_DIR_NAME
 from kitlib.host import registry
 from kitlib.pluginsource import RefreshError
 from kitlib.pluginsource import settings as plugin_settings
@@ -85,13 +84,12 @@ def candidates(values, tokens):
 def owner_only(cfg, home, kit_root, environ=None):
     """([(label, path)], whys): the places no approved run may touch. The machine config folders
     (the PM repository's .pm-kit that kitlib.config.user.locate reads when the pointer is good,
-    and both folder names under the home: the config, the hub secrets, the delegation list),
+    and the folder name under the home: the config, the hub secrets, the delegation list),
     every host's state folder (the machine lock), the hub store and the PM data worktree, the
     ledger, the kit release store and the running kit. A place that cannot be named is a why:
     the caller refuses then."""
     loc = kuser.locate(home)
-    places = [('the machine config folder', os.path.join(loc.home, name))
-              for name in (kuser.DIR_NAME, OLD_DIR_NAME)]
+    places = [('the machine config folder', os.path.join(loc.home, kuser.DIR_NAME))]
     if loc.folder:
         places.append(('the machine config folder', loc.folder))
     places += [('a host state folder', os.path.join(home, d))

@@ -821,6 +821,21 @@ def _live_changes(ctx, holding, branch):
     return changes, notes, unknown
 
 
+def live_dirty(ctx, holding, changes):
+    """`{branch: (paths, why)}` for the narrowing hint of `next` (omod.narrowings): the
+    uncommitted paths of each live pull's one worktree (`_dirty_paths`) for each branch in
+    `changes`, or `(None, why)` when they cannot be read. Read only."""
+    out = {}
+    for other in holding:
+        branch = other.get('pulled_by')
+        if branch in changes and branch not in out:
+            try:
+                out[branch] = (_dirty_paths(ctx, branch), None)
+            except (Failure, Usage) as exc:
+                out[branch] = (None, 'its uncommitted files cannot be read (%s)' % exc)
+    return out
+
+
 def _one_branch(ctx, name, refnames, base, sha, notes):
     """`[(label, paths)]` for one live branch of `_live_changes`, its NOTEs added to `notes`."""
     out = []

@@ -542,7 +542,8 @@ class NextNarrows(unittest.TestCase):
         offers, passed = self.offer(s, holding, narrow=self.narrow(['kit/a.py']))
         self.assertEqual(offers, [])
         lines = omod.narrowings(list(passed.values()), holding,
-                                {'kit/b': [('kit/b', ['kit/a.py'])]}, {})
+                                {'kit/b': [('kit/b', ['kit/a.py'])]}, {},
+                                {'kit/b': ([], None)})
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith('NARROW FOO (rank 2): kit/a.py collides'), lines)
 

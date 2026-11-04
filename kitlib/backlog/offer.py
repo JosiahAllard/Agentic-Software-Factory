@@ -815,6 +815,9 @@ def wants_narrowing(passed):
                and (is_broad(p.pair[0]) or is_broad(p.pair[1])) for p in passed)
 
 
+_UNQUOTED = re.compile(r'[^A-Za-z0-9_./@%+=:,-]')
+
+
 def narrowings(passed, holding, changes, unknown, dirty=None):
     """`next`'s NARROW lines: one for each record passed over on a scope collision with a live
     pull (in `holding`) where either member is broad (`is_broad`). `changes` and `unknown` are
@@ -822,10 +825,12 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
     since its merge base with the code main, and `{branch: error}`. A broad taken member gets the
     `set --scope` that narrows the live pull to the files its branch changed there, unless those
     files overlap this record too (then it waits for the landing); a broad member of this record
-    only gets the overlap named. `dirty` is `{branch: paths}`, the uncommitted files of each live
-    branch's worktree, or `{branch: why}` (a string) when they could not be read: the `set` keeps
-    those files and the pull's `## Files` paths with the committed ones (the NARROWS split's
-    protected set, plan `_narrower`), and is not suggested when either cannot be read."""
+    only gets the overlap named. `dirty` is `{branch: (paths, why)}` (plan `live_dirty`): the
+    uncommitted files of each live branch's worktree, or `(None, why)` when they could not be
+    read. The `set` keeps those files and the pull's `## Files` paths with the committed ones (the
+    NARROWS split's protected set, plan `_narrower`). It is not suggested when either cannot be
+    read, when `dirty` has no entry for the branch, or when a kept path has a space, a quote or a
+    shell-special character (it would split when pasted)."""
     dirty = dirty or {}
     live = {r.id: r for r in holding}
     out = []
@@ -848,11 +853,14 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
             out.append('%s; %s\'s diff was not compared' % (head, branch))
             continue
         files, files_why = files_section(other.body)
-        extra = dirty.get(branch, [])
-        unread = files_why if files is None else (extra if isinstance(extra, str) else None)
+        extra, extra_why = dirty.get(branch, (None, 'its uncommitted files were not read'))
+        unread = files_why if files is None else (extra_why if extra is None else None)
         paths = sorted(set(q for _label, qs in changes[branch] for q in qs)
-                       | set([] if isinstance(extra, str) else extra) | set(files or []))
+                       | set(extra or []) | set(files or []))
         there = _under(theirs, paths)
+        if not there and unread and is_broad(theirs):
+            out.append('%s; not narrowing %s: %s' % (head, other.id, unread))
+            continue
         if not there:
             out.append('%s, which changed nothing under %s yet' % (head, theirs))
             continue
@@ -863,6 +871,11 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
         elif is_broad(theirs) and not overlap:
             keep = [m for m in other.all('scope') if m != theirs]
             keep += [q for q in there if q not in keep]
+            odd = [m for m in keep if _UNQUOTED.search(m)]
+            if odd:
+                out.append('%s; not narrowing %s: %s would split when pasted into a shell' % (
+                    head, other.id, odd[0]))
+                continue
             out.append('%s -> `set %s %s`' % (
                 head, other.id, ' '.join('--scope %s' % m for m in keep)))
         elif is_broad(mine) and not is_broad(theirs):

@@ -158,6 +158,8 @@ class Narrowings(unittest.TestCase):
                            scope=['brain/**', 'tools/t.py'])
 
     def lines(self, cand_scope, changes, unknown=None, dirty=None, hold=None):
+        if dirty is None:       # a clean worktree, read
+            dirty = {'kit/b': ([], None)}
         s = snap(hold or self.hold, priced('FOO', priority='3', scope=cand_scope))
         holding = [s.get('HOLD')]
         (_offers, passed), _, _ = omod.next_offer(s, holding)
@@ -166,7 +168,7 @@ class Narrowings(unittest.TestCase):
 
     def test_the_set_keeps_the_uncommitted_files_of_the_worktree(self):
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
-                         dirty={'kit/b': ['brain/wip.py', 'other/z.py']})
+                         dirty={'kit/b': (['brain/wip.py', 'other/z.py'], None)})
         self.assertIn('which changed 2 file(s) there: brain/a.py, brain/wip.py -> `set HOLD '
                       '--scope tools/t.py --scope brain/a.py --scope brain/wip.py`', got[0])
 
@@ -174,20 +176,48 @@ class Narrowings(unittest.TestCase):
         hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
                       scope=['brain/**', 'tools/t.py'], body='## Files\n\n- `brain/plan.py`\n')
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
-                         dirty={'kit/b': []}, hold=hold)
+                         hold=hold)
         self.assertIn('--scope brain/a.py --scope brain/plan.py`', got[0])
 
     def test_unreadable_uncommitted_files_drop_the_set(self):
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
-                         dirty={'kit/b': 'no worktree'})
+                         dirty={'kit/b': (None, 'no worktree')})
         self.assertNotIn('`set ', got[0])
         self.assertIn('not narrowing HOLD: no worktree', got[0])
+
+    def test_uncommitted_files_not_read_at_all_drop_the_set(self):
+        for dirty in ({}, {'kit/x': ([], None)}):
+            s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
+            holding = [s.get('HOLD')]
+            (_o, passed), _, _ = omod.next_offer(s, holding)
+            got = omod.narrowings(passed, holding, {'kit/b': [('kit/b', ['brain/a.py'])]}, {},
+                                  dirty)
+            self.assertNotIn('`set ', got[0])
+            self.assertIn('not narrowing HOLD: its uncommitted files were not read', got[0])
+        s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
+        (_o, passed), _, _ = omod.next_offer(s, [s.get('HOLD')])
+        got = omod.narrowings(passed, [s.get('HOLD')],
+                              {'kit/b': [('kit/b', ['brain/a.py'])]}, {})
+        self.assertNotIn('`set ', got[0])
+
+    def test_nothing_committed_under_the_glob_but_unreadable_is_not_nothing_yet(self):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['other/z.py'])]},
+                         dirty={'kit/b': (None, 'no worktree')})
+        self.assertEqual(len(got), 1)
+        self.assertNotIn('changed nothing', got[0])
+        self.assertTrue(got[0].endswith('; not narrowing HOLD: no worktree'), got)
+
+    def test_a_kept_path_a_shell_would_split_drops_the_set(self):
+        for odd in ('brain/a b.py', "brain/it's.py", 'brain/a;b.py'):
+            got = self.lines('brain/b.py', {'kit/b': [('kit/b', [odd])]})
+            self.assertNotIn('`set ', got[0], odd)
+            self.assertIn('not narrowing HOLD: %s would split when pasted' % odd, got[0])
 
     def test_an_unreadable_files_plan_drops_the_set(self):
         hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
                       scope=['brain/**', 'tools/t.py'], body='## Files\n\n- a.py: rewrite\n')
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
-                         dirty={'kit/b': []}, hold=hold)
+                         hold=hold)
         self.assertNotIn('`set ', got[0])
         self.assertIn('not narrowing HOLD', got[0])
 
@@ -221,7 +251,7 @@ class Narrowings(unittest.TestCase):
                         scope='tools/t.py'), priced('FOO', priority='3', scope='tools/t.py'))
         (_o, passed), _, _ = omod.next_offer(s, [s.get('HOLD')])
         self.assertFalse(omod.wants_narrowing(passed))
-        self.assertEqual(omod.narrowings(passed, [s.get('HOLD')], {}, {}), [])
+        self.assertEqual(omod.narrowings(passed, [s.get('HOLD')], {}, {}, {}), [])
 
     def test_counts_by_reason(self):
         s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))

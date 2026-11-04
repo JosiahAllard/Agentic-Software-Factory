@@ -329,14 +329,7 @@ def narrow_lines(ctx, passed, holding, own):
     if not omod.wants_narrowing(passed):
         return []
     changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
-    dirty = {}
-    for other in holding:
-        branch = other.get('pulled_by')
-        if branch in changes and branch not in dirty:
-            try:
-                dirty[branch] = pmod._dirty_paths(ctx, branch)
-            except (Failure, Usage) as exc:
-                dirty[branch] = 'its uncommitted files cannot be read (%s)' % exc
+    dirty = pmod.live_dirty(ctx, holding, changes)
     return omod.narrowings(passed, holding, changes, unknown, dirty)
 
 

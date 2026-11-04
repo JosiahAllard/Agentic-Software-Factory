@@ -117,6 +117,29 @@ class Banner(object):
             out.append(line)
         return out
 
+    def review_lines(self):
+        """`next`'s REVIEW lines, one per record in the `to review` bucket, by id: who marked
+        it and what to read before `clear-review`. Nothing clears the mark but that command."""
+        return [review_line(rec) for rec in sorted(self.buckets[REVIEW], key=lambda r: r.id)]
+
+    def session_note(self, session, offered):
+        """`next --session`'s NOTE when the offer may be short because of the key: the pullable
+        records of other sessions or of none, which this key never offers; None without
+        `session` or when there are none."""
+        if session is None:
+            return None
+        counts = {}
+        for rec in self.buckets[PULLABLE]:
+            other = rec.get('session')
+            if other != session:
+                counts[other] = counts.get(other, 0) + 1
+        if not counts:
+            return None
+        none = counts.pop(None, 0)
+        named = ', '.join('%s: %d' % (s, counts[s]) for s in sorted(counts))
+        return ('NOTE: %d pullable carry other sessions (%s) or none (%d); this key offers %d'
+                % (sum(counts.values()) + none, named or '-', none, offered))
+
     def queue_warning(self):
         """A line under 10 pullable, or under 3 pullable at priority 1-2; never an exit code."""
         pullable = self.buckets[PULLABLE]
@@ -129,6 +152,24 @@ class Banner(object):
                else '%d pullable at priority 1-2' % len(high))
         return 'QUEUE DEPTH: %s. Largest held group: %s.' % (
             why, '%s (%d)' % largest if largest else 'none - nothing is held')
+
+
+ANSWER_REVIEW = 'owner-answer'      # the mark plan.plan_answer writes for a free-text answer
+
+
+def review_line(rec):
+    """`REVIEW <ID>: ...`: the record's review mark, what to read and the `clear-review` that
+    drops it. An owner-answer mark names the question whose answer was filed that day (the last
+    such `answer:` line; else the last one)."""
+    source, _, date = (rec.get('review') or '').partition(' ')
+    clear = 'clear-review %s --reason "<what you read>"' % rec.id
+    if source == ANSWER_REVIEW:
+        answers = [v.split(' ', 1) for v in rec.all('answer')]
+        same_day = [a for a in answers if len(a) == 2 and a[1].startswith(date)]
+        pick = (same_day or answers or [['?']])[-1][0]
+        return ("REVIEW %s: owner answer %s filed %s -> read '## Owner answer', then %s"
+                % (rec.id, pick, date, clear))
+    return 'REVIEW %s: marked by %s %s -> read the record, then %s' % (rec.id, source, date, clear)
 
 
 # --- rank -----------------------------------------------------------------------------------------

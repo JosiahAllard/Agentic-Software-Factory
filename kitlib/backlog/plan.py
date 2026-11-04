@@ -1164,6 +1164,13 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
             raise Usage('refused `--until %s`: %s' % (until, why))
         if members[0] == 'owner' and not role_checked:
             refuse_top(rid, 'block', ['unblock-owner'])
+    if 'owner' in members:
+        # Every caller passes here (tools/backlog.py, the hub's park): an owner hold cites the
+        # hub ask that ends it, never only itself or another item.
+        bad = rmod.owner_citation_error(rid, reason, owner_ask or rec.get('owner_ask'),
+                                        hub=kitroot.command('hub'))
+        if bad:
+            raise Usage(bad)
     stop = None
     if rec.get('state') == 'pulled':
         if reason is None:
@@ -1412,7 +1419,7 @@ def plan_clear_review(snap, ctx, rid, reason):
 
 # --- the owner's answer ---------------------------------------------------------------------------
 
-ANSWER_REVIEW = 'owner-answer'
+ANSWER_REVIEW = omod.ANSWER_REVIEW     # `next` reads it back (offer.review_line)
 ASKED_Q = re.compile(r'(?<![A-Za-z0-9-])Q-[0-9]{3,}(?![A-Za-z0-9_])')
 
 

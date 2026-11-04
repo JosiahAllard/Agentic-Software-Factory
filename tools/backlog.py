@@ -251,6 +251,8 @@ def do_next(args, ctx, snap):
     warn = b.queue_warning()
     if warn:
         say(warn)
+    for line in b.review_lines():
+        say(line)
     holding, dead, why = omod.in_flight_split(snap, ctx.root, ctx.remote)
     if why:
         say('in flight: cannot read the branches (%s); every pull holds its scope' % why)
@@ -279,6 +281,11 @@ def do_next(args, ctx, snap):
             + ('  (narrows, below)' if o.split is not None else ''))
     for p in passed:
         say('  passed over %s (rank %s): %s' % (p.rec.id, p.rank, p.why))
+    if cap is None or len(offers) < cap:
+        # A short offer under --session: the records it never offers are other sessions'.
+        note = b.session_note(ctx.session, len(offers))
+        if note:
+            say(note)
     summary = omod.blocker_summary(passed)
     if summary:
         say('  blockers, most first:')

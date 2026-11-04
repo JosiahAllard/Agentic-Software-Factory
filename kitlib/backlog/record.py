@@ -115,6 +115,31 @@ def block_citation_error(members, reason=None, owner_ask=None):
             % ' --on '.join(bare))
 
 
+# A hub question, to-do or approval id, any length, as conditions.py's forms read one (the hub
+# numbers them `%03d`, but a short id is still the id its `until` line names).
+HUB_CITE_RE = re.compile(r'(?<![A-Za-z0-9-])[QTA]-[0-9]+(?![A-Za-z0-9])')
+
+
+def owner_citation_error(rid, reason=None, owner_ask=None, hub='hub.py'):
+    """None, or why `block <rid> --on owner` may not be written: the owner's hold ends only on an
+    owner event, so `--reason` or `--owner-ask` (or the `owner_ask` the record keeps) must cite
+    the Action Hub question, to-do or approval it waits on (Q-nnn, T-nnn or A-nnn). A cite of
+    the record itself, or an item:<ID> or R-nnnn with no hub id beside it, names nothing the hub
+    clears, so the hold would stand until someone noticed (docs/backlog.md "Commands")."""
+    found = cites(reason) + cites(owner_ask)
+    fix = ('post the ask bound to the record, `%s questions add --record <REPO>:%s` (or '
+           '`todos add` / `approvals add` with `--record`), which parks it on the owner itself, '
+           'or cite that Q-nnn, T-nnn or A-nnn in `--reason`' % (hub, rid))
+    if 'item:%s' % rid in found:
+        return ('`block %s --on owner` cites the record itself (`item:%s`): nothing ever ends '
+                'that hold. Instead: %s' % (rid, rid, fix))
+    if not (HUB_CITE_RE.search(reason or '') or HUB_CITE_RE.search(owner_ask or '')):
+        return ('`block %s --on owner` cites no Action Hub question, to-do or approval (Q-nnn, '
+                'T-nnn or A-nnn)%s, so nothing the owner answers ends the hold. Instead: %s'
+                % (rid, ' (only %s)' % ', '.join(found) if found else '', fix))
+    return None
+
+
 def blocker_kind(member):
     """The held-breakdown group of a `blocked_on` member, or None for `-` or an unknown one."""
     for prefix in BLOCKED_ON_PREFIXES:

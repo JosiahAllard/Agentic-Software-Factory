@@ -250,22 +250,22 @@ class BlockUntil(StoreCase):
 
     def test_owner_takes_a_question(self):
         self.seed(rec('FOO'))
-        self.verb('block', 'FOO', ['owner'], owner_ask='which one?', until='question:Q-9 answered',
-                  role_checked=True)
-        self.assertEqual(self.get('FOO').all('until'), ['owner question:Q-9 answered'])
+        self.verb('block', 'FOO', ['owner'], owner_ask='Q-109: which one?',
+                  until='question:Q-109 answered', role_checked=True)
+        self.assertEqual(self.get('FOO').all('until'), ['owner question:Q-109 answered'])
 
     def test_owner_takes_an_approval(self):
         self.seed(rec('FOO'))
-        self.verb('block', 'FOO', ['owner'], owner_ask='is A-4 approved?',
-                  until='approval:A-4 decided', role_checked=True)
-        self.assertEqual(self.get('FOO').all('until'), ['owner approval:A-4 decided'])
+        self.verb('block', 'FOO', ['owner'], owner_ask='is A-104 approved?',
+                  until='approval:A-104 decided', role_checked=True)
+        self.assertEqual(self.get('FOO').all('until'), ['owner approval:A-104 decided'])
         # an owner event, not free text: the unblock-conditions job reads it
         self.assertEqual(condmod.kind_of('approval:A-4 decided'), 'approval')
 
     def test_an_owner_until_is_added_beside_the_owners_others(self):
         self.seed(rec('FOO'))
         for q in ('Q-101', 'Q-102', 'Q-101'):       # the same ask again is written once
-            self.verb('block', 'FOO', ['owner'], owner_ask='which one?',
+            self.verb('block', 'FOO', ['owner'], owner_ask='which one? %s' % q,
                       until='question:%s answered' % q, role_checked=True)
         self.assertEqual(self.get('FOO').all('until'),
                          ['owner question:Q-101 answered', 'owner question:Q-102 answered'])

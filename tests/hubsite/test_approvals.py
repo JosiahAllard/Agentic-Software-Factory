@@ -112,7 +112,8 @@ class SupersedeRouteTest(test_api.ApiCase):
         self.refused('conflict', 'status', 'POST', *self.supersede(doc_id, self.main, version=2))
 
     def test_an_approval_that_does_not_exist_is_refused(self):
-        self.refused('not_found', None, 'POST', *self.supersede('A-099', self.main))
+        err = self.refused('not_found', 'id', 'POST', *self.supersede('A-099', self.main))
+        self.assertIn('approvals/A-099', err['error']['message'])     # the handler's, not no route
 
     def test_a_by_that_is_not_a_known_approval_or_a_commit_main_reaches_is_refused(self):
         doc_id = self.seed()
@@ -126,6 +127,13 @@ class SupersedeRouteTest(test_api.ApiCase):
             self.refused('forbidden', 'from', 'POST', *self.supersede(doc_id, self.main, who=who))
         self.refused('invalid', 'from', 'POST', *self.supersede(doc_id, self.main, who=None))
         self.assertIn(doc_id, self.pending_ids())
+        # a repo with no coordinator (repo_key ''): an empty or blank from never matches that
+        # empty key; the required check refuses it before the caller check runs
+        other = self.store.add('approvals', dict(doc(NOW), repo='github.com/o/none')).id
+        for who in ('', '  '):
+            self.refused('invalid', 'from', 'POST', *self.supersede(other, doc_id, who=who))
+        self.assertIn(other, self.pending_ids())
+        self.assertIn(other, self.pending_ids())
 
 
 class SupersedeVerbTest(test_hub_cli.VerbCase):

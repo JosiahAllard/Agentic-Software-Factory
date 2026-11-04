@@ -160,37 +160,37 @@ class GradleCmdReparse(unittest.TestCase):
 
 class Verdicts(unittest.TestCase):
     def test_python(self):
-        self.assertEqual(V.python_verdict(0, 'Ran 2 tests in 0.1s\nOK')[0], V.GREEN)
+        self.assertEqual(V.python_verdict(0, 'Ran 2 tests in 0.1s\nOK', '')[0], V.GREEN)
         failed = ('=' * 70 + '\nFAIL: test_a (m.T.test_a)\n' + '-' * 70 + '\nTraceback (most '
                   'recent call last):\n  File "m.py", line 3, in test_a\n    x\nAssertionError: 1 != 2'
                   '\n\n' + '-' * 70 + '\nRan 2 tests in 0.1s\nFAILED (failures=1)')
-        self.assertEqual(V.python_verdict(1, failed), (V.RED, 'failed an assertion (2 test(s) ran)'))
-        self.assertEqual(V.python_verdict(1, 'Ran 2 tests in 0.1s\nFAILED')[0], 'INCONCLUSIVE')
-        self.assertEqual(V.python_verdict(1, 'boom')[0], V.ERROR)
-        self.assertEqual(V.python_verdict(5, 'Ran 0 tests in 0s\nNO TESTS RAN')[0], V.NONE)
+        self.assertEqual(V.python_verdict(1, failed, ''), (V.RED, 'failed an assertion (2 test(s) ran)'))
+        self.assertEqual(V.python_verdict(1, 'Ran 2 tests in 0.1s\nFAILED', '')[0], 'INCONCLUSIVE')
+        self.assertEqual(V.python_verdict(1, 'boom', '')[0], V.ERROR)
+        self.assertEqual(V.python_verdict(5, 'Ran 0 tests in 0s\nNO TESTS RAN', '')[0], V.NONE)
         imp = ('ERROR: m (unittest.loader._FailedTest.m)\nImportError: Failed to import test '
                'module: m\nRan 1 test in 0s\nFAILED')
-        self.assertEqual(V.python_verdict(1, imp), (V.RED, 'does not import against the base'))
+        self.assertEqual(V.python_verdict(1, imp, ''), (V.RED, 'does not import against the base'))
         nomod = ('ERROR: m (unittest.loader._FailedTest.m)\nImportError: Failed to import test '
                  'module: m\nTraceback (most recent call last):\n  File "m.py", line 1\n'
                  "    from calc import mul\nImportError: cannot import name 'mul' from 'calc'\n"
                  'Ran 1 test in 0s\nFAILED')
-        self.assertEqual(V.python_verdict(1, nomod),
+        self.assertEqual(V.python_verdict(1, nomod, ''),
                          (V.RED, "does not import against the base: ImportError: cannot import "
                                  "name 'mul' from 'calc'"))
         gone = imp.replace('module: m\n', "module: m\nModuleNotFoundError: No module named 'x'\n")
-        self.assertEqual(V.python_verdict(1, gone)[1],
+        self.assertEqual(V.python_verdict(1, gone, '')[1],
                          "does not import against the base: ModuleNotFoundError: No module "
                          "named 'x'")
         nofilter = 'ERROR: x (unittest.loader._FailedTest.x)\nAttributeError\nRan 1 test in 0s'
-        self.assertEqual(V.python_verdict(1, nofilter)[0], V.NONE)
+        self.assertEqual(V.python_verdict(1, nofilter, '')[0], V.NONE)
 
     def test_a_load_failure_with_a_cr_in_the_name_is_not_red(self):
         """A CRLF selector puts a CR in the name unittest prints; the load failure must still
         count as the filter naming nothing, never as a red test."""
         nofilter = ('ERROR: T.test_x\r (unittest.loader._FailedTest.T.test_x\r)\r\n'
                     'AttributeError\r\nRan 1 test in 0s\r\n')
-        self.assertEqual(V.python_verdict(1, nofilter)[0], V.NONE)
+        self.assertEqual(V.python_verdict(1, nofilter, '')[0], V.NONE)
 
     def test_names_copied(self):
         copied = ['src/FooTest.java']
@@ -249,7 +249,7 @@ class ResultFiles(unittest.TestCase):
 
     def gradle(self, rc, since, tw=None):
         sel = V.parse_selector('engine/core/src/test/FooTest.java', RUNNERS)
-        return V.judge(sel, rc, '', tw or self.dir, self.dir, 1, [sel.path], since)
+        return V.judge(sel, rc, '', tw or self.dir, self.dir, 1, [sel.path], '', since)
 
     def test_gradle_reads_a_test_task_not_named_test(self):
         """A module whose test task writes build/test-results/<task>/ is judged from that XML."""

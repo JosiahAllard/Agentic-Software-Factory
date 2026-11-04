@@ -567,7 +567,7 @@ store's git push (the `push` setting).
   will not import or whose `make` raises is a start-up note and the hub serves without it. The plugin
   refresh is one (docs/plugin-source.md "Hub refresh"). At a job's third failure in a row the worker
   pushes the PM once `[hub push] job <name> failing route:pm attempt:<k>`, and `... recovered` at its
-  next success (`job_event`). `usage-crossover` and `coord-restart` list processes with a 15 s timeout
+  next success (`job_event`). `usage-crossover`, `coord-restart` and `fill-watch` list processes with a 15 s timeout
   (`coord_restart.PROC_TIMEOUT_S`; the session start keeps 4 s); a listing that still times out is a `Skip`
   (no failure counted, no push; the next run lists again). `usage-crossover` lists before it writes anything;
   `coord-restart`'s boot step (`launch.py after-reboot`, its boot record) runs first and is reported in the Skip note. A job may push a word of its own with `ctx.event(word, detail=None)`;
@@ -596,6 +596,9 @@ store's git push (the `push` setting).
   cannot be read or a refused write is a failure once the pass has done the rest; a write whose
   commit landed with the index left stale (`IndexStale`) is an unblock, pushed and counted. A stopped coordinator learns of the
   opened record from `coord-restart`'s backlog wake; nothing else is pushed.
+  `fill-watch` (`kitlib/hubjobs/fill_watch.py`, every 300 s, docs/hub-fill.md) sends a live coordinator
+  with a free slot and startable work one `[hub push] fill: N free, M startable: <ids>` message, once per change,
+  that says to pull and dispatch unless the PM holds new work or it is checkpointing or standing down.
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its

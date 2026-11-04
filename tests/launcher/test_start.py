@@ -220,6 +220,12 @@ class Deep(Base):
 
 
 class Consultant(Base):
+    def test_consultant_repo_slug(self):
+        self.assertEqual(start.consultant_repo("Big_Repo-Name"), "big-repo-name")
+        self.assertEqual(start.consultant_repo("MixedCase"), "mixedcase")
+        self.assertEqual(start.consultant_repo("plainname"), "plainname")
+        self.assertEqual(start.consultant_repo("My Repo"), "my repo")     # not slug-safe: consultant() refuses it
+
     def setUp(self):
         Base.setUp(self)
         self.repo = os.path.join(self.h.root, 'repos', 'MyRepo')
@@ -242,6 +248,14 @@ class Consultant(Base):
 
     def live(self):
         self.host.procs = [session(4242, 'consultant-myrepo', agent='consultant')]
+
+    def test_an_underscore_folder_is_named_with_a_hyphen(self):
+        repo = os.path.join(self.h.root, 'repos', 'My_Repo')
+        os.makedirs(os.path.join(repo, 'docs'))
+        with open(os.path.join(repo, 'docs', 'conventions-digest.md'), 'w', encoding='utf-8') as f:
+            f.write('digest')
+        out = self.cons(repo_path=repo)
+        self.assertIn("-n 'consultant-my-repo' ", out)
 
     def test_command_has_agent_model_effort_window_and_name(self):
         out = self.cons()

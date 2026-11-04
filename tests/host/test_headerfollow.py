@@ -167,11 +167,11 @@ class SubagentStart(unittest.TestCase):
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump(data, fh)
 
-    def start(self, event='SubagentStart', kit=None):
+    def start(self, event='SubagentStart', kit=None, payload=None):
         out = io.StringIO()
         # a fake export holds no roles: the block's own test is tests/host/test_header.py
         with mock.patch.object(agentstart, 'is_dispatched', return_value=True):
-            code = hookmain.dispatch(ADAPTER, event, kit or self.old, json.dumps(self.payload), out,
+            code = hookmain.dispatch(ADAPTER, event, kit or self.old, json.dumps(payload or self.payload), out,
                                      environ=self.env)
         self.assertEqual(code, 0)
         return json.loads(out.getvalue())['hookSpecificOutput']['additionalContext']
@@ -194,8 +194,37 @@ class SubagentStart(unittest.TestCase):
         later = time.time() + headerfollow.EVERY_S + 1
         self.assertIsNone(headerfollow.line(self.old, self.payload, 'a1', self.env, now=later))
 
+    def session(self, source):
+        return {'hook_event_name': 'SessionStart', 'cwd': self.repo.root, 'session_id': 's1', 'source': source}
+
+    def recorded(self, name='s1-main'):
+        with open(os.path.join(self.plugin, headerfollow.HEADERS, name), encoding='utf-8') as fh:
+            return os.path.normcase(fh.read())
+
     def test_the_session_s_own_header_keeps_its_folder(self):
         self.assertIn(self.fwd(self.old), self.start('SessionStart'))
+        self.assertIn(self.fwd(self.old), self.start('SessionStart', payload=self.session('startup')))
+        self.assertEqual(self.recorded(), os.path.normcase(os.path.normpath(self.old)))
+
+    def test_a_compacted_session_s_header_names_the_current_export(self):
+        # a compaction keeps the hook's old plugin root: the header and its record follow the export
+        for source in ('compact', 'clear', 'resume'):
+            text = self.start('SessionStart', payload=self.session(source))
+            self.assertTrue(text.startswith('PM kit header. The kit folder is %s.' % self.fwd(self.new)), text)
+            self.assertNotIn(OLD, text)
+            self.assertEqual(self.recorded(), os.path.normcase(os.path.normpath(self.new)))
+
+    def test_a_compaction_does_not_hold_back_the_current_export_past_every_s(self):
+        # the record named the old folder EVERY_S - 60 ago; the session compacts from the old folder
+        self.start('SessionStart', payload=self.session('startup'))
+        path = os.path.join(self.plugin, headerfollow.HEADERS, 's1-main')
+        then = time.time() - headerfollow.EVERY_S + 60
+        os.utime(path, (then, then))
+        text = self.start('SessionStart', payload=self.session('compact'))
+        due = then + headerfollow.EVERY_S + 1
+        told = self.fwd(self.new) in text and OLD not in text
+        told = told or headerfollow.line(self.old, self.session('compact'), None, self.env, now=due) is not None
+        self.assertTrue(told, 'the current export was not named within EVERY_S of the last naming')
 
     def test_a_kit_checkout_stays_on_itself(self):
         self.assertEqual(headerfollow.start_kit(self.checkout, self.env), self.checkout)

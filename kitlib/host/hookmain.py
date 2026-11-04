@@ -7,9 +7,10 @@ lives here once:
         (adapter.CONTEXT_EVENTS): the context text, adapter.start_text(event_name, kit, payload,
         environ, part) when the adapter has one, else the kit header (kitlib.host.header; no part
         then), written through adapter.context; exit 0. The header part (no part) also records
-        which kit folder the header named (kitlib.host.headerfollow.note); at a SubagentStart that
-        folder, and the one the context text names, is the current export
-        (kitlib.host.headerfollow.start_kit), not the one the session began on. Any other event: run()
+        which kit folder the header named (kitlib.host.headerfollow.note); at a SubagentStart, and
+        at a SessionStart whose payload source is in FOLLOW_SOURCES (a compact, clear or in-session
+        resume keeps the plugin root the session began on; startup keeps its own folder), that folder, and the one the context text names, is the
+        current export (kitlib.host.headerfollow.start_kit), not the one the session began on. Any other event: run()
         over the payload `text`, the adapter's DEADLINE (None when it has none) for the whole call
         from `started`, with `kit`. `entry` and `args` are the hook's own command line, for the
         reproduce line of a deny.
@@ -299,6 +300,9 @@ def _log(adapter, payload, action, decision, environ):
         pass
 
 
+FOLLOW_SOURCES = ('compact', 'clear', 'resume')        # a SessionStart that re-runs on the session's old plugin root
+
+
 def dispatch(adapter, event_name, kit, text, stdout, entry=None, args=(), part=None, environ=None, started=None):
     if event_name in getattr(adapter, 'CONTEXT_EVENTS', ()):
         try:
@@ -306,7 +310,8 @@ def dispatch(adapter, event_name, kit, text, stdout, entry=None, args=(), part=N
         except ValueError:
             payload = {}
         payload = payload if isinstance(payload, dict) else {}
-        if part is None and event_name == 'SubagentStart':
+        if part is None and (event_name == 'SubagentStart' or
+                             (event_name == 'SessionStart' and payload.get('source') in FOLLOW_SOURCES)):
             try:
                 from kitlib.host import headerfollow
                 kit = headerfollow.start_kit(kit, environ)

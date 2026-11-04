@@ -444,28 +444,43 @@ def store_root(settings, repo):
     return pm_root if pm_root is not None and named is not None else root
 
 
-def offered_ids(settings, key, entry):
-    """The record ids `backlog.py next --all` offers the coordinator of sessions.json entry
-    `key` (every session of wake_sessions, the store of store_root), with no fetch: the hub's own
-    backlog fetch keeps the local store fresh. The same offer `next` prints (plan.offer_for: live
-    pulls, unmet `requires:`, the fold-in guard). BacklogUnread when it cannot be read."""
+def read_offer(settings, key, entry, with_cap=False):
+    """(ids, holding, cap) for the coordinator of sessions.json entry `key`: the record ids
+    `backlog.py next --all` offers it (every session of wake_sessions, the store of store_root),
+    in offer order, each once; the store's live pulls (offer.in_flight_split's holding); and,
+    with `with_cap`, `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap), else
+    None. No fetch: the hub's own backlog fetch keeps the local store fresh. The same offer `next`
+    prints (plan.offer_for: live pulls, unmet `requires:`, the fold-in guard). BacklogUnread when
+    the store or the cap cannot be read (a backlog Refusal, a ConfigError, a PartitionError, an
+    OSError). A LaunchError is not caught here: store_root already makes a repo missing from
+    launcher.repos BacklogUnread, so any other is a fault of the run. coord-restart's wake
+    (offered_ids) and the fill watch (kitlib.hubjobs.fill_watch) both read it."""
     from kitlib.backlog import opener, plan
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
-    root = store_root(settings, (entry or {}).get('repo'))
-    ids, snap, holding = set(), None, None
+    repo = (entry or {}).get('repo')
+    root = store_root(settings, repo)
+    ids, snap, holding, cap = [], None, None, None
     try:
+        if with_cap:
+            cap = opener.repo_cap(settings.repo_path(repo))
         for session in wake_sessions(key, entry):
             ctx = opener.open_store(root, fetch=False, session=session)
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()
                 holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
             offers, _passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding)
-            ids.update(o.rec.id for o in offers)
+            ids.extend(o.rec.id for o in offers if o.rec.id not in ids)
     except (Refusal, ConfigError, omod.PartitionError, OSError) as exc:
         raise BacklogUnread('the store could not be read (%s)' % type(exc).__name__)
-    return ids
+    return ids, list(holding or ()), cap
+
+
+def offered_ids(settings, key, entry):
+    """The set of record ids read_offer gives the coordinator of sessions.json entry `key`.
+    BacklogUnread when it cannot be read."""
+    return set(read_offer(settings, key, entry)[0])
 
 
 def owner_items(pending, key):

@@ -435,8 +435,16 @@ def run(root, days=1, fetch=True, home=None, now=None, show_all=False, questions
         return NOT_CHECKED, ['NOT CHECKED: the machine config names no pm_data, so there is no '
                              'audit log to read']
     try:
-        top, cfg, rules = open_repo(root)
+        # The store a run from `root` opens, as every other reader does (opener.open_store): a
+        # linked worktree naming no store reads the PM data worktree's live one.
+        top, cfg, rules, _own, why = smod.resolve_store(root, open_repo)
         backend = smod.open_backend(top, cfg, fetch=fetch)
+        if getattr(backend, 'implicit', False) and backend.load(rules).tip is None:
+            # The default ref, named by no .kit.json and absent: nothing was audited, so not OK.
+            raise NotChecked('%s is the default backlog store and holds nothing here: this '
+                             'repository\'s .kit.json names no "backlog".store%s' % (
+                                 smod.STORE_REF, '; %s' % why if why else
+                                 ', and no PM data worktree names one for it'))
         entries, notes = read_log(audit.log_path(pm_data))
         report = check(backend, rules, entries, since, questions)
     except NotChecked as exc:

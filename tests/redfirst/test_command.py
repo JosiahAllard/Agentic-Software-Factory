@@ -287,14 +287,12 @@ class EngineHeadRefusals(EngineRun):
 
     def test_head_that_is_not_the_worktree_s_head_is_refused(self):
         first = self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
-        self.commit({'README.md': 'later
-'})
+        self.commit({'README.md': 'later\n'})
         self.refused('--head', first, want='is not at --head')
 
     def test_an_uncommitted_runner_is_refused(self):
         self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
-        self.fx.write('tools/engine.py', ENGINE + '# edit
-', root=self.wt)
+        self.fx.write('tools/engine.py', ENGINE + '# edit\n', root=self.wt)
         self.refused(want='uncommitted changes')
 
 

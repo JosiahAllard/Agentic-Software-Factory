@@ -7,6 +7,7 @@ import threading
 import unittest
 
 from kitlib.git.fake import objects
+from tests.realgit import real_git
 
 GIT = shutil.which('git')
 
@@ -17,6 +18,7 @@ def _git(cwd, *args):
         cwd=cwd, check=True, capture_output=True, text=True).stdout
 
 
+@real_git('real git writes the pack with REF_DELTA objects')
 @unittest.skipUnless(GIT, 'real git needed to write the pack')
 class RefDeltaSamePackTest(unittest.TestCase):
     def test_ref_delta_with_base_in_same_pack_reads(self):

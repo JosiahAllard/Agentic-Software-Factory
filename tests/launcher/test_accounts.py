@@ -57,10 +57,10 @@ class Headroom(unittest.TestCase):
     def test_the_five_hour_window_never_refuses(self):
         # The plan gives no five-hour readings any more: one a file still holds blocks nothing.
         h = Home(self)
-        h.usage('1', five=(100, NOW + DAY / 24), week=(20, NOW + DAY))
-        A.check_headroom(h.settings, '1', NOW, False, [])
         five = {'five_hour': {'used_percentage': 100, 'resets_at': (NOW + DAY / 24).isoformat()}}
         self.assertEqual(A.over_limit(five, NOW), [])
+        h.usage('1', five=(100, NOW + DAY / 24), week=(20, NOW + DAY))
+        A.check_headroom(h.settings, '1', NOW, False, [])
 
     def test_the_limit_is_95_at_or_over_is_refused_and_94_is_not(self):
         self.assertEqual(A.HEADROOM_LIMIT, 95)

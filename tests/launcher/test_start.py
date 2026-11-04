@@ -122,7 +122,11 @@ class Deep(Base):
 
     def test_the_five_hour_window_never_refuses(self):
         self.full('2', 100, days=0.1, window_='five')
-        self.assertIn('Would open', self.deep(account='2'))
+        try:
+            out = self.deep(account='2')
+        except S.LaunchError as e:
+            self.fail('refused on the five-hour window: %s' % e)
+        self.assertIn('Would open', out)
 
     def test_a_window_past_its_reset_is_fresh(self):
         self.full('1', 99, days=-1)

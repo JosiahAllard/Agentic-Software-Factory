@@ -516,19 +516,19 @@ class RestartTest(PushCase):
         q1 = self.ask(**{'from': 'kit'})
         self.answer(q1)
         q2 = self.ask(**{'from': 'kit'})
+        self.answer(q2)
         self.worker.poll()
         path = os.path.join(self.folder, push.OUTBOX)
         with open(path, encoding='utf-8') as f:
             outbox = json.load(f)
-        damaged = dict(outbox['question:%s' % q1], id=q2)
-        del damaged['status']
-        outbox['question:%s' % q2] = damaged
+        del outbox['question:%s' % q2]['status']
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(outbox, f)
         self.worker = self.make()
         self.assertNotIn('question:%s' % q2, self.worker._outbox)
         self.later(push.SCHEDULE_S[0])
-        self.assertEqual(self.attempts('kit'), [1, 2])
+        self.assertEqual(self.attempts('kit'), [1, 1, 2])
+        self.assertNotIn(q2, ''.join(self.push.to('kit')[2:]))
 
     def test_a_superseded_approval_is_not_read_again_at_every_round(self):
         # red proof: _tick rebuilding the phase without `superseded` reads 'decided' while the

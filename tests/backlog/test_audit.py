@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib import pmdata, sessionmark
 from kitlib.backlog import audit
 from kitlib.backlog import audit_check
 from kitlib.backlog import opener
@@ -22,9 +22,9 @@ from kitlib.backlog import roles
 from kitlib.backlog import store as smod
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
-from tests.backlog.helpers import ADD_FLAGS, kit_json_ref
+from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, priced
 from tests.gitfixture import TempRepo, fixture_env, rmtree
-from tests.home import PM_REPO_FENCE_ENV, machine_config, pm_repo
+from tests.home import PM_REPO_FENCE_ENV, machine_config, pm_repo, temp_home
 
 BACKLOG = inproc.load_tool('backlog')
 UTC = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\Z')
@@ -567,6 +567,41 @@ class CheckFolder(unittest.TestCase):
         with self.assertRaises(audit_check.NotChecked):
             audit_check.check(other, rmod.Rules(), [], 0)
 
+
+class RunStore(unittest.TestCase):
+    """audit_check.run opens the store as every other reader does (opener.open_store)."""
+
+    def config(self):
+        """The machine config of the test's home, naming a pm_data folder: `home`."""
+        home = os.environ['HOME']
+        data = tempfile.mkdtemp(prefix='kit-pmdata-')
+        self.addCleanup(rmtree, data)
+        machine_config(home, {'pm_data': {'path': data}}, case=self)
+        return home
+
+    def test_the_implicit_default_ref_with_no_tip_is_not_checked(self):
+        temp_home(self)
+        repo = TempRepo()                                   # its .kit.json names no store
+        self.addCleanup(repo.cleanup)
+        code, lines = audit_check.run(repo.root, fetch=False, home=self.config())
+        self.assertEqual(code, audit_check.NOT_CHECKED, lines)
+        self.assertTrue(lines[0].startswith('NOT CHECKED: refs/backlog/main is the default'), lines)
+        self.assertNotIn('OK', lines)
+
+    def test_a_linked_worktree_audits_the_pm_data_worktrees_folder_store(self):
+        temp_home(self)
+        repo = TempRepo()
+        self.addCleanup(repo.cleanup)
+        pmdata.write(repo.common_dir(), 'pmdata', 'private', repo.head())
+        pm = repo.worktree('pm', branch='pmdata')
+        repo.write('.kit.json', json.dumps({'backlog': {'store': 'demo/backlog'}}) + '\n', root=pm)
+        repo.write('demo/backlog/FOO.md', priced('FOO')['FOO'], root=pm)
+        repo.commit('seed the demo store', '.kit.json', 'demo/backlog/FOO.md', cwd=pm)
+        work = repo.worktree('demo-work')
+        code, lines = audit_check.run(work, days=3650, fetch=False, home=self.config())
+        self.assertEqual(code, audit_check.FINDINGS, lines)
+        self.assertTrue(any(x.startswith('UNKNOWN') and 'seed the demo store' in x for x in lines),
+                        lines)
 
 if __name__ == '__main__':
     unittest.main()

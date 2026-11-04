@@ -191,6 +191,7 @@ class Resolve(unittest.TestCase):
         self.griffball()
         self.m.session(51, 'griffball-coordinator-a2')
         t = self.m.hub().resolve('GriffBall')
+        self.assertIsNotNone(t, 'the live -a2 is the GriffBall coordinator')
         self.assertEqual((t.record['pid'], t.name, t.ambiguous), (51, 'griffball-coordinator-a2', False))
 
     def test_the_recorded_name_comes_first_and_another_stem_never_matches(self):
@@ -208,6 +209,7 @@ class Resolve(unittest.TestCase):
         self.m.session(57, 'griffball-coordinator-a1', start=8000)
         self.m.session(58, 'griffball-coordinator-a2', start=9000)
         t = self.m.hub().resolve('GriffBall')
+        self.assertIsNotNone(t)
         self.assertEqual((t.record['pid'], t.name, t.ambiguous), (58, 'griffball-coordinator-a2', True))
 
     def test_two_live_sessions_of_one_name_take_pipes_json_else_the_newest_flagged(self):

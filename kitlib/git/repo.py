@@ -141,6 +141,26 @@ def worktrees(path):
     return parse_worktrees(data), None
 
 
+class Worktrees(object):
+    """git's worktree list of one repository, asked once however many callers want it: a
+    callable with worktrees()' signature, for one run over checkouts of one repository, whose
+    answer is the same from any of them. Never kept past that run. A failed answer is not kept:
+    the next call asks again. `common` is that repository's git common dir (Place.common) when
+    the caller already has it, else None: a reader then skips its own common_dir() ask."""
+
+    def __init__(self, common=None):
+        self._got = None
+        self.common = common
+
+    def __call__(self, path):
+        if self._got is None:
+            got = worktrees(path)
+            if got[0] is None:
+                return got
+            self._got = got
+        return self._got
+
+
 def linked_worktrees(path):
     """Paths of every linked worktree of the repository at `path` ([] when git fails)."""
     wts, _why = worktrees(path)

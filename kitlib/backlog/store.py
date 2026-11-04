@@ -1337,34 +1337,16 @@ def catch_up(backend, paths, session):
                                                    session or '-'))
 
 
-class Worktrees(object):
-    """git's worktree list of one repository, asked once however many callers want it: a
-    callable with gitrepo.worktrees' signature, for one run (opener.open_store) over checkouts of
-    one repository, whose answer is the same from any of them. Never kept past that run.
-    `common` is that repository's git common dir (gitrepo.common_dir's answer) once
-    resolve_store has read it, else None."""
-
-    def __init__(self):
-        self._got = None
-        self.common = None
-
-    def __call__(self, path):
-        if self._got is None:
-            self._got = gitrepo.worktrees(path)
-        return self._got
-
-
-def pm_data_live_store(root, place=None, worktrees=None):
+def pm_data_live_store(root, *, worktrees=None):
     """`(pm_root, named, None)`: the PM data worktree of `root`'s repository
     (at_landing.pm_data_root) and the "backlog".store its `.kit.json` writes, `named` None when it
     writes none (it then reads the same implicit ref as `root`, refs being shared by every
     worktree). `(None, None, None)` when the repository has no PM data record or `root` is that
     worktree; `(None, None, why)` when the worktree cannot be found; `(pm_root, None, why)` when it
     was found and its `.kit.json` cannot be read (`why` the error). Shared by default_store_refusal and preflight's backlog line (kitlib/preflight/defaultstore.py).
-    `place` (gitrepo.classify of `root`) and `worktrees` (a Worktrees) spare git a second ask."""
+    `worktrees` (a gitrepo.Worktrees) spares git the second ask of the list and the common dir."""
     from . import at_landing                         # at_landing imports this module
-    pm_root, why = at_landing.pm_data_root(root, common=place.common if place else None,
-                                           worktrees=worktrees)
+    pm_root, why = at_landing.pm_data_root(root, worktrees=worktrees)
     if pm_root is None:
         return None, None, why
     if os.path.normcase(os.path.normpath(pm_root)) == os.path.normcase(os.path.normpath(root)):
@@ -1393,18 +1375,20 @@ def worktree_live_store(top, cfg):
     return worktree_store(top, cfg)[0]
 
 
-def worktree_store(top, cfg, place=None, worktrees=None):
+def worktree_store(top, cfg, *, place=None, worktrees=None):
     """`(live, why)`: `live` is worktree_live_store's answer; `why`, when `live` is None only
     because the PM data worktree cannot be found or its `.kit.json` read (pm_data_live_store's
     `why`), says so, else None. A reader that must not take `top`'s own store for the live one
     in silence (commit.py's narrowed-record check) reads `why`. `place` is gitrepo.classify(top)
-    and `worktrees` a Worktrees, when the caller has them."""
+    and `worktrees` a gitrepo.Worktrees, when the caller has them."""
     if cfg.written('backlog', 'store') is not None:
         return None, None
-    branch = worktree_branch(top, place)
+    branch = worktree_branch(top, place=place)
     if branch is None:
         return None, None
-    pm_root, named, why = pm_data_live_store(top, place, worktrees)
+    if worktrees is None and place is not None:
+        worktrees = gitrepo.Worktrees(common=place.common)
+    pm_root, named, why = pm_data_live_store(top, worktrees=worktrees)
     if why:
         return None, (unreadable_kit_json(pm_root, why) if pm_root else why)
     if pm_root is None or not named:
@@ -1432,19 +1416,19 @@ def _open_repo(root):
     return place.top, cfg, rmod.Rules(section['id_grammar'], section['phases']), place
 
 
-def resolve_store(root, worktrees=None):
+def resolve_store(root, *, worktrees=None):
     """`(top, cfg, rules, branch, why)`: the checkout whose store a run from `root` opens and
     its configuration (open_repo's, Failure as there); `branch`, the branch the run acts as when
     that is the PM data worktree's live store (worktree_live_store), else None; `why`, when the
     run keeps `root`'s own store only because the PM data worktree cannot be found or read
     (worktree_store), else None. The one lookup opener.open_store and commit.py's
     narrowed-record check share (docs/backlog.md "The store a worktree opens"). `worktrees` is a
-    Worktrees the caller keeps to reuse the list; git is asked each of its questions of `root`
-    once."""
+    gitrepo.Worktrees the caller keeps to reuse the list and the common dir afterwards; git is
+    asked each of its questions of `root` once."""
     top, cfg, rules, place = _open_repo(root)
-    if worktrees is not None:
+    if worktrees is not None and worktrees.common is None:
         worktrees.common = place.common
-    live, why = worktree_store(top, cfg, place, worktrees)
+    live, why = worktree_store(top, cfg, place=place, worktrees=worktrees)
     if live is None:
         return top, cfg, rules, None, why
     pm_root, branch = live
@@ -1452,7 +1436,7 @@ def resolve_store(root, worktrees=None):
     return top, cfg, rules, branch, None
 
 
-def worktree_branch(top, place=None):
+def worktree_branch(top, *, place=None):
     """The branch checked out at `top` when it is a linked worktree of its repository, else None
     (the main checkout, a detached HEAD): the checkouts worktree_live_store can resolve. `place`
     is gitrepo.classify(top) when the caller has it."""

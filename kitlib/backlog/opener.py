@@ -49,14 +49,14 @@ def open_store(root, fetch=True, session=None, branch=None):
     # `why` (the PM data worktree unread) is the write's to refuse (default_store_refusal).
     # One worktree list for the run: the store lookup, the code config and the cap and resources
     # read lazily after all ask the one repository for it.
-    listing = smod.Worktrees()
-    top, cfg, rules, own, _why = smod.resolve_store(root, listing)
+    listing = gitrepo.Worktrees()
+    top, cfg, rules, own, _why = smod.resolve_store(root, worktrees=listing)
     branch = branch or own
     section = cfg.section('backlog')
     backend = smod.open_backend(top, cfg, fetch=fetch)
     store = smod.Store(backend, rules, session=session)
     code_main, code_remote = section['code_main'], cfg.remote
-    code = pullmod.code_config(top, listing)
+    code = pullmod.code_config(top, worktrees=listing)
     if code is not None:
         # The PM data worktree: its own main and remote are the data's; the code lands on the
         # main checkout's (docs/backlog.md "The fold-in guard").
@@ -64,12 +64,12 @@ def open_store(root, fetch=True, session=None, branch=None):
     ctx = pmod.Context(store, top, remote=cfg.remote, main_branch=cfg.main_branch,
                        branch=branch, code_main=code_main or cfg.main_branch,
                        code_remote=code_remote, liveness=lambda name: liveness(top, name),
-                       cap=lambda: repo_cap(top, listing),
-                       resources=lambda: repo_resources(top, listing))
+                       cap=lambda: repo_cap(top, worktrees=listing),
+                       resources=lambda: repo_resources(top, worktrees=listing))
     return ctx
 
 
-def repo_cap(top, worktrees=None):
+def repo_cap(top, *, worktrees=None):
     """The cap `next` offers up to and `pull` checks against (plan.Context.cap, read lazily, so
     only an offer reads it): `.kit.json` "backlog".cap of the repository's main checkout, its
     first worktree (as pull_branch._main_checkout finds it), whatever checkout `top` is. A worker
@@ -79,20 +79,20 @@ def repo_cap(top, worktrees=None):
     (ERROR), never a silent default; the schema refuses a value that is not a whole number >= 1
     when the file loads (kitlib/config/schema.py), and checked_cap refuses one that reaches here
     otherwise."""
-    section, main = _main_backlog(top, 'the backlog cap', worktrees)
+    section, main = _main_backlog(top, 'the backlog cap', worktrees=worktrees)
     return checked_cap(section['cap'], main)
 
 
-def repo_resources(top, worktrees=None):
+def repo_resources(top, *, worktrees=None):
     """`{name: capacity}` from `.kit.json` "backlog".resources of the main checkout, read as
     repo_cap reads the cap and for the same reason (plan.Context.resources). No key: {}."""
-    section, _main = _main_backlog(top, 'the backlog resources', worktrees)
+    section, _main = _main_backlog(top, 'the backlog resources', worktrees=worktrees)
     return {k: v for k, v in section['resources'].items() if not is_note(k)}
 
 
-def _main_backlog(top, what, worktrees=None):
+def _main_backlog(top, what, *, worktrees=None):
     """`(the "backlog" section of the main checkout's .kit.json, that checkout)`; Failure naming
-    `what` when it cannot be read. `worktrees`: store.Worktrees, when the caller has the list."""
+    `what` when it cannot be read. `worktrees`: gitrepo.Worktrees, when the caller has the list."""
     wts, why = (worktrees or gitrepo.worktrees)(top)
     if not wts:
         raise Failure('cannot read %s: git cannot list the worktrees of %s, so its main '

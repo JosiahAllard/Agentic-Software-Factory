@@ -14,6 +14,7 @@ from unittest import mock
 
 from kitlib import pmdata
 from kitlib.git import cmd
+from kitlib.git import repo as gitrepo
 
 from tests.backlog.helpers import TODAY, priced
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -91,6 +92,15 @@ class NextStartup(unittest.TestCase):
         self.assertEqual(again, [], 'asked more often than allowed:\n' + listing)
         self.assertEqual(sum(1 for c, _cwd in calls if c[:2] == ('worktree', 'list') and '-z' in c),
                          1, listing)
+
+    def test_a_failed_worktree_list_is_asked_again_a_good_one_is_kept(self):
+        answers = [(None, 'git timed out'), ([], None), ([], None)]
+        with mock.patch.object(gitrepo, 'worktrees', side_effect=answers) as asked:
+            listing = gitrepo.Worktrees()
+            self.assertEqual(listing('x'), (None, 'git timed out'))
+            self.assertEqual(listing('x'), ([], None))
+            self.assertEqual(listing('y'), ([], None))
+        self.assertEqual(asked.call_count, 2)
 
     def test_importing_the_tool_leaves_out_check_and_audit(self):
         code = ('import importlib.util, sys\n'

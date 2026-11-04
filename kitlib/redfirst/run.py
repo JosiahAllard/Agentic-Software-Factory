@@ -546,7 +546,7 @@ def head_rels(sel):
     rels = []
     for w in list(sel.runner.get('command') or []) + list(sel.runner.get('args') or []):
         if '{head}' in w:
-            rels.append(w.split('{head}', 1)[1].replace('\', '/').strip('/') or '.')
+            rels.append(w.split('{head}', 1)[1].replace('\\', '/').strip('/') or '.')
     return rels
 
 
@@ -566,8 +566,7 @@ def refuse_head_placeholder(top, head, sels):
             raise V.Usage('refused: git status failed in %s: %s' % (top, err))
         if out:
             raise V.Usage('refused: %s and its path has uncommitted changes (commit them first; '
-                          'the evidence must be about a commit):
-%s' % (who, out))
+                          'the evidence must be about a commit):\n%s' % (who, out))
 
 
 def refuse_tracked_results(top, base, sels, files):

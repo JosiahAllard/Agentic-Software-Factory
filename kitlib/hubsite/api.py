@@ -2097,13 +2097,34 @@ def todos_add(api, req):
     return out
 
 
+TODO_NOTE_MAX = 2000        # characters of the owner's note on marking a to-do done
+_NOTE_CONTROL = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+
+
+def _todo_note(b, done):
+    """The owner's optional `note` of a done mark, stripped: '' when there is none. Plain text of
+    at most TODO_NOTE_MAX characters (`invalid`, field note, otherwise); a note on a reopen is
+    refused, since a reopened to-do keeps none."""
+    note = (_text(b, 'note') or '').strip()
+    if note and not done:
+        raise _invalid('a note comes with a done mark, not a reopen', 'note')
+    if len(note) > TODO_NOTE_MAX:
+        raise _invalid('the note is %d characters: at most %d' % (len(note), TODO_NOTE_MAX), 'note')
+    if _NOTE_CONTROL.search(note):
+        raise _invalid('the note is plain text: no control characters', 'note')
+    return note
+
+
 def todos_done(api, req):
-    b = _fields(req, ('done', 'if_version'), flags=('done',))
+    b = _fields(req, ('done', 'note', 'if_version'), flags=('done',))
     _pin(b)
     done = _flag(b, 'done', True)
+    note = _todo_note(b, done)
     doc_id = req.params['id']
     d = api.doc('todos', doc_id, b)
     changes = {'status': 'done' if done else 'open', 'done_at': api.clock() if done else None}
+    if note or d.get('done_note'):
+        changes['done_note'] = note or None      # a re-done or a reopen drops the old note
     out = api.change('todos', doc_id, d, changes, req, changes)
     # a reopened or re-done to-do is pending afresh: an old hand-over must not outlive it when
     # no read ran in between (_routed forgets only what it sees gone)

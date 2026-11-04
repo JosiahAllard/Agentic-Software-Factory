@@ -1533,6 +1533,18 @@ class WriteCase(VerbCase):
         self.assertEqual(json.loads(out)['error']['code'], 'not_found')
         self.assertTrue(err.startswith('REFUSED not_found: '), err)
 
+    def test_todos_show_gives_the_owners_done_note(self):
+        self.ok('todos', 'add', '--title', 'hash it', '--detail', 'Why.', '--command', 'tool one',
+                '--from', 'coordinator')
+        self.assertNotIn('note: ', '\n'.join(self.ok('todos', 'show', 'T-001')))
+        self.assertEqual(self.ok('todos', 'done', 'T-001', '--note', 'sha256 abc'), ['DONE T-001'])
+        lines = self.ok('todos', 'show', 'T-001')
+        self.assertIn('note: sha256 abc', lines)
+        self.assertIn('detail: Why.', lines)
+        self.assertIn('command 1: tool one', lines)
+        code, out, err = self.run_cli('todos', 'show', 'T-099', '--port', self.port)
+        self.assertEqual(code, 1)
+
     def test_todos_are_added_done_reopened_and_acked(self):
         self.assertEqual(self.ok('todos', 'add', '--title', 'rotate the key', '--detail', 'soon',
                                  '--command', 'tool one', '--command', 'tool two', '--repo',

@@ -61,8 +61,8 @@ What a failure leaves, step by step:
   - the fast-forward fails: NOTHING is committed and nothing is pushed in that pass. The cause may
     pass by itself (another tool held the index for a moment), and a commit made then, on the old
     tip, would turn a remote that only moved into a real divergence. `diverged` is True when git
-    says the remote's commit does not contain the branch's (refs.is_ancestor, a definite NO only):
-    the two histories have to be joined by a person. gitsync never merges, rebases or forces.
+    says neither commit contains the other (refs.is_ancestor, a definite NO both ways; the branch
+    only ahead is a pending push): the two histories have to be joined by a person. gitsync never merges, rebases or forces.
   - no git identity (identity check, below): nothing is added or committed, the pass fails at
     `commit` with a detail that begins "git identity not set".
   - add or commit fails or is refused (a hook, the index held): the paths THIS pass added are
@@ -720,7 +720,9 @@ class GitSync:
                         stop = {'failed': 'fast-forward', 'detail': _why(r, 'merge --ff-only')}
                 if stop is not None:
                     contains, _unread = refs.is_ancestor(local, tracking, plan.root)
-                    out.update(stop, diverged=contains is False, pending_push=contains is not True)
+                    ahead, _unread = refs.is_ancestor(tracking, local, plan.root)
+                    out.update(stop, diverged=contains is False and ahead is False,
+                               pending_push=contains is not True)
                     return out
                 local = self._tip(head_ref)
                 if local is None:

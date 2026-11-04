@@ -563,7 +563,8 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     slot): a branch's HEAD tree, a landing's merge tree, the daily full run's commit's tree.
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
     in the store it books in) and, once it holds, gives its slot back and books again while the
-    session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and the daily full run leave it False and never wait.
+    session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and
+    the daily full run leave it False and never wait.
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
     first, before the cap is waited for or anything is booked: `(None, REFUSED Outcome)` when it
     is spent. None: not asked (a detached HEAD). The run is booked with it as book's `branch`,

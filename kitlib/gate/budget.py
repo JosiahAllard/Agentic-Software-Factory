@@ -4,9 +4,10 @@ before booking one more, a branch gate is REFUSED until the branch's coordinator
 
 A run counted is a history line of the machine lock (kitlib.lock.store history_records) with
 `gate` true, a priority other than "land" (a landing books the branch's slug too), the gated
-repository (case aside) and the branch (`of_branch`), that started, and that ended at or after the
-branch was made: the first entry of its reflog (`since`), so a branch made again under an old name starts at 0;
-a branch with no reflog file (git's reftable format, or the tests' fake git) has no such bound.
+repository (case aside) and the branch (`of_branch`), that started, and that ended at or after
+the branch was made: the first entry of its reflog (`since`), so a branch made again under an
+old name starts at 0; a branch with no reflog file (git's reftable format, or the tests' fake
+git) has no such bound.
 The branch is the line's `branch` (case aside: on Windows `Kit/A` and `kit/A` are one loose ref),
 never its slug, which two branches can share and `gate.py --slug` sets; a null `branch` (a run
 booked with none) never counts. A line with no `branch` key, written before history lines kept

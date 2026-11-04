@@ -38,17 +38,20 @@ def build_parser():
     g = p.add_mutually_exclusive_group()
     g.add_argument('--check', action='store_true', help='the default')
     g.add_argument('--write', action='store_true')
-    p.add_argument('-C', dest='root', default=KIT, help="the kit checkout (default: this script's)")
+    p.add_argument('-C', dest='root', default=None, help="the kit checkout (default: this script's)")
     return p
 
 
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
-    root, why = gitrepo.toplevel(os.path.abspath(a.root))
-    if root is None:
-        out.write('agent_roster: -C: %s\n' % why)
-        return USAGE
+    if a.root is None:
+        root = KIT          # this script's own tree: an installed export has no .git
+    else:
+        root, why = gitrepo.toplevel(os.path.abspath(a.root))
+        if root is None:
+            out.write('agent_roster: -C: %s\n' % why)
+            return USAGE
     try:
         tiers = render_content.tier_maps()
         if a.write:

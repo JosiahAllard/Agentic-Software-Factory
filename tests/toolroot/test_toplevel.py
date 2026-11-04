@@ -86,6 +86,21 @@ class OutsideAGitTree(Case):
         self.assertEmpty()
 
 
+class DefaultInAnExport(unittest.TestCase):
+    """No -C: the tool's own tree, which an installed export holds without a .git."""
+
+    def test_default_path_does_not_need_git(self):
+        import subprocess
+        kit = os.path.dirname(TOOLS)
+        dst = os.path.join(tempfile.mkdtemp(prefix='toolroot-export-'), 'kit')
+        self.addCleanup(shutil.rmtree, os.path.dirname(dst), True)
+        shutil.copytree(kit, dst, ignore=shutil.ignore_patterns('.git', '.claude', '__pycache__', 'tests'))
+        for tool in ('agent_roster.py', 'render_content.py'):
+            r = subprocess.run([sys.executable, os.path.join(dst, 'tools', tool), '--check'],
+                               capture_output=True, text=True, cwd=os.path.dirname(dst))
+            self.assertIn(r.returncode, (0, 1), r.stdout + r.stderr)
+
+
 class FromASubfolder(Case):
 
     def test_stack_skill_writes_at_the_top(self):

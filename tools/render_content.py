@@ -45,7 +45,7 @@ def build_parser():
     g.add_argument('--check', action='store_true', help='the default')
     g.add_argument('--write', action='store_true')
     p.add_argument('--host', action='append', choices=sorted(RENDERERS), help='default: every host')
-    p.add_argument('-C', dest='root', default=KIT, help="the kit checkout (default: this script's)")
+    p.add_argument('-C', dest='root', default=None, help="the kit checkout (default: this script's)")
     return p
 
 
@@ -62,10 +62,13 @@ def tier_maps():
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
-    root, why = gitrepo.toplevel(os.path.abspath(a.root))
-    if root is None:
-        out.write('render_content: -C: %s\n' % why)
-        return USAGE
+    if a.root is None:
+        root = KIT          # this script's own tree: an installed export has no .git
+    else:
+        root, why = gitrepo.toplevel(os.path.abspath(a.root))
+        if root is None:
+            out.write('render_content: -C: %s\n' % why)
+            return USAGE
     try:
         rs = renderers(a.host)
         tiers = tier_maps()

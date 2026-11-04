@@ -164,9 +164,27 @@ class Opening(BridgeCase):
         pidfile = os.path.join(self.tmp, 'pid')
         self.opts = ['--ready-delay', '60', '--pidfile', pidfile]
         self.bridge.ready_s = 1.0
+        # the fake writes its pid at startup, which on a loaded machine can come after the 1 s
+        # budget; hold the bridge's first look at the port after the spawn until the pid is
+        # written (bounded by a deadline of our own), so the budget is spent only afterwards
+        spawned = []
+        real_argv, real_listening = self.bridge.argv, self.bridge.listening
+
+        def argv(exe, port):
+            spawned.append(port)
+            return real_argv(exe, port)
+
+        def listening(port):
+            deadline = time.monotonic() + 60
+            while spawned and not (os.path.exists(pidfile) and os.path.getsize(pidfile)) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            return real_listening(port)
+
+        self.bridge.argv, self.bridge.listening = argv, listening
         with self.assertRaises(BridgeError) as cm:
             self.bridge.open(self.wt)
         self.assertEqual(cm.exception.code, 'start')
+        self.assertTrue(os.path.exists(pidfile), 'the fake never wrote its pid')
         with open(pidfile) as f:
             self.assertTrue(self.gone(int(f.read())))
         self.assertEqual(self.ports_held(), [])

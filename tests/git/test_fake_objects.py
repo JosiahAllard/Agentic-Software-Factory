@@ -39,14 +39,13 @@ class RefDeltaSamePackTest(unittest.TestCase):
             verify = _git(d, 'verify-pack', '-v', os.path.join(packdir, idx[0]))
             deltas = [ln for ln in verify.splitlines() if len(ln.split()) == 7]
             self.assertTrue(deltas, 'the pack holds no delta')
-            oids = _git(d, 'rev-list', '--objects', '--all').splitlines()
-            oids = [ln.split()[0] for ln in oids]
-
-            store = objects.ObjectStore(os.path.join(d, '.git', 'objects'), 'sha1')
+            oids = [ln.split()[0] for ln in deltas]
+            objdir = os.path.join(d, '.git', 'objects')
             result = {}
 
             def work():
-                result['read'] = [store.read(o) for o in oids]
+                # a fresh store per object: its cache must not already hold the delta base
+                result['read'] = [objects.ObjectStore(objdir, 'sha1').read(o) for o in oids]
 
             t = threading.Thread(target=work, daemon=True)
             t.start()

@@ -352,7 +352,7 @@ class Tick(Base):
             code, lines = T.tick(home=self.home, kit=self.kit, now=NOW, fetch=lambda: self.schedules,
                                  start=self.start, repos=lambda: [('demo', MAIN, 'demo')])
         self.assertEqual(code, T.EXIT_OK)
-        self.assertEqual(self.started[0][0][0], T.sys.executable)
+        self.assertEqual([c[0] for c, *_ in self.started], [T.sys.executable])
         self.assertEqual(self.records()['worktree-sweep-demo']['what'], 'started')
 
     def test_a_machine_wide_task_starts_once_a_tick(self):

@@ -419,7 +419,11 @@ class FetchRemoved(Base):
             out.append(data)
             if len(out) == 1:                 # the M frame is out: the file goes
                 os.remove(path)
-        self.assertEqual(self.box.fetch(JOB, write), 1)
+        try:
+            code = self.box.fetch(JOB, write)
+        except OSError as e:
+            self.fail('fetch raised: %r' % e)
+        self.assertEqual(code, 1)
         got = frames.Decoder().feed(b''.join(out))
         self.assertEqual([k for k, _ in got], ['M', 'X'])
         self.assertIn('x.bin', json.loads(got[1][1])['error'])
@@ -473,8 +477,11 @@ class RunJob(Base):
 
         def no_tree(path):
             raise FileNotFoundError(path)
-        code = self.box.run_job(JOB, run_command=self.fail, new_rid=lambda: 'r-1',
-                                store_factory=lambda say: None, chdir=no_tree)
+        try:
+            code = self.box.run_job(JOB, run_command=self.fail, new_rid=lambda: 'r-1',
+                                    store_factory=lambda say: None, chdir=no_tree)
+        except OSError as e:
+            self.fail('run_job raised: %r' % e)
         res = box._read_json(os.path.join(d, 'result.json'))
         self.assertEqual((code, res['how']), (1, 'error'))
 

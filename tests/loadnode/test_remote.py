@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -224,15 +225,17 @@ class LinkTests(unittest.TestCase):
 
         def popen(argv, **kw):
             p = subprocess.Popen([sys.executable, '-c',
-                                  'import sys, time; sys.stdout.write("x"); sys.stdout.flush(); time.sleep(60)'], **kw)
+                                  'import sys, time; sys.stdout.write("x"); sys.stdout.flush(); time.sleep(20)'], **kw)
             procs.append(p)
             return p
 
         def boom(data):
             raise ValueError('bad frame')
+        t0 = time.monotonic()
         with remote.Link(NODE, ssh=SSH, home=HOME, popen=popen) as link:
             with self.assertRaises(ValueError):
                 link.stream('follow', {}, boom)
+        self.assertLess(time.monotonic() - t0, 10)     # not waiting out the live ssh
         self.assertIsNotNone(procs[0].poll())
 
     def test_a_silent_node_is_ended_as_idle(self):

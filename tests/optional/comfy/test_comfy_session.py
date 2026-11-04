@@ -447,6 +447,14 @@ class Serve(Tmp):
         start.assert_not_called()
         self.assertIn("already", G.read_state()["failed"])
 
+    def test_another_commands_comfyui_keeps_its_record(self):
+        mine = {"pid": 500, "ctime": 3, "source": "direct", "last_used": ago(0)}
+        G.write_state(mine)
+        rc, _, start, _ = self.serve(reachable=True)
+        self.assertNotEqual(rc, 0)
+        start.assert_not_called()
+        self.assertEqual(G.read_state(), mine)
+
 
 class Down(Tmp):
     def down(self, details, rc=0):
@@ -489,6 +497,140 @@ class Down(Tmp):
         cmd = run.call_args[0][0]
         self.assertEqual(cmd[-2:], ["stop", RID])
         self.assertIn("creationflags", run.call_args[1])
+
+
+class NoSlotNoStart(Tmp):
+    """Only a command that holds its own local-ai slot (machine_lock_rerun returned in the re-run)
+    may start ComfyUI: one that joined a session which has since ended refuses instead."""
+
+    def launch(self, in_lock_run, why=None):
+        self.install([self.local("inst-a")], last="inst-a")
+        job, proc = mock.Mock(), FakeProc(pid=500)
+        writes = []
+        real_write = G.write_state
+        with mock.patch.object(G, "_IN_LOCK_RUN", in_lock_run, create=True), \
+                mock.patch.object(G, "_JOBS", []), \
+                mock.patch.object(G, "_start_server", return_value=(job, proc)) as start, \
+                mock.patch.object(G, "_wait_ready", return_value=why), \
+                mock.patch.object(G, "write_state", side_effect=lambda s: (writes.append(dict(s)), real_write(s))), \
+                mock.patch.object(G.W, "details", side_effect=alive({500: 3})), \
+                mock.patch("sys.stderr", new_callable=io.StringIO):
+            try:
+                G._launch(5)
+                err = None
+            except RuntimeError as e:
+                err = str(e)
+        return err, start, job, writes
+
+    def test_a_command_holding_no_slot_never_starts_comfyui(self):
+        err, start, _, _ = self.launch(False)
+        start.assert_not_called()
+        self.assertIsNotNone(err, "_launch started ComfyUI with no slot booked")
+        self.assertIn("slot", err)
+
+    def test_a_command_in_its_own_lock_run_starts_it(self):
+        err, start, _, _ = self.launch(True)
+        self.assertIsNone(err)
+        start.assert_called_once()
+
+    def test_a_failed_launch_ends_its_server_and_clears_the_state(self):
+        err, _, job, writes = self.launch(True, why="ComfyUI exited with code 1 before it answered")
+        self.assertIn("code 1", err or "")
+        self.assertTrue(any(w.get("pid") == 500 for w in writes), writes)
+        job.terminate.assert_called_once()
+        self.assertIsNone(G.read_state())
+
+    def test_rerun_marks_the_command_as_holding_a_slot(self):
+        args = G.argparse.Namespace(cmd="image", name="cat", lock_wait=60)
+        with mock.patch.dict(os.environ, {G.RERUN_ENV: "1", "MACHINE_LOCK_RUN": "r-x:1:2"}), \
+                mock.patch.object(G, "_IN_LOCK_RUN", False, create=True):
+            G.machine_lock_rerun(args, ["image"])
+            self.assertTrue(G._IN_LOCK_RUN)
+
+
+class SessionEnds(Tmp):
+    """A session asked to end, or failed, is not live; the down request survives any later write
+    of the state; a wait on a session stops once it has failed."""
+
+    def test_a_failed_or_down_session_is_not_live(self):
+        with mock.patch.object(G.W, "details", side_effect=alive({11: 1})):
+            self.assertTrue(G._session_live(self.session()))
+            self.assertFalse(G._session_live(self.session(failed="ComfyUI exited with code 1")))
+            state = self.session()
+            G._request_down(RID)
+            self.assertFalse(G._session_live(state))
+
+    def test_a_state_write_after_down_keeps_the_request(self):
+        state = self.session(keeper_pid=os.getpid())
+        G._request_down(RID)
+        state.pop("down", None)
+        G.write_state(dict(state, last_used=ago(0)))     # a command's touch_last_used, say
+        G.touch_last_used()
+        with mock.patch("comfy_gen.time.sleep"), \
+                mock.patch.object(G, "_queue_busy", return_value=True), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            self.assertEqual(G._keep(FakeProc()), 0)
+        self.assertIn("down", out.getvalue())
+
+    def test_a_session_failing_while_waited_on_ends_the_wait(self):
+        self.session(ready=False)
+        sleeps = []
+
+        def sleep(_):
+            sleeps.append(1)
+            if len(sleeps) == 1:
+                st = G.read_state()
+                st["failed"] = "ComfyUI exited with code 7 before it answered"
+                G.write_state(st)
+
+        clock = iter(range(0, 100000, 2))
+        with mock.patch.object(G, "_reachable", return_value=False), \
+                mock.patch.object(G.W, "details", side_effect=alive({11: 1})), \
+                mock.patch("comfy_gen.time.sleep", side_effect=sleep), \
+                mock.patch("comfy_gen.time.time", side_effect=lambda: float(next(clock))), \
+                mock.patch.object(G, "_launch") as launch:
+            with self.assertRaises(RuntimeError) as e:
+                G.ensure_running(wait=300)
+        launch.assert_not_called()
+        self.assertLessEqual(len(sleeps), 2, "it sat out the wait after the session failed")
+        self.assertIn("code 7", str(e.exception))
+
+
+class TruthfulAndBounded(Tmp):
+    def test_up_names_another_commands_comfyui_as_such(self):
+        G.write_state({"pid": 22, "ctime": 2, "source": "direct", "last_used": ago(0)})
+        out = io.StringIO()
+        with mock.patch.object(G, "_reachable", return_value=True), \
+                mock.patch.object(G.W, "details", side_effect=alive({22: 2})), \
+                mock.patch.object(G.subprocess, "run") as run, \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", out):
+            rc = G.cmd_up(G.argparse.Namespace(ttl=600, lock_wait=60, ready=300))
+        run.assert_not_called()
+        self.assertNotIn("did not start it", out.getvalue())
+        self.assertIn("another", out.getvalue())
+        self.assertNotEqual(rc, 0)
+
+    def test_a_lock_call_that_hangs_is_reported_not_raised(self):
+        with mock.patch.object(G.subprocess, "run", side_effect=subprocess.TimeoutExpired(["x"], 120)):
+            done = G._run_quiet(["x"])
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("120", done.stderr)
+
+    def test_down_survives_a_hanging_lock_stop(self):
+        self.session()
+        ticks = iter(range(0, 100000, 5))
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
+            tool = f.name
+        self.addCleanup(os.remove, tool)
+        with mock.patch.object(G, "MACHINE_LOCK_TOOL", tool), \
+                mock.patch.object(G.W, "details", side_effect=alive({11: 1})), \
+                mock.patch.object(G.subprocess, "run", side_effect=subprocess.TimeoutExpired(["x"], 120)), \
+                mock.patch("comfy_gen.time.sleep"), \
+                mock.patch("comfy_gen.time.monotonic", side_effect=lambda: float(next(ticks))), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            code = G.cmd_down(G.argparse.Namespace())
+        self.assertNotEqual(code, 0)
+        self.assertIn(RID, out.getvalue())
 
 
 @unittest.skipUnless(os.name == "nt", "a job object is Windows'")

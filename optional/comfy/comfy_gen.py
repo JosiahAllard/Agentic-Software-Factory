@@ -162,7 +162,8 @@ IDLE_STOP_SECONDS = 600
 READY_SECONDS = 300          # a cold start: venv check, custom nodes, the model scan
 SESSION_SECONDS = 3600       # `up --for` default: the most a session lives
 POLL_SECONDS = 5             # the keeper's loop
-DOWN_WAIT_SECONDS = 30       # `down`: how long the keeper gets to end on its flag
+DOWN_WAIT_SECONDS = 30       # `down`: how long the keeper gets to end on its request
+LOCK_CALL_SECONDS = 120      # a machine_lock.py call (_run_quiet) that takes longer is reported
 LOG_TAIL = 1500              # bytes of a server log quoted when it fails
 APPDATA_COMFY = os.path.join(os.environ.get("APPDATA", ""), "Comfy Desktop")
 NO_INSTALL = ("cannot start ComfyUI: no local install in Comfy Desktop's installations.json "
@@ -241,11 +242,18 @@ def _reachable(timeout=3):
         return False
 
 
-def _wait_for_stats(wait):
+def _wait_for_stats(wait, session=None):
+    """Wait up to `wait` seconds for ComfyUI to answer. With `session` (a run id), stop early once
+    the state says that session failed, was asked to end, or is gone: nothing will answer then."""
     deadline = time.time() + wait
     while time.time() < deadline:
         if _reachable():
             return True
+        if session:
+            state = read_state()
+            if (not state or state.get("rid") != session or state.get("failed")
+                    or _down_requested(state)):
+                return False
         time.sleep(2)
     return False
 
@@ -469,15 +477,23 @@ def _wait_ready(proc, job, ready_s, log_path):
 
 
 _JOBS = []   # the job of a ComfyUI this command started, open while this process lives
+_IN_LOCK_RUN = False   # set by machine_lock_rerun in the re-run: this command holds its own slot
 
 
 def _launch(wait):
     """Start ComfyUI for this one command and wait for it (_wait_ready). The server lives in this
     process's job (_start_server), so it ends with the command; the run's release then finds it
-    gone. Raises RuntimeError with why when it cannot start or does not answer."""
+    gone. Only a command in its own local-ai lock run (_IN_LOCK_RUN) may start one: a command that
+    joined a session (and so booked nothing) is refused once that session has ended. Raises
+    RuntimeError with why when it cannot start or does not answer."""
     cmd, cwd = _direct_launch_command()
     if cmd is None:
         raise RuntimeError(NO_INSTALL.format(APPDATA_COMFY))
+    if not _IN_LOCK_RUN:
+        raise RuntimeError(f"ComfyUI is not running at {C.HOST} and this command holds no local-ai "
+                           "slot (it joined a session that has since ended, so it booked none); "
+                           "nothing was started. Run the command again: it books its own slot. "
+                           "Or `comfy_gen.py up` first for a new session.")
     print(f"[comfy_gen] ComfyUI not reachable at {C.HOST}; starting it headless", file=sys.stderr)
     log_path = _new_log()
     try:
@@ -496,9 +512,35 @@ def _launch(wait):
         raise RuntimeError(why)
 
 
+def _down_path(rid):
+    """The file `down` makes to end session `rid`. A file of its own, never a field of the state:
+    every writer of the state rewrites it whole, so a flag there could be lost."""
+    return os.path.join(STATE_DIR, f"down-{rid}")
+
+
+def _request_down(rid):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(_down_path(rid), "w", encoding="utf-8") as f:
+        f.write(_iso(_now()))
+
+
+def _down_requested(state):
+    return bool(state and (state.get("down")
+                           or (state.get("rid") and os.path.exists(_down_path(state["rid"])))))
+
+
+def _clear_down(rid):
+    try:
+        os.remove(_down_path(rid))
+    except OSError:
+        pass
+
+
 def _session_live(state):
-    """Is `state` a session's (`up`) whose keeper is still the process it recorded?"""
+    """Is `state` a session's (`up`) whose keeper is still the process it recorded, not failed and
+    not asked to end?"""
     return bool(state and state.get("rid") and state.get("keeper_pid") is not None
+                and not state.get("failed") and not _down_requested(state)
                 and _pid_alive_at(state["keeper_pid"], state.get("keeper_ctime")))
 
 
@@ -511,7 +553,7 @@ def ensure_running(wait=READY_SECONDS):
     state = read_state()
     if _reachable():
         if _tool_started_and_alive(state or {}):
-            touch_last_used(state)
+            touch_last_used()    # re-read: the keeper may have written since
             return True
         if state and not _session_live(state):
             clear_state()   # stale record: a previous run of ours, now gone or pid reused
@@ -519,7 +561,13 @@ def ensure_running(wait=READY_SECONDS):
     if _session_live(state) or _tool_started_and_alive(state or {}):
         # a session's ComfyUI `up` is starting, or ours from an earlier start still booting:
         # wait for that one, never start a second
-        if not _wait_for_stats(wait):
+        if not _wait_for_stats(wait, session=state.get("rid")):
+            now = read_state() or {}
+            if state.get("rid") and now.get("rid") == state["rid"] and now.get("failed"):
+                raise RuntimeError(f"ComfyUI session {now['rid']} failed: {now['failed']}")
+            if state.get("rid") and (now.get("rid") != state["rid"] or _down_requested(now)):
+                raise RuntimeError(f"ComfyUI session {state['rid']} ended before it answered; run "
+                                   "the command again (or `comfy_gen.py up` first)")
             raise RuntimeError(f"ComfyUI did not answer at {C.HOST} within {wait}s"
                                + (f" (log: {state['log']})" if state.get("log") else ""))
         touch_last_used()
@@ -578,8 +626,8 @@ def _queue_busy():
 
 def _keep(proc):
     """The keeper's loop, every POLL_SECONDS. It returns, for its caller to end the server, when
-    the server has exited (a crash: why is recorded for `up` and `check`; exit 3), `down` has set
-    the state's flag, the session's --for time is up, it has been idle IDLE_STOP_SECONDS with an
+    the server has exited (a crash: why is recorded for `up` and `check`; exit 3), `down` has asked
+    (_down_requested), the session's --for time is up, it has been idle IDLE_STOP_SECONDS with an
     empty queue, or the state no longer names this keeper."""
     me = os.getpid()
     while True:
@@ -597,7 +645,7 @@ def _keep(proc):
         if not state or state.get("keeper_pid") != me:
             print("[comfy_gen] serve: the state no longer names this session; ending it")
             return 0
-        if state.get("down"):
+        if _down_requested(state):
             print("[comfy_gen] serve: `down` asked; ending the session")
             return 0
         until = _parse_iso(state.get("until"))
@@ -617,6 +665,7 @@ def cmd_serve(args):
     job closes with this process too, so a killed keeper takes ComfyUI along."""
     rid = os.environ.get("MACHINE_LOCK_RUN", "").split(":")[0]
     me, now = os.getpid(), _now()
+    prior = read_state()
     state = {"rid": rid, "keeper_pid": me, "keeper_ctime": W.details(me)["ctime"],
              "started": _iso(now), "last_used": _iso(now), "ready": False,
              "until": _iso(now + datetime.timedelta(seconds=args.ttl))}
@@ -628,8 +677,16 @@ def cmd_serve(args):
         return code
 
     if _reachable():
-        return fail(f"ComfyUI already answers at {C.HOST} and this tool did not start it: use it "
-                    "as it is; no session started", 3)
+        if _tool_started_and_alive(prior or {}):
+            # this tool's ComfyUI (another session's, or a command's own): its record stays, so
+            # whoever owns it still ends it
+            whose = (f"session {prior['rid']}'s" if prior.get("rid") else
+                     "another comfy_gen command's own (it ends with that command)")
+            print(f"ComfyUI already answers at {C.HOST}: it is {whose}; no session started. Run "
+                  "`up` again once it has gone.", file=sys.stderr)
+            return 3
+        return fail(f"ComfyUI already answers at {C.HOST}, started outside this tool: use it as "
+                    "it is; no session started", 3)
     try:
         if _port_held(args.ready):
             return fail(f"Comfy Desktop's ComfyUI now answers at {C.HOST}: use it as it is; no "
@@ -663,6 +720,7 @@ def cmd_serve(args):
         final = read_state()
         if final and final.get("keeper_pid") == me and not final.get("failed"):
             clear_state()
+        _clear_down(rid)
 
 
 def _lock_cmd(*args):
@@ -670,9 +728,15 @@ def _lock_cmd(*args):
 
 
 def _run_quiet(cmd):
-    """A machine_lock.py call, its output captured, so it needs no console of ours: no window."""
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=120,
-                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    """A machine_lock.py call, its output captured, so it needs no console of ours: no window. One
+    that does not answer within LOCK_CALL_SECONDS comes back as exit 124 with why in stderr."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=LOCK_CALL_SECONDS,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as e:
+        return subprocess.CompletedProcess(cmd, 124, stdout="",
+                                           stderr=f"machine_lock.py did not answer within "
+                                                  f"{e.timeout:g}s")
 
 
 def _await_session(rid, pid, ctime, wait_s):
@@ -720,8 +784,17 @@ def cmd_up(args):
         return _await_session(state["rid"], state["keeper_pid"], state.get("keeper_ctime"),
                               args.ready + 60)
     if _reachable():
-        print(f"ComfyUI already answers at {C.HOST} and this tool did not start it: use it as it "
-              "is; nothing booked")
+        if _tool_started_and_alive(state or {}):
+            if state.get("rid"):
+                print(f"ComfyUI session {state['rid']} is ending (`down`, or it failed); run `up` "
+                      "again once it has gone. Nothing booked.")
+            else:
+                print(f"ComfyUI already answers at {C.HOST}: another comfy_gen command started it "
+                      "for itself and it ends with that command. Nothing booked; run `up` again "
+                      "once it has gone.")
+            return 2
+        print(f"ComfyUI already answers at {C.HOST}, started outside this tool (by you or Comfy "
+              "Desktop): use it as it is; nothing booked")
         return 0
     if not os.path.isfile(MACHINE_LOCK_TOOL):
         print(f"[machine-lock] refused: no machine lock tool at {MACHINE_LOCK_TOOL}, and a "
@@ -749,17 +822,18 @@ def cmd_up(args):
 
 
 def cmd_down(args):
-    """End the session `up` started: set the state's down flag, on which its keeper ends ComfyUI
-    and its lock run within POLL_SECONDS; a keeper still there after DOWN_WAIT_SECONDS has its
-    lock run stopped (machine_lock.py stop: the run's job ends, keeper and ComfyUI with it)."""
+    """End the session `up` started: make its down request (_request_down), on which its keeper
+    ends ComfyUI and its lock run within POLL_SECONDS; a keeper still there after DOWN_WAIT_SECONDS
+    has its lock run stopped (machine_lock.py stop: the run's job ends, keeper and ComfyUI with
+    it). The request is a file of its own, so no later write of the state can drop it."""
     state = read_state()
     if not state or not state.get("rid"):
         print("[comfy_gen] down: no ComfyUI session; nothing to end")
         return 0
     rid = state["rid"]
-    if _session_live(state):
-        state["down"] = True
-        write_state(state)
+    if state.get("keeper_pid") is not None and _pid_alive_at(state["keeper_pid"],
+                                                             state.get("keeper_ctime")):
+        _request_down(rid)
         deadline = time.monotonic() + DOWN_WAIT_SECONDS
         while _pid_alive_at(state["keeper_pid"], state.get("keeper_ctime")):
             if time.monotonic() >= deadline:
@@ -774,6 +848,7 @@ def cmd_down(args):
     final = read_state()
     if final and final.get("rid") == rid:
         clear_state()
+    _clear_down(rid)
     print(f"[comfy_gen] down: session {rid} ended")
     return 0
 
@@ -1259,7 +1334,9 @@ def machine_lock_rerun(args, argv):
     (exit 2) rather than run on a GPU slot nobody holds. The run's --on-release is `release`: the
     ComfyUI it used is freed when the slot ends (one this command started has already ended with
     it: _start_server)."""
+    global _IN_LOCK_RUN
     if os.environ.pop(RERUN_ENV, None) and os.environ.get("MACHINE_LOCK_RUN"):
+        _IN_LOCK_RUN = True     # this command holds its own slot: it may start ComfyUI (_launch)
         return
     if not os.path.isfile(MACHINE_LOCK_TOOL):
         print(f"[machine-lock] refused: no machine lock tool at {MACHINE_LOCK_TOOL}, and generation "

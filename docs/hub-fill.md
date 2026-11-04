@@ -33,7 +33,8 @@ reader `coord-restart`'s backlog wake shares:
 - **Free** = cap - in flight, never below 0.
 
 A coordinator the usage crossover is moving (`usage_crossover.claims`, the hold `coord-restart`
-reads) is passed over with a note: it was told to checkpoint and stand down.
+reads) is passed over with a note: it was told to checkpoint and stand down. What was told it
+stays as it was while it is claimed ("Saved state").
 
 A store or a cap that cannot be read is a note in the job's health, never a failure. A run is a
 skip with a note, never a failure, when sessions.json or the usage crossover's state cannot be
@@ -70,12 +71,15 @@ beside `coord-restart.json`), so a hub restart does not nudge again. One entry p
 key:
 
 - `told`: `[free, [ids], reason or null]`, the last nudge written.
-- `since`: epoch seconds, when the episode began: the first nudge written, reset to now when the
-  coordinator's in-flight count rises above the last one read (it pulled). Stage 3's timer.
+- `since`: epoch seconds, when the episode began. It is the first nudge written, reset to now:
+  - when the coordinator's in-flight count rises above the last one read (it pulled);
+  - when a nudge is written whose free count is above the one told (a slot freed), so stage 3's
+    20 minutes run from the nudge that names the slot. A nudge for new ids alone keeps it.
 - `in_flight`: the in-flight count last read.
 
-A key is dropped when its coordinator is forgotten (above); a store that cannot be read keeps its
-entry as it was. The file is written only when it changes, as a temp file then a replace.
+A key is dropped when its coordinator is forgotten (above). Its entry stays as it was while its
+store cannot be read, while the usage crossover claims it, and when a hub stop ends the run before
+the job reaches it. The file is written only when it changes, as a temp file then a replace.
 
 A file that cannot be read, or whose entries are not that shape, fails the run before anything is
 sent or written: the runner pushes `job fill-watch failing` to the PM at the third failure. It is
@@ -103,7 +107,12 @@ the survey.
 
 A stand-down that cannot be read fails closed: the reason is `unread` (stood down) and the job's
 note names why. That covers a `.kit.json` the schema refuses, main as fetched, the git common dir,
-a verdict queue that holds a bad file, and worktrees `--classify` cannot read.
+a verdict queue that holds a bad file, and worktrees `--classify` cannot read. It also covers a
+`--classify` run that could not make one of its reads: a run-wide one (the process scan, the
+machine lock or the landing lock: every tree is then L) or one tree's (an L tree whose reason is
+`unreadable: ...`, such as its status). Either would hide an idle tree and read the stand-down
+open. An idle tree that a process the scan could not read may hold is one of those, so on a
+machine where that happens every run the stand-down stays `unread`.
 
 A stand-down never stops the nudge: the coordinator still hears of its free slot, with the reason.
 

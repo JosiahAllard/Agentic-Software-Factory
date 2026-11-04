@@ -24,8 +24,8 @@ LANE = {'repo': 'game', 'agent': True, 'stem': 'lane-coordinator', 'name': 'lane
 PLAIN = {'repo': 'game', 'agent': False, 'stem': 'research', 'name': 'research-a2'}
 
 
-class Watch(unittest.TestCase):
-    """The job with its readers replaced: `self.slots[key]` is (cap, in_flight, ids) or an
+class WatchFixture(object):
+    """A mixin: the job with its readers replaced: `self.slots[key]` is (cap, in_flight, ids) or an
     exception; `self.states` the deliver results, in turn (default written)."""
 
     def setUp(self):
@@ -57,6 +57,10 @@ class Watch(unittest.TestCase):
             return self.run_job()
         except Exception as e:      # noqa: BLE001
             self.fail('the run raised %s: %s' % (type(e).__name__, e))
+
+
+class Watch(WatchFixture, unittest.TestCase):
+    """Stage 1: the watch and the nudge."""
 
     def test_free_and_startable_nudges_the_coordinator_once_with_the_counts(self):
         out = self.run_job()
@@ -411,19 +415,59 @@ class Persist(Watch):
         self.run_job()
         self.clock.t = 1300.0
         self.job = self.fresh()
-        self.slots['game'] = (5, 2, ['EX-A', 'EX-B', 'EX-C'])      # one landed: in flight fell
+        self.slots['game'] = (5, 3, ['EX-A', 'EX-B', 'EX-D'])      # ids only: same free count
         self.run_job()
         self.assertEqual((self.saved()['game']['since'], len(self.sent)), (1000.0, 2))
-        self.assertEqual(self.saved()['game']['in_flight'], 2)
         self.clock.t = 1450.0
-        self.slots['game'] = (5, 3, ['EX-A', 'EX-B', 'EX-C'])      # risen from the last read
+        self.slots['game'] = (6, 4, ['EX-A', 'EX-B', 'EX-D'])      # same free, one more pulled
         self.run_job()
-        self.assertEqual(self.saved()['game']['since'], 1450.0)
+        self.assertEqual((self.saved()['game']['since'], len(self.sent)), (1450.0, 2))
         self.clock.t = 1600.0
-        self.slots['game'] = (5, 4, ['EX-B', 'EX-C'])              # it pulled: in flight rose
+        self.slots['game'] = (6, 5, ['EX-B', 'EX-C'])              # it pulled: in flight rose
         self.run_job()
         self.assertEqual(self.saved()['game']['since'], 1600.0)
-        self.assertEqual(self.saved()['game']['in_flight'], 4)
+        self.assertEqual(self.saved()['game']['in_flight'], 5)
+
+    def test_a_nudge_that_names_a_newly_freed_slot_restarts_since(self):
+        self.run_job()
+        self.clock.t = 1300.0
+        self.slots['game'] = (5, 2, ['EX-A', 'EX-B', 'EX-C'])      # one landed: a slot freed
+        self.run_job()
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.saved()['game']['since'], 1300.0)
+        self.assertEqual(self.saved()['game']['in_flight'], 2)
+
+    def test_a_hub_stop_mid_run_keeps_the_keys_it_did_not_reach(self):
+        self.sessions = {'game': dict(COORD), 'lane': dict(LANE)}
+        self.live = {'game-coordinator-a1', 'lane-coordinator-a1'}
+        self.slots['lane'] = (2, 0, ['EX-L'])
+        self.run_job()
+        before = self.saved()
+        self.assertEqual(sorted(before), ['game', 'lane'])
+        c = ctx()
+        read = self.job.read
+
+        def stop_after(key, entry):
+            c.stop.set()                    # the hub stops while game is read
+            return read(key, entry)
+        self.job.read = stop_after
+        self.clock.t = 1300.0
+        self.job(c)
+        self.assertEqual(self.saved(), before)
+        self.job = self.fresh()
+        self.run_job()
+        self.assertEqual(len(self.sent), 2)                         # nobody nudged again
+
+    def test_a_coordinator_the_crossover_claims_keeps_its_state(self):
+        self.run_job()
+        before = self.saved()
+        self.job.claims = lambda: {'game'}
+        self.clock.t = 1300.0
+        self.run_job()
+        self.assertEqual(self.saved(), before)
+        self.job.claims = lambda: set()
+        self.run_job()
+        self.assertEqual(len(self.sent), 1)
 
     def test_a_key_that_ends_is_dropped_from_the_file(self):
         self.run_job()
@@ -450,7 +494,7 @@ class Persist(Watch):
         self.assertEqual(len(self.sent), 1)
 
 
-class StandDownNudge(Watch):
+class StandDownNudge(WatchFixture, unittest.TestCase):
     """The stand-down reason, read once per repository per run, rides in the nudge."""
 
     def setUp(self):
@@ -543,9 +587,11 @@ class StandDown(unittest.TestCase):
                 self.reason(0, 0)
 
 
-def tree(branch, klass, head=None, gate=None):
+def tree(branch, klass, head=None, gate=None, reason=None):
     row = {'path': '/w/' + branch, 'branch': branch, 'head': head or 'h-' + branch,
            'class': klass}
+    if reason is not None:
+        row['reason'] = reason
     if gate is not None:
         row['gate'] = gate
     return row
@@ -619,6 +665,20 @@ class Survey(unittest.TestCase):
                       tree('kit/o', 'O')]
         self.assertEqual(self.survey()[1], 2)
         self.assertEqual(self.dead_after, [7200])
+
+    def test_a_classify_that_could_not_read_a_probe_is_unread(self):
+        self.trees = {'trees': [tree('kit/b', 'L', reason='unreadable: the machine lock cannot be'
+                                     ' read (x)')], 'counts': {},
+                      'unreadable': 'the machine lock cannot be read (x)'}
+        with self.assertRaises(W.StandDownUnread):
+            self.survey()
+
+    def test_a_tree_classify_could_not_read_is_unread(self):
+        self.trees = [tree('kit/b', 'B', gate='green'),
+                      tree('kit/x', 'L', reason='unreadable: its status (git failed)'),
+                      tree('kit/l', 'L', reason='active 0.5 h ago')]
+        with self.assertRaises(W.StandDownUnread):
+            self.survey()
 
     def test_anything_unread_is_unread(self):
         from kitlib.gate import verdicts

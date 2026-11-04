@@ -46,13 +46,18 @@ with something offered. `standdown(top)` reads the main checkout's `.kit.json`:
   backlog.fill_idle_max (default 2): `idle N>=MAX` when N worktrees are class B or C under
              `--classify` with a dead bar of IDLE_AFTER_S (2 h, fixed); L trees never count. 0 is
              always stood down.
-A stand-down that cannot be read is `unread` (fails closed: stood down) and a note names why.
+A stand-down that cannot be read is `unread` (fails closed: stood down) and a note names why;
+that includes a `--classify` run that reports a read it could not make (its `unreadable`, or an L
+tree whose reason is `unreadable: ...`), since such a tree would hide an idle one.
 
 One push per change: the job keeps, in fill-watch.json under launcher.state_dir (FileState), per
 key: `told` [free, ids, reason] last told, `since` (epoch seconds: the first nudge of the
-episode, reset to now when in_flight rises above the last read) and `in_flight` (the last read).
-It pushes when (free, ids, reason) differ from `told`; a key with no free slot, nothing offered,
-or no live session is dropped, so the state coming back nudges again. A deliver that is written or
+episode, reset to now when in_flight rises above the last read, and when a nudge is written whose
+free count is above the one told: the nudge that names a newly freed slot) and `in_flight` (the
+last read). It pushes when (free, ids, reason) differ from `told`; a key with no free slot,
+nothing offered, or no live session is dropped, so the state coming back nudges again. A key the
+usage crossover claims, a key whose store cannot be read, and the keys a hub stop leaves unreached
+keep their state untouched. A deliver that is written or
 uncertain counts as told; one not written, with no live session, with no push object, or that
 raises is tried again next run. The file is written only when it changes. A file that cannot be
 read or does not hold that shape raises LaunchError before anything is sent or written: a failed
@@ -60,7 +65,7 @@ run, which the runner pushes to the PM as `failing` at the third. It is never re
 bad file cannot nudge every coordinator again or restart `since` (the auto-pull's timer).
 
 A coordinator the usage crossover is moving (usage_crossover.claims, the hold coord-restart reads)
-is never nudged: it was told to checkpoint and stand down.
+is never nudged, and what was told it stays as it was: it was told to checkpoint and stand down.
 
 Outcomes (kitlib.hubsite.jobs): a nudge is a success whose note names the keys; nothing to nudge
 is a Skip. A store or cap that cannot be read is a note. A sessions.json or crossover state that
@@ -172,6 +177,11 @@ def read_survey(top, cfg):
     got = classify.classify(top, dead_after_s=IDLE_AFTER_S)
     if 'error' in got.data:
         raise StandDownUnread('the worktrees cannot be classified (%s)' % got.data['error'])
+    if got.data.get('unreadable'):      # every tree was made L: idle would read 0
+        raise StandDownUnread('--classify could not read %s' % got.data['unreadable'])
+    for t in got.data['trees']:
+        if t['class'] == 'L' and str(t.get('reason', '')).startswith('unreadable'):
+            raise StandDownUnread('--classify could not read %s (%s)' % (t['path'], t['reason']))
     idle = 0
     for t in got.data['trees']:
         if t['class'] in IDLE_CLASSES:
@@ -299,14 +309,18 @@ class FillWatch(object):
         told = {k: dict(v) for k, v in loaded.items()}
         told_ok = told_states()
         nudged, notes, seen, reasons = [], [], set(), {}
+        unvisited = set(sessions)
         for key in sorted(sessions):
             entry = sessions[key]
-            if ctx.stop.is_set():
+            if ctx.stop.is_set():       # a hub stop: the keys not reached keep their state
+                seen |= unvisited
                 break
+            unvisited.discard(key)
             if not is_coordinator(key, entry) or entry['name'] not in live:
                 continue
             if key in claimed:          # the usage crossover is moving it: no nudge to dispatch
                 notes.append('%s: being moved by the usage crossover' % key)
+                seen.add(key)           # its state stands untouched while it is claimed
                 continue
             try:
                 cap, in_flight, ids = self.read(key, entry)
@@ -337,6 +351,8 @@ class FillWatch(object):
                 if had is None:
                     told[key] = {'told': state, 'since': now, 'in_flight': in_flight}
                 else:
+                    if free > had['told'][0]:
+                        had['since'] = now      # this nudge names a newly freed slot
                     had['told'] = state
                 nudged.append('%s (%d free, %d startable%s)'
                               % (key, free, len(ids), ', stood down: %s' % reason if reason else ''))

@@ -21,7 +21,7 @@ def read_live(user32=None):
 def check(cfg, read=None):
     """One warning line when the live value is not 0; [] when it is 0. Always on: no config key.
     `cfg` is unused, kept for the checks pattern."""
-    if platform.NAME == 'linux':     # the timeout is a Windows setting; Linux has none to warn about
+    if platform.NAME != 'windows':   # the timeout is a Windows-only setting; nothing to check elsewhere
         return []
     value = (read or read_live)()
     if value == 0:

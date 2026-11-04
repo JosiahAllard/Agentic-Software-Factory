@@ -62,9 +62,11 @@ class FgLockTest(unittest.TestCase):
             fglock.read_live(FakeUser32(0, ok=0))
 
     def test_linux_gives_no_line_and_no_error(self):
-        with mock.patch.object(fglock.platform, "NAME", "linux"):
-            self.assertEqual(fglock.check(CFG), [])      # the real read_live (WinDLL) is never reached
-            temp_home(self)
+        temp_home(self)
+        # Linux has no ctypes.WinDLL: the base reaches read_live and fails with this AttributeError.
+        with mock.patch("kitlib.platform.NAME", "linux"), \
+                mock.patch.object(fglock.ctypes, "WinDLL", create=True, side_effect=AttributeError("WinDLL")):
+            self.assertEqual(fglock.check(CFG), [])
             txt = pmstart.checklist(dict(CFG, standing=["x"]), NOW, procs=[], **FAKES)
         self.assertNotIn("foreground_lock", txt)
 

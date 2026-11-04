@@ -17,6 +17,7 @@ import sys
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, KIT)
 
+from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib import content                                          # noqa: E402
 from kitlib.host.content import ContentError                        # noqa: E402
 
@@ -61,7 +62,10 @@ def tier_maps():
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
-    root = os.path.abspath(a.root)
+    root, why = gitrepo.toplevel(os.path.abspath(a.root))
+    if root is None:
+        out.write('render_content: -C: %s\n' % why)
+        return USAGE
     try:
         rs = renderers(a.host)
         tiers = tier_maps()

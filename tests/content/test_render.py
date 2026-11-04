@@ -17,6 +17,7 @@ from hosts.claude.adapter import content as claude_content
 from kitlib import content
 from kitlib.host import content as hc
 from kitlib.host import registry
+from tests import gitfixture
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(KIT_ROOT, 'tools'))
@@ -404,8 +405,9 @@ class TempTreeTest(unittest.TestCase):
     """drift and write on a copy of the kit's content/ and rendered folders."""
 
     def setUp(self):
-        self.root = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.root, True)
+        fx = gitfixture.TempRepo()               # -C is resolved to a git top
+        self.addCleanup(fx.cleanup)
+        self.root = fx.root
         for rel in ('content', '.claude-plugin', 'boot',      # boot/: a host's plugin ships a copy
                     os.path.join('hosts', 'claude', 'shell', 'agents')):
             shutil.copytree(os.path.join(KIT_ROOT, rel), os.path.join(self.root, rel))

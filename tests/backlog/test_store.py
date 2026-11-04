@@ -912,6 +912,19 @@ class OtherBackends(TempHomeCase):
         self.assertIn('summary: renamed', text)
         self.assertIn('edited by hand', text)
 
+    def test_pending_reads_status_without_optional_locks(self):
+        """A plain `git status` may take index.lock to refresh the index, which a concurrent
+        store write's _IndexLock would then wait on or report Busy."""
+        repo, root, store, ctx = self.main_store()
+        store.write(lambda s: pmod.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
+                                            **ADD_NONE))
+        seen = []
+        wrap_git(self, lambda args, real: seen.append(args))
+        self.assertEqual(store.backend.pending(), [('added', 'docs/backlog/FOO.md')])
+        status = [a for a in seen if 'status' in a]
+        self.assertEqual(len(status), 1, seen)
+        self.assertEqual(status[0][0], '--no-optional-locks')
+
     def test_landable_on_a_main_store_reads_each_branchs_own_tip(self):
         from kitlib.backlog import landable as L
         from tests.gitfixture import TempRepo

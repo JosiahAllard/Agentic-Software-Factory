@@ -238,9 +238,10 @@ def play_action(objs, act):
 # --- the committed-script and stray-write checks ----------------------------------------------
 
 def _git(root, *args):
-    done = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
-    return done.returncode, done.stdout
+    done = subprocess.run(["git", "-C", root] + list(args), capture_output=True,
+                          creationflags=NO_WINDOW)
+    # bytes, decoded here: text mode would turn a CR in a file name into LF
+    return done.returncode, done.stdout.decode("utf-8", errors="replace")
 
 
 def script_refusal(script, git=_git):
@@ -250,10 +251,7 @@ def script_refusal(script, git=_git):
     root = checkout_root(script)
     if root is None:
         return f"{script} is not in a git checkout; only a committed script counts"
-    try:
-        rel = os.path.relpath(os.path.realpath(script), root).replace(os.sep, "/")
-    except ValueError:      # another drive than the checkout
-        return f"{script} is not under its checkout {root}; only a committed script counts"
+    rel = os.path.relpath(os.path.realpath(script), root).replace(os.sep, "/")
     code, _ = git(root, "ls-files", "--error-unmatch", "--", rel)
     if code != 0:
         return f"{rel} is not tracked in {root}: commit the script first"

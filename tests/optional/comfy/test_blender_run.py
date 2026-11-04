@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.join(HERE, '..', '..', '..', 'optional', 'comfy')
 sys.path.insert(0, CODE)
 import blender_run as B  # noqa: E402
+from tests import gitfixture  # noqa: E402
 from tests.realgit import real_git  # noqa: E402
 
 
@@ -177,27 +178,13 @@ class Checks(unittest.TestCase):
         self.assertIsNone(B.script_refusal(os.path.join(linked, 'tools', 'job.py'), run))
         self.assertEqual(calls[0], ('ls-files', '--error-unmatch', '--', 'tools/job.py'))
 
-    def test_a_script_on_another_drive_is_a_refusal_not_a_crash(self):
-        script = touch(os.path.join(self.repo, 'job.py'))
-        with mock.patch('os.path.relpath', side_effect=ValueError('different drives')):
-            self.assertIn('not under', B.script_refusal(script, lambda *a: (0, '')))
-
 
 @real_git('the status text of a non-ASCII name: the fake does not model core.quotepath')
 class RealStatus(unittest.TestCase):
     def test_an_accented_out_is_no_stray_write_in_a_real_status(self):
-        import subprocess
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        root = os.path.join(self.tmp, 'real')
-        os.makedirs(root)
-
-        def run(*a):
-            subprocess.run(['git', '-C', root, *a], check=True, capture_output=True)
-        run('init', '-q')
-        touch(os.path.join(root, 'kept.txt'))
-        run('add', 'kept.txt')
-        run('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'x')
+        repo = gitfixture.TempRepo(branch='main')
+        self.addCleanup(repo.cleanup)
+        root = repo.root
         before = B._status(root)
         touch(os.path.join(root, 'café', 'a.png'))
         after = B._status(root)

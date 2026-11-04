@@ -20,6 +20,7 @@ from kitlib import content as kcontent
 from kitlib.launcher import accounts as A
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
+from kitlib.ledger import rulebook
 from kitlib.launcher import home, lookup, pipes, state, stop, window
 from kitlib.launcher.settings import LaunchError
 
@@ -127,6 +128,12 @@ def agent_temp(host):
 def consultant_notes_path(host, repo):
     """The default notes file of the consultant of `repo` (its slug)."""
     return os.path.join(agent_temp(host), CONSULTANT_FOLDER % repo, CONSULTANT_NOTES)
+
+
+def consultant_repo(folder):
+    """The --repo slug launch.py consultant gives a repo folder: the kit's folder-to-name rule
+    (kitlib.ledger.rulebook.normal: lower-cased, '_' as '-'). The session is 'consultant-' + this."""
+    return rulebook.normal(folder)
 
 
 def cli(*args):
@@ -524,7 +531,7 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
     repo_path = os.path.abspath(repo_path)
-    repo = repo or os.path.basename(os.path.normpath(repo_path)).lower()
+    repo = repo or consultant_repo(os.path.basename(os.path.normpath(repo_path)))
     if not SLUG.match(repo):
         raise LaunchError("--repo '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % repo)
     if not autocompact or not CONSULTANT_AUTOCOMPACT[0] <= int(autocompact) <= CONSULTANT_AUTOCOMPACT[1]:

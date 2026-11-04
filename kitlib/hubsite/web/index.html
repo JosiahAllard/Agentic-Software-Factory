@@ -510,8 +510,8 @@ ul.hist .sch-line{display:block}
   // (a 409 too) puts the old paint back through `undo` and says "Not saved" in `say`, so a real failure stays in sight.
   // Two of them can be in flight at once; each undoes only its own paint, and the read after a failure shows what the
   // server holds. The returned promise ends when the POST has answered.
-  function writeQuick(path, body, undo, say){
-    return hub.post(path, body).then(() => { refresh().catch(() => {}); }, e => {
+  function writeQuick(path, body, undo, say, saved){
+    return hub.post(path, body).then(() => { if (saved) saved(); refresh().catch(() => {}); }, e => {
       undo(); say.className = "status err"; say.textContent = "Not saved: " + why(e) + ".";
       refresh().catch(() => {});
     });
@@ -1400,6 +1400,8 @@ ul.hist .sch-line{display:block}
     fillRepos(state.todos);
     const open = state.todos.filter(t => t.status !== "done"), done = state.todos.filter(t => t.status === "done");
     $("#n-topen").textContent = open.length; $("#n-tdone").textContent = done.length;
+    // Done by anything (the CLI too): a note draft typed here is stale, so it must not come back on a reopen.
+    if (ready) done.forEach(t => clearDraft(t.id));
     document.querySelectorAll("#ttabs .tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tf === state.tfilter)));
     // A to-do with an open edit stays in the list whatever the tab or the repository filter, so what was
     // typed in it is never out of sight without a word (it may be ticked done elsewhere meanwhile).
@@ -1460,13 +1462,24 @@ ul.hist .sch-line{display:block}
     box.addEventListener("change", () => {
       const on = box.checked, card = box.parentNode;
       const paint = v => { box.checked = v; if (card) card.classList.toggle("done", v); };
+      // The optional note typed before the tick goes with it; its draft is kept like an answer's (readDraft), so it
+      // survives a redraw and the tunnel sign-in redirect, and is dropped once the hub has the done mark.
+      const note = on && noteIn ? noteIn.value.trim() : "";
       paint(on); status.className = "status"; status.textContent = "";
-      writeQuick("/todos/" + seg(t.id) + "/done", { done: on }, () => paint(!on), status);
+      writeQuick("/todos/" + seg(t.id) + "/done", note ? { done: on, note } : { done: on }, () => paint(!on), status, () => { if (note) clearDraft(t.id); });
     });
+    const noteIn = !isDone ? el("textarea", {id: "tn-" + t.id, rows: "2", maxlength: "2000", "aria-label": "Note for " + t.id + " (optional)", placeholder: "Note (optional): sent with the done mark"}) : null;
+    if (noteIn) {
+      const kept = readDraft(t.id);
+      if (kept && typeof kept.note === "string") noteIn.value = kept.note;
+      noteIn.addEventListener("input", () => { if (noteIn.value) saveDraft(t.id, { note: noteIn.value }); else clearDraft(t.id); });
+    }
     const body = el("div", {class:"body"},
       el("div", {class:"meta"}, t.urgent ? el("span", {class:"chip urgent st-urgent", text:"Urgent"}) : null, el("span", {class:"id", text: t.id}), t.repo ? el("span", {class:"chip", text: t.repo}) : null, t.from ? el("span", {text: "from " + t.from}) : null, t.added_at ? el("span", {text: "added " + when(t.added_at)}) : null, isDone && t.done_at ? el("span", {class:"chip ok st-done", text: "done " + when(t.done_at)}) : null));
     body.append(el("h2", {}, el("label", {for: "t-" + t.id, text: t.title || "(untitled)"})));
     { const d = detailParts(t.detail); if (d.length) body.append(el("div", {class:"detail"}, ...d)); }
+    if (noteIn) body.append(el("div", {class:"note"}, noteIn));
+    else if (typeof t.done_note === "string" && t.done_note) body.append(el("div", {class:"detail"}, el("strong", {text:"Your note: "}), el("span", {text: t.done_note})));
     const cmds = pmCommands(t);
     if (cmds.length) {
       const list = el("ol", {class:"steps"});

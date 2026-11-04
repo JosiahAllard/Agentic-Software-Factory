@@ -2223,6 +2223,48 @@ class QuickWriteTest(unittest.TestCase):
         self.assertEqual(got["after"], 1)               # the lists are read again once the POST has answered
         self.assertFalse(got["off"])
 
+    def test_a_typed_note_goes_with_the_tick_and_its_draft_survives_a_reload_until_sent(self):
+        got = dom(HOLD % r"/\/todos\/T-1\/done$/" + """
+            await start();
+            const note = $("#tn-T-1");
+            note.value = "sha256 <b>abc</b>"; await fire(note, "input");
+            const kept = localStorage.getItem("oq.draft.T-1");
+            await start();                                     // a reload: the draft is read back
+            const again = $("#tn-T-1").value;
+            const box = $("#t-T-1");
+            box.checked = true; await fire(box, "change");
+            const sent = calls.filter(c => c.path === "/todos/T-1/done").map(c => c.body);
+            const during = localStorage.getItem("oq.draft.T-1");
+            held[0](ok()); await settle();
+            return { kept, again, sent, during, after: localStorage.getItem("oq.draft.T-1") };
+        """, snapshot(collections=LISTS), hash="#todo")
+        self.assertEqual(json.loads(got["kept"]), {"note": "sha256 <b>abc</b>"})
+        self.assertEqual(got["again"], "sha256 <b>abc</b>")
+        self.assertEqual(got["sent"], [{"done": True, "note": "sha256 <b>abc</b>"}])
+        self.assertIsNotNone(got["during"])                  # kept until the hub has it
+        self.assertIsNone(got["after"])
+
+    def test_a_todo_drawn_as_done_drops_its_stale_note_draft(self):
+        lists = {"todos": {"T-1": {"status": "done", "title": "mine", "from": "you", "version": 2, "added_at": NOW, "done_at": NOW}}}
+        got = dom("""
+            localStorage.setItem("oq.draft.T-1", JSON.stringify({ note: "typed, then done from the CLI" }));
+            await start();
+            return localStorage.getItem("oq.draft.T-1");
+        """, snapshot(collections=lists), hash="#todo")
+        self.assertIsNone(got)
+
+    def test_a_done_todos_note_is_shown_as_plain_text(self):
+        lists = {"todos": {"T-1": {"status": "done", "title": "mine", "from": "you", "version": 2, "added_at": NOW,
+                                   "done_at": NOW, "done_note": "hash <img src=x>"}}}
+        got = dom("""
+            await start();
+            await click($("#ttabs [data-tf=done]"));
+            const c = $("#todo-T-1");
+            return { card: text(c), imgs: c.querySelectorAll("img").length, field: !!$("#tn-T-1") };
+        """, snapshot(collections=lists), hash="#todo")
+        self.assertIn("hash <img src=x>", got["card"])
+        self.assertEqual((got["imgs"], got["field"]), (0, False))
+
     def test_a_failed_tick_is_put_back_and_says_not_saved_whatever_the_refusal(self):
         got = dom(HOLD % r"/\/todos\/T-1\/done$/" + """
             await start();

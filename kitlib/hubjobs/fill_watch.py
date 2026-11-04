@@ -501,7 +501,7 @@ class FillWatch(object):
                 notes.append('%s: pull push %s' % (key, sent or 'not sent'))
         acted.append('%s (pulled %s%s)' % (key, ' '.join(r for r, _b in pulled) or 'none',
                                            ', skipped %d' % len(skipped) if skipped else ''))
-        left = free - len(pulled)
+        left = free - len(pulled) - sum(1 for _r, c in skipped if c.split('+')[0] in TAKES_SLOT)
         if left > 0 and e.get('pm') != since:
             ctx.event('fill', '%s:%d:unfilled' % (push.field(key), left))
             e['pm'] = since

@@ -871,6 +871,19 @@ class AutoPull(WatchFixture, unittest.TestCase):
         self.run_at(2200.0)
         self.assertEqual(self.c.events, [])
 
+    def test_slots_taken_by_not_open_skips_are_not_unfilled(self):
+        self.pulled = [([], [('EX-A', 'not-open'), ('EX-B', 'not-open')])]
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual(self.c.events, [])
+
+    def test_an_unsure_skip_takes_a_slot_and_the_rest_is_unfilled(self):
+        self.slots['game'] = (5, 2, ['EX-A', 'EX-B', 'EX-C'])   # free 3
+        self.pulled = [([('EX-A', 'game/fill-ex-a')], [('EX-B', 'unsure+tree-kept')])]
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual(self.c.events, [('fill', 'game:1:unfilled')])
+
     def test_nothing_pulled_and_nothing_skipped_sends_no_pull_push(self):
         self.pulled = [([], [])]
         self.run_at(1000.0)

@@ -339,6 +339,21 @@ class LivenessTest(unittest.TestCase):
                          ["consultant-alpha is not running: launch.py consultant --repo alpha "
                           "--repo-path <its checkout>"])
 
+    def test_a_mixed_case_repo_whose_consultant_runs_under_the_launcher_name_gets_no_line(self):
+        sess = json.dumps({"a": {"name": "a-1", "repo": "Agentic-Project_Manager-Kit"}})
+        procs = [proc("claude.exe", "claude --remote-control a-1", "C:/bin/claude.exe"),
+                 proc("claude.exe", "claude --remote-control consultant-agentic-project-manager-kit",
+                      "C:/bin/claude.exe")]
+        self.assertEqual(pmstart.liveness(CFG, procs, read=lambda p: sess, account=lambda: "2", repos={}), [])
+
+    def test_a_mixed_case_repo_without_consultant_gets_a_repo_value_launch_accepts(self):
+        from kitlib.launcher import start
+        sess = json.dumps({"a": {"name": "a-1", "repo": "Agentic-Project_Manager-Kit"}})
+        (line,) = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",
+                                   repos={"Agentic-Project_Manager-Kit": "C:/r/apm"})
+        self.assertIn("--repo agentic-project-manager-kit --repo-path C:/r/apm", line)
+        self.assertRegex("agentic-project-manager-kit", start.SLUG)
+
     def test_the_consultant_line_names_the_repo_folder_when_launcher_repos_has_it(self):
         sess = json.dumps({"a": {"name": "a-1", "repo": "alpha"}})
         out = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",

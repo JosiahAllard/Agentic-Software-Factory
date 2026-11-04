@@ -603,6 +603,11 @@ def down_entries(sessions, alive):
             and e["name"] not in alive]
 
 
+def consultant_repo(folder):
+    from kitlib.launcher.start import consultant_repo as slug     # here: only this check needs the launcher
+    return slug(folder)
+
+
 def _consultants_missing(sessions, alive, repos=None):
     """One line per repository in sessions (an entry's "repo") with no live consultant-<repo> session
     (launch.py consultant names it so, kitlib.launcher.start.consultant). A repository with a
@@ -614,14 +619,15 @@ def _consultants_missing(sessions, alive, repos=None):
     out = []
     folders = None
     for repo in sorted({e["repo"] for e in entries if isinstance(e.get("repo"), str) and e["repo"]}, key=str.lower):
-        if repo not in covered and "consultant-" + repo not in alive:
+        slug = consultant_repo(repo)
+        if repo not in covered and "consultant-" + slug not in alive:
             if folders is None:
                 try:
                     folders = launcher_repos() if repos is None else repos
                 except Exception:
                     folders = {}
             out.append("consultant-%s is not running: launch.py consultant --repo %s --repo-path %s"
-                       % (repo, repo, folders.get(repo) or "<its checkout>"))
+                       % (slug, slug, folders.get(repo) or "<its checkout>"))
     return out
 
 

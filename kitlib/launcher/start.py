@@ -129,6 +129,12 @@ def consultant_notes_path(host, repo):
     return os.path.join(agent_temp(host), CONSULTANT_FOLDER % repo, CONSULTANT_NOTES)
 
 
+def consultant_repo(folder):
+    """The --repo slug launch.py consultant gives a repo folder: lowercase, any run of characters outside
+    a-z, 0-9 and '-' (an underscore, say) as one '-'. The session is 'consultant-' + this."""
+    return re.sub(r'[^a-z0-9-]+', '-', folder.lower())
+
+
 def cli(*args):
     """A launch.py command line for the owner or the PM to run."""
     kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -524,7 +530,7 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)
     repo_path = os.path.abspath(repo_path)
-    repo = repo or os.path.basename(os.path.normpath(repo_path)).lower()
+    repo = repo or consultant_repo(os.path.basename(os.path.normpath(repo_path)))
     if not SLUG.match(repo):
         raise LaunchError("--repo '%s' must be 2-41 characters of a-z, 0-9 and '-', starting with a letter or digit." % repo)
     if not autocompact or not CONSULTANT_AUTOCOMPACT[0] <= int(autocompact) <= CONSULTANT_AUTOCOMPACT[1]:

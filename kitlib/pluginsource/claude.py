@@ -32,8 +32,7 @@ USER_SCOPE = 'user'
 
 
 def account_folders(home=None):
-    """Existing account folders, each real folder once: ~/.claude and every ~/.claude-* (the kit's
-    own machine folders excepted, machinesetup.default_config_dirs), then every folder of the
+    """Existing account folders, each real folder once: ~/.claude and every ~/.claude-*, then every folder of the
     machine config's launcher.accounts and launcher.orgs. A launcher config that cannot be read
     adds nothing (the default folders still count)."""
     from kitlib.config import user

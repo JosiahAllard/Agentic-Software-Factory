@@ -15,7 +15,6 @@ from unittest import mock
 
 from kitlib import coordinatorstart, pmstart, pmwatch
 from kitlib.config import ConfigError, user
-from kitlib.machinesetup import default_config_dirs
 from tests.home import machine_config, pm_repo
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'optional', 'agenttemp'))
@@ -315,15 +314,6 @@ class BadLocationCliTest(_Home):
                 self.assertEqual(code, 2, err)
                 self.assertIn('machine config', err)
                 self.assertIn('not a folder', err)
-
-
-class MachineSetupTest(_Home):
-
-    def test_the_config_folder_is_not_taken_for_a_claude_account_folder(self):
-        for name in ('.claude', '.claude-two', user.DIR_NAME):
-            os.makedirs(os.path.join(self.home, name))
-        self.assertEqual([os.path.basename(d) for d in default_config_dirs(self.home)],
-                         ['.claude', '.claude-two'])
 
 
 if __name__ == '__main__':

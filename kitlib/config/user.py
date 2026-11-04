@@ -660,9 +660,7 @@ def _kind(path):
 def home_location(home=None):
     """The HomeLocation of the machine config file in the home folder `home` (default the
     user's): the move's source (kitlib.config.move), never what the kit reads (locate). It
-    decides on DIR_NAME's config file, never on its folder alone, so another writer making the
-    folder first does not hide the old file. It reads nothing but the file system's answers and
-    never raises."""
+    reads nothing but the file system's answers and never raises."""
     h = home or home_dir()
     new_dir = os.path.join(h, DIR_NAME)
     new = os.path.join(new_dir, FILE_NAME)

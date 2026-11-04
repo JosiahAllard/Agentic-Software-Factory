@@ -38,12 +38,13 @@ import re
 
 from kitlib.gate import result
 from kitlib.git import refs, repo
+from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
 
 RUNS = 5
 DIR_NAME = 'kit-gate-budget'
 DOC = 'docs/gate.md "The branch gate budget"'
-NOT_STARTED = 'not started'     # the `how` of a lock run that got its slots and started nothing
+NOT_STARTED = lockrun.NOT_STARTED   # a run that got its slots and started nothing
 
 
 class BudgetError(Exception):

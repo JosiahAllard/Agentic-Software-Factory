@@ -323,6 +323,53 @@ class CountedTogether(CapCase):
         self.assertEqual(len(naps), 1)
         self.assertTrue(0 <= naps[0] <= max(gatecap.POLL_S, self.store.settings.queue_poll_s))
 
+    def test_a_run_asked_to_stop_is_not_given_back(self):
+        """A give-back settles the run and drops its stop request: the stop would be lost."""
+        self.run_rec()
+        slot = self.book()
+        self.assertTrue(lockrun.request_stop(self.store, slot.id, 'test'))
+        self.assertFalse(gatecap.gave_way(self.store, self.name, slot, lambda t: None, cap=1,
+                                          who=AGENT, sleep=never))
+        self.assertFalse(slot.released)
+        self.assertTrue(slot.stop_asked())
+
+    def stopped_gate(self, stop_on_give_back):
+        """A capped branch gate at the cap (its wait_turn passed, as when two count together),
+        whose run is asked to stop once booked, or as it is given back. (outcome, its slots)."""
+        self.run_rec()
+        slots, booked = [], lockrun.book
+
+        def book(*a, **k):
+            slot = booked(*a, **k)
+            slots.append(slot)
+            if not stop_on_give_back:
+                lockrun.request_stop(self.store, slot.id, 'test')
+            return slot
+
+        def say(text):
+            if stop_on_give_back and 'gives back run' in text:
+                lockrun.request_stop(self.store, slots[-1].id, 'test')
+        with self.capped(cap=1), \
+                mock.patch.object(gatecap, 'wait_turn', lambda *a, **k: None), \
+                mock.patch.object(lockrun, 'book', book):
+            out = self.branch_gate(say=say)
+        return out, slots
+
+    def test_a_stop_before_the_give_back_ends_the_gate_stopped(self):
+        """Red before: the run was given back, its stop dropped, and the gate booked again."""
+        out, slots = self.stopped_gate(stop_on_give_back=False)
+        self.assertEqual(out.code, G.STOPPED, out.lines)
+        self.assertEqual(len(slots), 1)
+        self.assertEqual(slots[0].ended.get('how'), 'cancelled')
+
+    def test_a_stop_while_it_is_given_back_ends_the_gate_stopped(self):
+        """The stop request found as the run settles is kept as `stopped_by`: no booking again."""
+        out, slots = self.stopped_gate(stop_on_give_back=True)
+        self.assertEqual(out.code, G.STOPPED, out.lines)
+        self.assertEqual(len(slots), 1)
+        self.assertEqual(slots[0].ended.get('how'), budget.NOT_STARTED)
+        self.assertTrue(slots[0].ended.get('stopped_by'))
+
     def test_below_the_cap_it_keeps_its_slot(self):
         """Another session's run, and the session's own below the cap, leave the slot held."""
         self.run_rec(host=OTHER_HOST)

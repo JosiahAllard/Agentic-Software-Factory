@@ -123,10 +123,14 @@ def gave_way(store, repo, slot, say, cap=None, who=None, home=None, poll_s=None,
     flight are counted again, now that this one's record is visible to theirs: at the cap, this
     gate gives its slots back (released `not started`, which the branch gate budget does not
     count), says one line, pauses a random part of a poll (two that gave way together do not book
-    together again) and returns True; the caller waits its turn again and books again. False: it
-    runs. Of gates that hold together, the one that counts last sees every other's record, so no
-    more than the cap run. The caller and the cap are read only when another gate run of repo is
-    live."""
+    together again) and returns True; the caller waits its turn again and books again, unless a
+    stop came while the run was given back (stopped): then it pauses nothing and the caller ends
+    the gate stopped. False: it runs. A run already asked to stop is never given back (False): a
+    give-back would settle the run and drop the stop, and the gate would book again under a new
+    id; the caller's own stop check ends it. Of gates that hold together, the one that counts
+    last sees every other's record it can read: a soft limit, since a record being rewritten can
+    read as missing (Store.live_runs), so a count can miss a live gate. The caller and the cap
+    are read only when another gate run of repo is live."""
     others = [r for r in _gate_runs(store.live_runs(), repo) if r.get('id') != slot.id]
     if not others:
         return False
@@ -142,10 +146,20 @@ def gave_way(store, repo, slot, say, cap=None, who=None, home=None, poll_s=None,
         return False
     whose = ('of this session' if _hosted(who) else
              '(all counted: this agent\'s host cannot be read)')
+    if slot.stop_asked():
+        return False
     say('the gate gives back run %s for the session gate cap: %d of %d other gate runs %s in %s '
         'are in flight (%s); it books again when one ends' % (
             slot.id, len(mine), cap, whose, repo, ', '.join(str(r.get('id')) for r in mine)))
     slot.release(1, budget.NOT_STARTED)
+    if stopped(slot):
+        return True
     interval = max(poll_s or POLL_S, store.settings.queue_poll_s)
     (sleep or time.sleep)(random.uniform(0, interval))
     return True
+
+
+def stopped(slot):
+    """Whether released `slot`'s run was asked to stop before it ended: Run.finish keeps the stop
+    request it found as the ended record's `stopped_by`, then removes the request."""
+    return bool((getattr(slot, 'ended', None) or {}).get('stopped_by'))

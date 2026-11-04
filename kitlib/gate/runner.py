@@ -626,8 +626,11 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
             return None, book_refusal(e, log_dir, base)
         with slot:
             # Counted and booked in two steps: at the cap now, it gives the slot back and books
-            # again (gatecap.gave_way).
+            # again (gatecap.gave_way), unless a stop came while it gave the run back.
             if capped and gatecap.gave_way(store, name, slot, say):
+                if gatecap.stopped(slot):
+                    return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir,
+                                                 base)
                 continue
             say(slot.held_text())
             results = run_steps(slot.launcher, chosen, gate or cfg.section('gate'), ctx, log_dir,

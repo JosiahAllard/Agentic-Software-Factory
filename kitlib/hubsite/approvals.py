@@ -8,8 +8,13 @@ signed with the approval key (auth.read_approval_key), so a document edited in t
 by anyone without the key no longer verifies. The commit and land steps ask the server whether
 their change is the approved one (Verifier) and fail closed on any doubt.
 
-  PENDING_TTL_S, APPROVED_TTL_S   how long a request waits for a decision, and how long an
-                                  approval lasts (the owner's choice: 7 days, 24 hours)
+  PENDING_TTL_S, APPROVAL_LIFE_S  how long a request waits for a decision, and how long a file
+                                  approval holds, used or not (the owner's choice: 7 days, 30
+                                  days; APPROVED_TTL_S, 24 hours, for an op approval)
+  DENIAL_PENDING_S                how long a denial stays pending owner input after its decision
+                                  (24 hours; kitlib.hubsite.store.approval_decided)
+  approval_end(doc)               when a decided approval stops counting: the one place its
+                                  lifetime is computed
   blob_id(content)                git's blob id of the content (SHA-1 object format)
   repo_id(url)                    a remote URL as the repository's identity: credentials,
                                   scheme and `.git` dropped, the host lower-cased
@@ -28,7 +33,7 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   consumed; ApprovalError
   check(key, doc_id, doc, repo, head, blobs, now, commit=None)
                                   (True, '') when this change is the approved one (given a
-                                  commit, also consumed by that commit), else (False, why):
+                                  commit, also consumed, by any commit), else (False, why):
                                   the server's verify, pure
   remote_id(checkout, remote='origin', run=None)
                                   (repo_id, None) of a checkout's remote, or (None, why)
@@ -36,15 +41,27 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   (text, None) of a file at head, read with git and checked to
                                   be base_blob, or (None, why)
   diff(path, base, content)       the unified diff lines the page shows for one file
-  same_content_error(checkout, base, parent, paths, call=None)
-                                  why a change made on the commit `parent` is not made on the
-                                  same content as on the approved base `base`, for `paths`, or
-                                  None (the same-content rule, below)
+  delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
+  cat=None)                       (blob or None, None): what one file's approved change gives
+                                  on a parent, or (None, why) (the delta rule, below)
+  delta_content(...)              the same arguments: (bytes or None, None), the content
+                                  itself, or (None, why)
+  delta_targets(checkout, doc, parent, call=None, cat=None)
+                                  ({path: (parent entry, blob, bytes)}, None): what the approval
+                                  gives on the commit `parent`, path by path, or (None, why)
+  delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None)
+                                  ({path: approved blob}, None) when a commit makes the approved
+                                  change on its parent, or (None, why)
+  spent(checkout, doc_id, rev, call=None)
+                                  (sha, None) of the newest commit `rev` reaches that carries the
+                                  approval (TRAILER), (None, None), or (None, why)
+  landed(checkout, base, tip, call=None)
+                                  ({doc id: sha}, None) of the approvals the commits base..tip
+                                  carry, as spent reads one, or (None, why): what a landing puts
+                                  on main (kitlib.gate.land.Lander.post_landing)
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
-                                  through the verify route; fails closed. .verify_on(checkout,
-                                  doc_id, repo, parent, blobs, commit=None, base=None): the same
-                                  for a change made on the commit `parent`, which may descend
-                                  from the approved base (the same-content rule)
+                                  through the verify route; fails closed.
+                                  .approved_doc(doc_id) -> (doc, why) from the snapshot
   request(client, repo, title, head, files, reason=None) / consume(client, doc_id, commit,
   if_version)                     the agent's add and consume calls
 
@@ -96,20 +113,25 @@ decision and decided_at (canonical): editing any of them, the expiry included, v
 out, as blob binds it. The status is not covered: only `approved` and `consumed` can verify, and
 both need a signed approval.
 
-The same-content rule (docs/commit.md "Owner approval"): the server's check compares `head` with
-the signed head, the approved base, exactly, and never reads git. A change made on another commit
-P counts as made on the approved base B when same_content_error(checkout, B, P, paths) is None:
-B is an ancestor of P (`git merge-base --is-ancestor`), and every one of `paths` (the paths the
-change touches) has the same tree entry at P as at B: the same mode, type and object id, or no
-entry at either. The client proves that with git, then asks the server to verify the change for
-B (Verifier.verify_on). So the change against P is, path for path, the change the owner saw
-against B: a path edited, created, removed, renamed or given another mode between B and P
-refuses. Owner-only paths the change does not touch are not compared (the owner's choice: the
-approved paths only).
+The delta rule (docs/guard.md "Owner-only commits"; kitlib.guard.ownercommits HubApprovals): an
+approval is a change, not a commit. A commit C with one parent P makes it when C changes no path
+the approval does not hold and each approved path p is at C what the change gives on P,
+delta_result(base_blob, P:p, blob, content): a new file needs no file at P or the approved one; a
+delete needs P:p at the base or absent; a modification needs P:p present, and gives the approved
+blob where P:p is the base or the approved blob already, else the byte-level three-way merge
+`git merge-file -p P:p base A` of the approved content A onto it, refused when it does not merge
+cleanly. B0:p must be the signed base_blob and P:p a regular file; C:p keeps P's mode. Then the
+server verifies the approved blobs for the signed base. A commit on main (as last fetched) that
+carries the approval spends it: a later commit with it is refused.
+
+The server's check compares `head` with the signed head, the approved base, exactly, and never
+reads git: the client judges the parent and the commit with git (delta_error).
 
 Expiry is read, never written by a timer: a pending request expires PENDING_TTL_S after
-created_at; an approval APPROVED_TTL_S after decided_at, consumed or not (the owner's choice:
-a consumed approval verifies until it expires, so a land after the commit can still check it).
+created_at; a file approval APPROVAL_LIFE_S after decided_at, consumed or not, and an op approval
+APPROVED_TTL_S after it (approval_end; the owner's choice: a file approval holds until its change
+is on main or for 30 days, whichever comes first, so a rebuilt branch and a land after the commit
+can still check it).
 A time that cannot be read, a decision dated after now and a naive now count as expired. Denied
 and expired are final.
 
@@ -123,18 +145,30 @@ import difflib
 import hashlib
 import hmac
 import json
+import os
 import re
+import tempfile
+import urllib.parse
 
 from kitlib import hubvalidate
 from kitlib.git import batch, cmd
 
 from .api import AGENT
-from .client import part as _part
 
-# How long an approval counts, as the owner chose them.
+
+def _part(doc_id):
+    """`doc_id` as one segment of a path, as client.part gives it: not imported from there, so
+    this module loads without the client and the server it imports."""
+    return urllib.parse.quote(str(doc_id), safe='')
+
+# How long an approval counts, as the owner chose them (approval_end reads the last two).
 PENDING_TTL_S = 7 * 86400       # a request not decided within 7 days is expired
-APPROVED_TTL_S = 24 * 3600      # an approval, consumed or not, lasts 24 hours
 PENDING_OP_TTL_S = 24 * 3600    # an op request not decided within 24 hours is expired
+APPROVAL_LIFE_S = 30 * 86400    # a file approval, used or not, holds 30 days (or until spent)
+APPROVED_TTL_S = 24 * 3600      # an op approval lasts 24 hours
+DENIAL_PENDING_S = 24 * 3600    # a denial stays pending owner input this long after decided_at
+                                # (kitlib.hubsite.store.approval_decided; the PM's ruling)
+TRAILER = 'Owner-Approval'      # the trailer that carries one (kitlib.guard.ownercommits)
 
 PENDING, APPROVED, DENIED = 'pending', 'approved', 'denied'
 CONSUMED, EXPIRED = 'consumed', 'expired'
@@ -166,7 +200,7 @@ WHY_STATUS = 'the approval is %s'               # % its status at that moment
 WHY_REPO = 'the approval is for another repository'
 WHY_HEAD = 'the approval is for another base commit'
 WHY_FILES = 'the files differ from the approved ones'
-WHY_COMMIT = 'the approval was not consumed by this commit'
+WHY_COMMIT = 'the approval was not consumed'
 WHY_SERVER = 'the hub server cannot say: %s'     # % the error's class
 WHY_ANSWER = 'the hub server gave no verdict'
 WHY_KIND_OP = 'the approval is for an operation, not a change'
@@ -430,19 +464,29 @@ def sign(key, doc_id, doc):
     return hmac.new(key.encode('ascii'), canonical(doc_id, doc), hashlib.sha256).hexdigest()
 
 
+def approval_end(doc):
+    """When the decided approval `doc` stops counting, or None when its decided_at cannot be
+    read: decided_at + APPROVED_TTL_S for an op approval, + APPROVAL_LIFE_S for a file approval,
+    used or not (a file approval also ends once its change is on main: spent). The one place an
+    approval's lifetime is computed, so a cutoff date would go here."""
+    t = _when(doc.get('decided_at'))
+    if t is None:
+        return None
+    life = APPROVED_TTL_S if doc.get('kind') == KIND_OP else APPROVAL_LIFE_S
+    return t + datetime.timedelta(seconds=life)
+
+
 def expires_at(doc):
     """When `doc` stops counting: created_at + PENDING_TTL_S (PENDING_OP_TTL_S for an op
-    document) while pending, decided_at + APPROVED_TTL_S when approved or consumed; None when it
-    never expires (denied, expired) or a time cannot be read (status_at then counts it
-    expired)."""
+    document) while pending, approval_end(doc) when approved or consumed; None when it never
+    expires (denied, expired) or a time cannot be read (status_at then counts it expired)."""
     status = doc.get('status') if isinstance(doc, dict) else None
     if status == PENDING:
         t = _when(doc.get('created_at'))
         life = PENDING_OP_TTL_S if doc.get('kind') == KIND_OP else PENDING_TTL_S
         return None if t is None else t + datetime.timedelta(seconds=life)
     if status in (APPROVED, CONSUMED):
-        t = _when(doc.get('decided_at'))
-        return None if t is None else t + datetime.timedelta(seconds=APPROVED_TTL_S)
+        return approval_end(doc)
     return None
 
 
@@ -557,8 +601,10 @@ def check(key, doc_id, doc, repo, head, blobs, now, commit=None):
     """(True, '') when the change of `repo` (a remote URL or a repo_id) at base commit `head`
     with the files `blobs` ({path: blob, None for a delete}) is the one `doc` approved and the
     approval still counts at `now`; else (False, one of the WHY_ phrases). Given a `commit`, the
-    approval must also be consumed, and by that commit (WHY_COMMIT). A document is trusted only
-    once its signature checks under `key`, before any of its fields is compared."""
+    approval must also be consumed (WHY_COMMIT), by that commit or another: a rebuilt branch
+    keeps its approval until the change is on main (spent, judged by the client) or it expires.
+    A document is trusted only once its signature checks under `key`, before any of its fields
+    is compared."""
     why = _signed(key, doc_id, doc)
     if why:
         return False, why
@@ -567,7 +613,7 @@ def check(key, doc_id, doc, repo, head, blobs, now, commit=None):
     status = status_at(doc, now)
     if status not in (APPROVED, CONSUMED):
         return False, WHY_STATUS % (status or 'malformed')
-    if commit is not None and (status != CONSUMED or doc.get('commit') != commit):
+    if commit is not None and status != CONSUMED:
         return False, WHY_COMMIT
     try:
         if as_repo_id(repo) != doc.get('repo'):
@@ -686,6 +732,8 @@ def diff(path, base, content):
                                      '/dev/null' if content is None else 'b/' + path))
 
 
+APPROVAL_ID = re.compile(r'A-[0-9]+\Z')   # a file or op approval's doc id
+SHA = re.compile(r'[0-9a-f]{40}\Z')       # a commit id, as git log gives it
 _NOREPLACE = ['--no-replace-objects']     # replace refs do not travel: judge the real objects
 
 
@@ -704,85 +752,244 @@ def _entries(checkout, rev, paths, call):
     return found, None
 
 
-def same_content_error(checkout, base, parent, paths, call=None):
-    """None when a change made on the commit `parent` of the git checkout `checkout` is made on
-    the same content as on the approval's base commit `base`, for every one of `paths`; else why
-    not (the same-content rule, module docstring). `base` == `parent` is None at once. Otherwise
-    `base` must be an ancestor of `parent`, and each path must have the same tree entry (mode,
-    type, object id) at both, or none at either; the first that differs is named. Any git failure
-    is a why: it fails closed. `call` is kitlib.git.cmd.call or a stand-in."""
-    if isinstance(base, str) and base == parent:
-        return None
-    if not (isinstance(base, str) and _HEX40.match(base) and isinstance(parent, str)
-            and _HEX40.match(parent)):
-        return 'the base and the commit the change is made on are not both commit ids'
-    paths = sorted(set(paths))
-    if not paths:
-        return 'the change touches no path'
-    call = call or cmd.call
-    r = call(_NOREPLACE + ['merge-base', '--is-ancestor', base, parent], checkout)
-    if r.rc == 1:
-        return 'the approved base %s is not an ancestor of %s' % (base[:12], parent[:12])
+REGULAR_MODES = ('100644', '100755')    # the tree modes of a regular file
+
+
+def delta_result(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
+                 cat=None):
+    """(R, None): what the approved change of one file, from `base_blob` (None: the approval
+    creates it) to `approved_blob` (None: it deletes it), gives on a parent that holds
+    `parent_blob` (None: no file there); R is a blob id, or None for no file. (None, why) when it
+    gives nothing (the delta rule, module docstring). `approved_bytes`: the approved content,
+    which must be `approved_blob`'s, so the merge reads the bytes the owner saw. Fails closed on
+    any git failure. `call` is kitlib.git.cmd.call and `cat` kitlib.git.batch.cat_file, or
+    stand-ins."""
+    data, why = delta_content(checkout, base_blob, parent_blob, approved_blob, approved_bytes,
+                              call=call, cat=cat)
+    if why:
+        return None, why
+    return (None if data is None else blob_id(data)), None
+
+
+def delta_content(checkout, base_blob, parent_blob, approved_blob, approved_bytes, call=None,
+                  cat=None):
+    """delta_result with the bytes: (D, None), D the content the approved change gives on the
+    parent (bytes, None for no file), or (None, why). What commit.py writes on a newer HEAD."""
+    if approved_blob is not None and not (isinstance(approved_bytes, bytes)
+                                          and blob_id(approved_bytes) == approved_blob):
+        return None, 'the approved content is not its approved blob'
+    if base_blob is None:
+        if parent_blob is None or parent_blob == approved_blob:
+            return (None if approved_blob is None else approved_bytes), None
+        return None, 'the file the approval creates is already at the parent with other content'
+    if approved_blob is None:
+        if parent_blob is None or parent_blob == base_blob:
+            return None, None
+        return None, 'the file the approval deletes changed since the approved base'
+    if parent_blob is None:
+        return None, 'the file the approval changes is not at the parent'
+    if parent_blob in (base_blob, approved_blob):
+        return approved_bytes, None
+    got, why = (cat or batch.cat_file)([parent_blob, base_blob], checkout)
+    if got is None:
+        return None, why or 'git could not read the blobs to merge'
+    sides = [got.get(parent_blob), got.get(base_blob)]
+    if any(s is None or s[0] != 'blob' for s in sides):
+        return None, 'git could not read the blobs to merge'
+    with tempfile.TemporaryDirectory(prefix='kit-approval-') as folder:
+        names = []
+        for name, data in (('parent', sides[0][1]), ('base', sides[1][1]),
+                           ('approved', approved_bytes)):
+            names.append(os.path.join(folder, name))
+            with open(names[-1], 'wb') as f:
+                f.write(data)
+        r = (call or cmd.call)(['merge-file', '-p'] + names, checkout)
+    if r.rc is None:
+        return None, 'git merge-file failed: %s' % r.err
     if r.rc != 0:
-        return 'git merge-base failed: %s' % (r.err or 'exit %s' % r.rc)
-    at_base, why = _entries(checkout, base, paths, call)
-    if at_base is None:
-        return why
-    at_parent, why = _entries(checkout, parent, paths, call)
-    if at_parent is None:
-        return why
+        return None, ('the approved change does not merge cleanly onto the parent (git '
+                      'merge-file exit %s)' % r.rc)
+    return bytes(r.out), None
+
+
+def spent(checkout, doc_id, rev, call=None):
+    """(sha, None): the newest commit `rev` (main as last fetched) reaches that carries the trailer
+    `Owner-Approval: hub:<doc_id>` exactly (TRAILER), so the approved change is on main and the
+    approval is used up; (None, None) when none does; (None, why) when git cannot tell."""
+    if not (isinstance(rev, str) and rev and not rev.startswith('-')):
+        return None, 'not a rev: %r' % (rev,)
+    want = 'hub:%s' % doc_id
+    r = (call or cmd.call)(_NOREPLACE + [
+        'log', '--no-use-mailmap', '-F', '--grep=%s' % want,
+        '--format=%%H%%x00%%(trailers:key=%s,valueonly,separator=%%x01)%%x00' % TRAILER,
+        rev, '--'], checkout)
+    if r.rc != 0:
+        return None, 'git log %s failed: %s' % (rev, r.err or 'exit %s' % r.rc)
+    fields = cmd.text(r.out).split('\0')
+    for i in range(0, len(fields) - 1, 2):
+        sha = fields[i].strip()
+        if sha and want in [v.strip() for v in fields[i + 1].split('\x01')]:
+            return sha, None
+    return None, None
+
+
+def landed(checkout, base, tip, call=None):
+    """({doc id: sha}, None): each approval a commit `tip` reaches and `base` does not carries, as
+    the only `Owner-Approval: hub:<id>` value of that commit, with the newest such commit; else
+    (None, why). What a landing from `base` (main before it) to `tip` puts on main, for the hub
+    page (the landing feed); spent stays the check that counts."""
+    for rev in (base, tip):
+        if not (isinstance(rev, str) and rev and not rev.startswith('-')):
+            return None, 'not a rev: %r' % (rev,)
+    r = (call or cmd.call)(_NOREPLACE + [
+        'log', '--no-use-mailmap',
+        '--format=%%H%%x00%%(trailers:key=%s,valueonly,separator=%%x01)%%x00' % TRAILER,
+        '%s..%s' % (base, tip), '--'], checkout)
+    if r.rc != 0:
+        return None, 'git log %s..%s failed: %s' % (base, tip, r.err or 'exit %s' % r.rc)
+    out = {}
+    fields = cmd.text(r.out).split('\0')
+    for i in range(0, len(fields) - 1, 2):
+        sha, values = fields[i].strip(), [v.strip() for v in fields[i + 1].split('\x01')]
+        values = [v for v in values if v]
+        if not (sha and len(values) == 1 and values[0].startswith('hub:')):
+            continue
+        doc_id = values[0][len('hub:'):]
+        if APPROVAL_ID.match(doc_id):
+            out.setdefault(doc_id, sha)          # git log lists the newest first
+    return out, None
+
+
+def approved_files(doc):
+    """{path: (base_blob, blob, content bytes or None)} of the file approval `doc`, or None when
+    it is malformed (no 40-hex head, no files, a path named twice, a field of the wrong type)."""
+    if not isinstance(doc, dict):
+        return None
+    head, files = doc.get('head'), doc.get('files')
+    if not (isinstance(head, str) and _HEX40.match(head) and isinstance(files, list) and files):
+        return None
+    out = {}
+    for f in files:
+        if not isinstance(f, dict) or not isinstance(f.get('path'), str) or f['path'] in out:
+            return None
+        base, blob, content = f.get('base_blob'), f.get('blob'), f.get('content')
+        if any(v is not None and not (isinstance(v, str) and _HEX40.match(v))
+               for v in (base, blob)) or not (content is None or isinstance(content, str)):
+            return None
+        out[f['path']] = (base, blob, None if content is None else content.encode('utf-8'))
+    return out
+
+
+def delta_error(checkout, doc, parent, commit, blobs, call=None, cat=None):
+    """({path: approved blob}, None) when the commit `commit`, whose one parent is `parent`, makes
+    the approved change of `doc` (as the hub's snapshot gives it, not yet verified) on it, `blobs`
+    being every path the commit changes with its blob there; else (None, why). The delta rule,
+    module docstring: the commit changes no path the approval does not hold; at the approval's
+    base each approved path is its base_blob; and at the commit each is what delta_result gives
+    on the parent, a regular file in the parent's mode. The caller then asks the hub to verify
+    the approved blobs for the signed base, which binds every field read here."""
+    files = approved_files(doc)
+    if files is None:
+        return None, WHY_BAD
+    extra = sorted(p for p in (blobs if isinstance(blobs, dict) else ()) if p not in files)
+    if extra:
+        return None, '%s: %s is not in the approval' % (WHY_FILES, extra[0])
+    call = call or cmd.call
+    targets, why = delta_targets(checkout, doc, parent, call=call, cat=cat)
+    if targets is None:
+        return None, why
+    paths = sorted(files)
+    at_commit, why = _entries(checkout, commit, paths, call)
+    if at_commit is None:
+        return None, why
     for p in paths:
-        if at_base.get(p) != at_parent.get(p):
-            return '%s at %s is not as the approved base %s has it' % (p, parent[:12], base[:12])
-    return None
+        par, want, _data = targets[p]
+        c = at_commit.get(p)
+        if want is None:                # the approved change leaves no file there
+            if c is not None:
+                return None, '%s: %s at %s is not the approved change' % (
+                    WHY_FILES, p, commit[:12])
+            continue
+        if c is None or not _regular(c, want):
+            return None, '%s: %s at %s is not the approved change' % (WHY_FILES, p, commit[:12])
+        if par is not None and c[0] != par[0]:
+            return None, '%s: %s at %s changes its mode from %s to %s' % (
+                WHY_FILES, p, commit[:12], par[0], c[0])
+    return {p: files[p][1] for p in paths}, None
+
+
+def delta_targets(checkout, doc, parent, call=None, cat=None):
+    """({path: (P entry or None, R blob or None, R bytes or None)}, None): what the approved
+    change of `doc` (the hub's snapshot document, not yet verified) gives on the commit `parent`
+    P, path by path, R by delta_content; else (None, why). At the approval's base each approved
+    path must be its base_blob, a regular file (or absent for a new file), and at P a regular
+    file or absent. P's entry is (mode, type, object id). The one reading of the delta rule's
+    base and parent: delta_error judges a commit by it, and commit.py writes R on a newer HEAD."""
+    files = approved_files(doc)
+    if files is None:
+        return None, WHY_BAD
+    paths, head, call = sorted(files), doc['head'], call or cmd.call
+    found = []
+    for rev in (head, parent):
+        got, why = _entries(checkout, rev, paths, call)
+        if got is None:
+            return None, why
+        found.append(got)
+    at_base, at_parent = found
+    out = {}
+    for p in paths:
+        base, blob, content = files[p]
+        b, par = at_base.get(p), at_parent.get(p)
+        if (b is None) != (base is None) or (b is not None and not _regular(b, base)):
+            return None, '%s: %s at the approved base %s is not the approved base blob' % (
+                WHY_HEAD, p, head[:12])
+        if par is not None and not _regular(par):
+            return None, '%s: %s at %s is not a regular file' % (WHY_FILES, p, parent[:12])
+        data, why = delta_content(checkout, base, None if par is None else par[2], blob, content,
+                                  call=call, cat=cat)
+        if why:
+            return None, '%s: %s: %s' % (WHY_FILES, p, why)
+        out[p] = (par, None if data is None else blob_id(data), data)
+    return out, None
+
+
+def _regular(entry, oid=None):
+    """True when the ls-tree entry (mode, type, object id) is a regular file (with blob `oid`)."""
+    return (len(entry) == 3 and entry[0] in REGULAR_MODES and entry[1] == 'blob'
+            and (oid is None or entry[2] == oid))
 
 
 class Verifier(object):
     """Asks the hub server whether a change is the approved one. `client` is a
     kitlib.hubsite.client.Client (or a stand-in with its get()); the call is the agent's.
     verify() fails closed: any error of the call (NotRunning, Refused, ServeError, anything
-    else) or an answer without a verdict is (False, why); verify_on() too."""
+    else) or an answer without a verdict is (False, why)."""
 
     def __init__(self, client):
         self.client = client
 
-    def approved_head(self, doc_id):
-        """The `head` the hub's snapshot gives the approval `doc_id` (40 hex), or None on any
-        failure. Not trusted as it stands: verify() for it checks it against the signature."""
+    def approved_doc(self, doc_id):
+        """(the document the hub's snapshot gives the approval `doc_id`, None), or (None, why):
+        WHY_SERVER on a failed call, WHY_ANSWER for a snapshot without approvals, WHY_UNKNOWN when
+        it holds none of that id, WHY_BAD for one that is not an object. Not trusted as it stands:
+        verify() checks what is read from it against the signature."""
         try:
             got = self.client.get('/snapshot')
-        except Exception:           # noqa: BLE001 - no answer is no base
-            return None
+        except Exception as e:      # noqa: BLE001 - fail closed: no answer is no approval
+            return None, WHY_SERVER % type(e).__name__
         colls = got.get('collections') if isinstance(got, dict) else None
         docs = colls.get('approvals') if isinstance(colls, dict) else None
-        doc = docs.get(doc_id) if isinstance(docs, dict) else None
-        head = doc.get('head') if isinstance(doc, dict) else None
-        return head if isinstance(head, str) and _HEX40.match(head) else None
-
-    def verify_on(self, checkout, doc_id, repo, parent, blobs, commit=None, base=None):
-        """verify() for a change made on the commit `parent` of `checkout`: `blobs` and `commit`
-        as verify() takes them. `base`: the approval's base as the caller read it, or None to ask
-        the server for `parent` first and, only when it answers WHY_HEAD, the snapshot for the
-        base. When the base is not `parent`, same_content_error must be None for the paths of
-        `blobs` (else (False, WHY_HEAD and why)), and the server must verify the change for the
-        base: its signature binds the base, so a wrong one never verifies."""
-        if base is None:
-            ok, why = self.verify(doc_id, repo, parent, blobs, commit=commit)
-            if ok or why != WHY_HEAD:
-                return ok, why
-            base = self.approved_head(doc_id)
-            if base is None or base == parent:
-                return False, WHY_HEAD
-        if base != parent:
-            why = same_content_error(checkout, base, parent,
-                                     blobs if isinstance(blobs, dict) else ())
-            if why:
-                return False, '%s: %s' % (WHY_HEAD, why)
-        return self.verify(doc_id, repo, base, blobs, commit=commit)
+        if not isinstance(docs, dict):
+            return None, WHY_ANSWER
+        if doc_id not in docs:
+            return None, WHY_UNKNOWN
+        doc = docs[doc_id]
+        return (doc, None) if isinstance(doc, dict) else (None, WHY_BAD)
 
     def verify(self, doc_id, repo, head, blobs, commit=None):
         """(True, '') only when the server answers valid true for this change (and, given a
-        `commit`, the approval was consumed by it: check's commit); else (False, why)."""
+        `commit`, the approval was consumed, by it or another commit: check's commit); else
+        (False, why)."""
         if commit is not None and not commit:   # the client drops an empty value: unbound
             return False, WHY_COMMIT
         try:

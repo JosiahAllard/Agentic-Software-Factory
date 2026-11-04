@@ -7,33 +7,42 @@ each answers why it refuses, or None.
   fetch(client, doc_id)             (document, why) from the hub's snapshot
   state_error(doc_id, doc)          why the document cannot be committed now (consumed, not
                                     approved), or None
-  prewrite_error(root, doc_id, doc, paths, head)
-                                    why the change cannot be written: the named paths are not
-                                    exactly the approval's, HEAD is not on the same content as
-                                    its base, a content is not its signed blob, a file is
-                                    unchanged, or a file in the work tree is not the approved base
-                                    (or a path not a plain file of the work tree); or None
+  prewrite(root, doc_id, doc, paths, head)
+                                    (plan, None): what to write on HEAD, {path: (blob, bytes)}
+                                    (None, None for a delete); or (None, why) when the change
+                                    cannot be written: the named paths are not exactly the
+                                    approval's, a content is not its signed blob, a file is
+                                    unchanged, the approved change does not apply on HEAD (the
+                                    delta rule), HEAD holds it already, or a file in the work
+                                    tree is not HEAD's copy (or a path not a plain file of the
+                                    work tree). prewrite_error(...) is its why alone
   preverify_error(root, client, doc_id, doc, head)
                                     why the hub does not verify the approval before the write
-  write(root, doc) / restore(state) the approved content into the work tree, and back
-  staged_error(doc, head, staged, snap, judged)
-                                    why what was staged is not the approved blobs on the HEAD
-                                    the steps before judged
+  write(root, doc, plan=None) / restore(state)
+                                    the plan (default: the approved content) into the work tree,
+                                    and back
+  staged_error(doc, head, staged, snap, judged, plan=None)
+                                    why what was staged is not the plan's blobs (default: the
+                                    approved ones) on the HEAD the steps before judged
   consume_commit(root, client, doc_id, value, sha)
                                     (line, why, consumed): consume the approval for the commit
                                     `sha`, then ask the hub to verify it for that commit
 
-The same content: HEAD is the approval's base, or a descendant of it that holds every approved
-path exactly as the base does (kitlib.hubsite.approvals.same_content_error, the owner's choice:
-the approved paths only, compared). The base may have moved on with other work since the owner
-approved; the change written on HEAD is still, path for path, the change the owner saw.
+What is written on HEAD (the delta rule, kitlib.hubsite.approvals.delta_targets): for each
+approved path, the approved content where HEAD holds the base's copy (HEAD is the base, a
+descendant that changed none of the approved paths, or a rebuilt line with the same copy), and
+the clean merge of the approved change onto HEAD's copy (`git merge-file`) where HEAD changed the
+path since the base. A merge that conflicts, a path HEAD holds as something other than a regular
+file, or a file the approval creates that HEAD holds with other content refuses. So the commit
+made is the one gate land judges by the same rule.
 
-The hub is asked through kitlib.hubsite (approvals.Verifier.verify_on, for the approval's base,
+The hub is asked through kitlib.hubsite (approvals.Verifier.verify, for the approval's base,
 and approvals.consume, the agent's calls); every failure to ask it is a refusal, never a pass.
-The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations: the
-approved commit has one parent (the approval's base, or a descendant of it with the same
-content), changes exactly the approval's files to their approved blobs, and is consumed by the
-hub for that commit.
+The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations, by
+the delta rule (kitlib.hubsite.approvals.delta_error): the approved commit has one parent, changes
+only the approval's files, makes the approved change on that parent (a clean merge onto it when the
+parent moved past the base), and is consumed by the hub, by any commit, and not
+spent. consume_commit judges the commit by delta_error too before it consumes.
 """
 import os
 
@@ -185,65 +194,78 @@ def _path_error(root, rel):
 
 def prewrite_error(root, did, doc, paths, head):
     """Why the approved change cannot be written into `root` for a commit of `paths` on `head`,
-    or None (module docstring)."""
+    or None (prewrite)."""
+    return prewrite(root, did, doc, paths, head)[1]
+
+
+def prewrite(root, did, doc, paths, head):
+    """(plan, None): what to write into `root` for a commit of `paths` on `head`, {path: (blob,
+    bytes)}, (None, None) for a path the change deletes; or (None, why) when the approved change
+    cannot be written there (module docstring)."""
     from kitlib.hubsite import approvals as ap
     want = approved_paths(doc)
     if sorted(paths) != want:
-        return ('the paths named are not the approval\'s: named %s; hub:%s holds %s. Name '
-                'exactly its files.' % (', '.join(sorted(paths)), did, ', '.join(want)))
+        return None, ('the paths named are not the approval\'s: named %s; hub:%s holds %s. Name '
+                      'exactly its files.' % (', '.join(sorted(paths)), did, ', '.join(want)))
     for p in want:
         why = _path_error(root, p)
         if why:
-            return why
-    if head != doc['head']:
-        why = ap.same_content_error(root, doc['head'], head, want)
-        if why:
-            return ('the approval is for base %s, and HEAD is %s: %s. %s'
-                    % (doc['head'][:12], (head or 'unborn')[:12], why, base_route(root, did)))
+            return None, why
     unchanged = []
     for f in doc['files']:
         content = f.get('content')
         if content is not None and not isinstance(content, str):
-            return 'the content of %s is not text' % f['path']
+            return None, 'the content of %s is not text' % f['path']
         if (None if content is None else ap.blob_id(content)) != f.get('blob'):
-            return 'the content of %s is not the approved blob' % f['path']
+            return None, 'the content of %s is not the approved blob' % f['path']
         if f.get('blob') == f.get('base_blob'):
             unchanged.append(f['path'])
     if unchanged:
-        return 'the approval changes nothing in: %s' % ', '.join(unchanged)
-    for f in doc['files']:
-        full = os.path.join(root, *f['path'].split('/'))
-        base = f.get('base_blob')
-        if base is None:
-            drift = os.path.lexists(full)
+        return None, 'the approval changes nothing in: %s' % ', '.join(unchanged)
+    targets, why = (None, 'HEAD is unborn: an approved commit has one parent') if head is None \
+        else ap.delta_targets(root, doc, head)
+    if targets is None:
+        return None, ('the approval is for base %s, and its change does not apply on HEAD %s: %s. '
+                      '%s' % (doc['head'][:12], (head or 'unborn')[:12], why,
+                              base_route(root, did)))
+    plan = {}
+    for p in want:
+        par, blob, data = targets[p]
+        if blob == (None if par is None else par[2]):
+            return None, ('HEAD %s holds the approved change of %s already: there is nothing to '
+                          'commit' % (head[:12], p))
+        full = os.path.join(root, *p.split('/'))
+        if par is None:
+            drift = os.path.lexists(full) and 'a file is there where HEAD has none'
         else:
-            drift = not os.path.isfile(full) or _hash_object(root, f['path']) != base
+            drift = ((not os.path.isfile(full) or _hash_object(root, p) != par[2])
+                     and 'it was changed')
         if drift:
-            return ('%s is not the approved base: the work tree has %s since the approval was '
-                    'asked. Put it back, or ask the owner again.'
-                    % (f['path'], 'it' if base is None else 'changed it'))
-    return None
+            return None, ('%s in the work tree is not HEAD\'s copy, the one the approved change '
+                          'is made on: %s. Put it back, or ask the owner again.' % (p, drift))
+        plan[p] = (blob, data)
+    return plan, None
 
 
 def preverify_error(root, client, did, doc, head):
     """Why the hub does not verify the approval as it stands, before anything is written (its
-    signature, status and repository, for a change on `head` with the approval's own blobs:
-    approvals.Verifier.verify_on, with the approval's base), or None."""
+    signature, status and repository, for the approval's own base and blobs:
+    approvals.Verifier.verify; prewrite judged the change on `head` against that base), or
+    None."""
     from kitlib.hubsite import approvals as ap
     repo, why = ap.remote_id(root)
     if repo is None:
         return 'the repository has no remote to name it: %s' % why
-    ok, why = ap.Verifier(client).verify_on(root, did, repo, head,
-                                            {f['path']: f.get('blob') for f in doc['files']},
-                                            base=doc['head'])
+    ok, why = ap.Verifier(client).verify(did, repo, doc['head'],
+                                         {f['path']: f.get('blob') for f in doc['files']})
     return None if ok else 'hub:%s refused: %s' % (did, why)
 
 
-def staged_error(doc, head, staged, snap, judged):
+def staged_error(doc, head, staged, snap, judged, plan=None):
     """Why what is staged is not the approved change, or None. `head`: HEAD as read for the
-    commit; `judged`: the HEAD prewrite_error and preverify_error judged; `staged`: {path: status
+    commit; `judged`: the HEAD prewrite and preverify_error judged; `staged`: {path: status
     letter} this call commits; `snap`: their index entries ({path: (mode, oid)}, None for a
-    deletion; kitlib.commit.index_snapshot)."""
+    deletion; kitlib.commit.index_snapshot); `plan`: prewrite's, else the approved blobs."""
     if head != judged:
         return 'HEAD is %s, not %s, the commit the approval was checked on' % (
             (head or 'unborn')[:12], (judged or 'unborn')[:12])
@@ -256,16 +278,19 @@ def staged_error(doc, head, staged, snap, judged):
         if entry and entry[0] not in oc.REGULAR_MODES:
             return ('the staged %s has mode %s: an approval holds regular files only (100644 or '
                     '100755)' % (f['path'], entry[0]))
-        if (entry[1] if entry else None) != f.get('blob'):
-            return ('the staged %s is not the approved blob (a git filter or .gitattributes '
-                    'changed it on staging)' % f['path'])
+        blob = plan[f['path']][0] if plan else f.get('blob')
+        if (entry[1] if entry else None) != blob:
+            return ('the staged %s is not the %s (a git filter or .gitattributes changed it on '
+                    'staging)' % (f['path'], 'approved blob' if blob == f.get('blob') else
+                                  'approved change merged onto HEAD'))
     return None
 
 
-def write(root, doc):
-    """((saved, made), None) once every approved file is written (UTF-8 bytes, no line-ending
-    change) or deleted; else (None, why) with the work tree restored. `saved`: [(full path, its
-    bytes before or None)]; `made`: the folders this call created."""
+def write(root, doc, plan=None):
+    """((saved, made), None) once every approved file is written (the plan's bytes, else the
+    approved content's UTF-8 bytes, no line-ending change) or deleted; else (None, why) with the
+    work tree restored. `saved`: [(full path, its bytes before or None)]; `made`: the folders
+    this call created."""
     saved, made = [], []
     try:
         for f in doc['files']:
@@ -275,7 +300,10 @@ def write(root, doc):
                 with open(full, 'rb') as fh:
                     old = fh.read()
             saved.append((full, old))
-            if f.get('content') is None:
+            content = f.get('content')
+            data = plan[f['path']][1] if plan else (None if content is None
+                                                    else content.encode('utf-8'))
+            if data is None:
                 os.remove(full)
                 continue
             missing, parent = [], os.path.dirname(full)
@@ -286,7 +314,7 @@ def write(root, doc):
                 os.mkdir(folder)
                 made.append(folder)
             with open(full, 'wb') as fh:
-                fh.write(f['content'].encode('utf-8'))
+                fh.write(data)
     except OSError as e:
         failed = restore((saved, made))
         return None, 'the approved content could not be written (%s)%s' % (
@@ -331,9 +359,9 @@ def consume_commit(root, client, did, value, sha):
     hex) and verifies it for that commit; else (None, why, consumed): `consumed` True when the hub
     did consume it for `sha` (now or before) and only the verify for the commit failed, so a retry
     (--consume) asks that verify again. The commit must carry exactly `Owner-Approval: <value>`
-    and have one parent, on the same content as the approval's base; the hub checks the rest (its
-    base and files) before the consume (Verifier.verify_on, no commit) and after it (with the
-    commit)."""
+    and have one parent, and make the approved change on it (approvals.delta_error, the land
+    check's rule); the hub verifies the approved blobs for the signed base before the consume
+    (Verifier.verify, no commit) and after it (with the commit)."""
     from kitlib.hubsite import approvals as ap
     facts, why = commit_facts(root, sha)
     if facts is None:
@@ -359,11 +387,14 @@ def consume_commit(root, client, did, value, sha):
     doc, why = fetch(client, did)
     if doc is None:
         return None, why, False
+    if doc.get('commit') != sha and doc.get('commit'):
+        return None, state_error(did, doc), False
+    approved, why = ap.delta_error(root, doc, parents[0], sha, blobs)
+    if approved is None:
+        return None, 'hub:%s refused: %s' % (did, why), False
     verifier = ap.Verifier(client)
     if doc.get('commit') != sha:
-        if doc.get('commit'):
-            return None, state_error(did, doc), False
-        ok, why = verifier.verify_on(root, did, repo, parents[0], blobs, base=doc['head'])
+        ok, why = verifier.verify(did, repo, doc['head'], approved)
         if not ok:
             return None, 'hub:%s refused: %s' % (did, why), False
         version = doc.get('version', 0)
@@ -371,7 +402,7 @@ def consume_commit(root, client, did, value, sha):
             ap.consume(client, did, sha, version if isinstance(version, int) else 0)
         except Exception as e:      # noqa: BLE001 - the commit stands; the caller says so
             return None, 'the hub did not consume hub:%s (%s)' % (did, _err(e)), False
-    ok, why = verifier.verify_on(root, did, repo, parents[0], blobs, commit=sha, base=doc['head'])
+    ok, why = verifier.verify(did, repo, doc['head'], approved, commit=sha)
     if not ok:
         return None, 'hub:%s refused: %s' % (did, why), True
     return 'approval  hub:%s consumed by %s' % (did, sha[:12]), None, True

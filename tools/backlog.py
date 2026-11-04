@@ -286,6 +286,9 @@ def do_next(args, ctx, snap):
         note = b.session_note(ctx.session, len(offers))
         if note:
             say(note)
+    for line in (omod.idle_lines(ctx.session_live)
+                 + omod.unread_lines(ctx.session_live, passed)):
+        say(line)
     summary = omod.blocker_summary(passed)
     if summary:
         say('  blockers, most first:')
@@ -525,6 +528,8 @@ def main(argv=None):
         policy.by_design_refusal(args.session)
         root = os.path.abspath(args.root or os.getcwd())
         ctx = open_store(root, fetch=not args.no_fetch, session=args.session, branch=args.branch)
+        # `next` and `pull`: another session's record reserves only while it runs (read lazily).
+        ctx.session_live = omod.SessionLiveness()
         store = ctx.store
         if args.verb in WRITES or (args.verb in ('retarget', 'uncite') and args.apply):
             return do_write(args, ctx, store)

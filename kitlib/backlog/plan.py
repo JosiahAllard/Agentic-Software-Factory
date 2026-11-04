@@ -83,6 +83,9 @@ class Context(object):
         self.branch = branch
         self.today = today
         self.liveness = liveness
+        # omod.SessionLiveness for an offer (None: another session's record always reserves);
+        # only tools/backlog.py sets it, so a program and a test never read the machine.
+        self.session_live = None
         self._cap = cap
         self._resources = resources
 
@@ -258,7 +261,8 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False, why
                                                folded=folded, capacity=ctx.capacity(snap),
                                                branch=own,
                                                narrow=_narrower(ctx, live, whys) if narrow
-                                               else None)
+                                               else None,
+                                               session_live=getattr(ctx, 'session_live', None))
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
@@ -425,7 +429,9 @@ def current_offer(snap, ctx, branch=None, seeds=(), whys=None):
                                                    session=ctx.session,
                                                    unmet=ctx.unmet(snap),
                                                    folded=_offer_folds(ctx, holding, None, diffs),
-                                                   capacity=ctx.capacity(snap))
+                                                   capacity=ctx.capacity(snap),
+                                                   session_live=getattr(ctx, 'session_live',
+                                                                        None))
         if refusals:
             notes.append('NOTE: the offer without branch %s cannot be computed (%s); only the '
                          'offer as %s was checked' % (own, '; '.join(refusals), own))

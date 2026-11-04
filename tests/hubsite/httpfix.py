@@ -6,16 +6,22 @@ import json
 import os
 import shutil
 import socket
+import struct
+import sys
 import tempfile
 import threading
 import unittest
 
+import kitlib.platform
 from kitlib.hubsite import api, auth, httpd
 from kitlib.hubsite.store import Store
+from kitlib.proc import tcp
 
 CLOCK = lambda: '2026-01-02T03:04:05+00:00'      # noqa: E731
 TIMEOUT = 20                    # a client socket never waits longer; no test sleeps
 OPTIONS = [{'label': 'a', 'description': 'b'}]
+# SO_LINGER on with a 0 s timeout: struct linger is two u_shorts on Windows, two ints on Linux
+LINGER_NOW = struct.pack('HH' if sys.platform == 'win32' else 'ii', 1, 0)
 # the one finding the stand-in views show (GET findings), so a finding mark has one to name
 FINDING = {'repo': 'r', 'check': 'stale-pull', 'target': 'X-1', 'text': 't', 'fix': 'f',
            'age': None, 'fingerprint': '0123456789abcdef', 'new': False, 'started': None}
@@ -94,11 +100,23 @@ class Reply(object):
         return (self.json().get('error') or {}).get('code')
 
 
+def abort_on_close(sock):
+    """Make closing `sock` reset the connection (SO_LINGER on, 0 seconds), so neither end keeps
+    it in TIME_WAIT. The listener answers every request with Connection: close, so each request
+    is one connection; closed the ordinary way, each left a TIME_WAIT on loopback, and a test
+    run's sweeps of hundreds of requests ran the machine out of loopback ports (record
+    KIT-TEST-LOOPBACK-CHURN). Callers close only after the whole answer is read."""
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, LINGER_NOW)
+
+
 def send(port, method, path, headers=(), body=None, host=None, timeout=TIMEOUT):
     """One request to the loopback listener at `port`. `headers` is [(name, value)]; `host` is
-    the Host header (None: the listener's own, False: none at all)."""
+    the Host header (None: the listener's own, False: none at all). The connection is reset
+    when it closes, after the answer is read (abort_on_close)."""
     conn = http.client.HTTPConnection(httpd.LOOPBACK, port, timeout=timeout)
     try:
+        conn.connect()
+        abort_on_close(conn.sock)
         conn.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
         if host is None:
             host = '%s:%d' % (httpd.LOOPBACK, port)
@@ -126,7 +144,9 @@ def read_all(sock):
 
 
 def raw(port, data, timeout=TIMEOUT):
-    """Send these bytes, close the sending side, and return everything the listener answers."""
+    """Send these bytes, close the sending side, and return everything the listener answers.
+    Each call leaves a connection in TIME_WAIT: this end closed first (the shutdown), and a reset
+    at close cannot undo that, so a sweep uses send() (abort_on_close)."""
     with socket.create_connection((httpd.LOOPBACK, port), timeout=timeout) as s:
         s.sendall(data)
         s.shutdown(socket.SHUT_WR)
@@ -168,6 +188,103 @@ def get(port, path, token=None, headers=()):
 def http_threads():
     """The names of the listener threads alive now."""
     return sorted(t.name for t in threading.enumerate() if t.name.startswith('hub-http'))
+
+
+# ------------------------------------------------------------------ loopback churn guard
+WIN_TIME_WAIT = 11                      # MIB_TCP_STATE_TIME_WAIT
+PROC_TIME_WAIT = '06'                   # TCP_TIME_WAIT in a /proc/net row's st column
+CHURN_LOG = 'KIT_TEST_CHURN_LOG'        # a file each guard adds its "module count" line to
+
+
+def proc_time_wait(lines, family):
+    """[(local, remote)] of the TIME_WAIT rows of a Linux /proc/net/tcp (family 4) or tcp6
+    (family 6) table, its header line already dropped."""
+    out = []
+    for line in lines:
+        cols = line.split()
+        if len(cols) > 3 and cols[3] == PROC_TIME_WAIT:
+            out.append((tcp._proc_end(cols[1], family), tcp._proc_end(cols[2], family)))
+    return out
+
+
+def time_wait_ends():
+    """{(local, remote)} of every TCP connection on this machine in TIME_WAIT with both ends on
+    a loopback address. Raises OSError when a table cannot be read."""
+    if kitlib.platform.NAME == 'linux':
+        rows = []
+        for family, path in zip((4, 6), tcp.PROC_NET):
+            try:
+                with open(path, encoding='ascii') as f:
+                    lines = f.read().splitlines()[1:]
+            except OSError:
+                if family == 4:
+                    raise
+                continue                # a kernel with no IPv6
+            rows += proc_time_wait(lines, family)
+    else:
+        from kitlib.proc import win32
+        rows = [(l, r) for l, r, _pid in
+                tcp.parse_v4(tcp._table(win32.AF_INET), WIN_TIME_WAIT)
+                + tcp.parse_v6(tcp._table(win32.AF_INET6), WIN_TIME_WAIT)]
+    return {(l, r) for l, r in rows if tcp.is_loopback(l) and tcp.is_loopback(r)}
+
+
+class ChurnGuard(object):
+    """Fails a test module that leaves more than `bound` loopback connections in TIME_WAIT on
+    the ports of the listeners it started (record KIT-TEST-LOOPBACK-CHURN). A module calls
+    start() in setUpModule and check() in tearDownModule. Connections already in TIME_WAIT at
+    start() are not counted, nor any whose ports are not this module's listeners', so other
+    traffic on the machine never counts. A table that cannot be read skips the check."""
+
+    def __init__(self, name, bound, read=time_wait_ends):
+        self.name = name
+        self.bound = bound
+        self.read = read
+        self.ports = set()
+        self.before = None
+        self.unread = None
+        self._start = None
+
+    def start(self):
+        try:
+            self.before = self.read()
+        except OSError as e:
+            self.unread = 'the TCP table cannot be read: %s' % e
+        self._start = start = httpd.Listener.start
+        ports = self.ports
+
+        def noted(lis, *args, **kw):
+            out = start(lis, *args, **kw)
+            ports.add(lis.port)
+            return out
+        httpd.Listener.start = noted
+
+    def count(self):
+        """The TIME_WAIT connections on this module's listener ports since start()."""
+        new = self.read() - self.before
+        return sum(1 for l, r in new if l[2] in self.ports or r[2] in self.ports)
+
+    def check(self):
+        if self._start is not None:
+            httpd.Listener.start = self._start
+            self._start = None
+        if self.unread is None:
+            try:
+                left = self.count()
+            except OSError as e:
+                self.unread = 'the TCP table cannot be read: %s' % e
+        if self.unread is not None:
+            raise unittest.SkipTest(self.unread)
+        log = os.environ.get(CHURN_LOG)
+        if log:
+            with open(log, 'a', encoding='utf-8') as f:
+                f.write('%s %d\n' % (self.name, left))
+        if left > self.bound:
+            raise AssertionError('%s left %d loopback connections in TIME_WAIT on its listeners '
+                                 '(bound %d): send() and raw() reset theirs, so a client that '
+                                 'closes the ordinary way is churning ports'
+                                 % (self.name, left, self.bound))
+        return left
 
 
 class ListenerCase(unittest.TestCase):

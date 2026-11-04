@@ -19,6 +19,19 @@ HEALTH = BASE + '/health'
 TODOS = BASE + '/todos'
 
 
+# the loopback ports this module's listeners leave in TIME_WAIT (httpfix.ChurnGuard)
+# measured 16 on 11-04 (831 before send() reset its connections); 64 leaves 4x room
+CHURN = httpfix.ChurnGuard(__name__, 64)
+
+
+def setUpModule():
+    CHURN.start()
+
+
+def tearDownModule():
+    CHURN.check()
+
+
 class Recorder(object):
     """An Api that records what the listener passed it."""
 

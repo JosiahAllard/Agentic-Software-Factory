@@ -276,7 +276,11 @@ class Store(unittest.TestCase):
             with self.subTest(error=error), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp) / 'store'
                 with mock.patch.object(S.os, 'rename', self._race_rename(error)):
-                    self.assertEqual(S._create(root), root)
+                    try:
+                        created = S._create(root)
+                    except OSError as raised:
+                        self.fail('racing creator not accepted: %r' % raised)
+                self.assertEqual(created, root)
                 state = S._load(root)[1]
                 self.assertEqual(state['current'], None)
 

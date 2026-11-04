@@ -502,6 +502,16 @@ class PassTest(Case):
         self.assertEqual((self.head(), self.remote_tip()), (tip, moved))
         self.assertEqual(self.hub_status(), '?? hub/pages/b.json')
 
+    def test_a_busy_guard_with_local_commits_unpushed_is_a_pending_push_not_a_divergence(self):
+        sync = self.sync()
+        self.write('hub/pages/a.json')
+        self.assertTrue(sync.sync_once()['ok'])
+        self.write('notes.txt', 'one\n')
+        self.repo.commit('notes', 'notes.txt', cwd=self.wt)     # a person's commit, not yet pushed
+        self.mark('MERGE_HEAD')
+        st = sync.sync_once()
+        self.assertEqual((st['failed'], st['diverged'], st['pending_push']), ('busy', False, True))
+
     def test_a_branch_switched_during_the_fetch_stops_the_fast_forward(self):
         sync = self.sync()
         self.write('hub/pages/a.json')

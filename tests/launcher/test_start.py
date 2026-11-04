@@ -220,6 +220,11 @@ class Deep(Base):
 
 
 class Consultant(Base):
+    def test_consultant_repo_slug(self):
+        self.assertEqual(start.consultant_repo("Agentic-Project_Manager-Kit"), "agentic-project-manager-kit")
+        self.assertEqual(start.consultant_repo("GriffBall"), "griffball")
+        self.assertEqual(start.consultant_repo("retribution"), "retribution")
+
     def setUp(self):
         Base.setUp(self)
         self.repo = os.path.join(self.h.root, 'repos', 'MyRepo')

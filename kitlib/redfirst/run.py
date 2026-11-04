@@ -514,6 +514,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
             raise V.Usage('refused: %s is a %s at base %s, not a file' % (f, at_base, base[:10]))
         (had if at_base else new).append(f)
     refuse_tracked_results(top, base, sels, files)
+    refuse_head_placeholder(top, head, sels)
     if head == rev(top, 'HEAD'):
         rc, out, err = git(top, 'status', '--porcelain', '--', *files)
         if rc != 0:
@@ -539,6 +540,36 @@ _TREE = 'TREE'                                          # stands for the throwaw
 _LOGS = os.path.join(os.path.abspath(os.sep), 'redfirst-logs')   # and for the log folder
 
 
+def head_rels(sel):
+    """The repo-relative paths the `{head}` words of a command runner name ('.' for a bare
+    `{head}`), each word's text after `{head}`."""
+    rels = []
+    for w in list(sel.runner.get('command') or []) + list(sel.runner.get('args') or []):
+        if '{head}' in w:
+            rels.append(w.split('{head}', 1)[1].replace('\', '/').strip('/') or '.')
+    return rels
+
+
+def refuse_head_placeholder(top, head, sels):
+    """V.Usage when a command runner uses `{head}` (the worktree's checkout, not a commit) and
+    the worktree is not at `--head`, or the path `{head}` points to has uncommitted changes."""
+    for sel in sels:
+        rels = head_rels(sel) if sel.kind == 'command' else []
+        if not rels:
+            continue
+        who = 'the runner for %r in %s uses {head}' % (sel.runner.get('glob'), KEY)
+        if head != rev(top, 'HEAD'):
+            raise V.Usage('refused: %s, the checkout %s, which is not at --head %s; check out '
+                          'that commit or drop --head; nothing was run' % (who, top, head[:10]))
+        rc, out, err = git(top, 'status', '--porcelain', '--', *rels)
+        if rc != 0:
+            raise V.Usage('refused: git status failed in %s: %s' % (top, err))
+        if out:
+            raise V.Usage('refused: %s and its path has uncommitted changes (commit them first; '
+                          'the evidence must be about a commit):
+%s' % (who, out))
+
+
 def refuse_tracked_results(top, base, sels, files):
     """V.Usage when a command runner's `result` names a path in the throwaway tree that the base
     holds, or a file the run checks out: the run deletes the result before each command, and a
@@ -546,6 +577,11 @@ def refuse_tracked_results(top, base, sels, files):
     inside = {}
     for n, sel in enumerate(sels, 1):
         p = V.result_path(sel, _TREE, _LOGS, n, top) if sel.kind == 'command' else None
+        if p and os.path.normcase(p).startswith(os.path.normcase(top) + os.sep):
+            raise V.Usage('refused: --tests %r: the result of the runner for %r in %s resolves '
+                          'under the head checkout %s, which the run only reads; nothing was run. '
+                          'Instead: name a result under {log_dir}'
+                          % (sel.text, sel.runner.get('glob'), KEY, top))
         if p and p.startswith(_TREE + os.sep):
             inside[p[len(_TREE) + 1:].replace(os.sep, '/')] = sel
     if not inside:

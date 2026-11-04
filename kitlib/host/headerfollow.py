@@ -16,9 +16,14 @@ first tool event after the prune.
 A subagent is the exception: its start hook runs from the folder its session began on, and that
 header would be fresh, so the hour would hold the line back for most of a subagent's life while
 tools from that folder refuse a .kit.json holding a key newer than the folder. So a subagent's
-start header names the current folder outright (start_kit), and is recorded as naming it.
+start header names the current folder outright (start_kit), and is recorded as naming it. So does
+a SessionStart whose payload source is compact or clear (kitlib.host.hookmain.FOLLOW_SOURCES): it runs
+from the folder the session began on, and re-noting that folder would reset the record's clock (a
+session that compacts more often than EVERY_S would never hear the line) and re-inject a header that
+undoes the line. A startup SessionStart keeps its own folder.
 
-  start_kit(kit, environ)        at a subagent's start: the folder its header names, the one the
+  start_kit(kit, environ)        at a subagent's start (and a compact or clear session start):
+                                 the folder its header names, the one the
                                  guard names (advice_kit) when `kit` and that folder are exports,
                                  else `kit`. Never raises
   note(kit, payload, agent)      at a start event whose text holds the header: when `kit` is an

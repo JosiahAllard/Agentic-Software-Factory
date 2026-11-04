@@ -86,10 +86,10 @@ class Argv(unittest.TestCase):
         runner = dict(ENGINE_RUNNER, command=['{head}/tools/x', '-Tree', '{tree}'],
                       result='{head}/r-{n}.xml')
         s = sel('tools/engine_tests/A.cs', runner)
-        argv = V.command(s, 'TW', 'LOGS', 1, head='/h/wt')[0]
-        self.assertEqual(argv, ['/h/wt/tools/x', '-Tree', 'TW'])    # absolute: not put under TW
-        self.assertEqual(V.result_path(s, 'TW', 'LOGS', 1, '/h/wt'),
-                         os.path.normpath('/h/wt/r-1.xml'))
+        head = os.path.join(os.path.abspath(os.sep), 'h', 'wt')
+        argv = V.command(s, 'TW', 'LOGS', 1, head=head)[0]
+        self.assertEqual(argv, [head + '/tools/x', '-Tree', 'TW'])  # absolute: not put under TW
+        self.assertEqual(V.result_path(s, 'TW', 'LOGS', 1, head), os.path.normpath(head + '/r-1.xml'))
 
     def test_a_runner_with_no_command_is_a_usage_error(self):
         runner = {'glob': 'tools/engine_tests/*.cs', 'kind': 'command'}

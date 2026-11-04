@@ -85,8 +85,8 @@ class PushCase(unittest.TestCase):
         self.worker = self.make()
 
     def make(self):
-        w = push.PushWorker(self.store, self.api, self.push, self.folder, clock=lambda: self.t,
-                            pm_folder=lambda: '')
+        w = push.PushWorker(self.store, self.api, self.push, self.folder, clock=lambda: self.t)
+        w.pm_folder = lambda: ''    # not the machine's config (the home fence)
         w.begin()
         return w
 

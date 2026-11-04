@@ -476,16 +476,44 @@ def is_author(entry):
     return any(_word_in(w, author) for w in words)
 
 
+def _closing_reader(root, rev):
+    """`history(rid)` of the store whose commits are in `root` at `rev`: `<sha> <subject>` of the
+    last one whose subject closes, retires or deletes `rid`, or None (the store's own history
+    reader, which `next`'s offer.ended_reader reads too)."""
+    return lambda rid: smod._last_closing(root, rid, rev)
+
+
 class _Held(object):
     """What the scope check found for one branch: `held`, id -> [scope members, command(*args)
     for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
     read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
     allowed); `narrowed`, id -> its `narrowed:` values, for each id held that carries one
-    (scope_check refuses their branch's miss)."""
+    (scope_check refuses their branch's miss); `states`, id -> the states of the readable records
+    of that id in the stores read (_scope_take), and `histories`, each store's `history(rid)`
+    (_closing_reader), for `live`."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
-        self.narrowed = {}
+        self.narrowed, self.states, self.histories = {}, {}, []
+
+    def live(self, rid):
+        """Whether the other record `rid` of a `narrowed:` line still holds its part, read as
+        `next` reads it (offer.ended_reader): a store read holds it and not open (pulled, blocked
+        or parked), or none does and no store's history has a commit whose subject closes,
+        retires or deletes it (store.history's match). A file removed by any other commit (a
+        hand `git rm` or `git mv`, a revert), an id that is not plain, or a history git cannot
+        read says nothing: the part is held."""
+        if rid in self.states:
+            return any(s != 'open' for s in self.states[rid])
+        if not smod.PLAIN_ID.match(rid):
+            return True
+        for history in self.histories:
+            try:
+                if history(rid):
+                    return False
+            except Refusal:
+                continue
+        return True
 
     def hold(self, rid, members, command, area=None, narrowed=()):
         if narrowed:
@@ -1572,7 +1600,12 @@ class Lander(object):
         RESTORE form (narrowed.restore_set: each current member no original member holds kept, the
         lines cleared, a malformed one kept as written; docs/commit.md "A narrowed record").
         Lines are read with the `mixed` id grammar, which takes every store's ids: they come from
-        more than one store, and a record's own store checked them when they were written."""
+        more than one store, and a record's own store checked them when they were written.
+        A record narrowed for several records (a split against several live pulls) gets no
+        restore while one of them still holds its part (_Held.live): given back then, a member
+        would cover that record's live paths again. The clause names each one still live and
+        points at `next`'s RESTORE line, which restores each member once every record it was
+        narrowed for has ended (offer._restore)."""
         parts = []
         for rid in sorted(found.narrowed):
             members, command, _area = found.held[rid]
@@ -1582,6 +1615,14 @@ class Lander(object):
                              'original member by hand' % rid)
                 continue
             originals, others, args = got
+            live = [o for o in others if found.live(o)] if len(others) > 1 else []
+            if live:
+                parts.append('%s was narrowed off %s for %s: %s still %s, so no restore is given '
+                             'here: `next`\'s RESTORE line gives each part back once the records '
+                             'it was narrowed for have ended' % (rid, ', '.join(originals), ', '.join(others),
+                                        ', '.join(live), 'holds its part' if len(live) == 1
+                                        else 'hold their parts'))
+                continue
             parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
                          'then restore the original member with %s' % (
                              rid, ', '.join(originals), ', '.join(others), ', '.join(others),
@@ -1616,6 +1657,7 @@ class Lander(object):
                         and '/' not in p[len(rel) + 1:]]
                 self._scope_take(found, '%s at %s' % (rel, t[:10]), records, b, named, gone,
                                  lambda rid: self._scope_last(root, t, rel, rid), close_cmd)
+                found.histories.append(_closing_reader(root, t))
         elif backend is not None:
             got = self.scope_reads.get('configured')
             if got is None:
@@ -1627,16 +1669,19 @@ class Lander(object):
                 self._scope_take(found, backend.describe(), records, b, named, (),
                                  lambda rid: self._scope_last(root, tip, smod.STORE_DIR, rid),
                                  close_cmd)
+                found.histories.append(_closing_reader(root, tip))
         configured = backend.describe() if isinstance(backend, smod.RefBackend) else None
         got = self.scope_reads.get('pm')
         if got is None:
             got = self.scope_reads['pm'] = self._scope_pm_records(configured)
-        pm_root, where, records, last, why = got
+        pm_root, where, records, last, why, rev = got
         if why:
             found.unread.append('the PM data branch\'s store: %s' % why)
         elif records is not None:
             self._scope_take(found, where, records, b, named, (), last,
                              lambda *args: at_landing.backlog_command(pm_root, *args), True)
+            if rev:
+                found.histories.append(_closing_reader(pm_root, rev))
         return found
 
     def _scope_take(self, found, where, records, b, named, gone, last, command, shared=False):
@@ -1655,6 +1700,8 @@ class Lander(object):
             found.read = True
         stems = set(r.stem for r in records)
         candidates = [r for r in records if r.readable]
+        for r in candidates:
+            found.states.setdefault(r.stem, []).append(r.get('state'))
         for rid in sorted((set(named) | set(gone)) - stems):
             rec = last(rid) if smod.PLAIN_ID.match(rid) else None
             if rec is not None and rec.readable:
@@ -1709,33 +1756,34 @@ class Lander(object):
         return records, tip, None
 
     def _scope_pm_records(self, configured):
-        """`(pm root, where, records, last(rid), None)` of the PM data branch's store, `(None,
-        None, None, None, None)` when there is none, or `(..., why)`. A folder store there is read
-        in its worktree, as a landing's close reads it; a record deleted there and not committed
-        is read from HEAD."""
+        """`(pm root, where, records, last(rid), None, rev)` of the PM data branch's store, with
+        `rev` the commit its history is read at (store.history: the ref's tip, a folder store's
+        HEAD; None for an empty ref); `(None, None, None, None, None, None)` when there is none, or
+        `(..., why, None)`. A folder store there is read in its worktree, as a landing's close
+        reads it; a record deleted there and not committed is read from HEAD."""
         pm_root, _cfg, backend, why = at_landing.pm_data_store(self.root, configured)
         if why:
-            return None, None, None, None, why
+            return None, None, None, None, why, None
         if backend is None:
-            return None, None, None, None, None
+            return None, None, None, None, None, None
         if isinstance(backend, smod.RefBackend):
             records, tip, why = self._scope_ref_records(pm_root, backend)
             if records is None:
-                return None, None, None, None, why
+                return None, None, None, None, why, None
             return (pm_root, backend.describe(), records,
                     lambda rid: self._scope_last(pm_root, tip, smod.STORE_DIR, rid) if tip
-                    else None, None)
+                    else None, None, tip or None)
         try:
             snap = backend.load(rmod.Rules())
         except (Refusal, OSError) as e:
-            return None, None, None, None, '%s: %s' % (backend.describe(), _what(e))
+            return None, None, None, None, '%s: %s' % (backend.describe(), _what(e)), None
         rel = backend.rel.replace('\\', '/').strip('/')
 
         def last(rid):
             if backend.uncommitted_removal(rid):
                 return self._scope_blob(pm_root, 'HEAD:%s/%s.md' % (rel, rid), rid)
             return self._scope_last(pm_root, 'HEAD', rel, rid)
-        return pm_root, backend.describe(), snap.records, last, None
+        return pm_root, backend.describe(), snap.records, last, None, 'HEAD'
 
     def onto_origin(self):
         """Step 5, after the fetch: the base becomes <remote>/<main> as fetched. A local main only

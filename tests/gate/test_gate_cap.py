@@ -2,21 +2,26 @@
 waits while its agent session has the cap's number of gate runs of the repository in flight; a
 landing, the daily full run and the owner never wait. Every in-flight run here is a scratch-store
 record (StoreCase.live_record) whose ancestors hold a made-up agent host."""
+import contextlib
 import functools
 import os
 import shutil
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
 from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.config import user as kuser
-from kitlib.gate import gatecap, runner
+from kitlib.gate import budget, gatecap, runner
 from kitlib.gate import steps as S
+from kitlib.lock import run as lockrun
 from kitlib.proc import process
 from tests.gate import fixtures
 from tests.home import machine_config
+from tests.lock.helpers import own_affinity
 
 HOST = [912345, 77]
 OTHER_HOST = [912346, 78]
@@ -104,10 +109,15 @@ class CapCase(fixtures.GateRepoCase):
     def drop(self, rid):
         os.remove(self.store.path('active', '%s.json' % rid))
 
+    @contextlib.contextmanager
     def capped(self, cap=4, who=AGENT, sleep=never):
-        """kitlib.gate.gatecap.wait_turn with this cap, caller and sleep, as runner calls it."""
-        return mock.patch.object(gatecap, 'wait_turn', functools.partial(
-            gatecap.wait_turn, cap=cap, who=who, sleep=sleep))
+        """kitlib.gate.gatecap.wait_turn and gave_way with this cap, caller and sleep, as runner
+        calls them."""
+        with mock.patch.object(gatecap, 'wait_turn', functools.partial(
+                gatecap.wait_turn, cap=cap, who=who, sleep=sleep)), \
+                mock.patch.object(gatecap, 'gave_way', functools.partial(
+                    gatecap.gave_way, cap=cap, who=who, sleep=sleep)):
+            yield
 
     def branch_gate(self, say=None):
         return runner.branch_gate(self.wt, book_kw=self.book_kw, log_dir=self.logs, say=say)
@@ -209,6 +219,126 @@ class HostlessAgentCountsAll(CapCase):
         self.run_rec()
         inside = dict(HOSTLESS, ancestors=[[os.getpid(), process.own_ctime()]])
         self.assertEqual(gatecap.in_flight(self.store, inside, self.name), [])
+
+
+class CountedTogether(CapCase):
+    """wait_turn counts, then the gate books: two gates of one session that count together both
+    pass a cap of 1. Once its booking holds, a gate counts again (gatecap.gave_way) and gives its
+    slot back at the cap, so one runs and the other waits for it."""
+
+    def book(self, branch='kit/demo'):
+        slot = fixtures.REAL_BOOK('engine-test', self.name, 'demo', gate=True, branch=branch,
+                                  **self.book_kw)
+        self.addCleanup(slot.release)
+        return slot
+
+    def test_two_gates_that_count_together_run_one_at_a_time(self):
+        """Red before: both booked past the cap and ran together."""
+        own = own_affinity()
+        if len([1 for ts in self.layout()['slots_cpu'] if set(ts) <= own]) < 2:
+            self.skipTest('two gates need two fake cpu slots this process may run on')
+        anc = lockrun.run_ancestors(False, self.env)     # what the real book's records keep
+        if not anc:
+            self.skipTest('this process has no ancestor to stand for the agent host')
+        who = dict(AGENT, host=anc[0], ancestors=anc)
+        cfg = kconfig.load(self.wt)
+        chosen = S.build(cfg.section('gate'), self.wt, self.main, cfg.tools_dir, full=True)
+        guard, gave = threading.Lock(), threading.Event()
+        state = {'running': 0, 'most': 0, 'ran': 0, 'booked': 0}
+        lines = []
+
+        def say(text):
+            lines.append(text)
+            if 'gives back run' in text:
+                gave.set()
+
+        def run_steps(*_a, **_k):       # runs until the other gate runs too or gives way
+            with guard:
+                state['running'] += 1
+                state['ran'] += 1
+                state['most'] = max(state['most'], state['running'])
+            end = time.monotonic() + 20
+            while time.monotonic() < end and not gave.is_set():
+                with guard:
+                    if state['running'] > 1:
+                        break
+                time.sleep(0.01)
+            with guard:
+                state['running'] -= 1
+            return []
+
+        both, booked = threading.Barrier(2, timeout=20), lockrun.book
+
+        def book(*a, **k):              # the first two book only once both have counted
+            with guard:
+                state['booked'] += 1
+                first = state['booked'] <= 2
+            if first:
+                both.wait()
+            return booked(*a, **k)
+
+        out = {}
+
+        def gate(tag):
+            logs = os.path.join(self.logs, tag)
+            os.makedirs(logs)
+            try:
+                out[tag] = runner.gated(cfg, self.wt, self.main, [], chosen, 'engine-test',
+                                        self.name, 'demo-%s' % tag, logs, say, self.book_kw,
+                                        capped=True)
+            except BaseException as e:      # noqa: BLE001 - reported by the assertion below
+                out[tag] = e
+        with mock.patch.object(gatecap, 'configured', return_value=(1, None)), \
+                mock.patch.object(gatecap, 'actor', return_value=who), \
+                mock.patch.object(gatecap, 'POLL_S', 0.02), \
+                mock.patch.object(runner, 'run_steps', run_steps), \
+                mock.patch.object(lockrun, 'book', book):
+            threads = [threading.Thread(target=gate, args=(t,)) for t in ('a', 'b')]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(60)
+        self.assertEqual(sorted(out), ['a', 'b'], lines)
+        for tag, got in out.items():
+            self.assertIsInstance(got, tuple, (tag, got))
+            self.assertIsNone(got[1], (tag, got))
+        self.assertEqual((state['ran'], state['most']), (2, 1), lines)     # one ran, then the other
+        self.assertTrue(gave.is_set(), lines)
+
+    def test_at_the_cap_its_slot_goes_back_as_a_run_that_started_nothing(self):
+        """The slot it gives back ends `not started`, which the branch gate budget never counts."""
+        other = self.run_rec()
+        slot = self.book()
+        lines, naps = [], []
+        self.assertTrue(gatecap.gave_way(self.store, self.name, slot, lines.append, cap=1,
+                                         who=AGENT, sleep=naps.append))
+        self.assertTrue(slot.released)
+        got = [d for d in self.store.history_records() if d.get('id') == slot.id]
+        self.assertEqual([d.get('how') for d in got], [budget.NOT_STARTED])
+        self.assertEqual(budget.runs(self.store, self.name, 'kit/demo'), [])
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn('gives back run %s' % slot.id, lines[0])
+        self.assertIn('1 of 1 other gate runs of this session in %s' % self.name, lines[0])
+        self.assertIn(other, lines[0])
+        self.assertEqual(len(naps), 1)
+        self.assertTrue(0 <= naps[0] <= max(gatecap.POLL_S, self.store.settings.queue_poll_s))
+
+    def test_below_the_cap_it_keeps_its_slot(self):
+        """Another session's run, and the session's own below the cap, leave the slot held."""
+        self.run_rec(host=OTHER_HOST)
+        self.run_rec()
+        slot = self.book()
+        self.assertFalse(gatecap.gave_way(self.store, self.name, slot, lambda t: None, cap=2,
+                                          who=AGENT, sleep=never))
+        self.assertFalse(slot.released)
+
+    def test_with_no_other_run_it_reads_neither_caller_nor_config(self):
+        slot = self.book()
+        with mock.patch.object(gatecap, 'actor', side_effect=AssertionError('caller read')), \
+                mock.patch.object(gatecap, 'configured', side_effect=AssertionError('config read')):
+            self.assertFalse(gatecap.gave_way(self.store, self.name, slot, lambda t: None,
+                                              sleep=never))
+        self.assertFalse(slot.released)
 
 
 class NeverWaits(CapCase):

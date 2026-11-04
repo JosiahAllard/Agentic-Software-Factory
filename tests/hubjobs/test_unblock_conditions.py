@@ -14,13 +14,14 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.hubjobs import unblock_conditions as U
 from kitlib import hubvalidate
+from kitlib import platform as kplatform
 from kitlib.hubsite import approvals, jobs, recordwrite
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
 VAR = 'KIT_UNBLOCK_TEST_DIR'
-FLAG = 'path:%%%s%%\\flag exists' % VAR
+FLAG = 'path:%%%s%%/flag exists' % VAR
 # An invented question id: the question form takes only `Q-<digits>`, so it is built here rather
 # than written out, which the owner-text scrub (tests/scrub) would read as a real record id.
 QID = 'Q' + '-4'
@@ -394,7 +395,7 @@ class Readers(Case):
 
     def test_linux_absolute_paths_are_told_and_unc_or_dotdot_are_not(self):
         r = U.Readers(self.hub, self.plugins, None)
-        with mock.patch.object(U.kplatform, 'NAME', 'linux'), \
+        with mock.patch.object(kplatform, 'NAME', 'linux'), \
                 mock.patch.object(U.os.path, 'exists', side_effect=lambda p: p == '/t/flag'):
             self.assertIs(r.path_exists('/t/flag'), True)
             self.assertIs(r.path_exists('/t/missing'), False)

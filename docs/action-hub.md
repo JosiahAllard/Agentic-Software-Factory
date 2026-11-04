@@ -593,8 +593,8 @@ store's git push (the `push` setting).
   repository's store, a plugin folder under `pluginsource` `export_dir`. Free text, a member the
   record is not blocked on, an `owner` member on anything but a to-do, a question or an approval
   (`conditions.OWNER_KINDS`), a condition
-  holding a machine path, a path that is not on a local drive after its `%VAR%` is filled (a UNC
-  path, a `..` part; never probed), and a condition that cannot be read are never acted on; a
+  holding a machine path, a path that is not on a local drive after its `%VAR%` is filled (on Linux, not absolute or
+  starting with `//`; a UNC path, a `..` part; never probed), and a condition that cannot be read are never acted on; a
   record counts as closed only when a commit removed it. Nothing met is a skip, and a store that
   cannot be read or a refused write is a failure once the pass has done the rest; a write whose
   commit landed with the index left stale (`IndexStale`) is an unblock, pushed and counted. A stopped coordinator learns of the

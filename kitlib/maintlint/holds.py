@@ -69,7 +69,9 @@ def findings(snap, backlog_cmd, resources=None):
             continue
         fix = ('%s block %s --on %s --reason "<what it waits on and until when%s>"'
                % (backlog_cmd, rec.stem, member,
-                  ', citing the ruling or question' if member == 'owner' else ''))
+                  ', citing the Action Hub Q-nnn, T-nnn or A-nnn that ends it (post it with '
+                  'hub.py questions add --record <REPO>:%s)' % rec.stem
+                  if member == 'owner' else ''))
         if member == 'live-client' and resources:
             fix += ('; or, when a shared resource and not the owner\'s presence is what it needs, '
                     '%s set %s --uses <%s>' % (backlog_cmd, rec.stem, '|'.join(sorted(resources))))

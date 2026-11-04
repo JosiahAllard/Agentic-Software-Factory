@@ -120,24 +120,34 @@ def block_citation_error(members, reason=None, owner_ask=None):
 HUB_CITE_RE = re.compile(r'(?<![A-Za-z0-9-])[QTA]-[0-9]+(?![A-Za-z0-9])')
 
 
-def owner_citation_error(rid, reason=None, owner_ask=None, hub='hub.py'):
+def owner_citation_error(rid, reason=None, owner_ask=None, hub='hub.py', stored=None):
     """None, or why `block <rid> --on owner` may not be written: the owner's hold ends only on an
-    owner event, so `--reason` or `--owner-ask` (or the `owner_ask` the record keeps) must cite
-    the Action Hub question, to-do or approval it waits on (Q-nnn, T-nnn or A-nnn). A cite of
-    the record itself, or an item:<ID> or R-nnnn with no hub id beside it, names nothing the hub
-    clears, so the hold would stand until someone noticed (docs/backlog.md "Commands")."""
-    found = cites(reason) + cites(owner_ask)
-    fix = ('post the ask bound to the record, `%s questions add --record <REPO>:%s` (or '
-           '`todos add` / `approvals add` with `--record`), which parks it on the owner itself, '
-           'or cite that Q-nnn, T-nnn or A-nnn in `--reason`' % (hub, rid))
+    owner event, so `--reason` or `--owner-ask` (or `stored`, the `owner_ask` the record keeps)
+    must cite the Action Hub question, to-do or approval it waits on (Q-nnn, T-nnn or A-nnn). A
+    hub id in any of them is enough: an older stored ask that cites only the record never vetoes
+    a reason that cites the hub id. With no hub id, a cite of the record itself, or an item:<ID>
+    or R-nnnn alone, names nothing the hub clears, so the hold would stand until someone noticed
+    (docs/backlog.md "Commands")."""
+    texts = [t for t in (reason, owner_ask, stored) if t]
+    if any(HUB_CITE_RE.search(t) for t in texts):
+        return None
+    found = []
+    for t in texts:
+        found += [c for c in cites(t) if c not in found]
+    fix = owner_ask_fix(rid, hub)
     if 'item:%s' % rid in found:
         return ('`block %s --on owner` cites the record itself (`item:%s`): nothing ever ends '
                 'that hold. Instead: %s' % (rid, rid, fix))
-    if not (HUB_CITE_RE.search(reason or '') or HUB_CITE_RE.search(owner_ask or '')):
-        return ('`block %s --on owner` cites no Action Hub question, to-do or approval (Q-nnn, '
-                'T-nnn or A-nnn)%s, so nothing the owner answers ends the hold. Instead: %s'
-                % (rid, ' (only %s)' % ', '.join(found) if found else '', fix))
-    return None
+    return ('`block %s --on owner` cites no Action Hub question, to-do or approval (Q-nnn, '
+            'T-nnn or A-nnn)%s, so nothing the owner answers ends the hold. Instead: %s'
+            % (rid, ' (only %s)' % ', '.join(found) if found else '', fix))
+
+
+def owner_ask_fix(rid, hub='hub.py'):
+    """How an owner hold names what ends it: the hub ask bound to the record, then its id cited."""
+    return ('post the ask bound to the record, `%s questions add --record <REPO>:%s` (or '
+            '`todos add` / `approvals add` with `--record`), which parks it on the owner itself, '
+            'or cite that Q-nnn, T-nnn or A-nnn in `--reason` or `--owner-ask`' % (hub, rid))
 
 
 def blocker_kind(member):
@@ -154,8 +164,10 @@ ONE, AT_MOST_ONE, ONE_PLUS, ANY = '1', '0-1', '1+', '0+'
 # `priority: -1` once marked a record awaiting the owner; `blocked_on: owner` is the only owner
 # hold now, and -1 is refused with this pointer (docs/backlog.md "Fields").
 RETIRED_PRIORITY = '-1'
-RETIRED_PRIORITY_WHY = ('`priority: -1` is retired: a record awaiting the owner is `block ID --on '
-                        'owner --owner-ask "<the question>"`')
+RETIRED_PRIORITY_WHY = ('`priority: -1` is retired: a record awaiting the owner is asked bound to '
+                        'it, `hub.py questions add --record <REPO>:ID` (which parks it), or '
+                        '`block ID --on owner --owner-ask "<Q-nnn: the question>"` citing that '
+                        'hub id')
 RULING_RE = re.compile(r'^R-[0-9]{4,}$')
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 QUESTION_RE = re.compile(r'^Q-[0-9]{3,}$')

@@ -32,8 +32,47 @@ class OwnerCitesAHubId(StoreCase):
         self.seed(rec('FOO'))
         self.refused('FOO', 'cites the record itself', owner_ask='item:FOO until the owner '
                      'approves the grant lines')
-        self.refused('FOO', 'cites the record itself', owner_ask='Q-123 first',
-                     reason='item:FOO waits on Q-123')
+        self.refused('FOO', 'cites the record itself', owner_ask='which one?',
+                     reason='item:FOO waits on the owner')
+
+    def test_a_hub_id_now_beats_an_old_stored_self_cite(self):
+        # review finding 3: the stored `item:FOO` ask vetoed a reason citing Q-n, though the
+        # message said that cite would pass
+        held = dict(state='blocked', blocked_on='owner', owner_ask='item:FOO until the owner '
+                    'approves the grant lines')
+        self.seed(rec('FOO', **held), rec('BAR', **dict(held, owner_ask='item:BAR first')))
+        self.verb('block', 'FOO', ['owner', 'deliberate'], reason='waits on Q-130 now')
+        self.assertEqual(self.get('FOO').all('blocked_on'), ['owner', 'deliberate'])
+        self.verb('block', 'BAR', ['owner', 'deliberate'], owner_ask='Q-131: which one?')
+        self.assertEqual(self.get('BAR').all('owner_ask'), ['Q-131: which one?'])
+        self.refused('FOO', 'cites the record itself', reason='still waiting on the owner')
+
+    def test_the_hubs_park_passes_over_an_old_stored_self_cite(self):
+        # recordwrite.park: owner_ask None (the record keeps one), its PARK_REASON cites the id
+        self.seed(rec('FOO', state='blocked', blocked_on='live-client', owner_ask='item:FOO'))
+        self.verb('block', 'FOO', ['owner'], reason='asked as Q-140 on the Action Hub by kit',
+                  until='question:Q-140 answered', role_checked=True)
+        self.assertEqual((self.get('FOO').all('blocked_on'), self.get('FOO').all('until')),
+                         (['live-client', 'owner'], ['owner question:Q-140 answered']))
+
+    def test_a_set_of_an_owner_hold_meets_the_same_check(self):
+        # review finding 4: `set --state blocked --blocked-on owner --owner-ask item:ID` skipped it
+        self.seed(rec('FOO'), rec('BAR'), rec('BAZ'))
+        for rid, ask in (('FOO', 'item:FOO'), ('BAR', 'item:BAZ first'), ('BAZ', None)):
+            tip = self.remote_tip()
+            changes = [('state', ['blocked']), ('blocked_on', ['owner'])]
+            changes += [('owner_ask', [ask])] if ask else []
+            with self.assertRaises(Usage) as ctx:
+                self.verb('set', rid, changes, role_checked=True)
+            self.assertIn('`set %s` of an owner hold' % rid, str(ctx.exception))
+            self.assertIn('questions add --record <REPO>:%s' % rid, str(ctx.exception))
+            self.assertEqual(self.remote_tip(), tip)
+        self.verb('set', 'FOO', [('state', ['blocked']), ('blocked_on', ['owner']),
+                                 ('owner_ask', ['Q-150: which one?'])], role_checked=True)
+        self.assertEqual(self.get('FOO').all('blocked_on'), ['owner'])
+        with self.assertRaises(Usage):          # rewriting the ask of a hold is checked too
+            self.verb('set', 'FOO', [('owner_ask', ['item:FOO'])], role_checked=True)
+        self.verb('set', 'FOO', [('summary', ['still a thing'])], role_checked=True)
 
     def test_an_item_or_ruling_alone_is_refused(self):
         self.seed(rec('FOO'), rec('BAR'))
@@ -62,7 +101,9 @@ class OwnerCitesAHubId(StoreCase):
         self.assertIsNone(rmod.owner_citation_error('FOO', None, 'Q-123?'))
         self.assertIsNone(rmod.owner_citation_error('FOO', 'asked as T-5 on the hub', None))
         self.assertIsNotNone(rmod.owner_citation_error('FOO', 'see KIT-T-5 and Q-12x', None))
-        self.assertIn('itself', rmod.owner_citation_error('FOO', 'item:FOO', 'Q-123?'))
+        self.assertIsNone(rmod.owner_citation_error('FOO', 'item:FOO', 'Q-123?'))
+        self.assertIsNone(rmod.owner_citation_error('FOO', 'on Q-1', None, stored='item:FOO'))
+        self.assertIn('itself', rmod.owner_citation_error('FOO', 'why', None, stored='item:FOO'))
         self.assertIn('(only R-1234, item:BAR)',
                       rmod.owner_citation_error('FOO', 'R-1234', 'item:BAR'))
 
@@ -149,9 +190,9 @@ class LeadUntilOnOwner(unittest.TestCase):
 
     def test_a_lead_may_set_the_three_forms_and_no_other(self):
         self.seed()
-        self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask', 'which one, Q-101?')
-        self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--reason',
-                'until T-101 is done', '--until', LEAD_FORMS[0])
+        # the block that adds `owner` may carry the end; then the hold ends on such lines
+        self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask', 'which one, Q-101?',
+                '--until', LEAD_FORMS[0])
         self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask',
                 'which one now, Q-102?', '--until', LEAD_FORMS[1])
         self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--reason',
@@ -164,6 +205,23 @@ class LeadUntilOnOwner(unittest.TestCase):
                                'until A-103 is decided', '--until', form)
             self.assertIn('`unblock-owner`', out)
         self.assertEqual(self.ok(None, 'show', 'FOO'), shown)       # nothing written
+
+    def test_a_lead_never_ends_a_hold_set_by_hand(self):
+        # review finding 1: `owner` held by hand (no `until: owner` line) keeps its own end, as
+        # the hub's park leaves it; only the owner or the PM schedules it
+        self.seed()
+        self.ok(None, 'block', 'FOO', '--on', 'owner', '--owner-ask', 'which one, Q-101?')
+        shown = self.ok(None, 'show', 'FOO')
+        for form in LEAD_FORMS:
+            rc, out = self.run_tool('coordinator', 'block', 'FOO', '--on', 'owner', '--reason',
+                                    'until A-103 is decided', '--until', form)
+            self.assertEqual(rc, 2, out)
+            self.assertIn('held on the owner by hand', out)
+            self.assertIn('The owner or the PM sets it (the backlog action `unblock-owner`', out)
+        self.assertEqual(self.ok(None, 'show', 'FOO'), shown)       # nothing written
+        self.ok('pm', 'block', 'FOO', '--on', 'owner', '--reason', 'until A-103 is decided',
+                '--until', LEAD_FORMS[2])
+        self.assertIn('until: owner %s' % LEAD_FORMS[2], self.ok(None, 'show', 'FOO'))
 
     def test_the_owner_and_the_pm_are_unchanged(self):
         self.seed()
@@ -181,14 +239,19 @@ class LeadUntilWithoutTheRoleCheck(StoreCase):
     remote = False
 
     def test_a_library_caller_follows_the_same_split(self):
-        self.seed(rec('FOO', state='blocked', blocked_on='owner', owner_ask='which one, Q-101?'))
-        self.verb('block', 'FOO', ['owner'], until='todo:T-101 done')
+        self.seed(rec('FOO'), rec('BAR', state='blocked', blocked_on='owner',
+                                  owner_ask='which one, Q-101?'))
+        self.verb('block', 'FOO', ['owner'], owner_ask='which one, Q-101?',
+                  until='todo:T-101 done')                  # adds `owner`, so it may end it
         self.assertEqual(self.get('FOO').all('until'), ['owner todo:T-101 done'])
         tip = self.remote_tip()
         with self.assertRaises(Refusal) as ctx:
             self.verb('block', 'FOO', ['owner'], until='todo:T-101 started')
         self.assertIn('unblock-owner', str(ctx.exception))
-        self.assertEqual(self.remote_tip(), tip)
+        with self.assertRaises(Refusal) as ctx:             # a hand hold: finding 1
+            self.verb('block', 'BAR', ['owner'], until='todo:T-101 done')
+        self.assertIn('held on the owner by hand', str(ctx.exception))
+        self.assertEqual((self.remote_tip(), self.get('BAR').all('until')), (tip, []))
 
 
 if __name__ == '__main__':

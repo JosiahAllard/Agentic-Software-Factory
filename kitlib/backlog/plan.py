@@ -1016,8 +1016,8 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
         if key in rmod.SINGLE_VALUED and vals is not None and len(vals) > 1:
             raise Usage('`%s` takes one value and was given %d' % (key, len(vals)))
     if rmod.RETIRED_PRIORITY in dict(changes).get('priority', []):
-        raise Usage('%s (`block %s --on owner --owner-ask "<the question>"`)'
-                    % (rmod.RETIRED_PRIORITY_WHY, rid))
+        raise Usage('%s. For `%s`: %s' % (rmod.RETIRED_PRIORITY_WHY, rid,
+                                          rmod.owner_ask_fix(rid, kitroot.command('hub'))))
     for s in dict(changes).get('scope', []):
         # Before the widening check, which counts a member it cannot compare as a collision.
         bad = smod.scope_member_error(s)
@@ -1039,6 +1039,15 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
                       'only by `unpark`, which record the wait and its end')
     if not role_checked:
         refuse_top(rid, 'set', policy.sort('set', policy.given_of_set(changes, unset, body), rec))
+    if 'owner' in get('blocked_on') and ('blocked_on' in keys or 'owner_ask' in keys) and \
+            ('owner' not in rec.all('blocked_on') or get('owner_ask') != rec.all('owner_ask')):
+        # The same owner check as `block --on owner` (plan_block): a `set` that adds the owner
+        # hold, or rewrites its ask, cites the hub ask that ends it.
+        bad = rmod.owner_citation_error(rid, None, ' '.join(get('owner_ask')) or None,
+                                        hub=kitroot.command('hub'))
+        if bad:
+            raise Usage(bad.replace('`block %s --on owner`' % rid,
+                                    '`set %s` of an owner hold' % rid))
 
     new_by = dict(changes).get('priority_by', [None])[0]
     if 'priority' in keys and rmod.is_owner_held(rec) and new_by not in RULED_PRICE_BY:
@@ -1110,6 +1119,13 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
 
 # --- block / unblock ------------------------------------------------------------------------------
 
+def _hand_owner_hold(rec):
+    """True when `rec` is held on the owner with no `until: owner` line: a hold set by hand,
+    which keeps its own end (the hub's park leaves it alone too)."""
+    return 'owner' in rec.all('blocked_on') and \
+        not any(condmod.split(v)[0] == 'owner' for v in rec.all('until'))
+
+
 def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
                role_checked=False):
     """`block` ADDS `members` to `blocked_on`, in order, after the blockers already there (one
@@ -1123,7 +1139,10 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     takes only an owner event (a to-do, a question or an approval). An `until` on `owner`
     schedules the owner's hold to end: unless it is one of the three forms a lead may set
     (policy.lead_until), it is the `unblock-owner` row (policy.sort), and without
-    `role_checked` it refuses (refuse_top).
+    `role_checked` it refuses (refuse_top). One of those three forms on a record already held on
+    the owner by hand (no `until: owner` line) is refused too unless the role check ran and the
+    session's role may take `unblock-owner` (policy.may: the owner or the PM): only the owner or
+    the PM schedules the end of a hold they set.
     `reason`, when given, goes into the commit subject and onto one line appended to the body
     (`Blocked on M (date): T`), so `show` says why the record is held; no header key is written
     for it. A PULLED record is blocked only by whoever may stop its pull (stop_pull), and only
@@ -1149,7 +1168,8 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     if 'item:%s' % rid in members:
         raise Usage('`%s` cannot be blocked on itself' % rid)
     if 'owner' in members and not owner_ask and not rec.has('owner_ask'):
-        raise Usage('blocking on the owner needs `--owner-ask "<the question>"`')
+        raise Usage('blocking on the owner needs `--owner-ask` citing the Action Hub ask it '
+                    'waits on: %s' % rmod.owner_ask_fix(rid, kitroot.command('hub')))
     if until is not None:
         until = ' '.join(until.split())
         refuse_machine_paths('--until', until)
@@ -1165,11 +1185,21 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
             raise Usage('refused `--until %s`: %s' % (until, why))
         if members[0] == 'owner' and not role_checked and not policy.lead_until(until):
             refuse_top(rid, 'block', ['unblock-owner'])
+        if members[0] == 'owner' and _hand_owner_hold(rec) and \
+                not (role_checked and policy.may('unblock-owner')):
+            # A lead's owner-event `--until` (policy.lead_until) ends only a hold it adds, or
+            # one already ending on the owner's asks: a hold set by hand keeps its own end, as
+            # the hub's park leaves it (kitlib/hubsite/recordwrite.py `park`).
+            raise Refusal('`%s` is held on the owner by hand (`blocked_on: owner`, no `until: '
+                          'owner` line): a lead\'s `--until` would schedule that hold to end. '
+                          'The owner or the PM sets it (%s)'
+                          % (rid, policy.row_text('unblock-owner')))
     if 'owner' in members:
         # Every caller passes here (tools/backlog.py, the hub's park): an owner hold cites the
-        # hub ask that ends it, never only itself or another item.
-        bad = rmod.owner_citation_error(rid, reason, owner_ask or rec.get('owner_ask'),
-                                        hub=kitroot.command('hub'))
+        # hub ask that ends it, never only itself or another item. A hub id given now is enough
+        # beside an older stored ask (record.owner_citation_error).
+        bad = rmod.owner_citation_error(rid, reason, owner_ask, hub=kitroot.command('hub'),
+                                        stored=None if owner_ask else rec.get('owner_ask'))
         if bad:
             raise Usage(bad)
     stop = None
@@ -1611,8 +1641,8 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     if rec.get('priority') == rmod.RETIRED_PRIORITY:
         # a leftover owner hold: pricing it would lift the hold, so name the hold, not a price
         raise Refusal('`%s` is `priority: -1`, a retired owner hold, never pulled or priced away: '
-                      'the owner or the PM moves it to `block %s --on owner --owner-ask "<the '
-                      'question>"`' % (rid, rid))
+                      'the owner or the PM moves it to an owner hold citing its Action Hub ask: '
+                      '%s' % (rid, rmod.owner_ask_fix(rid, kitroot.command('hub'))))
     if not rmod.is_band(rec.get('priority')):
         raise Refusal('`%s` is `priority: %s`, and `pull` takes a priced record (`1`-`5`). Price it '
                       'first: `set %s --priority N --priority-by agent`'

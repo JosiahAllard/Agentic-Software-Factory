@@ -79,7 +79,8 @@ class ExportTest(Base):
 
     def test_the_export_chmods_only_the_100755_blobs_off_windows(self):
         for name, expect in (('linux', [os.path.join('githooks', 'pre-push')]), ('windows', [])):
-            with self.subTest(name), mock.patch.object(P.kitplatform, 'NAME', name),                     mock.patch.object(P.os, 'chmod') as chmod:
+            with self.subTest(name), mock.patch.object(P.kitplatform, 'NAME', name), \
+                    mock.patch.object(P.os, 'chmod') as chmod:
                 folder = self._export_with_hook(os.path.join(self.k.root, name))
                 # the fake git also chmods its own objects (0o444); only the export's 0o755 counts
                 self.assertEqual([os.path.join(*c.args[0].split(os.sep)[-2:]) for c in chmod.call_args_list

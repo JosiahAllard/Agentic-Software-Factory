@@ -418,6 +418,8 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py', platform
     and stamped (host_manifests), and the marker (`made_by`: the tool that wrote it;
     `checkout`: the main checkout of `kit`'s repository, left out when git cannot place it). Written into <sha12>.tmp and renamed, so a folder by the
     final name is always whole. An existing folder whose marker names `sha` is kept as it is.
+    A 100755 blob is chmodded 0o755 unless the running host is Windows (kitplatform.NAME, not
+    the `platform` argument, which picks only the manifests), so git runs the kit githooks.
     Returns (folder, version)."""
     name = folder_name(sha)
     dest = os.path.join(root, name)

@@ -120,9 +120,9 @@ class Deep(Base):
         self.assertIn('--force: starting on account 1 anyway; it is at 96% of its seven_day window', out)
         self.assertIn('Would open a new window running:', out)
 
-    def test_five_hour_window_counts_too(self):
-        self.full('2', 95, days=0.1, window_='five')
-        self.refused('Account 2 is at 95% of its five_hour window', account='2')
+    def test_the_five_hour_window_never_refuses(self):
+        self.full('2', 100, days=0.1, window_='five')
+        self.assertIn('Would open', self.deep(account='2'))
 
     def test_a_window_past_its_reset_is_fresh(self):
         self.full('1', 99, days=-1)

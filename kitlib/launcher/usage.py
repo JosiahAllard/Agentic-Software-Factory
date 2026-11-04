@@ -1,16 +1,19 @@
 """Every account's plan usage, as lines (docs/launcher.md "Usage"); kitlib.pmwatch parses them.
 
   account N: five_hour=X% (resets ddd HH:mm)  seven_day=Y% (resets ...)  [updated M min ago]
+  account N: five_hour=?  seven_day=0% (resets ...) reset passed, computed  [updated M min ago]
   account N: no usage file
   current account: N            (the one whose file was written in the last 15 minutes)
   account codex: five_hour=reset  seven_day=Z% (resets ...)  [updated M min ago]
 
 A file refreshes only while a session on that account runs, so "updated" says how fresh it is (the
 status line keeps a stale session's reading out of the file, updated_at included: docs/launcher.md
-"Usage"). A window whose resets_at has passed reads `reset` only when the file's updated_at is at or
-after that time, else `?`: no reading since the reset is no evidence of it. A window the file does
-not give (null, no resets_at, no percentage) reads `?`, which kitlib.pmwatch keeps as unknown, never
-0. Each account's newest file by updated_at is read.
+"Usage"). The week is accounts.week_state's: a week whose resets_at has passed reads 0% to its next
+reset a whole number of weeks on, and with no reading at or after the recorded reset it adds
+`reset passed, computed`: the hub computed it, no reading shows it. The five-hour window is shown
+as the file gives it (a passed reset reads `reset`) and decides nothing: kitlib.pmwatch's line
+pattern needs it. A window the file does not give (null, no resets_at, no percentage) reads `?`,
+which kitlib.pmwatch keeps as unknown, never 0. Each account's newest file by updated_at is read.
 Codex's weekly limit is the last rate_limits event of its newest session log; it has no five-hour
 window.
 """
@@ -24,22 +27,31 @@ FRESH_MINUTES = 15
 _CODEX = re.compile(r'"primary":\{"used_percent":([\d.]+),"window_minutes":\d+,"resets_at":(\d+)')
 
 
-def _window(name, w, now, read_at):
-    """One window's text. read_at: the file's updated_at (None when unknown). A passed weekly reset
-    with no reading after it is unknown (the RESET pm_watch logs is weekly); a passed five-hour
-    reset reads reset as before."""
+def _week(data, now, read_at):
+    """The week's text (accounts.week_state). read_at: the file's updated_at (None when unknown)."""
+    pct, reset, passed = A.week_state(data, now)
+    if pct is None:
+        return 'seven_day=?'
+    text = 'seven_day=%d%% (resets %s)' % (A.whole(pct), A.short(reset))
+    recorded = A.parse_time(data['seven_day'].get('resets_at'))
+    if passed and (read_at is None or read_at < recorded):
+        text += ' reset passed, computed'
+    return text
+
+
+def _five(w, now):
+    """The five-hour window's text, shown as the file gives it; it decides nothing."""
     if not isinstance(w, dict):
-        return '%s=?' % name
+        return 'five_hour=?'
     reset = A.parse_time(w.get('resets_at'))
     if reset is None:
-        return '%s=?' % name
+        return 'five_hour=?'
     if reset < now:
-        seen = name != 'seven_day' or (read_at is not None and read_at >= reset)
-        return '%s=%s' % (name, 'reset' if seen else '?')
+        return 'five_hour=reset'
     pct = w.get('used_percentage')
     if not isinstance(pct, (int, float)) or isinstance(pct, bool):
-        return '%s=?' % name
-    return '%s=%d%% (resets %s)' % (name, A.whole(pct), A.short(reset))
+        return 'five_hour=?'
+    return 'five_hour=%d%% (resets %s)' % (A.whole(pct), A.short(reset))
 
 
 def account_lines(settings, now):
@@ -51,7 +63,7 @@ def account_lines(settings, now):
             continue
         upd = A.parse_time(data.get('updated_at'))
         age = int((now - upd).total_seconds() // 60) if upd else None
-        parts = [_window(k, data.get(k), now, upd) for k in A.WINDOWS]
+        parts = [_five(data.get('five_hour'), now), _week(data, now, upd)]
         out.append('account %s: %s  [updated %s min ago]' % (n, '  '.join(parts), '?' if age is None else age))
         if age is not None and age <= freshest:
             current, freshest = n, age

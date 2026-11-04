@@ -58,11 +58,13 @@ asked, class ones included, or a decided approval of its repo, newer than the st
 start) is read first, on the same terms, and needs no baseline. A wake start passes `--prompt` with the reason, the new ids and the
 entry's state note path.
 
-The account: accounts.restart_pick, the signed-in account with a reading no older than
-pmwatch.STALE_MINUTES under accounts.HEADROOM_LIMIT of both windows whose week resets first (a
-missing, stale or unknown reading never counts as under). With none, the last account as before,
-held when it is not known, not signed in, or at or over accounts.HEADROOM_LIMIT of a window that
-has not reset; a stale reading under the limit still starts there.
+The account: accounts.restart_pick, the signed-in account whose week resets first of those whose
+week has reset (accounts.week_state: a recorded reset passed, 0%, even on a stale reading) or
+whose reading no older than pmwatch.STALE_MINUTES is under accounts.HEADROOM_LIMIT of its week (a
+missing or unknown reading never counts as under, nor a stale one whose week has not reset). The
+five-hour window is never read. With none, the last account as before, held when it is not
+known, not signed in, or at or over accounts.HEADROOM_LIMIT of a week that has not reset; a stale
+reading under the limit still starts there.
 
 The hub is the only thing that restarts agents (the launcher's sign-in task is retired,
 kitlib.launcher.autostart). After a boot it also runs, once, `launch.py after-reboot` as a
@@ -301,9 +303,10 @@ def decide(key, entry, live, record, last_stop, down_runs, accounts, now, wake=N
     when = datetime.datetime.fromtimestamp(now, datetime.timezone.utc)
     pick = A.restart_pick(accounts, when, acct, pmwatch.STALE_MINUTES, A.HEADROOM_LIMIT)
     if pick is not None:
-        return Decision(True, woke + 'start on account %s: a fresh reading under %d%%, its week '
-                        'resets first' % (pick, A.HEADROOM_LIMIT), pick, 'restarted', wake=wake)
-    # no account with a fresh reading under the limit: the last account, as before
+        return Decision(True, woke + 'start on account %s: a week reset or a fresh reading under '
+                        '%d%%, its week resets first' % (pick, A.HEADROOM_LIMIT), pick, 'restarted',
+                        wake=wake)
+    # no account whose week reset or with a fresh reading under the limit: the last account, as before
     if acct is None:
         return _hold('no last account known')
     st = accounts.get(acct)

@@ -25,10 +25,10 @@ def iso(ts):
     return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat()
 
 
-def usage(pct, resets_in=3600, week_in=86400, age=60):
+def usage(pct, week_in=86400, age=60, five=10):
     return {'updated_at': iso(NOW - age),
-            'five_hour': {'used_percentage': pct, 'resets_at': iso(NOW + resets_in)},
-            'seven_day': {'used_percentage': 10, 'resets_at': iso(NOW + week_in)}}
+            'five_hour': {'used_percentage': five, 'resets_at': iso(NOW + 3600)},
+            'seven_day': {'used_percentage': pct, 'resets_at': iso(NOW + week_in)}}
 
 
 def decide(entry=ENTRY, live=(), record=None, last_stop=None, down_runs=2, accounts=OK, now=NOW,
@@ -101,8 +101,18 @@ class Decide(unittest.TestCase):
         d = decide(accounts={'1': C.AccountState(True, usage(50))})
         self.assertEqual((d.start, d.word), (True, 'restarted'))
 
-    def test_a_window_that_has_reset_is_not_over(self):
-        self.assertTrue(decide(accounts={'1': C.AccountState(True, usage(99, resets_in=-60))}).start)
+    def test_a_week_that_has_reset_is_not_over(self):
+        self.assertTrue(decide(accounts={'1': C.AccountState(True, usage(99, week_in=-600))}).start)
+
+    def test_the_five_hour_window_never_holds(self):
+        d = decide(accounts={'1': C.AccountState(True, usage(10, five=100))})
+        self.assertEqual((d.start, d.account, d.word), (True, '1', 'restarted'))
+
+    def test_a_stale_reading_whose_week_reset_passed_restarts_there(self):
+        # 2026-11-04: the last account full; account 2 read 41 h ago at 100%, its week reset since
+        gone = dict(usage(100, week_in=-86400, age=41 * 3600), five_hour=None)
+        d = decide(accounts={'1': C.AccountState(True, usage(99)), '2': C.AccountState(True, gone)})
+        self.assertEqual((d.start, d.account, d.word), (True, '2', 'restarted'))
 
     def test_a_fresh_account_under_the_limit_whose_week_resets_first_wins_over_the_last(self):
         d = decide(accounts={'1': C.AccountState(True, usage(50, week_in=3 * 86400)),

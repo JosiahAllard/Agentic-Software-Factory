@@ -506,6 +506,28 @@ class CurrentLinesTest(Base):
         self.assertEqual(lines, ['pm-kit plugin in %s: not refreshed to %s: %s'
                                  % (two, sha[:12], P.refresh_cmd())])
 
+    def test_a_record_of_a_folder_not_in_folders_gives_no_line(self):
+        default, gone = self.k.folders('.claude', '.claude-gone')
+        self.k.seed_migrated([default, gone])
+        _root, sha = P.ensure_export(self.k.kit, self.s, now=NOW, own=ME, alive=never_alive)
+        state = P.read_state(self.s.export_dir)
+        state['folders'][gone] = {'migrated': True}
+        P.write_state(self.s.export_dir, state)
+        lines = P.current_lines(self.k.kit, self.s, folders=[default])
+        self.assertEqual(len(lines), 1)
+        self.assertIn(default, lines[0])
+        self.assertNotIn(gone, ''.join(lines))
+        self.assertEqual(P.current_lines(self.k.kit, self.s, folders=[]), [])
+
+    def test_a_non_dict_record_is_no_line_and_no_crash(self):
+        default, junk = self.k.folders('.claude', '.claude-junk')
+        self.k.seed_migrated([default])
+        self.assertEqual(self.refresh([default]), 0)
+        state = P.read_state(self.s.export_dir)
+        state['folders'][junk] = 'not a dict'
+        P.write_state(self.s.export_dir, state)
+        self.assertEqual(P.current_lines(self.k.kit, self.s, folders=[default]), [])
+
     def test_unreadable_state(self):
         os.makedirs(self.k.root)
         with open(os.path.join(self.k.root, P.STATE), 'w', encoding='utf-8') as fh:

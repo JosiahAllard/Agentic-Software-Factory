@@ -1412,8 +1412,8 @@ def current_lines(kit, s, folders=None, managed=_MACHINE):
     if main and main != state.get('sha'):
         lines.append('pm-kit plugin behind kit main (exported %s, %s/%s %s): %s'
                      % (str(state.get('sha') or '?')[:12], s.remote, MAIN, main[:12], cmd))
-    for f in sorted(state['folders']):
-        r = state['folders'][f] or {}
+    for f in sorted(folders):       # only the folders asked about: a retired folder's record is no line
+        r = _record(state, f)
         if r.get('migrated') is not True or r.get('rc') == 0:
             continue
         if r.get('rc') is None:     # migrated, carried into this export, never refreshed to it

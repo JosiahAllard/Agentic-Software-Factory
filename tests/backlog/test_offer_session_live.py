@@ -34,30 +34,30 @@ def offer(s, live, session='kit'):
 
 
 def two():
-    """A higher record of session combat and a lower one of session kit, on the same scope."""
-    return snap(priced('HIGH', priority='1', scope='artifacts/models/**', session='combat'),
+    """A higher record of session alpha and a lower one of session kit, on the same scope."""
+    return snap(priced('HIGH', priority='1', scope='artifacts/models/**', session='alpha'),
                 priced('LOW', priority='2', scope='artifacts/models/x/**', session='kit'))
 
 
 class SessionLive(unittest.TestCase):
 
     def test_a_session_not_running_reserves_nothing_and_is_noted(self):
-        live = liveness({'combat': 'combat-coordinator'}, names=['kit-coordinator-a1'])
+        live = liveness({'alpha': 'alpha-coordinator'}, names=['kit-coordinator-a1'])
         ids, passed = offer(two(), live)
         self.assertEqual(ids, ['LOW'])
         self.assertEqual(passed, {})
-        self.assertEqual(live.idle, [('HIGH', 'combat')])
+        self.assertEqual(live.idle, [('HIGH', 'alpha')])
         self.assertEqual(omod.idle_lines(live),
-                         ['NOTE: HIGH (session combat not running) reserves no scope'])
+                         ['NOTE: HIGH (session alpha not running) reserves no scope'])
 
     def test_a_running_session_reserves_as_before(self):
-        live = liveness({'combat': 'combat-coordinator'}, names=['combat-coordinator-a2-r1'])
+        live = liveness({'alpha': 'alpha-coordinator'}, names=['alpha-coordinator-a2-r1'])
         ids, passed = offer(two(), live)
         self.assertEqual(ids, [])
         self.assertEqual(passed['LOW'].why, 'scope artifacts/models/x/** collides with '
-                         'artifacts/models/** already taken by HIGH (session combat)')
+                         'artifacts/models/** already taken by HIGH (session alpha)')
         self.assertEqual(omod.blocker_summary(list(passed.values())),
-                         ['blocks 1: session combat (HIGH)'])
+                         ['blocks 1: session alpha (HIGH)'])
         self.assertEqual(omod.idle_lines(live), [])
 
     def test_unreadable_liveness_reserves_and_says_so(self):
@@ -66,13 +66,13 @@ class SessionLive(unittest.TestCase):
             ids, passed = offer(two(), live)
             self.assertEqual(ids, [])
             self.assertEqual(passed['LOW'].why, 'scope artifacts/models/x/** collides with '
-                             'artifacts/models/** already taken by HIGH (session combat) '
+                             'artifacts/models/** already taken by HIGH (session alpha) '
                              '(liveness unread, so reserved)')
             self.assertEqual(omod.blocker_summary(list(passed.values())),
-                             ['blocks 1: session combat (HIGH)'])
+                             ['blocks 1: session alpha (HIGH)'])
             notes = omod.unread_lines(live, list(passed.values()))
             self.assertEqual(len(notes), 1, notes)
-            self.assertTrue(notes[0].startswith('NOTE: session combat liveness unread ('), notes)
+            self.assertTrue(notes[0].startswith('NOTE: session alpha liveness unread ('), notes)
             self.assertIn(why, notes[0])
             self.assertTrue(notes[0].endswith('): its records reserve their scope as before'),
                             notes)
@@ -80,12 +80,12 @@ class SessionLive(unittest.TestCase):
     def test_no_reader_is_todays_offer(self):
         (offers, passed), _r, _k = omod.next_offer(two(), [], session='kit')
         self.assertEqual([o.rec.id for o in offers], [])
-        self.assertTrue(passed[0].why.endswith('already taken by HIGH (session combat)'))
+        self.assertTrue(passed[0].why.endswith('already taken by HIGH (session alpha)'))
 
     def test_a_dead_session_takes_no_resource_unit(self):
-        s = snap(priced('HIGH', priority='1', scope='a/**', session='combat', uses='gpu'),
+        s = snap(priced('HIGH', priority='1', scope='a/**', session='alpha', uses='gpu'),
                  priced('LOW', priority='2', scope='b/**', session='kit', uses='gpu'))
-        live = liveness({'combat': 'combat-coordinator'})
+        live = liveness({'alpha': 'alpha-coordinator'})
         (offers, _p), _r, _k = omod.next_offer(s, [], session='kit', capacity={'gpu': 1},
                                                session_live=live)
         self.assertEqual([o.rec.id for o in offers], ['LOW'])
@@ -96,20 +96,20 @@ class SessionLive(unittest.TestCase):
         def names():
             calls.append(1)
             return []
-        live = omod.SessionLiveness(sessions=lambda: {'combat': 'combat-coordinator'},
+        live = omod.SessionLiveness(sessions=lambda: {'alpha': 'alpha-coordinator'},
                                     names=names)
         self.assertEqual(live.live('other'), (None, 'session other is not in sessions.json'))
         self.assertEqual(calls, [])
-        self.assertEqual(live.live('combat'), (False, None))
-        self.assertEqual(live.live('combat'), (False, None))
+        self.assertEqual(live.live('alpha'), (False, None))
+        self.assertEqual(live.live('alpha'), (False, None))
         self.assertEqual(calls, [1])
 
     def test_a_failing_listing_is_unread_never_a_raise(self):
         def names():
             raise OSError('listing timed out')
-        live = omod.SessionLiveness(sessions=lambda: {'combat': 'combat-coordinator'},
+        live = omod.SessionLiveness(sessions=lambda: {'alpha': 'alpha-coordinator'},
                                     names=names)
-        state, why = live.live('combat')
+        state, why = live.live('alpha')
         self.assertIsNone(state)
         self.assertIn('listing timed out', why)
 
@@ -129,7 +129,7 @@ class RealReaders(unittest.TestCase):
         root = tempfile.mkdtemp(prefix='kit-live-')
         self.addCleanup(shutil.rmtree, root, True)
         with open(os.path.join(root, 'sessions.json'), 'w', encoding='utf-8') as f:
-            json.dump({'_note': 'x', 'combat': {'repo': 'app', 'stem': 'combat-coordinator'},
+            json.dump({'_note': 'x', 'alpha': {'repo': 'app', 'stem': 'alpha-coordinator'},
                        'kit': {'repo': 'kit', 'stem': 'kit-coordinator'}}, f)
         rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control kit-coordinator-a2'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude -n other-session'},
@@ -138,12 +138,12 @@ class RealReaders(unittest.TestCase):
                                return_value=lsettings.Settings({'state_dir': root}, root)), \
                 mock.patch.object(pmstart, 'list_processes', return_value=rows), \
                 mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
-            self.assertEqual(omod.launcher_stems(), {'combat': 'combat-coordinator',
+            self.assertEqual(omod.launcher_stems(), {'alpha': 'alpha-coordinator',
                                                      'kit': 'kit-coordinator'})
             self.assertEqual(omod.running_names(), ['kit-coordinator-a2', 'other-session'])
             live = omod.SessionLiveness()
             self.assertEqual(live.live('kit'), (True, None))
-            self.assertEqual(live.live('combat'), (False, None))
+            self.assertEqual(live.live('alpha'), (False, None))
             self.assertEqual(live.live('gone'), (None, 'session gone is not in sessions.json'))
 
 
@@ -158,17 +158,17 @@ class SessionLiveCli(unittest.TestCase):
         backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snapshot = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snapshot, {
-            'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='combat',
+            'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='alpha',
                                 scope='a/**'),
             'R1': record_text(id='R1', priority='2', priority_by='agent', scope='a/x.py')},
             'seed\n')
         # the readers `next` reads liveness with (patched below, so no machine read)
         self.assertTrue(hasattr(omod, 'launcher_stems') and hasattr(omod, 'running_names'))
         with mock.patch.object(omod, 'launcher_stems',
-                               return_value={'combat': 'combat-coordinator'}), \
+                               return_value={'alpha': 'alpha-coordinator'}), \
                 mock.patch.object(omod, 'running_names', return_value=['kit-coordinator-a1']):
             out = self.ok('next')
-        self.assertIn('NOTE: HOLD (session combat not running) reserves no scope', out)
+        self.assertIn('NOTE: HOLD (session alpha not running) reserves no scope', out)
         self.assertNotIn('passed over R1', out)
         self.assertIn('NEXT (1 offered)', out)
 
@@ -176,7 +176,7 @@ class SessionLiveCli(unittest.TestCase):
         backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snapshot = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snapshot, {
-            'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='combat',
+            'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='alpha',
                                 scope='a/**'),
             'R1': record_text(id='R1', priority='2', priority_by='agent', scope='a/x.py')},
             'seed\n')
@@ -184,7 +184,7 @@ class SessionLiveCli(unittest.TestCase):
     def pull_with(self, running):
         self.assertTrue(hasattr(omod, 'launcher_stems') and hasattr(omod, 'running_names'))
         with mock.patch.object(omod, 'launcher_stems',
-                               return_value={'combat': 'combat-coordinator'}), \
+                               return_value={'alpha': 'alpha-coordinator'}), \
                 mock.patch.object(omod, 'running_names', return_value=running):
             return self.run_tool('--as', 'tools/wk', 'pull', 'R1')
 
@@ -196,9 +196,9 @@ class SessionLiveCli(unittest.TestCase):
 
     def test_pull_is_still_refused_while_that_session_runs(self):
         self.seed_pair()
-        rc, out = self.pull_with(['combat-coordinator-a1'])
+        rc, out = self.pull_with(['alpha-coordinator-a1'])
         self.assertNotEqual(rc, 0, out)
-        self.assertIn('HOLD (session combat)', out)
+        self.assertIn('HOLD (session alpha)', out)
         self.assertEqual(self.ok('show', 'R1').count('pulled_by:  tools/wk'), 0)
 
 

@@ -41,6 +41,21 @@ class SendChurnTest(httpfix.ListenerCase):
                              % (left, REQUESTS))
         self.assertEqual(self.errors(), [])
 
+    def test_the_reader_sees_the_time_wait_raw_leaves(self):
+        # every other live check is an upper bound, which a reader that returned nothing would
+        # pass: raw() closes first, so each call leaves its connection in TIME_WAIT (3 of 3 on
+        # Windows, 11-04), and the reader must see them
+        try:
+            before = httpfix.time_wait_ends()
+        except OSError as e:
+            self.skipTest('the TCP table cannot be read: %s' % e)
+        lis = self.listener()
+        for _ in range(3):
+            self.assertNotEqual(httpfix.raw(lis.port, b'GET / HTTP/1.1\r\nHost: %s:%d\r\n\r\n'
+                                            % (httpd.LOOPBACK.encode(), lis.port)), b'')
+        self.close(lis)
+        self.assertGreaterEqual(on_port(httpfix.time_wait_ends() - before, lis.port), 1)
+
 
 @unittest.skipUnless(sys.byteorder == 'little', 'the rows below are as a little-endian kernel '
                      'writes /proc/net')

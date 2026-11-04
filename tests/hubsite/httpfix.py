@@ -145,8 +145,9 @@ def read_all(sock):
 
 def raw(port, data, timeout=TIMEOUT):
     """Send these bytes, close the sending side, and return everything the listener answers.
-    Each call leaves a connection in TIME_WAIT: this end closed first (the shutdown), and a reset
-    at close cannot undo that, so a sweep uses send() (abort_on_close)."""
+    Each call leaves a connection in TIME_WAIT: this end closed first (the shutdown). On Windows a
+    reset at close did not undo that (100 of 100 left either way, measured 11-04); on Linux it
+    may. raw() sets no linger either way, so a sweep uses send() (abort_on_close)."""
     with socket.create_connection((httpd.LOOPBACK, port), timeout=timeout) as s:
         s.sendall(data)
         s.shutdown(socket.SHUT_WR)

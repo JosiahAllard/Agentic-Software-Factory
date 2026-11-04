@@ -25,7 +25,14 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   canonical(doc_id, doc)          the bytes a decision's signature covers
   sign(key, doc_id, doc)          that signature: HMAC with SHA-256 under the approval key, hex
   expires_at(doc)                 when the document stops counting, or None (never or unknown)
-  status_at(doc, now)             its status at `now`, expiry applied; None for a bad document
+  status_at(doc, now)             its status at `now`, supersede then expiry applied; None for a
+                                  bad document
+  supersede_fields(doc_id, doc, by, who, now)
+                                  the `superseded` note marking a decided approval nobody
+                                  consumed superseded by approval `by` or commit `by`;
+                                  ApprovalError
+  on_main(checkout, sha)          (True/False, None): whether main as last fetched reaches the
+                                  commit `sha`, or (None, why)
   decide_fields(key, doc_id, doc, decision, now)
                                   the fields a decision writes; ApprovalError
   consume_fields(key, doc_id, doc, commit, now)
@@ -92,6 +99,11 @@ The document (collection `approvals`, ids A-<n>):
   created_at  ISO time with offset
   decision, decided_at, sig      once decided (sig on an approval only)
   commit, consumed_at            once consumed
+  superseded  {by, from, at}     once the PM or the repository's coordinator marked a decided,
+                                 unconsumed approval superseded by approval `by` (A-<n>) or a
+                                 commit `by` on main (supersede_fields); the stored status and
+                                 the decision stay, and status_at reads SUPERSEDED; not covered
+                                 by the signature
   record, park                   a file request bound to a backlog record {repo, id}, and the
                                  mark of the record's park (kitlib.hubsite.api park_item); not
                                  covered by the signature
@@ -133,7 +145,9 @@ APPROVED_TTL_S after it (approval_end; the owner's choice: a file approval holds
 is on main or for 30 days, whichever comes first, so a rebuilt branch and a land after the commit
 can still check it).
 A time that cannot be read, a decision dated after now and a naive now count as expired. Denied
-and expired are final.
+and expired are final. Superseded is read too, from the `superseded` note, and before the expiry:
+an approval superseded and past its life reads superseded, the act on record. It is final, never
+consumed and never verified.
 
 Routes (kitlib.hubsite.api): the helpers below call ROUTE (POST add), ROUTE/<id>/consume (POST)
 and ROUTE/<id>/verify (GET, query repo, head, files as JSON {path: blob} and an optional commit;
@@ -172,7 +186,8 @@ TRAILER = 'Owner-Approval'      # the trailer that carries one (kitlib.guard.own
 
 PENDING, APPROVED, DENIED = 'pending', 'approved', 'denied'
 CONSUMED, EXPIRED = 'consumed', 'expired'
-STATUSES = tuple(hubvalidate.STATUSES['approvals'])     # the single source
+STATUSES = tuple(hubvalidate.STATUSES['approvals'])     # the single source of stored ones
+SUPERSEDED = 'superseded'       # read from the `superseded` note, never stored as a status
 APPROVE, DENY = 'approve', 'deny'
 DECISIONS = (APPROVE, DENY)
 COLLECTION = 'approvals'
@@ -491,13 +506,17 @@ def expires_at(doc):
 
 
 def status_at(doc, now):
-    """The status of `doc` at `now` (an aware datetime): EXPIRED for a pending, approved or
-    consumed one past expires_at or with a time that cannot be read, for an approved or consumed
-    one decided after `now`, and for any of them when `now` is naive; its stored status
-    otherwise; None for a document with no known status."""
+    """The status of `doc` at `now` (an aware datetime): SUPERSEDED for an approved or denied one
+    with a `superseded` note, before any expiry (an approval superseded and past its life reads
+    superseded: the act on record wins); EXPIRED for a pending, approved or consumed one past
+    expires_at or with a time that cannot be read, for an approved or consumed one decided after
+    `now`, and for any of them when `now` is naive; its stored status otherwise; None for a
+    document with no known status."""
     status = doc.get('status') if isinstance(doc, dict) else None
     if status not in STATUSES:
         return None
+    if status in (APPROVED, DENIED) and isinstance(doc.get('superseded'), dict):
+        return SUPERSEDED
     if status in (PENDING, APPROVED, CONSUMED):
         end = expires_at(doc)
         try:
@@ -549,6 +568,40 @@ def withdraw_check(doc, now):
     if status != PENDING:
         raise ApprovalError('only an undecided approval can be withdrawn, not one that is %s'
                             % (status or 'malformed'), 'status', 'conflict')
+
+
+def supersede_fields(doc_id, doc, by, who, now):
+    """The fields marking `doc` superseded: {'superseded': {by, from, at}}. Only a decided
+    approval nobody consumed (status_at approved or denied) is superseded; a pending one is
+    withdrawn instead (withdraw_check). `by` is the approval that replaces it (A-<n>, not
+    `doc_id` itself) or a commit id (40 lowercase hex); the caller checks that the approval
+    exists and that main reaches the commit (on_main), and who `who` is. ApprovalError (code
+    conflict, field status; invalid, field by)."""
+    status = status_at(doc, now)
+    if status not in (APPROVED, DENIED):
+        hint = ': withdraw a pending one' if status == PENDING else ''
+        raise ApprovalError('only a decided approval nobody consumed can be superseded, not one '
+                            'that is %s%s' % (status or 'malformed', hint), 'status', 'conflict')
+    if not (isinstance(by, str) and (APPROVAL_ID.match(by) or _HEX40.match(by))):
+        raise ApprovalError('by is the approval that replaces it (A-<n>) or a commit id of 40 '
+                            'lowercase hex digits, not %s' % ascii(by), 'by')
+    if by == doc_id:
+        raise ApprovalError('an approval cannot supersede itself', 'by')
+    return {'superseded': {'by': by, 'from': who, 'at': _iso(now)}}
+
+
+def on_main(checkout, sha):
+    """(True/False, None): whether main as last fetched (refs/remotes/<remote>/<main> of the
+    checkout's config, as kitlib.guard.ownercommits names it) reaches the commit `sha`; (None,
+    why) when that cannot be told (no main, an unknown commit, git failing)."""
+    from kitlib import config as kconfig
+    from kitlib.git import refs
+    try:
+        cfg = kconfig.load(checkout)
+        ref = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+    except Exception as e:      # noqa: BLE001 - fail closed: no main reaches nothing
+        return None, 'main cannot be named: %s' % e
+    return refs.is_ancestor(sha, ref, checkout)
 
 
 def _line_holds(doc):

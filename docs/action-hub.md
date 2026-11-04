@@ -1274,7 +1274,7 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 | Field | Written by | Meaning |
 |---|---|---|
 | (doc id) | server | `A-1`, `A-2`, ...: the document's id, not a field |
-| status | server | `pending`, `approved`, `denied`, `consumed` or `expired` (`approvals.STATUSES`); expiry is read from the times, never written |
+| status | server | `pending`, `approved`, `denied`, `consumed` or `expired` (`approvals.STATUSES`); expiry is read from the times, never written. `superseded` is read too, from `superseded`, and before the expiry: an approval superseded and past its life reads `superseded` (`approvals.status_at`) |
 | repo | agent | the repository, as the repo_id of its remote URL (`approvals.repo_id`) |
 | title, reason | agent | what the change is and why; reason is optional |
 | head | agent | the commit the change applies to (40 hex) |
@@ -1284,6 +1284,7 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 | decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only |
 | commit, consumed_at | server | once an agent consumes the approval for a commit |
 | spent, spent_at | server | the commit on main that carries the approval and when the hub learned it: set once, from a landing feed event's `approvals` ("landings/L-NNN"), on a consumed file approval of the event's repo only. Display only, for a later page (no page reads them yet): the status stays, and whether an approval is used up is read from main itself (`approvals.spent`). An approval that reached main some other way than `tools/land.py` has none |
+| superseded | server | `{by, from, at}`: a decided approval nobody consumed, marked superseded by the PM or its repository's coordinator (`from`), by the approval `by` (`A-<n>`) or the commit `by` on main, at `at` (`approvals.supersede_fields`). The stored status and the decision stay; the status reads `superseded`, final: it is not pending, not consumed and not verified. Not covered by the signature |
 | record | agent | `{repo, id}`: the backlog record the change is for; absent or null on an unbound request |
 | park | server | `{at, code, message}`: what binding the request did to its record, as a question's `park` ("A question bound to a record") |
 
@@ -1305,6 +1306,17 @@ Routes, below `/api/v1`:
   undecided (`conflict`, field `status` otherwise: a decided one is the owner's record); one bound to a
   record drops its line from the record. The `from` is a claim: an
   approval stores none, so it is `pm` (`forbidden`, field `from`, for another).
+- POST `/approvals/{id}/supersede` (agent): the PM, or the coordinator of the approval's repository,
+  marks a decided approval nobody consumed superseded (`hub.py approvals supersede A-n --by A-m|SHA
+  --from KEY --if-version V`, `SUPERSEDED A-n by A-m`). The body gives `from`, `by` and `if_version`,
+  all required. The `from` is a claim, checked as `questions done` checks one: `pm` or the
+  repository's coordinator key (`Api.repo_key`), `forbidden`, field `from`, for another. `by` is the
+  approval that replaces it, which must exist and not be itself, or a commit id of 40 hex that main as
+  last fetched (`refs/remotes/<remote>/<main>`) reaches in this machine's checkout of the repository
+  (`approvals.on_main`); anything else, a git that cannot tell included, is `invalid`, field `by`. Only
+  an approved or denied approval is superseded: a pending one is withdrawn instead, and a consumed,
+  expired or superseded one is `conflict`, field `status`. It writes `superseded`; the approval leaves
+  pending and `approvals show` gives its status and a line `superseded by <by> from <from> at <at>`.
 - GET `/approvals/{id}/verify` (agent): query `repo`, `head`, `files` (JSON `{path: blob}`) and an
   optional `commit`; answers `{ok, valid, why}`, never the key or the sig. With `commit`, only a consumed
   approval is valid, consumed by that commit or another: a rebuilt branch keeps its approval (the
@@ -1358,7 +1370,7 @@ file in the parent's mode (`approvals.delta_error`). So a branch rebuilt on a mo
 and a commit that undoes or adds to the approved change does not.
 
 A decided approval that is not consumed is pending owner input ("Who handles a pending item"): for the
-coordinator of its repository and for the PM, until it is consumed or expires, and a denied one for 24
+coordinator of its repository and for the PM, until it is consumed, superseded or expires, and a denied one for 24
 hours after the decision. The server pushes it to both at the decision and, if it is still approved and
 not consumed, once more 4 hours before it expires ("Push notifications").
 

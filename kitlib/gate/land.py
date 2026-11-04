@@ -481,11 +481,30 @@ class _Held(object):
     for its store's write, area or None (_area_lead)]; `read`, a store holding a record was
     read; `unread`, why a store could not be; `folders`, folder stores' own folders (always
     allowed); `narrowed`, id -> its `narrowed:` values, for each id held that carries one
-    (scope_check refuses their branch's miss)."""
+    (scope_check refuses their branch's miss); `states`, id -> the states of the readable records
+    of that id in the stores read, and `lasts`, each store's `last(rid)` (_scope_take), for
+    `live`."""
 
     def __init__(self):
         self.held, self.read, self.unread, self.folders = {}, False, [], []
-        self.narrowed = {}
+        self.narrowed, self.states, self.lasts = {}, {}, []
+
+    def live(self, rid):
+        """Whether the other record `rid` of a `narrowed:` line still holds its part, read as
+        `next` reads it (offer.ended_reader): a store read holds it and not open (pulled, blocked
+        or parked), or none does and no store's history shows it removed (closed, retired or
+        deleted). A history git cannot read says nothing: the part is held."""
+        if rid in self.states:
+            return any(s != 'open' for s in self.states[rid])
+        if not smod.PLAIN_ID.match(rid):
+            return True
+        for last in self.lasts:
+            try:
+                if last(rid) is not None:
+                    return False
+            except Refusal:
+                continue
+        return True
 
     def hold(self, rid, members, command, area=None, narrowed=()):
         if narrowed:
@@ -1572,7 +1591,12 @@ class Lander(object):
         RESTORE form (narrowed.restore_set: each current member no original member holds kept, the
         lines cleared, a malformed one kept as written; docs/commit.md "A narrowed record").
         Lines are read with the `mixed` id grammar, which takes every store's ids: they come from
-        more than one store, and a record's own store checked them when they were written."""
+        more than one store, and a record's own store checked them when they were written.
+        A record narrowed for several records (a split against several live pulls) gets no
+        restore while one of them still holds its part (_Held.live): given back then, a member
+        would cover that record's live paths again. The clause names each one still live and
+        points at `next`'s RESTORE line, which restores each member once every record it was
+        narrowed for has ended (offer._restore)."""
         parts = []
         for rid in sorted(found.narrowed):
             members, command, _area = found.held[rid]
@@ -1582,6 +1606,14 @@ class Lander(object):
                              'original member by hand' % rid)
                 continue
             originals, others, args = got
+            live = [o for o in others if found.live(o)] if len(others) > 1 else []
+            if live:
+                parts.append('%s was narrowed off %s for %s: %s still %s, so no restore is given '
+                             'here: `next`\'s RESTORE line gives it once every one of them has '
+                             'ended' % (rid, ', '.join(originals), ', '.join(others),
+                                        ', '.join(live), 'holds its part' if len(live) == 1
+                                        else 'hold their parts'))
+                continue
             parts.append('%s was narrowed off %s for %s: a path given to %s waits until it lands, '
                          'then restore the original member with %s' % (
                              rid, ', '.join(originals), ', '.join(others), ', '.join(others),
@@ -1655,6 +1687,9 @@ class Lander(object):
             found.read = True
         stems = set(r.stem for r in records)
         candidates = [r for r in records if r.readable]
+        for r in candidates:
+            found.states.setdefault(r.stem, []).append(r.get('state'))
+        found.lasts.append(last)
         for rid in sorted((set(named) | set(gone)) - stems):
             rec = last(rid) if smod.PLAIN_ID.match(rid) else None
             if rec is not None and rec.readable:

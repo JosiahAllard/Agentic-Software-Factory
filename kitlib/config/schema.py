@@ -128,7 +128,7 @@ BISECT = Obj({
 
 # A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard.md "Write jail").
 DATA_ROOT = Obj({
-    'path': Field(Str(pattern=r'(?:[A-Za-z]:[\\/]|\\\\|//).+', what='an absolute folder path'), None, 'the folder, absolute'),
+    'path': Field(Str(pattern=r'(?:[A-Za-z]:[\\/]|\\\\|/).+', what='an absolute folder path'), None, 'the folder, absolute'),
     'mode': Field(Enum('add-only', 'read-only', 'open'), None, 'add-only: new files only, never overwrite, move or delete; read-only: no write; open: any write'),
     'why': Field(Str(), None, 'the reason, a ruling or a measurement'),
 }, required=('path', 'mode'), what='{path, mode, why}')

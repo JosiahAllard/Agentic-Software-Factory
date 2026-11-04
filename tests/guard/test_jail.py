@@ -546,8 +546,13 @@ class Config(unittest.TestCase):
                  {'path': 'E:/scratch', 'mode': 'open', 'why': 'test'}]
         self.assertEqual(self.load({'data_roots': roots}).section('guard')['data_roots'], roots)
 
+    def test_posix_absolute_path(self):
+        roots = [{'path': '/srv/data', 'mode': 'add-only'}]
+        self.assertEqual(self.load({'data_roots': roots}).section('guard')['data_roots'], roots)
+
     def test_bad_entries_refuse(self):
         for bad in ([{'path': 'D:/x', 'mode': 'append'}], [{'path': 'data/models', 'mode': 'open'}],
+                    [{'path': '/', 'mode': 'open'}], [{'path': './srv', 'mode': 'open'}],
                     [{'mode': 'open'}], [{'path': 'D:/x'}], [{'path': 'D:/x', 'mode': 'open', 'extra': 1}]):
             with self.subTest(bad):
                 with self.assertRaises(kconfig.ConfigError):

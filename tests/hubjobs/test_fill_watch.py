@@ -9,17 +9,9 @@ import unittest
 from unittest import mock
 
 from kitlib.hubjobs import coord_restart as C
+from kitlib.hubjobs import fill_watch as W
 from kitlib.hubsite import jobs
 from kitlib.launcher import settings as lsettings
-
-W = None
-
-
-def setUpModule():
-    global W
-    from kitlib.hubjobs import fill_watch
-    W = fill_watch
-
 
 def ctx():
     return jobs.Ctx(threading.Event(), lambda word, detail=None: None)

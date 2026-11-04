@@ -22,7 +22,7 @@ class Args(unittest.TestCase):
     def test_plain_form_is_unchanged(self):
         o = R.parse_args(['out.png', 'a.glb', 'b.glb'])
         self.assertEqual((o.out, o.files, o.grid, o.view, o.keep_tiles),
-                         ('out.png', ['a.glb', 'b.glb'], None, '3/4', False))
+                         (os.path.abspath('out.png'), ['a.glb', 'b.glb'], None, '3/4', False))
 
     def test_grid_view_and_keep_tiles(self):
         o = R.parse_args(['--grid', '3', '--view', 'front', '--keep-tiles', 'out.png', 'a.glb'])
@@ -308,6 +308,31 @@ class Modes(unittest.TestCase):
             self.assertIn('not inside a git checkout', R.out_refusal(R.parse_args([mode, loose, 'a.glb'])))
         os.makedirs(os.path.join(tmp, '.git'))
         self.assertIsNone(R.out_refusal(R.parse_args(['--turnaround', loose, 'a.glb'])))
+
+    def test_a_relative_out_is_absolute_and_a_foreign_cwd_is_refused(self):
+        # Blender resolved a relative scene.render.filepath against the drive root, not the cwd the
+        # check used; so OUT, and every tile path made from it, must be absolute before either.
+        tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        inside, outside = os.path.join(tmp, 'repo'), os.path.join(tmp, 'elsewhere')
+        os.makedirs(os.path.join(inside, '.git'))
+        os.makedirs(outside)
+        old = os.getcwd()
+        self.addCleanup(os.chdir, old)
+        for mode in ('--turnaround', '--filmstrip'):
+            os.chdir(inside)
+            o = R.parse_args([mode, os.path.join('art', 'sheet.png'), 'a.glb'])
+            self.assertEqual(o.out, os.path.join(inside, 'art', 'sheet.png'))
+            self.assertTrue(os.path.isabs(R.strip_tile_path(o.out, 0, 'm', 'walk', 1, False)))
+            self.assertIsNone(R.out_refusal(o))
+            os.chdir(outside)
+            with mock.patch.object(R.B, 'find_blender', return_value='C:/B/blender.exe'),                     mock.patch.object(R, 'machine_lock_rerun') as rerun,                     mock.patch('sys.stderr', new_callable=io.StringIO) as err:
+                with self.assertRaises(SystemExit) as e:
+                    R.launch([mode, os.path.join('art', 'sheet.png'), 'a.glb'])
+            self.assertEqual(e.exception.code, 2)
+            self.assertIn('not inside a git checkout', err.getvalue())
+            rerun.assert_not_called()
+        self.assertEqual(os.listdir(outside), [])
 
     def test_plain_python_finds_blender_and_relaunches_under_the_lock(self):
         with mock.patch.object(R.B, 'find_blender', return_value='C:/B/blender.exe'), \

@@ -152,7 +152,8 @@ class Pack:
         pos += self.count * 4
         self.large = idx[pos:]
         self._fh = None
-        self._lock = threading.Lock()
+        # reentrant: a REF_DELTA whose base is in this pack comes back to read_at from _read
+        self._lock = threading.RLock()
 
     def _name(self, i):
         return self.names[i * self.rawlen:(i + 1) * self.rawlen]

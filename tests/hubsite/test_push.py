@@ -162,6 +162,22 @@ class FiresTest(PushCase):
         self.assertIn('A done mark is not proof: verify each step on disk, then: hub todo ack %s'
                       % tid, text)
 
+    def test_a_done_todos_note_is_in_the_push_on_one_bounded_line_and_none_adds_no_line(self):
+        plain = self.todo(**{'from': 'kit'})
+        self.done(plain)
+        self.worker.poll()
+        self.assertNotIn("note", self.push.to('kit')[0])
+        tid = self.todo(**{'from': 'kit'})
+        long_note = 'sha256 = deadbeef\n' + 'z' * 1000
+        self.ok('POST', '/todos/%s/done' % tid, OWNER, {'done': True, 'note': long_note})
+        self.worker.poll()
+        text = self.push.to('kit')[-1]
+        lines = [l for l in text.splitlines() if "owner's note" in l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn('sha256 = deadbeef zzz', lines[0])
+        self.assertLess(len(lines[0]), push.TODO_NOTE_PUSH_MAX + 200)
+        self.assertIn('hub todos show %s' % tid, lines[0])
+
     def test_the_pms_own_items_and_a_session_that_is_the_pm_push_to_the_pm_once(self):
         self.push.pm_names.add('zeta')
         q1, q2 = self.ask(), self.ask(**{'from': 'zeta'})

@@ -441,6 +441,32 @@ class TodoTest(ApiCase):
         self.refused('conflict', 'if_version', 'POST', '/todos/%s/done' % tid, OWNER,
                      {'done': True, 'if_version': 1})
 
+    def test_done_with_a_note_stores_it_trimmed_and_a_reopen_or_redo_drops_it(self):
+        tid = self.ok('POST', '/todos', OWNER, {'title': 't'})['id']
+        path = '/todos/%s/done' % tid
+        self.ok('POST', path, OWNER, {'done': True, 'note': '  sha256 abc\nline two \n'})
+        self.assertEqual(self.store.get('todos', tid)['done_note'], 'sha256 abc\nline two')
+        self.ok('POST', path, OWNER, {'done': True})            # done again with no note
+        self.assertFalse(self.store.get('todos', tid).get('done_note'))
+        self.ok('POST', path, OWNER, {'note': 'again'})
+        self.ok('POST', path, OWNER, {'done': False})
+        self.assertFalse(self.store.get('todos', tid).get('done_note'))
+
+    def test_an_empty_note_changes_nothing_and_a_done_without_one_has_no_note_field(self):
+        tid = self.ok('POST', '/todos', OWNER, {'title': 't'})['id']
+        self.ok('POST', '/todos/%s/done' % tid, OWNER, {'done': True, 'note': '  \n'})
+        self.assertNotIn('done_note', self.store.get('todos', tid))
+
+    def test_a_note_is_bounded_plain_text_and_not_for_a_reopen(self):
+        tid = self.ok('POST', '/todos', OWNER, {'title': 't'})['id']
+        path = '/todos/%s/done' % tid
+        self.ok('POST', path, OWNER, {'note': 'x' * api.TODO_NOTE_MAX})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'x' * (api.TODO_NOTE_MAX + 1)})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'a\x00b'})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'a\ud800b'})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 5})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'done': False, 'note': 'n'})
+
     def test_ack(self):
         tid = self.ok('POST', '/todos', OWNER, {'title': 't'})['id']
         self.assertEqual([p['id'] for p in self.ok('GET', '/pending', AGENT)['items']], [tid])

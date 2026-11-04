@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -338,6 +339,23 @@ class LivenessTest(unittest.TestCase):
         self.assertEqual(pmstart.liveness(CFG, procs, read=lambda p: sess, account=lambda: "2", repos={}),
                          ["consultant-alpha is not running: launch.py consultant --repo alpha "
                           "--repo-path <its checkout>"])
+
+    def test_a_mixed_case_repo_whose_consultant_runs_under_the_launcher_name_gets_no_line(self):
+        sess = json.dumps({"a": {"name": "a-1", "repo": "Big_Repo-Name"}})
+        procs = [proc("claude.exe", "claude --remote-control a-1", "C:/bin/claude.exe"),
+                 proc("claude.exe", "claude --remote-control consultant-big-repo-name",
+                      "C:/bin/claude.exe")]
+        self.assertEqual(pmstart.liveness(CFG, procs, read=lambda p: sess, account=lambda: "2", repos={}), [])
+
+    def test_a_mixed_case_repo_without_consultant_gets_a_repo_value_launch_accepts(self):
+        from kitlib.launcher import start
+        sess = json.dumps({"a": {"name": "a-1", "repo": "Big_Repo-Name"}})
+        line = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",
+                                repos={"Big_Repo-Name": "C:/r/apm"})[-1]
+        self.assertIn("--repo-path C:/r/apm", line)
+        value = re.search(r"--repo (\S+) ", line).group(1)
+        self.assertEqual(value, "big-repo-name")
+        self.assertRegex(value, start.SLUG)
 
     def test_the_consultant_line_names_the_repo_folder_when_launcher_repos_has_it(self):
         sess = json.dumps({"a": {"name": "a-1", "repo": "alpha"}})

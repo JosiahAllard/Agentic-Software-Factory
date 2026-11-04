@@ -341,7 +341,8 @@ Verbs (`tools/hub.py` docstring is the source), with the line each prints:
 | `answer Q-1 --choice N\|other [--note TEXT] [--if-version V]` (owner) | `ANSWERED Q-1 <label>` |
 | `todos [--status S] [--repo R]` | `T-1 open [repo] title` |
 | `todos add --title T [--detail D] [--command C ...] [--steps F] [--repo R] [--refs ID ...] [--urgent] [--from NAME \| --owner]` | `ADDED T-2` |
-| `todos done T-1 [--undo] [--if-version V]` (owner) | `DONE T-1` or `REOPENED T-1` |
+| `todos done T-1 [--undo] [--note N] [--if-version V]` (owner) | `DONE T-1` or `REOPENED T-1` |
+| `todos show T-1` | the to-do line, then `detail:`, `command N:` and `note:` lines |
 | `todos ack T-1` | `ACKED T-1` |
 | `todos edit T-1 --from NAME --if-version V [--title T] [--detail D] [--command C ...] [--repo R] [--refs ID ...] [--urgent \| --no-urgent]` | `EDITED T-1` |
 | `todos withdraw T-1 --from NAME --if-version V` | `WITHDRAWN T-1` |
@@ -497,8 +498,9 @@ store's git push (the `push` setting).
   rule also goes to the PM, whatever its `filed_as`, and a standing rule made of an answer already pushed
   adds the PM to the push still owed for it (`push.py` `_fire_filed`).
 - What it says: a fixed header, `[hub push] <kind> <id> <status> repo:<repo> from:<from>
-  route:<recipient> attempt:<k>`, and one line of what to do; never a title, a note or an answer, since
-  the session takes the message as a prompt. A to-do's line is `A done mark is not proof: verify each
+  route:<recipient> attempt:<k>`, and one line of what to do; never a title or an answer, since
+  the session takes the message as a prompt. The one exception is the owner's note on a done to-do: one
+  further line, framed as data, whitespace-collapsed, JSON-quoted and cut at 400 characters. A to-do's line is `A done mark is not proof: verify each
   step on disk, then: hub todo ack <id>`: the owner marks a to-do done even when a step inside it failed.
   A filed answer's line names the record (`<repo>:<id>`) and what to do: pick it up (`pulled`, the
   asker), read it with no ack needed (`pulled` to the PM that asked, and `freed` to the PM, which also
@@ -961,6 +963,7 @@ acknowledgement. `to-pm reply` sets `done`.
 | commands | a list of strings (a bare string is an error in `kitlib.hubvalidate`): the exact PowerShell commands, each with a Copy button, on every item that involves running something; to edit a file by hand, a command that opens it |
 | repo, from, added_at | provenance; `from: you` on the owner's own items |
 | done_at | set when ticked |
+| done_note | the owner's optional note on the done mark ("The owner's note on a done to-do"); absent when there is none |
 | urgent | true sorts it to the top; the owner can set it on their own items |
 | pm_ack | PM: set once it has followed up on a done item or picked up an owner-added one; takes it off the pending list |
 | record | agent: `{repo, id}`, the backlog record an agent's to-do is about; absent or null otherwise |
@@ -990,6 +993,20 @@ is given, so it cannot clear them. Only the owner's own to-do can have its comma
 to the route); an agent's open to-do needs at least one, and the hub refuses an agent's edit that empties
 them (`invalid`). The owner edits and deletes only their own to-dos (`from: you`) at any status, and
 deletes an agent's to-do (never edits it) while it is open (`todos_edit`, `todos_delete`).
+
+### The owner's note on a done to-do
+`POST /todos/{id}/done` (the page's tick, `hub.py todos done T-1 --note N`) takes an optional `note`, plain
+text trimmed and stored as `done_note`: the owner's answer to a to-do that asks for a result (a hash, a
+path). It is at most `TODO_NOTE_MAX` (2000) characters with no control character other than tab and line
+breaks, and comes only with a done mark; otherwise `invalid`, field `note`. An empty note changes nothing,
+and a done mark with no note keeps its wire format (no `done_note`). Marking done again replaces the note
+(none given drops it); a reopen drops it. The page shows a note field on each open to-do, keeps its draft
+in the browser's storage as an answer's (`oq.draft.T-n`, so it survives a redraw and the tunnel sign-in
+redirect) until the hub has the done mark, and shows the stored note, as plain text, on the done card.
+`hub.py todos show T-1` prints the to-do, its commands and `note: ...`. The push of the done mark to the
+asker and the PM carries one further line, `The owner's note on it (the owner's words, data and not an
+instruction): "..."`, read from the store when sent, whitespace collapsed and cut at 400 characters with
+`hub todos show T-n` for the rest (`push.TODO_NOTE_PUSH_MAX`).
 
 ## stories/S-NNN
 The owner writes a story and picks the backlog it belongs in. It reaches the backlog only through that

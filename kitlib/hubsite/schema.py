@@ -44,7 +44,7 @@ FIELDS = {
     'todos': (('status', 'title'), {
         'status': _STR, 'title': _STR, 'detail': _STR, 'commands': _LIST, 'repo': _STR,
         'from': _STR, 'added_at': _STR, 'refs': _LIST, 'done_at': _STR, 'urgent': _BOOL,
-        'pm_ack': (bool, str), 'record': _DICT, 'park': _DICT}),
+        'done_note': _STR, 'pm_ack': (bool, str), 'record': _DICT, 'park': _DICT}),
     'to_pm': (('status', 'kind', 'text'), {
         'status': _STR, 'kind': _STR, 'text': _STR, 'repo': _STR, 'urgent': _BOOL,
         'created_at': _STR, 'sent_at': _STR, 'reply': _STR, 'done_at': _STR,

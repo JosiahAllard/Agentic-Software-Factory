@@ -6,7 +6,9 @@ it closes records in (at_landing.close_landed): a `ref` or `branch` store `.kit.
 the PM data branch's folder store, read here in its own worktree. There a pull the branch holds is
 LANDABLE, and the verdict says what the landing will do to each record, from the `Closes:` and
 `Part-of:` lines of the branch's commits above `base` (the code main, as the landing reads them):
-close it, or release it when the branch has a Part-of line and no Closes line names it. A folder
+close it, or release it when the branch has a Part-of line and no Closes line names it, or when
+it is a live-proof record (`requires: live-run`) no `Live-pass:` line of those commits cites a
+passing live run for (at_landing.is_live_proof, live_pass_trailers). A folder
 store in the code repository (its records travel with the branch, so a landing closes none) and
 the implicit default store (a landing only reads it) still say NOT LANDABLE for a held pull; with
 a folder store the records are read from the branch's own tip. Reads git only, writes nothing.
@@ -26,9 +28,11 @@ CANNOT_TELL = 'CANNOT TELL'
 EXIT = {LANDABLE: 0, CANNOT_TELL: 1, NOT_LANDABLE: 2}
 
 # `held`: the ids the branch holds pulled; `closes` and `releases`: what its landing does to them,
-# in a store that landing closes records in; `partial`: the branch has a Part-of line.
-Verdict = collections.namedtuple('Verdict', 'branch verdict held detail closes releases partial')
-Verdict.__new__.__defaults__ = ((), (), False)
+# in a store that landing closes records in; `partial`: the branch has a Part-of line;
+# `unproven`: the live-proof ids among `releases` that no Live-pass line cites.
+Verdict = collections.namedtuple('Verdict',
+                                 'branch verdict held detail closes releases partial unproven')
+Verdict.__new__.__defaults__ = ((), (), False, ())
 
 
 def _closing_store(backend):
@@ -42,21 +46,26 @@ def _closing_store(backend):
     return not getattr(backend, 'implicit', False), None
 
 
-def _landing_acts(root, tip, base, held):
-    """`((closes, releases, partial), None)` for the ids in `held`, as close_landed decides them
-    from the branch's Closes and Part-of lines in `tip --not base`; or `(None, why)`."""
+def _landing_acts(root, tip, base, held, proof=()):
+    """`((closes, releases, partial, unproven), None)` for the ids in `held`, as close_landed
+    decides them from the branch's Closes, Part-of and Live-pass lines in `tip --not base`: a
+    live-proof id (in `proof`) it would close and no Live-pass line cites is released instead
+    (`unproven`); or `(None, why)`."""
     named, why = at_landing.closes_trailers(root, tip, base)
-    found = None
+    found = passed = None
     if named is not None:
         found, why = at_landing.part_trailers(root, tip, base)
-    if found is None:
-        return None, ('cannot read the Closes and Part-of lines of its commits (git log %s --not '
-                      '%s): %s' % (tip[:10], base, ' '.join(str(why).split())))
+    if found is not None:
+        passed, why = at_landing.live_pass_trailers(root, tip, base)
+    if passed is None:
+        return None, ('cannot read the Closes, Part-of and Live-pass lines of its commits (git log '
+                      '%s --not %s): %s' % (tip[:10], base, ' '.join(str(why).split())))
     partial = found[0]
-    if not partial:
-        return (tuple(sorted(held)), (), False), None
-    return (tuple(sorted(r for r in held if r in named)),
-            tuple(sorted(r for r in held if r not in named)), True), None
+    closes = [r for r in held if r in named or not partial]
+    unproven = [r for r in closes if r in proof and r not in passed]
+    return (tuple(sorted(r for r in closes if r not in unproven)),
+            tuple(sorted(r for r in held if r not in closes or r in unproven)), partial,
+            tuple(sorted(unproven))), None
 
 
 def code_base(ctx):
@@ -112,7 +121,8 @@ def check(backend, snap, root, branches, base=None):
             out.append(Verdict(branch, CANNOT_TELL, tuple(held), 'no code main to read the Closes '
                                'and Part-of lines of its commits above'))
             continue
-        acts, why = _landing_acts(root, tip, base, held)
+        proof = [x.id for x in records if at_landing.is_live_proof(x)]
+        acts, why = _landing_acts(root, tip, base, held, proof)
         if acts is None:
             out.append(Verdict(branch, CANNOT_TELL, tuple(held), why))
             continue
@@ -144,8 +154,10 @@ def lines(v, command):
                'a slice branch needs a `Part-of: %s` line' % rid)
         out.append('  closes %s, which it holds pulled (%s)' % (rid, why))
     for rid in v.releases:
-        out.append('  releases %s, which it holds pulled (the branch has a Part-of line and no '
-                   'Closes line names it)' % rid)
+        out.append('  releases %s, which it holds pulled (%s)' % (rid, (
+            'a live-proof record: no `Live-pass: %s <run>` line in its commits cites a passing '
+            'live run' % rid) if rid in v.unproven else
+            'the branch has a Part-of line and no Closes line names it'))
     return out
 
 

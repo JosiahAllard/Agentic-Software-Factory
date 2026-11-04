@@ -614,14 +614,15 @@ def _consultants_missing(sessions, alive, repos=None):
     out = []
     folders = None
     for repo in sorted({e["repo"] for e in entries if isinstance(e.get("repo"), str) and e["repo"]}, key=str.lower):
-        if repo not in covered and "consultant-" + repo not in alive:
+        slug = rulebook.normal(repo)     # the --repo kitlib.launcher.start.consultant_repo gives
+        if repo not in covered and "consultant-" + slug not in alive:
             if folders is None:
                 try:
                     folders = launcher_repos() if repos is None else repos
                 except Exception:
                     folders = {}
             out.append("consultant-%s is not running: launch.py consultant --repo %s --repo-path %s"
-                       % (repo, repo, folders.get(repo) or "<its checkout>"))
+                       % (slug, slug, folders.get(repo) or "<its checkout>"))
     return out
 
 

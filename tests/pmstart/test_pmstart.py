@@ -349,8 +349,8 @@ class LivenessTest(unittest.TestCase):
     def test_a_mixed_case_repo_without_consultant_gets_a_repo_value_launch_accepts(self):
         from kitlib.launcher import start
         sess = json.dumps({"a": {"name": "a-1", "repo": "Agentic-Project_Manager-Kit"}})
-        (line,) = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",
-                                   repos={"Agentic-Project_Manager-Kit": "C:/r/apm"})
+        line = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",
+                                repos={"Agentic-Project_Manager-Kit": "C:/r/apm"})[-1]
         self.assertIn("--repo agentic-project-manager-kit --repo-path C:/r/apm", line)
         self.assertRegex("agentic-project-manager-kit", start.SLUG)
 

@@ -23,7 +23,7 @@ CODE = os.path.join(HERE, '..', '..', '..', 'optional', 'comfy')
 sys.path.insert(0, CODE)
 import comfy_gen as G  # noqa: E402
 
-RID = "r-20261104-120000-abc123"
+RID = "r-20261104T120000Z-abc123"
 
 
 def ago(seconds):

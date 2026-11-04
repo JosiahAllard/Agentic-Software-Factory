@@ -163,7 +163,7 @@ class TheLine(SubmitCase):
                          ('refused', G.REFUSED, out.lines[0]))
         self.assertIsNotNone(rec['finished_at'])
 
-    @windows_only('Win32_Process.Create is Windows only')
+    @windows_only('the WMI start is Windows only')
     def test_a_wmi_code_8_is_asked_again_and_a_last_one_is_named(self):
         """Code 8 (unknown failure) starts nothing: the start is asked again, and a refusal
         that still comes names the code's meaning, not a bare number."""

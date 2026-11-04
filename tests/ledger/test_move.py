@@ -204,7 +204,8 @@ class MoveTest(unittest.TestCase):
         self.assertIn('nothing was moved', str(cm.exception))
 
     def test_a_ledger_dir_inside_the_old_rules_folder_is_refused_before_anything_is_made(self):
-        for inside in (self.L.old_rules, os.path.join(self.L.old_rules, 'SPLIT' if CASE_FOLDING else 'split')):
+        for inside in (self.L.old_rules, (os.path.join(self.L.old_rules, 'split').upper() if CASE_FOLDING
+                       else os.path.join(self.L.old_rules, 'split'))):
             cfg = dict(self.L.cfg, ledger_dir=inside)
             for call in (move.plan, move.apply):
                 with self.assertRaises(Refused) as cm:

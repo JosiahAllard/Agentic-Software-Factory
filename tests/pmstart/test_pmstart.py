@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -351,8 +352,10 @@ class LivenessTest(unittest.TestCase):
         sess = json.dumps({"a": {"name": "a-1", "repo": "Agentic-Project_Manager-Kit"}})
         line = pmstart.liveness(CFG, [], read=lambda p: sess, account=lambda: "2",
                                 repos={"Agentic-Project_Manager-Kit": "C:/r/apm"})[-1]
-        self.assertIn("--repo agentic-project-manager-kit --repo-path C:/r/apm", line)
-        self.assertRegex("agentic-project-manager-kit", start.SLUG)
+        self.assertIn("--repo-path C:/r/apm", line)
+        value = re.search(r"--repo (\S+) ", line).group(1)
+        self.assertEqual(value, "agentic-project-manager-kit")
+        self.assertRegex(value, start.SLUG)
 
     def test_the_consultant_line_names_the_repo_folder_when_launcher_repos_has_it(self):
         sess = json.dumps({"a": {"name": "a-1", "repo": "alpha"}})

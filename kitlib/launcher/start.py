@@ -20,6 +20,7 @@ from kitlib import content as kcontent
 from kitlib.launcher import accounts as A
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
+from kitlib.ledger import rulebook
 from kitlib.launcher import home, lookup, pipes, state, stop, window
 from kitlib.launcher.settings import LaunchError
 
@@ -130,9 +131,9 @@ def consultant_notes_path(host, repo):
 
 
 def consultant_repo(folder):
-    """The --repo slug launch.py consultant gives a repo folder: lowercase, any run of characters outside
-    a-z, 0-9 and '-' (an underscore, say) as one '-'. The session is 'consultant-' + this."""
-    return re.sub(r'[^a-z0-9-]+', '-', folder.lower())
+    """The --repo slug launch.py consultant gives a repo folder: the kit's folder-to-name rule
+    (kitlib.ledger.rulebook.normal: lower-cased, '_' as '-'). The session is 'consultant-' + this."""
+    return rulebook.normal(folder)
 
 
 def cli(*args):

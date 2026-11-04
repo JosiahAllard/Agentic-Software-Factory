@@ -16,7 +16,6 @@ as absent.
 import json
 import os
 import re
-import tempfile
 
 from kitlib.git import repo as gitrepo
 
@@ -111,6 +110,7 @@ def write(common_dir, branch, remote, root):
         raise PmDataError('not writing %s: %s' % (record_path(common_dir), '; '.join(errs)))
     rec = Record(branch, remote, root, common_dir)
     path = record_path(common_dir)
+    import tempfile               # here, not at the top: the guard imports this module per hook call
     tmp = None
     try:
         fd, tmp = tempfile.mkstemp(prefix=FILE_NAME + '.', suffix='.tmp', dir=common_dir)

@@ -371,6 +371,23 @@ class AppliedTest(unittest.TestCase):
         self.assertIn('there is no kit.md', rulebook.applied({}, [first])[0])
         self.assertIn('it has no such rule', rulebook.applied({'kit': kit}, [first])[0])
 
+    def test_same_minute_changes_from_two_files_pass_if_either_is_in_force(self):
+        from kitlib.ledger import fmt
+        when = '2026-10-07 09:00Z'
+        alpha = log_text(0) + fmt.render(rid(1), when, 'alpha', 'selected', 'q', 'a',
+                                         'Use it. [rule all.md a.k set]', 's', '-')
+        pm = log_text(0) + fmt.render(rid(2), when, 'pm', 'selected', 'q', 'a',
+                                      'Use it now. [rule all.md a.k set]', 's', '-')
+        book = rulebook.parse('# A\nRepos: alpha\n', 'all')[0]
+        cites_first, _ = rulebook.set_rule(book, 'a.k', 'T', 'x', (rid(1),))
+        cites_second, _ = rulebook.set_rule(book, 'a.k', 'T', 'x', (rid(2),))
+        cites_neither, _ = rulebook.set_rule(book, 'a.k', 'T', 'x', (rid(3),))
+        self.assertEqual(rulebook.applied({'all': cites_first}, [alpha, pm]), [])
+        self.assertEqual(rulebook.applied({'all': cites_second}, [alpha, pm]), [])
+        errs = rulebook.applied({'all': cites_neither}, [alpha, pm])
+        self.assertEqual(len(errs), 1)
+        self.assertIn('the rule does not cite it', errs[0])
+
 
 class CliTest(WriteBase):
 

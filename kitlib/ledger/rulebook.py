@@ -338,13 +338,28 @@ def tag(op, name, key=None, head=None):
 def applied(books, texts):
     """Error lines for each logged rule change its rulebook does not show. Per rule, the last live
     tagged entry (by its time, then file and log order; `texts` are the log files' texts) must be
-    in force: a `set` as a rule citing it, a `dropped` as no rule, a `header` as the book's header
+    in force; changes from different files with the same time are tied, and any one of them in
+    force passes: a `set` as a rule citing it, a `dropped` as no rule, a `header` as the book's header
     having the digest its tag records.
     A tombstone keeps no Decides, so which change it was is unknown. Not judged: a rule citing a
     retired entry newer than its last live change (a later set, since retired); and a `set` whose
     rule is absent, or a header, with a retired entry of a repo routed to its book (`target`) newer
     than its last live change (perhaps a later drop or header change, since retired)."""
     last, heads, retired = {}, {}, []
+
+    def note(table, key, cand):
+        # Keep the newest change by time. Changes from different files at the same minute are
+        # tied (the file order says nothing about which came last): keep each file's newest.
+        order = cand[0]
+        cur = table.get(key)
+        if cur is None or cur[0][0][0] < order[0]:
+            table[key] = [cand]
+        elif cur[0][0][0] == order[0]:
+            same = next((i for i, c in enumerate(cur) if c[0][1] == order[1]), None)
+            if same is None:
+                cur.append(cand)
+            elif cur[same][0] < order:
+                cur[same] = cand
     for f, text in enumerate(texts):
         for n, (rid, block) in enumerate(split_entries(text)[1]):
             e, _ = parse_block(block)
@@ -358,41 +373,52 @@ def applied(books, texts):
             if not m:
                 continue
             if m.group(4):
-                if m.group(4) not in heads or heads[m.group(4)][0] < order:
-                    heads[m.group(4)] = (order, rid, m.group(5))
+                note(heads, m.group(4), (order, rid, m.group(5)))
             else:
-                k = (m.group(1), m.group(2))
-                if k not in last or last[k][0] < order:
-                    last[k] = (order, rid, m.group(3))
+                note(last, (m.group(1), m.group(2)), (order, rid, m.group(3)))
     dead = {rid: o for o, rid, _ in retired}
 
     def overtaken(name, order):
         return any(o > order and target(books, repo) == name for o, _, repo in retired)
-    errs = []
-    for (name, key), (order, rid, op) in sorted(last.items()):
+
+    def rule_error(name, key, cand):
+        order, rid, op = cand
         book = books.get(name)
         rule = next((r for r in book.rules if r.key == key), None) if book else None
         if rule is not None and any(s in dead and dead[s] > order for s in rule.sources):
-            continue        # a later set, since retired: the rule cites it
+            return None     # a later set, since retired: the rule cites it
         if op == 'set' and rule is None and overtaken(name, order):
-            continue        # perhaps a later drop, since retired
+            return None     # perhaps a later drop, since retired
         if op == 'set' and (rule is None or rid not in rule.sources):
             why = ('there is no %s' % file_name(name) if book is None else
                    'it has no such rule' if rule is None else 'the rule does not cite it')
-            errs.append('logged rule change not applied: %s sets %s %s, but %s; redo it with '
-                        'ledger.py add --rule' % (rid, file_name(name), key, why))
-        elif op == 'dropped' and rule is not None:
-            errs.append('logged rule change not applied: %s drops %s %s, which is still there; '
-                        'redo it with ledger.py rule-drop' % (rid, file_name(name), key))
-    for name, (order, rid, head) in sorted(heads.items()):
+            return ('logged rule change not applied: %s sets %s %s, but %s; redo it with '
+                    'ledger.py add --rule' % (rid, file_name(name), key, why))
+        if op == 'dropped' and rule is not None:
+            return ('logged rule change not applied: %s drops %s %s, which is still there; '
+                    'redo it with ledger.py rule-drop' % (rid, file_name(name), key))
+        return None
+
+    def head_error(name, cand):
+        order, rid, head = cand
         if overtaken(name, order):
-            continue
+            return None
         if name not in books:
-            errs.append('logged rule change not applied: %s sets the header of %s, which is not '
-                        'there; redo it with ledger.py rule-set' % (rid, file_name(name)))
-        elif header_digest(books[name]) != head:
-            errs.append('logged rule change not applied: %s sets the header of %s, which is not '
-                        'the header there; redo it with ledger.py rule-set' % (rid, file_name(name)))
+            return ('logged rule change not applied: %s sets the header of %s, which is not '
+                    'there; redo it with ledger.py rule-set' % (rid, file_name(name)))
+        if header_digest(books[name]) != head:
+            return ('logged rule change not applied: %s sets the header of %s, which is not '
+                    'the header there; redo it with ledger.py rule-set' % (rid, file_name(name)))
+        return None
+    errs = []
+    for (name, key), cands in sorted(last.items()):
+        found = [rule_error(name, key, c) for c in cands]
+        if all(found):      # none of the tied changes is in force
+            errs.append(found[cands.index(max(cands))])
+    for name, cands in sorted(heads.items()):
+        found = [head_error(name, c) for c in cands]
+        if all(found):
+            errs.append(found[cands.index(max(cands))])
     return errs
 
 

@@ -83,7 +83,8 @@ class ToolchainCase(ReuseCase):
         return moved
 
     def line_of(self, word, name):
-        found = [l for l in self.lines(word) if l.startswith(reuse.PREFIX + '%s %s: ' % (word, name))]
+        head = reuse.PREFIX + '%s %s: ' % (word, name)
+        found = [l for l in self.lines(word) if l.startswith(head)]
         self.assertEqual(len(found), 1, self.said)
         return found[0]
 
@@ -193,10 +194,13 @@ class ProbeFails(ToolchainCase):
                 self.set_sdk(text)
                 out = self.gate(wt)
                 self.assertEqual(out.code, G.OK, out.lines)
-                for name in ('tooly', 'cachy'):
-                    self.assertEqual(self.line_of('NONE', name)[-len(why):], why, self.said)
-                    self.assertIn(': toolchain probe 1 (%s): ' % os.path.basename(sys.executable),
-                                  self.line_of('NONE', name))
+                # the cache keys cachy, so its probe is read; a branch gate never keys tooly
+                # ({base}), and its failed probe shows as no input key in the record (below)
+                self.assertEqual(self.line_of('NONE', 'cachy'), reuse.PREFIX + 'NONE cachy: '
+                                 'toolchain probe 1 (%s): %s' % (os.path.basename(sys.executable),
+                                                                 why), self.said)
+                self.assertEqual(self.line_of('NONE', 'tooly'), reuse.PREFIX + 'NONE tooly: its '
+                                 'command names {base}: it reads git history', self.said)
                 self.assertFalse([l for l in self.lines('STORED') if ' cachy:' in l], self.said)
                 self.assertTrue(self.line_of('STORED', 'unit'), self.said)
                 self.assert_ran(out.log_dir, 'tooly', 'cachy')
@@ -250,6 +254,27 @@ class NoOptIn(ReuseCase):
         step = S.Step('x', ['x'], None, '.', [], [], (0,), False, False, [], False)
         self.assertEqual(getattr(step, 'toolchain', None), ())
         self.assertIsNone(reuse.toolchain_digest('.', step, {}))
+
+
+class ProbeCwd(unittest.TestCase):
+    """A probe runs where the step runs: the root for a step without cwd (a `dotnet --version`
+    there resolves the root's global.json), else the step's cwd."""
+    CWD = ['{python}', '-c', 'import os, sys; sys.stdout.write(os.getcwd())']
+
+    def test_a_probe_runs_in_the_root_or_in_the_steps_cwd(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        os.mkdir(os.path.join(root, 'sub'))
+        base = {'globs': ['*'], 'cmd': ['x'], 'reuse': True, 'toolchain': [self.CWD]}
+        gate = {'steps': [dict(base, name='at-root'), dict(base, name='in-sub', cwd='sub')]}
+        at_root, in_sub = S.build(gate, root, '0' * 40, root)
+        subs = reuse._subs(root)
+        self.assertEqual(os.path.normcase(os.path.abspath(at_root.cwd)),
+                         os.path.normcase(os.path.abspath(root)))
+        self.assertEqual(reuse._probe(list(at_root.toolchain[0]), 1, at_root.cwd, subs)['out'],
+                         '<root>')
+        self.assertEqual(reuse._probe(list(in_sub.toolchain[0]), 1, in_sub.cwd, subs)['out'],
+                         '<root>' + os.sep + 'sub')
 
 
 if __name__ == '__main__':

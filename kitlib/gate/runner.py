@@ -876,12 +876,15 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         known['log_dir'] = logs
     say('gate %s at %s, base %s: %s' % (branch or '(detached)', head[:10], base_text,
                                         ', '.join(s.name for s in chosen) or 'no step'))
+    probes = {}         # the toolchains probed before the run (kitlib.gate.reuse)
     plan = None if empty else reuse.branch_plan(top, cfg, chosen, mb, changed, full=full,
-                                                only=only, head=head, branch=branch)
+                                                only=only, head=head, branch=branch, probes=probes)
     keys_kit = None     # the kit before the run: a record's input keys (kitlib.gate.reuse)
+    keys_tools = None   # each step's toolchain before the run, the same way
     if not (only or partial or empty or docs or entries):
         try:
             keys_kit = reuse.kit_identity()
+            keys_tools = reuse.toolchains(top, cfg, chosen, probes)
         except Exception as e:      # noqa: BLE001 - a key never fails the gate
             say(reuse.PREFIX + 'no input keys in the record: %s: %s' % (type(e).__name__, e))
     reused = _say_plan(plan, chosen, logs, say)
@@ -932,7 +935,8 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         facts['no_record'] = no
         lines.append('no gate-OK record: %s' % no)
         return G.Outcome(G.OK, lines, **facts)
-    input_keys, why = reuse.record_keys(top, cfg, chosen, head, mb, results, keys_kit)
+    input_keys, why = reuse.record_keys(top, cfg, chosen, head, mb, results, keys_kit,
+                                        keys_tools)
     if why:
         say(reuse.PREFIX + 'no input keys in the record: %s' % why)
     try:

@@ -13,23 +13,37 @@ within "landing".reuse_max_age_h hours. The key is the sha256 of the canonical J
     landing's base..merge), since a step such as the kit's `kit_tests.py --select` picks its
     tests by the change without naming {base};
   - its inputs: every file git shows in the work tree (tracked, or untracked and not ignored)
-    that matches its `globs` or its `content`.globs, `exclude` NOT subtracted, by sha256.
-A file git ignores is never an input: a step that reads one must not ask for reuse.
+    that matches its `globs` or its `content`.globs, `exclude` NOT subtracted, by sha256;
+  - only for a step that declares a `toolchain`: what its probe argvs print (toolchain_digest).
+A file git ignores is never an input: a step that reads one must not ask for reuse. Reuse replays
+only a result recorded for the same tracked inputs: build output such as obj/ and bin/ is a
+cache, never an input.
+
+The toolchain (toolchain_digest). A step's `toolchain` probe argvs run in its cwd (through
+kitlib.proc.spawn, the environment a step gets, stdin closed, stdout read, killed with their tree
+after runner.PROBE_TIMEOUT); each one's argv, program path and sha256 and output (CRLF made LF,
+`<root>` and `<kit>` written for the folders) join the digest. A probe that fails gives the step
+no key (NotCacheable). The digest joins the cache key, the input key (part TOOLCHAIN), and the
+same-tree check (_same_toolchain); a step that declares none starts no probe, and its key and
+input key are exactly as before the opt-in. Probed again after the run (_keeper, record_keys): a
+toolchain that answered otherwise stores nothing and writes no input key for the step.
 
 Fail closed. Anything that raises means every step runs. Nothing is read or stored:
   - for a step that runs no command, a check step, a step without `globs` or `content`.globs, a
     step whose globs match no file git shows (a mistyped glob, or one naming only ignored
     files, would key it on its command alone), a step whose cmd, full_cmd, daily_cmd or
     merged_args names {base}, or whose argv holds the base commit;
-  - for an input that is not a plain file (a link, a folder: a nested repository or submodule);
+  - for an input that is not a plain file (a link, a folder: a nested repository or submodule),
+    and for a step whose toolchain probe fails;
   - in a --full run, a branch gate's --only, or when "landing".reuse_max_age_h is 0;
   - when the change touches `.kit.json`, a config section file, the hook module, a path matching
     "landing".reuse_never, or a strict path (kitlib.gate.strict_defaults.STRICT_DEFAULTS);
   - in a landing: --fresh; a result record that cannot be read; a land record of a tip (it got
     past its locked checks and did not land); a gate record of a tip that did not pass; a landing
     tree (kitlib.gate.land.TREE_NAME) that is not clean.
-A step's result is stored only when its key (inputs, kit, program, config) is the same after the
-run as before it: PASS as pass, FAIL or WARN as fail; a skipped or unrun step stores nothing.
+A step's result is stored only when its key (inputs, kit, program, config, toolchain) is the
+same after the run as before it: PASS as pass, FAIL or WARN as fail; a skipped or unrun step
+stores nothing.
 Storing or pruning that fails says one line and never fails the gate.
 
 The same tree (same_tree). A branch's gate.py --full stores nothing, so a landing whose merge holds
@@ -40,15 +54,16 @@ merge's tree is the record's tree, the record's base is the landing's base (--ex
 gate config hash is the landing's, its kit (runner.kit_identity: commit, interpreter, clean) is the
 kit gating the landing, and it ended within "landing".reuse_max_age_h hours. A step is taken from
 it when it asks for reuse, is no check step, has no merged_args (its landing argv never ran at the
-tip) and the record says it passed. Only in that mode, a step whose command names {base} or the
-base commit, or that declares no input, is not barred: the tree is the same tree, and the base is
-the same commit, so {base} and every tracked file are the ones the tip's run had (the history
-differs only by the merge commit, and the opt-in already promises the step does not read git
-state). Tracked content only: the landing tree lacks the author worktree's ignored and generated
-files, and no step is checked for them (plan_steps takes the record on a miss as well as for a
-step that declares no input, and the key is built from the landing tree), so a step whose result
-depends on such a file must not set reuse. The result taken is the one of the step's --full command
-(full_cmd where it has one), not of the landing's cmd. Such a step gets no key and is never
+tip) and the record says it passed; a step that declares a toolchain only when the record's input
+key for it holds the digest its probes give now. Only in that mode, a step whose command names
+{base} or the base commit, or that declares no input, is not barred: the tree is the same tree, and
+the base is the same commit, so {base} and every tracked file are the ones the tip's run had (the
+history differs only by the merge commit, and the opt-in already promises the step does not read
+git state). Tracked content only: the landing tree lacks the author worktree's ignored and
+generated files, and no step is checked for them (plan_steps takes the record on a miss as well as
+for a step that declares no input, and the key is built from the landing tree), so a step whose
+result depends on such a file must not set reuse. The result taken is the one of the step's --full
+command (full_cmd where it has one), not of the landing's cmd. Such a step gets no key and is never
 stored, so the relaxation never reaches the cache. Anything that raises means every step runs.
 
 The input tree (input_tree). When main moved since the tip's gate, the merge's tree is not the
@@ -68,7 +83,9 @@ sha256 of its own so a miss names the parts that differ (INPUT_PARTS):
     step's globs or its content.globs, `exclude` NOT subtracted. A link (mode 120000) or a gitlink
     among them gives the step no key; so does a head with no input;
   - changed: the paths base..head changes (runner.changed_between, git on both sides);
-  - kit: kit_identity (the kit's files and interpreter: two kit versions never share a key).
+  - kit: kit_identity (the kit's files and interpreter: two kit versions never share a key);
+  - toolchain (TOOLCHAIN), only for a step that declares one: toolchain_digest, compared
+    whichever side holds it.
 The record must also be of the tip, its input keys of INPUT_SCHEMA, the merge's parents exactly
 (base, tip), its gate config hash the landing's, and it must have ended within
 "landing".reuse_max_age_h hours; the INPUT TREE line says which failed. A step is taken from it
@@ -78,7 +95,7 @@ is never served: there is nothing to compare), has no merged_args, and the recor
 equal, a step whose command names {base} or the base commit is not barred: what it reads of the
 base is the same. A step that reads history beyond the changed list and the base side of its
 inputs (commit messages, the log, ancestry, its own merge-base) must not set reuse; neither must
-one whose result depends on the environment or a toolchain, which no part holds. The inputs come
+one whose result depends on the environment, or on a toolchain it does not declare. The inputs come
 from git trees, while tools_of reads the work tree: this is sound only because the branch gate
 writes a record only for a clean tree at HEAD, and a landing reuses only in a clean landing tree
 (landing_why). Tracked content only: the landing tree lacks the author worktree's ignored and
@@ -101,6 +118,7 @@ import re
 import secrets
 import shutil
 import stat
+import subprocess
 import sys
 
 from kitlib.config import schema
@@ -109,6 +127,7 @@ from kitlib.gate import gitstatus, result, runner
 from kitlib.gate import steps as S
 from kitlib.gate.strict_defaults import STRICT_DEFAULTS
 from kitlib.git import cmd, refs, repo
+from kitlib.proc import process, spawn
 from kitlib.records import gate_ok
 
 # reused: {step name: why}; lines to say; keep(results) -> lines, after the run (None: store nothing)
@@ -143,6 +162,8 @@ SameTree = collections.namedtuple('SameTree', 'record tip tree')
 InputTree = collections.namedtuple('InputTree', 'record tip mode trees')
 INPUT_SCHEMA = 1
 INPUT_PARTS = ('argv', 'tools', 'head_inputs', 'base_inputs', 'changed', 'kit')
+TOOLCHAIN = 'toolchain'     # the part (and key material) of a step that declares a toolchain
+PROBE_GRACE = 5             # seconds a killed toolchain probe's output pipe may take to close
 INPUT_MODES = ('full', 'select')
 
 
@@ -471,10 +492,11 @@ def changed_list(changed):
     return sorted({p.replace('\\', '/') for p in changed})
 
 
-def step_key(root, cfg, spec, step, files, kit, changed=()):
+def step_key(root, cfg, spec, step, files, kit, changed=(), probes=None):
     """`(key, inputs)` of `step` in the work tree at `root` (`files`: list_files; `kit`:
-    kit_identity; `changed`: the paths the gate selects by). NotCacheable when no file is an
-    input: the key would not change with whatever the step really reads."""
+    kit_identity; `changed`: the paths the gate selects by; `probes`: toolchain_digest's cache,
+    None for a fresh one). NotCacheable when no file is an input: the key would not change with
+    whatever the step really reads; and when its toolchain probe fails."""
     subs = _subs(root)
     ins = inputs(root, spec, files)
     if not ins:
@@ -490,8 +512,113 @@ def step_key(root, cfg, spec, step, files, kit, changed=()):
         'inputs': ins,
         'changed': changed_list(changed),
     }
+    if step.toolchain:          # only then: a step that declares none keeps its key exactly
+        material[TOOLCHAIN] = toolchain_digest(root, step, {} if probes is None else probes)
     key = hashlib.sha256(gate_ok.canonical_json(material).encode('utf-8')).hexdigest()
     return key, ins
+
+
+# ---------------------------------------------------------------- the toolchain
+
+def _probe(argv, n, cwd, subs):
+    """{argv, program, sha256, out} of the toolchain probe `argv` (the `n`th of its step) run in
+    `cwd`: its argv and output with the checkout's root and the kit's folders written `<root>` and
+    `<kit>`, and the program found on PATH with its sha256. Started through kitlib.proc.spawn
+    with the environment a step gets and nothing on stdin; the probe and everything it started
+    are killed after runner.PROBE_TIMEOUT. NotCacheable when the program is not found or cannot
+    start, or the probe does not finish in time, exits non-zero, or prints nothing or text that
+    is not UTF-8 (on stdout; stderr is not read)."""
+    def bad(why):
+        return NotCacheable('toolchain probe %d (%s): %s' % (n, os.path.basename(argv[0]), why))
+    exe = shutil.which(argv[0])
+    if not exe or not os.path.isfile(exe):
+        raise bad('its program is not found')
+    try:
+        program = _file_hash(exe)
+        p = spawn.popen([exe] + list(argv[1:]), cwd=cwd, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                        env=runner.child_env(None))
+    except OSError as e:
+        raise bad('it cannot start: %s' % e)
+    timeout = runner.PROBE_TIMEOUT
+    ctime = process.proc_ctime(p.pid)
+    try:
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if ctime is not None:       # the probe and everything it started
+            process.kill_tree(p.pid, ctime)
+        p.kill()
+        try:
+            p.communicate(timeout=PROBE_GRACE)
+        except subprocess.TimeoutExpired:
+            pass
+        raise bad('it did not finish within %s s' % timeout)
+    if p.returncode != 0:
+        raise bad('it exited %d' % p.returncode)
+    try:
+        text = out.decode('utf-8')
+    except UnicodeDecodeError:
+        raise bad('it printed text that is not UTF-8')
+    if not text.strip():
+        raise bad('it printed nothing')
+    return {'argv': [_norm(a, subs) for a in argv],
+            'program': _norm(os.path.normcase(os.path.abspath(exe)), subs), 'sha256': program,
+            'out': _norm(text.replace('\r\n', '\n'), subs)}
+
+
+def toolchain_digest(root, step, probes):
+    """The sha256 of what the toolchain probes of `step` say, run in its cwd in the checkout
+    `root` (_probe), or None when it declares no toolchain (and nothing is started). `probes`:
+    {(cwd, probe argvs): digest or the failure}, filled here, so one plan probes each toolchain
+    once; a fresh dict probes again (a keep after the run). NotCacheable when a probe fails."""
+    if not step.toolchain:
+        return None
+    k = (os.path.normcase(os.path.abspath(step.cwd)), tuple(tuple(a) for a in step.toolchain))
+    if k not in probes:
+        subs = _subs(root)
+        try:
+            probes[k] = _digest([_probe(list(a), i, step.cwd, subs)
+                                 for i, a in enumerate(step.toolchain, 1)])
+        except NotCacheable as e:
+            probes[k] = e
+    got = probes[k]
+    if isinstance(got, NotCacheable):
+        raise NotCacheable(str(got))
+    return got
+
+
+def toolchains(root, cfg, chosen, probes):
+    """{name: toolchain_digest} of each of `chosen` that asks for reuse and declares a
+    toolchain, probed now: a branch gate reads it before its run, and record_keys keys such a step
+    only when its toolchain says the same after the run. A step whose probe fails is left out (it
+    gets no key). Raises only when the config cannot be read."""
+    _, asking = _asking(cfg, chosen)
+    out = {}
+    for s in asking:
+        if s.toolchain:
+            try:
+                out[s.name] = toolchain_digest(root, s, probes)
+            except NotCacheable:
+                continue
+    return out
+
+
+def _same_toolchain(rec, root, step, probes):
+    """Why the same-tree record `rec` does not serve `step`, which declares a toolchain, or None:
+    its input key (record_keys) must hold the toolchain digest the landing tree's probes give."""
+    keys = rec.get('input_keys')
+    held = None
+    if isinstance(keys, dict) and keys.get('schema') == INPUT_SCHEMA \
+            and isinstance(keys.get('steps'), dict):
+        part = keys['steps'].get(step.name)
+        held = part.get(TOOLCHAIN) if isinstance(part, dict) else None
+    if not held:
+        return 'the record holds no toolchain digest for it'
+    try:
+        mine = toolchain_digest(root, step, probes)
+    except NotCacheable as e:
+        return str(e)
+    return None if mine == held else 'toolchain differs'
 
 
 # ---------------------------------------------------------------- the input tree
@@ -543,11 +670,13 @@ def input_bar(spec, step):
     return None
 
 
-def input_parts(root, spec, step, base, head, trees, changed, kit):
-    """{part: sha256} of `step` gated at `head` against `base` in the checkout `root` (INPUT_PARTS;
-    `trees`: {commit: tree_entries}, filled here; `changed`: base..head; `kit`: kit_identity).
-    NoInputs when no entry at `head` is an input; NotCacheable when one is not a plain file, or
-    when the step's program or a file its command names cannot be read."""
+def input_parts(root, spec, step, base, head, trees, changed, kit, probes=None):
+    """{part: sha256} of `step` gated at `head` against `base` in the checkout `root` (INPUT_PARTS,
+    and TOOLCHAIN for a step that declares one; `trees`: {commit: tree_entries}, filled here;
+    `changed`: base..head; `kit`: kit_identity; `probes`: toolchain_digest's cache, None for a
+    fresh one). NoInputs when no entry at `head` is an input; NotCacheable when one is not a plain
+    file, when the step's program or a file its command names cannot be read, or when its
+    toolchain probe fails."""
     for rev in (head, base):
         if rev not in trees:
             trees[rev] = tree_entries(root, rev)
@@ -556,7 +685,7 @@ def input_parts(root, spec, step, base, head, trees, changed, kit):
         raise NoInputs('its "globs" and "content".globs match no file at %s' % head[:10])
     subs = _subs(root) + [(base, '<base>')]
     cwd = os.path.relpath(os.path.abspath(step.cwd), os.path.abspath(root)).replace('\\', '/')
-    return {
+    parts = {
         'argv': _digest({'argv': [_norm(a, subs) for a in step.cmd], 'cwd': cwd}),
         'tools': _digest(tools_of(step, subs)),
         'head_inputs': _digest(head_in),
@@ -564,15 +693,19 @@ def input_parts(root, spec, step, base, head, trees, changed, kit):
         'changed': _digest(changed_list(changed)),
         'kit': _digest(kit),
     }
+    if step.toolchain:          # only then: a step that declares none keeps its parts exactly
+        parts[TOOLCHAIN] = toolchain_digest(root, step, {} if probes is None else probes)
+    return parts
 
 
-def record_keys(root, cfg, chosen, head, base, results, kit):
+def record_keys(root, cfg, chosen, head, base, results, kit, toolchains_before=None):
     """`(input_keys or None, why or None)` for the gate-OK record of a branch gate of `head`
     against its merge base `base` in the clean checkout `root`: {'schema': INPUT_SCHEMA, 'steps':
     {name: input_parts}} for each of `chosen` that asks for reuse, has no input_bar and PASSed in
     `results`. `kit`: kit_identity read before the run (None: no keys); a kit that changed since
-    gives none. None when no step has a key. Never raises: why names what went wrong, and the
-    record holds no keys."""
+    gives none. `toolchains_before`: toolchains read before the run; a step that declares a
+    toolchain gets a key only when its probes, run again now, say what they said then. None when
+    no step has a key. Never raises: why names what went wrong, and the record holds no keys."""
     if kit is None:
         return None, None
     try:
@@ -586,12 +719,19 @@ def record_keys(root, cfg, chosen, head, base, results, kit):
         changed, why = runner.changed_between(root, base, head)
         if changed is None:
             raise RuntimeError('git cannot list the changed paths: %s' % why)
-        trees, steps = {}, {}
+        trees, steps, probes = {}, {}, {}
+        before = toolchains_before or {}
         for s in asking:
+            if s.toolchain and s.name not in before:
+                continue                # no toolchain read before the run: nothing to compare
             try:
-                steps[s.name] = input_parts(root, specs[s.name], s, base, head, trees, changed, kit)
+                parts = input_parts(root, specs[s.name], s, base, head, trees, changed, kit,
+                                    probes)
             except NotCacheable:
                 continue
+            if s.toolchain and parts[TOOLCHAIN] != before[s.name]:
+                continue                # the toolchain changed while the gate ran
+            steps[s.name] = parts
         return ({'schema': INPUT_SCHEMA, 'steps': steps} if steps else None), None
     except Exception as e:      # noqa: BLE001 - a key never fails the gate: the record holds none
         return None, '%s: %s' % (type(e).__name__, e)
@@ -641,9 +781,10 @@ def input_tree(root, cfg, branch, tip, rec, base, merge, now=None):
         'all match' % (mode, branch, tip[:10], str(rec.get('base'))[:10], rec['ended_utc']))
 
 
-def _from_input_tree(itree, root, spec, step, base, merge, changed, kit):
+def _from_input_tree(itree, root, spec, step, base, merge, changed, kit, probes=None):
     """`(the REUSED reason, None)` when the input tree `itree` serves `step` in the landing tree
-    `root` (the merge `merge` onto `base`), else `(None, why)`. Raises when git cannot tell."""
+    `root` (the merge `merge` onto `base`), else `(None, why)`. A TOOLCHAIN part is compared
+    whichever side holds one. Raises when git cannot tell."""
     why = input_bar(spec, step)
     if why:
         return None, why
@@ -655,10 +796,10 @@ def _from_input_tree(itree, root, spec, step, base, merge, changed, kit):
     if not isinstance(held, dict):
         return None, 'the record holds no input key for it'
     try:
-        mine = input_parts(root, spec, step, base, merge, itree.trees, changed, kit)
+        mine = input_parts(root, spec, step, base, merge, itree.trees, changed, kit, probes)
     except NotCacheable as e:
         return None, str(e)
-    differ = [p for p in INPUT_PARTS if held.get(p) != mine[p]]
+    differ = [p for p in INPUT_PARTS + (TOOLCHAIN,) if held.get(p) != mine.get(p)]
     if differ:
         return None, '%s %s' % (', '.join(differ), 'differs' if len(differ) == 1 else 'differ')
     return 'passed in the %s gate of %s on the same inputs, base side and change (ended %s)' % (
@@ -829,11 +970,13 @@ def _none(names, why):
 
 
 def plan_steps(root, cfg, chosen, base, changed, now=None, facts=None, same=None, itree=None,
-               merge=None):
+               merge=None, probes=None):
     """The Plan for `chosen` in the work tree at `root`, the gate-wide checks passed (`changed`:
     the paths the gate selects by, part of each key). `same`: a same-tree landing's SameTree,
-    whose record serves a step the cache does not (_from_record). `itree`: a landing's InputTree
-    (of the merge `merge`), whose record serves a step neither does (_from_input_tree)."""
+    whose record serves a step the cache does not (_from_record; a step that declares a toolchain
+    only when the record's input key holds the toolchain its probes give now, _same_toolchain).
+    `itree`: a landing's InputTree (of the merge `merge`), whose record serves a step neither does
+    (_from_input_tree). `probes`: toolchain_digest's cache for this plan (None: a fresh one)."""
     specs, asking = _asking(cfg, chosen)
     if not asking:
         return NOTHING
@@ -842,10 +985,16 @@ def plan_steps(root, cfg, chosen, base, changed, now=None, facts=None, same=None
     folder = cache_dir(root)
     files = list_files(root)
     kit = kit_identity()
+    probes = {} if probes is None else probes
     said, keys, hits, taken = {}, {}, {}, {}
 
     def take(s):
         why = _from_record(same, specs[s.name], s)
+        if why and s.toolchain:
+            miss = _same_toolchain(same.record, root, s, probes)
+            if miss:
+                said[s.name] += '; same tree: %s' % miss
+                why = None
         if why:
             taken[s.name] = why
             said[s.name] = 'HIT %s: the --full record of %s (same tree %s, ended %s)' % (
@@ -853,7 +1002,8 @@ def plan_steps(root, cfg, chosen, base, changed, now=None, facts=None, same=None
             return
         if itree is None:
             return
-        why, miss = _from_input_tree(itree, root, specs[s.name], s, base, merge, changed, kit)
+        why, miss = _from_input_tree(itree, root, specs[s.name], s, base, merge, changed, kit,
+                                     probes)
         if why:
             taken[s.name] = why
             said[s.name] = 'HIT %s: the input tree of the %s record of %s (ended %s)' % (
@@ -868,7 +1018,7 @@ def plan_steps(root, cfg, chosen, base, changed, now=None, facts=None, same=None
             take(s)
             continue
         try:
-            key, ins = step_key(root, cfg, specs[s.name], s, files, kit, changed)
+            key, ins = step_key(root, cfg, specs[s.name], s, files, kit, changed, probes)
         except NoInputs as e:
             said[s.name] = 'NONE %s: %s' % (s.name, e)
             take(s)
@@ -914,13 +1064,14 @@ def _keeper(root, cfg, specs, steps, keys, folder, facts, changed):
             todo = [s for s in steps if STORE_AS.get((by_name.get(s.name) or {}).get('status'))]
             files = list_files(root) if todo else []
             kit = kit_identity() if todo else None
+            probes = {}                 # the toolchains probed again, after the run
             for s in todo:
                 try:
-                    key, ins = step_key(root, cfg, specs[s.name], s, files, kit, changed)
+                    key, ins = step_key(root, cfg, specs[s.name], s, files, kit, changed, probes)
                     if key != keys[s.name][0]:
                         what = ('its inputs changed while the gate ran' if ins != keys[s.name][1]
-                                else 'its key changed while the gate ran (the kit, a program or '
-                                'the config)')
+                                else 'its key changed while the gate ran (the kit, a program, '
+                                'a toolchain or the config)')
                         lines.append(PREFIX + 'NOT STORED %s: %s' % (s.name, what))
                         continue
                     res = STORE_AS[by_name[s.name]['status']]
@@ -981,9 +1132,10 @@ def planner(root, cfg, branch, tip, base, merge, prior, fresh=False, full=False,
 
 
 def branch_plan(top, cfg, chosen, base, changed, full=False, only=None, head=None, branch=None,
-                now=None):
+                now=None, probes=None):
     """The Plan for a branch gate's `chosen` steps in the checkout `top` (`base`: the merge base;
-    `changed`: what the gate selects by). Anything that raises means every step runs."""
+    `changed`: what the gate selects by; `probes`: toolchain_digest's cache, shared with the
+    toolchains the gate reads before its run). Anything that raises means every step runs."""
     def make():
         _, asking = _asking(cfg, chosen)
         if not asking:
@@ -992,5 +1144,5 @@ def branch_plan(top, cfg, chosen, base, changed, full=False, only=None, head=Non
         if why:
             return _none([s.name for s in asking], why)
         return plan_steps(top, cfg, chosen, base, changed, now=now,
-                          facts={'head': head, 'branch': branch})
+                          facts={'head': head, 'branch': branch}, probes=probes)
     return _guarded(cfg, chosen, make)

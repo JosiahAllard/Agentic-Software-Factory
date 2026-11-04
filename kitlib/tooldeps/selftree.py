@@ -104,7 +104,7 @@ def config(root, data=None):
         if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
             raise ConfigError('%s: %s must be a list of non-empty strings' % (CONFIG_REL, k))
     for x in out['always']:
-        if '.' in x and not x.startswith('tests.'):
+        if '.' in x and not (x.startswith('tests.') and len(x.split('.')) == 3):
             raise ConfigError('%s: always entry %r must be a test package or "tests.<pkg>.<module>"'
                               % (CONFIG_REL, x))
     pairs = []

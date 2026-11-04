@@ -196,9 +196,18 @@ class FixtureTree(unittest.TestCase):
         self.assertEqual(selftree.split_picked(picked), (['top'], ['tests.leaf.test_x']))
         self.assertIn('always', why['tests.leaf.test_x'][0])
 
-    def test_always_rejects_a_dotted_name_outside_tests(self):
-        with self.assertRaises(selftree.ConfigError):
-            selftree.config(self.root, dict(TABLE, always=['a.b']))
+    def test_plan_runs_and_prints_an_always_module(self):
+        cfg = dict(self.cfg, always=['tests.leaf.test_leaf'])
+        out = []
+        modules = cli.plan(self.root, ['kitlib/top/a.py'], cfg, out.append)
+        self.assertEqual(modules, ['tests.top.test_top', 'tests.leaf.test_leaf'])
+        self.assertTrue(any(l.strip().startswith('tests/leaf/test_leaf ') for l in out), out)
+        self.assertIn('selected 1 of', out[-1])         # packages count only the package
+
+    def test_always_dotted_name_must_be_tests_pkg_module(self):
+        for bad in ('a.b', 'tests.proc', 'tests.proc.x.y'):
+            with self.assertRaises(selftree.ConfigError, msg=bad):
+                selftree.config(self.root, dict(TABLE, always=[bad]))
 
     def test_by_name_file_no_test_names_selects_everything(self):
         self.assertIs(self.select('hooks/pre.py')[0], ALL)
@@ -507,7 +516,6 @@ class KitTree(unittest.TestCase):
             picked = self.select(path)
             self.assertIsNot(picked, ALL, path)
             self.assertTrue(policy <= set(picked), path)
-
 
     def test_every_serial_entry_names_a_test_module(self):
         with open(os.path.join(KIT, 'tests', 'selection.json'), encoding='utf-8') as fh:

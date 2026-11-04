@@ -1,7 +1,8 @@
 """The launcher's state files, in launcher.state_dir (docs/launcher.md "State files"):
 
   sessions.json    {key: {repo, agent, stem, state, brief?, account, name, autostart?}}: every
-                   long-running session; handoff and reboot rewrite account and name. A key
+                   long-running session; handoff, start --session and reboot rewrite account
+                   and name. A key
                    starting with "_" is a note. agent true runs the coordinator agent, a string
                    that agent, false a plain session.
   coordinators.json {repo: account, pm_session_id, pm_folder, pm_account, pm_name?}: the account

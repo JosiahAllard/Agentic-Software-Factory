@@ -38,8 +38,6 @@ DRIVE_ALLOWED = (
     ('kitlib/guard/commands.py', 'C:\\\\x\\\\Godot_v4.exe', 'a docstring example of a program path'),
     ('kitlib/guard/shell.py', 'unquoted Windows path (C:\\\\tmp', 'a docstring on bash quoting'),
     ('kitlib/guard/shell.py', "# C:\\ before a space", 'a comment on a drive root'),
-    ('optional/comfy/comfy_gen.py', 'DESKTOP_EXE_DEFAULT = r"C:\\Program Files',
-     "the installer's default (COMFY_DESKTOP_EXE overrides it)"),
     ('optional/comfy/comfy_gen.py', '--temp-directory "C:\\ComfyUI"', 'a comment quoting the app'),
     ('optional/procwatch/procwatch.py', '# find / , find /c , find C:\\', 'a regex comment'),
     ('optional/procwatch/procwatch.py', '# dir /s C:\\', 'a regex comment'),

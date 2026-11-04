@@ -63,7 +63,7 @@ def main(argv=None):
             if not added:
                 say('already present; nothing written')
             else:
-                say('stored: %d token(s); self-test %s'
+                say('stored: %d digest record(s); self-test %s'
                     % (count, 'passes' if why is None else 'FAILS - %s' % why))
             return 0 if why is None else 2
         paths = None

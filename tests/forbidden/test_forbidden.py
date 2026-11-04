@@ -219,6 +219,26 @@ class AddToken(unittest.TestCase):
         self.assertEqual(len(F.hits_in('a quaxlingzimbretto b', store, True)), 1)
         self.assertEqual(F.add_token(self.path, 'quaxling zimbretto')[:2], (False, 2))
 
+    def test_a_trailing_punctuation_after_a_space_does_not_leave_a_trailing_space(self):
+        F.add_token(self.path, 'Quaxling Zimbretto .')
+        store = F.load_store(self.path)
+        self.assertEqual(len(F.hits_in('end: quaxling zimbretto', store, False)), 1)
+
+    def test_re_adding_upgrades_an_old_spaceless_only_store(self):
+        salt = os.urandom(16).hex()
+        norm = 'quaxlingzimbretto'
+        store = store_for()
+        store['salt'] = salt
+        sb = bytes.fromhex(salt)
+        store['canary'] = F.digest(sb, F.normalise(F.CANARY, True)[0])
+        store['tokens'] = [{'length': len(norm), 'digest': F.digest(sb, norm)}]
+        store['checksum'] = F.tokens_checksum(store)
+        with open(self.path, 'w', encoding='utf-8') as fh:
+            json.dump(store, fh)
+        self.assertEqual(len(F.hits_in('a quaxling zimbretto b', store, False)), 0)
+        self.assertEqual(F.add_token(self.path, 'Quaxling Zimbretto')[:2], (True, 2))
+        self.assertEqual(len(F.hits_in('a quaxling zimbretto b', F.load_store(self.path), False)), 1)
+
     def test_an_empty_object_file_is_a_new_store(self):
         with open(self.path, 'w', encoding='utf-8') as fh:
             fh.write('{}\n')
@@ -500,7 +520,7 @@ class Run(GitRepo):
         self.config(forbidden='ops/tokens.json')
         code, out = self.cli('--add', stdin=TOKEN + '\n')
         self.assertEqual(code, 0, out)
-        self.assertIn('stored: 1 token(s); self-test passes', out)
+        self.assertIn('stored: 1 digest record(s); self-test passes', out)
         self.assertNotIn(TOKEN, out)
         self.assertIsNone(F.self_test(F.load_store(self.repo.path('ops', 'tokens.json'))))
         self.assertFalse(os.path.exists(self.repo.path('tools')))

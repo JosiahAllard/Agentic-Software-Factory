@@ -162,8 +162,10 @@ def self_test(store, drop_spaces=False):
 
 
 def add_token(path, token):
-    """Add the digest of `token` to the store at `path`, creating it when absent or `{}`.
-    Returns `(added, count, why)`: whether a record was written, the number of tokens, and the
+    """Add the digest(s) of `token` to the store at `path`, creating it when absent or `{}`: the
+    spaceless form, plus the space-kept form when a token has spaces (the default scan reads
+    that one), so a multi-word token is two records.
+    Returns `(added, count, why)`: whether a record was written, the number of digest records, and the
     self-test's answer for the store as written (None: sound). ForbiddenError for an empty or
     short token, or a file that is not a token store. The caller reads `token` from stdin: an
     argument would land in shell history and the process list."""
@@ -182,7 +184,7 @@ def add_token(path, token):
     # The default scan keeps one space per whitespace run, so a multi-word token needs that
     # form stored too; the spaceless form stays for the paranoid scan.
     forms = [norm]
-    spaced = normalise(token, drop_spaces=False)[0]
+    spaced = normalise(token, drop_spaces=False)[0].strip()
     if spaced != norm:
         forms.append(spaced)
     have = {t.get('digest') for t in store['tokens']}

@@ -129,6 +129,8 @@ class SessionLiveCli(unittest.TestCase):
                                 scope='a/**'),
             'R1': record_text(id='R1', priority='2', priority_by='agent', scope='a/x.py')},
             'seed\n')
+        # the readers `next` reads liveness with (patched below, so no machine read)
+        self.assertTrue(hasattr(omod, 'launcher_stems') and hasattr(omod, 'running_names'))
         with mock.patch.object(omod, 'launcher_stems',
                                return_value={'combat': 'combat-coordinator'}), \
                 mock.patch.object(omod, 'running_names', return_value=['kit-coordinator-a1']):

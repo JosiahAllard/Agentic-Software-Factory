@@ -52,8 +52,6 @@ import datetime
 import os
 
 from kitlib import platform
-from kitlib.config import user
-from kitlib.config.migration import OLD_DIR_NAME
 
 from . import (agenttemp, extras, kitcommand, linuxbox, links, managed, owner, plugin, settings,
                worktreesweep)
@@ -108,17 +106,14 @@ class Context(object):
 
 
 def default_config_dirs(home):
-    """`<home>/.claude` and every `<home>/.claude-*` folder, the kit's own machine config folders
-    excepted: the current one and the retired one (kitlib.config.migration.OLD_DIR_NAME), which
-    starts `.claude-` and is no Claude account folder."""
+    """`<home>/.claude` and every `<home>/.claude-*` folder."""
     out = []
     try:
         names = sorted(os.listdir(home))
     except OSError:
         return out
     for n in names:
-        if (n == '.claude' or n.startswith('.claude-')) and n not in (user.DIR_NAME, OLD_DIR_NAME) \
-                and os.path.isdir(os.path.join(home, n)):
+        if (n == '.claude' or n.startswith('.claude-')) and os.path.isdir(os.path.join(home, n)):
             out.append(os.path.join(home, n))
     return out
 

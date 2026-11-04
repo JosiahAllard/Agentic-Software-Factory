@@ -44,6 +44,8 @@ ALLOWED = {
                                          '(LEFTOVER, UNMOVED), never read',
     ('kitlib/delegations/load.py', 'delegations_file'): 'the home folder\'s delegations copy, the '
                                                         'move\'s source, which the guard still holds',
+    ('kitlib/delegations/place.py', 'owner_only'): 'no hub-approved run may touch the leftover home '
+                                                   'config folder',
     ('kitlib/guard/jail.py', 'home_config_dirs'): 'no write root may be on a leftover home config '
                                                   'folder',
     ('kitlib/guard/rules.py', 'hub_secret_folders'): 'guards the leftover home token folder the '

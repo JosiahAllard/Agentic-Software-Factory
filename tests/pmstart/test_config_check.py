@@ -98,12 +98,6 @@ class LinesTest(ConfigCheckCase):
         self.assertIn('a copy is still in the home folder (%s)' % left, line)
         self.assertIn("Remove-Item -LiteralPath '%s'" % left, line)
 
-    def test_a_config_file_left_in_the_retired_folder_is_named_too(self):
-        from kitlib.config import migration
-        left = self.leave(migration.OLD_DIR_NAME)
-        (line,) = self.lines()
-        self.assertIn("Remove-Item -LiteralPath '%s'" % left, line)
-
     def test_the_home_folder_without_a_config_file_is_no_leftover(self):
         os.makedirs(os.path.join(self.home, kuser.DIR_NAME, 'hub'))
         self.assertEqual(self.lines(), [])

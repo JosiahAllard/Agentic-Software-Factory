@@ -32,7 +32,7 @@ class Move(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
         loc = user.home_location(self.home)
-        self.new_dir, self.old_dir = os.path.dirname(loc.new), os.path.dirname(loc.old)
+        self.new_dir = os.path.dirname(loc.new)
 
     def config(self, body, folder=None):
         folder = folder or self.new_dir
@@ -127,13 +127,6 @@ class Move(unittest.TestCase):
         self.assertNotIn('wrote', out)
         self.assertIn('same    config.json', out)
         self.assertEqual(before, {rel: self.read(rel) for rel in before})
-
-    def test_the_old_folder_is_read_when_the_new_has_none(self):
-        self.config({'pm_start': {}}, folder=self.old_dir)
-        code, out = self.run_move()
-        self.assertEqual(code, move.OK, out)
-        self.assertIn('policy  config.json: pm_start', out)
-        self.assertIn('Remove-Item', '\n'.join(move.commands(move.survey(self.home))))
 
     def test_an_unknown_home_file_is_a_note_and_not_copied(self):
         self.plain()

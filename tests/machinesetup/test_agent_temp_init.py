@@ -16,7 +16,6 @@ from unittest import mock
 from kitlib import machinesetup as M
 from kitlib.machinesetup import extras
 from kitlib.config import user as kuser
-from kitlib.config.migration import OLD_DIR_NAME
 from tests.home import PM_REPO_FENCE_ENV
 from tests.machinesetup import test_machinesetup as T
 from tests.platforms import windows_only
@@ -241,22 +240,19 @@ class Init(T.Base):
     def test_a_config_still_in_the_home_folder_refuses(self):
         # the PM repository has none yet: the home file is the move's to carry, never written here
         os.rmdir(self.cfg_dir)
-        for name in (kuser.DIR_NAME, OLD_DIR_NAME):
-            with self.subTest(name):
-                folder = os.path.join(self.home, name)
-                os.makedirs(folder)
-                with open(os.path.join(folder, kuser.FILE_NAME), 'w', encoding='utf-8') as f:
-                    f.write('{}\n')
-                before = self.snapshot()
-                code, out = self.run_new(apply=True)
-                self.assertEqual(code, M.EXIT_REFUSED, out)
-                self.assertIn('REFUSED - cannot read the machine config for agent_temp_sweep: the machine '
-                              'config is still in the home folder (%s)' % os.path.join(folder, kuser.FILE_NAME), out)
-                self.assertIn('nothing changed', out)
-                self.assertEqual(self.snapshot(), before)
-                self.assertFalse(os.path.exists(self.new))
-                self.assertFalse(os.path.exists(self.cfg_dir))
-                shutil.rmtree(folder)
+        folder = os.path.join(self.home, kuser.DIR_NAME)
+        os.makedirs(folder)
+        with open(os.path.join(folder, kuser.FILE_NAME), 'w', encoding='utf-8') as f:
+            f.write('{}\n')
+        before = self.snapshot()
+        code, out = self.run_new(apply=True)
+        self.assertEqual(code, M.EXIT_REFUSED, out)
+        self.assertIn('REFUSED - cannot read the machine config for agent_temp_sweep: the machine '
+                      'config is still in the home folder (%s)' % os.path.join(folder, kuser.FILE_NAME), out)
+        self.assertIn('nothing changed', out)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse(os.path.exists(self.new))
+        self.assertFalse(os.path.exists(self.cfg_dir))
 
     def test_no_pm_repo_pointer_refuses_naming_the_pointer_step_and_makes_no_home_file(self):
         patch = mock.patch.dict(os.environ, {PM_REPO_FENCE_ENV: ''})

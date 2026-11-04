@@ -14,7 +14,7 @@ present file that cannot be read, or that holds an unknown key or a bad value, i
 (never silently "no ledger").
 
 No pointer and no machine config left in the home folder (NONE) is an empty config. A machine
-config still in the home folder (DIR_NAME's, or the retired kitlib.config.migration.OLD_DIR_NAME's)
+config still in the home folder (DIR_NAME's)
 while the PM repository has none is UNMOVED; one beside the PM repository's files is LEFTOVER (the
 config moved: the copy must go, LEFTOVER_WHY); a pointer that is BAD, or a PM folder or file that
 cannot be told apart from absent, is BAD: each a ConfigError, never a fallback. home_location()
@@ -28,7 +28,6 @@ import tempfile
 import kitlib.platform
 from kitlib.platform.linux import paths as linux_paths
 
-from .migration import OLD_DIR_NAME
 from .types import ConfigError, Email, Enum, Field, ListOf, MapOf, Obj, Regex, Str, T, is_note, parse_json
 
 # The machine config's folder in the home folder. The one place the kit names it: code derives
@@ -49,9 +48,7 @@ BAD = 'bad'          # the pointer is BAD, or a PM folder or file cannot be read
 # kitlib.config.pointer's states, repeated (that module imports this one).
 OK_POINTER, BAD_POINTER = 'OK', 'BAD'
 # home_location() states, the move's source (kitlib.config.move), with NONE and BAD above.
-NEW = 'new'      # DIR_NAME's file; the old folder has none
-OLD = 'old'      # the old folder's file: DIR_NAME has none
-BOTH = 'both'    # both have one: DIR_NAME's is read, the old one ignored
+NEW = 'new'      # DIR_NAME's file
 # The kit's temp folder at the root of a checkout's drive (work_temp): the kit's default, which
 # the machine config's `temp_dir` overrides.
 TEMP_DIR_NAME = 'kit-temp'
@@ -157,7 +154,7 @@ SCHEMA = {
     'guard_mcp_prefix': Field(Str(), None, 'the lock MCP tool-name prefix the guard denies owner-only tools under; unset: the kit default (docs/guard.md "Lock MCP")'),
     'guard_mcp_tools': Field(ListOf(Str()), None, 'more full tool names the guard treats as the lock MCP\'s owner-only tools, as a PreToolUse payload names them (docs/guard.md "Lock MCP")'),
     'guard_agent_marks': Field(ListOf(Str()), None, 'the session marks the guard treats as agent sessions for the kill-by-name, lock-state, kit-json, write-jail and git-stash-shared rules; it replaces the default list, so it names every mark it holds; unset: coordinator, deep-worker, consultant and pm (docs/guard.md "Session mark")'),
-    'guard_mark_roots': Field(MarkMap(ListOf(MARK_ROOT), what='mark'), None, 'more write-jail roots for the main sessions of one launcher mark, as {mark: [{path, mode, why}]}; a root that is, holds or lies inside either machine config folder, the current or the retired one, is ignored unless it is read-only (docs/guard.md "Write jail")'),
+    'guard_mark_roots': Field(MarkMap(ListOf(MARK_ROOT), what='mark'), None, 'more write-jail roots for the main sessions of one launcher mark, as {mark: [{path, mode, why}]}; a root that is, holds or lies inside the machine config folder is ignored unless it is read-only (docs/guard.md "Write jail")'),
     'guard_rules': Field(MapOf(Enum('deny', 'warn', 'off'), what='rule'), None, 'the guard\'s rule modes, {rule: deny|warn|off}, over the kit defaults (kitlib.guard.modes.DEFAULTS); set here only, never in .kit.json (docs/guard.md "Rule modes"); older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'pm_data': Field(Owned('kitlib.pmdata'), None, 'the worktree of the PM data branch: {path, branch, remote} (docs/pm-data-branch.md "Layout")'),
     'hub': Field(Owned('kitlib.hubsite.settings'), None, 'the Action Hub site settings: port, tunnel_port, store, commit_every_s, push (unset: on only when store is unset and pm_data is set), backlog_refresh_s, access: {team, aud, emails}; unset: every default, and the site still runs; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
@@ -622,10 +619,10 @@ class Location(collections.namedtuple('Location', 'state path local folder pm pm
         return _shown(path or self.path, self.home)
 
 
-class HomeLocation(collections.namedtuple('HomeLocation', 'state path new old error home')):
+class HomeLocation(collections.namedtuple('HomeLocation', 'state path new error home')):
     """The machine config file in the home folder (home_location), the move's source
-    (kitlib.config.move): `state` one of NEW, OLD, BOTH, NONE, BAD; `path` the file read
-    (DIR_NAME's for NONE and BAD); `new` and `old` the two candidate files; `error` why a BAD
+    (kitlib.config.move): `state` one of NEW, NONE, BAD; `path` the file read
+    (DIR_NAME's for NONE and BAD); `new` the candidate file; `error` why a BAD
     location cannot be read, else None; `home` the home folder."""
 
     def display(self, path=None):
@@ -667,11 +664,11 @@ def home_location(home=None):
     folder first does not hide the old file. It reads nothing but the file system's answers and
     never raises."""
     h = home or home_dir()
-    new_dir, old_dir = os.path.join(h, DIR_NAME), os.path.join(h, OLD_DIR_NAME)
-    new, old = os.path.join(new_dir, FILE_NAME), os.path.join(old_dir, FILE_NAME)
+    new_dir = os.path.join(h, DIR_NAME)
+    new = os.path.join(new_dir, FILE_NAME)
 
     def bad(why):
-        return HomeLocation(BAD, new, new, old, why, h)
+        return HomeLocation(BAD, new, new, why, h)
     try:
         d = _kind(new_dir)
         if d not in ('absent', 'dir'):
@@ -681,17 +678,7 @@ def home_location(home=None):
         return bad('cannot tell whether the machine config %s exists: %s' % (new, e))
     if n not in ('absent', 'file'):
         return bad('%s is not a file: the machine config cannot be read' % new)
-    try:
-        o = _kind(old)
-    except OSError as e:
-        if n == 'file':
-            return HomeLocation(NEW, new, new, old, None, h)
-        return bad('cannot tell whether the machine config %s exists: %s' % (old, e))
-    if n == 'file':
-        return HomeLocation(NEW if o == 'absent' else BOTH, new, new, old, None, h)
-    if o == 'absent':
-        return HomeLocation(NONE, new, new, old, None, h)
-    return HomeLocation(OLD, old, new, old, None, h)
+    return HomeLocation(NEW if n == 'file' else NONE, new, new, None, h)
 
 
 # The pointer's answer, once per process for each raw registry answer
@@ -715,15 +702,14 @@ def forget():
 
 
 def _leftover(h):
-    """(the first machine config file still in the home folder `h`, DIR_NAME's then the retired
-    folder's, or None; why the home folder cannot be examined, or None)."""
-    for name in (DIR_NAME, OLD_DIR_NAME):
-        path = os.path.join(h, name, FILE_NAME)
-        try:
-            if _kind(path) != 'absent':
-                return path, None
-        except OSError as e:
-            return None, 'cannot tell whether the machine config %s exists: %s' % (path, e)
+    """(the machine config file still in the home folder `h`, DIR_NAME's, or None; why the home
+    folder cannot be examined, or None)."""
+    path = os.path.join(h, DIR_NAME, FILE_NAME)
+    try:
+        if _kind(path) != 'absent':
+            return path, None
+    except OSError as e:
+        return None, 'cannot tell whether the machine config %s exists: %s' % (path, e)
     return None, None
 
 

@@ -13,8 +13,8 @@ invented paths on purpose), the two name checks read tests/ too.
   pm_start.sessions_file, the coordinator_start.cap repository keys and the hub artifact id at the
   end of pm_start.hub_url. A machine with none of these skips the check with a printed note.
 - Kit names: the kit's repository name (`.kit.json` repo.name) and the machine config folder's
-  retired name (kitlib.config.migration.OLD_DIR_NAME), read from those files at test time, so this
-  file names none of them. Each may stand only on a line of KIT_NAMES_ALLOWED; everywhere else code
+  retired name (RETIRED_CONFIG_NAME, kept here so it is never reintroduced), the first read from
+  .kit.json at test time, so this file names the repository's none. Each may stand only on a line of KIT_NAMES_ALLOWED; everywhere else code
   derives it and text says what it is. The folder's current name (kitlib.config.user.DIR_NAME) is
   neutral, and so is the Claude plugin's name (.claude-plugin/plugin.json),
   so neither is a kit name.
@@ -54,11 +54,13 @@ NAMES_ALLOWED = (
 )
 # (file glob, the whole line as a regex, why a kit name may stand there). `{kit}` is the kit's
 # repository name, escaped; `.*` allows every line of the file. kit_allowed compiles them.
+# The machine config folder's retired name: no code or doc may name it again, so the scrub looks for it.
+RETIRED_CONFIG_NAME = '.claude-pm-kit'
 KIT_NAMES_ALLOWED = (
     ('.kit.json', r'\s*"repo": \{"name": "{kit}"\},?', "the kit's own name lives in its .kit.json, repo.name"),
     ('README.md', r'# {kit}', "the project page keeps the project's title (an owner ruling)"),
-    ('kitlib/config/migration.py', r"OLD_DIR_NAME = '[^']*'", "the machine config folder's retired name, "
-     'read as a fallback until the owner moves the file (tests/scrub/test_old_config_name.py)'),
+    ('tests/scrub/test_generic.py', r"RETIRED_CONFIG_NAME = '[^']*'", "the machine config folder's retired name, "
+     'spelled here once so the scrub keeps it out of the kit'),
 )
 
 
@@ -185,12 +187,11 @@ def install_names(home=None, kit_dir=ROOT, toplevel=None, common_dir=_common_dir
 
 def kit_names(root=ROOT, strict=False):
     """(name of the kit's repository or None, [(regex, source)]) for the kit's own names, read
-    from its files under root: `.kit.json` repo.name and kitlib.config.migration.OLD_DIR_NAME
+    from its files under root: `.kit.json` repo.name and RETIRED_CONFIG_NAME
     without its leading dot (kit_name_pattern); the current kitlib.config.user.DIR_NAME and the
     Claude plugin's name in .claude-plugin/plugin.json are neutral and not ones. Names equal but for case and separators share one pattern. A missing file
     or name adds nothing, unless strict: then it raises ValueError naming the source, so the live
     check cannot pass on fewer names."""
-    from kitlib.config import migration
     named = {}
 
     def add(name, source):
@@ -217,7 +218,7 @@ def kit_names(root=ROOT, strict=False):
     repo = read('.kit.json').get('repo')
     kit = repo.get('name') if isinstance(repo, dict) else None
     add(kit, '.kit.json repo.name')
-    add(migration.OLD_DIR_NAME.lstrip('.'), "the machine config folder's retired name")
+    add(RETIRED_CONFIG_NAME.lstrip('.'), "the machine config folder's retired name")
     return (kit if isinstance(kit, str) else None,
             [(kit_name_pattern(n), src) for n, src in sorted(named.values())])
 
@@ -368,7 +369,7 @@ class TheChecks(unittest.TestCase):
         found, stale = scan(sorted(files), files.get, pats, kit_allowed(kit), excluded=())
         self.assertEqual(found, ['README.md:2: Kit-Alpha (.kit.json repo.name)',
                                  "tests/x.py:1: kit-alpha (.kit.json repo.name)"])
-        self.assertEqual(sorted(g for g, _, _ in stale), ['kitlib/config/migration.py'])
+        self.assertEqual(sorted(g for g, _, _ in stale), ['tests/scrub/test_generic.py'])
 
     def test_the_plugin_name_is_no_kit_name(self):
         # The plugin's name is neutral: kit_names reads no kit name from plugin.json.
@@ -376,11 +377,10 @@ class TheChecks(unittest.TestCase):
         self.assertFalse([src for rx, src in pats if rx.search("host-kit")])
 
     def test_kit_names_without_the_files_are_the_retired_config_folder_only(self):
-        from kitlib.config import migration
         kit, pats = kit_names(self._kit(None, None))
         self.assertIsNone(kit)
         self.assertEqual([rx.pattern for rx, _ in pats],
-                         [kit_name_pattern(migration.OLD_DIR_NAME.lstrip('.')).pattern])
+                         [kit_name_pattern(RETIRED_CONFIG_NAME.lstrip('.')).pattern])
         self.assertNotIn('README.md', [g for g, _, _ in kit_allowed(None)])
 
     def test_strict_kit_names_refuse_a_missing_source(self):

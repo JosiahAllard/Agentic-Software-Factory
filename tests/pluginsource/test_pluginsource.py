@@ -512,13 +512,21 @@ class CurrentLinesTest(Base):
         _root, sha = P.ensure_export(self.k.kit, self.s, now=NOW, own=ME, alive=never_alive)
         state = P.read_state(self.s.export_dir)
         state['folders'][gone] = {'migrated': True}
-        state['folders']['.claude-junk'] = 'not a dict'
         P.write_state(self.s.export_dir, state)
         lines = P.current_lines(self.k.kit, self.s, folders=[default])
         self.assertEqual(len(lines), 1)
         self.assertIn(default, lines[0])
         self.assertNotIn(gone, ''.join(lines))
         self.assertEqual(P.current_lines(self.k.kit, self.s, folders=[]), [])
+
+    def test_a_non_dict_record_is_no_line_and_no_crash(self):
+        default, junk = self.k.folders('.claude', '.claude-junk')
+        self.k.seed_migrated([default])
+        self.assertEqual(self.refresh([default]), 0)
+        state = P.read_state(self.s.export_dir)
+        state['folders'][junk] = 'not a dict'
+        P.write_state(self.s.export_dir, state)
+        self.assertEqual(P.current_lines(self.k.kit, self.s, folders=[default]), [])
 
     def test_unreadable_state(self):
         os.makedirs(self.k.root)

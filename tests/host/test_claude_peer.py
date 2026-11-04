@@ -181,36 +181,36 @@ class Resolve(unittest.TestCase):
         self.m.put(self.m.state, 'coordinators.json', {'pm_session_id': 'pm-sid-gone', 'pm_name': '<name>'})
         self.assertFalse(hub.is_pm('<name>'))
 
-    def griffball(self):
-        self.m.put(self.m.state, 'sessions.json', {'GriffBall': {
-            'repo': 'GriffBall', 'agent': True, 'stem': 'griffball-coordinator', 'account': 3,
-            'name': 'griffball-coordinator-a3'}})
+    def demo_entry(self):
+        self.m.put(self.m.state, 'sessions.json', {'demo': {
+            'repo': 'demo', 'agent': True, 'stem': 'demo-coord', 'account': 3,
+            'name': 'demo-coord-a3'}})
 
     def test_a_successor_sessions_json_never_recorded_is_found_by_its_stem(self):
-        # KIT-HUB-COORD-RUNNING-STALE: sessions.json still names -a3, the live one is -a2
-        self.griffball()
-        self.m.session(51, 'griffball-coordinator-a2')
-        t = self.m.hub().resolve('GriffBall')
-        self.assertIsNotNone(t, 'the live -a2 is the GriffBall coordinator')
-        self.assertEqual((t.record['pid'], t.name, t.ambiguous), (51, 'griffball-coordinator-a2', False))
+        # sessions.json still names -a3, the live one is -a2
+        self.demo_entry()
+        self.m.session(51, 'demo-coord-a2')
+        t = self.m.hub().resolve('demo')
+        self.assertIsNotNone(t, 'the live -a2 is the demo coordinator')
+        self.assertEqual((t.record['pid'], t.name, t.ambiguous), (51, 'demo-coord-a2', False))
 
     def test_the_recorded_name_comes_first_and_another_stem_never_matches(self):
-        self.griffball()
-        self.m.session(52, 'griffball-coordinator-docs-a2')     # another stem that starts the same
-        self.m.session(53, 'griffball-coordinatorx-a2')
+        self.demo_entry()
+        self.m.session(52, 'demo-coord-docs-a2')     # another stem that starts the same
+        self.m.session(53, 'demo-coordx-a2')
         self.m.session(54, 'other-coordinator-a3')
-        self.assertIsNone(self.m.hub().resolve('GriffBall'))
-        self.m.session(55, 'griffball-coordinator-a1-r2', start=9900)
-        self.m.session(56, 'griffball-coordinator-a3', start=100)
-        self.assertEqual(self.m.hub().resolve('GriffBall').record['pid'], 56, 'the exact name first')
+        self.assertIsNone(self.m.hub().resolve('demo'))
+        self.m.session(55, 'demo-coord-a1-r2', start=9900)
+        self.m.session(56, 'demo-coord-a3', start=100)
+        self.assertEqual(self.m.hub().resolve('demo').record['pid'], 56, 'the exact name first')
 
     def test_two_live_sessions_of_the_stem_take_the_newest_flagged(self):
-        self.griffball()
-        self.m.session(57, 'griffball-coordinator-a1', start=8000)
-        self.m.session(58, 'griffball-coordinator-a2', start=9000)
-        t = self.m.hub().resolve('GriffBall')
+        self.demo_entry()
+        self.m.session(57, 'demo-coord-a1', start=8000)
+        self.m.session(58, 'demo-coord-a2', start=9000)
+        t = self.m.hub().resolve('demo')
         self.assertIsNotNone(t)
-        self.assertEqual((t.record['pid'], t.name, t.ambiguous), (58, 'griffball-coordinator-a2', True))
+        self.assertEqual((t.record['pid'], t.name, t.ambiguous), (58, 'demo-coord-a2', True))
 
     def test_two_live_sessions_of_one_name_take_pipes_json_else_the_newest_flagged(self):
         self.m.session(31, 'x-a1', start=9000)
@@ -247,12 +247,12 @@ class Deliver(unittest.TestCase):
         self.assertNotIn(TOKEN, repr(sent))
 
     def test_a_successor_under_a_stale_sessions_json_name_gets_the_packet(self):
-        self.m.put(self.m.state, 'sessions.json', {'GriffBall': {
-            'repo': 'GriffBall', 'agent': True, 'stem': 'griffball-coordinator', 'account': 3,
-            'name': 'griffball-coordinator-a3'}})
-        self.m.session(46, 'griffball-coordinator-a2')
-        sent = self.m.hub().deliver('GriffBall', 'Q-1880 answered')
-        self.assertEqual(sent, push.Sent(push.WRITTEN, 'griffball-coordinator-a2', 'sid-46', False))
+        self.m.put(self.m.state, 'sessions.json', {'demo': {
+            'repo': 'demo', 'agent': True, 'stem': 'demo-coord', 'account': 3,
+            'name': 'demo-coord-a3'}})
+        self.m.session(46, 'demo-coord-a2')
+        sent = self.m.hub().deliver('demo', 'EX-7 answered')
+        self.assertEqual(sent, push.Sent(push.WRITTEN, 'demo-coord-a2', 'sid-46', False))
         (pipe, pid, _creation, _packet), = self.m.writes
         self.assertEqual((pipe, pid), (pipe_name(46), 46))
 

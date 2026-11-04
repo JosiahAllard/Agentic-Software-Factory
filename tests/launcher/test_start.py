@@ -605,7 +605,7 @@ class Start(Base):
             return json.load(f)
 
     def test_start_entry_on_another_account_records_the_name_and_account(self):
-        # KIT-HUB-COORD-RUNNING-STALE: a start (coord-restart's too) left sessions.json naming -a1
+        # a start (coord-restart's too) used to leave sessions.json naming -a1
         self.rec(name='alpha-coord-a1', repo='alpha')
         self.h.write_state('sessions.json', {'alpha': self.state('sessions.json')['rev'],
                                              'help': {'repo': 'alpha', 'agent': False, 'stem': 'alpha-help',

@@ -480,7 +480,7 @@ store's git push (the `push` setting).
   launcher key is resolved through sessions.json: its recorded `name`, else, when no live session has
   that name, a live session of the entry's own stem (`<stem>-a<N>[-r<k>]`, `kitlib.launcher.lookup`
   `of_stem`; the newest if several, logged `ambiguous`), so a successor sessions.json never recorded
-  still hears (KIT-HUB-COORD-RUNNING-STALE); `pm` through coordinators.json's `pm_session_id` (a
+  still hears; `pm` through coordinators.json's `pm_session_id` (a
   `launch.py pm-relaunch` fork's own id), then the names `Project Manager` and `pm-session`; its `pm_name`
   counts as a PM sender, never as a fallback target.
 - **Filed answers** (`filed`): who hears depends on what the filing did to the record, the question's

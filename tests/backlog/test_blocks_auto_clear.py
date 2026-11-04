@@ -28,7 +28,7 @@ class OwnerCitesAHubId(StoreCase):
         self.assertEqual(self.remote_tip(), tip)        # nothing written
 
     def test_a_self_cite_is_refused(self):
-        # Retribution TEST-SUPPORT-ARTIFACT: only `item:<itself>`, so nothing ever cleared it
+        # A game repo's test-support record: only `item:<itself>`, so nothing ever cleared it
         self.seed(rec('FOO'))
         self.refused('FOO', 'cites the record itself', owner_ask='item:FOO until the owner '
                      'approves the grant lines')
@@ -78,7 +78,7 @@ class OwnerCitesAHubId(StoreCase):
         self.seed(rec('FOO'), rec('BAR'))
         self.refused('FOO', 'cites no Action Hub question', owner_ask='item:BAR first')
         self.refused('FOO', 'cites no Action Hub question', owner_ask='which one?',
-                     reason='R-1234 says the owner decides')
+                     reason='R-9234 says the owner decides')
         self.refused('FOO', 'cites no Action Hub question', owner_ask='which colour?')
 
     def test_a_hub_id_passes_in_the_ask_the_reason_or_the_stored_ask(self):
@@ -94,7 +94,7 @@ class OwnerCitesAHubId(StoreCase):
     def test_other_members_are_not_held_to_it(self):
         self.seed(rec('FOO'), rec('BAR'))
         self.verb('block', 'FOO', ['item:BAR'])
-        self.verb('block', 'FOO', ['deliberate'], reason='R-1234: until the rework')
+        self.verb('block', 'FOO', ['deliberate'], reason='R-9234: until the rework')
         self.assertEqual(self.get('FOO').all('blocked_on'), ['item:BAR', 'deliberate'])
 
     def test_the_error_helper(self):
@@ -104,8 +104,8 @@ class OwnerCitesAHubId(StoreCase):
         self.assertIsNone(rmod.owner_citation_error('FOO', 'item:FOO', 'Q-123?'))
         self.assertIsNone(rmod.owner_citation_error('FOO', 'on Q-1', None, stored='item:FOO'))
         self.assertIn('itself', rmod.owner_citation_error('FOO', 'why', None, stored='item:FOO'))
-        self.assertIn('(only R-1234, item:BAR)',
-                      rmod.owner_citation_error('FOO', 'R-1234', 'item:BAR'))
+        self.assertIn('(only R-9234, item:BAR)',
+                      rmod.owner_citation_error('FOO', 'R-9234', 'item:BAR'))
 
 
 class NextLines(unittest.TestCase):
@@ -119,7 +119,7 @@ class NextLines(unittest.TestCase):
         backend.publish(smod.Store(backend, rmod.Rules()).load(), texts, 'seed\n')
 
     def test_each_record_to_review_gets_a_line_and_keeps_its_mark(self):
-        # Retribution DRAIN-INVENTORY: `review: owner-answer` sat 57 h behind a bare count
+        # A game repo's drain-inventory record: `review: owner-answer` sat 57 h behind a bare count
         self.publish({
             'AAA': record_text(id='AAA', priority='2', priority_by='agent', scope='a/aaa.py',
                                review='owner-answer 2026-11-01',
@@ -138,7 +138,7 @@ class NextLines(unittest.TestCase):
         self.assertIn('review:', self.ok('show', 'AAA'))         # `next` clears nothing
 
     def test_a_session_short_offer_names_what_other_keys_hold(self):
-        # Retribution: `next --session <key>` offered 0 while plain `next` offered 8
+        # A game repo: `next --session <key>` offered 0 while plain `next` offered 8
         texts = {}
         for rid, session in (('AAA', None), ('BBB', None), ('CCC', 'retri'), ('DDD', 'kit')):
             over = {'session': session} if session else {}

@@ -131,7 +131,7 @@ def _narrow(names):
 
 def lead_until(text):
     """True when `text` is an owner event a lead may set as the end of an `owner` hold (the
-    owner's Go, Q-1821): exactly one of the to-do, question and approval forms
+    owner's go-ahead): exactly one of the to-do, question and approval forms
     (`todo:T-n done`, `question:Q-n answered`, `approval:A-n decided`; conditions.OWNER_KINDS).
     Anything else (another form, a malformed one, free text, a value not read) is False."""
     if not isinstance(text, str):

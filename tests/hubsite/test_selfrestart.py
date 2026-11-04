@@ -299,9 +299,8 @@ class FailureCase(Case):
         held.pop()()                                    # the probe ends
         self.at(selfrestart.SETTLE_S, NEW)              # collected, the check is handed off
         self.assertEqual(len(held), 1)
-        self.at(1, NEWER)                               # the code changes while the check runs
-        held.pop()()                                    # the old check ends, failed
-        self.at(1, NEWER)
+        held.pop()()                                    # the old check ends, failed, unread
+        self.at(1, NEWER)                               # the code changed: the result is in the box
         self.assertEqual(self.texts('error'), [], 'no CHECK_FAILED for superseded code')
         self.assertFalse(self.w.stale)
         self.assertNotIn(NEW, self.w._done)
@@ -309,8 +308,7 @@ class FailureCase(Case):
         self.at(selfrestart.SETTLE_S, NEWER)
         held.pop()()
         self.at(1, NEWER)
-        # the stand-in records the stamp on disk when a check runs: the old check ran after the change
-        self.assertEqual(self.checked, [NEWER, NEWER], 'the new code is tried')
+        self.assertEqual(self.checked, [NEW, NEWER], 'the new code is tried')
         self.assertEqual(len(self.launched), 1)
 
     def test_a_check_that_raises_is_a_failed_check(self):

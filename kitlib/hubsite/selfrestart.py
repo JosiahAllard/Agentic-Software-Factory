@@ -416,7 +416,9 @@ class Watcher(object):
             if self._first is None:
                 self._first = now
                 self._say(CHANGED, 'note')
-        self._collect()     # after _seen is current: work on older code is dropped
+        # After _seen is current: work on older code is dropped, so a superseded probe's 'off'
+        # (the NOT_HERE warning) comes only when the newer code's own probe ends, up to SETTLE_S later.
+        self._collect()
         if stamp == self.started or self._work is not None:
             return
         if not self.stale and now - self._first >= GIVE_UP_S:

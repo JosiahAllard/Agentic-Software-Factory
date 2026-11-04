@@ -2486,6 +2486,34 @@ class RecordPageTest(unittest.TestCase):
         self.assertIn("priority: 2", got["after"])
         self.assertTrue(got["back"])
 
+    def test_a_section_save_refused_as_stale_reads_the_record_again_and_the_next_save_is_pinned_to_it(self):
+        newer = record(version="c2:s2", fields=[["id", "B-1"], ["summary", "theirs"], ["scope", "tools/x.py"], ["effort", "s"]])
+        after = record(version="c3:s3", fields=[["id", "B-1"], ["summary", "mine"], ["scope", "tools/x.py"], ["effort", "s"]])
+        got = self.page("""
+            let reads = 0, edits = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: ++reads > 1 ? NEWER : REC }     // the detail's own read came before this route
+              : c.path === "/records/alpha/B-1/edit" ? (edits++ ? { status: 200, body: { ok: true, lines: ["SET B-1"], record: AFTER } }
+                : { status: 409, body: { ok: false, error: { code: "conflict", message: "changed on the hub server", field: "version" } } })
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const fields = $$("#list .rec .pk")[0], ta = fields.querySelector("textarea");
+            await type(ta, "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await click(button(fields, "Save"));
+            const out = { status: text(fields.querySelector(".status")), kept: ta.value, enabled: !button(fields, "Save").disabled,
+                          theirs: text(fields.querySelector(".ans")) };
+            await click(button(fields, "Save"));
+            out.sent = calls.filter(c => c.path.endsWith("/edit")).map(c => c.body.version);
+            out.after = text($("#list"));
+            return out;
+        """, NEWER=newer, AFTER=after)
+        self.assertIn("changed on the hub server", got["status"])
+        self.assertIn("Your text is kept", got["status"])
+        self.assertEqual(got["kept"], "id: B-1\nsummary: mine\nscope: tools/x.py\neffort: s")
+        self.assertTrue(got["enabled"])
+        self.assertIn("summary: theirs", got["theirs"])
+        self.assertEqual(got["sent"], ["c1:s1", "c2:s2"])
+        self.assertIn("summary: mine", got["after"])
+
     def test_a_parked_rows_id_opens_its_record(self):
         views = {"repos": [{"name": "alpha"}],
                  "backlog": [dict(BACKLOG[0], items=[{"id": "B-4", "t": "waits", "p": 1, "s": "parked", "parked_at": NOW}])]}

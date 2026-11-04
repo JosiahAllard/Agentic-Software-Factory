@@ -1790,14 +1790,15 @@ ul.hist .sch-line{display:block}
   function showRecord(d){ recView = recPage(recordView(d)); render(); }
   // One section: what it shows, and an Edit that opens its text; post turns the text into the edit's body
   // (null: nothing changed). Every save is pinned to the version the page read.
-  function recSection(d, title, shown, text, post){
+  function recSection(d, title, shown, text, post, again){
     const box = el("div", {class:"pk"}, el("h2", {text: title}), el("div", {}, ...shown));
     if (!post || d.where !== "open") return box;
     const ta = el("textarea", {"aria-label": title}), status = el("span", {class:"status", role:"status"});
     const save = el("button", {class:"primary", type:"button", text:"Save"}), cancel = el("button", {class:"link", type:"button", text:"Cancel"});
-    const pane = el("div", {class:"pmf", hidden:true}, ta, el("div", {class:"act"}, save, cancel, status));
+    const theirs = el("div", {class:"ans", hidden:true});
+    const pane = el("div", {class:"pmf", hidden:true}, ta, theirs, el("div", {class:"act"}, save, cancel, status));
     const open = el("button", {class:"link", type:"button", text:"Edit " + title.toLowerCase()});
-    const show = () => { ta.value = text; pane.hidden = false; open.hidden = true; recSay(status, "status", ""); };
+    const show = () => { ta.value = text; theirs.hidden = true; pane.hidden = false; open.hidden = true; recSay(status, "status", ""); };
     open.addEventListener("click", show); recOpeners[title] = show;
     cancel.addEventListener("click", () => { pane.hidden = true; open.hidden = false; });
     save.addEventListener("click", async () => {
@@ -1806,7 +1807,18 @@ ul.hist .sch-line{display:block}
       if (!body) { recSay(status, "status", "Nothing changed."); return; }
       save.disabled = true; recSay(status, "status", "Saving…");
       try { const out = await write("/records/" + seg(d.repo) + "/" + seg(d.id) + "/edit", Object.assign({version: d.version}, body)); showRecord(out.record); }
-      catch (e) { recSay(status, "status err", "Not saved: " + why(e)); save.disabled = false; }
+      catch (e) {
+        save.disabled = false;
+        if (e.status !== 409 || !again) { recSay(status, "status err", "Not saved: " + why(e)); return; }
+        // The record changed meanwhile: it is read again, the next Save is pinned to the version now held, and what the server
+        // holds is shown under the draft. The draft stays; nothing is put in place of the server's text until Save is pressed again.
+        try {
+          const cur = await hub.call("GET", "/records/" + seg(d.repo) + "/" + seg(d.id));
+          d.version = cur.version;
+          theirs.replaceChildren(el("b", {text: "The hub server now holds:"}), el("pre", {class:"kv", text: again(cur)})); theirs.hidden = false;
+          recSay(status, "status err", "Not saved: this record changed on the hub server while you were editing. Your text is kept; press Save again to put it in place of what the server holds now.");
+        } catch (e2) { recSay(status, "status err", "Not saved: this record changed on the hub server and could not be read again (" + why(e2) + "). Your text is kept; press Save again."); }
+      }
     });
     box.append(open, pane);
     return box;
@@ -1833,11 +1845,11 @@ ul.hist .sch-line{display:block}
     const parts = [el("div", {class:"meta"}, el("span", {class:"id", text: d.id}), el("span", {class:"chip", text: d.repo}), el("span", {class:"chip", text: d.where}))];
     if (d.removed) parts.push(el("p", {class:"gone", role:"status", text: "This record is " + d.removed.how + (d.removed.at ? " (" + d.removed.at + ")" : "") + (d.removed.subject ? ": " + d.removed.subject : "") + "."}));
     if (!d.readable) parts.push(el("p", {class:"gone", role:"status", text: "A header line of this record is not key: value; the store refuses edits until it is fixed."}));
-    parts.push(recSection(d, "Fields", plain.map(f => kv(f[0], f[1])), kvText(plain), fieldPost(d, plain)));
+    parts.push(recSection(d, "Fields", plain.map(f => kv(f[0], f[1])), kvText(plain), fieldPost(d, plain), r => kvText(r.fields.filter(f => !HOLD.includes(f[0])))));
     const held = [...d.blockers.map(b => el("p", {class:"kv"}, el("b", {text: "blocked on: "}), b.value + " ", b.target ? el("button", {class:"link", type:"button", text:"open " + b.target, onclick: () => openRecord(d.repo, b.target)}) : null)),
       ...["owner_ask", "hold_ruling", "q"].filter(k => d.hold[k]).map(k => kv(k, d.hold[k]))];
-    parts.push(recSection(d, "Blocker or hold", held.length ? held : [el("p", {class:"status", text:"Not blocked or held."})], kvText(hold), fieldPost(d, hold)));
-    parts.push(recSection(d, "Body", [el("p", {class:"kv", text: d.body || "(no body)"})], d.body || "", txt => txt === (d.body || "") ? null : {body: txt}));
+    parts.push(recSection(d, "Blocker or hold", held.length ? held : [el("p", {class:"status", text:"Not blocked or held."})], kvText(hold), fieldPost(d, hold), r => kvText(r.fields.filter(f => HOLD.includes(f[0])))));
+    parts.push(recSection(d, "Body", [el("p", {class:"kv", text: d.body || "(no body)"})], d.body || "", txt => txt === (d.body || "") ? null : {body: txt}, r => r.body || ""));
     const b = d.branch;
     parts.push(recSection(d, "Branch", b ? [kv("branch", b.name + " (" + b.source + ")"),
       ...(b.error ? [kv("error", b.error)] : b.exists ? [kv("tip", b.tip + " " + b.subject), kv("date", b.date), kv("worktree", b.worktree || "none"), kv("ahead / behind main", b.ahead + " / " + b.behind)] : [kv("tip", "not found")])]

@@ -77,12 +77,17 @@ def _linux():
     return platform.NAME == 'linux'
 
 
+# the characters PowerShell reads as a single quote: ' and U+2018 to U+201B
+QUOTES = "\'\u2018\u2019\u201a\u201b"
+
+
 def q(text):
-    """A PowerShell single-quoted string (on Linux a bash one: linuxwin.q)."""
+    """A PowerShell single-quoted string, every quote character doubled
+    (on Linux a bash one: linuxwin.q)."""
     if _linux():
         from kitlib.launcher import linuxwin
         return linuxwin.q(text)
-    return "'" + str(text).replace("'", "''") + "'"
+    return "'" + ''.join(c * 2 if c in QUOTES else c for c in str(text)) + "'"
 
 
 def session_command(name, prompt, agent=None, model=None, effort=None, autocompact=None, resume=None,

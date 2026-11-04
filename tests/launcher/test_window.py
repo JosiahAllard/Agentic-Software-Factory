@@ -41,6 +41,26 @@ class ClaudeCommand(unittest.TestCase):
         self.assertIn(" -n 'n' ", got)
 
 
+@unittest.skipIf(window._linux(), 'the PowerShell window script; Linux writes a bash one')
+class CurlyQuotes(unittest.TestCase):
+    """PowerShell reads U+2018 to U+201B as single quotes: q doubles each, the readers undo it."""
+
+    def test_q_doubles_every_single_quote_character(self):
+        for c in "'\u2018\u2019\u201a\u201b":
+            self.assertEqual(window.q('it%ss' % c), "'it%s%ss'" % (c, c))
+        self.assertEqual(window.q('it\u2019s'), "'it\u2019\u2019s'")
+
+    def test_a_script_with_curly_quotes_reads_back_through_unlisted(self):
+        from kitlib.launcher import unlisted
+        name = 'deep-x\u2019y'
+        prompt = "fix the owner\u2019s \u2018bug\u2019 isn't \u201a\u201b"
+        folder = 'C:\a\u2019b'
+        cmd = window.claude_command(name, prompt, 'deep-worker', remote_control=True)
+        got = unlisted.read_window(window.script(name, 'deep-worker', folder, cmd), name)
+        self.assertEqual(got['prompt'], prompt)
+        self.assertEqual(got['folder'], folder)
+
+
 class ScriptOrder(unittest.TestCase):
     def setUp(self):
         self.text = window.script('alpha-coord-a2', 'coordinator', '/repos/alpha', 'claude --x',

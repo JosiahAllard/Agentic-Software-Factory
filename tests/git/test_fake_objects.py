@@ -22,7 +22,8 @@ def _git(cwd, *args):
 @unittest.skipUnless(GIT, 'real git needed to write the pack')
 class RefDeltaSamePackTest(unittest.TestCase):
     def test_ref_delta_with_base_in_same_pack_reads(self):
-        with tempfile.TemporaryDirectory() as d:
+        # a deadlocked reader keeps the pack open: cleanup errors must not hide the assertion
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _git(d, 'init', '-q')
             body = ''.join('line %d of a file long enough to delta well\n' % i for i in range(400))
             for n in range(4):

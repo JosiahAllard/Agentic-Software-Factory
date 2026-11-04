@@ -18,6 +18,8 @@ import time
 import unittest
 from unittest import mock
 
+from tests.platforms import windows_only
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.join(HERE, '..', '..', '..', 'optional', 'comfy')
 sys.path.insert(0, CODE)
@@ -633,7 +635,7 @@ class TruthfulAndBounded(Tmp):
         self.assertIn(RID, out.getvalue())
 
 
-@unittest.skipUnless(os.name == "nt", "a job object is Windows'")
+@windows_only("a job object is Windows'")
 class RealKill(unittest.TestCase):
     """The one real process test: a keeper that dies (killed, crashed) takes its ComfyUI with it.
     A sleeping python stands in for ComfyUI."""

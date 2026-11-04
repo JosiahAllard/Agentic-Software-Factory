@@ -424,7 +424,11 @@ def _start_server(cmd, cwd, log_path):
     CREATE_NO_WINDOW for a parent with no console). Returns (job, proc); the caller keeps the job
     open while the server should live. RuntimeError off Windows or with no kit library; OSError
     when the command cannot start."""
-    if os.name != "nt":
+    try:
+        from kitlib import platform as kplatform    # imports no other kitlib: loads anywhere
+    except ImportError:
+        raise RuntimeError(f"cannot start ComfyUI: no kit library (kitlib.platform) at {KIT_ROOT}")
+    if kplatform.NAME != "windows":
         raise RuntimeError("cannot start ComfyUI: this tool starts it on Windows only")
     try:
         from kitlib.proc.job import Job

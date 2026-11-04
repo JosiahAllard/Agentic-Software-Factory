@@ -9,7 +9,7 @@ from contextlib import redirect_stderr
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), 'tools'))
 import launch                                                       # noqa: E402
-from tests.launcher.fakes import FakeHost, Home                     # noqa: E402
+from tests.launcher.fakes import FakeHost, Home, windows_text                     # noqa: E402
 
 
 class HandoffState(unittest.TestCase):
@@ -50,6 +50,9 @@ class HandoffState(unittest.TestCase):
 
 class TopicArgs(unittest.TestCase):
     """launch.py topic: --worktree, --brief and --slug are required; run passes them through."""
+
+    def setUp(self):
+        windows_text(self)
 
     def test_each_required_argument_missing_exits_2(self):
         full = ['topic', '--worktree', 'w', '--brief', 'b.md', '--slug', 'ab']

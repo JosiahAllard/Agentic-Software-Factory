@@ -192,7 +192,7 @@ class Cli(unittest.TestCase):
 
     def test_a_window_timeout_exits_1(self):
         class Slow(FakeHost):
-            def open_window(self, text):
+            def open_window(self, text, **kw):
                 raise subprocess.TimeoutExpired(['powershell'], 60)
         code, _, err, _ = self.main(['start', '--repo', 'alpha', '--account', '1'], host=Slow(self.h.root))
         self.assertEqual(code, 1)

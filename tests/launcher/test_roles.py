@@ -6,12 +6,15 @@ import unittest
 from kitlib import sessionmark
 from kitlib.launcher import reboot, start, window
 from kitlib.lockmcp import PLUGIN_NAME
-from tests.launcher.fakes import FakeHost, Home, role_of
+from tests.launcher.fakes import FakeHost, Home, role_of, windows_text
 
 P = PLUGIN_NAME + ':'
 
 
 class RoleFor(unittest.TestCase):
+    def setUp(self):
+        windows_text(self)
+
     def test_the_mapping(self):
         self.assertEqual(window.role_for(None), 'plain')
         self.assertEqual(window.role_for('coordinator'), 'coordinator')

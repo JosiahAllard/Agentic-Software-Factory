@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from kitlib.launcher import start, unlisted, window
-from tests.launcher.fakes import EXE, FakeHost, Home, NOW
+from tests.launcher.fakes import EXE, FakeHost, Home, NOW, windows_text
 
 DAY = datetime.timedelta(days=1)
 
@@ -22,6 +22,7 @@ def rows(text, pid, name, parent_name='powershell.exe'):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self, accounts=('1', '2'), repos=('alpha',))
         for n in ('1', '2'):
             self.h.usage(n, five=(10, NOW + DAY / 8), week=(10, NOW + 2 * DAY))

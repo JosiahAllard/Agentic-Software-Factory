@@ -12,8 +12,8 @@ case-blind, `*` crosses `/`). Kinds:
            filter: `FullyQualifiedName~<FileName>`); the verdict from its .trx
   command  the runner's own `command`, a list of argv words (an engine's test runner, say), each
            word's placeholders filled (fill): {selector} the filter, else the file name without its
-           extension; {path} the repo-relative path; {stem}; {tree} the throwaway root; {log_dir};
-           {n} the selector's number. A first word with a slash that is not absolute is under the
+           extension; {path} the repo-relative path; {stem}; {tree} the throwaway root; {head} the head
+           checkout (the caller's worktree); {log_dir}; {n} the selector's number. A first word with a slash that is not absolute is under the
            throwaway root. The verdict from the JUnit XML file its `result` names (filled the same
            way, under the throwaway root unless absolute) written in this run, else from the exit
            code: 0 GREEN, 1 RED only when a log line matches its `assertion`, else INCONCLUSIVE,
@@ -163,13 +163,13 @@ def runs_in_cmd(program):
     return name.endswith(('.bat', '.cmd')) or name in ('cmd', 'cmd.exe')
 
 
-PLACEHOLDERS = ('{selector}', '{path}', '{stem}', '{tree}', '{log_dir}', '{n}')
+PLACEHOLDERS = ('{selector}', '{path}', '{stem}', '{tree}', '{head}', '{log_dir}', '{n}')
 
 
-def fill(word, sel, tw, log_dir, n):
+def fill(word, sel, tw, log_dir, n, head='.'):
     """`word` with each placeholder of a command runner replaced (PLACEHOLDERS); other braces stay."""
     values = {'{selector}': sel.filter or stem(sel.path), '{path}': sel.path,
-              '{stem}': stem(sel.path), '{tree}': tw, '{log_dir}': log_dir, '{n}': str(n)}
+              '{stem}': stem(sel.path), '{tree}': tw, '{head}': head, '{log_dir}': log_dir, '{n}': str(n)}
     return re.sub('|'.join(re.escape(p) for p in PLACEHOLDERS), lambda m: values[m.group(0)], word)
 
 
@@ -178,12 +178,12 @@ def _under(tw, path):
     return path if os.path.isabs(path) else os.path.join(tw, *path.replace('\\', '/').split('/'))
 
 
-def command_argv(sel, tw, log_dir, n):
+def command_argv(sel, tw, log_dir, n, head='.'):
     """The argv of a command runner's selector, or Usage. A first word with a slash that is not
     absolute is under `tw`. A program cmd.exe runs (runs_in_cmd) reads its command line again, so
     a later word that holds one of its characters is refused (refuse_cmd_reparse)."""
     runner = 'of the runner for %r in `.kit.json` "redfirst".runners' % sel.runner.get('glob')
-    words = [fill(w, sel, tw, log_dir, n) for w in sel.runner['command']]
+    words = [fill(w, sel, tw, log_dir, n, head) for w in sel.runner['command']]
     words += list(sel.runner.get('args') or [])
     prog = words[0].strip()
     if not prog:
@@ -198,21 +198,21 @@ def command_argv(sel, tw, log_dir, n):
     return [prog] + words[1:]
 
 
-def result_path(sel, tw, log_dir, n):
+def result_path(sel, tw, log_dir, n, head='.'):
     """The file a command runner's `result` names for this selector, or None when it names none."""
     if not sel.runner.get('result'):
         return None
-    return os.path.normpath(_under(tw, fill(sel.runner['result'], sel, tw, log_dir, n)))
+    return os.path.normpath(_under(tw, fill(sel.runner['result'], sel, tw, log_dir, n, head)))
 
 
 def trx_path(sel, log_dir, n):
     return os.path.join(log_dir, '%d-%s.trx' % (n, stem(sel.path)))
 
 
-def command(sel, tw, log_dir, n, python=sys.executable):
+def command(sel, tw, log_dir, n, python=sys.executable, head='.'):
     """(argv, cwd, env extra) for one selector run in the throwaway tree `tw`. Pure."""
     if sel.kind == 'command':
-        return command_argv(sel, tw, log_dir, n), tw, {}
+        return command_argv(sel, tw, log_dir, n, head), tw, {}
     if sel.kind == 'gradle':
         gradlew = os.path.join(tw, 'gradlew.bat' if os.name == 'nt' else 'gradlew')
         return [gradlew] + gradle_args(sel), tw, {}
@@ -563,7 +563,7 @@ def trx_counts(path, since=0.0):
     return None
 
 
-def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0):
+def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0, head='.'):
     if sel.kind == 'gradle':
         # Every task's folder (a module's test task may not be named `test`), but only the
         # selector's own class: `--tests` filters the named task alone, so a sibling test task
@@ -573,7 +573,7 @@ def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0):
         return gradle_verdict(rc, log_text, junit_counts(results, since, stem(sel.path)), copied,
                               sel.runner.get('assertion'))
     if sel.kind == 'command':
-        result = result_path(sel, tw, log_dir, n)
+        result = result_path(sel, tw, log_dir, n, head)
         return command_verdict(rc, log_text, sel.runner,
                                junit_file_counts(result, since) if result else None)
     if sel.kind == 'dotnet':

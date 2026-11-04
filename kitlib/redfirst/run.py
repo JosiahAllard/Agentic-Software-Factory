@@ -408,15 +408,15 @@ def locked_run(slot, ints):
     return run
 
 
-def run_one(sel, n, tw, log_dir, files, run):
+def run_one(sel, n, tw, log_dir, files, run, head='.'):
     """(verdict, reason, log) for one selector. Its log and .trx from an earlier run in the same
     log dir are deleted first: only this run's results are read."""
-    argv, cwd, env = V.command(sel, tw, log_dir, n)
+    argv, cwd, env = V.command(sel, tw, log_dir, n, head=head)
     log = os.path.join(log_dir, '%d-%s-%s.log' % (n, sel.kind, V.stem(sel.path)))
     # A command runner's result file goes wherever it is: an earlier selector of this run may have
     # written it (no {n} in its name), and a file the base tracks is refused in prepare.
     for stale in (log, V.trx_path(sel, log_dir, n) if sel.kind == 'dotnet' else None,
-                  V.result_path(sel, tw, log_dir, n) if sel.kind == 'command' else None):
+                  V.result_path(sel, tw, log_dir, n, head) if sel.kind == 'command' else None):
         try:
             if stale and os.path.lexists(stale):
                 os.remove(stale)
@@ -432,7 +432,7 @@ def run_one(sel, n, tw, log_dir, files, run):
             text = fh.read()
     except OSError as e:
         return V.ERROR, 'the run left no log (exit %d): %s' % (rc, e), log
-    v, reason = V.judge(sel, rc, text, tw, log_dir, n, files, started)
+    v, reason = V.judge(sel, rc, text, tw, log_dir, n, files, started, head)
     return v, reason, log
 
 
@@ -514,6 +514,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
             raise V.Usage('refused: %s is a %s at base %s, not a file' % (f, at_base, base[:10]))
         (had if at_base else new).append(f)
     refuse_tracked_results(top, base, sels, files)
+    refuse_head_placeholder(top, head, sels)
     if head == rev(top, 'HEAD'):
         rc, out, err = git(top, 'status', '--porcelain', '--', *files)
         if rc != 0:
@@ -539,13 +540,47 @@ _TREE = 'TREE'                                          # stands for the throwaw
 _LOGS = os.path.join(os.path.abspath(os.sep), 'redfirst-logs')   # and for the log folder
 
 
+def head_rels(sel):
+    """The repo-relative paths the `{head}` words of a command runner name ('.' for a bare
+    `{head}`), each word's text after `{head}`."""
+    rels = []
+    for w in list(sel.runner.get('command') or []) + list(sel.runner.get('args') or []):
+        if '{head}' in w:
+            rels.append(w.split('{head}', 1)[1].replace('\\', '/').strip('/') or '.')
+    return rels
+
+
+def refuse_head_placeholder(top, head, sels):
+    """V.Usage when a command runner uses `{head}` (the worktree's checkout, not a commit) and
+    the worktree is not at `--head`, or the path `{head}` points to has uncommitted changes."""
+    for sel in sels:
+        rels = head_rels(sel) if sel.kind == 'command' else []
+        if not rels:
+            continue
+        who = 'the runner for %r in %s uses {head}' % (sel.runner.get('glob'), KEY)
+        if head != rev(top, 'HEAD'):
+            raise V.Usage('refused: %s, the checkout %s, which is not at --head %s; check out '
+                          'that commit or drop --head; nothing was run' % (who, top, head[:10]))
+        rc, out, err = git(top, 'status', '--porcelain', '--', *rels)
+        if rc != 0:
+            raise V.Usage('refused: git status failed in %s: %s' % (top, err))
+        if out:
+            raise V.Usage('refused: %s and its path has uncommitted changes (commit them first; '
+                          'the evidence must be about a commit):\n%s' % (who, out))
+
+
 def refuse_tracked_results(top, base, sels, files):
     """V.Usage when a command runner's `result` names a path in the throwaway tree that the base
     holds, or a file the run checks out: the run deletes the result before each command, and a
     file that was there before the run is no result of it."""
     inside = {}
     for n, sel in enumerate(sels, 1):
-        p = V.result_path(sel, _TREE, _LOGS, n) if sel.kind == 'command' else None
+        p = V.result_path(sel, _TREE, _LOGS, n, top) if sel.kind == 'command' else None
+        if p and os.path.normcase(p).startswith(os.path.normcase(top) + os.sep):
+            raise V.Usage('refused: --tests %r: the result of the runner for %r in %s resolves '
+                          'under the head checkout %s, which the run only reads; nothing was run. '
+                          'Instead: name a result under {log_dir}'
+                          % (sel.text, sel.runner.get('glob'), KEY, top))
         if p and p.startswith(_TREE + os.sep):
             inside[p[len(_TREE) + 1:].replace(os.sep, '/')] = sel
     if not inside:
@@ -829,7 +864,7 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
                 if ints.seen:
                     raise KeyboardInterrupt
                 for n, sel in enumerate(plan.sels, 1):
-                    v, reason, log = run_one(sel, n, tw, plan.log_dir, plan.files, run)
+                    v, reason, log = run_one(sel, n, tw, plan.log_dir, plan.files, run, plan.top)
                     verdicts.append(v)
                     say('%-6s %s  %s  %s' % (v, sel.text, reason, log))
             finally:

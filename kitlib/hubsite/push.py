@@ -384,6 +384,17 @@ def trigger(kind, doc, old, now=None):
     return None
 
 
+def machine_pm_folder():
+    """The folder name of the PM's own repository (the one holding the machine config's
+    pm_start sessions_file, as kitlib.pmstart.known_repos names it), '' when unknown."""
+    from kitlib import pmstart
+    cfg = pmstart.load_config() or {}
+    path = cfg.get('sessions_file')
+    if not path:
+        return ''
+    return pmstart._toplevel(os.path.dirname(os.path.abspath(path))) or ''
+
+
 def schedule(attempt):
     """Seconds after try number `attempt` (1, 2, ...) until the next."""
     return SCHEDULE_S[attempt - 1] if 0 < attempt <= len(SCHEDULE_S) else HOURLY_S
@@ -466,8 +477,10 @@ def guidance(kind, doc_id, event, recipient, entry=None):
 
 
 class PushWorker(object):
-    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None):
+    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None,
+                 pm_folder=None):
         self.store, self.api, self.push, self.folder = store, api, push, folder
+        self.pm_folder = pm_folder or machine_pm_folder     # () -> the PM repository's folder name
         self.clock = clock or time.time
         self.watcher = watcher          # None: watcher_heartbeat, looked up at each read
         self.jobs = jobs                # None: the api's jobs_seen (GET health jobs), at each read
@@ -1018,12 +1031,25 @@ class PushWorker(object):
             return False
 
     def _repo_key(self, repo):
-        """The coordinator key of an approval's repository (Api.repo_key), '' when none."""
+        """The coordinator key of an approval's repository (Api.repo_key), '' when none. The
+        PM repository's folder name stands for the kit (its records are bound under it), so
+        it gives the kit coordinator's key."""
+        if isinstance(repo, str) and repo and repo.lower() == self._pm_folder().lower():
+            return self._kit_key()
         fn = getattr(self.api, 'repo_key', None)
         try:
             got = fn(repo) if fn is not None else ''
         except Exception as e:          # noqa: BLE001 - a host fault: the PM alone hears it
             self.log('push: repo_key failed: %s' % type(e).__name__)
+            got = ''
+        return got if isinstance(got, str) else ''
+
+    def _pm_folder(self):
+        """The PM repository's folder name, '' when unknown (a failing reader is logged)."""
+        try:
+            got = self.pm_folder()
+        except Exception as e:          # noqa: BLE001 - a host fault: no folder, no mapping
+            self.log('push: pm_folder failed: %s' % type(e).__name__)
             got = ''
         return got if isinstance(got, str) else ''
 

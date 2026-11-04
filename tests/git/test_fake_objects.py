@@ -7,6 +7,7 @@ import threading
 import unittest
 
 from kitlib.git.fake import objects
+from tests import gitfixture
 from tests.realgit import real_git
 
 GIT = shutil.which('git')
@@ -15,15 +16,24 @@ GIT = shutil.which('git')
 def _git(cwd, *args):
     return subprocess.run(
         ('git', '-c', 'user.name=t', '-c', 'user.email=t@example.invalid') + args,
-        cwd=cwd, check=True, capture_output=True, text=True).stdout
+        cwd=cwd, env=gitfixture.fixture_env(), check=True, capture_output=True, text=True).stdout
 
 
 @real_git('real git writes the pack with REF_DELTA objects')
 @unittest.skipUnless(GIT, 'real git needed to write the pack')
 class RefDeltaSamePackTest(unittest.TestCase):
+    @staticmethod
+    def _close_packs(d):
+        # the pack cache keeps a .pack open, a reader stuck on the lock (as at the base) too
+        for pk in list(objects._PACK_CACHE.values()):
+            if os.path.normcase(pk.pack_path).startswith(os.path.normcase(d)):
+                pk.close()
+
     def test_ref_delta_with_base_in_same_pack_reads(self):
-        # a deadlocked reader keeps the pack open: cleanup errors must not hide the assertion
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        d = tempfile.mkdtemp(dir=gitfixture.fixture_parent())
+        self.addCleanup(gitfixture.rmtree, d)
+        self.addCleanup(self._close_packs, d)       # runs first
+        if True:
             _git(d, 'init', '-q')
             body = ''.join('line %d of a file long enough to delta well\n' % i for i in range(400))
             for n in range(4):
@@ -39,6 +49,10 @@ class RefDeltaSamePackTest(unittest.TestCase):
             verify = _git(d, 'verify-pack', '-v', os.path.join(packdir, idx[0]))
             deltas = [ln for ln in verify.splitlines() if len(ln.split()) == 7]
             self.assertTrue(deltas, 'the pack holds no delta')
+            with open(os.path.join(packdir, idx[0][:-4] + '.pack'), 'rb') as f:
+                for ln in deltas:               # column 5 is the entry's offset in the pack
+                    f.seek(int(ln.split()[4]))
+                    self.assertEqual((f.read(1)[0] >> 4) & 7, 7, 'not a REF_DELTA: ' + ln)
             oids = [ln.split()[0] for ln in deltas]
             objdir = os.path.join(d, '.git', 'objects')
             result = {}

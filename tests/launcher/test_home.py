@@ -149,11 +149,7 @@ class Ensure(unittest.TestCase):
 
     def test_a_modified_first_file_keeps_its_whole_name(self):
         self.present()
-        g = self.git(entry='HEAD %s
-detached
-locked' % OLD, status=' M README.md
-?? stray.txt
-')
+        g = self.git(entry='HEAD %s\ndetached\nlocked' % OLD, status=' M README.md\n?? stray.txt\n')
         out = home.ensure(self.main, self.path, git=g)
         self.assertIn('README.md, stray.txt', out[0])
 

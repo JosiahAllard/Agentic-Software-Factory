@@ -63,7 +63,8 @@ class Findings(unittest.TestCase):
         self.assertEqual([(f.check, f.key) for f in got],
                          [('keyword-hold', 'AAA'), ('keyword-hold', 'BBB')])
         self.assertEqual(got[0].fix, CMD + ' block AAA --on owner --reason "<what it waits on and'
-                         ' until when, citing the ruling or question>"')
+                         ' until when, citing the Action Hub Q-nnn, T-nnn or A-nnn that ends it'
+                         ' (post it with hub.py questions add --record <REPO>:AAA)>"')
         self.assertIn('--on live-client', got[1].fix)
 
     def test_a_held_record_is_not_a_finding(self):

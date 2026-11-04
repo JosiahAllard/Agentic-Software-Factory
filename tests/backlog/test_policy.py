@@ -331,18 +331,19 @@ class CliRole(unittest.TestCase):
         self.assertIn('FOO', self.ok('plain', 'show', 'FOO'))
         self.assertIn('scope:', self.ok(None, 'show', 'FOO'))
 
-    def test_a_coordinator_may_not_set_the_end_of_an_owner_hold(self):
+    def test_a_coordinator_may_not_set_the_end_of_an_owner_hold_but_on_an_owner_event(self):
         # KIT-UNBLOCK-CONDITIONS review: a lead may block on the owner, never schedule that hold
-        # to end (the hub job would clear it under Session: hub-condition)
+        # to end (the hub job would clear it under Session: hub-condition), except on the owner's
+        # own to-do, question or approval (the owner's Go, Q-1821; test_blocks_auto_clear)
         self.seed()
         self.ok('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask', 'which one, Q-101?')
         before = self.ok(None, 'show', 'FOO')
         # the record already holds the owner's ask, so no new one is needed: the role decides
         out = self.refused('coordinator', 'block', 'FOO', '--on', 'owner', '--reason',
-                           'until T-101 is done', '--until', 'todo:T-101 done')
+                           'until T-101 is done', '--until', 'when T-101 is done')
         self.assertIn('`unblock-owner`', out)
         out = self.refused('coordinator', 'block', 'FOO', '--on', 'owner', '--owner-ask',
-                           'which one now, Q-102?', '--until', 'question:Q-102 answered')
+                           'which one now, Q-102?', '--until', 'question:Q-102 filed')
         self.assertIn('`unblock-owner`', out)
         self.assertEqual(self.ok(None, 'show', 'FOO'), before)
         self.ok('pm', 'block', 'FOO', '--on', 'owner', '--reason', 'until T-101 is done',

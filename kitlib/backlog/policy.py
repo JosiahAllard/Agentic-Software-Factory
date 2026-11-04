@@ -32,7 +32,8 @@ the record as the store holds it locally.
 
 `given` is a dict: 'fields' (the set fields given or unset, `body` for --body-file), 'priority'
 (each priority value given; '-' for --unset priority), 'priority_by' and 'blocked_on' (the values
-given), 'owner_ask', 'apply' (each true when given), 'on' (the --on members), and 'unknown' (true
+given), 'owner_ask', 'apply' (each true when given), 'until' (the --until text, True when given
+but not read), 'on' (the --on members), and 'unknown' (true
 when a word could not be read: every row the verb can take counts). A verb of None (not read)
 counts as every row but `read`.
 
@@ -43,6 +44,7 @@ caller says the role may take the row (`may`), and the Change names the row for 
 import collections
 import re
 
+from . import conditions as condmod
 from . import record as rmod
 from . import roles
 from .errors import Refusal
@@ -127,13 +129,27 @@ def _narrow(names):
     return [n for n in roles.ACTIONS if n in names and n not in over]
 
 
+def lead_until(text):
+    """True when `text` is an owner event a lead may set as the end of an `owner` hold (the
+    owner's go-ahead): exactly one of the to-do, question and approval forms
+    (`todo:T-n done`, `question:Q-n answered`, `approval:A-n decided`; conditions.OWNER_KINDS).
+    Anything else (another form, a malformed one, free text, a value not read) is False."""
+    if not isinstance(text, str):
+        return False
+    cond = condmod.parse(' '.join(text.split()))
+    return cond is not None and cond.kind in condmod.OWNER_KINDS
+
+
 def _until_rows(verb, given):
     """`block --on owner --until C` sets the owner's hold to end on its own (the Action Hub's
     unblock-conditions job clears it when C is met), so it is also the `unblock-owner` row, the
-    owner's and the PM's: a lead may block on the owner, never schedule the owner's hold to end.
-    An `--on` not read counts as `owner`."""
+    owner's and the PM's, unless C is an owner event a lead may set (lead_until: the owner's own
+    answer, to-do or approval ends it). `given['until']` is the condition text, or True when it
+    was given but not read; an `--on` not read counts as `owner`."""
     on = list(given.get('on') or ())
-    if verb == 'block' and given.get('until') and ('owner' in on or UNREAD in on or not on):
+    until = given.get('until')
+    if verb == 'block' and until and ('owner' in on or UNREAD in on or not on) and \
+            not lead_until(until):
         return {'unblock-owner'}
     return set()
 
@@ -296,6 +312,14 @@ def given_of_set(changes, unset=(), body=None):
             'priority_by': values.get('priority_by', []), 'blocked_on': values.get('blocked_on', [])}
 
 
+def _until_given(value):
+    """sort's `given['until']` for an `--until` value: False when none was given, its text when
+    it reads as a non-empty string, else True (given, but nothing lead_until could pass)."""
+    if value is None:
+        return False
+    return value if isinstance(value, str) and value.strip() else True
+
+
 def given_of(args):
     """sort's `given` from tools/backlog.py's parsed arguments (an argparse Namespace)."""
     from .opener import FIELD_FLAGS
@@ -306,7 +330,7 @@ def given_of(args):
     on = getattr(args, 'on', None)
     given.update({
         'owner_ask': getattr(args, 'owner_ask', None) is not None,
-        'until': getattr(args, 'until', None) is not None,
+        'until': _until_given(getattr(args, 'until', None)),
         'on': on if isinstance(on, list) else [on] if on else [],
         'apply': (getattr(args, 'apply', None) is not None if args.verb == 'catch-up'
                   else bool(getattr(args, 'apply', None)))})     # `catch-up --apply` alone counts
@@ -514,7 +538,9 @@ def read_argv(words):
 
 def _given_add(given, verb, name, value):
     key = name[2:].replace('-', '_')
-    if key in ('owner_ask', 'apply', 'until'):
+    if key == 'until':
+        given[key] = _until_given(value)
+    elif key in ('owner_ask', 'apply'):
         given[key] = True
     elif key == 'on':
         given['on'].append(value)

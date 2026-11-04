@@ -82,6 +82,15 @@ class Argv(unittest.TestCase):
         argv = V.command(sel('tools/engine_tests/A.cs', runner), 'TW', 'LOGS', 1)[0]
         self.assertEqual(argv, [os.path.join('TW', 'tools', 'run_engine.exe'), 'A', '-v'])
 
+    def test_head_is_the_head_checkout_beside_tree(self):
+        runner = dict(ENGINE_RUNNER, command=['{head}/tools/x', '-Tree', '{tree}'],
+                      result='{head}/r-{n}.xml')
+        s = sel('tools/engine_tests/A.cs', runner)
+        argv = V.command(s, 'TW', 'LOGS', 1, head='/h/wt')[0]
+        self.assertEqual(argv, ['/h/wt/tools/x', '-Tree', 'TW'])    # absolute: not put under TW
+        self.assertEqual(V.result_path(s, 'TW', 'LOGS', 1, '/h/wt'),
+                         os.path.normpath('/h/wt/r-1.xml'))
+
     def test_a_runner_with_no_command_is_a_usage_error(self):
         runner = {'glob': 'tools/engine_tests/*.cs', 'kind': 'command'}
         with self.assertRaisesRegex(V.Usage, 'has no command'):
@@ -179,6 +188,7 @@ class EngineRun(LockCase):
     """tools/redfirst.py end to end with a fake engine as the runner's command."""
     RUNNER_EXTRA = {}
     RESULT_WORD = None              # a fifth engine argument: where it writes its result
+    ENGINE_AT_HEAD = False          # the engine is a repo file committed with the test, not at base
 
     def setUp(self):
         scratch = tempfile.mkdtemp()
@@ -187,8 +197,9 @@ class EngineRun(LockCase):
         with open(self.engine, 'w', encoding='utf-8') as f:
             f.write(ENGINE)
         self.args_file = os.path.join(scratch, 'args.json')
+        engine = '{head}/tools/engine.py' if self.ENGINE_AT_HEAD else self.engine
         runner = dict({'glob': 'tools/engine_tests/*.cs', 'kind': 'command',
-                       'command': [sys.executable, self.engine, self.args_file, '{tree}', '{path}',
+                       'command': [sys.executable, engine, self.args_file, '{tree}', '{path}',
                                    '{selector}'] + ([self.RESULT_WORD] if self.RESULT_WORD else [])},
                       **self.RUNNER_EXTRA)
         self.KIT_JSON = {'repo': {'name': 'fixture'}, 'redfirst': {'runners': [runner]}}
@@ -242,6 +253,23 @@ class EngineExitCode(EngineRun):
         tree, path, selector = self.engine_args()[:3]
         self.assertEqual((path, selector), ('tools/engine_tests/CalcTest.cs', 'Mul "Works" & more'))
         self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)
+
+
+class EngineAtHead(EngineRun):
+    """The runner script is added with the test, so the base lacks it: {head} runs the head's copy
+    against the base tree."""
+    RUNNER_EXTRA = {'no_test': r'^engine: no test named', 'assertion': r'^engine: \S+ FAILED'}
+    ENGINE_AT_HEAD = True
+
+    def test_a_runner_only_at_head_proves_the_base_red_by_assertion(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
+        self.assertEqual(rc, V.EXIT_RED, out)
+        self.assertRegex(out, r'(?m)^RED    tools/engine_tests/CalcTest.cs::MulWorks  the command '
+                              r'exited 1 and a log line matches the runner.s assertion')
+        self.assertIn('engine: MulWorks FAILED', self.log('1-command-CalcTest.log'))
+        tree = self.engine_args()[0]
+        self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)   # the base tree ran it
 
 
 class EngineExitCodeNoPattern(EngineRun):

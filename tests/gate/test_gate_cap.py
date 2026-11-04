@@ -329,15 +329,16 @@ class CountedTogether(CapCase):
         slot = self.book()
         self.assertTrue(lockrun.request_stop(self.store, slot.id, 'test'))
         self.assertFalse(gatecap.gave_way(self.store, self.name, slot, lambda t: None, cap=1,
-                                          who=AGENT, sleep=never))
+                                          who=AGENT, sleep=lambda s: None))
         self.assertFalse(slot.released)
         self.assertTrue(slot.stop_asked())
 
     def stopped_gate(self, stop_on_give_back):
         """A capped branch gate at the cap (its wait_turn passed, as when two count together),
-        whose run is asked to stop once booked, or as it is given back. (outcome, its slots)."""
-        self.run_rec()
-        slots, booked = [], lockrun.book
+        whose run is asked to stop once booked, or as it is given back. (outcome, its slots,
+        its pauses). A pause ends the other run, so a gate that books again runs."""
+        other = self.run_rec()
+        slots, naps, booked = [], [], lockrun.book
 
         def book(*a, **k):
             slot = booked(*a, **k)
@@ -349,24 +350,26 @@ class CountedTogether(CapCase):
         def say(text):
             if stop_on_give_back and 'gives back run' in text:
                 lockrun.request_stop(self.store, slots[-1].id, 'test')
-        with self.capped(cap=1), \
+
+        def sleep(s):
+            naps.append(s)
+            self.drop(other)
+        with self.capped(cap=1, sleep=sleep), \
                 mock.patch.object(gatecap, 'wait_turn', lambda *a, **k: None), \
                 mock.patch.object(lockrun, 'book', book):
             out = self.branch_gate(say=say)
-        return out, slots
+        return out, slots, naps
 
     def test_a_stop_before_the_give_back_ends_the_gate_stopped(self):
         """Red before: the run was given back, its stop dropped, and the gate booked again."""
-        out, slots = self.stopped_gate(stop_on_give_back=False)
-        self.assertEqual(out.code, G.STOPPED, out.lines)
-        self.assertEqual(len(slots), 1)
+        out, slots, naps = self.stopped_gate(stop_on_give_back=False)
+        self.assertEqual((out.code, len(slots), naps), (G.STOPPED, 1, []), out.lines)
         self.assertEqual(slots[0].ended.get('how'), 'cancelled')
 
     def test_a_stop_while_it_is_given_back_ends_the_gate_stopped(self):
         """The stop request found as the run settles is kept as `stopped_by`: no booking again."""
-        out, slots = self.stopped_gate(stop_on_give_back=True)
-        self.assertEqual(out.code, G.STOPPED, out.lines)
-        self.assertEqual(len(slots), 1)
+        out, slots, naps = self.stopped_gate(stop_on_give_back=True)
+        self.assertEqual((out.code, len(slots), naps), (G.STOPPED, 1, []), out.lines)
         self.assertEqual(slots[0].ended.get('how'), budget.NOT_STARTED)
         self.assertTrue(slots[0].ended.get('stopped_by'))
 

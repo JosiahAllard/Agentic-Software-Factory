@@ -163,6 +163,31 @@ class TheLine(SubmitCase):
                          ('refused', G.REFUSED, out.lines[0]))
         self.assertIsNotNone(rec['finished_at'])
 
+    @windows_only('the WMI start is Windows only')
+    def test_a_wmi_code_8_is_asked_again_and_a_last_one_is_named(self):
+        """Code 8 (unknown failure) starts nothing: the start is asked again, and a refusal
+        that still comes names the code's meaning, not a bare number."""
+        _, tip = self.branch('feature', {'a.py': 'a\n'})
+        answers = []
+
+        def wmi(*outs):
+            def run(args, **kw):
+                answers.append(outs[min(len(answers), len(outs) - 1)])
+                return subprocess.CompletedProcess(args, 0, answers[-1], '')
+            return lambda argv, cwd, env: submit.detach(argv, cwd, env, run=run)
+        with mock.patch.object(lockdetach, 'RETRY_DELAY_S', 0):
+            out, _ = self.submit([BRANCH], [tip], detach=wmi('8 \n'))
+            self.assertEqual(out.code, G.REFUSED, out.lines)
+            self.assertEqual(out.lines, [
+                'REFUSED: the landing could not be started: the detached start got WMI code 8 '
+                '(unknown failure) after 3 tries (exit 0); nothing was changed'])
+            self.assertEqual(len(answers), 3)
+            self.assertEqual(self.record(BRANCH)['verdict'], 'refused')
+            del answers[:]
+            out, _ = self.submit([BRANCH], [tip], detach=wmi('8 \n', '0 %d\n' % os.getpid()))
+            self.assertEqual(out.code, G.OK, out.lines)
+            self.assertEqual(len(answers), 2)
+
     def test_the_command_is_the_carrier_beside_the_tool(self):
         """The machine lock's detach shape (kitlib.lock.detach.command), with no --detached-id:
         the pythonw and python.exe beside the interpreter, the carrier beside the tool."""
@@ -206,10 +231,13 @@ class TheLine(SubmitCase):
         # the WMI start of the rule's home, which sets no ShowWindow: nothing rests on it
         self.assertEqual(seen, [lockdetach.CREATE_PS])
         self.assertNotIn('ShowWindow', seen[0])
-        for stdout, rc in (('8 0\n', 0), ('', 1), ('0 notapid', 0)):
-            pid, why = submit.detach(argv, 'C:\\cwd', {}, run=ran(stdout, rc))
-            self.assertIsNone(pid)
-            self.assertIn('the detached start got', why)
+        with mock.patch.object(lockdetach, 'RETRY_DELAY_S', 0):
+            for stdout, rc in (('8 0\n', 0), ('', 1), ('0 notapid', 0)):
+                pid, why = submit.detach(argv, 'C:\\cwd', {}, run=ran(stdout, rc))
+                self.assertIsNone(pid)
+                self.assertIn('the detached start got', why)
+            self.assertIn('the detached start got WMI code 8 (unknown failure) after 3 tries',
+                          submit.detach(argv, 'C:\\cwd', {}, run=ran('8 \n'))[1])
 
         def broken(args, **kw):
             raise OSError('no powershell')

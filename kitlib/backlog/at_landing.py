@@ -16,7 +16,11 @@ branch checked out) takes part too: the PM's records of this repository live the
                     branch other than main and outside the batch is a WARNING: tell its builder).
                     A branch with a `Part-of: <ID>` line (part_trailers) lands one part of a
                     record: its pulls no Closes line names are released ("releases <ID>: part
-                    landed <merge sha> ..."), not closed. What cannot be closed or released is a
+                    landed <merge sha> ..."), not closed. A live-proof record (a `requires:
+                    live-run` line, is_live_proof) closes only when a `Live-pass: <ID> <evidence>`
+                    line of the branch cites a passing live run (live_pass_trailers): else it is
+                    released when the branch holds it, left pulled when another branch does, and
+                    a NOTE says how to close it. What cannot be closed or released is a
                     WARNING line naming the command, and the landing stands; trailer ids no store
                     holds, and Part-of ids the branch holds nowhere, are NOTE lines. The implicit
                     default store (refs/backlog/main while .kit.json names no "backlog".store;
@@ -243,6 +247,52 @@ def part_trailers(root, tip, base):
     return (None, why) if values is None else ((bool(values), closes_ids(values)), None)
 
 
+# A live-proof record carries a `requires: live-run` line (LIVE_PROOF; offer.unmet_requires reads
+# it as a note, so it gates no pull): a landing closes it only when a `Live-pass:` line (LIVE_KEY)
+# of the branch cites a passing live run of it (close_landed).
+LIVE_PROOF = 'live-run'
+LIVE_KEY = 'Live-pass:'
+
+
+def is_live_proof(rec):
+    """Whether record `rec` is a live proof: one of its `requires:` lines is LIVE_PROOF. Pure."""
+    return LIVE_PROOF in rec.all('requires')
+
+
+def live_passes(values):
+    """The ids `Live-pass:` values cite a passing live run for: a value whose first word is a
+    plain id (store.PLAIN_ID) and that has at least one more word, the evidence (a run, a hub id,
+    a log). `FOO` alone cites nothing. Pure."""
+    out = []
+    for value in values:
+        words = value.split()
+        if len(words) > 1 and smod.PLAIN_ID.match(words[0]) and words[0] not in out:
+            out.append(words[0])
+    return out
+
+
+def live_pass_trailers(root, tip, base):
+    """`(ids, None)`: the ids the `Live-pass:` lines of the commits `tip` has and `base` does not
+    cite (live_passes); or `(None, why)`."""
+    values, why = _branch_values(root, tip, base, LIVE_KEY)
+    return (None, why) if values is None else (live_passes(values), None)
+
+
+def live_reason(merge, branch):
+    """The reason a landing releases a live-proof record its branch holds with (close_landed)."""
+    return ('landed %s (%s); not closed: a live-proof record closes only when a Live-pass line '
+            'cites a passing live run' % (merge, branch))
+
+
+def _live_note(branch, rid, how, command):
+    """The NOTE that `rid`, a live-proof record, was not closed and `how` it was left."""
+    return ('NOTE: %s landed, and %s is a live-proof record (requires: live-run) with no '
+            '`Live-pass: %s <run>` line in its commits to cite a passing live run, so it was not '
+            'closed: %s; once a live run passes, close it with: %s'
+            % (branch, rid, rid, how,
+               command('close', rid, '--reason', '"live run <run> passed"')))
+
+
 def _close_plan(ctx, rid, branch, reason, named=False):
     """plan_close, run only while `rid` is still pulled by `branch` in the fresh snapshot; or, when
     a `Closes:` trailer of the branch names it (`named`), while it is still pulled by anyone."""
@@ -334,23 +384,27 @@ class _Seen(object):
     some store; `read`, how many stores were read; `unread`, whether one could not be. And what
     the landing did, so its NOTE lines claim only that: `closed` and `released`, the ids whose
     close or release was written (committed or not: a WARNING says which); `unreleased`, the ids
-    it set out to release and did not. `default`: id -> _Stranded, the records the implicit
-    default store holds that the landing would close or release (it writes none there); `live`,
-    the snapshots of the other stores read, whose records are not stranded."""
+    it set out to release and did not; `held_back`, the live-proof ids it released, not closed,
+    for want of a Live-pass line (in neither list). `default`: id -> _Stranded, the records the
+    implicit default store holds that the landing would close or release (it writes none there);
+    `live`, the snapshots of the other stores read, whose records are not stranded."""
 
     def __init__(self):
         self.held, self.part_held, self.read, self.unread = set(), set(), 0, False
         self.closed, self.released, self.unreleased = set(), [], []
+        self.held_back = set()
         self.default, self.live = {}, []
 
     def done(self, rid, act):
-        if act.release:
+        if act.live:
+            self.held_back.add(rid)
+        elif act.release:
             self.released.append(rid)
         else:
             self.closed.add(rid)
 
     def not_done(self, rid, act):
-        if act.release:
+        if act.release and not act.live:
             self.unreleased.append(rid)
 
 
@@ -381,8 +435,12 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     pulls close. NOTE lines name a Part-of id the branch holds pulled in no store read (a typo,
     or another branch's record: left as it is) with what was released, and an id both a Closes and
     a Part-of line name (closed, never released); each says only what this landing did. When the lines cannot be read, the branch's pulls close (the WARNING says so).
+    A live-proof record (is_live_proof) that would close is closed only when a `Live-pass:` line
+    of those messages cites a passing live run of it (live_pass_trailers); else one NOTE says why
+    and how to close it, and the record is released when the branch holds it, left pulled when
+    another branch does. Lines that cannot be read cite nothing.
     [] when neither store takes part and no trailer names a record, or nothing is pulled."""
-    lines, named, seen, part = [], [], _Seen(), _Part()
+    lines, named, seen, part, passed = [], [], _Seen(), _Part(), []
     quiet = tuple(cfg.guarded_mains()) + tuple(batch)    # holders nobody needs to tell
     if tip and base:
         named, why = closes_trailers(root, tip, base)
@@ -392,6 +450,12 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
             found, why = part_trailers(root, tip, base)
             if found is not None:
                 part = _Part(*found)
+                passed, live_why = live_pass_trailers(root, tip, base)
+                if passed is None:
+                    passed = []
+                    lines.append('WARNING: %s landed, and the Live-pass lines of its commits '
+                                 'could not be read (%s), so no live-proof record was closed'
+                                 % (branch, _one_line(live_why)))
         if why:
             lines.append('WARNING: %s landed, and the Closes trailers of its commits could not be '
                          'read (%s), so only the records it holds pulled are closed (its Part-of '
@@ -403,7 +467,7 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     if backend is not None:
         lines.extend(_close_in(backend, root, cfg, branch, merge, session,
                                lambda *args: close_command(root, *args), named, seen, quiet,
-                               part))
+                               part, passed))
     pm_root, pm_cfg, pm_backend, why = pm_data_store(
         root, backend.describe() if backend is not None else None)
     if why:
@@ -416,7 +480,7 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     elif pm_backend is not None:
         lines.extend(_close_in(pm_backend, pm_root, pm_cfg, branch, merge, session,
                                lambda *args: backlog_command(pm_root, *args), named, seen,
-                               quiet, part))
+                               quiet, part, passed))
     if not seen.unread:
         for rid in sorted(seen.default):
             if not any(snap.get(rid) is not None for snap in seen.live):
@@ -431,6 +495,8 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
         lines.append('NOTE: %s landed, and %s is named by both a Closes line and a Part-of line '
                      'of its commits; the Closes line wins, so %s'
                      % (branch, rid, 'it was closed, not released' if rid in seen.closed else
+                        'it was released, not closed, as a live-proof record (see the NOTE '
+                        'above)' if rid in seen.held_back else
                         'it was not released, and it was not closed either (see the lines '
                         'above)'))
     stray = [rid for rid in part.ids
@@ -454,14 +520,15 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
 
 class _Act(object):
     """What the landing does to one record: close it (`landed <merge>`), or release it, for a
-    landing that is one part of it (release_reason). `verb`, `past` and `noun` word the lines;
+    landing that is one part of it (release_reason), or for a live-proof record no Live-pass line
+    cites a passing live run for (`live`: live_reason). `verb`, `past` and `noun` word the lines;
     `args` is the backlog.py command that does it by hand."""
 
-    def __init__(self, rid, branch, merge, release=False):
-        self.rid, self.release = rid, release
-        if release:
+    def __init__(self, rid, branch, merge, release=False, live=False):
+        self.rid, self.release, self.live = rid, release or live, live
+        if self.release:
             self.verb, self.past, self.noun = 'release', 'released', 'release'
-            self.reason = release_reason(merge, branch)
+            self.reason = live_reason(merge, branch) if live else release_reason(merge, branch)
             # `--as`: the person who runs it is not on the landed branch, whose own pull it is.
             self.args = ['--as', branch, 'release', rid, '--reason', '"%s"' % self.reason]
         else:
@@ -535,22 +602,28 @@ def _refused_advice(exc, backend, root, act, args, command):
     return '%s it with: %s' % (act.verb, command(*args))
 
 
-def _read_default(snap, where, branch, merge, named, seen, part):
+def _read_default(snap, where, branch, merge, named, seen, part, passed=()):
     """Record in `seen.default` what the implicit default store's `snap` holds that the landing
-    would close (an id a Closes line names) or close or release (the branch's own pulls)."""
+    would close (an id a Closes line names) or close or release (the branch's own pulls); a
+    live-proof pull of the branch's that no Live-pass line in `passed` cites, release."""
+    def unproven(rec):
+        return (rec.readable and rec.get('state') == 'pulled' and rec.get('pulled_by') == branch
+                and is_live_proof(rec) and rec.stem not in passed)
     for rid in named:
         rec = snap.get(rid)
         if rec is not None:
-            seen.default.setdefault(rid, _Stranded(where, rec, True, _Act(rid, branch, merge)))
+            seen.default.setdefault(rid, _Stranded(where, rec, True, _Act(
+                rid, branch, merge, live=unproven(rec))))
     for rec in snap.readable:
         if (rec.get('state') == 'pulled' and rec.get('pulled_by') == branch
                 and rec.stem not in named):
-            seen.default.setdefault(rec.stem, _Stranded(
-                where, rec, False, _Act(rec.stem, branch, merge, release=part.partial)))
+            seen.default.setdefault(rec.stem, _Stranded(where, rec, False, _Act(
+                rec.stem, branch, merge, release=part.partial,
+                live=not part.partial and unproven(rec))))
 
 
 def _close_in(backend, root, cfg, branch, merge, session, command, named=(), seen=None,
-              quiet=(), part=None):
+              quiet=(), part=None, passed=()):
     """close_landed for one store: `backend` of the repository or worktree `root` with `cfg`;
     `command(*args)` is the printed command line for a write the landing could not make. `named`:
     the ids the branch's `Closes:` trailers name; one this store does not hold is another store's
@@ -560,7 +633,9 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
     WARNING that the holder's builder must be told, unless the holder is in `quiet` (the code
     repository's mains and the batch's branches: _live_holder_warning). `part` (a _Part): when
     the branch has a `Part-of:` line, a record it holds pulled that no Closes line names is
-    released (_release_plan), not closed.
+    released (_release_plan), not closed. A live-proof record it would close (is_live_proof) whose
+    id is not in `passed` (live_pass_trailers) is not closed: released when the branch holds it,
+    left pulled when another branch does, with one NOTE each (_live_note).
     The implicit default store (`backend.implicit`) is only read, into `seen.default`
     (_read_default), for close_landed's stranded-record WARNING: the local ref when the remote has
     no store, as the landing's own store commands would find it."""
@@ -599,7 +674,7 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
         return [_store_unread(branch, '%s: %s' % (exc.label, exc), unread)]
     seen.read += 1
     if implicit:
-        _read_default(snap, where, branch, merge, named, seen, part)
+        _read_default(snap, where, branch, merge, named, seen, part, passed)
         return []
     seen.live.append(snap)
     seen.held.update(rid for rid in named if snap.get(rid) is not None)
@@ -627,15 +702,25 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
             continue
         if rec.get('state') != 'pulled':
             lines.append('WARNING: %s landed, and a Closes trailer of its commits names %s, which '
-                         'is %s, not pulled, so it was not closed; close it with: %s'
-                         % (branch, rid, rec.get('state') or '?', command(*close_args(rid))))
+                         'is %s, not pulled, so it was not closed; %sclose it with: %s'
+                         % (branch, rid, rec.get('state') or '?',
+                            'it is a live-proof record: once a live run passes, '
+                            if is_live_proof(rec) and rid not in passed else '',
+                            command(*close_args(rid))))
             continue
         by_trailer[rid] = rec.get('pulled_by') or '?'
+    # Live-proof records no Live-pass line cites: the branch's own pulls are released, another
+    # holder's are left pulled; each gets one NOTE (below).
+    unproven = set(rid for rid in held | set(by_trailer)
+                   if is_live_proof(snap.get(rid)) and rid not in passed)
+    left = dict((rid, by_trailer.pop(rid)) for rid in unproven if rid in by_trailer)
+    held -= unproven
+    release |= unproven - set(left)
     ctx = pmod.Context(store, root, remote=cfg.remote, main_branch=cfg.main_branch, branch=branch)
     folder = isinstance(backend, smod.MainBackend)
     live = []                               # offer.live_branches' answer, once it is needed
     for rid in sorted(held | set(by_trailer) | release):
-        act = _Act(rid, branch, merge, release=rid in release)
+        act = _Act(rid, branch, merge, release=rid in release, live=rid in unproven)
         how = (', which a Closes trailer of its commits names' if rid in by_trailer
                else ', which it holds pulled')
         try:
@@ -721,6 +806,11 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
         if rid in by_trailer:
             lines.extend(_live_holder_warning(branch, rid, by_trailer[rid], cfg, live, root,
                                               quiet))
+    for rid in sorted(unproven):
+        how = ('it was left pulled by %s' % left[rid] if rid in left else
+               'its pull was released' if rid in seen.held_back else
+               'its pull was not released either (see the WARNING above)')
+        lines.append(_live_note(branch, rid, how, command))
     return lines
 
 

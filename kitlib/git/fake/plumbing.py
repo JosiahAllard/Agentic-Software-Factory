@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 
+from kitlib import platform as _platform
 from . import command
 from . import config as _config
 from . import index as _index
@@ -1456,7 +1457,7 @@ _TEMPLATE_CACHE = {}
 
 def _is_posix():
     """Whether init writes a POSIX repository's core config (a seam the tests patch)."""
-    return os.name == 'posix'
+    return _platform.NAME == 'linux'
 
 
 def _template_dir(ctx, cfg_get):

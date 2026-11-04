@@ -15,6 +15,7 @@ import os
 import re
 import stat as _stat
 
+from kitlib import platform as _platform
 from . import config as _config
 from . import ignore as _ignore
 from .errors import GitExit, Unsupported
@@ -522,6 +523,8 @@ class Tree:
             os.remove(full)
         with open(full, 'wb') as f:
             f.write(data)
+        if mode == MODE_EXEC and _platform.NAME == 'linux':      # the mode bit a POSIX git keeps
+            os.chmod(full, os.stat(full).st_mode | 0o111)
         st = os.lstat(full)
         e = Entry(path, mode, oid)
         e.set_stat(st)

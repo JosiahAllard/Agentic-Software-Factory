@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -633,6 +634,102 @@ class TruthfulAndBounded(Tmp):
             code = G.cmd_down(G.argparse.Namespace())
         self.assertNotEqual(code, 0)
         self.assertIn(RID, out.getvalue())
+
+
+class SharedSession(Tmp):
+    """Several agents on one session: a joining `up` never ends a session it did not book, a state
+    write waits out a reader, and a command refreshing the idle clock never writes the keeper's
+    fields back."""
+
+    def test_a_joining_up_that_times_out_stops_nothing(self):
+        self.session(ready=False)                     # another agent's session, still starting
+        ticks = iter(range(0, 100000, 100))
+        out = io.StringIO()
+        with mock.patch.object(G.W, "details", side_effect=alive({11: 1})), \
+                mock.patch.object(G.subprocess, "run") as run, \
+                mock.patch("comfy_gen.time.sleep"), \
+                mock.patch("comfy_gen.time.monotonic", side_effect=lambda: float(next(ticks))), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", out):
+            rc = G.cmd_up(G.argparse.Namespace(ttl=600, lock_wait=60, ready=300))
+        self.assertEqual(rc, 2)
+        run.assert_not_called()
+        self.assertIn(RID, out.getvalue())
+        self.assertEqual(G.read_state()["rid"], RID)
+
+    def test_its_own_booking_that_times_out_is_stopped(self):
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
+            tool = f.name
+        self.addCleanup(os.remove, tool)
+        booked = subprocess.CompletedProcess([], 0, stdout="%s pid 4321\n" % RID, stderr="")
+        ticks = iter(range(0, 100000, 100))
+        with mock.patch.object(G, "MACHINE_LOCK_TOOL", tool), \
+                mock.patch.object(G, "_reachable", return_value=False), \
+                mock.patch.object(G, "_direct_launch_command", return_value=(["py"], "C:\\x")), \
+                mock.patch.object(G.subprocess, "run", return_value=booked) as run, \
+                mock.patch.object(G.W, "details", side_effect=alive({4321: 7})), \
+                mock.patch("comfy_gen.time.sleep"), \
+                mock.patch("comfy_gen.time.monotonic", side_effect=lambda: float(next(ticks))), \
+                mock.patch("sys.stdout", new_callable=io.StringIO), \
+                mock.patch("sys.stderr", new_callable=io.StringIO):
+            rc = G.cmd_up(G.argparse.Namespace(ttl=600, lock_wait=60, ready=300))
+        self.assertEqual(rc, 2)
+        self.assertEqual(run.call_args[0][0][-2:], ["stop", RID])
+
+    def test_write_state_waits_out_a_refused_replace(self):
+        real, sources = os.replace, []
+
+        def refused_once(src, dst):
+            sources.append(src)
+            if len(sources) == 1:
+                raise PermissionError(13, "the target is open in another process")
+            return real(src, dst)
+
+        with mock.patch("os.replace", side_effect=refused_once):
+            G.write_state({"rid": RID, "ready": True})
+        self.assertEqual(G.read_state(), {"rid": RID, "ready": True})
+        self.assertIn(str(os.getpid()), os.path.basename(sources[0]))
+        self.assertEqual([n for n in os.listdir(self.tmp) if n.endswith(".tmp")], [])
+
+    @windows_only("only Windows refuses a rename over a file a reader holds open")
+    def test_write_state_survives_a_held_reader(self):
+        G.write_state({"rid": RID, "ready": False})
+        reader = open(G.STATE_FILE, encoding="utf-8")
+        later = threading.Timer(0.3, reader.close)
+        later.start()
+        self.addCleanup(later.join)
+        G.write_state({"rid": RID, "ready": True})
+        self.assertTrue(G.read_state()["ready"])
+
+    def test_touch_last_used_never_changes_ready(self):
+        self.session(ready=False)
+        real_read = G.read_state
+
+        def read_then_the_keeper_writes():
+            seen = real_read()
+            if seen:       # the keeper marks the session ready between the command's read and write
+                G.write_state(dict(seen, ready=True))
+            return seen
+
+        with mock.patch.object(G, "read_state", side_effect=read_then_the_keeper_writes):
+            G.touch_last_used()
+        self.assertIs(real_read()["ready"], True)
+
+    def test_a_touch_keeps_the_session_from_idling_out(self):
+        self.session(keeper_pid=os.getpid(), last_used=ago(G.IDLE_STOP_SECONDS + 5))
+        G.touch_last_used()
+        loops = []
+
+        def sleep(_):
+            loops.append(1)
+            if len(loops) == 2:
+                G._request_down(RID)
+
+        with mock.patch("comfy_gen.time.sleep", side_effect=sleep), \
+                mock.patch.object(G, "_queue_busy", return_value=False), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            self.assertEqual(G._keep(FakeProc()), 0)
+        self.assertEqual(len(loops), 2)
+        self.assertIn("down", out.getvalue())
 
 
 @windows_only("a job object is Windows'")

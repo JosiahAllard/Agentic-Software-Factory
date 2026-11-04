@@ -7,7 +7,9 @@ the decision logic runs against made-up state.
 usage: python -m unittest test_comfy_gen -v
 """
 import io
+import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -49,11 +51,14 @@ class StateFileRoundTrip(unittest.TestCase):
 
     def test_touch_last_used_updates_existing_state_only(self):
         self.assertIsNone(G.read_state())
-        G.touch_last_used()  # no state: must not create one out of nothing
+        G.touch_last_used()  # no state: must not create one out of nothing, nor its idle clock
         self.assertIsNone(G.read_state())
-        G.write_state({"pid": 1, "last_used": "old"})
+        self.assertEqual(os.listdir(self.tmp), [])
+        old = iso(G._now() - G.datetime.timedelta(hours=1))
+        G.write_state({"pid": 1, "last_used": old})
         G.touch_last_used()
-        self.assertNotEqual(G.read_state()["last_used"], "old")
+        self.assertEqual(G.read_state(), {"pid": 1, "last_used": old})     # the state is not rewritten
+        self.assertGreater(G._last_used(G.read_state()), G._parse_iso(old))
 
 
 class EnsureRunningOwnership(unittest.TestCase):
@@ -90,7 +95,7 @@ class EnsureRunningOwnership(unittest.TestCase):
             w.details.return_value = {"ctime": 555}
             owned = G.ensure_running()
         self.assertTrue(owned)
-        self.assertNotEqual(G.read_state()["last_used"], "old")   # idle clock refreshed
+        self.assertIsNotNone(G._last_used(G.read_state()))   # idle clock refreshed ("old" is none)
 
     def test_reused_pid_is_treated_as_owner_started(self):
         """A pid recorded as ours, now belonging to a different process (ctime differs):
@@ -519,6 +524,65 @@ class GeneratorOutage(unittest.TestCase):
             code, err = self.run_handler(self.args())
         self.assertEqual(code, 1)
         self.assertNotIn("GENERATOR UNAVAILABLE", err)
+
+
+class SharedSessionApi(unittest.TestCase):
+    """comfy_api on a session several commands share: a timed-out run takes its prompt off the
+    GPU, never another command's, and same-named inputs never overwrite each other."""
+
+    def run_out(self, running=(), pending=()):
+        posts = []
+
+        def post_json(path, payload, timeout=30):
+            posts.append((path, payload))
+            return {"prompt_id": "p1", "number": 1} if path == "/prompt" else {}
+
+        def get_json(path, timeout=15):
+            if path == "/queue":
+                return {"queue_running": [[0, p, {}, {}, []] for p in running],
+                        "queue_pending": [[1, p, {}, {}, []] for p in pending]}
+            return {}       # /history/p1: not finished
+
+        clock = iter(range(0, 100000, 10))
+        with mock.patch.object(G.C, "post_json", side_effect=post_json), \
+                mock.patch.object(G.C, "get_json", side_effect=get_json), \
+                mock.patch.object(G.C.time, "sleep"), \
+                mock.patch.object(G.C.time, "time", side_effect=lambda: float(next(clock))):
+            with self.assertRaises(RuntimeError) as e:
+                G.C.run({"1": {"class_type": "X", "inputs": {}}}, timeout=30, poll=1)
+        self.assertIn("timed out", str(e.exception))
+        return posts
+
+    def test_a_timed_out_run_cancels_its_prompt(self):
+        posts = self.run_out(running=["p1"])
+        self.assertIn(("/queue", {"delete": ["p1"]}), posts)
+        self.assertIn(("/interrupt", {"prompt_id": "p1"}), posts)
+
+    def test_a_timed_out_run_still_queued_never_interrupts_another_commands_job(self):
+        posts = self.run_out(running=["someone-else"], pending=["p1"])
+        self.assertIn(("/queue", {"delete": ["p1"]}), posts)
+        self.assertNotIn("/interrupt", [p for p, _ in posts])
+
+    def test_same_named_different_images_upload_under_different_names(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        paths = []
+        for folder, data in (("a", b"first image"), ("b", b"second image"), ("c", b"first image")):
+            os.makedirs(os.path.join(tmp, folder))
+            paths.append(os.path.join(tmp, folder, "ref.png"))
+            with open(paths[-1], "wb") as f:
+                f.write(data)
+        sent = []
+
+        def urlopen(req, timeout=60):
+            sent.append(re.search(rb'name="image"; filename="([^"]+)"', req.data).group(1).decode())
+            return io.BytesIO(json.dumps({"name": sent[-1], "subfolder": "agent", "type": "input"}).encode())
+
+        with mock.patch.object(G.C.urllib.request, "urlopen", side_effect=urlopen):
+            first, second, same = (G.C.upload_image(p) for p in paths)
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, same)        # the same image gets the same name
+        self.assertTrue(first.startswith("agent/") and first.endswith("ref.png"), first)
 
 
 if __name__ == "__main__":

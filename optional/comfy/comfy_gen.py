@@ -86,6 +86,10 @@ try:
     from kitlib.config import user as kuser  # noqa: E402
 except ImportError:
     kuser = None
+try:
+    from kitlib.fs import replace as fsreplace  # noqa: E402
+except ImportError:
+    fsreplace = None
 sys.path.insert(0, TOOL_DIR)
 import comfy_api as C  # noqa: E402
 # winproc.py (Toolhelp + job-object helpers, standard library only) lives beside procwatch.py,
@@ -150,8 +154,9 @@ MAX_PIXELS = 2_100_000
 # keeper (`serve`), however either ends, crash and kill included. It shuts down only what IT
 # started - a ComfyUI the owner started is never touched. One small state file under
 # <shared temp>\comfy_gen\ records the server's pid and creation time (so a reused pid is never
-# mistaken for ours - see winproc.terminate_verified), when it was last used, and for a session
-# its lock run id and keeper. The shared temp (SHARED_TEMP), else LOCALAPPDATA\Temp, never TEMP:
+# mistaken for ours - see winproc.terminate_verified), when it started, and for a session its lock
+# run id and keeper. A command that only uses the server never rewrites it: it refreshes the idle
+# clock in a file of its own beside it (touch_last_used). The shared temp (SHARED_TEMP), else LOCALAPPDATA\Temp, never TEMP:
 # `stop` from the owner's shell must find the state an agent wrote, even when agents run with
 # TEMP moved
 STATE_DIR = (os.path.join(SHARED_TEMP, "comfy_gen") if SHARED_TEMP else
@@ -198,11 +203,22 @@ def read_state():
 
 
 def write_state(state):
+    """Write the state whole, through a temp file of this process's own (two writers never share
+    one), and a replace that waits out a reader: other commands poll the state every few seconds,
+    and Windows refuses a rename over a file one of them has open (kitlib.fs.replace). Copied out
+    of the kit, with no kitlib, a plain os.replace."""
     os.makedirs(STATE_DIR, exist_ok=True)
-    tmp = STATE_FILE + ".tmp"
+    tmp = f"{STATE_FILE}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=1)
-    os.replace(tmp, STATE_FILE)
+    try:
+        (fsreplace.replace if fsreplace else os.replace)(tmp, STATE_FILE)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def clear_state():
@@ -223,15 +239,34 @@ def _tool_started_and_alive(state):
                 and _pid_alive_at(state["pid"], state.get("ctime")))
 
 
-def touch_last_used(state=None):
-    """Refresh the idle clock. Safe to call whether or not ComfyUI was started by this tool."""
+def _last_used_path():
+    """The idle clock's file, beside the state: its mtime is when a command last used ComfyUI."""
+    return os.path.join(STATE_DIR, "last_used")
+
+
+def touch_last_used():
+    """Refresh the idle clock: the mtime of a file of its own (_last_used_path), never a field of
+    the state, so a command never writes the state back over what the keeper wrote since it read
+    it (`ready`, its server, why it failed). Does nothing when no state is recorded. Safe to call
+    whether or not ComfyUI was started by this tool."""
     try:
-        state = state or read_state()
-        if state:
-            state["last_used"] = _iso(_now())
-            write_state(state)
+        if read_state():
+            with open(_last_used_path(), "w", encoding="utf-8") as f:
+                f.write(_iso(_now()))
     except OSError:
         pass
+
+
+def _last_used(state):
+    """When ComfyUI was last used: the later of the state's own `last_used` (its start, written by
+    its owner) and the idle clock commands refresh (touch_last_used). None when neither is known."""
+    times = [t for t in (_parse_iso(state.get("last_used")),) if t is not None]
+    try:
+        times.append(datetime.datetime.fromtimestamp(os.path.getmtime(_last_used_path()),
+                                                     datetime.timezone.utc))
+    except OSError:
+        pass
+    return max(times) if times else None
 
 
 def _reachable(timeout=3):
@@ -557,7 +592,7 @@ def ensure_running(wait=READY_SECONDS):
     state = read_state()
     if _reachable():
         if _tool_started_and_alive(state or {}):
-            touch_last_used()    # re-read: the keeper may have written since
+            touch_last_used()
             return True
         if state and not _session_live(state):
             clear_state()   # stale record: a previous run of ours, now gone or pid reused
@@ -656,7 +691,7 @@ def _keep(proc):
         if until is not None and _now() >= until:
             print("[comfy_gen] serve: the session's --for time is up; ending it")
             return 0
-        last = _parse_iso(state.get("last_used")) or _now()
+        last = _last_used(state) or _now()
         if (_now() - last).total_seconds() >= IDLE_STOP_SECONDS and not _queue_busy():
             print(f"[comfy_gen] serve: idle {IDLE_STOP_SECONDS // 60} minutes; ending the session")
             return 0
@@ -743,11 +778,12 @@ def _run_quiet(cmd):
                                                   f"{e.timeout:g}s")
 
 
-def _await_session(rid, pid, ctime, wait_s):
+def _await_session(rid, pid, ctime, wait_s, stop_on_timeout=True):
     """Wait for session `rid` to be ready, as its keeper writes it in the state. `pid` (created at
     `ctime`) is its lock run's wrapper, or its keeper: alive while the run is. 0 once ready; 2 when
-    the keeper recorded why it failed, the run ended first, or `wait_s` ran out (the run is then
-    stopped)."""
+    the keeper recorded why it failed, the run ended first, or `wait_s` ran out. On that timeout
+    the run is stopped only with `stop_on_timeout`, which only the `up` that booked it passes: an
+    `up` that joined another agent's starting session leaves it alone."""
     deadline = time.monotonic() + wait_s
     while True:
         state = read_state()
@@ -766,6 +802,11 @@ def _await_session(rid, pid, ctime, wait_s):
                   f"machine_lock.py status {rid})")
             return 2
         if time.monotonic() >= deadline:
+            if not stop_on_timeout:
+                print(f"ComfyUI session {rid} (booked by another `up`) was not ready within "
+                      f"{wait_s}s; left as it is: run `up` again to wait more, or `comfy_gen.py "
+                      "down` to end it")
+                return 2
             done = _run_quiet(_lock_cmd("stop", rid))
             print(f"ComfyUI session {rid} was not ready within {wait_s}s; its lock run is stopped "
                   f"(exit {done.returncode})")
@@ -786,7 +827,7 @@ def cmd_up(args):
             return 0
         print(f"[comfy_gen] up: session {state['rid']} is starting; waiting for it", file=sys.stderr)
         return _await_session(state["rid"], state["keeper_pid"], state.get("keeper_ctime"),
-                              args.ready + 60)
+                              args.ready + 60, stop_on_timeout=False)
     if _reachable():
         if _tool_started_and_alive(state or {}):
             if state.get("rid"):

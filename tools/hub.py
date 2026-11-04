@@ -150,7 +150,8 @@ the server alone decides what a role may do.
                                                      (docs/hub-mcp.md "To-do steps"); --record:
                                                      the record waits on the owner until the
                                                      to-do is done (the hub parks it)
-  hub.py todos done T-1 [--undo] [--if-version V]   (owner) `DONE T-1`, `REOPENED T-1`
+  hub.py todos done T-1 [--undo] [--note N] [--if-version V]   (owner) `DONE T-1`, `REOPENED T-1`
+  hub.py todos show T-1                             the to-do, its commands and the owner's note
   hub.py todos ack T-1                              `ACKED T-1`
   hub.py todos edit T-1 --from NAME --if-version V [--title T] [--detail D] [--command C ...]
         [--repo R] [--refs ID ...] [--urgent | --no-urgent]     `EDITED T-1`
@@ -324,6 +325,7 @@ EXAMPLES = {
     'hub.py todos': 'hub.py todos --status open',
     'hub.py todos add': 'hub.py todos add --title "<title>"',
     'hub.py todos done': 'hub.py todos done T-1000',
+    'hub.py todos show': 'hub.py todos show T-1000',
     'hub.py todos ack': 'hub.py todos ack T-1000',
     'hub.py todos edit': 'hub.py todos edit T-1000 --from <key> --if-version 3',
     'hub.py todos withdraw': 'hub.py todos withdraw T-1000 --from <key> --if-version 3',
@@ -630,7 +632,10 @@ def _client_verbs(sub):
     x = _leaf(t, 'done', 'mark a to-do done (the owner)')
     x.add_argument('id')
     x.add_argument('--undo', action='store_true')
+    x.add_argument('--note', help='the owner\'s note on it, shown in todos show and pushed to '
+                                  'the asker (at most 2000 characters; not with --undo)')
     _pins(x)
+    _leaf(t, 'show', 'one to-do with its detail, commands and the owner\'s note').add_argument('id')
     _leaf(t, 'ack', 'say that the PM has seen a to-do').add_argument('id')
     x = _leaf(t, 'edit', 'change an open to-do you added')
     _creator(x, 'NAME')
@@ -1335,6 +1340,27 @@ def _question(a):
     return _show(a, d, lines)
 
 
+def _todo(a):
+    """todos show: the one to-do of `a.id` out of the list of every status, with its detail,
+    commands and, once done, the owner's note."""
+    got = _hub(a).get('/todos', query={'status': 'all'})
+    for d in got.get('items') or []:
+        if d.get('id') == a.id:
+            break
+    else:
+        raise serve.ServeError('%s is not a to-do the hub holds' % a.id)
+    if getattr(a, 'json', False):
+        return _show(a, d, [])
+    lines = [_item(d, version=True)]
+    if d.get('detail'):
+        lines.append('detail: %s' % d['detail'].strip())
+    for n, c in enumerate(d.get('commands') or []):
+        lines.append('command %d: %s' % (n + 1, c))
+    if d.get('done_note'):
+        lines.append('note: %s' % d['done_note'])
+    return _show(a, d, lines)
+
+
 def _edits(a, body):
     """The body of a creator's edit or withdraw: its fields, --from and --if-version, and
     --urgent or --no-urgent when one was given (_body leaves a False out)."""
@@ -1363,8 +1389,10 @@ def _todos(a, stop):
             body['from'] = a.who
         got = hub.post('/todos', client.OWNER if a.owner else client.AGENT, body)
         return _wrote(a, got, 'ADDED %s' % got.get('id'))
+    if a.sub == 'show':
+        return _todo(a)
     if a.sub == 'done':
-        body = _body(if_version=a.if_version)
+        body = _body(if_version=a.if_version, note=a.note)
         body['done'] = not a.undo
         got = hub.post(_one('todos', a) + '/done', client.OWNER, body)
         return _wrote(a, got, '%s %s' % ('REOPENED' if a.undo else 'DONE', got.get('id')))

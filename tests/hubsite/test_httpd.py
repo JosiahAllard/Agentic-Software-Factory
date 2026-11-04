@@ -4,7 +4,6 @@ import http.client
 import json
 import os
 import socket
-import sys
 import threading
 import unittest
 from unittest import mock
@@ -16,6 +15,7 @@ from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
 from tests.hubsite import test_api_roles as roles
 from tests.hubsite.httpfix import TIMEOUT, get, post, send
+from tests.platforms import posix_only, windows_only
 
 HEALTH = BASE + '/health'
 TODOS = BASE + '/todos'
@@ -752,7 +752,7 @@ class LimitCase(httpfix.ListenerCase):
             self.assertEqual(lis.waiting, 0)
         self.assertEqual(len(self.errors()), 3)
 
-    @unittest.skipUnless(sys.platform == 'win32', 'SO_EXCLUSIVEADDRUSE is Windows only')
+    @windows_only('SO_EXCLUSIVEADDRUSE is Windows only')
     def test_the_port_is_bound_exclusively_and_no_resolver_is_asked(self):
         with mock.patch.object(socket, 'getfqdn',
                                side_effect=AssertionError('the resolver was asked')):
@@ -774,7 +774,7 @@ class LimitCase(httpfix.ListenerCase):
                 if exclusive is not None:
                     self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, exclusive), 1 - reuse)
 
-    @unittest.skipUnless(sys.platform.startswith('linux'), 'the TIME_WAIT rebind is Linux only')
+    @posix_only('the listener sets SO_REUSEADDR on Linux only')
     def test_on_linux_a_restart_binds_its_port_again_at_once(self):
         lis = self.listener()
         port = lis.port

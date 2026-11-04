@@ -39,7 +39,8 @@ class RefDeltaSamePackTest(unittest.TestCase):
             verify = _git(d, 'verify-pack', '-v', os.path.join(packdir, idx[0]))
             deltas = [ln for ln in verify.splitlines() if len(ln.split()) == 7]
             self.assertTrue(deltas, 'the pack holds no delta')
-            oids = _git(d, 'rev-list', '--objects', '--all').split()[::2]
+            oids = _git(d, 'rev-list', '--objects', '--all').splitlines()
+            oids = [ln.split()[0] for ln in oids]
 
             store = objects.ObjectStore(os.path.join(d, '.git', 'objects'), 'sha1')
             result = {}

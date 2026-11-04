@@ -105,10 +105,12 @@ def _bad_rev(rev):
 def _changed_since(sinces, root):
     """`({since: set of paths}, {since: why})` for resolved `{since: full hash}`: the paths
     written by the commits reachable from HEAD and not from that commit. Two git calls however
-    many commits there are: `rev-list --parents HEAD` (the graph) and one `log --name-only` over
-    what is not reachable from every `files_at` commit. A path changed and changed back counts as
-    changed (a diff would not say so)."""
-    graph, why = cmd.run_text(['rev-list', '--parents', 'HEAD', '--'], root, timeout=120)
+    many commits there are: `rev-list --parents HEAD <the files_at commits>` (the graph, which
+    must hold a `files_at` commit HEAD cannot reach) and one `log --name-only` over what is not
+    reachable from every `files_at` commit. A path changed and changed back counts as changed (a
+    diff would not say so)."""
+    graph, why = cmd.run_text(['rev-list', '--parents', 'HEAD'] + sorted(set(sinces.values()))
+                              + ['--'], root, timeout=120)
     if graph is None:
         return {}, dict.fromkeys(sinces, why)
     parents = {}

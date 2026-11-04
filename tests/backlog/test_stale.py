@@ -179,6 +179,23 @@ class Stale(StoreCase):
         self.assertEqual(sorted(rep.moved), [('R1', 'a/x.py', stmod.CHANGED),
                                              ('R3', 'b/y.py', stmod.CHANGED)])
 
+    def test_a_files_at_commit_off_head_counts_only_what_changed_since_it(self):
+        """A `files_at` on a side branch HEAD cannot reach still gets its ancestors: only the
+        files HEAD's own commits wrote since the fork are CHANGED, not every file."""
+        self.repo.write('a/x.py', '1\n')
+        self.repo.write('a/y.py', '1\n')
+        self.repo.write('a/z.py', '1\n')
+        fork = self.repo.commit('fork', 'a')
+        self.repo.git('checkout', '-q', '-b', 'side', fork)
+        self.repo.write('a/x.py', '2\n')
+        side = self.repo.commit('side', 'a')
+        self.repo.git('checkout', '-q', 'main')
+        self.repo.write('a/y.py', '2\n')
+        self.repo.commit('main', 'a')
+        self.seed(rec('OFF', files=['a/x.py', 'a/y.py', 'a/z.py'], files_at=side))
+        rep = self.sweep()
+        self.assertEqual(rep.moved, [('OFF', 'a/y.py', stmod.CHANGED)])
+
     def test_an_unreadable_record_is_not_checked(self):
         self.seed(rec('FOO'), {'BAD': 'no header here\n'})
         rep = self.sweep()

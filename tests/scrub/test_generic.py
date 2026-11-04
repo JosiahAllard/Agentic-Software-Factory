@@ -56,7 +56,6 @@ NAMES_ALLOWED = (
 RETIRED_CONFIG_NAME = '.claude-pm-kit'
 KIT_NAMES_ALLOWED = (
     ('.kit.json', r'\s*"repo": \{"name": "{kit}"\},?', "the kit's own name lives in its .kit.json, repo.name"),
-    ('README.md', r'# {kit}', "the project page keeps the project's title (an owner ruling)"),
     ('tests/scrub/test_generic.py', r"RETIRED_CONFIG_NAME = '[^']*'", "the machine config folder's retired name, "
      'spelled here once so the scrub keeps it out of the kit'),
 )
@@ -365,7 +364,8 @@ class TheChecks(unittest.TestCase):
                  '.kit.json': '"repo": {"name": "Kit-Alpha"}\n',
                  'README.md': '# Kit-Alpha\nthe Kit-Alpha way\n'}
         found, stale = scan(sorted(files), files.get, pats, kit_allowed(kit), excluded=())
-        self.assertEqual(found, ['README.md:2: Kit-Alpha (.kit.json repo.name)',
+        self.assertEqual(found, ['README.md:1: Kit-Alpha (.kit.json repo.name)',    # no title allow
+                                 'README.md:2: Kit-Alpha (.kit.json repo.name)',
                                  "tests/x.py:1: kit-alpha (.kit.json repo.name)"])
         self.assertEqual(sorted(g for g, _, _ in stale), ['tests/scrub/test_generic.py'])
 
@@ -405,11 +405,9 @@ class TheChecks(unittest.TestCase):
     def test_kit_allow_entries_cover_whole_lines_only(self):
         root = self._kit('{"repo": {"name": "Kit-Alpha"}}', '{"name": "host-kit"}')
         kit, pats = kit_names(root)
-        files = {'README.md': '# Kit-Alpha\n# Kit-Alpha notes\n',
-                 '.kit.json': '  "repo": {"name": "Kit-Alpha"},\n  "x": "Kit-Alpha"\n'}
+        files = {'.kit.json': '  "repo": {"name": "Kit-Alpha"},\n  "x": "Kit-Alpha"\n'}
         found, _ = scan(sorted(files), files.get, pats, kit_allowed(kit), excluded=())
-        self.assertEqual(found, ['.kit.json:2: Kit-Alpha (.kit.json repo.name)',
-                                 'README.md:2: Kit-Alpha (.kit.json repo.name)'])
+        self.assertEqual(found, ['.kit.json:2: Kit-Alpha (.kit.json repo.name)'])
 
     def test_names_come_from_the_machine_config(self):
         home = self._home({'scrub_patterns': ['\\bowner\\b'],

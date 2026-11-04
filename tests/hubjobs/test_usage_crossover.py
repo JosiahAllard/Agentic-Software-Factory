@@ -118,6 +118,18 @@ class Trigger(unittest.TestCase):
     def test_no_room_holds_and_pushes(self):
         d = decide(accounts={'1': HOT, '2': on(98)})
         self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'kit'))
+        self.assertEqual(d.note, 'no account has room')
+
+    def test_no_room_names_the_accounts_whose_reading_is_unknown_or_stale(self):
+        bad = reading(20)
+        bad['five_hour']['used_percentage'] = None
+        accounts = {'1': HOT, '2': on(98), '3': on(20, age=7200), '4': C.AccountState(True, bad),
+                    '5': C.AccountState(True, None)}
+        d = decide(accounts=accounts, running={'1': 1, '3': 1})
+        self.assertEqual((d.action, d.word, d.detail, d.mark),
+                         (U.HOLD, 'no-room', 'kit:unknown:a3.a4.a5', 'no-room:unknown:a3.a4.a5'))
+        self.assertEqual(d.note, 'no account has room it can read: account 3 stale, account 4 five_hour '
+                                 'unknown, account 5 no usage file')
 
     def test_a_cap_on_the_key_or_the_machine_holds_before_the_child(self):
         three = {'kit': [NOW - 60, NOW - 120, NOW - 180]}
@@ -260,6 +272,34 @@ class Target(unittest.TestCase):
         self.assertEqual(self.pick(accounts)[0], '2')
         self.assertIsNone(self.pick(accounts, running={'2': 1}))
 
+    def test_a_fresh_reading_with_no_five_hour_is_a_tier_one_target(self):
+        # 2026-11-04: account 2 fresh at week 0%, its file's five_hour null; never a target before
+        for absent in (lambda d: d.update(five_hour=None), lambda d: d.pop('five_hour')):
+            data = reading(0)
+            absent(data)
+            self.assertEqual(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}),
+                             ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
+
+    def test_no_five_hour_on_a_stale_reading_never_counts(self):
+        data = dict(reading(0, age=7200), five_hour=None)
+        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}))
+        note, detail, _ = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)
+        self.assertEqual((note, detail), ('no account has room it can read: account 2 stale',
+                                          'kit:unknown:a2'))
+
+    def test_a_five_hour_the_file_gives_but_cannot_be_read_stays_unknown(self):
+        no_pct = reading(0)
+        no_pct['five_hour']['used_percentage'] = None
+        no_reset = reading(0)
+        del no_reset['five_hour']['resets_at']
+        for data in (no_pct, no_reset):
+            self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+
+    def test_no_five_hour_with_an_unknown_week_never_counts(self):
+        data = dict(reading(0), five_hour=None, seven_day=None)
+        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+
     def test_no_second_start_until_a_reading_newer_than_the_last(self):
         accounts = {'2': on(20, age=60)}
         self.assertIsNone(self.pick(accounts, landed={'2': NOW - 30}))
@@ -345,6 +385,10 @@ class PmDecide(unittest.TestCase):
         d = decide_pm(accounts={'1': HOT, '2': on(96), '3': on(97)})
         self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'pm'))
         self.assertEqual(U.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW, tier2=False), None)
+
+    def test_no_room_for_the_pm_names_an_account_it_cannot_read(self):
+        d = decide_pm(accounts={'1': HOT, '2': on(96), '3': on(20, age=7200)}, running={'1': 1, '3': 1})
+        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'pm:unknown:a3'))
         self.assertEqual(U.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW)[0], '2')
 
     def test_notify_says_what_it_would_do(self):
@@ -474,7 +518,7 @@ class PmPhases(unittest.TestCase):
             self.assertEqual(d.detail, 'pm', why)
             self.assertIn(d.word, push.JOB_EACH, why)
             text = push.JOB_EACH[d.word]
-            self.assertIn('When detail is pm (you, the PM)', text, why)
+            self.assertIn('When detail is pm or starts pm: (you, the PM)', text, why)
             self.assertIn('resume your normal work', text, why)
         self.assertIn('resume your normal work', U.pm_checkpoint_text('2'))
         for word in ('crossing', 'crossed', 'no-ready', 'pm-limit'):
@@ -1395,6 +1439,19 @@ class PmJob(JobBase):
         self.assertEqual(self.ctx.events, [('crossing', 'pm:a2')])
         self.assertEqual(len(self.sent), 2)
         self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.ASKED)
+
+    def test_no_room_once_ready_naming_an_unknown_account_is_pushed_once_across_the_next_trigger(self):
+        self.run_job()
+        self.newest = {'pm': self.note(7, NOW + 30)}
+        self.host.written['pm-session'] = NOW + 120
+        self.usage = {'1': reading(99), '2': reading(96), '3': None}
+        self.now += 300
+        self.run_job()
+        self.assertEqual((self.ctx.events, self.calls), ([('no-room', 'pm:unknown:a3')], []))
+        self.assertIsNone(self.crossing(U.PM_DOC))
+        self.now += 300
+        self.run_job()
+        self.assertEqual((self.ctx.events, self.calls), ([], []))
 
     def test_notify_runs_pm_crossover_what_if_and_changes_nothing(self):
         self.mode = 'notify'

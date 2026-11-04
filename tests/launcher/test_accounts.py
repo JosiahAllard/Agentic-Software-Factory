@@ -155,13 +155,27 @@ class RestartPick(unittest.TestCase):
         no_pct['five_hour']['used_percentage'] = None
         no_reset = reading(week_reset=DAY)
         del no_reset['seven_day']['resets_at']
-        null_win = dict(reading(week_reset=DAY), five_hour=None)
+        no_five_reset = reading(week_reset=DAY)
+        del no_five_reset['five_hour']['resets_at']
+        null_week = dict(reading(week_reset=DAY), five_hour=None, seven_day=None)
         no_upd = reading(week_reset=DAY)
         del no_upd['updated_at']
         bad_upd = dict(reading(week_reset=DAY), updated_at='not a time')
-        for bad in (None, no_pct, no_reset, null_win, no_upd, bad_upd):
+        for bad in (None, no_pct, no_reset, no_five_reset, null_week, no_upd, bad_upd):
             self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': bad}), '1', bad)
             self.assertIsNone(self.pick({'2': bad}), bad)
+
+    def test_a_fresh_reading_with_no_five_hour_counts_as_0_of_it(self):
+        # 2026-11-04: the host gives no five_hour; every account's file reads `"five_hour": null`
+        for absent in (lambda d: d.update(five_hour=None), lambda d: d.pop('five_hour')):
+            fresh = reading(week_reset=DAY)
+            absent(fresh)
+            self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': fresh}), '2')
+
+    def test_a_stale_reading_with_no_five_hour_never_counts(self):
+        m = datetime.timedelta(minutes=1)
+        stale = dict(reading(week_reset=DAY, age=(pmwatch.STALE_MINUTES + 1) * m), five_hour=None)
+        self.assertIsNone(self.pick({'2': stale}))
 
     def test_either_window_at_the_limit_is_skipped(self):
         for over in (reading(week_reset=DAY, five=A.HEADROOM_LIMIT), reading(week_reset=DAY, week=A.HEADROOM_LIMIT)):

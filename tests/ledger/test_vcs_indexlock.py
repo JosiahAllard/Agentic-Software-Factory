@@ -12,20 +12,25 @@ from kitlib.git import cmd
 from kitlib.ledger import vcs, write
 from kitlib.ledger.errors import Refused
 from tests.gitfixture import TempRepo, fixture_env
+from tests.platforms import windows_only
 
 MODEL = 'Test Model 1'
 WAIT = 1.0      # the lock bound the tests run with
 GONE_WAIT = 2.0  # seconds release() waits for a delete Windows still has pending
 
-_K32 = ctypes.WinDLL('kernel32', use_last_error=True)     # its own instance: argtypes stay local
-_K32.CreateFileW.restype = wintypes.HANDLE
-_K32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                             wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-_K32.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID,
-                                            wintypes.DWORD]
-_K32.CloseHandle.argtypes = [wintypes.HANDLE]
 _DELETE, _SHARE_ALL, _OPEN_EXISTING, _FILE_DISPOSITION_INFO = 0x00010000, 7, 3, 4
-_INVALID = wintypes.HANDLE(-1).value
+
+
+def _kernel32():
+    """Its own kernel32 instance (argtypes stay local), loaded on first use: Windows only."""
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    k32.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID,
+                                               wintypes.DWORD]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    return k32
 
 
 class IndexLockTest(unittest.TestCase):
@@ -71,16 +76,18 @@ class IndexLockTest(unittest.TestCase):
         """Put the held lock in the state a delete leaves it in while another handle is still open
         on it (the gate's failures of 2026-10-14): the file stays listed, and creating it is denied
         (PermissionError, errno 13), until that handle closes. Returns the close."""
-        h = _K32.CreateFileW(self.lock, _DELETE, _SHARE_ALL, None, _OPEN_EXISTING, 0, None)
-        self.assertNotIn(h, (None, _INVALID), 'open: WinError %d' % ctypes.get_last_error())
+        k32 = _kernel32()
+        invalid = wintypes.HANDLE(-1).value
+        h = k32.CreateFileW(self.lock, _DELETE, _SHARE_ALL, None, _OPEN_EXISTING, 0, None)
+        self.assertNotIn(h, (None, invalid), 'open: WinError %d' % ctypes.get_last_error())
         flag = ctypes.c_ubyte(1)
-        self.assertTrue(_K32.SetFileInformationByHandle(h, _FILE_DISPOSITION_INFO, ctypes.byref(flag), 1),
+        self.assertTrue(k32.SetFileInformationByHandle(h, _FILE_DISPOSITION_INFO, ctypes.byref(flag), 1),
                         'mark deleted: WinError %d' % ctypes.get_last_error())
         closed = []
 
         def close():
             if not closed:
-                closed.append(_K32.CloseHandle(h))
+                closed.append(k32.CloseHandle(h))
         self.addCleanup(close)
         self.assertTrue(os.path.exists(self.lock))
         with self.assertRaises(PermissionError):         # what git's create of the lock meets
@@ -106,6 +113,7 @@ class IndexLockTest(unittest.TestCase):
         self.addCleanup(sleep.stop)
         return fired
 
+    @windows_only('a pending delete of the lock file is a Windows file-handle state')
     def test_a_lock_still_being_deleted_is_busy_to_git_as_a_held_one(self):
         """Real git (2.55.0.windows.5, probed 2026-10-14) reports it as an existing lock."""
         self.hold()
@@ -115,6 +123,7 @@ class IndexLockTest(unittest.TestCase):
         self.assertIn('Unable to create', why)
         self.assertIn("index.lock': File exists.", why)
 
+    @windows_only('a pending delete of the lock file is a Windows file-handle state')
     def test_a_lock_still_being_deleted_at_the_release_gives_one_commit(self):
         self.hold()
         fired = self.free_at_first_pause(self.pending())

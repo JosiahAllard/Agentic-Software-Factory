@@ -815,14 +815,18 @@ def wants_narrowing(passed):
                and (is_broad(p.pair[0]) or is_broad(p.pair[1])) for p in passed)
 
 
-def narrowings(passed, holding, changes, unknown):
+def narrowings(passed, holding, changes, unknown, dirty=None):
     """`next`'s NARROW lines: one for each record passed over on a scope collision with a live
     pull (in `holding`) where either member is broad (`is_broad`). `changes` and `unknown` are
     plan `_live_changes`'s: `{branch: [(label, paths)]}`, the paths each live branch changed
     since its merge base with the code main, and `{branch: error}`. A broad taken member gets the
     `set --scope` that narrows the live pull to the files its branch changed there, unless those
     files overlap this record too (then it waits for the landing); a broad member of this record
-    only gets the overlap named."""
+    only gets the overlap named. `dirty` is `{branch: paths}`, the uncommitted files of each live
+    branch's worktree, or `{branch: why}` (a string) when they could not be read: the `set` keeps
+    those files and the pull's `## Files` paths with the committed ones (the NARROWS split's
+    protected set, plan `_narrower`), and is not suggested when either cannot be read."""
+    dirty = dirty or {}
     live = {r.id: r for r in holding}
     out = []
     for p in passed:
@@ -843,14 +847,20 @@ def narrowings(passed, holding, changes, unknown):
         if branch not in changes:
             out.append('%s; %s\'s diff was not compared' % (head, branch))
             continue
-        paths = sorted(set(q for _label, qs in changes[branch] for q in qs))
+        files, files_why = files_section(other.body)
+        extra = dirty.get(branch, [])
+        unread = files_why if files is None else (extra if isinstance(extra, str) else None)
+        paths = sorted(set(q for _label, qs in changes[branch] for q in qs)
+                       | set([] if isinstance(extra, str) else extra) | set(files or []))
         there = _under(theirs, paths)
         if not there:
             out.append('%s, which changed nothing under %s yet' % (head, theirs))
             continue
         head = '%s, which changed %d file(s) there: %s' % (head, len(there), _named(there))
         overlap = _under(mine, there)
-        if is_broad(theirs) and not overlap:
+        if is_broad(theirs) and not overlap and unread:
+            out.append('%s; not narrowing %s: %s' % (head, other.id, unread))
+        elif is_broad(theirs) and not overlap:
             keep = [m for m in other.all('scope') if m != theirs]
             keep += [q for q in there if q not in keep]
             out.append('%s -> `set %s %s`' % (

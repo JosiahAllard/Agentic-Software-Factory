@@ -1,7 +1,7 @@
 """RED only on an assertion failure (kitlib.redfirst.verdict, docs/redfirst.md "What counts as
 red"): a named test that fails at the base on a crash, a setup error or anything else that is no
 assertion is INCONCLUSIVE, never RED, so a proof cannot pass on a test that never reached its
-assertion (GriffBall's 11-03 proof: every test died on a NullReferenceException, not its check).
+assertion (a game repo's 11-03 proof: every test died on a NullReferenceException, not its check).
 
 Each runner kind: python (unittest's FAIL and ERROR blocks), gradle and a command runner's result
 (JUnit XML: <error>, or a <failure> whose type is no assertion), dotnet (the .trx message), and a
@@ -227,8 +227,8 @@ class Dotnet(unittest.TestCase):
                                  [('error', '', outcome, 'T.I')])
 
 
-# Lines of the GriffBall log (Z:/kit-temp/griffball-gate/redfirst/20261103-125436-39028).
-GODOT_CRASH = '\n'.join([
+# Lines of a game repo's log (<gate log dir>/redfirst/<stamp>-<pid>/1-command-<stem>.log).
+ENGINE_CRASH = '\n'.join([
     '[FAIL] PvpPredictionTests.APredictedReplayWalksThroughAnotherPlayer (1069 ms): '
     'NullReferenceException: Object reference not set to an instance of an object.',
     '--- 3 tests in 1.4 s',
@@ -236,35 +236,35 @@ GODOT_CRASH = '\n'.join([
     'Object reference not set to an instance of an object.',
     '   at Player.FirstHeldIndex() in Z:\\x\\scripts\\player\\Player.cs:line 347',
     'UNIT TESTS FAIL 1 of 3', ''])
-GODOT_ASSERT = '\n'.join([
+ENGINE_ASSERT = '\n'.join([
     '[FAIL] PvpPredictionTests.APredictedReplayWalksThroughAnotherPlayer (12 ms): mask: expected '
     'True, got False', 'UNIT TESTS FAIL 1 of 3', ''])
-# What GriffBall's runner prints for an assertion: `[FAIL] <name> (<n> ms): <message>`, where a
+# What a game repo's runner prints for an assertion: `[FAIL] <name> (<n> ms): <message>`, where a
 # crash prints the exception's type first (tools/engine_tests/EngineTestRunner.cs, RunOne).
-GODOT_ASSERTION = r'^\[FAIL\] \S+ \(\d+ ms\): (?!\w+Exception: )'
+ENGINE_ASSERTION = r'^\[FAIL\] \S+ \(\d+ ms\): (?!\w+Exception: )'
 
 
 class CommandExitCode(unittest.TestCase):
     PLAIN = {'command': ['x']}
-    NAMED = {'command': ['x'], 'assertion': GODOT_ASSERTION}
+    NAMED = {'command': ['x'], 'assertion': ENGINE_ASSERTION}
 
     def test_exit_1_with_no_assertion_pattern_is_inconclusive(self):
-        """The GriffBall proof: exit 1 from tests that crashed. With no pattern no log tells a
+        """The game repo's proof: exit 1 from tests that crashed. With no pattern no log tells a
         crash from an assertion, so exit 1 is never RED on its own."""
-        for log in (GODOT_CRASH, GODOT_ASSERT, ''):
+        for log in (ENGINE_CRASH, ENGINE_ASSERT, ''):
             with self.subTest(log=log[:30]):
                 v, reason = V.command_verdict(1, log, self.PLAIN, None)
                 self.assertEqual(v, INCONCLUSIVE, reason)
                 self.assertIn('assertion', reason)
 
     def test_exit_1_is_red_only_when_a_log_line_matches_the_assertion_pattern(self):
-        self.assertEqual(V.command_verdict(1, GODOT_ASSERT, self.NAMED, None)[0], 'RED')
-        v, reason = V.command_verdict(1, GODOT_CRASH, self.NAMED, None)
+        self.assertEqual(V.command_verdict(1, ENGINE_ASSERT, self.NAMED, None)[0], 'RED')
+        v, reason = V.command_verdict(1, ENGINE_CRASH, self.NAMED, None)
         self.assertEqual(v, INCONCLUSIVE, reason)
 
     def test_exit_0_and_other_codes_keep_their_verdicts(self):
         self.assertEqual(V.command_verdict(0, '', self.NAMED, None)[0], V.GREEN)
-        self.assertEqual(V.command_verdict(2, GODOT_ASSERT, self.NAMED, None)[0], V.ERROR)
+        self.assertEqual(V.command_verdict(2, ENGINE_ASSERT, self.NAMED, None)[0], V.ERROR)
 
 
 class CommandResultFile(unittest.TestCase):

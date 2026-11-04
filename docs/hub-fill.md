@@ -39,7 +39,11 @@ A coordinator with a free slot and at least one startable record is sent one mes
 the hub's delivery object to its sessions.json key:
 
     [hub push] fill: 2 free, 3 startable: EX-A, EX-B, EX-C route:<key>
-    A hub fill watch saw a free slot and startable records: run `backlog.py next`, pull and dispatch ...
+    A hub fill watch saw a free slot and startable records: run `backlog.py next`, pull and dispatch
+    to fill your slots (coordinator role, Slots), unless the PM holds new work or you are
+    checkpointing or standing down. No reply is needed.
+
+The `unless` clause defers to holds the hub cannot see (a PM hold on new work, a hand-off).
 
 At most 5 ids are shown, then `+N more`. It carries record ids and counts only, never free text.
 Nothing goes to the PM.

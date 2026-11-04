@@ -52,7 +52,8 @@ EVERY_S = 300
 FIRST_S = 120                   # after the hub starts, as coord-restart
 NOTE_MAX = 300
 DO_LINE = ('A hub fill watch saw a free slot and startable records: run `backlog.py next`, pull and '
-           'dispatch to fill your slots (coordinator role, Slots). No reply is needed.')
+           'dispatch to fill your slots (coordinator role, Slots), unless the PM holds new work or '
+           'you are checkpointing or standing down. No reply is needed.')
 
 
 def is_coordinator(key, entry):

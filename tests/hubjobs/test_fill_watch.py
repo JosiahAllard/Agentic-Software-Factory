@@ -64,6 +64,7 @@ class Watch(unittest.TestCase):
         self.assertEqual(key, 'game')
         self.assertIn('fill: 2 free, 3 startable: EX-A, EX-B, EX-C', text.splitlines()[0])
         self.assertIn('backlog.py next', text)
+        self.assertIn('unless the PM holds new work or you are checkpointing or standing down', text)
         self.assertNotIsInstance(out, jobs.Skip)
         self.assertIn('game', out)
 

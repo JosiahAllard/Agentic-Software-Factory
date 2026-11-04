@@ -406,6 +406,25 @@ class CleanAndStop(Base):
         self.assertEqual(self.box.stop(JOB, kill=self.fail), {'ok': True, 'ended': True})
 
 
+class FetchRemoved(Base):
+
+    def test_a_file_removed_after_the_manifest_ends_with_an_error_frame(self):
+        d = self.made_job(artifacts=['*.bin'], result={'exit': 0})
+        path = os.path.join(d, 'wt', 'x.bin')
+        with open(path, 'wb') as f:
+            f.write(b'12345')
+        out = []
+
+        def write(data):
+            out.append(data)
+            if len(out) == 1:                 # the M frame is out: the file goes
+                os.remove(path)
+        self.assertEqual(self.box.fetch(JOB, write), 1)
+        got = frames.Decoder().feed(b''.join(out))
+        self.assertEqual([k for k, _ in got], ['M', 'X'])
+        self.assertIn('x.bin', json.loads(got[1][1])['error'])
+
+
 class RunJob(Base):
 
     def run_job(self, run_command, stop=False):
@@ -447,6 +466,16 @@ class RunJob(Base):
         def boom():
             raise RuntimeError('x')
         code, res, _s, _d = self.run_job(boom)
+        self.assertEqual((code, res['how']), (1, 'error'))
+
+    def test_a_missing_tree_still_leaves_an_error_result(self):
+        d = self.made_job()
+
+        def no_tree(path):
+            raise FileNotFoundError(path)
+        code = self.box.run_job(JOB, run_command=self.fail, new_rid=lambda: 'r-1',
+                                store_factory=lambda say: None, chdir=no_tree)
+        res = box._read_json(os.path.join(d, 'result.json'))
         self.assertEqual((code, res['how']), (1, 'error'))
 
     def test_ctrl_c_from_sigterm_is_how_interrupted(self):

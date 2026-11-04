@@ -336,6 +336,8 @@ class Link(object):
                     break
         finally:
             done.set()
+            if p.poll() is None:                  # on_data raised: ssh is still running, unread
+                p.kill()
             p.wait()
             et.join(5)
             _close(p)

@@ -118,8 +118,8 @@ A stand-down never stops the nudge: the coordinator still hears of its free slot
 
 ## Coming
 
-Stages 3 and 5 are designed, not built (the rest of KIT-HUB-FILL-WATCH). They wait on
-KIT-OFFER-DEAD-SESSION, so that the offer and the pull judge session liveness the same way.
+Stages 3 and 5 are designed, not built (the rest of this work). The pull is to judge session
+liveness the same way the offer does.
 
 - **Auto-pull (stage 3)**: 20 minutes after `since` with no stand-down, the hub pulls records
   itself, up to the free count, in offer order, once per episode.

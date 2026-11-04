@@ -360,7 +360,7 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow):
 
 
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
-               folded=None, capacity=None, branch=None, narrow=None):
+               folded=None, capacity=None, branch=None, narrow=None, session_live=None):
     """`((offers, passed), refusals, ranks)`. `holding` are the live pulls whose scopes are taken
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
@@ -385,7 +385,12 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     passes one): a record of `session` whose every collision is with live pulls (`others`)
     is offered at its rank with the Split when `narrow` gives one (Offer.split, the NARROWS line)
     and takes only the scope it keeps (Split.keep), which `folded(rec, scopes=)` then judges;
-    without one it is passed over as today. Nothing is written."""
+    without one it is passed over as today.
+    `session_live` (None: every other session's record reserves, as before; else a
+    SessionLiveness) is asked of another session's record (one with a `session:`) about to take
+    its place: a session not running takes nothing, scope or resource, and is added to
+    `session_live.idle`; one whose liveness cannot be read reserves as before, its holder named
+    `(liveness unread, so reserved)`. Nothing is written."""
     capacity = capacity or {}
     ranks = ranked(snap)
     occupied, occupied_by = [], []      # each member taken, and the record that took it
@@ -488,10 +493,19 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
             if why:
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), why))
                 continue
+        unread = ''
+        if not own(rec) and session_live is not None and rec.get('session') is not None:
+            running, _why = session_live.live(rec.get('session'))
+            if running is False:            # an idle session's record takes no place
+                if (rid, rec.get('session')) not in session_live.idle:
+                    session_live.idle.append((rid, rec.get('session')))
+                continue
+            if running is None:
+                unread = ' (liveness unread, so reserved)'
         occupied.extend(scopes)
         occupied_by.extend(rec for _m in scopes)
         taker = (('%s (offered above)' % rid, None) if own(rec) else
-                 ('%s (session %s)' % (rid, rec.get('session') or 'none'),
+                 ('%s (session %s)%s' % (rid, rec.get('session') or 'none', unread),
                   ('session %s' % (rec.get('session') or 'none'), rid)))
         for m in scopes:
             holders.setdefault(m, taker)
@@ -519,6 +533,91 @@ def blocker_summary(passed, top=5):
             counts[p.blocker] = counts.get(p.blocker, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
     return ['blocks %d: %s (%s)' % (n, who, rid) for (who, rid), n in ordered]
+
+
+# --- whether another session runs (next_offer's `session_live`) ----------------------------------
+
+def launcher_stems():
+    """{sessions.json key: stem} of the launcher's sessions.json (docs/launcher.md "State
+    files"); a record's `session:` is such a key. Raises when it cannot be read."""
+    from kitlib.launcher import settings, state
+    return {k: e.get('stem') for k, e in state.entries(state.read_sessions(settings.load()))}
+
+
+def running_names():
+    """The names of the session processes running now, as the hub's coordinator restart job reads
+    them (kitlib.launcher.lookup: launched, rc_name). Raises when they cannot be listed."""
+    from kitlib import pmstart
+    from kitlib.launcher import lookup
+    rows = lookup.launched(pmstart.list_processes(timeout=pmstart.TIMEOUT))
+    return [n for n in (lookup.rc_name(p.get('CommandLine')) for p in rows) if n]
+
+
+def _failure(exc):
+    return '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
+
+
+class SessionLiveness(object):
+    """`live(session)` -> `(True|False, None)` or `(None, why it cannot be read)`, never a raise:
+    True when a running session's name starts with the stem sessions.json gives that key (any
+    account, any recycle: lookup.running_stem's test). `sessions()` and `names()` (default
+    launcher_stems, running_names) are each read at most once, and the process list only for a
+    key that has a stem. `idle` [(record id, session)]: the records next_offer let take no place
+    because their session is not running."""
+
+    def __init__(self, sessions=None, names=None):
+        self._sessions_reader = sessions or launcher_stems
+        self._names_reader = names or running_names
+        self._stems = self._names = None
+        self.idle = []
+        self.unread = {}                    # session -> why its liveness could not be read
+
+    def _read(self, attr, reader):
+        if getattr(self, attr) is None:
+            try:
+                setattr(self, attr, (reader(), None))
+            except Exception as exc:        # noqa: BLE001 - any failure is unread, never a raise
+                setattr(self, attr, (None, _failure(exc)))
+        return getattr(self, attr)
+
+    def live(self, session):
+        stems, why = self._read('_stems', self._sessions_reader)
+        if why is None:
+            stem = (stems or {}).get(session)
+            if not isinstance(stem, str) or not stem:
+                why = 'session %s is not in sessions.json' % session if session not in (
+                    stems or {}) else 'session %s has no stem in sessions.json' % session
+        if why is None:
+            names, why = self._read('_names', self._names_reader)
+            if why is None:
+                return any((n or '').startswith(stem) for n in names), None
+        self.unread[session] = why
+        return None, why
+
+
+def idle_lines(session_live):
+    """`next`'s NOTE for each record that reserved no scope because its session is not running."""
+    if session_live is None:
+        return []
+    return ['NOTE: %s (session %s not running) reserves no scope' % (rid, s)
+            for rid, s in session_live.idle]
+
+
+def unread_lines(session_live, passed):
+    """`next`'s NOTE for each session whose liveness could not be read and whose record holds the
+    scope of a passed-over record: it reserves as before, and why."""
+    if session_live is None:
+        return []
+    out = []
+    for p in passed:
+        who = p.blocker[0] if p.blocker else ''
+        session = who[len('session '):] if who.startswith('session ') else None
+        if session in session_live.unread:
+            line = ('NOTE: session %s liveness unread (%s): its records reserve their scope as '
+                    'before' % (session, session_live.unread[session]))
+            if line not in out:
+                out.append(line)
+    return out
 
 
 # --- a short offer's causes: releasable holds and narrowable pass-overs (`next`) -----------------

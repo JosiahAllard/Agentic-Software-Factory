@@ -177,6 +177,7 @@ import threading
 import time
 
 from kitlib import pmwatch
+from kitlib.config.user import HomeFenced
 from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
@@ -481,6 +482,7 @@ class PushWorker(object):
                  pm_folder=None):
         self.store, self.api, self.push, self.folder = store, api, push, folder
         self.pm_folder = pm_folder or machine_pm_folder     # () -> the PM repository's folder name
+        self._pm_folder_got = None      # its answer, read once (a failed read is tried again)
         self.clock = clock or time.time
         self.watcher = watcher          # None: watcher_heartbeat, looked up at each read
         self.jobs = jobs                # None: the api's jobs_seen (GET health jobs), at each read
@@ -935,6 +937,8 @@ class PushWorker(object):
                 self._done_flags(doc, sender, mine, held, first, recipients, flags, now)
             flags['record'] = '%s:%s' % (record.get('repo') or '', record.get('id') or '')
             flags['record_repo'] = record.get('repo') or ''
+            if flags['record_repo'] and flags['record_repo'].lower() == self._pm_folder().lower():
+                flags['record_repo'] = self._kit_key() or flags['record_repo']    # the kit's
         if not recipients:
             if flags.get('has_it'):
                 self._hub_done(dict(flags, id=doc_id, fingerprint=fp))
@@ -1047,13 +1051,17 @@ class PushWorker(object):
         return got if isinstance(got, str) else ''
 
     def _pm_folder(self):
-        """The PM repository's folder name, '' when unknown (a failing reader is logged)."""
+        """The PM repository's folder name, '' when unknown. Read once per worker; a failing
+        reader (also a fenced home) is logged and counts as unknown, so routing is as before."""
+        if self._pm_folder_got is not None:
+            return self._pm_folder_got
         try:
             got = self.pm_folder()
-        except Exception as e:          # noqa: BLE001 - a host fault: no folder, no mapping
+        except (Exception, HomeFenced) as e:    # noqa: BLE001 - a host fault: no folder, no mapping
             self.log('push: pm_folder failed: %s' % type(e).__name__)
-            got = ''
-        return got if isinstance(got, str) else ''
+            return ''
+        self._pm_folder_got = got if isinstance(got, str) else ''
+        return self._pm_folder_got
 
     def _kit_key(self):
         """The kit coordinator's key (Api.kit_session_key), '' when none."""

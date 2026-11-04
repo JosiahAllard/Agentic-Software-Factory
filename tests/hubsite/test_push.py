@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest import mock
 
+from kitlib.config.user import HomeFenced
 from kitlib.hubsite import api, auth, push, serve, store as store_mod
 from kitlib.hubsite import settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
@@ -1064,6 +1065,54 @@ class FiledRecipientsTest(FiledPushCase):
         self.worker.poll()
         self.assertEqual(self.push.to('kitcoord'), [])
         self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+
+    def ask_pm_folder(self, repo='pmrepo'):
+        return self.ask(**{'from': 'zeta', 'record': {'repo': repo, 'id': 'KIT-X'}})
+
+    def test_the_pm_folder_match_ignores_case(self):
+        self.bind_pm_folder({'kitcoord'})
+        self.worker.pm_folder = lambda: 'PmRepo'
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
+
+    def test_a_freed_pm_folder_record_with_no_live_kit_coordinator_names_the_kit(self):
+        self.bind_pm_folder(())
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        text = self.push.to(push.PM_KEY)[0]
+        self.assertIn('no coordinator of repo kitcoord is running', text)
+        self.assertNotIn('repo pmrepo', text)
+
+    def test_a_fenced_home_in_the_pm_folder_reader_routes_as_before(self):
+        self.bind_pm_folder({'kitcoord'})
+
+        def fenced():
+            raise HomeFenced('fenced')
+        self.worker.pm_folder = fenced
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+
+    def test_the_pm_folder_is_read_once_per_worker(self):
+        self.bind_pm_folder({'kitcoord'})
+        reads = []
+        self.worker.pm_folder = lambda: reads.append(1) or 'pmrepo'
+        self.answer(self.ask_pm_folder())
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual(len(reads), 1)
+
+    def test_machine_pm_folder_is_the_folder_holding_sessions_file(self):
+        with mock.patch('kitlib.pmstart.load_config',
+                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.pmstart._toplevel',
+                           side_effect=lambda d: 'pmrepo' if d == self.root else None):
+            self.assertEqual(push.machine_pm_folder(), 'pmrepo')
+
+    def test_machine_pm_folder_is_empty_without_a_sessions_file(self):
+        for cfg in ({}, None):
+            with mock.patch('kitlib.pmstart.load_config', return_value=cfg):
+                self.assertEqual(push.machine_pm_folder(), '')
 
     def test_a_freed_record_without_resolve_pings_the_pm(self):
         self.bind('blocked', 'open')

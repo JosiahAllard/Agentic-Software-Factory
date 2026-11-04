@@ -11,13 +11,14 @@ EXPECTED = {"backlog-ops", "backlog-pricing", "branch-review", "branch-sync", "b
             "flaky-test-triage", "hub-ops", "ledger-ops", "land-branch", "machine-lock-run", "mutation-testing", "session-handoff",
             "shell-and-worktree-traps",
             "specialty-3d-assets", "specialty-rigging", "specialty-tech-art", "specialty-sound",
-            "specialty-review", "specialty-research", "specialty-docs", "topic-session"}
+            "specialty-review", "specialty-research", "specialty-docs", "specialty-art-critique", "topic-session"}
 # a task specialty a generic agent loads because its brief names it (docs/specialty-skills.md
 # "Specialty skills"): the agent type its Dispatch line names as the minimum
 SPECIALTY_MIN = {"specialty-3d-assets": "senior-worker", "specialty-rigging": "senior-worker",
                  "specialty-tech-art": "senior-worker",
                  "specialty-sound": "worker", "specialty-review": "analyst",
-                 "specialty-research": "analyst", "specialty-docs": "docs-writer"}
+                 "specialty-research": "analyst", "specialty-docs": "docs-writer",
+                 "specialty-art-critique": "analyst"}
 CREATIVE = ("specialty-3d-assets", "specialty-rigging", "specialty-tech-art", "specialty-sound")
 # the one creative.md lives in specialty-tech-art; the other CREATIVE skills reach it as a sibling folder
 CREATIVE_HOME = "specialty-tech-art"

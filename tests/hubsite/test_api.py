@@ -2975,7 +2975,7 @@ class ApprovalRouteTest(ApiCase):
                           query={'repo': self.URL, 'head': self.repo.initial, 'files': files})
             self.assertEqual((obj['valid'], obj['why']), (False, approvals.WHY_FILES), files)
 
-    def test_verify_with_a_commit_needs_the_approval_consumed_by_it(self):
+    def test_verify_with_a_commit_needs_the_approval_consumed(self):
         doc_id = self.add()['id']
         self.decide(doc_id)
         self.assertEqual(self.verify(doc_id, commit=self.COMMIT)['why'], approvals.WHY_COMMIT)
@@ -2984,7 +2984,9 @@ class ApprovalRouteTest(ApiCase):
         self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
                 {'commit': self.COMMIT, 'if_version': 2})
         self.assertIs(self.verify(doc_id, commit=self.COMMIT)['valid'], True)
-        self.assertEqual(self.verify(doc_id, commit='d' * 40)['why'], approvals.WHY_COMMIT)
+        # a rebuilt commit keeps the approval: consumed by any commit (spent is the client's)
+        self.assertIs(self.verify(doc_id, commit='d' * 40)['valid'], True)
+        self.assertEqual(self.store.get('approvals', doc_id)['commit'], self.COMMIT)
 
     def test_the_snapshot_carries_approvals(self):
         doc_id = self.add()['id']
@@ -5016,6 +5018,23 @@ class AnswerNoStoreTest(trw.Case):
         self.assertIn('names no backlog store the hub may write', got['error']['message'])
         self.assertNotIn(root, got['error']['message'])
         self.assertEqual(self.store.docs('questions'), {})
+
+
+
+class EachModuleImportsFirst(unittest.TestCase):
+    """Each of the hub server's modules imports in a fresh interpreter as the first one: an
+    import cycle (once approvals -> client -> serve -> push -> approvals) breaks whichever is
+    imported first, and the test runner's own import order hides it."""
+
+    def test_each_module_imports_on_its_own(self):
+        import sys
+        from kitlib.proc import spawn
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for name in ('api', 'approvals', 'client', 'landings', 'push', 'serve', 'store'):
+            with self.subTest(module=name):
+                r = spawn.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
+                                   cwd=root, capture_output=True, text=True, timeout=60)
+                self.assertEqual(r.returncode, 0, r.stderr[-600:])
 
 
 if __name__ == '__main__':

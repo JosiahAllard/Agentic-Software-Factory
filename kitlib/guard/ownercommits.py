@@ -38,14 +38,18 @@ owner's email on the command line; an identity in the session's starting environ
 
 An owner approval (docs/commit.md "Owner approval"): a commit not authored by the owner that would
 be a violation is not one when it carries exactly one `Owner-Approval: hub:A-<n>` trailer
-(TRAILER; the id as the hub issues it, hub:A-001, APPROVAL_RE) and the hub server verifies that
-approval for exactly this commit (kitlib.hubsite.approvals, Verifier.verify_on with the commit):
-the commit has one parent, the approval's base or a descendant of it that holds every path the
-commit changes exactly as the base does (approvals.same_content_error); every path it changes,
-with its blob at the commit (None when it deletes it), is the approval's, all of them; and the
-approval was consumed by this commit. A merge, a root commit, a path the commit holds as anything
-but a regular file (a symbolic link, a gitlink: blobs_at), a value that is not one hub:A-<n>, and
-any doubt of the hub (not running, no answer) keep the violation, with why in its `why`.
+(TRAILER; the id as the hub issues it, hub:A-001, APPROVAL_RE) and that approval holds for it
+as a delta (HubApprovals; kitlib.hubsite.approvals): no commit on main as last fetched other
+than this one carries it (approvals.spent: once the change is on main the approval is used up);
+the commit has one parent P, any commit; it changes no path the approval does not hold; each
+approved path is at the commit what the approved change gives on P (approvals.delta_result: the
+approved content where P holds the base or the approved content, the clean `git merge-file` of
+the change onto P where P moved on, a refusal on a conflict), a regular file in P's mode; and
+the hub server verifies the approved blobs for the signed base, consumed (by any commit: there
+is no exact binding). A merge, a root commit, a path the commit holds
+as anything but a regular file (a symbolic link, a gitlink: blobs_at), a value that is not one
+hub:A-<n>, and any doubt of git or the hub (not running, no answer) keep the violation, with why
+in its `why`.
 `approvals` is the seam: an object with check(root, doc_id, head, blobs, commit) -> (ok, why);
 default_approvals() is the hub's.
 """
@@ -69,13 +73,19 @@ NOT_A_FILE = 'is not a regular file'    # blobs_at's text for any other entry
 
 
 class HubApprovals(object):
-    """The approvals seam of violations() that asks the hub server (approvals.Verifier.verify_on,
-    with the commit: `head`, the commit's parent, may descend from the approval's base with the
-    same content). `client` and `repo` default to the machine's hub (kitlib.hubsite.settings) and
-    the checkout's origin remote; any failure to make either is a refusal, never a pass."""
+    """The approvals seam of violations() that asks the hub server, judging the approval as a
+    delta (module docstring): not spent on `main` (approvals.spent), the commit making the
+    approved change on its parent `head` (approvals.delta_error, on the document the hub's
+    snapshot gives), then the hub verifying the approved blobs for the signed base, consumed
+    (approvals.Verifier.verify). `client` and `repo` default to the machine's hub
+    (kitlib.hubsite.settings) and the checkout's origin remote, `main` to main as last fetched
+    (refs/remotes/<remote>/<main branch> of the checkout's config); any failure to make one is a
+    refusal, never a pass. One instance reads each approval's document and each spent answer
+    once."""
 
-    def __init__(self, client=None, repo=None):
-        self.client, self.repo = client, repo
+    def __init__(self, client=None, repo=None, main=None):
+        self.client, self.repo, self.main = client, repo, main
+        self._docs, self._spent, self._main_sha = {}, {}, None
 
     def check(self, root, doc_id, head, blobs, commit):
         from kitlib.hubsite import approvals as ap      # here: a guard without the hub still loads
@@ -91,7 +101,49 @@ class HubApprovals(object):
                 client = hubclient.Client(settings.load().port)
             except Exception as e:      # noqa: BLE001 - fail closed: no client is no approval
                 return False, ap.WHY_SERVER % type(e).__name__
-        return ap.Verifier(client).verify_on(root, doc_id, repo, head, blobs, commit=commit)
+        why = self._spent_why(root, doc_id, commit)
+        if why:
+            return False, why
+        verifier = ap.Verifier(client)
+        if doc_id not in self._docs:
+            self._docs[doc_id] = verifier.approved_doc(doc_id)
+        doc, why = self._docs[doc_id]
+        if doc is None:
+            return False, why
+        approved, why = ap.delta_error(root, doc, head, commit, blobs)
+        if approved is None:
+            return False, why
+        return verifier.verify(doc_id, repo, doc['head'], approved, commit=commit)
+
+    def _spent_why(self, root, doc_id, commit):
+        """Why the approval `doc_id` is used up (a commit on main other than `commit` carries it),
+        or '' when it is not; any doubt is a why."""
+        from kitlib.hubsite import approvals as ap
+        if self._main_sha is None:
+            ref = self.main
+            if ref is None:
+                try:
+                    from kitlib import config as kconfig
+                    cfg = kconfig.load(root)
+                    ref = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+                except Exception as e:  # noqa: BLE001 - fail closed: no main is no approval
+                    return 'main cannot be named: %s' % e
+            sha, why = refs.resolve(ref, root, known=True)
+            if sha is None:
+                return 'main %s cannot be read: %s' % (ref, why)
+            self._main_sha = (ref, sha)
+        ref, sha = self._main_sha
+        if not sha:
+            return ''                   # no main fetched: nothing has landed
+        key = (sha, doc_id)
+        if key not in self._spent:
+            self._spent[key] = ap.spent(root, doc_id, sha)
+        landed, why = self._spent[key]
+        if why:
+            return 'whether it is spent cannot be told: %s' % why
+        if landed and landed != commit:
+            return 'spent: landed in %s' % landed[:12]
+        return ''
 
 
 def default_approvals():
@@ -296,7 +348,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
     """`([Violation], None)`: the commits from `tip` not in `exclude` that change an owner-only path
     that landing `tip` on `exclude` would change (module docstring), are not authored by the
     owner and carry no owner approval the hub verifies (`approvals`: the seam, default
-    default_approvals()); `(None, why)` when git cannot tell."""
+    default_approvals(), made once per call so its reads are cached across the commits);
+    `(None, why)` when git cannot tell."""
     found, why = commits(root, tip, exclude, env)
     if found is None:
         return None, why
@@ -312,6 +365,8 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
     if plain is None:
         return None, why
     bad = []
+    if approvals is None:
+        approvals = default_approvals()
     for sha, parents, author, values in judged:
         paths, why = (plain[sha], None) if sha in plain else changed(root, sha, parents, env,
                                                                      exclude)

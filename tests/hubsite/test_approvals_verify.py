@@ -1,8 +1,9 @@
 """kitlib.hubsite.approvals: a request's document, the owner's signed decision, its expiry, the
 check that a change is the approved one, and the Verifier that asks the server and fails closed.
 
-The expiry durations are the module's PENDING_TTL_S and APPROVED_TTL_S, as the owner chose
-them; every time here is reckoned from them, never from a number of its own."""
+The expiry durations are the module's PENDING_TTL_S, APPROVAL_LIFE_S (a file approval) and
+APPROVED_TTL_S (an op approval), as the owner chose them; every time here is reckoned from them,
+never from a number of its own, except the one test that pins APPROVAL_LIFE_S at 30 days."""
 import datetime
 import unittest
 
@@ -22,7 +23,7 @@ REPO = 'github.com/Owner/Repo'
 T0 = datetime.datetime(2026, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
 SECOND = datetime.timedelta(seconds=1)
 PENDING_LIFE = datetime.timedelta(seconds=ap.PENDING_TTL_S)
-APPROVED_LIFE = datetime.timedelta(seconds=ap.APPROVED_TTL_S)
+APPROVED_LIFE = datetime.timedelta(seconds=ap.APPROVAL_LIFE_S)     # a file approval's
 OLD = 'line one\nline two\n'
 NEW = 'line one\nline 2\n'
 
@@ -190,6 +191,24 @@ class ExpiryTest(unittest.TestCase):
         self.assertEqual(ap.status_at(doc, T0 + PENDING_LIFE - SECOND), ap.PENDING)
         self.assertEqual(ap.status_at(doc, T0 + PENDING_LIFE), ap.EXPIRED)
 
+    def test_a_file_approval_lasts_30_days_from_its_decision_used_or_not(self):
+        # The owner's choice: one named constant, pinned here; no 24 h first-use limit.
+        self.assertEqual(ap.APPROVAL_LIFE_S, 30 * 86400)
+        thirty = datetime.timedelta(days=30)
+        doc = approved()
+        self.assertEqual(ap.status_at(doc, T0 + datetime.timedelta(hours=25)), ap.APPROVED)
+        self.assertEqual(ap.status_at(doc, T0 + thirty - SECOND), ap.APPROVED)
+        self.assertEqual(ap.status_at(doc, T0 + thirty), ap.EXPIRED)
+        doc.update(ap.consume_fields(KEY, 'A-1', doc, COMMIT, T0 + thirty - 2 * SECOND))
+        self.assertEqual(ap.status_at(doc, T0 + thirty - SECOND), ap.CONSUMED)
+        self.assertEqual(ap.status_at(doc, T0 + thirty), ap.EXPIRED)
+
+    def test_an_op_approval_still_lasts_24_hours(self):
+        self.assertEqual(ap.APPROVED_TTL_S, 24 * 3600)
+        doc = {'kind': ap.KIND_OP, 'status': ap.APPROVED,
+               'decided_at': T0.isoformat(timespec='seconds')}
+        self.assertEqual(ap.expires_at(doc), T0 + datetime.timedelta(hours=24))
+
     def test_an_approval_lasts_approved_ttl_consumed_or_not(self):
         doc = approved()
         self.assertEqual(ap.expires_at(doc), T0 + APPROVED_LIFE)
@@ -287,9 +306,10 @@ class CheckTest(unittest.TestCase):
     def test_with_a_commit_an_approval_not_consumed_does_not_verify(self):
         self.assertEqual(self.check(approved(), commit=COMMIT), (False, ap.WHY_COMMIT))
 
-    def test_with_a_commit_an_approval_consumed_by_another_does_not_verify(self):
-        self.assertEqual(self.check(self.consumed('d' * 40), commit=COMMIT),
-                         (False, ap.WHY_COMMIT))
+    def test_with_a_commit_an_approval_consumed_by_any_commit_verifies(self):
+        # No exact binding: a rebuild of the approved change (another commit) still holds; the
+        # client judges the delta and whether it is spent (kitlib.guard.ownercommits).
+        self.assertEqual(self.check(self.consumed('d' * 40), commit=COMMIT), (True, ''))
 
     def test_without_a_commit_approved_and_consumed_both_verify(self):
         self.assertEqual(self.check(approved()), (True, ''))

@@ -349,15 +349,15 @@ class Split(unittest.TestCase):
         return snap(live(scope=scope)).get('HOLD')
 
     def split(self, c, l, protected, plan, tree=TREE):
-        return omod.split(c, self.other(l), protected, tree, plan)
+        return omod.split_all(c, [(self.other(l), protected, plan)], tree)
 
     def test_no_plan_narrows_the_broad_candidate_off_the_whole_live_member(self):
         out, why = self.split(['kit/**'], 'kit/sub/**', ['kit/sub/c.py'], False)
         self.assertIsNone(why)
         self.assertEqual(out.keep, ['kit/a.py', 'kit/b.py'])
-        self.assertEqual(out.other_keep, ['kit/sub/**'])
+        self.assertEqual(out.parts[0].other_keep, ['kit/sub/**'])
         self.assertEqual(out.c_changes, [('kit/**', ['kit/sub/**'], ['kit/a.py', 'kit/b.py'])])
-        self.assertEqual(out.l_changes, [])
+        self.assertEqual(out.parts[0].l_changes, [])
 
     def test_no_plan_and_a_candidate_under_the_live_member_stays_held(self):
         out, why = self.split(['kit/sub/d.py'], 'kit/**', ['kit/a.py'], False)
@@ -368,18 +368,84 @@ class Split(unittest.TestCase):
         out, why = self.split(['kit/**'], 'kit/**', ['kit/a.py', 'kit/sub/c.py'], True)
         self.assertIsNone(why)
         self.assertEqual(out.keep, ['kit/b.py', 'kit/sub/d.py'])
-        self.assertEqual(out.other_keep, ['kit/a.py', 'kit/sub/c.py'])
+        self.assertEqual(out.parts[0].other_keep, ['kit/a.py', 'kit/sub/c.py'])
 
     def test_a_plan_takes_only_the_candidates_part_from_a_broader_live_member(self):
         out, _why = self.split(['kit/sub/d.py'], 'kit/**', ['kit/a.py'], True)
         self.assertEqual(out.keep, ['kit/sub/d.py'])
-        self.assertEqual(out.other_keep, ['kit/a.py', 'kit/b.py', 'kit/sub/c.py'])
+        self.assertEqual(out.parts[0].other_keep, ['kit/a.py', 'kit/b.py', 'kit/sub/c.py'])
         self.assertEqual(out.c_changes, [])
 
     def test_a_new_file_the_live_pull_adds_stays_its_own(self):
         out, _why = self.split(['kit/**'], 'kit/**', ['kit/a.py', 'kit/new.py'], True)
         self.assertEqual(out.keep, ['kit/b.py', 'kit/sub/**'])
-        self.assertEqual(out.other_keep, ['kit/a.py', 'kit/new.py'])
+        self.assertEqual(out.parts[0].other_keep, ['kit/a.py', 'kit/new.py'])
+
+    def test_no_plan_narrows_a_bare_folder_candidate_off_a_file_inside_it(self):
+        # ERRAND-VALUES-DOWN's shape: a bare folder (no `/**`) hit by one file of a live pull.
+        out, why = self.split(['kit/sub'], 'kit/sub/c.py', ['kit/sub/c.py'], False)
+        self.assertIsNone(why)
+        self.assertEqual(out.keep, ['kit/sub/d.py'])
+        self.assertEqual(out.c_changes, [('kit/sub', ['kit/sub/c.py'], ['kit/sub/d.py'])])
+        self.assertEqual(out.parts[0].l_changes, [])
+
+    def split_all(self, c, parts, tree=TREE):
+        s = snap(*[live(rid, scope=scope, by='kit/%s' % rid.lower()) for rid, scope, _p, _f
+                   in parts])
+        return omod.split_all(c, [(s.get(rid), prot, plan) for rid, _s, prot, plan in parts],
+                              tree)
+
+    def test_two_live_pulls_on_different_files_narrow_the_candidate_clear_of_both(self):
+        # MOVEMENT-S5's shape: one broad member, two live pulls each on its own file.
+        out, why = self.split_all(['kit/**'], [('H1', 'kit/a.py', ['kit/a.py'], False),
+                                               ('H2', 'kit/sub/c.py', ['kit/sub/c.py'], True)])
+        self.assertIsNone(why)
+        self.assertEqual(out.keep, ['kit/b.py', 'kit/sub/d.py'])
+        self.assertEqual([(p.other.id, p.other_keep, p.l_changes) for p in out.parts],
+                         [('H1', ['kit/a.py'], []), ('H2', ['kit/sub/c.py'], [])])
+        self.assertEqual(out.c_changes, [('kit/**', ['kit/a.py', 'kit/sub/c.py'],
+                                          ['kit/b.py', 'kit/sub/d.py'])])
+        self.assertEqual([p.c_members for p in out.parts], [['kit/**'], ['kit/**']])
+
+    def test_two_live_pulls_with_plans_each_give_up_the_overlap_outside_every_t(self):
+        out, why = self.split_all(['kit/sub/**'], [('H1', 'kit/**', ['kit/a.py'], True),
+                                                   ('H2', 'kit/sub/**', ['kit/sub/c.py'], True)])
+        self.assertIsNone(why)
+        self.assertEqual(out.keep, ['kit/sub/d.py'])
+        # H1 keeps H2's protected kit/sub/c.py: no path either live pull gives up is left
+        # held by nobody.
+        self.assertEqual([p.other_keep for p in out.parts],
+                         [['kit/a.py', 'kit/b.py', 'kit/sub/c.py'], ['kit/sub/c.py']])
+
+    def test_a_file_one_live_pull_adds_in_another_s_given_up_part_stays_held(self):
+        # H2's `## Files` names kit/new2.py, a file not yet in the tree, outside its own scope
+        # but inside H1's kit/**: the candidate gives it up (it is in T) and H2 cannot keep it,
+        # so H1 must, or no record holds it.
+        out, why = self.split_all(['kit/**'],
+                                  [('H1', 'kit/**', ['kit/a.py'], True),
+                                   ('H2', 'kit/sub/**', ['kit/sub/c.py', 'kit/new2.py'], True)])
+        self.assertIsNone(why)
+        self.assertEqual(out.keep, ['kit/b.py', 'kit/sub/d.py'])
+        self.assertEqual([p.other_keep for p in out.parts],
+                         [['kit/a.py', 'kit/new2.py', 'kit/sub/c.py'], ['kit/sub/c.py']])
+
+    def test_a_live_pull_without_files_inside_another_s_given_up_part_keeps_its_scope(self):
+        # Three ways, mixed kinds: H3 (no `## Files`) sits in what H1 gives up; H3 keeps its
+        # member, the candidate gives it up whole, H1 keeps only its T.
+        out, why = self.split_all(['kit/**'], [('H1', 'kit/**', ['kit/a.py'], True),
+                                               ('H3', 'kit/b.py', [], False)])
+        self.assertIsNone(why)
+        self.assertEqual(out.keep, ['kit/sub/**'])
+        self.assertEqual([(p.other.id, p.other_keep) for p in out.parts],
+                         [('H1', ['kit/a.py']), ('H3', ['kit/b.py'])])
+
+    def test_one_hitter_s_exact_file_clash_keeps_the_whole_record_held(self):
+        # H2 holds the very file the candidate names: no split, though H1 alone would narrow.
+        out, why = self.split_all(['kit/**', 'kit/b.py'],
+                                  [('H1', 'kit/a.py', ['kit/a.py'], False),
+                                   ('H2', 'kit/b.py', ['kit/b.py'], False)])
+        self.assertIsNone(out)
+        self.assertIn('H2', why)
 
     def test_every_case_complement_cannot_narrow_stays_held(self):
         cases = [(['kit/a.py'], 'kit/**', ['kit/a.py'], True),          # a single file
@@ -395,13 +461,14 @@ class Split(unittest.TestCase):
 
     def test_the_narrows_line(self):
         s = snap(live(), priced('FOO', priority='3', scope='kit/**'))
-        out, _ = omod.split(['kit/**'], s.get('HOLD'), ['kit/a.py', 'kit/sub/c.py'], TREE, True)
+        out, _ = omod.split_all(['kit/**'], [(s.get('HOLD'), ['kit/a.py', 'kit/sub/c.py'], True)],
+                              TREE)
         self.assertEqual(omod.narrows_line(omod.Offer(s.get('FOO'), 4, split=out)),
                          'NARROWS FOO (rank 4) with HOLD on kit/b: FOO drops kit/a.py, '
                          'kit/sub/c.py from kit/** (keeps kit/b.py, kit/sub/d.py); HOLD drops '
                          'kit/b.py, kit/sub/d.py from kit/** (keeps kit/a.py, kit/sub/c.py)')
         s = snap(live(scope='kit/sub/**'), priced('FOO', priority='3', scope='kit/**'))
-        out, _ = omod.split(['kit/**'], s.get('HOLD'), [], TREE, False)
+        out, _ = omod.split_all(['kit/**'], [(s.get('HOLD'), [], False)], TREE)
         self.assertEqual(omod.narrows_line(omod.Offer(s.get('FOO'), 4, split=out)),
                          'NARROWS FOO (rank 4) with HOLD on kit/b: FOO drops kit/sub/** from '
                          'kit/** (keeps kit/a.py, kit/b.py); HOLD keeps its scope (no ## Files)')
@@ -412,10 +479,11 @@ class NextNarrows(unittest.TestCase):
     the split, at its rank, taking only the scope it keeps."""
 
     def narrow(self, protected, plan=True, seen=None, tree=TREE):
-        def narrow(rec, other):
+        def narrow(rec, others):
             if seen is not None:
-                seen.append((rec.id, other.id))
-            return omod.split(rec.all('scope'), other, protected, tree, plan)[0]
+                seen.append((rec.id,) + tuple(o.id for o in others))
+            return omod.split_all(rec.all('scope'), [(o, protected, plan) for o in others],
+                                  tree)[0]
         return narrow
 
     def offer(self, s, holding, **kw):
@@ -468,14 +536,37 @@ class NextNarrows(unittest.TestCase):
         self.assertEqual(seen, [('R', 'HOLD')])
         self.assertIn('C', passed)
 
-    def test_a_member_two_live_pulls_hold_is_no_narrowing(self):
-        s = snap(live(), live('HOLD2', scope='kit/**', by='kit/c'),
+    def test_a_record_hit_by_two_live_pulls_is_narrowed_clear_of_both(self):
+        # MOVEMENT-S5's shape: one broad member, each live pull on its own file.
+        s = snap(live(scope='kit/a.py'), live('HOLD2', scope='kit/sub/c.py', by='kit/c'),
                  priced('FOO', priority='3', scope='kit/**'))
         seen = []
         offers, passed = self.offer(s, [s.get('HOLD'), s.get('HOLD2')],
-                                    narrow=self.narrow(['kit/a.py'], seen=seen))
-        self.assertEqual((offers, seen), ([], []))
-        self.assertIn('FOO', passed)
+                                    narrow=self.narrow([], plan=False, seen=seen))
+        self.assertEqual(seen, [('FOO', 'HOLD', 'HOLD2')])
+        self.assertEqual([o.rec.id for o in offers], ['FOO'])
+        self.assertEqual(offers[0].split.keep, ['kit/b.py', 'kit/sub/d.py'])
+        self.assertEqual(omod.narrows_line(offers[0]),
+                         'NARROWS FOO (rank 3) with HOLD on kit/b, HOLD2 on kit/c: FOO drops '
+                         'kit/a.py, kit/sub/c.py from kit/** (keeps kit/b.py, kit/sub/d.py); '
+                         'HOLD keeps its scope (no ## Files); HOLD2 keeps its scope (no ## Files)')
+
+    def test_a_bare_folder_hit_by_one_file_inside_it_is_narrowed(self):
+        s = snap(live(scope='kit/sub/c.py'), priced('FOO', priority='3', scope='kit/sub'))
+        offers, passed = self.offer(s, [s.get('HOLD')], narrow=self.narrow([], plan=False))
+        self.assertEqual([o.rec.id for o in offers], ['FOO'])
+        self.assertEqual(offers[0].split.keep, ['kit/sub/d.py'])
+
+    def test_one_hitter_that_cannot_be_narrowed_keeps_the_record_held(self):
+        # HOLD2 takes the very file FOO names (an exact-file clash): FOO waits, though HOLD
+        # alone would narrow, and its NARROW line stays.
+        s = snap(live(scope='kit/a.py'), live('HOLD2', scope='kit/b.py', by='kit/c'),
+                 priced('FOO', priority='3', scope=['kit/**', 'kit/b.py']))
+        holding = [s.get('HOLD'), s.get('HOLD2')]
+        offers, passed = self.offer(s, holding, narrow=self.narrow([], plan=False))
+        self.assertEqual(offers, [])
+        self.assertIsNotNone(passed['FOO'].pair)
+        self.assertTrue(omod.wants_narrowing(list(passed.values())))
 
     def test_a_collision_with_a_record_offered_above_is_no_narrowing(self):
         s = snap(live(scope='kit/sub/**'), priced('TOP', priority='1', scope='kit/b.py'),
@@ -486,13 +577,13 @@ class NextNarrows(unittest.TestCase):
         self.assertEqual(([o.rec.id for o in offers], seen), (['TOP'], []))
         self.assertIn('FOO', passed)
 
-    def test_two_live_pulls_in_the_way_is_no_narrowing(self):
-        s = snap(live(), live('HOLD2', scope='kit/sub/**', by='kit/c'),
+    def test_a_live_pull_and_a_record_offered_above_in_the_way_is_no_narrowing(self):
+        s = snap(live(scope='kit/sub/**'), priced('TOP', priority='1', scope='kit/a.py'),
                  priced('FOO', priority='3', scope='kit/**'))
         seen = []
-        offers, passed = self.offer(s, [s.get('HOLD'), s.get('HOLD2')],
-                                    narrow=self.narrow(['kit/a.py'], seen=seen))
-        self.assertEqual((offers, seen), ([], []))
+        offers, passed = self.offer(s, [s.get('HOLD')],
+                                    narrow=self.narrow(['kit/sub/c.py'], plan=False, seen=seen))
+        self.assertEqual(([o.rec.id for o in offers], seen), (['TOP'], []))
         self.assertIn('FOO', passed)
 
     def test_an_unpriced_or_held_record_is_never_narrowed(self):
@@ -561,7 +652,7 @@ class ProtectedSet(StoreCase):
         offers, _passed = self.offer()
         self.assertEqual([o.rec.id for o in offers], ['FOO'])
         self.assertEqual(offers[0].split.keep, ['kitlib/x/b.py', 'kitlib/y/d.py'])
-        self.assertEqual(offers[0].split.other_keep,
+        self.assertEqual(offers[0].split.parts[0].other_keep,
                          ['kitlib/x/a.py', 'kitlib/x/new.py', 'kitlib/y/c.py'])
 
     def test_offer_for_without_narrow_is_todays_offer(self):
@@ -714,6 +805,25 @@ class Restore(unittest.TestCase):
                                   blocked_on='owner'))
         self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
         self.assertEqual(omod.restore_lines(snap(self.mine()), None, lambda rid: None), [])
+
+    def test_a_member_narrowed_for_two_records_waits_until_both_have_ended(self):
+        # A split against two live pulls: kitlib/** carries a line for each. Given back when
+        # only L-ONE has landed, it would cover M-ONE's live paths again.
+        def two(**kw):
+            return rec('C-ONE', priority='3', priority_by='agent', pulled_at=TODAY,
+                       pulled_by='kit/c', scope='kitlib/x/b.py',
+                       narrowed=['kitlib/** L-ONE kit/l', 'kitlib/** M-ONE kit/m'], **kw)
+        m_live = rec('M-ONE', priority='3', priority_by='agent', state='pulled',
+                     pulled_at=TODAY, pulled_by='kit/m', scope='kitlib/y/c.py')
+        s = snap(two(state='pulled'), m_live)
+        self.assertEqual(omod.restore_lines(s, None, self.HIST), [])
+        held = snap(two(state='blocked', blocked_on='item:L-ONE'), m_live)
+        out, _note = omod.releasable_holds(held, None, self.HIST)
+        self.assertEqual([line for _r, line in out if line.startswith('RESTORE')], [])
+        both = {'L-ONE': 'abc1234 closes L-ONE: landed', 'M-ONE': 'fed4321 closes M-ONE: x'}.get
+        self.assertEqual(omod.restore_lines(snap(two(state='pulled')), None, both), [
+            'RESTORE C-ONE: L-ONE landed (closed in abc1234), M-ONE landed (closed in fed4321) '
+            '-> `set C-ONE --scope "kitlib/**" --unset narrowed`'])
 
 
 class NextCliNarrows(unittest.TestCase):

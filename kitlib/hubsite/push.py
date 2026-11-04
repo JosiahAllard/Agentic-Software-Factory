@@ -26,9 +26,9 @@ them alone, never does):
   reopened    a done to-do back to open: informational, acknowledged by the first written
   added       a to-do the owner added (from: you): to the PM only
   decided     an approval the owner approved or denied (store.approval_decided)
-  expiring    an approval still approved and not consumed EXPIRING_S after its decision: the
-              one reminder before it expires (APPROVED_TTL_S), so a missed first push cannot
-              lose it
+  expiring    an approval still approved and not consumed EXPIRING_LEAD_S before it expires
+              (approvals.expires_at: 30 days after the decision for a file approval, 24 hours
+              for an op one): the one reminder, so a missed first push cannot lose it
   submitted   a story the owner submitted (or submitted again): to the PM only; a skill edit
               the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
@@ -69,8 +69,10 @@ are never marked done here. A question the hub marked done takes a new answer an
 (_first), and a promote of the same answer is the `standing` event.
 
 An approval's phase is read at the worker's clock: 'decided' while it is decided and pending,
-'expiring' from EXPIRING_S after decided_at while it is still approved, None once it is not
-pending (consumed, expired, a denial past its window). Every round re-reads the phases of the
+'expiring' from EXPIRING_LEAD_S before expires_at while it is still approved, None once it is not
+pending (consumed, expired, a denial past its window). A phase that goes back from 'expiring' to
+'decided' (an approval whose life grew, at a deploy) fires nothing: its reminder was owed or
+sent, and a 'decided' push again would be news of nothing. Every round re-reads the phases of the
 approvals it knows (no store write marks the time passing), so the reminder fires exactly once,
 and the end of the window drops what was still owed without a push. Every approval push is sent
 once: the first written try acknowledges it, as does any change of its fingerprint.
@@ -248,7 +250,7 @@ ANSWERED = ('answered', 'filed')          # a question's statuses that hold an u
 FILED_AS = ('pulled', 'freed', 'held')    # what a filed answer did to its record (api._filed_as)
 EVENTS = ('answered', 'filed', 'standing', 'done', 'reopened', 'added', 'decided', 'expiring',
           'submitted', 'sent')
-EXPIRING_S = 20 * 3600                      # after decided_at: an approved one's reminder
+EXPIRING_LEAD_S = 4 * 3600                  # before expires_at: an approved one's reminder
 WATCHER_STALE_S = 300                       # a heartbeat older than this: the watcher is down
                                             # (kitlib.pmstart BEAT_STALE, the same rule)
 WATCHER_POLL_S = 30                         # between heartbeat reads on the thread
@@ -282,12 +284,10 @@ def approval_phase(doc, now):
     if status is None:
         return None
     if status == 'approved':
-        try:
-            at = datetime.datetime.fromisoformat(doc.get('decided_at'))
-            if now >= at + datetime.timedelta(seconds=EXPIRING_S):
-                return 'expiring'
-        except (TypeError, ValueError):
-            pass
+        from kitlib.hubsite import approvals as ap   # local: no cycle needs it now; kept
+        end = ap.expires_at(doc)
+        if end is not None and now >= end - datetime.timedelta(seconds=EXPIRING_LEAD_S):
+            return 'expiring'
     return 'decided'
 
 
@@ -351,9 +351,13 @@ def fingerprint(kind, doc, now=None):
 
 def trigger(kind, doc, old, now=None):
     """The event a change from fingerprint `old` (None: an item not seen before) to doc fires,
-    or None. An approval fires its phase at `now` (fingerprint)."""
+    or None. An approval fires its phase at `now` (fingerprint), except 'decided' after
+    'expiring' (module docstring)."""
     if kind == 'approval':
-        return approval_phase(doc, now if now is not None else _utc_now())
+        phase = approval_phase(doc, now if now is not None else _utc_now())
+        if phase == 'decided' and old is not None and len(old) > 2 and old[2] == 'expiring':
+            return None
+        return phase
     status = doc.get('status')
     if kind == 'question':
         phase = question_phase(doc)
@@ -443,8 +447,8 @@ def guidance(kind, doc_id, event, recipient, entry=None):
         return ('Decided by the owner: hub pending --for %s (or hub approvals show %s).'
                 % (recipient, doc_id))
     if event == 'expiring':
-        return ('Approved and not consumed; it expires 24 h after the decision: hub approvals '
-                'show %s' % doc_id)
+        return ('Approved and not consumed; it expires within %d h: hub approvals show %s'
+                % (EXPIRING_LEAD_S // 3600, doc_id))
     if event == 'reopened':
         return 'Reopened by the owner: for your information, no ack needed (hub view %s).' % doc_id
     if event == 'added':
@@ -473,6 +477,7 @@ class PushWorker(object):
         self._thread = None
         self._rev = 0
         self._fps = {}
+        self._kinds = {}                # approval key -> its document's kind (an op's 'op')
         self._outbox = {}
         self._before = {}               # {key: fingerprint before a question's filing}, _fire
         self._dirty = False
@@ -748,7 +753,8 @@ class PushWorker(object):
         now = self._at()
         for key in keys:
             fp = self._fps[key]
-            phase = approval_phase({'status': fp[0], 'decided_at': fp[1]}, now)
+            phase = approval_phase({'status': fp[0], 'decided_at': fp[1],
+                                    'kind': self._kinds.get(key)}, now)
             if phase != fp[2]:
                 self._changed('approval', key.split(':', 1)[1])
 
@@ -767,9 +773,12 @@ class PushWorker(object):
         doc = self.store.get(_coll(kind), doc_id)
         if doc is None:
             self._fps.pop(key, None)
+            self._kinds.pop(key, None)
             self._before.pop(key, None)
             self._drop(key)
             return
+        if kind == 'approval':
+            self._kinds[key] = doc.get('kind')
         old, fp = self._fps.get(key), self._print(kind, doc)
         self._fps[key] = fp
         if fp != old:
@@ -1156,10 +1165,14 @@ class PushWorker(object):
 
     # ------------------------------------------------------------------ files
     def _prints(self, docs):
+        """Every item's fingerprint, and (kept for _tick) each approval's kind."""
         out, now = {}, (self._at() if docs.get('approvals') else None)
+        self._kinds = {}
         for coll, kind in COLLECTIONS.items():
             for doc_id, d in docs.get(coll, {}).items():
                 out['%s:%s' % (kind, doc_id)] = self._print(kind, d, now)
+                if kind == 'approval':
+                    self._kinds['approval:%s' % doc_id] = d.get('kind')
         return out
 
     def _load(self):

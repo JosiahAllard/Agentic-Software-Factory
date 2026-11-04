@@ -174,6 +174,34 @@ class CreateRetry(unittest.TestCase):
                 self.assertIn("got WMI code %s (%s)" % (out.strip(), meaning), why)
                 self.assertNotIn("tries", why)
 
+    def test_a_code_8_with_a_pid_is_final(self):
+        # A pid back means a process may have started: asking again could start a second one.
+        for out in ("8 1234\n", "8 1234\r\n"):
+            with self.subTest(out=out):
+                run = SeqRun(out, "0 4242\n")
+                (pid, why), slept = self.create(run)
+                self.assertIsNone(pid)
+                self.assertEqual((len(run.calls), slept), (1, []))
+                self.assertIn("got WMI code 8 (unknown failure) with pid 1234 (exit 0)", why)
+
+    def test_a_code_8_with_pid_0_is_asked_again(self):
+        run = SeqRun("8 0\n", "0 4242\n")
+        self.assertEqual(self.create(run)[0], (4242, None))
+        self.assertEqual(len(run.calls), 2)
+
+    def test_a_failed_powershell_after_code_8_tries_says_so(self):
+        calls = []
+
+        def run(args, **kw):
+            calls.append(args)
+            if len(calls) > 1:
+                raise subprocess.TimeoutExpired("powershell", 60)
+            return subprocess.CompletedProcess(args, 0, "8 \n", "")
+        pid, why = dt.create(["x"], "C:\\", {}, run=run, sleep=lambda s: None)
+        self.assertIsNone(pid)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(why.startswith("failed after 2 tries: "), why)
+
     def test_an_undocumented_code_is_named_as_such(self):
         (pid, why), _ = self.create(SeqRun("17 \n"))
         self.assertIsNone(pid)

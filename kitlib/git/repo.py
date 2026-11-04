@@ -193,13 +193,20 @@ def toplevel(path):
     A tool's -C is a plain path option: the checkout to act on is the one -C names (or the
     current directory), and no tool hands off to a copy of itself inside that checkout (there
     is one kit copy)."""
+    place, why = toplevel_place(path)
+    return (place.top if place else None), why
+
+
+def toplevel_place(path):
+    """`(Place, None)` of the work tree `path` is in (toplevel's answer, with the classify() that
+    gave it, for a caller that needs the Place too and must not ask git twice), or `(None, why)`."""
     if not os.path.isdir(path):
         return None, not_a_directory(path)
     place = classify(path)
     if place.kind not in (MAIN, LINKED) or not place.top:
         return None, '%s is in no git work tree git could name (%s%s)' % (
             path, place.kind, ': %s' % place.detail if place.detail else '')
-    return place.top, None
+    return place, None
 
 
 class WriteRefused(Exception):

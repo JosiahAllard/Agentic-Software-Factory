@@ -190,7 +190,7 @@ class Tool(unittest.TestCase):
 
         def boom(path, fields):
             raise ValueError('an odd failure')
-        with mock.patch.object(BACKLOG.audit, 'append', boom):
+        with mock.patch.object(audit, 'append', boom):
             out, err = self.ok('close', 'FOO', '--reason', 'the work is finished')
         self.assertIn('WROTE', out)
         self.assertNotEqual(self.tip(), before)                # the write stands

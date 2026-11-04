@@ -21,7 +21,9 @@ if [ -d content/roles ] && [ -f tools/render_content.py ] \
     render=1
 fi
 [ -n "$ledger$render" ] || exit 0
-if ! command -v python >/dev/null 2>&1; then
+py=python
+command -v python >/dev/null 2>&1 || py=python3
+if ! command -v "$py" >/dev/null 2>&1; then
     if [ -n "$render" ]; then
         echo "pre-commit: a render source is staged and no python is on PATH to render it: run python tools/render_content.py --write, stage what it wrote, then commit again; commit refused" >&2
         exit 1
@@ -29,4 +31,4 @@ if ! command -v python >/dev/null 2>&1; then
     echo "pre-commit: ledger check skipped: no python on PATH" >&2
     exit 0
 fi
-exec python "${0%/*}/pre-commit.py" "$@"
+exec "$py" "${0%/*}/pre-commit.py" "$@"

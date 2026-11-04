@@ -4,6 +4,9 @@ repo.push_block, whoever pushes; a branch push never does; deleting main is refu
 non-fast-forward push to main is refused whatever push_block says."""
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -466,8 +469,31 @@ class EntryTest(unittest.TestCase):
     def test_the_hook_file_is_a_thin_python_entry(self):
         with open(os.path.join(HOOKS, 'pre-push'), encoding='utf-8') as f:
             text = f.read()
-        self.assertTrue(text.startswith('#!/usr/bin/env python\n'))
+        self.assertTrue(text.startswith('#!/bin/sh\n'))
         self.assertIn('prepush.main', text)
+
+    def run_hook(self, *names):
+        """Run the hook under sh with only shims for `names` on PATH; each shim prints its own name."""
+        sh = shutil.which('sh')
+        if sh is None:
+            self.skipTest('no sh')
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for name in names:
+            path = os.path.join(tmp, name)
+            with open(path, 'w', newline='\n') as f:
+                f.write('#!/bin/sh\necho shim-%s\nexit 7\n' % name)
+            os.chmod(path, 0o755)
+        env = dict(os.environ, PATH=tmp)
+        return subprocess.run([sh, os.path.join(HOOKS, 'pre-push')], env=env, capture_output=True, text=True)
+
+    def test_the_hook_runs_with_only_python3_on_the_path(self):
+        res = self.run_hook('python3')
+        self.assertEqual((res.returncode, res.stdout.strip()), (7, 'shim-python3'))
+
+    def test_the_hook_prefers_python_when_both_exist(self):
+        res = self.run_hook('python', 'python3')
+        self.assertEqual((res.returncode, res.stdout.strip()), (7, 'shim-python'))
 
 
 if __name__ == '__main__':

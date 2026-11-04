@@ -12,6 +12,9 @@ from kitlib.ledger.errors import Refused, Usage
 from tests.gitfixture import TempRepo, fixture_env
 from tests.ledger.test_writer import race, rid
 
+# One spelling is one file only where the file system folds case; elsewhere another spelling is another file.
+CASE_FOLDING = os.path.normcase('A') == os.path.normcase('a')
+
 MODEL = 'Test Model 1'
 
 
@@ -183,7 +186,11 @@ class VcsTest(unittest.TestCase):
         lock = write.lock_path(self.path)
         self.assertEqual(os.path.normcase(os.path.dirname(lock)), common)
         self.assertTrue(os.path.basename(lock).startswith('kit-ledger-ledger.md-'), lock)
-        self.assertEqual(write.lock_path(self.path.replace('\\', '/').upper()), lock)
+        respelt = write.lock_path(self.path.replace('\\', '/').upper())
+        if CASE_FOLDING:
+            self.assertEqual(respelt, lock)
+        else:                                           # another spelling is another file
+            self.assertNotEqual(respelt, lock)
         other = write.lock_path(self.repo.path('rulings', 'other.md'))
         self.assertNotEqual(other, lock)
         self.add()

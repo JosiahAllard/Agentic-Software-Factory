@@ -66,6 +66,7 @@ class SupersedeRouteTest(test_api.ApiCase):
         self.api = api.Api(self.store, clock=test_api.CLOCK, session_keys=lambda: {COORD},
                            checkout=lambda repo: self.repo.root if repo == REPO else None,
                            repo_name=lambda repo: COORD if repo == REPO else None)
+        self.api.coordinators = lambda: {}      # never the machine's own sessions.json
 
     def seed(self, status='approved', at=None):
         return self.store.add('approvals', doc(at or NOW, status)).id
@@ -134,6 +135,47 @@ class SupersedeRouteTest(test_api.ApiCase):
             self.refused('invalid', 'from', 'POST', *self.supersede(other, doc_id, who=who))
         self.assertIn(other, self.pending_ids())
         self.assertIn(other, self.pending_ids())
+
+
+class SupersedeCoordinatorKeyTest(SupersedeRouteTest):
+    """A coordinator keyed differently from its repository's name (the kit's `kit`, whose
+    sessions.json repo is the repository's configured name) may supersede; a coordinator of
+    another repository, or a session of this one that is not a coordinator, may not."""
+
+    def setUp(self):
+        super().setUp()
+        sessions = {
+            COORD: {'repo': COORD, 'agent': True},              # keyed by the repo's name
+            'kit':{'repo': COORD.upper(), 'agent': True},      # matched without case
+            'agents': {'repo': COORD, 'agent': 'pm-kit:coordinator'},
+            'other-repo': {'repo': 'other-repo', 'agent': True},
+            COORD + '-x': {'repo': 'elsewhere', 'agent': True},
+            'plain': {'repo': COORD, 'agent': False},
+            'brief': {'repo': COORD},
+        }
+        self.api._session_keys = lambda: set(sessions)
+        self.api.coordinators = lambda: {k: v.get('repo') for k, v in sessions.items()
+                                         if v.get('agent')}
+
+    def test_a_coordinator_session_of_the_repo_keyed_otherwise_may_supersede(self):
+        for who in ('kit', 'agents', COORD, 'pm'):
+            doc_id = self.seed()
+            self.ok('POST', *self.supersede(doc_id, self.main, who=who))
+            self.assertEqual(self.store.get('approvals', doc_id)['superseded']['from'], who)
+
+    def test_another_repos_coordinator_or_a_plain_session_is_refused(self):
+        doc_id = self.seed()
+        for who in ('other-repo', COORD + '-x', 'plain', 'brief', 'KIT'):
+            self.refused('forbidden', 'from', 'POST', *self.supersede(doc_id, self.main, who=who))
+        self.assertIn(doc_id, self.pending_ids())
+
+    def test_unreadable_sessions_leave_only_the_pm_and_the_repo_name(self):
+        def broken():
+            raise OSError('no sessions.json')
+        self.api.coordinators = broken
+        doc_id = self.seed()
+        self.refused('forbidden', 'from', 'POST', *self.supersede(doc_id, self.main, who='kit'))
+        self.ok('POST', *self.supersede(doc_id, self.main, who=COORD))
 
 
 class SupersedeVerbTest(test_hub_cli.VerbCase):

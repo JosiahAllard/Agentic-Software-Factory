@@ -1307,11 +1307,13 @@ Routes, below `/api/v1`:
   undecided (`conflict`, field `status` otherwise: a decided one is the owner's record); one bound to a
   record drops its line from the record. The `from` is a claim: an
   approval stores none, so it is `pm` (`forbidden`, field `from`, for another).
-- POST `/approvals/{id}/supersede` (agent): the PM, or the coordinator of the approval's repository,
-  marks a decided approval nobody consumed superseded (`hub.py approvals supersede A-n --by A-m|SHA
-  --from KEY --if-version V`, `SUPERSEDED A-n by A-m`). The body gives `from`, `by` and `if_version`,
-  all required. The `from` is a claim, checked as `questions done` checks one: `pm` or the
-  repository's coordinator key (`Api.repo_key`), `forbidden`, field `from`, for another. `by` is the
+- POST `/approvals/{id}/supersede` (agent): the PM, or a coordinator session of the approval's
+  repository, marks a decided approval nobody consumed superseded (`hub.py approvals supersede A-n
+  --by A-m|SHA --from KEY --if-version V`, `SUPERSEDED A-n by A-m`). The body gives `from`, `by` and
+  `if_version`, all required. The `from` is a claim, checked as `questions done` checks one: `pm`, the
+  repository's configured name (`Api.repo_key`), or any sessions.json key whose entry sets `agent`
+  and whose `repo` is that name, matched without case (`Api.coordinator_keys`; the kit's coordinator
+  is keyed `kit`); `forbidden`, field `from`, for another. `by` is the
   approval that replaces it, which must exist and not be itself, or a commit id of 40 hex that main as
   last fetched (`refs/remotes/<remote>/<main>`) reaches in this machine's checkout of the repository
   (`approvals.on_main`); anything else, a git that cannot tell included, is `invalid`, field `by`. Only

@@ -1003,7 +1003,13 @@ class PushWorker(object):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
         keys = []
-        for k in (asker, self._repo_key(record.get('repo')), record.get('repo'),
+        rrepo = record.get('repo')
+        if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
+            rrepo = self._kit_key()     # the kit's records are bound under the PM folder's name
+            rkey = rrepo
+        else:
+            rkey = self._repo_key(rrepo)
+        for k in (asker, rkey, rrepo,
                   self._repo_key(doc.get('repo')), doc.get('repo')):
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
@@ -1031,11 +1037,7 @@ class PushWorker(object):
             return False
 
     def _repo_key(self, repo):
-        """The coordinator key of an approval's repository (Api.repo_key), '' when none. The
-        PM repository's folder name stands for the kit (its records are bound under it), so
-        it gives the kit coordinator's key."""
-        if isinstance(repo, str) and repo and repo.lower() == self._pm_folder().lower():
-            return self._kit_key()
+        """The coordinator key of an approval's repository (Api.repo_key), '' when none."""
         fn = getattr(self.api, 'repo_key', None)
         try:
             got = fn(repo) if fn is not None else ''

@@ -85,7 +85,8 @@ class PushCase(unittest.TestCase):
         self.worker = self.make()
 
     def make(self):
-        w = push.PushWorker(self.store, self.api, self.push, self.folder, clock=lambda: self.t)
+        w = push.PushWorker(self.store, self.api, self.push, self.folder, clock=lambda: self.t,
+                            pm_folder=lambda: '')
         w.begin()
         return w
 
@@ -839,12 +840,13 @@ class RecordViews(object):
     def __init__(self, before='open', after=None):
         self.before, self.after = before, before if after is None else after
         self.filed, self.fail, self.during = False, None, None
+        self.also = {}      # repo -> record id it also holds (besides kit's EX-1)
 
     def record(self, repo, id):
-        if repo.lower() != 'kit' or id != 'EX-1':
+        if not (repo.lower() == 'kit' and id == 'EX-1' or self.also.get(repo.lower()) == id):
             raise HubError('not_found', 'no such record', 'id')
         state = self.after if self.filed else self.before
-        return {'repo': 'kit', 'id': id, 'where': 'open',
+        return {'repo': repo, 'id': id, 'where': 'open',
                 'fields': [['id', id], ['state', state]]}
 
     def record_answer(self, repo, id, qid, at, title, label, note, via, other, waiting):
@@ -1034,6 +1036,7 @@ class FiledRecipientsTest(FiledPushCase):
 
     def bind_pm_folder(self, live):
         self.bind('blocked', 'open', live=live)
+        self.views.also = {'pmrepo': 'KIT-X', 'other': 'KIT-X'}
         self.api.kit_key = lambda: 'kitcoord'
         self.worker.pm_folder = lambda: 'pmrepo'
 

@@ -46,6 +46,17 @@ CHAINED = block('ERROR', 'test_f', "AttributeError: module 'calc' has no attribu
                 'During handling of the above exception, another exception occurred:', '',
                 'Traceback (most recent call last):', '  File "test_x.py", line 12, in test_f',
                 '    raise ValueError()', 'ValueError: two', 'lines')
+ADDS_MUL = '+++ b/calc.py\n+def mul(a, b):\n+    return a * b'      # added_lines of a change
+# Each form a name the base lacks takes, with the name the change adds (calc.mul, calc.Calc.mul,
+# the module pkg.calc_new, the keyword scale) and that name swapped for one it does not add.
+FORMS = ("AttributeError: module 'calc' has no attribute 'mul'",
+         "ImportError: cannot import name 'mul' from 'calc' (/w/calc.py)",
+         "ModuleNotFoundError: No module named 'pkg.calc_new'",
+         "AttributeError: <module 'calc' from '/w/calc.py'> does not have the attribute 'mul'",
+         "AttributeError: 'Calc' object has no attribute 'mul'. Did you mean: 'add'?",
+         "AttributeError: type object 'Calc' has no attribute 'mul'",
+         "TypeError: Calc.add() got an unexpected keyword argument 'scale'")
+ADDS_ALL = ADDS_MUL + '\n+++ b/pkg/calc_new.py\n+X = 1\n+def add(a, b, scale=1):'
 SETUP_CRASH = '\n'.join([SEP, 'ERROR: setUpClass (test_x.T)', DASH,
                          'Traceback (most recent call last):', '  File "test_x.py", line 4',
                          '    x', 'OSError: [Errno 2] No such file or directory', ''])
@@ -53,19 +64,19 @@ SETUP_CRASH = '\n'.join([SEP, 'ERROR: setUpClass (test_x.T)', DASH,
 
 class Python(unittest.TestCase):
     def test_an_assertion_failure_is_red(self):
-        v, reason = V.python_verdict(1, unittest_log(ASSERT_FAIL))
+        v, reason = V.python_verdict(1, unittest_log(ASSERT_FAIL), '')
         self.assertEqual(v, 'RED', reason)
 
     def test_a_crash_is_inconclusive_and_names_the_test_and_its_exception(self):
         for crash in (NONE_CRASH, TYPE_CRASH, SETUP_CRASH):
             with self.subTest(crash=crash.splitlines()[1]):
-                v, reason = V.python_verdict(1, unittest_log(crash))
+                v, reason = V.python_verdict(1, unittest_log(crash), '')
                 self.assertEqual(v, INCONCLUSIVE, reason)
                 self.assertIn(crash.splitlines()[1].split(': ', 1)[1], reason)
                 self.assertIn(crash.rstrip().splitlines()[-1], reason)
 
     def test_one_crash_beside_an_assertion_failure_is_inconclusive(self):
-        v, reason = V.python_verdict(1, unittest_log(ASSERT_FAIL, NONE_CRASH, ran=2))
+        v, reason = V.python_verdict(1, unittest_log(ASSERT_FAIL, NONE_CRASH, ran=2), '')
         self.assertEqual(v, INCONCLUSIVE, reason)
         self.assertIn('test_b', reason)
 
@@ -74,23 +85,61 @@ class Python(unittest.TestCase):
         is (RED there already): the test names code the change adds."""
         for missing in (MISSING_NAME, MISSING_IMPORT):
             with self.subTest(missing=missing.splitlines()[1]):
-                v, reason = V.python_verdict(1, unittest_log(missing))
+                v, reason = V.python_verdict(1, unittest_log(missing), ADDS_MUL)
                 self.assertEqual(v, 'RED', reason)
                 self.assertIn(missing.rstrip().splitlines()[-1], reason)
 
+    def test_each_missing_name_form_is_red_only_when_the_diff_adds_the_name(self):
+        for exc in FORMS:
+            with self.subTest(exc=exc):
+                v, reason = V.python_verdict(1, unittest_log(block('ERROR', 'test_n', exc)), ADDS_ALL)
+                self.assertEqual(v, 'RED', reason)
+                self.assertIn(exc, reason)
+                v, reason = V.python_verdict(1, unittest_log(block('ERROR', 'test_n', exc)), '')
+                self.assertEqual(v, INCONCLUSIVE, reason)
+                self.assertIn('the base..head diff adds no', reason)
+
+    def test_a_name_counts_only_as_a_whole_word_of_the_diff(self):
+        log = unittest_log(MISSING_NAME)
+        self.assertEqual(V.python_verdict(1, log, '+def multiply(a, b):\n+x = mul_')[0], INCONCLUSIVE)
+        self.assertEqual(V.python_verdict(1, log, '+    self.mul = 2')[0], 'RED')
+
+    def test_a_missing_module_matches_its_dotted_name_or_its_last_part(self):
+        log = unittest_log(block('ERROR', 'test_m', "ModuleNotFoundError: No module named 'pkg.sub'"))
+        self.assertEqual(V.python_verdict(1, log, '+from pkg.sub import x')[0], 'RED')
+        self.assertEqual(V.python_verdict(1, log, '+++ b/pkg/sub.py')[0], 'RED')
+        self.assertEqual(V.python_verdict(1, log, '+import pkg')[0], INCONCLUSIVE)
+
+    def test_an_import_error_naming_no_name_is_inconclusive(self):
+        """A DLL that will not load, or a None attribute, is a crash whatever the diff adds."""
+        for exc in ('ImportError: DLL load failed while importing _calc: The specified module '
+                    'could not be found.',
+                    "AttributeError: 'NoneType' object has no attribute 'mul'",
+                    "AttributeError: partially initialized module 'calc' has no attribute 'mul' "
+                    '(most likely due to a circular import)'):
+            with self.subTest(exc=exc):
+                v, reason = V.python_verdict(1, unittest_log(block('ERROR', 'test_n', exc)),
+                                             ADDS_ALL + '\n+_calc DLL load')
+                self.assertEqual(v, INCONCLUSIVE, reason)
+                self.assertIn('not an assertion failure', reason)
+
+    def test_the_diff_is_a_required_argument(self):
+        with self.assertRaises(TypeError):
+            V.python_verdict(1, unittest_log(MISSING_NAME))
+
     def test_the_last_exception_of_a_chain_decides(self):
-        v, reason = V.python_verdict(1, unittest_log(CHAINED))
+        v, reason = V.python_verdict(1, unittest_log(CHAINED), ADDS_MUL)
         self.assertEqual(v, INCONCLUSIVE, reason)
         self.assertIn('ValueError: two', reason)
 
     def test_a_failure_with_no_failed_test_is_inconclusive(self):
         log = 'test_a ... unexpected success\n\n%s\nRan 1 test in 0s\n\nFAILED (unexpected successes=1)\n' % DASH
-        self.assertEqual(V.python_verdict(1, log)[0], INCONCLUSIVE)
+        self.assertEqual(V.python_verdict(1, log, '')[0], INCONCLUSIVE)
 
     def test_the_runner_s_assertion_pattern_names_more_assertions(self):
-        v, reason = V.python_verdict(1, unittest_log(TYPE_CRASH), r'^TypeError: unsupported')
+        v, reason = V.python_verdict(1, unittest_log(TYPE_CRASH), '', r'^TypeError: unsupported')
         self.assertEqual(v, 'RED', reason)
-        self.assertEqual(V.python_verdict(1, unittest_log(NONE_CRASH), r'^TypeError')[0],
+        self.assertEqual(V.python_verdict(1, unittest_log(NONE_CRASH), '', r'^TypeError')[0],
                          INCONCLUSIVE)
 
 

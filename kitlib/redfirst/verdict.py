@@ -24,7 +24,8 @@ RED only on an assertion failure: a named test that fails at the base on anythin
 an exception in setup, a missing asset) proves nothing about the change and is INCONCLUSIVE, never
 RED. Each failure is judged on its own (is_assertion), and one that is no assertion makes the
 selector INCONCLUSIVE: unittest's FAIL block is an assertion and its ERROR block is not, unless its
-exception names a module or name the base lacks (missing_name); a JUnit <error> is not, nor a
+exception names a module or name the base lacks that the base..head diff adds (missing_name,
+in_diff: the test files' own lines do not count); a JUnit <error> is not, nor a
 <failure> or .trx message whose exception type is no assertion type (ASSERT_TYPE) or that says a
 method `threw`. A runner's `assertion` regex, matched against a failure's `<type>: <message>`
 (an exit-code command runner: against the log), names more failures that count as assertions.
@@ -364,10 +365,37 @@ def dotnet_verdict(rc, log, counts, copied, assertion=None):
 # traceback up to the next block's `=` line or the closing dash line.
 _PY_BLOCK = re.compile(r'^(FAIL|ERROR): (.*?)\r?\n-{70}\r?\n(.*?)(?=^={70}\r?$|^-{70}\r?\nRan |\Z)',
                        re.M | re.S)
-# An exception that names a module or a name the base lacks: what a test file that will not import
-# says (RED), raised inside the test instead.
-_MISSING_NAME = re.compile(r"^(?:ModuleNotFoundError: |ImportError: |AttributeError: module '[^']+' "
-                           r"has no attribute )")
+# An exception that names a module or a name the base lacks, raised inside the test: what a test
+# file that will not import says (RED there), here RED only when the change adds that name
+# (missing_name, in_diff). Each form captures the name. A None attribute is a crash, never a name.
+# ImportError with no name (DLL load failed, a relative import) matches none: INCONCLUSIVE.
+_MODULE_FORM = re.compile(r"^ModuleNotFoundError: No module named '([^']+)'")
+_NAME_FORMS = (
+    re.compile(r"^ImportError: cannot import name '([^']+)'"),
+    re.compile(r"^AttributeError: module '[^']+' has no attribute '([^']+)'"),
+    re.compile(r"^AttributeError: .* does not have the attribute '([^']+)'"),        # mock.patch
+    re.compile(r"^AttributeError: '(?!NoneType')[^']+' object has no attribute '([^']+)'"),
+    re.compile(r"^AttributeError: type object '[^']+' has no attribute '([^']+)'"),
+    re.compile(r"^TypeError: .*\bgot an unexpected keyword argument '([^']+)'"),
+)
+
+
+def missing_name(exc):
+    """The names the exception line `exc` says the base lacks, any of which the diff may add: a
+    missing module's dotted name and its last part, else the one name. None for any other line."""
+    m = _MODULE_FORM.match(exc)
+    if m:
+        return [m.group(1), m.group(1).rsplit('.', 1)[-1]]
+    for form in _NAME_FORMS:
+        m = form.match(exc)
+        if m:
+            return [m.group(1)]
+    return None
+
+
+def in_diff(names, added):
+    """Whether any of `names` is a whole word in `added`, the base..head diff's added lines."""
+    return any(re.search(r'(?<!\w)%s(?!\w)' % re.escape(n), added) for n in names)
 
 
 def py_exception(trace):
@@ -382,7 +410,10 @@ def py_exception(trace):
     return rest[-1] if rest else ''
 
 
-def python_verdict(rc, log, assertion=None):
+def python_verdict(rc, log, added, assertion=None):
+    """(verdict, reason) of a unittest run. `added`: the base..head diff's added lines outside the
+    files under test (run.py added_lines); an ERROR naming a name the base lacks is RED only when
+    that name is a whole word in it (missing_name, in_diff), else INCONCLUSIVE."""
     m = re.findall(r'^Ran (\d+) tests? in', log, re.M)
     if not m:
         return ERROR, 'unittest printed no summary (exit %d)' % rc
@@ -409,8 +440,14 @@ def python_verdict(rc, log, assertion=None):
         exc = py_exception(trace)
         if kind == 'FAIL' or (assertion and re.search(assertion, exc, re.M)):
             failed += 1
-        elif _MISSING_NAME.match(exc):
+            continue
+        names = missing_name(exc)
+        if names and in_diff(names, added):
             missing = missing or exc
+        elif names:
+            return INCONCLUSIVE, ('%s raised %s, but the base..head diff adds no %r outside the '
+                                  'files under test: a name the base lacks proves the change only '
+                                  'when the change adds it' % (name.strip(), exc, names[0]))
         else:
             return INCONCLUSIVE, ('%s raised %s, not an assertion failure: a crash or setup error at '
                                   'the base proves nothing' % (name.strip(), exc or 'an exception'))
@@ -563,7 +600,9 @@ def trx_counts(path, since=0.0):
     return None
 
 
-def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0, head='.'):
+def judge(sel, rc, log_text, tw, log_dir, n, copied, added, since=0.0, head='.'):
+    """(verdict, reason) of one selector's run. `added`: the base..head diff's added lines outside
+    the `copied` files (run.py added_lines), which a python runner's missing name must be in."""
     if sel.kind == 'gradle':
         # Every task's folder (a module's test task may not be named `test`), but only the
         # selector's own class: `--tests` filters the named task alone, so a sibling test task
@@ -579,7 +618,7 @@ def judge(sel, rc, log_text, tw, log_dir, n, copied, since=0.0, head='.'):
     if sel.kind == 'dotnet':
         return dotnet_verdict(rc, log_text, trx_counts(trx_path(sel, log_dir, n), since), copied,
                               sel.runner.get('assertion'))
-    return python_verdict(rc, log_text, sel.runner.get('assertion'))
+    return python_verdict(rc, log_text, added, sel.runner.get('assertion'))
 
 
 def exit_code(verdicts, cleaned):

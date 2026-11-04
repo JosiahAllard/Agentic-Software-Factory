@@ -408,9 +408,9 @@ def locked_run(slot, ints):
     return run
 
 
-def run_one(sel, n, tw, log_dir, files, run, head='.'):
+def run_one(sel, n, tw, log_dir, files, added, run, head='.'):
     """(verdict, reason, log) for one selector. Its log and .trx from an earlier run in the same
-    log dir are deleted first: only this run's results are read."""
+    log dir are deleted first: only this run's results are read. `added`: added_lines."""
     argv, cwd, env = V.command(sel, tw, log_dir, n, head=head)
     log = os.path.join(log_dir, '%d-%s-%s.log' % (n, sel.kind, V.stem(sel.path)))
     # A command runner's result file goes wherever it is: an earlier selector of this run may have
@@ -432,8 +432,35 @@ def run_one(sel, n, tw, log_dir, files, run, head='.'):
             text = fh.read()
     except OSError as e:
         return V.ERROR, 'the run left no log (exit %d): %s' % (rc, e), log
-    v, reason = V.judge(sel, rc, text, tw, log_dir, n, files, started, head)
+    v, reason = V.judge(sel, rc, text, tw, log_dir, n, files, added, started, head)
     return v, reason, log
+
+
+def added_lines(top, base, head, files):
+    """The `+` lines of `git diff base head` outside the `files` copied in (their own lines name
+    everything they test), the `+++ b/<path>` line of each new or changed file among them: the
+    words a missing name must be among to count RED (verdict.python_verdict). No rename detection,
+    so a moved file's path and lines count as added. A file whose path git quotes (`+++ "b/..."`)
+    is left out too: it cannot be told from a copied one, and leaving it out errs to INCONCLUSIVE.
+    V.Usage when git cannot read the diff."""
+    rc, out, err = git(top, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0', base, head)
+    if rc != 0:
+        raise V.Usage('refused: the diff %s..%s could not be read: %s'
+                      % (base[:10], head[:10], err or 'exit %d' % rc))
+    copied = set(files)
+    keep, lines, body = False, [], False
+    for line in out.splitlines():
+        if line.startswith('diff --git '):
+            keep, body = False, False
+        elif not body and line.startswith('+++ '):
+            # git ends the line with a tab when the path holds a space
+            keep = line.startswith('+++ b/') and line[len('+++ b/'):].rstrip('\t') not in copied
+            body = True
+            if keep:
+                lines.append(line)
+        elif body and keep and line.startswith('+'):
+            lines.append(line)
+    return '\n'.join(lines)
 
 
 class Plan(object):
@@ -526,9 +553,11 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
     # keeps the tree's commits under a tag (the safe advice when it cannot be told).
     landed = gitrefs.is_ancestor(base, upstream, top)[0] is True
     timeout, timeout_from = run_timeout(top, base)
+    added = added_lines(top, base, head, files)
     if not log_dir:
         log_dir = default_log_dir(cfg, main)
     return Plan(top=top, main=main, base=base, head=head, sels=sels, files=files, new=new, had=had,
+                added=added,
                 landed=landed, log_dir=os.path.abspath(log_dir),
                 worktrees_dir=os.path.normpath(cfg.repo['worktrees_dir']),
                 tools_dir=cfg.tools_dir, hold_wait=section['hold_wait'],
@@ -864,7 +893,8 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
                 if ints.seen:
                     raise KeyboardInterrupt
                 for n, sel in enumerate(plan.sels, 1):
-                    v, reason, log = run_one(sel, n, tw, plan.log_dir, plan.files, run, plan.top)
+                    v, reason, log = run_one(sel, n, tw, plan.log_dir, plan.files, plan.added, run,
+                                             plan.top)
                     verdicts.append(v)
                     say('%-6s %s  %s  %s' % (v, sel.text, reason, log))
             finally:

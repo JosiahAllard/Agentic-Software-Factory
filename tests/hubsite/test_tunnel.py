@@ -45,6 +45,19 @@ GIT_WHY = "fatal: unable to access 'https://git.example.invalid/team/data.git/' 
 DECIDE = api.BASE + '/decide-test'
 
 
+# the loopback ports this module's listeners leave in TIME_WAIT (httpfix.ChurnGuard)
+# measured 12 on 11-04 (1344 before send() reset its connections); 64 leaves 5x room
+CHURN = httpfix.ChurnGuard(__name__, 64)
+
+
+def setUpModule():
+    CHURN.start()
+
+
+def tearDownModule():
+    CHURN.check()
+
+
 class _Sync(object):
     """What serve needs of a git sync; `state` is a test's changes to status()."""
 

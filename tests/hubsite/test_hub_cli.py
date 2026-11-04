@@ -39,6 +39,20 @@ HUB = load()
 RULING = 'R-' + '0007'
 
 
+# the loopback ports this module's listeners leave in TIME_WAIT (httpfix.ChurnGuard)
+# measured 238-252 on 11-04 (295 before): most are the CLI's own client
+# (kitlib/hubsite/serve.py), which closes the ordinary way; 400 leaves 1.6x room
+CHURN = httpfix.ChurnGuard(__name__, 400)
+
+
+def setUpModule():
+    CHURN.start()
+
+
+def tearDownModule():
+    CHURN.check()
+
+
 class CliCase(unittest.TestCase):
     def setUp(self):
         self.addCleanup(lambda: self.assertEqual(httpfix.http_threads(), [],

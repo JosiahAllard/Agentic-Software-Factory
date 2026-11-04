@@ -16,6 +16,7 @@ Default: one row per model, one column per view (front, 3/4, side).
   frames (--frames, default 8) from a fixed camera (--view, default side) framed on the whole
   clip, then an onion-skin tile that overlays them, earlier frames fainter.
   --turnaround and --filmstrip write OUT only inside a git checkout (blender_run.py's --out rule).
+  A relative OUT is taken against the current folder and made absolute before that check.
 --keep-tiles: also keep each tile as OUT_<model>_<view>.png (3/4 is written 3q; a filmstrip tile
   is OUT_<model>_<clip>_f<frame>.png, its overlay _onion) beside OUT, so
   compare_sheet.py can put them on a labelled page. Two models with the same file name get
@@ -78,6 +79,9 @@ def parse_args(argv):
     ap.add_argument("out")
     ap.add_argument("files", nargs="+")
     opts = ap.parse_args(argv)
+    # Blender resolves a relative scene.render.filepath against its own idea of the cwd (seen: the
+    # drive root), not the cwd the --out check judged, so OUT is made absolute here, before both.
+    opts.out = os.path.abspath(opts.out)
     if opts.view is None:
         opts.view = "side" if opts.filmstrip else "3/4"
     return opts
@@ -87,7 +91,7 @@ def out_refusal(opts):
     """Why OUT may not be written, or None. The turnaround and filmstrip modes, made for the art
     loop, write only inside a git checkout; the older modes keep their old freedom."""
     if opts.turnaround or opts.filmstrip:
-        return B.out_refusal(os.path.dirname(os.path.abspath(opts.out)))
+        return B.out_refusal(os.path.dirname(opts.out))
     return None
 
 

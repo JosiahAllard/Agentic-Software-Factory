@@ -20,13 +20,14 @@ only a result recorded for the same tracked inputs: build output such as obj/ an
 cache, never an input.
 
 The toolchain (toolchain_digest). A step's `toolchain` probe argvs run in its cwd (through
-kitlib.proc.spawn, the environment a step gets, stdin closed, stdout read, killed with their tree
-after runner.PROBE_TIMEOUT); each one's argv, program path and sha256 and output (CRLF made LF,
-`<root>` and `<kit>` written for the folders) join the digest. A probe that fails gives the step
-no key (NotCacheable). The digest joins the cache key, the input key (part TOOLCHAIN), and the
-same-tree check (_same_toolchain); a step that declares none starts no probe, and its key and
-input key are exactly as before the opt-in. Probed again after the run (_keeper, record_keys): a
-toolchain that answered otherwise stores nothing and writes no input key for the step.
+kitlib.proc.spawn, outside the slot's job, with os.environ plus PYTHONDONTWRITEBYTECODE=1, stdin
+closed, stdout read, killed with their tree after runner.PROBE_TIMEOUT); each one's argv, program
+path and sha256 and output (CRLF made LF, `<root>` and `<kit>` written for the folders) join the
+digest. A probe that fails gives the step no key (NotCacheable). The digest joins the cache key,
+the input key (part TOOLCHAIN), and the same-tree check (_same_toolchain); a step that declares
+none starts no probe, and its key and input key are exactly as before the opt-in. Probed again
+after the run (_keeper, record_keys): a toolchain that answered otherwise stores nothing and writes
+no input key for the step.
 
 Fail closed. Anything that raises means every step runs. Nothing is read or stored:
   - for a step that runs no command, a check step, a step without `globs` or `content`.globs, a
@@ -523,9 +524,10 @@ def step_key(root, cfg, spec, step, files, kit, changed=(), probes=None):
 def _probe(argv, n, cwd, subs):
     """{argv, program, sha256, out} of the toolchain probe `argv` (the `n`th of its step) run in
     `cwd`: its argv and output with the checkout's root and the kit's folders written `<root>` and
-    `<kit>`, and the program found on PATH with its sha256. Started through kitlib.proc.spawn
-    with the environment a step gets and nothing on stdin; the probe and everything it started
-    are killed after runner.PROBE_TIMEOUT. NotCacheable when the program is not found or cannot
+    `<kit>`, and the program found on PATH with its sha256. Started through kitlib.proc.spawn,
+    outside the slot's job, with runner.child_env(None) (os.environ, not the slot's environment)
+    and nothing on stdin; the probe and everything it started are killed after
+    runner.PROBE_TIMEOUT. NotCacheable when the program is not found or cannot
     start, or the probe does not finish in time, exits non-zero, or prints nothing or text that
     is not UTF-8 (on stdout; stderr is not read)."""
     def bad(why):

@@ -24,12 +24,14 @@ SRC = test_reuse.SRC
 UNIT = test_reuse.UNIT
 
 SDK_ENV = 'KIT_TEST_TOOLCHAIN_SDK'
-# prints the SDK file; "fail" exits 1, "hang" sleeps past any patched PROBE_TIMEOUT
+# prints the SDK file; "fail" exits 1, "hang" sleeps past any patched PROBE_TIMEOUT, "bytes"
+# prints bytes that are not UTF-8
 PROBE = ['{python}', '-c',
          'import os, sys, time\n'
          't = open(os.environ["%s"], encoding="utf-8").read()\n'
          'if t == "fail": sys.exit(1)\n'
          'if t == "hang": time.sleep(60)\n'
+         'if t == "bytes": sys.stdout.buffer.write(b"8.0.\\xff\\xfe\\n"); sys.exit(0)\n'
          'sys.stdout.write(t)\n' % SDK_ENV]
 # names {base}: only the same tree and the input tree can serve it (as a repository's test tiers)
 TOOLY = {'name': 'tooly', 'always': True, 'globs': ['src/*'], 'pass': '^ok$', 'reuse': True,
@@ -186,7 +188,8 @@ class Cache(ToolchainCase):
 class ProbeFails(ToolchainCase):
     def test_a_probe_that_fails_gives_the_step_no_key_and_stores_nothing(self):
         cases = (('fail', 'it exited 1'), ('', 'it printed nothing'),
-                 ('hang', 'it did not finish within 1 s'))
+                 ('hang', 'it did not finish within 1 s'),
+                 ('bytes', 'it printed text that is not UTF-8'))
         for i, (text, why) in enumerate(cases):
             with self.subTest(text=text), mock.patch.object(runner, 'PROBE_TIMEOUT', 1):
                 # a file of its own: unit's key is new each time, so unit is stored each time
@@ -227,6 +230,30 @@ class Bumper(ToolchainCase):
         out = self.gate(wt, full=True)
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(self.keys(tip), {})
+
+
+# its probe's program is on no PATH
+MISSING = 'kit-test-no-such-toolchain-program'
+LOST = {'name': 'lost', 'always': True, 'globs': ['src/*'], 'cmd': OK_CMD, 'pass': '^ok$',
+        'reuse': True, 'toolchain': [[MISSING, '--version']]}
+
+
+class ProbeNotFound(ToolchainCase):
+    GATE = {'steps': [UNIT, LOST]}
+    ASKING = ('unit', 'lost')
+
+    def test_a_probe_whose_program_is_not_found_gives_the_step_no_key(self):
+        self.assertIsNone(shutil.which(MISSING))
+        wt, tip = self.branch('feature', dict(SRC))
+        out = self.gate(wt)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.line_of('NONE', 'lost'), reuse.PREFIX + 'NONE lost: toolchain '
+                         'probe 1 (%s): its program is not found' % MISSING, self.said)
+        self.assertFalse([l for l in self.lines('STORED') if ' lost:' in l], self.said)
+        self.assert_ran(out.log_dir, 'lost')
+        out = self.gate(wt, full=True)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(sorted(self.keys(tip)), ['unit'])
 
 
 class NoOptIn(ReuseCase):

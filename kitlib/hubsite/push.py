@@ -243,7 +243,9 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                        'is unknown, their reading is stale while a session runs there, or there '
                        'is no reading since the hub last started a session there, so they may '
                        'have room; the log says why for each. A stale reading whose week reset '
-                       'has passed counts as reset (0%), so such an account is never left out.'
+                       'has passed counts as reset (0%) once past a 5-minute grace, so it is '
+                       'never left out as stale (it still waits for a reading after the hub\'s '
+                       'last start there).'
                        + _PM_RESUMES,
             'pm-limit': _CROSSOVER + 'the PM session is at the weekly limit and this job cannot '
                         'move it: it is not a launched session (the desktop app), or '

@@ -84,7 +84,11 @@ than the baseline fails, a file with no baseline fails on its first hit, and few
 ## Optional machine-wide tools (`optional/`, tests in `tests/optional`)
 
 - `comfy`: a ComfyUI image-generation client. Its lock tool defaults to the plugin's
-  `tools/machine_lock.py`; env `KIT_MACHINE_LOCK` names another. No connection to the generator
+  `tools/machine_lock.py`; env `KIT_MACHINE_LOCK` names another. It starts ComfyUI headless
+  from the local Comfy Desktop install's own Python (read from `%APPDATA%\Comfy Desktop\`
+  `installations.json`; it never starts the Desktop app). Starting ComfyUI is Windows only;
+  elsewhere it uses a ComfyUI that already answers. `up` books a local-ai run holding
+  `comfy-port:<port>` for an art session and `down` ends it. No connection to the generator
   exits 2 with `GENERATOR UNAVAILABLE` and stops the run; an HTTP error from ComfyUI exits 1.
   `render_glb.py` renders GLB contact sheets in Blender (`--grid COLS`: one view of many
   models). `compare_sheet.py` writes a labelled HTML page of images; it refuses a non-image

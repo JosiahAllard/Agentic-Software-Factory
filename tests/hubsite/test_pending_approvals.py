@@ -1,7 +1,8 @@
 """An approval the owner decided and that is not consumed is pending: for the PM and for the
 coordinator of its repository (by its `repo`), and the push tells both, once at the decision and
-once more 20 h after it while it is still approved (docs/action-hub.md "Who handles a pending
-item" and "Push notifications")."""
+once more 4 h before it expires while it is still approved (30 days after the decision for a
+file approval, 24 h for an op one; docs/action-hub.md "Who handles a pending item" and "Push
+notifications")."""
 import datetime
 import json
 import os
@@ -21,6 +22,8 @@ from tests.gitfixture import own_git
 REPO = 'example.org/team/kit'
 T0 = 1800000000.0       # the decision, epoch seconds
 H = 3600
+D = 24 * H
+LIFE = 30 * D           # a file approval's (approvals.APPROVAL_LIFE_S)
 
 
 def iso(t):
@@ -52,8 +55,9 @@ class PendingItemsCase(unittest.TestCase):
 
     def test_approved_until_consumed_or_expired(self):
         self.assertEqual(self.ids(decided(), T0 + 1), [('approval', 'A-001', REPO)])
-        self.assertEqual(self.ids(decided(), T0 + 24 * H - 1), [('approval', 'A-001', REPO)])
-        self.assertEqual(self.ids(decided(), T0 + 24 * H), [])
+        self.assertEqual(self.ids(decided(), T0 + 25 * H), [('approval', 'A-001', REPO)])
+        self.assertEqual(self.ids(decided(), T0 + LIFE - 1), [('approval', 'A-001', REPO)])
+        self.assertEqual(self.ids(decided(), T0 + LIFE), [])
         self.assertEqual(self.ids(decided('consumed', consumed_at=iso(T0 + 5)), T0 + 10), [])
 
     def test_denied_for_24_hours(self):
@@ -137,16 +141,22 @@ class FakePush(object):
 
 
 class PushCase(Clocked):
-    """One push to each at the decision, one more at 20 h while approved, none after."""
+    """One push to each at the decision, one more 4 h before it expires while approved, none
+    after."""
 
     def setUp(self):
         Clocked.setUp(self)
         self.push = FakePush()
         self.folder = os.path.join(self.root, 'state')
         os.mkdir(self.folder)
+        self.worker = self.restart()
+
+    def restart(self):
+        """A new worker on the same store and state folder, as a hub server restart makes."""
         self.worker = push.PushWorker(self.store, self.api, self.push, self.folder,
                                       clock=lambda: self.t)
         self.worker.begin()
+        return self.worker
 
     def sent(self, t=None):
         if t is not None:
@@ -161,13 +171,70 @@ class PushCase(Clocked):
         both = [('kit', 'Decided by the owner'), ('pm', 'Decided by the owner')]
         self.assertEqual(self.sent(), both)
         self.assertEqual(self.sent(T0 + H), [])
-        self.assertEqual(self.sent(T0 + 20 * H - 1), [])
-        soon = 'Approved and not consumed; it expires 24 h after the decision'
+        self.assertEqual(self.sent(T0 + 20 * H), [])
+        self.assertEqual(self.sent(T0 + LIFE - 4 * H - 1), [])
+        soon = 'Approved and not consumed; it expires within 4 h'
         late = [('kit', soon), ('pm', soon)]
-        self.assertEqual(self.sent(T0 + 20 * H), late)
-        self.assertEqual(self.sent(T0 + 20 * H + 1), [])
-        self.assertEqual(self.sent(T0 + 24 * H), [])
-        self.assertEqual(self.sent(T0 + 30 * H), [])
+        self.assertEqual(self.sent(T0 + LIFE - 4 * H), late)
+        self.assertEqual(self.sent(T0 + LIFE - 4 * H + 1), [])
+        self.assertEqual(self.sent(T0 + LIFE), [])
+        self.assertEqual(self.sent(T0 + LIFE + D), [])
+
+    def test_the_reminder_is_tied_to_when_it_expires(self):
+        doc = decided()
+        self.assertEqual(push.approval_phase(doc, at(T0 + LIFE - 4 * H - 1)), 'decided')
+        self.assertEqual(push.approval_phase(doc, at(T0 + LIFE - 4 * H)), 'expiring')
+        op = dict(doc, kind='op')
+        self.assertEqual(push.approval_phase(op, at(T0 + 20 * H - 1)), 'decided')
+        self.assertEqual(push.approval_phase(op, at(T0 + 20 * H)), 'expiring')
+        self.assertIsNone(push.approval_phase(op, at(T0 + D)))
+
+    def test_an_op_approval_is_reminded_20_hours_after_its_decision(self):
+        doc = approvals.new_op_doc('D-001', 'kit', 'run D-001', 'Run it', at(T0 - 60))
+        self.t = T0
+        self.store.put('approvals', 'A-002', dict(doc, status='approved', decision='approve',
+                                                  decided_at=iso(T0)))
+        self.assertTrue(self.sent())
+        self.assertEqual(self.sent(T0 + 20 * H - 1), [])
+        self.assertIn('Approved and not consumed; it expires within 4 h',
+                      [text for _r, text in self.sent(T0 + 20 * H)])
+        self.assertEqual(self.sent(T0 + D), [])
+
+    def test_a_restart_fires_nothing_for_an_approval_its_longer_life_revived(self):
+        # Decided three days ago, so the old 24 h life had ended it: the new life brings it
+        # back as pending, and a deploy's restart must not announce it again.
+        self.t = T0 - 120
+        self.store.put('approvals', 'A-001', decided())
+        self.worker.stop()
+        self.t = T0 + 3 * D
+        with open(os.path.join(self.folder, push.OUTBOX), 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+        self.restart()
+        self.assertEqual(self.push.calls, [])
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(len(self.sent(T0 + LIFE - 4 * H)), 2)      # its one reminder, in time
+
+    def test_a_reminder_owed_under_the_old_life_does_not_fire_a_decision_again(self):
+        # An 'expiring' reminder owed when the hub restarts on the 30-day life (its push not
+        # yet written): its phase goes back to 'decided', which fires nothing.
+        self.decide()
+        self.assertEqual(len(self.sent()), 2)
+        self.push.deliver = lambda recipient, text: push.Sent(push.NOT_WRITTEN, '', '', False)
+        with mock.patch.object(approvals, 'APPROVAL_LIFE_S', D):
+            self.t = T0 + 20 * H
+            self.worker.poll()
+        with open(os.path.join(self.folder, push.OUTBOX), encoding='utf-8') as f:
+            owed = json.load(f)
+        self.assertEqual(owed['approval:A-001']['fingerprint'][2], 'expiring')
+        self.worker.stop()
+        del self.push.deliver
+        self.t = T0 + 21 * H
+        self.restart()
+        self.assertEqual(self.push.calls, [])
+        self.assertEqual(self.sent(), [])
+        with open(os.path.join(self.folder, push.OUTBOX), encoding='utf-8') as f:
+            self.assertNotIn('approval:A-001', json.load(f))
+        self.assertEqual(len(self.sent(T0 + LIFE - 4 * H)), 2)
 
     def test_header_names_the_approval(self):
         self.decide()

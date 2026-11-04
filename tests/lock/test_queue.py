@@ -4,9 +4,13 @@ import os
 import unittest
 from tests.platforms import windows_only
 
+from .helpers import StoreCase
+
 if os.name == "nt":
+    from kitlib.lock import api
     from kitlib.lock import layout as lay
     from kitlib.lock import queue as qm
+    from kitlib.lock import status as st
 
 NOW = 1_800_000_000.0
 
@@ -72,6 +76,32 @@ class Plan(unittest.TestCase):
         got = self.plan(es)
         self.assertEqual(got["r-big"]["start"], NOW + 500)
         self.assertEqual(got["r-small"]["start"], NOW)
+
+    def resource_head(self, held_at):
+        # H holds cores 2-3 and resource LAND (expect 1000). W, the head, needs the 2 cores free
+        # now (0-1) and LAND, so LAND alone puts it off; W2 names LAND too; T, a long 2-core
+        # run, is behind both.
+        h = holder("r-h", [2, 3], held_at, 1000)
+        h["resource"] = LAND
+        return self.plan([h, land("r-w", 2, 100, 2), land("r-w2", 1, 100, 3),
+                          waiter("r-t", 2, 2000, 4)])
+
+    def test_a_head_put_off_by_an_overrun_resource_holder_leaves_free_cores_to_backfill(self):
+        # H is overrun, so its end (now + 500) slides on every pass: W plans no slots at that
+        # start, and T takes the cores free now instead of waiting behind a start that moves.
+        got = self.resource_head(NOW - 5000)
+        self.assertEqual((got["r-t"]["start"], got["r-t"]["cores"]), (NOW, [0, 1]))
+        self.assertTrue(got["r-t"]["now"])
+        self.assertEqual(got["r-w"]["start"], NOW + 500)        # its start and place unchanged
+        self.assertLess(got["r-w"]["position"], got["r-t"]["position"])
+        self.assertEqual(got["r-w2"]["start"], NOW + 600)       # resource order kept
+
+    def test_a_head_put_off_by_an_on_time_resource_holder_keeps_its_cores(self):
+        # H is on time (ends at now + 900): W keeps cores 0-1 from then, so T waits for H.
+        got = self.resource_head(NOW - 100)
+        self.assertEqual((got["r-w"]["start"], got["r-w"]["cores"]), (NOW + 900, [0, 1]))
+        self.assertFalse(got["r-t"]["now"])
+        self.assertEqual(got["r-t"]["start"], NOW + 900)
 
     def test_own_turn_entries_plan_first(self):
         got = self.plan([waiter("r-a", 4, 100, 2), waiter("r-held", 4, 100, 3, hold="h-x")])
@@ -437,6 +467,30 @@ class ResourceExclusion(unittest.TestCase):
         rec2["id"] = "r-y"
         e2 = qm.join(q, rec2, {"cpu": 1, "gpu": 0})
         self.assertEqual((e2["resource"], e2["priority"]), (None, None))
+
+
+@windows_only("the lock is Windows only")
+class BackfillLabel(StoreCase):
+    """What status (and the wait line, which shares queue.BACKFILL_TEXT) says of a backfill:
+    planned before a run ahead of it, never that it starts now."""
+
+    def test_status_says_a_backfill_is_planned_before_a_run_ahead_of_it(self):
+        snap = api.snapshot(self.store)
+        row = {"id": "r-t", "position": 2, "repo": "kit", "slug": "t", "kind": "test",
+               "needs": {"cpu": 2, "gpu": 0}, "since": None, "est_start": None,
+               "backfill": True, "moved": None, "resource": None, "priority": None,
+               "within_slots": None, "why": ""}
+        snap["queue"]["entries"] = [row, dict(row, id="r-u", position=3, backfill=False)]
+        lines = [x for x in st.render(snap) if x.startswith("waiting: ")]
+        self.assertEqual(len(lines), 2, lines)
+        self.assertTrue(lines[0].endswith(
+            "queue position 2, expected to start once what keeps it waiting ends "
+            "(planned to start before a run ahead of it in the queue)"), lines[0])
+        self.assertTrue(lines[1].endswith(
+            "queue position 3, expected to start once what keeps it waiting ends"), lines[1])
+        self.assertFalse(any("ahead of its turn" in x for x in lines))
+        self.assertEqual(qm.BACKFILL_TEXT,
+                         " (planned to start before a run ahead of it in the queue)")
 
 
 if __name__ == "__main__":

@@ -2392,7 +2392,8 @@ class Lander(object):
     def post_landing(self):
         """Landed, the records finished and the lock released: one landing feed event per branch
         posted to the hub (kitlib.hubsite.landings), built from the land record the ledger line
-        was (rr.last). Best-effort with a short timeout: each event the hub did not take is a
+        was (rr.last), with the hub approvals its commits put on main (landed_approvals).
+        Best-effort with a short timeout: each event the hub did not take is a
         WARNING said as progress and dropped, and the outcome, its lines and its code stand
         whatever happens here. Never raises."""
         try:
@@ -2406,7 +2407,8 @@ class Lander(object):
                 events.append(landings.event(
                     rr.last, repo_name, self.cfg.main_branch, self.merge,
                     records=self.closed.get(rr.branch, ()), mode=mode,
-                    deploy=self.deploy_note(rr.last.get('tip'))))
+                    deploy=self.deploy_note(rr.last.get('tip')),
+                    approvals=self.landed_approvals(rr.last.get('tip'))))
             lines = landings.post(events, client=self.hub)
         except BaseException as e:  # noqa: BLE001 - landed: only the feed misses it
             lines = ['WARNING: the landing was not posted to the hub feed (%s); the landing '
@@ -2432,6 +2434,16 @@ class Lander(object):
             return None
         r = self.git('log', '-1', '--format=%B', tip)
         return landings.deploy_note(cmd.text(r.out)) if r.rc == 0 else None
+
+    def landed_approvals(self, tip):
+        """{A-<n>: sha} of the hub approvals the commits main (before the landing) .. `tip`
+        carry (kitlib.hubsite.approvals.landed), for the hub page's "on main"; {} when git cannot
+        tell. Display only: whether an approval is spent is read from main itself."""
+        from kitlib.hubsite import approvals    # here: as deploy_note
+        if not (tip and self.expect_main):
+            return {}
+        got, _why = approvals.landed(self.root, self.expect_main, tip)
+        return got or {}
 
     def refresh_mirrors(self, out):
         """Step 13, landed and nothing held: the merge pushed to the load nodes' mirrors of main

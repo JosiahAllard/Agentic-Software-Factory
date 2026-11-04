@@ -54,7 +54,8 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   (kitlib.commit.approval; docs/commit.md "Owner approval"). The paths named must be exactly the
   approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
   content is written, staged and checked blob for blob, committed with `Owner-Approval: hub:A-<n>`
-  before Co-Authored-By, and the approval consumed for that commit. A refusal after the write
+  before Co-Authored-By, and the approval consumed, recording that commit (a rebuild of it needs
+  no new approval: docs/commit.md "Owner approval"). A refusal after the write
   puts the work tree back and unstages what this call staged. A consume that fails leaves the
   commit (REFUSED, naming the retry): --owner-approval hub:A-<n> --consume <commit> consumes it.
 - Otherwise the trailer is `Co-Authored-By: Claude <model> <noreply@anthropic.com>`, "Claude "
@@ -1122,8 +1123,9 @@ def render_sources(root, paths):
 
 
 # The approval an --owner-approval commit carries: the hub client, its id (A-<n>), its document,
-# and the HEAD the steps before the write judged it on (None until _approval_before_write).
-_Hub = collections.namedtuple('_Hub', 'client did doc head', defaults=(None,))
+# the HEAD the steps before the write judged it on and what they found to write there
+# (approval.prewrite; both None until _approval_before_write).
+_Hub = collections.namedtuple('_Hub', 'client did doc head plan', defaults=(None, None))
 
 
 def _approval_first(req, root, paths):
@@ -1151,20 +1153,23 @@ def _approval_first(req, root, paths):
 
 
 def _approval_before_write(root, hub, paths, status_before):
-    """`hub`, with the HEAD it was judged on, once the approved change may be written: none of its
-    paths staged already, the paths its own and HEAD on its base's content
-    (approval.prewrite_error), and the hub verifying it for HEAD; else _Stop."""
+    """`hub`, with the HEAD it was judged on and what to write there, once the approved change may
+    be written: none of its paths staged already, the paths its own and the change applying on
+    HEAD (approval.prewrite: the approved content, or its clean merge onto HEAD's copy), and the
+    hub verifying it for its base; else _Stop."""
     staged = sorted(set(status_before) & set(approval.approved_paths(hub.doc)))
     why = None
     if staged:
         why = ('%s is staged already: an approved commit records the approved content only. '
                'Unstage it first' % ', '.join(staged))
-    head = None if why else head_commit(root)
-    why = why or approval.prewrite_error(root, hub.did, hub.doc, paths, head)
+    head = plan = None
+    if not why:
+        head = head_commit(root)
+        plan, why = approval.prewrite(root, hub.did, hub.doc, paths, head)
     why = why or approval.preverify_error(root, hub.client, hub.did, hub.doc, head)
     if why:
         raise _Stop(REFUSED, 'refused: %s. Nothing was written or committed.' % why)
-    return hub._replace(head=head)
+    return hub._replace(head=head, plan=plan)
 
 
 def _stage(req, root, paths, rendered, named, merged, status_before, msg_warnings, body, trailers,
@@ -1195,7 +1200,7 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     # after the machine-path check, so the blobs checked are the blobs committed.
     head = head_commit(root)
     snap = index_snapshot(root, status_after)
-    why = hub and approval.staged_error(hub.doc, head, status_after, snap, hub.head)
+    why = hub and approval.staged_error(hub.doc, head, status_after, snap, hub.head, hub.plan)
     if why:
         raise _Stop(REFUSED, 'refused: %s. Nothing was committed.' % why)
     refusal, warnings = staged_machine_path_error(root, status_after, status_before)
@@ -1374,7 +1379,7 @@ def _commit(req, lines):
     written = None
     if hub:
         trailers.insert(0, approval.trailer(req.owner_approval))
-        written, why = approval.write(root, hub.doc)
+        written, why = approval.write(root, hub.doc, hub.plan)
         if written is None:
             raise _Stop(REFUSED, 'refused: %s. Nothing was committed.' % why)
     try:

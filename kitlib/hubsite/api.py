@@ -131,9 +131,14 @@ else null (_lint_runs); no view, or one that fails, is an empty list.
 Landings (docs/action-hub.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
 landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
-record ids), and the hub sets posted_at. GET landings (ANY) lists them newest first, filtered by
-`repo`, at most `limit` (default FEED_MAX); GET snapshot carries the newest FEED_MAX. Every event
-is kept; none is ever pending or pushed, and no route changes or deletes one.
+record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
+main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
+whose repo is the event's (repo_name of its remote) is marked spent (that sha) and spent_at,
+once: display only, for a later page (none reads it yet); its status stays, any other is
+skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
+lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX); GET snapshot
+carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
+changes or deletes one.
 
 Hand-offs (docs/action-hub.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
 checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
@@ -2478,8 +2483,47 @@ def landings_add(api, req):
     records = _typed(b, 'records', (list,), 'a list')
     if records is not None and not all(isinstance(r, str) and r.strip() for r in records):
         raise _invalid('records is a list of record ids', 'records')
+    from . import approvals as ap
+    landed = _typed(b, 'approvals', (dict,), 'an object')
+    if landed is not None and not all(isinstance(k, str) and ap.APPROVAL_ID.match(k)
+                                      and isinstance(v, str) and ap.SHA.match(v)
+                                      for k, v in landed.items()):
+        raise _invalid('approvals is an object of approval ids (A-<n>) to commit shas',
+                       'approvals')
     b['posted_at'] = api.clock()
-    return api.add('landings', b, req)
+    out = api.add('landings', b, req)
+    out['spent'] = _mark_spent(api, landed or {}, b['repo'], b['posted_at'], req)
+    return out
+
+
+def _mark_spent(api, landed, repo, now, req):
+    """The ids of the file approvals in `landed` ({id: sha}) marked spent now: each consumed
+    one, of the event's `repo` (api.repo_name of its remote; none when that is unknown), with no
+    spent yet. The event is any agent's: it cannot mark an approval no commit used, or another
+    repository's. Display only, for a later page; one that changed meanwhile is left."""
+    marked, repo = [], str(repo).strip().lower()
+    for doc_id in sorted(landed, key=_natural):
+        d = api.store.get('approvals', doc_id)
+        if not (isinstance(d, dict) and d.get('kind') is None and d.get('status') == 'consumed'
+                and not d.get('spent') and _repo_name_of(api, d.get('repo')) == repo):
+            continue
+        try:
+            api.store.update('approvals', doc_id,
+                             {'spent': landed[doc_id], 'spent_at': now, 'via': _via(req)},
+                             if_version=_version(d))
+        except HubError:
+            continue
+        marked.append(doc_id)
+    return marked
+
+
+def _repo_name_of(api, repo_id):
+    """The configured repository name (lower case) of the remote `repo_id`, or None."""
+    try:
+        name = api.repo_name(repo_id) if isinstance(repo_id, str) and repo_id else None
+    except Exception:           # noqa: BLE001 - no name: nothing is marked
+        return None
+    return name.strip().lower() if isinstance(name, str) and name.strip() else None
 
 
 # hand-offs ("Hand-offs"): the record a session writes beside its ready reply to the PM

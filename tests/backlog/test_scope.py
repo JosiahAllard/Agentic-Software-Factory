@@ -89,6 +89,27 @@ class Complement(unittest.TestCase):
         self.assertEqual(smod.complement('docs/**', {'docs/x.md', 'docs/y.md'}, TREE), [])
 
 
+class InsideBareFolder(unittest.TestCase):
+    """`inside_bare_folder`: a bare member (no `/**`) strictly above the other, which narrowing
+    reads as a folder; `strictly_inside` (the commit side's) stays the glob's alone."""
+
+    def test_a_member_below_a_bare_folder(self):
+        self.assertTrue(smod.inside_bare_folder('kit/sub/c.py', 'kit/sub'))
+        self.assertTrue(smod.inside_bare_folder('kit/sub/**', 'kit'))
+        self.assertTrue(smod.inside_bare_folder('Kit/Sub/c.py', 'kit/sub'))
+        self.assertFalse(smod.strictly_inside('kit/sub/c.py', 'kit/sub'))
+
+    def test_not_strictly_below_or_a_glob_outer_is_false(self):
+        for inner, outer in (('kit/sub', 'kit/sub'), ('kit', 'kit/sub'), ('kit/a.py', 'kit/sub'),
+                             ('kit/sub/c.py', 'kit/sub/**'), ('kit/subx/c.py', 'kit/sub')):
+            with self.subTest(inner=inner, outer=outer):
+                self.assertFalse(smod.inside_bare_folder(inner, outer))
+
+    def test_an_illegal_member_raises(self):
+        with self.assertRaises(smod.UndecidableScope):
+            smod.inside_bare_folder('kit/*.py', 'kit')
+
+
 class AddBroadScope(StoreCase):
     """`add` warns, never refuses, on a scope broader than the change needs."""
 

@@ -90,6 +90,7 @@ class Side(object):
 
 # A script is a list of steps: ('git', argv[, cwd]), ('write', relpath, text[, cwd]),
 # ('bytes', relpath, data) (the file's exact bytes), ('mtime', relpath, ns) (the file's mtime),
+# ('delete', relpath) (the file removed: a state another git process leaves half-way),
 # ('setup', argv) (real git on both sides: a state the fake cannot reach itself) or
 # ('read', relpath) (the two sides' file bytes compared, None when it is absent).
 BRANCH_AND_LAND = [
@@ -213,6 +214,26 @@ WORKTREES_AND_CONFLICTS = [
 # extensions.worktreeConfig (set by the Claude desktop app in the kit's own repository): each
 # worktree's config.worktree is a layer after the repository config and before -c.
 _LINKED_WT_CONFIG = '.git/worktrees/wt/config.worktree'
+# A linked worktree half made or half removed by another git process, as `worktree list` meets
+# it: `worktree add` writes the admin directory's gitdir before its HEAD, and `worktree remove`
+# deletes the admin directory file by file. git lists one without HEAD with the null oid,
+# detached, and leaves out one without gitdir (worktree.c get_linked_worktree). A landing's
+# `worktree list` beside another landing's branch cleanup met the first (tests.gate.
+# test_land_queue FirstComeFirstServed, a landing gate of kit/ownerpath-merge-sync).
+HALF_MADE_WORKTREES = [
+    ('git', ['worktree', 'add', '-q', WT, '-b', 'kit/wt']),
+    ('git', ['worktree', 'add', '-q', '--detach', WT2]),
+    ('delete', '.git/worktrees/wt/HEAD'),
+    ('git', ['worktree', 'list', '--porcelain']),
+    ('git', ['worktree', 'list', '--porcelain', '-z']),
+    ('delete', '.git/worktrees/wt2/gitdir'),
+    ('git', ['worktree', 'list', '--porcelain']),
+    ('git', ['worktree', 'list', '--porcelain', '-z']),
+    ('git', ['worktree', 'prune']),         # wt2's registration, gitdir gone, goes
+    ('bytes', '.git/worktrees/wt/HEAD', b'ref: refs/heads/kit/wt\n'),
+    ('git', ['worktree', 'list', '--porcelain']),
+]
+
 _KIT_KEYS = ['config', '--get-regexp', r'^kit\.']
 WORKTREE_CONFIG = [
     ('git', ['config', 'kit.scope', 'local']),
@@ -501,6 +522,10 @@ class FakeAgainstRealGit(unittest.TestCase):
                 for s in sides:
                     os.utime(s.repo.path(step[1]), ns=(step[2], step[2]))
                 continue
+            if step[0] == 'delete':
+                for s in sides:
+                    os.remove(s.repo.path(step[1]))
+                continue
             if step[0] == 'setup':
                 got = [s.real(step[1])[0] for s in sides]
                 self.assertEqual(got[0], got[1], 'set-up step %d git %s' % (n, ' '.join(step[1])))
@@ -538,6 +563,9 @@ class FakeAgainstRealGit(unittest.TestCase):
 
     def test_worktree_config(self):
         self.run_script(BRANCH_AND_LAND[:3] + WORKTREE_CONFIG)
+
+    def test_worktree_list_beside_a_half_made_worktree(self):
+        self.run_script(BRANCH_AND_LAND[:3] + HALF_MADE_WORKTREES)
 
     def test_gitattributes_line_endings(self):
         self.run_script(BRANCH_AND_LAND[:3] + ATTRIBUTES)

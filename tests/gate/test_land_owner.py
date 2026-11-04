@@ -185,14 +185,13 @@ class OwnerApproval(OwnerLandCase):
         self.assertEqual(self.hub.asked[-1][1], approved_on)
 
     def test_an_approved_commit_on_a_main_where_the_owner_changed_its_path_is_refused(self):
-        approved_on = self.main
         self.hub_seam()
         tip = self.approve_and_commit('approved\n', moved={'CLAUDE.md': 'owner\n'})
         out = self.lander(BRANCH, self.main, tip).run()
-        self.assertIn('%s by %s changes CLAUDE.md (owner approval hub:A-001 refused: %s: CLAUDE.md'
-                      ' at %s is not as the approved base %s has it)'
-                      % (tip[:10], AGENT, ap.WHY_HEAD, self.main[:12], approved_on[:12]),
-                      out.lines[0])
+        # the approval creates CLAUDE.md, which the owner made since: the delta rule refuses it
+        self.assertIn('%s by %s changes CLAUDE.md (owner approval hub:A-001 refused: %s: CLAUDE.md:'
+                      ' the file the approval creates is already at the parent with other '
+                      'content)' % (tip[:10], AGENT, ap.WHY_FILES), out.lines[0])
         self.assert_untouched(out, G.REFUSED)
 
 

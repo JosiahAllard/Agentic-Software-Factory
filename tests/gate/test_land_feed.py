@@ -65,7 +65,7 @@ class Posts(FeedCase):
         self.assertEqual({k: ev[k] for k in result.LEDGER_FIELDS},
                          {k: line[k] for k in result.LEDGER_FIELDS})
         self.assertEqual((ev['branch'], ev['tip'], ev['verdict']), (BRANCH, tip, 'pass'))
-        self.assertEqual(sorted(ev), sorted(landings.FIELDS))
+        self.assertEqual(sorted(ev), sorted(f for f in landings.FIELDS if f != 'approvals'))
         self.assertEqual(ev['repo'], runner.repo_name(lander.cfg, self.repo.root))
         self.assertEqual((ev['main_branch'], ev['main']), ('main', out.merge))
         self.assertEqual((ev['records'], ev['deploy']), ([], 'restart the hub'))
@@ -80,6 +80,17 @@ class Posts(FeedCase):
         hub = FakeHub(self)
         self.landed(self.lander(BRANCH, self.main, tip, hub=hub).run())
         self.assertIsNone(hub.posted[0][2]['deploy'])
+
+    def test_an_event_names_each_approval_whose_commit_the_landing_put_on_main(self):
+        # approvals.landed over the base main..the tip: the hub marks each one spent for its page
+        wt = self.repo.worktree('feature')
+        self.repo.write('a.py', 'x = 1\n', root=wt)
+        one = self.repo.commit('a\n\nOwner-Approval: hub:A-007\n%s\n' % TRAILERS, 'a.py', cwd=wt)
+        self.repo.write('b.py', 'y = 1\n', root=wt)
+        tip = self.repo.commit('b\n\n%s\n' % TRAILERS, 'b.py', cwd=wt)
+        hub = FakeHub(self)
+        self.landed(self.lander(BRANCH, self.main, tip, hub=hub).run())
+        self.assertEqual(hub.posted[0][2]['approvals'], {'A-007': one})
 
     def test_a_landing_that_did_not_land_posts_nothing(self):
         _, tip = self.branch('feature', {'RED': 'x\n'})

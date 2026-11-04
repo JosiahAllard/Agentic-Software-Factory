@@ -23,7 +23,6 @@ still reads the home folder's file, for the move (kitlib.config.move) alone.
 import collections
 import os
 import stat
-import tempfile
 
 import kitlib.platform
 from kitlib.platform.linux import paths as linux_paths
@@ -365,6 +364,7 @@ def system_temp(environ=None, platform=None):
     if plat.startswith('linux'):
         return linux_paths.temp()
     if plat != 'win32':
+        import tempfile
         return tempfile.gettempdir()
     lad = env.get('LOCALAPPDATA')
     if not lad:
@@ -414,6 +414,7 @@ def mkdtemp(prefix, home=None):
     """A new folder (tempfile.mkdtemp, `prefix`) in temp_parent(home), that folder made if
     missing; with no temp_parent, or one that cannot be made or written, in this process's temp
     folder. For short-lived private folders (a private git index). Never a config error."""
+    import tempfile
     parent = temp_parent(home)
     if parent:
         try:
@@ -573,6 +574,7 @@ def make_temp(near, prefix, home=None):
     made if missing; else, with a note saying why, one in default_work_temp(near) when that is
     another folder and can be used, else one from mkdtemp (the machine config's `temp_dir`, else
     this process's temp folder)."""
+    import tempfile
     parent = None
     try:
         parent = work_temp(near, home)

@@ -162,8 +162,10 @@ def self_test(store, drop_spaces=False):
 
 
 def add_token(path, token):
-    """Add the digest of `token` to the store at `path`, creating it when absent or `{}`.
-    Returns `(added, count, why)`: whether a record was written, the number of tokens, and the
+    """Add the digest(s) of `token` to the store at `path`, creating it when absent or `{}`: the
+    spaceless form, plus the space-kept form when a token has spaces (the default scan reads
+    that one), so a multi-word token is two records.
+    Returns `(added, count, why)`: whether a record was written, the number of digest records, and the
     self-test's answer for the store as written (None: sound). ForbiddenError for an empty or
     short token, or a file that is not a token store. The caller reads `token` from stdin: an
     argument would land in shell history and the process list."""
@@ -179,13 +181,20 @@ def add_token(path, token):
     if not isinstance(store.get('salt'), str) or not isinstance(store.get('tokens'), list):
         raise ForbiddenError('%s is not a token store (no salt or token list); nothing written' % path)
     salt_bytes = bytes.fromhex(store['salt'])
-    d = digest(salt_bytes, norm)
-    if any(t.get('digest') == d for t in store['tokens']):
+    # The default scan keeps one space per whitespace run, so a multi-word token needs that
+    # form stored too; the spaceless form stays for the paranoid scan.
+    forms = [norm]
+    spaced = normalise(token, drop_spaces=False)[0].strip()
+    if spaced != norm:
+        forms.append(spaced)
+    have = {t.get('digest') for t in store['tokens']}
+    new = [{'length': len(f), 'digest': digest(salt_bytes, f)} for f in forms
+           if digest(salt_bytes, f) not in have]
+    if not new:
         return False, len(store['tokens']), self_test(store)
     store['canary'] = digest(salt_bytes, normalise(CANARY, True)[0])
     store['algo'] = 'sha256'
-    store['tokens'] = sorted(store['tokens'] + [{'length': len(norm), 'digest': d}],
-                             key=lambda t: t['digest'])
+    store['tokens'] = sorted(store['tokens'] + new, key=lambda t: t['digest'])
     store['checksum'] = tokens_checksum(store)
     with open(path, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(store, fh, indent=2, sort_keys=True)

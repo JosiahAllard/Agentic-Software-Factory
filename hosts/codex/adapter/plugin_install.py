@@ -269,11 +269,12 @@ def _run(argv, env):
 
 
 def codex_running():
-    """True when a process named codex.exe runs (the CLI, or the desktop app's). False when none
-    does or the list cannot be had: the add's os error 5 is the fallback."""
+    """True when a process named codex.exe (codex on Linux) runs (the CLI, or the desktop app's).
+    False when none does or the list cannot be had: the add's os error 5 is the fallback."""
+    from hosts.codex.adapter.sessions import exe_name
     from kitlib.proc import process
     try:
-        return any(name.lower() == 'codex.exe' for _pid, _ppid, name in process.snapshot())
+        return any(name.lower() == exe_name() for _pid, _ppid, name in process.snapshot())
     except OSError:
         return False
 

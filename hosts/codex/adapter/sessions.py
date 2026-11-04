@@ -27,7 +27,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from kitlib import sessionmark
+from kitlib import platform, sessionmark
 
 HOST = 'codex'
 EXE_ENV = 'PM_KIT_CODEX_EXE'
@@ -52,15 +52,25 @@ def desktop_codex(environ=None):
     return max(found)[1] if found else None
 
 
+def exe_name():
+    """The Codex binary's file name on this platform: codex.exe on Windows, codex on Linux."""
+    return 'codex.exe' if platform.NAME == 'windows' else 'codex'
+
+
 def native_codex(explicit=None, environ=None):
     env = os.environ if environ is None else environ
-    selected = (explicit or env.get(EXE_ENV) or shutil.which('codex.exe', path=env.get('PATH', ''))
+    name = exe_name()
+    selected = (explicit or env.get(EXE_ENV) or shutil.which(name, path=env.get('PATH', ''))
                 or desktop_codex(env))
     if not selected:
-        raise ValueError('codex.exe is unavailable; provide an absolute %s or --codex-exe path' % EXE_ENV)
+        raise ValueError('%s is unavailable; provide an absolute %s or --codex-exe path' % (name, EXE_ENV))
     path = Path(selected)
-    if not path.is_absolute() or path.suffix.lower() != '.exe' or not path.is_file():
-        raise ValueError('Codex requires an existing absolute .exe path; .cmd/.bat shims are unsupported')
+    suffix = path.suffix.lower()
+    # Windows needs a real .exe; elsewhere a binary has no suffix to check, only the shims are refused.
+    bad = suffix != '.exe' if platform.NAME == 'windows' else suffix in ('.cmd', '.bat')
+    if not path.is_absolute() or bad or not path.is_file():
+        raise ValueError('Codex requires an existing absolute %s path; .cmd/.bat shims are unsupported'
+                         % ('.exe' if platform.NAME == 'windows' else 'binary'))
     return str(path.resolve())
 
 

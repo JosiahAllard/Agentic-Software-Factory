@@ -372,7 +372,7 @@ def survey(home=None):
 
 def _write_new(full, data):
     """Write `data` to `full`, which must not exist: a new temp file beside it (named
-    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a rename that fails when the target
+    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a hard link that fails when the target
     appeared meanwhile. On any failure the temp file is removed."""
     os.makedirs(os.path.dirname(full), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix='.%s.' % os.path.basename(full), suffix=TMP_SUFFIX,
@@ -380,7 +380,8 @@ def _write_new(full, data):
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        os.rename(tmp, full)
+        os.link(tmp, full)                  # FileExistsError on both platforms; rename replaces on POSIX
+        os.remove(tmp)
     except BaseException:
         try:
             os.remove(tmp)

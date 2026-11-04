@@ -301,13 +301,13 @@ class Move(unittest.TestCase):
     def test_a_write_that_fails_part_way_leaves_no_temp_file_and_says_what_was_written(self):
         self.plain()
         self.put(os.path.join(self.new_dir, 'hub', 'token.json'), SECRET)
-        real = os.rename
+        real = os.link
 
         def rename(src, dst):
             if dst.endswith('token.json'):
                 raise PermissionError(13, 'Access is denied', dst)
             return real(src, dst)
-        with mock.patch.object(move.os, 'rename', side_effect=rename):
+        with mock.patch.object(move.os, 'link', side_effect=rename):
             code, out = self.run_move(apply_it=True)
         self.assertEqual(code, move.REFUSED, out)
         self.assertIn('wrote   config.json', out)
@@ -331,10 +331,19 @@ class Move(unittest.TestCase):
 
         class Boom(Exception):
             pass
-        with mock.patch.object(move.os, 'rename', side_effect=Boom):
+        with mock.patch.object(move.os, 'link', side_effect=Boom):
             with self.assertRaises(Boom):
                 move._write_new(target, b'secret')
         self.assertEqual(os.listdir(self.folder), [])
+
+    def test_an_existing_target_is_kept_and_refused(self):
+        target = self.target('x.json')
+        self.put(target, b'old')
+        with self.assertRaises(FileExistsError):
+            move._write_new(target, b'new')
+        with open(target, 'rb') as f:
+            self.assertEqual(f.read(), b'old')
+        self.assertEqual(os.listdir(self.folder), ['x.json'])
 
     def test_git_ignores_the_moves_temp_files(self):
         self.put(self.target('.gitignore'), move.GITIGNORE.encode())

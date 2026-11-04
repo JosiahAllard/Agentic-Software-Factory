@@ -91,7 +91,13 @@ class Trigger(unittest.TestCase):
         self.assertEqual(decide(accounts={'1': on(99, age=3660), '2': on(20)}).action, U.HOLD)
 
     def test_a_week_that_reset_counts_as_zero(self):
-        self.assertEqual(decide(accounts={'1': on(99, week_in=-60), '2': on(20)}).action, U.HOLD)
+        d = decide(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S), '2': on(20)})
+        self.assertEqual((d.action, d.note), (U.HOLD, 'under the trigger'))
+
+    def test_a_week_just_past_its_reset_waits_out_the_grace(self):
+        d = decide(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S + 1), '2': on(20)})
+        self.assertEqual(d.action, U.HOLD)
+        self.assertIn('resets within', d.note)
 
     def test_a_reading_without_the_week_never_counts(self):
         data = reading(99)
@@ -122,14 +128,25 @@ class Trigger(unittest.TestCase):
 
     def test_no_room_names_the_accounts_whose_reading_is_unknown_or_stale(self):
         bad = reading(20)
-        bad['five_hour']['used_percentage'] = None
+        bad['seven_day']['used_percentage'] = None
         accounts = {'1': HOT, '2': on(98), '3': on(20, age=7200), '4': C.AccountState(True, bad),
                     '5': C.AccountState(True, None)}
         d = decide(accounts=accounts, running={'1': 1, '3': 1})
         self.assertEqual((d.action, d.word, d.detail, d.mark),
                          (U.HOLD, 'no-room', 'kit:unknown:a3.a4.a5', 'no-room:unknown:a3.a4.a5'))
-        self.assertEqual(d.note, 'no account has room it can read: account 3 stale, account 4 five_hour '
+        self.assertEqual(d.note, 'no account has room it can read: account 3 stale, account 4 seven_day '
                                  'unknown, account 5 no usage file')
+
+    def test_the_11_04_case_asks_to_move_to_the_account_whose_week_reset(self):
+        # Accounts 1 and 3 fresh at 99; account 2 read 41 h ago at 100%, its week reset since,
+        # its five_hour null: before, no-room named it stale. Now it is the target.
+        gone = dict(reading(100, week_in=-DAY, age=41 * 3600), five_hour=None)
+        accounts = {'1': HOT, '2': C.AccountState(True, gone), '3': on(99)}
+        for running in ({'1': 1, '3': 1}, {'1': 1, '2': 1, '3': 1}):
+            d = decide(accounts=accounts, running=running)
+            self.assertEqual((d.action, d.target, d.word), (U.ASK, '2', 'crossing'), running)
+            # never named unknown or stale in a no-room: its detail is the key alone
+            self.assertEqual(U.no_room('kit', accounts, {'1', '3'}, running, {}, NOW)[1], 'kit')
 
     def test_a_cap_on_the_key_or_the_machine_holds_before_the_child(self):
         three = {'kit': [NOW - 60, NOW - 120, NOW - 180]}
@@ -250,12 +267,9 @@ class Target(unittest.TestCase):
         accounts = {'2': on(96, week_in=DAY), '3': on(94, week_in=5 * DAY)}
         self.assertEqual(self.pick(accounts)[0], '3')
 
-    def test_the_five_hour_window_must_have_room_in_both_tiers(self):
-        self.assertIsNone(self.pick({'2': on(20, five=95)}))
-        self.assertIsNone(self.pick({'2': on(96, five=95)}))
-
-    def test_a_passed_five_hour_window_has_room(self):
-        self.assertEqual(self.pick({'2': on(20, five=100, five_in=-60)})[0], '2')
+    def test_the_five_hour_window_is_never_read_in_either_tier(self):
+        self.assertEqual(self.pick({'2': on(20, five=100)}), ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
+        self.assertEqual(self.pick({'2': on(96, five=100)}), ('2', 'the lowest week under %d%%' % U.TIER2_WEEK))
 
     def test_98_of_the_week_is_no_target(self):
         self.assertIsNone(self.pick({'2': on(98)}))
@@ -280,25 +294,46 @@ class Target(unittest.TestCase):
             self.assertEqual(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}),
                              ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
 
-    def test_no_five_hour_on_a_stale_reading_never_counts(self):
+    def test_a_stale_reading_with_no_five_hour_counts_as_its_week(self):
         data = dict(reading(0, age=7200), five_hour=None)
-        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+        self.assertEqual(self.pick({'2': C.AccountState(True, data)})[0], '2')
         self.assertIsNone(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}))
-        note, detail, _ = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)
+        note, detail, _ = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {'2': 1}, {}, NOW)
         self.assertEqual((note, detail), ('no account has room it can read: account 2 stale',
                                           'kit:unknown:a2'))
 
-    def test_a_five_hour_the_file_gives_but_cannot_be_read_stays_unknown(self):
-        no_pct = reading(0)
-        no_pct['five_hour']['used_percentage'] = None
-        no_reset = reading(0)
-        del no_reset['five_hour']['resets_at']
-        for data in (no_pct, no_reset):
-            self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+    def test_a_stale_reading_whose_week_reset_passed_is_a_tier_one_target(self):
+        # The hub computes the reset: 0% to a week on, even with a live session there
+        for age in (7200, 41 * 3600):
+            data = dict(reading(100, week_in=-DAY, age=age), five_hour=None)
+            for running in ({}, {'2': 1}):
+                self.assertEqual(self.pick({'2': C.AccountState(True, data)}, running=running),
+                                 ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
 
-    def test_no_five_hour_with_an_unknown_week_never_counts(self):
-        data = dict(reading(0), five_hour=None, seven_day=None)
+    def test_the_week_rolls_on_a_week_at_a_time_for_the_tier_one_order(self):
+        rolled = C.AccountState(True, dict(reading(100, week_in=-10 * DAY, age=12 * DAY), five_hour=None))  # resets in 4 days
+        self.assertEqual(self.pick({'2': rolled, '3': on(10, week_in=5 * DAY)})[0], '2')
+        self.assertEqual(self.pick({'2': rolled, '3': on(10, week_in=3 * DAY)})[0], '3')
+
+    def test_a_stale_reading_at_the_limit_keeps_it_until_its_reset(self):
+        data = dict(reading(100, week_in=DAY, age=41 * 3600), five_hour=None)
         self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+        data = dict(reading(100, week_in=-U.A.RESET_GRACE_S + 1, age=41 * 3600), five_hour=None)
+        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+
+    def test_a_week_with_no_reset_time_or_an_unreadable_one_is_unknown(self):
+        no_reset = reading(100, week_in=-DAY, age=7200)
+        del no_reset['seven_day']['resets_at']
+        bad_reset = reading(100, week_in=-DAY, age=7200)
+        bad_reset['seven_day']['resets_at'] = 'Fri 11:00'
+        for data in (no_reset, bad_reset, dict(reading(0), five_hour=None, seven_day=None)):
+            self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
+            note = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)[0]
+            self.assertEqual(note, 'no account has room it can read: account 2 seven_day unknown')
+
+    def test_a_reset_week_still_waits_for_a_reading_after_the_jobs_last_start(self):
+        data = dict(reading(100, week_in=-DAY, age=41 * 3600), five_hour=None)
+        self.assertIsNone(self.pick({'2': C.AccountState(True, data)}, landed={'2': NOW - 600}))
 
     def test_no_second_start_until_a_reading_newer_than_the_last(self):
         accounts = {'2': on(20, age=60)}
@@ -558,8 +593,10 @@ class Asked(unittest.TestCase):
         self.assertEqual((d.action, d.word), (U.HOLD, 'no-ready'))
 
     def test_a_week_that_reset_clears_it(self):
-        d = self.step(accounts={'1': on(99, week_in=-60), '2': on(20)})
+        d = self.step(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S), '2': on(20)})
         self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        d = self.step(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S + 1), '2': on(20)})
+        self.assertEqual(d.action, U.HOLD)          # within the grace: not reset yet
 
     def test_an_early_crossing_stays_open_under_99_and_clears_under_95(self):
         self.assertEqual(self.step(accounts={'1': on(97), '2': on(20)}).action, U.HOLD)

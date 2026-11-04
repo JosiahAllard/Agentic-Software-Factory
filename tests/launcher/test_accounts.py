@@ -4,6 +4,7 @@ import os
 import unittest
 
 from kitlib import pmwatch
+from kitlib.hubsite import derived
 from kitlib.config import user as kuser
 from kitlib.launcher import accounts as A
 from kitlib.launcher import settings as lsettings
@@ -42,16 +43,24 @@ class LaunchDir(unittest.TestCase):
 
 
 class Headroom(unittest.TestCase):
-    def test_refused_at_the_limit_unless_forced_and_a_reset_window_is_free(self):
-        h = Home(self)
-        h.usage('1', five=(95, NOW + DAY / 24), week=(20, NOW + DAY))
+    def test_refused_at_the_limit_unless_forced_and_a_reset_week_is_free(self):
+        h = Home(self, accounts=('1', '2'))
+        h.usage('1', week=(95, NOW + DAY))
         out = []
-        with self.assertRaisesRegex(A.LaunchError, "Account 1 is at 95% of its five_hour window.*95% limit"):
+        with self.assertRaisesRegex(A.LaunchError, "Account 1 is at 95% of its seven_day window.*95% limit"):
             A.check_headroom(h.settings, '1', NOW, False, out)
         A.check_headroom(h.settings, '1', NOW, True, out)
         self.assertIn('--force: starting on account 1 anyway', out[-1])
-        h.usage('2', five=(99, NOW - DAY), week=(10, NOW + DAY))
-        A.check_headroom(h.settings, '2', NOW, False, out)       # its five-hour window has reset
+        h.usage('2', week=(99, NOW - DAY))
+        A.check_headroom(h.settings, '2', NOW, False, out)       # its week has reset
+
+    def test_the_five_hour_window_never_refuses(self):
+        # The plan gives no five-hour readings any more: one a file still holds blocks nothing.
+        h = Home(self)
+        five = {'five_hour': {'used_percentage': 100, 'resets_at': (NOW + DAY / 24).isoformat()}}
+        self.assertEqual(A.over_limit(five, NOW), [])
+        h.usage('1', five=(100, NOW + DAY / 24), week=(20, NOW + DAY))
+        A.check_headroom(h.settings, '1', NOW, False, [])
 
     def test_the_limit_is_95_at_or_over_is_refused_and_94_is_not(self):
         self.assertEqual(A.HEADROOM_LIMIT, 95)
@@ -126,6 +135,47 @@ class Pick(unittest.TestCase):
             A.pick(h.settings, NOW)
 
 
+def week_doc(pct, reset, updated=None):
+    doc = {'seven_day': {'used_percentage': pct,
+                         'resets_at': reset if isinstance(reset, str) else reset.isoformat()}}
+    if updated is not None:
+        doc['updated_at'] = updated.isoformat()
+    return doc
+
+
+class WeekState(unittest.TestCase):
+    """week_state: the one weekly rule of restart_pick, the usage crossover and launch.py usage."""
+
+    def test_a_reset_ahead_keeps_its_value_fresh_or_stale(self):
+        for age in (DAY / 24 / 60, 3 * DAY):
+            self.assertEqual(A.week_state(week_doc(87, NOW + DAY, NOW - age), NOW), (87, NOW + DAY, False))
+
+    def test_a_passed_reset_is_0_and_moves_a_week_on_even_on_a_stale_reading(self):
+        self.assertEqual(A.week_state(week_doc(100, NOW - DAY, NOW - 3 * DAY), NOW), (0, NOW + 6 * DAY, True))
+
+    def test_the_reset_rolls_across_two_weeks(self):
+        self.assertEqual(A.week_state(week_doc(100, NOW - 10 * DAY, NOW - 12 * DAY), NOW),
+                         (0, NOW + 4 * DAY, True))
+        self.assertEqual(A.week_state(week_doc(100, NOW - 14 * DAY), NOW), (0, NOW + 7 * DAY, True))
+
+    def test_a_reading_at_the_limit_keeps_it_until_its_reset_and_the_grace(self):
+        # The grace: a local clock a few minutes ahead of the server never resets a week early.
+        self.assertEqual(A.RESET_GRACE_S, 300)
+        grace = datetime.timedelta(seconds=A.RESET_GRACE_S)
+        for at in (NOW + DAY, NOW, NOW - grace + datetime.timedelta(seconds=1)):
+            self.assertEqual(A.week_state(week_doc(100, at), NOW), (100, at, False), at)
+        self.assertEqual(A.week_state(week_doc(100, NOW - grace), NOW), (0, NOW - grace + 7 * DAY, True))
+
+    def test_a_missing_or_unreadable_week_is_unknown(self):
+        no_reset = week_doc(10, NOW + DAY)
+        del no_reset['seven_day']['resets_at']
+        for data in (None, [], {}, {'seven_day': None}, {'seven_day': 'x'}, no_reset,
+                     week_doc(10, 'Fri 11:00'), week_doc(10, ''), week_doc(None, NOW + DAY),
+                     week_doc('10', NOW + DAY), week_doc(True, NOW + DAY),
+                     week_doc(float('nan'), NOW + DAY), week_doc(float('inf'), NOW + DAY)):
+            self.assertEqual(A.week_state(data, NOW), (None, None, False), data)
+
+
 def reading(five=10, week=10, week_reset=2 * DAY, age=datetime.timedelta(minutes=5), five_reset=DAY / 24):
     """A usage-status.json dict as of NOW: `age` old, each window (pct, reset NOW + delta)."""
     win = lambda pct, delta: {'used_percentage': pct, 'resets_at': (NOW + delta).isoformat()}
@@ -150,20 +200,28 @@ class RestartPick(unittest.TestCase):
         states['2'] = reading(week_reset=DAY, age=pmwatch.STALE_MINUTES * m)
         self.assertEqual(self.pick(states), '2')
 
-    def test_a_missing_file_an_unknown_window_or_no_updated_at_is_skipped(self):
+    def test_a_missing_file_an_unknown_week_or_no_updated_at_is_skipped(self):
         no_pct = reading(week_reset=DAY)
-        no_pct['five_hour']['used_percentage'] = None
+        no_pct['seven_day']['used_percentage'] = None
         no_reset = reading(week_reset=DAY)
         del no_reset['seven_day']['resets_at']
-        no_five_reset = reading(week_reset=DAY)
-        del no_five_reset['five_hour']['resets_at']
+        bad_reset = reading(week_reset=DAY)
+        bad_reset['seven_day']['resets_at'] = 'Fri 11:00'
         null_week = dict(reading(week_reset=DAY), five_hour=None, seven_day=None)
         no_upd = reading(week_reset=DAY)
         del no_upd['updated_at']
         bad_upd = dict(reading(week_reset=DAY), updated_at='not a time')
-        for bad in (None, no_pct, no_reset, no_five_reset, null_week, no_upd, bad_upd):
+        for bad in (None, no_pct, no_reset, bad_reset, null_week, no_upd, bad_upd):
             self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': bad}), '1', bad)
             self.assertIsNone(self.pick({'2': bad}), bad)
+
+    def test_a_five_hour_window_is_never_read(self):
+        no_pct = reading(week_reset=DAY)
+        no_pct['five_hour']['used_percentage'] = None
+        no_reset = reading(week_reset=DAY)
+        del no_reset['five_hour']['resets_at']
+        for five in (no_pct, no_reset, reading(week_reset=DAY, five=100)):
+            self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': five}), '2', five)
 
     def test_a_fresh_reading_with_no_five_hour_counts_as_0_of_it(self):
         # 2026-11-04: the host gives no five_hour; every account's file reads `"five_hour": null`
@@ -172,15 +230,22 @@ class RestartPick(unittest.TestCase):
             absent(fresh)
             self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': fresh}), '2')
 
-    def test_a_stale_reading_with_no_five_hour_never_counts(self):
+    def test_a_stale_reading_whose_week_reset_passed_counts_as_0(self):
+        # 2026-11-04: account 2's last reading 41 h old, at 100% of a week that has reset since
+        stale = dict(reading(week=100, week_reset=-DAY / 2, age=41 * DAY / 24), five_hour=None)
+        self.assertEqual(self.pick({'2': stale}), '2')
+        self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': stale}), '1')   # 2 resets in 6.5 days
+        self.assertEqual(self.pick({'1': reading(week_reset=7 * DAY), '2': stale}), '2')
+
+    def test_a_stale_reading_whose_week_has_not_reset_never_counts(self):
         m = datetime.timedelta(minutes=1)
-        stale = dict(reading(week_reset=DAY, age=(pmwatch.STALE_MINUTES + 1) * m), five_hour=None)
+        stale = dict(reading(week=0, week_reset=DAY, age=(pmwatch.STALE_MINUTES + 1) * m), five_hour=None)
         self.assertIsNone(self.pick({'2': stale}))
 
-    def test_either_window_at_the_limit_is_skipped(self):
-        for over in (reading(week_reset=DAY, five=A.HEADROOM_LIMIT), reading(week_reset=DAY, week=A.HEADROOM_LIMIT)):
-            self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': over}), '1')
-        self.assertEqual(self.pick({'2': reading(week_reset=DAY, five=A.HEADROOM_LIMIT - 0.5)}), '2')
+    def test_a_week_at_the_limit_is_skipped(self):
+        over = reading(week_reset=DAY, week=A.HEADROOM_LIMIT)
+        self.assertEqual(self.pick({'1': reading(week_reset=3 * DAY), '2': over}), '1')
+        self.assertEqual(self.pick({'2': reading(week_reset=DAY, week=A.HEADROOM_LIMIT - 0.5)}), '2')
 
     def test_a_passed_reset_counts_as_0_and_the_week_moves_on(self):
         passed = reading(five=99, five_reset=-DAY / 24, week=99, week_reset=-DAY / 2)   # resets again in 6.5 days
@@ -213,21 +278,33 @@ class Usage(unittest.TestCase):
                           '2': {'five': 0, 'week': 30, 'age': 1440, 'stale': True, 'missing': False},
                           '3': unknown, 'codex': unknown})
 
-    def test_a_passed_reset_is_a_reset_only_with_a_reading_after_it(self):
-        # No reading since the week's reset (the 11-02 file, written before it): unknown, never
-        # 0%, so pm_watch keeps its last figure and logs no RESET. A reading after it: reset.
+    def test_a_passed_week_reset_reads_0_computed_with_no_reading_after_it(self):
+        # No reading since the week's reset (the 11-02 file, written before it): the reset is
+        # computed, 0% to the next one a week on, and said so. A reading after it: a plain 0%.
         h = Home(self, accounts=('1', '2'))
         hour = datetime.timedelta(hours=1)
         h.usage('1', five=(40, NOW - 3 * hour), week=(95, NOW - hour), updated=NOW - 2 * hour)
         h.usage('2', five=(40, NOW - 3 * hour), week=(95, NOW - hour), updated=NOW - hour / 2)
         lines = usage.report(h.settings, NOW)
-        self.assertTrue(lines[0].startswith('account 1: five_hour=reset  seven_day=?  [updated 120 min'), lines[0])
-        self.assertTrue(lines[1].startswith('account 2: five_hour=reset  seven_day=reset  [updated 30 min'), lines[1])
+        nxt = A.short(NOW - hour + 7 * DAY)
+        self.assertEqual(lines[0], 'account 1: five_hour=reset  seven_day=0%% (resets %s) reset passed, '
+                                   'computed  [updated 120 min ago]' % nxt)
+        self.assertEqual(lines[1], 'account 2: five_hour=reset  seven_day=0%% (resets %s)  [updated 30 min ago]' % nxt)
         got = pmwatch.parse_usage('\n'.join(lines))
-        self.assertEqual((got['1']['five'], got['1']['week']), (0, None))
-        self.assertEqual(pmwatch.usage_events({'1': {'five': 40, 'week': 95}}, got), [])
-        self.assertEqual(pmwatch.usage_events({'2': {'five': 40, 'week': 95}}, got),
-                         ['RESET account 2 (weekly 95% -> 0%)'])
+        self.assertEqual((got['1']['five'], got['1']['week']), (0, 0))
+        self.assertEqual(pmwatch.usage_events({'1': {'five': 40, 'week': 95}}, got),
+                         ['RESET account 1 (weekly 95% -> 0%)'])
+
+    def test_the_computed_line_parses_in_pm_watch_and_the_hub_page(self):
+        h = Home(self, accounts=('1',))
+        h.usage('1', week=(100, NOW - 10 * DAY), updated=NOW - 12 * DAY)     # rolled across two weeks
+        lines = usage.report(h.settings, NOW)
+        self.assertIn('seven_day=0%% (resets %s) reset passed, computed' % A.short(NOW + 4 * DAY), lines[0])
+        got = derived.usage(lambda: lines, lambda: NOW.isoformat())
+        one = got['accounts']['1']
+        self.assertEqual((one['five'], one['week'], one['stale']), (None, 0, True))
+        self.assertEqual(one['week_reset'], (NOW + 4 * DAY).astimezone(datetime.timezone.utc).isoformat())
+        self.assertNotIn('five_reset', one)
 
     def test_a_passed_five_hour_reset_reads_reset_with_no_reading_after_it(self):
         # The rule above is the weekly window's alone (pm_watch's RESET is weekly): a five-hour

@@ -5,10 +5,13 @@ this session runs on (current_account, for the Action Hub's one copy per account
 
 Every Claude session's status line writes usage-status.json into its account's config folder:
 {"updated_at": iso, "five_hour": {"used_percentage": n, "resets_at": iso} | null,
- "seven_day": {...} | null}. A window whose resets_at has passed has reset (0%).
+ "seven_day": {...} | null}. Only the week counts (week_state): the plan gives no five-hour
+readings, and a five_hour a file still holds is never read here. A week whose resets_at has
+passed has reset (0%), even on a stale reading.
 """
 import datetime
 import json
+import math
 import os
 import re
 
@@ -17,8 +20,9 @@ from kitlib.launcher.settings import LaunchError
 
 CREDENTIALS = '.credentials.json'
 USAGE_FILE = 'usage-status.json'
-WINDOWS = ('five_hour', 'seven_day')
-HEADROOM_LIMIT = 95      # deep, consultant and topic launches refuse an account at or over this % of either window, the band account picking also skips
+HEADROOM_LIMIT = 95      # deep, consultant and topic launches refuse an account at or over this % of its week, the band account picking also skips
+RESET_GRACE_S = 300      # a recorded week reset counts as passed this long after it: a local clock ahead of the server never resets a full week early
+WEEK = datetime.timedelta(days=7)
 PICK_LIMIT = 95          # pick-account's default
 FRACTION = re.compile(r'\.\d{7,}')   # PowerShell ToString('o') writes 7 fraction digits
 
@@ -113,19 +117,34 @@ def newest_usage(settings, n, by='mtime'):
     return p, data
 
 
+def week_state(data, now):
+    """(pct, reset, passed) of a reading's week: the one weekly rule of restart_pick, the usage
+    crossover and launch.py usage (docs/launcher.md "Usage"). (None, None, False), unknown, when
+    the reading has no seven_day object, its resets_at is missing or not a time, or its
+    used_percentage is not a finite number. A reset still ahead, or passed by less than
+    RESET_GRACE_S: the recorded percentage and reset, fresh or stale (a reading at the limit
+    keeps it until then). Passed by RESET_GRACE_S or more: 0%, the reset moved on whole weeks to
+    the first one after `now`, and passed True, even on a stale reading with no reading after it.
+    The arithmetic is on absolute instants, so a clock change does not move a reset."""
+    w = data.get('seven_day') if isinstance(data, dict) else None
+    if not isinstance(w, dict):
+        return None, None, False
+    pct, reset = w.get('used_percentage'), parse_time(w.get('resets_at'))
+    if (reset is None or not isinstance(pct, (int, float)) or isinstance(pct, bool)
+            or not math.isfinite(pct)):
+        return None, None, False
+    if now < reset + datetime.timedelta(seconds=RESET_GRACE_S):
+        return pct, reset, False
+    return 0, reset + ((now - reset) // WEEK + 1) * WEEK, True
+
+
 def over_limit(data, now, limit=HEADROOM_LIMIT):
-    """The windows at or over `limit`% that have not reset yet, as 'N% of its <window> window
-    (resets ddd HH:mm)' texts."""
-    out = []
-    for k in WINDOWS:
-        w = (data or {}).get(k)
-        if not isinstance(w, dict) or w.get('used_percentage') is None:
-            continue
-        reset = parse_time(w.get('resets_at'))
-        pct = float(w['used_percentage'])
-        if reset and reset > now and pct >= limit:
-            out.append('%d%% of its %s window (resets %s)' % (int(pct), k, short(reset)))
-    return out
+    """The week at or over `limit`% that has not reset yet (week_state), as ['N% of its seven_day
+    window (resets ddd HH:mm)'], else []. A five_hour window is never read."""
+    pct, reset, _ = week_state(data, now)
+    if pct is None or pct < limit:
+        return []
+    return ['%d%% of its seven_day window (resets %s)' % (int(pct), short(reset))]
 
 
 def check_headroom(settings, n, now, force, out, limit=HEADROOM_LIMIT):
@@ -145,22 +164,17 @@ def check_headroom(settings, n, now, force, out, limit=HEADROOM_LIMIT):
 
 
 def week_rows(settings, now):
-    """[(account, pct, reset)] of every signed-in account's seven-day window. A window whose
-    reset has passed is fresh (0%) and resets 7 days after the old time. No file, or a file with
-    no seven-day window or no percentage in it, is unknown: pct and reset None, never 0%."""
+    """[(account, pct, reset)] of every signed-in account's seven-day window (week_state, pct a
+    whole number). A week whose reset has passed is fresh (0%) and resets a whole number of weeks
+    after the old time. No file, or a file with no seven-day window or no percentage in it, is
+    unknown: pct and reset None, never 0%."""
     rows = []
     for n in settings.account_numbers():
         if not account_signed_in(settings, n):
             continue
-        pct, reset = None, None
         _, data = newest_usage(settings, n)
-        w = (data or {}).get('seven_day')
-        used = w.get('used_percentage') if isinstance(w, dict) else None
-        if isinstance(used, (int, float)) and not isinstance(used, bool) and parse_time(w.get('resets_at')):
-            pct, reset = whole(used), parse_time(w['resets_at'])
-            while reset < now:
-                reset, pct = reset + datetime.timedelta(days=7), 0
-        rows.append((n, pct, reset))
+        pct, reset, _ = week_state(data, now)
+        rows.append((n, None if pct is None else whole(pct), reset))
     return rows
 
 
@@ -178,53 +192,29 @@ def pick(settings, now, limit=PICK_LIMIT):
     return chosen[0], rows
 
 
-def five_hour_absent(data):
-    """True when a reading gives no five_hour at all (the key missing or null): the host reports
-    no open five-hour window. On a fresh reading that counts as 0% used, with no reset needed;
-    a five_hour the file gives but that cannot be read stays unknown, and a stale reading is
-    never trusted this way. The one rule of restart_pick and the usage crossover's pick_target
-    (docs/launcher.md "Usage crossover"); each checks freshness itself."""
-    return isinstance(data, dict) and data.get('five_hour') is None
-
-
-def _fresh_week_reset(data, now, stale_minutes, limit):
-    """The seven-day reset of a reading that is fresh and under `limit`% in both windows, or None.
-    Fresh: an updated_at at most `stale_minutes` whole minutes old (kitlib.pmwatch's stale line).
-    A window whose reset has passed counts as 0% and its week moves on 7 days at a time; a window
-    with no percentage or no reset time is unknown, and unknown is never under the limit. An
-    absent five_hour (five_hour_absent) is 0% on this fresh reading."""
-    if not isinstance(data, dict):
-        return None
+def _restart_reset(data, now, stale_minutes, limit):
+    """The week reset of a reading restart_pick may start on, or None: a week that has reset
+    (week_state passed, 0%), fresh or stale; or a fresh reading under `limit`% of its week. Fresh:
+    an updated_at at most `stale_minutes` whole minutes old (kitlib.pmwatch's stale line). An
+    unknown week, or a stale reading whose week has not reset, never qualifies."""
+    pct, reset, passed = week_state(data, now)
+    if pct is None or passed:
+        return reset
     upd = parse_time(data.get('updated_at'))
-    if upd is None or int((now - upd).total_seconds() // 60) > stale_minutes:
+    if upd is None or int((now - upd).total_seconds() // 60) > stale_minutes or pct >= limit:
         return None
-    resets = {}
-    for k in WINDOWS:
-        if k == 'five_hour' and five_hour_absent(data):
-            continue
-        w = data.get(k)
-        reset = parse_time(w.get('resets_at')) if isinstance(w, dict) else None
-        if reset is None:
-            return None
-        if reset > now:
-            pct = w.get('used_percentage')
-            if not isinstance(pct, (int, float)) or isinstance(pct, bool) or pct >= limit:
-                return None
-        resets[k] = reset
-    week = resets['seven_day']
-    while week <= now:
-        week += datetime.timedelta(days=7)
-    return week
+    return reset
 
 
 def restart_pick(states, now, last, stale_minutes, limit=HEADROOM_LIMIT):
     """The account the hub's coordinator restart starts on (docs/launcher.md "Hub restart"): of
-    `states` {account: (signed_in, usage data or None)}, the signed-in one with a fresh reading
-    under `limit`% of both windows whose week resets soonest; a tie goes to `last`, then the
-    lowest number. None when no account qualifies: a missing, stale or unknown reading never does."""
+    `states` {account: (signed_in, usage data or None)}, the signed-in one whose week has reset or
+    whose fresh reading is under `limit`% of its week (_restart_reset), the week that resets
+    soonest; a tie goes to `last`, then the lowest number. None when no account qualifies: a
+    missing or unknown reading never does, nor a stale one whose week has not reset."""
     rows = []
     for n, (signed, data) in states.items():
-        reset = _fresh_week_reset(data, now, stale_minutes, limit) if signed else None
+        reset = _restart_reset(data, now, stale_minutes, limit) if signed else None
         if reset is not None:
             rows.append((reset, str(n) != str(last), int(n) if str(n).isdigit() else float('inf'), str(n)))
     return min(rows)[3] if rows else None

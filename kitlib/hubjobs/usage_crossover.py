@@ -19,7 +19,8 @@ the weekly limit (docs/launcher.md "Usage crossover", docs/action-hub.md "Timed 
                                      holds them); LaunchError for a bad state file
   CrossoverJob(load, ...)            its run(ctx)
 
-The trigger is the weekly window only (the five-hour window is ignored): a reading no older than
+The trigger is the weekly window only (the plan gives no five-hour readings, and a five_hour a
+file still holds is never read): a reading no older than
 pmwatch.STALE_MINUTES at TRIGGER_WEEK% or more, or earlier, a fresh week at EARLY_FLOOR% or more
 that burn_eta, from the account's readings of the last BURN_SPAN_S, puts at 100% within LEAD_S;
 or a stall read: the session transcript's newest entry is a weekly-limit error (the host's
@@ -78,13 +79,14 @@ activity under QUIET_S old. No second start goes to an account until its reading
 job's last start there.
 
 The target (pick_target; never `auto`, never accounts.pick): tier 1, a signed-in account under
-TARGET_LIMIT% of both windows whose week resets first; tier 2, the lowest week under TIER2_WEEK%
-with five hours under TARGET_LIMIT%. Not the session's account, nor the account sessions.json
-still names for it (handoff refuses that one). A stale reading counts only with no live session on
-that account: an idle account's reading does not refresh. An unknown reading never counts, but a
-fresh one whose file gives no five_hour (missing or null: accounts.five_hour_absent) is five hours
-at 0% (five_hour). With no target, `no-room` names in its detail the accounts left out for an
-unknown or stale reading, <key>:unknown:a1.a2 (no_room); detail <key> alone: every one is full.
+TARGET_LIMIT% of its week whose week resets first; tier 2, the lowest week under TIER2_WEEK%. Not
+the session's account, nor the account sessions.json still names for it (handoff refuses that
+one). The week is accounts.week_state's (week_window): a recorded reset passed by
+accounts.RESET_GRACE_S is 0% to a week on, fresh or stale, with or without a live session there,
+since the hub computes it. A stale reading whose week has not reset counts only with no live
+session on that account: an idle account's reading does not refresh. An unknown week never
+counts. With no target, `no-room` names in its detail the accounts left out for an unknown or
+stale reading, <key>:unknown:a1.a2 (no_room); detail <key> alone: every one is full.
 
 One acting step per run across all keys, stop-stalled first, then stop-old, finish, start, ask,
 would-cross; the rest wait for the next run. Every key is decided on each run.
@@ -95,7 +97,7 @@ pm-session or its pm_session_id as the --resume or --session-id value); its acco
 pm_session_id or pm_account recorded, pm-crossover cannot move it: `pm-limit` once per change. A conversation
 cannot resume on another account, so its successor starts fresh from its hand-off file through
 `launch.py pm-crossover`, which confirms the new session and writes coordinators.json. The trigger
-is a session's (the early one included). The target is tier 1 only (no account under TARGET_LIMIT% of both windows: `no-room pm`). Its states:
+is a session's (the early one included). The target is tier 1 only (no account under TARGET_LIMIT% of its week: `no-room pm`). Its states:
 
   asked       the PM is pushed a checkpoint message (PM_CHECKPOINT: update HANDOFF.md, post
               hub_handoff_ready from pm with its path); as a session's, but a stall on full goes to
@@ -184,7 +186,7 @@ from kitlib.launcher.settings import LaunchError, NOTIFY, FULL
 NAME = 'usage-crossover'
 EVERY_S = 300
 FIRST_S = 60                   # before coord-restart's 120: a claim is written before it reads one
-TRIGGER_WEEK = 99              # % of the week; the five-hour window is ignored
+TRIGGER_WEEK = 99              # % of the week; a five-hour window is never read
 TARGET_LIMIT = A.HEADROOM_LIMIT
 TIER2_WEEK = 98
 RESET_NEAR_S = 60 * 60         # a reset this close is waited for
@@ -201,7 +203,6 @@ STOP_TRIES = len(BACKOFF_S)    # stops of one old session run, each after the la
 CAP_WINDOW_S = C.CAP_WINDOW_S
 STATE_FILE = 'usage-crossover.json'
 LOG = 'usage-crossover.log'
-WEEK_S = 7 * 24 * 3600
 PM_DOC = '_pm'                 # the PM's key in the state file (no sessions.json key starts with _)
 PM_DETAIL = 'pm'               # its push detail
 PM_FROM = 'pm'                 # the `from` of its hand-off records (push.PM_KEY)
@@ -264,19 +265,19 @@ def _number(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def window(data, name, now):
-    """(pct, reset epoch) of a reading's window; (None, None) when it is unknown. A window whose
-    reset has passed is 0%, and a week's reset moves on seven days at a time."""
-    w = data.get(name) if isinstance(data, dict) else None
-    used = w.get('used_percentage') if isinstance(w, dict) else None
-    reset = _epoch(w.get('resets_at')) if isinstance(w, dict) else None
-    if not _number(used) or reset is None:
-        return None, None
-    if reset > now:
-        return float(used), reset
-    if name == 'seven_day':
-        reset += (math.floor((now - reset) / WEEK_S) + 1) * WEEK_S
-    return 0.0, reset
+def week_state(data, now):
+    """(pct, reset epoch, passed) of a reading's week: accounts.week_state at epoch `now`; (None,
+    None, False) when it is unknown. A recorded reset passed by accounts.RESET_GRACE_S is 0% (passed
+    True), its reset moved on whole weeks, even on a stale reading."""
+    pct, reset, passed = A.week_state(data, datetime.datetime.fromtimestamp(now, datetime.timezone.utc))
+    if pct is None:
+        return None, None, False
+    return float(pct), reset.timestamp(), passed
+
+
+def week_window(data, now):
+    """(pct, reset epoch) of a reading's week (week_state); (None, None) when it is unknown."""
+    return week_state(data, now)[:2]
 
 
 def is_fresh(data, now):
@@ -317,21 +318,10 @@ def cap_reached(key, starts, now):
     return None
 
 
-def five_hour(data, now):
-    """A reading's five-hour % as pick_target counts it, or None when unknown: window()'s, except
-    that a fresh reading whose file gives no five_hour (missing or null: the host reports no open
-    window) is 0. A five_hour the file gives but window() cannot read stays unknown, and so does
-    any five_hour of a stale reading."""
-    five, _ = window(data, 'five_hour', now)
-    if five is None and A.five_hour_absent(data) and is_fresh(data, now):
-        return 0.0
-    return five
-
-
 def _candidates(accounts, current, running, landed, now):
-    """([(account, five, week, reset)] of the readable accounts pick_target weighs, {account: why}
-    of those left out for want of a reading it may trust: no file, an unknown window, stale with a
-    live session there, or none since the job's last start there)."""
+    """([(account, week, reset)] of the readable accounts pick_target weighs, {account: why} of
+    those left out for want of a reading it may trust: no file, an unknown week, stale with a live
+    session there and its week not reset, or none since the job's last start there)."""
     rows, unread = [], {}
     for acct in sorted(accounts, key=int):
         st = accounts[acct]
@@ -340,23 +330,19 @@ def _candidates(accounts, current, running, landed, now):
         if not isinstance(st.usage, dict):
             unread[acct] = 'no usage file'
             continue
-        five = five_hour(st.usage, now)
-        week, reset = window(st.usage, 'seven_day', now)
-        if five is None and A.five_hour_absent(st.usage) and not is_fresh(st.usage, now):
-            unread[acct] = 'stale'      # no five_hour counts only on a fresh reading
+        week, reset, passed = week_state(st.usage, now)
+        if week is None:
+            unread[acct] = 'seven_day unknown'
             continue
-        if five is None or week is None:
-            unread[acct] = '%s unknown' % ('seven_day' if week is None else 'five_hour')
-            continue
-        if not is_fresh(st.usage, now) and running.get(acct):
-            unread[acct] = 'stale'
+        if not passed and not is_fresh(st.usage, now) and running.get(acct):
+            unread[acct] = 'stale'      # a week that has reset counts, live session or not
             continue
         last = (landed or {}).get(acct)
         updated = _epoch(st.usage.get('updated_at'))
         if last is not None and (updated is None or updated <= last):
             unread[acct] = 'no reading since the last start'
             continue
-        rows.append((acct, five, week, reset))
+        rows.append((acct, week, reset))
     return rows, unread
 
 
@@ -366,13 +352,13 @@ def pick_target(accounts, current, running, landed, now, tier2=True):
     `landed`: {account: epoch of the job's last start there}; `tier2` False: tier 1 only (the PM).
     Module docstring "The target"."""
     rows, _ = _candidates(accounts, current, running, landed, now)
-    tier1 = [r for r in rows if r[1] < TARGET_LIMIT and r[2] < TARGET_LIMIT]
+    tier1 = [r for r in rows if r[1] < TARGET_LIMIT]
     if tier1:
-        pick = min(tier1, key=lambda r: r[3])
+        pick = min(tier1, key=lambda r: r[2])
         return pick[0], 'under %d%%, its week resets first' % TARGET_LIMIT
-    second = [r for r in rows if r[1] < TARGET_LIMIT and r[2] < TIER2_WEEK] if tier2 else []
+    second = [r for r in rows if r[1] < TIER2_WEEK] if tier2 else []
     if second:
-        pick = min(second, key=lambda r: r[2])
+        pick = min(second, key=lambda r: r[1])
         return pick[0], 'the lowest week under %d%%' % TIER2_WEEK
     return None
 
@@ -509,8 +495,8 @@ def _remembered(d, c, stall, accounts, now):
     if d.action == CLEAR and d.remember:
         acct = str(c.get('account'))
         st = accounts.get(acct)
-        reset = stall[1] if stall is not None and stall[1] > now else window(
-            st.usage if st is not None else None, 'seven_day', now)[1]
+        reset = stall[1] if stall is not None and stall[1] > now else week_window(
+            st.usage if st is not None else None, now)[1]
         d.fields = {} if reset is None else {'account': acct, 'reset': reset}
     return d
 
@@ -574,7 +560,7 @@ def _asked(args, stalled, stall_now, accounts, newest, running, landed, now):
         return _gone('stalled before its ready record: left to the PM (usage_crossover is not '
                      'full)', 'stalled', key)
     st = accounts.get(str(c.get('account')))
-    week, _ = window(st.usage if st is not None else None, 'seven_day', now)
+    week, _ = week_window(st.usage if st is not None else None, now)
     if week is not None and week < EARLY_FLOOR:     # an early ask comes under TRIGGER_WEEK
         return _gone('the week reset: no crossing needed', detail=key)
     if not c.get('delivered'):
@@ -774,7 +760,7 @@ def _u_asked(key, c, old, others, stalled, stall_now, accounts, running, landed,
     if stall_now:
         return _gone('stalled before its ready file: left to the PM (usage_crossover is not full)', 'stalled', key)
     st = accounts.get(str(c.get('account')))
-    week, _ = window(st.usage if st is not None else None, 'seven_day', now)
+    week, _ = week_window(st.usage if st is not None else None, now)
     if week is not None and week < EARLY_FLOOR:
         return _gone('the week reset: no crossing needed', detail=key)
     if not c.get('delivered'):
@@ -869,7 +855,7 @@ def _week_trigger(data, points, now):
     """(week, reset, high, early, eta) of an account's reading `data`: `high` a fresh week at
     TRIGGER_WEEK% or more; `early` not high, a fresh week at EARLY_FLOOR% or more that burn_eta of
     `points` puts at 100% within LEAD_S (eta its seconds, else None)."""
-    week, reset = window(data, 'seven_day', now)
+    week, reset = week_window(data, now)
     fresh = week is not None and is_fresh(data, now)
     eta = burn_eta(points, now) if fresh and week >= EARLY_FLOOR else None
     high = fresh and week >= TRIGGER_WEEK
@@ -1004,7 +990,7 @@ def _pm_asked(c, old, pms, stall_now, accounts, newest, mode, now):
         return _gone('stalled before its hand-off: left to the owner (usage_crossover is not full)',
                      'stalled', PM_DETAIL)
     st = accounts.get(str(c.get('account')))
-    week, _ = window(st.usage if st is not None else None, 'seven_day', now)
+    week, _ = week_window(st.usage if st is not None else None, now)
     if week is not None and week < EARLY_FLOOR:
         return _gone('the week reset: no crossing needed', detail=PM_DETAIL)
     if not c.get('delivered'):
@@ -1023,7 +1009,7 @@ def _pm_ready(c, old, pms, stall_now, accounts, starts, running, landed, mode, n
     if len(pms) > 1:
         return _hold('several PM processes')
     st = accounts.get(str(c.get('account')))
-    week, _ = window(st.usage if st is not None else None, 'seven_day', now)
+    week, _ = week_window(st.usage if st is not None else None, now)
     if week is not None and week < EARLY_FLOOR and not stall_now:
         return _gone('the week reset: no crossing needed', detail=PM_DETAIL)
     if not c.get('stalled'):
@@ -1480,7 +1466,7 @@ def _hot_reset(account, stall, accounts, now):
         return stall[1]
     st = accounts.get(account)
     data = st.usage if st is not None else None
-    week, reset = window(data, 'seven_day', now)
+    week, reset = week_window(data, now)
     if week is not None and week >= TRIGGER_WEEK and is_fresh(data, now):
         return reset
     return None
@@ -1508,12 +1494,11 @@ class _Run(object):
     def log_readings(self, accounts):
         """Log each account's reading on a change, and keep its week history (burn_eta)."""
         for acct, st in sorted(accounts.items(), key=lambda t: int(t[0])):
-            five, _ = window(st.usage, 'five_hour', self.now)
-            week, reset = window(st.usage, 'seven_day', self.now)
+            week, _, passed = week_state(st.usage, self.now)
             if week is None:
                 continue
             self._history(acct, _epoch((st.usage or {}).get('updated_at')), week)
-            text = 'five=%s week=%s' % ('?' if five is None else int(five), int(week))
+            text = 'week=%d%s' % (int(week), ' computed' if passed else '')
             if self.doc['readings'].get(acct) != text:
                 self.doc['readings'][acct] = text
                 self.dirty = True

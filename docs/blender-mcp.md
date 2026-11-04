@@ -21,8 +21,8 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
   - Linux: `$XDG_CONFIG_HOME/blender/<version>/...`, or under `~/.config`.
   - `BLENDER_USER_EXTENSIONS` overrides both.
 - **The add-on is GPL and is never copied into the kit.** The bridge starts the owner's own install, and it checks that install against the reviewed one before every open (`addon.check`).
-  - The pin is the add-on folder's tree hash, `addon.TREE_SHA256` (98960c57...c832de): SHA-256 over each file's relative path, a NUL, the file's own SHA-256 and a newline, in walk order, with `__pycache__` skipped. The zip it came from had SHA-256 A7A9DA81...43040707.
-  - How the pin was made: the same hash over the zip's own entries (sorted, `__pycache__` skipped) gave 98960c57...c832de, equal to the installed folder's tree hash. So the installed files are the reviewed zip's 9 files, byte for byte.
+  - The pin is the add-on folder's tree hash, `addon.TREE_SHA256` in `kitlib/blendermcp/addon.py`: SHA-256 over each file's relative path, a NUL, the file's own SHA-256 and a newline, in walk order, with `__pycache__` skipped. The SHA-256 of the zip it came from is recorded beside it in `addon.py`.
+  - How the pin was made: the same hash over the zip's own entries (sorted, `__pycache__` skipped) gave the pinned hash, equal to the installed folder's tree hash. So the installed files are the reviewed zip's 9 files, byte for byte.
   - `__pycache__` is outside the pin, and Blender writes one there. Python never reads it: the bridge starts Blender with `--python-use-system-env` and an environment (`addon.launch_env`) with no PYTHON* variable of the caller's, plus `PYTHONPYCACHEPREFIX` set to a fresh empty folder for that Blender, `PYTHONDONTWRITEBYTECODE` and `PYTHONNOUSERSITE`. Python then looks for byte code only under that folder, so a `.pyc` planted beside the add-on's sources is never run. The folder is removed when the Blender ends.
   - A different version, or an edited copy, is refused with the `setup` error. An update is reviewed and pinned again in `addon.py`.
 - **The command line:** `blender --background --python-use-system-env --online-mode --command blender_mcp --host 127.0.0.1 --port <port>` (`addon.launch_argv`). `--online-mode` is Blender's own option and must come before `--command`: the add-on's parser takes the rest of the line and refuses it. Blender runs in the worktree it was opened for.
@@ -91,7 +91,7 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
   - the resource `blender-port:<port>`.
   The repo and slug come from the worktree, and the note is "Blender MCP bridge on port <port>". `kinds.json` is unchanged.
 - **Two at once:** the machine's 2 gpu slots let two Blenders run at once, and a third waits or is refused.
-- **Whether two fit:** this was measured on the RTX 3080 Ti (12 GB) with two `render` bookings using `--gpu-share training`, which held gpu slots 0 and 1 at once.
+- **Whether two fit:** this was measured on a 12 GB-class GPU with two `render` bookings using `--gpu-share training`, which held gpu slots 0 and 1 at once.
   - The load was a Workbench render loop (1920x1080, AA 16, six 256x128 spheres, no shadows), 60 s each.
   - Alone: median 0.46 s per render (p90 0.72).
   - Side by side, over a 57 s overlap: 0.38 s and 0.34 s (p90 0.48 and 0.38).

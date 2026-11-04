@@ -1,4 +1,4 @@
-"""blender_server.py: the Blender MCP bridge as Codex's stdio MCP server (mcp.json;
+"""blender_server.py: the Blender MCP server (kitlib.blendermcp) as Codex's stdio MCP server (mcp.json;
 docs/blender-mcp.md). Takes no arguments. It boots the kit before importing kitlib
 (boot/kitboot.py of the export or checkout it sits in, or PM_KIT_ROOT, verified) and exits on a
 kit that fails that check. Codex's guard (hosts/codex/adapter/policy.py) refuses every call of

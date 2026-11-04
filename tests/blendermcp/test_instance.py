@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest import mock
 
-from tests.lock.helpers import KINDS, REPO, StoreCase, clean_env
+from tests.lock.helpers import KINDS, OWNER, REPO, StoreCase, clean_env
 
 if os.name == 'nt':
     from kitlib.blendermcp import RESOURCE_PREFIX, instance
@@ -46,6 +46,12 @@ class BridgeCase(StoreCase):
         with open(self.kinds_path, 'w', encoding='utf-8') as f:
             json.dump(kinds, f)
         self.store = self.make_store()
+        # a medium kind (render, engine-test) is one fake cpu slot here, so the two runs a test
+        # holds at once fit the two slots confine leaves inside the gate's 4-thread run (each
+        # medium booking would take 2 of them under the default division)
+        res = api.set_division(OWNER, {'medium_cores': 1}, self.store)
+        self.assertTrue(res.get('ok'), res)
+        self.assertEqual(self.layout()['medium_cores'], 1)
         self.confine(2)
         self.wt = os.path.join(self.tmp, 'wt')
         os.makedirs(self.wt)

@@ -114,6 +114,39 @@ class SessionLive(unittest.TestCase):
         self.assertIn('listing timed out', why)
 
 
+class RealReaders(unittest.TestCase):
+    """launcher_stems and running_names themselves, over a temp sessions.json and a canned
+    process list (mocked at the launcher settings and pmstart/lookup, never at the readers)."""
+
+    def test_the_readers_tell_a_running_stem_from_an_idle_one(self):
+        import json
+        import os
+        import shutil
+        import tempfile
+        from kitlib import pmstart
+        from kitlib.launcher import lookup
+        from kitlib.launcher import settings as lsettings
+        root = tempfile.mkdtemp(prefix='kit-live-')
+        self.addCleanup(shutil.rmtree, root, True)
+        with open(os.path.join(root, 'sessions.json'), 'w', encoding='utf-8') as f:
+            json.dump({'_note': 'x', 'combat': {'repo': 'app', 'stem': 'combat-coordinator'},
+                       'kit': {'repo': 'kit', 'stem': 'kit-coordinator'}}, f)
+        rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control kit-coordinator-a2'},
+                {'Name': 'claude.exe', 'CommandLine': 'claude -n other-session'},
+                {'Name': 'claude.exe', 'CommandLine': 'claude'}]
+        with mock.patch.object(lsettings, 'load',
+                               return_value=lsettings.Settings({'state_dir': root}, root)), \
+                mock.patch.object(pmstart, 'list_processes', return_value=rows), \
+                mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
+            self.assertEqual(omod.launcher_stems(), {'combat': 'combat-coordinator',
+                                                     'kit': 'kit-coordinator'})
+            self.assertEqual(omod.running_names(), ['kit-coordinator-a2', 'other-session'])
+            live = omod.SessionLiveness()
+            self.assertEqual(live.live('kit'), (True, None))
+            self.assertEqual(live.live('combat'), (False, None))
+            self.assertEqual(live.live('gone'), (None, 'session gone is not in sessions.json'))
+
+
 class SessionLiveCli(unittest.TestCase):
     """`next` prints the NOTE for a record whose session is not running, and offers below it."""
     run_tool, run_process, ok = test_cli.Cli.run_tool, test_cli.Cli.run_process, test_cli.Cli.ok
@@ -138,6 +171,35 @@ class SessionLiveCli(unittest.TestCase):
         self.assertIn('NOTE: HOLD (session combat not running) reserves no scope', out)
         self.assertNotIn('passed over R1', out)
         self.assertIn('NEXT (1 offered)', out)
+
+    def seed_pair(self):
+        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        snapshot = smod.Store(backend, rmod.Rules()).load()
+        backend.publish(snapshot, {
+            'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='combat',
+                                scope='a/**'),
+            'R1': record_text(id='R1', priority='2', priority_by='agent', scope='a/x.py')},
+            'seed\n')
+
+    def pull_with(self, running):
+        self.assertTrue(hasattr(omod, 'launcher_stems') and hasattr(omod, 'running_names'))
+        with mock.patch.object(omod, 'launcher_stems',
+                               return_value={'combat': 'combat-coordinator'}), \
+                mock.patch.object(omod, 'running_names', return_value=running):
+            return self.run_tool('--as', 'tools/wk', 'pull', 'R1')
+
+    def test_pull_takes_the_scope_an_idle_sessions_record_would_reserve(self):
+        self.seed_pair()
+        rc, out = self.pull_with(['kit-coordinator-a1'])
+        self.assertEqual(rc, 0, out)
+        self.assertIn('pulled_by:  tools/wk', out)
+
+    def test_pull_is_still_refused_while_that_session_runs(self):
+        self.seed_pair()
+        rc, out = self.pull_with(['combat-coordinator-a1'])
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn('HOLD (session combat)', out)
+        self.assertEqual(self.ok('show', 'R1').count('pulled_by:  tools/wk'), 0)
 
 
 if __name__ == '__main__':

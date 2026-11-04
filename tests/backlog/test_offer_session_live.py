@@ -42,7 +42,7 @@ def two():
 class SessionLive(unittest.TestCase):
 
     def test_a_session_not_running_reserves_nothing_and_is_noted(self):
-        live = liveness({'alpha': 'alpha-coordinator'}, names=['kit-coordinator-a1'])
+        live = liveness({'alpha': 'alpha-coordinator'}, names=['coord-example-1'])
         ids, passed = offer(two(), live)
         self.assertEqual(ids, ['LOW'])
         self.assertEqual(passed, {})
@@ -131,7 +131,7 @@ class RealReaders(unittest.TestCase):
         with open(os.path.join(root, 'sessions.json'), 'w', encoding='utf-8') as f:
             json.dump({'_note': 'x', 'alpha': {'repo': 'app', 'stem': 'alpha-coordinator'},
                        'kit': {'repo': 'kit', 'stem': 'kit-coordinator'}}, f)
-        rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control kit-coordinator-a2'},
+        rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control coord-example-2'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude -n other-session'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude'}]
         with mock.patch.object(lsettings, 'load',
@@ -140,7 +140,7 @@ class RealReaders(unittest.TestCase):
                 mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
             self.assertEqual(omod.launcher_stems(), {'alpha': 'alpha-coordinator',
                                                      'kit': 'kit-coordinator'})
-            self.assertEqual(omod.running_names(), ['kit-coordinator-a2', 'other-session'])
+            self.assertEqual(omod.running_names(), ['coord-example-2', 'other-session'])
             live = omod.SessionLiveness()
             self.assertEqual(live.live('kit'), (True, None))
             self.assertEqual(live.live('alpha'), (False, None))
@@ -166,7 +166,7 @@ class SessionLiveCli(unittest.TestCase):
         self.assertTrue(hasattr(omod, 'launcher_stems') and hasattr(omod, 'running_names'))
         with mock.patch.object(omod, 'launcher_stems',
                                return_value={'alpha': 'alpha-coordinator'}), \
-                mock.patch.object(omod, 'running_names', return_value=['kit-coordinator-a1']):
+                mock.patch.object(omod, 'running_names', return_value=['coord-example-1']):
             out = self.ok('next')
         self.assertIn('NOTE: HOLD (session alpha not running) reserves no scope', out)
         self.assertNotIn('passed over R1', out)
@@ -190,7 +190,7 @@ class SessionLiveCli(unittest.TestCase):
 
     def test_pull_takes_the_scope_an_idle_sessions_record_would_reserve(self):
         self.seed_pair()
-        rc, out = self.pull_with(['kit-coordinator-a1'])
+        rc, out = self.pull_with(['coord-example-1'])
         self.assertEqual(rc, 0, out)
         self.assertIn('pulled_by:  tools/wk', out)
 

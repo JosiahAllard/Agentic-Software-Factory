@@ -414,6 +414,8 @@ class FrontEndTest(unittest.TestCase):
         self.assertTrue(self.hook(self.with_fake())[2])
 
     def test_only_python3_on_path_still_starts_the_check(self):
+        if shutil.which('python', path=os.path.dirname(SH)):
+            self.skipTest('python sits beside sh, so it would win over the shim')
         os.rename(os.path.join(self.fake, 'python'), os.path.join(self.fake, 'python3'))
         self.kit_json('{"ledger": {"pre_commit_check": true}}')
         rc, out, ran = self.hook(self.with_fake())
@@ -422,8 +424,8 @@ class FrontEndTest(unittest.TestCase):
 
     def test_no_python_on_path_is_a_skip_with_a_note(self):
         bare = os.path.dirname(SH)
-        if shutil.which('python', path=bare):
-            self.skipTest('python sits beside sh')
+        if shutil.which('python', path=bare) or shutil.which('python3', path=bare):
+            self.skipTest('python or python3 sits beside sh')
         self.kit_json('{"ledger": {"pre_commit_check": true}}')
         rc, out, ran = self.hook(bare)
         self.assertEqual(rc, 0, out)

@@ -5,7 +5,8 @@ tests/proc/test_entry_points.py share: a helper, not a test module, so importing
   scan_script(text, rel)    [(rel, '<script>', what, line)] for one .ps1, .cmd or .bat file
   process_uses(text)        [line] of every place a Python module reaches a way to start a process
   kitlib_imports(text)      [line] of every module-level kitlib import
-  is_python(path)           True for a .py or .pyw file, or a python-shebang file with no extension
+  is_python(path)           True for a .py or .pyw file, a python-shebang file with no extension, or
+                            the kit's pre-push (an sh line, then a `''''` line that execs python)
 
 A window hazard is a construct that can open a console window whatever kitlib.proc.console's
 CreateProcess hook does: the hook wraps _winapi.CreateProcess, the one door subprocess and
@@ -99,7 +100,8 @@ NO_WINDOW = 0x08000000
 
 
 def is_python(path):
-    """A .py or .pyw file, or a file with no extension whose first line is a python shebang."""
+    """A .py or .pyw file, or a file with no extension whose first line is a python shebang, or the
+    kit's pre-push: `#!/bin/sh`, then a second line starting `` (the sh/Python polyglot)."""
     ext = os.path.splitext(path)[1].lower()
     if ext in ('.py', '.pyw'):
         return True
@@ -108,9 +110,10 @@ def is_python(path):
     try:
         with open(path, 'rb') as f:
             first = f.readline(200)
+            second = f.readline(200)
     except OSError:
         return False
-    if first.startswith(b'#!/bin/sh') and os.path.basename(path) == 'pre-push':
+    if first.startswith(b'#!/bin/sh') and second.startswith(b"''''") and os.path.basename(path) == 'pre-push':
         return True                         # the kit's pre-push: an sh line that execs python, then Python
     return first.startswith(b'#!') and b'python' in first
 

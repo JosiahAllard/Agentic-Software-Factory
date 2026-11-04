@@ -83,13 +83,13 @@ class LiveProofLanding(StoreLandCase):
         self.assertEqual(self.warnings(out), [])
 
     def test_a_live_pass_line_with_no_evidence_cites_nothing(self):
-        self.assertEqual(at_landing.live_passes(['FOO', 'BAR run 9', '#1 run 2', 'BAR again', '']),
-                         ['BAR'])
         self.seed(pulled('FOO', **LIVE))
         out = self.land(self.branch_with('fix\n\nCloses: FOO\nLive-pass: FOO\n%s\n' % TRAILERS))
         self.assert_open('FOO')
         self.assertEqual(self.ids(out, 'closed'), [], out.lines)
         self.assert_held_back(self.notes(out), 'FOO', 'its pull was released')
+        self.assertEqual(at_landing.live_passes(['FOO', 'BAR run 9', '#1 run 2', 'BAR again', '']),
+                         ['BAR'])
 
     def test_landable_says_the_landing_releases_an_uncited_live_proof_record(self):
         self.seed(pulled('FOO', **LIVE), pulled('BAR', **LIVE), pulled('BAZ'))

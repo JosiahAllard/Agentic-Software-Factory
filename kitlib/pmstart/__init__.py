@@ -1135,8 +1135,10 @@ def rulebook_lines(machine, repo=None):
             % (found.rules, counts, cmd)]
 
 
-def checklist(cfg, now=None, procs=None, **fakes):
-    """The full session-start text. A failed check is one "could not check X: reason" line."""
+def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
+    """The full session-start text. A failed check is one "could not check X: reason" line.
+    `check_only` reads without changing state: no filed-answers stamp write and no kit_sync (its
+    fetch and fast-forward of the kit checkout); the PM's own start leaves it off."""
     today = (now or datetime.datetime.now()).date()
     lines = []
     box = {}
@@ -1152,13 +1154,13 @@ def checklist(cfg, now=None, procs=None, **fakes):
         ("machine_config", lambda: configcheck.lines(**fakes.get("machine_config", {}))),
         ("eng_review", lambda: eng_review(cfg)),
         ("rulebooks", lambda: rulebook_lines(fakes["machine"] if "machine" in fakes else _user_config())),
-        ("hub", lambda: hub_site(**dict({"stamp": filed_stamp_file},
+        ("hub", lambda: hub_site(**dict({"stamp": None if check_only else filed_stamp_file},
                                                      **fakes.get("hub_site", {})))),
         ("watcher", lambda: watcher(cfg, procs_once(), **fakes.get("watcher", {}))),
         ("handoff", lambda: handoff(cfg, **fakes.get("handoff", {}))),
         ("reminders", lambda: reminders(cfg, today, **fakes.get("reminders", {}))),
         ("liveness", lambda: liveness(cfg, procs_once(), **fakes.get("liveness", {}))),
-        ("kit_sync", lambda: kit_sync(fakes.get("pm_data", pm_data_settings)())),
+        ("kit_sync", lambda: [] if check_only else kit_sync(fakes.get("pm_data", pm_data_settings)())),
         ("plugin_current", lambda: plugin_current(**fakes.get("plugin_current", {}))),
         # A plugin_current fake's settings and folders stand for this check's too.
         ("plugin_enabled", lambda: plugin_enabled(**fakes.get("plugin_enabled", {

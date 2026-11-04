@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import fill_watch as W
 from kitlib.hubsite import jobs
+from kitlib.hubsite import push as P
 from kitlib.launcher import settings as lsettings
 
 def ctx():
@@ -41,7 +42,7 @@ class Watch(unittest.TestCase):
 
         def deliver(key, text):
             self.sent.append((key, text))
-            return self.states.pop(0) if self.states else W.WRITTEN
+            return self.states.pop(0) if self.states else P.WRITTEN
 
         self.job = W.FillWatch(lambda: self.sessions, lambda: self.live, read, deliver)
 
@@ -109,7 +110,7 @@ class Watch(unittest.TestCase):
         self.assertEqual(len(self.sent), 2)
 
     def test_a_push_not_written_is_tried_again_and_uncertain_is_not(self):
-        self.states = [W.NOT_WRITTEN, W.NO_SESSION, W.UNCERTAIN]
+        self.states = [P.NOT_WRITTEN, P.NO_SESSION, P.UNCERTAIN]
         self.run_job()
         self.run_job()
         self.run_job()                      # uncertain: counted as told
@@ -123,7 +124,7 @@ class Watch(unittest.TestCase):
             calls.append(key)
             if len(calls) == 1:
                 raise OSError('pipe')
-            return W.WRITTEN
+            return P.WRITTEN
         self.job.deliver = boom
         self.run_job()
         self.run_job()
@@ -151,7 +152,7 @@ class Watch(unittest.TestCase):
     def test_no_push_object_sends_nothing_and_is_not_told(self):
         self.job.deliver = lambda key, text: None
         self.run_job()
-        self.job.deliver = lambda key, text: self.sent.append(key) or W.WRITTEN
+        self.job.deliver = lambda key, text: self.sent.append(key) or P.WRITTEN
         self.run_job()
         self.assertEqual(self.sent, ['game'])
 
@@ -162,6 +163,41 @@ class Watch(unittest.TestCase):
             raise subprocess.TimeoutExpired('ps', 15)
         self.job.live = slow
         self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual(self.sent, [])
+
+    def test_a_coordinator_the_crossover_is_moving_gets_no_push(self):
+        self.job.claims = lambda: {'game'}
+        out = self.run_job()
+        self.assertEqual((self.sent, self.reads), ([], []))
+        self.assertIsInstance(out, jobs.Skip)
+        self.assertIn('usage crossover', out.note)
+
+    def test_an_unreadable_crossover_state_is_a_skip(self):
+        def bad():
+            raise lsettings.LaunchError('usage-crossover.json: bad JSON')
+        self.job.claims = bad
+        out = self.run_job()
+        self.assertIsInstance(out, jobs.Skip)
+        self.assertIn('usage crossover', out.note)
+        self.assertEqual(self.sent, [])
+
+    def test_an_unreadable_sessions_file_is_a_skip(self):
+        def bad():
+            raise lsettings.LaunchError('sessions.json: bad JSON')
+        self.job.sessions = bad
+        out = self.run_job()
+        self.assertIsInstance(out, jobs.Skip)
+        self.assertIn('sessions.json', out.note)
+        self.assertEqual(self.sent, [])
+
+    def test_a_listing_that_fails_is_a_skip(self):
+        for exc in (RuntimeError('ps failed'), OSError('no ps')):
+            def bad(exc=exc):
+                raise exc
+            self.job.live = bad
+            out = self.run_job()
+            self.assertIsInstance(out, jobs.Skip)
+            self.assertIn(type(exc).__name__, out.note)
         self.assertEqual(self.sent, [])
 
 
@@ -249,12 +285,35 @@ class Slots(unittest.TestCase):
         with self.assertRaises(C.BacklogUnread):
             W.read_slots(self.settings, 'x', {'repo': 'nowhere'})
 
+    def test_a_cap_that_cannot_be_read_is_unread(self):
+        from kitlib.backlog import opener
+        from kitlib.backlog.errors import Failure, Refusal
+        for exc in (Refusal('backlog.cap must be a number'), Failure('.kit.json unreadable')):
+            def bad(top, exc=exc):
+                raise exc
+            with mock.patch.object(opener, 'repo_cap', bad), self.assertRaises(C.BacklogUnread):
+                W.read_slots(self.settings, 'game', dict(COORD))
+
 
 class Make(unittest.TestCase):
-    def test_the_states_are_the_push_workers(self):
-        from kitlib.hubsite import push
-        self.assertEqual((W.WRITTEN, W.NOT_WRITTEN, W.UNCERTAIN, W.NO_SESSION),
-                         (push.WRITTEN, push.NOT_WRITTEN, push.UNCERTAIN, push.NO_SESSION))
+    def job(self, push):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        s = lsettings.Settings({'state_dir': tmp, 'repos': {'game': tmp}}, home=tmp)
+        with mock.patch.object(lsettings, 'load', lambda home=None: s):
+            return W.make(mock.Mock(home=tmp, push=push)).run
+
+    def test_deliver_reads_the_sent_state_and_no_push_object_is_none(self):
+        sources = mock.Mock(home=None)
+        sources.push.deliver.return_value = P.Sent(P.UNCERTAIN, 'game-coordinator-a1', 'sid', False)
+        run = self.job(None)
+        self.assertIsNone(run.deliver('game', 'text'))
+        run = self.job(sources.push)
+        self.assertEqual(run.deliver('game', 'text'), P.UNCERTAIN)
+        sources.push.deliver.assert_called_once_with('game', 'text')
+
+    def test_told_states_are_push_written_and_uncertain(self):
+        self.assertEqual(W.told_states(), (P.WRITTEN, P.UNCERTAIN))
 
     def test_no_repository_is_no_job(self):
         tmp = tempfile.mkdtemp()

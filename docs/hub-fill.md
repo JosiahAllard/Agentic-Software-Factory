@@ -9,8 +9,9 @@ the nudge, is built.
 ## The watch
 
 Every 300 s (first run 120 s after the hub starts), for each coordinator in sessions.json (an
-entry with a truthy `agent`) whose `name` is a live session (the process listing `coord-restart`
-uses; a listing that times out is a skip):
+entry with a truthy `agent`; inference: a string `agent` matches too) whose `name` is a live
+session (the process listing `coord-restart` uses), read through `coord_restart.read_offer`, the
+reader `coord-restart`'s backlog wake shares:
 
 - **Cap**: `.kit.json` `backlog.cap` of the repository's main checkout (`opener.repo_cap`, default
   5). Inference: this is the cap the coordinator role calls "your cap"; no other key holds one.
@@ -24,7 +25,13 @@ uses; a listing that times out is a skip):
   `requires:` are already passed over.
 - **Free** = cap - in flight, never below 0.
 
-A store that cannot be read is a note in the job's health, never a failure.
+A coordinator the usage crossover is moving (`usage_crossover.claims`, the hold `coord-restart`
+reads) is passed over with a note: it was told to checkpoint and stand down.
+
+A store or a cap that cannot be read is a note in the job's health, never a failure. A run is a
+skip with a note, never a failure, when sessions.json or the usage crossover's state cannot be
+read (a LaunchError) or the process listing times out or fails (a RuntimeError or an OSError).
+So none of them, however long it lasts, makes the hub push `job fill-watch failing` to the PM.
 
 ## The nudge
 
@@ -55,6 +62,8 @@ next run.
   - reviewers, test runners and other agents with no pulled record of their own are not seen.
     While they run, the watch can count a slot free that the coordinator is using.
 - What was told is kept in memory: a hub restart nudges each coordinator once more.
+- No retry backoff: a deliver not written is tried every run, at most 12 times an hour.
+- An offer whose ids only change order is a change and is pushed again.
 
 ## Not built yet
 

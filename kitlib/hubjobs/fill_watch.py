@@ -3,7 +3,7 @@ and startable work is nudged, once per change (docs/hub-fill.md).
 
   make(sources) -> jobs.Job | None   the job; None when launcher.repos names no repository or
                                      launcher.state_dir is not set
-  FillWatch(sessions, live, read, deliver)
+  FillWatch(sessions, live, read, deliver, claims=None)
                                      its run(ctx): one pass over the live coordinators
   read_slots(settings, key, entry)   (cap, in_flight, offered ids in offer order) of one
                                      coordinator; coord_restart.BacklogUnread when it cannot be read
@@ -11,7 +11,8 @@ and startable work is nudged, once per change (docs/hub-fill.md).
 
 Every EVERY_S the job reads sessions.json and the process listing (coord_restart's: a listing
 that times out is a Skip). A coordinator is an entry with a truthy `agent` whose `name` is a live
-session. For each one, read_slots gives:
+session (an inference: a string `agent` matches too). For each one, read_slots gives, through
+coord_restart.read_offer (the reader coord-restart's wake shares):
   cap        `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap). Inference:
              this is the cap the coordinator role calls "your cap"; no other key holds one.
   in_flight  the coordinator's live pulls: the store's pulled records with a branch
@@ -31,10 +32,17 @@ the state coming back nudges again. A deliver that is written or uncertain count
 not written, with no live session, with no push object, or that raises is tried again next run.
 A hub restart forgets what was told and nudges once more (a known limit).
 
+A coordinator the usage crossover is moving (usage_crossover.claims, the hold coord-restart reads)
+is never nudged: it was told to checkpoint and stand down.
+
 Outcomes (kitlib.hubsite.jobs): a nudge is a success whose note names the keys; nothing to nudge
-is a Skip. A store that cannot be read is a note, never a failure. Nothing goes to the PM here.
+is a Skip. A store or cap that cannot be read is a note. A sessions.json or crossover state that
+cannot be read (LaunchError), or a process listing that times out or fails (RuntimeError, OSError),
+is a Skip with a note: never a failure, so the runner never pushes `failing` to the PM for them.
+Nothing goes to the PM here.
 """
 import subprocess
+import time
 
 from kitlib.hubjobs import coord_restart
 from kitlib.hubsite import jobs
@@ -43,9 +51,6 @@ NAME = 'fill-watch'
 EVERY_S = 300
 FIRST_S = 120                   # after the hub starts, as coord-restart
 NOTE_MAX = 300
-# kitlib.hubsite.push's Sent states (imported there only at run time: push is heavy)
-WRITTEN, NOT_WRITTEN, UNCERTAIN, NO_SESSION = 'written', 'not-written', 'uncertain', 'no-live-session'
-TOLD = (WRITTEN, UNCERTAIN)
 DO_LINE = ('A hub fill watch saw a free slot and startable records: run `backlog.py next`, pull and '
            'dispatch to fill your slots (coordinator role, Slots). No reply is needed.')
 
@@ -63,29 +68,11 @@ def nudge_text(key, free, ids):
 
 
 def read_slots(settings, key, entry):
-    """(cap, in_flight, ids) of the coordinator of sessions.json entry `key` (module docstring)."""
-    from kitlib.backlog import opener, plan
-    from kitlib.backlog import offer as omod
-    from kitlib.backlog.errors import Refusal
-    from kitlib.config import ConfigError
-    from kitlib.launcher.settings import LaunchError
-    repo = (entry or {}).get('repo')
-    root = coord_restart.store_root(settings, repo)
+    """(cap, in_flight, ids) of the coordinator of sessions.json entry `key` (module docstring),
+    read through coord_restart.read_offer: BacklogUnread when it cannot be read."""
+    ids, holding, cap = coord_restart.read_offer(settings, key, entry, with_cap=True)
     sessions = coord_restart.wake_sessions(key, entry)
-    ids, snap, holding = [], None, None
-    try:
-        cap = opener.repo_cap(settings.repo_path(repo))
-        for session in sessions:
-            ctx = opener.open_store(root, fetch=False, session=session)
-            if snap is None:            # one read of the store and its live pulls for both offers
-                snap = ctx.store.load()
-                holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            offers, _passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding)
-            ids.extend(o.rec.id for o in offers if o.rec.id not in ids)
-    except (Refusal, ConfigError, LaunchError, omod.PartitionError, OSError) as exc:
-        raise coord_restart.BacklogUnread('the store could not be read (%s)' % type(exc).__name__)
-    in_flight = sum(1 for r in holding or () if r.get('session') in sessions)
-    return cap, in_flight, ids
+    return cap, sum(1 for r in holding if r.get('session') in sessions), ids
 
 
 def live_names():
@@ -96,27 +83,51 @@ def live_names():
     return names
 
 
+def told_states():
+    """The kitlib.hubsite.push Sent states that count as told: written and uncertain (push is
+    imported here, at run time, as usage_crossover.make does)."""
+    from kitlib.hubsite import push
+    return (push.WRITTEN, push.UNCERTAIN)
+
+
 class FillWatch(object):
     """run(ctx) is the job. `sessions()` the sessions.json dict, `live()` the live session names,
     `read(key, entry)` (cap, in_flight, ids) or BacklogUnread, `deliver(key, text)` a Sent state
-    (None: no push object)."""
+    (None: no push object), `claims()` the sessions.json keys the usage crossover is moving
+    (usage_crossover.claims; default none)."""
 
-    def __init__(self, sessions, live, read, deliver):
+    def __init__(self, sessions, live, read, deliver, claims=None):
         self.sessions, self.live, self.read, self.deliver = sessions, live, read, deliver
+        self.claims = claims or (lambda: set())
         self.told = {}                  # key -> (free, ids) last told, in memory only
 
     def __call__(self, ctx):
-        sessions = self.sessions()
+        from kitlib.launcher.settings import LaunchError
+        try:
+            sessions = self.sessions()
+        except LaunchError as e:
+            return jobs.Skip(('sessions.json cannot be read: %s' % e)[:NOTE_MAX])
+        try:
+            claimed = self.claims()
+        except LaunchError as e:
+            return jobs.Skip(('the usage crossover state cannot be read: %s' % e)[:NOTE_MAX])
         try:
             live = self.live()
         except subprocess.TimeoutExpired as e:
             return coord_restart.skip_timed_out(e)
+        except (RuntimeError, OSError) as e:
+            return jobs.Skip(('process listing failed (%s): skipped, tried again next run'
+                              % type(e).__name__)[:NOTE_MAX])
+        told_ok = told_states()
         nudged, notes, seen = [], [], set()
         for key in sorted(sessions):
             entry = sessions[key]
             if ctx.stop.is_set():
                 break
             if not is_coordinator(key, entry) or entry['name'] not in live:
+                continue
+            if key in claimed:          # the usage crossover is moving it: no nudge to dispatch
+                notes.append('%s: being moved by the usage crossover' % key)
                 continue
             try:
                 cap, in_flight, ids = self.read(key, entry)
@@ -136,7 +147,7 @@ class FillWatch(object):
             except Exception as e:      # noqa: BLE001 - a host fault: tried again next run
                 notes.append('%s: nudge not sent (%s)' % (key, type(e).__name__))
                 continue
-            if sent in TOLD:
+            if sent in told_ok:
                 self.told[key] = state
                 nudged.append('%s (%d free, %d startable)' % (key, free, len(ids)))
             else:
@@ -167,6 +178,10 @@ def make(sources):
             return None
         return sources.push.deliver(key, text).state
 
+    def claims():
+        from kitlib.hubjobs import usage_crossover      # it imports coord_restart
+        return usage_crossover.claims(s, time.time())
+
     job = FillWatch(lambda: state.read_sessions(s), live_names,
-                    lambda key, entry: read_slots(s, key, entry), deliver)
+                    lambda key, entry: read_slots(s, key, entry), deliver, claims)
     return jobs.Job(NAME, EVERY_S, job, first_s=FIRST_S)

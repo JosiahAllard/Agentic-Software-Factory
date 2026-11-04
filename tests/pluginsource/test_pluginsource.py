@@ -55,6 +55,36 @@ class ExportTest(Base):
                                  P.MARKER, 'README.md', 'tools/x.py'])
         self.assertFalse(os.path.exists(folder + '.tmp'))
 
+    def _export_with_hook(self, root=None):
+        """Export a tree whose githooks/pre-push is mode 100755 (the fake git cannot set the bit,
+        so the tree listing is rewritten) and githooks/notes.txt is 100644."""
+        r = self.k.repo
+        if not os.path.exists(os.path.join(r.root, 'githooks', 'pre-push')):
+            r.write('githooks/pre-push', '#!/bin/sh\n')
+            r.write('githooks/notes.txt', 'plain\n')
+            r.commit('hooks', 'githooks/pre-push', 'githooks/notes.txt')
+            r.git('push', '-q', 'origin', 'main')
+        sha = P.remote_main(self.k.kit, 'origin')
+        real = P._tree
+        tree = lambda kit, s: [('100755',) + e[1:] if e[3] == 'githooks/pre-push' else e
+                               for e in real(kit, s)]
+        with mock.patch.object(P, '_tree', tree):
+            return P.export(self.k.kit, sha, root or self.k.root, NOW)[0]
+
+    @unittest.skipIf(os.name == 'nt', 'the exec bit is a POSIX file mode')
+    def test_a_100755_blob_is_exported_executable_and_a_100644_blob_is_not(self):
+        folder = self._export_with_hook()
+        self.assertTrue(os.access(os.path.join(folder, 'githooks', 'pre-push'), os.X_OK))
+        self.assertFalse(os.access(os.path.join(folder, 'githooks', 'notes.txt'), os.X_OK))
+
+    def test_the_export_chmods_only_the_100755_blobs_off_windows(self):
+        for name, expect in (('linux', [os.path.join('githooks', 'pre-push')]), ('windows', [])):
+            with self.subTest(name), mock.patch.object(P.kitplatform, 'NAME', name),                     mock.patch.object(P.os, 'chmod') as chmod:
+                folder = self._export_with_hook(os.path.join(self.k.root, name))
+                # the fake git also chmods its own objects (0o444); only the export's 0o755 counts
+                self.assertEqual([os.path.join(*c.args[0].split(os.sep)[-2:]) for c in chmod.call_args_list
+                                  if c.args[1] == 0o755], expect)
+
     def test_the_kits_tests_folder_is_left_out(self):
         """Half an export was the kit's tests/, which nothing reads from an export (a gate runs
         tools/kit_tests.py from its own checkout); a tests folder deeper down stays."""

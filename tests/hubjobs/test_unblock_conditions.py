@@ -392,6 +392,15 @@ class Readers(Case):
             for path in off:
                 self.assertIsNone(r.path_exists(path), path)
 
+    def test_linux_absolute_paths_are_told_and_unc_or_dotdot_are_not(self):
+        r = U.Readers(self.hub, self.plugins, None)
+        with mock.patch.object(U.kplatform, 'NAME', 'linux'), \
+                mock.patch.object(U.os.path, 'exists', side_effect=lambda p: p == '/t/flag'):
+            self.assertIs(r.path_exists('/t/flag'), True)
+            self.assertIs(r.path_exists('/t/missing'), False)
+            for path in ('//host/x', '/a/../b', 'rel/flag', 'C:/x/flag'):
+                self.assertIsNone(r.path_exists(path), path)
+
     def test_a_variable_that_expands_off_a_local_drive_cannot_be_told(self):
         from kitlib.backlog import conditions as condmod
         r = U.Readers(self.hub, self.plugins, None)

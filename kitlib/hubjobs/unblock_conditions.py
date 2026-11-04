@@ -51,6 +51,7 @@ import ntpath
 import os
 import re
 
+from kitlib import platform as kplatform
 from kitlib.hubsite import jobs
 
 NAME = 'unblock-conditions'
@@ -166,8 +167,14 @@ class Readers(object):
 def local_path(path):
     r"""True when `path` names a place on a local drive: a drive letter, a colon and a slash or
     backslash first (LOCAL_DRIVE), no `..` part, and
-    a drive ntpath reads as a letter (not `\\?\` or `\\host\share`)."""
-    if not isinstance(path, str) or not LOCAL_DRIVE.match(path):
+    a drive ntpath reads as a letter (not `\\?\` or `\\host\share`). On Linux: an absolute path
+    that does not start with `//` and has no `..` part."""
+    if not isinstance(path, str):
+        return False
+    if kplatform.NAME == 'linux':
+        return (path.startswith('/') and not path.startswith('//')
+                and '..' not in path.split('/'))
+    if not LOCAL_DRIVE.match(path):
         return False
     if len(ntpath.splitdrive(path)[0]) != 2:
         return False

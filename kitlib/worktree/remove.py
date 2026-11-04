@@ -1308,12 +1308,12 @@ def pulled_by(ctx, rev, branch):
     index, why = pulled_index(ctx, rev)
     if index is None:
         return None, why
-    return index.get(branch, []), None
+    return index.get(branch.casefold(), []), None
 
 
 def pulled_index(ctx, rev):
     """`({branch: sorted ids}, None)` over every backlog record `state: pulled`, keyed by its
-    `pulled_by`, or `(None, why)`: one store read for every branch. A main or folder store is read
+    `pulled_by` casefolded (as backlog.py matches it), or `(None, why)`: one store read for every branch. A main or folder store is read
     in the tree of `rev`; a ref or branch store at its local ref as it stands (never fetched; `rev`
     is not used), an absent ref holding no records."""
     try:
@@ -1340,7 +1340,7 @@ def pulled_index(ctx, rev):
     index = {}
     for r in records:
         if r.get('state') == 'pulled' and r.get('pulled_by'):
-            index.setdefault(r.get('pulled_by'), []).append(r.id)
+            index.setdefault(r.get('pulled_by').casefold(), []).append(r.id)
     return {branch: sorted(ids) for branch, ids in index.items()}, None
 
 

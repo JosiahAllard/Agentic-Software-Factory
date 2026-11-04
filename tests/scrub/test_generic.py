@@ -405,9 +405,11 @@ class TheChecks(unittest.TestCase):
     def test_kit_allow_entries_cover_whole_lines_only(self):
         root = self._kit('{"repo": {"name": "Kit-Alpha"}}', '{"name": "host-kit"}')
         kit, pats = kit_names(root)
-        files = {'.kit.json': '  "repo": {"name": "Kit-Alpha"},\n  "x": "Kit-Alpha"\n'}
+        files = {'.kit.json': '  "repo": {"name": "Kit-Alpha"},\n  "x": "Kit-Alpha"\n'
+                              '  "repo": {"name": "Kit-Alpha"}, "y": 1\n'}    # the entry's text, and more
         found, _ = scan(sorted(files), files.get, pats, kit_allowed(kit), excluded=())
-        self.assertEqual(found, ['.kit.json:2: Kit-Alpha (.kit.json repo.name)'])
+        self.assertEqual(found, ['.kit.json:2: Kit-Alpha (.kit.json repo.name)',
+                                 '.kit.json:3: Kit-Alpha (.kit.json repo.name)'])
 
     def test_names_come_from_the_machine_config(self):
         home = self._home({'scrub_patterns': ['\\bowner\\b'],

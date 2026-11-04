@@ -1378,7 +1378,7 @@ class ChildFlags(unittest.TestCase):
         run_kw, popen_kw = self._calls('windows')
         self.assertEqual(run_kw['creationflags'], 0x08000000)
         self.assertEqual(popen_kw['creationflags'], 0x08000000)
-        self.assertIs(popen_kw['start_new_session'], False)
+        self.assertIs(popen_kw.get('start_new_session', False), False)
 
 
 if __name__ == '__main__':

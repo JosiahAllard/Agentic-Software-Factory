@@ -49,6 +49,14 @@ class Watch(unittest.TestCase):
     def run_job(self):
         return self.job(ctx())
 
+    def run_quietly(self):
+        """The run, failing the test (not erroring it) when the run raises: the runner counts a
+        raise as a job failure and pushes `failing` to the PM at the third."""
+        try:
+            return self.run_job()
+        except Exception as e:      # noqa: BLE001
+            self.fail('the run raised %s: %s' % (type(e).__name__, e))
+
     def test_free_and_startable_nudges_the_coordinator_once_with_the_counts(self):
         out = self.run_job()
         self.assertEqual(len(self.sent), 1)
@@ -185,7 +193,7 @@ class Watch(unittest.TestCase):
         def bad():
             raise lsettings.LaunchError('sessions.json: bad JSON')
         self.job.sessions = bad
-        out = self.run_job()
+        out = self.run_quietly()
         self.assertIsInstance(out, jobs.Skip)
         self.assertIn('sessions.json', out.note)
         self.assertEqual(self.sent, [])
@@ -195,7 +203,7 @@ class Watch(unittest.TestCase):
             def bad(exc=exc):
                 raise exc
             self.job.live = bad
-            out = self.run_job()
+            out = self.run_quietly()
             self.assertIsInstance(out, jobs.Skip)
             self.assertIn(type(exc).__name__, out.note)
         self.assertEqual(self.sent, [])

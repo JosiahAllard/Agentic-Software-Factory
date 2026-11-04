@@ -106,6 +106,12 @@ class InputTree(ToolchainCase):
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(out.verdict, 'GATE OK (reused: unit, tooly, cachy)')
         self.assert_not_ran(lander.gate_logs, 'unit', 'tooly', 'cachy')
+        # tooly names {base}: the cache never keys it, and the input tree still serves it
+        ended = gate_ok.read(self.repo.root, tip)[0]['ended_utc']
+        self.assertEqual(self.line_of('HIT', 'tooly'), reuse.PREFIX + 'HIT tooly: the input tree '
+                         'of the full record of %s (ended %s)' % (tip[:10], ended))
+        self.assertIn('REUSED tooly: passed in the full gate of %s on the same inputs, base side '
+                      'and change (ended %s)' % (tip[:10], ended), self.lines())
 
     def test_main_moved_and_a_changed_toolchain_runs_the_steps_that_declare_it(self):
         _, tip = self.full_tip()
@@ -129,6 +135,12 @@ class SameTree(ToolchainCase):
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(out.verdict, 'GATE OK (reused: unit, tooly, cachy)')
         self.assert_not_ran(lander.gate_logs, 'unit', 'tooly', 'cachy')
+        # tooly names {base}: the cache never keys it, and the same tree still serves it
+        ended = gate_ok.read(self.repo.root, tip)[0]['ended_utc']
+        self.assertTrue(self.line_of('HIT', 'tooly').startswith(
+            reuse.PREFIX + 'HIT tooly: the --full record of %s (same tree ' % tip[:10]), self.said)
+        self.assertIn('REUSED tooly: passed in the --full gate of %s on the same tree (ended %s)'
+                      % (tip[:10], ended), self.lines())
 
     def test_the_same_tree_and_a_changed_toolchain_runs_the_steps_that_declare_it(self):
         _, tip = self.full_tip()
@@ -218,6 +230,8 @@ class NoOptIn(ReuseCase):
     KIT = {'landing': {'shared_paths': ['shared/*']}}
 
     def test_no_toolchain_starts_no_probe_and_keys_the_input_parts_alone(self):
+        # the seam every probe goes through: a mock of a name that is not there proves nothing
+        self.assertTrue(callable(getattr(reuse, '_probe', None)), 'reuse has no _probe')
         p = mock.patch.object(reuse, '_probe', side_effect=AssertionError('a probe ran'))
         probe = p.start()
         self.addCleanup(p.stop)
@@ -234,7 +248,7 @@ class NoOptIn(ReuseCase):
 
     def test_a_step_built_without_a_toolchain_has_none(self):
         step = S.Step('x', ['x'], None, '.', [], [], (0,), False, False, [], False)
-        self.assertEqual(step.toolchain, ())
+        self.assertEqual(getattr(step, 'toolchain', None), ())
         self.assertIsNone(reuse.toolchain_digest('.', step, {}))
 
 

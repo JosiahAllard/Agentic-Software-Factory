@@ -244,11 +244,14 @@ class GateRulesTest(TreeCase):
     def test_a_toolchain_is_probe_argvs_of_a_reuse_cmd_step_that_declares_inputs(self):
         ok = {'name': 'a', 'always': True, 'globs': ['src/*'], 'cmd': ['x'], 'reuse': True,
               'toolchain': [['dotnet', '--version'], ['{python}', '{tools}/v.py', '{root}', '{here}']]}
-        self.assertEqual(self.load({'gate': {'steps': [ok]}}).section('gate')['steps'], [ok])
         content = dict(ok, content={'globs': ['src/*'], 'regex': 'x'})
         del content['globs']
-        self.assertEqual(self.load({'gate': {'steps': [content]}}).section('gate')['steps'],
-                         [content])
+        for step in (ok, content):
+            try:
+                cfg = self.load({'gate': {'steps': [step]}})
+            except config.ConfigError as e:
+                self.fail('a valid toolchain is refused: %s' % e)
+            self.assertEqual(cfg.section('gate')['steps'], [step])
         self.assertIn('"toolchain" needs "reuse"', self.steps(dict(ok, reuse=False)))
         bare = dict(ok)
         del bare['reuse']

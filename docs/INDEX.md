@@ -21,7 +21,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/ROSTER.md` | agent roster | choosing an agent | kw: roster, agents
 - `docs/allow-rules.md` | allow rules for landing: the permission lines allow_rules.py prints, what each lets through | letting an agent submit a landing without a prompt | kw: allow-rules, allow_rules, permissions
 - `docs/action-hub.md` | Action Hub | the PM action list | kw: action-hub, hub
-- `docs/hub-fill.md` | Hub fill watch: a live coordinator with a free slot and startable work is nudged | coordinators under-filling their slots | kw: hub, fill, slots, nudge
+- `docs/hub-fill.md` | Hub fill watch: a live coordinator with a free slot and startable work is nudged; its saved state, the auto-pull stand-down and the stages to come | coordinators under-filling their slots | kw: hub, fill, slots, nudge, auto-pull, stand-down, fill-watch
 - `docs/hub-mcp.md` | hub MCP server: the Action Hub's api as MCP tools, the owner's tools pinned | the hub from an agent | kw: hub-mcp, hub, mcp
 - `docs/hub-remote-access.md` | Hub remote access | reaching the hub from a phone | kw: hub, remote-access, tunnel, cloudflared
 - `docs/blender-mcp.md` | Blender MCP bridge: a live headless Blender per agent, booked through the machine lock, through the pinned Blender Lab MCP add-on | inspecting or rendering a scene from an agent | kw: blender-mcp, blender, mcp, render

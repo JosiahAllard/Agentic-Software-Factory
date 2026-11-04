@@ -598,7 +598,8 @@ store's git push (the `push` setting).
   opened record from `coord-restart`'s backlog wake; nothing else is pushed.
   `fill-watch` (`kitlib/hubjobs/fill_watch.py`, every 300 s, docs/hub-fill.md) sends a live coordinator
   with a free slot and startable work one `[hub push] fill: N free, M startable: <ids>` message, once per change,
-  that says to pull and dispatch unless the PM holds new work or it is checkpointing or standing down.
+  that says to pull and dispatch unless the PM holds new work or it is checkpointing or standing down,
+  and names the auto-pull stand-down when one holds; what it told is kept in `fill-watch.json`.
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its

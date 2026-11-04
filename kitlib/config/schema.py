@@ -187,6 +187,8 @@ SECTIONS = {
         'cap': Field(Int(1, None), 5, 'most records `backlog.py next` offers and `pull` takes in order (`next --cap` overrides it for one call); every worktree reads the main checkout\'s value'),
         'resources': Field(MapOf(Int(1, None), 'name', key=Str(pattern=r'[a-z0-9][a-z0-9-]*', what='a lower-case resource name')), {},
                            'limited resources and how many live pulls may use each at once: a record names one with `uses:`, and `next` passes it over at capacity (docs/backlog.md "Resources"); every worktree reads the main checkout\'s value'),
+        'fill_queued_max': Field(Int(0, None), 3, 'the hub fill watch stands auto-pull down while this many branches wait to land (unexpired verdict-queue entries, and worktree branches whose tip has a green gate-OK record and is not in main); 0 turns auto-pull off (docs/hub-fill.md "Stand-down"); read from the main checkout'),
+        'fill_idle_max': Field(Int(0, None), 2, 'the hub fill watch stands auto-pull down while this many worktrees are idle 2 h or more (`--classify` class B or C); 0 stands it down always (docs/hub-fill.md "Stand-down"); read from the main checkout'),
     },
     'board': {
         'state_file': Field(RelPath(), None, 'the board state file, under the git dir (default <git common dir>/kit/board-state.md)'),

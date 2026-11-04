@@ -498,8 +498,9 @@ store's git push (the `push` setting).
   rule also goes to the PM, whatever its `filed_as`, and a standing rule made of an answer already pushed
   adds the PM to the push still owed for it (`push.py` `_fire_filed`).
 - What it says: a fixed header, `[hub push] <kind> <id> <status> repo:<repo> from:<from>
-  route:<recipient> attempt:<k>`, and one line of what to do; never a title, a note or an answer, since
-  the session takes the message as a prompt. A to-do's line is `A done mark is not proof: verify each
+  route:<recipient> attempt:<k>`, and one line of what to do; never a title or an answer, since
+  the session takes the message as a prompt. The one exception is the owner's note on a done to-do: one
+  further line, framed as data, whitespace-collapsed, JSON-quoted and cut at 400 characters. A to-do's line is `A done mark is not proof: verify each
   step on disk, then: hub todo ack <id>`: the owner marks a to-do done even when a step inside it failed.
   A filed answer's line names the record (`<repo>:<id>`) and what to do: pick it up (`pulled`, the
   asker), read it with no ack needed (`pulled` to the PM that asked, and `freed` to the PM, which also

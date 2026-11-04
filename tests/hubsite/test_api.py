@@ -463,6 +463,7 @@ class TodoTest(ApiCase):
         self.ok('POST', path, OWNER, {'note': 'x' * api.TODO_NOTE_MAX})
         self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'x' * (api.TODO_NOTE_MAX + 1)})
         self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'a\x00b'})
+        self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 'a\ud800b'})
         self.refused('invalid', 'note', 'POST', path, OWNER, {'note': 5})
         self.refused('invalid', 'note', 'POST', path, OWNER, {'done': False, 'note': 'n'})
 

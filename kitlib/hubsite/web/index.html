@@ -1400,6 +1400,8 @@ ul.hist .sch-line{display:block}
     fillRepos(state.todos);
     const open = state.todos.filter(t => t.status !== "done"), done = state.todos.filter(t => t.status === "done");
     $("#n-topen").textContent = open.length; $("#n-tdone").textContent = done.length;
+    // Done by anything (the CLI too): a note draft typed here is stale, so it must not come back on a reopen.
+    if (ready) done.forEach(t => clearDraft(t.id));
     document.querySelectorAll("#ttabs .tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tf === state.tfilter)));
     // A to-do with an open edit stays in the list whatever the tab or the repository filter, so what was
     // typed in it is never out of sight without a word (it may be ticked done elsewhere meanwhile).

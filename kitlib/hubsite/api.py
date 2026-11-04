@@ -2112,6 +2112,8 @@ def _todo_note(b, done):
         raise _invalid('the note is %d characters: at most %d' % (len(note), TODO_NOTE_MAX), 'note')
     if _NOTE_CONTROL.search(note):
         raise _invalid('the note is plain text: no control characters', 'note')
+    if _SURROGATE.search(note):
+        raise _invalid('the note holds a lone surrogate, half a character', 'note')
     return note
 
 

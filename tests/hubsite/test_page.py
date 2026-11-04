@@ -2244,6 +2244,15 @@ class QuickWriteTest(unittest.TestCase):
         self.assertIsNotNone(got["during"])                  # kept until the hub has it
         self.assertIsNone(got["after"])
 
+    def test_a_todo_drawn_as_done_drops_its_stale_note_draft(self):
+        lists = {"todos": {"T-1": {"status": "done", "title": "mine", "from": "you", "version": 2, "added_at": NOW, "done_at": NOW}}}
+        got = dom("""
+            localStorage.setItem("oq.draft.T-1", JSON.stringify({ note: "typed, then done from the CLI" }));
+            await start();
+            return localStorage.getItem("oq.draft.T-1");
+        """, snapshot(collections=lists), hash="#todo")
+        self.assertIsNone(got)
+
     def test_a_done_todos_note_is_shown_as_plain_text(self):
         lists = {"todos": {"T-1": {"status": "done", "title": "mine", "from": "you", "version": 2, "added_at": NOW,
                                    "done_at": NOW, "done_note": "hash <img src=x>"}}}

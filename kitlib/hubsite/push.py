@@ -149,8 +149,9 @@ Files, in `folder` (the launcher's state_dir):
 The text is fixed: a header `[hub push] <kind> <id> <status> repo:<repo> from:<from>
 route:<recipient> attempt:<k>` (`[hub push] job <name> <event> [detail:<detail> ]route:<recipient>
 attempt:<k>` for a job push; each field cut to [A-Za-z0-9._:-], 64 characters) and one line of
-what to do. It never carries a title, a note or an answer: those are free text and the
-recipient takes the message as a prompt.
+what to do. It never carries a title or an answer: those are free text and the recipient takes
+the message as a prompt. The one exception is the owner's note on a done to-do: one further line,
+framed as data, whitespace-collapsed, JSON-quoted and cut at TODO_NOTE_PUSH_MAX (400) characters.
 
 Threads: start() reads the baseline and the outbox, then starts the thread; stop(timeout) asks it
 to end and joins it (False when it did not end in time: a deliver can block up to its own

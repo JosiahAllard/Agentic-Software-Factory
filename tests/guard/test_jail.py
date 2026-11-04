@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from kitlib import config as kconfig
 from kitlib import guard
@@ -548,11 +549,24 @@ class Config(unittest.TestCase):
 
     def test_posix_absolute_path(self):
         roots = [{'path': '/srv/data', 'mode': 'add-only'}]
-        try:
-            got = self.load({'data_roots': roots}).section('guard')['data_roots']
-        except kconfig.ConfigError as e:
-            self.fail(f'a POSIX absolute path was refused: {e}')
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            try:
+                got = self.load({'data_roots': roots}).section('guard')['data_roots']
+            except kconfig.ConfigError as e:
+                self.fail(f'a POSIX absolute path was refused: {e}')
         self.assertEqual(got, roots)
+
+    def test_posix_path_refused_on_windows(self):
+        for p in ('/srv/data', '/d/data'):
+            with self.subTest(p), mock.patch('kitlib.platform.NAME', 'windows'):
+                with self.assertRaises(kconfig.ConfigError):
+                    self.load({'data_roots': [{'path': p, 'mode': 'open'}]})
+
+    def test_bad_posix_paths_refused_on_linux(self):
+        for p in ('/', '//', '//host/share', '/..', '/srv/../etc', '/srv/..'):
+            with self.subTest(p), mock.patch('kitlib.platform.NAME', 'linux'):
+                with self.assertRaises(kconfig.ConfigError):
+                    self.load({'data_roots': [{'path': p, 'mode': 'open'}]})
 
     def test_bad_entries_refuse(self):
         for bad in ([{'path': 'D:/x', 'mode': 'append'}], [{'path': 'data/models', 'mode': 'open'}],

@@ -6,6 +6,7 @@ that holds the object. Defaults of None mean "absent": the tool that reads the k
 Kit-level sections (repo, owner, hook, heavy, roles, kinds) are read by kitlib itself; the rest are the
 per-tool sections the PM kit's tools read (kit/tools/_kit.py SECTIONS), checked here for shape only.
 """
+from kitlib import platform
 from kitlib.host import registry
 from kitlib.host.content import MODES
 
@@ -126,9 +127,23 @@ BISECT = Obj({
                      'the session the filed record carries'),
 }, what='{max_probes, prefix, session}')
 
+class _DataRootPath(Str):
+    """A drive-letter or UNC path; on Linux also a POSIX one (a single leading `/`, no `..`, not `/` itself)."""
+
+    def __init__(self):
+        Str.__init__(self, pattern=r'(?:[A-Za-z]:[\\/]|\\\\|//).+', what='an absolute folder path')
+
+    def check(self, v, where, errs):
+        if platform.NAME == 'linux' and isinstance(v, str) and v.startswith('/'):
+            if len(v) < 2 or v.startswith('//') or '..' in v.split('/'):
+                errs.append('%s must be an absolute folder path, not %r' % (where, v))
+            return
+        Str.check(self, v, where, errs)
+
+
 # A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard.md "Write jail").
 DATA_ROOT = Obj({
-    'path': Field(Str(pattern=r'(?:[A-Za-z]:[\\/]|\\\\|/).+', what='an absolute folder path'), None, 'the folder, absolute'),
+    'path': Field(_DataRootPath(), None, 'the folder, absolute'),
     'mode': Field(Enum('add-only', 'read-only', 'open'), None, 'add-only: new files only, never overwrite, move or delete; read-only: no write; open: any write'),
     'why': Field(Str(), None, 'the reason, a ruling or a measurement'),
 }, required=('path', 'mode'), what='{path, mode, why}')

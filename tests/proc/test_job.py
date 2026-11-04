@@ -88,6 +88,37 @@ class Plans(unittest.TestCase):
 
 
 @windows_only("Windows only")
+class LimitRefused(unittest.TestCase):
+    """SetInformationJobObject refused (faked): a Job never comes back without kill-on-close."""
+
+    def test_an_unpinned_job_whose_limit_is_refused_raises(self):
+        with mock.patch.object(job, "_set_ext", return_value=False):
+            with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):
+                job.Job()
+
+    def test_a_pinned_job_whose_limit_is_refused_twice_raises(self):
+        with mock.patch.object(job, "_set_ext", return_value=False):
+            with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):
+                job.Job(1 << first_own_thread())
+
+    def test_a_refused_pin_alone_drops_the_pin_and_keeps_kill_on_close(self):
+        calls = []
+
+        def refuse_pin(h, flags, affinity=0):
+            calls.append(flags)
+            return not flags & win32.JOB_AFFINITY
+
+        with mock.patch.object(job, "_set_ext", side_effect=refuse_pin):
+            j = job.Job(1 << first_own_thread())
+        try:
+            self.assertIsNone(j.pin)
+            self.assertIn("could not be set", j.note)
+            self.assertTrue(calls[-1] & win32.JOB_KILL_ON_CLOSE)
+        finally:
+            j.close()
+
+
+@windows_only("Windows only")
 class Live(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="kitlib-job-")

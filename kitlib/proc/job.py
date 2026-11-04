@@ -226,7 +226,10 @@ class Job:
             self.mask = (mask & every) if mask is not None else None
             if mask is not None and not self.mask:
                 self.note, self.mask = "this machine has none of cores %s" % cores_text(mask), None
-            if not self._limit(kill_on_close) and self.mask is not None:
+            if not self._limit(kill_on_close):
+                if self.mask is None:       # nothing to drop: no job limit means no kill-on-close
+                    raise JobError("SetInformationJobObject: windows error %d"
+                                   % ctypes.get_last_error())
                 self.note = "the core pin could not be set (windows error %d)" % ctypes.get_last_error()
                 self.mask = None
                 if not self._limit(kill_on_close):

@@ -1,5 +1,6 @@
-"""kitlib.hubjobs.fill_watch: the hub's fill watch, stage 1 (docs/hub-fill.md): a live coordinator
-with a free slot and startable work gets one nudge per change."""
+"""kitlib.hubjobs.fill_watch: the hub's fill watch (docs/hub-fill.md): a live coordinator with a
+free slot and startable work gets one nudge per change (stage 1), what was told survives a hub
+restart (stage 2), and the nudge names the stand-down (stage 4)."""
 import json
 import os
 import shutil
@@ -23,8 +24,8 @@ LANE = {'repo': 'game', 'agent': True, 'stem': 'lane-coordinator', 'name': 'lane
 PLAIN = {'repo': 'game', 'agent': False, 'stem': 'research', 'name': 'research-a2'}
 
 
-class Watch(unittest.TestCase):
-    """The job with its readers replaced: `self.slots[key]` is (cap, in_flight, ids) or an
+class WatchFixture(object):
+    """A mixin: the job with its readers replaced: `self.slots[key]` is (cap, in_flight, ids) or an
     exception; `self.states` the deliver results, in turn (default written)."""
 
     def setUp(self):
@@ -56,6 +57,10 @@ class Watch(unittest.TestCase):
             return self.run_job()
         except Exception as e:      # noqa: BLE001
             self.fail('the run raised %s: %s' % (type(e).__name__, e))
+
+
+class Watch(WatchFixture, unittest.TestCase):
+    """Stage 1: the watch and the nudge."""
 
     def test_free_and_startable_nudges_the_coordinator_once_with_the_counts(self):
         out = self.run_job()
@@ -321,6 +326,18 @@ class Make(unittest.TestCase):
         self.assertEqual(run.deliver('game', 'text'), P.UNCERTAIN)
         sources.push.deliver.assert_called_once_with('game', 'text')
 
+    def test_the_state_file_and_stand_down_are_the_repos(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        s = lsettings.Settings({'state_dir': tmp, 'repos': {'game': tmp}}, home=tmp)
+        with mock.patch.object(lsettings, 'load', lambda home=None: s):
+            run = W.make(mock.Mock(home=tmp, push=None)).run
+        self.assertEqual(run.store.path, os.path.join(tmp, 'fill-watch.json'))
+        with mock.patch.object(W, 'standdown', lambda top: 'at %s' % top):
+            self.assertEqual(run.standdown('game', dict(COORD)), 'at %s' % tmp)
+            with self.assertRaises(lsettings.LaunchError):
+                run.standdown('x', {'repo': 'nowhere'})
+
     def test_told_states_are_push_written_and_uncertain(self):
         self.assertEqual(W.told_states(), (P.WRITTEN, P.UNCERTAIN))
 
@@ -339,6 +356,350 @@ class Make(unittest.TestCase):
             job = W.make(mock.Mock(home=tmp, push=None))
         self.assertEqual((job.name, job.every_s), ('fill-watch', 300))
 
+
+class Clock(object):
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+class Persist(Watch):
+    """What was told, and when the episode began, kept in fill-watch.json across hub restarts."""
+
+    def setUp(self):
+        super(Persist, self).setUp()
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, W.STATE_FILE)
+        self.clock = Clock()
+        self.job = self.fresh()
+
+    def fresh(self):
+        """A new FillWatch over the same file: a hub restart."""
+        return W.FillWatch(lambda: self.sessions, lambda: self.live, self.job.read,
+                           self.job.deliver, store=W.FileState(self.path), now=self.clock)
+
+    def saved(self):
+        with open(self.path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_a_restart_reads_what_was_told_and_does_not_nudge_again(self):
+        self.run_job()
+        self.job = self.fresh()
+        self.run_job()
+        self.assertEqual(len(self.sent), 1)
+        self.slots['game'] = (5, 3, ['EX-A', 'EX-B', 'EX-D'])
+        self.job = self.fresh()
+        self.run_job()                      # a change after the restart is still pushed
+        self.assertEqual(len(self.sent), 2)
+
+    def test_the_file_holds_what_was_told_since_and_in_flight(self):
+        self.run_job()
+        self.assertEqual(self.saved(), {'game': {'told': [2, ['EX-A', 'EX-B', 'EX-C'], None],
+                                                 'since': 1000.0, 'in_flight': 3}})
+
+    def test_a_bad_state_file_fails_the_run_and_writes_nothing(self):
+        for bad in ('{not json', '[]', '{"game": {"told": "x"}}', '{"game": 3}',
+                    '{"game": {"told": [2, ["EX-A"], null], "since": "soon", "in_flight": 3}}'):
+            with open(self.path, 'w', encoding='utf-8') as f:
+                f.write(bad)
+            with self.assertRaises(lsettings.LaunchError):
+                self.run_job()
+            with open(self.path, encoding='utf-8') as f:
+                self.assertEqual(f.read(), bad)
+        self.assertEqual(self.sent, [])
+
+    def test_since_is_kept_across_a_restart_and_reset_when_in_flight_rises(self):
+        self.run_job()
+        self.clock.t = 1300.0
+        self.job = self.fresh()
+        self.slots['game'] = (5, 3, ['EX-A', 'EX-B', 'EX-D'])      # ids only: same free count
+        self.run_job()
+        self.assertEqual((self.saved()['game']['since'], len(self.sent)), (1000.0, 2))
+        self.clock.t = 1450.0
+        self.slots['game'] = (6, 4, ['EX-A', 'EX-B', 'EX-D'])      # same free, one more pulled
+        self.run_job()
+        self.assertEqual((self.saved()['game']['since'], len(self.sent)), (1450.0, 2))
+        self.clock.t = 1600.0
+        self.slots['game'] = (6, 5, ['EX-B', 'EX-C'])              # it pulled: in flight rose
+        self.run_job()
+        self.assertEqual(self.saved()['game']['since'], 1600.0)
+        self.assertEqual(self.saved()['game']['in_flight'], 5)
+
+    def test_a_nudge_that_names_a_newly_freed_slot_restarts_since(self):
+        self.run_job()
+        self.clock.t = 1300.0
+        self.slots['game'] = (5, 2, ['EX-A', 'EX-B', 'EX-C'])      # one landed: a slot freed
+        self.run_job()
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.saved()['game']['since'], 1300.0)
+        self.assertEqual(self.saved()['game']['in_flight'], 2)
+
+    def test_a_hub_stop_mid_run_keeps_the_keys_it_did_not_reach(self):
+        self.sessions = {'game': dict(COORD), 'lane': dict(LANE)}
+        self.live = {'game-coordinator-a1', 'lane-coordinator-a1'}
+        self.slots['lane'] = (2, 0, ['EX-L'])
+        self.run_job()
+        before = self.saved()
+        self.assertEqual(sorted(before), ['game', 'lane'])
+        c = ctx()
+        read = self.job.read
+
+        def stop_after(key, entry):
+            c.stop.set()                    # the hub stops while game is read
+            return read(key, entry)
+        self.job.read = stop_after
+        self.clock.t = 1300.0
+        self.job(c)
+        self.assertEqual(self.saved(), before)
+        self.job = self.fresh()
+        self.run_job()
+        self.assertEqual(len(self.sent), 2)                         # nobody nudged again
+
+    def test_a_coordinator_the_crossover_claims_keeps_its_state(self):
+        self.run_job()
+        before = self.saved()
+        self.job.claims = lambda: {'game'}
+        self.clock.t = 1300.0
+        self.run_job()
+        self.assertEqual(self.saved(), before)
+        self.job.claims = lambda: set()
+        self.run_job()
+        self.assertEqual(len(self.sent), 1)
+
+    def test_a_key_that_ends_is_dropped_from_the_file(self):
+        self.run_job()
+        self.slots['game'] = (5, 5, ['EX-A'])
+        self.run_job()
+        self.assertEqual(self.saved(), {})
+
+    def test_the_file_is_written_only_on_a_change(self):
+        writes = []
+        store = W.FileState(self.path)
+        real = store.write
+        store.write = lambda data: writes.append(1) or real(data)
+        self.job = W.FillWatch(lambda: self.sessions, lambda: self.live, self.job.read,
+                               self.job.deliver, store=store, now=self.clock)
+        self.run_job()
+        self.clock.t = 1300.0
+        self.run_job()
+        self.run_job()
+        self.assertEqual(len(writes), 1)
+
+    def test_no_file_is_an_empty_state(self):
+        self.assertFalse(os.path.exists(self.path))
+        self.run_job()
+        self.assertEqual(len(self.sent), 1)
+
+
+class StandDownNudge(WatchFixture, unittest.TestCase):
+    """The stand-down reason, read once per repository per run, rides in the nudge."""
+
+    def setUp(self):
+        super(StandDownNudge, self).setUp()
+        self.reasons, self.asked = [], []
+
+        def standdown(key, entry):
+            self.asked.append(entry['repo'])
+            got = self.reasons[0] if self.reasons else None
+            if isinstance(got, Exception):
+                raise got
+            return got
+        self.job.standdown = standdown
+
+    def test_no_stand_down_leaves_the_nudge_as_it_was(self):
+        self.run_job()
+        self.assertNotIn('stood down', self.sent[0][1])
+
+    def test_a_stand_down_reason_is_in_the_nudge(self):
+        self.reasons = ['queued 3>=3']
+        self.run_job()
+        first, second = self.sent[0][1].splitlines()[:2]
+        self.assertIn('fill: 2 free, 3 startable', first)
+        self.assertEqual(second, 'auto-pull stood down: queued 3>=3')
+
+    def test_a_change_of_reason_pushes_again(self):
+        self.run_job()
+        self.reasons = ['idle 2>=2']
+        self.run_job()
+        self.run_job()                      # the same reason: no second push
+        self.reasons = []
+        self.run_job()                      # stand-down over: pushed again
+        self.assertEqual(len(self.sent), 3)
+
+    def test_an_unread_stand_down_fails_closed(self):
+        self.reasons = [RuntimeError('git said no')]
+        out = self.run_quietly()
+        self.assertIn('auto-pull stood down: unread', self.sent[0][1])
+        self.assertIn('RuntimeError', out)
+
+    def test_read_once_per_repository_and_only_with_a_free_slot_and_work(self):
+        self.sessions = {'game': dict(COORD), 'lane': dict(LANE)}
+        self.live = {'game-coordinator-a1', 'lane-coordinator-a1'}
+        self.slots['lane'] = (2, 0, ['EX-L'])
+        self.run_job()
+        self.assertEqual(self.asked, ['game'])
+        self.slots['game'] = self.slots['lane'] = (5, 5, ['EX-A'])
+        self.run_job()
+        self.assertEqual(self.asked, ['game'])
+
+
+class StandDown(unittest.TestCase):
+    """standdown(top): the limits from the main checkout's .kit.json, the counts from survey."""
+
+    def setUp(self):
+        self.top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.top, True)
+
+    def kit(self, backlog):
+        with open(os.path.join(self.top, '.kit.json'), 'w', encoding='utf-8') as f:
+            json.dump({'backlog': backlog}, f)
+
+    def reason(self, queued, idle):
+        return W.standdown(self.top, survey=lambda top, cfg: (queued, idle))
+
+    def test_the_keys_default_to_three_queued_and_two_idle(self):
+        self.assertEqual(W.read_limits(self.top), (3, 2))
+        self.assertIsNone(self.reason(2, 1))
+        self.assertEqual(self.reason(3, 0), 'queued 3>=3')
+        self.assertEqual(self.reason(0, 2), 'idle 2>=2')
+        self.assertEqual(self.reason(4, 5), 'queued 4>=3')
+
+    def test_the_keys_are_read_from_the_checkout(self):
+        self.kit({'fill_queued_max': 5, 'fill_idle_max': 4})
+        self.assertEqual(W.read_limits(self.top), (5, 4))
+        self.assertIsNone(self.reason(4, 3))
+        self.assertEqual(self.reason(1, 4), 'idle 4>=4')
+
+    def test_fill_queued_max_zero_is_off_without_a_survey(self):
+        self.kit({'fill_queued_max': 0})
+
+        def survey(top, cfg):
+            raise AssertionError('surveyed')
+        self.assertEqual(W.standdown(self.top, survey=survey), 'off')
+
+    def test_a_config_that_cannot_be_read_is_unread(self):
+        for bad in ({'fill_queued_max': -1}, {'fill_idle_max': 'two'}):
+            self.kit(bad)
+            with self.assertRaises(W.StandDownUnread):
+                self.reason(0, 0)
+
+
+def tree(branch, klass, head=None, gate=None, reason=None):
+    row = {'path': '/w/' + branch, 'branch': branch, 'head': head or 'h-' + branch,
+           'class': klass}
+    if reason is not None:
+        row['reason'] = reason
+    if gate is not None:
+        row['gate'] = gate
+    return row
+
+
+class Survey(unittest.TestCase):
+    """read_survey(top, cfg): (queued, idle) from the verdict queue and one --classify read."""
+
+    def setUp(self):
+        self.entries = []
+        self.expired = set()
+        self.trees = []
+        self.green = set()
+        self.in_main = set()
+        self.dead_after = []
+        self.main = ('m' * 40, None)
+        self.common = ('/common', None)
+
+    def survey(self):
+        from kitlib.coordstate import render
+        from kitlib.gate import verdicts
+        from kitlib.git import refs
+        from kitlib.git import repo
+        from kitlib.worktree import classify
+
+        def entries(common):
+            if isinstance(self.entries, Exception):
+                raise self.entries
+            return [{'branch': b, 'tip': 't-' + b} for b in self.entries]
+
+        def fake_classify(top, dead_after_s=None, **k):
+            self.dead_after.append(dead_after_s)
+            if isinstance(self.trees, dict):
+                return classify.Result(1, [], self.trees)
+            return classify.Result(1, [], {'trees': self.trees, 'counts': {}})
+
+        def is_ancestor(a, d, cwd):
+            return (a in self.in_main, None) if a != 'unknown' else (None, 'git failed')
+        with mock.patch.object(render, 'main_as_fetched', lambda top: self.main), \
+                mock.patch.object(repo, 'common_dir', lambda top: self.common), \
+                mock.patch.object(verdicts, 'entries', entries), \
+                mock.patch.object(verdicts, 'expired',
+                                  lambda c, e, m: 'landed' if e['branch'] in self.expired else None), \
+                mock.patch.object(classify, 'classify', fake_classify), \
+                mock.patch.object(classify, 'gate_state',
+                                  lambda main, head, cfg=None: 'green' if head in self.green
+                                  else 'none'), \
+                mock.patch.object(refs, 'is_ancestor', is_ancestor):
+            return W.read_survey('/top', None)
+
+    def test_queued_is_unexpired_verdicts_and_green_tips_not_in_main_once_each(self):
+        self.entries = ['kit/a', 'kit/b', 'kit/gone']
+        self.expired = {'kit/gone'}
+        self.trees = [tree('kit/a', 'B', gate='green'),         # queued too: counted once
+                      tree('kit/c', 'L'),                       # live, green, not in main
+                      tree('kit/d', 'L'),                       # live, no gate-OK record
+                      tree('kit/e', 'L'),                       # green but in main
+                      tree('kit/f', 'C', gate='none')]
+        self.green = {'h-kit/c', 'h-kit/e'}
+        self.in_main = {'h-kit/e'}
+        self.assertEqual(self.survey()[0], 3)                  # a, b, c
+
+    def test_an_ancestry_git_cannot_tell_counts_as_queued(self):
+        self.trees = [tree('kit/x', 'L', head='unknown')]
+        self.green = {'unknown'}
+        self.assertEqual(self.survey()[0], 1)
+
+    def test_idle_counts_b_and_c_trees_at_two_hours_and_never_l(self):
+        self.trees = [tree('kit/b', 'B', gate='green'), tree('kit/c', 'C', gate='none'),
+                      tree('kit/l', 'L'), tree('kit/a', 'A'), tree('kit/e', 'E'),
+                      tree('kit/o', 'O')]
+        self.assertEqual(self.survey()[1], 2)
+        self.assertEqual(self.dead_after, [7200])
+
+    def test_a_classify_that_could_not_read_a_probe_is_unread(self):
+        self.trees = {'trees': [tree('kit/b', 'L', reason='unreadable: the machine lock cannot be'
+                                     ' read (x)')], 'counts': {},
+                      'unreadable': 'the machine lock cannot be read (x)'}
+        with self.assertRaises(W.StandDownUnread):
+            self.survey()
+
+    def test_a_tree_classify_could_not_read_is_unread(self):
+        self.trees = [tree('kit/b', 'B', gate='green'),
+                      tree('kit/x', 'L', reason='unreadable: its status (git failed)'),
+                      tree('kit/l', 'L', reason='active 0.5 h ago')]
+        with self.assertRaises(W.StandDownUnread):
+            self.survey()
+
+    def test_anything_unread_is_unread(self):
+        from kitlib.gate import verdicts
+        cases = [('main', (None, 'no origin/main')), ('common', (None, 'not a repo')),
+                 ('entries', verdicts.VerdictError('bad file')),
+                 ('trees', {'error': 'git cannot list the worktrees'})]
+        for name, value in cases:
+            self.setUp()
+            setattr(self, name, value)
+            with self.assertRaises(W.StandDownUnread):
+                self.survey()
+
+
+class Keys(unittest.TestCase):
+    def test_the_two_keys_are_in_the_schema_with_their_defaults(self):
+        from kitlib.config import schema
+        backlog = schema.SECTIONS['backlog']
+        self.assertIn('fill_queued_max', backlog)
+        self.assertIn('fill_idle_max', backlog)
+        self.assertEqual((backlog['fill_queued_max'].default, backlog['fill_idle_max'].default),
+                         (3, 2))
 
 if __name__ == '__main__':
     unittest.main()

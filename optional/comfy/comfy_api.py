@@ -10,6 +10,7 @@ Main pieces:
   run(prompt)               queue a prompt, wait, return its history entry
   outputs(entry)            every file the run produced (images, 3D, audio)
 """
+import hashlib
 import json
 import os
 import time
@@ -46,11 +47,13 @@ def post_json(path, payload, timeout=30):
 
 
 def upload_image(path, subfolder="agent"):
-    """Upload a local image into ComfyUI's input folder; returns the name LoadImage wants."""
+    """Upload a local image into ComfyUI's input folder; returns the name LoadImage wants. The
+    name starts with a short hash of the image, so commands sharing one session never overwrite
+    each other's same-named inputs (ref.png); the same image always gets the same name."""
     boundary = uuid.uuid4().hex
-    name = os.path.basename(path)
     with open(path, "rb") as f:
         data = f.read()
+    name = f"{hashlib.sha256(data).hexdigest()[:12]}-{os.path.basename(path)}"
     body = b"".join([
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"subfolder\"\r\n\r\n{subfolder}\r\n".encode(),
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n".encode(),
@@ -254,15 +257,25 @@ def find(api, class_type):
 
 
 # ---------------------------------------------------------------- running
+def _cancel(pid):
+    """Take prompt `pid` off ComfyUI: delete it from the queue, and interrupt it only while it is
+    the one running. The server may be a session other commands share, and a bare /interrupt
+    stops whatever runs, another command's job included; the prompt_id asks ComfyUI to interrupt
+    only that prompt. Best effort: a failure here is not reported."""
+    try:
+        post_json("/queue", {"delete": [pid]})
+        q = get_json("/queue", timeout=5)
+        if any(len(row) > 1 and row[1] == pid for row in q.get("queue_running") or []):
+            post_json("/interrupt", {"prompt_id": pid})
+    except Exception:
+        pass
+
+
 def run(api, timeout=900, poll=2):
     job = post_json("/prompt", {"prompt": api, "client_id": "claude-agent"})
     if job.get("node_errors"):
         # ComfyUI still runs the outputs that validated; a partial run is a failure for us.
-        try:
-            post_json("/queue", {"delete": [job["prompt_id"]]})
-            post_json("/interrupt", {})
-        except Exception:
-            pass
+        _cancel(job["prompt_id"])
         raise RuntimeError(f"ComfyUI rejected part of the workflow: {json.dumps(job['node_errors'])[:3000]}")
     pid = job["prompt_id"]
     deadline = time.time() + timeout
@@ -277,7 +290,9 @@ def run(api, timeout=900, poll=2):
             if st.get("completed"):
                 return entry
         time.sleep(poll)
-    raise RuntimeError(f"timed out after {timeout}s waiting for job {pid}")
+    # cancelled, or the GPU stays busy with it and a session's keeper never sees it idle
+    _cancel(pid)
+    raise RuntimeError(f"timed out after {timeout}s waiting for job {pid}; it was cancelled")
 
 
 def outputs(entry, kinds=("images", "3d", "audio", "gifs", "files", "mesh", "model_3d", "result")):

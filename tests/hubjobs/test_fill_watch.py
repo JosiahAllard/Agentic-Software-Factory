@@ -636,6 +636,8 @@ class Keys(unittest.TestCase):
     def test_the_two_keys_are_in_the_schema_with_their_defaults(self):
         from kitlib.config import schema
         backlog = schema.SECTIONS['backlog']
+        self.assertIn('fill_queued_max', backlog)
+        self.assertIn('fill_idle_max', backlog)
         self.assertEqual((backlog['fill_queued_max'].default, backlog['fill_idle_max'].default),
                          (3, 2))
 

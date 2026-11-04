@@ -78,6 +78,40 @@ class Readers(object):
         self.plugin_root = plugin_root
         self.record_closed = record_closed
 
+    scope = None            # (store root, snapshot) of the repository being read: `at`
+    why = None              # why the last resource_free could not tell
+
+    def at(self, root, snap):
+        """Read `resource:` conditions against the store at `root`, read as `snap`."""
+        self.scope = (root, snap)
+
+    def resource_free(self, name):
+        """True when fewer live pulls use resource `name` than `.kit.json` backlog.resources
+        declares for it (offer.resource_load's count), False when every unit is taken, None when
+        that cannot be told (`why` says why): no store, a `.kit.json` that cannot be read, a name it
+        does not declare, or git that cannot tell which pulls are live."""
+        from kitlib import config as kconfig
+        from kitlib.backlog import offer, opener
+        self.why = None
+        if self.scope is None:
+            self.why = 'no store is being read'
+            return None
+        root, snap = self.scope
+        try:
+            capacity = opener.repo_resources(root)
+            remote = kconfig.load(root).remote
+        except Exception:               # noqa: BLE001 - not told: the condition waits
+            self.why = '.kit.json cannot be read'
+            return None
+        if name not in capacity:
+            self.why = '.kit.json does not declare resource %s' % name
+            return None
+        holding, _dead, git_why = offer.in_flight_split(snap, root, remote)
+        if git_why:
+            self.why = 'git cannot tell which pulls are live (%s)' % git_why
+            return None
+        return len(offer.resource_load(holding, capacity)[name]) < capacity[name]
+
     def _doc(self, coll, doc_id):
         if not self.hub_store:
             return None
@@ -214,7 +248,7 @@ class UnblockJob(object):
             write = recordwrite.condition_met
         roots, notes = self.roots()
         readers = self.readers()
-        done, dropped, failed, count = [], [], [], 0
+        done, dropped, failed, count, unread = [], [], [], 0, []
         for repo, root in roots:
             if ctx.stop.is_set():
                 break
@@ -225,10 +259,16 @@ class UnblockJob(object):
                 continue
             if snap is None:
                 continue
+            at = getattr(readers, 'at', None)
+            if callable(at):
+                at(root, snap)
             for rid, member, cond in watched(snap):
                 count += 1
                 parsed = condmod.parse(cond)
                 met = condmod.evaluate(parsed, readers)
+                if met is None and parsed.kind == 'resource':
+                    unread.append('%s:%s: %s not told (%s)' % (
+                        repo, rid, parsed.target, getattr(readers, 'why', None) or 'unknown'))
                 if met is False:
                     self._expired(ctx, readers, repo, rid, parsed)
                 if met is not True:
@@ -245,7 +285,8 @@ class UnblockJob(object):
                     # one `owner` line of several met: the line goes, the hold stays (no push)
                     dropped.append('%s:%s' % (repo, rid))
         note = '; '.join(
-            (['unblocked %s' % ', '.join(done)] if done else [])
+            unread      # first: the cut below must not drop why a condition is not told
+            + (['unblocked %s' % ', '.join(done)] if done else [])
             + (['line met, still held: %s' % ', '.join(dropped)] if dropped else [])
             + notes)[:NOTE_MAX]
         if failed:

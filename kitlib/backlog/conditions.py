@@ -15,6 +15,8 @@ clears that member (plan.plan_condition_met). The conditions it reads:
   path:<path> exists|absent    the file or folder is there, or not; <path> is absolute, or starts
                                with a %VAR% (machine paths stay out of records), and may hold spaces
   plugin:<folder> absent       the plugin export folder <folder> is gone from the export root
+  resource:<name> free         the repo's declared resource <name> (`.kit.json` backlog.resources)
+                               has a unit free: fewer live pulls use it than its capacity
 
 Any other text is free text: it is kept, and nothing acts on it (it is cleared by hand, with
 `unblock --on M`). An `owner` member ends only on an owner event, a to-do, a question or an
@@ -25,6 +27,8 @@ skips one.
   parse(text)               a Condition, or None when the text is not one of the forms
   kind_of(text)             the form a text names by its prefix (`path:` ...), readable or not
   owner_error(member, text) None, or why `member` may not end on `text`
+  resource_error(text, declared)
+                            None, or why a `resource:` condition names an undeclared resource
   evaluate(cond, readers)   True (met), False (not met) or None (cannot tell); only True acts
   expand(path, environ)     a path's %VAR%s filled from `environ`; None when one is not set
   cited_ids(text)           the hub ids (Q-n, T-n, A-n) a free text cites, each once
@@ -40,7 +44,7 @@ import collections
 import os
 import re
 
-KINDS = ('todo', 'question', 'approval', 'record', 'path', 'plugin')
+KINDS = ('todo', 'question', 'approval', 'record', 'path', 'plugin', 'resource')
 # the owner's own acts: the only end of an `owner` hold
 OWNER_KINDS = ('todo', 'question', 'approval')
 # The one member that holds an `until` line per ask (each owner question bound to the record, say)
@@ -66,6 +70,7 @@ _FORMS = {
                          r'(closed)$'),
     'path': re.compile(r'^path:(\S(?:.*\S)?) (exists|absent)$'),
     'plugin': re.compile(r'^plugin:([A-Za-z0-9][A-Za-z0-9._-]*) (absent)$'),
+    'resource': re.compile(r'^resource:([a-z0-9][a-z0-9-]*) (free)$'),
 }
 
 
@@ -108,6 +113,16 @@ def owner_error(member, text):
                 ', '.join('`%s:`' % k for k in OWNER_KINDS), kind))
 
 
+def resource_error(text, declared):
+    """None, or why `text`, a `resource:<name> free` condition, names a resource `declared`
+    ({name: capacity}, `.kit.json` backlog.resources) does not hold. Any other text is None."""
+    cond = parse(text)
+    if cond is None or cond.kind != 'resource' or cond.target in declared:
+        return None
+    return ('`resource:%s free`: .kit.json "backlog".resources does not declare `%s` (declared: %s)'
+            % (cond.target, cond.target, ', '.join(sorted(declared)) or 'none'))
+
+
 def expand(path, environ=None):
     """`path` with each %VAR% filled from `environ` (default os.environ), or None when one is not
     set or is empty."""
@@ -135,6 +150,9 @@ def evaluate(cond, readers):
       record_closed(repo, rid)    True (a commit removed it), False (still there), None
       path_exists(path)           True or False for an absolute path, None when unreadable
       plugin_present(folder)      True or False, None when the export root is not known
+      resource_free(name)         True (a unit is free), False (every unit is taken), None when
+                                  the capacity or the pulls cannot be read (a readers object
+                                  without it cannot tell)
     """
     if cond.kind == 'todo':
         status = readers.todo_status(cond.target)
@@ -158,6 +176,9 @@ def evaluate(cond, readers):
     if cond.kind == 'plugin':
         there = readers.plugin_present(cond.target)
         return None if there is None else not there
+    if cond.kind == 'resource':
+        read = getattr(readers, 'resource_free', None)
+        return read(cond.target) if callable(read) else None
     return None
 
 

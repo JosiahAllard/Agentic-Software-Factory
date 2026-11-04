@@ -43,7 +43,7 @@ Session = collections.namedtuple(
 _QC = '[' + window.QUOTES + ']'
 _QX = '%s(?:[^%s]|%s{2})*%s' % (_QC, window.QUOTES, _QC, _QC)
 _Q = '%s((?:[^%s]|%s{2})*)%s' % (_QC, window.QUOTES, _QC, _QC)
-_UNDOUBLE = re.compile(r'(%s)\1' % _QC)
+_UNDOUBLE = re.compile('%s(%s)' % (_QC, _QC))     # a doubled pair is its second character, as PowerShell reads it
 # the host program window.session_command runs, read from it: the host's name stays out of kitlib
 _PROGRAM = re.escape(window.session_command('n', 'p').split(' ', 1)[0])
 _SET = re.compile(r"; Set-Location %s; (%s .*)\Z" % (_Q, _PROGRAM), re.S)

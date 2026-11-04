@@ -54,11 +54,20 @@ class CurlyQuotes(unittest.TestCase):
         from kitlib.launcher import unlisted
         name = 'deep-x\u2019y'
         prompt = "fix the owner\u2019s \u2018bug\u2019 isn't \u201a\u201b"
-        folder = 'C:\a\u2019b'
-        cmd = window.claude_command(name, prompt, 'deep-worker', remote_control=True)
-        got = unlisted.read_window(window.script(name, 'deep-worker', folder, cmd), name)
-        self.assertEqual(got['prompt'], prompt)
-        self.assertEqual(got['folder'], folder)
+        folder = 'C:/a\u2019b'
+        cmd = window.claude_command(name, prompt, 'deep-worker', model='m\u2018x', effort='high',
+                                    add_dir='D:/d\u201bz', remote_control=True)
+        script = window.script(name, 'deep-worker', folder, cmd, config_dir='C:/cfg\u2019s',
+                               agent_temp='C:/t\u201amp')
+        got = unlisted.read_window(script, name)
+        self.assertEqual((got['prompt'], got['folder']), (prompt, folder))
+        self.assertEqual((got['model'], got['add_dir']), ('m\u2018x', 'D:/d\u201bz'))
+        self.assertEqual((got['config_dir'], got['agent_temp']), ('C:/cfg\u2019s', 'C:/t\u201amp'))
+
+    def test_a_mixed_pair_reads_as_its_second_character(self):
+        from kitlib.launcher import unlisted
+        self.assertEqual(unlisted._unq("'a\u2019\u2018b'"), 'a\u2018b')
+        self.assertEqual(unlisted._unq("'a\u2019\u2019b'"), 'a\u2019b')
 
 
 class ScriptOrder(unittest.TestCase):

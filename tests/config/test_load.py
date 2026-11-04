@@ -241,6 +241,33 @@ class GateRulesTest(TreeCase):
                                              'reuse': 'pair'}]}})
         self.assertEqual(cfg.section('gate')['steps'][0]['reuse'], 'pair')
 
+    def test_a_toolchain_is_probe_argvs_of_a_reuse_cmd_step_that_declares_inputs(self):
+        ok = {'name': 'a', 'always': True, 'globs': ['src/*'], 'cmd': ['x'], 'reuse': True,
+              'toolchain': [['dotnet', '--version'], ['{python}', '{tools}/v.py', '{root}', '{here}']]}
+        self.assertEqual(self.load({'gate': {'steps': [ok]}}).section('gate')['steps'], [ok])
+        content = dict(ok, content={'globs': ['src/*'], 'regex': 'x'})
+        del content['globs']
+        self.assertEqual(self.load({'gate': {'steps': [content]}}).section('gate')['steps'],
+                         [content])
+        self.assertIn('"toolchain" needs "reuse"', self.steps(dict(ok, reuse=False)))
+        bare = dict(ok)
+        del bare['reuse']
+        self.assertIn('"toolchain" needs "reuse"', self.steps(bare))
+        bare = dict(ok)
+        del bare['globs']
+        self.assertIn('"toolchain" needs "globs" or "content".globs', self.steps(bare))
+        self.assertIn('"toolchain" cannot name {base}',
+                      self.steps(dict(ok, toolchain=[['git', 'log', '{base}']])))
+        self.assertIn('"toolchain": unknown placeholder(s) {repo}',
+                      self.steps(dict(ok, toolchain=[['{repo}/sdk']])))
+        for empty in ([], [[]], ['dotnet --version']):
+            self.assertIn('toolchain', self.steps(dict(ok, toolchain=empty)))
+        why = self.refused({'hook': {'module': 'gate_hook'},
+                            'gate': {'steps': [{'name': 'a', 'always': True, 'check': 'pins',
+                                                'globs': ['src/*'],
+                                                'toolchain': [['dotnet', '--version']]}]}})
+        self.assertIn('toolchain only apply to a "cmd" step', why)
+
     def test_a_check_step_needs_a_hook_module(self):
         why = self.steps({'name': 'pin-check', 'always': True, 'check': 'pins'})
         self.assertIn('step(s) pin-check run a hook check, and no "hook".module is named', why)

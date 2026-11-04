@@ -1231,7 +1231,9 @@ class CrossoverJob(object):
             if _pm_entry(key, entry, coordinators) or any(l.name in pm for l in live):
                 continue
             d = step(key, entry, live)
-            if d.action == ADVANCE:     # a state change is no acting step: decide again from it
+            for _ in range(2):          # asked -> ready -> stall-stop: state changes, no acting step
+                if d.action != ADVANCE:
+                    break
                 run.advance(key, d)
                 d = step(key, entry, live)
             run.settle(key, d)
@@ -1564,7 +1566,9 @@ class _Run(object):
         pm_old (and in `pm`, so this run pushes it nothing): its window stays until the owner closes
         it."""
         d = decide_now()
-        if d.action == ADVANCE:
+        for _ in range(2):          # asked -> ready -> ready stalled: state changes, no acting step
+            if d.action != ADVANCE:
+                break
             self.advance(PM_DOC, d)
             d = decide_now()
         if d.action == CLEAR and d.word == 'crossed':

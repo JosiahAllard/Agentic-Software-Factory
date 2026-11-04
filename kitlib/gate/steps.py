@@ -63,8 +63,9 @@ def kit_live():
     from kitlib import pluginsource
     return pluginsource.live_root(KIT_ROOT)
 
+# toolchain: the probe argvs of the step's "toolchain" (kitlib.gate.reuse), placeholders filled
 Step = collections.namedtuple('Step', 'name cmd check cwd passes fails ok_exits cont warn requires '
-                                      'requires_strict')
+                                      'requires_strict toolchain', defaults=((),))
 
 
 class GateConfigError(Exception):
@@ -338,7 +339,8 @@ def build(gate, root, base, tools_dir, merged=False, full=False, daily=False):
         steps.append(Step(s['name'], cmd, s.get('check'), cwd, _list(s.get('pass')),
                           _list(s.get('fail')) + top_fails, tuple(s.get('ok_exits') or (0,)),
                           bool(s.get('continue')), bool(s.get('warn')), requires,
-                          bool(s.get('requires_strict'))))
+                          bool(s.get('requires_strict')),
+                          tuple(tuple(substitute(t, values)) for t in s.get('toolchain') or ())))
     return steps
 
 

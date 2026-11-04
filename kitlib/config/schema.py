@@ -105,7 +105,8 @@ STEP = Obj({
                      None, 'select by changed file content'),
     'requires': Field(ListOf(Either(Str(), Argv), nonempty=True), None, 'commands or probe argvs; missing: skip'),
     'requires_strict': Field(Bool(), None, 'a missing requirement fails instead of skipping'),
-    'reuse': Field(Either(Bool(), Str(pattern=NAME_RE, what='a group name')), None, 'a branch gate rerun or a landing does not run the step again while the gate cache holds a pass of its key (its input files, command, gate config and kit files); a group name: its group is reused together or not at all'),
+    'reuse': Field(Either(Bool(), Str(pattern=NAME_RE, what='a group name')), None, 'a branch gate rerun or a landing does not run the step again while the gate cache holds a pass of its key (its input files, command, gate config and kit files, and its toolchain); a group name: its group is reused together or not at all'),
+    'toolchain': Field(ListOf(Argv, nonempty=True), None, 'probe argvs whose output joins the reuse key, each run before and after the step (a resolved SDK version, say); {python} {root} {here} {tools} are substituted, never {base}; needs reuse and globs or content.globs'),
 }, required=('name',), what='step object')
 
 # gate.docs_only (kitlib.gate.steps.docs_only): which changes are docs, and the steps they run.

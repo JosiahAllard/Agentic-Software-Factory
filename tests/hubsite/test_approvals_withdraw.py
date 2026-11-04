@@ -54,7 +54,7 @@ class WithdrawRouteTest(test_api.ApiCase):
         path, role, body = self.delete(decided)
         self.refused('conflict', 'status', 'POST', path, role, body)
         # decided, then expired: still the owner's record
-        old = self.NOW - datetime.timedelta(seconds=approvals.APPROVED_TTL_S + 60)
+        old = self.NOW - datetime.timedelta(seconds=approvals.APPROVAL_LIFE_S + 60)
         lapsed = self.seed(created=old, status='approved')
         path, role, body = self.delete(lapsed)
         self.refused('conflict', 'status', 'POST', path, role, body)

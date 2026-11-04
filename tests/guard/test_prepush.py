@@ -243,8 +243,10 @@ class OwnerApprovalTest(pc.PrePushCase):
         with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
             ok, msg = self.check(tip)
         self.assertFalse(ok)
+        # the approval creates CLAUDE.md, which the owner made since: the delta rule refuses it
         self.assertIn('%s by %s changes CLAUDE.md (owner approval hub:A-001 refused: %s: '
-                      'CLAUDE.md at ' % (tip[:10], AGENT, ap.WHY_HEAD), msg)
+                      'CLAUDE.md: the file the approval creates is already at the parent with '
+                      'other content)' % (tip[:10], AGENT, ap.WHY_FILES), msg)
 
 
 class CheckTest(pc.PrePushCase):

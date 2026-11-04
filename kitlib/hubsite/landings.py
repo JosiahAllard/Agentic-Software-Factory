@@ -3,9 +3,11 @@ posted to the hub on this machine (docs/action-hub.md "landings/L-NNN").
 
   EXTRA_FIELDS        the fields an event has beyond the land ledger line's (result.LEDGER_FIELDS)
   POST_TIMEOUT_S      seconds the post waits for the hub's answer
-  event(record, repo, main_branch, main, records, mode, deploy)
+  event(record, repo, main_branch, main, records, mode, deploy, approvals)
                       one branch's event: the land record's ledger fields (the same pick as the
-                      land ledger line, so the feed and the ledger cannot disagree) and the extras
+                      land ledger line, so the feed and the ledger cannot disagree) and the
+                      extras; approvals only when there is one, so a hub older than the field
+                      still takes the event
   deploy_note(message)
                       the values of the `Deploy:` lines of a commit message, joined by '; ', or
                       None
@@ -22,7 +24,7 @@ file and no retry. Nothing here prints, parses arguments or exits.
 from kitlib.backlog import at_landing
 from kitlib.gate import result
 
-EXTRA_FIELDS = ('repo', 'main_branch', 'main', 'records', 'mode', 'deploy')
+EXTRA_FIELDS = ('repo', 'main_branch', 'main', 'records', 'mode', 'deploy', 'approvals')
 FIELDS = tuple(result.LEDGER_FIELDS) + EXTRA_FIELDS
 DEPLOY_KEY = 'Deploy:'
 POST_TIMEOUT_S = 3
@@ -30,15 +32,19 @@ PATH = '/landings'
 AGENT = 'agent'                 # kitlib.hubsite.api.AGENT: the role the post is made as
 
 
-def event(record, repo, main_branch, main, records=(), mode=None, deploy=None):
+def event(record, repo, main_branch, main, records=(), mode=None, deploy=None, approvals=None):
     """One branch's event: `record` (a land record, result.Run.last) picked as the land ledger
     picks it (result.LEDGER_FIELDS), with the repository's name, its main branch, `main` (the
     new main the landing pushed: one commit for every branch of a batch, which the feed groups
     by), the backlog `records` the landing closed for the branch, the merged gate's `mode`
-    (kitlib.records.gate_ok.MODES, None when unknown) and the tip's `deploy` note, or None."""
+    (kitlib.records.gate_ok.MODES, None when unknown), the tip's `deploy` note, or None, and the
+    hub `approvals` ({A-<n>: sha}, kitlib.hubsite.approvals.landed) its commits put on main,
+    left out when there is none."""
     out = dict((k, record.get(k)) for k in result.LEDGER_FIELDS)
     out.update(repo=repo, main_branch=main_branch, main=main, records=list(records or ()),
                mode=mode, deploy=deploy)
+    if approvals:
+        out['approvals'] = dict(approvals)
     return out
 
 

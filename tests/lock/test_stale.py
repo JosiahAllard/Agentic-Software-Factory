@@ -47,9 +47,18 @@ class Base(StoreCase):
     def exited(self):
         """[pid, creation time] of a child process of this test that has exited."""
         p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        # A host whose creation time was not read is "cannot be told", which is never stale
+        # (store.hosts_gone), so a one-off failed read right after the spawn would make the
+        # stale run look held by a live host: read until it answers.
         ct = process.proc_ctime(p.pid)
+        for _ in range(100):
+            if ct is not None:
+                break
+            time.sleep(0.05)
+            ct = process.proc_ctime(p.pid)
         p.kill()
         p.wait()
+        self.assertIsNotNone(ct, "no creation time read for the child that stands for a host")
         return [p.pid, ct]
 
     def stale_record(self, rid=RID, **fields):

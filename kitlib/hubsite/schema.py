@@ -62,7 +62,8 @@ FIELDS = {
         'status': _STR, 'repo': _STR, 'title': _STR, 'head': _STR, 'files': _LIST,
         'created_at': _STR, 'reason': _STR, 'decision': _STR, 'decided_at': _STR, 'sig': _STR,
         'commit': _STR, 'consumed_at': _STR, 'diff': _LIST, 'kind': _STR, 'op': _STR,
-        'line': _STR, 'args_sha256': _STR, 'what': _STR, 'record': _DICT, 'park': _DICT}),
+        'line': _STR, 'args_sha256': _STR, 'what': _STR, 'record': _DICT, 'park': _DICT,
+        'spent': _STR, 'spent_at': _STR}),
     # kitlib.hubsite.api, "Schedules": the owner's times for the kit's automatic tasks
     'schedules': (('task', 'repo', 'cadence', 'at'), {
         'task': _STR, 'repo': _STR, 'cadence': _STR, 'days': _LIST, 'at': _STR, 'set_at': _STR}),
@@ -84,7 +85,7 @@ FIELDS = {
         'branch': _STR, 'tip': _STR, 'run_id': _STR, 'started_at': _STR, 'finished_at': _STR,
         'verdict': _STR, 'code': _INT, 'summary': _STR, 'gate_once': _BOOL, 'escalated': _BOOL,
         'repo': _STR, 'main_branch': _STR, 'main': _STR, 'records': _LIST, 'mode': _STR,
-        'deploy': _STR, 'posted_at': _STR}),
+        'deploy': _STR, 'approvals': _DICT, 'posted_at': _STR}),
     # kitlib.hubsite.api, "Hand-offs": a session's record that it checkpointed and stands down
     # (from: its session key; kind: KINDS['handoffs']; state_path: its state note); the api
     # takes from, kind and state_path only and sets at

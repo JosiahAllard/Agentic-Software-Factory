@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest import mock
 
+from kitlib.config.user import HomeFenced
 from kitlib.hubsite import api, auth, push, serve, store as store_mod
 from kitlib.hubsite import settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
@@ -86,6 +87,7 @@ class PushCase(unittest.TestCase):
 
     def make(self):
         w = push.PushWorker(self.store, self.api, self.push, self.folder, clock=lambda: self.t)
+        w.pm_folder = lambda: ''    # not the machine's config (the home fence)
         w.begin()
         return w
 
@@ -839,12 +841,13 @@ class RecordViews(object):
     def __init__(self, before='open', after=None):
         self.before, self.after = before, before if after is None else after
         self.filed, self.fail, self.during = False, None, None
+        self.also = {}      # repo -> record id it also holds (besides kit's EX-1)
 
     def record(self, repo, id):
-        if repo.lower() != 'kit' or id != 'EX-1':
+        if not (repo.lower() == 'kit' and id == 'EX-1' or self.also.get(repo.lower()) == id):
             raise HubError('not_found', 'no such record', 'id')
         state = self.after if self.filed else self.before
-        return {'repo': 'kit', 'id': id, 'where': 'open',
+        return {'repo': repo, 'id': id, 'where': 'open',
                 'fields': [['id', id], ['state', state]]}
 
     def record_answer(self, repo, id, qid, at, title, label, note, via, other, waiting):
@@ -1031,6 +1034,85 @@ class FiledRecipientsTest(FiledPushCase):
         self.answer(qid)
         self.worker.poll()
         self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
+
+    def bind_pm_folder(self, live):
+        self.bind('blocked', 'open', live=live)
+        self.views.also = {'pmrepo': 'KIT-X', 'other': 'KIT-X'}
+        self.api.kit_key = lambda: 'kitcoord'
+        self.worker.pm_folder = lambda: 'pmrepo'
+
+    def test_an_answer_bound_to_the_pm_folder_goes_to_the_kit_coordinator(self):
+        self.bind_pm_folder({'kitcoord'})
+        qid = self.ask(**{'from': 'zeta', 'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
+        self.assertNotIn('start one', self.push.to('kitcoord')[0])
+        self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_a_todo_bound_to_the_pm_folder_pushes_with_no_start_one_line(self):
+        self.bind_pm_folder({'kitcoord'})
+        tid = self.todo(**{'from': 'kitcoord', 'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.done(tid)
+        self.worker.poll()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), sorted(['kitcoord', push.PM_KEY]))
+        self.assertNotIn('start one', ''.join(t for _r, t in self.push.calls))
+
+    def test_another_repo_bound_answer_does_not_go_to_the_kit_coordinator(self):
+        self.bind_pm_folder({'kitcoord'})
+        qid = self.ask(**{'from': 'zeta', 'record': {'repo': 'other', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual(self.push.to('kitcoord'), [])
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+
+    def ask_pm_folder(self, repo='pmrepo'):
+        return self.ask(**{'from': 'zeta', 'record': {'repo': repo, 'id': 'KIT-X'}})
+
+    def test_the_pm_folder_match_ignores_case(self):
+        self.bind_pm_folder({'kitcoord'})
+        self.worker.pm_folder = lambda: 'PmRepo'
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
+
+    def test_a_freed_pm_folder_record_with_no_live_kit_coordinator_names_the_kit(self):
+        self.bind_pm_folder(())
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        text = self.push.to(push.PM_KEY)[0]
+        self.assertIn('no coordinator of repo kitcoord is running', text)
+        self.assertNotIn('repo pmrepo', text)
+
+    def test_a_fenced_home_in_the_pm_folder_reader_routes_as_before(self):
+        self.bind_pm_folder({'kitcoord'})
+
+        def fenced():
+            raise HomeFenced('fenced')
+        self.worker.pm_folder = fenced
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+
+    def test_the_pm_folder_is_read_once_per_worker(self):
+        self.bind_pm_folder({'kitcoord'})
+        reads = []
+        self.worker.pm_folder = lambda: reads.append(1) or 'pmrepo'
+        self.answer(self.ask_pm_folder())
+        self.answer(self.ask_pm_folder())
+        self.worker.poll()
+        self.assertEqual(len(reads), 1)
+
+    def test_machine_pm_folder_is_the_folder_holding_sessions_file(self):
+        with mock.patch('kitlib.pmstart.load_config',
+                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.pmstart._toplevel',
+                           side_effect=lambda d: 'pmrepo' if d == self.root else None):
+            self.assertEqual(push.machine_pm_folder(), 'pmrepo')
+
+    def test_machine_pm_folder_is_empty_without_a_sessions_file(self):
+        for cfg in ({}, None):
+            with mock.patch('kitlib.pmstart.load_config', return_value=cfg):
+                self.assertEqual(push.machine_pm_folder(), '')
 
     def test_a_freed_record_without_resolve_pings_the_pm(self):
         self.bind('blocked', 'open')

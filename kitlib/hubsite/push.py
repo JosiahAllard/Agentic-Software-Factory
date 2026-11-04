@@ -177,6 +177,7 @@ import threading
 import time
 
 from kitlib import pmwatch
+from kitlib.config.user import HomeFenced
 from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
@@ -384,6 +385,17 @@ def trigger(kind, doc, old, now=None):
     return None
 
 
+def machine_pm_folder():
+    """The folder name of the PM's own repository (the one holding the machine config's
+    pm_start sessions_file, as kitlib.pmstart.known_repos names it), '' when unknown."""
+    from kitlib import pmstart
+    cfg = pmstart.load_config() or {}
+    path = cfg.get('sessions_file')
+    if not path:
+        return ''
+    return pmstart._toplevel(os.path.dirname(os.path.abspath(path))) or ''
+
+
 def schedule(attempt):
     """Seconds after try number `attempt` (1, 2, ...) until the next."""
     return SCHEDULE_S[attempt - 1] if 0 < attempt <= len(SCHEDULE_S) else HOURLY_S
@@ -466,8 +478,11 @@ def guidance(kind, doc_id, event, recipient, entry=None):
 
 
 class PushWorker(object):
-    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None):
+    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None,
+                 pm_folder=None):
         self.store, self.api, self.push, self.folder = store, api, push, folder
+        self.pm_folder = pm_folder or machine_pm_folder     # () -> the PM repository's folder name
+        self._pm_folder_got = None      # its answer, read once (a failed read is tried again)
         self.clock = clock or time.time
         self.watcher = watcher          # None: watcher_heartbeat, looked up at each read
         self.jobs = jobs                # None: the api's jobs_seen (GET health jobs), at each read
@@ -922,6 +937,8 @@ class PushWorker(object):
                 self._done_flags(doc, sender, mine, held, first, recipients, flags, now)
             flags['record'] = '%s:%s' % (record.get('repo') or '', record.get('id') or '')
             flags['record_repo'] = record.get('repo') or ''
+            if flags['record_repo'] and flags['record_repo'].lower() == self._pm_folder().lower():
+                flags['record_repo'] = self._kit_key() or flags['record_repo']    # the kit's
         if not recipients:
             if flags.get('has_it'):
                 self._hub_done(dict(flags, id=doc_id, fingerprint=fp))
@@ -990,7 +1007,13 @@ class PushWorker(object):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
         keys = []
-        for k in (asker, self._repo_key(record.get('repo')), record.get('repo'),
+        rrepo = record.get('repo')
+        if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
+            rrepo = self._kit_key()     # the kit's records are bound under the PM folder's name
+            rkey = rrepo
+        else:
+            rkey = self._repo_key(rrepo)
+        for k in (asker, rkey, rrepo,
                   self._repo_key(doc.get('repo')), doc.get('repo')):
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
@@ -1026,6 +1049,19 @@ class PushWorker(object):
             self.log('push: repo_key failed: %s' % type(e).__name__)
             got = ''
         return got if isinstance(got, str) else ''
+
+    def _pm_folder(self):
+        """The PM repository's folder name, '' when unknown. Read once per worker; a failing
+        reader (also a fenced home) is logged and counts as unknown, so routing is as before."""
+        if self._pm_folder_got is not None:
+            return self._pm_folder_got
+        try:
+            got = self.pm_folder()
+        except (Exception, HomeFenced) as e:    # noqa: BLE001 - a host fault: no folder, no mapping
+            self.log('push: pm_folder failed: %s' % type(e).__name__)
+            return ''
+        self._pm_folder_got = got if isinstance(got, str) else ''
+        return self._pm_folder_got
 
     def _kit_key(self):
         """The kit coordinator's key (Api.kit_session_key), '' when none."""

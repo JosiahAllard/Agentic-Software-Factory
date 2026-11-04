@@ -333,11 +333,14 @@ def start_entry(settings, host, key, account=None, prompt=None, whatif=False, ho
     name (a recycle's <stem>-a<N>-r<M> included), so liveness, which checks that name, sees it come
     back; on another account it is <stem>-a<N>. `account` may be a number, 'current' (the account this
     process runs on, else pick-account's) or 'auto' (pick-account's). Refused while any session of its
-    stem runs."""
+    stem runs. Once started, the account and name are recorded in sessions.json (and coordinators.json
+    for a repo's main coordinator), as a hand-off records them, so the hub finds the session by them."""
+    from kitlib.launcher import handoff        # at call time: handoff imports this module
     sessions = state.read_sessions(settings)
     entry = sessions.get(key)
     if not isinstance(entry, dict) or not entry.get('stem'):
         raise LaunchError('sessions.json has no entry %r with a stem.' % key)
+    coordinators = state.read_coordinators(settings)   # before anything starts: a refusal here starts nothing
     if lookup.running_stem(host.processes(), entry['stem']):
         raise LaunchError("A session of '%s' (stem %s) is already running; stop it first or use handoff."
                           % (key, entry['stem']))
@@ -354,9 +357,13 @@ def start_entry(settings, host, key, account=None, prompt=None, whatif=False, ho
         prompt = ('Start up now: run your start-up routine, read %s, check in with %s, '
                   'then continue the queue in the state note.' % (entry['state'], PM_REF))
     name = entry.get('name') if same and entry.get('name') else None
-    return out + start(settings, host, whatif=whatif, home_worktree=home_worktree,
-                       permission_mode=permission_mode,
-                       **entry_start_args(settings, key, entry, str(account), prompt, name=name))
+    args = entry_start_args(settings, key, entry, str(account), prompt, name=name)
+    out += start(settings, host, whatif=whatif, home_worktree=home_worktree, permission_mode=permission_mode,
+                 **args)
+    if whatif or not str(account).isdigit():         # no account number: nothing to record
+        return out
+    handoff.record_move(settings, sessions, coordinators, key, entry, account, args['name'])
+    return out + ['Recorded sessions.json %s : account=%s name=%s' % (key, account, args['name'])]
 
 
 def _pick_or(settings, host, account, out, limit=A.HEADROOM_LIMIT):

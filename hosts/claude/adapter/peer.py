@@ -50,7 +50,7 @@ from urllib.parse import quote
 import uuid
 
 from kitlib.hubsite import push
-from kitlib.launcher import pipes, state
+from kitlib.launcher import lookup, pipes, state
 from kitlib.launcher.settings import LaunchError
 
 PIPE = re.compile(r'\\\\\.\\pipe\\(?:(LOCAL)\\)?(cc-msg-[A-Za-z0-9_-]+)\Z', re.I)
@@ -369,7 +369,19 @@ class HubPush(object):
             return None
         name = self._name(recipient)
         hits = [h for h in live if h[1].get('name') == name]
-        return self._pick(hits, name) if hits else None
+        if hits:
+            return self._pick(hits, name)
+        # sessions.json's name can trail the live session (a successor it never recorded): a live
+        # session of the entry's own stem, <stem>-a<N>[-r<k>], is the one; never another stem's
+        entry = self._sessions().get(recipient)
+        stem = entry.get('stem') if isinstance(entry, dict) else None
+        if not isinstance(stem, str) or not stem:
+            return None
+        hits = [h for h in live if lookup.of_stem(h[1].get('name'), stem)]
+        if not hits:
+            return None
+        picked = self._pick(hits, name)
+        return picked._replace(name=picked.record.get('name') or name)
 
     def deliver(self, recipient, text):
         target = self.resolve(recipient)

@@ -156,10 +156,7 @@ def _hold(reason, word=None, account=None):
     return Decision(False, reason, account, word)
 
 
-def of_stem(name, stem):
-    """True when `name` is a session of `stem`: the stem itself, or <stem>-a<N>[-r<k>]."""
-    return bool(name) and bool(stem) and (
-        name == stem or re.match(re.escape(stem) + r'-a\d+(?:-r\d+)?\Z', name) is not None)
+of_stem = lookup.of_stem          # it lives in kitlib.launcher.lookup; usage_crossover calls it as C.of_stem
 
 
 def name_account(name):

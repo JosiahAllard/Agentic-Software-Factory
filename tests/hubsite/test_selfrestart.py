@@ -309,7 +309,8 @@ class FailureCase(Case):
         self.at(selfrestart.SETTLE_S, NEWER)
         held.pop()()
         self.at(1, NEWER)
-        self.assertEqual(self.checked, [NEW, NEWER], 'the new code is tried')
+        # the stand-in records the stamp on disk when a check runs: the old check ran after the change
+        self.assertEqual(self.checked, [NEWER, NEWER], 'the new code is tried')
         self.assertEqual(len(self.launched), 1)
 
     def test_a_check_that_raises_is_a_failed_check(self):

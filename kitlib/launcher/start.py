@@ -362,6 +362,14 @@ def start_entry(settings, host, key, account=None, prompt=None, whatif=False, ho
                  **args)
     if whatif or not str(account).isdigit():         # no account number: nothing to record
         return out
+    try:            # read again: start() can wait seconds, and a hub job may have written meanwhile
+        sessions = state.read_sessions(settings)
+        coordinators = state.read_coordinators(settings)
+    except LaunchError as e:    # the window is open: a fault here must not read as a failed launch
+        return out + ['sessions.json not recorded (%s)' % e]
+    entry = sessions.get(key)
+    if not isinstance(entry, dict):
+        return out + ['sessions.json not recorded: its entry %r is gone' % key]
     handoff.record_move(settings, sessions, coordinators, key, entry, account, args['name'])
     return out + ['Recorded sessions.json %s : account=%s name=%s' % (key, account, args['name'])]
 

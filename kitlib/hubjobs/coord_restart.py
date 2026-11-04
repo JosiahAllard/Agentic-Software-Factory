@@ -167,8 +167,8 @@ def name_account(name):
 
 def last_account(entry, record):
     """The account the coordinator last ran on: the one the job last saw it running on, else the
-    entry's sessions.json `account` (handoff and after-reboot write it; `launch.py start --session
-    --account M` does not, hence the sighting first). None when neither is known."""
+    entry's sessions.json `account` (handoff, after-reboot and `launch.py start --session` write it;
+    a session started any other way does not, hence the sighting first). None when neither is known."""
     seen = (record or {}).get('account')
     if seen not in (None, ''):
         return str(seen)

@@ -622,6 +622,26 @@ class Start(Base):
         self.assertEqual((entry['account'], entry['name']), (3, 'alpha-help-a3'))
         self.assertEqual(self.state('coordinators.json'), {'alpha': 2, 'pm_account': 1})
 
+    def test_a_write_made_while_the_window_opens_survives_the_record(self):
+        # start() can wait seconds in record_pipe; a hub job's hand-off written then is kept
+        self.rec(name='alpha-coord-a1', repo='alpha')
+        self.h.write_state('sessions.json', {'alpha': self.state('sessions.json')['rev']})
+        self.h.write_state('coordinators.json', {'alpha': 1})
+
+        def meanwhile(settings, name, after_ms):
+            sessions = self.state('sessions.json')
+            sessions['other'] = {'repo': 'beta', 'agent': True, 'stem': 'beta-coord', 'account': 3,
+                                 'name': 'beta-coord-a3'}
+            self.h.write_state('sessions.json', sessions)
+            self.h.write_state('coordinators.json', {'alpha': 1, 'beta': 3})
+        self.host.record_pipe = meanwhile
+        start.start_entry(self.h.settings, self.host, 'alpha', account='2')
+        sessions = self.state('sessions.json')
+        self.assertIn('other', sessions, 'the entry written meanwhile was lost')
+        self.assertEqual(sessions['other']['name'], 'beta-coord-a3')
+        self.assertEqual(sessions['alpha']['name'], 'alpha-coord-a2')
+        self.assertEqual(self.state('coordinators.json'), {'alpha': 2, 'beta': 3})
+
     def test_a_what_if_start_entry_writes_nothing(self):
         self.rec(name='alpha-coord-a1')
         self.h.write_state('coordinators.json', {'alpha': 1})

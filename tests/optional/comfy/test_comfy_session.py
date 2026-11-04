@@ -102,6 +102,7 @@ class InstallChoice(Tmp):
         self.install([{"id": "cloud"}, self.local("inst-a", '--enable-manager --temp-directory "C:\\T"')],
                      last="cloud")
         cmd, cwd = G._direct_launch_command()
+        self.assertIsNotNone(cmd, "no command for the local install")
         self.assertEqual(cmd[0], os.path.join(self.tmp, "inst-a", "ComfyUI", ".venv", "Scripts", "python.exe"))
         self.assertEqual(cwd, os.path.join(self.tmp, "inst-a"))
         self.assertIn("--enable-manager", cmd)
@@ -116,6 +117,7 @@ class InstallChoice(Tmp):
     def test_no_last_session_takes_the_first_local_install(self):
         self.install([{"id": "cloud"}, self.local("inst-a")])
         cmd, _ = G._direct_launch_command()
+        self.assertIsNotNone(cmd, "no command for the local install")
         self.assertIn("inst-a", cmd[0])
 
     def test_only_a_cloud_instance_gives_none(self):
@@ -330,6 +332,7 @@ class SessionSkipsBooking(Tmp):
                 mock.patch.object(G.sys, "exit"):
             G.machine_lock_rerun(args, ["image", "--name", "cat"])
         cmd = call.call_args[0][0]
+        self.assertIn("--resource", cmd)
         self.assertEqual(cmd[cmd.index("--resource") + 1], "comfy-port:8188")
 
     def test_release_leaves_a_sessions_comfyui(self):
@@ -505,7 +508,9 @@ class RealKill(unittest.TestCase):
         keeper = subprocess.Popen([sys.executable, script], stdout=subprocess.PIPE, text=True,
                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.addCleanup(lambda: keeper.poll() is None and keeper.kill())
-        pid = int(keeper.stdout.readline())
+        line = keeper.stdout.readline().strip()
+        self.assertRegex(line, r"^\d+$", "the keeper did not start a server")
+        pid = int(line)
         ctime = G.W.details(pid)["ctime"]
         self.assertIsNotNone(ctime)
         self.addCleanup(G.W.terminate_verified, pid, ctime)

@@ -1,11 +1,13 @@
 """Codex's session reads through the local app-server (kitlib.host.SessionHost; from the Codex branch's
 session_host.py and executable.py).
 
-  native_codex(explicit, environ)   the absolute codex.exe to run: `explicit`, else PM_KIT_CODEX_EXE,
-                                    else codex.exe on PATH, else the desktop app's own
+  native_codex(explicit, environ)   the absolute codex binary to run (codex.exe on Windows, `codex` on
+                                    Linux; exe_name()): `explicit`, else PM_KIT_CODEX_EXE, else it on
+                                    PATH, else (Windows) the desktop app's own
                                     %LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>\\codex.exe, the newest
                                     by mtime (desktop_codex); a relative path, a missing file or a
-                                    .cmd/.bat shim is refused (no shell ever runs it)
+                                    .cmd/.bat shim is refused (no shell ever runs it); Windows also
+                                    refuses anything but .exe
   ReadOnlyAppServer(argv, timeout, popen)
         a context manager over `codex app-server proxy`: it attaches to the running app-server,
         never starts a daemon, creates a thread or sends a turn. request() takes only READ_METHODS.

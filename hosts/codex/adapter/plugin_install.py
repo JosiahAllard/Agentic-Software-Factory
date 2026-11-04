@@ -20,7 +20,7 @@
                                    Codex runs or an add is denied (os error 5); an apply clears the
                                    flag first, so only a deferral in this run leaves it
   clear_deferral(export, out)      clear the export root's codex pending flag (plugin_copy.Step, on apply)
-  codex_running()                  whether a process named codex.exe runs (the CLI or the app's)
+  codex_running()                  whether a process named codex.exe (Windows) or codex (Linux) runs
   switch_lines(home, root)         the owner's hand steps from the hand-made pm-kit-local copy to the export
 
 Codex runs a plugin only from its cache: `codex plugin add` copies the folder the marketplace names
@@ -270,7 +270,8 @@ def _run(argv, env):
 
 def codex_running():
     """True when a process named codex.exe (codex on Linux) runs (the CLI, or the desktop app's).
-    False when none does or the list cannot be had: the add's os error 5 is the fallback."""
+    On Linux it matches the process comm `codex` (a release-asset name or the npm node launcher is
+    not matched). False when none does or the list cannot be had: the add's os error 5 is the fallback."""
     from hosts.codex.adapter.sessions import exe_name
     from kitlib.proc import process
     try:

@@ -76,3 +76,13 @@ class LinuxExecutable(unittest.TestCase):
             with self.subTest(names=names), mock.patch(
                     "kitlib.proc.process.snapshot", return_value=[(i, 0, n) for i, n in enumerate(names)]):
                 self.assertEqual(plugin_install.codex_running(), want)
+
+
+class WindowsExecutable(unittest.TestCase):
+    def test_a_suffixless_or_js_file_is_refused(self):
+        with mock.patch("kitlib.platform.NAME", "windows"), tempfile.TemporaryDirectory() as scratch:
+            for name in ("codex", "codex.js"):
+                path = Path(scratch) / name
+                path.touch()
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    native_codex(path)

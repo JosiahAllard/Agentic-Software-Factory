@@ -342,6 +342,9 @@ def _candidates(accounts, current, running, landed, now):
             continue
         five = five_hour(st.usage, now)
         week, reset = window(st.usage, 'seven_day', now)
+        if five is None and A.five_hour_absent(st.usage) and not is_fresh(st.usage, now):
+            unread[acct] = 'stale'      # no five_hour counts only on a fresh reading
+            continue
         if five is None or week is None:
             unread[acct] = '%s unknown' % ('seven_day' if week is None else 'five_hour')
             continue
@@ -485,10 +488,10 @@ def _trigger_on(key, acct, skip, stall, quiet_s, accounts, starts, running, land
     return Decision(ASK, note, target, 'crossing', detail)
 
 
-def _gone(note, word='cross-cleared', detail=None, remember=False):
+def _gone(note, word='cross-cleared', detail=None, remember=False, mark=None):
     """A CLEAR. `remember`: the session stays where it is, so the trigger must not ask it again
-    in this week window (_cleared_now)."""
-    return Decision(CLEAR, note, word=word, detail=detail, remember=remember)
+    in this week window (_cleared_now). `mark`: as Decision (default the word)."""
+    return Decision(CLEAR, note, word=word, detail=detail, mark=mark, remember=remember)
 
 
 def _advance(phase, note, **fields):
@@ -1040,8 +1043,8 @@ def _pm_ready(c, old, pms, stall_now, accounts, starts, running, landed, mode, n
         return _hold('backoff after a failed start')
     pick = _pm_pick(c.get('account'), accounts, running, landed, now)
     if pick is None:            # the PM resumes; the trigger asks again once an account has room
-        note, detail, _ = no_room(PM_DETAIL, accounts, {str(c.get('account'))}, running, landed, now)
-        return _gone(note + ': the PM resumes', 'no-room', detail)
+        note, detail, mark = no_room(PM_DETAIL, accounts, {str(c.get('account'))}, running, landed, now)
+        return _gone(note + ': the PM resumes', 'no-room', detail, mark=mark)   # the trigger's mark
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
 
 

@@ -284,6 +284,9 @@ class Target(unittest.TestCase):
         data = dict(reading(0, age=7200), five_hour=None)
         self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
         self.assertIsNone(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}))
+        note, detail, _ = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)
+        self.assertEqual((note, detail), ('no account has room it can read: account 2 stale',
+                                          'kit:unknown:a2'))
 
     def test_a_five_hour_the_file_gives_but_cannot_be_read_stays_unknown(self):
         no_pct = reading(0)
@@ -1436,6 +1439,19 @@ class PmJob(JobBase):
         self.assertEqual(self.ctx.events, [('crossing', 'pm:a2')])
         self.assertEqual(len(self.sent), 2)
         self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.ASKED)
+
+    def test_no_room_once_ready_naming_an_unknown_account_is_pushed_once_across_the_next_trigger(self):
+        self.run_job()
+        self.newest = {'pm': self.note(7, NOW + 30)}
+        self.host.written['pm-session'] = NOW + 120
+        self.usage = {'1': reading(99), '2': reading(96), '3': None}
+        self.now += 300
+        self.run_job()
+        self.assertEqual((self.ctx.events, self.calls), ([('no-room', 'pm:unknown:a3')], []))
+        self.assertIsNone(self.crossing(U.PM_DOC))
+        self.now += 300
+        self.run_job()
+        self.assertEqual((self.ctx.events, self.calls), ([], []))
 
     def test_notify_runs_pm_crossover_what_if_and_changes_nothing(self):
         self.mode = 'notify'

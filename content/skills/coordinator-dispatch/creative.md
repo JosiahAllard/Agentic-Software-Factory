@@ -24,3 +24,12 @@ Read from skill `coordinator-dispatch`, "Creative dispatches".
 - Visual output: as the repo profile says; default a self-contained HTML (images inlined base64)
   in the agent's scratch folder, report leading with its absolute path. Never relay a bare
   worktree image path; an image nobody opened has not been reviewed.
+- Art team flow (art that ships on screen). The art director (senior-worker + `specialty-tech-art`,
+  direction mode) takes the owner-picked concept to a style sheet and asset sheet; the builders
+  (senior-worker + `specialty-tech-art` for scenes, shaders and lighting, `specialty-3d-assets` for
+  props, `specialty-rigging` for rigs and animation), one per area, build from them and never edit
+  the sheet; the critic (skill `specialty-art-critique`; tier in the roster file) scores each round,
+  a fresh dispatch each time. You re-dispatch the
+  builder with the critic's top 3 gaps until the verdict is PASS.
+- Round cap: 4 rounds per area. Then the owner gets the best round, with its scores and open gaps,
+  through the PM. The builder's brief carries the cap and the "Visual loop" section of `specialty-tech-art/creative.md`.

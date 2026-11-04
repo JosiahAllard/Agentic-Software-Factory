@@ -20,6 +20,15 @@ Read `creative.md` (`../specialty-tech-art/creative.md` from this folder) first.
 9. Validate the exported file re-imported from disk, never the scene that made it: object names, triangle budget, overall dimensions against the given size, one material per object, UVs present; print each measurement beside its budget. The validator passes a right-size wrong-shape mesh, so never report a result you have not looked at.
 10. Critique (`creative.md`), deliver the contact sheet (all renders, measurements beside budgets, the shape constants, the rebuild command), commit (skill builder).
 
+## Generated first
+
+For a prop with a picked asset sheet (skill `specialty-tech-art`, "Direction mode"), prefer this route to building from primitives (step 4):
+
+1. The asset sheet's image of the prop, as the owner picked it.
+2. Image-to-3D with TRELLIS.2 (`comfy_gen.py to3d --engine trellis2`); the face and texture caps are in `<kit>/knowledge/asset-generation/BEST_PRACTICES.md`.
+3. The cleanup script (step 5): scale, pivot, budget, emissive parts rebuilt as their own materials.
+4. For detail beyond the budget: a scripted normal-map bake from the generated mesh onto the decimated one, with LODs, then validate the bake against the budget (step 9).
+
 ## Never
 
 - Hand-edit an exported mesh, or commit one whose script you did not write.

@@ -81,7 +81,10 @@ The target (pick_target; never `auto`, never accounts.pick): tier 1, a signed-in
 TARGET_LIMIT% of both windows whose week resets first; tier 2, the lowest week under TIER2_WEEK%
 with five hours under TARGET_LIMIT%. Not the session's account, nor the account sessions.json
 still names for it (handoff refuses that one). A stale reading counts only with no live session on
-that account: an idle account's reading does not refresh. An unknown reading never counts.
+that account: an idle account's reading does not refresh. An unknown reading never counts, but a
+fresh one whose file gives no five_hour (missing or null: accounts.five_hour_absent) is five hours
+at 0% (five_hour). With no target, `no-room` names in its detail the accounts left out for an
+unknown or stale reading, <key>:unknown:a1.a2 (no_room); detail <key> alone: every one is full.
 
 One acting step per run across all keys, stop-stalled first, then stop-old, finish, start, ask,
 would-cross; the rest wait for the next run. Every key is decided on each run.
@@ -314,27 +317,52 @@ def cap_reached(key, starts, now):
     return None
 
 
+def five_hour(data, now):
+    """A reading's five-hour % as pick_target counts it, or None when unknown: window()'s, except
+    that a fresh reading whose file gives no five_hour (missing or null: the host reports no open
+    window) is 0. A five_hour the file gives but window() cannot read stays unknown, and so does
+    any five_hour of a stale reading."""
+    five, _ = window(data, 'five_hour', now)
+    if five is None and A.five_hour_absent(data) and is_fresh(data, now):
+        return 0.0
+    return five
+
+
+def _candidates(accounts, current, running, landed, now):
+    """([(account, five, week, reset)] of the readable accounts pick_target weighs, {account: why}
+    of those left out for want of a reading it may trust: no file, an unknown window, stale with a
+    live session there, or none since the job's last start there)."""
+    rows, unread = [], {}
+    for acct in sorted(accounts, key=int):
+        st = accounts[acct]
+        if acct in current or not st.signed_in:
+            continue
+        if not isinstance(st.usage, dict):
+            unread[acct] = 'no usage file'
+            continue
+        five = five_hour(st.usage, now)
+        week, reset = window(st.usage, 'seven_day', now)
+        if five is None or week is None:
+            unread[acct] = '%s unknown' % ('seven_day' if week is None else 'five_hour')
+            continue
+        if not is_fresh(st.usage, now) and running.get(acct):
+            unread[acct] = 'stale'
+            continue
+        last = (landed or {}).get(acct)
+        updated = _epoch(st.usage.get('updated_at'))
+        if last is not None and (updated is None or updated <= last):
+            unread[acct] = 'no reading since the last start'
+            continue
+        rows.append((acct, five, week, reset))
+    return rows, unread
+
+
 def pick_target(accounts, current, running, landed, now, tier2=True):
     """(account, why) of the account to move a session to, or None. `accounts`: {account:
     AccountState}; `current`: the accounts to leave out; `running`: {account: live sessions};
     `landed`: {account: epoch of the job's last start there}; `tier2` False: tier 1 only (the PM).
     Module docstring "The target"."""
-    rows = []
-    for acct in sorted(accounts, key=int):
-        st = accounts[acct]
-        if acct in current or not st.signed_in:
-            continue
-        five, _ = window(st.usage, 'five_hour', now)
-        week, reset = window(st.usage, 'seven_day', now)
-        if five is None or week is None:
-            continue
-        if not is_fresh(st.usage, now) and running.get(acct):
-            continue
-        last = (landed or {}).get(acct)
-        updated = _epoch(st.usage.get('updated_at'))
-        if last is not None and (updated is None or updated <= last):
-            continue
-        rows.append((acct, five, week, reset))
+    rows, _ = _candidates(accounts, current, running, landed, now)
     tier1 = [r for r in rows if r[1] < TARGET_LIMIT and r[2] < TARGET_LIMIT]
     if tier1:
         pick = min(tier1, key=lambda r: r[3])
@@ -354,8 +382,23 @@ def _skip(account, entry):
     return out
 
 
-def _no_room(key):
-    return _hold('no account has room', 'no-room', key)
+def no_room(key, accounts, current, running, landed, now):
+    """(note, detail, mark) of a no-room for `key` (pick_target found none). Every account it
+    weighed full: 'no account has room', detail `key`. Some left out for an unknown or stale
+    reading (they may have room): those named, detail `<key>:unknown:a1.a2`."""
+    _, unread = _candidates(accounts, current, running, landed, now)
+    if not unread:
+        return 'no account has room', key, 'no-room'
+    names = sorted(unread, key=int)
+    tail = 'unknown:' + '.'.join('a%s' % a for a in names)
+    note = 'no account has room it can read: %s' % ', '.join(
+        'account %s %s' % (a, unread[a]) for a in names)
+    return note, '%s:%s' % (key, tail), 'no-room:' + tail
+
+
+def _no_room(key, accounts, current, running, landed, now):
+    note, detail, mark = no_room(key, accounts, current, running, landed, now)
+    return _hold(note, 'no-room', detail, mark)
 
 
 def decide(key, entry, crossing, live, stall, quiet_s, accounts, newest, starts, running, landed,
@@ -425,7 +468,7 @@ def _trigger_on(key, acct, skip, stall, quiet_s, accounts, starts, running, land
         return _hold(why, 'cross-failed', key, 'cap')
     pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key)
+        return _no_room(key, accounts, skip, running, landed, now)
     target, reason = pick
     how = 'stalled' if stalled else _how(week, high, eta)
     note = 'account %s %s: to account %s (%s)' % (acct, how, target, reason)
@@ -502,9 +545,10 @@ def _phase_step(key, entry, c, live, stall, quiet_s, accounts, newest, starts, r
 
 def _stall_first(key, entry, c, accounts, running, landed, now):
     """The step from asked or ready when the old session stalls: on to stall-stop with a target."""
-    pick = pick_target(accounts, _skip(c.get('account'), entry), running, landed, now)
+    skip = _skip(c.get('account'), entry)
+    pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key)
+        return _no_room(key, accounts, skip, running, landed, now)
     return _advance(STALL_STOP, 'stalled: stop first, then account %s' % pick[0], stalled=True)
 
 
@@ -581,9 +625,10 @@ def _ready(args, stalled, accounts, starts, running, landed, now, quiet_s=None, 
     retry = c.get('retry_at')
     if _number(retry) and now < retry:
         return _hold('backoff after a failed start')
-    pick = pick_target(accounts, _skip(c.get('account'), entry), running, landed, now)
+    skip = _skip(c.get('account'), entry)
+    pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key)
+        return _no_room(key, accounts, skip, running, landed, now)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
 
 
@@ -760,9 +805,10 @@ def _u_ready(key, c, live, old, up, others, stopped, stalled, accounts, starts, 
     retry = c.get('retry_at')
     if _number(retry) and now < retry:
         return _hold('backoff after a failed start')
-    pick = pick_target(accounts, {str(c.get('account'))}, running, landed, now)
+    skip = {str(c.get('account'))}
+    pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key)
+        return _no_room(key, accounts, skip, running, landed, now)
     if c.get('kind') == UL.CONSULTANT and not stopped:
         return _advance(STOP_FIRST, 'stop first, then account %s (%s)' % pick)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
@@ -890,7 +936,7 @@ def _pm_trigger(pms, stall, quiet_s, accounts, starts, running, landed, mode, no
         return _hold(why, 'cross-failed', PM_DETAIL, 'cap')
     pick = _pm_pick(acct, accounts, running, landed, now)
     if pick is None:
-        return _no_room(PM_DETAIL)
+        return _no_room(PM_DETAIL, accounts, {str(acct)}, running, landed, now)
     target, reason = pick
     how = 'stalled' if stalled else _how(week, high, eta)
     note = 'the PM: account %s %s: to account %s (%s)' % (acct, how, target, reason)
@@ -994,7 +1040,8 @@ def _pm_ready(c, old, pms, stall_now, accounts, starts, running, landed, mode, n
         return _hold('backoff after a failed start')
     pick = _pm_pick(c.get('account'), accounts, running, landed, now)
     if pick is None:            # the PM resumes; the trigger asks again once an account has room
-        return _gone('no account has room: the PM resumes', 'no-room', PM_DETAIL)
+        note, detail, _ = no_room(PM_DETAIL, accounts, {str(c.get('account'))}, running, landed, now)
+        return _gone(note + ': the PM resumes', 'no-room', detail)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
 
 

@@ -1579,6 +1579,16 @@ class UnblockedPushTest(PushCase):
         for text in self.jobs_sent():
             self.assertIn('hub health jobs.usage-crossover', text)
 
+    def test_a_no_room_naming_unknown_accounts_still_tells_the_pm_to_resume(self):
+        self.worker.job_event('usage-crossover', 'no-room', 'pm:unknown:a2')
+        self.worker.send_jobs()
+        sent = self.jobs_sent()
+        self.assertEqual([t.splitlines()[0] for t in sent],
+                         ['[hub push] job usage-crossover no-room detail:pm:unknown:a2 route:pm attempt:1'])
+        self.assertIn('<session>:unknown:a1.a2', sent[0])
+        self.assertIn('When detail is pm or starts pm: (you, the PM)', sent[0])
+        self.assertIn('resume your normal work', sent[0])
+
 
 if __name__ == '__main__':
     unittest.main()

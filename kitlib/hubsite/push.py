@@ -200,8 +200,8 @@ OUTBOX = 'push-outbox.json'
 # session or account each), so a second one in a round must not replace the first.
 _CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usage-crossover.log): '
 # the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`
-_PM_RESUMES = (' When detail is pm (you, the PM), no crossing of yours is open now: the '
-               'checkpoint message no longer holds, so resume your normal work.')
+_PM_RESUMES = (' When detail is pm or starts pm: (you, the PM), no crossing of yours is open now: '
+               'the checkpoint message no longer holds, so resume your normal work.')
 JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
                          'record named in detail (<repo>:<ID>) is unblocked; `backlog.py show '
                          '<ID>` gives the commit. No reply is needed.',
@@ -237,7 +237,12 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                           'consultant was stopped first, and the hub stops watching it). Check on '
                           'the successor.',
             'no-room': _CROSSOVER + 'detail needs moving and no account has room: nothing was '
-                       'stopped or started. A stalled session wakes at its reset.'
+                       'stopped or started. A stalled session wakes at its reset. Detail '
+                       '<session> alone: every account it could read is full. Detail '
+                       '<session>:unknown:a1.a2: those accounts were left out because their '
+                       'reading is unknown or stale (no live session refreshes it), so they may '
+                       'have room; the log says why for each. A session started on one of them '
+                       'gives it a reading.'
                        + _PM_RESUMES,
             'pm-limit': _CROSSOVER + 'the PM session is at the weekly limit and this job cannot '
                         'move it: it is not a launched session (the desktop app), or '

@@ -178,11 +178,21 @@ def pick(settings, now, limit=PICK_LIMIT):
     return chosen[0], rows
 
 
+def five_hour_absent(data):
+    """True when a reading gives no five_hour at all (the key missing or null): the host reports
+    no open five-hour window. On a fresh reading that counts as 0% used, with no reset needed;
+    a five_hour the file gives but that cannot be read stays unknown, and a stale reading is
+    never trusted this way. The one rule of restart_pick and the usage crossover's pick_target
+    (docs/launcher.md "Usage crossover"); each checks freshness itself."""
+    return isinstance(data, dict) and data.get('five_hour') is None
+
+
 def _fresh_week_reset(data, now, stale_minutes, limit):
     """The seven-day reset of a reading that is fresh and under `limit`% in both windows, or None.
     Fresh: an updated_at at most `stale_minutes` whole minutes old (kitlib.pmwatch's stale line).
     A window whose reset has passed counts as 0% and its week moves on 7 days at a time; a window
-    with no percentage or no reset time is unknown, and unknown is never under the limit."""
+    with no percentage or no reset time is unknown, and unknown is never under the limit. An
+    absent five_hour (five_hour_absent) is 0% on this fresh reading."""
     if not isinstance(data, dict):
         return None
     upd = parse_time(data.get('updated_at'))
@@ -190,6 +200,8 @@ def _fresh_week_reset(data, now, stale_minutes, limit):
         return None
     resets = {}
     for k in WINDOWS:
+        if k == 'five_hour' and five_hour_absent(data):
+            continue
         w = data.get(k)
         reset = parse_time(w.get('resets_at')) if isinstance(w, dict) else None
         if reset is None:

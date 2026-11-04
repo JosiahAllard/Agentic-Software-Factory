@@ -236,13 +236,20 @@ class RefLock:
         self.lock = path + '.lock'
         self.fd = None
 
-    def acquire(self):
-        d = os.path.dirname(self.path)
+    # How many times the lock's folder is made again when another writer pruned it between the
+    # makedirs and the open (git's raceproof_create_file retries the same window).
+    MISSING_DIR_TRIES = 3
+
+    def _make_dir(self):
         try:
-            os.makedirs(d, exist_ok=True)
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
         except (FileExistsError, NotADirectoryError):
             raise GitExit(128, "fatal: cannot lock ref '%s': unable to create directory for %s\n"
                           % (self.name, self.lock.replace('\\', '/')))
+
+    def acquire(self):
+        self._make_dir()
+        missing = 0
         # Windows denies creating a lock file another thread has just renamed or removed (it is
         # still being deleted); that window is retried, as _read_file retries its open.
         began = retry.start()
@@ -252,6 +259,13 @@ class RefLock:
                 return
             except FileExistsError:
                 raise lock_error(self.name, self.path)
+            except FileNotFoundError:
+                # Another writer's _prune_dirs or _remove_empty_tree removed the folder just made.
+                missing += 1
+                if missing > self.MISSING_DIR_TRIES:
+                    raise GitExit(128, "fatal: cannot lock ref '%s': unable to create directory "
+                                       "for %s\n" % (self.name, self.lock.replace('\\', '/')))
+                self._make_dir()
             except PermissionError as e:
                 if os.path.isdir(self.lock) or os.path.exists(self.lock):
                     raise lock_error(self.name, self.path)

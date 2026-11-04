@@ -79,8 +79,8 @@ REMOTE_SAYS = {
     'store': 'the machine lock could not be written; the schedule window on this machine says '
              'why',
     'path': 'the machine lock refused the change; the schedule window on this machine says why'}
-# a drive or UNC folder in a message: never sent over the tunnel
-_FOLDER = re.compile(r'[A-Za-z]:[\\/]|\\\\')
+# a drive, UNC or absolute POSIX folder in a message: never sent over the tunnel
+_FOLDER = re.compile(r'[A-Za-z]:[\\/]|\\\\|(?<![\w.:/])/[^\s/]+/')
 # the lock's refusal code -> (the hub's code, the field when the lock names none)
 CODES = {'invalid': ('invalid', 'lock'), 'forbidden': ('forbidden', 'lock'),
          'not_found': ('not_found', 'id'), 'conflict': ('conflict', 'lock'),

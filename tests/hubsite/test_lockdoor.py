@@ -259,6 +259,23 @@ class DoorCase(lh.StoreCase):
         self.assertFalse(any('queue.json' in w for w in remote['view']['warnings']))
         self.no_folder(remote)
 
+    def test_over_the_tunnel_a_refusal_or_note_naming_a_posix_folder_is_a_fixed_phrase(self):
+        from kitlib.hubsite import lockdoor
+        said = lockdoor.REMOTE_SAYS['path']
+        for text in ('cannot write /demo/x/state.json', 'bad file /srv/demo/x.json',
+                     'in /demo/ here'):
+            with self.subTest(text=text):
+                self.assertEqual(lockdoor._said(text, True), said)
+                self.assertEqual(lockdoor._said(text, False), text)
+                err = lockdoor.LockDoor._refusal({'code': 'invalid', 'message': text}, True)
+                self.assertNotIn('/demo', str(err))
+                self.assertIn(said, str(err))
+                self.assertEqual(
+                    lockdoor.LockDoor(make_store=lambda: self.store)._hold_result(
+                        {'hold': {}, 'notes': [text, 'fine']}, True)['notes'], [said, 'fine'])
+        for text in ('and/or', 'a/b/c', 'ok'):
+            self.assertEqual(lockdoor._said(text, True), text)
+
     def test_stats_reads_the_history_and_refuses_a_bad_time(self):
         status, obj = self.call('/lock/stats', {'days': '7'})
         self.assertEqual(status, 200, obj)

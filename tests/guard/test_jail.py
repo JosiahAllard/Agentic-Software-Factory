@@ -548,7 +548,11 @@ class Config(unittest.TestCase):
 
     def test_posix_absolute_path(self):
         roots = [{'path': '/srv/data', 'mode': 'add-only'}]
-        self.assertEqual(self.load({'data_roots': roots}).section('guard')['data_roots'], roots)
+        try:
+            got = self.load({'data_roots': roots}).section('guard')['data_roots']
+        except kconfig.ConfigError as e:
+            self.fail(f'a POSIX absolute path was refused: {e}')
+        self.assertEqual(got, roots)
 
     def test_bad_entries_refuse(self):
         for bad in ([{'path': 'D:/x', 'mode': 'append'}], [{'path': 'data/models', 'mode': 'open'}],

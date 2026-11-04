@@ -78,10 +78,11 @@ def load(top, statuses=None, globs=None):
             name = r.get('testName')
             tests.add(name)
             status(name, 'passed')
-            if r.get('outcome') == 'Failed':
-                status(name, 'failed')
-            elif r.get('outcome') == 'NotExecuted':
+            outcome = r.get('outcome')
+            if outcome == 'NotExecuted':
                 status(name, 'skipped')
+            elif outcome not in (None, '', 'Passed'):
+                status(name, 'failed')
     return sorted(tests), newest
 
 

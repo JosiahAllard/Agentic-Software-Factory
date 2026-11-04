@@ -125,6 +125,16 @@ class MoreThanRepathTested(Tree):
         self.assertEqual((statuses['N.T.pass'], statuses['N.T.fail'], statuses['N.T.skip']),
                          ('passed', 'failed', 'skipped'))
 
+    def test_trx_error_timeout_aborted_outcomes_are_failed(self):
+        for outcome in ('Error', 'Timeout', 'Aborted'):
+            with self.subTest(outcome=outcome):
+                self.put('net/TestResults/run.trx',
+                         TRX.replace('</Results>', '<UnitTestResult testName="N.T.x" outcome="%s"/></Results>'
+                                     % outcome))
+                statuses = {}
+                results.load_names(self.top, statuses)
+                self.assertEqual(statuses['N.T.x'], 'failed')
+
     def test_the_worst_status_of_a_repeated_name_wins(self):
         self.put('n/build/test-results/test/TEST-again.xml',
                  '<testsuite><testcase classname="a.B" name="ok"><failure/></testcase></testsuite>')

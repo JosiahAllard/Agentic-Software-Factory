@@ -853,7 +853,7 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
             out.append('%s; %s\'s diff was not compared' % (head, branch))
             continue
         files, files_why = files_section(other.body)
-        extra, extra_why = dirty.get(branch, (None, 'its uncommitted files were not read'))
+        extra, extra_why = dirty.get(branch) or (None, 'its uncommitted files were not read')
         unread = files_why if files is None else (extra_why if extra is None else None)
         paths = sorted(set(q for _label, qs in changes[branch] for q in qs)
                        | set(extra or []) | set(files or []))
@@ -870,14 +870,16 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
             out.append('%s; not narrowing %s: %s' % (head, other.id, unread))
         elif is_broad(theirs) and not overlap:
             keep = [m for m in other.all('scope') if m != theirs]
-            keep += [q for q in there if q not in keep]
-            odd = [m for m in keep if _UNQUOTED.search(m)]
+            added = [q for q in there if q not in keep]
+            # the record's own members print as they are (a glob single-quoted); only the paths
+            # added must paste whole
+            odd = [m for m in added if _UNQUOTED.search(m)] + [m for m in keep if "'" in m]
             if odd:
                 out.append('%s; not narrowing %s: %s would split when pasted into a shell' % (
                     head, other.id, odd[0]))
                 continue
-            out.append('%s -> `set %s %s`' % (
-                head, other.id, ' '.join('--scope %s' % m for m in keep)))
+            out.append('%s -> `set %s %s`' % (head, other.id, ' '.join(
+                "--scope '%s'" % m if '*' in m else '--scope %s' % m for m in keep + added)))
         elif is_broad(mine) and not is_broad(theirs):
             out.append('%s; %s is broad: narrow %s\'s own scope to leave out %s' % (
                 head, mine, p.rec.id, theirs))

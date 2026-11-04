@@ -186,7 +186,7 @@ class Narrowings(unittest.TestCase):
         self.assertIn('not narrowing HOLD: no worktree', got[0])
 
     def test_uncommitted_files_not_read_at_all_drop_the_set(self):
-        for dirty in ({}, {'kit/x': ([], None)}):
+        for dirty in ({}, {'kit/x': ([], None)}, {'kit/b': None}):
             s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
             holding = [s.get('HOLD')]
             (_o, passed), _, _ = omod.next_offer(s, holding)
@@ -206,6 +206,19 @@ class Narrowings(unittest.TestCase):
         self.assertEqual(len(got), 1)
         self.assertNotIn('changed nothing', got[0])
         self.assertTrue(got[0].endswith('; not narrowing HOLD: no worktree'), got)
+
+    def test_a_second_glob_member_is_kept_and_single_quoted(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'tools/**'])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertIn("-> `set HOLD --scope 'tools/**' --scope brain/a.py`", got[0])
+
+    def test_a_kept_member_with_a_quote_drops_the_set(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', "tools/it's.py"])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertNotIn('`set ', got[0])
+        self.assertIn('would split when pasted', got[0])
 
     def test_a_kept_path_a_shell_would_split_drops_the_set(self):
         for odd in ('brain/a b.py', "brain/it's.py", 'brain/a;b.py'):

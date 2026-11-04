@@ -218,13 +218,23 @@ class Narrowings(unittest.TestCase):
                       scope=['brain/**', "tools/it's.py"])
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
         self.assertNotIn('`set ', got[0])
-        self.assertIn('would split when pasted', got[0])
+        self.assertIn('has a quote', got[0])
 
     def test_a_kept_path_a_shell_would_split_drops_the_set(self):
-        for odd in ('brain/a b.py', "brain/it's.py", 'brain/a;b.py'):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ["brain/it's.py"])]})
+        self.assertNotIn('`set ', got[0])
+        self.assertIn("not narrowing HOLD: brain/it's.py has a quote", got[0])
+
+    def test_an_added_path_a_shell_would_split_is_single_quoted(self):
+        for odd in ('brain/a b.py', 'brain/a;b.py', 'brain/a"b.py'):
             got = self.lines('brain/b.py', {'kit/b': [('kit/b', [odd])]})
-            self.assertNotIn('`set ', got[0], odd)
-            self.assertIn('not narrowing HOLD: %s would split when pasted' % odd, got[0])
+            self.assertIn("--scope tools/t.py --scope '%s'`" % odd, got[0])
+
+    def test_a_own_member_with_a_space_is_single_quoted(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'docs/my notes.md'])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertIn("-> `set HOLD --scope 'docs/my notes.md' --scope brain/a.py`", got[0])
 
     def test_an_unreadable_files_plan_drops_the_set(self):
         hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',

@@ -829,8 +829,8 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
     uncommitted files of each live branch's worktree, or `(None, why)` when they could not be
     read. The `set` keeps those files and the pull's `## Files` paths with the committed ones (the
     NARROWS split's protected set, plan `_narrower`). It is not suggested when either cannot be
-    read, when `dirty` has no entry for the branch, or when a kept path has a space, a quote or a
-    shell-special character (it would split when pasted)."""
+    read, when `dirty` has no entry for the branch, or when a kept member has a quote (a member
+    with a space or another shell-special character, a glob included, is single-quoted)."""
     dirty = dirty or {}
     live = {r.id: r for r in holding}
     out = []
@@ -871,15 +871,16 @@ def narrowings(passed, holding, changes, unknown, dirty=None):
         elif is_broad(theirs) and not overlap:
             keep = [m for m in other.all('scope') if m != theirs]
             added = [q for q in there if q not in keep]
-            # the record's own members print as they are (a glob single-quoted); only the paths
-            # added must paste whole
-            odd = [m for m in added if _UNQUOTED.search(m)] + [m for m in keep if "'" in m]
+            # a member a shell would split or expand is single-quoted; one with a quote itself
+            # cannot be, so no set
+            odd = [m for m in keep + added if "'" in m]
             if odd:
-                out.append('%s; not narrowing %s: %s would split when pasted into a shell' % (
-                    head, other.id, odd[0]))
+                out.append('%s; not narrowing %s: %s has a quote and would split when pasted '
+                           'into a shell' % (head, other.id, odd[0]))
                 continue
             out.append('%s -> `set %s %s`' % (head, other.id, ' '.join(
-                "--scope '%s'" % m if '*' in m else '--scope %s' % m for m in keep + added)))
+                "--scope '%s'" % m if _UNQUOTED.search(m) else '--scope %s' % m
+                for m in keep + added)))
         elif is_broad(mine) and not is_broad(theirs):
             out.append('%s; %s is broad: narrow %s\'s own scope to leave out %s' % (
                 head, mine, p.rec.id, theirs))

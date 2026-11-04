@@ -211,7 +211,9 @@ the server alone decides what a role may do.
                                                      refused; its record's line is dropped
   hub.py approvals supersede A-1 --by A-2|SHA --from KEY --if-version V
                                                     `SUPERSEDED A-1 by A-2`: the PM (KEY pm) or
-                                                     the coordinator of its repo marks a decided
+                                                     a coordinator session of its repo (any
+                                                     sessions.json key whose agent is set and
+                                                     whose repo is the approval's) marks a decided
                                                      approval nobody consumed superseded by
                                                      approval A-2 or commit SHA (40 hex, on main
                                                      as last fetched); it leaves pending, keeps
@@ -784,7 +786,7 @@ def _client_verbs(sub):
     y.add_argument('--by', required=True, metavar='A-n|SHA',
                    help='the approval that replaces it, or a commit on main (40 hex)')
     y.add_argument('--from', dest='who', required=True, metavar='KEY',
-                   help="pm, or the session key of the coordinator of the approval's repo")
+                   help="pm, or a coordinator session of the approval's repo")
     _pins(y, required=True)
 
     x = _asks(sub.add_parser('pending', help='the owner input the PM has not handled'))

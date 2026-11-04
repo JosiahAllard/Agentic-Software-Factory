@@ -46,8 +46,8 @@ does. A file request may give `record` {repo, id} (checked as a question's, _bou
 waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
 decided`), and the withdrawal drops that line (unpark_item); an op request takes none. POST
 approvals/{id}/supersede (AGENT) marks a decided approval nobody consumed superseded
-(approvals.supersede_fields): the body gives `from` (the PM's key or the coordinator key of the
-approval's repo, repo_key: a claim, as for questions done), `by` (the approval that replaces it,
+(approvals.supersede_fields): the body gives `from` (`pm`, or a coordinator session of the
+approval's repo, Api.coordinator_keys: a claim, as for questions done), `by` (the approval that replaces it,
 which must exist, or a commit this machine's checkout of the repo has on main as last fetched,
 approvals.on_main) and `if_version`; it leaves pending and is never consumed. GET approvals/{id}/verify
 (AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
@@ -643,6 +643,14 @@ def launcher_keys():
     return {k for k, _ in lstate.entries(lstate.read_sessions(lsettings.load()))}
 
 
+def launcher_coordinators():
+    """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
+    (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
+    it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
+    return {k: e.get('repo') for k, e in lstate.entries(lstate.read_sessions(lsettings.load()))
+            if e.get('agent')}
+
+
 def _for(d, for_key):
     """Whether pending item d (with `from`, `route` and `note`) is listed for for_key: every
     item with none; for AGENT_FROM, the ones routed to it, every question not filed (the PM logs
@@ -694,13 +702,16 @@ class Api(object):
     edit is the PM's; `kit_blob(branch, path)` gives the blob id of `path` on `branch` in this
     machine's kit checkout, or None when git cannot read it; with none given (default) every
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
-    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits")."""
+    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
+    `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
+    each supersede (default: launcher_coordinators; coordinator_keys)."""
 
     def __init__(self, store, views=None, clock=None, session_keys=None, now=None,
                  approval_key=None, checkout=None, lock=None, repo_name=None,
                  schedule_repos=None, tick_seen=None, tick_state=None, kit_key=None,
-                 kit_blob=None, kit_text=None):
+                 kit_blob=None, kit_text=None, coordinators=None):
         self.store = store
+        self.coordinators = coordinators or launcher_coordinators
         self.kit_text = kit_text or (lambda blob: None)
         self.kit_key = kit_key or (lambda: '')
         self.kit_blob = kit_blob or (lambda branch, path: None)
@@ -915,6 +926,26 @@ class Api(object):
         except Exception:           # noqa: BLE001 - no name, no coordinator: the PM hears it
             name = None
         return name if isinstance(name, str) else ''
+
+    def coordinator_keys(self, repo):
+        """The session keys that may act as the coordinator of the repository whose remote is the
+        repo_id `repo` (approvals supersede): repo_key(repo), and every coordinator session of
+        sessions.json (coordinators()) whose `repo` is that repository's configured name, matched
+        without case, so a coordinator keyed otherwise (the kit's `kit`) is one. [] when the
+        repository has no name; only repo_key's when sessions.json cannot be read."""
+        name = self.repo_key(repo)
+        if not name:
+            return []
+        out = [name]
+        try:
+            got = self.coordinators()
+        except Exception:           # noqa: BLE001 - unreadable: no coordinator beyond the name
+            got = {}
+        for key, of in (got.items() if isinstance(got, dict) else ()):
+            if (isinstance(key, str) and key and isinstance(of, str)
+                    and of.casefold() == name.casefold() and key not in out):
+                out.append(key)
+        return out
 
     def pending(self, for_key=''):
         """The pending items, each with the session key it is for as `from`: a question's or a
@@ -2691,8 +2722,8 @@ def approvals_delete(api, req):
 
 
 def approvals_supersede(api, req):
-    """The PM, or the coordinator of the approval's repository (repo_key), marks a decided
-    approval nobody consumed superseded by another approval or a commit on main
+    """The PM, or a coordinator session of the approval's repository (coordinator_keys), marks
+    a decided approval nobody consumed superseded by another approval or a commit on main
     (approvals.supersede_fields, on_main). The `from` is a claim checked as questions_done checks
     one, before anything else about the approval is said; the decision and the stored status
     stay."""
@@ -2703,11 +2734,10 @@ def approvals_supersede(api, req):
     doc_id = req.params['id']
     d = api.doc(ap.COLLECTION, doc_id)
     claimed = b['from'].strip()
-    coordinator = api.repo_key(d.get('repo'))
-    if claimed not in [k for k in (AGENT_FROM, coordinator) if k]:
+    allowed = [AGENT_FROM] + [k for k in api.coordinator_keys(d.get('repo')) if k != AGENT_FROM]
+    if claimed not in allowed:
         raise HubError('forbidden', '%s is for %s: only they can mark it superseded (%s was '
-                       'given)' % (doc_id, ' or '.join(k for k in (AGENT_FROM, coordinator) if k),
-                                   ascii(claimed)), 'from')
+                       'given)' % (doc_id, ' or '.join(allowed), ascii(claimed)), 'from')
     d = api.doc(ap.COLLECTION, doc_id, b)
     by = b['by']
     changes = _approval(ap.supersede_fields, doc_id, d, by, claimed, _when(api.clock(), ''))

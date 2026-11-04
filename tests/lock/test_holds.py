@@ -189,6 +189,51 @@ class Holds(StoreCase):
         self.assertEqual(cm.exception.code, 1)
         self.assertIn("it ended: released", cm.exception.message)
 
+    def rewrite(self, hid, **fields):
+        """Changes hold hid's file as a later read finds it (the division changed under it, or
+        the record was left half made)."""
+        path = self.store.path("holds", hid + ".json")
+        with open(path, encoding="utf-8") as f:
+            rec = json.load(f)
+        rec.update(fields)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        return path
+
+    def test_an_agent_hold_left_with_no_usable_slot_is_ended_on_a_pruning_read(self):
+        """An agent hold whose slots the division dropped (or whose record cannot be used) was
+        skipped before the prune branch: never moved to ended, and `hold end` answered a bare
+        "no live hold" while its file stayed in holds/ (red there). A read that does not prune
+        writes nothing."""
+        past = {"cpu": [self.L["cpu_slots"]], "gpu": []}
+        cases = (("slots dropped", {"slots": past}, "no slots"),
+                 ("slots not a map", {"slots": [0, 1]}, "no slots"),
+                 ("shares not a map", {"shares": None}, "unusable"),
+                 ("past its end too", {"slots": past, "start": iso(self.now - 2 * H),
+                                       "end": iso(self.now - H)}, "expired"))
+        for name, fields, how in cases:
+            with self.subTest(name):
+                h, _ = self.agent_hold()
+                path = self.rewrite(h["id"], **fields)
+                self.assertIsNone(hl.find(self.store, self.L, h["id"]))
+                self.assertTrue(os.path.exists(path))
+                with self.assertRaises(LockError) as cm:
+                    hl.end_hold(self.store, self.L, h["id"])
+                self.assertEqual(cm.exception.message,
+                                 "no live hold %s (it ended: %s)" % (h["id"], how))
+                self.assertFalse(os.path.exists(path))
+                self.assertEqual(self.store.read("ended/%s.json" % h["id"])["how"], how)
+
+    def test_a_pruning_read_leaves_an_owner_hold_whose_slots_were_dropped(self):
+        """Only agent holds that can never be used are ended: an owner hold over slots the
+        division dropped stays live, as before."""
+        h, _ = self.make(owner="owner", scope="slots", slots={"cpu": [3], "gpu": []})
+        path = self.rewrite(h["id"], slots={"cpu": [self.L["cpu_slots"]], "gpu": []})
+        got = hl.records(self.store, self.L, prune=True)
+        self.assertEqual([x["id"] for x in got], [h["id"]])
+        self.assertTrue(os.path.exists(path))
+        self.assertFalse(os.path.exists(self.store.path("ended", h["id"] + ".json")))
+
     def drawn(self, *taken):
         """(a patch of the id builder create uses: each of `taken` in turn, then an id nothing
         has, that id). A draw after it is an error (StopIteration)."""

@@ -1,6 +1,7 @@
 """kitlib.hubjobs.fill_watch: the hub's fill watch (docs/hub-fill.md): a live coordinator with a
 free slot and startable work gets one nudge per change (stage 1), what was told survives a hub
-restart (stage 2), and the nudge names the stand-down (stage 4)."""
+restart (stage 2), the hub pulls into a slot left free (stage 3), the nudge names the stand-down
+(stage 4) and the PM hears of a slot that stays empty (stage 5)."""
 import json
 import os
 import shutil
@@ -9,11 +10,13 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib.backlog import offer as omod
 from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import fill_watch as W
 from kitlib.hubsite import jobs
 from kitlib.hubsite import push as P
 from kitlib.launcher import settings as lsettings
+from tests import gitfixture
 
 def ctx():
     return jobs.Ctx(threading.Event(), lambda word, detail=None: None)
@@ -348,6 +351,26 @@ class Make(unittest.TestCase):
         with mock.patch.object(lsettings, 'load', lambda home=None: s):
             self.assertIsNone(W.make(mock.Mock(home=tmp, push=None)))
 
+    def test_the_pull_the_reads_and_the_hand_offs_are_wired(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        s = lsettings.Settings({'state_dir': tmp, 'repos': {'game': tmp}}, home=tmp)
+        sources = mock.Mock(home=tmp, push=None, handoffs=None)
+        with mock.patch.object(lsettings, 'load', lambda home=None: s):
+            run = W.make(sources).run
+        self.assertIsNone(run.handoffs())       # the hub has not set its read yet: unread
+        sources.handoffs = lambda: {'game': {'kind': 'stop'}}
+        self.assertEqual(run.handoffs(), {'game': {'kind': 'stop'}})
+        run.liveness = 'live'
+        pulled, read = [], []
+        with mock.patch.object(W, 'auto_pull', lambda *a: pulled.append(a) or ([], [])), \
+                mock.patch.object(W, 'read_slots',
+                                  lambda *a, **k: read.append((a, k)) or (5, 0, [])):
+            run.pull('game', dict(COORD), ['EX-A'], 1, 'stop')
+            run.read('game', dict(COORD))
+        self.assertEqual(pulled, [(s, 'game', dict(COORD), ['EX-A'], 1, 'live', 'stop')])
+        self.assertEqual(read, [((s, 'game', dict(COORD)), {'session_live': 'live'})])
+
     def test_a_job_named_fill_watch_every_five_minutes(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
@@ -488,6 +511,47 @@ class Persist(Watch):
         self.run_job()
         self.assertEqual(len(writes), 1)
 
+    def test_a_stop_after_a_nudge_writes_that_nudge_and_leaves_the_rest(self):
+        self.sessions = {'game': dict(COORD), 'lane': dict(LANE)}
+        self.live = {'game-coordinator-a1', 'lane-coordinator-a1'}
+        self.slots['lane'] = (2, 0, ['EX-L'])
+        c = ctx()
+        deliver = self.job.deliver
+
+        def stop_after(key, text):
+            c.stop.set()                    # the hub stops once game is nudged
+            return deliver(key, text)
+        self.job.deliver = stop_after
+        self.job(c)
+        self.assertEqual([k for k, _ in self.sent], ['game'])
+        self.assertEqual(sorted(self.saved()), ['game'])           # lane was never reached
+        self.job = self.fresh()
+        self.run_job()
+        self.assertEqual([k for k, _ in self.sent], ['game', 'lane'])   # game not nudged again
+
+    def test_a_file_written_before_the_pull_marks_reads_and_pulls(self):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            json.dump({'game': {'told': [2, ['EX-A', 'EX-B', 'EX-C'], None], 'since': 100.0,
+                                'in_flight': 3}}, f)
+        pulls = []
+        self.clock.t = 2000.0
+        self.job = W.FillWatch(lambda: self.sessions, lambda: self.live, self.job.read,
+                               self.job.deliver, store=W.FileState(self.path), now=self.clock,
+                               pull=lambda *a: pulls.append(a) or ([], []))
+        self.run_job()
+        self.assertEqual(len(pulls), 1)
+        self.assertEqual((self.saved()['game']['pulled'], self.saved()['game']['pm']),
+                         (100.0, 100.0))
+
+    def test_a_bad_pull_mark_fails_the_run(self):
+        for name in ('pulled', 'pm'):
+            for bad in ('"x"', 'true', '[1]', 'null'):
+                with open(self.path, 'w', encoding='utf-8') as f:
+                    f.write('{"game": {"told": [2, ["EX-A"], null], "since": 1.0, "in_flight": 3, '
+                            '"%s": %s}}' % (name, bad))
+                with self.assertRaises(lsettings.LaunchError):
+                    self.run_job()
+
     def test_no_file_is_an_empty_state(self):
         self.assertFalse(os.path.exists(self.path))
         self.run_job()
@@ -587,11 +651,13 @@ class StandDown(unittest.TestCase):
                 self.reason(0, 0)
 
 
-def tree(branch, klass, head=None, gate=None, reason=None):
+def tree(branch, klass, head=None, gate=None, reason=None, idle_s=None):
     row = {'path': '/w/' + branch, 'branch': branch, 'head': head or 'h-' + branch,
            'class': klass}
     if reason is not None:
         row['reason'] = reason
+    if idle_s is not None:
+        row['idle_s'] = idle_s
     if gate is not None:
         row['gate'] = gate
     return row
@@ -680,6 +746,29 @@ class Survey(unittest.TestCase):
         with self.assertRaises(W.StandDownUnread):
             self.survey()
 
+    HELD = ('unreadable: 2 process(es) could not be read and x cannot be read in full: a '
+            'process we could not read may hold it')
+
+    def test_an_unreadable_tree_dead_two_hours_counts_idle(self):
+        self.trees = [tree('kit/b', 'B', gate='green'),
+                      tree('kit/x', 'L', reason=self.HELD, idle_s=7200)]
+        self.assertEqual(self.survey(), (1, 2))
+
+    def test_an_unreadable_dead_tree_in_main_counts_neither_idle_nor_unread(self):
+        self.trees = [tree('kit/x', 'L', reason=self.HELD, idle_s=9000)]
+        self.in_main = {'h-kit/x'}              # landed: a tree awaiting removal
+        self.assertEqual(self.survey(), (0, 0))
+
+    def test_an_unreadable_dead_tree_git_cannot_place_counts_idle(self):
+        self.trees = [tree('kit/x', 'L', head='unknown', reason=self.HELD, idle_s=9000)]
+        self.assertEqual(self.survey()[1], 1)
+
+    def test_an_unreadable_tree_under_the_bar_or_with_no_activity_is_unread(self):
+        for why, idle_s in ((self.HELD, 7199), ('unreadable: its last activity (git)', None)):
+            self.trees = [tree('kit/x', 'L', reason=why, idle_s=idle_s)]
+            with self.assertRaises(W.StandDownUnread):
+                self.survey()
+
     def test_anything_unread_is_unread(self):
         from kitlib.gate import verdicts
         cases = [('main', (None, 'no origin/main')), ('common', (None, 'not a repo')),
@@ -690,6 +779,368 @@ class Survey(unittest.TestCase):
             setattr(self, name, value)
             with self.assertRaises(W.StandDownUnread):
                 self.survey()
+
+
+class EventCtx(object):
+    def __init__(self):
+        self.stop = threading.Event()
+        self.events = []
+
+    def event(self, word, detail=None):
+        self.events.append((word, detail))
+
+
+class AutoPull(WatchFixture, unittest.TestCase):
+    """Stages 3 and 5: PULL_AFTER_S into an episode with no stand-down the hub pulls, once per
+    episode; a stand-down, or slots the pull left free, tell the PM once per episode."""
+
+    def setUp(self):
+        super(AutoPull, self).setUp()
+        self.clock = Clock()
+        self.pulls = []
+        self.pulled = [([('EX-A', 'game/fill-ex-a')], [('EX-B', 'refused')])]
+        self.reasons = []
+        self.handoffs = {}
+        self.store = W.MemoryState()
+
+        def pull(key, entry, ids, free, stop):
+            self.pulls.append((key, list(ids), free, stop))
+            got = self.pulled.pop(0) if self.pulled else ([], [])
+            if isinstance(got, Exception):
+                raise got
+            return got
+
+        def handoffs():
+            if isinstance(self.handoffs, Exception):
+                raise self.handoffs
+            return self.handoffs
+        self.job = W.FillWatch(lambda: self.sessions, lambda: self.live, self.job.read,
+                               self.job.deliver, store=self.store, now=self.clock,
+                               standdown=lambda key, entry: self.reasons[0] if self.reasons
+                               else None, pull=pull, handoffs=handoffs)
+        self.c = EventCtx()
+
+    def run_at(self, t):
+        self.clock.t = t
+        self.c = EventCtx()
+        return self.job(self.c)
+
+    def test_twenty_minutes_after_the_episode_began_it_pulls_once(self):
+        self.assertEqual(W.PULL_AFTER_S, 1200)
+        self.run_at(1000.0)
+        self.run_at(1000.0 + 1199)
+        self.assertEqual(self.pulls, [])
+        self.run_at(1000.0 + 1200)
+        self.assertEqual([(k, ids, free) for k, ids, free, _ in self.pulls],
+                         [('game', ['EX-A', 'EX-B', 'EX-C'], 2)])
+        self.run_at(1000.0 + 1500)              # the same episode: never twice
+        self.assertEqual(len(self.pulls), 1)
+
+    def test_the_push_names_what_was_pulled_and_what_was_skipped(self):
+        self.run_at(1000.0)
+        out = self.run_at(2200.0)
+        key, text = self.sent[-1]
+        lines = text.splitlines()
+        self.assertEqual((key, lines[0]),
+                         ('game', '[hub push] fill: pulled EX-A as game/fill-ex-a route:game'))
+        self.assertEqual(lines[1], 'skipped EX-B refused')
+        self.assertIn('dispatch', lines[-1])
+        self.assertNotIsInstance(out, jobs.Skip)
+        self.assertIn('pulled', out)
+
+    def test_a_new_episode_pulls_again(self):
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.slots['game'] = (5, 4, ['EX-B', 'EX-C'])           # the pull is in flight
+        self.run_at(2500.0)                                     # the episode begins again
+        self.run_at(2500.0 + 1199)
+        self.assertEqual(len(self.pulls), 1)
+        self.run_at(2500.0 + 1200)
+        self.assertEqual(len(self.pulls), 2)
+
+    def test_slots_left_free_tell_the_pm_once_per_episode(self):
+        self.run_at(1000.0)
+        self.run_at(2200.0)                     # one pulled of two free
+        self.assertEqual(self.c.events, [('fill', 'game:1:unfilled')])
+        self.run_at(2500.0)
+        self.assertEqual(self.c.events, [])
+
+    def test_every_slot_filled_tells_the_pm_nothing(self):
+        self.pulled = [([('EX-A', 'game/fill-ex-a'), ('EX-B', 'game/fill-ex-b')], [])]
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual(self.c.events, [])
+
+    def test_nothing_pulled_and_nothing_skipped_sends_no_pull_push(self):
+        self.pulled = [([], [])]
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual(len(self.sent), 1)     # the nudge alone
+        self.assertEqual(self.c.events, [('fill', 'game:2:unfilled')])
+
+    def test_a_stand_down_never_pulls_and_tells_the_pm_once(self):
+        self.reasons = ['queued 3>=3']
+        self.run_at(1000.0)
+        self.run_at(1000.0 + 1199)
+        self.assertEqual(self.c.events, [])
+        self.run_at(2200.0)
+        self.assertEqual(self.c.events, [('fill', 'game:2:queued')])
+        self.run_at(2500.0)
+        self.assertEqual((self.c.events, self.pulls), ([], []))
+
+    def test_fill_queued_max_zero_is_off(self):
+        self.reasons = ['off']
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual((self.c.events, self.pulls), ([('fill', 'game:2:off')], []))
+
+    def test_a_pending_hand_off_stands_down_and_is_named(self):
+        self.handoffs = {'game': {'kind': 'restart', 'from': 'game'}}
+        self.run_at(1000.0)
+        self.assertEqual(self.sent[0][1].splitlines()[1], 'auto-pull stood down: handoff restart')
+        self.run_at(2200.0)
+        self.assertEqual((self.c.events, self.pulls), ([('fill', 'game:2:handoff')], []))
+
+    def test_a_check_in_or_another_keys_hand_off_is_none(self):
+        self.handoffs = {'game': {'kind': 'checkin'}, 'lane': {'kind': 'stop'}}
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual(len(self.pulls), 1)
+        self.assertNotIn('stood down', self.sent[0][1])
+
+    def test_hand_offs_that_cannot_be_read_stand_down(self):
+        for bad in (None, RuntimeError('hub store')):
+            self.setUp()
+            self.handoffs = bad
+            self.run_at(1000.0)
+            self.assertIn('auto-pull stood down: handoff unread', self.sent[0][1])
+            self.run_at(2200.0)
+            self.assertEqual(self.pulls, [])
+
+    def test_the_pull_is_marked_in_the_state_before_it_is_made(self):
+        self.run_at(1000.0)
+        since = self.store.read()['game']['since']
+        seen = []
+        pull = self.job.pull
+
+        def look(*a):
+            seen.append(self.store.read()['game'].get('pulled'))
+            return pull(*a)
+        self.job.pull = look
+        self.run_at(2200.0)
+        self.assertEqual(seen, [since])
+
+    def test_a_pull_that_raises_is_a_note_never_retried_in_the_episode(self):
+        self.pulled = [RuntimeError('git said no')]
+        self.run_at(1000.0)
+        out = self.run_at(2200.0)
+        self.assertIn('RuntimeError', out.note if isinstance(out, jobs.Skip) else out)
+        self.assertEqual(self.c.events, [('fill', 'game:2:unfilled')])
+        self.run_at(2500.0)
+        self.assertEqual(len(self.pulls), 1)
+
+    def test_the_pull_is_given_the_hub_stop(self):
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertIs(self.pulls[0][3], self.c.stop)
+
+    def test_each_run_judges_session_liveness_from_its_own_listing(self):
+        self.sessions = {'game': dict(COORD), 'lane': dict(LANE)}
+        self.slots['lane'] = (1, 1, [])
+        self.run_at(1000.0)
+        first = self.job.liveness
+        self.assertEqual(first.live('game'), (True, None))
+        self.assertEqual(first.live('lane'), (False, None))
+        self.assertIsNone(first.live('nobody')[0])          # not in sessions.json: unread
+        self.live = {'game-coordinator-a1', 'lane-coordinator-a1'}
+        self.run_at(1300.0)
+        self.assertIsNot(self.job.liveness, first)
+        self.assertEqual(self.job.liveness.live('lane'), (True, None))
+
+    def test_no_pull_wired_is_the_watch_alone(self):
+        self.job.pull = None
+        self.run_at(1000.0)
+        self.run_at(2200.0)
+        self.assertEqual((self.c.events, self.pulls), ([], []))
+
+
+class PullText(unittest.TestCase):
+    def test_ids_branches_and_codes_only(self):
+        text = W.pull_text('game', [('EX-A', 'game/fill-ex-a')], [('EX-B', 'not-theirs')])
+        self.assertEqual(text.splitlines()[:2], ['[hub push] fill: pulled EX-A as game/fill-ex-a '
+                                                 'route:game', 'skipped EX-B not-theirs'])
+        self.assertIn('pulled none route:game', W.pull_text('game', [], [('EX-B', 'refused')]))
+
+    def test_the_fill_event_is_owed_once_per_detail_with_its_text(self):
+        self.assertIn('fill', P.JOB_EACH)
+        self.assertIn('unfilled', P.JOB_EACH['fill'])
+
+
+class AutoPullSteps(unittest.TestCase):
+    """auto_pull over stand-ins: the branch, the tree made before the pull, removed on a skip,
+    the count up to `free`, the stop between records."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.settings = lsettings.Settings({'state_dir': self.tmp, 'repos': {'game': self.tmp}},
+                                           home=self.tmp)
+        self.made, self.asked, self.removed = [], [], []
+        self.codes, self.create_code, self.kept = {}, {}, set()
+        self.stop = threading.Event()
+        self.stop_on_remove = False
+
+    def run_pull(self, ids, free, key='game', entry=None):
+        from kitlib.worktree import new
+
+        def create(main, branch):
+            self.made.append((main, branch))
+            return new.Outcome(self.create_code.get(branch, new.OK), ['said'])
+
+        def pull(root, rid, branch, sessions, liveness):
+            self.asked.append((root, rid, branch, sessions, liveness))
+            return self.codes.get(rid)
+
+        def remove(main, branch):
+            self.removed.append(branch)
+            if self.stop_on_remove:
+                self.stop.set()
+            return branch not in self.kept
+        with mock.patch.object(C, 'store_root', lambda settings, repo: '/store'):
+            return W.auto_pull(self.settings, key, entry or dict(COORD), ids, free, 'live',
+                               self.stop, create=create, pull=pull, remove=remove)
+
+    def test_each_record_gets_its_tree_then_its_pull_up_to_free(self):
+        got = self.run_pull(['EX-A', 'EX-B', 'EX-C'], 2)
+        self.assertEqual(got, ([('EX-A', 'game/fill-ex-a'), ('EX-B', 'game/fill-ex-b')], []))
+        self.assertEqual(self.made, [(self.tmp, 'game/fill-ex-a'), (self.tmp, 'game/fill-ex-b')])
+        self.assertEqual(self.asked[0], ('/store', 'EX-A', 'game/fill-ex-a', ['game', None],
+                                         'live'))
+
+    def test_a_skipped_pull_removes_its_tree_and_the_next_is_tried(self):
+        self.codes = {'EX-A': 'refused', 'EX-B': 'not-theirs'}
+        self.kept = {'game/fill-ex-b'}
+        got = self.run_pull(['EX-A', 'EX-B', 'EX-C'], 1)
+        self.assertEqual(got, ([('EX-C', 'game/fill-ex-c')],
+                               [('EX-A', 'refused'), ('EX-B', 'not-theirs+tree-kept')]))
+        self.assertEqual(self.removed, ['game/fill-ex-a', 'game/fill-ex-b'])
+
+    def test_a_tree_not_made_is_skipped_and_never_pulled(self):
+        from kitlib.worktree import new
+        self.create_code = {'game/fill-ex-a': new.REFUSED}
+        got = self.run_pull(['EX-A', 'EX-B'], 1)
+        self.assertEqual(got, ([('EX-B', 'game/fill-ex-b')], [('EX-A', 'worktree')]))
+        self.assertEqual([a[1] for a in self.asked], ['EX-B'])
+        self.assertEqual(self.removed, [])
+
+    def test_the_branch_is_the_coordinators_key_lowercased(self):
+        got = self.run_pull(['EX-UP'], 1, key='Kit', entry=dict(COORD, repo='game'))
+        self.assertEqual(got[0], [('EX-UP', 'kit/fill-ex-up')])
+
+    def test_a_branch_new_worktree_would_refuse_is_skipped(self):
+        got = self.run_pull(['EX_A'], 1, key='_lane')
+        self.assertEqual(got, ([], [('EX_A', 'branch')]))
+        self.assertEqual(self.made, [])
+
+    def test_a_stop_ends_it_between_records(self):
+        self.codes = {'EX-A': 'refused'}
+        self.stop_on_remove = True
+        got = self.run_pull(['EX-A', 'EX-B'], 1)
+        self.assertEqual(got, ([], [('EX-A', 'refused')]))
+        self.assertEqual(len(self.made), 1)
+
+
+class PullOnAStore(unittest.TestCase):
+    """auto_pull and pull_record against a ref store on a temp repository with a bare origin:
+    the tree is made, the record pulled onto its branch under Session hub-fill and the
+    coordinator's offer; a pull the store refuses removes the tree it made."""
+
+    def setUp(self):
+        from kitlib.backlog import record as rmod
+        from kitlib.backlog import store as smod
+        from tests.backlog import helpers as bh
+        from tests.home import temp_home
+        patch = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.home = temp_home(self)
+        self.repo = gitfixture.TempRepo(bare_remote=True)
+        self.addCleanup(self.repo.cleanup)
+        self.root = os.path.realpath(self.repo.root)
+        bh.kit_json_ref(self.repo)
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.backend = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        self.store = smod.Store(self.backend, rmod.Rules())
+        writes = {}
+        for r in (bh.priced('FOO', session='kit'), bh.priced('BAR', session='other'),
+                  bh.priced('BAZ', session='kit', scope='area/shared/**'),
+                  bh.priced('LIVE', state='pulled', pulled_at=bh.TODAY, pulled_by='kit/live',
+                            scope='area/shared/**', session='kit')):
+            writes.update(r)
+        self.backend.publish(self.store.load(), writes, 'seed\n')
+        self.repo.git('branch', 'kit/live')
+        self.settings = lsettings.Settings({'state_dir': self.home, 'repos': {'kit': self.root}},
+                                           home=self.home)
+        self.liveness = omod.SessionLiveness(sessions=lambda: {'kit': 'kit-coord'},
+                                             names=lambda: ['kit-coord-a1'])
+        self.entry = {'repo': 'kit', 'agent': True, 'stem': 'kit-coord', 'name': 'kit-coord-a1'}
+
+    def pull(self, ids, free):
+        import functools
+        from kitlib.worktree import new
+        create = functools.partial(new.create, wait=False, prep=lambda main, folders: [])
+        return W.auto_pull(self.settings, 'kit', self.entry, ids, free, self.liveness,
+                           threading.Event(), create=create)
+
+    def trees(self):
+        from kitlib.worktree import remove
+        return {e['branch']: e['path']
+                for e in remove.worktree_entries(remove.worktree_listing(self.root))}
+
+    def branch(self, name):
+        return self.repo.git('rev-parse', '--verify', '--quiet', 'refs/heads/' + name,
+                             check=False)
+
+    def test_a_record_in_the_offer_is_pulled_onto_its_own_tree(self):
+        from kitlib.backlog import audit_check, opener
+        from kitlib.backlog import store as smod
+        got = self.pull(['FOO'], 1)
+        self.assertEqual(got, ([('FOO', 'kit/fill-foo')], []))
+        self.assertTrue(os.path.isdir(self.trees()['kit/fill-foo']))
+        rec = self.store.load().get('FOO')
+        self.assertEqual((rec.get('state'), rec.get('pulled_by'), rec.get('session')),
+                         ('pulled', 'kit/fill-foo', 'kit'))
+        tip = self.repo.git('ls-remote', 'origin', smod.STORE_REF).split('\t')[0]
+        self.assertIn('Session: hub-fill', self.repo.git('log', '-1', '--format=%B', tip))
+        top, cfg, rules = opener.open_repo(self.root)
+        report = audit_check.check(smod.open_backend(top, cfg, fetch=False), rules, [], 0)
+        self.assertEqual(report.changes, 2)                 # the seed and the pull
+        self.assertEqual([f for f in report.findings if tip[:10] in f.text], [])
+
+    def test_a_refused_pull_removes_the_tree_and_branch_it_made(self):
+        got = self.pull(['BAZ'], 1)             # collides with the live pull on kit/live
+        self.assertEqual(got, ([], [('BAZ', 'refused')]))
+        self.assertNotIn('kit/fill-baz', self.trees())
+        self.assertEqual(self.branch('kit/fill-baz'), '')
+        from kitlib.backlog import opener
+        cfg = opener.open_repo(self.root)[1]
+        self.assertFalse(os.path.exists(
+            os.path.join(self.root, cfg.repo['worktrees_dir'], 'fill-baz')))
+        self.assertEqual(self.store.load().get('BAZ').get('state'), 'open')
+
+    def test_another_sessions_record_and_a_missing_one_are_skipped(self):
+        got = self.pull(['BAR', 'NOPE'], 2)
+        self.assertEqual(got, ([], [('BAR', 'not-theirs'), ('NOPE', 'gone')]))
+        self.assertEqual(self.store.load().get('BAR').get('state'), 'open')
+        trees = self.trees()
+        self.assertNotIn('kit/fill-bar', trees)
+        self.assertNotIn('kit/fill-nope', trees)
+        self.assertEqual((self.branch('kit/fill-bar'), self.branch('kit/fill-nope')), ('', ''))
+
+    def test_a_skip_moves_on_to_the_next_record_up_to_free(self):
+        got = self.pull(['BAZ', 'FOO', 'BAR'], 1)
+        self.assertEqual(got, ([('FOO', 'kit/fill-foo')], [('BAZ', 'refused')]))
+        self.assertNotIn('kit/fill-bar', self.trees())
 
 
 class Keys(unittest.TestCase):

@@ -9,8 +9,10 @@ resets first among those under the limit, else its last account (docs/launcher.m
   owner_wake(key, items, since)      a Wake when an owner answer or a decided approval for the key is
                                      newer than `since` (owner_since: the stopped session's start,
                                      else its stop); owner_items reads them from Sources.pending
-  offered_ids(settings, key, entry)  the record ids `backlog.py next --all` offers the entry's
+  offered_ids(settings, key, entry, session_live=None)
+                                     the record ids `backlog.py next --all` offers the entry's
                                      coordinator (BacklogUnread when the store cannot be read)
+  session_liveness(sessions, live)   the offer's session liveness from one run's own reads
   last_account(entry, record)        the account a coordinator last ran on, or None
   RestartJob(settings, ...)          its run(ctx): the boot one-shot, then read the state, decide
                                      each entry, start one
@@ -49,7 +51,9 @@ is not woken for them again. The offer is read only for an entry held on a delib
 autostart and pace_hold (DOWN_RUNS, the cap, the backoff) pass, through kitlib.backlog
 (opener.open_store with no fetch, plan.offer_for), from the store the repo's .kit.json names, else
 the PM data worktree's (store.pm_data_live_store). A store that cannot be read wakes nothing and is
-a note, not a failure. An owner wake (an answered or filed question it
+a note, not a failure. The wake judges session liveness as `next` does (session_liveness, from the
+run's own sessions.json and process listing): a record of a session that is not running takes no
+place in the offer, so the wake sees what `next` offers. An owner wake (an answered or filed question it
 asked, class ones included, or a decided approval of its repo, newer than the stopped session's
 start) is read first, on the same terms, and needs no baseline. A wake start passes `--prompt` with the reason, the new ids and the
 entry's state note path.
@@ -444,13 +448,25 @@ def store_root(settings, repo):
     return pm_root if pm_root is not None and named is not None else root
 
 
-def read_offer(settings, key, entry, with_cap=False):
+def session_liveness(sessions, live):
+    """The offer's session liveness (kitlib.backlog.offer.SessionLiveness) from one run's own reads:
+    `sessions` the sessions.json it read, `live` the names of the session processes it listed. A
+    fresh one per run: it keeps what it read."""
+    from kitlib.backlog import offer as omod
+    stems = {k: e.get('stem') for k, e in state.entries(sessions or {})}
+    names = list(live)
+    return omod.SessionLiveness(sessions=lambda: stems, names=lambda: names)
+
+
+def read_offer(settings, key, entry, with_cap=False, session_live=None):
     """(ids, holding, cap) for the coordinator of sessions.json entry `key`: the record ids
     `backlog.py next --all` offers it (every session of wake_sessions, the store of store_root),
     in offer order, each once; the store's live pulls (offer.in_flight_split's holding); and,
     with `with_cap`, `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap), else
-    None. No fetch: the hub's own backlog fetch keeps the local store fresh. The same offer `next`
-    prints (plan.offer_for: live pulls, unmet `requires:`, the fold-in guard). BacklogUnread when
+    None. No fetch: the hub's own backlog fetch keeps the local store fresh. `session_live` (an
+    offer.SessionLiveness, session_liveness) judges whether another session's record reserves its
+    scope; None: it always does. With it, the same offer `next` prints (plan.offer_for: live
+    pulls, unmet `requires:`, the fold-in guard, session liveness). BacklogUnread when
     the store or the cap cannot be read (a backlog Refusal, a ConfigError, a PartitionError, an
     OSError). A LaunchError is not caught here: store_root already makes a repo missing from
     launcher.repos BacklogUnread, so any other is a fault of the run. coord-restart's wake
@@ -467,6 +483,7 @@ def read_offer(settings, key, entry, with_cap=False):
             cap = opener.repo_cap(settings.repo_path(repo))
         for session in wake_sessions(key, entry):
             ctx = opener.open_store(root, fetch=False, session=session)
+            ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()
                 holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
@@ -477,10 +494,10 @@ def read_offer(settings, key, entry, with_cap=False):
     return ids, list(holding or ()), cap
 
 
-def offered_ids(settings, key, entry):
-    """The set of record ids read_offer gives the coordinator of sessions.json entry `key`.
-    BacklogUnread when it cannot be read."""
-    return set(read_offer(settings, key, entry)[0])
+def offered_ids(settings, key, entry, session_live=None):
+    """The set of record ids read_offer gives the coordinator of sessions.json entry `key`, with
+    `session_live` as read_offer's. BacklogUnread when it cannot be read."""
+    return set(read_offer(settings, key, entry, session_live=session_live)[0])
 
 
 def owner_items(pending, key):
@@ -536,7 +553,7 @@ class RestartJob(object):
     run_child), `clock` epoch seconds, `kit` the kit checkout whose tools/launch.py runs,
     `uptime()` seconds since boot (default uptime_s), `detached(argv, cwd)` the after-reboot
     start (default spawn_detached), `backlog(key, entry)` the ids the coordinator is offered
-    (default offered_ids; BacklogUnread when unread), `pending(key, entry)` the entry's pending
+    (default offered_ids with the run's session_liveness; BacklogUnread when unread), `pending(key, entry)` the entry's pending
     owner answers and decided approvals (default none; make gives the hub's; OwnerUnread when
     unread)."""
 
@@ -544,7 +561,9 @@ class RestartJob(object):
                  backlog=None, pending=None):
         self.settings = settings
         self.pending = pending or (lambda key, entry: [])
-        self.backlog = backlog or (lambda key, entry: offered_ids(settings, key, entry))
+        self._session_live = None       # this run's session liveness (_run), for the wake
+        self.backlog = backlog or (lambda key, entry: offered_ids(
+            settings, key, entry, session_live=self._session_live))
         self.procs = procs or list_processes
         self.child = child or run_child
         self.clock = clock or time.time
@@ -586,6 +605,7 @@ class RestartJob(object):
         rows = lookup.launched(listed)
         live = {lookup.rc_name(p.get('CommandLine')) for p in rows}
         live.discard(None)
+        self._session_live = session_liveness(sessions, live)
         created = {}
         for p in rows:
             n, t = lookup.rc_name(p.get('CommandLine')), row_created(p)

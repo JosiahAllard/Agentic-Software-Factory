@@ -574,7 +574,7 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked`, `approval-expired` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
@@ -595,11 +595,17 @@ store's git push (the `push` setting).
   record counts as closed only when a commit removed it. Nothing met is a skip, and a store that
   cannot be read or a refused write is a failure once the pass has done the rest; a write whose
   commit landed with the index left stale (`IndexStale`) is an unblock, pushed and counted. A stopped coordinator learns of the
-  opened record from `coord-restart`'s backlog wake; nothing else is pushed.
+  opened record from `coord-restart`'s backlog wake; nothing else is pushed. That wake reads the offer
+  with session liveness as `backlog.py next` does (`coord_restart.session_liveness`, from the run's own
+  sessions.json and process listing), so another session's record whose session is not running holds
+  back nothing it offers.
   `fill-watch` (`kitlib/hubjobs/fill_watch.py`, every 300 s, docs/hub-fill.md) sends a live coordinator
   with a free slot and startable work one `[hub push] fill: N free, M startable: <ids>` message, once per change,
   that says to pull and dispatch unless the PM holds new work or it is checkpointing or standing down,
   and names the auto-pull stand-down when one holds; what it told is kept in `fill-watch.json`.
+  Twenty minutes into an episode with no stand-down the hub pulls up to the free count itself, each record
+  on its own new worktree under Session `hub-fill`, and tells the coordinator what it pulled; a stand-down,
+  or slots the pull left free, push `fill` to the PM once per episode, detail `<key>:<free>:<why>`.
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its

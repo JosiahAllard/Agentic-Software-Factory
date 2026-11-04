@@ -57,6 +57,9 @@ WRITTEN_BY.update((k, 'no verb: an owner gate is a role now (kitlib/backlog/role
                       '`set ID --unset %s` clears it' % k)
                   for k in UNWRITTEN)
 
+# Context.offer_session unset: `session` is the store's.
+_STORE_SESSION = object()
+
 
 class Context(object):
     """What a plan needs beyond the snapshot. `branch` None: the branch checked out in `root`.
@@ -86,6 +89,9 @@ class Context(object):
         # omod.SessionLiveness for an offer (None: another session's record always reserves);
         # only tools/backlog.py sets it, so a program and a test never read the machine.
         self.session_live = None
+        # The session a library caller offers and pulls for while the store commits under its
+        # own (the hub's fill watch: the coordinator's key, Session hub-fill); unset: the store's.
+        self.offer_session = _STORE_SESSION
         self._cap = cap
         self._resources = resources
 
@@ -111,6 +117,8 @@ class Context(object):
 
     @property
     def session(self):
+        if self.offer_session is not _STORE_SESSION:
+            return self.offer_session
         return self.store.session
 
     def date(self):

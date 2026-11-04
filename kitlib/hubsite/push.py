@@ -245,7 +245,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                         'hand off.',
             'unmanaged': _CROSSOVER + 'a session with no sessions.json entry is at the weekly limit '
                          'and this job never crosses it; detail is <session>:<reason> (the reasons: '
-                         'docs/launcher.md "Usage crossover"). It is left to you.'}
+                         'docs/launcher.md "Usage crossover"). It is left to you.',
+            'fill': 'The hub fill watch left a coordinator\'s slots free after its startable work '
+                    'waited 20 minutes; it was already nudged. Detail is <session>:<free '
+                    'slots>:<why>: `unfilled` (the auto-pull filled none or not all of them) or '
+                    'a stand-down code (off, queued, idle, unread, handoff; docs/hub-fill.md). '
+                    'Check on that coordinator: if it is not dispatching, ask it why, or clear '
+                    'what stands the auto-pull down. Once per episode; no reply is needed.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

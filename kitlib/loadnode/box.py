@@ -680,7 +680,8 @@ class Box(object):
         return sorted(found.items())
 
     def fetch(self, job, write):
-        """M the manifest {files: [{path, size, sha256}], error}, F the files' bytes, E."""
+        """M the manifest {files: [{path, size, sha256}], error}, F the files' bytes, E; or X
+        {error} when a file cannot be read (or the job is unknown), and the stream ends there."""
         if not os.path.isdir(self.job_dir(job)):
             write(frames.encode(frames.ERROR, json.dumps({'error': 'no job %s here' % job}).encode()))
             return EXIT_REFUSED

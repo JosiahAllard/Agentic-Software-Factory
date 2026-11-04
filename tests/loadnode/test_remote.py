@@ -229,13 +229,15 @@ class LinkTests(unittest.TestCase):
             procs.append(p)
             return p
 
+        t0 = []
+
         def boom(data):
+            t0.append(time.monotonic())
             raise ValueError('bad frame')
-        t0 = time.monotonic()
         with remote.Link(NODE, ssh=SSH, home=HOME, popen=popen) as link:
             with self.assertRaises(ValueError):
                 link.stream('follow', {}, boom)
-        self.assertLess(time.monotonic() - t0, 10)     # not waiting out the live ssh
+        self.assertLess(time.monotonic() - t0[0], 10)     # not waiting out the live ssh
         self.assertIsNotNone(procs[0].poll())
 
     def test_a_silent_node_is_ended_as_idle(self):

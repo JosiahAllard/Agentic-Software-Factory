@@ -221,9 +221,9 @@ class Deep(Base):
 
 class Consultant(Base):
     def test_consultant_repo_slug(self):
-        self.assertEqual(start.consultant_repo("Agentic-Project_Manager-Kit"), "agentic-project-manager-kit")
-        self.assertEqual(start.consultant_repo("GriffBall"), "griffball")
-        self.assertEqual(start.consultant_repo("retribution"), "retribution")
+        self.assertEqual(start.consultant_repo("Big_Repo-Name"), "big-repo-name")
+        self.assertEqual(start.consultant_repo("MixedCase"), "mixedcase")
+        self.assertEqual(start.consultant_repo("plainname"), "plainname")
         self.assertEqual(start.consultant_repo("My Repo"), "my repo")     # not slug-safe: consultant() refuses it
 
     def setUp(self):

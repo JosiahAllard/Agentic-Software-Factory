@@ -151,6 +151,16 @@ class Entries(unittest.TestCase):
         from kitlib import hubmcp
         self.assertFalse(names & set(hubmcp.OWNER_ONLY))
 
+    def test_the_blender_server_lists_its_tools_and_starts_no_blender(self):
+        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}]
+        r = self.run_entry(PLUGIN, MCP + 'blender_server.py', '\n'.join(json.dumps(q) for q in requests) + '\n')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        first, second = [json.loads(line) for line in r.stdout.splitlines()]
+        self.assertEqual(first['result']['serverInfo']['name'], 'blender')
+        from kitlib import blendermcp
+        self.assertEqual(tuple(t['name'] for t in second['result']['tools']), blendermcp.TOOL_NAMES)
+
 
 if __name__ == '__main__':
     unittest.main()

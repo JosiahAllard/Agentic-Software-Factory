@@ -191,7 +191,8 @@ class Manifests(unittest.TestCase):
         # Codex starts a plugin's MCP server in its cache copy and expands no ${PLUGIN_ROOT}.
         servers = json.loads(files[cc.MCP_REL])
         self.assertEqual(sorted(servers), ['mcpServers'])
-        for name, script in (('machine-lock', 'lock_server.py'), ('hub', 'hub_server.py')):
+        for name, script in (('machine-lock', 'lock_server.py'), ('hub', 'hub_server.py'),
+                             ('blender', 'blender_server.py')):
             server = servers['mcpServers'][name]
             self.assertEqual(server['args'], ['hosts/codex/shell/mcp/' + script])
             self.assertEqual(server['cwd'], '.')
@@ -226,7 +227,7 @@ class Manifests(unittest.TestCase):
         files = cc.renderer().manifests(kcontent.load_kit(ROOT), kcontent.load(ROOT))
         windows = json.loads(files[cc.MCP_REL])
         linux = json.loads(files['hosts/codex/shell/mcp.linux.json'])
-        self.assertEqual(sorted(linux['mcpServers']), ['hub', 'machine-lock'])
+        self.assertEqual(sorted(linux['mcpServers']), ['blender', 'hub', 'machine-lock'])
         for name, server in windows['mcpServers'].items():
             self.assertEqual(server['command'], 'python')
             self.assertEqual(linux['mcpServers'][name], dict(server, command='python3'))
@@ -247,7 +248,7 @@ class Manifests(unittest.TestCase):
         with open(os.path.join(ROOT, '.claude-plugin', 'plugin.json'), encoding='utf-8') as f:
             claude = set(json.load(f)['mcpServers'])
         self.assertEqual(codex, claude)
-        self.assertEqual(codex, {'machine-lock', 'hub'})
+        self.assertEqual(codex, {'machine-lock', 'hub', 'blender'})
 
     def test_the_hook_events_must_match_hosts_json(self):
         r = cc.renderer()

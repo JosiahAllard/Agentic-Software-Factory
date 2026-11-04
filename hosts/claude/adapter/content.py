@@ -15,7 +15,7 @@ docs/multi-host-plan.md section 7).
 manifests(kit, content) writes the files that carry the kit's one version (kit.json; ARCHITECTURE.md
 "Packaging"), each JSON with indent 2 and a final newline:
 - `.claude-plugin/plugin.json`: kit.json's name and version, every agent file, SKILLS_REL (the
-  kit's own `content/skills/`), HOOKS_REL and the MCP servers (MCP_SERVERS: the machine lock's and the hub's). It stays at the kit
+  kit's own `content/skills/`), HOOKS_REL and the MCP servers (MCP_SERVERS: the machine lock's, the hub's and the Blender bridge's). It stays at the kit
   root: the plugin root is the whole kit, since its hooks and MCP server run kitlib and tools beside them (${CLAUDE_PLUGIN_ROOT}).
   That is the Windows file; each other platform hosts.json gives Claude gets the same manifest with
   that platform's MCP interpreter (mcp_servers) in manifest_rel(platform),
@@ -60,7 +60,8 @@ HOOKS = (
     ('SubagentStart', None, None),
 )
 MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/lock_server.py']},
-               'hub': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/hub_server.py']}}
+               'hub': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/hub_server.py']},
+               'blender': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/blender_server.py']}}
 
 
 def mcp_servers(platform='windows'):

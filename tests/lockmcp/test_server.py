@@ -318,7 +318,7 @@ class Manifest(unittest.TestCase):
     def test_the_plugin_starts_this_server(self):
         with open(os.path.join(REPO, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
             m = json.load(f)
-        self.assertEqual(set(m["mcpServers"]), {"machine-lock", "hub"})   # the whole set, pinned
+        self.assertEqual(set(m["mcpServers"]), {"machine-lock", "hub", "blender"})   # the whole set, pinned
         s = m["mcpServers"]["machine-lock"]
         self.assertEqual(s["args"], ["${CLAUDE_PLUGIN_ROOT}/mcp/lock_server.py"])
         self.assertTrue(os.path.isfile(ENTRY))

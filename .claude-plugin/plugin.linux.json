@@ -34,6 +34,12 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/hub_server.py"
       ]
+    },
+    "blender": {
+      "command": "python3",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/blender_server.py"
+      ]
     }
   }
 }

@@ -2,21 +2,35 @@
 """Asset generation for art agents through the owner's local ComfyUI.
 
 Free by construction: talks only to ComfyUI on this machine (127.0.0.1:8188),
-never downloads models, installs nodes or calls a paid/API node. Every command
-below `check`/`free`/`stop` starts ComfyUI itself if it is not already up
-(headless where possible, else the Comfy Desktop app the owner uses)
-and, if it is the one who started it, shuts it down again after the job or
-~10 idle minutes. A ComfyUI the owner started by hand is left running; agents
-still reach it only through this tool. If it cannot be reached even after
+never downloads models, installs nodes or calls a paid/API node. ComfyUI is started
+headless, never through the Comfy Desktop app, and agents never ask the owner to open
+Desktop: the install's own venv python runs ComfyUI/main.py directly, with no window,
+in a job object of the process that started it, so it ends when that process ends.
+The install is read (read-only) from Comfy Desktop's installations.json.
+
+Two ways to use it:
+  up / down    a session for an art run: `up` books a detached local-ai machine-lock run
+               (resource comfy-port:<port>) whose keeper (the hidden `serve`) starts
+               ComfyUI, waits up to --ready seconds (default 300) for it to answer and
+               keeps it up; generating commands then book nothing of their own. It ends
+               on `down`, at its --for limit, after ~10 idle minutes with an empty queue,
+               or when the lock stops the run; a crashed server ends it too.
+  one command  with no session, every generating command books its own local-ai run,
+               starts ComfyUI if it is not up, and its server ends with the command.
+A ComfyUI the owner started (port 8188 answering, not started by this tool) is used as
+it is and never stopped. A port that is held but does not answer is waited for while
+Comfy Desktop is still starting it (its comfy-procs file names the listener), and
+otherwise refused, naming the process. If ComfyUI cannot be reached even after
 trying to start it, or it stops answering mid-run, the command exits 2 with a
 GENERATOR UNAVAILABLE error naming any files it already saved: the run stops there and
 the agent reports the outage. It never writes prompts or placeholders in place of outputs.
 
 Commands (all take --out DIR --name STEM; see `<command> --help`):
   check                         ComfyUI up? which approved models are present?
+  up      [--for S] [--ready S] [--lock-wait S]   start a session (prints its run id)
+  down                          end the session `up` started
   free                          unload models + free RAM/VRAM (run when your work is done)
-  stop                          stop ComfyUI if this tool started it (manual; the idle
-                                watcher calls the same code automatically)
+  stop                          stop ComfyUI if this tool started it (a session: as `down`)
   image   --prompt  [--model zimage|krea2] [--width --height --count --seed]
   edit    --image A [--image2 B] --prompt       Qwen-Image-Edit 2511 (4-step)
   rembg   --image A                             BiRefNet background removal -> RGBA PNG
@@ -38,11 +52,10 @@ settings, date, seconds taken) for the repository's ATTRIBUTIONS row.
 
 GPU etiquette: generation shares the GPU with the game engine. Serialising
 generations against each other and against the repos' engine, network and
-render runs is the machine lock's job: every generating command runs as a
-local-ai machine-lock run (the slot is held for the command, waiting up to
---lock-wait seconds, at most 540), and with no machine lock tool it refuses
-(exit 2). When that run's slot ends, a ComfyUI
-this tool started is stopped and a local ComfyUI has its models unloaded if
+render runs is the machine lock's job: a session, or else every generating command,
+is a local-ai machine-lock run holding the resource comfy-port:<port> (a command waits
+up to --lock-wait seconds, at most 540), and with no machine lock tool it refuses
+(exit 2). When a command's run ends, a local ComfyUI has its models unloaded if
 idle (the hidden `release` command, the run's --on-release). One
 command is one slice: keep it under ~10 minutes. Keep images near 1 MP, and never
 generate during a measurement window.
@@ -129,33 +142,33 @@ MAX_PIXELS = 2_100_000
 
 
 # ---------------------------------------------------------------- ComfyUI lifecycle
-# Before that the owner always started ComfyUI by hand (a taskbar shortcut to Comfy Desktop);
-# agents only ever found it up or not. Now `ensure_running()` may start it, headless where
-# possible, and this tool shuts down only what IT started - a ComfyUI the owner started is
-# never touched. Design: one small state file under <shared temp>\comfy_gen\ records the pid, its
-# creation time (so a reused pid is never mistaken for ours - see winproc.terminate_verified)
-# and when it was last used; a detached "idle watcher" process (this script re-invoked as
-# `stop --idle-watch`) wakes every 60s and stops ComfyUI once ~10 minutes have passed with no
-# job touching last_used and the queue is empty. A watcher is simpler and more robust here than
-# a foreground timer thread: it survives this process exiting (every command is one-shot) and
-# a crashed watcher just means ComfyUI is not auto-stopped, not that it is wrongly stopped.
-# The shared temp (SHARED_TEMP), else LOCALAPPDATA\Temp, never TEMP: `stop` from the owner's
-# shell must find the state an agent wrote, even when agents run with TEMP moved
+# This tool starts ComfyUI itself, headless: the install's venv python runs ComfyUI/main.py with
+# the arguments Comfy Desktop would give it (_direct_launch_command), never the Desktop app,
+# whose own start (venv re-sync, pygit2 setup) took ~4 minutes here and outlived the old 120 s
+# wait. The server runs in a kill-on-close job object of the process that started it
+# (_start_server): a one-shot command's server ends with the command, a session's with its
+# keeper (`serve`), however either ends, crash and kill included. It shuts down only what IT
+# started - a ComfyUI the owner started is never touched. One small state file under
+# <shared temp>\comfy_gen\ records the server's pid and creation time (so a reused pid is never
+# mistaken for ours - see winproc.terminate_verified), when it was last used, and for a session
+# its lock run id and keeper. The shared temp (SHARED_TEMP), else LOCALAPPDATA\Temp, never TEMP:
+# `stop` from the owner's shell must find the state an agent wrote, even when agents run with
+# TEMP moved
 STATE_DIR = (os.path.join(SHARED_TEMP, "comfy_gen") if SHARED_TEMP else
              os.path.join(os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or ".", "Temp",
                           "comfy_gen"))
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 IDLE_STOP_SECONDS = 600
-DESKTOP_EXE_DEFAULT = r"C:\Program Files\Comfy Desktop\Comfy Desktop.exe"   # the installer's default
-
-
-def desktop_exe(env=os.environ):
-    """Comfy Desktop's exe: COMFY_DESKTOP_EXE when set, else the installer's default."""
-    return env.get("COMFY_DESKTOP_EXE") or DESKTOP_EXE_DEFAULT
-
-
-DESKTOP_EXE = desktop_exe()
+READY_SECONDS = 300          # a cold start: venv check, custom nodes, the model scan
+SESSION_SECONDS = 3600       # `up --for` default: the most a session lives
+POLL_SECONDS = 5             # the keeper's loop
+DOWN_WAIT_SECONDS = 30       # `down`: how long the keeper gets to end on its request
+LOCK_CALL_SECONDS = 120      # a machine_lock.py call (_run_quiet) that takes longer is reported
+LOG_TAIL = 1500              # bytes of a server log quoted when it fails
 APPDATA_COMFY = os.path.join(os.environ.get("APPDATA", ""), "Comfy Desktop")
+NO_INSTALL = ("cannot start ComfyUI: no local install in Comfy Desktop's installations.json "
+              "(an entry with an installPath holding ComfyUI\\.venv\\Scripts\\python.exe and "
+              "ComfyUI\\main.py) under {}. Report it: agents never start the Desktop app, nor ask the owner to.")
 
 
 def _now():
@@ -229,11 +242,18 @@ def _reachable(timeout=3):
         return False
 
 
-def _wait_for_stats(wait):
+def _wait_for_stats(wait, session=None):
+    """Wait up to `wait` seconds for ComfyUI to answer. With `session` (a run id), stop early once
+    the state says that session failed, was asked to end, or is gone: nothing will answer then."""
     deadline = time.time() + wait
     while time.time() < deadline:
         if _reachable():
             return True
+        if session:
+            state = read_state()
+            if (not state or state.get("rid") != session or state.get("failed")
+                    or _down_requested(state)):
+                return False
         time.sleep(2)
     return False
 
@@ -261,19 +281,37 @@ def _agent_output_dir():
     return path
 
 
+def _host_port():
+    """(host, port) this tool talks to: C.HOST, which COMFY_URL sets."""
+    parsed = urllib.parse.urlparse(C.HOST)
+    return parsed.hostname or "127.0.0.1", parsed.port or 8188
+
+
+def _pick_install(installs, last_id):
+    """The install to start: the one last-session.json names when it is a local install (it has
+    an installPath; a Comfy Cloud entry has none), else the first local install listed. None when
+    there is none."""
+    local = [i for i in installs if isinstance(i, dict) and i.get("installPath")]
+    return next((i for i in local if i.get("id") == last_id), local[0] if local else None)
+
+
 def _direct_launch_command():
-    """The exact command Comfy Desktop would use for its last-opened install: the venv python
-    running ComfyUI/main.py from the install path, with the same extra-model-paths config and
-    input/output directories, and the install's own launchArgs. Read-only: nothing here is
-    written to the Comfy Desktop config. Returns (argv, cwd) or (None, None) if any piece of
-    that config is missing (caller falls back to Comfy Desktop.exe)."""
+    """The command Comfy Desktop would use for its install: the venv python running
+    ComfyUI/main.py from the install path, with the same extra-model-paths config and
+    input/output directories and the install's own launchArgs, headless on C.HOST's port.
+    Read-only: nothing here is written to the Comfy Desktop config. Returns (argv, cwd), or
+    (None, None) when there is no local install or a piece of it is missing."""
     try:
-        with open(os.path.join(APPDATA_COMFY, "last-session.json"), encoding="utf-8") as f:
-            inst_id = json.load(f)["installationId"]
+        try:
+            with open(os.path.join(APPDATA_COMFY, "last-session.json"), encoding="utf-8") as f:
+                last_id = json.load(f).get("installationId")
+        except (OSError, ValueError, AttributeError):
+            last_id = None
         with open(os.path.join(APPDATA_COMFY, "installations.json"), encoding="utf-8") as f:
-            installs = json.load(f)
-        inst = next(i for i in installs if i.get("id") == inst_id)
-        install_path = inst["installPath"]
+            inst = _pick_install(json.load(f), last_id)
+        if inst is None:
+            return None, None
+        inst_id, install_path = inst.get("id"), inst["installPath"]
         python_exe = os.path.join(install_path, "ComfyUI", ".venv", "Scripts", "python.exe")
         main_py = os.path.join("ComfyUI", "main.py")
         if not os.path.isfile(python_exe) or not os.path.isfile(os.path.join(install_path, main_py)):
@@ -298,88 +336,251 @@ def _direct_launch_command():
                  for a in shlex.split(inst.get("launchArgs") or "", posix=False)]
         # Headless and on the same host/port this tool talks to (C.HOST), forced last so an
         # earlier occurrence in launchArgs never wins (argparse keeps the last of a repeated flag).
-        parsed = urllib.parse.urlparse(C.HOST)
-        args += ["--listen", parsed.hostname or "127.0.0.1", "--port", str(parsed.port or 8188),
-                 "--disable-auto-launch"]
+        host, port = _host_port()
+        args += ["--listen", host, "--port", str(port), "--disable-auto-launch"]
         return [python_exe] + args, install_path
-    except (FileNotFoundError, KeyError, ValueError, StopIteration, OSError):
+    except (FileNotFoundError, KeyError, ValueError, TypeError, OSError):
         return None, None
 
 
-def _desktop_launch_command():
-    """Fallback when the direct config above is not (fully) reproducible: start the Comfy Desktop
-    app itself, the same way the owner's taskbar shortcut does. Less reliable to know exactly
-    when /system_stats will answer (Electron startup, possibly a GUI window) but always available
-    when the app is installed."""
-    if not os.path.isfile(DESKTOP_EXE):
-        return None, None
-    return [DESKTOP_EXE], None
+def _new_log():
+    return os.path.join(STATE_DIR, f"comfy-{datetime.datetime.now():%Y%m%d-%H%M%S}.log")
+
+
+def _tail(path):
+    """The last LOG_TAIL bytes of a server log, '' when it cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - LOG_TAIL))
+            return f.read().decode("utf-8", "replace").strip()
+    except OSError:
+        return ""
+
+
+def _listening(port):
+    """The pids that listen on TCP `port` now (kitlib.proc.tcp.listeners; a Linux row's pid is
+    None). Empty when the table cannot be read or the kit library is missing."""
+    try:
+        from kitlib.proc import tcp
+        return {pid for end, pid in tcp.listeners() if end[2] == port}
+    except (ImportError, OSError):
+        return set()
+
+
+def _describe(pid):
+    if pid is None:
+        return "a process whose owner cannot be read"
+    return f"pid {pid} ({W.details(pid).get('image') or 'image unreadable'})"
+
+
+def _desktop_child(pid, port):
+    """Is `pid` the ComfyUI Comfy Desktop runs on `port`: does a comfy-procs/<id>.json of Desktop's
+    name it (its childPid, or a pid in its tree) with no stop asked?"""
+    folder = os.path.join(APPDATA_COMFY, "comfy-procs")
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return False
+    for name in names:
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                rec = json.load(f)
+            if rec.get("port") != port or rec.get("stopRequestedAt"):
+                continue
+            pids = {rec.get("childPid")} | {t.get("pid") for t in rec.get("tree") or []}
+        except (OSError, ValueError, AttributeError, TypeError):
+            continue
+        if pid is not None and pid in pids:
+            return True
+    return False
+
+
+def _port_held(wait):
+    """The port check before a start, with nothing answering at C.HOST. None when nothing listens
+    on its port. Comfy Desktop's ComfyUI still starting there is waited for, up to `wait`
+    seconds: True once it answers (the owner's: use it as it is). Anything else listening there
+    raises RuntimeError naming the process; nothing is started beside it."""
+    _host, port = _host_port()
+    pids = _listening(port)
+    if not pids:
+        return None
+    if any(_desktop_child(p, port) for p in pids):
+        print(f"[comfy_gen] Comfy Desktop is starting ComfyUI on port {port}; waiting up to {wait}s "
+              "for it", file=sys.stderr)
+        if _wait_for_stats(wait):
+            return True
+        raise RuntimeError(f"Comfy Desktop's ComfyUI on port {port} did not answer within {wait}s; "
+                           "this tool starts none beside it")
+    raise RuntimeError(f"cannot start ComfyUI: port {port} is held by "
+                       + ", ".join(_describe(p) for p in sorted(pids, key=str))
+                       + ", which does not answer as ComfyUI; nothing was started")
+
+
+def _start_server(cmd, cwd, log_path):
+    """Start ComfyUI (`cmd`, from _direct_launch_command) in a kill-on-close job object of this
+    process (kitlib.proc.job.Job): when this process ends, however it ends, the job's handle closes
+    and ComfyUI ends with every process it started. No breakaway, no window (Job.start adds
+    CREATE_NO_WINDOW for a parent with no console). Returns (job, proc); the caller keeps the job
+    open while the server should live. RuntimeError off Windows or with no kit library; OSError
+    when the command cannot start."""
+    try:
+        from kitlib import platform as kplatform    # imports no other kitlib: loads anywhere
+    except ImportError:
+        raise RuntimeError(f"cannot start ComfyUI: no kit library (kitlib.platform) at {KIT_ROOT}")
+    if kplatform.NAME != "windows":
+        raise RuntimeError("cannot start ComfyUI: this tool starts it on Windows only")
+    try:
+        from kitlib.proc.job import Job
+    except ImportError:
+        raise RuntimeError(f"cannot start ComfyUI: no kit library (kitlib.proc.job) at {KIT_ROOT}")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    job = Job(kill_on_close=True)
+    try:
+        with open(log_path, "ab") as logf:
+            proc = job.start(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=logf,
+                             stderr=subprocess.STDOUT)
+    except BaseException:
+        job.close()
+        raise
+    return job, proc
+
+
+def _ours(job, proc, pid):
+    """Is the listener `pid` the ComfyUI just started (its process, or one its job holds)? None (a
+    Linux listener, its owner unread) counts as ours."""
+    if pid is None or pid == proc.pid:
+        return True
+    try:
+        return job.contains(pid) == "in"
+    except Exception:
+        return False
+
+
+def _wait_ready(proc, job, ready_s, log_path):
+    """Wait up to `ready_s` seconds for the ComfyUI just started to answer at C.HOST. None once it
+    answers on a listener of its own; else why not, with its log's tail where that helps: it
+    exited first (no use waiting on), another process took the port, or the time ran out."""
+    _host, port = _host_port()
+    deadline = time.monotonic() + ready_s
+    while True:
+        code = proc.poll()
+        if code is not None:
+            return (f"ComfyUI exited with code {code} before it answered; its log {log_path} "
+                    f"ends:\n{_tail(log_path)}")
+        foreign = [p for p in _listening(port) if not _ours(job, proc, p)]
+        if foreign:
+            return (f"port {port} was taken by {_describe(foreign[0])}, not the ComfyUI this tool "
+                    "started; that one is ended and the other process left alone")
+        if _reachable():
+            return None
+        if time.monotonic() >= deadline:
+            return (f"ComfyUI did not answer at {C.HOST} within {ready_s}s of starting it; its log "
+                    f"{log_path} ends:\n{_tail(log_path)}")
+        time.sleep(2)
+
+
+_JOBS = []   # the job of a ComfyUI this command started, open while this process lives
+_IN_LOCK_RUN = False   # set by machine_lock_rerun in the re-run: this command holds its own slot
 
 
 def _launch(wait):
+    """Start ComfyUI for this one command and wait for it (_wait_ready). The server lives in this
+    process's job (_start_server), so it ends with the command; the run's release then finds it
+    gone. Only a command in its own local-ai lock run (_IN_LOCK_RUN) may start one: a command that
+    joined a session (and so booked nothing) is refused once that session has ended. Raises
+    RuntimeError with why when it cannot start or does not answer."""
     cmd, cwd = _direct_launch_command()
-    source = "direct"
     if cmd is None:
-        cmd, cwd = _desktop_launch_command()
-        source = "desktop-exe"
-        if cmd is None:
-            raise RuntimeError("cannot start ComfyUI: no Comfy Desktop config at "
-                              f"{APPDATA_COMFY} and no {DESKTOP_EXE}")
-    print(f"[comfy_gen] ComfyUI not reachable at {C.HOST}; starting it ({source})", file=sys.stderr)
-    os.makedirs(STATE_DIR, exist_ok=True)
-    log_path = os.path.join(STATE_DIR, f"comfy-{datetime.datetime.now():%Y%m%d-%H%M%S}.log")
-    logf = open(log_path, "ab")
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-    proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT,
-                            creationflags=flags, close_fds=True)
-    d = W.details(proc.pid)
-    write_state({"pid": proc.pid, "ctime": d["ctime"], "cmd": " ".join(cmd), "source": source,
-                "log": log_path, "started": _iso(_now()), "last_used": _iso(_now())})
-    print(f"[comfy_gen] ComfyUI starting, pid {proc.pid}; log: {log_path}", file=sys.stderr)
-
-
-def _ensure_watcher(state):
-    """A detached `stop --idle-watch` for this ComfyUI, unless one is already running."""
-    wpid = state.get("watcher_pid")
-    if wpid and W.details(wpid)["ctime"] is not None:
-        return
+        raise RuntimeError(NO_INSTALL.format(APPDATA_COMFY))
+    if not _IN_LOCK_RUN:
+        raise RuntimeError(f"ComfyUI is not running at {C.HOST} and this command holds no local-ai "
+                           "slot (it joined a session that has since ended, so it booked none); "
+                           "nothing was started. Run the command again: it books its own slot. "
+                           "Or `comfy_gen.py up` first for a new session.")
+    print(f"[comfy_gen] ComfyUI not reachable at {C.HOST}; starting it headless", file=sys.stderr)
+    log_path = _new_log()
     try:
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-        p = subprocess.Popen([sys.executable, "-B", os.path.abspath(__file__), "stop", "--idle-watch"],
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=flags, close_fds=True)
+        job, proc = _start_server(cmd, cwd, log_path)
     except OSError as e:
-        print(f"[comfy_gen] could not start the idle watcher: {e} "
-              "(ComfyUI will stay up until `stop` is run by hand)", file=sys.stderr)
-        return
-    state["watcher_pid"] = p.pid
-    write_state(state)
+        raise RuntimeError(f"cannot start ComfyUI ({cmd[0]}): {e}")
+    _JOBS.append(job)
+    write_state({"pid": proc.pid, "ctime": W.details(proc.pid)["ctime"],
+                 "cmd": subprocess.list2cmdline(cmd), "source": "direct", "log": log_path,
+                 "started": _iso(_now()), "last_used": _iso(_now())})
+    print(f"[comfy_gen] ComfyUI starting, pid {proc.pid}; log: {log_path}", file=sys.stderr)
+    why = _wait_ready(proc, job, wait, log_path)
+    if why:
+        job.terminate()
+        clear_state()
+        raise RuntimeError(why)
 
 
-def ensure_running(wait=120):
+def _down_path(rid):
+    """The file `down` makes to end session `rid`. A file of its own, never a field of the state:
+    every writer of the state rewrites it whole, so a flag there could be lost."""
+    return os.path.join(STATE_DIR, f"down-{rid}")
+
+
+def _request_down(rid):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(_down_path(rid), "w", encoding="utf-8") as f:
+        f.write(_iso(_now()))
+
+
+def _down_requested(state):
+    return bool(state and (state.get("down")
+                           or (state.get("rid") and os.path.exists(_down_path(state["rid"])))))
+
+
+def _clear_down(rid):
+    try:
+        os.remove(_down_path(rid))
+    except OSError:
+        pass
+
+
+def _session_live(state):
+    """Is `state` a session's (`up`) whose keeper is still the process it recorded, not failed and
+    not asked to end?"""
+    return bool(state and state.get("rid") and state.get("keeper_pid") is not None
+                and not state.get("failed") and not _down_requested(state)
+                and _pid_alive_at(state["keeper_pid"], state.get("keeper_ctime")))
+
+
+def ensure_running(wait=READY_SECONDS):
     """Make sure ComfyUI answers at C.HOST, starting it if needed. Returns True when THIS tool
-    owns the running ComfyUI (freshly started, or still the one it started earlier) - the only
-    case `stop`/the idle watcher will ever touch it. Returns False when it was already reachable
-    and is not ours: the owner started it by hand, and it is left running untouched."""
+    owns the running ComfyUI (a session's, or one this command started) - the only kind `stop`
+    and `release` will ever touch. Returns False when it was already reachable and is not ours:
+    the owner started it, and it is left running untouched. Raises RuntimeError when it cannot
+    be had (why, and the server log's tail when it started one)."""
     state = read_state()
     if _reachable():
         if _tool_started_and_alive(state or {}):
-            touch_last_used(state)
-            _ensure_watcher(read_state())
+            touch_last_used()    # re-read: the keeper may have written since
             return True
-        if state:
+        if state and not _session_live(state):
             clear_state()   # stale record: a previous run of ours, now gone or pid reused
         return False
-    if not _tool_started_and_alive(state or {}):
-        clear_state()
-        _launch(wait)
-    if not _wait_for_stats(wait):
-        state = read_state()
-        raise RuntimeError(f"ComfyUI did not answer at {C.HOST} within {wait}s of starting it"
-                          + (f" (log: {state['log']})" if state else ""))
-    state = read_state()
-    touch_last_used(state)
-    _ensure_watcher(state)
+    if _session_live(state) or _tool_started_and_alive(state or {}):
+        # a session's ComfyUI `up` is starting, or ours from an earlier start still booting:
+        # wait for that one, never start a second
+        if not _wait_for_stats(wait, session=state.get("rid")):
+            now = read_state() or {}
+            if state.get("rid") and now.get("rid") == state["rid"] and now.get("failed"):
+                raise RuntimeError(f"ComfyUI session {now['rid']} failed: {now['failed']}")
+            if state.get("rid") and (now.get("rid") != state["rid"] or _down_requested(now)):
+                raise RuntimeError(f"ComfyUI session {state['rid']} ended before it answered; run "
+                                   "the command again (or `comfy_gen.py up` first)")
+            raise RuntimeError(f"ComfyUI did not answer at {C.HOST} within {wait}s"
+                               + (f" (log: {state['log']})" if state.get("log") else ""))
+        touch_last_used()
+        return True
+    clear_state()
+    if _port_held(wait):
+        return False
+    _launch(wait)
+    touch_last_used()
     return True
 
 
@@ -410,35 +611,250 @@ def _stop_now(manual):
     return 0
 
 
-def _watch_and_stop():
-    """Idle watcher body (`stop --idle-watch`): wake every 60s; stop once ~10 minutes have
-    passed since the last job touched last_used and the queue is empty; exit the moment the
-    state file no longer names this same pid (someone already stopped it, or replaced it)."""
+def cmd_stop(args):
     state = read_state()
-    if not state:
-        return 0
-    watch_pid, watch_ctime = state.get("pid"), state.get("ctime")
+    if state and state.get("rid"):
+        return cmd_down(args)
+    return _stop_now(manual=True)
+
+
+# ---------------------------------------------------------------- the session (up / serve / down)
+def _queue_busy():
+    """Is a job running or queued on ComfyUI? An unreachable ComfyUI is not busy."""
+    try:
+        q = C.get_json("/queue", timeout=5)
+        return bool(q.get("queue_running") or q.get("queue_pending"))
+    except Exception:
+        return False
+
+
+def _keep(proc):
+    """The keeper's loop, every POLL_SECONDS. It returns, for its caller to end the server, when
+    the server has exited (a crash: why is recorded for `up` and `check`; exit 3), `down` has asked
+    (_down_requested), the session's --for time is up, it has been idle IDLE_STOP_SECONDS with an
+    empty queue, or the state no longer names this keeper."""
+    me = os.getpid()
     while True:
-        time.sleep(60)
+        time.sleep(POLL_SECONDS)
         state = read_state()
-        if not state or state.get("pid") != watch_pid or state.get("ctime") != watch_ctime:
+        code = proc.poll()
+        if code is not None:
+            log = (state or {}).get("log") or "?"
+            why = f"ComfyUI exited with code {code} during the session; its log {log} ends:\n{_tail(log)}"
+            if state and state.get("keeper_pid") == me:
+                state.update(failed=why, ready=False)
+                write_state(state)
+            print(why, file=sys.stderr)
+            return 3
+        if not state or state.get("keeper_pid") != me:
+            print("[comfy_gen] serve: the state no longer names this session; ending it")
+            return 0
+        if _down_requested(state):
+            print("[comfy_gen] serve: `down` asked; ending the session")
+            return 0
+        until = _parse_iso(state.get("until"))
+        if until is not None and _now() >= until:
+            print("[comfy_gen] serve: the session's --for time is up; ending it")
             return 0
         last = _parse_iso(state.get("last_used")) or _now()
-        if (_now() - last).total_seconds() < IDLE_STOP_SECONDS:
-            continue
-        try:
-            q = C.get_json("/queue", timeout=5)
-            if q.get("queue_running") or q.get("queue_pending"):
-                continue
-        except Exception:
-            pass   # unreachable is not "busy": stop it rather than leak it forever
-        return _stop_now(manual=False)
+        if (_now() - last).total_seconds() >= IDLE_STOP_SECONDS and not _queue_busy():
+            print(f"[comfy_gen] serve: idle {IDLE_STOP_SECONDS // 60} minutes; ending the session")
+            return 0
 
 
-def cmd_stop(args):
-    if getattr(args, "idle_watch", False):
-        return _watch_and_stop()
-    return _stop_now(manual=True)
+def cmd_serve(args):
+    """The session's keeper (internal: the command of `up`'s detached local-ai lock run). It starts
+    ComfyUI in a job of its own, waits for it, records it in the state (its run id, this keeper,
+    the server, ready or why it failed), keeps it (_keep) and ends it, whatever ends this: the
+    job closes with this process too, so a killed keeper takes ComfyUI along."""
+    rid = os.environ.get("MACHINE_LOCK_RUN", "").split(":")[0]
+    me, now = os.getpid(), _now()
+    prior = read_state()
+    state = {"rid": rid, "keeper_pid": me, "keeper_ctime": W.details(me)["ctime"],
+             "started": _iso(now), "last_used": _iso(now), "ready": False,
+             "until": _iso(now + datetime.timedelta(seconds=args.ttl))}
+
+    def fail(why, code):
+        state["failed"] = why
+        write_state(state)
+        print(why, file=sys.stderr)
+        return code
+
+    if _reachable():
+        if _tool_started_and_alive(prior or {}):
+            # this tool's ComfyUI (another session's, or a command's own): its record stays, so
+            # whoever owns it still ends it
+            whose = (f"session {prior['rid']}'s" if prior.get("rid") else
+                     "another comfy_gen command's own (it ends with that command)")
+            print(f"ComfyUI already answers at {C.HOST}: it is {whose}; no session started. Run "
+                  "`up` again once it has gone.", file=sys.stderr)
+            return 3
+        return fail(f"ComfyUI already answers at {C.HOST}, started outside this tool: use it as "
+                    "it is; no session started", 3)
+    try:
+        if _port_held(args.ready):
+            return fail(f"Comfy Desktop's ComfyUI now answers at {C.HOST}: use it as it is; no "
+                        "session started", 3)
+    except RuntimeError as e:
+        return fail(str(e), 2)
+    cmd, cwd = _direct_launch_command()
+    if cmd is None:
+        return fail(NO_INSTALL.format(APPDATA_COMFY), 2)
+    log_path = _new_log()
+    try:
+        job, proc = _start_server(cmd, cwd, log_path)
+    except (OSError, RuntimeError) as e:
+        return fail(f"cannot start ComfyUI ({cmd[0]}): {e}", 2)
+    try:
+        state.update(pid=proc.pid, ctime=W.details(proc.pid)["ctime"], log=log_path,
+                     cmd=subprocess.list2cmdline(cmd), source="session")
+        write_state(state)
+        print(f"[comfy_gen] serve: session {rid}: ComfyUI pid {proc.pid} starting; log {log_path}",
+              flush=True)
+        why = _wait_ready(proc, job, args.ready, log_path)
+        if why:
+            return fail(why, 2)
+        state.update(ready=True, last_used=_iso(_now()))
+        write_state(state)
+        print(f"[comfy_gen] serve: ComfyUI up at {C.HOST}", flush=True)
+        return _keep(proc)
+    finally:
+        job.terminate()
+        job.close()
+        final = read_state()
+        if final and final.get("keeper_pid") == me and not final.get("failed"):
+            clear_state()
+        _clear_down(rid)
+
+
+def _lock_cmd(*args):
+    return [sys.executable, "-B", MACHINE_LOCK_TOOL] + list(args)
+
+
+def _run_quiet(cmd):
+    """A machine_lock.py call, its output captured, so it needs no console of ours: no window. One
+    that does not answer within LOCK_CALL_SECONDS comes back as exit 124 with why in stderr."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=LOCK_CALL_SECONDS,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as e:
+        return subprocess.CompletedProcess(cmd, 124, stdout="",
+                                           stderr=f"machine_lock.py did not answer within "
+                                                  f"{e.timeout:g}s")
+
+
+def _await_session(rid, pid, ctime, wait_s):
+    """Wait for session `rid` to be ready, as its keeper writes it in the state. `pid` (created at
+    `ctime`) is its lock run's wrapper, or its keeper: alive while the run is. 0 once ready; 2 when
+    the keeper recorded why it failed, the run ended first, or `wait_s` ran out (the run is then
+    stopped)."""
+    deadline = time.monotonic() + wait_s
+    while True:
+        state = read_state()
+        if state and state.get("rid") == rid:
+            if state.get("failed"):
+                print(f"ComfyUI session {rid} did not start: {state['failed']}")
+                return 2
+            if state.get("ready"):
+                print(f"ComfyUI up at {C.HOST}: session {rid} (pid {state.get('pid')}, log "
+                      f"{state.get('log')}). Generating commands use it and book nothing of their "
+                      f"own. `comfy_gen.py down` ends it; so do {IDLE_STOP_SECONDS // 60} idle "
+                      "minutes and its --for time.")
+                return 0
+        if ctime is None or not _pid_alive_at(pid, ctime):
+            print(f"ComfyUI session {rid}: its lock run ended before ComfyUI was ready (see "
+                  f"machine_lock.py status {rid})")
+            return 2
+        if time.monotonic() >= deadline:
+            done = _run_quiet(_lock_cmd("stop", rid))
+            print(f"ComfyUI session {rid} was not ready within {wait_s}s; its lock run is stopped "
+                  f"(exit {done.returncode})")
+            return 2
+        time.sleep(2)
+
+
+def cmd_up(args):
+    """Start a ComfyUI session for an art run (the module docstring): book a detached local-ai
+    lock run holding comfy-port:<port>, whose command is the keeper (`serve`), and wait until
+    ComfyUI answers or fails. Prints the run id. Nothing is booked when ComfyUI already answers
+    or a session is already up."""
+    state = read_state()
+    if _session_live(state):
+        if state.get("ready"):
+            print(f"ComfyUI session {state['rid']} is already up at {C.HOST}; `comfy_gen.py down` "
+                  "ends it")
+            return 0
+        print(f"[comfy_gen] up: session {state['rid']} is starting; waiting for it", file=sys.stderr)
+        return _await_session(state["rid"], state["keeper_pid"], state.get("keeper_ctime"),
+                              args.ready + 60)
+    if _reachable():
+        if _tool_started_and_alive(state or {}):
+            if state.get("rid"):
+                print(f"ComfyUI session {state['rid']} is ending (`down`, or it failed); run `up` "
+                      "again once it has gone. Nothing booked.")
+            else:
+                print(f"ComfyUI already answers at {C.HOST}: another comfy_gen command started it "
+                      "for itself and it ends with that command. Nothing booked; run `up` again "
+                      "once it has gone.")
+            return 2
+        print(f"ComfyUI already answers at {C.HOST}, started outside this tool (by you or Comfy "
+              "Desktop): use it as it is; nothing booked")
+        return 0
+    if not os.path.isfile(MACHINE_LOCK_TOOL):
+        print(f"[machine-lock] refused: no machine lock tool at {MACHINE_LOCK_TOOL}, and a "
+              "session takes a local-ai slot. Exit 2.", file=sys.stderr)
+        return 2
+    if _direct_launch_command()[0] is None:
+        print(NO_INSTALL.format(APPDATA_COMFY), file=sys.stderr)
+        return 2
+    _host, port = _host_port()
+    wait = max(1, min(int(args.lock_wait), 540))
+    keeper = [sys.executable, "-B", os.path.abspath(__file__), "serve", "--for", str(args.ttl),
+              "--ready", str(args.ready)]
+    done = _run_quiet(_lock_cmd("run", "--detach", "--repo", "comfy", "--slug", "session",
+                                "--kind", "local-ai", "--resource", f"comfy-port:{port}",
+                                "--max-wait", f"{wait}s", "--expect", f"{args.ttl}s", "--") + keeper)
+    m = re.match(r"\s*(r-\S+) pid (\d+)", done.stdout or "")
+    if done.returncode != 0 or not m:
+        print(f"[comfy_gen] up: the machine lock did not start the session (exit {done.returncode}): "
+              + ((done.stdout or "") + (done.stderr or "")).strip(), file=sys.stderr)
+        return 2
+    rid, pid = m.group(1), int(m.group(2))
+    print(f"[comfy_gen] up: lock run {rid} (local-ai, comfy-port:{port}); waiting for ComfyUI",
+          file=sys.stderr)
+    return _await_session(rid, pid, W.details(pid)["ctime"], wait + args.ready + 60)
+
+
+def cmd_down(args):
+    """End the session `up` started: make its down request (_request_down), on which its keeper
+    ends ComfyUI and its lock run within POLL_SECONDS; a keeper still there after DOWN_WAIT_SECONDS
+    has its lock run stopped (machine_lock.py stop: the run's job ends, keeper and ComfyUI with
+    it). The request is a file of its own, so no later write of the state can drop it."""
+    state = read_state()
+    if not state or not state.get("rid"):
+        print("[comfy_gen] down: no ComfyUI session; nothing to end")
+        return 0
+    rid = state["rid"]
+    if state.get("keeper_pid") is not None and _pid_alive_at(state["keeper_pid"],
+                                                             state.get("keeper_ctime")):
+        _request_down(rid)
+        deadline = time.monotonic() + DOWN_WAIT_SECONDS
+        while _pid_alive_at(state["keeper_pid"], state.get("keeper_ctime")):
+            if time.monotonic() >= deadline:
+                done = _run_quiet(_lock_cmd("stop", rid))
+                print(f"[comfy_gen] down: the keeper did not end within {DOWN_WAIT_SECONDS}s; "
+                      f"machine_lock.py stop {rid}: exit {done.returncode} "
+                      + ((done.stdout or "") + (done.stderr or "")).strip())
+                if done.returncode != 0:
+                    return 1
+                break
+            time.sleep(1)
+    final = read_state()
+    if final and final.get("rid") == rid:
+        clear_state()
+    _clear_down(rid)
+    print(f"[comfy_gen] down: session {rid} ended")
+    return 0
 
 
 def engine_running():
@@ -618,12 +1034,13 @@ def cmd_check(args):
         stats = C.get_json("/system_stats", timeout=3)
     except Exception as e:
         # check never starts it (it holds no lock); it only says whether a job could
-        if _direct_launch_command()[0] is None and _desktop_launch_command()[0] is None:
-            print(f"ComfyUI not reachable at {C.HOST} ({e}) and no Comfy Desktop install to start it from")
+        if _direct_launch_command()[0] is None:
+            print(f"ComfyUI not reachable at {C.HOST} ({e}) and no local Comfy install to start it "
+                  "from (" + NO_INSTALL.format(APPDATA_COMFY) + ")")
             return 2
         busy = engine_running()
-        print(f"ComfyUI is off; the first job starts it headless and it stops after "
-              f"{IDLE_STOP_SECONDS // 60} idle minutes. Models are checked then.")
+        print("ComfyUI is off; `comfy_gen.py up` starts it headless for an art run (`down` ends "
+              "it), and a lone generating command starts it for itself. Models are checked then.")
         print("  engine: " + (("RUNNING " + ", ".join(busy) + " -> wait or take the engine lock") if busy else "idle"))
         return 0
     have = installed_files()
@@ -836,8 +1253,20 @@ def main():
 
     sub.add_parser("check")
     sub.add_parser("free")
-    p = sub.add_parser("stop", help="stop ComfyUI if this tool started it (no-op otherwise)")
-    p.add_argument("--idle-watch", action="store_true", help=argparse.SUPPRESS)  # internal: the detached watcher
+    sub.add_parser("stop", help="stop ComfyUI if this tool started it (no-op otherwise); a "
+                   "session's: as `down`")
+    p = sub.add_parser("up", help="start a ComfyUI session for an art run (headless, booked in the "
+                       "machine lock); `down` ends it")
+    p.add_argument("--for", dest="ttl", type=int, default=SESSION_SECONDS,
+                   help="seconds the session may live at most (default %(default)s)")
+    p.add_argument("--lock-wait", type=int, default=540,
+                   help="seconds to wait for the local-ai slot (capped at 540)")
+    p.add_argument("--ready", type=int, default=READY_SECONDS,
+                   help="seconds ComfyUI gets to answer once started (default %(default)s)")
+    sub.add_parser("down", help="end the session `up` started")
+    p = sub.add_parser("serve")     # internal: the session's keeper, the command of up's lock run
+    p.add_argument("--for", dest="ttl", type=int, default=SESSION_SECONDS)
+    p.add_argument("--ready", type=int, default=READY_SECONDS)
     p = sub.add_parser("release")   # internal: the local-ai run's --on-release (cmd_release)
     p.add_argument("--outer", default="")
     p = common(sub.add_parser("image"))
@@ -874,7 +1303,10 @@ def main():
     p.add_argument("--print-api", action="store_true", help="print the converted prompt and stop")
 
     args = ap.parse_args(argv)
-    if args.cmd not in UNLOCKED and not getattr(args, "print_api", False):
+    # a command run while a session (`up`) is live uses its ComfyUI and books nothing: the session's
+    # lock run already holds the local-ai slot and the port
+    if (args.cmd not in UNLOCKED and not getattr(args, "print_api", False)
+            and not _session_live(read_state())):
         machine_lock_rerun(args, argv)
     return run_handler(args)
 
@@ -885,7 +1317,8 @@ MACHINE_LOCK_TOOL = os.environ.get("KIT_MACHINE_LOCK") or os.path.join(
 
 
 RERUN_ENV = "COMFY_GEN_LOCKED"     # set only for the command this function re-runs
-UNLOCKED = ("check", "free", "stop", "release")   # commands that never take a slot
+UNLOCKED = ("check", "free", "stop", "release", "up", "down", "serve")   # never re-run in a slot
+# (`up` books its own detached run, whose command is `serve`)
 
 
 def release_cmdline():
@@ -900,10 +1333,14 @@ def machine_lock_rerun(args, argv):
     Returns without re-running only in that re-run itself (RERUN_ENV, consumed here so nothing it
     starts inherits it). Inside another locked run (MACHINE_LOCK_RUN) it still goes through the
     tool: that runs it directly when the enclosing run holds gpu and takes gpu when it holds only
-    cpu. With no tool it refuses
+    cpu. The run also holds comfy-port:<port>: local-ai runs share the GPU, the port they cannot.
+    With no tool it refuses
     (exit 2) rather than run on a GPU slot nobody holds. The run's --on-release is `release`: the
-    ComfyUI it used is freed when the slot ends, not ~10 idle minutes later."""
+    ComfyUI it used is freed when the slot ends (one this command started has already ended with
+    it: _start_server)."""
+    global _IN_LOCK_RUN
     if os.environ.pop(RERUN_ENV, None) and os.environ.get("MACHINE_LOCK_RUN"):
+        _IN_LOCK_RUN = True     # this command holds its own slot: it may start ComfyUI (_launch)
         return
     if not os.path.isfile(MACHINE_LOCK_TOOL):
         print(f"[machine-lock] refused: no machine lock tool at {MACHINE_LOCK_TOOL}, and generation "
@@ -913,7 +1350,8 @@ def machine_lock_rerun(args, argv):
     stem = re.sub(r"[^A-Za-z0-9_-]+", "-", getattr(args, "name", None) or args.cmd).strip("-")[:48] or args.cmd
     wait = max(1, min(int(getattr(args, "lock_wait", 540)), 540))
     cmd = [sys.executable, "-B", MACHINE_LOCK_TOOL, "run", "--repo", "comfy", "--slug", stem,
-           "--kind", "local-ai", "--max-wait", f"{wait}s", "--on-release", release_cmdline(), "--",
+           "--kind", "local-ai", "--resource", f"comfy-port:{_host_port()[1]}",
+           "--max-wait", f"{wait}s", "--on-release", release_cmdline(), "--",
            sys.executable, os.path.abspath(__file__)] + list(argv)
     sys.exit(subprocess.call(cmd, env=dict(os.environ, **{RERUN_ENV: "1"})))
 
@@ -923,12 +1361,16 @@ def cmd_release(args):
     started is stopped (with its children, ctime-checked); a local ComfyUI is never stopped, only
     its models unloaded, and only when its queue is idle (as `free`). Skipped when the run was
     nested in an enclosing run (MACHINE_LOCK_RUN still the enclosing one's): that run still holds
-    the slot. Always exits 0; what it did is printed."""
+    the slot, and when a session (`up`) owns ComfyUI: its keeper ends it. Always exits 0; what it
+    did is printed."""
+    state = read_state()
+    if state and state.get("rid"):
+        print(f"[comfy_gen] release: ComfyUI belongs to session {state['rid']}; left as is")
+        return 0
     if os.environ.get("MACHINE_LOCK_RUN", "") == (args.outer or ""):
         print("[comfy_gen] release: nested in an enclosing run that still holds the GPU; "
               "ComfyUI left as is")
         return 0
-    state = read_state()
     if _tool_started_and_alive(state):
         print("[comfy_gen] release: the local-ai slot ended; stopping the ComfyUI this tool started")
         _stop_now(manual=False)
@@ -949,6 +1391,7 @@ def run_handler(args):
     stem = re.sub(r"[^A-Za-z0-9_-]+", "-", getattr(args, "name", None) or args.cmd).strip("-")[:48] or args.cmd
     RUN_FOLDER = f"agent/{datetime.datetime.now():%Y%m%d-%H%M%S}_{args.cmd}_{stem}"
     handler = {"check": cmd_check, "free": cmd_free, "stop": cmd_stop, "release": cmd_release,
+               "up": cmd_up, "down": cmd_down, "serve": cmd_serve,
                "image": cmd_image, "edit": cmd_edit,
                "rembg": cmd_rembg, "upscale": cmd_upscale, "to3d": cmd_to3d, "music": cmd_music,
                "template": cmd_template}[args.cmd]
@@ -972,9 +1415,15 @@ def run_handler(args):
         print(str(e), file=sys.stderr)
         code = 1
     finally:
-        # Refresh the idle clock the moment the job ends (a no-op if ComfyUI is not ours, or
-        # the owner's): the ~10-minute idle window the watcher counts starts from here.
-        touch_last_used()
+        # Refresh the idle clock the moment the job ends (a no-op if ComfyUI is not ours): a
+        # session's keeper counts its idle minutes from here. A ComfyUI this command started ends
+        # with it (its job), so its record goes too.
+        if _JOBS:
+            for job in _JOBS:
+                job.terminate()
+            clear_state()
+        elif args.cmd not in ("serve", "down", "up"):
+            touch_last_used()
     sys.exit(code)
 
 

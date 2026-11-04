@@ -1,5 +1,5 @@
-"""Tests for the ComfyUI lifecycle added to comfy_gen.py (ensure_running / stop / the
-idle watcher). Fakes only: no real ComfyUI, no real process is started or killed here (that is
+"""Tests for the ComfyUI lifecycle in comfy_gen.py (ensure_running / stop / release; the
+session and the headless start are test_comfy_session.py). Fakes only: no real ComfyUI, no real process is started or killed here (that is
 the smoke test, run by hand - see docs/reference comment in comfy_gen.py). Everything below
 monkeypatches the small seams (_reachable, W.details/snapshot/terminate_verified, subprocess) so
 the decision logic runs against made-up state.
@@ -68,12 +68,10 @@ class EnsureRunningOwnership(unittest.TestCase):
 
     def test_reachable_with_no_state_is_owner_started(self):
         with mock.patch.object(G, "_reachable", return_value=True), \
-             mock.patch.object(G, "_launch") as launch, \
-             mock.patch.object(G, "_ensure_watcher") as watcher:
+             mock.patch.object(G, "_launch") as launch:
             owned = G.ensure_running()
         self.assertFalse(owned)
         launch.assert_not_called()
-        watcher.assert_not_called()
         self.assertIsNone(G.read_state())
 
     def test_reachable_with_stale_state_is_owner_started_and_clears_it(self):
@@ -88,12 +86,10 @@ class EnsureRunningOwnership(unittest.TestCase):
     def test_reachable_with_matching_state_is_tool_started(self):
         G.write_state({"pid": 42, "ctime": 555, "last_used": "old"})
         with mock.patch.object(G, "_reachable", return_value=True), \
-             mock.patch.object(G, "W") as w, \
-             mock.patch.object(G, "_ensure_watcher") as watcher:
+             mock.patch.object(G, "W") as w:
             w.details.return_value = {"ctime": 555}
             owned = G.ensure_running()
         self.assertTrue(owned)
-        watcher.assert_called_once()
         self.assertNotEqual(G.read_state()["last_used"], "old")   # idle clock refreshed
 
     def test_reused_pid_is_treated_as_owner_started(self):
@@ -109,17 +105,16 @@ class EnsureRunningOwnership(unittest.TestCase):
 
     def test_unreachable_starts_it_and_waits(self):
         with mock.patch.object(G, "_reachable", return_value=False), \
-             mock.patch.object(G, "_launch") as launch, \
-             mock.patch.object(G, "_wait_for_stats", return_value=True), \
-             mock.patch.object(G, "_ensure_watcher"):
+             mock.patch.object(G, "_listening", return_value=set()), \
+             mock.patch.object(G, "_launch") as launch:
             owned = G.ensure_running(wait=5)
         self.assertTrue(owned)
-        launch.assert_called_once()
+        launch.assert_called_once_with(5)   # _launch waits for it itself (_wait_ready)
 
     def test_unreachable_and_never_comes_up_raises(self):
         with mock.patch.object(G, "_reachable", return_value=False), \
-             mock.patch.object(G, "_launch"), \
-             mock.patch.object(G, "_wait_for_stats", return_value=False):
+             mock.patch.object(G, "_listening", return_value=set()), \
+             mock.patch.object(G, "_launch", side_effect=RuntimeError("did not answer")):
             with self.assertRaises(RuntimeError):
                 G.ensure_running(wait=1)
 
@@ -128,8 +123,7 @@ class EnsureRunningOwnership(unittest.TestCase):
         with mock.patch.object(G, "_reachable", return_value=False), \
              mock.patch.object(G, "W") as w, \
              mock.patch.object(G, "_launch") as launch, \
-             mock.patch.object(G, "_wait_for_stats", return_value=True), \
-             mock.patch.object(G, "_ensure_watcher"):
+             mock.patch.object(G, "_wait_for_stats", return_value=True):
             w.details.return_value = {"ctime": 3}   # our recorded pid is alive, just not up yet
             G.ensure_running(wait=5)
         launch.assert_not_called()
@@ -179,77 +173,11 @@ class StopOnlyOwnPid(unittest.TestCase):
         self.assertEqual(killed_pids, {42, 99})
 
 
-class IdleWatcher(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        self.patch = mock.patch.multiple(G, STATE_DIR=self.tmp, STATE_FILE=os.path.join(self.tmp, "state.json"))
-        self.patch.start()
-        self.addCleanup(self.patch.stop)
-
-    def test_no_state_returns_immediately(self):
-        with mock.patch("comfy_gen.time.sleep") as sleep:
-            self.assertEqual(G._watch_and_stop(), 0)
-        sleep.assert_not_called()
-
-    def test_exits_without_stopping_when_state_is_replaced(self):
-        G.write_state({"pid": 1, "ctime": 1, "last_used": iso(G._now())})
-
-        def sleep_then_replace(_):
-            G.write_state({"pid": 2, "ctime": 2, "last_used": iso(G._now())})
-
-        with mock.patch("comfy_gen.time.sleep", side_effect=sleep_then_replace), \
-             mock.patch.object(G, "_stop_now") as stop:
-            self.assertEqual(G._watch_and_stop(), 0)
-        stop.assert_not_called()
-
-    def test_stops_once_idle_past_threshold_and_queue_empty(self):
-        old = iso(G._now() - __import__("datetime").timedelta(seconds=G.IDLE_STOP_SECONDS + 5))
-        G.write_state({"pid": 1, "ctime": 1, "last_used": old})
-        with mock.patch("comfy_gen.time.sleep"), \
-             mock.patch.object(G.C, "get_json", return_value={"queue_running": [], "queue_pending": []}), \
-             mock.patch.object(G, "_stop_now", return_value=0) as stop:
-            G._watch_and_stop()
-        stop.assert_called_once_with(manual=False)
-
-    def test_stays_up_while_the_queue_is_busy(self):
-        old = iso(G._now() - __import__("datetime").timedelta(seconds=G.IDLE_STOP_SECONDS + 5))
-        G.write_state({"pid": 1, "ctime": 1, "last_used": old})
-        calls = {"n": 0}
-
-        def sleep_side_effect(_):
-            calls["n"] += 1
-            if calls["n"] >= 2:
-                G.write_state({"pid": 2, "ctime": 2, "last_used": iso(G._now())})  # end the test
-
-        with mock.patch("comfy_gen.time.sleep", side_effect=sleep_side_effect), \
-             mock.patch.object(G.C, "get_json", return_value={"queue_running": [{"x": 1}], "queue_pending": []}), \
-             mock.patch.object(G, "_stop_now") as stop:
-            G._watch_and_stop()
-        stop.assert_not_called()
-
-    def test_still_under_idle_threshold_does_not_stop(self):
-        G.write_state({"pid": 1, "ctime": 1, "last_used": iso(G._now())})
-        calls = {"n": 0}
-
-        def sleep_side_effect(_):
-            calls["n"] += 1
-            if calls["n"] >= 2:                              # first loop: idle is small, must continue
-                G.write_state({"pid": 2, "ctime": 2, "last_used": iso(G._now())})  # second: end the test
-
-        with mock.patch("comfy_gen.time.sleep", side_effect=sleep_side_effect), \
-             mock.patch.object(G, "_stop_now") as stop:
-            G._watch_and_stop()
-        stop.assert_not_called()
-        self.assertGreaterEqual(calls["n"], 2)
-
-
 class CheckWhenOff(unittest.TestCase):
     """`check` must pass while ComfyUI is off but startable, or agents fall back and never start it."""
-    def run_check(self, direct, desktop):
+    def run_check(self, direct):
         with mock.patch.object(G.C, "get_json", side_effect=OSError("refused")), \
              mock.patch.object(G, "_direct_launch_command", return_value=direct), \
-             mock.patch.object(G, "_desktop_launch_command", return_value=desktop), \
              mock.patch.object(G, "engine_running", return_value=[]), \
              mock.patch.object(G, "ensure_running") as ensure, \
              mock.patch("sys.stdout", new_callable=io.StringIO):
@@ -258,36 +186,20 @@ class CheckWhenOff(unittest.TestCase):
         return code
 
     def test_off_but_startable_passes(self):
-        self.assertEqual(self.run_check((["python"], "C:\\x"), (None, None)), 0)
+        self.assertEqual(self.run_check((["python"], "C:\\x")), 0)
 
     def test_off_and_not_startable_fails(self):
-        self.assertEqual(self.run_check((None, None), (None, None)), 2)
+        self.assertEqual(self.run_check((None, None)), 2)
 
 
 class DirectLaunchCommandIsReadOnly(unittest.TestCase):
-    """No Comfy Desktop config here -> falls back cleanly rather than raising."""
+    """No Comfy Desktop config here -> None rather than raising."""
 
     def test_missing_config_returns_none(self):
         with mock.patch.object(G, "APPDATA_COMFY", os.path.join(tempfile.mkdtemp(), "nope")):
             cmd, cwd = G._direct_launch_command()
         self.assertIsNone(cmd)
         self.assertIsNone(cwd)
-
-    def test_missing_desktop_exe_returns_none(self):
-        with mock.patch.object(G, "DESKTOP_EXE", os.path.join(tempfile.mkdtemp(), "nope.exe")):
-            cmd, cwd = G._desktop_launch_command()
-        self.assertIsNone(cmd)
-
-
-class DesktopExe(unittest.TestCase):
-    """COMFY_DESKTOP_EXE overrides the installer's default path."""
-
-    def test_env_overrides_the_default(self):
-        self.assertEqual(G.desktop_exe({"COMFY_DESKTOP_EXE": "elsewhere/Comfy.exe"}), "elsewhere/Comfy.exe")
-
-    def test_unset_or_empty_keeps_the_default(self):
-        for env in ({}, {"COMFY_DESKTOP_EXE": ""}):
-            self.assertEqual(G.desktop_exe(env), G.DESKTOP_EXE_DEFAULT)
 
 
 class AgentOutputDir(unittest.TestCase):

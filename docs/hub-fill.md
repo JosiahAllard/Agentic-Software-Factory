@@ -71,7 +71,7 @@ next run.
 
 ## Not built yet
 
-Stages 2 and 3 of the design (backlog record KIT-HUB-FILL-WATCH):
+Stages 2 and 3 of the design:
 
 - **Auto-pull**: 20 minutes after a nudge with the slot still empty, the hub pulls up to the free
   count itself.

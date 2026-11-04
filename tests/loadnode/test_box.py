@@ -501,12 +501,13 @@ class RunJob(Base):
 
     def test_a_failed_run_json_write_still_leaves_an_error_result(self):
         d = self.made_job()
-        with mock.patch.object(box, '_write_json', side_effect=OSError('disk full')) as w:
-            def real(path, obj, _w=box._write_json):
-                if path.endswith('run.json'):
-                    raise OSError('disk full')
-                return _w(path, obj)
-            w.side_effect = real
+        real_write = box._write_json
+
+        def write(path, obj):
+            if path.endswith('run.json'):
+                raise OSError('disk full')
+            return real_write(path, obj)
+        with mock.patch.object(box, '_write_json', write):
             try:
                 code = self.box.run_job(JOB, run_command=self.fail, new_rid=lambda: 'r-1',
                                         store_factory=lambda say: None, chdir=lambda p: None)

@@ -142,7 +142,8 @@ class Context(object):
 
     def unmet(self, snap):
         hist = self.history(snap)
-        return lambda rec: omod.unmet_requires(rec, snap, hist, self.root, self.main_branch)
+        base, _note = refs.default_base(self.root, self.code_remote, self.code_main)
+        return lambda rec: omod.unmet_requires(rec, snap, hist, self.root, base)
 
 
 # --- shared ---------------------------------------------------------------------------------------

@@ -167,6 +167,32 @@ class Requires(unittest.TestCase):
         self.assertEqual([m for m, _ in got], ['item:BBB', 'item:DDD'])
 
 
+class RequiresCommitCodeMain(StoreCase):
+    """`requires: commit:H` is tested against the code main, not the store's own branch."""
+    remote = False
+
+    def test_commit_is_met_on_the_code_main_when_the_store_branch_differs(self):
+        self.repo.write('a.txt', 'a\n')
+        on_main = self.repo.commit('on the code main', 'a.txt')
+        self.repo.git('checkout', '-q', '-b', 'side')
+        self.repo.write('b.txt', 'b\n')
+        off_main = self.repo.commit('only on a side branch', 'b.txt')
+        self.repo.git('checkout', '-q', 'main')
+        self.repo.git('branch', 'datastore', 'main')
+        ctx = pmod.Context(self.store, self.repo.root, main_branch='datastore', code_main='main')
+        # the store's own branch holds neither commit's history: it is an unrelated root
+        self.repo.git('checkout', '-q', '--orphan', 'orphanstore')
+        self.repo.git('rm', '-rfq', '.')
+        self.repo.git('commit', '-q', '--allow-empty', '-m', 'store root')
+        self.repo.git('branch', '-f', 'datastore', 'orphanstore')
+        self.repo.git('checkout', '-q', 'main')
+        s = snap(priced('EX-A', requires=['commit:%s' % on_main]),
+                 priced('EX-B', requires=['commit:%s' % off_main]))
+        unmet = ctx.unmet(s)
+        self.assertEqual(unmet(s.get('EX-A')), [])
+        self.assertEqual([m for m, _ in unmet(s.get('EX-B'))], ['commit:%s' % off_main])
+
+
 class CollisionHolder(unittest.TestCase):
     """A collision names who holds the scope; a pulled record's narrowed `scope:` lines are what
     it holds."""

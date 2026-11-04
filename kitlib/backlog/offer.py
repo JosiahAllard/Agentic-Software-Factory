@@ -242,9 +242,10 @@ def in_flight_split(snap, root, remote):
 
 # --- requires -------------------------------------------------------------------------------------
 
-def unmet_requires(rec, snap, history, root, main_branch):
+def unmet_requires(rec, snap, history, root, main_ref):
     """`[(member, why)]` for every gated `requires:` line not met. `item:X` is met when X has no
-    live record and the store history closed it; `commit:H` when H is on `main_branch`. Any
+    live record and the store history closed it; `commit:H` when H is on `main_ref` (the code
+    main's rev, not the store's own branch: a PM data store shares no history with the code). Any
     other `requires:` line is a note and gates nothing. A git that cannot answer is unmet."""
     out = []
     for member in rec.all('requires'):
@@ -259,9 +260,9 @@ def unmet_requires(rec, snap, history, root, main_branch):
                 out.append((member, 'retired or deleted, so it will never land' if last else
                             'no record has that id and none was closed'))
         elif kind == 'commit' and target:
-            ok, why = refs.is_ancestor(target, 'refs/heads/%s' % main_branch, root)
+            ok, why = refs.is_ancestor(target, main_ref, root)
             if not ok:
-                out.append((member, 'it is not on %s' % main_branch if ok is False
+                out.append((member, 'it is not on %s' % main_ref if ok is False
                             else 'git cannot tell (%s)' % why))
     return out
 

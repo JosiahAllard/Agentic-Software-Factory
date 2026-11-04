@@ -120,9 +120,13 @@ open. One case is not `unread`: an unreadable L tree idle 2 h or more (only a pr
 could not read might hold it) counts idle. When its head is already in main as fetched it counts
 neither idle nor unread: it is a landed tree awaiting removal.
 
-With no repository stand-down, a coordinator with a pending hub hand-off (its newest hand-off
-record is a stop, restart or hand-off, not a check-in) is stood down as `handoff <kind>`. Records
-the hub cannot read (or a hub that gives the job no read) stand it down as `handoff unread`.
+With no repository stand-down, a coordinator with a pending hub hand-off is stood down as
+`handoff <kind>`. Pending means its newest hand-off record is a stop, restart or hand-off, not a
+check-in, and the live session sessions.json names did not start after it. A session started
+after the record (process creation time against the record's `at`) is a new one: the hand-off is
+over, whether or not it wrote a check-in (a `launch.py start` or a `coord-restart` wake writes
+none). A record whose `at`, or a session whose start, cannot be read stays pending. Records the
+hub cannot read (or a hub that gives the job no read) stand it down as `handoff unread`.
 
 A stand-down never stops the nudge: the coordinator still hears of its free slot, with the reason.
 
@@ -146,9 +150,14 @@ episode again.
   remove`, never forced, and the branch deleted only while its tip is still the tree's head). The
   next record is then tried. Codes: `gone` (no such record), `held` (owner-held), `not-open`,
   `not-theirs` (its session is not this coordinator's), `refused` (the planner's refusal: not in
-  the offer, a collision, a hold), `store` (the store cannot be read or written, or is the
-  implicit one), `branch` (an invalid branch name), `worktree` (the tree was not made). A code
-  ends in `+tree-kept` when the tree could not be removed.
+  the offer, a collision, a hold), `store` (the store cannot be read, or the write surely did not
+  land: busy, a dirty data worktree, overtaken; or the store is the implicit one), `unsure` (the
+  write may have landed), `branch` (an invalid branch name), `worktree` (the tree was not made). A
+  code ends in `+tree-kept` when the tree was not removed: it could not be, or the code is
+  `unsure`, whose record may now be pulled onto that branch (check the store before removing it).
+- A `not-open` record of this coordinator's sessions was pulled (or closed) since the offer was
+  read, most likely by the coordinator itself: it counts as a slot taken, so the hub never pulls
+  past the coordinator's cap when both pull at once.
 - One push to the coordinator lists what was pulled (id and branch) and what was skipped (id and
   code), and asks it to dispatch them.
 
@@ -164,20 +173,6 @@ One hub job push to the PM (`JOB_EACH['fill']`), once per episode per coordinato
 - or the auto-pull leaves slots free: `<why>` is `unfilled` and the count is the slots left.
 
 `pm` in `fill-watch.json` marks it sent for the episode.
-
-- **Auto-pull (stage 3)**: 20 minutes after `since` with no stand-down, the hub pulls records
-  itself, up to the free count, in offer order, once per episode.
-  - Through the backlog library, never the shell (`pull_branch.plan_pull` with no reason and no
-    collision allowance). So it never pulls past a collision, a hold or another session's record.
-  - For each record it first makes the worktree (`kitlib.worktree.new.create`, slug
-    `fill-<id in lower case>`, its branch and folder as that function names them, default host).
-    A pull the store refuses removes the empty worktree it made, and the next record is tried.
-  - It skips a coordinator with a pending hub hand-off (a stop, restart or hand-off not yet
-    followed by a check-in): the nudge still goes, with the reason named.
-  - One push to the coordinator lists what was pulled and what was skipped, with codes.
-- **PM fill event (stage 5)**: a hub job push to the PM (`JOB_EACH['fill']`, one per repository),
-  once per episode. It goes when the 20 minutes pass while stood down, or when the auto-pull leaves
-  slots free.
 
 ## Known limits
 

@@ -901,6 +901,31 @@ class AutoPull(WatchFixture, unittest.TestCase):
         self.run_at(2200.0)
         self.assertEqual((self.c.events, self.pulls), ([('fill', 'game:2:handoff')], []))
 
+    def test_a_session_started_after_the_hand_off_ends_it_with_no_check_in(self):
+        # a stop, then a fresh session (launch.py start or a coord-restart wake): no check-in
+        at = '2026-11-04T09:00:00+00:00'
+        stamp = C.item_epoch({'at': at})
+        self.handoffs = {'game': {'kind': 'stop', 'at': at}}
+        self.live = {'game-coordinator-a1': stamp + 60}
+        self.run_at(1000.0)
+        self.assertNotIn('stood down', self.sent[0][1])
+        self.run_at(2200.0)
+        self.assertEqual(len(self.pulls), 1)
+
+    def test_a_session_older_than_the_hand_off_or_unread_times_keep_it_pending(self):
+        at = '2026-11-04T09:00:00+00:00'
+        stamp = C.item_epoch({'at': at})
+        for live, rec in (({'game-coordinator-a1': stamp - 60}, {'kind': 'stop', 'at': at}),
+                          ({'game-coordinator-a1': None}, {'kind': 'stop', 'at': at}),
+                          ({'game-coordinator-a1': stamp + 60}, {'kind': 'stop', 'at': 'bad'}),
+                          ({'game-coordinator-a1'}, {'kind': 'stop', 'at': at})):
+            self.setUp()
+            self.handoffs, self.live = {'game': rec}, live
+            self.run_at(1000.0)
+            self.assertIn('auto-pull stood down: handoff stop', self.sent[0][1])
+            self.run_at(2200.0)
+            self.assertEqual(self.pulls, [])
+
     def test_a_check_in_or_another_keys_hand_off_is_none(self):
         self.handoffs = {'game': {'kind': 'checkin'}, 'lane': {'kind': 'stop'}}
         self.run_at(1000.0)
@@ -999,7 +1024,10 @@ class AutoPullSteps(unittest.TestCase):
 
         def pull(root, rid, branch, sessions, liveness):
             self.asked.append((root, rid, branch, sessions, liveness))
-            return self.codes.get(rid)
+            got = self.codes.get(rid)
+            if isinstance(got, BaseException):
+                raise got
+            return got
 
         def remove(main, branch):
             self.removed.append(branch)
@@ -1025,6 +1053,26 @@ class AutoPullSteps(unittest.TestCase):
                                [('EX-A', 'refused'), ('EX-B', 'not-theirs+tree-kept')]))
         self.assertEqual(self.removed, ['game/fill-ex-a', 'game/fill-ex-b'])
 
+    def test_a_record_already_not_open_takes_a_slot_so_the_cap_holds(self):
+        # the coordinator pulled it between the offer and the hub's pull: one slot fewer
+        self.codes = {'EX-A': 'not-open'}
+        got = self.run_pull(['EX-A', 'EX-B', 'EX-C'], 2)
+        self.assertEqual(got, ([('EX-B', 'game/fill-ex-b')], [('EX-A', 'not-open')]))
+        self.assertEqual([a[1] for a in self.asked], ['EX-A', 'EX-B'])
+        self.assertEqual(self.removed, ['game/fill-ex-a'])
+
+    def test_a_pull_that_may_have_landed_keeps_its_tree_and_takes_a_slot(self):
+        self.codes = {'EX-A': 'unsure'}
+        got = self.run_pull(['EX-A', 'EX-B'], 1)
+        self.assertEqual(got, ([], [('EX-A', 'unsure+tree-kept')]))
+        self.assertEqual((self.removed, [a[1] for a in self.asked]), ([], ['EX-A']))
+
+    def test_a_pull_that_raises_removes_its_tree_and_raises(self):
+        self.codes = {'EX-A': RuntimeError('boom')}
+        with self.assertRaises(RuntimeError):
+            self.run_pull(['EX-A', 'EX-B'], 2)
+        self.assertEqual((self.removed, [a[1] for a in self.asked]), (['game/fill-ex-a'], ['EX-A']))
+
     def test_a_tree_not_made_is_skipped_and_never_pulled(self):
         from kitlib.worktree import new
         self.create_code = {'game/fill-ex-a': new.REFUSED}
@@ -1048,6 +1096,91 @@ class AutoPullSteps(unittest.TestCase):
         got = self.run_pull(['EX-A', 'EX-B'], 1)
         self.assertEqual(got, ([], [('EX-A', 'refused')]))
         self.assertEqual(len(self.made), 1)
+
+
+class FakeRec(dict):
+    def all(self, key):
+        got = self.get(key)
+        return [got] if got else []
+
+
+class PullRecordCodes(unittest.TestCase):
+    """pull_record's codes over a stand-in store: the checks made in the plan, and each store
+    error: a write that surely did not land is `store`, one that may have is `unsure`."""
+
+    def setUp(self):
+        self.snap = {'EX-A': FakeRec(state='open', session='game'),
+                     'EX-H': FakeRec(state='open', session='game', blocked_on='owner'),
+                     'EX-P': FakeRec(state='pulled', session='game'),
+                     'EX-O': FakeRec(state='pulled', session='lane')}
+        self.raises, self.planned = None, []
+        test = self
+
+        class Store(object):
+            backend = mock.Mock(implicit=False)
+
+            def write(self, plan):
+                if test.raises is not None:
+                    raise test.raises
+                return plan(test.snap)
+
+        class Ctx(object):
+            store = Store()
+
+        def plan_pull(snap, ctx, rid):
+            self.planned.append((rid, ctx.offer_session, ctx.session_live))
+        from kitlib.backlog import opener, pull_branch
+        for target, name, value in ((opener, 'open_store', lambda *a, **k: Ctx()),
+                                    (pull_branch, 'plan_pull', plan_pull)):
+            patch = mock.patch.object(target, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def code(self, rid):
+        return W.pull_record('/store', rid, 'game/fill-x', ['game', None], 'live')
+
+    def test_an_open_record_of_the_coordinators_is_planned_under_its_session(self):
+        self.assertIsNone(self.code('EX-A'))
+        self.assertEqual(self.planned, [('EX-A', 'game', 'live')])
+
+    def test_the_plans_own_checks(self):
+        self.assertEqual([self.code(r) for r in ('EX-H', 'EX-P', 'EX-O', 'NOPE')],
+                         ['held', 'not-open', 'not-theirs', 'gone'])
+        self.assertEqual(self.planned, [])
+
+    def test_a_write_that_surely_did_not_land_is_store(self):
+        from kitlib.backlog import errors as E
+        for exc in (E.Busy('lock'), E.Dirty('dirty'), E.Overtaken('moved')):
+            self.raises = exc
+            self.assertEqual(self.code('EX-A'), 'store', type(exc).__name__)
+
+    def test_a_write_that_may_have_landed_is_unsure(self):
+        from kitlib.backlog import errors as E
+        for exc in (E.Failure('push reported failure: the write may have landed'),
+                    E.Uncommitted('commit failed')):
+            self.raises = exc
+            self.assertEqual(self.code('EX-A'), 'unsure', type(exc).__name__)
+
+    def test_a_stale_index_is_pulled_and_a_refusal_refused(self):
+        from kitlib.backlog import errors as E
+        self.raises = E.IndexStale('index')
+        self.assertIsNone(self.code('EX-A'))
+        self.raises = E.Refusal('not offered')
+        self.assertEqual(self.code('EX-A'), 'refused')
+
+
+class LiveNames(unittest.TestCase):
+    def test_each_live_session_with_its_earliest_start(self):
+        from kitlib.launcher import lookup
+        rows = [{'CommandLine': 'a', 'Created': '2026-11-04T09:00:00+00:00'},
+                {'CommandLine': 'a', 'Created': '2026-11-04T08:00:00+00:00'},
+                {'CommandLine': 'b', 'Created': 'bad'},
+                {'CommandLine': None}]
+        with mock.patch.object(C, 'list_processes', lambda: rows), \
+                mock.patch.object(lookup, 'launched', lambda ps: ps), \
+                mock.patch.object(lookup, 'rc_name', lambda line: line):
+            got = W.live_names()
+        self.assertEqual(got, {'a': C.item_epoch({'at': '2026-11-04T08:00:00+00:00'}), 'b': None})
 
 
 class PullOnAStore(unittest.TestCase):

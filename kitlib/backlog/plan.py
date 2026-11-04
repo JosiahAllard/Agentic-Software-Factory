@@ -87,10 +87,12 @@ class Context(object):
         self.today = today
         self.liveness = liveness
         # omod.SessionLiveness for an offer (None: another session's record always reserves);
-        # only tools/backlog.py sets it, so a program and a test never read the machine.
+        # set by tools/backlog.py and the hub's jobs (coord_restart.read_offer,
+        # fill_watch.pull_record), each with its own reads, so a test never reads the machine.
         self.session_live = None
         # The session a library caller offers and pulls for while the store commits under its
         # own (the hub's fill watch: the coordinator's key, Session hub-fill); unset: the store's.
+        # Set, it is `session` for every reader of ctx.session, not only the offer.
         self.offer_session = _STORE_SESSION
         self._cap = cap
         self._resources = resources

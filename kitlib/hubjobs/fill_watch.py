@@ -62,15 +62,18 @@ exception: an unreadable L tree --classify gives an idle time of IDLE_AFTER_S or
 process it could not read might hold it) counts idle, or neither idle nor unread when its head is
 in main as fetched (a landed tree awaiting removal).
 With no repository stand-down, a coordinator whose newest hand-off record (the hub's
-`handoffs`) is not a check-in is stood down as `handoff <kind>`; records that cannot be read are
-`handoff unread`.
+`handoffs`) is not a check-in is stood down as `handoff <kind>`, unless its live session started
+after the record's `at` (live_names' start): a session started since is a new one, check-in or
+not. Records that cannot be read are `handoff unread`.
 
 Auto-pull (stage 3), for a key already told this episode, PULL_AFTER_S after `since` and once per
 episode: with a stand-down, nothing is pulled; else `pulled` (= since) is written to the state
 file first, then auto_pull takes up to `free` of the offered ids in order: a branch
 `<key lowercased>/fill-<id lowercased>`, its worktree made by new_worktree (no wait), then
 pull_record pulls the record onto it under Session PULL_SESSION with the record's own session's
-offer (plan.Context.offer_session); a record it does not pull has its tree and branch removed.
+offer (plan.Context.offer_session); a record it does not pull has its tree and branch removed,
+but for one whose write may have landed (`unsure`). A `not-open` or `unsure` skip counts as a
+slot taken, so the coordinator's cap holds when both pull at once.
 One push to the coordinator names what was pulled and skipped (pull_text). Stage 5: a stand-down,
 or slots the pull left free, is one `fill` event to the PM (push.JOB_EACH), detail
 `<key>:<free>:<why>`, `pm` (= since) marking it told for the episode.
@@ -122,6 +125,8 @@ DO_LINE = ('A hub fill watch saw a free slot and startable records: run `backlog
 PULL_AFTER_S = 1200             # into an episode with no stand-down: the hub pulls (stage 3)
 PULL_SESSION = 'hub-fill'       # the `Session:` of a hub pull's store commit
 MARKS = ('pulled', 'pm')        # a key's episode marks: pulled, and the PM told
+UNSURE = 'unsure'               # a hub pull whose write may have landed: its tree is kept
+TAKES_SLOT = ('not-open', UNSURE)   # skips that still count against the free slots
 _UNSET = object()
 PULL_DO_LINE = ('The hub fill watch pulled these records for you, each on its own new worktree '
                 'and branch: dispatch them (coordinator role, Slots). A skipped one was not '
@@ -171,11 +176,16 @@ def read_slots(settings, key, entry, session_live=None):
 
 
 def live_names():
-    """The names of the live sessions (coord_restart's listing); TimeoutExpired passes up."""
+    """{name: start} of the live sessions (coord_restart's listing): the earliest creation time,
+    epoch seconds, of the processes of that name; None when one of them cannot be read (it could
+    be the oldest). TimeoutExpired passes up."""
     from kitlib.launcher import lookup
-    names = {lookup.rc_name(p.get('CommandLine')) for p in lookup.launched(coord_restart.list_processes())}
-    names.discard(None)
-    return names
+    starts = {}
+    for p in lookup.launched(coord_restart.list_processes()):
+        name = lookup.rc_name(p.get('CommandLine'))
+        if name is not None:
+            starts.setdefault(name, []).append(coord_restart.row_created(p))
+    return {n: None if None in ts else min(ts) for n, ts in starts.items()}
 
 
 def told_states():
@@ -342,7 +352,8 @@ class FileState(object):
 
 
 class FillWatch(object):
-    """run(ctx) is the job. `sessions()` the sessions.json dict, `live()` the live session names,
+    """run(ctx) is the job. `sessions()` the sessions.json dict, `live()` the live session names
+    (a set, or live_names' {name: start}, whose starts end a stale hand-off),
     `read(key, entry)` (cap, in_flight, ids) or BacklogUnread, `deliver(key, text)` a Sent state
     (None: no push object), `claims()` the sessions.json keys the usage crossover is moving
     (usage_crossover.claims; default none), `standdown(key, entry)` the stand-down reason or None
@@ -364,6 +375,7 @@ class FillWatch(object):
         self.handoffs = handoffs
         self.liveness = None
         self._hands = _UNSET            # this run's hand-off read (_handoff)
+        self._started = {}              # this run's {live session name: its start or None}
 
     def __call__(self, ctx):
         from kitlib.launcher.settings import LaunchError
@@ -384,6 +396,7 @@ class FillWatch(object):
                               % type(e).__name__)[:NOTE_MAX])
         self.liveness = coord_restart.session_liveness(sessions, live)  # this run's, fresh
         self._hands = _UNSET
+        self._started = live if isinstance(live, dict) else {}   # a set of names: no starts
         loaded = self.store.read()      # a bad file raises here: nothing sent, nothing written
         told = {k: dict(v) for k, v in loaded.items()}
         told_ok = told_states()
@@ -504,13 +517,15 @@ class FillWatch(object):
                 notes.append('%s: stand-down unread (%s: %s)' % (key, type(e).__name__, e))
                 reasons[repo] = UNREAD
         if reasons[repo] is None and self.handoffs is not None:
-            return self._handoff(key, notes)
+            return self._handoff(key, entry, notes)
         return reasons[repo]
 
-    def _handoff(self, key, notes):
+    def _handoff(self, key, entry, notes):
         """`handoff <kind>` when the newest hand-off record of `key` is not a check-in (a hand-off,
-        restart or stop is pending), `handoff unread` when the records cannot be read (read once
-        per run), else None."""
+        restart or stop) and the live session `entry` names did not start after its `at`: pending.
+        A session started after it is a new one (a `launch.py start` or a coord-restart wake writes
+        no check-in), so None; a start or an `at` that cannot be read keeps it pending. `handoff
+        unread` when the records cannot be read (read once per run), else None."""
         from kitlib.hubsite import push
         if self._hands is _UNSET:
             try:
@@ -527,6 +542,10 @@ class FillWatch(object):
         kind = rec.get('kind') if isinstance(rec, dict) else None
         if rec is None or kind == 'checkin':
             return None
+        at = coord_restart.item_epoch(rec)
+        started = self._started.get(entry.get('name'))
+        if at is not None and started is not None and started > at:
+            return None                 # a session started since: that hand-off is over
         return 'handoff %s' % push.field(kind)
 
 
@@ -552,11 +571,12 @@ def pull_record(root, rid, branch, sessions, liveness=None):
     `sessions` (coord_restart.wake_sessions), with `liveness` the session liveness. None when it
     is pulled, else the code of why not: `gone` (no such record), `held` (owner-held: the
     `pull-held` row every role is refused), `not-open`, `not-theirs` (its session is not one of
-    `sessions`), `refused` (the planner's refusal: not in the offer, a collision, a hold), or
-    `store` (the store is the implicit one, or cannot be read or written)."""
+    `sessions`), `refused` (the planner's refusal: not in the offer, a collision, a hold),
+    `store` (the store is the implicit one or cannot be read, or the write surely did not land:
+    Busy, Dirty, Overtaken), or UNSURE (any other Failure: the write may have landed)."""
     from kitlib.backlog import opener, policy, pull_branch
     from kitlib.backlog import offer as omod
-    from kitlib.backlog.errors import Failure, IndexStale, NotFound, Refusal
+    from kitlib.backlog.errors import Busy, Dirty, Failure, IndexStale, NotFound, Overtaken, Refusal
     from kitlib.config import ConfigError
 
     def plan(snap):
@@ -565,10 +585,10 @@ def pull_record(root, rid, branch, sessions, liveness=None):
             raise _Skip('gone')
         if 'pull-held' in policy.sort('pull', {}, rec):
             raise _Skip('held')
-        if rec.get('state') != 'open':
-            raise _Skip('not-open')
         if rec.get('session') not in sessions:
             raise _Skip('not-theirs')
+        if rec.get('state') != 'open':
+            raise _Skip('not-open')
         ctx.offer_session = rec.get('session')
         return pull_branch.plan_pull(snap, ctx, rid)
     try:
@@ -583,8 +603,10 @@ def pull_record(root, rid, branch, sessions, liveness=None):
         return None
     except NotFound:
         return 'gone'
-    except Failure:
+    except (Busy, Dirty, Overtaken):    # refused before anything landed
         return 'store'
+    except Failure:                     # the write may have landed: never assume it did not
+        return UNSURE
     except Refusal:
         return 'refused'
     except (omod.PartitionError, ConfigError, OSError):
@@ -625,8 +647,10 @@ def auto_pull(settings, key, entry, ids, free, liveness=None, stop=None, create=
     (`create(main, branch)`, default create_tree) and pulled onto it (`pull(store root, id,
     branch, sessions, liveness)`, default pull_record). A record not pulled has its tree removed
     (`remove(main, branch)`, default remove_fresh; `+tree-kept` when it could not be) and the next
-    is tried. Codes besides pull_record's: `branch` (new_worktree would refuse the name),
-    `worktree` (the tree was not made). `stop` set ends it between records. LaunchError or
+    is tried; an UNSURE pull keeps its tree. A code in TAKES_SLOT (`not-open`: pulled since the
+    offer was read, most likely by the coordinator; UNSURE) counts as a slot taken, so the
+    coordinator's cap holds when both pull at once. Codes besides pull_record's: `branch`
+    (new_worktree would refuse the name), `worktree` (the tree was not made). `stop` set ends it between records. LaunchError or
     coord_restart.BacklogUnread when the repository or its store cannot be found."""
     from kitlib.worktree import new
     create = create or create_tree
@@ -636,9 +660,9 @@ def auto_pull(settings, key, entry, ids, free, liveness=None, stop=None, create=
     main = settings.repo_path(repo)
     root = coord_restart.store_root(settings, repo)
     sessions = coord_restart.wake_sessions(key, entry)
-    pulled, skipped = [], []
+    pulled, skipped, taken = [], [], 0
     for rid in ids:
-        if len(pulled) >= free or (stop is not None and stop.is_set()):
+        if len(pulled) + taken >= free or (stop is not None and stop.is_set()):
             break
         branch = fill_branch(key, rid)
         if not new.branch_ok(branch, False):
@@ -659,8 +683,10 @@ def auto_pull(settings, key, entry, ids, free, liveness=None, stop=None, create=
         if code is None:
             pulled.append((rid, branch))
             continue
-        if not remove(main, branch):
-            code += '+tree-kept'
+        if code in TAKES_SLOT:
+            taken += 1                  # the coordinator's pull, or one that may have landed
+        if code == UNSURE or not remove(main, branch):
+            code += '+tree-kept'        # unsure: its record may be pulled onto this branch
         skipped.append((rid, code))
     return pulled, skipped
 

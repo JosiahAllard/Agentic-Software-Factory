@@ -41,8 +41,9 @@ if not IN_BLENDER:
         pass
 
 # the kit's machine lock entry point: <plugin root>/tools/machine_lock.py, or KIT_MACHINE_LOCK to override
-MACHINE_LOCK_TOOL = os.environ.get("KIT_MACHINE_LOCK") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "machine_lock.py")
+# (made absolute: Blender runs with cwd=--out, so a relative path would resolve there)
+MACHINE_LOCK_TOOL = os.path.abspath(os.environ.get("KIT_MACHINE_LOCK") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "machine_lock.py"))
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 MAX_WAIT = "540s"
@@ -92,6 +93,7 @@ def find_blender(given=None, env=None, platform=None):
     env = os.environ if env is None else env
     for p in (given, env.get("KIT_BLENDER")):
         if p:
+            p = os.path.abspath(p)      # the run's cwd is --out, so a relative path would miss
             if os.path.isfile(p):
                 return p
             raise Refused(f"no Blender at {p}")
@@ -237,7 +239,7 @@ def play_action(objs, act):
 
 def _git(root, *args):
     done = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True,
-                          creationflags=NO_WINDOW)
+                          encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
     return done.returncode, done.stdout
 
 
@@ -248,7 +250,10 @@ def script_refusal(script, git=_git):
     root = checkout_root(script)
     if root is None:
         return f"{script} is not in a git checkout; only a committed script counts"
-    rel = os.path.relpath(os.path.abspath(script), root).replace(os.sep, "/")
+    try:
+        rel = os.path.relpath(os.path.realpath(script), root).replace(os.sep, "/")
+    except ValueError:      # another drive than the checkout
+        return f"{script} is not under its checkout {root}; only a committed script counts"
     code, _ = git(root, "ls-files", "--error-unmatch", "--", rel)
     if code != 0:
         return f"{rel} is not tracked in {root}: commit the script first"
@@ -259,15 +264,20 @@ def script_refusal(script, git=_git):
 
 
 def status_paths(porcelain):
-    """{path: status line} from `git status --porcelain` output (a rename counts as its new path)."""
+    """{path: status entry} from `git status --porcelain -z` output: NUL-separated, so a non-ASCII
+    name is raw, never quoted. A rename counts as its new path (its old path follows as an entry of
+    its own, skipped)."""
     paths = {}
-    for line in porcelain.splitlines():
-        if len(line) < 4:
+    entries = porcelain.split("\0")
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if len(entry) < 4:
             continue
-        path = line[3:].split(" -> ")[-1].strip()
-        if len(path) >= 2 and path[0] == path[-1] == '"':
-            path = path[1:-1]
-        paths[path] = line
+        if "R" in entry[:2] or "C" in entry[:2]:
+            i += 1
+        paths[entry[3:]] = entry
     return paths
 
 
@@ -293,7 +303,7 @@ def stray_writes(before, after, out_rel):
 def _status(root, git=_git):
     """`git status --porcelain` of the checkout; Refused when git fails (never an empty answer,
     which would read as "nothing changed")."""
-    code, out = git(root, "status", "--porcelain", "--untracked-files=all")
+    code, out = git(root, "status", "--porcelain", "-z", "--untracked-files=all")
     if code != 0:
         raise Refused(f"git status failed in {root} (exit {code})")
     return out

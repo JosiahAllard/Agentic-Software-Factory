@@ -208,8 +208,7 @@ def _setup_scene():
 
 
 # the kit's machine lock entry point: <plugin root>/tools/machine_lock.py, or KIT_MACHINE_LOCK to override
-MACHINE_LOCK_TOOL = os.environ.get("KIT_MACHINE_LOCK") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "machine_lock.py")
+MACHINE_LOCK_TOOL = B.MACHINE_LOCK_TOOL     # one copy, in blender_run.py
 
 RERUN_ENV = "RENDER_GLB_LOCKED"     # set only for the Blender run machine_lock_rerun starts
 

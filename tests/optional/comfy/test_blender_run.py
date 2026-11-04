@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.join(HERE, '..', '..', '..', 'optional', 'comfy')
 sys.path.insert(0, CODE)
 import blender_run as B  # noqa: E402
+from tests.realgit import real_git  # noqa: E402
 
 
 def touch(path):
@@ -58,6 +59,16 @@ class Finding(unittest.TestCase):
                 B.find_blender(None, {}, 'win32')
         with mock.patch('shutil.which', return_value='/usr/bin/blender'):
             self.assertEqual(B.find_blender(None, {'ProgramFiles': self.tmp}, 'win32'), '/usr/bin/blender')
+
+    def test_a_relative_blender_is_made_absolute(self):
+        touch(os.path.join(self.tmp, 'bin', 'blender.exe'))
+        old = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, old)
+        rel = os.path.join('bin', 'blender.exe')
+        want = os.path.normcase(os.path.abspath(rel))
+        self.assertEqual(os.path.normcase(B.find_blender(rel, env={})), want)
+        self.assertEqual(os.path.normcase(B.find_blender(None, env={'KIT_BLENDER': rel})), want)
 
     def test_a_named_blender_that_is_missing_refuses_rather_than_searching(self):
         with mock.patch('shutil.which', return_value='/usr/bin/blender'):
@@ -142,14 +153,56 @@ class Checks(unittest.TestCase):
         self.assertIn('not in a git checkout', B.script_refusal(loose, git({})))
 
     def test_stray_writes_are_new_or_changed_paths_outside_out(self):
-        before = ' M kept.txt\n?? old/\n'
-        after = (' M kept.txt\n?? old/\n?? art/round1/sheet.png\n M src/model.py\n'
-                 '?? art/\n?? "with space.txt"\nR  a.txt -> b.txt\n')
+        z = '\0'.join
+        before = z([' M kept.txt', '?? old/', ''])
+        after = z([' M kept.txt', '?? old/', '?? art/round1/sheet.png', ' M src/model.py', '?? art/',
+                   '?? with space.txt', 'R  b.txt', 'a.txt', ''])
         self.assertEqual(B.stray_writes(before, after, 'art/round1'),
                          ['b.txt', 'src/model.py', 'with space.txt'])
-        self.assertEqual(B.stray_writes('', ' M kept.txt\n', 'art'), ['kept.txt'])
-        self.assertEqual(B.stray_writes(' M kept.txt\n', ' M kept.txt\n', 'art'), [])
-        self.assertEqual(B.stray_writes('', 'MM kept.txt\n', ''), [])
+        self.assertEqual(B.stray_writes('', z([' M kept.txt', '']), 'art'), ['kept.txt'])
+        self.assertEqual(B.stray_writes(z([' M kept.txt', '']), z([' M kept.txt', '']), 'art'), [])
+        self.assertEqual(B.stray_writes('', z(['MM kept.txt', '']), ''), [])
+
+    def test_a_tracked_script_through_a_linked_checkout_is_not_refused(self):
+        real = os.path.join(self.tmp, 'real')
+        os.makedirs(os.path.join(real, '.git'))
+        touch(os.path.join(real, 'tools', 'job.py'))
+        linked = os.path.join(self.tmp, 'linked')
+        self.link(linked, real)
+        calls = []
+
+        def run(root, *args):
+            calls.append(args)
+            return 0, ''
+        self.assertIsNone(B.script_refusal(os.path.join(linked, 'tools', 'job.py'), run))
+        self.assertEqual(calls[0], ('ls-files', '--error-unmatch', '--', 'tools/job.py'))
+
+    def test_a_script_on_another_drive_is_a_refusal_not_a_crash(self):
+        script = touch(os.path.join(self.repo, 'job.py'))
+        with mock.patch('os.path.relpath', side_effect=ValueError('different drives')):
+            self.assertIn('not under', B.script_refusal(script, lambda *a: (0, '')))
+
+
+@real_git('the status text of a non-ASCII name: the fake does not model core.quotepath')
+class RealStatus(unittest.TestCase):
+    def test_an_accented_out_is_no_stray_write_in_a_real_status(self):
+        import subprocess
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        root = os.path.join(self.tmp, 'real')
+        os.makedirs(root)
+
+        def run(*a):
+            subprocess.run(['git', '-C', root, *a], check=True, capture_output=True)
+        run('init', '-q')
+        touch(os.path.join(root, 'kept.txt'))
+        run('add', 'kept.txt')
+        run('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'x')
+        before = B._status(root)
+        touch(os.path.join(root, 'café', 'a.png'))
+        after = B._status(root)
+        self.assertEqual(B.stray_writes(before, after, 'café'), [])
+        self.assertEqual(B.stray_writes(before, after, 'other'), ['café/a.png'])
 
 
 class Main(unittest.TestCase):
@@ -228,7 +281,7 @@ class Main(unittest.TestCase):
         self.assertNotIn('OUT ', text)
 
     def test_a_write_outside_out_fails_the_run(self):
-        self.after = '?? art/o/a.png\n?? stray.glb\n'
+        self.after = '?? art/o/a.png\0?? stray.glb\0'
         code, _, err = self.run_main(self.script, '--out', self.out)
         self.assertEqual(code, 3)
         self.assertIn('OUTSIDE --out: stray.glb', err)

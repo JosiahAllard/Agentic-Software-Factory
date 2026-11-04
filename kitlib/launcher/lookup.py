@@ -66,6 +66,12 @@ def find_exact(sessions, name):
     return [p for p in sessions if rc_name(p.get('CommandLine')) == name]
 
 
+def of_stem(name, stem):
+    """True when `name` is a session of `stem`: the stem itself, or <stem>-a<N>[-r<k>]."""
+    return bool(name) and bool(stem) and (
+        name == stem or re.match(re.escape(stem) + r'-a\d+(?:-r\d+)?\Z', name) is not None)
+
+
 def running_stem(procs, stem):
     """True when a launched session's name starts with `stem` (any account, any recycle)."""
     return any((rc_name(p.get('CommandLine')) or '').startswith(stem) for p in claude_sessions(procs))

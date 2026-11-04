@@ -600,6 +600,56 @@ class Start(Base):
         out = '\n'.join(start.start_entry(self.h.settings, self.host, 'rev', whatif=True))
         self.assertIn("-n 'alpha-coord-a1'", out)
 
+    def state(self, name):
+        with open(os.path.join(self.h.settings.state_dir(), name), encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_start_entry_on_another_account_records_the_name_and_account(self):
+        # a start (coord-restart's too) used to leave sessions.json naming -a1
+        self.rec(name='alpha-coord-a1', repo='alpha')
+        self.h.write_state('sessions.json', {'alpha': self.state('sessions.json')['rev'],
+                                             'help': {'repo': 'alpha', 'agent': False, 'stem': 'alpha-help',
+                                                      'state': 's.md', 'account': 1, 'name': 'alpha-help-a1'}})
+        self.h.write_state('coordinators.json', {'alpha': 1, 'pm_account': 1})
+        out = start.start_entry(self.h.settings, self.host, 'alpha', account='2')
+        self.assertEqual(len(self.host.opened), 1)
+        self.assertIn('Recorded sessions.json alpha : account=2 name=alpha-coord-a2', out)
+        entry = self.state('sessions.json')['alpha']
+        self.assertEqual((entry['account'], entry['name']), (2, 'alpha-coord-a2'))
+        self.assertEqual(self.state('coordinators.json'), {'alpha': 2, 'pm_account': 1})
+        start.start_entry(self.h.settings, self.host, 'help', account='3')       # a plain entry
+        entry = self.state('sessions.json')['help']
+        self.assertEqual((entry['account'], entry['name']), (3, 'alpha-help-a3'))
+        self.assertEqual(self.state('coordinators.json'), {'alpha': 2, 'pm_account': 1})
+
+    def test_a_write_made_while_the_window_opens_survives_the_record(self):
+        # start() can wait seconds in record_pipe; a hub job's hand-off written then is kept
+        self.rec(name='alpha-coord-a1', repo='alpha')
+        self.h.write_state('sessions.json', {'alpha': self.state('sessions.json')['rev']})
+        self.h.write_state('coordinators.json', {'alpha': 1})
+
+        def meanwhile(settings, name, after_ms):
+            sessions = self.state('sessions.json')
+            sessions['other'] = {'repo': 'beta', 'agent': True, 'stem': 'beta-coord', 'account': 3,
+                                 'name': 'beta-coord-a3'}
+            self.h.write_state('sessions.json', sessions)
+            self.h.write_state('coordinators.json', {'alpha': 1, 'beta': 3})
+        self.host.record_pipe = meanwhile
+        start.start_entry(self.h.settings, self.host, 'alpha', account='2')
+        sessions = self.state('sessions.json')
+        self.assertIn('other', sessions, 'the entry written meanwhile was lost')
+        self.assertEqual(sessions['other']['name'], 'beta-coord-a3')
+        self.assertEqual(sessions['alpha']['name'], 'alpha-coord-a2')
+        self.assertEqual(self.state('coordinators.json'), {'alpha': 2, 'beta': 3})
+
+    def test_a_what_if_start_entry_writes_nothing(self):
+        self.rec(name='alpha-coord-a1')
+        self.h.write_state('coordinators.json', {'alpha': 1})
+        before = (self.state('sessions.json'), self.state('coordinators.json'))
+        out = '\n'.join(start.start_entry(self.h.settings, self.host, 'rev', account='2', whatif=True))
+        self.assertNotIn('Recorded', out)
+        self.assertEqual((self.state('sessions.json'), self.state('coordinators.json')), before)
+
     def test_start_entry_refuses_while_its_stem_runs(self):
         self.rec()
         self.host.procs = [proc(5, "claude --remote-control 'alpha-coord-a1-r2' -n 'alpha-coord-a1-r2' 'x'")]

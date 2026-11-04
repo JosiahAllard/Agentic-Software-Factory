@@ -156,10 +156,7 @@ def _hold(reason, word=None, account=None):
     return Decision(False, reason, account, word)
 
 
-def of_stem(name, stem):
-    """True when `name` is a session of `stem`: the stem itself, or <stem>-a<N>[-r<k>]."""
-    return bool(name) and bool(stem) and (
-        name == stem or re.match(re.escape(stem) + r'-a\d+(?:-r\d+)?\Z', name) is not None)
+of_stem = lookup.of_stem          # it lives in kitlib.launcher.lookup; usage_crossover calls it as C.of_stem
 
 
 def name_account(name):
@@ -170,8 +167,8 @@ def name_account(name):
 
 def last_account(entry, record):
     """The account the coordinator last ran on: the one the job last saw it running on, else the
-    entry's sessions.json `account` (handoff and after-reboot write it; `launch.py start --session
-    --account M` does not, hence the sighting first). None when neither is known."""
+    entry's sessions.json `account` (handoff, after-reboot and `launch.py start --session` write it;
+    a session started any other way does not, hence the sighting first). None when neither is known."""
     seen = (record or {}).get('account')
     if seen not in (None, ''):
         return str(seen)

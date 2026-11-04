@@ -143,9 +143,10 @@ RUNNER = Obj({
     'command': Field(ListOf(Str(), nonempty=True), None, 'command: the argv words run, with {selector} {path} {stem} {tree} {log_dir} {n} filled in (docs/redfirst.md)'),
     'result': Field(Str(), None, 'command: the JUnit XML file it writes, filled in the same way, under the throwaway root unless absolute (unset: the exit code gives the verdict)'),
     'no_test': Field(Regex(), None, 'command: a log line meaning no test matched, the verdict NONE'),
+    'assertion': Field(Regex(), None, 'a failure that counts as an assertion, so RED: matched against a failed test\'s "<type>: <message>" (python: its exception line), or for a command with no result against the log, where exit 1 without a match is INCONCLUSIVE (docs/redfirst.md)'),
     'args': Field(Strs, None, 'arguments appended to the command'),
     'lock': Field(Str(pattern=NAME_RE, what='a kind name'), None, 'the kinds-table kind booked around its command (unset: build for command, else the kind of the heavy-list entry the command matches - build for gradle and dotnet, none for python)'),
-}, required=('glob', 'kind'), what='{glob, kind, pythonpath, dir, project, csproj, command, result, no_test, args, lock}')
+}, required=('glob', 'kind'), what='{glob, kind, pythonpath, dir, project, csproj, command, result, no_test, assertion, args, lock}')
 
 SECTIONS = {
     'repo': {

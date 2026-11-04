@@ -15,6 +15,11 @@ GRADLE = {'glob': 'engine/core/src/test/*.java', 'kind': 'gradle', 'dir': 'engin
 DOTNET = {'glob': 'server/App.Tests/*.cs', 'kind': 'dotnet',
           'csproj': 'server/App.Tests/App.Tests.csproj', 'args': ['--no-incremental']}
 RUNNERS = [TOOLS, PY, GRADLE, DOTNET]
+# A JUnit suite with one assertion failure: Gradle writes every failed test as a <failure> whose
+# type is the exception's class.
+ONE_ASSERT = ('<testsuite tests="%d" failures="1" errors="0"><testcase name="t">'
+              '<failure type="org.opentest4j.AssertionFailedError" message="x"/></testcase>'
+              '</testsuite>')
 
 
 class Selectors(unittest.TestCase):
@@ -156,7 +161,11 @@ class GradleCmdReparse(unittest.TestCase):
 class Verdicts(unittest.TestCase):
     def test_python(self):
         self.assertEqual(V.python_verdict(0, 'Ran 2 tests in 0.1s\nOK')[0], V.GREEN)
-        self.assertEqual(V.python_verdict(1, 'Ran 2 tests in 0.1s\nFAILED')[0], V.RED)
+        failed = ('=' * 70 + '\nFAIL: test_a (m.T.test_a)\n' + '-' * 70 + '\nTraceback (most '
+                  'recent call last):\n  File "m.py", line 3, in test_a\n    x\nAssertionError: 1 != 2'
+                  '\n\n' + '-' * 70 + '\nRan 2 tests in 0.1s\nFAILED (failures=1)')
+        self.assertEqual(V.python_verdict(1, failed), (V.RED, 'failed an assertion (2 test(s) ran)'))
+        self.assertEqual(V.python_verdict(1, 'Ran 2 tests in 0.1s\nFAILED')[0], 'INCONCLUSIVE')
         self.assertEqual(V.python_verdict(1, 'boom')[0], V.ERROR)
         self.assertEqual(V.python_verdict(5, 'Ran 0 tests in 0s\nNO TESTS RAN')[0], V.NONE)
         imp = ('ERROR: m (unittest.loader._FailedTest.m)\nImportError: Failed to import test '
@@ -196,17 +205,19 @@ class Verdicts(unittest.TestCase):
         log = "Execution failed for task ':core:compileTestJava'\n/w/a/FooTest.java:1: error: x"
         self.assertEqual(V.gradle_verdict(1, log, None, ['a/FooTest.java'])[0], V.RED)
         self.assertEqual(V.gradle_verdict(1, log, None, ['a/Other.java'])[0], V.ERROR)
-        self.assertEqual(V.gradle_verdict(1, '', (3, 1), [])[0], V.RED)
-        self.assertEqual(V.gradle_verdict(0, '', (3, 0), [])[0], V.GREEN)
+        failed = [('failure', 'org.opentest4j.AssertionFailedError', 'x', 'FooTest.t')]
+        self.assertEqual(V.gradle_verdict(1, '', (3, 1, failed), [])[0], V.RED)
+        self.assertEqual(V.gradle_verdict(0, '', (3, 0, []), [])[0], V.GREEN)
         self.assertEqual(V.gradle_verdict(1, '', None, [])[0], V.ERROR)
 
     def test_dotnet(self):
         self.assertEqual(V.dotnet_verdict(1, 'No test matches the given testcase filter', None, [])[0], V.NONE)
         self.assertEqual(V.dotnet_verdict(1, 'T/A.cs(1,2): error CS1: x', None, ['T/A.cs'])[0], V.RED)
         self.assertEqual(V.dotnet_verdict(1, 'B.cs(1,2): error CS1: x', None, ['T/A.cs'])[0], V.ERROR)
-        self.assertEqual(V.dotnet_verdict(1, '', (4, 2), [])[0], V.RED)
-        self.assertEqual(V.dotnet_verdict(0, '', (4, 0), [])[0], V.GREEN)
-        self.assertEqual(V.dotnet_verdict(0, '', (0, 0), [])[0], V.NONE)
+        failed = [('failure', '', 'Assert.Equal() Failure', 'T.A'), ('failure', '', 'Assert.True() Failure', 'T.B')]
+        self.assertEqual(V.dotnet_verdict(1, '', (4, 2, failed), [])[0], V.RED)
+        self.assertEqual(V.dotnet_verdict(0, '', (4, 0, []), [])[0], V.GREEN)
+        self.assertEqual(V.dotnet_verdict(0, '', (0, 0, []), [])[0], V.NONE)
 
     def test_exit_code(self):
         self.assertEqual(V.exit_code([V.RED, V.RED], True), V.EXIT_RED)
@@ -234,7 +245,7 @@ class ResultFiles(unittest.TestCase):
     def test_junit_counts_this_run_only(self):
         self.put('TEST-a.xml', '<testsuite tests="2" failures="1" errors="0"/>')
         self.put('TEST-old.xml', '<testsuite tests="9" failures="9" errors="0"/>', age=3600)
-        self.assertEqual(V.junit_counts(self.dir, time.time() - 60), (2, 1))
+        self.assertEqual(V.junit_counts(self.dir, time.time() - 60)[:2], (2, 1))
 
     def gradle(self, rc, since, tw=None):
         sel = V.parse_selector('engine/core/src/test/FooTest.java', RUNNERS)
@@ -243,7 +254,7 @@ class ResultFiles(unittest.TestCase):
     def test_gradle_reads_a_test_task_not_named_test(self):
         """A module whose test task writes build/test-results/<task>/ is judged from that XML."""
         self.put('engine/core/build/test-results/integrationTest/TEST-a.FooTest.xml',
-                 '<testsuite tests="3" failures="1" errors="0"/>')
+                 ONE_ASSERT % 3)
         self.assertEqual(self.gradle(1, time.time() - 60), (V.RED, '1 of 3 test(s) failed'))
 
     def test_gradle_counts_the_own_class_and_its_nested_ones_of_this_run(self):
@@ -251,8 +262,7 @@ class ResultFiles(unittest.TestCase):
         folders; its XML older than the run, and a class whose name only ends in it, do not."""
         base = 'engine/core/build/test-results/'
         self.put(base + 'test/TEST-a.FooTest.xml', '<testsuite tests="2" failures="0" errors="0"/>')
-        self.put(base + 'test/TEST-a.FooTest$Inner.xml',
-                 '<testsuite tests="1" failures="0" errors="1"/>')
+        self.put(base + 'test/TEST-a.FooTest$Inner.xml', ONE_ASSERT % 1)
         self.put(base + 'unitTest/TEST-FooTest.xml', '<testsuite tests="1" failures="0" errors="0"/>')
         self.put(base + 'otherTest/TEST-a.FooTest.xml',
                  '<testsuite tests="9" failures="9" errors="0"/>', age=3600)
@@ -293,8 +303,7 @@ class ResultFiles(unittest.TestCase):
     def test_gradle_module_root_with_glob_characters(self):
         """A tree whose path holds `[` is searched as a literal folder, not a glob pattern."""
         tw = os.path.join(self.dir, 'm[1]')
-        self.put('m[1]/engine/core/build/test-results/test/TEST-a.FooTest.xml',
-                 '<testsuite tests="3" failures="1" errors="0"/>')
+        self.put('m[1]/engine/core/build/test-results/test/TEST-a.FooTest.xml', ONE_ASSERT % 3)
         self.assertEqual(self.gradle(1, time.time() - 60, tw), (V.RED, '1 of 3 test(s) failed'))
 
     def test_junit_unparseable_is_none(self):
@@ -304,7 +313,7 @@ class ResultFiles(unittest.TestCase):
     def test_trx_counts(self):
         p = self.put('r.trx', '<TestRun><ResultSummary><Counters total="5" failed="1" error="1"/>'
                               '</ResultSummary></TestRun>')
-        self.assertEqual(V.trx_counts(p), (5, 2))
+        self.assertEqual(V.trx_counts(p), (5, 2, []))
         self.assertIsNone(V.trx_counts(p, time.time() + 60))
         self.assertIsNone(V.trx_counts(os.path.join(self.dir, 'none.trx')))
 

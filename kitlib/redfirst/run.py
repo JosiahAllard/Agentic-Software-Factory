@@ -741,8 +741,11 @@ def select(text, runners, written, top, head):
 
 FINAL = {V.EXIT_RED: 'REDFIRST OK - every named test is red at %s',
          V.EXIT_GREEN: 'REDFIRST NOT RED - a named test passes at %s',
-         V.EXIT_UNDECIDED: 'REDFIRST UNDECIDED - see the NONE/ERROR/TIMEOUT/stopped lines',
+         V.EXIT_UNDECIDED: 'REDFIRST UNDECIDED - see the NONE/ERROR/TIMEOUT/INCONCLUSIVE/stopped lines',
          V.EXIT_LEFTOVER: 'REDFIRST LEFTOVER - verdicts above, the throwaway tree was not removed'}
+INCONCLUSIVE = ('REDFIRST INCONCLUSIVE - a named test failed at the base, but not on an assertion '
+                '(a crash, setup error or missing asset): that proves nothing, so this is no '
+                'red-first proof; see the INCONCLUSIVE lines (docs/redfirst.md "What counts as red")')
 TIMED_OUT = ('REDFIRST TIMEOUT - a named test ran past its time limit and its process tree was '
              'killed: no verdict for it (see the TIMEOUT line)')
 
@@ -860,6 +863,8 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
         rc = V.exit_code(verdicts, cleaned)
         if rc == V.EXIT_UNDECIDED and V.TIMEOUT in verdicts:
             say(TIMED_OUT)
+        elif rc == V.EXIT_UNDECIDED and V.INCONCLUSIVE in verdicts:
+            say(INCONCLUSIVE)
         else:
             say(FINAL[rc] % plan.base[:10] if '%s' in FINAL[rc] else FINAL[rc])
         return rc

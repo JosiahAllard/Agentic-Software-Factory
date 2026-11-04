@@ -1184,7 +1184,8 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
         if why:
             raise Usage('refused `--until %s`: %s' % (until, why))
         if condmod.kind_of(until) == 'resource':
-            why = condmod.resource_error(until, ctx.resources)
+            why = condmod.resource_error(until, ctx.resources) if condmod.parse(until) else \
+                'not the form `resource:<name> free` (<name>: lowercase letters, digits, `-`)'
             if why:
                 raise Usage('refused `--until %s`: %s' % (until, why))
         if members[0] == 'owner' and not role_checked and not policy.lead_until(until):

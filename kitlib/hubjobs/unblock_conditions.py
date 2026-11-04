@@ -285,9 +285,10 @@ class UnblockJob(object):
                     # one `owner` line of several met: the line goes, the hold stays (no push)
                     dropped.append('%s:%s' % (repo, rid))
         note = '; '.join(
-            (['unblocked %s' % ', '.join(done)] if done else [])
+            unread      # first: the cut below must not drop why a condition is not told
+            + (['unblocked %s' % ', '.join(done)] if done else [])
             + (['line met, still held: %s' % ', '.join(dropped)] if dropped else [])
-            + notes + unread)[:NOTE_MAX]
+            + notes)[:NOTE_MAX]
         if failed:
             raise ConditionsFailed('; '.join(failed + ([note] if note else []))[:NOTE_MAX * 2])
         if not done and not dropped:

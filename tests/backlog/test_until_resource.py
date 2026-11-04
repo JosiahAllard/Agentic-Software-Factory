@@ -71,6 +71,13 @@ class BlockTime(StoreCase):
         self.assertIn('does not declare', str(cm.exception))
         self.assertEqual(self.get('FOO').get('state'), 'open')
 
+    def test_a_resource_text_that_does_not_parse_is_usage(self):
+        self.seed(rec('FOO'))
+        for text in ('resource:Dev-Clone free', 'resource:dev-clone busy'):
+            with self.assertRaises(Usage, msg=text):
+                self.verb('block', 'FOO', ['live-client'], until=text)
+        self.assertEqual(self.get('FOO').get('state'), 'open')
+
     def test_owner_is_refused(self):
         self.seed(rec('FOO'))
         with self.assertRaises(Usage):

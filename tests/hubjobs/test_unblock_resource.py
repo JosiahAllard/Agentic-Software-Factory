@@ -1,6 +1,8 @@
 """The Action Hub's unblock-conditions job on `resource:<name> free`: a hold stays while every unit
 of the repo's declared resource is taken by a live pull, clears when one frees, and stays (with the
 reason said) when the capacity cannot be read."""
+from unittest import mock
+
 from kitlib.hubjobs import unblock_conditions as U
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.hubjobs.test_unblock_conditions import Case, Ctx
@@ -13,11 +15,11 @@ def waiting():
     return rec('WAIT', state='blocked', blocked_on='live-client', until=UNTIL)
 
 
-def holder(state='pulled'):
-    over = dict(uses='dev-clone')
+def holder(state='pulled', rid='HOLD', by=HOLDER, uses='dev-clone'):
+    over = {} if uses is None else dict(uses=uses)
     if state == 'pulled':
-        over.update(state='pulled', pulled_at='2026-11-04', pulled_by=HOLDER)
-    return rec('HOLD', **over)
+        over.update(state='pulled', pulled_at='2026-11-04', pulled_by=by)
+    return rec(rid, **over)
 
 
 class ResourceFree(Case):
@@ -62,4 +64,46 @@ class ResourceFree(Case):
         note = self.job()(Ctx())
         self.assertEqual(self.get('ODD').get('state'), 'blocked')
         self.assertIn('gpu', note.note)
+
+    def test_pulls_on_other_or_no_resource_take_no_unit(self):
+        self.repo.git('branch', 'kit/other')
+        self.repo.git('branch', 'kit/none')
+        self.seed(waiting(), holder('pulled', 'OTH', 'kit/other', 'gpu'),
+                  holder('pulled', 'NON', 'kit/none', None))
+        self.job()(Ctx())
+        self.assertEqual(self.get('WAIT').get('state'), 'open')
+
+    def test_capacity_two_is_free_with_one_holder_and_taken_with_two(self):
+        kit_json_ref(self.repo, {'backlog': {'resources': {'dev-clone': 2}}})
+        self.repo.git('branch', 'kit/second')
+        self.seed(waiting(), holder())
+        self.job()(Ctx())
+        self.assertEqual(self.get('WAIT').get('state'), 'open')
+        self.seed(waiting(), holder(), holder('pulled', 'HOL2', 'kit/second'))
+        self.job()(Ctx())
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')
+
+    def test_the_job_says_why_an_unreadable_capacity_holds_the_record(self):
+        self.seed(waiting())
+        with mock.patch('kitlib.backlog.opener.repo_resources', side_effect=ValueError('x')):
+            note = self.job()(Ctx())
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')
+        self.assertIn('.kit.json cannot be read', note.note)
+
+    def test_the_job_says_why_git_that_cannot_tell_holds_the_record(self):
+        self.seed(waiting(), holder())
+        with mock.patch('kitlib.backlog.offer.live_branches', return_value=(None, 'boom')):
+            note = self.job()(Ctx())
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')
+        self.assertIn('git cannot tell which pulls are live (boom)', note.note)
+
+    def test_the_reasons_survive_the_note_cut(self):
+        self.seed(waiting())
+        long_note = 'x' * (U.NOTE_MAX + 50)
+        job = U.UnblockJob(lambda: ([('kit', self.repo.root)], [long_note]),
+                           lambda: U.Readers(self.hub, self.plugins, lambda repo, rid: None),
+                           write=self.write)
+        with mock.patch('kitlib.backlog.opener.repo_resources', side_effect=ValueError('x')):
+            note = job(Ctx())
+        self.assertIn('.kit.json cannot be read', note.note)
 

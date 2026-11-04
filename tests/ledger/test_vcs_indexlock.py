@@ -5,7 +5,6 @@ import ctypes
 import os
 import time
 import unittest
-from ctypes import wintypes
 from unittest import mock
 
 from kitlib.git import cmd
@@ -23,6 +22,7 @@ _DELETE, _SHARE_ALL, _OPEN_EXISTING, _FILE_DISPOSITION_INFO = 0x00010000, 7, 3, 
 
 def _kernel32():
     """Its own kernel32 instance (argtypes stay local), loaded on first use: Windows only."""
+    from ctypes import wintypes     # not at module level: it fails to import on some Linux Pythons
     k32 = ctypes.WinDLL('kernel32', use_last_error=True)
     k32.CreateFileW.restype = wintypes.HANDLE
     k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
@@ -76,6 +76,7 @@ class IndexLockTest(unittest.TestCase):
         """Put the held lock in the state a delete leaves it in while another handle is still open
         on it (the gate's failures of 2026-10-14): the file stays listed, and creating it is denied
         (PermissionError, errno 13), until that handle closes. Returns the close."""
+        from ctypes import wintypes
         k32 = _kernel32()
         invalid = wintypes.HANDLE(-1).value
         h = k32.CreateFileW(self.lock, _DELETE, _SHARE_ALL, None, _OPEN_EXISTING, 0, None)

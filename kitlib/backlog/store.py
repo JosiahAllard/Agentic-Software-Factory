@@ -1214,7 +1214,8 @@ class MainBackend(object):
         HEAD, in path order: `added`, `modified` or `deleted` for a record (`<dir>/<ID>.md`), `not
         a record` for anything else there. Failure when git does not answer."""
         rel = self.rel.replace('\\', '/')
-        out, why = cmd.run(['-c', 'core.quotePath=false', 'status', '--porcelain', '-z',
+        out, why = cmd.run(['--no-optional-locks', '-c', 'core.quotePath=false', 'status',
+                            '--porcelain', '-z',
                             '--untracked-files=all', '--no-renames', '--', rel + '/'], self.root,
                            env=_store_env())
         if out is None:

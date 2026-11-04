@@ -543,9 +543,12 @@ class Config(unittest.TestCase):
         self.assertEqual(kconfig.load(w.main).section('guard')['data_roots'], [])
 
     def test_entries(self):
-        roots = [{'path': 'D:\\data\\models', 'mode': 'add-only'}, {'path': '//host/share/x', 'mode': 'read-only'},
+        roots = [{'path': 'D:\\data\\models', 'mode': 'add-only'},
                  {'path': 'E:/scratch', 'mode': 'open', 'why': 'test'}]
         self.assertEqual(self.load({'data_roots': roots}).section('guard')['data_roots'], roots)
+        unc = [{'path': '//host/share/x', 'mode': 'read-only'}]
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertEqual(self.load({'data_roots': unc}).section('guard')['data_roots'], unc)
 
     def test_posix_absolute_path(self):
         roots = [{'path': '/srv/data', 'mode': 'add-only'}]

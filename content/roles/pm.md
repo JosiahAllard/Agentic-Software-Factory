@@ -124,7 +124,7 @@ When the hub's usage crossover sends you its checkpoint message (your account ne
 limit), update HANDOFF.md as above, then post it with `hub_handoff_ready`: kind `handoff`, from
 pm, `state_path` its absolute path. After that send nothing, dispatch nothing and land nothing:
 the hub starts a fresh PM on another account from that file. If the hub instead pushes
-cross-cleared, cross-failed, no-room or stalled with detail pm, the crossing is off: resume your
+cross-cleared, cross-failed, no-room or stalled with detail pm or pm:... (as no-room pm:unknown:a2), the crossing is off: resume your
 normal work. When you are told to stand down,
 delete your crons, stop your monitors and loops, and stay idle; the owner closes your window. If
 you are the new PM, act only once coordinators.json names your session, as your first message says.

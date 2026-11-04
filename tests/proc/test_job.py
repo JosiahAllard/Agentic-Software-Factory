@@ -96,6 +96,16 @@ class LimitRefused(unittest.TestCase):
             with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):
                 job.Job()
 
+    def test_a_job_that_asks_for_no_kill_on_close_accepts_a_refused_limit(self):
+        # kitlib.git.cmd makes Job(kill_on_close=False): a refusal leaves it as asked.
+        with mock.patch.object(job, "_set_ext", return_value=False):
+            j = job.Job(kill_on_close=False)
+        try:
+            self.assertFalse(j.kill_on_close)
+            self.assertIsNone(j.pin)
+        finally:
+            j.close()
+
     def test_a_pinned_job_whose_limit_is_refused_twice_raises(self):
         with mock.patch.object(job, "_set_ext", return_value=False):
             with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):

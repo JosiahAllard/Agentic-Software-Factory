@@ -59,8 +59,13 @@ under the title.
   detail has Open the record. Open also shows your stories: in progress above the table, filed or closed
   below it, with Withdraw while one is still submitted. The New story button opens a blank record page;
   `stories add` still files a story.
-- **Docs.** The agents' documents (a plan, research, a visual choice), newest first in This week and
-  Earlier (by last change; one with no time is Earlier), from `pages/` and `page_html/`. A row opens
+- **Docs.** The agents' documents (a plan, research, a visual choice), from `pages/` and `page_html/`.
+  The left pane is a tree, All documents > repo > kind, with a count on each node. A card with a repo
+  but no kind is under that repo's Unsorted, and a card with no repo is under a top-level Unsorted.
+  Selecting a node shows its cards newest first (This week / Earlier, by last change; one with no time
+  is Earlier) under a heading with the count and size. The id/title box filters tree and cards, and the
+  repo menu still narrows both. The selected node and the open repos are kept in the browser's
+  localStorage. The existing pages were given a kind and a repo (`pages place`), so none is Unsorted. A row opens
   its detail: the summary, refs and buttons. Ask the PM about it adds a line about the document to the
   Message the PM form and sends nothing. Read full screen reads the body from the server into a reader;
   Close or Esc (focus outside the document) shuts it. A ref on any card that names a listed document

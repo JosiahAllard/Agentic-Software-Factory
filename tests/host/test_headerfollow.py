@@ -208,7 +208,7 @@ class SubagentStart(unittest.TestCase):
 
     def test_a_compacted_session_s_header_names_the_current_export(self):
         # a compaction keeps the hook's old plugin root: the header and its record follow the export
-        for source in ('compact', 'clear'):
+        for source in ('compact', 'clear', 'resume'):
             text = self.start('SessionStart', payload=self.session(source))
             self.assertTrue(text.startswith('PM kit header. The kit folder is %s.' % self.fwd(self.new)), text)
             self.assertNotIn(OLD, text)

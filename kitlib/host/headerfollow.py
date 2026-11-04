@@ -17,12 +17,12 @@ A subagent is the exception: its start hook runs from the folder its session beg
 header would be fresh, so the hour would hold the line back for most of a subagent's life while
 tools from that folder refuse a .kit.json holding a key newer than the folder. So a subagent's
 start header names the current folder outright (start_kit), and is recorded as naming it. So does
-a SessionStart whose payload source is compact or clear (kitlib.host.hookmain.FOLLOW_SOURCES): it runs
+a SessionStart whose payload source is compact, clear or resume (kitlib.host.hookmain.FOLLOW_SOURCES): it runs
 from the folder the session began on, and re-noting that folder would reset the record's clock (a
 session that compacts more often than EVERY_S would never hear the line) and re-inject a header that
 undoes the line. A startup SessionStart keeps its own folder.
 
-  start_kit(kit, environ)        at a subagent's start (and a compact or clear session start):
+  start_kit(kit, environ)        at a subagent's start (and a compact, clear or resume session start):
                                  the folder its header names, the one the
                                  guard names (advice_kit) when `kit` and that folder are exports,
                                  else `kit`. Never raises

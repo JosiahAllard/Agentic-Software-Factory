@@ -52,7 +52,7 @@ CREATE_TIMEOUT_S = 60
 # Win32_Process.Create's documented return values; a refusal names the meaning, not the number.
 WMI_CODES = {0: 'successful completion', 2: 'access denied', 3: 'insufficient privilege',
              8: 'unknown failure', 9: 'path not found', 21: 'invalid parameter'}
-# Code 8 is asked again, up to CREATE_TRIES starts in all, RETRY_DELAY_S apart (it runs inside a
+# Code 8 with no ProcessId (or 0) is asked again, up to CREATE_TRIES starts in all, RETRY_DELAY_S apart (it runs inside a
 # land submit, so short). Why that is safe, that a code 8 started nothing:
 #   observed: the two land submits refused on it (2026-11-04) got no ProcessId back, and their
 #     output logs hold only the submission's header, where a landing that had started would have
@@ -147,19 +147,24 @@ def create(argv, cwd, env, run=None, timeout=CREATE_TIMEOUT_S, sleep=None):
                                     CREATE_PS],
                                    input=data, capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.SubprocessError) as e:
-            return None, 'failed: %s' % e
+            return None, 'failed%s: %s' % (' after %d tries' % tries if tries > 1 else '', e)
         parts = (r.stdout or '').split()
         if not r.returncode and len(parts) == 2 and parts[0] == '0' and parts[1].isdigit():
             return int(parts[1]), None
         code = int(parts[0]) if not r.returncode and parts and parts[0].isdigit() else None
-        if code == RETRY_CODE and tries < CREATE_TRIES:
+        # Only a code 8 with no pid (or pid 0) is asked again: a pid back means a process may
+        # have started, and asking again could start a second one.
+        pid = parts[1] if len(parts) > 1 and parts[1] != '0' else None
+        if (code == RETRY_CODE and parts in (['8'], ['8', '0'])
+                and tries < CREATE_TRIES):
             (sleep or time.sleep)(RETRY_DELAY_S)
             continue
         if code is None or code == 0:   # 0 with no pid is output that is no start either
             got = '%r' % (r.stdout or '').strip()
         else:
-            got = 'WMI code %d (%s)%s' % (code, WMI_CODES.get(code, 'undocumented'),
-                                          ' after %d tries' % tries if tries > 1 else '')
+            got = 'WMI code %d (%s)%s%s' % (code, WMI_CODES.get(code, 'undocumented'),
+                                            ' with pid %s' % pid if pid else '',
+                                            ' after %d tries' % tries if tries > 1 else '')
         err = (r.stderr or '').strip()[-300:]
         return None, 'got %s (exit %s)%s' % (got, r.returncode, ': %s' % err if err else '')
 

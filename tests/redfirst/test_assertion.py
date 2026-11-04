@@ -111,12 +111,18 @@ class Python(unittest.TestCase):
         self.assertEqual(V.python_verdict(1, log, '+import pkg')[0], INCONCLUSIVE)
 
     def test_an_import_error_naming_no_name_is_inconclusive(self):
-        """A DLL that will not load, or a None attribute, is a crash whatever the diff adds."""
+        """A DLL that will not load, a circular import, or an attribute of None or of a builtin
+        type is a crash whatever the diff adds."""
         for exc in ('ImportError: DLL load failed while importing _calc: The specified module '
                     'could not be found.',
                     "AttributeError: 'NoneType' object has no attribute 'mul'",
                     "AttributeError: partially initialized module 'calc' has no attribute 'mul' "
-                    '(most likely due to a circular import)'):
+                    '(most likely due to a circular import)',
+                    "ImportError: cannot import name 'mul' from partially initialized module "
+                    "'calc' (most likely due to a circular import) (/w/calc.py)",
+                    "AttributeError: 'str' object has no attribute 'mul'",
+                    "AttributeError: 'builtin_function_or_method' object has no attribute 'mul'",
+                    "AttributeError: type object 'dict' has no attribute 'mul'"):
             with self.subTest(exc=exc):
                 v, reason = V.python_verdict(1, unittest_log(block('ERROR', 'test_n', exc)),
                                              ADDS_ALL + '\n+_calc DLL load')

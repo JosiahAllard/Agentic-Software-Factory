@@ -6,6 +6,7 @@ name both, so they must not count as the diff.
 """
 import unittest
 
+from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
 
 from .test_run import Case
@@ -123,6 +124,15 @@ class DiffNames(Case):
 
     def test_an_unexpected_keyword_argument(self):
         self.check('kwarg', "got an unexpected keyword argument 'scale'")
+
+    def test_a_copied_file_s_lines_are_left_out_however_its_path_is_spelled(self):
+        """An `--also` helper given as ./tests\\calc_new.py is still a copied file: its lines and
+        path are not the diff's; the change's other files are."""
+        head = self.fx.head(self.wt)
+        added = R.added_lines(self.wt, self.before, head, [PATH, '.\\tests\\calc_new.py'])
+        self.assertIn('+def mul(a, b):', added)
+        self.assertNotIn('calc_new', added)
+        self.assertNotIn('calc_gone', added)
 
 
 if __name__ == '__main__':

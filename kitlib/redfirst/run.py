@@ -436,6 +436,11 @@ def run_one(sel, n, tw, log_dir, files, added, run, head='.'):
     return v, reason, log
 
 
+def _rel(path):
+    """A repo-relative path as the diff's `+++ b/` line spells it: `/` separators, no `./`."""
+    return posixpath.normpath(path.replace('\\', '/'))
+
+
 def added_lines(top, base, head, files):
     """The `+` lines of `git diff base head` outside the `files` copied in (their own lines name
     everything they test), the `+++ b/<path>` line of each new or changed file among them: the
@@ -443,18 +448,20 @@ def added_lines(top, base, head, files):
     so a moved file's path and lines count as added. A file whose path git quotes (`+++ "b/..."`)
     is left out too: it cannot be told from a copied one, and leaving it out errs to INCONCLUSIVE.
     V.Usage when git cannot read the diff."""
-    rc, out, err = git(top, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0', base, head)
+    rc, out, err = git(top, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0',
+                       '--src-prefix=a/', '--dst-prefix=b/', base, head)
     if rc != 0:
         raise V.Usage('refused: the diff %s..%s could not be read: %s'
                       % (base[:10], head[:10], err or 'exit %d' % rc))
-    copied = set(files)
+    copied = {_rel(f) for f in files}
     keep, lines, body = False, [], False
     for line in out.splitlines():
         if line.startswith('diff --git '):
             keep, body = False, False
         elif not body and line.startswith('+++ '):
             # git ends the line with a tab when the path holds a space
-            keep = line.startswith('+++ b/') and line[len('+++ b/'):].rstrip('\t') not in copied
+            keep = (line.startswith('+++ b/')
+                    and _rel(line[len('+++ b/'):].rstrip('\t')) not in copied)
             body = True
             if keep:
                 lines.append(line)

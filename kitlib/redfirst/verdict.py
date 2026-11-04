@@ -367,15 +367,18 @@ _PY_BLOCK = re.compile(r'^(FAIL|ERROR): (.*?)\r?\n-{70}\r?\n(.*?)(?=^={70}\r?$|^
                        re.M | re.S)
 # An exception that names a module or a name the base lacks, raised inside the test: what a test
 # file that will not import says (RED there), here RED only when the change adds that name
-# (missing_name, in_diff). Each form captures the name. A None attribute is a crash, never a name.
-# ImportError with no name (DLL load failed, a relative import) matches none: INCONCLUSIVE.
+# (missing_name, in_diff). Each form captures the name. An attribute of None or of a builtin type
+# is a crash, never a name: no change adds one. ImportError with no name (DLL load failed, a
+# relative import) and a circular import match none: INCONCLUSIVE.
+_BUILTIN = (r"(?!(?:NoneType|str|bytes|int|float|bool|list|dict|tuple|set|frozenset|function|"
+            r"method|builtin_function_or_method|module)')")
 _MODULE_FORM = re.compile(r"^ModuleNotFoundError: No module named '([^']+)'")
 _NAME_FORMS = (
-    re.compile(r"^ImportError: cannot import name '([^']+)'"),
+    re.compile(r"^ImportError: cannot import name '([^']+)'(?!.*\bpartially initialized module\b)"),
     re.compile(r"^AttributeError: module '[^']+' has no attribute '([^']+)'"),
     re.compile(r"^AttributeError: .* does not have the attribute '([^']+)'"),        # mock.patch
-    re.compile(r"^AttributeError: '(?!NoneType')[^']+' object has no attribute '([^']+)'"),
-    re.compile(r"^AttributeError: type object '[^']+' has no attribute '([^']+)'"),
+    re.compile(r"^AttributeError: '%s[^']+' object has no attribute '([^']+)'" % _BUILTIN),
+    re.compile(r"^AttributeError: type object '%s[^']+' has no attribute '([^']+)'" % _BUILTIN),
     re.compile(r"^TypeError: .*\bgot an unexpected keyword argument '([^']+)'"),
 )
 

@@ -93,8 +93,11 @@ def survey(plan, d, ctx):
         plan.refuse('%s: "hooks" is not a JSON object; this step cannot read it' % path)
         return
     try:
-        ed.did.extend(repoint_moved(data, ctx))
-        ed.did.extend(repoint_links(data, ctx))
+        for event in sorted(hooks) if isinstance(hooks, dict) else []:
+            for h in _hooks(data, event):                  # per hook: ed.hook drops a dropped hook's lines
+                one = {'hooks': {event: [{'hooks': [h]}]}}
+                ed.pending[id(h)] = repoint_moved(one, ctx) + repoint_links(one, ctx)
+        ed.did.extend(repoint_links({'statusLine': data['statusLine']} if 'statusLine' in data else {}, ctx))
     except ValueError as e:
         plan.refuse('%s: %s' % (path, e))
         return
@@ -603,7 +606,7 @@ class _Editor(object):
     def __init__(self, ctx, d, path, plan):
         self.ctx, self.d, self.path, self.plan = ctx, d, path, plan
         self.did = []
-        self._mark = 0                          # len(did) when the current hook began (see rewrite)
+        self.pending = {}                       # id(hook) -> the lines survey's re-points of it made
         self._entry = None
 
     def guard_entry(self):
@@ -617,11 +620,18 @@ class _Editor(object):
         """True when `h` is an old kit hook to drop; otherwise its paths are re-pointed in place and a
         shell-form SessionStart hook running the kit's hook entry is written in exec form."""
         where = '%s hook' % event
-        self._mark = len(self.did)
+        mark = len(self.did)
+        self.did.extend(self.pending.pop(id(h), []))
+
+        def dropped():
+            """Keep only the drop line `rewrite` just recorded: a dropped hook prints that one line."""
+            self.did[mark:] = self.did[-1:]
+            return True
+
         if isinstance(h.get('command'), str):
             h['command'], drop, _ = self.rewrite(h['command'], where, True)
             if drop:
-                return True
+                return dropped()
         args = h.get('args')
         if isinstance(args, list):
             out = []
@@ -629,7 +639,7 @@ class _Editor(object):
                 if isinstance(a, str):
                     a, drop, words = self.rewrite(a, where, True, whole=True)
                     if drop:
-                        return True
+                        return dropped()
                     out += [a] + words
                 else:
                     out.append(a)
@@ -690,7 +700,6 @@ class _Editor(object):
             base = os.path.basename(p).lower()
             if verdict == 'remove':
                 if removable:
-                    del self.did[self._mark:]                # a dropped hook prints its drop line only
                     self.did.append('drop the %s %s' % (where, os.path.basename(p)))
                     return s, True, []
                 self.plan.refuse('%s: %s runs %s, which this step only removes from hooks' % (self.path, where, bare))

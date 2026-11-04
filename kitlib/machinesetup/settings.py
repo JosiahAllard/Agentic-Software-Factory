@@ -272,6 +272,12 @@ def _moved(tok, ctx):
     return None
 
 
+def _quote_for(q, path, whole):
+    """The quote to put round the new `path` that replaces a token quoted with `q` ('' when it was not):
+    an unquoted token that gains a space is quoted, or the shell splits it; a whole argument never is."""
+    return '"' if not q and not whole and ' ' in path else q
+
+
 def _sub_moved(s, ctx, event, did, whole):
     """(`s` with each retired hook script path of this kit (_moved) replaced by ENTRY, [the words a
     whole argument adds after it]). In a command line the words follow the path; for a whole
@@ -292,7 +298,9 @@ def _sub_moved(s, ctx, event, did, whole):
         if not os.path.isfile(new):
             raise ValueError('a %s hook runs %s, now %s, which the kit lacks' % (event, bare, new))
         added = entry_words(name.lower())
-        out.append(s[last:a] + q + new.replace('\\', '/') + q + ('' if whole else ' ' + ' '.join(added)))
+        fwd = new.replace('\\', '/')
+        q = _quote_for(q, fwd, whole)
+        out.append(s[last:a] + q + fwd + q + ('' if whole else ' ' + ' '.join(added)))
         words = added if whole else words
         last = b
         did.append('re-point the %s hook %s from %s/ to %s %s' % (event, name, folder, ENTRY, ' '.join(added)))
@@ -367,8 +375,7 @@ def _sub_links(s, ctx, dirs, where, did, whole):
             raise ValueError('%s runs %s through the tools link %s, and the kit has no %s for it to reach'
                              % (where, bare, name, new))
         fwd = new.replace('\\', '/')
-        if not q and not whole and ' ' in fwd:
-            q = '"'
+        q = _quote_for(q, fwd, whole)
         out.append(s[last:a] + q + fwd + q)
         last = b
         did.append('re-point the %s path %s (through the tools link %s) to %s' % (where, bare, name, fwd))
@@ -596,6 +603,7 @@ class _Editor(object):
     def __init__(self, ctx, d, path, plan):
         self.ctx, self.d, self.path, self.plan = ctx, d, path, plan
         self.did = []
+        self._mark = 0                          # len(did) when the current hook began (see rewrite)
         self._entry = None
 
     def guard_entry(self):
@@ -609,6 +617,7 @@ class _Editor(object):
         """True when `h` is an old kit hook to drop; otherwise its paths are re-pointed in place and a
         shell-form SessionStart hook running the kit's hook entry is written in exec form."""
         where = '%s hook' % event
+        self._mark = len(self.did)
         if isinstance(h.get('command'), str):
             h['command'], drop, _ = self.rewrite(h['command'], where, True)
             if drop:
@@ -681,6 +690,7 @@ class _Editor(object):
             base = os.path.basename(p).lower()
             if verdict == 'remove':
                 if removable:
+                    del self.did[self._mark:]                # a dropped hook prints its drop line only
                     self.did.append('drop the %s %s' % (where, os.path.basename(p)))
                     return s, True, []
                 self.plan.refuse('%s: %s runs %s, which this step only removes from hooks' % (self.path, where, bare))
@@ -693,6 +703,7 @@ class _Editor(object):
                 continue
             fwd = target.replace('\\', '/')
             added = entry_words(base) if rel == ENTRY else []
+            q = _quote_for(q, fwd, whole)
             out.append(s[last:a] + q + fwd + q + ('' if whole or not added else ' ' + ' '.join(added)))
             words = added if whole else words
             last = b

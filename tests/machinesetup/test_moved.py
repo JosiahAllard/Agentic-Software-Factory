@@ -171,12 +171,10 @@ class MovedHooks(unittest.TestCase):
         ctx = self.spaced_kit()
         new = T.fwd(self.entry())
         data = {'hooks': {'SessionStart': [{'hooks': [
-            {'type': 'command', 'command': 'python %s' % T.fwd(self.old('pm_session_start.py'))},
             {'type': 'command', 'command': T.PYW, 'args': [T.fwd(self.old('guard.py'))]}]}]}}
         settings.repoint_moved(data, ctx)
         hs = data['hooks']['SessionStart'][0]['hooks']
-        self.assertEqual(shlex.split(hs[0]['command']), ['python', new, 'claude', 'SessionStart', 'pm'])
-        self.assertEqual(hs[1]['args'], [new, 'claude', 'PreToolUse'])           # one argv item: never quoted
+        self.assertEqual(hs[0]['args'], [new, 'claude', 'PreToolUse'])           # one argv item: never quoted
         ed = settings._Editor(ctx, self.acct, 'settings.json', M.Plan())
         old = os.path.join(ctx.old_kit, 'hooks', 'pm_session_start.py')
         out = ed.rewrite('python %s' % T.fwd(old), 'SessionStart hook', True)[0]

@@ -35,8 +35,6 @@ ALLOWED = tuple(('%s' % glob, 'record-id', '', why) for glob, why in ID_SHAPE_FO
     ('kitlib/git/fake/wtcmds.py', 'pinned-hash', 'abc1234', 'an invented hash in the fake git'),
     ('tests/launcher/test_current_account.py', 'record-id', "HOME + '\\\\.",
      'an invented config folder upper-cased to prove Windows case folding'),
-    ('tests/guard/test_config_move.py', 'record-id', "os.path.dirname(self.w.ledger), '",
-     'an invented file name for the replaced ledger'),
     ('tests/scrub/test_no_cites.py', 'record-id', "'docs/near.md': 'PR-",
      'longer tokens that end like a cite, to prove the cite pattern anchors on a word boundary; '
      'an EX- prefix would change what the anchor sees'),

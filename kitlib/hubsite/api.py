@@ -44,7 +44,12 @@ expired undecided: a decided one is `conflict`, field status): the body gives `f
 requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
 does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
 waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
-decided`), and the withdrawal drops that line (unpark_item); an op request takes none. GET approvals/{id}/verify
+decided`), and the withdrawal drops that line (unpark_item); an op request takes none. POST
+approvals/{id}/supersede (AGENT) marks a decided approval nobody consumed superseded
+(approvals.supersede_fields): the body gives `from` (the PM's key or the coordinator key of the
+approval's repo, repo_key: a claim, as for questions done), `by` (the approval that replaces it,
+which must exist, or a commit this machine's checkout of the repo has on main as last fetched,
+approvals.on_main) and `if_version`; it leaves pending and is never consumed. GET approvals/{id}/verify
 (AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
 {ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
 An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
@@ -2685,6 +2690,42 @@ def approvals_delete(api, req):
     return _unpark_now(api, doc_id, d.get('record'), out)
 
 
+def approvals_supersede(api, req):
+    """The PM, or the coordinator of the approval's repository (repo_key), marks a decided
+    approval nobody consumed superseded by another approval or a commit on main
+    (approvals.supersede_fields, on_main). The `from` is a claim checked as questions_done checks
+    one, before anything else about the approval is said; the decision and the stored status
+    stay."""
+    from . import approvals as ap
+    b = _fields(req, ('from', 'by', 'if_version'), required=('from', 'by'))
+    _pin(b, required=True)
+    _text(b, 'from')
+    doc_id = req.params['id']
+    d = api.doc(ap.COLLECTION, doc_id)
+    claimed = b['from'].strip()
+    coordinator = api.repo_key(d.get('repo'))
+    if claimed not in [k for k in (AGENT_FROM, coordinator) if k]:
+        raise HubError('forbidden', '%s is for %s: only they can mark it superseded (%s was '
+                       'given)' % (doc_id, ' or '.join(k for k in (AGENT_FROM, coordinator) if k),
+                                   ascii(claimed)), 'from')
+    d = api.doc(ap.COLLECTION, doc_id, b)
+    by = b['by']
+    changes = _approval(ap.supersede_fields, doc_id, d, by, claimed, _when(api.clock(), ''))
+    if ap.APPROVAL_ID.match(by):
+        if api.store.get(ap.COLLECTION, by) is None:
+            raise _invalid('there is no approval %s' % by, 'by')
+    else:
+        root = api.checkout(d.get('repo'))
+        if not root:
+            raise _invalid('this machine has no checkout of %s to find %s in'
+                           % (d.get('repo'), by), 'by')
+        reached, why = ap.on_main(root, by)
+        if not reached:
+            raise _invalid('main as last fetched does not reach %s%s'
+                           % (by, ': %s' % why if why else ''), 'by')
+    return api.change(ap.COLLECTION, doc_id, d, changes, req, {'superseded': changes['superseded']})
+
+
 def approvals_verify(api, req):
     from . import approvals as ap
     doc_id = req.params['id']
@@ -3844,6 +3885,7 @@ ROUTES = (
     _r('POST', '/approvals/{id}/decide', APPROVER, approvals_decide),
     _r('POST', '/approvals/{id}/consume', AGENT, approvals_consume),
     _r('POST', '/approvals/{id}/delete', AGENT, approvals_delete),
+    _r('POST', '/approvals/{id}/supersede', AGENT, approvals_supersede),
     _r('GET', '/approvals/{id}/verify', AGENT, approvals_verify),
     _r('GET', '/backlog', ANY, backlog),
     _r('GET', '/completed', ANY, completed),

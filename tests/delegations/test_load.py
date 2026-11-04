@@ -13,7 +13,7 @@ from unittest import mock
 
 from tests.home import PM_REPO_FENCE_ENV, pm_repo
 from kitlib import delegations
-from kitlib.config import migration, user
+from kitlib.config import user
 from kitlib.delegations import schema
 
 
@@ -133,14 +133,6 @@ class Location(Home):
             self.load()
         self.assertIn('nothing is delegated', str(cm.exception))
         self.assertIsInstance(cm.exception, delegations.DelegationError)
-
-    def test_the_old_folder_is_never_read(self):
-        old = os.path.join(self.home, migration.OLD_DIR_NAME)
-        os.makedirs(old)
-        with open(os.path.join(old, delegations.FILE_NAME), 'w', encoding='utf-8') as f:
-            json.dump(DRAFT, f)
-        with self.assertRaises(delegations.DelegationMissing):
-            self.load()
 
     def test_an_environment_variable_does_not_move_it(self):
         other = tempfile.mkdtemp(prefix='kit-other-')
@@ -379,7 +371,7 @@ class Exclusions(Home):
         for cmd in ('Remove-Item Q:/home/.claude/settings.json', 'Remove-Item Q:/srv/settings.local.json',
                     'Remove-Item Q:/home/.claude.json', 'Remove-Item Q:/home/.claude',
                     'Remove-Item Q:/srv/app/.codex/config.toml', 'Remove-Item Q:/home/.pm-kit/config.json',
-                    'Remove-Item Q:\\home\\%s\\x' % migration.OLD_DIR_NAME, 'Remove-Item Q:/srv/app/CLAUDE.md',
+                    'Remove-Item Q:/srv/app/CLAUDE.md',
                     'Remove-Item Q:/home/.codex.json',
                     'Remove-Item Q:/srv/app/AGENTS.md', 'Remove-Item Q:/home/owner-delegations.json',
                     'Remove-Item Q:/srv/app/.kit.json', 'Remove-Item Q:/kit/content/roles/pm.md',

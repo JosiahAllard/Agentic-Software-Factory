@@ -311,7 +311,7 @@ def survey(home=None):
     if plan.local:
         _target(plan, LOCAL_FILE, _render(plan.local), None, False)
 
-    folders_home = [os.path.dirname(loc.new), os.path.dirname(loc.old)]
+    folders_home = [os.path.dirname(loc.new)]
     known = {os.path.normcase(loc.path)}
     copies = {os.path.normcase(os.path.join(folders_home[0], DELEGATIONS_FILE)): (DELEGATIONS_FILE, True),
               os.path.normcase(os.path.join(os.path.dirname(loc.path), MANAGED_FILE)): (MANAGED_FILE, False)}

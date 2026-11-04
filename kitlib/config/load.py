@@ -37,7 +37,7 @@ KIT_SECTIONS = ('repo', 'owner', 'hook', 'heavy', 'roles')
 PLACEHOLDER = re.compile(r'\{([A-Za-z_]\w*)\}')
 PLACEHOLDERS = ('python', 'root', 'base', 'here', 'tools')    # gate.py's substitution mapping
 # Step keys about running a subprocess; a hook check is called, not run.
-CMD_ONLY = ('cwd', 'daily_cmd', 'full_cmd', 'merged_args', 'ok_exits', 'reuse')
+CMD_ONLY = ('cwd', 'daily_cmd', 'full_cmd', 'merged_args', 'ok_exits', 'reuse', 'toolchain')
 
 
 def _parse(text, where):
@@ -105,6 +105,20 @@ def _gate_rules(gate, errs):
         argvs = [('cmd', step.get('cmd')), ('full_cmd', step.get('full_cmd')),
                  ('daily_cmd', step.get('daily_cmd')), ('merged_args', step.get('merged_args'))]
         argvs += [('requires', r) for r in requires if isinstance(r, list)]
+        toolchain = step.get('toolchain')
+        toolchain = toolchain if isinstance(toolchain, list) else []
+        argvs += [('toolchain', t) for t in toolchain if isinstance(t, list)]
+        if 'toolchain' in step:
+            content = step.get('content')
+            if not step.get('reuse'):
+                errs.append('%s: "toolchain" needs "reuse": it only joins the reuse key' % where)
+            if not (step.get('globs') or (isinstance(content, dict) and content.get('globs'))):
+                errs.append('%s: "toolchain" needs "globs" or "content".globs: a step without '
+                            'declared inputs is never keyed' % where)
+            if any(isinstance(a, str) and '{base}' in a
+                   for t in toolchain if isinstance(t, list) for a in t):
+                errs.append('%s: "toolchain" cannot name {base}: its output must not depend on '
+                            'the base' % where)
         for key, argv in argvs:
             for arg in argv if isinstance(argv, list) else ():
                 if not isinstance(arg, str):

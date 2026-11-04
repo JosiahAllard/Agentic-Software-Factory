@@ -1,25 +1,24 @@
 """Mark roots and the home config folders (docs/guard.md "Write jail"; docs/kit-json.md "Moving the
-machine config folder"): no mark root may be on, over or in EITHER home config folder, though the
-machine config is read from the PM repository (kitlib.config.user.locate's OK). A file in one is
+machine config folder"): no mark root may be on, over or in the home config folder, though the
+machine config is read from the PM repository (kitlib.config.user.locate's OK). A file in it is
 the move's source (kitlib.config.move) and turns a machine without a pointer UNMOVED, so a session
 must not write one. The same holds for a root of every other kind: the session's own root, a data
 root and a temp root. A config still in the home folder (UNMOVED) gives no mark roots at all."""
 import json
 import os
 
-from kitlib.config import migration, user
+from kitlib.config import user
 from .claudehost import decide
 
 from .test_jail import PM, Base
 from .world import event
 
 
-class MarkRootsBothFolders(Base):
+class MarkRootsHomeFolder(Base):
 
     def setUp(self):
         Base.setUp(self)
         self.new_dir = os.path.join(self.w.home, user.DIR_NAME)
-        self.old_dir = os.path.join(self.w.home, migration.OLD_DIR_NAME)
 
     def config(self, roots):
         """The PM repository's config (World.user_config) with `roots` for the mark pm."""
@@ -32,44 +31,31 @@ class MarkRootsBothFolders(Base):
                 self.jailed(self.write(os.path.join(self.new_dir, user.FILE_NAME), env=PM, sub=False))
                 self.jailed(self.write(os.path.join(self.new_dir, 'sub', 'x.json'), env=PM, sub=False))
 
-    def test_a_root_on_the_retired_home_folder_cannot_write_there(self):
-        for path in ('~/' + migration.OLD_DIR_NAME, self.old_dir):
-            with self.subTest(path):
-                self.config([{'path': path, 'mode': 'open'}])
-                self.jailed(self.write(os.path.join(self.old_dir, user.FILE_NAME), env=PM, sub=False))
-
-    def test_a_sibling_of_either_folder_is_still_a_root(self):
-        for name in (user.DIR_NAME, migration.OLD_DIR_NAME):
-            with self.subTest(name):
-                self.config([{'path': '~/%s-notes' % name, 'mode': 'open'}])
-                self.allowed(self.write(os.path.join(self.w.home, name + '-notes', 'x.md'), env=PM, sub=False))
+    def test_a_sibling_of_the_folder_is_still_a_root(self):
+        self.config([{'path': '~/%s-notes' % user.DIR_NAME, 'mode': 'open'}])
+        self.allowed(self.write(os.path.join(self.w.home, user.DIR_NAME + '-notes', 'x.md'), env=PM, sub=False))
 
     def test_a_config_still_in_the_home_folder_gives_no_mark_roots(self):
         notes = os.path.join(self.w.home, 'notes')
-        for folder in (self.new_dir, self.old_dir):
-            with self.subTest(folder):
-                os.makedirs(folder, exist_ok=True)
-                with open(os.path.join(folder, user.FILE_NAME), 'w', encoding='utf-8') as f:
-                    json.dump({'guard_mark_roots': {'pm': [{'path': notes, 'mode': 'open'}]}}, f)
-                self.assertEqual(user.locate(self.w.home).state, user.UNMOVED)
-                self.jailed(self.write(os.path.join(notes, 'x.md'), env=PM, sub=False))
-                os.remove(os.path.join(folder, user.FILE_NAME))
+        os.makedirs(self.new_dir, exist_ok=True)
+        with open(os.path.join(self.new_dir, user.FILE_NAME), 'w', encoding='utf-8') as f:
+            json.dump({'guard_mark_roots': {'pm': [{'path': notes, 'mode': 'open'}]}}, f)
+        self.assertEqual(user.locate(self.w.home).state, user.UNMOVED)
+        self.jailed(self.write(os.path.join(notes, 'x.md'), env=PM, sub=False))
 
 
 class OwnRootNotAConfigFolder(Base):
-    """A session run outside git in either home config folder (or in one inside or over it) has
+    """A session run outside git in the home config folder (or in one inside or over it) has
     no own root there: it cannot write config.json there, the move's source, while the machine
     config (with the ledger the guard protects) is read from the PM repository."""
 
     def setUp(self):
         Base.setUp(self)
         self.new_dir = os.path.join(self.w.home, user.DIR_NAME)
-        self.old_dir = os.path.join(self.w.home, migration.OLD_DIR_NAME)
-        for d in (self.new_dir, self.old_dir):
-            os.makedirs(os.path.join(d, 'sub'))
-        with open(os.path.join(self.old_dir, user.FILE_NAME), 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.join(self.new_dir, 'sub'))
+        with open(os.path.join(self.new_dir, user.FILE_NAME), 'w', encoding='utf-8') as f:
             json.dump({'ledger_path': os.path.join(self.w.base, 'ledger.md')}, f)
-        self.assertEqual(user.home_location(self.w.home).state, user.OLD)
+        self.assertEqual(user.home_location(self.w.home).state, user.NEW)
         self.w.user_config({'ledger_path': os.path.join(self.w.base, 'ledger.md')})
 
     def each_session(self):
@@ -80,16 +66,11 @@ class OwnRootNotAConfigFolder(Base):
             for who, kw in self.each_session():
                 with self.subTest(cwd=cwd, who=who):
                     self.jailed(self.write(os.path.join(self.new_dir, user.FILE_NAME), cwd=cwd, **kw))
-                    self.assertFalse(os.path.exists(os.path.join(self.new_dir, user.FILE_NAME)))
-
-    def test_a_session_in_the_old_folder_cannot_write_its_config_file(self):
-        for cwd in (self.old_dir, os.path.join(self.old_dir, 'sub')):
-            for who, kw in self.each_session():
-                with self.subTest(cwd=cwd, who=who):
-                    self.jailed(self.write(os.path.join(self.old_dir, user.FILE_NAME), cwd=cwd, **kw))
+                    with open(os.path.join(self.new_dir, user.FILE_NAME), encoding='utf-8') as f:
+                        self.assertIn('ledger_path', f.read())
 
     def test_a_session_over_the_home_folder_has_no_own_root(self):
-        # base holds home, so a root there would hold both config folders
+        # base holds home, so a root there would hold the config folder
         for who, kw in self.each_session():
             with self.subTest(who):
                 self.jailed(self.write(os.path.join(self.new_dir, user.FILE_NAME), cwd=self.w.base, **kw))
@@ -101,7 +82,7 @@ class OwnRootNotAConfigFolder(Base):
 
 
 class NoRootOfAnyKindOnAConfigFolder(Base):
-    """A data root or a temp root on, over or inside either config folder is dropped as an own or
+    """A data root or a temp root on, over or inside the config folder is dropped as an own or
     mark root is (jail.roots): a .kit.json guard.data_roots entry, or TMP, AGENT_TEMP or the system
     temp folder, at the home folder or above would otherwise let a jailed session write
     config.json. A read-only data root there is kept: it only denies."""
@@ -109,12 +90,10 @@ class NoRootOfAnyKindOnAConfigFolder(Base):
     def setUp(self):
         Base.setUp(self)
         self.new_dir = os.path.join(self.w.home, user.DIR_NAME)
-        self.old_dir = os.path.join(self.w.home, migration.OLD_DIR_NAME)
-        for d in (self.new_dir, self.old_dir):
-            os.makedirs(os.path.join(d, 'sub'))
+        os.makedirs(os.path.join(self.new_dir, 'sub'))
 
     def targets(self):
-        return [os.path.join(d, user.FILE_NAME) for d in (self.new_dir, self.old_dir)]
+        return [os.path.join(d, user.FILE_NAME) for d in (self.new_dir,)]
 
     def data_root(self, path, mode):
         self.w.kit({'repo': {'name': 'demo', 'push_block': True},
@@ -125,7 +104,7 @@ class NoRootOfAnyKindOnAConfigFolder(Base):
         return (('marked', dict(env=dict(PM, **env), sub=False)), ('subagent', dict(env=env, sub=True)))
 
     def test_a_data_root_on_or_over_the_home_folder_cannot_write_a_config_file(self):
-        for path in (self.w.home, self.w.base, self.new_dir, os.path.join(self.old_dir, 'sub')):
+        for path in (self.w.home, self.w.base, self.new_dir, os.path.join(self.new_dir, 'sub')):
             for mode in ('open', 'add-only'):
                 self.data_root(path, mode)
                 for who, kw in self.each_session():

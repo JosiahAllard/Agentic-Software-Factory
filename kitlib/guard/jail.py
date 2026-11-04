@@ -41,7 +41,6 @@ read-only or add-only root holds it, and every other check here, with the defaul
 import os
 
 from kitlib.config import user as kuser
-from kitlib.config.migration import OLD_DIR_NAME
 from kitlib.git import repo
 from kitlib.guard import paths
 from kitlib.platform.linux import paths as linux_paths
@@ -174,18 +173,15 @@ def data_roots(ctx, cwd):
 
 def config_dirs(ctx):
     """Every machine config folder: the PM repository's (pointer_config_dir) when the pointer
-    names one, then both under ctx.home (home_config_dirs)."""
+    names one, then the one under ctx.home (home_config_dirs)."""
     d = pointer_config_dir(ctx)
     return ([d] if d else []) + home_config_dirs(ctx)
 
 
 def home_config_dirs(ctx):
-    """Both machine config folders under ctx.home, the current (kitlib.config.user.DIR_NAME) and
-    the retired one (kitlib.config.migration.OLD_DIR_NAME), whichever kitlib.config.user.locate
-    reads: no root that may write (roots) may be on, hold or lie in either. A root on the
-    new folder while only the old one has a config would let the session write the file locate
-    then reads instead."""
-    return [os.path.join(ctx.home, kuser.DIR_NAME), os.path.join(ctx.home, OLD_DIR_NAME)]
+    """The machine config folder under ctx.home (kitlib.config.user.DIR_NAME): no root that may
+    write (roots) may be on, hold or lie in it."""
+    return [os.path.join(ctx.home, kuser.DIR_NAME)]
 
 
 def user_pointer_file():

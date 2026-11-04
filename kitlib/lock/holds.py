@@ -274,15 +274,21 @@ def lost(h, strongs):
 def records(store, L, prune=False):
     """The live holds, by start, each with _start, _end, _slots ({pool: [slot]} it covers, an
     agent hold's less what strong holds take), _fixed (its slots are recorded), and for agent
-    holds _lapse and _claimed. Never written. One past its end, or an agent hold past its lapse
-    unclaimed, is ignored; prune (under the holds mutex): moved to ended (expired, lapsed)."""
+    holds _lapse and _claimed. Never written. One past its end, an agent hold past its lapse
+    unclaimed, or an agent hold that can never be used (no slot of this layout left, or no
+    shares), is ignored; prune (under the holds mutex): moved to ended (expired, lapsed,
+    no slots, unusable). Owner and game holds are never ended before their end."""
     now = utc_now()
     grace = datetime.timedelta(seconds=store.settings.hold_grace_s)
     strongs, agents = [], []
     for d in _read_all(store):
         if d["owner"] == "agent":
             sl = recorded_slots(L, d)
-            if sl is None or not any(sl.values()) or not isinstance(d.get("shares"), dict):
+            usable = isinstance(d.get("shares"), dict)
+            if sl is None or not any(sl.values()) or not usable:
+                if prune:
+                    end(store, d, "expired" if d["_end"] <= now
+                        else "no slots" if usable else "unusable")
                 continue
             d["slots"] = sl
             d["_lapse"] = d["_start"] + grace

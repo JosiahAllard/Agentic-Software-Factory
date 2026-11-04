@@ -120,9 +120,78 @@ class Create(unittest.TestCase):
                     FakeRun(raises=OSError("no powershell")),
                     FakeRun(raises=subprocess.TimeoutExpired("powershell", 60))):
             with self.subTest(stdout=run.stdout, code=run.code, raises=run.raises):
-                pid, why = dt.create(["x"], "C:\\", {}, run=run)
+                pid, why = dt.create(["x"], "C:\\", {}, run=run, sleep=lambda s: None)
                 self.assertIsNone(pid)
                 self.assertTrue(why)
+
+
+class SeqRun(FakeRun):
+    """Answers each WMI start with the next of `outs` (the last one repeats)."""
+    def __init__(self, *outs):
+        super().__init__()
+        self.outs = list(outs)
+
+    def __call__(self, args, **kw):
+        self.stdout = self.outs.pop(0) if len(self.outs) > 1 else self.outs[0]
+        return super().__call__(args, **kw)
+
+
+@windows_only("the lock is Windows only")
+class CreateRetry(unittest.TestCase):
+    """Win32_Process.Create's 8 (unknown failure) starts nothing (no pid): create asks again."""
+
+    def create(self, run):
+        slept = []
+        return dt.create(["x"], "C:\\", {}, run=run, sleep=slept.append), slept
+
+    def test_a_code_8_then_a_start_gives_the_pid(self):
+        run = SeqRun("8 \n", "0 4242\n")
+        (pid, why), slept = self.create(run)
+        self.assertEqual((pid, why), (4242, None))
+        self.assertEqual(len(run.calls), 2)
+        self.assertEqual(slept, [dt.RETRY_DELAY_S])
+        # the second ask is the same start: same command line, cwd and environment
+        self.assertEqual(run.calls[0], run.calls[1])
+
+    def test_code_8_every_time_is_tried_a_bounded_number_of_times_and_named(self):
+        run = SeqRun("8 \n")
+        (pid, why), slept = self.create(run)
+        self.assertIsNone(pid)
+        self.assertEqual(len(run.calls), dt.CREATE_TRIES)
+        self.assertEqual(dt.CREATE_TRIES, 3)
+        self.assertEqual(slept, [dt.RETRY_DELAY_S] * (dt.CREATE_TRIES - 1))
+        self.assertTrue(why.startswith("got WMI code 8 (unknown failure) after 3 tries (exit 0)"),
+                        why)
+
+    def test_other_codes_are_final_and_named(self):
+        for out, meaning in (("2 \n", "access denied"), ("3 \n", "insufficient privilege"),
+                             ("9 \n", "path not found"), ("21 \n", "invalid parameter")):
+            with self.subTest(out=out):
+                run = SeqRun(out, "0 4242\n")
+                (pid, why), slept = self.create(run)
+                self.assertIsNone(pid)
+                self.assertEqual((len(run.calls), slept), (1, []))
+                self.assertIn("got WMI code %s (%s)" % (out.strip(), meaning), why)
+                self.assertNotIn("tries", why)
+
+    def test_an_undocumented_code_is_named_as_such(self):
+        (pid, why), _ = self.create(SeqRun("17 \n"))
+        self.assertIsNone(pid)
+        self.assertIn("got WMI code 17 (undocumented)", why)
+
+    def test_output_that_is_no_code_is_quoted_and_not_retried(self):
+        run = SeqRun("boom\n", "0 4242\n")
+        (pid, why), slept = self.create(run)
+        self.assertIsNone(pid)
+        self.assertEqual((len(run.calls), slept), (1, []))
+        self.assertIn("got 'boom' (exit 0)", why)
+
+    def test_a_failed_powershell_is_not_retried(self):
+        run = SeqRun("8 \n")
+        run.code = 1
+        (pid, why), slept = self.create(run)
+        self.assertIsNone(pid)
+        self.assertEqual((len(run.calls), slept), (1, []))
 
 
 @windows_only("the lock is Windows only")

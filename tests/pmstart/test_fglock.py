@@ -66,9 +66,9 @@ class FgLockTest(unittest.TestCase):
         # Linux has no ctypes.WinDLL: the base reaches read_live and fails with this AttributeError.
         with mock.patch("kitlib.platform.NAME", "linux"), \
                 mock.patch.object(fglock.ctypes, "WinDLL", create=True, side_effect=AttributeError("WinDLL")):
-            self.assertEqual(fglock.check(CFG), [])
             txt = pmstart.checklist(dict(CFG, standing=["x"]), NOW, procs=[], **FAKES)
-        self.assertNotIn("foreground_lock", txt)
+            self.assertNotIn("foreground_lock", txt)     # base: "could not check foreground_lock: AttributeError"
+            self.assertEqual(fglock.check(CFG), [])
 
     def test_in_checklist_last_and_failure_isolated(self):
         temp_home(self)     # the hub check's current account reads an empty machine config

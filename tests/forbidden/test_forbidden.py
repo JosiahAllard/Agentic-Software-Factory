@@ -211,6 +211,14 @@ class AddToken(unittest.TestCase):
         self.assertEqual(len(store['tokens']), 2)
         self.assertEqual(F.add_token(self.path, TOKEN), (False, 2, None))
 
+    def test_a_two_word_token_is_found_by_the_default_scan(self):
+        F.add_token(self.path, 'Quaxling Zimbretto')
+        store = F.load_store(self.path)
+        self.assertIsNone(F.self_test(store))
+        self.assertEqual(len(F.hits_in('a quaxling  zimbretto b', store, False)), 1)
+        self.assertEqual(len(F.hits_in('a quaxlingzimbretto b', store, True)), 1)
+        self.assertEqual(F.add_token(self.path, 'quaxling zimbretto')[:2], (False, 2))
+
     def test_an_empty_object_file_is_a_new_store(self):
         with open(self.path, 'w', encoding='utf-8') as fh:
             fh.write('{}\n')

@@ -47,5 +47,12 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .chip.k-warn{background:var(--warn-soft);color:var(--warn)}.chip.k-accent{background:var(--accent-soft);color:var(--accent)}.chip.k-rec{background:var(--rec-soft);color:var(--rec)}.chip.k-ok{background:var(--ok-soft);color:var(--ok)}.chip.k-muted{background:var(--hover);color:var(--muted)}
 .dochead{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
 .dsum{margin:4px 0 0;font-size:.85rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-@media(max-width:700px){.doctree{max-height:none}}
+.cmap{position:relative;width:100%;aspect-ratio:16/7;min-height:140px;background:var(--side);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.cmap .cell{position:absolute;box-sizing:border-box;border:2px solid var(--bg);border-radius:var(--r-s);margin:0;padding:4px 6px;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;text-align:left;font:inherit;font-size:.78rem;line-height:1.2}
+.cmap button.cell{cursor:pointer}
+.cmap button.cell:hover{filter:brightness(.94)}
+.cmap .cell .cl{font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmap .cell .n{font:600 .7rem var(--f-mono);opacity:.8}
+.cmap .cell.k-warn{background:var(--warn-soft);color:var(--warn)}.cmap .cell.k-accent{background:var(--accent-soft);color:var(--accent)}.cmap .cell.k-rec{background:var(--rec-soft);color:var(--rec)}.cmap .cell.k-ok{background:var(--ok-soft);color:var(--ok)}.cmap .cell.k-muted{background:var(--hover);color:var(--muted)}
+@media(max-width:700px){.doctree{max-height:none}.cmap{aspect-ratio:4/3}}
 .mono{font:500 .75rem var(--f-mono);font-variant-numeric:tabular-nums}

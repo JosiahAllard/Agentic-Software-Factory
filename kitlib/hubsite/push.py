@@ -123,7 +123,7 @@ snapshot's and GET health's `watcher` (Api.watcher_seen).
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired` and the usage
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill` and the usage
 crossover's words, is owed once per detail instead, beside the rest, and its text says what to
 do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
@@ -245,7 +245,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                         'hand off.',
             'unmanaged': _CROSSOVER + 'a session with no sessions.json entry is at the weekly limit '
                          'and this job never crosses it; detail is <session>:<reason> (the reasons: '
-                         'docs/launcher.md "Usage crossover"). It is left to you.'}
+                         'docs/launcher.md "Usage crossover"). It is left to you.',
+            'fill': 'The hub fill watch left a coordinator\'s slots free after its startable work '
+                    'waited 20 minutes; it was already nudged. Detail is <session>:<free '
+                    'slots>:<why>: `unfilled` (the auto-pull filled none or not all of them) or '
+                    'a stand-down code (off, queued, idle, unread, handoff; docs/hub-fill.md). '
+                    'Check on that coordinator: if it is not dispatching, ask it why, or clear '
+                    'what stands the auto-pull down. Once per episode; no reply is needed.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

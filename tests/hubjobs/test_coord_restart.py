@@ -838,13 +838,13 @@ class Offered(unittest.TestCase):
                                             'repos': {'game': self.repo, 'kitrepo': self.repo}},
                                            home=self.tmp)
         self.by_session = {}
-        self.opened, self.loads = [], []
+        self.opened, self.loads, self.lives = [], [], []
 
     def kit_json(self, data):
         with open(os.path.join(self.repo, '.kit.json'), 'w', encoding='utf-8') as f:
             json.dump(data, f)
 
-    def offered(self, key, entry, pm=(None, None, None)):
+    def offered(self, key, entry, pm=(None, None, None), **kw):
         from kitlib.backlog import offer as omod
         from kitlib.backlog import opener, plan
         from kitlib.backlog import store as bstore
@@ -867,12 +867,13 @@ class Offered(unittest.TestCase):
 
         def offer_for(snap, ctx, branch=None, cap=5, seeds=(), holding=None):
             self.assertEqual((snap, cap, holding), ('snap', None, ['pull']))
+            self.lives.append(getattr(ctx, 'session_live', 'unset'))
             return [mock.Mock(rec=Rec(r)) for r in self.by_session.get(ctx.session, ())], [], holding, None
         with mock.patch.object(opener, 'open_store', open_store), \
                 mock.patch.object(plan, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split', lambda snap, root, remote: (['pull'], [], None)), \
                 mock.patch.object(bstore, 'pm_data_live_store', pm if callable(pm) else lambda root: pm):
-            return C.offered_ids(self.settings, key, entry)
+            return C.offered_ids(self.settings, key, entry, **kw)
 
     def test_a_session_tagged_coordinator_reads_its_own_session_only(self):
         self.kit_json({'backlog': {'store': 'ref'}})
@@ -886,6 +887,18 @@ class Offered(unittest.TestCase):
         self.assertEqual(self.offered('game', {'repo': 'game'}), {'EX-R1', 'EX-R2', 'EX-R3'})
         self.assertEqual([s for _, _, s in self.opened], ['game', None])
         self.assertEqual(len(self.loads), 1)                          # one store read for both
+
+    def test_the_liveness_given_judges_every_sessions_offer_as_next_does(self):
+        self.kit_json({'backlog': {'store': 'ref'}})
+        self.by_session = {'game': ['EX-R1'], None: ['EX-R2']}
+        live = object()
+        self.offered('game', {'repo': 'game'}, session_live=live)
+        self.assertEqual(self.lives, [live, live])                # both offers of the main one
+
+    def test_no_liveness_given_leaves_it_none(self):
+        self.kit_json({'backlog': {'store': 'ref'}})
+        self.offered('kit', {'repo': 'kitrepo'})
+        self.assertEqual(self.lives, [None])
 
     def test_a_repo_naming_no_store_reads_its_pm_data_worktree(self):
         self.kit_json({})
@@ -961,6 +974,28 @@ class WakeJob(JobBase):
         self.run_job()
         self.live = []
         self.stop()
+
+    def test_the_wake_judges_session_liveness_from_the_runs_listing(self):
+        got = []
+
+        def offered(settings, key, entry, session_live=None):
+            got.append(session_live)
+            return set(self.offer)
+        self.job = C.RestartJob(self.settings, procs=lambda: [proc(n) for n in self.live],
+                                child=self.child, clock=lambda: self.now, kit=self.tmp,
+                                uptime=lambda: self.uptime, detached=self.detached)
+        with mock.patch.object(C, 'offered_ids', offered):
+            self.held_run()
+            self.live = ['plain-a1']
+            for _ in range(2):
+                self.now += 300
+                self.run_job()
+        self.assertEqual(len(got), 1)                             # the baseline read
+        live = got[0]
+        self.assertIsNotNone(live)
+        self.assertEqual(live.live('plain'), (True, None))       # its stem runs in this listing
+        self.assertEqual(live.live('kit'), (False, None))
+        self.assertIsNone(live.live('nobody')[0])               # not in sessions.json: unread
 
     def test_the_first_held_run_keeps_a_baseline_and_a_new_record_wakes_it(self):
         self.offer = {'EX-A'}

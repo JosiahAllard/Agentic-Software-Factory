@@ -110,6 +110,8 @@ def is_python(path):
             first = f.readline(200)
     except OSError:
         return False
+    if first.startswith(b'#!/bin/sh') and os.path.basename(path) == 'pre-push':
+        return True                         # the kit's pre-push: an sh line that execs python, then Python
     return first.startswith(b'#!') and b'python' in first
 
 

@@ -1,4 +1,6 @@
-#!/usr/bin/env python
+#!/bin/sh
+''''command -v python >/dev/null 2>&1 && exec python "$0" "$@" # '''
+''''exec python3 "$0" "$@" # '''
 """The kit's git pre-push hook (docs/guard.md "Pre-push"): refuses, whoever
 pushes, first, when the repository records a PM data branch (kit-pm-data.json in its git common
 dir), any push that would put PM data on a remote other than the recorded private one, or send

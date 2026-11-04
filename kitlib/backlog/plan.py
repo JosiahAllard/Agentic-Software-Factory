@@ -1016,8 +1016,8 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
         if key in rmod.SINGLE_VALUED and vals is not None and len(vals) > 1:
             raise Usage('`%s` takes one value and was given %d' % (key, len(vals)))
     if rmod.RETIRED_PRIORITY in dict(changes).get('priority', []):
-        raise Usage('%s. For `%s`: %s' % (rmod.RETIRED_PRIORITY_WHY, rid,
-                                          rmod.owner_ask_fix(rid, kitroot.command('hub'))))
+        raise Usage('`priority: -1` is retired: a record awaiting the owner is '
+                    + rmod.OWNER_HOLD_FORM % {'hub': kitroot.command('hub'), 'id': rid})
     for s in dict(changes).get('scope', []):
         # Before the widening check, which counts a member it cannot compare as a collision.
         bad = smod.scope_member_error(s)
@@ -1641,8 +1641,8 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     if rec.get('priority') == rmod.RETIRED_PRIORITY:
         # a leftover owner hold: pricing it would lift the hold, so name the hold, not a price
         raise Refusal('`%s` is `priority: -1`, a retired owner hold, never pulled or priced away: '
-                      'the owner or the PM moves it to an owner hold citing its Action Hub ask: '
-                      '%s' % (rid, rmod.owner_ask_fix(rid, kitroot.command('hub'))))
+                      'the owner or the PM moves it to an owner hold, %s'
+                      % (rid, rmod.OWNER_HOLD_FORM % {'hub': kitroot.command('hub'), 'id': rid}))
     if not rmod.is_band(rec.get('priority')):
         raise Refusal('`%s` is `priority: %s`, and `pull` takes a priced record (`1`-`5`). Price it '
                       'first: `set %s --priority N --priority-by agent`'

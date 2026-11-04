@@ -164,10 +164,11 @@ ONE, AT_MOST_ONE, ONE_PLUS, ANY = '1', '0-1', '1+', '0+'
 # `priority: -1` once marked a record awaiting the owner; `blocked_on: owner` is the only owner
 # hold now, and -1 is refused with this pointer (docs/backlog.md "Fields").
 RETIRED_PRIORITY = '-1'
-RETIRED_PRIORITY_WHY = ('`priority: -1` is retired: a record awaiting the owner is asked bound to '
-                        'it, `hub.py questions add --record <REPO>:ID` (which parks it), or '
-                        '`block ID --on owner --owner-ask "<Q-nnn: the question>"` citing that '
-                        'hub id')
+OWNER_HOLD_FORM = ('asked bound to it, `%(hub)s questions add --record <REPO>:%(id)s` (which '
+                   'parks it), or `block %(id)s --on owner --owner-ask "<Q-nnn: the question>"` '
+                   'citing that hub id')
+RETIRED_PRIORITY_WHY = ('`priority: -1` is retired: a record awaiting the owner is '
+                        + OWNER_HOLD_FORM % {'hub': 'hub.py', 'id': 'ID'})
 RULING_RE = re.compile(r'^R-[0-9]{4,}$')
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 QUESTION_RE = re.compile(r'^Q-[0-9]{3,}$')

@@ -147,6 +147,16 @@ class Ensure(unittest.TestCase):
         self.assertIn('has 2 uncommitted or untracked file(s), left as they are', out[0])
         self.assertIn('stray.txt, README.md', out[0])
 
+    def test_a_modified_first_file_keeps_its_whole_name(self):
+        self.present()
+        g = self.git(entry='HEAD %s
+detached
+locked' % OLD, status=' M README.md
+?? stray.txt
+')
+        out = home.ensure(self.main, self.path, git=g)
+        self.assertIn('README.md, stray.txt', out[0])
+
     def test_a_failed_move_is_a_warning(self):
         self.present()
         g = self.git(entry='HEAD %s\ndetached\nlocked' % OLD, fail=('checkout -q',))

@@ -685,7 +685,10 @@ class SharedSession(Tmp):
             return real(src, dst)
 
         with mock.patch("os.replace", side_effect=refused_once):
-            G.write_state({"rid": RID, "ready": True})
+            try:
+                G.write_state({"rid": RID, "ready": True})
+            except PermissionError as e:
+                self.fail(f"write_state gave up on a refused replace: {e}")
         self.assertEqual(G.read_state(), {"rid": RID, "ready": True})
         self.assertIn(str(os.getpid()), os.path.basename(sources[0]))
         self.assertEqual([n for n in os.listdir(self.tmp) if n.endswith(".tmp")], [])
@@ -697,7 +700,10 @@ class SharedSession(Tmp):
         later = threading.Timer(0.3, reader.close)
         later.start()
         self.addCleanup(later.join)
-        G.write_state({"rid": RID, "ready": True})
+        try:
+            G.write_state({"rid": RID, "ready": True})
+        except PermissionError as e:
+            self.fail(f"write_state gave up on a held reader: {e}")
         self.assertTrue(G.read_state()["ready"])
 
     def test_touch_last_used_never_changes_ready(self):

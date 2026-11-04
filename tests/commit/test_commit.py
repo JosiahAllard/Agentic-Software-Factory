@@ -709,15 +709,32 @@ class AStagedMachinePathIsRefused(LinkedCase):
         # ok.py was staged before the call, so it stays staged; a.py is unstaged again.
         self.assertEqual(self.git('diff', '--cached', '--name-only'), 'ok.py')
 
+    def commit_rewriting_before_the_check(self, text):
+        """Commit a.py, rewriting its work-tree file to `text` after the call has staged it and
+        just before the staged check runs: the staged copy and the work tree then differ."""
+        real = C.staged_machine_path_error
+
+        def wrapper(*a, **kw):
+            self.put('a.py', text)
+            return real(*a, **kw)
+        with mock.patch.object(C, 'staged_machine_path_error', wrapper):
+            return self.commit('s', 'a.py')
+
     def test_the_staged_copy_is_read_not_the_working_tree(self):
-        self.put('a.py', 'clean\n')
-        self.git('add', '--', 'a.py')
+        # staged dirty, work tree clean: refused
         self.put('a.py', self.LINE)
-        code, out = self.commit('s', 'a.py')       # commit.py adds it again: the hit is staged
+        head = self.head()
+        code, out = self.commit_rewriting_before_the_check('clean\n')
         self.assertEqual(code, 1, out)
-        self.put('a.py', 'clean again\n')
-        code, out = self.commit('s', 'a.py')
+        self.assertIn('a.py:1: hard-coded machine path', out)
+        self.assertEqual(self.head(), head)
+
+    def test_a_clean_staged_copy_commits_whatever_the_working_tree_holds(self):
+        # staged clean, work tree dirty: the check reads the staged copy, so it passes
+        self.put('a.py', 'clean\n')
+        code, out = self.commit_rewriting_before_the_check(self.LINE)
         self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('show', 'HEAD:a.py'), 'clean')
 
     def test_an_allow_listed_line_commits(self):
         self.configure(owner={'email': OWNER},

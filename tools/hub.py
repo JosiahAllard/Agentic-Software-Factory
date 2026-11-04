@@ -209,6 +209,13 @@ the server alone decides what a role may do.
                                                      undecided, expired or not (KEY is pm:
                                                      approvals store no from); a decided one is
                                                      refused; its record's line is dropped
+  hub.py approvals supersede A-1 --by A-2|SHA --from KEY --if-version V
+                                                    `SUPERSEDED A-1 by A-2`: the PM (KEY pm) or
+                                                     the coordinator of its repo marks a decided
+                                                     approval nobody consumed superseded by
+                                                     approval A-2 or commit SHA (40 hex, on main
+                                                     as last fetched); it leaves pending, keeps
+                                                     the owner's decision and is never consumed
   hub.py handoffs [--from KEY]                      `C-1 restart from=KEY at=TIME PATH`: each
                                                      session's newest hand-off record, or KEY's
                                                      (docs/action-hub.md "handoffs/C-NNN")
@@ -355,6 +362,8 @@ EXAMPLES = {
     'hub.py approvals show': 'hub.py approvals show A-1',
     'hub.py approvals add': 'hub.py approvals add --title "<title>" --file <path> <content-file>',
     'hub.py approvals withdraw': 'hub.py approvals withdraw A-1 --from <key> --if-version 3',
+    'hub.py approvals supersede': 'hub.py approvals supersede A-1 --by A-2 --from <key> '
+                                  '--if-version 3',
     'hub.py pending': 'hub.py pending',
     'hub.py wait': 'hub.py wait --pending --timeout 600',
     'hub.py validate': 'hub.py validate',
@@ -752,7 +761,8 @@ def _client_verbs(sub):
     _pins(x, required=True)
 
     x = _listed(sub, 'approvals', "list the requests for the owner's approval; show; add: ask "
-                "for one; withdraw: take back a pending one", S['approvals'])
+                "for one; withdraw: take back a pending one; supersede: mark a decided one "
+                "replaced", tuple(S['approvals']) + (approvals.SUPERSEDED,))
     _leaf(x, 'show', 'one request and its files').add_argument('id')
     y = _leaf(x, 'add', "ask the owner to approve writing these files")
     y.add_argument('--checkout', default='.', metavar='DIR',
@@ -769,6 +779,13 @@ def _client_verbs(sub):
                    help='the backlog record that waits on this request: the hub parks it until '
                         'the owner decides (checked by the hub)')
     _creator(_leaf(x, 'withdraw', 'take back a request still undecided'), 'KEY')
+    y = _leaf(x, 'supersede', 'mark a decided approval nobody consumed superseded')
+    y.add_argument('id')
+    y.add_argument('--by', required=True, metavar='A-n|SHA',
+                   help='the approval that replaces it, or a commit on main (40 hex)')
+    y.add_argument('--from', dest='who', required=True, metavar='KEY',
+                   help="pm, or the session key of the coordinator of the approval's repo")
+    _pins(y, required=True)
 
     x = _asks(sub.add_parser('pending', help='the owner input the PM has not handled'))
     x.add_argument('--for', dest='for_key', metavar='KEY',
@@ -1570,6 +1587,10 @@ def _approvals(a, stop):
     if a.sub == 'withdraw':
         got = _hub(a).post(_one('approvals', a) + '/delete', client.AGENT, _edits(a, {}))
         return _wrote(a, got, 'WITHDRAWN %s' % got.get('id'))
+    if a.sub == 'supersede':
+        got = _hub(a).post(_one('approvals', a) + '/supersede', client.AGENT,
+                           _edits(a, {'by': a.by}))
+        return _wrote(a, got, 'SUPERSEDED %s by %s' % (got.get('id'), a.by))
     if a.sub == 'add':
         try:
             body = hubapprove.build(a.checkout, a.title, [tuple(f) for f in a.files],
@@ -1590,6 +1611,10 @@ def _approvals(a, stop):
             raise serve.ServeError('no approval %s' % a.id)
         lines = [_item(d), 'head %s' % d.get('head')] + (
             ['reason %s' % d['reason']] if d.get('reason') else [])
+        note = d.get('superseded')
+        if isinstance(note, dict):
+            lines.append('superseded by %s from %s at %s'
+                         % (note.get('by'), note.get('from'), note.get('at')))
         lines += ['%s %s -> %s' % (f.get('path'), f.get('base_blob') or 'new',
                                    f.get('blob') or 'deleted')
                   for f in d.get('files') or [] if isinstance(f, dict)]

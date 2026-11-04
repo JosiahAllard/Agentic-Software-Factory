@@ -130,7 +130,7 @@ class RealReaders(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         with open(os.path.join(root, 'sessions.json'), 'w', encoding='utf-8') as f:
             json.dump({'_note': 'x', 'alpha': {'repo': 'app', 'stem': 'alpha-coordinator'},
-                       'kit': {'repo': 'kit', 'stem': 'kit-coordinator'}}, f)
+                       'kit': {'repo': 'kit', 'stem': 'coord-example'}}, f)
         rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control coord-example-2'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude -n other-session'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude'}]
@@ -139,7 +139,7 @@ class RealReaders(unittest.TestCase):
                 mock.patch.object(pmstart, 'list_processes', return_value=rows), \
                 mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
             self.assertEqual(omod.launcher_stems(), {'alpha': 'alpha-coordinator',
-                                                     'kit': 'kit-coordinator'})
+                                                     'kit': 'coord-example'})
             self.assertEqual(omod.running_names(), ['coord-example-2', 'other-session'])
             live = omod.SessionLiveness()
             self.assertEqual(live.live('kit'), (True, None))

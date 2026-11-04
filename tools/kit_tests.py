@@ -144,14 +144,17 @@ def plan(root, changed, cfg, say):
     if not picked:
         say('kit_tests: OK, nothing selected (%d changed path(s))' % len(changed))
         return None
-    width = max(len(p) for p in picked) + 6
+    packages, singles = selftree.split_picked(picked)
+    shown = {p: ('tests/' + p if p in packages else p.replace('.', '/')) for p in picked}
+    width = max(len(v) for v in shown.values()) + 6
     for p in picked:
-        say('  %s %s' % (('tests/' + p).ljust(width), why[p][0]))
+        say('  %s %s' % (shown[p].ljust(width), why[p][0]))
         for more in why[p][1:]:
             say('  %s %s' % (' ' * width, more))
-    modules = selftree.test_modules(root, picked)
+    modules = selftree.test_modules(root, packages)
+    modules += [m for m in singles if m not in modules]
     say('kit_tests: selected %d of %d test package(s), %d module(s), from %d changed path(s)'
-        % (len(picked), len(tree.tests), len(modules), len(changed)))
+        % (len(packages), len(tree.tests), len(modules), len(changed)))
     return modules
 
 

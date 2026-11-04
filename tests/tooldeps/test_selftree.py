@@ -190,6 +190,16 @@ class FixtureTree(unittest.TestCase):
         with self.assertRaises(selftree.ConfigError):
             selftree.config(self.root, dict(TABLE, always='scrub'))
 
+    def test_an_always_module_runs_as_a_single_module(self):
+        cfg = dict(self.cfg, always=['tests.leaf.test_x'])
+        picked, why, _ = selftree.selection(['kitlib/top/a.py'], self.tree, cfg)
+        self.assertEqual(selftree.split_picked(picked), (['top'], ['tests.leaf.test_x']))
+        self.assertIn('always', why['tests.leaf.test_x'][0])
+
+    def test_always_rejects_a_dotted_name_outside_tests(self):
+        with self.assertRaises(selftree.ConfigError):
+            selftree.config(self.root, dict(TABLE, always=['a.b']))
+
     def test_by_name_file_no_test_names_selects_everything(self):
         self.assertIs(self.select('hooks/pre.py')[0], ALL)
 
@@ -479,10 +489,25 @@ class KitTree(unittest.TestCase):
             self.assertIsNot(picked, ALL, path)
             self.assertIn('scrub', picked, path)
 
-    def test_every_always_entry_is_a_test_package(self):
+    def test_every_always_entry_is_a_test_package_or_module(self):
         self.assertIn('scrub', self.cfg['always'])
-        for pkg in self.cfg['always']:
-            self.assertIn(pkg, self.tree.tests)
+        mods = set(selftree.all_test_modules(KIT))
+        for name in self.cfg['always']:
+            if name.startswith('tests.'):
+                self.assertIn(name, mods)
+            else:
+                self.assertIn(name, self.tree.tests)
+
+    def test_repo_wide_policy_tests_follow_any_non_test_path(self):
+        # kit/comfy-headless-start: a scoped gate on optional/comfy/** skipped these three and
+        # the landing's merged gate failed them.
+        policy = {'platform', 'ci', 'tests.proc.test_spawn_sites'}
+        for path in ('optional/comfy/blender_run.py', 'tests/optional/comfy/test_blender_run.py',
+                     'hosts/codex/adapter/codex_host.py', 'mcp/hub_server.py'):
+            picked = self.select(path)
+            self.assertIsNot(picked, ALL, path)
+            self.assertTrue(policy <= set(picked), path)
+
 
     def test_every_serial_entry_names_a_test_module(self):
         with open(os.path.join(KIT, 'tests', 'selection.json'), encoding='utf-8') as fh:

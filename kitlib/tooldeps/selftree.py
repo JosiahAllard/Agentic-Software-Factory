@@ -31,8 +31,10 @@ package, tools importing a reached package or tool, and packages running a reach
   - `by_name` globs: the test packages naming the file (its base name);
   - `prose` globs: the same, but a file no test names selects nothing (it is read only by name);
   - anything else -> ALL.
-After the paths, the `always` packages (test packages that read every tracked file, such as
-tests/scrub) join any non-empty change that is not ALL, whatever the paths are.
+After the paths, the `always` entries (test packages that read every tracked file, such as
+tests/scrub, and single "tests.<pkg>.<module>" names for a repo-wide scan inside a package that
+is otherwise not wanted) join any non-empty change that is not ALL, whatever the paths are. A
+module entry is returned by its dotted name beside the package names; `split_picked` parts them.
 A path that maps to no test package (but a `prose` one) is unmapped and selects ALL: unmapped
 never means "skip". Each selected package carries the reasons it was picked.
 The table's `serial` list, [module, why] pairs, names the test modules that cannot run beside
@@ -101,6 +103,10 @@ def config(root, data=None):
         v = out[k]
         if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
             raise ConfigError('%s: %s must be a list of non-empty strings' % (CONFIG_REL, k))
+    for x in out['always']:
+        if '.' in x and not x.startswith('tests.'):
+            raise ConfigError('%s: always entry %r must be a test package or "tests.<pkg>.<module>"'
+                              % (CONFIG_REL, x))
     pairs = []
     for i, e in enumerate(out['paths']):
         ok = (isinstance(e, list) and len(e) == 2 and isinstance(e[0], str) and e[0]
@@ -474,9 +480,17 @@ def selection(changed, tree, cfg):
         if why is not None:
             return ALL, ['full suite: ' + why], notes
     if changed:
-        for pkg in cfg['always']:
-            picks.add(pkg, 'reads every tracked file (always, %s)' % CONFIG_REL)
+        for name in cfg['always']:
+            why = 'reads every tracked file (always, %s)' % CONFIG_REL
+            if not picks.add(name, why) and name.startswith('tests.'):
+                picks.why.setdefault(name, [why])
     return sorted(picks.why), picks.why, notes
+
+
+def split_picked(picked):
+    """(packages, modules) of a selection's names: a dotted "tests.<pkg>.<module>" name is a
+    module an `always` entry named, the rest are test packages."""
+    return ([p for p in picked if '.' not in p], [p for p in picked if '.' in p])
 
 
 def changed_paths(base, root):

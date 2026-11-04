@@ -56,7 +56,7 @@
   ],
   "by_name": ["hosts/**", "githooks/**", "mcp/**", "installer/**", ".claude-plugin/**"],
   "prose": ["docs/**", "*.md", ".gitignore"],
-  "always": ["scrub"],
+  "always": ["scrub", "platform", "ci", "tests.proc.test_spawn_sites"],
   "serial": [],
   "smoke": [
     "tests.guard.test_rules",

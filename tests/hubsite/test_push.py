@@ -1032,6 +1032,36 @@ class FiledRecipientsTest(FiledPushCase):
         self.worker.poll()
         self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
 
+    def bind_pm_folder(self, live):
+        self.bind('blocked', 'open', live=live)
+        self.api.kit_key = lambda: 'kitcoord'
+        self.worker.pm_folder = lambda: 'pmrepo'
+
+    def test_an_answer_bound_to_the_pm_folder_goes_to_the_kit_coordinator(self):
+        self.bind_pm_folder({'kitcoord'})
+        qid = self.ask(**{'from': 'zeta', 'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
+        self.assertNotIn('start one', self.push.to('kitcoord')[0])
+        self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_a_todo_bound_to_the_pm_folder_pushes_with_no_start_one_line(self):
+        self.bind_pm_folder({'kitcoord'})
+        tid = self.todo(**{'from': 'kitcoord', 'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.done(tid)
+        self.worker.poll()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), sorted(['kitcoord', push.PM_KEY]))
+        self.assertNotIn('start one', ''.join(t for _r, t in self.push.calls))
+
+    def test_another_repo_bound_answer_does_not_go_to_the_kit_coordinator(self):
+        self.bind_pm_folder({'kitcoord'})
+        qid = self.ask(**{'from': 'zeta', 'record': {'repo': 'other', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual(self.push.to('kitcoord'), [])
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+
     def test_a_freed_record_without_resolve_pings_the_pm(self):
         self.bind('blocked', 'open')
         qid = self.ask_bound()

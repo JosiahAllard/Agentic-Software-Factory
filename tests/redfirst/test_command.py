@@ -84,7 +84,7 @@ class Argv(unittest.TestCase):
 
     def test_head_is_the_head_checkout_beside_tree(self):
         runner = dict(ENGINE_RUNNER, command=['{head}/tools/x', '-Tree', '{tree}'],
-                      result='{head}/r-{n}.xml')
+                      result='{head}/r-{n}.xml')   # filled; prepare refuses it (EngineHeadRefusals)
         s = sel('tools/engine_tests/A.cs', runner)
         head = os.path.join(os.path.abspath(os.sep), 'h', 'wt')
         argv = V.command(s, 'TW', 'LOGS', 1, head=head)[0]
@@ -270,6 +270,44 @@ class EngineAtHead(EngineRun):
         self.assertIn('engine: MulWorks FAILED', self.log('1-command-CalcTest.log'))
         tree = self.engine_args()[0]
         self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)   # the base tree ran it
+
+
+class EngineHeadRefusals(EngineRun):
+    """{head} is the worktree's checkout: it must be at --head, its runner path unchanged, and no
+    result may be written into it. Each refusal is exit 2 with nothing made."""
+    RUNNER_EXTRA = {'no_test': r'^engine: no test named', 'assertion': r'^engine: \S+ FAILED'}
+    ENGINE_AT_HEAD = True
+    TEST = 'tools/engine_tests/CalcTest.cs::MulWorks'
+
+    def refused(self, *args, want):
+        rc, out = self.run_locked('--tests', self.TEST, *args)
+        self.assertEqual(rc, V.EXIT_USAGE, out)
+        self.assertIn(want, out)
+        self.assertEqual((self.throwaways(), self.booked), ([], []))
+
+    def test_head_that_is_not_the_worktree_s_head_is_refused(self):
+        first = self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
+        self.commit({'README.md': 'later
+'})
+        self.refused('--head', first, want='is not at --head')
+
+    def test_an_uncommitted_runner_is_refused(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
+        self.fx.write('tools/engine.py', ENGINE + '# edit
+', root=self.wt)
+        self.refused(want='uncommitted changes')
+
+
+class EngineHeadResult(EngineRun):
+    RUNNER_EXTRA = {'result': '{head}/build/r.xml'}
+    ENGINE_AT_HEAD = True
+
+    def test_a_result_under_head_is_refused(self):
+        self.commit({'tools/engine_tests/CalcTest.cs': TEST_FILE, 'tools/engine.py': ENGINE})
+        rc, out = self.run_locked('--tests', 'tools/engine_tests/CalcTest.cs::MulWorks')
+        self.assertEqual(rc, V.EXIT_USAGE, out)
+        self.assertIn('resolves under the head checkout', out)
+        self.assertEqual((self.throwaways(), self.booked), ([], []))
 
 
 class EngineExitCodeNoPattern(EngineRun):

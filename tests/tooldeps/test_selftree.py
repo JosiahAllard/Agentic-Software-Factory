@@ -672,6 +672,14 @@ class KitTree(unittest.TestCase):
         # tests/preflight/test_preflight.py lists tools/
         self.assertIn('tests.preflight.test_preflight', self.select('tools/backlog_audit.py'))
 
+    def test_the_skill_commands_test_follows_any_tool_change(self):
+        # it reads the flags of each tool content/ shows through a computed name
+        # (os.path.join(TOOLS, name + '.py')), which no scan can follow
+        for path in ('tools/backlog.py', 'tools/backlog_audit.py'):
+            picked = self.select(path)
+            self.assertIsNot(picked, ALL, path)
+            self.assertIn('tests.content.test_skill_commands', picked, path)
+
     def test_every_test_package_is_selected_by_its_own_change(self):
         for pkg in self.tree.tests:
             picked = self.select('tests/%s/zz.py' % pkg)

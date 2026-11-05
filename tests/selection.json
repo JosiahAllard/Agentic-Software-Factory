@@ -41,7 +41,7 @@
     ["tests/optional/**", ["knowledge"]],
     ["tests/**", ["tooldeps"]],
     ["reserve_ui.pyw", ["lockui"]],
-    ["tools/*.py", ["skills", "kitcmd"]],
+    ["tools/*.py", ["skills", "kitcmd", "tests.content.test_skill_commands"]],
     ["kitlib/hubsite/**", ["hubsite"]],
     ["kitlib/hubsite/web/**", ["hubsite"]],
     ["tests/hubsite/**", ["hubsite"]],

@@ -541,7 +541,7 @@ def kept_reflog(ctx, path, head, tagged):
                                                          else 'removed'))
         return None
     if not tagged:
-        return logged if scratch.reachable(ctx, path, head, logged) else None
+        return logged if scratch.all_reached(ctx, path, head, logged) else None
     # The tag on HEAD keeps HEAD's history: HEAD counts as one more ref. One rev-list for them all.
     lost, why = scratch._reaches(ctx, [o for o in logged if o != head], also=(head,))
     if lost is None:

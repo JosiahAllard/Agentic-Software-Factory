@@ -230,29 +230,21 @@ def _holder(ctx, refs, oid):
     return None, failed
 
 
-def reachable(ctx, path, head, logged):
-    """The first ref (refs/heads, refs/remotes, refs/tags) whose history holds `head`, or None
-    after saying why the tree is refused. Every commit in `logged` (its HEAD reflog) must be
-    reached too: a commit made in the tree and left by a checkout is work no ref keeps."""
-    def unknown(what, why):
-        ctx.say('refused   %s: whether a ref reaches %s is unknown (%s); %s'
-                % (path, what, why, NOTHING))
+def _unknown(ctx, path, what, why):
+    ctx.say('refused   %s: whether a ref reaches %s is unknown (%s); %s'
+            % (path, what, why, NOTHING))
 
-    args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', 'refs/heads',
-            'refs/remotes', 'refs/tags')
-    rc, out, err = remove.git(ctx.main, *args)
-    if rc != 0:
-        unknown(head[:10], remove.failure(args[:1], rc, err))
-        return None
-    # A ref to a blob or tree holds no commit; a tag object may peel to one (merge-base peels it).
-    refs = [(p[0], p[2]) for p in (line.split(' ', 2) for line in out.splitlines())
-            if len(p) == 3 and p[1] in ('commit', 'tag')]
+
+def all_reached(ctx, path, head, logged):
+    """True when a branch, remote-tracking branch or tag reaches `head` and every commit in
+    `logged` (its HEAD reflog), with one walk (`_reaches`); else False after saying why the tree is
+    refused: a commit made in the tree and left by a checkout is work no ref keeps."""
     oids = [head] + [o for o in logged if o != head]
     lost, why = _reaches(ctx, oids)
     if lost is None:
-        unknown(head[:10] if len(oids) == 1 else '%s or its %d reflog commit(s)'
-                % (head[:10], len(oids) - 1), why)
-        return None
+        _unknown(ctx, path, head[:10] if len(oids) == 1 else '%s or its %d reflog commit(s)'
+                 % (head[:10], len(oids) - 1), why)
+        return False
     if head in lost:
         rc, count, _ = remove.git(ctx.main, 'rev-list', '--count', head, '--not', '--branches',
                                   '--remotes', '--tags')
@@ -260,16 +252,34 @@ def reachable(ctx, path, head, logged):
                 ' be lost); whether to drop them is the owner\'s call; %s'
                 % (path, head[:10], count if rc == 0 and count.isdigit() else 'an unknown number of',
                    NOTHING))
-        return None
+        return False
     if lost:
         ctx.say('refused   %s: its HEAD reflog or a per-worktree ref holds %s, which no'
                 ' ref reaches (a commit'
                 ' made there and left behind); whether to drop it is the owner\'s call; %s'
                 % (path, lost[0][:10], NOTHING))
+        return False
+    return True
+
+
+def reachable(ctx, path, head, logged):
+    """The first ref (refs/heads, refs/remotes, refs/tags) whose history holds `head`, the name
+    printed, or None after saying why the tree is refused (`all_reached` first)."""
+    args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', 'refs/heads',
+            'refs/remotes', 'refs/tags')
+    rc, out, err = remove.git(ctx.main, *args)
+    if rc != 0:
+        _unknown(ctx, path, head[:10], remove.failure(args[:1], rc, err))
         return None
+    if not all_reached(ctx, path, head, logged):
+        return None
+    # A ref to a blob or tree holds no commit; a tag object may peel to one (merge-base peels it).
+    refs = [(p[0], p[2]) for p in (line.split(' ', 2) for line in out.splitlines())
+            if len(p) == 3 and p[1] in ('commit', 'tag')]
     ref, why = _holder(ctx, refs, head)
     if ref is None:
-        unknown(head[:10], why or 'git rev-list found it reached, but no ref answered which')
+        _unknown(ctx, path, head[:10], why or 'git rev-list found it reached, but no ref answered'
+                 ' which')
         return None
     return ref
 

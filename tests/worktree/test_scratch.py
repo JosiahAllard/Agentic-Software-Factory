@@ -74,6 +74,17 @@ class Batched(ReachCase):
         self.assertEqual(got, self.chain + [self.lone], self.ctx.out)
         self.assertEqual(n, 1)
 
+    def test_kept_reflog_without_the_tag_walks_once_and_names_no_ref(self):
+        self.spare(20)
+        head = self.chain[1]                # not a tip: naming its ref would walk per ref
+        with mock.patch.object(scratch, 'reflog', return_value=(self.chain, None)):
+            got, n = self.walks(lambda: remove.kept_reflog(self.ctx, 'p', head, False))
+        self.assertEqual(got, self.chain, self.ctx.out)
+        self.assertEqual(n, 1)
+        with mock.patch.object(scratch, 'reflog', return_value=([self.lone, head], None)):
+            self.assertIsNone(remove.kept_reflog(self.ctx, 'p', head, False))
+        self.assertIn('holds %s, which no ref reaches' % self.lone[:10], self.ctx.out[-1])
+
 
 class Answers(ReachCase):
 

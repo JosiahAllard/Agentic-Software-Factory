@@ -8,12 +8,14 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib import platform as kitplatform
 from kitlib.hubsite import api, auth, httpd
 from kitlib.hubsite.api import AGENT, ANY, BASE, OWNER
 from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
 from tests.hubsite import test_api_roles as roles
 from tests.hubsite.httpfix import TIMEOUT, get, post, send
+from tests.platforms import posix_only, windows_only
 
 HEALTH = BASE + '/health'
 TODOS = BASE + '/todos'
@@ -750,6 +752,7 @@ class LimitCase(httpfix.ListenerCase):
             self.assertEqual(lis.waiting, 0)
         self.assertEqual(len(self.errors()), 3)
 
+    @windows_only('SO_EXCLUSIVEADDRUSE is Windows only')
     def test_the_port_is_bound_exclusively_and_no_resolver_is_asked(self):
         with mock.patch.object(socket, 'getfqdn',
                                side_effect=AssertionError('the resolver was asked')):
@@ -759,6 +762,37 @@ class LimitCase(httpfix.ListenerCase):
         sock = lis._server.socket
         self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE), 1)
         self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR), 0)
+
+    def test_on_linux_the_port_is_bound_with_reuse_address_and_on_windows_not(self):
+        for name, reuse in (('linux', 1), ('windows', 0)):
+            with self.subTest(platform=name):
+                with mock.patch.object(kitplatform, 'NAME', name):
+                    lis = self.listener(start=False)
+                sock = lis._server.socket
+                self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR), reuse)
+                exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+                if exclusive is not None:
+                    self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, exclusive), 1 - reuse)
+
+    @posix_only('the listener sets SO_REUSEADDR on Linux only')
+    def test_on_linux_a_restart_binds_its_port_again_at_once(self):
+        lis = self.listener()
+        port = lis.port
+        # one request, read until the listener closes, so the listener's side is the one that
+        # closed first and keeps the connection in TIME_WAIT (no abort_on_close here)
+        s = socket.create_connection((httpd.LOOPBACK, port), timeout=TIMEOUT)
+        try:
+            s.sendall(('GET %s HTTP/1.1\r\nHost: %s:%d\r\n\r\n'
+                       % (HEALTH, httpd.LOOPBACK, port)).encode('ascii'))
+            self.assertTrue(httpfix.read_all(s).startswith(b'HTTP/1.1 '))
+        finally:
+            s.close()
+        self.assertTrue(lis.stop(TIMEOUT))
+        again = httpd.Listener((httpd.LOOPBACK, port), self.api, None)
+        self.addCleanup(again.stop, TIMEOUT)
+        self.assertEqual(again.port, port)
+        with self.assertRaises(httpd.BindRefused):     # a port in LISTEN is still refused
+            httpd.Listener((httpd.LOOPBACK, port), self.api, None)
 
     def test_a_silent_connection_and_a_stalled_body_end_at_the_socket_timeout(self):
         self.assertEqual((httpd._Handler.timeout, httpd.SOCKET_TIMEOUT_S), (30, 30))

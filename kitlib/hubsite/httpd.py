@@ -26,7 +26,8 @@
 The address. Only LOOPBACK is bound: any other host in `addr` (a name, the empty string, the any
 address, an IPv6 one) is BindRefused in code, whatever a setting says. The port is bound by the
 constructor, exclusively (a second process cannot share or take it), so a taken port is a
-BindRefused at once and `.port` is real before start().
+BindRefused at once and `.port` is real before start(). On Linux the port's own TIME_WAIT
+connections do not hold it, so a restarted hub binds it again at once.
 
 One request, in this order, for every method and every path:
   1. gate(request). It answers a role (auth.OWNER, auth.AGENT), None (no role: the Api refuses
@@ -122,6 +123,8 @@ import threading
 import time
 import traceback
 import urllib.parse
+
+from kitlib import platform
 
 from . import api as _api
 from . import auth
@@ -407,8 +410,9 @@ def _shown(text, limit=200):
 
 
 class _Server(http.server.ThreadingHTTPServer):
-    """The socket and the accept loop of one Listener."""
-    allow_reuse_address = False     # on Windows the option would let a second process bind too
+    """The socket and the accept loop of one Listener. server_bind sets the socket options
+    itself, so the two allow_reuse_* flags below are never read."""
+    allow_reuse_address = False
     allow_reuse_port = False
     daemon_threads = True
     block_on_close = False
@@ -419,9 +423,15 @@ class _Server(http.server.ThreadingHTTPServer):
         http.server.ThreadingHTTPServer.__init__(self, addr, handler)
 
     def server_bind(self):
-        exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
-        if exclusive is not None:
-            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        if platform.NAME == 'linux':
+            # binds over this port's TIME_WAIT connections, which each answer leaves (the
+            # listener closes first), so a restart can bind again at once; a port in LISTEN is
+            # still refused. On Windows the option would let a second process bind the port too.
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        else:
+            exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+            if exclusive is not None:
+                self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         self.socket.bind(self.server_address)
         self.server_address = self.socket.getsockname()
         # no socket.getfqdn here (HTTPServer's own asks the resolver, which can take seconds)

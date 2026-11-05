@@ -138,72 +138,11 @@ def parser():
     return p
 
 
-def again_args(a, root):
-    """This submission's arguments in the land permission rule's order (docs/allow-rules.md):
-    -C (absolute, forward slashes), the branches, --expect-tip, then the rest; for the Instead:
-    command of a submission that did not name its reviewers (submit.again_line)."""
-    args = ['-C', root.replace('\\', '/')] + list(a.branches)
-    for tip in a.expect_tip:
-        args += ['--expect-tip', tip]
-    if a.expect_main:
-        args += ['--expect-main', a.expect_main]
-    if a.summary:
-        args += ['--summary', a.summary]
-    if a.wait is not None:
-        args += ['--wait', str(a.wait)]
-    if a.log_dir:
-        args += ['--log-dir', a.log_dir]
-    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
-                                         ('--keep-branch', a.keep_branch),
-                                         ('--wait-result', a.wait_result)) if on]
-
-
-def child_args(a, root):
-    """The arguments of the detached landing a --submit starts: this landing's, -C and --log-dir
-    absolute."""
-    args = ['-C', root]
-    if a.expect_main:
-        args += ['--expect-main', a.expect_main]
-    for tip in a.expect_tip:
-        args += ['--expect-tip', tip]
-    if a.summary:
-        args += ['--summary', a.summary]
-    if a.wait is not None:
-        args += ['--wait', str(a.wait)]
-    if a.log_dir:
-        args += ['--log-dir', os.path.abspath(a.log_dir)]
-    args += [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
-                                   ('--keep-branch', a.keep_branch)) if on]
-    return args + list(a.branches)
-
-
-def restore(root, a):
-    """The detached landing's `submitted`, its output now going to the submission's log; None
-    when the payload is not the one a submission wrote for this landing (submit.Untrusted: that
-    is said on stderr and, at the submission's own path, in its log; no record is written) or,
-    read with the submission's token, cannot be read (the submission's records are
-    then finished refused, submit.abandon, and that is said, on the hidden console)."""
-    payload = a.submitted
-    try:
-        sub = submitmod.restore(root, payload, a.branches, a.expect_tip,
-                                expect_main=a.expect_main)
-    except submitmod.Untrusted as e:    # also in the submission's log: stderr may be hidden
-        sys.stderr.write(submitmod.untrusted_refusal(payload, e) + '\n')
-        return None
-    except submitmod.SubmitError as e:
-        emit(submitmod.abandon(root, payload, str(e)))
-        return None
-    if sub.get('output'):
-        try:
-            submitmod.redirect_output(sub['output'])
-        except OSError as e:
-            print('WARNING: the output stays on the hidden console: %s' % e, flush=True)
-    return sub
-
-
 def emit(outcome):
+    """Print the Outcome's lines, to stderr when it has the fact stderr=True; its code."""
+    stream = sys.stderr if outcome.facts.get('stderr') else sys.stdout
     for line in outcome.lines:
-        print(line, flush=True)
+        print(line, file=stream, flush=True)
     return outcome.code
 
 
@@ -248,10 +187,12 @@ def main(argv):
     if a.submit and a.submitted:
         p.error('--submit starts the landing that --submitted runs; not both')
     if a.submit:
+        tool = submitmod.LAND_TOOL
         out = submitmod.submit(
-            root, __file__, child_args(a, root), a.branches, a.expect_tip,
-            expect_main=a.expect_main, reviewed_by=a.reviewed_by,
-            again=lambda ids: submitmod.again_line('land.py', again_args(a, root), ids))
+            root, __file__, submitmod.child_args(tool, a, root, a.branches, a.expect_tip),
+            a.branches, a.expect_tip, expect_main=a.expect_main, reviewed_by=a.reviewed_by,
+            again=lambda ids: submitmod.again_line(
+                tool, submitmod.again_args(tool, a, root, a.branches, a.expect_tip), ids))
         code = emit(out)        # flushed first: a killed wait leaves the wait-result command
         coordlog.note_submit(out, a.branches, a.expect_tip, a.reviewed_by)   # docs/coord-state.md
         if not a.wait_result or out.code != G.OK:
@@ -264,9 +205,11 @@ def main(argv):
             return 130
     submitted = None
     if a.submitted:
-        submitted = restore(root, a)
+        submitted, said = submitmod.restore_landing(root, a.submitted, a.branches, a.expect_tip,
+                                                    expect_main=a.expect_main)
+        code = emit(said)
         if submitted is None:
-            return G.REFUSED
+            return code
     branch = a.branches[0] if len(a.branches) == 1 else a.branches
     tip = a.expect_tip[0] if len(a.expect_tip) == 1 else a.expect_tip
     try:

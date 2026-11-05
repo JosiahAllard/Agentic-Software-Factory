@@ -224,8 +224,10 @@ class TheTool(unittest.TestCase):
     def test_the_instead_command_keeps_wait_result(self):
         a = landcli.parser().parse_args(['-C', 'Y:/repo', 'kit/a', '--expect-tip', 'abc1234',
                                          '--wait-result', '--submit'])
-        self.assertEqual(landcli.again_args(a, 'Y:/repo')[-1], '--wait-result')
-        self.assertNotIn('--wait-result', landcli.child_args(a, 'Y:/repo'))
+        self.assertEqual(submit.again_args(submit.LAND_TOOL, a, 'Y:/repo', a.branches,
+                                           a.expect_tip)[-1], '--wait-result')
+        self.assertNotIn('--wait-result', submit.child_args(submit.LAND_TOOL, a, 'Y:/repo',
+                                                            a.branches, a.expect_tip))
 
 
 if __name__ == '__main__':

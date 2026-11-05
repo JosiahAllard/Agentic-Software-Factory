@@ -29,10 +29,20 @@ written as the size it books on this layout now, and its note says so. Each meas
 a `_measured` note: runs, median and p90 held seconds, cpu_samples (and cpu_skipped, a count
 per reason, when any run was skipped), p90 and max peak cpu slots of the cpu samples, max peak
 memory (MB), and the layout figures used. p90 is the nearest-rank percentile.
+
+write_proposal is `gate.py --measure` itself: it reads the live table and the lock's history,
+proposes, and writes the proposal file, refusing a path that is the live table.
 """
 import copy
 import decimal
+import json
 import math
+import os
+
+from kitlib import gate as G
+from kitlib.config import policy
+from kitlib.lock import layout as lay
+from kitlib.lock.store import Store
 
 WARN_MARGIN = 1.5
 SATURATED = 0.9
@@ -190,3 +200,48 @@ def document(kinds, note, aliases=None):
     if aliases:
         doc['aliases'] = copy.deepcopy(aliases)
     return doc
+
+
+def _refused(why):
+    """A refusal of write_proposal: its line goes to stderr (the fact `stderr`)."""
+    return G.Outcome(G.REFUSED, ['REFUSED: %s' % why], stderr=True)
+
+
+def write_proposal(out, days, say=None, store=None, live=None):
+    """`gate.py --measure`: the proposed kinds table from `days` (1 or more) of the machine lock's
+    run history, written to the file `out`, never over the live table `live` (default
+    policy.KINDS_FILE; a link or another spelling of it is the table). An Outcome: OK with one
+    note per kind (propose) and `proposal written: <out>` last; REFUSED (the fact stderr=True:
+    its line goes to stderr) when `out` is the live table or cannot be told apart from it, when
+    the live table or the lock's layout or history cannot be read (nothing written), or when the
+    proposal cannot be written. store: the lock store (default the machine's, Store(say=say))."""
+    out = os.path.abspath(out)
+    live = os.path.abspath(live or policy.KINDS_FILE)
+    try:                            # a link or another spelling of the live table is the table
+        same = os.path.normcase(out) == os.path.normcase(live) or (
+            os.path.exists(out) and os.path.samefile(out, live))
+    except OSError as e:
+        return _refused('cannot tell whether %s is the live kinds table: %s' % (out, e))
+    if same:
+        return _refused('%s is the live kinds table; sizes change only by a PM-reviewed commit'
+                        % live)
+    try:
+        with open(live, encoding='utf-8') as f:
+            live_doc = json.load(f)
+        table, aliases = live_doc['kinds'], live_doc.get('aliases')
+        store = store if store is not None else Store(say=say)
+        layout = lay.in_force(store)['layout']
+        history = store.history_records(days)
+    except (OSError, ValueError, KeyError) as e:
+        return _refused('cannot read the kinds table or the lock history: %s' % e)
+    kinds, notes = propose(table, history, layout['medium_cores'],
+                           store.settings.history_min_runs, agent_cap=layout['agent_cap'],
+                           aliases=aliases)
+    doc = document(kinds, 'PROPOSED by gate.py --measure from %d day(s) of history; review, '
+                          'then commit to kitlib/lock/kinds.json.' % days, aliases)
+    try:
+        with open(out, 'w', encoding='utf-8') as f:
+            f.write(json.dumps(doc, indent=1) + '\n')
+    except OSError as e:
+        return _refused('cannot write the proposal %s: %s' % (out, e))
+    return G.Outcome(G.OK, list(notes) + ['proposal written: %s' % out])

@@ -24,6 +24,10 @@
   abandon   the detached tool that cannot read its payload (at the path submit names it)
             finishes the submission's records `refused`, found by the run_id in the payload's name
   redirect_output  the detached tool's stdout and stderr, appended to the output file
+  again_args, child_args, restore_landing  the one copy of what both tools build and do around
+            a submission: the Instead: command's arguments, the detached landing's arguments
+            (each tool's order kept, named in their docstrings), and the --submitted run's
+            restore, redirect and refusal
   follow    `land.py --wait-result --submit`, once submit gave OK: wait for the batch's last
             land record to be final (result.wait), then up to EXIT_WAIT_S for the landing's
             process to exit, and give the outcome's own lines from the output file (those after
@@ -342,6 +346,89 @@ def again_line(tool, args, ids, kit=None):
     for i in ids:
         words += [REVIEWED_BY, i]
     return 'python %s/tools/%s %s --submit' % (kit, tool, ' '.join(_arg(w) for w in words))
+
+
+# The two tools that submit a landing, by the name again_line gives them. Their arguments differ
+# (landing_args): `gate.py land` lands one branch, `land.py` a batch.
+GATE_TOOL, LAND_TOOL = 'gate.py', 'land.py'
+
+
+def _landing_tail(a, log_dir):
+    """The arguments after the branches, tips and base that both tools write alike, in this order:
+    --summary, --wait, --log-dir (`log_dir`: as given or absolute, the caller's choice), then the
+    switches --full, --fresh, --keep-branch."""
+    args = []
+    if a.summary:
+        args += ['--summary', a.summary]
+    if a.wait is not None:
+        args += ['--wait', str(a.wait)]
+    if log_dir:
+        args += ['--log-dir', log_dir]
+    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
+                                         ('--keep-branch', a.keep_branch)) if on]
+
+
+def again_args(tool, a, root, branches, tips):
+    """The submission's arguments for the Instead: command of one that did not name its
+    reviewers (again_line): -C `root` absolute with forward slashes, --log-dir as given. `a`: the
+    tool's parsed arguments (expect_main, summary, wait, log_dir, full, fresh, keep_branch, and
+    for land.py wait_result). Where the two tools differ:
+      gate.py  `land BRANCH -C ROOT --expect-tip SHA [--expect-main SHA]` then the tail
+      land.py  `-C ROOT BRANCH... --expect-tip SHA... [--expect-main SHA]` (the land permission
+               rule's order, docs/allow-rules.md), the tail, then --wait-result when given"""
+    fwd = root.replace('\\', '/')
+    if tool == GATE_TOOL:
+        args = ['land'] + list(branches) + ['-C', fwd]
+    else:
+        args = ['-C', fwd] + list(branches)
+    for tip in tips:
+        args += ['--expect-tip', tip]
+    if a.expect_main:
+        args += ['--expect-main', a.expect_main]
+    args += _landing_tail(a, a.log_dir)
+    if tool == LAND_TOOL and a.wait_result:
+        args.append('--wait-result')
+    return args
+
+
+def child_args(tool, a, root, branches, tips):
+    """The arguments of the detached landing a --submit starts (submit's `child_args`): the
+    landing's own, -C `root` and --log-dir absolute, never --wait-result. `a` as again_args.
+    Where the two tools differ:
+      gate.py  `land BRANCH -C ROOT --expect-tip SHA [--expect-main SHA]` then the tail
+      land.py  `-C ROOT [--expect-main SHA] --expect-tip SHA...`, the tail, then BRANCH..."""
+    log_dir = os.path.abspath(a.log_dir) if a.log_dir else a.log_dir
+    base = ['--expect-main', a.expect_main] if a.expect_main else []
+    tip_args = []
+    for tip in tips:
+        tip_args += ['--expect-tip', tip]
+    if tool == GATE_TOOL:
+        return (['land'] + list(branches) + ['-C', root] + tip_args + base
+                + _landing_tail(a, log_dir))
+    return ['-C', root] + base + tip_args + _landing_tail(a, log_dir) + list(branches)
+
+
+def restore_landing(root, payload, branches, tips, expect_main=None):
+    """`--submitted <payload>` read back by either tool's detached landing: (submitted, Outcome).
+    Restored (restore): its output then goes to the submission's output file (redirect_output),
+    and the Outcome is OK, its lines a WARNING when that file could not be opened (the output
+    stays on the hidden console). Not restored, submitted None and the Outcome REFUSED: an
+    Untrusted payload's one line (untrusted_refusal, also in the submission's log), with the fact
+    stderr=True, no record written; a payload that cannot be read (SubmitError), abandon's
+    Outcome, its records finished refused."""
+    try:
+        sub = restore(root, payload, branches, tips, expect_main=expect_main)
+    except Untrusted as e:      # also in the submission's log: stderr may be hidden
+        return None, G.Outcome(G.REFUSED, [untrusted_refusal(payload, e)], stderr=True)
+    except SubmitError as e:    # its records are finished, never left running
+        return None, abandon(root, payload, str(e))
+    lines = []
+    if sub.get('output'):
+        try:
+            redirect_output(sub['output'])
+        except OSError as e:
+            lines.append('WARNING: the output stays on the hidden console: %s' % e)
+    return sub, G.Outcome(G.OK, lines)
 
 
 def named_review(root, branches, tips, given, again=None):

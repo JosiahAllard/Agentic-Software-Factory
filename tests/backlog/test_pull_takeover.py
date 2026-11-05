@@ -208,3 +208,36 @@ class PullTakeover(StoreCase):
         self.assertEqual(str(cm.exception),
                          '`LIVE` is already in flight - pulled %s by kit/live-one' % EARLIER)
         self.assertEqual(self.get('LIVE').get('pulled_by'), 'kit/live-one')
+
+
+class CodeMainOriginFirst(StoreCase):
+    """The code main is `origin/<main>` as last fetched when it resolves (refs.default_base): a
+    landing the local main has not pulled yet still counts."""
+    pulled = PullTakeover.pulled
+    land = PullTakeover.land
+
+    def setUp(self):
+        super().setUp()
+        self.store.session = 'kit'
+
+    def test_a_takeover_sees_a_landing_only_origin_has(self):
+        self.land(GONE)
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.repo.git('checkout', '-q', '--detach')
+        self.repo.git('branch', '-f', 'main', 'main~1')
+        self.assertNotIn('Merge %s' % GONE, self.repo.git('log', '--format=%s', 'main'))
+        self.seed(self.pulled('DEAD', GONE))
+        with self.assertRaises(Refusal) as cm:
+            self.verb('pull', 'DEAD')
+        self.assertIn('which has landed on main', str(cm.exception))
+
+    def test_a_restore_sees_a_tip_only_origin_has(self):
+        self.repo.git('checkout', '-q', '-b', GONE)
+        self.repo.write('landed/tip.txt', 'x\n')
+        self.repo.commit('work', 'landed')
+        tip = self.repo.git('rev-parse', 'HEAD')
+        self.repo.git('push', '-q', 'origin', '%s:refs/heads/main' % GONE)
+        self.repo.git('checkout', '-q', 'main')
+        self.seed(self.pulled('DEAD', GONE))
+        why = plan._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
+        self.assertEqual(why, 'its stopped tip %s has landed on main' % tip)

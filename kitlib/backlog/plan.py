@@ -96,7 +96,7 @@ class Context(object):
         self.offer_session = _STORE_SESSION
         self._cap = cap
         self._resources = resources
-        self._histories = (None, {})    # (the last snap asked about, {rid: history}), see `history`
+        self._histories = (None, {})    # (the last store tip asked about, {rid: history})
 
     @property
     def cap(self):
@@ -141,8 +141,10 @@ class Context(object):
     def history(self, snap):
         """`history(rid)` of the store at `snap`, one git log per rid for this Context and snap:
         offer's readers (closed_reader, ended_reader, unmet_requires) all ask through it."""
-        if self._histories[0] is not snap:
-            self._histories = (snap, {})
+        # Keyed on the store's tip, not the snapshot object: the backend reads its history from
+        # the store as it stands, so a later write must never be served an earlier answer.
+        if self._histories[0] != ('tip', snap.tip):
+            self._histories = (('tip', snap.tip), {})
         seen = self._histories[1]
 
         def history(rid):
@@ -1954,7 +1956,7 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
     is the `pull-collision` row, as a pull is: refused unless `may_collide`, and the Change names
     the row (_collision_change). It takes no flag. A dead pull marked for review refuses, as `pull` of a marked record does,
     until `clear-review`. A failed git probe
-    holds the pull (fail closed). A `pulled_by` that landed on the main branch (a `Merge <branch>`
+    holds the pull (fail closed). A `pulled_by` that landed on the code main (a `Merge <branch>`
     merge on its first-parent line, committed on or after the `pulled_at` day; one brought in
     inside another branch does not count) is not dead but unclosed:
     that refuses, and a git that cannot say fails."""

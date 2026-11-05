@@ -17,7 +17,7 @@ class HistoryMemo(StoreCase):
             closed = omod.closed_reader(snap, self.ctx.history(snap))
             ended = omod.ended_reader(snap, self.ctx.history(snap))
             self.assertEqual(closed('NOPE'), 'abc1234')
-            self.assertEqual(ended('NOPE'), ended('NOPE'))
+            self.assertEqual(ended('NOPE'), 'landed (closed in abc1234)')
             self.assertEqual(hist.call_count, 1)
             closed('OTHER')
             self.assertEqual(hist.call_count, 2)

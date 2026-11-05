@@ -141,8 +141,8 @@ class Context(object):
     def history(self, snap):
         """`history(rid)` of the store at `snap`, one git log per rid for this Context and snap:
         offer's readers (closed_reader, ended_reader, unmet_requires) all ask through it."""
-        # Keyed on the store's tip, not the snapshot object: the backend reads its history from
-        # the store as it stands, so a later write must never be served an earlier answer.
+        # Keyed on the store's tip (snap.tip), not the snapshot object: RefBackend.history reads
+        # HEAD and ignores snap, so an answer cached under an older tip must not outlive a write.
         if self._histories[0] != ('tip', snap.tip):
             self._histories = (('tip', snap.tip), {})
         seen = self._histories[1]

@@ -23,7 +23,7 @@ Never acted on: free text (not one of the forms), a member the record is not blo
 clears the owner's hold on its own reading), a condition holding a machine path
 (kitlib.machinepaths: the store refuses it in the unblock's reason), and a condition that cannot
 be told (a hub document, a store or the plugin export root that cannot be read, a path that is
-not on a local drive after its %VAR% expansion or has a `..` part: conditions.evaluate's None). A coordinator
+not on a local drive (on Linux, not absolute or starting with `//`) after its %VAR% expansion or has a `..` part: conditions.evaluate's None). A coordinator
 learns of the opened record from coord_restart's backlog wake (a stopped coordinator whose offer
 gained it is restarted); a live one gets no push of its own.
 
@@ -51,6 +51,7 @@ import ntpath
 import os
 import re
 
+from kitlib import platform as kplatform
 from kitlib.hubsite import jobs
 
 NAME = 'unblock-conditions'
@@ -59,7 +60,7 @@ EVENT = 'unblocked'
 EXPIRED_EVENT = 'approval-expired'      # an `approval:` line's approval expired undecided
 NOTE_MAX = 200
 # A path condition is read only on a local drive (a drive letter, a colon, then a slash or a
-# backslash): a UNC path (`\\host\share`) would
+# backslash; on Linux, an absolute path not starting with `//`): a UNC path (`\\host\share`) would
 # have the hub reach a network host every pass.
 LOCAL_DRIVE = re.compile(r'^[A-Za-z]:[\\/]')
 
@@ -166,8 +167,14 @@ class Readers(object):
 def local_path(path):
     r"""True when `path` names a place on a local drive: a drive letter, a colon and a slash or
     backslash first (LOCAL_DRIVE), no `..` part, and
-    a drive ntpath reads as a letter (not `\\?\` or `\\host\share`)."""
-    if not isinstance(path, str) or not LOCAL_DRIVE.match(path):
+    a drive ntpath reads as a letter (not `\\?\` or `\\host\share`). On Linux: an absolute path
+    that does not start with `//` and has no `..` part."""
+    if not isinstance(path, str):
+        return False
+    if kplatform.NAME == 'linux':
+        return (path.startswith('/') and not path.startswith('//')
+                and '..' not in path.split('/'))
+    if not LOCAL_DRIVE.match(path):
         return False
     if len(ntpath.splitdrive(path)[0]) != 2:
         return False

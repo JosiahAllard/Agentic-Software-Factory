@@ -418,7 +418,7 @@ class PointerLineWording(unittest.TestCase):
 
     def line(self, name, state, error=None):
         with mock.patch('kitlib.platform.NAME', name), \
-                mock.patch.object(pointer, 'read', return_value=pointer.Pointer(state, None, error)):
+                mock.patch.object(user, '_pointer', return_value=pointer.Pointer(state, None, error)):
             return configline.pointer_line()
 
     def test_none_on_windows_names_the_registry_value(self):

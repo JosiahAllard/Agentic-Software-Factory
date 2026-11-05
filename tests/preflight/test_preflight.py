@@ -527,7 +527,7 @@ class TheLeftoversLine(Fixture):
 
 class TheGitCalls(Fixture):
     """preflight asks git for the worktree list, the main checkout and the PM-repo pointer answer
-    once each (KIT-PREFLIGHT-REPEATED-GIT)."""
+    once each."""
 
     def test_worktree_list_common_dir_and_pointer_are_asked_once(self):
         self.config(repo={'main_branch': 'master'})

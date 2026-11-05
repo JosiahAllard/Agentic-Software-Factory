@@ -176,6 +176,31 @@ def start_task(run=None):
     _powershell(script, "starting the task '%s'" % TASK_NAME, run)
 
 
+def linux_unit():
+    """The name of the Linux job's systemd service (pm-kit-hub.service), for the commands
+    hub.py advises."""
+    from kitlib.platform.linux import schedule
+    return schedule.unit(LINUX_JOB) + '.service'
+
+
+def linux_desktop_path(home=None):
+    """The path of the Linux job's XDG autostart entry (under XDG_CONFIG_HOME when it is set)."""
+    from kitlib.platform.linux import schedule
+    return schedule.desktop_path(LINUX_JOB, home)
+
+
+def linux_is_autostart(home=None):
+    """True when the Linux job is an XDG autostart entry (no systemctl start for it); False for
+    a systemd service, for no job, or when the job cannot be read (including a home the password
+    database does not know)."""
+    from kitlib.platform.linux import schedule
+    try:
+        task = schedule.find(LINUX_JOB, schedule.written(home))
+    except (schedule.ScheduleError, KeyError):
+        return False
+    return task is not None and task['backend'] == schedule.AUTOSTART
+
+
 def linux_job(hub_py, python):
     """The Linux job: `python hub_py serve` in the kit folder, at sign-in."""
     from kitlib.platform.linux import schedule

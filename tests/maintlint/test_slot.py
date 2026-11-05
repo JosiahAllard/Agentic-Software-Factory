@@ -13,6 +13,7 @@ from unittest import mock
 from kitlib.lock.store import (EXIT_BUSY, EXIT_FAIL, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED,
                                EXIT_TIMEOUT, EXIT_USAGE, LockError)
 from kitlib.maintlint import slot
+from tests import gitfixture
 from tests.gitfixture import rmtree
 from tools import maint_lint
 
@@ -106,6 +107,9 @@ class Tool(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix='kit-maintlint-slot-')
         self.addCleanup(rmtree, self.dir)
         self.result = os.path.join(self.dir, 'result.json')
+        fx = gitfixture.TempRepo()               # -C is resolved to a git top
+        self.addCleanup(fx.cleanup)
+        self.repo = fx.root
 
     def main(self, *argv):
         out, err = io.StringIO(), io.StringIO()
@@ -124,7 +128,7 @@ class Tool(unittest.TestCase):
         with mock.patch.object(slot.lockrun, 'book', refusing(EXIT_TIMEOUT)), \
                 mock.patch.object(slot.kinds_mod, 'load', return_value=TABLE), \
                 mock.patch.object(maint_lint.maintlint, 'run') as run:
-            code, out, err = self.main('-C', self.dir, '--result', self.result)
+            code, out, err = self.main('-C', self.repo, '--result', self.result)
         self.assertEqual(code, 3, err)
         self.assertEqual(len(out.splitlines()), 1, out)
         self.assertTrue(out.startswith('SKIPPED: '), out)
@@ -140,7 +144,7 @@ class Tool(unittest.TestCase):
             with mock.patch.object(slot.lockrun, 'book', refusing(code)), \
                     mock.patch.object(slot.kinds_mod, 'load', return_value=TABLE), \
                     mock.patch.object(maint_lint.maintlint, 'run') as run:
-                got, out, err = self.main('-C', self.dir, '--result', self.result)
+                got, out, err = self.main('-C', self.repo, '--result', self.result)
             self.assertEqual(got, 3, err)
             run.assert_not_called()
             mark = slot.read_skip(self.result)
@@ -154,11 +158,11 @@ class Tool(unittest.TestCase):
         res = {'findings': [], 'notes': [], 'counts': {}, 'ledger': None, 'elapsed_s': 0.0}
         with mock.patch.object(slot.lockrun, 'book', refusing(EXIT_TIMEOUT)), \
                 mock.patch.object(slot.kinds_mod, 'load', return_value=TABLE):
-            self.main('-C', self.dir, '--result', self.result)
+            self.main('-C', self.repo, '--result', self.result)
         self.assertIsNotNone(slot.read_skip(self.result))
         with mock.patch.object(slot, 'take', return_value=FakeSlot()), \
                 mock.patch.object(maint_lint.maintlint, 'run', return_value=res):
-            code, out, err = self.main('-C', self.dir, '--result', self.result)
+            code, out, err = self.main('-C', self.repo, '--result', self.result)
         self.assertEqual(code, 0, err)
         self.assertIsNone(slot.read_skip(self.result))
         self.assertEqual(sorted(os.listdir(self.dir)), ['page.html', 'result.json'])
@@ -195,7 +199,7 @@ class Tool(unittest.TestCase):
                 mock.patch.object(slot.kinds_mod, 'load', return_value=TABLE), \
                 mock.patch.object(slot, 'write_skip', side_effect=OSError('denied')), \
                 mock.patch.object(maint_lint.maintlint, 'run') as run:
-            code, out, err = self.main('-C', self.dir, '--result', self.result)
+            code, out, err = self.main('-C', self.repo, '--result', self.result)
         self.assertEqual(code, slot.EXIT_SKIPPED, err)
         self.assertTrue(out.startswith('SKIPPED: '), out)
         self.assertEqual(err, 'note: the skip marker was not written: denied\n')
@@ -209,7 +213,7 @@ class Tool(unittest.TestCase):
                     mock.patch.object(slot, 'clear_skip', side_effect=OSError('in use')), \
                     mock.patch.object(maint_lint.page, 'render', return_value=''), \
                     mock.patch.object(maint_lint.maintlint, 'run', return_value=res):
-                code, out, err = self.main('-C', self.dir, '--result', self.result)
+                code, out, err = self.main('-C', self.repo, '--result', self.result)
             self.assertEqual(code, want, err)
             self.assertEqual(err, 'note: the old skip marker was not removed: in use\n')
             self.assertTrue(os.path.isfile(self.result))
@@ -234,7 +238,7 @@ class Tool(unittest.TestCase):
             with contextlib.ExitStack() as stack:
                 for p in patches:
                     stack.enter_context(p)
-                code, out, err = self.main('-C', self.dir, '--result', self.result)
+                code, out, err = self.main('-C', self.repo, '--result', self.result)
             self.assertEqual(code, maint_lint.EXIT_ERROR, (want, out, err))
             self.assertEqual(err, 'ERROR: %s\n' % want)
         self.assertEqual((held.entered, held.exited), (1, 1))
@@ -242,7 +246,7 @@ class Tool(unittest.TestCase):
     def test_an_unexpected_error_in_a_dry_run_exits_5(self):
         page = os.path.join(self.dir, 'page.html')
         with mock.patch.object(maint_lint.maintlint, 'run', side_effect=KeyError('gone')):
-            code, _, err = self.main('-C', self.dir, '--dry-run', '--result', self.result,
+            code, _, err = self.main('-C', self.repo, '--dry-run', '--result', self.result,
                                      '--out', page)
         self.assertEqual(code, maint_lint.EXIT_ERROR, err)
         self.assertIn('KeyError', err)
@@ -252,13 +256,13 @@ class Tool(unittest.TestCase):
             with mock.patch.object(slot, 'take', return_value=FakeSlot()), \
                     mock.patch.object(maint_lint.maintlint, 'run', side_effect=exc):
                 with self.assertRaises(exc):
-                    self.main('-C', self.dir, '--result', self.result)
+                    self.main('-C', self.repo, '--result', self.result)
 
     def test_another_refusal_exits_with_the_locks_code_and_runs_nothing(self):
         with mock.patch.object(slot.lockrun, 'book', refusing(EXIT_REQUIRE)), \
                 mock.patch.object(slot.kinds_mod, 'load', return_value=TABLE), \
                 mock.patch.object(maint_lint.maintlint, 'run') as run:
-            code, _, err = self.main('-C', self.dir, '--result', self.result)
+            code, _, err = self.main('-C', self.repo, '--result', self.result)
         self.assertEqual(code, EXIT_REQUIRE)
         self.assertIn('REFUSED: ', err)
         run.assert_not_called()
@@ -272,9 +276,9 @@ class Tool(unittest.TestCase):
             return res
         with mock.patch.object(slot, 'take', return_value=held) as take, \
                 mock.patch.object(maint_lint.maintlint, 'run', run):
-            code, out, _ = self.main('-C', self.dir, '--result', self.result)
+            code, out, _ = self.main('-C', self.repo, '--result', self.result)
         self.assertEqual(code, 0, out)
-        take.assert_called_once_with(os.path.basename(self.dir))
+        take.assert_called_once_with(os.path.basename(self.repo))
         self.assertEqual(order, [('run', 1, 0)])
         self.assertEqual((held.entered, held.exited), (1, 1))
         self.assertTrue(os.path.isfile(self.result))
@@ -285,7 +289,7 @@ class Tool(unittest.TestCase):
         with mock.patch.object(slot.lockrun, 'book', side_effect=AssertionError('booked')), \
                 mock.patch.object(slot, 'take', side_effect=AssertionError('took')), \
                 mock.patch.object(maint_lint.maintlint, 'run', return_value=res):
-            code, out, err = self.main('-C', self.dir, '--dry-run', '--result', self.result,
+            code, out, err = self.main('-C', self.repo, '--dry-run', '--result', self.result,
                                        '--out', page)
         self.assertEqual(code, 0, err)
         self.assertEqual(os.listdir(self.dir), ['page.html'])

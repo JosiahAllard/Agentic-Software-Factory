@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from kitlib import stackskill
+from tests import gitfixture
 from tests.shipped import ROOT
 
 sys_path_tool = ROOT / "tools" / "stack_skill.py"
@@ -167,15 +168,20 @@ class ToolExitCodesTest(unittest.TestCase):
             written.append("C:/t/one")
             raise OSError("disk full")
         out = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(mod.stackskill, "install", boom), \
-                contextlib.redirect_stdout(out):
+        fx = gitfixture.TempRepo()
+        self.addCleanup(fx.cleanup)
+        tmp = fx.root
+        with mock.patch.object(mod.stackskill, "install", boom), contextlib.redirect_stdout(out):
             code = mod.main(["install", "--stack", "godot", "-C", tmp, "--apply"])
         self.assertEqual(code, 1)
         self.assertIn("disk full", out.getvalue())
         self.assertIn("already written (delete to undo): C:/t/one", out.getvalue())
 
     def test_exit_codes(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        fx = gitfixture.TempRepo()
+        self.addCleanup(fx.cleanup)
+        tmp = fx.root
+        if True:
             code, out = self.run_tool("install", "--stack", "godot", "-C", tmp)
             self.assertEqual(code, 0)
             self.assertIn("would create", out)

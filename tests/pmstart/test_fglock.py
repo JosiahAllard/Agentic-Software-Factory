@@ -1,6 +1,7 @@
 import ctypes
 import datetime
 import unittest
+from unittest import mock
 
 from kitlib import pmstart
 from kitlib.pmstart import fglock
@@ -59,6 +60,15 @@ class FgLockTest(unittest.TestCase):
     def test_read_live_failure_raises_oserror(self):
         with self.assertRaises(OSError):
             fglock.read_live(FakeUser32(0, ok=0))
+
+    def test_linux_gives_no_line_and_no_error(self):
+        temp_home(self)
+        # Linux has no ctypes.WinDLL: the base reaches read_live and fails with this AttributeError.
+        with mock.patch("kitlib.platform.NAME", "linux"), \
+                mock.patch.object(fglock.ctypes, "WinDLL", create=True, side_effect=AttributeError("WinDLL")):
+            txt = pmstart.checklist(dict(CFG, standing=["x"]), NOW, procs=[], **FAKES)
+            self.assertNotIn("foreground_lock", txt)     # base: "could not check foreground_lock: AttributeError"
+            self.assertEqual(fglock.check(CFG), [])
 
     def test_in_checklist_last_and_failure_isolated(self):
         temp_home(self)     # the hub check's current account reads an empty machine config

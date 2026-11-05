@@ -586,6 +586,57 @@ class PendingTest(StoreCase):
         self.assertEqual(s.pending(), [])
 
 
+class SnapshotTest(StoreCase):
+    def filled(self):
+        s = self.open()
+        s.put('pages', 'p1', {'title': 'card'})
+        s.put('page_html', 'p1', {'html': '<p>' + 'x' * 1000 + '</p>'})
+        s.add('to_pm', {'status': 'queued', 'text': 'note', 'kind': 'fyi'})
+        self.qid = s.add('questions', question(standing={'rule': 'r'}, **{'class': 'go'})).id
+        return s
+
+    def copied(self, s, *args, **kw):
+        """The snapshot, and every top-level document deepcopy was handed while it was taken."""
+        seen, real = [], store.copy.deepcopy
+
+        def deepcopy(x, *a):
+            seen.append(x)
+            return real(x, *a)
+        with mock.patch.object(store.copy, 'deepcopy', deepcopy):
+            got = s.snapshot(*args, **kw)
+        return got, seen
+
+    def test_the_whole_snapshot_is_every_collection_as_before(self):
+        s = self.filled()
+        rev, docs = s.snapshot()
+        self.assertEqual(rev, s.revision)
+        self.assertEqual(sorted(docs), sorted(s._docs))
+        self.assertEqual(docs['page_html']['p1']['html'][:3], '<p>')
+
+    def test_a_skipped_collection_is_never_copied(self):
+        s = self.filled()
+        (_, docs), seen = self.copied(s, skip=('page_html', 'handoffs'))
+        self.assertNotIn('page_html', docs)
+        self.assertNotIn('handoffs', docs)
+        self.assertIn('pages', docs)
+        self.assertNotIn(s._docs['page_html'], seen, 'the bodies were copied')
+
+    def test_named_collections_alone_are_copied(self):
+        s = self.filled()
+        (_, docs), seen = self.copied(s, ('to_pm', 'nonesuch'))
+        self.assertEqual(list(docs), ['to_pm'])
+        self.assertEqual(seen, [s._docs['to_pm']])
+        docs['to_pm']['P-001']['text'] = 'changed'
+        self.assertEqual(s.get('to_pm', 'P-001')['text'], 'note', 'a copy, not the store')
+
+    def test_pick_copies_the_named_fields_of_the_named_documents(self):
+        s = self.filled()
+        got = s.pick('questions', [self.qid, 'Q-404'], ('standing', 'class', 'record'))
+        self.assertEqual(got, {self.qid: {'standing': {'rule': 'r'}, 'class': 'go'}})
+        got[self.qid]['standing']['rule'] = 'changed'
+        self.assertEqual(s.get('questions', self.qid)['standing'], {'rule': 'r'})
+
+
 class LockTest(StoreCase):
     def holder(self, root):
         p = spawn.popen([sys.executable, '-c', HOLDER, root], cwd=KIT, env=child_env(),

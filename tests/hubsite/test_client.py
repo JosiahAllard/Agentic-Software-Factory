@@ -56,6 +56,24 @@ class PendingCase(ClientCase):
         self.assertEqual(got[0]['title'], 'n0')
         self.assertIs(got[0]['read'], False)
 
+    def test_the_inbox_read_asks_the_hub_for_the_inbox_collection_alone(self):
+        self.hub.post('/inbox', client.AGENT, {'text': 't', 'title': 'n'})
+        self.ask_question()
+        seen = []
+        real = self.hub._ask
+
+        def ask(port, method, path, token, body, timeout):
+            status, obj = real(port, method, path, token, body, timeout)
+            seen.append((path, obj))
+            return status, obj
+        self.hub._ask = ask
+        got = self.hub.inbox()
+        self.assertEqual([m['title'] for m in got], ['n'])
+        (path, obj), = seen
+        self.assertEqual(path, api.BASE + '/snapshot?collections=inbox')
+        self.assertEqual(sorted(obj['collections']), ['inbox'], 'no other collection is sent')
+        self.assertNotIn('views', obj)
+
     def test_the_version_of_a_document_is_the_one_a_pinned_write_takes(self):
         asked = self.ask_question()
         self.assertEqual(self.hub.version('questions', asked['id']), asked['version'])
@@ -206,6 +224,18 @@ class StandIn(unittest.TestCase):
         hub = client.Client(1, tokens=self.tokens, ask=ask, clock=lambda: self.now[0])
         hub._sleep = sleep          # set after, not as sleep=: a client without it still runs
         return hub
+
+
+class OlderHubCase(StandIn):
+    def test_a_hub_that_ignores_the_collection_filter_still_gives_the_inbox(self):
+        # a hub older than GET snapshot?collections answers the whole snapshot
+        whole = {'revision': 3, 'views': {}, 'pending': [], 'collections': {
+            'inbox': {'M-2': {'title': 'b'}, 'M-10': {'title': 'c'}, 'M-1': {'title': 'a'}},
+            'questions': {'Q-1': {'title': 'q'}}}}
+        got = self.hub([whole], 0).inbox()
+        self.assertEqual([(m['id'], m['title']) for m in got],
+                         [('M-1', 'a'), ('M-2', 'b'), ('M-10', 'c')])
+        self.assertEqual([a[1] for a in self.asked], [api.BASE + '/snapshot?collections=inbox'])
 
 
 class LoopCase(StandIn):

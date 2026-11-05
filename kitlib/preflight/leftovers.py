@@ -9,6 +9,8 @@ Nothing here raises: a failure is a `not checked` line naming it.
 """
 import os
 
+from kitlib.config import ConfigError, load
+from kitlib.git import repo
 from kitlib.worktree import remove
 from kitlib.worktree.holders import canon
 
@@ -16,13 +18,47 @@ LABEL = 'leftovers '
 INDENT = ' ' * 12
 
 
-def lines(top):
-    """The lines for the checkout whose top level is `top`."""
+def _open(top, place, wts):
+    """`(Ctx, None, listing)` like remove.open_ctx, from the Place and the worktree list the report
+    already has (no second `rev-parse --git-common-dir`, no second `git worktree list`); listing is
+    None when remove must ask git for it. Anything the report's answers cannot vouch for falls back
+    to remove.open_ctx."""
+    if place is None or place.kind not in (repo.MAIN, repo.LINKED) or not wts \
+            or repo.real(os.path.join(wts[0].path, '.git')) != place.common:
+        return (*remove.open_ctx(top, cwd=top), None)
+    main = os.path.realpath(os.path.abspath(wts[0].path))
     try:
-        ctx, refused = remove.open_ctx(top, cwd=top)
+        ctx = remove.Ctx(main, load(main), top)
+    except ConfigError as e:
+        return None, remove.Outcome(remove.CONFIG, ['%s: refused: kit configuration: %s'
+                                                    % (remove.TOOL, e)]), None
+    return ctx, None, _listing(wts)
+
+
+def _listing(wts):
+    """`git worktree list --porcelain`'s text, rebuilt from the parsed worktrees."""
+    out = []
+    for w in wts:
+        out.append('worktree %s' % w.path)
+        if w.head:
+            out.append('HEAD %s' % w.head)
+        if w.branch:
+            out.append('branch refs/heads/%s' % w.branch)
+        if w.locked is not None:
+            out.append(('locked %s' % w.locked).rstrip())
+        out.append('')
+    return '\n'.join(out)
+
+
+def lines(top, place=None, wts=None):
+    """The lines for the checkout whose top level is `top`. `place` (repo.classify(top)) and `wts`
+    (repo.worktrees(top)'s list) are the answers the report already took."""
+    try:
+        ctx, refused, listing = _open(top, place, wts)
         if refused:
             return [LABEL + 'WARN not checked: %s' % ' '.join(' '.join(refused.lines).split())]
-        listing = remove.worktree_listing(ctx.main)
+        if listing is None:
+            listing = remove.worktree_listing(ctx.main)
         own = [top] if canon(top) != canon(ctx.main) else []
         merged, why = remove.merged_worktrees(ctx, listing, skip=own)
     except Exception as e:               # noqa: BLE001 - a WARN line must never become the failure

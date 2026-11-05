@@ -192,18 +192,17 @@ class SubagentStart(unittest.TestCase):
         # the machine config's pointer is read from the filesystem: no git child per tool hook
         self.start()                                  # a record for s1-a1 naming the new export
         import subprocess
+        from kitlib.git import refs, repo
         from kitlib.proc import job
         # a cold process: the pointer cache the start above filled is empty, as in a fresh hook.
-        # Git starts through kitlib.proc.job.Job.start (a fake git on the unit tier), so watch both it
-        # and subprocess.Popen
-        with mock.patch.dict(user._POINTERS, clear=True), \
-                mock.patch.object(job.Job, 'start', autospec=True, side_effect=job.Job.start) as started, \
-                mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
+        # Git starts through repo.classify and refs.current_branch (pointer's defaults; a fake git
+        # on the unit tier) and kitlib.proc.job.Job.start, so watch those and subprocess.Popen
+        with mock.patch.dict(user._POINTERS, clear=True),                 mock.patch.object(repo, 'classify', wraps=repo.classify) as classify,                 mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch,                 mock.patch.object(job.Job, 'start', autospec=True, side_effect=job.Job.start) as started,                 mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
             later = time.time() + headerfollow.EVERY_S + 1
             headerfollow.line(self.old, self.payload, 'a1', self.env, now=later, write=False)
             self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
-        started.assert_not_called()
-        popen.assert_not_called()
+        for seam in (classify, branch, started, popen):
+            seam.assert_not_called()
 
     def test_the_record_names_the_folder_the_header_named(self):
         self.start()

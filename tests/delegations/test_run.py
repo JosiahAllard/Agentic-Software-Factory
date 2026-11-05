@@ -607,6 +607,29 @@ class Preconditions(Fixture):
             self.assertIn('no PM start checklist line',
                           drun.checklist_line({'kind': 'checklist-line', 'text': 'cap: kit'}))
 
+    def test_a_checklist_line_check_changes_no_state(self):
+        stamp = os.path.join(self.dir, 'pm-start-last.json')
+        with open(stamp, 'w') as f:
+            f.write('{"at": "2026-01-01T00:00:00+00:00"}')
+
+        def hub_site(stamp=None, **kw):
+            if stamp is not None:
+                with open(stamp() if callable(stamp) else stamp, 'w') as f:
+                    f.write('{"at": "2026-02-02T00:00:00+00:00"}')
+            return ['hub key: demo']
+
+        quiet = dict.fromkeys(
+            ('standing', 'eng_review', 'watcher', 'handoff', 'reminders', 'liveness', 'plugin_current',
+             'plugin_enabled', 'memory', 'allow_rules', 'repo_prep', 'agent_temp_lines', 'cdrive_lines',
+             'worktree_sweep_lines', 'rulebook_lines', 'list_processes', 'pm_data_settings'), lambda *a, **k: [])
+        with open(stamp) as f:
+            before = f.read()
+        with mock.patch('kitlib.pmstart.load_config', return_value={}),                 mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
+            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+            sync.assert_not_called()
+            with open(stamp) as f:
+                self.assertEqual(f.read(), before)
+
     def test_no_pm_start_config_is_refused(self):
         with mock.patch('kitlib.pmstart.load_config', return_value=None):
             self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}))

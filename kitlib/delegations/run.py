@@ -639,7 +639,7 @@ def checklist_line(pre):
         return 'cannot read the PM start config: %s' % e
     if cfg is None:
         return 'no pm_start config: the PM start checklist cannot be read'
-    for ln in pmstart.checklist(cfg).split('\n'):
+    for ln in pmstart.checklist(cfg, check_only=True).split('\n'):
         if ln.startswith('- ') and not ln[2:].startswith('could not check') and text in ln:
             return None
     return 'no PM start checklist line holds %r' % text

@@ -141,6 +141,26 @@ def worktrees(path):
     return parse_worktrees(data), None
 
 
+class Worktrees(object):
+    """git's worktree list of one repository, asked once however many callers want it: a
+    callable with worktrees()' signature, for one run over checkouts of one repository, whose
+    answer is the same from any of them. Never kept past that run. A failed answer is not kept:
+    the next call asks again. `common` is that repository's git common dir (Place.common) when
+    the caller already has it, else None: a reader then skips its own common_dir() ask."""
+
+    def __init__(self, common=None):
+        self._got = None
+        self.common = common
+
+    def __call__(self, path):
+        if self._got is None:
+            got = worktrees(path)
+            if got[0] is None:
+                return got
+            self._got = got
+        return self._got
+
+
 def linked_worktrees(path):
     """Paths of every linked worktree of the repository at `path` ([] when git fails)."""
     wts, _why = worktrees(path)
@@ -193,13 +213,20 @@ def toplevel(path):
     A tool's -C is a plain path option: the checkout to act on is the one -C names (or the
     current directory), and no tool hands off to a copy of itself inside that checkout (there
     is one kit copy)."""
+    place, why = toplevel_place(path)
+    return (place.top if place else None), why
+
+
+def toplevel_place(path):
+    """`(Place, None)` of the work tree `path` is in (toplevel's answer, with the classify() that
+    gave it, for a caller that needs the Place too and must not ask git twice), or `(None, why)`."""
     if not os.path.isdir(path):
         return None, not_a_directory(path)
     place = classify(path)
     if place.kind not in (MAIN, LINKED) or not place.top:
         return None, '%s is in no git work tree git could name (%s%s)' % (
             path, place.kind, ': %s' % place.detail if place.detail else '')
-    return place.top, None
+    return place, None
 
 
 class WriteRefused(Exception):

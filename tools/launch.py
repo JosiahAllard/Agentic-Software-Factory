@@ -215,7 +215,10 @@ def push_delivery(settings):
     (kitlib.launcher.pushdelivery), or None when there is none: pm-relaunch and pm-crossover then
     say the stand-down is the owner's to send. Only an adapter that will not import (or has no
     ADAPTER) counts as none; any other fault surfaces."""
-    import _host
+    try:
+        import _host
+    except ImportError:
+        return None
     return pushdelivery.push_delivery(_host.adapter_module, settings, catch=(ImportError, AttributeError))[0]
 
 
@@ -287,7 +290,7 @@ def main(argv=None, host=None):
         settings = S.load(host.home)
         lines = run(a, settings, host)
     except stop.Refused as e:
-        print('\n'.join(e.lines + ['REFUSED: %s' % e]), file=sys.stderr)
+        print('\n'.join(e.lines + ['REFUSED: %s' % e]))
         return 2
     except S.LaunchError as e:
         if e.lines:

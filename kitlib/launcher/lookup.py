@@ -73,8 +73,9 @@ def of_stem(name, stem):
 
 
 def running_stem(procs, stem):
-    """True when a launched session's name starts with `stem` (any account, any recycle)."""
-    return any((rc_name(p.get('CommandLine')) or '').startswith(stem) for p in claude_sessions(procs))
+    """True when a launched session is of `stem` (of_stem: any account, any recycle); a stem that
+    only prefixes another's name (demo, demo-lane-a1) is not."""
+    return any(of_stem(rc_name(p.get('CommandLine')), stem) for p in claude_sessions(procs))
 
 
 def pids(rows):

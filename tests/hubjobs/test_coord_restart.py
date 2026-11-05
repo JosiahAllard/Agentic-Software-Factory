@@ -53,6 +53,13 @@ class Decide(unittest.TestCase):
         d = decide(record={'seen_at': NOW - 900, 'account': '2'})
         self.assertEqual((d.start, d.account), (True, '2'))
 
+    def test_a_longer_stem_sharing_the_prefix_is_not_the_stem_running(self):
+        demo = dict(ENTRY, stem='demo')
+        self.assertTrue(decide(demo, live=['demo-lane-a1']).start)
+        for name in ('demo-a2-r3', 'demo-a1'):
+            d = decide(demo, live=[name])
+            self.assertEqual((d.start, d.reason), (False, 'running'))
+
     def test_a_live_session_of_the_stem_is_never_a_second_copy(self):
         d = decide(live=['kit-coord-a2-r3'])
         self.assertFalse(d.start)
@@ -388,6 +395,18 @@ class Job(JobBase):
         self.run_job()                                            # backoff: no second start
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(self.ctx.events, [])
+
+    def test_a_longer_stem_running_does_not_hide_a_down_coordinator(self):
+        self.live = ['kit-coord-a2']
+        self.run_job()                                            # seen running on account 2
+        self.live = ['kit-coord-docs-a1']                         # another stem that starts with kit-coord
+        self.now += 300
+        self.run_job()                                            # down once
+        self.now += 300
+        note = self.run_job()
+        self.assertNotIsInstance(note, jobs.Skip)
+        self.assertIn('kit: started on account 2', note)
+        self.assertEqual(self.calls[0][-5:], ['start', '--session', 'kit', '--account', '2'])
 
     def test_the_plain_session_is_never_started(self):
         for _ in range(3):

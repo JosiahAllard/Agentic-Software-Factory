@@ -5,6 +5,7 @@ words, in every mode and in the PM settings, so no account gets a second guard e
 kit; settings.expand reads Windows paths only, so the tests read an absolute path of this OS as one."""
 import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
@@ -158,6 +159,57 @@ class MovedHooks(unittest.TestCase):
         plan = M.Plan(M.Plan.FRESH_SECTIONS)
         settings.survey_pm(plan, self.ctx(fresh=True, pm_settings=pm))
         self.assertEqual((plan.changes, plan.refusals), ([], []), 'the re-pointed hook is the PM hook')
+    def spaced_kit(self):
+        """Move the kit to a folder whose name holds a space; the shell splits an unquoted path there."""
+        self.kit = os.path.join(self.root, 'kit dir')
+        T.touch(self.entry())
+        return self.ctx()
+
+    def test_an_unquoted_path_that_gains_a_space_is_quoted_and_args_stay_bare(self):
+        ctx = self.spaced_kit()
+        new = T.fwd(self.entry())
+        data = {'hooks': {'SessionStart': [{'hooks': [
+            {'type': 'command', 'command': T.PYW, 'args': [T.fwd(self.old('guard.py'))]}]}]}}
+        settings.repoint_moved(data, ctx)
+        hs = data['hooks']['SessionStart'][0]['hooks']
+        self.assertEqual(hs[0]['args'], [new, 'claude', 'PreToolUse'])           # one argv item: never quoted
+        ed = settings._Editor(ctx, self.acct, 'settings.json', M.Plan())
+        old = os.path.join(ctx.old_kit, 'hooks', 'pm_session_start.py')
+        out = ed.rewrite('python %s' % T.fwd(old), 'SessionStart hook', True)[0]
+        self.assertEqual(shlex.split(out), ['python', new, 'claude', 'SessionStart', 'pm'])
+        out, _, _ = ed.rewrite(T.fwd(old), 'SessionStart hook', True, whole=True)
+        self.assertEqual(out, new)
+
+    def test_repoint_moved_quotes_an_unquoted_command_path_that_gains_a_space(self):
+        """An unquoted token cannot name a file inside a kit whose path holds a space, except by a
+        spelling the shell resolves (a link): _moved is patched to say this space-free token is one."""
+        ctx = self.spaced_kit()
+        data = {'hooks': {'SessionStart': [{'hooks': [
+            {'type': 'command', 'command': 'python C:/links/pm_session_start.py'}]}]}}
+        said = lambda tok, c: (settings.HOOKS, 'pm_session_start.py') if 'links' in tok else None  # noqa: E731
+        with mock.patch.object(settings, '_moved', said):
+            settings.repoint_moved(data, ctx)
+        cmd = data['hooks']['SessionStart'][0]['hooks'][0]['command']
+        self.assertEqual(shlex.split(cmd), ['python', T.fwd(self.entry()), 'claude', 'SessionStart', 'pm'])
+
+    def test_survey_prints_one_drop_line_for_a_hook_it_re_pointed_and_drops(self):
+        path = os.path.join(self.acct, 'settings.json')
+        self.settings_with(path, {'SessionStart': [{'hooks': [
+            {'type': 'command', 'command': 'python %s' % T.fwd(self.old('pm_session_start.py')),
+             'args': [T.fwd(os.path.join(self.root, 'old-kit', 'hooks', 'no_root_search.py'))]}]}]})
+        seen = []
+        with mock.patch.object(settings, '_plan_write', lambda *a: seen.append(a[-1])):
+            settings.survey(M.Plan(), self.acct, self.ctx())
+        self.assertEqual([ln for ln in seen[0] if 'guard' not in ln], ['drop the SessionStart hook no_root_search.py'])
+
+    def test_a_dropped_hook_prints_one_drop_line(self):
+        ctx = self.spaced_kit()
+        hooks = os.path.join(ctx.old_kit, 'hooks')
+        ed = settings._Editor(ctx, self.acct, 'settings.json', M.Plan())
+        h = {'type': 'command', 'command': 'python %s' % T.fwd(os.path.join(hooks, 'pm_session_start.py')),
+             'args': [T.fwd(os.path.join(hooks, 'no_root_search.py'))]}
+        self.assertTrue(ed.hook('SessionStart', h))
+        self.assertEqual(ed.did, ['drop the SessionStart hook no_root_search.py'])
 
 
 @windows_only('directory junctions are Windows only')

@@ -86,11 +86,16 @@ def staged_rulebooks(root, staged, folder):
     deletion leaves no file for `rulebook.paths` to list, yet the check must still run for it."""
     if not folder:
         return []
-    want = _key(folder)
-    return [rel for rel in staged
-            if rel.endswith('.md') and _key(os.path.dirname(os.path.join(root, rel))) == want
-            and rulebook.NAME_RE.match(rel[:-3].rsplit('/', 1)[-1])
-            and rel[:-3].rsplit('/', 1)[-1] == rel[:-3].rsplit('/', 1)[-1].lower()]
+    want, want_real = _key(folder), _real(folder)
+    out = []
+    for rel in staged:
+        name = rel[:-3].rsplit('/', 1)[-1]
+        if not (rel.endswith('.md') and rulebook.NAME_RE.match(name) and name == name.lower()):
+            continue
+        where = os.path.dirname(os.path.join(root, rel))
+        if _key(where) == want or _real(where) == want_real:
+            out.append(rel)
+    return out
 
 
 def _key(path):

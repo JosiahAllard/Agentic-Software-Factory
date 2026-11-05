@@ -176,6 +176,13 @@ def start_task(run=None):
     _powershell(script, "starting the task '%s'" % TASK_NAME, run)
 
 
+def linux_unit():
+    """The name of the Linux job's systemd service (pm-kit-hub.service), for the commands
+    hub.py advises."""
+    from kitlib.platform.linux import schedule
+    return schedule.unit(LINUX_JOB) + '.service'
+
+
 def linux_job(hub_py, python):
     """The Linux job: `python hub_py serve` in the kit folder, at sign-in."""
     from kitlib.platform.linux import schedule

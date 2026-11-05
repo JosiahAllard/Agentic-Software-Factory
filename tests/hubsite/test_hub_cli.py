@@ -1121,6 +1121,25 @@ class StopRestartCase(CliCase):
         self.assertNotIn(HUB.START, out)
         self.assertEqual(started, [])
 
+    def test_restart_advice_on_linux_names_systemctl_and_never_the_scheduled_task(self):
+        unit = 'pm-kit-hub.service'
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            for outcome in (HUB.control.NO_TASK, HUB.control.DISABLED, HUB.control.HAND_STARTED):
+                said = HUB.not_started(outcome)
+                advice = HUB.task_advice(outcome)
+                self.assertIn(unit, said)
+                self.assertNotIn('scheduled task', said)
+                self.assertIn('systemctl --user start ' + unit, advice)
+                for text in (said, advice):
+                    self.assertNotIn('ScheduledTask', text)
+            self.assertIn('systemctl --user enable ' + unit,
+                          HUB.task_advice(HUB.control.DISABLED))
+            self.assertIn('systemctl --user start ' + unit, HUB.task_advice(None))
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertEqual(HUB.not_started(HUB.control.NO_TASK),
+                             HUB.NOT_STARTED[HUB.control.NO_TASK])
+            self.assertIn('Start-ScheduledTask', HUB.task_advice(None))
+
     def test_restart_says_where_the_task_s_server_answers(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
         self.config({'hub': {'port': 8799}})

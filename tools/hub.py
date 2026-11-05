@@ -287,7 +287,7 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import hubapprove, hubvalidate                         # noqa: E402
+from kitlib import hubapprove, hubvalidate, platform               # noqa: E402
 from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubsite import access, api, auth, client, httpd, serve, settings, tunnel   # noqa: E402
@@ -1027,7 +1027,7 @@ def _setup(a, stop):
         print('NOTE: no store folder is set: set hub.store or pm_data in the machine config '
               '(this tool does not write it), or start with --store PATH')
     if a.autostart:
-        print('start the server detached, once the task is registered: %s' % _START_TASK)
+        print('start the server detached, once the task is registered: %s' % _start_command())
         for line in hub_autostart.install(os.path.abspath(__file__)):
             print(line)
     else:
@@ -1097,16 +1097,45 @@ _TASK = "-TaskName '%s'" % hub_autostart.TASK_NAME
 _START_TASK = 'Start-ScheduledTask %s' % _TASK
 
 
+def _linux():
+    return platform.NAME == 'linux'
+
+
+def _start_command():
+    """The command that starts the task (Windows) or the systemd user service (Linux)."""
+    if _linux():
+        return 'systemctl --user start %s' % hub_autostart.linux_unit()
+    return _START_TASK
+
+
+def not_started(outcome):
+    """Why a restart started nothing, by control's outcome; the Linux job's words on Linux."""
+    if not _linux():
+        return NOT_STARTED[outcome]
+    unit = hub_autostart.linux_unit()
+    return {
+        control.NO_TASK: "there is no job '%s' (hub.py setup --autostart makes it), so nothing "
+                         "was started" % unit,
+        control.DISABLED: "the job '%s' is disabled, so nothing was started" % unit,
+        control.HAND_STARTED: "the server was not started by the job '%s' (by hand, or by an XDG "
+                              "autostart entry, which restart cannot start), so nothing was "
+                              "started" % unit,
+    }[outcome]
+
+
 def task_advice(outcome):
     """The last line when a restart started nothing, by control's outcome (None: the task could
     not be started). `serve` is not it: a server started in a console ends with that shell; the
-    scheduled task runs it detached and windowless."""
+    scheduled task runs it detached and windowless. On Linux the job is a systemd user service."""
     if outcome == control.NO_TASK:
         return 'register the task, then start it: python "%s" setup --autostart; %s' % (
-            os.path.abspath(__file__), _START_TASK)
+            os.path.abspath(__file__), _start_command())
     if outcome == control.DISABLED:
+        if _linux():
+            return 'enable the job, then start it: systemctl --user enable %s; %s' % (
+                hub_autostart.linux_unit(), _start_command())
         return 'enable the task, then start it: Enable-ScheduledTask %s; %s' % (_TASK, _START_TASK)
-    return 'start it with: %s' % _START_TASK
+    return 'start it with: %s' % _start_command()
 
 
 # a server the task starts has no console: what it says at start-up goes nowhere
@@ -1169,7 +1198,7 @@ def _restart(a, stop):
         return client.TIMED_OUT
     _stopped(port, got.stopped)
     if got.outcome != control.RESTARTED:
-        print(NOT_STARTED[got.outcome])
+        print(not_started(got.outcome))
         print(task_advice(got.outcome))
         return client.NOT_RUNNING
     print("RESTARTED: the hub server answers on port %d (the scheduled task '%s' started it)"

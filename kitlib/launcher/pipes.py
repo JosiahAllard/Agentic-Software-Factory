@@ -92,11 +92,11 @@ def proc_start(rec):
 
 
 def require_peer_support():
-    """LaunchError on Linux: the procStart Claude Code writes there is not known to match the
+    """LaunchError on Linux: the procStart the host writes there is not known to match the
     kit's creation time, so a fork could not be confirmed. Windows: nothing."""
     if platform.NAME == 'linux':
         raise LaunchError('Linux peer support is deferred (docs/linux-support-plan.md): the procStart '
-                          'Claude Code writes on Linux is not known to match, so a fork cannot be confirmed; '
+                          'the host writes on Linux is not known to match, so a fork cannot be confirmed; '
                           'nothing was started.')
 
 

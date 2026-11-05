@@ -284,6 +284,77 @@ class ReadOnly(unittest.TestCase):
         self.assertNotIn("\nassert ", source)
 
 
+class StoreKept(StoreCase):
+    """Server() with no store keeps one Store, so the gpu_use cache (5 s) hits across calls."""
+
+    def test_two_snapshots_spawn_the_gpu_probe_once(self):
+        from unittest import mock
+        probes = []
+
+        def build():
+            s = self.make_store()
+            s.gpu_probe = lambda: probes.append(1) or {}
+            return s
+
+        server = srv.Server()
+        with mock.patch("kitlib.lockmcp.server.Store", build, create=True), \
+                mock.patch("kitlib.lock.api.Store", build):    # the base builds per call here
+            for _ in range(2):
+                payload, is_error = server.call("lock_snapshot", {})
+                self.assertFalse(is_error, payload)
+        self.assertEqual(len(probes), 1)
+
+    def test_two_snapshots_detect_the_hardware_once(self):
+        from unittest import mock
+        detects = []
+
+        def build():
+            s = self.make_store()
+            s.hardware = None           # detect() path, cached on the store (layout.hardware)
+            return s
+
+        def detect():
+            detects.append(1)
+            return self.hw
+
+        server = srv.Server()
+        with mock.patch("kitlib.lockmcp.server.Store", build, create=True), \
+                mock.patch("kitlib.lock.api.Store", build), \
+                mock.patch("kitlib.lock.layout.detect", detect):
+            for _ in range(2):
+                payload, is_error = server.call("lock_snapshot", {})
+                self.assertFalse(is_error, payload)
+        self.assertEqual(len(detects), 1)
+
+    def test_a_store_that_cannot_be_built_is_an_error_reply(self):
+        from unittest import mock
+        server = srv.Server()
+        with mock.patch("kitlib.lockmcp.server.Store", side_effect=OSError("no store")):
+            payload, is_error = server.call("lock_snapshot", {})
+            self.assertTrue(is_error)
+            self.assertEqual(payload["error"]["code"], "store")
+            bad, is_error = server.call("lock_snapshot", {"nope": 1})   # arguments come first
+        self.assertTrue(is_error)
+        self.assertEqual(bad["error"]["code"], "invalid")
+
+    def test_lock_state_is_read_fresh_on_every_call(self):
+        from unittest import mock
+        from kitlib.lock import api
+        from tests.lock.helpers import OWNER
+        server = srv.Server()
+        with mock.patch("kitlib.lockmcp.server.Store", self.make_store):
+            before, _ = server.call("lock_snapshot", {})
+            res = api.hold_create(OWNER, {"owner": "owner", "scope": "half", "for_s": 3600},
+                                  self.store)
+            self.assertTrue(res["ok"], res)
+            hid = res["result"]["hold"]["id"]
+            after, _ = server.call("lock_snapshot", {})
+            rec, _ = server.call("lock_hold", {"id": hid})
+        self.assertGreater(after["revision"], before["revision"])
+        self.assertEqual(len(after["holds"]), len(before["holds"]) + 1)
+        self.assertTrue(rec["found"], rec)
+
+
 @windows_only("the lock is Windows only")
 class EntryPoint(unittest.TestCase):
     """mcp/lock_server.py itself: initialize and tools/list read no store."""

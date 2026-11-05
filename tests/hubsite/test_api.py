@@ -854,6 +854,19 @@ class SnapshotCostTest(ApiCase):
         whole = self.ok('GET', '/snapshot', OWNER)
         self.assertEqual(self.ok('GET', '/snapshot', OWNER, None, {'collections': ' , '}), whole)
 
+    def test_a_bare_snapshot_is_the_whole_one_less_its_documents(self):
+        # KIT-HUB-SNAPSHOT-EVERY-WAIT: the page reads it after a wait that timed out
+        self.ok('POST', '/inbox', AGENT, {'text': 'x', 'title': 't'})
+        self.question()
+        whole = self.ok('GET', '/snapshot', OWNER)
+        obj, seen = self.copied(lambda: self.ok('GET', '/snapshot', OWNER, None, {'bare': '1'}))
+        self.assertEqual(obj, dict(whole, collections={}))
+        self.assertEqual(self.holding(seen, 'questions'), [])
+        self.assertEqual(self.ok('GET', '/snapshot', OWNER, None, {'bare': '0'}), whole)
+        self.refused('invalid', 'bare', 'GET', '/snapshot', OWNER, None,
+                     {'bare': '1', 'collections': 'inbox'})
+        self.refused('invalid', 'bare', 'GET', '/snapshot', OWNER, None, {'bare': 'yes please'})
+
 
 class PendingReadsTest(ApiCase):
     """One pending read reads sessions.json once and copies no whole question

@@ -5374,7 +5374,7 @@ class PageTextTest(unittest.TestCase):
         self.assertNotIn("style:", self.script)
 
     def test_only_the_decided_routes(self):
-        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/wait"])
+        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/snapshot", "/wait"])
         roots = set(re.findall(r'(?:write|writeQuick|hub\.post|delButton)\("(/[a-z_]+)', self.script))
         self.assertEqual(roots, {"/questions", "/todos", "/stories", "/records", "/to_pm", "/inbox", "/approvals", "/pages", "/schedules",
                                  "/finding_marks", "/skill_edits"})
@@ -5553,6 +5553,38 @@ class TriageShellTest(unittest.TestCase):
         """, snapshot(collections=LISTS), hash="#home")
         self.assertEqual([got[k] for k in ("first", "quiet", "changed", "near", "late")], [1, 1, 2, 2, 3])
         self.assertEqual(got["n"], "2")
+
+    def test_a_timed_out_wait_reads_the_bare_snapshot_not_the_documents(self):
+        # KIT-HUB-SNAPSHOT-EVERY-WAIT: a timeout re-read only what moves with no write (the git-backed views), over
+        # the documents it holds; a bare answer at another revision, and a wake by a write, read the whole snapshot.
+        bare_views = {"backlog": [dict(BACKLOG[0], items=[{"id": "B-9", "t": "landed meanwhile", "p": 1, "s": "open"}])]}
+        got = dom("""
+            let bareRev = null;
+            server.route = c => c.path === "/snapshot?bare=1"
+              ? { status: 200, body: { revision: bareRev === null ? server.snap.revision : bareRev, collections: {}, views: BARE, unavailable: {} } }
+              : undefined;
+            const reads = () => calls.filter(c => c.method === "GET" && c.path.startsWith("/snapshot")).map(c => c.path);
+            await start();
+            const first = reads().length;
+            await answerWait(200, { ok: true, revision: server.snap.revision, reset: false, timed_out: true, changes: [], pending: [] });
+            const quiet = reads().slice(first);
+            await click($("#sections [data-s=backlog]"));
+            const landed = text(body).includes("landed meanwhile");
+            await click($("#sections [data-s=todo]"));
+            const todo = text(body).includes("mine");
+            const n = reads().length;
+            bareRev = server.snap.revision + 1;
+            await answerWait(200, { ok: true, revision: server.snap.revision, reset: false, timed_out: true, changes: [], pending: [] });
+            const moved = reads().slice(n);
+            const m = reads().length;
+            await wake();
+            return { quiet, landed, todo, moved, woke: reads().slice(m) };
+        """.replace("BARE", json.dumps(bare_views)), snapshot(collections=LISTS, views={"backlog": BACKLOG}), hash="#home")
+        self.assertEqual(got["quiet"], ["/snapshot?bare=1"])                  # no /snapshot: the documents are kept
+        self.assertTrue(got["landed"])                                        # the views it read are drawn
+        self.assertTrue(got["todo"])                                          # over the documents it kept
+        self.assertEqual(got["moved"], ["/snapshot?bare=1", "/snapshot"])     # the revision moved: the whole snapshot
+        self.assertEqual(got["woke"], ["/snapshot"])                          # a wake by a write reads it whole
 
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")

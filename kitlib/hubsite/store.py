@@ -309,11 +309,29 @@ class Store(object):
             self._check_open()
             return copy.deepcopy(self._docs.get(coll, {}))
 
-    def snapshot(self):
-        """(revision, {collection: {id: document}}), copied under one hold of the mutex."""
+    def snapshot(self, colls=None, skip=()):
+        """(revision, {collection: {id: document}}), copied under one hold of the mutex. Only
+        the collections the caller reads are copied: `colls` (None: every one) less `skip`; a
+        name the store does not hold is left out."""
         with self._mutex:
             self._check_open()
-            return self._revision, copy.deepcopy(self._docs)
+            names = self._docs if colls is None else colls
+            return self._revision, {c: copy.deepcopy(self._docs[c]) for c in names
+                                    if c in self._docs and c not in skip}
+
+    def pick(self, coll, doc_ids, fields):
+        """{id: {field: a copy of its value}} of the named top-level fields of the documents of
+        coll with those ids, under one hold of the mutex: a field a document lacks is left out,
+        and so is an id with no document. Copies those fields only, never a whole document."""
+        with self._mutex:
+            self._check_open()
+            have = self._docs.get(coll, {})
+            out = {}
+            for doc_id in doc_ids:
+                d = have.get(doc_id)
+                if isinstance(d, dict):
+                    out[doc_id] = {f: copy.deepcopy(d[f]) for f in fields if f in d}
+            return out
 
     def pending(self):
         with self._mutex:

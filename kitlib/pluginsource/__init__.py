@@ -640,10 +640,21 @@ def _processes():
 
 def _tasks():
     """[the text of every registered scheduled task's definition] from `schtasks /Query /XML ONE`:
-    program, arguments and working folder alike. RuntimeError when schtasks fails or times out."""
+    program, arguments and working folder alike. RuntimeError when schtasks fails or times out.
+    Linux: the jobs kitlib.platform.linux.schedule wrote (consoletasks.read_tasks), each one's
+    name, program, arguments, argv and working folder."""
     import xml.etree.ElementTree as ET
     from kitlib.pmstart import consoletasks
     from kitlib.proc import spawn
+    if kitplatform.NAME == 'linux':
+        out = []
+        for t in consoletasks.read_tasks(timeout=LIST_TIMEOUT):
+            parts = [t.get('path') or '', t.get('workdir') or '']
+            parts += [str(a) for a in t.get('argv') or ()]
+            for a in t.get('actions') or ():
+                parts += [a.get('exe') or '', a.get('args') or '']
+            out.append(' '.join(p for p in parts if p))
+        return out
     try:
         r = spawn.run(['schtasks', '/Query', '/XML', 'ONE'], capture_output=True, timeout=LIST_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -1483,14 +1494,17 @@ def current_lines(kit, s, folders=None, managed=_MACHINE):
 
 
 def spawn_refresh(kit, root):
-    """Start tools/plugin_refresh.py --apply detached and windowless, its output in <root>/refresh.log."""
+    """Start tools/plugin_refresh.py --apply detached and windowless, its output in <root>/refresh.log.
+    Linux: in its own session, so a hangup or Ctrl-C that ends pm_watch does not end the refresh."""
     from kitlib.machinesetup.extras import pythonw
     os.makedirs(root, exist_ok=True)
+    detach = ({'start_new_session': True} if kitplatform.NAME == 'linux'
+              else {'creationflags': _DETACHED | _NOWIN})
     log = open(os.path.join(root, LOGFILE), 'ab')
     try:
         subprocess.Popen([pythonw(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
                          cwd=kit, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         close_fds=True, creationflags=_DETACHED | _NOWIN)
+                         close_fds=True, **detach)
     finally:
         log.close()
 

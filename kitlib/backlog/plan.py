@@ -687,7 +687,8 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
     compared; a landed branch has no diff to compare; the pulled scopes are checked either way.
     Every ref name is matched in any letter case, against git's own list of names
     (`_ref_names`), so a packed ref is found as a loose one is. Failure when git cannot answer
-    or there is no base to measure from."""
+    or there is no base to measure from. `backlog.shared_paths` exempts nothing here: a finding
+    in a shared file the branch changed still belongs to that branch (pull and next exempt it)."""
     notes, hits = [], []
     tips, note = _branch_tips(ctx, branch, _ref_names(ctx, branch))
     for label, tip in tips:
@@ -717,7 +718,7 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
     for r in snap.readable:
         if r.get('state') == 'pulled' and (r.get('pulled_by') or '').lower() == branch.lower():
             hits += _overlaps(scopes, r.all('scope'), '(scope of %s, pulled by %s)'
-                              % (r.stem, branch), shared_of(ctx))
+                              % (r.stem, branch))
     if hits:
         raise Refusal('cannot add %s: its scope overlaps the work of %s, so the finding belongs '
                       'there:\n  %s\nfold it into %s, or file it after %s lands'
@@ -818,7 +819,7 @@ def _diff_hits(ctx, branch, tip, scopes, base=None, mb=None):
     changed since its merge base with the code main; one that cannot be compared counts."""
     hits = []
     for path in _branch_changes(ctx, branch, tip, base, mb):
-        hits += _overlaps(scopes, [path], '(changed on %s)' % branch, shared_of(ctx))
+        hits += _overlaps(scopes, [path], '(changed on %s)' % branch)
     return hits
 
 

@@ -221,6 +221,14 @@ def check_shared_paths(entries):
     return CheckResult(SHARED_PATHS, len(entries), found, unit='shared_paths entries')
 
 
+def shared_paths_unread(why):
+    """The check_shared_paths row when the main checkout's `.kit.json` cannot be read (`why`, the
+    Failure's text): one FAIL, so `check` still prints every other result."""
+    found = rmod.Finding(SHARED_PATHS, '.kit.json "backlog".shared_paths', 0,
+                         'cannot read: %s' % why)
+    return CheckResult(SHARED_PATHS, 1, [found], unit='shared_paths entries')
+
+
 def check_store(snap, implicit=False, resources=None, shared=None):
     """Every check, each with its own denominator. `implicit`: `snap` is the implicit default
     store's, which adds check_default_store when it holds any file. `resources` ({name: capacity},

@@ -1,5 +1,6 @@
 """`complement` (kitlib/backlog/scope.py): the sibling members that cover a scope member minus the
 paths removed from it, over the tracked tree, or None when it cannot be done."""
+import json
 import unittest
 
 from kitlib.backlog import check as checkmod
@@ -8,10 +9,13 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as smod
 from kitlib.backlog import store as sstore
+from kitlib.backlog.errors import Refusal
 
+from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
-from tests.backlog.helpers import TODAY, StoreCase, kit_json_ref, priced, record_text
+from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, priced,
+                                   record_text)
 from tests.backlog.test_offer import snap as osnap
 
 
@@ -272,6 +276,62 @@ class SharedPathCallers(unittest.TestCase):
         self.assertIn('glob', res.findings[0].message)
         self.assertIn('folder', res.findings[1].message)
 
+    def test_split_all_narrows_a_broad_scope_off_the_live_pull_but_keeps_the_listed_path(self):
+        tree = TREE + [LIST]
+        held = osnap(pulled('HOLD', [LIST, 'docs/x.md'])).get('HOLD')
+        for plan, protected in ((False, ['docs/x.md']), (True, [LIST, 'docs/x.md'])):
+            with self.subTest(plan=plan):
+                out, why = omod.split_all(['docs/**'], [(held, protected, plan)], tree)
+                self.assertIsNone(why)
+                self.assertNotIn(LIST, out.keep)        # without the list, it is given up
+                out, why = omod.split_all(['docs/**'], [(held, protected, plan)], tree,
+                                          shared=SHARED)
+                self.assertIsNone(why)
+                self.assertEqual(out.keep, [LIST, 'docs/y.md'])     # narrows off docs/x.md only
+                self.assertEqual(out.c_changes,
+                                 [('docs/**', [LIST, 'docs/x.md'], [LIST, 'docs/y.md'])])
+                self.assertEqual(out.parts[0].other_keep, [LIST, 'docs/x.md'])
+
+
+class SharedPathWrites(StoreCase):
+    """The writes on a ref store: `set --scope` widening a pulled record onto a listed file the
+    live pull holds (and its branch changed) is free; `add --found-on` that branch is still
+    refused, as the add-time fold-in guard exempts no shared path."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo.git('checkout', '-q', '-b', 'kit/holder')
+        self.repo.write(LIST, 'one line\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'work on kit/holder')
+        self.repo.git('checkout', '-q', '-f', 'main')
+        self.seed(pulled('HOLD', LIST), pulled('MINE', 'kit/mine.py', by=BRANCH))
+
+    def share(self):
+        self.ctx = pmod.Context(self.store, self.repo.root, branch=BRANCH, today=TODAY,
+                                shared=lambda: [(LIST, None)])
+
+    def test_set_scope_widening_onto_a_listed_file_is_free(self):
+        with self.assertRaises(Refusal) as cm:
+            self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
+        self.assertIn('widens its scope into a live pull', str(cm.exception))
+        self.share()
+        self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
+        self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py', LIST])
+
+    def test_add_found_on_a_branch_that_changed_a_listed_file_is_refused(self):
+        self.share()
+        for scope in ([LIST], ['docs/**']):
+            with self.subTest(scope=scope):
+                with self.assertRaises(Refusal) as cm:
+                    self.verb('add', 'NEW', 'a defect found while working', scope,
+                              found_on='kit/holder', why_not_folded=ADD_WHY)
+                msg = str(cm.exception)
+                self.assertIn('its scope overlaps the work of kit/holder', msg)
+                self.assertIn('(changed on kit/holder)', msg)
+                self.assertIn('(scope of HOLD, pulled by kit/holder)', msg)
+                self.assertIsNone(self.get('NEW'))
+
 
 class SharedPathsCli(unittest.TestCase):
     """Through tools/backlog.py on a ref store: `next` and `pull` print the share, `check`
@@ -293,6 +353,13 @@ class SharedPathsCli(unittest.TestCase):
         self.repo.git('branch', 'tools/take')
 
     def test_next_and_pull_print_the_share(self):
+        # The holder's branch has changed the listed file, so the fold checks of `next` and
+        # `pull` (_offer_folds, _pull_fold_hits) see it too, and exempt it as the scope check does.
+        self.repo.git('checkout', '-q', 'tools/hold')
+        self.repo.write(LIST, 'one line\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'work on tools/hold')
+        self.repo.git('checkout', '-q', '-f', 'main')
         self.assertIn('passed over AAA', self.ok('next'))
         kit_json_ref(self.repo, {'backlog': {'shared_paths': [LIST]}})
         out = self.ok('next')
@@ -301,6 +368,21 @@ class SharedPathsCli(unittest.TestCase):
         rc, out = self.run_tool('--as', 'tools/take', 'pull', 'AAA')
         self.assertEqual(rc, 0, out)
         self.assertIn('shares %s with HOLD (shared path)' % LIST, out)
+        self.assertIn('pulled_by: tools/take', self.ok('show', 'AAA'))
+
+    def test_check_reports_an_unreadable_config_as_one_fail_and_the_rest(self):
+        wt = self.repo.worktree('wt', branch='tools/wt')
+        # The main checkout's file now fails to load; the worktree's own is fine.
+        self.repo.write('.kit.json', json.dumps({'backlog': {'store': 'ref', 'cap': 0}}) + '\n')
+        rc, out, err = inproc.run_main(test_cli.BACKLOG.main, ['-C', wt, 'check'], self.env, wt)
+        out += err
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn('ERROR', out)
+        self.assertIn('blocked_on', out)                # the other results still print
+        fails = [l for l in out.splitlines() if l.startswith('    FAIL')]
+        self.assertEqual(len(fails), 1, out)
+        self.assertIn('.kit.json "backlog".shared_paths:0 cannot read: ', fails[0])
+        self.assertTrue(out.rstrip().endswith('RED'), out)
 
     def test_check_refuses_a_glob_or_a_folder(self):
         self.repo.write('docs/layer.md', 'one line\n')

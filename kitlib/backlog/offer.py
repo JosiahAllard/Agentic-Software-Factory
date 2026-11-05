@@ -1027,7 +1027,7 @@ def split_all(c_scopes, parts, tree, shared=()):
     left with no scope, a member is not a legal scope, a comparison is undecidable, or what the
     candidate keeps still touches any T or collides with any live pull's kept scope. `shared`
     (`.kit.json` "backlog".shared_paths): a pair or a touch where either side is a shared path
-    counts for nothing (scope.members_collide)."""
+    counts for nothing (scope.members_collide), and a shared path in a T is not given up."""
     try:
         return _split(c_scopes, parts, tree, shared)
     except smod.UndecidableScope as exc:
@@ -1070,7 +1070,7 @@ def _split(c_scopes, parts, tree, shared=()):
             if not ls:
                 continue
             c_hit.setdefault(c, []).append(i)
-            removed += [t for t in prot if rel(base(c), t)]
+            removed += [t for t in prot if rel(base(c), t) and not smod.is_shared(t, shared)]
             if not plan:
                 for l in ls:
                     if not (smod.strictly_inside(l, c) or smod.inside_bare_folder(l, c)):

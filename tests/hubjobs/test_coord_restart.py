@@ -396,6 +396,16 @@ class Job(JobBase):
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(self.ctx.events, [])
 
+    def test_a_longer_stem_running_does_not_hide_a_down_coordinator(self):
+        self.live = ['kit-coord-a2']
+        self.run_job()                                            # seen running on account 2
+        self.live = ['kit-coord-docs-a1']                         # another stem that starts with kit-coord
+        self.now += 300
+        self.run_job()                                            # down once
+        self.now += 300
+        self.assertIn('kit: started on account 2', self.run_job())
+        self.assertEqual(self.calls[0][-5:], ['start', '--session', 'kit', '--account', '2'])
+
     def test_the_plain_session_is_never_started(self):
         for _ in range(3):
             self.now += 300

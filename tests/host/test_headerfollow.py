@@ -191,7 +191,9 @@ class SubagentStart(unittest.TestCase):
     def test_the_line_and_the_start_run_no_subprocess(self):
         # the machine config's pointer is read from the filesystem: no git child per tool hook
         self.start()                                  # a record for s1-a1 naming the new export
-        with mock.patch('subprocess.Popen', side_effect=AssertionError('a subprocess was started')) as popen:
+        import subprocess
+        # a cold process: the pointer cache the start above filled is empty, as in a fresh hook
+        with mock.patch.dict(user._POINTERS, clear=True),                 mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
             later = time.time() + headerfollow.EVERY_S + 1
             headerfollow.line(self.old, self.payload, 'a1', self.env, now=later, write=False)
             self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)

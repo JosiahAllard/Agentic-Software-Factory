@@ -680,17 +680,28 @@ class Box(object):
         return sorted(found.items())
 
     def fetch(self, job, write):
-        """M the manifest {files: [{path, size, sha256}], error}, F the files' bytes, E."""
+        """M the manifest {files: [{path, size, sha256}], error}, F the files' bytes, E; or X
+        {error} when a file cannot be read (or the job is unknown), and the stream ends there."""
         if not os.path.isdir(self.job_dir(job)):
             write(frames.encode(frames.ERROR, json.dumps({'error': 'no job %s here' % job}).encode()))
             return EXIT_REFUSED
+        def fail(why):
+            write(frames.encode(frames.ERROR, json.dumps({'error': why}).encode()))
+            return EXIT_REFUSED
         files, total, error = [], 0, None
         for rel, full in self.artifacts(job):
-            h, size = hashlib.sha256(), 0
-            with open(full, 'rb') as f:
-                for chunk in iter(lambda: f.read(1024 * 1024), b''):
-                    h.update(chunk)
-                    size += len(chunk)
+            try:
+                want = os.stat(full).st_size      # the caps are checked before a file is hashed
+                if len(files) + 1 > MAX_FILES or total + want > MAX_BYTES:
+                    files, error = [], 'the artifacts are over %d files or %d bytes' % (MAX_FILES, MAX_BYTES)
+                    break
+                h, size = hashlib.sha256(), 0
+                with open(full, 'rb') as f:
+                    for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                        h.update(chunk)
+                        size += len(chunk)
+            except OSError as e:
+                return fail('cannot read %s: %s' % (rel, e.strerror or e))
             files.append({'path': rel, 'size': size, 'sha256': h.hexdigest(), 'full': full})
             total += size
             if len(files) > MAX_FILES or total > MAX_BYTES:
@@ -701,7 +712,11 @@ class Box(object):
              'error': error}).encode()))
         for f in files:
             left = f['size']
-            with open(f['full'], 'rb') as fh:     # exactly size bytes: a changed file is padded or cut
+            try:
+                fh = open(f['full'], 'rb')
+            except OSError as e:                  # gone since it was hashed: M is sent already
+                return fail('cannot read %s: %s' % (f['path'], e.strerror or e))
+            with fh:                              # exactly size bytes: a changed file is padded or cut
                 while left:
                     chunk = fh.read(min(CHUNK * 16, left)) or b'\0' * min(CHUNK * 16, left)
                     write(frames.encode(frames.FILE, chunk))
@@ -780,10 +795,10 @@ class Box(object):
             store_factory = Store
         from kitlib.lock.store import LockError, EXIT_BUSY
         rid = new_rid()
-        _write_json(self._p(job, 'run.json'), {'rid': rid})
-        chdir(self.tree(spec))
         how, why = 'ended', None
         try:
+            _write_json(self._p(job, 'run.json'), {'rid': rid})
+            chdir(self.tree(spec))
             code = run_command(spec['cmd'], spec['kind'], spec['repo'], spec['slug'],
                                store=store_factory(say=say), rid=rid, wait_s=spec.get('wait_s'),
                                no_wait=spec.get('no_wait', False), expect_s=spec.get('expect_s'),

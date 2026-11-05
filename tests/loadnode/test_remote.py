@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -218,6 +219,26 @@ class LinkTests(unittest.TestCase):
         with remote.Link(NODE, ssh=SSH, home=HOME, popen=Child(loop)) as link:
             _rc, _err, idle = link.stream('follow', {}, lambda data: False)
         self.assertFalse(idle)
+
+    def test_on_data_raising_kills_ssh(self):
+        procs = []
+
+        def popen(argv, **kw):
+            p = subprocess.Popen([sys.executable, '-c',
+                                  'import sys, time; sys.stdout.write("x"); sys.stdout.flush(); time.sleep(20)'], **kw)
+            procs.append(p)
+            return p
+
+        t0 = []
+
+        def boom(data):
+            t0.append(time.monotonic())
+            raise ValueError('bad frame')
+        with remote.Link(NODE, ssh=SSH, home=HOME, popen=popen) as link:
+            with self.assertRaises(ValueError):
+                link.stream('follow', {}, boom)
+        self.assertLess(time.monotonic() - t0[0], 10)     # not waiting out the live ssh
+        self.assertIsNotNone(procs[0].poll())
 
     def test_a_silent_node_is_ended_as_idle(self):
         with remote.Link(NODE, ssh=SSH, home=HOME, popen=Child('import time; time.sleep(60)')) as link:

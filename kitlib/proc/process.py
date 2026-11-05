@@ -154,18 +154,18 @@ def alive(pid, ctime):
     protected one: a reused pid can name one) is judged by the creation time the system's process
     listing gives it (listed_ctime): another one than ctime is False. It is True when that cannot
     be told: ctime None or not a number, or the listing unavailable or not naming pid."""
+    try:
+        want = None if ctime is None else int(ctime)
+    except (TypeError, ValueError):
+        return True
     h = K32.OpenProcess(win32.QUERY_LIMITED | SYNCHRONIZE, False, int(pid))
     if not h:
         if ctypes.get_last_error() == win32.ERROR_INVALID_PARAMETER:
             return False
-        try:
-            want = None if ctime is None else int(ctime)
-        except (TypeError, ValueError):
-            return True
         listed = None if want is None else listed_ctime(pid)
         return listed is None or listed == want
     try:
-        if ctime is not None and handle_ctime(h) not in (None, int(ctime)):
+        if want is not None and handle_ctime(h) not in (None, want):
             return False
         return K32.WaitForSingleObject(h, 0) == WAIT_TIMEOUT
     finally:

@@ -329,7 +329,8 @@ def narrow_lines(ctx, passed, holding, own):
     if not omod.wants_narrowing(passed):
         return []
     changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
-    return omod.narrowings(passed, holding, changes, unknown)
+    dirty = pmod.live_dirty(ctx, holding, changes)
+    return omod.narrowings(passed, holding, changes, unknown, dirty)
 
 
 def do_show(args, ctx, snap):

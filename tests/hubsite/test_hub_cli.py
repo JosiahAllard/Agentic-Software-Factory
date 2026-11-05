@@ -1324,8 +1324,8 @@ class ApprovalsCase(VerbCase):
     def test_a_document_that_is_not_an_object_is_malformed(self):
         real = self.hub.store.snapshot
 
-        def snapshot():
-            revision, docs = real()
+        def snapshot(*a, **kw):
+            revision, docs = real(*a, **kw)
             docs['approvals']['A-003'] = ['not', 'an', 'object']
             return revision, docs
 
@@ -2286,7 +2286,7 @@ class ArgumentCase(CliCase):
                     (('questions', 'log', 'Q-001', '--if-version', '3'),
                      ('POST', '/questions/Q-001/log', 'agent')),
                     (('questions',), ('GET', '/questions', 'agent')),
-                    (('inbox',), ('GET', '/snapshot', 'agent')),
+                    (('inbox',), ('GET', '/snapshot?collections=inbox', 'agent')),
                     (('pages', 'publish', 'plan', '--title', 't', '--html-file', self.page),
                      ('POST', '/pages', 'agent')),
                     (('pages',), ('GET', '/pages', 'agent')),

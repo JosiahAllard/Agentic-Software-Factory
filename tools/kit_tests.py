@@ -57,7 +57,7 @@ malformed table): no test ran; 130 Ctrl+C.
 """
 import argparse
 import os
-import subprocess          # noqa: F401  (tests/tooldeps fake the one-process run through it)
+import subprocess          # noqa: F401  (kept as a handle for test patches: cli.subprocess.call)
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -147,22 +147,22 @@ def main(argv=None, out=None):
                            ('--base', a.base is not None)):
             if used:
                 parser.error('%s does not go with --list (it runs nothing)' % flag)
-    top, why = gitrepo.toplevel(os.path.abspath(a.root))
-    if not top:
-        say('kit_tests: refused: %s' % why)
-        return USAGE
-    if a.list_tests:
-        modules = selftree.all_test_modules(top)
-        env = child_env()
-        env.setdefault('KIT_FAKE_GIT', '1')
-        entries = selflist.collect(top, modules, environ=env)
-        if entries is None:
-            say('kit_tests: refused: the child that loads the tests failed - nothing listed')
-            return USAGE
-        for line in selflist.render(entries, modules):
-            say(line)
-        return 0
     try:
+        top, why = gitrepo.toplevel(os.path.abspath(a.root))
+        if not top:
+            say('kit_tests: refused: %s' % why)
+            return USAGE
+        if a.list_tests:
+            modules = selftree.all_test_modules(top)
+            env = child_env()
+            env.setdefault('KIT_FAKE_GIT', '1')
+            entries = selflist.collect(top, modules, environ=env)
+            if entries is None:
+                say('kit_tests: refused: the child that loads the tests failed - nothing listed')
+                return USAGE
+            for line in selflist.render(entries, modules):
+                say(line)
+            return 0
         return kitrun.run(a, top, out)
     except KeyboardInterrupt:
         say('kit_tests: INTERRUPTED, exit %d' % tiers.INTERRUPTED)

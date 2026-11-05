@@ -126,6 +126,14 @@ class CtrlC(unittest.TestCase):
         self.assertEqual(rc, 130, out)
         self.assertIn('INTERRUPTED, exit 130', out)
 
+    def test_interrupt_in_the_list_path(self):
+        rc, out = self.main(['--list'], collect=(cli.selflist, 'collect', KeyboardInterrupt))
+        self.assertEqual(rc, 130, out)
+
+    def test_interrupt_in_finding_the_checkout(self):
+        rc, out = self.main(['--full'], top=(cli.gitrepo, 'toplevel', KeyboardInterrupt))
+        self.assertEqual(rc, 130, out)
+
     def test_interrupt_in_the_change_list(self):
         rc, out = self.main(['--select'],
                             changed=(selftree, 'changed_paths', KeyboardInterrupt))

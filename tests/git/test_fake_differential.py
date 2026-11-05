@@ -16,12 +16,16 @@ Every difference is collected before the test fails, each named by its step numb
 The commands are the forms the kit's code and fixtures send to git."""
 import os
 import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
 from kitlib.git import cmd as gitcmd
 from kitlib.git import fake
 from kitlib.git.fake.errors import Unsupported
+from kitlib.git.fake import plumbing, wt
 from tests import gitfixture
+from tests.platforms import posix_only
 from tests.realgit import real_git
 
 DATES = {'GIT_AUTHOR_DATE': '1700000000 +0000', 'GIT_COMMITTER_DATE': '1700000000 +0000'}
@@ -610,6 +614,115 @@ class FakeAgainstRealGit(unittest.TestCase):
                  _file_bytes(merge_head))
         self.assertEqual(after, before)
         self.assertEqual(_file_bytes(s.repo.path('d.txt')), b'untracked\n')
+
+
+def _core_keys(config_path):
+    """The key = value pairs under [core] of a config file, as a dict."""
+    keys, in_core = {}, False
+    with open(config_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('['):
+                in_core = line == '[core]'
+            elif in_core and '=' in line:
+                k, v = line.split('=', 1)
+                keys[k.strip()] = v.strip()
+    return keys
+
+
+@real_git('differential: init and status of the fake next to real git')
+class FakeInitCoreConfig(unittest.TestCase):
+    """The fake's init writes the [core] keys real git's init writes on this platform."""
+
+    def setUp(self):
+        self.env = gitfixture.fixture_env(dict(
+            DATES, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+            GIT_COMMITTER_EMAIL='t@t', **gitcmd.LOCALE_ENV))
+
+    def git(self, use_fake, cwd, *argv):
+        if use_fake:
+            rc, out, _err = fake.run(list(argv), cwd, None, self.env)
+            return rc, out
+        r = subprocess.run(['git'] + list(argv), cwd=cwd, env=self.env, capture_output=True)
+        return r.returncode, r.stdout
+
+    def new_dir(self):
+        d = tempfile.mkdtemp(prefix='kit-init-', dir=gitfixture.fixture_parent())
+        self.addCleanup(gitfixture.rmtree, d)
+        return d
+
+    def init(self, use_fake, *flags):
+        d = self.new_dir()
+        self.assertEqual(self.git(use_fake, d, 'init', '-q', *flags)[0], 0)
+        return os.path.join(d, 'config' if '--bare' in flags else os.path.join('.git', 'config'))
+
+    def test_core_keys_match_real_git(self):
+        for flags in ((), ('--bare',)):
+            self.assertEqual(_core_keys(self.init(True, *flags)), _core_keys(self.init(False, *flags)),
+                             flags)
+
+    def test_posix_branch_writes_filemode_true_only(self):
+        with mock.patch.object(plumbing, '_is_posix', return_value=True):
+            keys = _core_keys(self.init(True))
+        self.assertEqual(keys['filemode'], 'true')
+        self.assertNotIn('ignorecase', keys)
+        self.assertNotIn('symlinks', keys)
+
+    def test_windows_branch_keeps_its_lines(self):
+        with mock.patch.object(plumbing, '_is_posix', return_value=False):
+            keys = _core_keys(self.init(True))
+        self.assertEqual((keys['filemode'], keys['symlinks'], keys['ignorecase']),
+                         ('false', 'false', 'true'))
+
+    def test_checkout_of_an_exec_blob_sets_the_exec_bit_on_posix(self):
+        d = self.new_dir()
+        for argv in (('init', '-q'), ('config', 'core.filemode', 'false')):
+            self.git(False, d, *argv)
+        with open(os.path.join(d, 'a.sh'), 'w') as f:
+            f.write('x\n')
+        for argv in (('add', 'a.sh'), ('update-index', '--chmod=+x', 'a.sh'),
+                     ('commit', '-q', '-m', 'a')):
+            self.git(False, d, *argv)
+        for platform, expect in (('linux', True), ('windows', False)):
+            os.remove(os.path.join(d, 'a.sh'))
+            with mock.patch.object(wt, '_platform', mock.Mock(NAME=platform)), \
+                    mock.patch.object(wt.os, 'chmod') as chmod:
+                self.assertEqual(self.git(True, d, 'checkout', '-q', '--', 'a.sh')[0], 0)
+            self.assertEqual(bool([c for c in chmod.call_args_list if c.args[1] & 0o111]), expect,
+                             platform)
+
+    @posix_only('a chmod +x is a file mode bit, which only a POSIX file system keeps')
+    def test_chmod_shows_as_modified(self):
+        got = []
+        for use_fake in (True, False):
+            d = self.new_dir()
+            self.git(use_fake, d, 'init', '-q')
+            with open(os.path.join(d, 'a.sh'), 'w') as f:
+                f.write('x\n')
+            self.git(use_fake, d, 'add', 'a.sh')
+            self.git(use_fake, d, 'commit', '-q', '-m', 'a')
+            os.chmod(os.path.join(d, 'a.sh'), 0o755)
+            got.append(self.git(use_fake, d, 'status', '--porcelain'))
+        self.assertEqual(got[0], got[1])
+        self.assertEqual(got[0][1], b' M a.sh\n')
+
+    @posix_only('a checked-out exec blob keeps its mode bit only on a POSIX file system')
+    def test_checkout_of_an_exec_blob_is_clean(self):
+        got = []
+        for use_fake in (True, False):
+            d = self.new_dir()
+            self.git(use_fake, d, 'init', '-q')
+            with open(os.path.join(d, 'a.sh'), 'w') as f:
+                f.write('x\n')
+            os.chmod(os.path.join(d, 'a.sh'), 0o755)
+            self.git(use_fake, d, 'add', 'a.sh')
+            self.git(use_fake, d, 'commit', '-q', '-m', 'a')
+            os.remove(os.path.join(d, 'a.sh'))
+            self.git(use_fake, d, 'checkout', '-q', '--', 'a.sh')
+            got.append((self.git(use_fake, d, 'status', '--porcelain'),
+                        os.stat(os.path.join(d, 'a.sh')).st_mode & 0o111 != 0))
+        self.assertEqual(got[0], got[1])
+        self.assertEqual(got[0], ((0, b''), True))
 
 
 if __name__ == '__main__':

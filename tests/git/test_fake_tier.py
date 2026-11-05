@@ -16,6 +16,7 @@ from unittest import mock
 from kitlib.config import user as kuser
 from kitlib.git import batch, cmd
 from tests import gitfixture, home
+from tests.platforms import windows_only
 from tests.realgit import real_git
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -330,6 +331,7 @@ class FakeIndexStatData(unittest.TestCase):
         self.assertEqual(index_sizes(self.r.path('.git'))['a.py'], 0)
         self.assertEqual(self.r.git('status', '--porcelain'), 'AM a.py\nA  b.py')
 
+    @windows_only('st_birthtime_ns, the creation time the fake records as ctime, is Windows-only')
     def test_a_new_ctime_alone_leaves_the_index_when_ctime_is_not_trusted(self):
         """A copied repository's files have a new creation time (what the fake records as ctime);
         with core.trustctime false, as the fixture sets it, git's refresh ignores it and status

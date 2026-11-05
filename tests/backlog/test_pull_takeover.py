@@ -5,6 +5,7 @@ import os
 from unittest import mock
 
 from kitlib.backlog import offer as omod
+from kitlib.backlog import plan
 from kitlib.backlog import policy
 from kitlib.backlog.errors import Failure, Refusal, Usage
 
@@ -168,12 +169,36 @@ class PullTakeover(StoreCase):
         self.assertEqual(self.get('DEAD').get('pulled_by'), BRANCH)
 
     def test_a_history_git_cannot_read_fails_closed(self):
-        self.ctx.main_branch = 'no-such-main'
+        self.ctx.code_main = 'no-such-main'
         self.seed(self.pulled('DEAD', GONE))
         with self.assertRaises(Failure) as cm:
             self.verb('pull', 'DEAD')
-        self.assertIn('cannot read the history of no-such-main', str(cm.exception))
+        self.assertIn('cannot read the code main `no-such-main`', str(cm.exception))
         self.assertEqual(self.get('DEAD').get('pulled_by'), GONE)
+
+    def test_the_landing_is_looked_for_on_the_code_main_not_the_stores(self):
+        # The store's git has its own main (a PM data store); the code lands elsewhere.
+        self.ctx.main_branch = 'store-main'
+        self.land(GONE)
+        self.seed(self.pulled('DEAD', GONE))
+        with self.assertRaises(Refusal) as cm:
+            self.verb('pull', 'DEAD')
+        self.assertIn('which has landed on main', str(cm.exception))
+        self.assertEqual(self.get('DEAD').get('pulled_by'), GONE)
+
+    def test_a_restore_sees_a_tip_merged_only_into_the_code_main(self):
+        self.ctx.main_branch = 'store-main'
+        self.ctx.code_main = 'code-main'
+        self.repo.git('branch', 'code-main')
+        self.repo.git('checkout', '-q', 'code-main')
+        self.repo.write('landed/tip.txt', 'x\n')
+        self.repo.commit('work', 'landed')
+        tip = self.repo.git('rev-parse', 'HEAD')
+        self.repo.git('branch', GONE)
+        self.repo.git('checkout', '-q', 'main')
+        self.seed(self.pulled('DEAD', GONE))
+        why = plan._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
+        self.assertEqual(why, 'its stopped tip %s has landed on code-main' % tip)
 
     def test_a_live_branch_is_refused(self):
         self.repo.git('branch', 'kit/live-one')

@@ -110,8 +110,31 @@ class Once(HintCase):
         self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
 
 
+class OnceUnset(HintCase):
+    """No "landing" section: gate_once is on by default, so the hint reads it as Once does (the
+    same effective value the landing's record check reads): a strict path needs no --full, a
+    gate config change does."""
+    KIT = {'owner': {'email': tg.ScopedCase.OWNER}}
+
+    def test_a_strict_path_says_nothing_extra(self):
+        _, _, out = self.plain({tg.STRICT_FILE: 'x = 1\n'})
+        self.quiet(out)
+
+    def test_a_plain_path_says_nothing_extra_and_lands(self):
+        _, tip, out = self.plain({'a.py': 'x = 1\n'})
+        self.quiet(out)
+        self.lands(tip)
+
+    def test_a_gate_config_change_needs_full(self):
+        wt, tip = self.config_change()
+        out = self.gate(wt)
+        self.needs(out, "the tip changes the gate's config (.kit.json)")
+        self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
+
+
 class NothingSet(HintCase):
-    """A base that takes no record that is not --full: every plain gate says so."""
+    """A base that takes no record that is not --full (gate_once opted out): every plain gate
+    says so."""
     KIT = dict(test_land.LandCase.KIT)
 
     def test_any_change_needs_full(self):

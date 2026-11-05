@@ -26,7 +26,7 @@ class Queued(object):
 
 
 class FoldCase(SubmitCase):
-    KIT = {'landing': {'batch_max': 3}}     # folding is off unless the repository sets it
+    KIT = {'landing': {'batch_max': 3}}     # an explicit cap under the default (5) wins
 
     def queued(self, names, files=None, extra=(), review=True, on=None):
         """Branches kit/<name> (each with `files[name]`, or a file of its own; `on`: a branch's

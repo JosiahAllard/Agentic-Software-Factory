@@ -14,6 +14,7 @@ import unittest
 
 from kitlib import content, roster
 from kitlib.host import registry
+from tests import gitfixture
 from kitlib.host.content import ContentError
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -85,8 +86,9 @@ def roster_frontmatter(data):
 
 class TempCopyTest(unittest.TestCase):
     def setUp(self):
-        self.top = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.top, True)
+        fx = gitfixture.TempRepo()               # -C is resolved to a git top
+        self.addCleanup(fx.cleanup)
+        self.top = fx.root
         shutil.copytree(os.path.join(KIT_ROOT, 'content', 'roles'), os.path.join(self.top, 'content', 'roles'))
         os.makedirs(os.path.join(self.top, 'content', 'skills'))
         os.makedirs(os.path.join(self.top, 'docs'))

@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from kitlib import stackskill
+from tests import gitfixture
 from tests.shipped import ROOT
 
 sys_path_tool = ROOT / "tools" / "stack_skill.py"
@@ -167,30 +168,34 @@ class ToolExitCodesTest(unittest.TestCase):
             written.append("C:/t/one")
             raise OSError("disk full")
         out = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(mod.stackskill, "install", boom), \
-                contextlib.redirect_stdout(out):
+        fx = gitfixture.TempRepo()
+        self.addCleanup(fx.cleanup)
+        tmp = fx.root
+        with mock.patch.object(mod.stackskill, "install", boom), contextlib.redirect_stdout(out):
             code = mod.main(["install", "--stack", "godot", "-C", tmp, "--apply"])
         self.assertEqual(code, 1)
         self.assertIn("disk full", out.getvalue())
         self.assertIn("already written (delete to undo): C:/t/one", out.getvalue())
 
     def test_exit_codes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            code, out = self.run_tool("install", "--stack", "godot", "-C", tmp)
-            self.assertEqual(code, 0)
-            self.assertIn("would create", out)
-            self.assertFalse((Path(tmp) / ".claude").exists())
-            code, out = self.run_tool("install", "--stack", "nosuch", "-C", tmp)
-            self.assertEqual(code, 1)          # no such stack folder: a refusal
-            self.assertIn("REFUSED", out)
-            code, out = self.run_tool("install", "--stack", "python", "-C", tmp)
-            self.assertEqual(code, 0)          # a stack with no skills: nothing to copy
-            self.assertEqual(out, "")
-            code, out = self.run_tool("install", "--stack", "Bad/Name", "-C", tmp)
-            self.assertEqual(code, 1)
-            self.assertIn("REFUSED", out)
-            code, _ = self.run_tool("install", "-C", tmp)
-            self.assertEqual(code, 2)
+        fx = gitfixture.TempRepo()
+        self.addCleanup(fx.cleanup)
+        tmp = fx.root
+        code, out = self.run_tool("install", "--stack", "godot", "-C", tmp)
+        self.assertEqual(code, 0)
+        self.assertIn("would create", out)
+        self.assertFalse((Path(tmp) / ".claude").exists())
+        code, out = self.run_tool("install", "--stack", "nosuch", "-C", tmp)
+        self.assertEqual(code, 1)          # no such stack folder: a refusal
+        self.assertIn("REFUSED", out)
+        code, out = self.run_tool("install", "--stack", "python", "-C", tmp)
+        self.assertEqual(code, 0)          # a stack with no skills: nothing to copy
+        self.assertEqual(out, "")
+        code, out = self.run_tool("install", "--stack", "Bad/Name", "-C", tmp)
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSED", out)
+        code, _ = self.run_tool("install", "-C", tmp)
+        self.assertEqual(code, 2)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib import stackskill                                       # noqa: E402
 
 USAGE = 2
@@ -37,10 +38,11 @@ def parser():
 
 
 def main(argv=None):
-    a = parser().parse_args(argv)
-    root = os.path.abspath(a.root)
-    if not os.path.isdir(root):
-        parser().error('-C: %s is not a folder' % root)
+    p = parser()
+    a = p.parse_args(argv)
+    root, why = gitrepo.toplevel(os.path.abspath(a.root))
+    if root is None:
+        p.error('-C: %s' % why)
     written = []
     try:
         lines = stackskill.install(a.stack, root, apply=a.apply, written=written)

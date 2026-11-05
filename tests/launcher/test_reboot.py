@@ -384,6 +384,12 @@ class SaidAsItHappens(unittest.TestCase):
         out = reboot.run(h.settings, host, test=True)
         self.assertTrue(out[-1].startswith('FAILED to start %s : duplicate session' % reboot.TEST_NAME), out)
 
+    def test_a_missing_tmux_in_the_test_window_is_logged_not_raised(self):
+        h = Home(self)
+        host = FailingHost(h.root, reboot.TEST_NAME, RuntimeError('tmux not found'))
+        out = reboot.run(h.settings, host, test=True)
+        self.assertTrue(out[-1].startswith('FAILED to start %s : RuntimeError: tmux not found' % reboot.TEST_NAME), out)
+
     def test_a_dry_run_says_its_lines_too(self):
         h = Home(self)
         h.write_state('sessions.json', {'alpha': dict(ALPHA)})

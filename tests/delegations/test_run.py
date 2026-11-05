@@ -843,8 +843,16 @@ class HubApproval(Fixture):
         return str(cm.exception)
 
     def test_the_run_is_verified_checked_consumed_claimed_then_started(self):
-        res = self.approve()
-        self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume', 'spawn'])
+        real = lwrite.add
+
+        def add(*a, **kw):
+            added = real(*a, **kw)
+            self.events.append('claimed')
+            return added
+        with mock.patch.object(lwrite, 'add', add):
+            res = self.approve()
+        self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume', 'claimed',
+                                       'spawn'])
         self.assertEqual((res.returncode, res.error), (0, None))
         self.assertEqual(res.argv, [os.path.normpath(self.exe), self.dest])
         sha = hubapprovals.line_sha256(self.line)
@@ -1047,6 +1055,18 @@ class HubApproval(Fixture):
                 self.assertIn('nothing was run', msg)
                 self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume'])
                 self.assertFalse(os.path.exists(self.cwds[0]))
+
+    def test_a_refused_claim_leaves_the_approval_unspent(self):
+        self.add(decides='run D-001 name=alpha')
+        with open(self.ledger, 'a', encoding='utf-8') as fh:
+            fh.write('\n## H-kit-0009 | broken\n')
+        with self.assertRaises(drun.RunRefused) as cm:
+            self.approve()
+        self.assertIn('the ledger refused the run entry', str(cm.exception))
+        self.assertNotIn('consume', self.events)
+        self.assertEqual([c[0] for c in self.hub.calls], ['get'])
+        self.assertEqual(self.spawn.calls, [])
+        self.assertFalse(os.path.exists(self.cwds[0]))
 
     def test_a_consume_answering_another_status_runs_nothing(self):
         for answer in ({'status': 'approved'}, {}, ['consumed'], {'status': None}):

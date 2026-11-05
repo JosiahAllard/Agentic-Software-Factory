@@ -25,12 +25,13 @@ the new approval's id. Run in this order:
      (one another such entry supersedes does not count) is its order (hub_entry). An owner
      ledger id: a live owner entry, written in the last MAX_AGE, whose Decides
      is the run line.
-  5. the preconditions: file-exists, branch-landed, checklist-line. A hub approval is then
-     consumed on the hub, pinned to the version it verified at: of two racing runners one wins,
-     and one that cannot consume it runs nothing and logs nothing.
+  5. the preconditions: file-exists, branch-landed, checklist-line.
   6. the claim, under the runner lock: no live runner entry (Source `under <anchor>: D-nnn
-     <trigger>`) has this anchor or this trigger, then one ledger entry, provenance delegated,
-     is added (not committed). Each trigger and each owner entry orders one run. A hub approval
+     <trigger>`) has this anchor or this trigger and the ledger is valid; a hub approval is then
+     consumed on the hub, pinned to the version it verified at (of two racing runners one wins,
+     and one that cannot consume it runs nothing and logs nothing), so a claim refused by those
+     checks leaves the approval unspent; then one ledger entry, provenance delegated, is added
+     (not committed). Each trigger and each owner entry orders one run. A hub approval
      is the run entry's own anchor (Source `under hub:A-nnn: D-nnn hub:A-nnn`): the runner never
      writes an owner-provenance entry.
   7. the child: the argv list with shell=False, stdin closed, in the kit folder (a hub
@@ -659,9 +660,11 @@ def preconditions(pres, checks):
 
 # --- The run ----------------------------------------------------------------------------------
 
-def _claim(op, order, line, found, cfg, now, lock_wait, pause):
+def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
     """Add the run's ledger entry under the runner lock; its id. RunRefused when the trigger or
-    its anchor already ran, or the ledger refuses the entry."""
+    its anchor already ran, or the ledger refuses the entry. `before` (a hub approval's
+    consume) is called under the lock once every check that can refuse the claim has passed,
+    just before the entry is added, so a refused claim never spends the approval."""
     col, path, split = target(found, op.repo)
     folder = os.path.dirname(os.path.abspath(path))      # every ledger file's folder: one lock
     if order.kind == HUB:
@@ -687,7 +690,13 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause):
                 if whys:
                     raise RunRefused('cannot read the other ledger files: %s' % '; '.join(whys))
             when, repos = now.strftime(LEDGER_WHEN), cfg.get('ledger_repos')
-            q = 'Run delegated operation %s (%s)?' % (op.id, op.what)
+            if before:
+                errs = lwrite.check(lwrite.read_text(path), None, repos, op.repo if split else None,
+                                    others)
+                if errs:
+                    raise LedgerRefused('the ledger is already invalid:\n  %s' % '\n  '.join(errs))
+                before()
+            q ='Run delegated operation %s (%s)?' % (op.id, op.what)
             added = lwrite.add(path, col, PROV, q, answer, line,
                                'under %s: %s %s' % (order.anchor, op.id, order.trigger),
                                when=when, repos=repos, split=split, others=others)
@@ -775,8 +784,8 @@ def run(op, pairs, trigger, cfg, hub=None, now=None, spawn=procspawn.run, checks
     if kind == APPROVAL:
         cwd = _empty_cwd(make_cwd, home)
         try:
-            consume_approval(hub, order, line, version)
-            rid = _claim(op, order, line, found, cfg, now, lock_wait, pause)
+            rid = _claim(op, order, line, found, cfg, now, lock_wait, pause,
+                         before=lambda: consume_approval(hub, order, line, version))
         except BaseException:
             _drop(cwd)
             raise

@@ -55,6 +55,9 @@ class RebootResumePm(unittest.TestCase):
 
 
 class RelaunchPmRunning(unittest.TestCase):
+    def setUp(self):
+        windows_text(self)      # session() rows are claude.exe; Linux keeps only claude and node
+
     def test_a_topic_session_that_mentions_the_pm_id_is_not_the_pm(self):
         for cmd in TOPICS:
             self.assertFalse(relaunch.pm_running([proc(8, cmd)], [], SID), cmd)

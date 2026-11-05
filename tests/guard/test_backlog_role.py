@@ -1128,11 +1128,15 @@ class Unread(Base):
               "print('kit backlog add X-2 --summary s')\n"
               "print('python tools/backlog.py add --summary s')\n"
               "n = 2\nprint(f'kit backlog add X-{n}')\n")
-    SHAPE = ("import argparse\nimport json\nimport os\nimport sys\n\n\n"
+    SHAPE = ('"""Revalidates rows against a diff.\n\nusage: python tools/x.py --diff REPORT.json\n\n'
+             'Exit codes: 0 none, 1 found, 2 refused. Output: one ready-to-run `backlog.py add` line for the '
+             'coordinator; the record id is a suggestion. Checklist:\ndocs/ops/x.md.\n"""\n'
+             "import argparse\nimport json\nimport os\nimport sys\n\n\n"
              "def _q(s):\n    return '\"' + s.replace('\"', \"'\") + '\"'\n\n\n"
              "def backlog_line(build, name):\n"
              "    return ('kit backlog add %s --summary %s --found-on none') % (name, _q('build %d' % build))\n\n\n"
-             "def main():\n    ap = argparse.ArgumentParser()\n    ap.add_argument('--diff')\n"
+             "def main():\n    ap = argparse.ArgumentParser(description=__doc__.split('\\n')[0])\n"
+             "    ap.add_argument('--diff')\n"
              "    args = ap.parse_args()\n    out = [backlog_line(1, 'X'), json.dumps(os.path.basename(args.diff or ''))]\n"
              "    sys.stdout.write('\\n'.join(out) + '\\n')\n    return 0\n\n\n"
              "if __name__ == '__main__':\n    sys.exit(main())\n")
@@ -1162,8 +1166,13 @@ class Unread(Base):
         "x = '''\nimport os; os.system('python tools/backlog.py close X-1')\n'''#'''\n",
         # a coding python reads otherwise than the guard: refused as the name alone
         "# coding: utf-7\n# tools/backlog.py +AAo-import os+AAo-\n",
+        "\r# coding: utf-7\r# tools/backlog.py +AAo-import os+AAo-\r",      # lines ended by a lone \r
         # text that does not parse: refused as the name alone
-        "print('tools/backlog.py'\n")
+        "print('tools/backlog.py'\n",
+        "breakpoint()  # then: python tools/backlog.py close X-1\n",
+        # a runner named by a string's dotted part (pkgutil.resolve and the like)
+        "from mylib import resolve\nresolve('os.system')('python tools/backlog.py close X-1')\n",
+        "from mylib import resolve\nresolve('os:system')('python tools/backlog.py close X-1')\n")
 
     def test_a_python_script_that_reaches_the_tool_is_refused(self):
         for k, body in enumerate(self.REACHES):
@@ -1172,6 +1181,35 @@ class Unread(Base):
                 d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
                 self.assertIn('whose code ', d.reason)
                 self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
+    def test_a_python_script_past_the_read_cap_is_judged_by_the_name(self):
+        # the guard reads SCRIPT_CAP (256 KB): the runner past it is never seen, so the name alone refuses
+        body = "print('tools/backlog.py')\n#" + 'x' * (300 * 1024) + "\nimport os\nos.system('x')\n"
+        d = self.refused(self.cmd('python "%s"' % self.script('big.py', body)), 'backlog-raw-write')
+        self.assertIn('whose code names ', d.reason)
+        self.assertNotIn('can run it', d.reason)
+
+    def test_a_python_script_piped_into_a_runner_is_judged_by_the_name(self):
+        # what it prints is the runner's code: a printed tools/backlog.py line runs
+        gen = self.script('gen.py', self.PRINTS)
+        for text, tool in (('python "%s" | bash' % gen, 'Bash'), ('python gen.py | sh', 'Bash'),
+                           ('python gen.py | python', 'Bash'), ('python gen.py | python -', 'Bash'),
+                           ('python gen.py 2>&1 | tee log.txt | bash', 'Bash'),
+                           ('python gen.py | xargs python', 'Bash'),
+                           ('python gen.py | pwsh -NoProfile', 'PowerShell'), ('python gen.py | iex', 'PowerShell'),
+                           ('python gen.py | Out-String | iex', 'PowerShell'),
+                           ('iex (python gen.py | Out-String)', 'PowerShell'),
+                           ('(python gen.py) | bash', 'Bash'), ('{ python gen.py; } | bash', 'Bash'),
+                           # what it prints held in another command's word
+                           ('eval "$(python gen.py)"', 'Bash'), ('bash -c "$(python gen.py)"', 'Bash'),
+                           ('bash <(python gen.py)', 'Bash'), ('python $(python gen.py)', 'Bash')):
+            with self.subTest(text):
+                self.refused(self.cmd(text, tool=tool), 'backlog-raw-write')
+                self.allowed(self.cmd(text, tool=tool, sub=False, env=COORDINATOR))
+        for text in ('python gen.py', 'python gen.py 2>&1 | tail -50', 'python gen.py | grep backlog',
+                     'python gen.py | python summarize.py', 'python gen.py > out.txt'):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
 
     def test_the_kits_own_python_is_not_judged(self):
         code = 'from kitlib.backlog import policy\n'

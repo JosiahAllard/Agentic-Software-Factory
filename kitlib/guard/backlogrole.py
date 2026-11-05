@@ -12,7 +12,8 @@
                      path that is not a regular file refused (script_file).
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
                      python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
-                     tools/backlog.py (a script file's: only where its code can run it, py_reach);
+                     tools/backlog.py (a script file's: only where its code can run it, py_reach,
+                     or what it prints may run as code, piped_script);
                      any session's but the owner's python code naming the hub's
                      record writer by its module name, not its file's path
                      (kitlib.hubsite.recordwrite, plan_answer: hub_writer_code);
@@ -78,8 +79,10 @@ def read_record(root, rid):
 
 
 def shell(event, ctx, cmd, inv, cwd, role):
-    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file."""
-    return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role)
+    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file and
+    piped_script."""
+    return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role) or \
+        piped_script(event, ctx, cmd, inv, cwd, role)
 
 
 def runs(event, ctx, cmd, inv, cwd, role):
@@ -655,12 +658,72 @@ def script_file(event, ctx, cmd, inv, cwd, role):
     return None
 
 
+PIPE_RUNNERS = cm.BASH_SHELLS | cm.PS_SHELLS | {'cmd', 'eval', 'iex', 'invoke-expression'} | set(SOURCERS)
+
+
+def _runs_piped_text(inv):
+    """True when the program `inv` names takes the text piped into it as code or a command line:
+    a shell, eval, source, iex or cmd (fallback.RUNNERS, whatever its arguments), python reading
+    its code from standard input (reads_stdin), any program xargs runs (the text becomes its
+    words), or a program the line does not name (fail closed)."""
+    if inv is None:
+        return False
+    if inv.dyn or inv.via == 'xargs':
+        return True
+    return (inv.name or '').lower() in PIPE_RUNNERS or reads_stdin(inv) == 'py'
+
+
+def piped_script(event, ctx, cmd, inv, cwd, role):
+    """A subagent's python script whose output may run as code, judged by CODE_RE alone, as -c
+    code is, and not by py_reach's reading of its own code: piped, straight or through other
+    commands, into a runner (_runs_piped_text: `python gen.py | bash`, `... | tee log | python`),
+    or held in another command's word (`eval "$(python gen.py)"`, `bash <(python gen.py)`, a
+    nested shell's text: shell.Command.nested_in), whose program then reads what it prints, or run
+    in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has no
+    pipe_from). The kit's own (_kit_code) is not judged."""
+    if not _judged_subagent(event):
+        return None
+    if cmd.nested_in is not None or cmd.groups:
+        how = 'and what it prints is a word of `%s`' % rules.hub_line(rules.bare(cmd.nested_in)) \
+            if cmd.nested_in is not None else 'in a group, whose output the guard does not follow'
+        d = _printed_name(ctx, role, cmd, [cmd], how)
+        if d:
+            return d
+    if cmd.pipe_from is None or not _runs_piped_text(inv):
+        return None
+    chain, up = [cmd], cmd.pipe_from
+    while up is not None:
+        chain.insert(0, up)
+        d = _printed_name(ctx, role, up, chain, 'and pipes what it prints into a command that runs it as code')
+        if d:
+            return d
+        up = up.pipe_from
+    return None
+
+
+def _printed_name(ctx, role, cmd, chain, how):
+    """piped_script's refusal when `cmd` runs a python script file whose text CODE_RE matches (not
+    the kit's own); else None."""
+    ci = cm.invocation(cmd)
+    found = script_file_word(ci) if ci is not None and not ci.dyn else None
+    if not found or found[1] != 'py':
+        return None
+    path, text = _script_text(cmd, found[0].text)
+    m = CODE_RE.search(text) if isinstance(text, str) else None
+    if not m or (path and _kit_code(ctx, path)):
+        return None
+    line = rules.hub_line(' | '.join(rules.bare(c) for c in chain))
+    return rules.refuse(RAW_RULE, role, '`%s` runs %s, whose code names %s, %s: a tools/backlog.py line printed '
+                        'that way skips the guard\'s role check, so it is a raw write (kitlib/backlog/roles.py). '
+                        '%s' % (line, rules.fwd(path), m.group(0), how, LITERAL_WHY), literal_form(ctx))
+
+
 # python a script file runs (py_reach): what can run code or a process, as python names it. An
 # import naming one of PY_RUN_MODULES (any part of its dotted path, or a name it takes); a name or
 # attribute in PY_RUN_ATTRS (os.system, from os import system, obj.__subclasses__); a bare name in
-# PY_RUN_BUILTINS (exec(...), not re.compile); a string that is exactly one of these
-# (getattr(os, 'system'), sys.modules['subprocess']). Wide on purpose: a script that names the
-# tool and holds any of them is refused as before.
+# PY_RUN_BUILTINS (exec(...), breakpoint(), not re.compile); a string that is one of these, whole
+# or a dotted part of it (getattr(os, 'system'), sys.modules['subprocess'], resolve('os.system')).
+# Wide on purpose: a script that names the tool and holds any of them is refused as before.
 PY_RUN_MODULES = frozenset((
     'subprocess', 'runpy', 'importlib', 'imp', 'pkgutil', 'zipimport', 'pty', 'ctypes', 'cffi', '_winapi',
     '_posixsubprocess', 'multiprocessing', 'code', 'codeop', 'timeit', 'pdb', 'bdb', 'cProfile', 'profile',
@@ -675,12 +738,14 @@ PY_RUN_ATTRS = frozenset((
     'exec_module', 'attrgetter', 'methodcaller', 'FunctionType', 'CodeType', 'dictConfig', 'fileConfig',
     '__import__', '__builtins__', '__dict__', '__subclasses__', '__globals__', '__code__',
     '__getattribute__', '__loader__'))
-PY_RUN_BUILTINS = frozenset(('exec', 'eval', 'compile', 'execfile', 'getattr', 'globals', 'locals', 'vars'))
+PY_RUN_BUILTINS = frozenset(('exec', 'eval', 'compile', 'execfile', 'getattr', 'globals', 'locals', 'vars',
+                             'breakpoint'))
 # an import that reaches the tool or the kit's library: a dotted part (or a name it takes) that is
 # backlog (kitlib.backlog, tools.backlog, a bare `import backlog`), kitlib or kit (tools/kit.py)
 PY_REACH_PARTS = frozenset(('backlog', 'kitlib', 'kit'))
 # a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
 PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
+PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
 
 
 def py_reach(text):
@@ -699,7 +764,7 @@ def py_reach(text):
     named = 'names %s' % m.group(0)
     if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
         return named
-    for line in text.split('\n', 3)[:3]:
+    for line in re.split(r'\r\n?|\n', text, maxsplit=3)[:3]:       # a lone \r ends a line too
         c = PY_CODING_RE.match(line)
         if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
             return named
@@ -740,7 +805,8 @@ def _tree_reach(ast, tree):
         elif isinstance(node, ast.Attribute):
             found = {node.attr} & PY_RUN_ATTRS
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            found = {node.value.strip()} & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
+            s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
+            found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
         if found and runner is None:
             runner = sorted(found)[0]
     return runner

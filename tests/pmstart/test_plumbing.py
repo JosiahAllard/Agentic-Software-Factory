@@ -94,7 +94,7 @@ class KitSyncCannotReadTest(unittest.TestCase):
                  (refs, "current_branch", (None, "bad"), "cannot read the kit's branch: bad"),
                  (refs, "merge_in_progress", (None, "bad"),
                   "cannot tell whether a merge is in progress: bad"),
-                 (gitcmd, "run_text", (None, "bad"), "cannot look for a cherry-pick is in progress: bad"),
+                 (gitcmd, "run_text", (None, "bad"), "cannot look for a cherry-pick, revert, rebase or am in progress: bad"),
                  (refs, "is_clean", (None, "bad"), "cannot read the kit's status: bad"))
         for target, name, value, text in cases:
             with self.subTest(name), mock.patch.object(target, name, return_value=value):

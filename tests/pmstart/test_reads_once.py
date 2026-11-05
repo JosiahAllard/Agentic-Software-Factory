@@ -2,6 +2,9 @@
 machine config's launcher.repos and plugin Settings, the PM repository's toplevel and the pm_watch
 config. Each reader is replaced by a counting fake; the checks that use it still see its answer."""
 import datetime
+import os
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
@@ -9,6 +12,7 @@ from kitlib import pmstart, pmwatch
 from kitlib.pmstart import consoletasks
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos
+from tests.pmstart.test_hub_site import SET, FiledClient
 
 NOW = datetime.datetime(2026, 10, 13, 9, 0)
 GONE = "Q:/no-such-repo-folder"
@@ -22,6 +26,8 @@ class ReadsOnceTest(unittest.TestCase):
 
     def run_checklist(self, **over):
         temp_home(self)
+        state = tempfile.mkdtemp(prefix="kit-reads-")
+        self.addCleanup(shutil.rmtree, state, True)
         calls = {k: 0 for k in ("repos", "settings", "tasks", "top", "watch")}
 
         def counted(key, value):
@@ -33,13 +39,14 @@ class ReadsOnceTest(unittest.TestCase):
                      liveness={"read": lambda p: "{}"},
                      memory={"check": lambda path, label=None: None, "folder": lambda top: None},
                      repo_prep={"prep": lambda path: []},
+                     hub_site={"load": lambda: SET, "make_client": lambda port: FiledClient()},
                      watcher={"now": 0}, foreground_lock={"read": lambda: 0})
         fakes.update(over)
         with mock.patch.object(pmstart, "launcher_repos", counted("repos", {"a": GONE})), \
                 mock.patch.object(pmstart, "plugin_settings", counted("settings", None)), \
                 mock.patch.object(pmstart, "pm_memory_repo", counted("top", "X:/pm")), \
                 mock.patch.object(consoletasks, "read_tasks", counted("tasks", [])), \
-                mock.patch.object(pmwatch, "load_config", counted("watch", {"state_file": GONE + "/s.json"})):
+                mock.patch.object(pmwatch, "load_config", counted("watch", {"state_file": os.path.join(state, "s.json")})):
             txt = pmstart.checklist({}, NOW, procs=[], **fakes)
         return txt, calls
 
@@ -63,6 +70,12 @@ class ReadsOnceTest(unittest.TestCase):
         self.assertIn("- could not check the worktree sweep tasks: RuntimeError: no schtasks", txt)
         if consoletasks.platform.NAME != "linux":
             self.assertIn("- could not check console_tasks: RuntimeError: no schtasks", txt)
+
+    def test_the_watch_config_loader_is_the_callers(self):
+        load = mock.Mock(return_value={"state_file": GONE + "/s.json"})
+        self.assertTrue(pmstart.filed_stamp_file(load).endswith("pm-start-last.json"))
+        self.assertIsNone(pmstart.read_heartbeat(load))
+        self.assertEqual(load.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -692,7 +692,7 @@ def _git_paths(kit, names):
     found = out.split("\n") if out else []
     if len(found) != len(names):
         return [None] * len(names), why or "git rev-parse --git-path printed nothing"
-    return [os.path.normpath(f) if f else None for f in found], why or "git rev-parse --git-path printed nothing"
+    return [os.path.normpath(f) if f else None for f in found], None
 
 
 def kit_sync(settings):
@@ -723,7 +723,8 @@ def kit_sync(settings):
     paths, why = _git_paths(kit, [name for name, _ in _OPERATIONS])
     for (name, what), path in zip(_OPERATIONS, paths):
         if path is None:
-            return ["kit not updated: cannot look for %s: %s" % (what, why)]
+            return ["kit not updated: cannot look for a cherry-pick, revert, rebase or am in progress: %s"
+                    % (why or "git rev-parse --git-path printed an empty path")]
         if os.path.exists(path):
             return ["kit not updated: %s in the kit checkout" % what]
     clean, why = refs.is_clean(kit)

@@ -799,14 +799,24 @@ class SnapshotCostTest(ApiCase):
             got = fn()
         return got, seen
 
+    def holding(self, seen, coll):
+        """The objects in seen that are the store's collection coll, or a dict that holds it
+        (the store's whole {collection: documents}), or one of its documents: a copy of any
+        of them copies coll's documents. Only the objects handed to deepcopy itself are seen,
+        not what it recurses into."""
+        held = self.store._docs[coll]
+        docs = list(held.values())
+        return [x for x in seen if x is held or any(x is d for d in docs)
+                or (isinstance(x, dict) and any(v is held for v in x.values()))]
+
     def bodies_in(self, seen):
-        bodies = self.store._docs['page_html']
-        return [x for x in seen if x is bodies or x is bodies.get('plan-1')]
+        return self.holding(seen, 'page_html')
 
     def test_the_snapshot_never_copies_the_page_bodies_or_hand_offs(self):
         obj, seen = self.copied(lambda: self.ok('GET', '/snapshot', OWNER))
+        self.assertTrue(self.holding(seen, 'pages'), 'the spy sees the copies')
         self.assertEqual(self.bodies_in(seen), [])
-        self.assertFalse([x for x in seen if x is self.store._docs['handoffs']])
+        self.assertEqual(self.holding(seen, 'handoffs'), [])
         self.assertNotIn('page_html', obj['collections'])
         self.assertNotIn('handoffs', obj['collections'])
         self.assertIn('plan-1', obj['collections']['pages'])
@@ -816,8 +826,9 @@ class SnapshotCostTest(ApiCase):
         self.question()
         obj, seen = self.copied(lambda: self.ok('POST', '/to_pm/send', OWNER))
         self.assertEqual(obj['sent'], ['P-001'])
+        self.assertTrue(self.holding(seen, 'to_pm'), 'the spy sees the copies')
         self.assertEqual(self.bodies_in(seen), [])
-        self.assertFalse([x for x in seen if x is self.store._docs['questions']])
+        self.assertEqual(self.holding(seen, 'questions'), [])
 
     def test_a_snapshot_of_named_collections_gives_those_alone(self):
         self.ok('POST', '/inbox', AGENT, {'text': 'x', 'title': 't'})
@@ -829,7 +840,7 @@ class SnapshotCostTest(ApiCase):
             self.assertEqual(list(obj['collections']), ['inbox'], role)
             self.assertEqual(obj['collections']['inbox']['M-001']['title'], 't', role)
             self.assertEqual(obj['revision'], self.store.revision, role)
-            self.assertFalse([x for x in seen if x is self.store._docs['questions']], role)
+            self.assertEqual(self.holding(seen, 'questions'), [], role)
         both = self.ok('GET', '/snapshot', AGENT, None, {'collections': 'inbox, pages,inbox'})
         self.assertEqual(sorted(both['collections']), ['inbox', 'pages'])
 

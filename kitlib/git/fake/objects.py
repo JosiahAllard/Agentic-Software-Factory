@@ -152,7 +152,10 @@ class Pack:
         pos += self.count * 4
         self.large = idx[pos:]
         self._fh = None
-        self._lock = threading.Lock()
+        # reentrant: a REF_DELTA whose base is in this pack comes back to read_at from _read.
+        # Safe only because _read inflates the delta before that nested store.read, which moves
+        # the shared handle; every reader seeks before it reads.
+        self._lock = threading.RLock()
 
     def _name(self, i):
         return self.names[i * self.rawlen:(i + 1) * self.rawlen]
@@ -227,7 +230,6 @@ class Pack:
             got = store.read(base)
             if got is None:
                 raise Unsupported('thin pack base %s missing' % base)
-            f.seek(0)
             return got[0], apply_delta(got[1], delta)
         return _PACK_TYPES[kind], self._inflate(offset + i)
 

@@ -53,6 +53,13 @@ class Decide(unittest.TestCase):
         d = decide(record={'seen_at': NOW - 900, 'account': '2'})
         self.assertEqual((d.start, d.account), (True, '2'))
 
+    def test_a_longer_stem_sharing_the_prefix_is_not_the_stem_running(self):
+        demo = dict(ENTRY, stem='demo')
+        self.assertTrue(decide(demo, live=['demo-lane-a1']).start)
+        for name in ('demo-a2-r3', 'demo-a1'):
+            d = decide(demo, live=[name])
+            self.assertEqual((d.start, d.reason), (False, 'running'))
+
     def test_a_live_session_of_the_stem_is_never_a_second_copy(self):
         d = decide(live=['kit-coord-a2-r3'])
         self.assertFalse(d.start)

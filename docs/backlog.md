@@ -86,6 +86,14 @@ A `pull` of a record whose resource live pulls on other branches fill is the `pu
 
 `blocked_on: live-client` stays beside resources: it means the owner must be present.
 
+### Shared paths
+
+Some files are touched by many records at once, a few lines each: a ratchet or grants list, a layering list. Two records that both name such a file collide, so one waits for the other although their edits never conflict in practice. A repository lists those files in `.kit.json`, `"backlog": {"shared_paths": ["docs/layering.md"]}` (docs/kit-json.md), each one literal file as a repository-root-relative path. A scope pair where either member IS one of them is no collision: `docs/layering.md` against `docs/layering.md`, and `docs/**` against `docs/layering.md`, both ways, compared casefolded as members are (kitlib/backlog/scope.py `members_collide`). The rest of each scope collides as before: two records that share the list and also `kit/a.py` still collide on `kit/a.py`, and `docs/**` still collides with `docs/other.md`.
+
+Every collision check reads the same list: `next`'s offer and its NARROWS split (offer.py `next_offer`, `split_all`), `pull`'s live hits and pre-emption lines, a `set --scope` widening, a dead-pull takeover, the fold-in guard (below), and `check`'s pull records. The landing scope check compares a branch's changed paths with its own record's scope, never one record with another, so it has no special case. `next` prints `    shares docs/layering.md with HELD (shared path)` under an offered record for each pair the list exempted, and `pull` prints the same line under `PULLED`.
+
+The list is read from the main checkout, as the cap is (`opener.repo_shared_paths`), and only when two members collide without it, so `next --all` and an offer that meets no collision never read it. The default is empty, which changes nothing. `check` reads it and FAILs an entry that is a glob (`/**`, or any of `*?[]{}`), ends in `/`, or names a folder in the main checkout's tree, and one that is no repository path; such an entry exempts nothing.
+
 ### The fold-in guard
 
 A finding is fixed on the branch that found it unless it cannot be, so `add` names where it came from and why it was not folded (kitlib/backlog/plan.py `plan_add`, `_fold_arguments`, `_fold_overlap`). `--found-on` is the branch the finding was made on, or `none` when no branch found it or the branch that found it was removed, landed or not (then `--why-not-folded` names that branch). A removed branch that landed may instead be named: its landing merge on the code main is the proof that lets it stand in for `none` (below); one removed without landing has no such proof and is written as `none`. `--why-not-folded` is at least 12 characters with no machine path. Both go into the body's `## Found` section, `Found on BRANCH; not folded: T` (`no branch (or on a branch since landed)` for `none`), never the summary, and the commit subject is `backlog: add ID, found on BRANCH`.

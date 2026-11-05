@@ -100,7 +100,9 @@ def check_preemptions(snap):
                        proxy='reads the shape; it cannot tell a computed `displaced:` from a typed one')
 
 
-def check_pull_records(snap):
+def check_pull_records(snap, shared=()):
+    """`shared`: `.kit.json` "backlog".shared_paths, the literal files a scope collision may meet
+    on (scope.members_collide)."""
     subjects = [r for r in snap.readable if r.get('state') == 'pulled']
     found, warned = [], []
     for rec in subjects:
@@ -112,8 +114,8 @@ def check_pull_records(snap):
         for b in subjects[i + 1:]:
             try:
                 why = None
-                if smod.scopes_collide(b.all('scope'), a.all('scope')):
-                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'))
+                if smod.scopes_collide(b.all('scope'), a.all('scope'), shared):
+                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'), shared)
                     why = 'scope %s collides with %s' % hit[0]
             except smod.UndecidableScope as exc:
                 why = 'the scope comparison could not be decided, so it is a collision: %s' % exc
@@ -207,11 +209,27 @@ def check_uses(snap, resources):
     return CheckResult(USES_NAMES, subjects, found, unit='`uses:` lines')
 
 
-def check_store(snap, implicit=False, resources=None):
+SHARED_PATHS = 'shared paths'
+
+
+def check_shared_paths(entries):
+    """One FAIL per `.kit.json` "backlog".shared_paths entry that is no literal file (`entries`:
+    opener.repo_shared_paths, `[(path, why)]`, `why` None for a good one). Such an entry exempts
+    nothing (docs/backlog.md "Shared paths")."""
+    found = [rmod.Finding(SHARED_PATHS, '.kit.json "backlog".shared_paths', i, why)
+             for i, (_p, why) in enumerate(entries, 1) if why is not None]
+    return CheckResult(SHARED_PATHS, len(entries), found, unit='shared_paths entries')
+
+
+def check_store(snap, implicit=False, resources=None, shared=None):
     """Every check, each with its own denominator. `implicit`: `snap` is the implicit default
     store's, which adds check_default_store when it holds any file. `resources` ({name: capacity},
     the repository's; None: not read) adds check_uses when a record names one, so a store with no
-    `uses:` line reads as it always did, and a write, which passes none, meets no config."""
+    `uses:` line reads as it always did, and a write, which passes none, meets no config.
+    `shared` (opener.repo_shared_paths' `[(path, why)]`; None: not read) adds check_shared_paths
+    when it has an entry, and its good paths exempt their pairs in check_pull_records."""
+    shared = list(shared or [])
+    good = tuple(p for p, why in shared if why is None)
     by_name = {}
     for f in snap.all_findings():
         by_name.setdefault(f.check, []).append(f)
@@ -231,9 +249,11 @@ def check_store(snap, implicit=False, resources=None):
                     by_name.get(rmod.PIN_UNIQUENESS, ()), unit='pinned records'),
         CheckResult(rmod.ID_FILENAME, len(readable), by_name.get(rmod.ID_FILENAME, ())),
         check_preemptions(snap),
-        check_pull_records(snap),
+        check_pull_records(snap, good),
         check_hold_citations(snap),
     ]
+    if shared:
+        results.append(check_shared_paths(shared))
     if implicit and snap.file_count:
         results.append(check_default_store(snap))
     if resources is not None and any(r.has('uses') for r in readable):

@@ -93,7 +93,7 @@ Known limits: a run is seen only as a string literal naming `<x>.py`, so a path 
 - `paths`: `[glob, [packages]]`, added on top of any rule. It is for a test that reads another folder, such as a scrub test, or `tests/skills`, which checks that every tool, kitlib and optional path a skill names exists.
 - `by_name`: globs selecting the test packages that name the file. If none names it, everything runs.
 - `prose`: the same, but a file no test names selects nothing and is listed as `(no test)`.
-- `always`: test packages that read every tracked file (`scrub`: no ruling id, no machine path in any file `git ls-files` lists). Any non-empty change that does not run everything adds them, so a doc edit cannot reach main unscanned.
+- `always`: test packages that read every tracked file (`scrub`: no ruling id, no machine path in any file `git ls-files` lists; `platform`: no OS check outside the seam; `ci`: the platform-skip policy over all of tests/), and single `tests.<pkg>.<module>` names for a repo-wide scan in a package not otherwise wanted (`tests.proc.test_spawn_sites`: every spawn site `git ls-files` lists). Any non-empty change that does not run everything adds them, so a doc edit cannot reach main unscanned.
 - `serial`: `[module, why]` pairs for test modules that cannot run beside others; each runs alone after the parallel phase.
 - `long`: test modules known to run long; with no recorded time they start first and run split by class.
 - `smoke`: the test modules `--smoke` adds: guard, landing, lock and commit approval (tests.commit.test_commit is left out until it is split by class).

@@ -4,6 +4,7 @@ the stand-down sent to the old PM, and every refusal. No window opens and no cla
 import json
 import os
 import unittest
+from unittest import mock
 
 from kitlib.hubsite import push
 from kitlib.launcher import pipes, reboot, relaunch, stop, window
@@ -252,6 +253,36 @@ class Refusals(Base):
             self.refused('--name must be a session name on one line', name=bad)
 
 
+class LinuxRefusal(Base):
+    def test_relaunch_and_crossover_refuse_plainly_on_linux_before_anything_starts(self):
+        host = ForkHost(self.h.root, procs=[self.pm_process()])
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.relaunch(self.h.settings, host, NEW, Delivery())
+            self.assertIn('Linux peer support is deferred', str(cm.exception))
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.crossover(self.h.settings, host, 1)
+            self.assertIn('Linux peer support is deferred', str(cm.exception))
+        self.assertEqual(host.opened, [], 'no window opened')
+        self.assertEqual(self.h.read_state('coordinators.json'), self.coords)
+
+    def test_crossover_what_if_on_linux_finds_the_pm_by_its_process_alone(self):
+        pm = dict(self.pm_process(), Name='claude')         # no registry record: Linux cannot match one
+        host = ForkHost(self.h.root, procs=[pm])
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            out = relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)
+        self.assertIn('Would start %s' % NEW, out[0])
+        self.assertEqual(host.opened, [])
+
+    def test_crossover_what_if_on_linux_says_the_pm_is_not_running_without_a_process(self):
+        host = ForkHost(self.h.root)
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)
+        self.assertIn('is not running', str(cm.exception))
+        self.assertEqual(host.opened, [])
+
+
 class AfterTheRelaunch(Base):
     """The fork's command line carries the old id, so stop and after-reboot know it by pm_name."""
 
@@ -409,6 +440,9 @@ class Crossover(Base):
 
 
 class Cli(unittest.TestCase):
+    def setUp(self):
+        windows_text(self)
+
     def test_the_parser_takes_pm_relaunch_name(self):
         from tools import launch
         a = launch.parser().parse_args(['pm-relaunch', '--name', NEW])

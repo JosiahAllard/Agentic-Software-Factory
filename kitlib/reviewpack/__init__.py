@@ -593,7 +593,8 @@ def gate_line(top, branch, cfg=None, base=None):
 
 
 def gate_once(cfg):
-    """True when the Config `cfg` (None: no config) sets "landing".gate_once true."""
+    """True when the Config `cfg` (None: no config) has "landing".gate_once on, as written or by
+    default."""
     return cfg is not None and cfg.section('landing').get('gate_once') is True
 
 

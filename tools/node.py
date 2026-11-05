@@ -287,37 +287,17 @@ def cmd_run(a, cmd, runner=None):
             return USAGE
         _say('no load node (%s); running on main' % e)
         return _run_main(a, cmd, co.top)
-    if a.node != 'auto':
-        node = next((n for n in nodes if n.name == a.node), None)
-        if node is None:
-            _err('USAGE: no node named %s in the registry' % a.node)
-            return USAGE
-        if a.repo not in node.repos:
-            _err('USAGE: %s has not opted in %s: add it to the node\'s "repos" in the registry'
-                 % (node.name, a.repo))
-            return USAGE
-        if co.dirty:
-            _err('USAGE: %s has tracked changes not committed; a node runs HEAD: commit first'
-                 % co.top)
-            return USAGE
-        return _on_node(a, node, co, cmd)[0]
-    takers = [n for n in nodes if a.repo in n.repos]
-    if co.dirty or not takers:
-        _say('running on main: %s' % ('tracked changes are not committed' if co.dirty
-                                      else 'no node has opted in %s' % a.repo))
+    d = route.decide('run', a.node, nodes, a.repo, co.dirty, co.top, lambda: need, _main_lock,
+                     lambda takers: remote.query_all(takers, runner=runner or remote.default_runner),
+                     _say)
+    if d.action == 'usage':
+        _err(d.err)
+        return USAGE
+    if d.action == 'main':
         return _run_main(a, cmd, co.top)
-    results = remote.query_all(takers, runner=runner or remote.default_runner)
-    try:
-        main_lock = _main_lock()
-    except Exception as e:
-        _say('the main machine\'s lock cannot be read (%s); running on main' % type(e).__name__)
-        return _run_main(a, cmd, co.top)
-    choice = route.choose(takers, results, a.repo, main_lock, need)
-    _say('%s: %s' % ('running on main' if choice.node is None else 'running on ' + choice.where,
-                     choice.why))
-    if choice.node is None:
-        return _run_main(a, cmd, co.top)
-    code, fallback = _on_node(a, choice.node, co, cmd)
+    if d.named:
+        return _on_node(a, d.node, co, cmd)[0]
+    code, fallback = _on_node(a, d.node, co, cmd)
     if fallback:
         _say('running on main instead')
         return _run_main(a, cmd, co.top)
@@ -363,50 +343,20 @@ def cmd_gate(a, runner=None):
             return USAGE
         _say('gating on main: %r is not a repo name a node takes' % a.repo)
         return _run_gate_main(co.top)
-    if a.node != 'auto':
-        node = next((n for n in nodes if n.name == a.node), None)
-        if node is None:
-            _err('USAGE: no node named %s in the registry' % a.node)
-            return USAGE
-        if a.repo not in node.repos:
-            _err('USAGE: %s has not opted in %s: add it to the node\'s "repos" in the registry'
-                 % (node.name, a.repo))
-            return USAGE
-        if co.dirty:
-            _err('USAGE: %s has tracked changes not committed; a node gates HEAD: commit first'
-                 % co.top)
-            return USAGE
-        return _on_gate(a, node, co, gate)[0]
-    takers = [n for n in nodes if a.repo in n.repos]
-    if co.dirty or not takers:
-        _say('gating on main: %s' % ('tracked changes are not committed' if co.dirty
-                                     else 'no node has opted in %s' % a.repo))
+    d = route.decide('gate', a.node, nodes, a.repo, co.dirty, co.top, lambda: _need(a.kind),
+                     _main_lock,
+                     lambda takers: remote.query_all(takers, runner=runner or remote.default_runner),
+                     _say, serves=box.GATE_VERB,
+                     size_fail='the gate\'s kind %s cannot be sized here (%%s); gating on main'
+                               % a.kind.replace('%', '%%'))
+    if d.action == 'usage':
+        _err(d.err)
+        return USAGE
+    if d.action == 'main':
         return _run_gate_main(co.top)
-    try:
-        need = _need(a.kind)
-    except Exception as e:
-        _say('the gate\'s kind %s cannot be sized here (%s); gating on main' % (a.kind, e))
-        return _run_gate_main(co.top)
-    results = remote.query_all(takers, runner=runner or remote.default_runner)
-    by_name = {r.name: r for r in results}
-    gaters = []
-    for n in takers:
-        r = by_name.get(n.name)
-        if r is not None and r.reply and box.GATE_VERB not in (r.reply.get('verbs') or ()):
-            _say('%s: its kit serves no gate verb (update it)' % n.name)
-            continue
-        gaters.append(n)
-    try:
-        main_lock = _main_lock()
-    except Exception as e:
-        _say('the main machine\'s lock cannot be read (%s); gating on main' % type(e).__name__)
-        return _run_gate_main(co.top)
-    choice = route.choose(gaters, results, a.repo, main_lock, need)
-    _say('%s: %s' % ('gating on main' if choice.node is None else 'gating on ' + choice.where,
-                     choice.why))
-    if choice.node is None:
-        return _run_gate_main(co.top)
-    code, fallback = _on_gate(a, choice.node, co, gate)
+    if d.named:
+        return _on_gate(a, d.node, co, gate)[0]
+    code, fallback = _on_gate(a, d.node, co, gate)
     if fallback:
         _say('gating on main instead')
         return _run_gate_main(co.top)

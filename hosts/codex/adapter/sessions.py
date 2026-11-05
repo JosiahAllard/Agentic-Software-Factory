@@ -1,11 +1,13 @@
 """Codex's session reads through the local app-server (kitlib.host.SessionHost; from the Codex branch's
 session_host.py and executable.py).
 
-  native_codex(explicit, environ)   the absolute codex.exe to run: `explicit`, else PM_KIT_CODEX_EXE,
-                                    else codex.exe on PATH, else the desktop app's own
+  native_codex(explicit, environ)   the absolute codex binary to run (codex.exe on Windows, `codex` on
+                                    Linux; exe_name()): `explicit`, else PM_KIT_CODEX_EXE, else it on
+                                    PATH, else (Windows) the desktop app's own
                                     %LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>\\codex.exe, the newest
                                     by mtime (desktop_codex); a relative path, a missing file or a
-                                    .cmd/.bat shim is refused (no shell ever runs it)
+                                    .cmd/.bat shim is refused (no shell ever runs it); Windows also
+                                    refuses anything but .exe
   ReadOnlyAppServer(argv, timeout, popen)
         a context manager over `codex app-server proxy`: it attaches to the running app-server,
         never starts a daemon, creates a thread or sends a turn. request() takes only READ_METHODS.
@@ -27,7 +29,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from kitlib import sessionmark
+from kitlib import platform, sessionmark
 
 HOST = 'codex'
 EXE_ENV = 'PM_KIT_CODEX_EXE'
@@ -52,15 +54,25 @@ def desktop_codex(environ=None):
     return max(found)[1] if found else None
 
 
+def exe_name():
+    """The Codex binary's file name on this platform: codex.exe on Windows, codex on Linux."""
+    return 'codex.exe' if platform.NAME == 'windows' else 'codex'
+
+
 def native_codex(explicit=None, environ=None):
     env = os.environ if environ is None else environ
-    selected = (explicit or env.get(EXE_ENV) or shutil.which('codex.exe', path=env.get('PATH', ''))
+    name = exe_name()
+    selected = (explicit or env.get(EXE_ENV) or shutil.which(name, path=env.get('PATH', ''))
                 or desktop_codex(env))
     if not selected:
-        raise ValueError('codex.exe is unavailable; provide an absolute %s or --codex-exe path' % EXE_ENV)
+        raise ValueError('%s is unavailable; provide an absolute %s or --codex-exe path' % (name, EXE_ENV))
     path = Path(selected)
-    if not path.is_absolute() or path.suffix.lower() != '.exe' or not path.is_file():
-        raise ValueError('Codex requires an existing absolute .exe path; .cmd/.bat shims are unsupported')
+    suffix = path.suffix.lower()
+    # Windows needs a real .exe; elsewhere a binary has no suffix to check, only the shims are refused.
+    bad = suffix != '.exe' if platform.NAME == 'windows' else suffix in ('.cmd', '.bat')
+    if not path.is_absolute() or bad or not path.is_file():
+        raise ValueError('Codex requires an existing absolute %s path; .cmd/.bat shims are unsupported'
+                         % ('.exe' if platform.NAME == 'windows' else 'binary'))
     return str(path.resolve())
 
 

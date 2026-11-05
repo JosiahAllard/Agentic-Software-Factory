@@ -96,7 +96,6 @@ config_location (a callable returning a kitlib.config.user.Location).
 """
 import json
 import os
-import tempfile
 
 from kitlib import config as kconfig
 from kitlib import kitroot
@@ -113,6 +112,13 @@ OWNER = 'owner'
 SUBAGENT = 'subagent'
 LEDGER_KEYS = ('ledger_path', 'ledger_dir')     # the paths the ledger rule protects (_tolerant)
 _UNREAD = object()                              # Ctx.host_capabilities not read yet
+
+
+def _gettempdir():
+    """tempfile.gettempdir(), imported only when TEMP is unset: tempfile pulls in shutil, and the
+    guard imports this module on every hook call."""
+    import tempfile
+    return tempfile.gettempdir()
 
 
 def default_session_role(action, environ):
@@ -266,7 +272,7 @@ class Ctx(object):
         self._role = role_resolver or default_session_role
         self._profile = profile
         self._caps = _UNREAD                     # host_capabilities' answer, read once
-        self.tempdir = tempdir or self.environ.get('TEMP') or tempfile.gettempdir()
+        self.tempdir = tempdir or self.environ.get('TEMP') or _gettempdir()
         self._places, self._configs, self._config_errors = {}, {}, {}
         self._raw_places = {}                    # key -> self._classify's answer, unadjusted
         self._user = None

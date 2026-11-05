@@ -414,6 +414,18 @@ class Linux(unittest.TestCase):
             autostart.linux_start(self.Fake(), self.home)
         self.assertIn('autostart entry', str(e.exception))
 
+    def test_linux_is_autostart_tells_an_xdg_entry_from_a_service_and_from_no_job(self):
+        self.assertFalse(autostart.linux_is_autostart(self.home))           # no job
+        self.install(self.Fake(systemd=False), self.DESKTOP)
+        self.assertTrue(autostart.linux_is_autostart(self.home))
+        shutil.rmtree(os.path.join(self.home, '.config'))
+        self.install(self.Fake())
+        self.assertFalse(autostart.linux_is_autostart(self.home))           # a systemd service
+        from kitlib.platform.linux import schedule
+        for err in (schedule.ScheduleError('unreadable'), KeyError('uid')):
+            with mock.patch.object(schedule, 'written', side_effect=err):
+                self.assertFalse(autostart.linux_is_autostart(self.home), err)
+
     def test_start_starts_the_service(self):
         with self.assertRaises(autostart.AutostartError):
             autostart.linux_start(self.Fake(), self.home)

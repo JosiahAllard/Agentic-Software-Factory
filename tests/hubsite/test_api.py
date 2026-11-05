@@ -778,6 +778,149 @@ class ReadTest(ApiCase):
         self.assertEqual(self.store.get('page_html', 'plan-1')['html'], body, 'the store keeps it')
 
 
+class SnapshotCostTest(ApiCase):
+    """What GET snapshot, POST to_pm/send and a pending read copy out of the store, which they
+    do under its mutex (KIT-HUB-STORE-SNAPSHOT-DEEPCOPY, KIT-HUB-SMALL-COSTS)."""
+
+    def setUp(self):
+        ApiCase.setUp(self)
+        self.store.put('pages', 'plan-1', {'title': 'The plan', 'repo': 'kit', 'at': NOW})
+        self.store.put('page_html', 'plan-1', {'html': '<h1>Plan</h1>'})
+
+    def copied(self, fn):
+        """fn()'s answer, and every object copy.deepcopy was handed while it ran."""
+        from kitlib.hubsite import store as hub_store
+        seen, real = [], hub_store.copy.deepcopy
+
+        def deepcopy(x, *a):
+            seen.append(x)
+            return real(x, *a)
+        with mock.patch.object(hub_store.copy, 'deepcopy', deepcopy):
+            got = fn()
+        return got, seen
+
+    def holding(self, seen, coll):
+        """The objects in seen that are the store's collection coll, or a dict that holds it
+        (the store's whole {collection: documents}), or one of its documents: a copy of any
+        of them copies coll's documents. Only the objects handed to deepcopy itself are seen,
+        not what it recurses into."""
+        held = self.store._docs[coll]
+        docs = list(held.values())
+        return [x for x in seen if x is held or any(x is d for d in docs)
+                or (isinstance(x, dict) and any(v is held for v in x.values()))]
+
+    def bodies_in(self, seen):
+        return self.holding(seen, 'page_html')
+
+    def test_the_snapshot_never_copies_the_page_bodies_or_hand_offs(self):
+        obj, seen = self.copied(lambda: self.ok('GET', '/snapshot', OWNER))
+        self.assertTrue(self.holding(seen, 'pages'), 'the spy sees the copies')
+        self.assertEqual(self.bodies_in(seen), [])
+        self.assertEqual(self.holding(seen, 'handoffs'), [])
+        self.assertNotIn('page_html', obj['collections'])
+        self.assertNotIn('handoffs', obj['collections'])
+        self.assertIn('plan-1', obj['collections']['pages'])
+
+    def test_sending_the_queue_copies_the_notes_alone(self):
+        self.ok('POST', '/to_pm', OWNER, {'text': 'one'})
+        self.question()
+        obj, seen = self.copied(lambda: self.ok('POST', '/to_pm/send', OWNER))
+        self.assertEqual(obj['sent'], ['P-001'])
+        self.assertTrue(self.holding(seen, 'to_pm'), 'the spy sees the copies')
+        self.assertEqual(self.bodies_in(seen), [])
+        self.assertEqual(self.holding(seen, 'questions'), [])
+
+    def test_a_snapshot_of_named_collections_gives_those_alone(self):
+        self.ok('POST', '/inbox', AGENT, {'text': 'x', 'title': 't'})
+        self.question()
+        for role in (OWNER, AGENT):
+            obj, seen = self.copied(lambda: self.ok('GET', '/snapshot', role, None,
+                                                    {'collections': 'inbox'}))
+            self.assertEqual(sorted(obj), ['collections', 'revision'], role)
+            self.assertEqual(list(obj['collections']), ['inbox'], role)
+            self.assertEqual(obj['collections']['inbox']['M-001']['title'], 't', role)
+            self.assertEqual(obj['revision'], self.store.revision, role)
+            self.assertEqual(self.holding(seen, 'questions'), [], role)
+        both = self.ok('GET', '/snapshot', AGENT, None, {'collections': 'inbox, pages,inbox'})
+        self.assertEqual(sorted(both['collections']), ['inbox', 'pages'])
+
+    def test_a_snapshot_cannot_name_a_collection_it_does_not_give(self):
+        for bad in ('page_html', 'handoffs', 'nonesuch', 'inbox,page_html'):
+            with self.subTest(bad=bad):
+                self.refused('invalid', 'collections', 'GET', '/snapshot', AGENT, None,
+                             {'collections': bad})
+
+    def test_an_empty_collection_filter_is_the_whole_snapshot(self):
+        whole = self.ok('GET', '/snapshot', OWNER)
+        self.assertEqual(self.ok('GET', '/snapshot', OWNER, None, {'collections': ' , '}), whole)
+
+
+class PendingReadsTest(ApiCase):
+    """One pending read reads sessions.json once and copies no whole question
+    (KIT-HUB-SMALL-COSTS)."""
+
+    def setUp(self):
+        ApiCase.setUp(self)
+        self.reads = []
+
+        class Repos(object):
+            # two configured names on one remote: repo_name asks the session keys which is one
+            def repos(self):
+                return [('Agentic-Kit', '/kit'), ('kit', '/kit')]
+
+        def read_sessions(settings):
+            self.reads.append(1)
+            return {'kit': {}, 'zeta': {}}
+        self.patch(mock.patch.object(api.lsettings, 'load', lambda home=None: object()))
+        self.patch(mock.patch.object(api.lstate, 'read_sessions', read_sessions))
+        repo_name = serve._repo_name(Repos(), api.launcher_keys,
+                                     remote_ids=lambda root: ('github.com/x/kit', None))
+        self.api = api.Api(self.store, clock=CLOCK, repo_name=repo_name,
+                           kit_key=lambda: repo_name('github.com/x/kit'))
+        for n in range(2):
+            self.store.add('questions', {
+                'status': 'answered', 'title': 'q%d' % n, 'repo': 'kit', 'from': 'zeta',
+                'class': 'go', 'answer': {'choice': 0, 'at': NOW}})
+            self.store.add('skill_edits', {'status': 'submitted', 'skill': 'builder',
+                                           'text': 'x', 'base_blob': '0' * 40,
+                                           'submitted_at': NOW})
+
+    def patch(self, p):
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_one_pending_read_reads_sessions_json_once(self):
+        items = self.ok('GET', '/pending', AGENT)['items']
+        self.assertEqual(sorted((i['kind'], i['from']) for i in items),
+                         [('question', 'zeta'), ('question', 'zeta'),
+                          ('skill_edit', 'kit'), ('skill_edit', 'kit')])
+        self.assertEqual(len(self.reads), 1)
+        self.reads.clear()
+        self.ok('GET', '/pending', AGENT)
+        self.assertEqual(len(self.reads), 1, 'the next read reads the file again')
+
+    def test_a_pending_read_copies_no_whole_question(self):
+        got = []
+        real = self.store.get
+
+        def get(coll, doc_id):
+            got.append(coll)
+            return real(coll, doc_id)
+        with mock.patch.object(self.store, 'get', get):
+            items = self.ok('GET', '/pending', AGENT)['items']
+        self.assertEqual([i.get('class') for i in items if i['kind'] == 'question'], ['go', 'go'])
+        self.assertNotIn('questions', got)
+
+    def test_a_failed_read_is_said_once_and_routes_to_the_pm(self):
+        def refusing(home=None):
+            self.reads.append(1)
+            raise OSError('locked')
+        with mock.patch.object(api.lsettings, 'load', refusing):
+            items = self.ok('GET', '/pending', AGENT)['items']
+        self.assertEqual({i['from'] for i in items if i['kind'] == 'question'}, {'pm'})
+        self.assertEqual(len(self.reads), 1)
+
+
 PAGE = '<h1>Plan</h1><svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>'
 
 

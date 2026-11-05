@@ -38,10 +38,10 @@ import os
 import subprocess
 import threading
 
-from kitlib.proc import job as _job
-from kitlib.proc import spawn as _spawn
-
 from . import cache
+
+# kitlib.proc.job and .spawn (ctypes, subprocess and the Win32 bindings) are imported where a git
+# child starts, not here: the guard imports this module on every hook call and mostly starts no git.
 
 SCRUB_ENV = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES')
 LOCALE_ENV = {'LC_ALL': 'C', 'LANGUAGE': 'C'}
@@ -138,6 +138,7 @@ def _run(argv, cwd=None, input=None, timeout=None, env=None):
     cannot block the caller), and the caller waits for it with the deadline. After the tree is
     ended the pipes close and the thread finishes; if something outside the job still holds a pipe
     the thread is left to it after KILL_GRACE and the call returns anyway."""
+    from kitlib.proc import job as _job
     job = _job.Job(kill_on_close=False, short=True)
     try:
         p = job.start(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -210,6 +211,7 @@ def subprocess_run(argv, **kw):
     if fake_active() and _is_git(argv):
         from kitlib.git import fake
         return fake.completed(argv, **kw)
+    from kitlib.proc import spawn as _spawn
     return _spawn.run(argv, **kw)
 
 

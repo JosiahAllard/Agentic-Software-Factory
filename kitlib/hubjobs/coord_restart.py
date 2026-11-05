@@ -284,7 +284,7 @@ def decide(key, entry, live, record, last_stop, down_runs, accounts, now, wake=N
     if entry.get('autostart') is False:
         return _hold('autostart off')
     stem = entry['stem']
-    if any((n or '').startswith(stem) for n in live):   # lookup.running_stem's test
+    if any(of_stem(n, stem) for n in live):   # lookup.running_stem's test
         return _hold('running')
     if claimed:
         return _hold('the usage crossover is moving it')
@@ -626,7 +626,7 @@ class RestartJob(object):
         notes, started, owed = ([booted] if booted else []), None, []
         for key in sorted(down):
             entry = down[key]
-            if any(n.startswith(entry['stem']) for n in live):    # another session of the stem runs
+            if any(of_stem(n, entry['stem']) for n in live):    # another session of the stem runs
                 self._down.pop(key, None)
                 self._told.pop(key, None)
                 continue

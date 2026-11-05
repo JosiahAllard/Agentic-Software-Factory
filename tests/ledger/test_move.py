@@ -20,6 +20,9 @@ from tests.guard.world import bash
 from tests.home import machine_config
 from tests.platforms import windows_only
 
+# One spelling is one file only where the file system folds case; elsewhere another spelling is another file.
+CASE_FOLDING = os.path.normcase('A') == os.path.normcase('a')
+
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'ledger.py')
 BOOK = '# Alpha rules\n\n## Topic\n\n- topic.one: A rule.\n'
@@ -131,7 +134,7 @@ class MoveTest(unittest.TestCase):
             self.assertIn(word, str(cm.exception))
 
     def test_ledger_dir_the_frozen_files_folder_has_nothing_to_move(self):
-        cfg = dict(self.L.cfg, ledger_dir=self.L.old.upper())
+        cfg = dict(self.L.cfg, ledger_dir=self.L.old.upper() if CASE_FOLDING else self.L.old)
         got, moved = move.apply(cfg)
         self.assertTrue(got.same)
         self.assertEqual((got.items, moved), ([], []))
@@ -201,7 +204,8 @@ class MoveTest(unittest.TestCase):
         self.assertIn('nothing was moved', str(cm.exception))
 
     def test_a_ledger_dir_inside_the_old_rules_folder_is_refused_before_anything_is_made(self):
-        for inside in (self.L.old_rules, os.path.join(self.L.old_rules, 'split').upper()):
+        for inside in (self.L.old_rules, (os.path.join(self.L.old_rules, 'split').upper() if CASE_FOLDING
+                       else os.path.join(self.L.old_rules, 'split'))):
             cfg = dict(self.L.cfg, ledger_dir=inside)
             for call in (move.plan, move.apply):
                 with self.assertRaises(Refused) as cm:

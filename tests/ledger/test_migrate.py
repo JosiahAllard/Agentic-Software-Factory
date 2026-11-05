@@ -12,6 +12,9 @@ from tests.home import machine_config
 from tests.ledger.test_cli_split import frozen_text
 from tests.ledger.test_rulebook import Base, R1, R2, R3, TOOL, rid
 
+# One spelling is one file only where the file system folds case; elsewhere another spelling is another file.
+CASE_FOLDING = os.path.normcase('A') == os.path.normcase('a')
+
 DIGEST = f'''# Standing
 
 ## Kit
@@ -240,7 +243,7 @@ class CliTest(Base):
     def test_out_refuses_a_ledger_file_in_every_spelling(self):
         log = self.read(self.log)
         rules = os.path.join(self.dir, 'rules')
-        for cwd, out in ((self.dir, 'LEDGER.md'), (self.dir, self.log.upper()),
+        for cwd, out in ((self.dir, 'LEDGER.md'), (self.dir, self.log.upper() if CASE_FOLDING else self.log),
                          (self.dir, os.path.join(rules, '..', 'LEDGER.md')),
                          (rules, os.path.join('..', 'LEDGER.md'))):
             r = self.out_from(cwd, '--out', out)

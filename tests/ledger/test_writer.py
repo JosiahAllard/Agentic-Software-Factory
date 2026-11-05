@@ -15,6 +15,9 @@ from kitlib import ledger
 from kitlib.backlog import ledger as backlog_ledger
 from kitlib.ledger import fmt, write
 
+# One spelling is one file only where the file system folds case; elsewhere another spelling is another file.
+CASE_FOLDING = os.path.normcase('A') == os.path.normcase('a')
+
 WHEN = '2026-10-06 08:00Z'
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HOLD = 0.4          # seconds a racing child sleeps between its read of the ledger and its write
@@ -442,7 +445,9 @@ class WriteLockTest(Base):
             self.assertEqual(self.add(decides='After.').id, rid(2))
 
     def test_the_lock_nests_in_its_thread_under_any_spelling_and_excludes_other_threads(self):
-        other = self.path.replace('\\', '/').upper()
+        other = self.path.replace('\\', '/')
+        if CASE_FOLDING:
+            other = other.upper()
         seen = []
 
         def from_another_thread():

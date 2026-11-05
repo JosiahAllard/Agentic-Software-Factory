@@ -1519,13 +1519,13 @@ def spawn_refresh(kit, root):
     Linux: in its own session, so a hangup or Ctrl-C that ends pm_watch does not end the refresh."""
     from kitlib.machinesetup.extras import pythonw
     os.makedirs(root, exist_ok=True)
-    detach = ({'start_new_session': True} if kitplatform.NAME == 'linux'
-              else {'creationflags': _DETACHED | _NOWIN})
+    linux = kitplatform.NAME == 'linux'
     log = open(os.path.join(root, LOGFILE), 'ab')
     try:
         subprocess.Popen([pythonw(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
                          cwd=kit, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         close_fds=True, **detach)
+                         close_fds=True, creationflags=0 if linux else _DETACHED | _NOWIN,
+                         start_new_session=linux)
     finally:
         log.close()
 

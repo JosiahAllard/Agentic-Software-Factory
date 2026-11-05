@@ -842,12 +842,12 @@ class SpawnRefreshTest(unittest.TestCase):
     def test_linux_starts_the_refresh_in_its_own_session(self):
         kw = self.spawned('linux')
         self.assertIs(kw.get('start_new_session'), True)
-        self.assertNotIn('creationflags', kw)
+        self.assertEqual(kw.get('creationflags'), 0)
 
     def test_windows_starts_it_detached_and_windowless(self):
         kw = self.spawned('windows')
         self.assertEqual(kw.get('creationflags'), P._DETACHED | P._NOWIN)
-        self.assertNotIn('start_new_session', kw)
+        self.assertIs(kw.get('start_new_session'), False)
 
 
 class AccountFoldersTest(unittest.TestCase):

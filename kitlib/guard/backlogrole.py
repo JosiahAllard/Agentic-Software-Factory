@@ -764,13 +764,14 @@ def py_reach(text):
     named = 'names %s' % m.group(0)
     if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
         return named
-    for line in re.split(r'\r\n?|\n', text, maxsplit=3)[:3]:       # a lone \r ends a line too
-        c = PY_CODING_RE.match(line)
-        if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
-            return named
+    cut = text.find('\n')                       # python -x skips up to the first \n only
+    for head in (text, text[cut + 1:]) if cut >= 0 else (text,):
+        for line in re.split(r'\r\n?|\n', head, maxsplit=3)[:3]:   # a lone \r ends a line too
+            c = PY_CODING_RE.match(line)
+            if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
+                return named
     import ast
     import warnings
-    cut = text.find('\n')
     for k, view in enumerate((text, text[cut + 1:] if cut >= 0 else '')):
         try:
             with warnings.catch_warnings():

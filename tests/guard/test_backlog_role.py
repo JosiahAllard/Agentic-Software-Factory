@@ -1167,6 +1167,8 @@ class Unread(Base):
         # a coding python reads otherwise than the guard: refused as the name alone
         "# coding: utf-7\n# tools/backlog.py +AAo-import os+AAo-\n",
         "\r# coding: utf-7\r# tools/backlog.py +AAo-import os+AAo-\r",      # lines ended by a lone \r
+        # python -x skips to the first \n: its first line there is the coding line
+        "#!x\r\r\r\n# coding: utf-7\n# tools/backlog.py +AAo-import os+AAo-\n",
         # text that does not parse: refused as the name alone
         "print('tools/backlog.py'\n",
         "breakpoint()  # then: python tools/backlog.py close X-1\n",

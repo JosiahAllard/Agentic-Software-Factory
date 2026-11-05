@@ -55,6 +55,9 @@ class Process(unittest.TestCase):
         self.assertTrue(process.alive(os.getpid(), process.own_ctime()))
         self.assertFalse(process.alive(os.getpid(), process.own_ctime() + 1))
 
+    def test_a_ctime_that_is_not_a_number_is_alive_when_the_handle_opens(self):
+        self.assertTrue(process.alive(os.getpid(), "x"))
+
     def test_parent_pid_reads_one_handle_and_agrees_with_the_snapshot(self):
         self.assertEqual(process.parent_pid(process.K32.GetCurrentProcess()), os.getppid())
         p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])

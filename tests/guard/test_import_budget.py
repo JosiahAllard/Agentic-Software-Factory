@@ -1,7 +1,7 @@
 """The guard's import budget: every guarded hook call imports kitlib.guard afresh (hookmain.run),
 so a module it pulls in but rarely uses costs every call. ctypes (with subprocess, through
 kitlib.proc.job) and shutil (through tempfile, and kitlib.proc.bash's default argument) cost about
-40 ms together (KIT-GUARD-LAZY-IMPORTS, measured with -X importtime); they are imported where they
+40 ms together (measured with -X importtime); they are imported where they
 are used, never at import time."""
 import json
 import os

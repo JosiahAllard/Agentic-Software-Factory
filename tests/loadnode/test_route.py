@@ -128,6 +128,68 @@ class Choose(unittest.TestCase):
         self.assertEqual(route.choose([], [], 'my-repo', lock(), NEED).where, route.MAIN)
 
 
+class Decide(unittest.TestCase):
+
+    def go(self, name='auto', nodes=None, dirty=False, need=lambda: NEED, main=None, results=None,
+           action='run', **kw):
+        said = []
+        nodes = [node('n1')] if nodes is None else nodes
+        d = route.decide(action, name, nodes, 'my-repo', dirty, '/top', need,
+                         main or (lambda: lock()), lambda takers: results or [ok(n.name) for n in takers],
+                         said.append, **kw)
+        return d, said
+
+    def test_a_named_node_is_refused_or_taken_without_a_fallback(self):
+        d, said = self.go('nope')
+        self.assertEqual((d.action, d.err), ('usage', 'USAGE: no node named nope in the registry'))
+        d, _ = self.go('n1', nodes=[node('n1', repos=())])
+        self.assertIn('n1 has not opted in my-repo', d.err)
+        d, _ = self.go('n1', dirty=True)
+        self.assertIn('/top has tracked changes not committed; a node runs HEAD', d.err)
+        d, _ = self.go('n1', dirty=True, action='gate')
+        self.assertIn('a node gates HEAD', d.err)
+        d, said = self.go('n1')
+        self.assertEqual((d.action, d.node.name, d.named, said), ('node', 'n1', True, []))
+
+    def test_dirty_or_no_taker_is_main(self):
+        d, said = self.go(dirty=True)
+        self.assertEqual((d.action, d.named), ('main', False))
+        self.assertEqual(said, ['running on main: tracked changes are not committed'])
+        d, said = self.go(nodes=[node('n1', repos=())], action='gate')
+        self.assertEqual((d.action, said), ('main', ['gating on main: no node has opted in my-repo']))
+
+    def test_a_kind_that_cannot_be_sized(self):
+        def bad():
+            raise ValueError('boom')
+        d, said = self.go(need=bad, size_fail='cannot size (%s)')
+        self.assertEqual((d.action, said), ('main', ['cannot size (boom)']))
+        with self.assertRaises(ValueError):
+            self.go(need=bad)
+
+    def test_a_node_without_the_verb_is_left_out_and_said(self):
+        res = [ok('n1', verbs=list(box.RUN_VERBS))]
+        d, said = self.go(results=res, serves=box.GATE_VERB, action='gate',
+                          main=lambda: lock(cpu_free=0))
+        self.assertEqual(d.action, 'main')
+        self.assertEqual(said[0], 'n1: its kit serves no gate verb (update it)')
+        self.assertTrue(said[1].startswith('gating on main: '))
+
+    def test_an_unreadable_main_lock_is_main(self):
+        def bad():
+            raise OSError('x')
+        d, said = self.go(main=bad)
+        self.assertEqual((d.action, said),
+                         ('main', ['the main machine\'s lock cannot be read (OSError); running on main']))
+
+    def test_the_choice_decides_and_is_said(self):
+        d, said = self.go(main=lambda: lock(cpu_free=0), results=[ok('n1', cpu_free=4)])
+        self.assertEqual((d.action, d.node.name, d.named), ('node', 'n1', False))
+        self.assertTrue(said[0].startswith('running on n1: n1 has 4 cpu slots free'))
+        d, said = self.go()
+        self.assertEqual(d.action, 'main')
+        self.assertTrue(said[0].startswith('running on main: main has 4 cpu slots free'))
+
+
 class NeedOf(unittest.TestCase):
 
     def test_the_kind_sized_by_main_layout(self):

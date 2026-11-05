@@ -20,7 +20,7 @@ from kitlib.git import cmd
 from kitlib.config import user
 from kitlib.preflight import configline, hooks, lockline, machine, nextblock, report, settings as st
 from tests import gitfixture
-from tests.home import machine_config
+from tests.home import PM_REPO_FENCE_ENV, machine_config
 from tools import preflight
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -518,10 +518,30 @@ class TheLeftoversLine(Fixture):
             'refs/remotes/origin/master'), out)
 
     def test_a_failure_inside_the_check_is_a_warn_line(self):
-        with mock.patch('kitlib.worktree.remove.worktree_listing', side_effect=OSError('boom')):
+        with mock.patch('kitlib.worktree.remove.merged_worktrees', side_effect=OSError('boom')):
             code, out = self.run_preflight()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.line(out, 'leftovers '), 'leftovers WARN not checked: OSError: boom')
+
+
+class TheGitCalls(Fixture):
+    """preflight asks git each question once: the Place, the worktree list and the PM-repo pointer
+    answer are taken once and passed on (KIT-PREFLIGHT-REPEATED-GIT)."""
+
+    def test_no_question_is_asked_twice(self):
+        self.config(repo={'main_branch': 'master'})
+        self.repo.worktree('open', 'x/open')
+        real_pointer = report.configline.pointer.read
+        # no PM-repo pointer: its own check classifies the PM repository, a different question
+        with Spawns() as spawns, mock.patch.object(user, '_POINTERS', {}),                 mock.patch.dict(os.environ, {PM_REPO_FENCE_ENV: ''}),                 mock.patch.object(report.configline.pointer, 'read', side_effect=real_pointer) as ptr:
+            code, out = self.run_preflight()
+        self.assertEqual(code, 0, out)
+        argvs = [' '.join(a) for a in spawns.argvs]
+        # the Place is asked for twice (main's toplevel, the report's) until the entry point
+        # passes its own on; the leftovers check no longer asks for the main checkout again
+        self.assertEqual(len([a for a in argvs if 'worktree list' in a]), 1, argvs)
+        self.assertEqual(len([a for a in argvs if a.endswith('--git-common-dir')]), 0, argvs)
+        self.assertEqual(ptr.call_count, 1)
 
 
 class TheNextBlock(Fixture):

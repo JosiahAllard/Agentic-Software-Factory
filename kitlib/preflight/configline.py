@@ -91,7 +91,7 @@ def line(home=None):
 def pointer_line():
     """The one `pointer` line: the PM-repo pointer (kitlib.config.pointer) and the PM repository
     it names, none, or why it is BROKEN."""
-    p = pointer.read()
+    p = user._pointer()                  # the answer `line` already took: one git check per run
     if p.state == pointer.OK:
         return POINTER_PREFIX + p.path.replace('\\', '/')
     if p.state == pointer.NONE:

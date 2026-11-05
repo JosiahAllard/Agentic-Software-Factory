@@ -651,7 +651,8 @@ def diff_cmd(ctx, args):
     repo = ctx.need_repo()
     cached = opts.get('cached') or opts.get('staged')
     revs, paths = split_args(ctx, pos, dd)
-    spec = _u.Pathspec(ctx.prefix or '', paths) if paths else None
+    spec = (_u.Pathspec(ctx.prefix or '', paths, literal=_u.literal_pathspecs(ctx.env))
+            if paths else None)
     filt = spec.match if spec else None
     ix = None
     tree = None

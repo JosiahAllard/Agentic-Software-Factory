@@ -62,18 +62,19 @@ class Side(object):
         return a.replace(WT2, os.path.join(self.repo.base, 'wt2')).replace(
             WT, os.path.join(self.repo.base, 'wt'))
 
-    def git(self, argv, cwd=None, stdin=None):
-        """(rc, stdout bytes, stderr alarm) of `git <argv>`; rc 'UNSUPPORTED' when the fake
-        raised it."""
+    def git(self, argv, cwd=None, stdin=None, env=None):
+        """(rc, stdout bytes, stderr alarm) of `git <argv>`, `env` added to the side's own; rc
+        'UNSUPPORTED' when the fake raised it."""
         argv = [self._arg(a) for a in argv]
         cwd = self._arg(cwd) if cwd else self.repo.root
+        env = dict(self.env, **(env or {}))
         if self.use_fake:
             try:
-                rc, out, err = fake.run(argv, cwd, stdin, self.env)
+                rc, out, err = fake.run(argv, cwd, stdin, env)
             except Unsupported as e:
                 return 'UNSUPPORTED: %s' % e, b'', True
         else:
-            r = subprocess.run(['git'] + argv, cwd=cwd, input=stdin, env=self.env,
+            r = subprocess.run(['git'] + argv, cwd=cwd, input=stdin, env=env,
                                capture_output=True)
             rc, out, err = r.returncode, r.stdout, r.stderr.decode('utf-8', 'replace')
         return rc, self.normal(out), _alarm(err)
@@ -95,7 +96,8 @@ class Side(object):
 # A script is a list of steps: ('git', argv[, cwd]), ('write', relpath, text[, cwd]),
 # ('bytes', relpath, data) (the file's exact bytes), ('mtime', relpath, ns) (the file's mtime),
 # ('delete', relpath) (the file removed: a state another git process leaves half-way),
-# ('setup', argv) (real git on both sides: a state the fake cannot reach itself) or
+# ('setup', argv) (real git on both sides: a state the fake cannot reach itself),
+# ('envgit', env, argv) (a git step with `env` added to the side's environment) or
 # ('read', relpath) (the two sides' file bytes compared, None when it is absent).
 BRANCH_AND_LAND = [
     ('write', 'a.txt', 'a\n'),
@@ -488,6 +490,47 @@ MERGE_ABORT_KEEPS_UNSTAGED = [
     ('git', ['diff', '--name-only']),
 ]
 
+# checkout's pathspecs. GIT_LITERAL_PATHSPECS (kitlib/worktree/scratch.py restore() sets it) makes
+# 'a[1].txt' the file of that name, not a glob that matches a1.txt. With a tree-ish, only the
+# tree's entries match: an index-only path is left alone, and a pathspec that only it matches
+# did not match (checkout.c mark_ce_for_checkout_overlay).
+_LITERAL = {'GIT_LITERAL_PATHSPECS': '1'}
+CHECKOUT_PATHSPECS = [
+    ('write', 'a[1].txt', 'bracket\n'),
+    ('write', 'a1.txt', 'twin\n'),
+    ('write', 'dir/old.txt', 'old\n'),
+    ('setup', ['add', '--', '.']),
+    ('setup', ['commit', '-q', '-m', 'brackets']),
+    ('write', 'a[1].txt', 'changed\n'),
+    ('write', 'a1.txt', 'changed\n'),
+    ('envgit', _LITERAL, ['checkout', '-q', 'HEAD', '--', 'a[1].txt']),
+    ('read', 'a[1].txt'),
+    ('read', 'a1.txt'),
+    ('write', 'a[1].txt', 'changed\n'),
+    ('envgit', _LITERAL, ['checkout', '-q', '--', 'a[1].txt']),
+    ('read', 'a[1].txt'),
+    ('read', 'a1.txt'),
+    ('envgit', _LITERAL, ['checkout', '-q', 'HEAD', '--', 'a*.txt']),
+    # diff and log read the switch too: a1.txt is changed, a[1].txt is not
+    ('envgit', _LITERAL, ['diff', '--name-only', '--', 'a[1].txt']),
+    ('envgit', _LITERAL, ['diff', '--name-only', 'HEAD', '--', 'a*.txt']),
+    ('envgit', _LITERAL, ['log', '--format=%s', '--', 'a*.txt']),
+    ('envgit', _LITERAL, ['log', '--format=%s', '--', 'a[1].txt']),
+    ('git', ['checkout', '-q', 'HEAD', '--', 'a[1].txt']),
+    ('read', 'a1.txt'),
+    ('write', 'dir/new.txt', 'new\n'),
+    ('setup', ['add', '--', 'dir/new.txt']),
+    ('write', 'dir/new.txt', 'new, changed\n'),
+    ('write', 'dir/old.txt', 'old, changed\n'),
+    ('git', ['checkout', '-q', 'HEAD~1', '--', 'dir/']),
+    ('read', 'dir/old.txt'),
+    ('git', ['checkout', '-q', 'HEAD', '--', 'dir/new.txt']),
+    ('git', ['checkout', '-q', 'HEAD', '--', 'dir/']),
+    ('read', 'dir/old.txt'),
+    ('read', 'dir/new.txt'),
+    ('git', ['status', '--porcelain=v1']),
+]
+
 # Real git reads both repositories after a script.
 END_STATE = [
     ['for-each-ref', '--format=%(refname) %(objectname)'],
@@ -540,8 +583,11 @@ class FakeAgainstRealGit(unittest.TestCase):
                     diffs.append('step %d read %s:\n  fake: %r\n  real: %r' % (
                         n, step[1], got[0], got[1]))
                 continue
-            argv, cwd = step[1], step[2] if len(step) > 2 else None
-            got = [s.git(argv, cwd) for s in sides]
+            if step[0] == 'envgit':
+                env, argv, cwd = step[1], step[2], None
+            else:
+                env, argv, cwd = None, step[1], step[2] if len(step) > 2 else None
+            got = [s.git(argv, cwd, env=env) for s in sides]
             if got[0] != got[1]:
                 diffs.append('step %d git %s%s:\n  fake: %r\n  real: %r' % (
                     n, ' '.join(argv), ' (in %s)' % cwd if cwd else '', got[0], got[1]))
@@ -585,6 +631,9 @@ class FakeAgainstRealGit(unittest.TestCase):
 
     def test_merge_abort_keeps_an_unstaged_change_the_merge_left_alone(self):
         self.run_script(BRANCH_AND_LAND[:3] + MERGE_ABORT_KEEPS_UNSTAGED)
+
+    def test_checkout_pathspecs_literal_and_from_a_tree(self):
+        self.run_script(BRANCH_AND_LAND[:3] + CHECKOUT_PATHSPECS)
 
     def test_merge_abort_refuses_an_untracked_file_in_the_way_before_any_write(self):
         # Fake only (real git is not probed here): the merge deletes d.txt and conflicts on

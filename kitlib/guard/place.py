@@ -87,6 +87,26 @@ def classify(path, fallback=None, environ=None, owned=None):
         return fallback(path)
 
 
+def fs_location(home, fallback=None):
+    """kitlib.config.user.locate(home) with the PM-repo pointer checked through `classify` (this
+    module's reading, `fallback` where it hands a layout to git: default repo.classify, so git runs
+    only for those layouts) and the work tree's HEAD file. With a fallback that answers None (no
+    git child at all) a pointer the filesystem cannot check reads as BAD."""
+    from kitlib.config import pointer, user
+
+    def check(path):
+        found = classify(path, fallback=fallback)
+        if found is None:
+            return repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
+        return found
+
+    def branch(path):
+        found = check(path)
+        answer = head_branch(found.git_dir) if found.git_dir else None
+        return answer if answer is not None else (None, 'its HEAD file cannot tell')
+    return user.locate(home, ptr=pointer.read(classify=check, branch=branch))
+
+
 def _walk(path, owned):
     written = os.path.abspath(repo.existing_dir(path))
     start = os.path.realpath(written)

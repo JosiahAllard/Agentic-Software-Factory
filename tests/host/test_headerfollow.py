@@ -191,18 +191,34 @@ class SubagentStart(unittest.TestCase):
     def test_the_line_and_the_start_run_no_subprocess(self):
         # the machine config's pointer is read from the filesystem: no git child per tool hook
         self.start()                                  # a record for s1-a1 naming the new export
+        headerfollow._write(os.path.join(self.plugin, headerfollow.HEADERS, 's1-a1'), self.old)
         import subprocess
         from kitlib.git import refs, repo
         from kitlib.proc import job
         # a cold process: the pointer cache the start above filled is empty, as in a fresh hook.
         # Git starts through repo.classify and refs.current_branch (pointer's defaults; a fake git
         # on the unit tier) and kitlib.proc.job.Job.start, so watch those and subprocess.Popen
-        with mock.patch.dict(user._POINTERS, clear=True),                 mock.patch.object(repo, 'classify', wraps=repo.classify) as classify,                 mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch,                 mock.patch.object(job.Job, 'start', autospec=True, side_effect=job.Job.start) as started,                 mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
-            later = time.time() + headerfollow.EVERY_S + 1
-            headerfollow.line(self.old, self.payload, 'a1', self.env, now=later, write=False)
-            self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        with mock.patch.dict(user._POINTERS, clear=True):
+            with mock.patch.object(repo, 'classify', wraps=repo.classify) as classify:
+                with mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch:
+                    with mock.patch.object(job.Job, 'start', autospec=True,
+                                           side_effect=job.Job.start) as started:
+                        with mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
+                            later = time.time() + headerfollow.EVERY_S + 1
+                            said = headerfollow.line(self.old, self.payload, 'a1', self.env,
+                                                     now=later, write=False)
+                            self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        self.assertIn(self.fwd(self.new), said)
         for seam in (classify, branch, started, popen):
             seam.assert_not_called()
+
+    def test_a_layout_the_filesystem_reading_hands_to_git_gives_the_same_answer(self):
+        # a discovery variable sends place.classify to git: the pointer still checks out, so the
+        # header names the current export as on the git path
+        self.start()
+        with mock.patch.dict(os.environ, {'GIT_OBJECT_DIRECTORY': os.path.join(self.base, 'objects')}):
+            with mock.patch.dict(user._POINTERS, clear=True):
+                self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
 
     def test_the_record_names_the_folder_the_header_named(self):
         self.start()

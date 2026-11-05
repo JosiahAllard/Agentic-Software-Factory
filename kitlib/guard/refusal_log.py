@@ -148,9 +148,10 @@ def append(pm_data, fields, wait=WAIT):
 
 
 def _location(home):
-    """The machine config's Location read from the filesystem only: kitlib.config.user.fs_location."""
-    from kitlib.config import user
-    return user.fs_location(home)
+    """The machine config's Location from the filesystem only: kitlib.guard.place.fs_location with
+    no git fallback, so record writes no line for a pointer the filesystem cannot check."""
+    from kitlib.guard import place
+    return place.fs_location(home, fallback=_none)
 
 
 def record(decision, action, host, role, environ=None, home=None, now=None):

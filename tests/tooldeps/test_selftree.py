@@ -199,7 +199,7 @@ class FixtureTree(unittest.TestCase):
     def test_plan_runs_and_prints_an_always_module(self):
         cfg = dict(self.cfg, always=['tests.leaf.test_leaf'])
         out = []
-        modules = cli.plan(self.root, ['kitlib/top/a.py'], cfg, out.append)
+        modules = cli.kitrun.plan(self.root, ['kitlib/top/a.py'], cfg, out.append)
         self.assertEqual(modules, ['tests.top.test_top', 'tests.leaf.test_leaf'])
         self.assertTrue(any(l.strip().startswith('tests/leaf/test_leaf ') for l in out), out)
         self.assertIn('selected 1 of', out[-1])         # packages count only the package

@@ -27,7 +27,7 @@ _spec.loader.exec_module(cli)
 def no_change():
     """The change adds or changes no test module: --full's diff for the real-git pass is empty."""
     with mock.patch.object(cli.selftree, 'changed_paths', return_value=([], None)), \
-            mock.patch.object(cli, 'default_base', return_value=('main', None)):
+            mock.patch.object(cli.kitrun, 'default_base', return_value=('main', None)):
         yield
 
 
@@ -52,7 +52,7 @@ class SelectBase(unittest.TestCase):
             return [], None
         with mock.patch.object(cli.selftree, 'config', return_value={'serial': []}), \
                 mock.patch.object(cli.selftree, 'changed_paths', side_effect=changed), \
-                mock.patch.object(cli, 'plan', return_value=None):
+                mock.patch.object(cli.kitrun, 'plan', return_value=None):
             rc = cli.main(['-C', self.repo.root, '--select', '--plan'] + list(extra), out=out)
         return rc, bases, out.getvalue()
 
@@ -71,7 +71,7 @@ class SelectBase(unittest.TestCase):
     def test_no_remote_selects_against_local_main(self):
         plain = gitfixture.TempRepo()
         self.addCleanup(plain.cleanup)
-        self.assertEqual(cli.default_base(plain.root), ('main', None))
+        self.assertEqual(cli.kitrun.default_base(plain.root), ('main', None))
 
 
 class PidHoldOptIn(unittest.TestCase):
@@ -380,7 +380,7 @@ class BothTiers(unittest.TestCase):
 
     def test_the_real_git_pass_runs_only_git_worktree_and_landing_modules(self):
         ran = []
-        with mock.patch.object(cli, 'run_pass', side_effect=lambda args, *a, **k: ran.append(args) or 0):
+        with mock.patch.object(cli.kitrun, 'run_pass', side_effect=lambda args, *a, **k: ran.append(args) or 0):
             rc, calls, text = self.run_both([0, 0])
         self.assertEqual(rc, 0, text)
         self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.gate.test_land_x']])
@@ -443,8 +443,8 @@ class ChangedTestsOnRealGit(unittest.TestCase):
                 mock.patch.object(cli.selftree, 'config', return_value={'serial': []}), \
                 mock.patch.object(cli.selftree, 'all_test_modules', return_value=MODULES), \
                 mock.patch.object(cli.selftree, 'changed_paths', side_effect=paths), \
-                mock.patch.object(cli, 'default_base', return_value=('main', None)), \
-                mock.patch.object(cli, 'plan', return_value=SELECTED), \
+                mock.patch.object(cli.kitrun, 'default_base', return_value=('main', None)), \
+                mock.patch.object(cli.kitrun, 'plan', return_value=SELECTED), \
                 mock.patch.object(cli.giveback, 'drainer', return_value=lambda n: None), \
                 mock.patch.object(cli.selfrun, 'count_units', return_value=({}, {})), \
                 mock.patch.object(cli.unit_runner, 'PidHoldRun', Hold), \

@@ -2486,6 +2486,73 @@ class RecordPageTest(unittest.TestCase):
         self.assertIn("priority: 2", got["after"])
         self.assertTrue(got["back"])
 
+    def test_a_section_save_refused_as_stale_reads_the_record_again_and_the_next_save_is_pinned_to_it(self):
+        newer = record(version="c2:s2", fields=[["id", "B-1"], ["summary", "theirs"], ["scope", "tools/x.py"], ["effort", "s"]])
+        after = record(version="c3:s3", fields=[["id", "B-1"], ["summary", "mine"], ["scope", "tools/x.py"], ["effort", "s"]])
+        got = self.page("""
+            let reads = 0, edits = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: ++reads > 1 ? NEWER : REC }     // the detail's own read came before this route
+              : c.path === "/records/alpha/B-1/edit" ? (edits++ ? { status: 200, body: { ok: true, lines: ["SET B-1"], record: AFTER } }
+                : { status: 409, body: { ok: false, error: { code: "conflict", message: "changed on the hub server", field: "version" } } })
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const fields = $$("#list .rec .pk")[0], ta = fields.querySelector("textarea");
+            await type(ta, "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await click(button(fields, "Save"));
+            const out = { status: text(fields.querySelector(".status")), kept: ta.value, enabled: !button(fields, "Save").disabled,
+                          theirs: text(fields.querySelector(".ans")) };
+            await click(button(fields, "Save"));
+            out.sent = calls.filter(c => c.path.endsWith("/edit")).map(c => c.body.version);
+            out.after = text($("#list"));
+            return out;
+        """, NEWER=newer, AFTER=after)
+        self.assertIn("changed on the hub server", got["status"])
+        self.assertIn("Your text is kept", got["status"])
+        self.assertEqual(got["kept"], "id: B-1\nsummary: mine\nscope: tools/x.py\neffort: s")
+        self.assertTrue(got["enabled"])
+        self.assertIn("summary: theirs", got["theirs"])
+        self.assertEqual(got["sent"], ["c1:s1", "c2:s2"])
+        self.assertIn("summary: mine", got["after"])
+
+    def test_a_stale_refusal_moves_only_its_own_section_so_another_open_section_is_refused_too(self):
+        newer = record(version="c2:s2", fields=[["id", "B-1"], ["summary", "theirs"], ["scope", "tools/x.py"], ["effort", "s"]])
+        got = self.page("""
+            let reads = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: ++reads > 1 ? NEWER : REC }
+              : c.path === "/records/alpha/B-1/edit" ? { status: 409, body: { ok: false, error: { code: "conflict", message: "changed", field: "version" } } }
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const secs = $$("#list .rec .pk"), fields = secs[0], body = secs[2];
+            await click(button(body, "Edit body"));
+            await type(fields.querySelector("textarea"), "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await type(body.querySelector("textarea"), "my body");
+            await click(button(fields, "Save"));
+            await click(button(body, "Save"));
+            return { sent: calls.filter(c => c.path.endsWith("/edit")).map(c => c.body.version), body: text(body.querySelector(".status")),
+                     theirs: text(body.querySelector(".ans")) };
+        """, NEWER=newer)
+        self.assertEqual(got["sent"], ["c1:s1", "c1:s1"])                         # the first section's re-read did not move the body's pin
+        self.assertIn("changed on the hub server", got["body"])
+        self.assertIn("The hub server now holds", got["theirs"])
+
+    def test_a_stale_refusal_whose_re_read_fails_keeps_the_text_and_says_so(self):
+        got = self.page("""
+            let reads = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? (++reads > 1 ? { status: 500, body: { ok: false, error: { code: "unavailable", message: "down", field: "" } } } : { status: 200, body: REC })
+              : c.path === "/records/alpha/B-1/edit" ? { status: 409, body: { ok: false, error: { code: "conflict", message: "changed", field: "version" } } }
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const fields = $$("#list .rec .pk")[0], ta = fields.querySelector("textarea");
+            await type(ta, "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await click(button(fields, "Save"));
+            return { status: text(fields.querySelector(".status")), kept: ta.value, enabled: !button(fields, "Save").disabled, theirs: fields.querySelector(".ans").hidden };
+        """)
+        self.assertIn("could not be read again", got["status"])
+        self.assertIn("press Save again to try reading the record again", got["status"])
+        self.assertEqual(got["kept"], "id: B-1\nsummary: mine\nscope: tools/x.py\neffort: s")
+        self.assertTrue(got["enabled"])
+        self.assertTrue(got["theirs"])
+
     def test_a_parked_rows_id_opens_its_record(self):
         views = {"repos": [{"name": "alpha"}],
                  "backlog": [dict(BACKLOG[0], items=[{"id": "B-4", "t": "waits", "p": 1, "s": "parked", "parked_at": NOW}])]}
@@ -5325,7 +5392,7 @@ class PageTextTest(unittest.TestCase):
         self.assertNotIn("style:", self.script)
 
     def test_only_the_decided_routes(self):
-        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/wait"])
+        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/wait"])
         roots = set(re.findall(r'(?:write|writeQuick|hub\.post|delButton)\("(/[a-z_]+)', self.script))
         self.assertEqual(roots, {"/questions", "/todos", "/stories", "/records", "/to_pm", "/inbox", "/approvals", "/pages", "/schedules",
                                  "/finding_marks", "/skill_edits"})

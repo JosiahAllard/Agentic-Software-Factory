@@ -8,6 +8,7 @@ beside it; nothing here opens it.
   registry_dirs(settings)   the registry folders of every configured account, each once
   records(dirs)             (folder, record) of every <digits>.json that reads as an object
   proc_start(rec)           the record's creation time as text, or None
+  require_peer_support()    LaunchError on Linux (pm-relaunch and pm-crossover call it first)
   is_live(rec, ctime)       its pid runs now with that creation time (a stopped session's record
                             can stay behind, so a record alone is never proof)
   find(dirs, name, after_ms, ctime)   the newest live record of that name started at or after
@@ -26,6 +27,7 @@ once can drop one entry (the last os.replace wins); the sender's registry scan s
 import os
 import re
 
+from kitlib import platform
 from kitlib.launcher import state
 from kitlib.launcher.settings import LaunchError
 
@@ -87,6 +89,14 @@ def proc_start(rec):
         if isinstance(v, int) or (isinstance(v, str) and v.isdigit()):
             return str(v)
     return None
+
+
+def require_peer_support():
+    """LaunchError on Linux: what Claude Code writes as procStart there is not known, so no record
+    can be matched to a process and a fork could never be confirmed. Windows: nothing."""
+    if platform.NAME == 'linux':
+        raise LaunchError('Linux peer support is deferred (docs/linux-support-plan.md): the session registry '
+                          'record cannot be matched to a process on Linux; nothing was started.')
 
 
 def is_live(rec, ctime):

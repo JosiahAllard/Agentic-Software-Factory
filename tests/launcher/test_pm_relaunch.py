@@ -4,6 +4,7 @@ the stand-down sent to the old PM, and every refusal. No window opens and no cla
 import json
 import os
 import unittest
+from unittest import mock
 
 from kitlib.hubsite import push
 from kitlib.launcher import pipes, reboot, relaunch, stop, window
@@ -66,6 +67,9 @@ class Delivery(object):
 class Base(unittest.TestCase):
     def setUp(self):
         windows_text(self)
+        patch = mock.patch('kitlib.platform.NAME', 'windows')      # these fixtures are the Windows registry
+        patch.start()
+        self.addCleanup(patch.stop)
         self.h = Home(self, repos=('alpha', 'pm'))
         self.folder = self.h.repos['pm']
         self.coords = {'alpha': 1, 'pm_session_id': OLD, 'pm_folder': self.folder, 'pm_account': 2}
@@ -250,6 +254,20 @@ class Refusals(Base):
     def test_an_empty_or_spaced_name(self):
         for bad in ('', ' pm-b', 'pm-b '):
             self.refused('--name must be a session name on one line', name=bad)
+
+
+class LinuxRefusal(Base):
+    def test_relaunch_and_crossover_refuse_plainly_on_linux_before_anything_starts(self):
+        host = ForkHost(self.h.root, procs=[self.pm_process()])
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.relaunch(self.h.settings, host, NEW, Delivery())
+            self.assertIn('Linux peer support is deferred', str(cm.exception))
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.crossover(self.h.settings, host, 1)
+            self.assertIn('Linux peer support is deferred', str(cm.exception))
+        self.assertEqual(host.opened, [], 'no window opened')
+        self.assertEqual(self.h.read_state('coordinators.json'), self.coords)
 
 
 class AfterTheRelaunch(Base):

@@ -3,6 +3,7 @@ start and dropped on stop (docs/launcher.md "Pipe addresses")."""
 import json
 import os
 import unittest
+from unittest import mock
 
 from kitlib.launcher import pipes, start, stop
 from kitlib.launcher import settings as S
@@ -62,6 +63,15 @@ class Registry(unittest.TestCase):
         self.assertFalse(pipes.is_live(dict(r, pid=True), Ctime({7: 5007})))
         self.assertFalse(pipes.is_live(dict(r, pid=0), Ctime({0: 5007})))
         self.assertFalse(pipes.is_live(dict(r, procStart=None), Ctime({7: 5007})))
+
+    def test_linux_refuses_peer_support_plainly_and_windows_does_not(self):
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            with self.assertRaises(S.LaunchError) as cm:
+                pipes.require_peer_support()
+        self.assertIn('Linux peer support is deferred', str(cm.exception))
+        self.assertIn('docs/linux-support-plan.md', str(cm.exception))
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            pipes.require_peer_support()
 
     def test_find_takes_the_newest_live_record_of_the_name_started_after_the_launch(self):
         self.put(rec(1, 'x-a1', started=NOW_MS + 100))

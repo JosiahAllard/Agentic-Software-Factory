@@ -210,6 +210,7 @@ def relaunch(settings, host, name, delivery=None, wait_s=WAIT_S, permission_mode
     host's hub push delivery (an object with deliver(recipient, text) -> push.Sent), or None when
     the host has none: the stand-down is then the owner's to send. wait_s: how long to wait for
     the fork's own session id."""
+    pipes.require_peer_support()
     sid, folder, acct = recorded_pm(settings)
     if not os.path.isdir(folder):
         raise LaunchError('pm_folder %s in coordinators.json is not a folder; nothing was started.' % folder)
@@ -313,6 +314,7 @@ def crossover(settings, host, account, name=None, state_path=None, delivery=None
     """Start a fresh PM on `account` from the hand-off file and make it the PM; the lines it says
     (module docstring "PM crossover"). LaunchError, with the lines so far, when it was not
     confirmed or coordinators.json was not written."""
+    pipes.require_peer_support()
     account = str(account)
     sid, folder, acct = recorded_pm(settings)
     if str(acct) == account:

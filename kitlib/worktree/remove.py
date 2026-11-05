@@ -394,22 +394,25 @@ def merged_worktrees(ctx, listing, skip=()):
     base, why = base_commit(ctx)
     if base is None:
         return None, why
-    got, why = ancestry(ctx, base)
-    if got is None:
-        return None, 'git rev-list --parents %s: %s' % (base, why)
-    chain, ancestors = got
-    home = canon(home_of(ctx))
     skipped = {canon(p) for p in skip}
-    out = []
+    candidates = []
     for e in worktree_entries(listing):
         path = e['path']
         if not is_workstream(ctx, path) or canon(path) in skipped \
                 or exemption(ctx.s, path) or not os.path.isdir(path):
             continue
-        if not e['head'] or e['head'] in chain:
-            continue
-        if e['head'] in ancestors:
-            out.append((os.path.normpath(path), e['branch']))
+        if e['head']:
+            candidates.append(e)
+    if not candidates:
+        return [], None
+    got, why = ancestry(ctx, base)
+    if got is None:
+        return None, 'git rev-list --parents %s: %s' % (base, why)
+    chain, ancestors = got
+    out = []
+    for e in candidates:
+        if e['head'] not in chain and e['head'] in ancestors:
+            out.append((os.path.normpath(e['path']), e['branch']))
     return out, None
 
 

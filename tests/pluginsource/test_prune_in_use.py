@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
-from tests.platforms import windows_only
+from tests.platforms import posix_only, windows_only
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
 NAMES = ['%012x' % i for i in range(1, 7)]
@@ -295,6 +295,16 @@ class CachePruneTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(os.path.join(target, 'keep-me')))
         self.assertTrue(os.path.lexists(os.path.join(P.cache_dir(a), '0.1.0-main.2')))
 
+    @posix_only('a directory symlink made without privilege (Windows needs one to make it)')
+    def test_a_symlink_in_the_cache_is_never_followed(self):
+        a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.9'], installed='0.1.0-main.9')
+        target = os.path.join(self.base, 'elsewhere')
+        os.makedirs(os.path.join(target, 'keep-me'))
+        os.symlink(target, os.path.join(P.cache_dir(a), '0.1.0-main.2'), target_is_directory=True)
+        P.prune_caches([a], reads(), apply=True, now=self.now)
+        self.assertTrue(os.path.isdir(os.path.join(target, 'keep-me')))
+        self.assertTrue(os.path.lexists(os.path.join(P.cache_dir(a), '0.1.0-main.2')))
+
 
 class LinuxInUseTest(unittest.TestCase):
     """The real read_in_use on Linux (kitlib.platform.NAME patched): its scheduled jobs come from
@@ -311,12 +321,39 @@ class LinuxInUseTest(unittest.TestCase):
         self.enterContext(mock.patch('kitlib.platform.NAME', 'linux'))
         self.enterContext(mock.patch('kitlib.proc.spawn.run', no_schtasks))
         self.enterContext(mock.patch('kitlib.platform.linux.schedule.read_back',
-                                     lambda **kw: jobs))
+                                     jobs if callable(jobs) else lambda **kw: jobs))
         self.enterContext(mock.patch.object(P, '_processes', lambda: self.PROCS))
 
     def test_the_read_is_whole(self):
         self.linux([])
         self.assertEqual(P.read_in_use(self.base).errors, [])
+
+    def assert_keeps_all(self, why):
+        a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.2', '0.1.0-main.3'],
+                         installed='0.1.0-main.3')
+        u = P.read_in_use(self.base)
+        self.assertEqual(len(u.errors), 1, u.errors)
+        self.assertIn('scheduled tasks', u.errors[0])
+        self.assertIn(why, u.errors[0])
+        rows = P.prune_caches([a], lambda: P.read_in_use(self.base), apply=True, now=self.now)
+        self.assertEqual(set(self.acts(rows).values()), {'kept'})
+        self.assertEqual(len(os.listdir(P.cache_dir(a))), 3)
+
+    def test_a_job_whose_command_did_not_split_is_a_failed_read(self):
+        # schedule.read_back gives argv [] for an ExecStart, Exec or cron command shlex refuses:
+        # what it runs is unknown, so nothing is pruned
+        self.linux([{'path': 'pm-kit-hub', 'backend': 'cron', 'argv': [], 'workdir': None,
+                     'line': '*/5 * * * * python "unclosed # pm-kit:hub',
+                     'actions': [{'exe': '', 'args': ''}]}])
+        self.assert_keeps_all('could not be split')
+
+    def test_a_schedule_that_cannot_be_read_is_a_failed_read(self):
+        from kitlib.platform.linux import schedule
+
+        def boom(**kw):
+            raise schedule.ScheduleError('reading the crontab: crontab -l exit 1: denied')
+        self.linux(boom)
+        self.assert_keeps_all('crontab -l exit 1')
 
     def test_apply_removes_an_old_version_and_keeps_the_installed_and_the_newest(self):
         a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.2', '0.1.0-main.3',

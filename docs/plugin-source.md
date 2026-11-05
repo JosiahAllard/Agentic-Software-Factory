@@ -48,7 +48,7 @@ Before it removes anything, `tools/plugin_refresh.py --apply` reads what is in u
 
 A `<sha12>` is in use when one of these names it as a whole path part (`in_use_sha12s`), followed by a separator, a quote, `;`, `,`, `)` or `&`. A read that fails is printed (`prune: what is in use could not be read whole (...)`), and the others still count. An empty process list counts as a failed read, since a real one always holds the reader itself.
 
-Known limit: a non-elevated `Win32_Process` read returns a null `CommandLine` for elevated processes and for other users' processes, so such a process does not protect the export it runs from. The rename claim covers it only while the process holds a file there open.
+Known limit: a non-elevated `Win32_Process` read returns a null `CommandLine` for elevated processes and for other users' processes, so such a process does not protect the export it runs from. The rename claim covers it only while the process holds a file there open, and only on Windows: on Linux the rename succeeds with files open (`_claim_remove`), so there only the young and newest rules keep a folder in use that no read names.
 
 Never removed (`kitlib.pluginsource` `prune`, `KEEP`):
 

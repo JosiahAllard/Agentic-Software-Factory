@@ -642,13 +642,17 @@ def _tasks():
     """[the text of every registered scheduled task's definition] from `schtasks /Query /XML ONE`:
     program, arguments and working folder alike. RuntimeError when schtasks fails or times out.
     Linux: the jobs kitlib.platform.linux.schedule wrote (consoletasks.read_tasks), each one's
-    name, program, arguments, argv and working folder."""
+    name, program, arguments, argv and working folder. A job whose command did not split (its argv
+    empty) is a RuntimeError: what it runs is unknown, so the read is not whole."""
     import xml.etree.ElementTree as ET
     from kitlib.pmstart import consoletasks
     from kitlib.proc import spawn
     if kitplatform.NAME == 'linux':
         out = []
         for t in consoletasks.read_tasks(timeout=LIST_TIMEOUT):
+            if not t.get('argv'):
+                raise RuntimeError('scheduled job %s: its command could not be split (%s)'
+                                   % (t.get('path') or '?', t.get('file') or t.get('line') or '?'))
             parts = [t.get('path') or '', t.get('workdir') or '']
             parts += [str(a) for a in t.get('argv') or ()]
             for a in t.get('actions') or ():

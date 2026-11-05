@@ -1291,6 +1291,19 @@ class RemoveBranchPulled(RemoveCase):
         self.assertIn('kit/claim', self.branches())
 
 
+    def test_a_record_pulled_under_another_case_refuses(self):
+        self.workstream('claim')
+        self.git('worktree', 'remove', '--force', os.path.join(self.home, 'claim'))
+        self.land('kit/claim')
+        self.fx.write('docs/backlog/T-001.md', 'id: T-001\nstate: pulled\npulled_by: Kit/Claim\n')
+        self.fx.commit('claim', 'docs/backlog/T-001.md')
+        self.fx.git('push', '-q', 'origin', 'main')
+        rc, out = self.run_verb('remove_branch', 'kit/claim')
+        self.assertEqual(rc, 1, out)
+        self.assertIn('a backlog record is still pulled by kit/claim (an open claim): T-001', out)
+        self.assertIn('kit/claim', self.branches())
+
+
 class RemoveBranchKilledStoreRead(RemoveCase):
     """A git ended from outside exits 1 having printed nothing, the shape
     `rev-parse --verify --quiet` gives for "no such ref". The open-claim check of a ref store must

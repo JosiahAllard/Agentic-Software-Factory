@@ -24,6 +24,7 @@ import time
 
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
+from kitlib.fs import replace as fsreplace
 from kitlib.gate import budget
 from kitlib.lock import store as lockstore
 from kitlib.proc import process
@@ -32,6 +33,8 @@ KEY = 'coordinator_start'
 CAP_KEY = 'gate_cap'
 POLL_S = 5.0        # how often a waiting gate counts again; never below the lock's queue_poll_s
 WAITERS = 'gatecap'     # the lock store's folder of gates waiting at the cap: <token>.json each
+DROP_WAIT_S = 2.0       # how long a refused remove of a waiter file is retried
+_WAITING = set()        # the tokens this process waits under now; its other files are leftovers
 
 
 def configured(repo, home=None):
@@ -106,17 +109,26 @@ def _order(d):
     return (since if isinstance(since, int) else 0, str(d.get('token')))
 
 
-def waiters(store, who, repo):
-    """The gates waiting at the cap for repo that the caller's session counts (as in_flight: the
-    session's own by owns(), every one for an agent with no readable host), oldest first. A file
-    whose process is surely gone is removed; one whose process cannot be told live is skipped,
-    so a dead waiter never holds the line."""
+def _drop(path):
+    """Removes a waiter file, waiting out a reader that has it open (Windows refuses the remove
+    then: kitlib.fs.replace.remove retries for DROP_WAIT_S); a remove still refused is let be."""
+    try:
+        fsreplace.remove(path, wait=DROP_WAIT_S)
+    except OSError:
+        pass
+
+
+def _repo_waiters(store, repo):
+    """Every live waiter file of repo, oldest first. A file whose process is surely gone is
+    removed; one whose process cannot be told live is skipped, so a dead waiter never holds the
+    line. So is one this process left (its pid and creation time, a token it no longer waits
+    under: a remove that was refused), which it removes again."""
     folder = store.path(WAITERS)
     try:
         names = sorted(os.listdir(folder))
     except OSError:
         return []
-    hosted, want, out = _hosted(who), str(repo).lower(), []
+    want, me, out = str(repo).lower(), [os.getpid(), process.own_ctime()], []
     for n in names:
         if not n.endswith('.json'):
             continue
@@ -125,14 +137,23 @@ def waiters(store, who, repo):
         if d is None:
             continue
         live = lockstore.record_state(d)
-        if live is False:
-            lockstore.remove(p)
+        if live is False or ([d.get('pid'), d.get('ctime')] == me
+                             and d.get('token') not in _WAITING):
+            _drop(p)
             continue
-        if live is not True or str(d.get('repo') or '').lower() != want:
-            continue
-        if not hosted or lockstore.owns(who, d):
+        if live is True and str(d.get('repo') or '').lower() == want:
             out.append(d)
     return sorted(out, key=_order)
+
+
+def waiters(store, who, repo):
+    """The gates waiting at the cap for repo that the caller's session counts, oldest first, as
+    in_flight counts runs: [] for the owner, the session's own by owns(), every one for an agent
+    with no readable host."""
+    hosted = _hosted(who)
+    if not hosted and isinstance(who, dict) and who.get('role') == 'owner':
+        return []
+    return [d for d in _repo_waiters(store, repo) if not hosted or lockstore.owns(who, d)]
 
 
 def _join(store, who, repo, ahead):
@@ -145,9 +166,11 @@ def _join(store, who, repo, ahead):
            'ctime': process.own_ctime(),
            'ancestors': list((who.get('ancestors') if isinstance(who, dict) else None) or [])}
     path = store.path(WAITERS, token + '.json')
+    _WAITING.add(token)
     try:
         lockstore.create_json(path, rec)
     except OSError:
+        _WAITING.discard(token)
         return None, None
     return rec, path
 
@@ -157,13 +180,15 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
     at the cap before this one, number fewer than the cap: gates waiting at the cap book in the
     order they began (a waiter file each, WAITERS), so a run that ends lets one book, not all.
     Waiting, it says one line naming the runs in flight and nothing per poll; its waiter file is
-    removed as it returns or raises. The cap and the caller are read only when some gate run of
-    repo is live, so a gate with none in flight reads neither."""
-    if not _gate_runs(store.live_runs(), repo):
+    removed as it returns or raises. The caller is read only when some gate run or waiting gate
+    of repo is live, and the cap only when one is the session's, so a gate with neither reads
+    neither."""
+    if not _gate_runs(store.live_runs(), repo) and not _repo_waiters(store, repo):
         return
     who = actor() if who is None else who
     mine = in_flight(store, who, repo)
-    if not mine:
+    ahead = waiters(store, who, repo)
+    if not mine and not ahead:
         return
     if cap is None:
         cap, warning = configured(repo, home)
@@ -171,14 +196,14 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
             say(warning)
     if not cap:
         return
-    ahead = waiters(store, who, repo)
     if len(mine) + len(ahead) < cap:
         return
     whose = ('of this session' if _hosted(who) else
              '(all counted: this agent\'s host cannot be read)')
     say('the gate waits for the session gate cap: %d of %d gate runs %s in %s are in flight '
         '(%s)%s; it books when one ends and the gates that began waiting before it have '
-        'booked' % (len(mine), cap, whose, repo, ', '.join(str(r.get('id')) for r in mine),
+        'booked' % (len(mine), cap, whose, repo,
+                    ', '.join(str(r.get('id')) for r in mine) or 'none',
                     ', and %d gate(s) wait ahead of it' % len(ahead) if ahead else ''))
     interval = max(poll_s or POLL_S, store.settings.queue_poll_s)
     sleep = sleep or time.sleep
@@ -195,7 +220,8 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
                 return
     finally:
         if path:
-            lockstore.remove(path)
+            _WAITING.discard(me['token'])   # a file left by a refused remove is now a leftover
+            _drop(path)
 
 
 def gave_way(store, repo, slot, say, cap=None, who=None, home=None, poll_s=None, sleep=None):

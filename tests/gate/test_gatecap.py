@@ -9,6 +9,7 @@ import tempfile
 import threading
 import types
 import unittest
+from unittest import mock
 
 from kitlib.gate import budget, gatecap
 
@@ -99,8 +100,9 @@ class Waiter:
     """One gate in gatecap.wait_turn on its own thread. Its sleep says 'nap' and blocks until
     the test ticks it; its return says 'done'."""
 
-    def __init__(self, store, name):
+    def __init__(self, store, name, cap=2):
         self.name, self.out, self.tick = name, queue.Queue(), threading.Semaphore(0)
+        self.cap = cap
         self.quit = False
         self.thread = threading.Thread(target=self.run, args=(store,), daemon=True)
 
@@ -111,7 +113,8 @@ class Waiter:
 
     def run(self, store):
         try:
-            gatecap.wait_turn(store, REPO, lambda t: None, cap=2, who=AGENT, sleep=self.sleep)
+            gatecap.wait_turn(store, REPO, lambda t: None, cap=self.cap, who=AGENT,
+                              sleep=self.sleep)
             self.out.put('done')
         except BaseException as e:      # noqa: BLE001 - reported to the test as what it did
             self.out.put('raised %s' % e)
@@ -132,8 +135,8 @@ class Waiter:
 class InTheOrderTheyWaited(Case):
     """Gates of one session waiting at a cap of 2 book one at a time, oldest first."""
 
-    def start(self, name):
-        w = Waiter(self.store, name)
+    def start(self, name, cap=2):
+        w = Waiter(self.store, name, cap)
         self.addCleanup(self.let_go, w)
         w.thread.start()
         self.assertEqual(w.next(), 'nap', name)     # it waits: its waiter file is written
@@ -173,6 +176,56 @@ class InTheOrderTheyWaited(Case):
         self.assertIn('1 gate(s) wait ahead of it', lines[0])
         self.assertEqual(len(os.listdir(self.store.path(gatecap.WAITERS))), 1)   # its own gone
         self.assertEqual(a.step(), 'done')
+
+    def test_with_no_session_run_in_flight_a_newcomer_still_waits_behind_waiters(self):
+        """Red before: with no live gate run of the repo, or none of the session's, the newcomer
+        returned before it read the waiters and booked ahead of them."""
+        for other_run in (False, True):
+            with self.subTest(other_session_run=other_run):
+                self.store.runs[:] = []
+                self.store.add(state='waiting')
+                a = self.start('a', cap=1)
+                self.store.runs[:] = []                 # the session's run ends
+                if other_run:
+                    self.store.add()
+                    self.store.runs[-1]['ancestors'] = [[912399, 99]]   # another session's
+                lines = []
+
+                def stop(_s):
+                    raise SystemExit('it waits')
+                with self.assertRaises(SystemExit):     # it waits: its first sleep ends it here
+                    gatecap.wait_turn(self.store, REPO, lines.append, cap=1, who=AGENT,
+                                      sleep=stop)
+                self.assertIn('1 gate(s) wait ahead of it', lines[0])
+                self.assertEqual(a.step(), 'done')
+
+    def test_a_file_its_own_refused_remove_left_holds_back_neither_it_nor_others(self):
+        """A remove refused (a reader had the file open, on Windows) leaves the gate's waiter file
+        while its process lives. Given back by gave_way, the gate waits again in the same
+        process. Red before: it counted its own leftover as a gate ahead of it, and at the cap it
+        waited behind itself for good."""
+        held = [self.store.add(), self.store.add()]
+        refused = mock.patch('os.remove', side_effect=PermissionError('a reader has it open'))
+        with refused, mock.patch.object(gatecap, 'DROP_WAIT_S', 0, create=True):
+            gatecap.wait_turn(self.store, REPO, lambda t: None, cap=2, who=AGENT,
+                              sleep=lambda s: self.store.drop(held[0]))
+        files = lambda: [n for n in os.listdir(self.store.path(gatecap.WAITERS))  # noqa: E731
+                         if n.endswith('.json')]
+        self.assertEqual(len(files()), 1)                               # left behind
+        gatecap.wait_turn(self.store, REPO, lambda t: None, cap=2, who=AGENT, sleep=self.fail)
+        self.assertEqual(files(), [])                                   # removed now
+
+    def test_a_waiter_file_it_cannot_write_lets_it_wait_unordered(self):
+        held = [self.store.add(), self.store.add()]
+        naps = []
+
+        def sleep(s):
+            naps.append(s)
+            self.store.drop(held[0])
+        with mock.patch.object(gatecap.lockstore, 'create_json', side_effect=OSError('full')):
+            gatecap.wait_turn(self.store, REPO, lambda t: None, cap=2, who=AGENT, sleep=sleep)
+        self.assertEqual(len(naps), 1)
+        self.assertFalse(os.path.exists(self.store.path(gatecap.WAITERS)))
 
     def test_a_dead_waiters_file_holds_nobody_back(self):
         self.store.add(), self.store.add()

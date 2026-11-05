@@ -1356,5 +1356,30 @@ class OwnerJob(JobBase):
         self.assertEqual([i['id'] for i in job.run.pending('kit', ENTRY)], ['EX-Q1'])
 
 
+class ChildFlags(unittest.TestCase):
+    """The real run_child and spawn_detached, subprocess stubbed: POSIX Popen refuses any
+    creationflags but 0, so Linux must pass 0 (and a new session for the detached child)."""
+
+    def _calls(self, name):
+        with mock.patch('kitlib.platform.NAME', name), \
+                mock.patch('subprocess.run') as run, mock.patch('subprocess.Popen') as popen:
+            run.return_value = mock.Mock(returncode=0, stdout=b'ok\n', stderr=b'')
+            self.assertEqual(C.run_child(['x'], '.'), (0, ['ok']))
+            C.spawn_detached(['x'], '.')
+        return run.call_args.kwargs, popen.call_args.kwargs
+
+    def test_linux_passes_no_creationflags_and_detaches_into_a_new_session(self):
+        run_kw, popen_kw = self._calls('linux')
+        self.assertEqual(run_kw['creationflags'], 0)
+        self.assertEqual(popen_kw['creationflags'], 0)
+        self.assertIs(popen_kw['start_new_session'], True)
+
+    def test_windows_keeps_create_no_window_and_no_new_session(self):
+        run_kw, popen_kw = self._calls('windows')
+        self.assertEqual(run_kw['creationflags'], 0x08000000)
+        self.assertEqual(popen_kw['creationflags'], 0x08000000)
+        self.assertIs(popen_kw.get('start_new_session', False), False)
+
+
 if __name__ == '__main__':
     unittest.main()

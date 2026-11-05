@@ -135,8 +135,9 @@ class PluginJobTest(JobCase):
             procs.append(FakePopen(argv, kw, out=b'one\r\ntwo\n', code=3))
             return procs[0]
         kills = []
-        got = plugin_job.run_child(['a', 'b'], 'C', start=start,
-                                   kill_tree=lambda *a: kills.append(a), ctime=lambda pid: 77)
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            got = plugin_job.run_child(['a', 'b'], 'C', start=start,
+                                       kill_tree=lambda *a: kills.append(a), ctime=lambda pid: 77)
         self.assertEqual(got, (3, ['one', 'two']))
         kw = procs[0].kw
         self.assertEqual((procs[0].argv, kw['cwd'], kw['stdin'], kw['creationflags']),
@@ -144,6 +145,17 @@ class PluginJobTest(JobCase):
         self.assertEqual(kw['env']['PYTHONIOENCODING'], 'utf-8')
         self.assertEqual(procs[0].waits[0], plugin_job.REFRESH_TIMEOUT_S)
         self.assertEqual(kills, [])
+
+    def test_linux_passes_no_creationflags_which_POSIX_Popen_refuses(self):
+        procs = []
+
+        def start(argv, **kw):
+            procs.append(FakePopen(argv, kw, out=b'', code=0))
+            return procs[0]
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            plugin_job.run_child(['a'], 'C', start=start, kill_tree=lambda *a: None,
+                                 ctime=lambda pid: 77)
+        self.assertEqual(procs[0].kw['creationflags'], 0)
 
     def test_a_child_past_its_timeout_is_ended_with_every_process_it_started(self):
         proc = FakePopen(['a'], {}, hang=True)

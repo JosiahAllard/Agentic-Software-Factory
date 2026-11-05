@@ -91,7 +91,7 @@ import subprocess
 import sys
 import time
 
-from kitlib import pmstart, pmwatch
+from kitlib import platform, pmstart, pmwatch
 from kitlib.hubsite import jobs
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, state
@@ -115,7 +115,7 @@ CAP_WINDOW_S = 24 * 3600
 START_TIMEOUT_S = 180          # launch.py start opens a window and polls ~20 s for its pipe
 STATE_FILE = 'coord-restart.json'
 STOP_LOG = 'stop.log'
-_NOWIN = 0x08000000            # CREATE_NO_WINDOW
+_NOWIN = 0x08000000            # CREATE_NO_WINDOW (Windows only: POSIX Popen refuses any creationflags but 0)
 _STOP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) stopped '([^']*)' .*; successor '([^']*)'")
 _ACCOUNT = re.compile(r'-a(\d+)(?:-r\d+)?\Z')
 STAMP_S = 1                    # stop.log stamps are whole seconds (pmwatch.stop_log_reader's allowance)
@@ -400,12 +400,16 @@ def after_reboot_argv(kit):
     return [sys.executable, os.path.join(kit, 'tools', 'launch.py'), 'after-reboot']
 
 
+def _win():
+    return platform.NAME == 'windows'
+
+
 def spawn_detached(argv, cwd):
     """Start one windowless child and do not wait: after-reboot waits 60 s and opens a window per
     session, longer than a run should take. Its outcome is in after-reboot.log."""
     return spawn.popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, env=dict(os.environ, PYTHONIOENCODING='utf-8'),
-                       creationflags=_NOWIN)
+                       creationflags=_NOWIN if _win() else 0, start_new_session=not _win())
 
 
 def start_argv(kit, key, account, prompt=None):
@@ -526,7 +530,7 @@ def run_child(argv, cwd):
     """(exit code, output lines) of one windowless child, waited for up to START_TIMEOUT_S
     (subprocess.TimeoutExpired past it)."""
     r = spawn.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
-                  env=dict(os.environ, PYTHONIOENCODING='utf-8'), creationflags=_NOWIN,
+                  env=dict(os.environ, PYTHONIOENCODING='utf-8'), creationflags=_NOWIN if _win() else 0,
                   timeout=START_TIMEOUT_S)
     return r.returncode, ((r.stdout or b'') + (r.stderr or b'')).decode('utf-8', 'replace').splitlines()
 

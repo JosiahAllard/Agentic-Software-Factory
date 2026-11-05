@@ -458,12 +458,12 @@ C_FLAGS_RE = re.compile(r'^-[bBdEhiIOPqsSuvx]*c$')     # -c, or flags that take 
 
 def c_code(inv):
     """The text of the code python runs from -c when it is the word after -c (C_FLAGS_RE), or
-    None: no -c, the code attached to it (-cCODE), Start-Process (which re-splits its words), or
+    None: no -c, the code attached to it (-cCODE), a PowerShell process-start call (which re-splits its words), or
     a word up to the code the line computes or the shell may hand python split
     (rules.native_unsure: a PowerShell word holding a double quote, cmd's quotes), so python may
     run other code than the guard reads. backlog_code reads it with py_reach; every other text is
     judged by CODE_RE alone."""
-    if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None or inv.via == 'start-process':
+    if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None or inv.via not in (None, 'xargs'):
         return None
     args, k = inv.args, 0
     while k < len(args):

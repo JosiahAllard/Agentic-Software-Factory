@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import webbrowser
 from unittest import mock
 
 from kitlib.hubsite import approvals, auth, httpd, schema, serve, todosteps, tunnel
@@ -891,13 +892,13 @@ class ClientCase(CliCase):
         self.assertEqual(httpfix.get(hub.port, link[len(base):]).status, 303)
         self.assertNotEqual(httpfix.get(hub.port, link[len(base):]).status, 303)
         opened = []
-        with mock.patch.object(HUB.webbrowser, 'open', lambda url: opened.append(url) or True):
+        with mock.patch.object(webbrowser, 'open', lambda url: opened.append(url) or True):
             code, out, err = self.run_cli('open', '--port', str(hub.port))
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(len(opened), 1)
         self.assertTrue(opened[0].startswith(base + '/pair?code='))
         self.assertNotIn('code=', out)
-        with mock.patch.object(HUB.webbrowser, 'open', lambda url: False):
+        with mock.patch.object(webbrowser, 'open', lambda url: False):
             code, out, err = self.run_cli('open', '--port', str(hub.port))
         self.assertEqual(code, 1)
         self.assertIn('REFUSED: no browser could be opened', err)

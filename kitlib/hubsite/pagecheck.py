@@ -5,6 +5,8 @@
   MERMAID_SAYS  the words every refusal of unrendered Mermaid carries
   TITLE_SAYS    the words every refusal of a title carries
   check(html)   why html cannot be published, as one sentence, or None when it can
+  warnings(html)  what a publishable page would lose in the frame (a video, audio or source the
+                policy blocks; MEDIA_SRC_ALLOWED is the policy's media-src), as sentences: never a refusal
 
 A page is static HTML the Docs tab shows in an iframe with sandbox="" and a Content-Security-
 Policy that loads nothing from outside the page. That iframe is the guarantee; this check is the
@@ -66,6 +68,8 @@ RAW = ('<script', 'javascript:', 'http-equiv', '<textarea', '<xmp', '<noembed', 
 CSS_FUNCTIONS = ('image-set(', '-webkit-image-set(', 'image(', 'src(')  # each can load by url
 TEXT_ATTRS = ('title', 'alt')               # read only as text; so are aria-* (_text_attr)
 STYLE_NEVER = ('<', '&')                    # in a style element's text (module docstring)
+MEDIA_TAGS = ('video', 'audio', 'source')
+MEDIA_SRC_ALLOWED = ()                      # url prefixes of the frame's media-src (index.html DOC_CSP); none today
 
 _SURROGATE = re.compile('[\ud800-\udfff]')
 _URL = re.compile(r'url\(\s*([\'"]?)(.*?)\1\s*\)', re.I | re.S)
@@ -197,6 +201,34 @@ class _Parser(html.parser.HTMLParser):
         if tag in ANIMATES and named.get('attributename', '').strip().lower() in LINKS:
             raise Refused('an svg <%s> that changes href is not allowed: a page links nowhere '
                           'outside it' % tag)
+
+
+class _Media(html.parser.HTMLParser):
+    def __init__(self):
+        html.parser.HTMLParser.__init__(self, convert_charrefs=True)
+        self.blocked = []                       # tags whose source the policy blocks, first seen first
+
+    def handle_starttag(self, tag, attrs):
+        if tag in MEDIA_TAGS and tag not in self.blocked:
+            src = _url(dict(attrs).get('src'))
+            if src and not src.startswith(MEDIA_SRC_ALLOWED):
+                self.blocked.append(tag)
+
+    handle_startendtag = handle_starttag
+
+
+def warnings(html):
+    """What a page that check() passes would lose when shown, as a list of sentences (empty when
+    nothing): one per kind of media element whose src the frame's policy blocks. Never a refusal."""
+    parser = _Media()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:                           # check() owns refusing a body this cannot read
+        pass
+    return ['the page has a <%s> with a src: the page policy allows media from %s, so it will not '
+            'play and the viewer sees nothing; use an animated GIF or WebP in an <img> instead'
+            % (tag, ', '.join(MEDIA_SRC_ALLOWED) or 'nowhere') for tag in parser.blocked]
 
 
 def check(html):

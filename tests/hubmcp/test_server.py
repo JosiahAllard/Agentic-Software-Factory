@@ -364,6 +364,16 @@ class Pages(Case):
         want["html"] = html
         self.assertEqual(call["body"], want)
 
+    def test_a_page_with_blocked_media_is_posted_and_the_hubs_warnings_come_back(self):
+        html = '<video src="data:video/mp4;base64,AA"></video>'
+        warn = {"level": "warn", "code": "media-blocked", "message": "the page has a <video>"}
+        self.ask.answer = (200, {"ok": True, "id": "p", "warnings": [warn]})
+        payload, is_error = self.rpc(self.server(), "hub_page_publish",
+                                     {"id": "p", "title": "t", "html_file": self.page(html)})
+        self.assertFalse(is_error, payload)
+        self.assertEqual(self.ask.calls[-1]["body"]["html"], html)
+        self.assertEqual(payload["warnings"], [warn])
+
     def test_what_the_check_refuses_never_reaches_the_hub(self):
         cap = pagecheck.MAX_BYTES
         for text, said in (("<script>x</script>", "<script>"),

@@ -175,9 +175,10 @@ class Cli(unittest.TestCase):
         self.assertIn('launch.py stop: could not write stop.log', err)
 
     def test_a_refused_stop_exits_2(self):
-        code, out, _, _ = self.main(['stop', '--name', 'gone'])
+        code, out, err, _ = self.main(['stop', '--name', 'gone'])
         self.assertEqual(code, 2)
-        self.assertIn("REFUSED: no claude.exe with --remote-control exactly 'gone'", out)
+        self.assertIn("REFUSED: no claude.exe with --remote-control exactly 'gone'", err)
+        self.assertEqual(out, '')
 
     def test_pick_account_prints_the_number_last(self):
         code, out, _, _ = self.main(['pick-account', '--explain'])

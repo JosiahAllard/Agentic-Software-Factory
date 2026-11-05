@@ -290,7 +290,7 @@ def main(argv=None, host=None):
         settings = S.load(host.home)
         lines = run(a, settings, host)
     except stop.Refused as e:
-        print('\n'.join(e.lines + ['REFUSED: %s' % e]))
+        print('\n'.join(e.lines + ['REFUSED: %s' % e]), file=sys.stderr)
         return 2
     except S.LaunchError as e:
         if e.lines:

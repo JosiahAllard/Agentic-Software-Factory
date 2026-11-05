@@ -18,7 +18,7 @@ launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] 
 launch.py install-autostart [--what-if]          (retired: refuses)
 ```
 
-Exit codes: 0 done; 1 refused or failed (the reason on stderr); 2 a stop refused (`REFUSED: ...` on stdout) or a usage error; 130 Ctrl+C.
+Exit codes: 0 done; 1 refused or failed (the reason on stderr); 2 a stop refused (`REFUSED: ...` on stderr) or a usage error; 130 Ctrl+C.
 
 ## Settings
 

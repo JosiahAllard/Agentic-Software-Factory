@@ -369,5 +369,30 @@ class LinuxInUseTest(unittest.TestCase):
                          ['0.1.0-main.2', '0.1.0-main.3', '0.1.0-main.9'])
 
 
+class LinuxExportPruneTest(Root):
+    """Export prune with the real read_in_use on Linux (as LinuxInUseTest)."""
+    PROCS = LinuxInUseTest.PROCS
+    linux = LinuxInUseTest.linux
+
+    def test_a_good_job_still_keeps_its_export_beside_a_job_that_did_not_split(self):
+        # NAMES[1] and NAMES[2] were replaced in early September, a month before NOW: past even
+        # the 7-day rule the bad job's error brings, so only the good job's text keeps NAMES[1]
+        self.old_six()
+        good = {'path': 'pm-kit-hub', 'backend': 'systemd', 'workdir': self.base,
+                'argv': ['/usr/bin/python3', os.path.join(self.root, NAMES[1], 'tools', 'hub.py')],
+                'actions': [{'exe': '/usr/bin/python3', 'args': 'hub.py'}]}
+        bad = {'path': 'pm-kit-tick', 'backend': 'cron', 'argv': [], 'workdir': None,
+               'line': '*/5 * * * * python "unclosed # pm-kit:tick',
+               'actions': [{'exe': '', 'args': ''}]}
+        self.linux([good, bad])
+        u = P.read_in_use(self.root)
+        self.assertEqual(len(u.errors), 1, u.errors)
+        self.assertIn('pm-kit-tick', u.errors[0])
+        removed, failed = P.prune(self.root, now=NOW, in_use=lambda: P.read_in_use(self.root))
+        self.assertEqual(failed, [])
+        self.assertEqual([os.path.basename(r) for r in removed], [NAMES[2]])
+        self.assertTrue(os.path.isfile(os.path.join(self.root, NAMES[1], P.MARKER)))
+
+
 if __name__ == '__main__':
     unittest.main()

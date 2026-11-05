@@ -638,26 +638,40 @@ def _processes():
     return list_processes(timeout=LIST_TIMEOUT)
 
 
+class PartialTasks(RuntimeError):
+    """_tasks read every job but could not tell what some run: `texts` are every job's texts,
+    which still count; the error says which jobs, so the read is not whole."""
+
+    def __init__(self, message, texts):
+        RuntimeError.__init__(self, message)
+        self.texts = texts
+
+
 def _tasks():
     """[the text of every registered scheduled task's definition] from `schtasks /Query /XML ONE`:
     program, arguments and working folder alike. RuntimeError when schtasks fails or times out.
     Linux: the jobs kitlib.platform.linux.schedule wrote (consoletasks.read_tasks), each one's
     name, program, arguments, argv and working folder. A job whose command did not split (its argv
-    empty) is a RuntimeError: what it runs is unknown, so the read is not whole."""
+    empty) runs something unknown: PartialTasks, carrying every job's text (that job's name,
+    working folder and file or line) and naming the jobs."""
     import xml.etree.ElementTree as ET
     from kitlib.pmstart import consoletasks
     from kitlib.proc import spawn
     if kitplatform.NAME == 'linux':
-        out = []
+        out, bad = [], []
         for t in consoletasks.read_tasks(timeout=LIST_TIMEOUT):
-            if not t.get('argv'):
-                raise RuntimeError('scheduled job %s: its command could not be split (%s)'
-                                   % (t.get('path') or '?', t.get('file') or t.get('line') or '?'))
             parts = [t.get('path') or '', t.get('workdir') or '']
+            if not t.get('argv'):
+                where = t.get('file') or t.get('line') or ''
+                bad.append('%s (%s)' % (t.get('path') or '?', where or '?'))
+                parts.append(where)
             parts += [str(a) for a in t.get('argv') or ()]
             for a in t.get('actions') or ():
                 parts += [a.get('exe') or '', a.get('args') or '']
             out.append(' '.join(p for p in parts if p))
+        if bad:
+            raise PartialTasks('the command of scheduled job %s could not be split'
+                               % ', '.join(bad), out)
         return out
     try:
         r = spawn.run(['schtasks', '/Query', '/XML', 'ONE'], capture_output=True, timeout=LIST_TIMEOUT)
@@ -701,6 +715,9 @@ def read_in_use(root, procs=None, tasks=None):
         errors.append('the process list could not be read (%s: %s)' % (type(e).__name__, e))
     try:
         texts.extend(str(t).lower() for t in (tasks or _tasks)() or ())
+    except PartialTasks as e:
+        texts.extend(str(t).lower() for t in e.texts)
+        errors.append('the scheduled tasks could not be read whole (%s)' % e)
     except Exception as e:
         errors.append('the scheduled tasks could not be read (%s: %s)' % (type(e).__name__, e))
     try:

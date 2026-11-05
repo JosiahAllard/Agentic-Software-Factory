@@ -204,6 +204,30 @@ class Fresh(FreshBase):
         self.assertTrue(guard_in(plugin_bak, self.kit))              # taken after the settings write
         self.assertNotIn('enabledPlugins', plugin_bak)
 
+    def test_a_survey_reads_the_guard_entry_once_across_three_accounts(self):
+        c3 = os.path.join(self.home, '.claude-three')
+        os.makedirs(c3)
+        with open(os.path.join(c3, 'settings.json'), 'wb') as f:
+            f.write(self.raw2)                                       # old hooks: exec_form wants the entry
+        reads = []
+        fake = self.host.guard_entry
+        self.host.guard_entry = lambda kit: reads.append(kit) or fake(kit)
+        code, out = self.run_it(pm_settings=self.pm)
+        self.assertEqual(code, M.EXIT_OK, out)
+        self.assertEqual(reads, [self.kit])
+
+    def test_a_guard_entry_that_cannot_be_read_is_not_cached_as_success(self):
+        reads = []
+
+        def broken(kit):
+            reads.append(kit)
+            raise RuntimeError('boom')
+        self.host.guard_entry = broken
+        code, out = self.run_it()
+        self.assertEqual(code, M.EXIT_REFUSED, out)
+        self.assertIn('cannot read boot/hook.py --settings-entry: boom', out)
+        self.assertGreaterEqual(len(reads), 2)                       # each account asked again
+
     def test_fresh_second_run_has_nothing_to_do(self):
         code, out = self.run_it(apply=True, pm_settings=self.pm)
         self.assertEqual(code, M.EXIT_OK, out)

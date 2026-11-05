@@ -33,6 +33,7 @@ entry, ENTRY, followed by the host and the script's words (RETIRED): `guard.py` 
 file written before plan step 14 keeps its one guard entry and its PM hook. Any other name in those
 folders, or a kit with no ENTRY, is refused.
 """
+import copy
 import difflib
 import json
 import os
@@ -241,7 +242,7 @@ def _survey_fresh(plan, path, ctx):
     _guard_on_failure(data, ctx, did)
     if _wants_guard(plan, path, data, ctx):
         try:
-            entry = ctx.host.guard_entry(ctx.kit)
+            entry = guard_entry(ctx)
         except (OSError, RuntimeError, ValueError) as e:
             plan.refuse('cannot read boot/hook.py --settings-entry: %s' % e)
             return
@@ -250,6 +251,17 @@ def _survey_fresh(plan, path, ctx):
         did.append('add the guard\'s PreToolUse entry')
     if did:
         _plan_write(plan, ctx, path, raw, layout, data, did)
+
+
+def guard_entry(ctx):
+    """The guard's settings entry (ctx.host.guard_entry), read once per survey: it depends on the kit
+    and the default host only, so the first read is kept on ctx and every account gets a copy. A read
+    that raises is not kept; the host's exception reaches each caller."""
+    cache = ctx.__dict__.setdefault('_guard_entries', {})
+    key = (ctx.kit, registry.default())
+    if key not in cache:
+        cache[key] = ctx.host.guard_entry(ctx.kit)
+    return copy.deepcopy(cache[key])
 
 
 def host_name():
@@ -456,7 +468,7 @@ def survey_pm(plan, ctx):
             _plan_write(plan, ctx, path, raw, layout, data, did)
         return
     try:
-        exe = ctx.host.guard_entry(ctx.kit)['PreToolUse'][0]['hooks'][0]['command']
+        exe = guard_entry(ctx)['PreToolUse'][0]['hooks'][0]['command']
         if not isinstance(exe, str) or not exe.strip():
             raise ValueError('its command is %r' % (exe,))
     except (OSError, RuntimeError, ValueError, KeyError, IndexError, TypeError) as e:
@@ -613,7 +625,7 @@ class _Editor(object):
         """The guard's settings entry (boot/hook.py --settings-entry), read once per file; raises what
         the host raises."""
         if self._entry is None:
-            self._entry = self.ctx.host.guard_entry(self.ctx.kit)
+            self._entry = guard_entry(self.ctx)
         return self._entry
 
     def hook(self, event, h):

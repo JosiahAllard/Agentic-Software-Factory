@@ -50,7 +50,10 @@ def why(e):
 
 def desktop_app_running(procs):
     """True when a Claude process runs that no launcher started: the desktop app (the Store
-    install under WindowsApps) or a session with no Remote Control name."""
+    install under WindowsApps) or a session with no Remote Control name. Linux has no desktop app,
+    so there it is always False."""
+    if platform.NAME == 'linux':
+        return False
     for p in procs:
         if (p.get('Name') or '').lower() != 'claude.exe':
             continue
@@ -59,20 +62,18 @@ def desktop_app_running(procs):
     return False
 
 
-def _cli(p):
-    return (p.get('Name') or '').lower() == 'claude.exe'
-
-
 def running(procs, text):
-    """A claude.exe whose command line contains text (--test's check for TEST_NAME; never the PM's:
-    other sessions' first messages name pm-session)."""
-    return any(_cli(p) and text in (p.get('CommandLine') or '') for p in procs)
+    """A launched session (lookup.launched: claude.exe, on Linux the host's process images) whose
+    command line contains text (--test's check for TEST_NAME; never the PM's: other sessions' first
+    messages name pm-session)."""
+    return any(text in p['CommandLine'] for p in lookup.launched(procs))
 
 
 def runs_session(procs, sid):
-    """A claude.exe that resumes or starts session sid (stop.runs_as: the --resume/-r or --session-id
-    value), not one whose command line only mentions the id, as a topic session's brief path does."""
-    return any(_cli(p) and stop.runs_as(p.get('CommandLine'), sid) for p in procs)
+    """A launched session that resumes or starts session sid (stop.runs_as: the --resume/-r or
+    --session-id value), not one whose command line only mentions the id, as a topic session's brief
+    path does."""
+    return any(stop.runs_as(p['CommandLine'], sid) for p in lookup.launched(procs))
 
 
 def newest_transcript_mtime(settings, session_id):
@@ -124,7 +125,11 @@ def run(settings, host, test=False, dry_run=False, say=None, permission_mode=Non
         if dry_run:
             tell('would start %s in %s' % (TEST_NAME, folder))
             return out
-        host.open_window(text, **window.open_args(TEST_NAME, settings))
+        try:
+            host.open_window(text, **window.open_args(TEST_NAME, settings))
+        except LaunchError as e:                     # e.g. tmux refusing a duplicate window name
+            log('FAILED to start %s : %s' % (TEST_NAME, why(e)))
+            return out
         if platform.NAME == 'linux':
             log('started %s in %s' % (TEST_NAME, window.opened_in(TEST_NAME, settings.terminal)))
         else:

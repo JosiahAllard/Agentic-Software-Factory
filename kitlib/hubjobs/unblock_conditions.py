@@ -84,8 +84,9 @@ class Readers(object):
     _read = None            # the scope's resource reads, made once per `at`: capacity, remote, split
 
     def at(self, root, snap):
-        """Read `resource:` conditions against the store at `root`, read as `snap`. Each `at`
-        starts the pass's resource reads afresh (resource_free reads them once per call of it)."""
+        """Read `resource:` conditions against the store at `root`, read as `snap`. The resource
+        reads (`.kit.json`, git) are made once per `at` pass and shared by every `resource:`
+        condition read in it; the next `at` starts them afresh."""
         self.scope = (root, snap)
         self._read = {}
 
@@ -102,7 +103,7 @@ class Readers(object):
             self.why = 'no store is being read'
             return None
         root, snap = self.scope
-        read = self._read if self._read is not None else {}
+        read = self._read
         if 'config' not in read:
             try:
                 read['config'] = (opener.repo_resources(root), kconfig.load(root).remote)

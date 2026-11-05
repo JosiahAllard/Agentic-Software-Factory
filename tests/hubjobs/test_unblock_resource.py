@@ -57,6 +57,18 @@ class ResourceFree(Case):
         self.assertEqual(self.get('WAIT').get('state'), 'blocked')      # dev-clone is taken
         self.assertEqual(self.get('GPU').get('state'), 'open')          # gpu is free
 
+    def test_an_unreadable_config_is_read_once_per_pass_and_says_the_same_why(self):
+        readers = U.Readers(self.hub, self.plugins, lambda repo, rid: None)
+        readers.at(self.repo.root, None)
+        with mock.patch('kitlib.backlog.opener.repo_resources',
+                        side_effect=ValueError('x')) as caps:
+            self.assertIsNone(readers.resource_free('dev-clone'))
+            first = readers.why
+            self.assertIsNone(readers.resource_free('gpu'))
+            self.assertEqual(readers.why, first)
+        self.assertIn('.kit.json cannot be read', first)
+        self.assertEqual(caps.call_count, 1)
+
     def test_each_at_reads_afresh(self):
         readers = U.Readers(self.hub, self.plugins, lambda repo, rid: None)
         readers.at(self.repo.root, None)

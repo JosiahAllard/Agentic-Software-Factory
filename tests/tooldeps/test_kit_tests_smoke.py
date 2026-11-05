@@ -134,7 +134,7 @@ class Cli(unittest.TestCase):
         if top is None:
             patches += [mock.patch.object(cli.selftree, 'config', return_value=cfg or table()),
                         mock.patch.object(cli.selftree, 'all_test_modules', return_value=MODULES),
-                        mock.patch.object(cli, 'plan', return_value=list(SELECTED))]
+                        mock.patch.object(cli.kitrun, 'plan', return_value=list(SELECTED))]
         for p in patches:
             p.start()
         try:

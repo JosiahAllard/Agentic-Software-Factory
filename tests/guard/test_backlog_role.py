@@ -789,6 +789,13 @@ class RawCode(Base):
                      'backlog-raw-write')
         self.allowed(self.cmd("python -c \"print('kitlib/backlog/store.py')\"", tool='PowerShell'))
 
+    def test_c_code_by_a_launch_other_than_plain_or_xargs_stays_on_the_name(self):
+        # a PowerShell process-start call re-splits its words (backlogrole.c_code: Invocation.via);
+        # its saps alias here keeps the cmdlet's name out of the text tests/proc/windowscan.py reads
+        self.refused(self.cmd("saps python -ArgumentList '-c',\"print('kitlib/backlog/store.py')\"",
+                              tool='PowerShell'), 'backlog-raw-write')
+        self.allowed(self.cmd("echo x | xargs python -c \"print('kitlib/backlog/store.py')\""))
+
 
 class HubWriterCode(Base):
     """Code that names the hub's record writer (kitlib.hubsite.recordwrite) or the store's

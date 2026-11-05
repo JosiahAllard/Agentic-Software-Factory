@@ -71,10 +71,37 @@ def scope_components(member):
     return member_base(member).casefold().strip('/').split('/')
 
 
-def members_collide(a, b):
+def shared_path_error(path):
+    """None when `path` may be a `.kit.json` "backlog".shared_paths entry: one literal file, a
+    repo-root-relative path with no glob and no wildcard character; else why not. Whether it names
+    a folder in the tree is the caller's to ask (opener.repo_shared_paths). Pure."""
+    if not isinstance(path, str):
+        return 'not a string'
+    if path.endswith(GLOB_SUFFIX) or any(ch in WILDCARD_CHARS for ch in path):
+        return '`%s` is a glob: a shared path is one literal file' % path
+    if path.endswith('/'):
+        return '`%s` is a folder: a shared path is one literal file' % path
+    if path.casefold() == NONE:
+        return '`%s` reads as the `none` sentinel' % path
+    return path_shape_error(path, 'shared path')
+
+
+def is_shared(member, shared):
+    """True when scope member `member` IS one of the shared paths `shared` (casefolded, as members
+    compare): a literal member, never a glob and never `none`."""
+    if not shared or member == NONE or member.endswith(GLOB_SUFFIX):
+        return False
+    folded = member.casefold()
+    return any(folded == s.casefold() for s in shared)
+
+
+def members_collide(a, b, shared=()):
     """True iff one member's component list is a prefix of the other's. Component-wise, so
     `Foo.java` and `Foobar.java` are clear; over-approximate by design. A tab a member already
-    holds is an ordinary character here."""
+    holds is an ordinary character here. `shared` (`.kit.json` "backlog".shared_paths): a pair
+    where either member IS a shared path does not collide (`x/**` against a shared `x/f`
+    included); both members are still validated first, and `shared` is only asked of a pair that
+    collides without it (a lazy `shared` is read only then)."""
     for m in (a, b):
         err = scope_member_error(m, tab_ok=True)
         if err is not None:
@@ -83,12 +110,14 @@ def members_collide(a, b):
         return False
     ca, cb = scope_components(a), scope_components(b)
     n = min(len(ca), len(cb))
-    return ca[:n] == cb[:n]
+    if ca[:n] != cb[:n]:
+        return False
+    return not (is_shared(a, shared) or is_shared(b, shared))
 
 
-def scopes_collide(scopes_a, scopes_b):
+def scopes_collide(scopes_a, scopes_b, shared=()):
     """True iff any member of one set collides with any member of the other. Every member is
-    validated, even after a hit; an empty set raises."""
+    validated, even after a hit; an empty set raises. `shared`: as members_collide."""
     for name, scopes in (('a', scopes_a), ('b', scopes_b)):
         if not scopes:
             raise UndecidableScope('scope set %s is empty; an item that touches no tracked file '
@@ -96,13 +125,28 @@ def scopes_collide(scopes_a, scopes_b):
     hit = False
     for a in scopes_a:
         for b in scopes_b:
-            if members_collide(a, b):
+            if members_collide(a, b, shared):
                 hit = True
     return hit
 
 
-def colliding_pairs(scopes_a, scopes_b):
-    return [(a, b) for a in scopes_a for b in scopes_b if members_collide(a, b)]
+def colliding_pairs(scopes_a, scopes_b, shared=()):
+    return [(a, b) for a in scopes_a for b in scopes_b if members_collide(a, b, shared)]
+
+
+def shared_hits(scopes_a, scopes_b, shared):
+    """The shared paths a pair exempted by `shared` meets on: for each `(a, b)` that collides
+    without `shared` and not with it, the member of the two that is a shared path (`a` when both
+    are), each once, in order. A member the grammar cannot read raises UndecidableScope. `shared`
+    is asked only of a pair that collides without it."""
+    out = []
+    for a in scopes_a:
+        for b in scopes_b:
+            if members_collide(a, b) and (is_shared(a, shared) or is_shared(b, shared)):
+                path = a if is_shared(a, shared) else b
+                if path not in out:
+                    out.append(path)
+    return out
 
 
 COMPLEMENT_CAP = 30     # members `complement` returns at most; more is "cannot auto-narrow"

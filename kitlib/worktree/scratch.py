@@ -15,8 +15,9 @@ this order before anything is touched:
 - it is a worktree registered to this repository, not locked, detached, holding no other
   registered worktree;
 - its HEAD, and every commit in its HEAD reflog, is reachable from a branch, remote-tracking
-  branch or tag (`reachable`): a commit no ref reaches cannot be told apart from work, so it is
-  refused (a ref that does not peel to a commit is skipped; a failed read proves nothing);
+  branch or tag (`reachable`, one `rev-list` for them all): a commit no ref reaches cannot be told
+  apart from work, so it is refused (a ref that does not peel to a commit is skipped; a failed
+  read, such as a commit git no longer has, proves nothing);
 - nothing holds it, no link is inside it, and its ignored files are build output only (the
   workstream verbs' own rules, kitlib.worktree.remove);
 - every uncommitted file is already in git at the SAME path (`preserved`): its content, and its
@@ -193,9 +194,28 @@ def reflog(path):
     return oids, None
 
 
-def _reaches(ctx, refs, oid):
-    """`(ref, None)` for a ref whose history holds `oid`; `(None, None)` when no ref does;
-    `(None, why)` when no ref proved it and a read failed (fail closed: never a NO)."""
+def _reaches(ctx, oids, also=()):
+    """`(the commits in `oids` that no branch, remote-tracking branch, tag or `also` commit
+    reaches, in their order; None)`, or `(None, why)` when git could not say (fail closed: a commit
+    git no longer has fails the read, never a NO). One `rev-list <oids> --not ...` per batch of
+    oids (BATCH_CHARS), whatever the number of refs: it lists every commit the oids reach that no
+    ref does, so an oid absent from its output is reached (the form remove.unsaved_count uses)."""
+    lost = []
+    for batch in _batches(oids):
+        args = ('rev-list', *batch, '--not', *also, '--branches', '--remotes', '--tags')
+        rc, out, err = remove.git(ctx.main, *args)
+        if rc != 0:
+            return None, remove.failure(args[:1], rc, err)
+        listed = set(out.split())
+        lost.extend(o for o in batch if o in listed)
+    return lost, None
+
+
+def _holder(ctx, refs, oid):
+    """`(ref, None)` for the first ref whose history holds `oid`, the name to print; `(None,
+    None)` when no ref does; `(None, why)` when no ref proved it and a read failed (fail closed:
+    never a NO). One `merge-base` per ref until one answers: only for the one commit whose ref is
+    printed (`reachable`'s HEAD), after `_reaches` said a ref holds it."""
     for tip, name in refs:          # a tip at the commit answers without a walk
         if tip == oid:
             return name, None
@@ -214,24 +234,26 @@ def reachable(ctx, path, head, logged):
     """The first ref (refs/heads, refs/remotes, refs/tags) whose history holds `head`, or None
     after saying why the tree is refused. Every commit in `logged` (its HEAD reflog) must be
     reached too: a commit made in the tree and left by a checkout is work no ref keeps."""
-    def unknown(oid, why):
+    def unknown(what, why):
         ctx.say('refused   %s: whether a ref reaches %s is unknown (%s); %s'
-                % (path, oid[:10], why, NOTHING))
+                % (path, what, why, NOTHING))
 
     args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', 'refs/heads',
             'refs/remotes', 'refs/tags')
     rc, out, err = remove.git(ctx.main, *args)
     if rc != 0:
-        unknown(head, remove.failure(args[:1], rc, err))
+        unknown(head[:10], remove.failure(args[:1], rc, err))
         return None
     # A ref to a blob or tree holds no commit; a tag object may peel to one (merge-base peels it).
     refs = [(p[0], p[2]) for p in (line.split(' ', 2) for line in out.splitlines())
             if len(p) == 3 and p[1] in ('commit', 'tag')]
-    ref, why = _reaches(ctx, refs, head)
-    if ref is None:
-        if why:
-            unknown(head, why)
-            return None
+    oids = [head] + [o for o in logged if o != head]
+    lost, why = _reaches(ctx, oids)
+    if lost is None:
+        unknown(head[:10] if len(oids) == 1 else '%s or its %d reflog commit(s)'
+                % (head[:10], len(oids) - 1), why)
+        return None
+    if head in lost:
         rc, count, _ = remove.git(ctx.main, 'rev-list', '--count', head, '--not', '--branches',
                                   '--remotes', '--tags')
         ctx.say('refused   %s: no ref reaches its detached HEAD %s (%s commit(s) of its own would'
@@ -239,19 +261,16 @@ def reachable(ctx, path, head, logged):
                 % (path, head[:10], count if rc == 0 and count.isdigit() else 'an unknown number of',
                    NOTHING))
         return None
-    for oid in logged:
-        if oid == head:
-            continue
-        got, why = _reaches(ctx, refs, oid)
-        if got is None:
-            if why:
-                unknown(oid, why)
-            else:
-                ctx.say('refused   %s: its HEAD reflog or a per-worktree ref holds %s, which no'
-                        ' ref reaches (a commit'
-                        ' made there and left behind); whether to drop it is the owner\'s call; %s'
-                        % (path, oid[:10], NOTHING))
-            return None
+    if lost:
+        ctx.say('refused   %s: its HEAD reflog or a per-worktree ref holds %s, which no'
+                ' ref reaches (a commit'
+                ' made there and left behind); whether to drop it is the owner\'s call; %s'
+                % (path, lost[0][:10], NOTHING))
+        return None
+    ref, why = _holder(ctx, refs, head)
+    if ref is None:
+        unknown(head[:10], why or 'git rev-list found it reached, but no ref answered which')
+        return None
     return ref
 
 

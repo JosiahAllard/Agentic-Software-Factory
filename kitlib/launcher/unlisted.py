@@ -9,20 +9,21 @@ their windows, so the hub's usage crossover can start each one again on another 
       `skip`: the names to leave out (the sessions.json entries' sessions, the PM); `keys`: the
       sessions.json keys (an unlisted session whose key is one of them is never crossed).
 
-A session is read from its window, the powershell.exe parent whose script start.py wrote
-(window.script): its title and the claude line both carry the session's name, PM_KIT_ROLE is
-consultant or deep-worker and matches its --agent, CLAUDE_CONFIG_DIR (or its removal: the default
-folder) is the folder of exactly one account in launcher.accounts, and its first message is one of
-start.py's (CONSULTANT_PROMPT, DEEP_PROMPT, DEEP_SUCCESSOR_PROMPT), from which the notes file, the
-brief, the requester and the repository come back. The key: a consultant's name; a deep-worker's
+A session is read from its window, the powershell.exe parent (on Linux the `/bin/bash -c` parent,
+linuxwin.script) whose script start.py wrote (window.script): its title and the claude line both
+carry the session's name, PM_KIT_ROLE is consultant or deep-worker and matches its --agent,
+CLAUDE_CONFIG_DIR (or its removal: the default folder) is the folder of exactly one account in
+launcher.accounts, and its first message is one of start.py's (CONSULTANT_PROMPT, DEEP_PROMPT,
+DEEP_SUCCESSOR_PROMPT), from which the notes file, the brief, the requester and the repository come
+back. The key: a consultant's name; a deep-worker's
 name, without the -a<N> a successor's name carries. Nothing here reads a file or a process itself.
 """
 import collections
 import os
 import re
 
-from kitlib import agentname
-from kitlib.launcher import lookup, start, stop, window
+from kitlib import agentname, platform
+from kitlib.launcher import linuxwin, lookup, start, stop, window
 
 CONSULTANT, DEEP = 'consultant', 'deep'
 # the reasons a live session is never crossed (docs/launcher.md "Usage crossover")
@@ -47,15 +48,49 @@ _UNDOUBLE = re.compile('%s(%s)' % (_QC, _QC))     # a doubled pair is its second
 # the host program window.session_command runs, read from it: the host's name stays out of kitlib
 _PROGRAM = re.escape(window.session_command('n', 'p').split(' ', 1)[0])
 _SET = re.compile(r"; Set-Location %s; (%s .*)\Z" % (_Q, _PROGRAM), re.S)
-_CMD = re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?(?: --effort (?P<effort>\S+))?"
-                   r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>{q}))?(?: --permission-mode \S+)?"
-                   r" --remote-control (?P<rc>{q}) -n (?P<n>{q}) (?P<prompt>{q})\Z").replace('{q}', _QX),
-                  re.S)
+
+
+def _command(qx):
+    """The regex of the claude line start.py writes, its quoted values matching `qx`."""
+    return re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?"
+                       r"(?: --effort (?P<effort>\S+))?"
+                       r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>{q}))?(?: --permission-mode \S+)?"
+                       r" --remote-control (?P<rc>{q}) -n (?P<n>{q}) (?P<prompt>{q})\Z").replace('{q}', qx), re.S)
+
+
+_CMD = _command(_QX)
 _ROLE = re.compile(r"(?:^|; )\$env:%s = %s" % (re.escape(window.ROLE_ENV), _Q))
 _CONFIG = re.compile(r"(?:^|; )\$env:%s = %s" % (re.escape(window.CONFIG_ENV), _Q))
 _NO_CONFIG = '; Remove-Item Env:%s ' % window.CONFIG_ENV
 _TEMP = re.compile(r"(?:^|; )\$env:AGENT_TEMP = %s" % _Q)
 _SUFFIX = re.compile(r'-a\d+\Z')
+
+# The Linux window (linuxwin.script): bash, a value single-quoted with ' written '\''.
+_BQX = r"'(?:[^']|'\\'')*'"
+_BQ = r"'((?:[^']|'\\'')*)'"
+_BCMD = _command(_BQX)
+_BSET = re.compile(r"\ncd -- %s && (%s .*)\n%s\Z" % (_BQ, _PROGRAM, re.escape(linuxwin.STAY)), re.S)
+_BROLE = re.compile(r"^export %s=%s$" % (re.escape(linuxwin.ROLE_ENV), _BQ), re.M)
+_BCONFIG = re.compile(r"^export %s=%s$" % (re.escape(window.CONFIG_ENV), _BQ), re.M)
+_BNO_CONFIG = re.compile(r"^unset %s$" % re.escape(window.CONFIG_ENV), re.M)
+_BTEMP = re.compile(r"^export AGENT_TEMP=%s " % _BQ, re.M)
+
+
+def _bunq(text):
+    """A bash single-quoted value (linuxwin.q), quotes included, back to its text; None stays None."""
+    return text[1:-1].replace("'\\''", "'") if text else text
+
+
+def _bval(m):
+    """The text of a match of _BQ's group 1; None for no match."""
+    return m.group(1).replace("'\\''", "'") if m else None
+
+
+def _title(name):
+    """The first line of a window script for `name`, as the platform's window writes it."""
+    if platform.NAME == 'linux':
+        return linuxwin.script('n', 'r', '/', 'c').split('\n', 1)[0].replace(linuxwin.q('n'), linuxwin.q(name)) + '\n'
+    return '$Host.UI.RawUI.WindowTitle = %s; ' % window.q(name)
 
 
 def _unq(text):
@@ -118,8 +153,10 @@ def account_of(settings, config_dir):
 def read_window(script, name):
     """{role, config_dir, agent_temp, folder, agent, model, effort, autocompact, add_dir, prompt}
     of a window script start.py wrote for the session `name`, or None."""
-    if not script or not script.startswith('$Host.UI.RawUI.WindowTitle = %s; ' % window.q(name)):
+    if not script or not script.startswith(_title(name)):
         return None
+    if platform.NAME == 'linux':
+        return _read_bash(script, name)
     m = _SET.search(script)
     c = _CMD.match(m.group(2)) if m else None
     if not c or _unq(c.group('rc')) != name or _unq(c.group('n')) != name:
@@ -134,13 +171,36 @@ def read_window(script, name):
             'add_dir': _unq(c.group('add')), 'prompt': _unq(c.group('prompt'))}
 
 
+def _read_bash(script, name):
+    """read_window for the Linux window's bash (linuxwin.script)."""
+    m = _BSET.search(script)
+    c = _BCMD.match(m.group(2)) if m else None
+    if not c or _bunq(c.group('rc')) != name or _bunq(c.group('n')) != name:
+        return None
+    head = script[:m.start()]
+    role, config = _BROLE.search(head), _BCONFIG.search(head)
+    if not role or (not config and not _BNO_CONFIG.search(head)):
+        return None
+    return {'role': _bval(role), 'config_dir': _bval(config), 'agent_temp': _bval(_BTEMP.search(head)),
+            'folder': _bval(m), 'agent': c.group('agent'), 'model': _bunq(c.group('model')),
+            'effort': c.group('effort'), 'autocompact': c.group('ac') and int(c.group('ac')),
+            'add_dir': _bunq(c.group('add')), 'prompt': _bunq(c.group('prompt'))}
+
+
 def _window_of(row, by_pid):
-    """The script of the powershell.exe window `row` runs in, or None."""
+    """The script of the window `row` runs in (powershell.exe, on Linux /bin/bash -c), or None."""
     try:
         parent = by_pid.get(int(row.get('ParentProcessId') or 0))
     except (TypeError, ValueError):
         return None
-    if not parent or parent.get('Name') != 'powershell.exe' or not parent.get('CommandLine'):
+    if not parent or not parent.get('CommandLine'):
+        return None
+    if platform.NAME == 'linux':
+        prefix = linuxwin.SHELL + ' -c '
+        if parent.get('Name') != linuxwin.SHELL_NAME or not parent['CommandLine'].startswith(prefix):
+            return None
+        return parent['CommandLine'][len(prefix):]
+    if parent.get('Name') != 'powershell.exe':
         return None
     return stop.window_script(parent['CommandLine'])
 
@@ -150,7 +210,7 @@ def session_of(row, by_pid, settings, name):
     account): `account` the one its window's config folder names, None when it has no readable
     window or the folder is no single account's."""
     script = _window_of(row, by_pid)
-    if not script or not script.startswith('$Host.UI.RawUI.WindowTitle = %s; ' % window.q(name)):
+    if not script or not script.startswith(_title(name)):
         return None, NO_WINDOW, None
     w = read_window(script, name)
     if w is None:

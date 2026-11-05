@@ -466,6 +466,25 @@ class Cli(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 launch.push_delivery(types.SimpleNamespace(state_dir=lambda: 's'))
 
+    def test_push_delivery_missing_host_is_none_but_another_missing_module_surfaces(self):
+        import builtins
+        import sys
+        import types
+        from unittest import mock
+        from tools import launch
+        settings = types.SimpleNamespace(state_dir=lambda: 's')
+        with mock.patch.dict(sys.modules, {'_host': None}):
+            self.assertIsNone(launch.push_delivery(settings))
+        real = builtins.__import__
+
+        def deep(name, *a, **kw):
+            if name == '_host':
+                raise ModuleNotFoundError("No module named 'kitlib.nope'", name='kitlib.nope')
+            return real(name, *a, **kw)
+        with mock.patch.dict(sys.modules), mock.patch.object(builtins, '__import__', deep):
+            sys.modules.pop('_host', None)
+            with self.assertRaises(ModuleNotFoundError):
+                launch.push_delivery(settings)
 
     def test_the_parser_takes_pm_crossover(self):
         from tools import launch

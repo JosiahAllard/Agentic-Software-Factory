@@ -337,9 +337,6 @@ class LoadsAndListings(unittest.TestCase):
         self.assertEqual(selftree._tool_loads(nodes), {'gate', 'backlog', 'commit', 'land'})
 
     def test_a_test_listing_a_folder_is_selected_by_a_change_in_it(self):
-        picked, why, _ = self.select('tools/solo.py')
-        self.assertEqual(why['tests.walker.test_every_tool'], ['lists tools/ (tools/solo.py)'])
-        self.assertNotIn('tests.walker.test_imports_walker', picked)
         # a prose file in a listed folder is not a note: a test reads it
         picked, why, notes = self.select('docs/sub/new.md')
         self.assertEqual(picked, ['tests.walker.test_uses_lister'])
@@ -348,6 +345,10 @@ class LoadsAndListings(unittest.TestCase):
         self.assertEqual(notes, [])
         # docs/ itself is not listed
         self.assertEqual(self.select('docs/other.md')[0], [])
+        picked, why, _ = self.select('tools/solo.py')
+        self.assertIn('tests.walker.test_every_tool', picked)
+        self.assertEqual(why['tests.walker.test_every_tool'], ['lists tools/ (tools/solo.py)'])
+        self.assertNotIn('tests.walker.test_imports_walker', picked)
 
     def test_folders_come_from_the_module_and_its_helpers_only(self):
         mods = self.tree.modules

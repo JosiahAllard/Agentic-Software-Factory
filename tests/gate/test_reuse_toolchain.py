@@ -49,7 +49,7 @@ TOOLED = sorted(reuse.INPUT_PARTS + ('toolchain',))
 
 class ToolchainCase(ReuseCase):
     GATE = {'steps': [UNIT, TOOLY, CACHY]}
-    KIT = {'landing': {'shared_paths': ['shared/*']}}
+    KIT = {'landing': {'shared_paths': ['shared/*'], 'gate_once': False}}   # reuse: no gate_once
     ASKING = ('unit', 'tooly', 'cachy')
 
     def setUp(self):
@@ -258,7 +258,7 @@ class ProbeNotFound(ToolchainCase):
 
 class NoOptIn(ReuseCase):
     """A gate whose steps declare no toolchain starts no probe and keys as it did."""
-    KIT = {'landing': {'shared_paths': ['shared/*']}}
+    KIT = {'landing': {'shared_paths': ['shared/*'], 'gate_once': False}}   # reuse: no gate_once
 
     def test_no_toolchain_starts_no_probe_and_keys_the_input_parts_alone(self):
         # the seam every probe goes through: a mock of a name that is not there proves nothing

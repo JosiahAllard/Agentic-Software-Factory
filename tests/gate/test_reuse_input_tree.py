@@ -40,7 +40,8 @@ class InputTree(ReuseCase):
     no input, a batch, a docs-only record, a result that was not a pass, or a record without input
     keys serves nothing."""
     GATE = {'steps': [UNIT, BASEY, WHOLE, FULLY, GU, GW, MERGED, PLAIN]}
-    KIT = {'landing': {'shared_paths': ['shared/*']}}       # a default-mode record lands
+    # a default-mode record lands; gate_once off, as its --full merged gate reuses nothing
+    KIT = {'landing': {'shared_paths': ['shared/*'], 'gate_once': False}}
     ASKING = ('unit', 'basey', 'whole', 'fully', 'gu', 'gw', 'merged')
 
     def full_tip(self):

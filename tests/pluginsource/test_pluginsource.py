@@ -9,6 +9,7 @@ from unittest import mock
 
 from kitlib import pluginsource as P
 from kitlib.pluginsource import claude
+from tests.platforms import posix_only
 from tests.pluginsource import FakeProc, Kit, MANIFEST, read_json
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
@@ -71,7 +72,7 @@ class ExportTest(Base):
         with mock.patch.object(P, '_tree', tree):
             return P.export(self.k.kit, sha, root or self.k.root, NOW)[0]
 
-    @unittest.skipIf(os.name == 'nt', 'the exec bit is a POSIX file mode')
+    @posix_only('the exec bit is a POSIX file mode')
     def test_a_100755_blob_is_exported_executable_and_a_100644_blob_is_not(self):
         folder = self._export_with_hook()
         self.assertTrue(os.access(os.path.join(folder, 'githooks', 'pre-push'), os.X_OK))

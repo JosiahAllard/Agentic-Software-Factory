@@ -284,6 +284,43 @@ class ReadOnly(unittest.TestCase):
         self.assertNotIn("\nassert ", source)
 
 
+class StoreKept(StoreCase):
+    """Server() with no store keeps one Store, so the gpu_use cache (5 s) hits across calls."""
+
+    def test_two_snapshots_spawn_the_gpu_probe_once(self):
+        from unittest import mock
+        probes = []
+
+        def build():
+            s = self.make_store()
+            s.gpu_probe = lambda: probes.append(1) or {}
+            return s
+
+        server = srv.Server()
+        with mock.patch("kitlib.lock.api.Store", build):
+            for _ in range(2):
+                payload, is_error = server.call("lock_snapshot", {})
+                self.assertFalse(is_error, payload)
+        self.assertEqual(len(probes), 1)
+
+    def test_lock_state_is_read_fresh_on_every_call(self):
+        from unittest import mock
+        from kitlib.lock import api
+        from tests.lock.helpers import OWNER
+        server = srv.Server()
+        with mock.patch("kitlib.lock.api.Store", self.make_store):
+            before, _ = server.call("lock_snapshot", {})
+            res = api.hold_create(OWNER, {"owner": "owner", "scope": "half", "for_s": 3600},
+                                  self.store)
+            self.assertTrue(res["ok"], res)
+            hid = res["result"]["hold"]["id"]
+            after, _ = server.call("lock_snapshot", {})
+            rec, _ = server.call("lock_hold", {"id": hid})
+        self.assertGreater(after["revision"], before["revision"])
+        self.assertEqual(len(after["holds"]), len(before["holds"]) + 1)
+        self.assertTrue(rec["found"], rec)
+
+
 @windows_only("the lock is Windows only")
 class EntryPoint(unittest.TestCase):
     """mcp/lock_server.py itself: initialize and tools/list read no store."""

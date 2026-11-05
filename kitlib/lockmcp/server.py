@@ -136,7 +136,8 @@ class Server:
     tool asks who is calling (tests/lockmcp/scratch_server.py still passes one)."""
 
     def __init__(self, store=None, actor=None):
-        self.store = store
+        self.store = store      # None: built on the first call and kept, so the Store's gpu_use and
+                                # hardware caches survive between calls (lock state is not cached)
 
     # ---------------------------------------------------------------- tools
     def tool_list(self):
@@ -151,6 +152,8 @@ class Server:
             return {"ok": False, "error": {"code": UNKNOWN_TOOL, "message": "unknown tool %s" % (name,),
                                            "field": "name"}}, True
         try:
+            if self.store is None:      # inside the try: a store that cannot be built is a reply
+                self.store = api._store(None)
             a = _args(name, args if args is not None else {})
             return getattr(self, "_t_" + name)(a)
         except ToolError as e:

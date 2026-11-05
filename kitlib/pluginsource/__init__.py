@@ -51,6 +51,7 @@ import time
 
 from kitlib import kitroot
 from kitlib import platform as kitplatform
+from kitlib.fs import replace as fsreplace
 from kitlib.git import batch, cmd, refs, repo
 
 NAME = 'pm-kit'                      # the marketplace's and the plugin's name
@@ -953,18 +954,19 @@ class RefreshLock(object):
         self.clock = clock or time.time
         self.held = False
 
-    def holder(self):
+    def holder(self, path=None):
         """{pid, ctime} of a live holder (pid None: a file not yet written), or None (no file, or
-        a stale one)."""
+        a stale one). `path`: read that file instead (a claimed refresh.pid, _break)."""
+        path = path or self.path
         try:
-            with open(self.path, encoding='utf-8') as fh:
+            with open(path, encoding='utf-8') as fh:
                 data = json.load(fh)
             pid, ctime = int(data['pid']), data.get('ctime')
         except FileNotFoundError:
             return None
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             try:
-                age = self.clock() - os.path.getmtime(self.path)
+                age = self.clock() - os.path.getmtime(path)
             except FileNotFoundError:
                 return None
             except OSError:
@@ -982,13 +984,60 @@ class RefreshLock(object):
             except FileExistsError:
                 h = self.holder()
                 if h is not None:
-                    who = 'pid %d' % h['pid'] if h['pid'] is not None else 'its pid not yet written'
-                    raise Busy('a refresh is already running (%s, %s)' % (who, self.path))
-                try:
-                    os.remove(self.path)        # stale: its process is gone
-                except FileNotFoundError:
-                    pass
+                    raise self._busy(h)
+                self._break()                   # stale: its process is gone
         raise Busy('cannot take %s' % self.path)
+
+    def _busy(self, h):
+        who = 'pid %d' % h['pid'] if h['pid'] is not None else 'its pid not yet written'
+        return Busy('a refresh is already running (%s, %s)' % (who, self.path))
+
+    def _break(self):
+        """Remove the refresh.pid just read as stale, by claim: renamed to a name only this run
+        uses, then read again there. Between that read and the rename another starter may have
+        broken it and written its own; a plain remove would delete that live file and both would
+        hold the lock. A claimed file that is still stale is removed; a live one is put back and
+        refused (Busy). A file already gone is another starter's break: the caller retries."""
+        claim = '%s.break-%d-%s' % (self.path, self.own[0], os.urandom(4).hex())
+        try:
+            fsreplace.replace(self.path, claim)     # waits out a reader on Windows
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            raise Busy('cannot take %s: %s' % (self.path, e))
+        h = self.holder(claim)
+        if h is None:
+            try:
+                fsreplace.remove(claim)
+            except OSError:
+                pass                                # a stray claim file; refresh.pid is free
+            return
+        self._put_back(claim)
+        raise self._busy(h)
+
+    def _put_back(self, claim):
+        """Move a claimed live file back to refresh.pid, never over a file a starter made there
+        meanwhile: os.link on Linux (a rename would replace it), os.rename on Windows (it refuses
+        an existing target), retried there while a reader holds the file open. On failure it
+        stays at `claim`."""
+        if kitplatform.NAME == 'linux':
+            try:
+                os.link(claim, self.path)
+                os.remove(claim)
+            except OSError:
+                pass
+            return
+        deadline = time.monotonic() + fsreplace.WAIT
+        while True:
+            try:
+                os.rename(claim, self.path)
+                return
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    return
+            except OSError:
+                return
+            time.sleep(fsreplace.PAUSE)
 
     def release(self):
         if not self.held:

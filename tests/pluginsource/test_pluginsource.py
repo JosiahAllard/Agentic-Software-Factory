@@ -398,11 +398,42 @@ class RefreshLockTest(Base):
             second = P.RefreshLock(self.k.root, own=(2, 20), alive=alive)
             second.acquire()
             self.assertTrue(second.held)
+            self.assertFalse([n for n in os.listdir(self.k.root) if '.break-' in n])
             second.release()
             self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
             first.acquire()
         first.release()
         self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
+
+    def test_two_starters_breaking_one_stale_file_never_both_hold(self):
+        # A dead holder (pid 9) left refresh.pid. B reads it as stale; before B breaks it, A breaks
+        # it too and takes the lock (run from B's liveness check, the race point). B must then
+        # refuse, and leave A's file where it was. Both ways of putting a claim back are run
+        # (os.link on Linux, os.rename on Windows).
+        os.makedirs(self.k.root)
+        pidfile = os.path.join(self.k.root, P.PIDFILE)
+        for name in ('windows', 'linux'):
+            with self.subTest(platform=name), mock.patch.object(P.kitplatform, 'NAME', name):
+                with open(pidfile, 'w', encoding='utf-8') as fh:
+                    json.dump({'pid': 9, 'ctime': 90}, fh)
+                a = P.RefreshLock(self.k.root, own=(1, 10), alive=lambda pid, ct: pid != 9)
+                raced = []
+
+                def b_alive(pid, ct):
+                    if pid == 9 and not raced:
+                        raced.append(1)
+                        a.acquire()
+                    return pid != 9
+
+                b = P.RefreshLock(self.k.root, own=(2, 20), alive=b_alive)
+                with self.assertRaises(P.Busy):
+                    b.acquire()
+                self.assertTrue(raced)
+                self.assertEqual((a.held, b.held), (True, False))
+                self.assertEqual(read_json(pidfile)['pid'], 1)
+                self.assertEqual(os.listdir(self.k.root), [P.PIDFILE])     # no claim left
+                a.release()
+                self.assertFalse(os.path.exists(pidfile))
 
     def test_release_leaves_a_file_another_run_took_over(self):
         os.makedirs(self.k.root)

@@ -1070,7 +1070,10 @@ class HubApproval(Fixture):
 
     def test_a_star_op_on_a_split_ledger_runs_with_pm_entries_present(self):
         self.add(repo='pm', decides='run D-002 other=1')
-        res = self.approve(op=self.op(repo='*'))
+        try:
+            res = self.approve(op=self.op(repo='*'))
+        except drun.RunRefused as e:
+            self.fail('a * run was refused: %s' % e)
         self.assertEqual((res.returncode, res.error), (0, None))
         self.assertEqual(self.events.count('consume'), 1)
         with open(os.path.join(self.folder, 'pm.md'), encoding='utf-8') as fh:

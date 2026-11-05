@@ -691,10 +691,11 @@ class SetupCase(CliCase):
         if not getattr(self, 'configured', False):
             self.config({'hub': {'store': self.store_dir}})
             self.configured = True
-        with mock.patch.object(HUB, '_linux', lambda: name == 'linux'), \
+        with mock.patch.object(HUB, '_linux', lambda: name == 'linux', create=True), \
                 mock.patch.object(HUB.hub_autostart, 'refusals', lambda *a, **k: []), \
                 mock.patch.object(HUB.hub_autostart, 'install', lambda *a, **k: ['INSTALLED']), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: xdg):
+                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: xdg,
+                                  create=True):
             code, out, err = self.run_cli('setup', '--autostart')
         self.assertEqual((code, err), (0, ''))
         return out.splitlines()
@@ -1181,6 +1182,25 @@ class StopRestartCase(CliCase):
                 for text in (said, advice):
                     self.assertNotIn('systemctl --user start', text)
                     self.assertNotIn('ScheduledTask', text)
+            # a hidden entry (DISABLED) does not start at sign-in; a plain one (HAND_STARTED) does
+            disabled = (HUB.not_started(HUB.control.DISABLED),
+                        HUB.task_advice(HUB.control.DISABLED))
+            plain = (HUB.not_started(HUB.control.HAND_STARTED),
+                     HUB.task_advice(HUB.control.HAND_STARTED))
+            self.assertIn('Hidden=true', disabled[0])
+            self.assertIn('Hidden=true', disabled[1])
+            self.assertNotIn('Hidden', plain[0] + plain[1])
+            self.assertIn('your next sign-in', plain[1])
+            self.assertEqual(HUB._job(), "the job 'pm-kit-hub.service'")
+
+    def test_restart_names_the_task_on_windows_and_the_job_on_linux(self):
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            self.assertIn('register the job', HUB.task_advice(HUB.control.NO_TASK))
+            self.assertNotIn('the task', HUB.task_advice(HUB.control.NO_TASK))
+            self.assertNotIn('scheduled task', HUB.NO_CONSOLE_LINUX)
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertIn('register the task', HUB.task_advice(HUB.control.NO_TASK))
+            self.assertEqual(HUB._job(), "the scheduled task 'PM kit hub server'")
 
     def test_restart_says_where_the_task_s_server_answers(self):
         self.assertEqual(self.run_cli('setup')[0], 0)

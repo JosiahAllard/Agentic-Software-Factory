@@ -185,11 +185,12 @@ def linux_unit():
 
 def linux_is_autostart(home=None):
     """True when the Linux job is an XDG autostart entry (no systemctl start for it); False for
-    a systemd service, for no job, or when the job cannot be read."""
+    a systemd service, for no job, or when the job cannot be read (including a home the password
+    database does not know)."""
     from kitlib.platform.linux import schedule
     try:
         task = schedule.find(LINUX_JOB, schedule.written(home))
-    except schedule.ScheduleError:
+    except (schedule.ScheduleError, KeyError, OSError):
         return False
     return task is not None and task['backend'] == schedule.AUTOSTART
 

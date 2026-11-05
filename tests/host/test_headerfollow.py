@@ -213,12 +213,19 @@ class SubagentStart(unittest.TestCase):
             seam.assert_not_called()
 
     def test_a_layout_the_filesystem_reading_hands_to_git_gives_the_same_answer(self):
-        # a discovery variable sends place.classify to git: the pointer still checks out, so the
-        # header names the current export as on the git path
+        # a variable in place.FALLBACK_ENV sends place.classify to git. It must be one that leaves
+        # git's answer alone: GIT_OBJECT_DIRECTORY naming a missing folder makes git itself say
+        # "not a git repository", so the pointer would read BAD on either path. Command-line config
+        # (GIT_CONFIG_COUNT, a key git ignores) changes nothing about where the repository is, so
+        # the pointer still checks out and the header names the current export, through git
+        from kitlib.git import repo
         self.start()
-        with mock.patch.dict(os.environ, {'GIT_OBJECT_DIRECTORY': os.path.join(self.base, 'objects')}):
+        config = {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'kittest.probe', 'GIT_CONFIG_VALUE_0': '1'}
+        with mock.patch.dict(os.environ, config):
             with mock.patch.dict(user._POINTERS, clear=True):
-                self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+                with mock.patch.object(repo, 'classify', wraps=repo.classify) as classify:
+                    self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        classify.assert_called()                      # git answered, not the filesystem reading
 
     def test_the_record_names_the_folder_the_header_named(self):
         self.start()

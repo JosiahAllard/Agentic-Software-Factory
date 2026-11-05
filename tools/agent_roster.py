@@ -16,7 +16,8 @@ import sys
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, KIT)
 
-import render_content                                               # noqa: E402
+import _host                                                        # noqa: E402
+from kitlib.host import registry                                    # noqa: E402
 from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib import content                                          # noqa: E402
 from kitlib.host.content import ContentError                        # noqa: E402
@@ -42,6 +43,12 @@ def build_parser():
     return p
 
 
+def tier_maps():
+    """{host: {tier: model}} of every host hosts.json registers: docs/ROSTER.md's tier table."""
+    renderers = [_host.adapter_module(h).ADAPTER.content().renderer() for h in sorted(registry.names())]
+    return {r.host: r.tier_models() for r in renderers}
+
+
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
@@ -53,7 +60,7 @@ def main(argv=None, out=None):
             out.write('agent_roster: -C: %s\n' % why)
             return USAGE
     try:
-        tiers = render_content.tier_maps()
+        tiers = tier_maps()
         if a.write:
             paths = content.write(root, [], tiers=tiers)        # no host renderer: ROSTER.md alone
             for p in paths:

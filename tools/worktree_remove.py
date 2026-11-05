@@ -56,6 +56,7 @@ from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib.worktree import classify, marks, remove, scratch, sweep  # noqa: E402
 
 USAGE = 2
+VALUE_OPTIONS = ('--abandon', '--tag', '--mark-stale')     # each takes the next word as its value
 
 
 def usage(message):
@@ -65,10 +66,15 @@ def usage(message):
 
 
 def split_root(argv):
-    """`(root, rest)`, or `(None, why)` when -C is repeated or has no value."""
+    """`(root, rest)`, or `(None, why)` when -C is repeated or has no value. The value after
+    --abandon, --tag or --mark-stale is kept whole: a reason or tag that starts with -C is not -C."""
     root, rest, i = None, [], 0
     while i < len(argv):
         a = argv[i]
+        if a in VALUE_OPTIONS and i + 1 < len(argv) and not argv[i + 1].startswith('--'):
+            rest.extend(argv[i:i + 2])
+            i += 2
+            continue
         if a == '-C' or a.startswith('-C') and len(a) > 2 and not a.startswith('--'):
             if root is not None:
                 return None, '-C is given twice'

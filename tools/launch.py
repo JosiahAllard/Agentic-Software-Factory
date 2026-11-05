@@ -29,7 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, autostart, handoff, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
+from kitlib.launcher import accounts, autostart, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
@@ -211,15 +211,11 @@ def session_conflicts(a):
 
 
 def push_delivery(settings):
-    """The host adapter's hub push delivery over the launcher's settings (tools/hub.py
-    _push_delivery), or None when the host has none (no adapter, or an adapter without push):
-    pm-relaunch and pm-crossover then say the stand-down is the owner's to send. Any other fault surfaces."""
-    try:
-        import _host
-        make = getattr(_host.adapter_module().ADAPTER, 'push', None)
-    except (ImportError, AttributeError):
-        return None
-    return make(settings) if make is not None else None
+    """The host adapter's hub push delivery over the launcher's settings
+    (kitlib.launcher.pushdelivery), or None when there is none: pm-relaunch and pm-crossover then
+    say the stand-down is the owner's to send."""
+    import _host
+    return pushdelivery.push_delivery(_host.adapter_module, settings)[0]
 
 
 def run(a, settings, host):
@@ -290,7 +286,7 @@ def main(argv=None, host=None):
         settings = S.load(host.home)
         lines = run(a, settings, host)
     except stop.Refused as e:
-        print('\n'.join(e.lines + ['REFUSED: %s' % e]))
+        print('\n'.join(e.lines + ['REFUSED: %s' % e]), file=sys.stderr)
         return 2
     except S.LaunchError as e:
         if e.lines:

@@ -63,7 +63,6 @@ text not found, or a commit or push that failed after the entry was written; 2 u
 """
 import argparse
 import contextlib
-import datetime
 import os
 import subprocess
 import sys
@@ -74,8 +73,8 @@ from kitlib import ledger                                          # noqa: E402
 from kitlib.config import user                                     # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
-from kitlib.ledger import files, fmt, migrate, move, read, rulebook, safepath, standing, vcs, write  # noqa: E402
-from kitlib.ledger.errors import Refused, Usage                    # noqa: E402
+from kitlib.ledger import audit, files, fmt, migrate, move, rulebook, standing, vcs, write  # noqa: E402
+from kitlib.ledger.errors import Failed, Refused, Usage            # noqa: E402
 
 
 class Parser(argparse.ArgumentParser):
@@ -202,33 +201,6 @@ def host_of(a):
         return registry.choose(a.host)
     except registry.RegistryError as e:
         raise Usage('--host: %s' % e) from None
-
-
-def views(found, repo):
-    """`[(repo or None, path)]` that list and grep read: every file, or with `repo` its own file
-    and the frozen (or one-file) ledger. A repo the split ledger does not name is a Usage error."""
-    if repo is not None and found.split and repo not in found.repos:
-        raise Usage("--repo %r is not one of ledger_repos (%s)" % (repo, ', '.join(found.repos)))
-    return [(r, p) for r, p in files.readable(found) if repo is None or r in (None, repo)]
-
-
-def read_views(found, repo):
-    """`([text], None)` for the files views names, or `(None, why)`. A repo file not written yet
-    is skipped; the frozen (or one-file) ledger must be read."""
-    texts = []
-    for r, path in views(found, repo):
-        if r is not None and not os.path.exists(path):
-            continue
-        why = safepath.refusal(path)
-        if why is None:
-            try:
-                with open(path, encoding='utf-8-sig') as f:
-                    texts.append(f.read().replace('\r\n', '\n'))
-                continue
-            except (OSError, UnicodeDecodeError) as e:
-                why = 'cannot read %s: %s' % (path, e)
-        return None, why
-    return texts, None
 
 
 def entry_file(a, found):
@@ -416,33 +388,13 @@ def do_rules(a, found):
     return 0 if shown or not a.topic else 1
 
 
-def under(path, folder):
-    """True when `path` is `folder` or anywhere below it (spelling, case and `..` resolved)."""
-    f = os.path.normcase(os.path.abspath(folder))
-    p = os.path.normcase(os.path.abspath(path))
-    return p == f or p.startswith(f.rstrip(os.sep) + os.sep)
-
-
 def do_migrate_report(a, found):
     """Print (or write to --out) the proposals for the standing digest's rules; read-only."""
-    digest_path = a.digest or found.digest
-    text, why = standing.read_digest(digest_path)
-    if text is None:
-        return fail(why or 'no standing digest at %s' % digest_path)
-    texts, why = read_views(found, None)
-    if texts is None:
-        return fail(why)
-    entries = [e for t in texts for e in read.parse(t)]
-    retired = {e.id for e in entries if e.dead}
-    since = datetime.datetime.fromtimestamp(os.path.getmtime(digest_path)).strftime('%Y-%m-%d')
-    report = migrate.render(migrate.propose(text, retired), migrate.basis(text, retired),
-                            os.path.basename(digest_path), migrate.uncited(entries, text, since))
+    report = migrate.report_for(found, a.digest)
     if a.out is None:
         sys.stdout.write(report)
         return 0
-    protected = [p for _, p in files.readable(found)] + [found.digest, digest_path]
-    if any(files._same(a.out, p) for p in protected) or (found.rules and under(a.out, found.rules)):
-        raise Usage('--out must not be a ledger file, the digest or in the rules folder')
+    migrate.check_out(found, a.out, a.digest)
     try:
         with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
             f.write(report)
@@ -457,49 +409,16 @@ def do_rule_apply(a, found, repos):
     write_entry, one log entry per rule; a dry run prints what would be written."""
     if a.write and not (a.prov and a.source):
         raise Usage('rule-apply --write needs --prov and --source')
-    report, why = read.read_file(a.report)
-    if report is None:
-        return fail(why)
-    texts, why = read_views(found, None)
-    if texts is None:
-        return fail(why)
-    retired = {e.id for t in texts for e in read.parse(t) if e.dead}
-    digest, why = standing.read_digest(found.digest)
-    if digest is None:
-        return fail(why or 'no standing digest at %s' % found.digest)
-    changes, errs = migrate.plan(report, migrate.basis(digest, retired))
-    books = write.load_books(found.rules)
-    todo, landing = [], {}
-    for c in changes:
-        state = migrate.status(books, c)
-        spot = (rulebook.target(books, c.repo), c.key)
-        if spot in landing:
-            errs.append('line %d: rule %s lands in %s, as line %d does too; give one a new key'
-                        % (c.line, c.key, rulebook.file_name(spot[0]), landing[spot]))
-            continue
-        landing[spot] = c.line
-        log = migrate.log_repo(c, found.split)
-        if not found.split:
-            bad = fmt.repo_problem(c.repo, repos)
-        elif log in found.repos:
-            bad = write.split_repo_problem(found.repos[log], log, list(found.repos))
-        else:
-            bad = 'repo %r is not one of ledger_repos' % log
-        if bad:
-            errs.append('line %d: rule %s: %s' % (c.line, c.key, bad))
-        elif state == 'conflict':
-            errs.append('line %d: rule %s is already in %s with other text; change the key or drop '
-                        'it first' % (c.line, c.key, rulebook.file_name(rulebook.target(books, c.repo))))
-        elif state == 'new':
-            todo.append(c)
-        else:
-            print('skip %s (already in %s)' % (c.key, rulebook.file_name(rulebook.target(books, c.repo))))
-    for e in errs:
+    got = migrate.applying(found, repos, a.report)
+    books = got.books
+    for key, name in got.skips:
+        print('skip %s (already in %s)' % (key, name))
+    for e in got.errs:
         sys.stderr.write('REFUSED: %s\n' % e)
-    if errs:
-        sys.stderr.write('ledger.py: %d problem(s); nothing was written\n' % len(errs))
+    if got.errs:
+        sys.stderr.write('ledger.py: %d problem(s); nothing was written\n' % len(got.errs))
         return 1
-    for c in todo:
+    for c in got.todo:
         name = rulebook.file_name(rulebook.target(books, c.repo))
         if not a.write:
             print('would set %s in %s (log repo %s): %s'
@@ -512,72 +431,16 @@ def do_rule_apply(a, found, repos):
         write_entry(argparse.Namespace(**dict(vars(a), repo=log)), found, repos, q, ans, decides,
                     rule=rule)
     if not a.write:
-        print('dry run: %d rule(s) to set; add --write to write them' % len(todo))
+        print('dry run: %d rule(s) to set; add --write to write them' % len(got.todo))
     return 0
 
 
-def rulebook_findings(found, texts):
-    """`(lines for check to print, error count, rule count, book count)`: every rulebook present
-    parsed, then checked against the ids of the log `texts`."""
-    if not found.rules:
-        return [], 0, 0, 0
-    books, errs = rulebook.load(found.rules)
-    ids = {e.id for text in texts for e in read.parse(text)}
-    got = rulebook.check(books, ids)
-    errs = errs + got.errors + rulebook.applied(books, texts)
-    out = ['FAIL ' + e for e in errs] + ['note: ' + n for n in got.notes]
-    return out, len(errs), sum(len(b.rules) for b in books.values()), len(books)
-
-
-def check_one(label, text, old, repos, repo, others):
-    """The check's findings for one file, each prefixed with `label` when it is set."""
-    errs = write.check(text, old, repos, repo, others)
-    return ['%s: %s' % (label, e) for e in errs] if label else errs
-
-
 def do_check(a, found, repos):
-    """Every readable file validated and checked append-only; the digest against all of them."""
-    texts, errs, unchecked = [], [], []
-    present = []
-    for r, path in files.readable(found):
-        if found.split and not os.path.exists(path):
-            if r is None:                    # a repo's file is new until its first entry
-                errs.append('the frozen ledger %s (ledger_path) is not there' % path)
-            continue
-        present.append((r, path, write.read_text(path)))
-    for r, path, text in present:
-        texts.append(text)
-        base = a.base or vcs.default_base(path)
-        old, why = vcs.base_text(path, base, new_ok=r is not None)
-        if old is None:
-            unchecked.append((path, base, why))
-        label = os.path.basename(path) if found.split else None
-        others = [t for _, p, t in present if p != path] if r is not None else ()
-        # The frozen (or one-file) ledger keeps its own repo columns (`all` among them); a repo's
-        # file holds that repo only.
-        errs += check_one(label, text, old, None if (found.split and r is None) else repos, r, others)
-    digest, dwhy = standing.read_digest(found.digest)
-    errs += standing.problems(texts, digest)
-    if dwhy:
-        errs.append('cannot read the standing digest: %s' % dwhy)
-    for e in errs:
-        print('FAIL ' + e)
-    book_lines, book_errs, rules, books = rulebook_findings(found, texts)
-    for line in book_lines:
+    """Print the whole-ledger check (kitlib.ledger.audit); 1 when it found a problem."""
+    got = audit.check_all(found, repos, a.base)
+    for line in got.lines:
         print(line)
-    for path, base, why in unchecked:
-        print('append-only NOT CHECKED: cannot read %s at %s (%s)'
-              % (os.path.basename(path) if found.split else 'the ledger', base, ' '.join((why or '').split())))
-    entries = sum(write.count(t) for t in texts)
-    problems = len(errs) + book_errs
-    verdict = 'OK' if not problems else '%d problem(s)' % problems
-    if found.split:
-        print('ledger: %d entries in %d files, %s' % (entries, len(texts), verdict))
-    else:
-        print('ledger: %d entries, %s' % (entries, verdict))
-    if books:
-        print('rulebooks: %d rules in %d files' % (rules, books))
-    return 1 if problems else 0
+    return 1 if got.problems else 0
 
 
 def split_move_line(item, moved=False):
@@ -605,8 +468,6 @@ def do_split_move(a, cfg):
     todo = [i for i in got.items if i.state == move.MOVE]
     if not todo and not moved:
         print('nothing to move')
-        if not any(i.state == move.DONE for i in got.items):
-            return 0
         # Every item already in ledger_dir: an --apply whose output was lost still has its git step.
         steps = move.git_steps(got)
         if not steps:
@@ -625,7 +486,7 @@ def do_split_move(a, cfg):
 
 def run(a, p, found, repos):
     if a.cmd == 'list':
-        texts, why = read_views(found, a.repo)
+        texts, why = files.read_views(found, a.repo)
         if texts is None:
             return fail(why)
         try:
@@ -664,7 +525,7 @@ def run(a, p, found, repos):
         if not found.split:
             hits = write.grep(write.read_text(found.frozen), a.text, a.repo)
         else:
-            texts, why = read_views(found, a.repo)
+            texts, why = files.read_views(found, a.repo)
             if texts is None:
                 return fail(why)
             hits = [h for text in texts for h in write.grep(text, a.text, a.repo)]

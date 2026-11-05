@@ -18,10 +18,13 @@ per rule: this module never writes a file. Pure over text, except `uncited` and 
 take parsed logs and books. Nothing here prints or exits.
 """
 import collections
+import datetime
 import hashlib
+import os
 import re
 
-from . import rulebook, write
+from . import files, fmt, read, rulebook, standing, write
+from .errors import Failed, Usage
 from .fmt import ID, RID_RE
 
 TAGS = ('KEEP', 'CUT', 'MERGE')
@@ -332,3 +335,76 @@ def entry_text(change, source_name):
     q = 'Carry the standing rule from %s (%s) into the rulebook?' % (
         source_name, ', '.join(change.ids) or 'no ids')
     return q, 'Yes: %s' % change.text, change.text
+
+
+def report_for(found, digest_path=None):
+    """The migrate-report text for the standing digest (`digest_path`, else the one beside the
+    log), read-only; Failed when the digest or a ledger file cannot be read."""
+    digest_path = digest_path or found.digest
+    text, why = standing.read_digest(digest_path)
+    if text is None:
+        raise Failed(why or 'no standing digest at %s' % digest_path)
+    texts, why = files.read_views(found, None)
+    if texts is None:
+        raise Failed(why)
+    entries = [e for t in texts for e in read.parse(t)]
+    retired = {e.id for e in entries if e.dead}
+    since = datetime.datetime.fromtimestamp(os.path.getmtime(digest_path)).strftime('%Y-%m-%d')
+    return render(propose(text, retired), basis(text, retired), os.path.basename(digest_path),
+                  uncited(entries, text, since))
+
+
+def check_out(found, out, digest_path=None):
+    """Usage unless `out` is a safe place for a report: not a ledger file, the digest or inside
+    the rules folder."""
+    protected = [p for _, p in files.readable(found)] + [found.digest, digest_path or found.digest]
+    if any(files.same_path(out, p) for p in protected) or (found.rules and files.under(out, found.rules)):
+        raise Usage('--out must not be a ledger file, the digest or in the rules folder')
+
+
+# What rule-apply decided: `todo` the changes to write, `skips` the (key, book file) already set,
+# `errs` the problems that refuse the whole report, `books` the rulebooks as read.
+Applying = collections.namedtuple('Applying', 'todo skips errs books')
+
+
+def applying(found, repos, report_path):
+    """Check the whole report `report_path` against the log, digest and rulebooks: an Applying.
+    Failed when the report, a ledger file or the digest cannot be read."""
+    report, why = read.read_file(report_path)
+    if report is None:
+        raise Failed(why)
+    texts, why = files.read_views(found, None)
+    if texts is None:
+        raise Failed(why)
+    retired = {e.id for t in texts for e in read.parse(t) if e.dead}
+    digest, why = standing.read_digest(found.digest)
+    if digest is None:
+        raise Failed(why or 'no standing digest at %s' % found.digest)
+    changes, errs = plan(report, basis(digest, retired))
+    books = write.load_books(found.rules)
+    todo, skips, landing = [], [], {}
+    for c in changes:
+        state = status(books, c)
+        spot = (rulebook.target(books, c.repo), c.key)
+        if spot in landing:
+            errs.append('line %d: rule %s lands in %s, as line %d does too; give one a new key'
+                        % (c.line, c.key, rulebook.file_name(spot[0]), landing[spot]))
+            continue
+        landing[spot] = c.line
+        log = log_repo(c, found.split)
+        if not found.split:
+            bad = fmt.repo_problem(c.repo, repos)
+        elif log in found.repos:
+            bad = write.split_repo_problem(found.repos[log], log, list(found.repos))
+        else:
+            bad = 'repo %r is not one of ledger_repos' % log
+        if bad:
+            errs.append('line %d: rule %s: %s' % (c.line, c.key, bad))
+        elif state == 'conflict':
+            errs.append('line %d: rule %s is already in %s with other text; change the key or drop '
+                        'it first' % (c.line, c.key, rulebook.file_name(rulebook.target(books, c.repo))))
+        elif state == 'new':
+            todo.append(c)
+        else:
+            skips.append((c.key, rulebook.file_name(rulebook.target(books, c.repo))))
+    return Applying(todo, skips, errs, books)

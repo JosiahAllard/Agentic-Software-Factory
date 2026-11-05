@@ -12,7 +12,8 @@ import os
 
 from kitlib.config.user import files_of
 
-from . import read, rulebook, standing
+from . import read, rulebook, safepath, standing
+from .errors import Usage
 from .fmt import repo_of
 
 # split: True with ledger_dir. repos: {repo: path} in ledger_repos order ({} unsplit). frozen: the
@@ -47,7 +48,7 @@ def readable(files):
     return ([(None, files.frozen)] if files.frozen else []) + list(files.repos.items())
 
 
-def _same(a, b):
+def same_path(a, b):
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
@@ -56,7 +57,7 @@ def others(files, path):
     for each that cannot be read. Where `under <id>` may point, and what may cite an entry."""
     texts, whys = [], []
     for _, p in readable(files):
-        if _same(p, path) or not os.path.exists(p):
+        if same_path(p, path) or not os.path.exists(p):
             continue
         text, why = read.read_file(p)
         if text is None:
@@ -64,3 +65,37 @@ def others(files, path):
         else:
             texts.append(text.replace('\r\n', '\n'))
     return texts, whys
+
+
+def under(path, folder):
+    """True when `path` is `folder` or anywhere below it (spelling, case and `..` resolved)."""
+    f = os.path.normcase(os.path.abspath(folder))
+    p = os.path.normcase(os.path.abspath(path))
+    return p == f or p.startswith(f.rstrip(os.sep) + os.sep)
+
+
+def views(found, repo):
+    """`[(repo or None, path)]` that list and grep read: every file, or with `repo` its own file
+    and the frozen (or one-file) ledger. A repo the split ledger does not name is a Usage error."""
+    if repo is not None and found.split and repo not in found.repos:
+        raise Usage("--repo %r is not one of ledger_repos (%s)" % (repo, ', '.join(found.repos)))
+    return [(r, p) for r, p in readable(found) if repo is None or r in (None, repo)]
+
+
+def read_views(found, repo):
+    """`([text], None)` for the files views names, or `(None, why)`. A repo file not written yet
+    is skipped; the frozen (or one-file) ledger must be read."""
+    texts = []
+    for r, path in views(found, repo):
+        if r is not None and not os.path.exists(path):
+            continue
+        why = safepath.refusal(path)
+        if why is None:
+            try:
+                with open(path, encoding='utf-8-sig') as f:
+                    texts.append(f.read().replace('\r\n', '\n'))
+                continue
+            except (OSError, UnicodeDecodeError) as e:
+                why = 'cannot read %s: %s' % (path, e)
+        return None, why
+    return texts, None

@@ -1122,7 +1122,7 @@ class Unread(Base):
         self.allowed(self.cmd('python "%s"' % good))
         self.allowed(self.cmd('python "%s"' % bad, sub=False, env=COORDINATOR))
 
-    # a script that only prints the tool's command lines (seen refused live: a Retribution script
+    # a script that only prints the tool's command lines (seen refused live: a repository's script
     # that builds `kit backlog add ...` lines for its coordinator); backlogrole.py_reach
     PRINTS = ("# the coordinator runs: python tools/backlog.py add\n"
               "print('kit backlog add X-2 --summary s')\n"

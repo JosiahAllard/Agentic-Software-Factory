@@ -266,12 +266,20 @@ class LinuxRefusal(Base):
         self.assertEqual(host.opened, [], 'no window opened')
         self.assertEqual(self.h.read_state('coordinators.json'), self.coords)
 
-    def test_crossover_what_if_still_prints_its_plan_on_linux(self):
-        self.record(70, 'pm-session', OLD)
-        host = ForkHost(self.h.root)
+    def test_crossover_what_if_on_linux_finds_the_pm_by_its_process_alone(self):
+        pm = dict(self.pm_process(), Name='claude')         # no registry record: Linux cannot match one
+        host = ForkHost(self.h.root, procs=[pm])
         with mock.patch('kitlib.platform.NAME', 'linux'):
             out = relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)
         self.assertIn('Would start %s' % NEW, out[0])
+        self.assertEqual(host.opened, [])
+
+    def test_crossover_what_if_on_linux_says_the_pm_is_not_running_without_a_process(self):
+        host = ForkHost(self.h.root)
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            with self.assertRaises(LaunchError) as cm:
+                relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)
+        self.assertIn('is not running', str(cm.exception))
         self.assertEqual(host.opened, [])
 
 

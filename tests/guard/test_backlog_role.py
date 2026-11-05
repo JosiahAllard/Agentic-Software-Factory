@@ -1122,6 +1122,57 @@ class Unread(Base):
         self.allowed(self.cmd('python "%s"' % good))
         self.allowed(self.cmd('python "%s"' % bad, sub=False, env=COORDINATOR))
 
+    # a script that only prints the tool's command lines (seen refused live: a Retribution script
+    # that builds `kit backlog add ...` lines for its coordinator); backlogrole.py_reach
+    PRINTS = ("# the coordinator runs: python tools/backlog.py add\n"
+              "print('kit backlog add X-2 --summary s')\n"
+              "print('python tools/backlog.py add --summary s')\n"
+              "n = 2\nprint(f'kit backlog add X-{n}')\n")
+    SHAPE = ("import argparse\nimport json\nimport os\nimport sys\n\n\n"
+             "def _q(s):\n    return '\"' + s.replace('\"', \"'\") + '\"'\n\n\n"
+             "def backlog_line(build, name):\n"
+             "    return ('kit backlog add %s --summary %s --found-on none') % (name, _q('build %d' % build))\n\n\n"
+             "def main():\n    ap = argparse.ArgumentParser()\n    ap.add_argument('--diff')\n"
+             "    args = ap.parse_args()\n    out = [backlog_line(1, 'X'), json.dumps(os.path.basename(args.diff or ''))]\n"
+             "    sys.stdout.write('\\n'.join(out) + '\\n')\n    return 0\n\n\n"
+             "if __name__ == '__main__':\n    sys.exit(main())\n")
+
+    def test_a_python_script_that_only_prints_the_tool_runs(self):
+        for name, body in (('p.py', self.PRINTS), ('shape.py', self.SHAPE),
+                           ('u8.py', '# -*- coding: utf-8 -*-\n' + self.PRINTS)):
+            with self.subTest(name):
+                self.allowed(self.cmd('python "%s"' % self.script(name, body)))
+
+    REACHES = (
+        "import subprocess\nsubprocess.run(['python', 'tools/backlog.py', 'block', 'X-1'])\n",
+        "import subprocess\nsubprocess.run(['python', 'tools/' + 'backlog.py', 'close', 'X-1'])\n",
+        "from subprocess import run as r\nr('kit backlog close X-1')\n",
+        "import os\nos.system('kit backlog close X-1')\n",
+        "import os as o\nf = o.system\nf('python tools/backlog.py close X-1')\n",
+        "from os import system\nsystem('python tools/backlog.py close X-1')\n",
+        "import os\ngetattr(os, 'sys' + 'tem')('python tools/backlog.py close X-1')\n",
+        "__import__('o' + 's').popen('python tools/backlog.py close X-1')\n",
+        "import importlib\nimportlib.import_module('kitlib.backlog.store')\n",
+        "exec(\"import os; os.system('python tools/backlog.py close X-1')\")\n",
+        "import runpy\nrunpy.run_path('tools/backlog.py')\n",
+        "import kitlib.backlog.store as s\n",
+        "from kitlib import backlog\n",
+        "import sys\nsys.path.insert(0, 'tools')\nimport backlog\nbacklog.main(['close', 'X-1'])  # backlog.py\n",
+        # python -x skips the first line: the string below it is then code
+        "x = '''\nimport os; os.system('python tools/backlog.py close X-1')\n'''#'''\n",
+        # a coding python reads otherwise than the guard: refused as the name alone
+        "# coding: utf-7\n# tools/backlog.py +AAo-import os+AAo-\n",
+        # text that does not parse: refused as the name alone
+        "print('tools/backlog.py'\n")
+
+    def test_a_python_script_that_reaches_the_tool_is_refused(self):
+        for k, body in enumerate(self.REACHES):
+            with self.subTest(body):
+                path = self.script('r%d.py' % k, body)
+                d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
+                self.assertIn('whose code ', d.reason)
+                self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
     def test_the_kits_own_python_is_not_judged(self):
         code = 'from kitlib.backlog import policy\n'
         kit_tool = os.path.join(self.w.kit_dir, 'tools', 'audit.py')

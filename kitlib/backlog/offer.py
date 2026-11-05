@@ -986,9 +986,11 @@ def split_all(c_scopes, parts, tree):
     folder). A live pull with a plan loses the tracked part of its overlap with the candidate
     that is in no live pull's T (so no path one gives up is left held by nobody), keeping every
     path of its own T under it (a file it adds that the tree has not got included). Fails
-    closed, for every part if for one: complement gives None, a side is left with no scope, a
-    member is not a legal scope, a comparison is undecidable, or what the candidate keeps still
-    touches any T or collides with any live pull's kept scope."""
+    closed, for every part if for one: a T path differs only in letter case from a tracked path
+    or from a member of either side (the candidate side matches T in any case, the live-pull
+    side in exact case, so the path would be held by nobody), complement gives None, a side is
+    left with no scope, a member is not a legal scope, a comparison is undecidable, or what the
+    candidate keeps still touches any T or collides with any live pull's kept scope."""
     try:
         return _split(c_scopes, parts, tree)
     except smod.UndecidableScope as exc:
@@ -1011,6 +1013,18 @@ def _split(c_scopes, parts, tree):
     prot_all = sorted(set(t for side in sides for t in side[3]))
     pset_all = set(prot_all)
     tracked = list(tree)
+    tracked_set, folded = set(tracked), {}
+    for p in tracked:
+        folded.setdefault(p.casefold(), p)
+    bases = [base(m) for m in c_scopes] + [base(l) for side in sides for l in side[1]]
+    for t in prot_all:
+        if t not in tracked_set and t.casefold() in folded:
+            return None, ('protected path %s is spelled %s in the tree: letter case differs'
+                          % (t, folded[t.casefold()]))
+        for b in bases:
+            if rel(b, t) and not (within(b, t) or within(t, b)):
+                return None, ('protected path %s differs in letter case from scope %s'
+                              % (t, b))
     c_kept, c_hit = [], {}          # c_hit: candidate member -> the indexes of the sides it hits
     for c in c_scopes:
         removed = []

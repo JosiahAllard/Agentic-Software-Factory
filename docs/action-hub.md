@@ -1229,6 +1229,8 @@ is the owner's alone: the Docs tab's Delete, with no CLI verb and no MCP tool. I
 the body; when the body's delete fails the card stays deleted and the body is an orphan, which
 `kitlib.hubvalidate` warns of and the next publish of that id writes over.
 
+`pagecheck.warnings` also warns, never refuses, of a `video`, `audio` or `source` whose `src` the page policy blocks (`MEDIA_SRC_ALLOWED`, kept equal to `DOC_CSP`'s `media-src`; none today): the publish succeeds and the reply's `warnings` carry a `media-blocked` finding naming the element and the workaround, an animated GIF or WebP in `<img>`.
+
 What a body may hold (`kitlib/hubsite/pagecheck.py`, whose docstring has the full list): at most 512 KiB
 of UTF-8 (`MAX_BYTES`); no `script`, `iframe`, `object`, `embed`, `form`, `link`, `base` or other element
 of `TAGS`; a `meta` only as exactly `<meta charset="utf-8">` or `<meta name content>` with a name of

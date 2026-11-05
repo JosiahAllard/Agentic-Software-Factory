@@ -1,5 +1,7 @@
 """kitlib.hubsite.pagecheck: what a published page may hold. Each refused sample names the rule it
 breaks in the refusal; each kept sample is what a real page uses."""
+import os
+import re
 import unittest
 
 from kitlib.hubsite import pagecheck
@@ -230,6 +232,53 @@ class CheckTest(unittest.TestCase):
         self.assertIn('string', pagecheck.check(None))
         self.assertIn('string', pagecheck.check(b'<p>x</p>'))
         self.assertIn('surrogate', pagecheck.check('<p>\ud800</p>'))
+
+
+INDEX = os.path.join(os.path.dirname(__file__), '..', '..', 'kitlib', 'hubsite', 'web', 'index.html')
+
+
+def _csp_media_sources():
+    """The url prefixes DOC_CSP allows media from: its media-src, else its default-src."""
+    with open(INDEX, encoding='utf-8') as f:
+        m = re.search(r'const DOC_CSP = "(.*)";', f.read())
+    policy = {}
+    for part in m.group(1).replace('\\"', '"').split('content="')[1].rstrip('">').split(';'):
+        words = part.split()
+        if words:
+            policy[words[0]] = words[1:]
+    sources = policy.get('media-src', policy.get('default-src', []))
+    return tuple(s for s in sources if s != "'none'")
+
+
+class MediaWarningTest(unittest.TestCase):
+    def test_the_allowed_sources_are_the_policys_media_src(self):
+        self.assertEqual(pagecheck.MEDIA_SRC_ALLOWED, _csp_media_sources())
+
+    def test_media_the_policy_blocks_warns_naming_element_and_workaround(self):
+        for tag in ('video', 'audio'):
+            with self.subTest(tag=tag):
+                html = '<%s src="data:video/mp4;base64,AA" controls></%s>' % (tag, tag)
+                self.assertIsNone(pagecheck.check(html))
+                out = pagecheck.warnings(html)
+                self.assertEqual(len(out), 1)
+                self.assertIn('<%s>' % tag, out[0])
+                self.assertIn('GIF or WebP', out[0])
+        out = pagecheck.warnings('<video controls><source src="data:video/mp4;base64,AA"></video>')
+        self.assertEqual(len(out), 1)
+        self.assertIn('<source>', out[0])
+
+    def test_a_page_without_media_does_not_warn(self):
+        self.assertEqual(pagecheck.warnings('<p>hi</p><img src="data:image/png;base64,AA">'), [])
+        self.assertEqual(pagecheck.warnings('<video controls></video>'), [])
+
+    def test_an_allowed_source_does_not_warn(self):
+        html = '<video src="data:video/mp4;base64,AA"></video>'
+        old = pagecheck.MEDIA_SRC_ALLOWED
+        pagecheck.MEDIA_SRC_ALLOWED = ('data:',)
+        try:
+            self.assertEqual(pagecheck.warnings(html), [])
+        finally:
+            pagecheck.MEDIA_SRC_ALLOWED = old
 
 
 if __name__ == '__main__':

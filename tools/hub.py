@@ -283,11 +283,10 @@ import datetime
 import json
 import os
 import sys
-import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import hubapprove, hubvalidate, platform               # noqa: E402
+from kitlib import hubvalidate, platform                           # noqa: E402
 from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubsite import access, api, auth, client, httpd, serve, settings, tunnel   # noqa: E402
@@ -1058,6 +1057,7 @@ def _open(a, stop):
     if a.show:
         print(url)
         return 0
+    import webbrowser                       # here: 50 ms the other verbs do not pay
     if not webbrowser.open(url):
         raise serve.ServeError('no browser could be opened: use hub.py open --print')
     print('opened the hub page in the browser')
@@ -1287,7 +1287,7 @@ def _show(a, obj, lines):
 
 
 def _hub(a):
-    return client.Client(getattr(a, 'port', None) or settings.load().port)
+    return client.Client(getattr(a, 'port', None) or settings.load().port, ask=serve.ask)
 
 
 def _item(d, state=None, version=False):
@@ -1662,6 +1662,7 @@ def _approvals(a, stop):
                            _edits(a, {'by': a.by}))
         return _wrote(a, got, 'SUPERSEDED %s by %s' % (got.get('id'), a.by))
     if a.sub == 'add':
+        from kitlib import hubapprove       # here: 150 ms the other verbs do not pay
         try:
             body = hubapprove.build(a.checkout, a.title, [tuple(f) for f in a.files],
                                     repo=getattr(a, 'repo', None), head=a.head, reason=a.reason,

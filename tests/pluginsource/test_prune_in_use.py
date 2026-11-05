@@ -9,8 +9,10 @@ import shutil
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from kitlib import pluginsource as P
+from tests.platforms import posix_only, windows_only
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
 NAMES = ['%012x' % i for i in range(1, 7)]
@@ -112,7 +114,6 @@ class InUseKeepTest(Root):
         self.assertEqual(P.in_use_sha12s(P.InUse(lines, set(), [])), set(NAMES[:4]))
 
     def test_tasks_reads_utf16_xml_with_a_bom(self):
-        from unittest import mock
         import subprocess
         xml = ('<?xml version="1.0" encoding="UTF-16"?>\r\n<Tasks>\r\n<!-- \\PM kit hub server -->\r\n'
                '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">'
@@ -122,7 +123,8 @@ class InUseKeepTest(Root):
                % NAMES[5])
         raw = b'\xff\xfe' + xml.encode('utf-16-le')
         done = subprocess.CompletedProcess(['schtasks'], 0, raw, b'')
-        with mock.patch('kitlib.proc.spawn.run', return_value=done):
+        with mock.patch('kitlib.platform.NAME', 'windows'), \
+                mock.patch('kitlib.proc.spawn.run', return_value=done):
             texts = P._tasks()
         u = P.InUse([t.lower() for t in texts], set(), [])
         self.assertEqual(P.in_use_sha12s(u), {NAMES[5]})
@@ -168,6 +170,7 @@ class YoungRuleTest(Root):
 
 
 class ClaimTest(Root):
+    @windows_only('Windows refuses to rename a folder while a file in it is open')
     def test_a_folder_with_an_open_file_is_kept_whole(self):
         self.old_six()
         fh = open(os.path.join(self.root, NAMES[1], 'tools', 'hub.py'), encoding='utf-8')
@@ -281,6 +284,7 @@ class CachePruneTest(unittest.TestCase):
         self.assertEqual(self.acts(rows)['0.1.0-main.1'], 'kept')
         self.assertEqual(self.acts(rows)['0.1.0-main.2'], 'would')
 
+    @windows_only('a directory junction is a Windows feature')
     def test_a_junction_in_the_cache_is_never_followed(self):
         import _winapi
         a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.9'], installed='0.1.0-main.9')
@@ -290,6 +294,104 @@ class CachePruneTest(unittest.TestCase):
         P.prune_caches([a], reads(), apply=True, now=self.now)
         self.assertTrue(os.path.isdir(os.path.join(target, 'keep-me')))
         self.assertTrue(os.path.lexists(os.path.join(P.cache_dir(a), '0.1.0-main.2')))
+
+    @posix_only('a directory symlink made without privilege (Windows needs one to make it)')
+    def test_a_symlink_in_the_cache_is_never_followed(self):
+        a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.9'], installed='0.1.0-main.9')
+        target = os.path.join(self.base, 'elsewhere')
+        os.makedirs(os.path.join(target, 'keep-me'))
+        os.symlink(target, os.path.join(P.cache_dir(a), '0.1.0-main.2'), target_is_directory=True)
+        P.prune_caches([a], reads(), apply=True, now=self.now)
+        self.assertTrue(os.path.isdir(os.path.join(target, 'keep-me')))
+        self.assertTrue(os.path.lexists(os.path.join(P.cache_dir(a), '0.1.0-main.2')))
+
+
+class LinuxInUseTest(unittest.TestCase):
+    """The real read_in_use on Linux (kitlib.platform.NAME patched): its scheduled jobs come from
+    kitlib.platform.linux.schedule.read_back (stubbed), never schtasks, which is not there (its
+    spawn raises as on Linux); the process list is stubbed."""
+    PROCS = [{'CommandLine': 'python tools/hub.py', 'ExecutablePath': '/usr/bin/python3'}]
+    setUp = CachePruneTest.setUp
+    account = CachePruneTest.account
+    acts = CachePruneTest.acts
+
+    def linux(self, jobs):
+        def no_schtasks(*a, **kw):
+            raise FileNotFoundError(2, 'No such file or directory', a[0][0] if a else '?')
+        self.enterContext(mock.patch('kitlib.platform.NAME', 'linux'))
+        self.enterContext(mock.patch('kitlib.proc.spawn.run', no_schtasks))
+        self.enterContext(mock.patch('kitlib.platform.linux.schedule.read_back',
+                                     jobs if callable(jobs) else lambda **kw: jobs))
+        self.enterContext(mock.patch.object(P, '_processes', lambda: self.PROCS))
+
+    def test_the_read_is_whole(self):
+        self.linux([])
+        self.assertEqual(P.read_in_use(self.base).errors, [])
+
+    def assert_keeps_all(self, why):
+        a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.2', '0.1.0-main.3'],
+                         installed='0.1.0-main.3')
+        u = P.read_in_use(self.base)
+        self.assertEqual(len(u.errors), 1, u.errors)
+        self.assertIn('scheduled tasks', u.errors[0])
+        self.assertIn(why, u.errors[0])
+        rows = P.prune_caches([a], lambda: P.read_in_use(self.base), apply=True, now=self.now)
+        self.assertEqual(set(self.acts(rows).values()), {'kept'})
+        self.assertEqual(len(os.listdir(P.cache_dir(a))), 3)
+
+    def test_a_job_whose_command_did_not_split_is_a_failed_read(self):
+        # schedule.read_back gives argv [] for an ExecStart, Exec or cron command shlex refuses:
+        # what it runs is unknown, so nothing is pruned
+        self.linux([{'path': 'pm-kit-hub', 'backend': 'cron', 'argv': [], 'workdir': None,
+                     'line': '*/5 * * * * python "unclosed # pm-kit:hub',
+                     'actions': [{'exe': '', 'args': ''}]}])
+        self.assert_keeps_all('could not be split')
+
+    def test_a_schedule_that_cannot_be_read_is_a_failed_read(self):
+        from kitlib.platform.linux import schedule
+
+        def boom(**kw):
+            raise schedule.ScheduleError('reading the crontab: crontab -l exit 1: denied')
+        self.linux(boom)
+        self.assert_keeps_all('crontab -l exit 1')
+
+    def test_apply_removes_an_old_version_and_keeps_the_installed_and_the_newest(self):
+        a = self.account('.claude-1', ['0.1.0-main.1', '0.1.0-main.2', '0.1.0-main.3',
+                                       '0.1.0-main.9'], installed='0.1.0-main.3')
+        job = {'path': 'pm-kit-hub.service', 'backend': 'systemd', 'workdir': self.base,
+               'argv': ['/usr/bin/python3', os.path.join(P.cache_dir(a), '0.1.0-main.2', 'x.py')],
+               'actions': [{'exe': '/usr/bin/python3', 'args': 'x.py'}]}
+        self.linux([job])
+        rows = P.prune_caches([a], lambda: P.read_in_use(self.base), apply=True, now=self.now)
+        self.assertEqual(self.acts(rows), {'0.1.0-main.1': 'removed', '0.1.0-main.2': 'kept',
+                                           '0.1.0-main.3': 'kept', '0.1.0-main.9': 'kept'})
+        self.assertEqual(sorted(os.listdir(P.cache_dir(a))),
+                         ['0.1.0-main.2', '0.1.0-main.3', '0.1.0-main.9'])
+
+
+class LinuxExportPruneTest(Root):
+    """Export prune with the real read_in_use on Linux (as LinuxInUseTest)."""
+    PROCS = LinuxInUseTest.PROCS
+    linux = LinuxInUseTest.linux
+
+    def test_a_good_job_still_keeps_its_export_beside_a_job_that_did_not_split(self):
+        # NAMES[1] and NAMES[2] were replaced in early September, a month before NOW: past even
+        # the 7-day rule the bad job's error brings, so only the good job's text keeps NAMES[1]
+        self.old_six()
+        good = {'path': 'pm-kit-hub', 'backend': 'systemd', 'workdir': self.base,
+                'argv': ['/usr/bin/python3', os.path.join(self.root, NAMES[1], 'tools', 'hub.py')],
+                'actions': [{'exe': '/usr/bin/python3', 'args': 'hub.py'}]}
+        bad = {'path': 'pm-kit-tick', 'backend': 'cron', 'argv': [], 'workdir': None,
+               'line': '*/5 * * * * python "unclosed # pm-kit:tick',
+               'actions': [{'exe': '', 'args': ''}]}
+        self.linux([good, bad])
+        u = P.read_in_use(self.root)
+        self.assertEqual(len(u.errors), 1, u.errors)
+        self.assertIn('pm-kit-tick', u.errors[0])
+        removed, failed = P.prune(self.root, now=NOW, in_use=lambda: P.read_in_use(self.root))
+        self.assertEqual(failed, [])
+        self.assertEqual([os.path.basename(r) for r in removed], [NAMES[2]])
+        self.assertTrue(os.path.isfile(os.path.join(self.root, NAMES[1], P.MARKER)))
 
 
 if __name__ == '__main__':

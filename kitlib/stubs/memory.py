@@ -5,7 +5,8 @@ machine path in a tracked file). tools/kit_stubs.py `memory` is the entry point;
 (kitlib.machinesetup.repo) and the PM session-start check (kitlib.pmstart memory) use it too.
 
 The memory root is the root of the drive (or UNC share) the main checkout is on, plus FOLDER: a repo on
-another drive keeps its memory on that drive. `override` replaces the whole root; config_override()
+another drive keeps its memory on that drive. On POSIX there is no drive: it is the home folder plus
+FOLDER, and a path with a leading '/' counts as absolute. `override` replaces the whole root; config_override()
 is where the machine config's key will be read, and gives None until it exists. <repo> is the
 folder name of the repository's main checkout, so every linked worktree names the same folder.
 No path or drive letter is written in this module: each is computed from the checkout.
@@ -30,6 +31,7 @@ import ntpath
 import os
 import re
 
+from kitlib import platform
 from kitlib.host import registry
 from kitlib.machinesetup import settings as jsonfile
 
@@ -37,6 +39,7 @@ KEY = 'autoMemoryDirectory'
 FOLDER = 'Agent-memory'
 OK, OTHER, MISSING, BAD = 'ok', 'other', 'missing', 'bad'
 ABSOLUTE = re.compile(r'^(?:[A-Za-z]:[\\/]|\\\\|//|~[\\/])')
+POSIX_ABSOLUTE = re.compile(r'^/')
 TMP = '.kit-memory.tmp'
 
 Memory = collections.namedtuple('Memory', 'state path value want raw layout data why')
@@ -57,6 +60,8 @@ def memory_root(checkout, override=None):
     forward slashes and no trailing one."""
     if override:
         return override.replace('\\', '/').rstrip('/')
+    if platform.NAME != 'windows':          # no drive: the user's home folder, which they can write
+        return os.path.expanduser('~').replace('\\', '/').rstrip('/') + '/' + FOLDER
     drive = ntpath.splitdrive(os.path.abspath(checkout))[0]
     return drive.replace('\\', '/') + '/' + FOLDER
 
@@ -165,7 +170,8 @@ def survey(checkout, override=None, main_top=None):
         if not isinstance(dat, dict) or KEY not in dat:
             continue
         value = dat[KEY]
-        if not isinstance(value, str) or not ABSOLUTE.match(value):
+        if not isinstance(value, str) or not (ABSOLUTE.match(value)
+                                              or (platform.NAME != 'windows' and POSIX_ABSOLUTE.match(value))):
             return bad('%s: %s is %s, not an absolute folder (fix it by hand)' % (path, KEY, json.dumps(value)),
                        path, r)
         return Memory(OK if _same(value, want) else OTHER, path, value, want, r, lay, dat, None)

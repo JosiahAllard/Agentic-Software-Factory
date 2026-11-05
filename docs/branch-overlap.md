@@ -43,6 +43,7 @@ Exit 0 `no overlap`; 1 `OVERLAP`; 2 usage or `CANNOT ANSWER`; 130 Ctrl+C. `CANNO
 - **A match:** a changed file overlaps a member when the backlog pull collision check would call them colliding (`kitlib.backlog.scope.members_collide`). The comparison goes component by component, case-blind, and one side must be a prefix of the other.
   - Some comparisons cannot be decided: a name holding a comma, a control character other than a tab, leading or trailing whitespace, a backslash, or a wildcard character (`*?[]{}`), or one starting with a drive letter (`c:x`). Such a comparison counts as an overlap, with an `undecidable, so counted` note.
   - The one departure is `none` in any case: it is compared as a path, so a root file `none` matches `none` and `none/**`.
+  - The pull check also exempts a pair either side of which is one of `.kit.json` `"backlog".shared_paths` (docs/backlog.md "Shared paths"). This check does not: a shared path a branch changed is reported like any other.
 
 ## Output
 

@@ -1,11 +1,28 @@
 """`complement` (kitlib/backlog/scope.py): the sibling members that cover a scope member minus the
 paths removed from it, over the tracked tree, or None when it cannot be done."""
+import json
 import unittest
 
+from kitlib.backlog import check as checkmod
+from kitlib.backlog import offer as omod
+from kitlib.backlog import plan as pmod
+from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as smod
+from kitlib.backlog import store as sstore
+from kitlib.backlog.errors import Refusal
 
+from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
-from tests.backlog.helpers import StoreCase
+from tests.backlog import test_cli
+from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, priced,
+                                   record_text)
+from tests.backlog.test_offer import snap as osnap
+
+
+def rparse(one):
+    """The parsed record of `{stem: text}`."""
+    (stem, text), = one.items()
+    return rmod.parse('backlog/%s.md' % stem, text, stem)
 
 TREE = ['kit/a.py', 'kit/b.py', 'kit/sub/c.py', 'kit/sub/d.py', 'kit/deep/e/f.py',
         'kit/deep/e/g.py', 'kit/deep/h.py', 'docs/x.md', 'docs/y.md', 'top.py']
@@ -159,6 +176,226 @@ class AddBroadScope(StoreCase):
     def test_a_path_outside_the_broad_scope_does_not_warn(self):
         change = self.add('fix docs/backlog.md', ['kitlib/backlog/**'])
         self.assertEqual(self.warnings(change), [])
+
+
+# --- shared paths (`.kit.json` "backlog".shared_paths; docs/backlog.md "Shared paths") -----------
+
+LIST = 'docs/layer.md'          # a list file many records add a line to
+SHARED = (LIST,)
+
+
+class SharedPathPairs(unittest.TestCase):
+    """scope.members_collide and friends with `shared`: a pair where either member IS a shared
+    path does not collide; the rest of each scope collides as before."""
+
+    def test_a_pair_sharing_only_a_listed_path_does_not_collide(self):
+        a, b = [LIST, 'kit/a.py'], [LIST, 'kit/b.py']
+        self.assertTrue(smod.scopes_collide(a, b))                  # as before, without the list
+        self.assertFalse(smod.scopes_collide(a, b, SHARED))
+        self.assertEqual(smod.colliding_pairs(a, b, SHARED), [])
+        self.assertEqual(smod.shared_hits(a, b, SHARED), [LIST])
+
+    def test_a_pair_also_sharing_an_unlisted_file_collides(self):
+        a, b = [LIST, 'kit/a.py'], [LIST, 'kit/a.py']
+        self.assertTrue(smod.scopes_collide(a, b, SHARED))
+        self.assertEqual(smod.colliding_pairs(a, b, SHARED), [('kit/a.py', 'kit/a.py')])
+
+    def test_a_glob_against_a_listed_file_under_it_is_exempt(self):
+        for a, b in (('docs/**', LIST), (LIST, 'docs/**'), ('docs/**', 'Docs/Layer.md')):
+            self.assertTrue(smod.members_collide(a, b), (a, b))
+            self.assertFalse(smod.members_collide(a, b, SHARED), (a, b))
+        # The rest of the glob still collides.
+        self.assertTrue(smod.members_collide('docs/**', 'docs/other.md', SHARED))
+        self.assertTrue(smod.members_collide('docs/**', 'docs/**', SHARED))
+
+    def test_a_glob_or_a_folder_is_no_shared_path(self):
+        self.assertIsNone(smod.shared_path_error(LIST))
+        for bad, word in (('docs/**', 'glob'), ('docs/*.md', 'glob'), ('docs/', 'folder'),
+                          ('none', 'none'), ('/abs.md', '')):
+            why = smod.shared_path_error(bad)
+            self.assertIsNotNone(why, bad)
+            self.assertIn(word, why, bad)
+        # A glob in the set exempts nothing.
+        self.assertTrue(smod.members_collide('docs/**', 'docs/a.md', ('docs/**',)))
+
+    def test_the_set_is_read_only_for_a_pair_that_collides_without_it(self):
+        def boom():
+            raise AssertionError('read the shared paths for a pair that does not collide')
+        lazy = pmod.SharedPaths(boom)
+        self.assertFalse(smod.members_collide('kit/a.py', 'kit/b.py', lazy))
+        self.assertEqual(smod.colliding_pairs(['kit/**'], ['docs/**'], lazy), [])
+        self.assertEqual(smod.shared_hits(['kit/**'], ['docs/**'], lazy), [])
+        read = pmod.SharedPaths(lambda: [LIST])
+        self.assertFalse(smod.members_collide('docs/**', LIST, read))
+
+
+def pulled(rid, scope, by='kit/holder'):
+    return priced(rid, state='pulled', pulled_at=TODAY, pulled_by=by, scope=scope)
+
+
+class SharedPathCallers(unittest.TestCase):
+    """Every caller of the collision check agrees: the offer, `pull`'s live hits, `check`."""
+
+    def test_the_offer_takes_a_record_that_shares_only_a_listed_path_and_names_it(self):
+        s = osnap(pulled('HOLD', [LIST, 'area/hold/**']), priced('AAA', scope='docs/**'),
+                  priced('BBB', scope=[LIST, 'area/hold/x.py']))
+        holding = [s.get('HOLD')]
+        (offers, passed), _bad, _r = omod.next_offer(s, holding)
+        self.assertEqual(offers, [])
+        self.assertEqual(sorted(p.rec.id for p in passed), ['AAA', 'BBB'])
+        (offers, passed), _bad, _r = omod.next_offer(s, holding, shared=SHARED)
+        self.assertEqual([o.rec.id for o in offers], ['AAA'])
+        self.assertEqual(offers[0].shares, [(LIST, 'HOLD')])
+        self.assertEqual(omod.shares_line(LIST, 'HOLD'), 'shares %s with HOLD (shared path)' % LIST)
+        self.assertEqual([p.rec.id for p in passed], ['BBB'])
+        self.assertIn('scope area/hold/x.py collides with area/hold/**', passed[0].why)
+
+    def test_pull_live_hits_exempt_the_listed_path_and_report_the_share(self):
+        held = rparse(pulled('HOLD', LIST))
+        self.assertEqual(len(pmod.live_hits(['docs/**'], [held])), 1)
+        self.assertEqual(pmod.live_hits(['docs/**'], [held], shared=SHARED), [])
+        self.assertEqual(pmod.live_shares(['docs/**'], [held], shared=SHARED),
+                         ['shares %s with HOLD (shared path)' % LIST])
+        self.assertEqual(len(pmod.live_hits(['docs/**', 'area/hold/**'],
+                                            [rparse(pulled('HOLD', [LIST, 'area/hold/a.py']))],
+                                            shared=SHARED)), 1)
+
+    def test_check_refuses_a_glob_or_a_folder_and_exempts_a_good_entry(self):
+        s = osnap(pulled('ONE', [LIST, 'kit/a.py'], by='kit/one'),
+                  pulled('TWO', [LIST, 'kit/b.py'], by='kit/two'))
+        by = {r.name: r for r in checkmod.check_store(s)}
+        self.assertEqual(len(by[checkmod.PULL_RECORDS].warnings), 1)
+        self.assertNotIn(checkmod.SHARED_PATHS, by)
+        entries = [(LIST, None), ('docs/**', smod.shared_path_error('docs/**')),
+                   ('docs', '`docs` is a folder: a shared path is one literal file')]
+        by = {r.name: r for r in checkmod.check_store(s, shared=entries)}
+        self.assertEqual(by[checkmod.PULL_RECORDS].warnings, [])
+        res = by[checkmod.SHARED_PATHS]
+        self.assertTrue(res.red)
+        self.assertEqual([f.line for f in res.findings], [2, 3])
+        self.assertIn('glob', res.findings[0].message)
+        self.assertIn('folder', res.findings[1].message)
+
+    def test_split_all_narrows_a_broad_scope_off_the_live_pull_but_keeps_the_listed_path(self):
+        tree = TREE + [LIST]
+        held = osnap(pulled('HOLD', [LIST, 'docs/x.md'])).get('HOLD')
+        for plan, protected in ((False, ['docs/x.md']), (True, [LIST, 'docs/x.md'])):
+            with self.subTest(plan=plan):
+                out, why = omod.split_all(['docs/**'], [(held, protected, plan)], tree)
+                self.assertIsNone(why)
+                self.assertNotIn(LIST, out.keep)        # without the list, it is given up
+                out, why = omod.split_all(['docs/**'], [(held, protected, plan)], tree,
+                                          shared=SHARED)
+                self.assertIsNone(why)
+                self.assertEqual(out.keep, [LIST, 'docs/y.md'])     # narrows off docs/x.md only
+                self.assertEqual(out.c_changes,
+                                 [('docs/**', ['docs/x.md'], [LIST, 'docs/y.md'])])
+                self.assertEqual(out.parts[0].other_keep, [LIST, 'docs/x.md'])
+
+
+class SharedPathWrites(StoreCase):
+    """The writes on a ref store: `set --scope` widening a pulled record onto a listed file the
+    live pull holds (and its branch changed) is free; `add --found-on` that branch is still
+    refused, as the add-time fold-in guard exempts no shared path."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo.git('checkout', '-q', '-b', 'kit/holder')
+        self.repo.write(LIST, 'one line\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'work on kit/holder')
+        self.repo.git('checkout', '-q', '-f', 'main')
+        self.seed(pulled('HOLD', LIST), pulled('MINE', 'kit/mine.py', by=BRANCH))
+
+    def share(self):
+        self.ctx = pmod.Context(self.store, self.repo.root, branch=BRANCH, today=TODAY,
+                                shared=lambda: [(LIST, None)])
+
+    def test_set_scope_widening_onto_a_listed_file_is_free(self):
+        with self.assertRaises(Refusal) as cm:
+            self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
+        self.assertIn('widens its scope into a live pull', str(cm.exception))
+        self.share()
+        self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
+        self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py', LIST])
+
+    def test_add_found_on_a_branch_that_changed_a_listed_file_is_refused(self):
+        self.share()
+        for scope in ([LIST], ['docs/**']):
+            with self.subTest(scope=scope):
+                with self.assertRaises(Refusal) as cm:
+                    self.verb('add', 'NEW', 'a defect found while working', scope,
+                              found_on='kit/holder', why_not_folded=ADD_WHY)
+                msg = str(cm.exception)
+                self.assertIn('its scope overlaps the work of kit/holder', msg)
+                self.assertIn('(changed on kit/holder)', msg)
+                self.assertIn('(scope of HOLD, pulled by kit/holder)', msg)
+                self.assertIsNone(self.get('NEW'))
+
+
+class SharedPathsCli(unittest.TestCase):
+    """Through tools/backlog.py on a ref store: `next` and `pull` print the share, `check`
+    refuses a glob or a folder in the list."""
+    setUp_cli = test_cli.Cli.setUp
+    run_tool = test_cli.Cli.run_tool
+    ok = test_cli.Cli.ok
+
+    def setUp(self):
+        self.setUp_cli()
+        backend = sstore.RefBackend(self.repo.root, 'origin', sstore.STORE_REF, sstore.STORE_REF)
+        snap = sstore.Store(backend, rmod.Rules()).load()
+        backend.publish(snap, {
+            'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
+                                pulled_at=TODAY, pulled_by='tools/hold', scope=LIST),
+            'AAA': record_text(id='AAA', priority='2', priority_by='agent', scope='docs/**'),
+        }, 'seed\n')
+        self.repo.git('branch', 'tools/hold')
+        self.repo.git('branch', 'tools/take')
+
+    def test_next_and_pull_print_the_share(self):
+        # The holder's branch has changed the listed file, so the fold checks of `next` and
+        # `pull` (_offer_folds, _pull_fold_hits) see it too, and exempt it as the scope check does.
+        self.repo.git('checkout', '-q', 'tools/hold')
+        self.repo.write(LIST, 'one line\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'work on tools/hold')
+        self.repo.git('checkout', '-q', '-f', 'main')
+        self.assertIn('passed over AAA', self.ok('next'))
+        kit_json_ref(self.repo, {'backlog': {'shared_paths': [LIST]}})
+        out = self.ok('next')
+        self.assertNotIn('passed over AAA', out)
+        self.assertIn('    shares %s with HOLD (shared path)' % LIST, out)
+        rc, out = self.run_tool('--as', 'tools/take', 'pull', 'AAA')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('shares %s with HOLD (shared path)' % LIST, out)
+        self.assertIn('pulled_by: tools/take', self.ok('show', 'AAA'))
+
+    def test_check_reports_an_unreadable_config_as_one_fail_and_the_rest(self):
+        wt = self.repo.worktree('wt', branch='tools/wt')
+        # The main checkout's file now fails to load; the worktree's own is fine.
+        self.repo.write('.kit.json', json.dumps({'backlog': {'store': 'ref', 'cap': 0}}) + '\n')
+        rc, out, err = inproc.run_main(test_cli.BACKLOG.main, ['-C', wt, 'check'], self.env, wt)
+        out += err
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn('ERROR', out)
+        self.assertIn('blocked_on', out)                # the other results still print
+        fails = [l for l in out.splitlines() if l.startswith('    FAIL')]
+        self.assertEqual(len(fails), 1, out)
+        self.assertIn('.kit.json "backlog".shared_paths:0 cannot read: ', fails[0])
+        self.assertTrue(out.rstrip().endswith('RED'), out)
+
+    def test_check_refuses_a_glob_or_a_folder(self):
+        self.repo.write('docs/layer.md', 'one line\n')
+        kit_json_ref(self.repo, {'backlog': {'shared_paths': ['docs/**', 'docs']}})
+        rc, out = self.run_tool('check')
+        self.assertEqual(rc, 1, out)
+        self.assertIn('`docs/**` is a glob', out)
+        self.assertIn('`docs` is a folder', out)
+        self.assertIn('passed over AAA', self.ok('next'))     # neither exempts anything
+        kit_json_ref(self.repo, {'backlog': {'shared_paths': [LIST]}})
+        rc, out = self.run_tool('check')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('shared paths', out)
 
 
 if __name__ == '__main__':

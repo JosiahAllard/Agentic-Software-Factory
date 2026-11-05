@@ -541,34 +541,19 @@ def kept_reflog(ctx, path, head, tagged):
                                                          else 'removed'))
         return None
     if not tagged:
-        return logged if scratch.reachable(ctx, path, head, logged) else None
-    args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', 'refs/heads',
-            'refs/remotes', 'refs/tags')
-    rc, out, err = git(ctx.main, *args)
-    if rc != 0:
+        return logged if scratch.all_reached(ctx, path, head, logged) else None
+    # The tag on HEAD keeps HEAD's history: HEAD counts as one more ref. One rev-list for them all.
+    lost, why = scratch._reaches(ctx, [o for o in logged if o != head], also=(head,))
+    if lost is None:
         ctx.say('refused   %s: whether a ref reaches its HEAD reflog is unknown (%s); nothing was'
-                ' tagged or removed' % (path, failure(args[:1], rc, err)))
+                ' tagged or removed' % (path, why))
         return None
-    # The tag on HEAD keeps HEAD's history: HEAD is the first "ref" asked (merge-base takes a hash).
-    refs = [(head, head)] + [(p[0], p[2]) for p in (line.split(' ', 2) for line in out.splitlines())
-                             if len(p) == 3 and p[1] in ('commit', 'tag')]
-    lost = []
-    for oid in logged:
-        if oid == head:
-            continue
-        got, why = scratch._reaches(ctx, refs, oid)
-        if got is None and why:
-            ctx.say('refused   %s: whether a ref reaches %s is unknown (%s); nothing was tagged or'
-                    ' removed' % (path, oid[:10], why))
-            return None
-        if got is None:
-            lost.append(oid[:10])
     if lost:
         ctx.say('refused   %s: its HEAD reflog or a per-worktree ref holds %s, which no ref'
                 ' reaches and the tag on HEAD'
                 ' %s would not keep (a commit made there and left behind); whether to drop it is'
-                ' the owner\'s call; nothing was tagged or removed' % (path, ', '.join(lost),
-                                                                       head[:10]))
+                ' the owner\'s call; nothing was tagged or removed'
+                % (path, ', '.join(o[:10] for o in lost), head[:10]))
         return None
     return logged
 

@@ -769,10 +769,25 @@ class RawCode(Base):
                      'python -c "print(\'kitlib/backlog/store.py\')" | xargs python',
                      'python $(python -c "print(\'kitlib/backlog/store.py\')")',
                      '(python -c "print(\'kitlib/backlog/store.py\')") | bash',
-                     "python -c \"print('kitlib/backlog/store.py'\""):
+                     "python -c \"print('kitlib/backlog/store.py'\"",
+                     # a kitlib import beside a string naming the tool or the library, which a kitlib helper
+                     # may run or load (backlogrole._names_backlog)
+                     "python -c \"from kitlib.tooldeps import kitrun; kitrun.run(['python', 'tools/backlog.py', "
+                     "'close', 'X-1'], 'kitlib/backlog/store.py')\"",
+                     "python -c \"import kitlib.kitroot as k; print(k.tool('backlog'), 'kitlib/backlog/store.py')\"",
+                     "python -c \"import kitlib.tooldeps as t; t.load('kitlib.backlog.store')\""):
             with self.subTest(text):
                 self.refused(self.cmd(text), 'backlog-raw-write')
                 self.allowed(self.cmd(text, sub=False, env=COORDINATOR))
+
+    def test_c_code_powershell_may_split_stays_on_the_name(self):
+        # Windows PowerShell 5.1 hands python a word holding a double quote split (rules.ps_native_unsure),
+        # so python may run other code than the guard reads: CODE_RE alone (backlogrole.c_code)
+        self.refused(self.cmd("python -c 'print(\"kitlib/backlog/store.py\")'", tool='PowerShell'),
+                     'backlog-raw-write')
+        self.refused(self.cmd("python -c 'import os; print(\"kitlib/backlog/store.py\")'", tool='PowerShell'),
+                     'backlog-raw-write')
+        self.allowed(self.cmd("python -c \"print('kitlib/backlog/store.py')\"", tool='PowerShell'))
 
 
 class HubWriterCode(Base):

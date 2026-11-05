@@ -458,9 +458,12 @@ C_FLAGS_RE = re.compile(r'^-[bBdEhiIOPqsSuvx]*c$')     # -c, or flags that take 
 
 def c_code(inv):
     """The text of the code python runs from -c when it is the word after -c (C_FLAGS_RE), or
-    None: no -c, the code attached to it (-cCODE), or a word the line computes. backlog_code
-    reads it with py_reach; every other text is judged by CODE_RE alone."""
-    if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None:
+    None: no -c, the code attached to it (-cCODE), Start-Process (which re-splits its words), or
+    a word up to the code the line computes or the shell may hand python split
+    (rules.native_unsure: a PowerShell word holding a double quote, cmd's quotes), so python may
+    run other code than the guard reads. backlog_code reads it with py_reach; every other text is
+    judged by CODE_RE alone."""
+    if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None or inv.via == 'start-process':
         return None
     args, k = inv.args, 0
     while k < len(args):
@@ -469,8 +472,10 @@ def c_code(inv):
             k += 2
             continue
         if C_FLAGS_RE.match(t):
-            w = args[k + 1] if k + 1 < len(args) else None
-            return w.text if w is not None and not w.dyn else None
+            if k + 1 >= len(args) or any(w.dyn or (inv.cmd is not None and rules.native_unsure(inv.cmd, w))
+                                         for w in args[:k + 2]):
+                return None
+            return args[k + 1].text
         if t.startswith('-') and t not in ('-', '-m') and not re.match(r'^-[A-Za-z]*c', t):
             k += 1
             continue
@@ -777,10 +782,12 @@ PY_RUN_BUILTINS = frozenset(('exec', 'eval', 'compile', 'execfile', 'getattr', '
                              'breakpoint'))
 # an import that reaches the tool or the kit's library: a dotted part (or a name it takes) that is
 # backlog (kitlib.backlog, tools.backlog, a bare `import backlog`) or kit (tools/kit.py); kitlib
-# only when the code also uses backlog as code (kitlib.backlog.store, x.backlog) or names it as a
-# dotted module in a string (PY_DOTTED_BACKLOG_RE): a kitlib/backlog path given as data passes
+# only when the code also uses backlog as code (kitlib.backlog.store, x.backlog) or holds a string
+# that names the tool or the library other than as a kitlib/backlog path (_names_backlog:
+# 'kitlib.backlog.store', 'tools/backlog.py', 'kit backlog', a dotted part 'backlog', which a kitlib
+# helper may load or run): only a kitlib/backlog path given as data passes
 PY_REACH_PARTS = frozenset(('backlog', 'kitlib', 'kit'))
-PY_DOTTED_BACKLOG_RE = re.compile(r'\bkitlib\s*\.\s*backlog\b')
+PY_BACKLOG_PATH_RE = re.compile(r'^kitlib\s*[/\\]')     # a CODE_RE match that is a kitlib/backlog path
 # a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
 PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
@@ -830,7 +837,7 @@ def _tree_reach(ast, tree):
     tool or the kit's library (PY_REACH_PARTS), else the first name that can run code or a process
     (PY_RUN_*), else None."""
     runner = kit_import = None
-    backlog_used = False                        # backlog as code (x.backlog) or a dotted module name in a string
+    backlog_used = False                        # backlog as code (x.backlog) or named in a string (_names_backlog)
     for node in ast.walk(tree):
         found = ()
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -854,12 +861,21 @@ def _tree_reach(ast, tree):
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
-            backlog_used = backlog_used or PY_DOTTED_BACKLOG_RE.search(s) is not None
+            backlog_used = backlog_used or _names_backlog(s)
         if found and runner is None:
             runner = sorted(found)[0]
     if kit_import and backlog_used:
         return kit_import
     return runner
+
+
+def _names_backlog(s):
+    """True when the string `s` names the tool or the backlog's library other than as a
+    kitlib/backlog path (PY_REACH_PARTS): a CODE_RE name that is not one, or a dotted part
+    'backlog' (a bare tool name a kitlib helper takes)."""
+    if 'backlog' in PY_PART_RE.split(s):
+        return True
+    return any(PY_BACKLOG_PATH_RE.match(m.group(0)) is None for m in CODE_RE.finditer(s))
 
 
 def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1):

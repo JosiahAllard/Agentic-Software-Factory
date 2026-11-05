@@ -900,6 +900,47 @@ class NoAncestryAnswer(RemoveCase):
         self.assertEqual(self.git('tag', '-l', 'archive/*'), '')
 
 
+class MergedWorktreesNoCandidate(RemoveCase):
+    """merged_worktrees filters the registered worktrees before it reads the base's history: with
+    none left to judge it spawns no `git rev-list` (one over all history is the costly read)."""
+
+    def spawned(self):
+        real = cmd.spawner()
+        seen = []
+
+        def run(argv, cwd=None, input=None, timeout=None, env=None):
+            seen.append(argv)
+            return real(argv, cwd=cwd, input=input, timeout=timeout, env=env)
+        return seen, mock.patch.object(cmd, '_run', side_effect=run)
+
+    def merged(self):
+        ctx, refused = remove.open_ctx(self.repo, None)
+        self.assertFalse(refused, refused)
+        listing = remove.worktree_listing(ctx.main)
+        seen, patch = self.spawned()
+        with patch:
+            got = remove.merged_worktrees(ctx, listing)
+        return got, seen
+
+    def test_no_workstream_spawns_no_rev_list(self):
+        got, seen = self.merged()
+        self.assertEqual(got, ([], None))
+        self.assertEqual([a for a in seen if 'rev-list' in a], [], seen)
+
+    def test_a_missing_directory_spawns_no_rev_list(self):
+        gitfixture.rmtree(self.workstream('gone', commits=0))
+        got, seen = self.merged()
+        self.assertEqual(got, ([], None))
+        self.assertEqual([a for a in seen if 'rev-list' in a], [], seen)
+
+    def test_a_landed_worktree_is_still_found(self):
+        path = self.workstream('done')
+        self.land('kit/done')
+        got, seen = self.merged()
+        self.assertEqual(got, ([(os.path.normpath(path), 'kit/done')], None))
+        self.assertEqual(len([a for a in seen if 'rev-list' in a]), 1, seen)
+
+
 class AbandonNextFree(RemoveCase):
 
     CONFIG = {'worktree_remove': {'archive_next_free': True}}

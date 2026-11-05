@@ -4,14 +4,19 @@ before booking one more, a branch gate is REFUSED until the branch's coordinator
 
 A run counted is a history line of the machine lock (kitlib.lock.store history_records) with
 `gate` true, a priority other than "land" (a landing books the branch's slug too), the gated
-repository (case aside) and the branch (`of_branch`), that ended at or after the branch was made:
-the first entry of its reflog (`since`), so a branch made again under an old name starts at 0;
-a branch with no reflog file (git's reftable format, or the tests' fake git) has no such bound.
+repository (case aside) and the branch (`of_branch`), that started, and that ended at or after
+the branch was made: the first entry of its reflog (`since`), so a branch made again under an
+old name starts at 0; a branch with no reflog file (git's reftable format, or the tests' fake
+git) has no such bound.
 The branch is the line's `branch` (case aside: on Windows `Kit/A` and `kit/A` are one loose ref),
 never its slug, which two branches can share and `gate.py --slug` sets; a null `branch` (a run
 booked with none) never counts. A line with no `branch` key, written before history lines kept
 it, counts by the branch's default slug (runner.slug_of), as every line did before. History
-lines written before they kept `gate` have none and never count. A fully reused gate
+lines written before they kept `gate` have none and never count. A booking that never got its
+slots (Ctrl+C or a stop while it queued, a hold refusal) has no history line
+(Store.history_append); one that got them and started nothing (`how` NOT_STARTED: a gate that
+gave its slots back to the session gate cap, kitlib.gate.gatecap gave_way, or a booking that
+failed once held) has one, which never counts. A fully reused gate
 books nothing and is never counted or refused (kitlib.gate.runner `gated` asks, for a branch
 gate only, just before it waits for the gate cap and books); a landing, the daily full run and
 redfirst never ask.
@@ -33,11 +38,13 @@ import re
 
 from kitlib.gate import result
 from kitlib.git import refs, repo
+from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
 
 RUNS = 5
 DIR_NAME = 'kit-gate-budget'
 DOC = 'docs/gate.md "The branch gate budget"'
+NOT_STARTED = lockrun.NOT_STARTED   # a run that got its slots and started nothing
 
 
 class BudgetError(Exception):
@@ -76,6 +83,7 @@ def runs(store, repo_name, branch, after=None):
     want = str(repo_name).lower()
     return [d for d in store.history_records(since=after)
             if d.get('gate') is True and d.get('priority') != 'land'
+            and d.get('how') != NOT_STARTED
             and str(d.get('repo') or '').lower() == want and of_branch(d, branch)]
 
 

@@ -120,6 +120,24 @@ class Counting(BudgetCase):
         got = [d['id'] for d in budget.runs(self.store, self.name, BRANCH, after)]
         self.assertEqual(sorted(got), sorted(mine))
 
+    def test_a_booking_that_started_nothing_is_not_counted(self):
+        """A booking that got its slots and gave them back with nothing run (how "not started": a
+        gate that gave way to the session gate cap) is no run. Red before: every line counted."""
+        mine = [self.line(how=how) for how in ('done', 'cancelled', 'interrupted', 'error')]
+        self.line(how='not started')
+        got = [d['id'] for d in budget.runs(self.store, self.name, BRANCH)]
+        self.assertEqual(sorted(got), sorted(mine))
+
+    def test_a_booking_that_never_got_its_slots_leaves_nothing_to_count(self):
+        """Ctrl+C while the booking queued: the real book ends its run, and the store writes no
+        history line for a run that never held (Store.history_append). A guard: green before."""
+        with mock.patch.object(lockrun, 'acquire', side_effect=KeyboardInterrupt), \
+                self.assertRaises(KeyboardInterrupt):
+            fixtures.REAL_BOOK('engine-test', self.name, SLUG, gate=True, branch=BRANCH,
+                               **self.book_kw)
+        self.assertEqual(len(os.listdir(self.store.path('ended'))), 1)     # it was booked
+        self.assertEqual(budget.runs(self.store, self.name, BRANCH), [])
+
 
 class ByBranch(BudgetCase):
     """The budget is the branch's, not its slug's: two branches that share a slug each get one,

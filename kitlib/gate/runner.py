@@ -562,7 +562,9 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     The lock run records the tree it tests (tested_tree; book's `tree`, Slot.note_tree for a held
     slot): a branch's HEAD tree, a landing's merge tree, the daily full run's commit's tree.
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
-    in the store it books in); a landing and the daily full run leave it False and never wait.
+    in the store it books in) and, once it holds, gives its slot back and books again while the
+    session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and
+    the daily full run leave it False and never wait.
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
     first, before the cap is waited for or anything is booked: `(None, REFUSED Outcome)` when it
     is spent. None: not asked (a detached HEAD). The run is booked with it as book's `branch`,
@@ -613,22 +615,32 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
         if over:
             return None, G.Outcome(G.REFUSED, over, record=None,
                                    no_record='the branch gate budget')
-        gatecap.wait_turn(store, name, say)
-    try:
-        mine = {'branch': budget_branch} if capped and budget_branch else {}
-        slot = lockrun.book(kind, name, slug, **dict(book_kw or {}, gate=True, tree=tree, **mine))
-    except LockError as e:
-        return None, book_refusal(e, log_dir, base)
-    with slot:
-        say(slot.held_text())
-        results = run_steps(slot.launcher, chosen, gate or cfg.section('gate'), ctx, log_dir, say,
-                            checks, halted=slot.stop_asked)
-        results += window_results(slot, say, seen)
-        if slot.stop_asked():
-            slot.release(1, 'cancelled')
-            return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir, base)
-        slot.release(0 if verdict(results)[0] and not nothing_ran(results) else 1, 'done')
-    return results, None
+    mine = {'branch': budget_branch} if capped and budget_branch else {}
+    while True:
+        if capped:
+            gatecap.wait_turn(store, name, say)
+        try:
+            slot = lockrun.book(kind, name, slug,
+                                **dict(book_kw or {}, gate=True, tree=tree, **mine))
+        except LockError as e:
+            return None, book_refusal(e, log_dir, base)
+        with slot:
+            # Counted and booked in two steps: at the cap now, it gives the slot back and books
+            # again (gatecap.gave_way), unless a stop came while it gave the run back.
+            if capped and gatecap.gave_way(store, name, slot, say):
+                if gatecap.stopped(slot):
+                    return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir,
+                                                 base)
+                continue
+            say(slot.held_text())
+            results = run_steps(slot.launcher, chosen, gate or cfg.section('gate'), ctx, log_dir,
+                                say, checks, halted=slot.stop_asked)
+            results += window_results(slot, say, seen)
+            if slot.stop_asked():
+                slot.release(1, 'cancelled')
+                return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir, base)
+            slot.release(0 if verdict(results)[0] and not nothing_ran(results) else 1, 'done')
+        return results, None
 
 
 def tested_tree(root):

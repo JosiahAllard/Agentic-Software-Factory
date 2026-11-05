@@ -64,6 +64,8 @@ GPUS_ENV = "MACHINE_LOCK_GPUS"          # the gpu cards the run holds, by adapte
 END_ENV = "MACHINE_LOCK_END"            # how the run ended, for --on-release
 XLA_FRACTION_ENV, XLA_DEFAULT_FRACTION = "XLA_PYTHON_CLIENT_MEM_FRACTION", "0.3"
 KILL_HOW = ("interrupted", "cancelled", "error")
+# The `how` of a run that got its slots and started nothing; kitlib.gate.budget never counts it.
+NOT_STARTED = "not started"
 # A run watches for console windows (kitlib.proc.winwatch) from its first command's start to
 # its release (Slot.watch_stop); False turns the monitor off. Windows only: there are no console
 # windows to watch elsewhere.
@@ -1708,7 +1710,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         acquire(store, run, L, own, wait_s, no_wait, prefer, {"cpu": wslots} if wtext else None)
         if run.rec.get("hold_owner") == "agent":
             hl.claimed(store, run.id, hold)
-        how = "not started"
+        how = NOT_STARTED
         slot = Slot(store, run, L, own, parent, mutex, env, on_release_cmd, k, shares, log, gate)
         if parent is None:
             notice.started(store, run, kind, k, L)
@@ -2070,7 +2072,7 @@ def run_command(cmd, kind, repo, slug, **kw):
         if code is not None:
             return code
     s = book(kind, repo, slug, cmd=cmd, **kw)
-    code, how = 1, "not started"
+    code, how = 1, NOT_STARTED
     try:
         try:
             p = s.start(start, give_back=True)

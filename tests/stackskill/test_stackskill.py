@@ -181,22 +181,21 @@ class ToolExitCodesTest(unittest.TestCase):
         fx = gitfixture.TempRepo()
         self.addCleanup(fx.cleanup)
         tmp = fx.root
-        if True:
-            code, out = self.run_tool("install", "--stack", "godot", "-C", tmp)
-            self.assertEqual(code, 0)
-            self.assertIn("would create", out)
-            self.assertFalse((Path(tmp) / ".claude").exists())
-            code, out = self.run_tool("install", "--stack", "nosuch", "-C", tmp)
-            self.assertEqual(code, 1)          # no such stack folder: a refusal
-            self.assertIn("REFUSED", out)
-            code, out = self.run_tool("install", "--stack", "python", "-C", tmp)
-            self.assertEqual(code, 0)          # a stack with no skills: nothing to copy
-            self.assertEqual(out, "")
-            code, out = self.run_tool("install", "--stack", "Bad/Name", "-C", tmp)
-            self.assertEqual(code, 1)
-            self.assertIn("REFUSED", out)
-            code, _ = self.run_tool("install", "-C", tmp)
-            self.assertEqual(code, 2)
+        code, out = self.run_tool("install", "--stack", "godot", "-C", tmp)
+        self.assertEqual(code, 0)
+        self.assertIn("would create", out)
+        self.assertFalse((Path(tmp) / ".claude").exists())
+        code, out = self.run_tool("install", "--stack", "nosuch", "-C", tmp)
+        self.assertEqual(code, 1)          # no such stack folder: a refusal
+        self.assertIn("REFUSED", out)
+        code, out = self.run_tool("install", "--stack", "python", "-C", tmp)
+        self.assertEqual(code, 0)          # a stack with no skills: nothing to copy
+        self.assertEqual(out, "")
+        code, out = self.run_tool("install", "--stack", "Bad/Name", "-C", tmp)
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSED", out)
+        code, _ = self.run_tool("install", "-C", tmp)
+        self.assertEqual(code, 2)
 
 
 if __name__ == "__main__":

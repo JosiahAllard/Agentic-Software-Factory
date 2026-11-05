@@ -693,7 +693,8 @@ class Walker:
                     raise GitExit(128, "fatal: bad revision '%s'\n" % s)
         self.paths = paths
         if paths:
-            self.spec = _u.Pathspec(ctx.prefix or '', paths)
+            self.spec = _u.Pathspec(ctx.prefix or '', paths,
+                                    literal=_u.literal_pathspecs(ctx.env))
         from .plumbing import index_reader
         neg = False
         for s in specs:

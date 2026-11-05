@@ -511,6 +511,11 @@ CHECKOUT_PATHSPECS = [
     ('read', 'a[1].txt'),
     ('read', 'a1.txt'),
     ('envgit', _LITERAL, ['checkout', '-q', 'HEAD', '--', 'a*.txt']),
+    # diff and log read the switch too: a1.txt is changed, a[1].txt is not
+    ('envgit', _LITERAL, ['diff', '--name-only', '--', 'a[1].txt']),
+    ('envgit', _LITERAL, ['diff', '--name-only', 'HEAD', '--', 'a*.txt']),
+    ('envgit', _LITERAL, ['log', '--format=%s', '--', 'a*.txt']),
+    ('envgit', _LITERAL, ['log', '--format=%s', '--', 'a[1].txt']),
     ('git', ['checkout', '-q', 'HEAD', '--', 'a[1].txt']),
     ('read', 'a1.txt'),
     ('write', 'dir/new.txt', 'new\n'),

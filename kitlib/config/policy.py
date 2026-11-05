@@ -30,8 +30,6 @@ Repo hook module: `<root>/<tools_dir>/<module>.py`, named by `.kit.json` "hook".
 import contextlib
 import copy
 import fnmatch
-import hashlib
-import importlib.util
 import json
 import ntpath
 import os
@@ -292,6 +290,8 @@ def load_hook_module(cfg):
     path, options = found
     if not os.path.isfile(path):
         raise ConfigError('.kit.json names the hook module %s, which does not exist' % path)
+    import hashlib                # here, not at the top: the guard imports this module per hook call
+    import importlib.util
     name = 'kit_repo_hook_%s' % hashlib.sha256(os.path.normcase(path).encode('utf-8')).hexdigest()[:12]
     module = None
     try:

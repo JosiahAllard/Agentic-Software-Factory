@@ -236,13 +236,20 @@ class RefLock:
         self.lock = path + '.lock'
         self.fd = None
 
-    def acquire(self):
-        d = os.path.dirname(self.path)
+    # How many times the lock's folder is made again when another writer pruned it between the
+    # makedirs and the open (git's raceproof_create_file retries the same window).
+    MISSING_DIR_TRIES = 3
+
+    def _make_dir(self):
         try:
-            os.makedirs(d, exist_ok=True)
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
         except (FileExistsError, NotADirectoryError):
             raise GitExit(128, "fatal: cannot lock ref '%s': unable to create directory for %s\n"
                           % (self.name, self.lock.replace('\\', '/')))
+
+    def acquire(self):
+        self._make_dir()
+        missing = 0
         # Windows denies creating a lock file another thread has just renamed or removed (it is
         # still being deleted); that window is retried, as _read_file retries its open.
         began = retry.start()
@@ -252,6 +259,13 @@ class RefLock:
                 return
             except FileExistsError:
                 raise lock_error(self.name, self.path)
+            except FileNotFoundError:
+                # Another writer's _prune_dirs or _remove_empty_tree removed the folder just made.
+                missing += 1
+                if missing > self.MISSING_DIR_TRIES:
+                    raise GitExit(128, "fatal: cannot lock ref '%s': unable to create directory "
+                                       "for %s\n" % (self.name, self.lock.replace('\\', '/')))
+                self._make_dir()
             except PermissionError as e:
                 if os.path.isdir(self.lock) or os.path.exists(self.lock):
                     raise lock_error(self.name, self.path)
@@ -270,7 +284,9 @@ class RefLock:
                 os.write(fd, data)
             finally:
                 os.close(fd)
-            if os.path.isdir(self.path):
+            # A folder tree holding no files (left by an earlier lock of a ref below it) is
+            # removed, as git does; one that holds a file still blocks the ref.
+            if os.path.isdir(self.path) and not _remove_empty_tree(self.path):
                 raise GitExit(128, "fatal: cannot lock ref '%s': there is a non-empty directory "
                                    "'%s' blocking reference '%s'\n"
                               % (self.name, self.path.replace('\\', '/'), self.name))
@@ -289,6 +305,19 @@ class RefLock:
             os.remove(self.lock)
         except OSError:
             pass
+
+
+def _remove_empty_tree(path):
+    """Remove the folder `path` bottom-up when it and its subfolders hold no file. True when it is
+    gone; False when a file (or anything else rmdir refuses) keeps it."""
+    for dirpath, _dirs, _files in os.walk(path, topdown=False):
+        try:
+            os.rmdir(dirpath)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+    return not os.path.isdir(path)
 
 
 def _replace(src, dst):
@@ -366,6 +395,7 @@ def update(repo, name, new, old=None, deref=True, msg=None, deleting=()):
                               % (target, cur_oid, old))
     except BaseException:
         lk.rollback()
+        _prune_dirs(repo, target)      # the folders acquire() made for the lock
         raise
     lk.commit(('%s\n' % new).encode('ascii'))
     return target
@@ -409,7 +439,7 @@ def delete(repo, name, old=None, deref=False):
         _remove_reflog(repo, target)
     finally:
         lk.rollback()
-    _prune_dirs(repo, target)
+        _prune_dirs(repo, target)      # on every exit: acquire() made the folders for the lock
     return True
 
 

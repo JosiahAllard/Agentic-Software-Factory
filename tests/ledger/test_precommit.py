@@ -184,6 +184,22 @@ class PreCommitTest(unittest.TestCase):
         self.assertIn('rulebooks: 1 rules in 1 files', out)
         self.assertEqual(self.last(), 'rules')
 
+    def test_opted_in_a_staged_rulebook_deletion_with_a_logged_set_is_refused(self):
+        """The real `tools/ledger.py check` judges the deletion: the logged `set` is not in force."""
+        self.opt_in()
+        book = 'rulings/rules/kit.md'
+        self.write_ledger(ENTRY % (rid(1), 'Keep.'), ENTRY % (rid(2), 'Rule. [rule kit.md a.b set]'))
+        self.repo.write(book, '# T\nRepos: x\n## A\n- a.b: Rule. (from %s)\n' % rid(2))
+        self.repo.git('add', '--', 'rulings/LEDGER.md', book)
+        rc, out = self.hook_commit('-m', 'rules')
+        self.assertEqual(rc, 0, out)
+        self.repo.git('rm', '-q', '--', book)
+        rc, out = self.hook_commit('-m', 'drop')
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn('FAIL logged rule change not applied', out)
+        self.assertIn('commit refused', out)
+        self.assertEqual(self.last(), 'rules')
+
     def test_opted_in_a_staged_digest_with_an_unstaged_ledger_change_is_refused(self):
         """The check reads the working ledger too, so it must be what the commit holds."""
         self.opt_in()
@@ -333,6 +349,47 @@ class TargetsTest(unittest.TestCase):
         with mock.patch.object(precommit.subprocess, 'call') as run:
             self.assertEqual(precommit.check(commit, self.home), (0, None))
         run.assert_not_called()
+
+    def test_a_staged_rulebook_deletion_is_a_target_and_runs_the_check(self):
+        """The deleted file is on no disk for `rulebook.paths`; the check still runs for it."""
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        commit = FakeCommit(self.root, ['rulings/rules/kit.md'])
+        with mock.patch.object(precommit.spawn, 'call', return_value=0) as run, \
+                mock.patch.object(precommit, 'unstaged', return_value=[]) as diff:
+            self.assertEqual(precommit.check(commit, self.home), (0, None))
+        run.assert_called_once()
+        self.assertIn('rulings/rules/kit.md', diff.call_args[0][1])
+
+    def test_a_failing_check_refuses_a_staged_rulebook_deletion(self):
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        commit = FakeCommit(self.root, ['rulings/rules/kit.md'])
+        with mock.patch.object(precommit.spawn, 'call', return_value=1), \
+                mock.patch.object(precommit, 'unstaged', return_value=[]):
+            code, message = precommit.check(commit, self.home)
+        self.assertEqual(code, 1)
+        self.assertIn('commit refused', message)
+
+    def test_only_rulebook_names_in_the_rules_folder_count_as_deleted_rulebooks(self):
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        folder = precommit.rules_folder(self.home)
+        staged = ['rulings/rules/kit.md', 'rulings/rules/notes.txt', 'rulings/rules/Up.md',
+                  'rulings/rules/sub/x.md', 'rulings/kit.md', 'other/rules/kit.md']
+        self.assertEqual(precommit.staged_rulebooks(self.root, staged, folder),
+                         ['rulings/rules/kit.md'])
+        self.assertEqual(precommit.staged_rulebooks(self.root, staged, None), [])
+
+    def test_a_rules_folder_reached_by_another_spelling_is_still_matched(self):
+        """Mirrors staged_targets: the realpath fallback, when the plain paths differ."""
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        folder = os.path.join(self.root, 'rulings', 'rules')
+        alias = os.path.join(self.root, 'alias')
+
+        def real(p):                                 # the alias resolves to the rules folder
+            return 'RESOLVED' if p in (folder, alias) else p
+        with mock.patch.object(precommit, '_real', side_effect=real):
+            self.assertEqual(precommit.staged_rulebooks(self.root, ['alias/kit.md'], folder),
+                             ['alias/kit.md'])
+            self.assertEqual(precommit.staged_rulebooks(self.root, ['other/kit.md'], folder), [])
 
     def test_not_staged_runs_no_check_and_no_further_git(self):
         self.ledger_at(os.path.join(self.root, 'LEDGER.md'))

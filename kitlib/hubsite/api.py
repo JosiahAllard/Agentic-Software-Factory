@@ -84,7 +84,11 @@ GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `p
 (and `handoffs`): the Docs tab reads a body when it is opened. GET snapshot?collections=a,b
 answers {revision, collections} with those collections alone, cut as the whole snapshot cuts
 them, and no views, pending or status; a name that is not one of its collections is `invalid`,
-field collections (Client.inbox reads it so; an older hub ignores the query and answers whole). POST pages/{id}/delete (OWNER, if_version
+field collections (Client.inbox reads it so; an older hub ignores the query and answers whole).
+GET snapshot?bare=1 answers the whole snapshot with `collections` {}: the revision, views,
+pending and status, which can move with no store write. The page reads it after a wait that
+timed out (no write ended it) and keeps the documents it holds when the revision is the one it
+drew; bare with collections is `invalid`, field bare. POST pages/{id}/delete (OWNER, if_version
 optional) deletes the card, then the body; a
 body delete that fails leaves the card deleted and the body an orphan, as above. One process
 lock is enough: Store.open lets one process write a store (`_store.lock`).
@@ -3740,7 +3744,16 @@ def _snapshot_colls(req):
 
 def snapshot(api, req):
     colls = _snapshot_colls(req)
-    revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
+    if _q(req, 'bare') and _q_flag(req, 'bare'):
+        # the snapshot less its documents: what can move with no store write (the views, the
+        # pending routes, the status). The page reads it after a wait that timed out, which no
+        # write ended, keeping the documents it holds for that revision (module docstring)
+        if colls is not None:
+            raise _invalid('bare leaves every collection out: give collections or bare, not both',
+                           'bare')
+        revision, docs = api.store.revision, {}
+    else:
+        revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
     if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings")
         feed = docs['landings']
         docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-FEED_MAX:]}

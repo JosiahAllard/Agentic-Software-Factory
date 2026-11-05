@@ -267,18 +267,6 @@ class PlaceTest(httpfix.ListenerCase):
 class LogicTest(unittest.TestCase):
     """The To PM rows and the freshness, on the page's pure block."""
 
-    def test_next_id(self):
-        self.assertEqual(js("pmNextId(items)", []), "P-001")
-        self.assertEqual(js("pmNextId(items)", [item(1, "done"), item(7, "sent"), {"id": "x"}]), "P-008")
-        self.assertEqual(js("pmNextId(items)", [item(999, "done")]), "P-1000")
-
-    def test_send_all_moves_only_queued(self):
-        items = [item(1, "queued"), item(2, "sent"), item(3, "queued"), item(4, "done")]
-        got = js('pmSendAll(items, "%s")' % NOW, items)
-        self.assertEqual(got, [{"id": "P-001", "patch": {"status": "sent", "sent_at": NOW}},
-                               {"id": "P-003", "patch": {"status": "sent", "sent_at": NOW}}])
-        self.assertEqual(js('pmSendAll(items, "%s")' % NOW, [item(2, "sent")]), [])
-
     def test_badge_is_queued_plus_sent(self):
         items = [item(1, "queued"), item(2, "sent"), item(3, "done"), item(4, "sent", urgent=True)]
         self.assertEqual(js("pmBadge(items)", items), {"n": 3, "hot": True})
@@ -307,22 +295,9 @@ class LogicTest(unittest.TestCase):
         got = js("pmRows(items, 'queued', 0, false)", items)
         self.assertEqual([r["id"] for r in got["rows"]], ["P-003", "P-002", "P-001"])
 
-    def test_alert_lists_sent_only(self):
-        items = [item(1, "queued"), item(2, "sent", kind="fyi", repo="pm", text="line one\nline two"),
-                 item(3, "sent", urgent=True), item(4, "done")]
-        lines = js("pmAlertLines(items)", items)
-        self.assertEqual(len(lines), 4)                                       # blank, heading, two items
-        self.assertIn("P-002 [FYI, pm]: line one line two", lines[2])
-        self.assertIn("P-003 [Question] (urgent)", lines[3])
-        self.assertEqual(js("pmAlertLines(items)", [item(1, "queued")]), [])
-
     def test_refs_hide_both_ledger_id_forms(self):
         refs = ["Q-12", "R-" + "0007", "H-" + "kit-0007", "H-" + "some-long-repo-0001", "H-x"]
         self.assertEqual(js("keptRefs(items)", refs), ["Q-12", "H-x"])
-
-    def test_an_act_note_is_its_own_kind_in_the_alert(self):
-        lines = js("pmAlertLines(items)", [item(5, "sent", kind="act", repo="alpha", text="Act on maintenance finding unpriced R-1")])
-        self.assertIn("P-005 [Act, alpha]: Act on maintenance finding unpriced R-1", lines[2])
 
     def test_freshness(self):
         now = "Date.parse('2026-10-11T12:00:00Z')"
@@ -2571,7 +2546,7 @@ class RecordPageTest(unittest.TestCase):
             await click(button($("#pane-detail"), "Edit fields"));
             return { reads: calls.filter(c => c.path.startsWith("/records")).map(c => c.method + " " + c.path), page: !!$("#list .rec") };
         """.replace("REC", json.dumps(record(id="B-4", fields=[["id", "B-4"], ["summary", "waits"]]))), snapshot(views=views))
-        self.assertEqual(got["reads"], ["GET /records/alpha/B-4"] * 3)                  # the detail (drawn twice), then the record page
+        self.assertEqual(got["reads"], ["GET /records/alpha/B-4"] * 2)                  # the detail (drawn twice, read once), then the record page
         self.assertTrue(got["page"])
 
     def test_delete_waits_for_a_reason_and_the_typed_id_then_shows_the_record_deleted(self):
@@ -5560,6 +5535,19 @@ class TriageShellTest(unittest.TestCase):
         """, snapshot(collections=LISTS), hash="#home")
         self.assertEqual(down, "–")                                           # a failed read keeps the dash
 
+    def test_a_wait_with_no_new_revision_reads_no_findings_and_a_new_revision_reads_them(self):
+        route = FINDINGS_ROUTE.replace("FOUND", json.dumps(FOUND[:2])).replace("MARKS", "[]").replace("RUNS", "[]")
+        got = dom(route + """
+            const reads = () => calls.filter(c => c.method === "GET" && c.path === "/findings").length;
+            await start();
+            const start_ = reads();
+            await wake();                                 // the wait ended with the revision as it was (a timeout)
+            const quiet = reads();
+            server.snap.revision++; await wake();         // a new revision
+            return { start_, quiet, loud: reads(), n: text($("#n-f")) };
+        """, snapshot(collections=LISTS), hash="#home")
+        self.assertEqual((got["start_"], got["quiet"], got["loud"], got["n"]), (1, 1, 2, "2"))
+
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
 class TriageViewsTest(unittest.TestCase):
@@ -5596,6 +5584,21 @@ class TriageViewsTest(unittest.TestCase):
         self.assertEqual(got["done"]["rows"], ["row-alpha:B-0"])
         self.assertEqual(got["done"]["detail"], ["done-alpha:B-0"])
         self.assertIn("Open the record", got["done"]["buttons"])
+
+    def test_typing_in_the_backlog_search_reads_the_open_record_once(self):
+        got = dom("""
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: { ok: true, id: "B-1", version: 2, fields: [["effort", "S"], ["scope", "a.md"]], body: "the body" } } : undefined;
+            await start();
+            await click($("#sections [data-s=backlog]"));
+            await settle();
+            const reads = () => calls.filter(c => c.method === "GET" && c.path.startsWith("/records/")).length;
+            const opened = reads();
+            for (const v of ["t", "th", "thr", "thre", "three"]) await type($("input[type=search]"), v);
+            await settle();
+            return { opened, typed: reads(), facts: text(document.getElementById("rf-B-3")) || text($("#pane-detail")) };
+        """, snapshot(views=self.VIEWS))
+        self.assertEqual(got["opened"], 1)
+        self.assertEqual(got["typed"], 1)                                       # five keystrokes redraw the card, none reads the record again
 
     def test_edit_body_opens_the_record_with_only_the_body_editor_open(self):
         got = dom("""

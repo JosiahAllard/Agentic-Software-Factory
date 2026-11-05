@@ -119,7 +119,7 @@ class _Ctx(object):
             return {'error': 'no home in the hook environment'}
         from kitlib.config import user
         try:
-            return user.user_config(home)
+            return user.user_config(home, location=user.fs_location(home))
         except Exception as e:
             return {'error': str(e)}
 

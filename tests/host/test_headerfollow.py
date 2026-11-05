@@ -130,7 +130,8 @@ class Follow(unittest.TestCase):
         self.assertIn('error', headerfollow._Ctx('C:/kit', {}).user())
         with mock.patch('kitlib.config.user.user_config', return_value={'plugin': None}) as cfg:
             self.assertEqual(headerfollow._Ctx('C:/kit', {'USERPROFILE': self.root}).user(), {'plugin': None})
-        cfg.assert_called_once_with(self.root)
+        self.assertEqual(cfg.call_args[0], (self.root,))
+        self.assertIn('location', cfg.call_args[1])
 
 
 class SubagentStart(unittest.TestCase):
@@ -186,6 +187,15 @@ class SubagentStart(unittest.TestCase):
         self.assertTrue(text.startswith('PM kit header. The kit folder is %s.' % self.fwd(self.new)), text)
         self.assertIn('%s/tools/new_worktree.py' % self.fwd(self.new), text)
         self.assertNotIn(OLD, text)
+
+    def test_the_line_and_the_start_run_no_subprocess(self):
+        # the machine config's pointer is read from the filesystem: no git child per tool hook
+        self.start()                                  # a record for s1-a1 naming the new export
+        with mock.patch('subprocess.Popen', side_effect=AssertionError('a subprocess was started')) as popen:
+            later = time.time() + headerfollow.EVERY_S + 1
+            headerfollow.line(self.old, self.payload, 'a1', self.env, now=later, write=False)
+            self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        popen.assert_not_called()
 
     def test_the_record_names_the_folder_the_header_named(self):
         self.start()

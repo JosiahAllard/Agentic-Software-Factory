@@ -944,6 +944,26 @@ def resolved(policy, pm):
     return out
 
 
+def fs_location(home):
+    """locate(home) with the PM-repo pointer checked from the filesystem only (kitlib.guard.place
+    and its HEAD-file read, no git child): a pointer the filesystem cannot check reads as BAD."""
+    from kitlib.git import repo
+    from kitlib.guard import place
+    from kitlib.config import pointer
+
+    def classify(path):
+        found = place.classify(path, fallback=lambda p: None)
+        if found is None:
+            return repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
+        return found
+
+    def branch(path):
+        found = classify(path)
+        answer = place.head_branch(found.git_dir) if found.git_dir else None
+        return answer if answer is not None else (None, 'its HEAD file cannot tell')
+    return locate(home, ptr=pointer.read(classify=classify, branch=branch))
+
+
 def user_config(home=None, location=None):
     """The checked machine config, every schema key present (None where unset). `location` is a
     Location already taken (the guard takes one per call), else locate(home); a HomeLocation

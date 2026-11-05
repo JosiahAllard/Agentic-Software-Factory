@@ -928,16 +928,19 @@ class Store:
             return "land"
         return "branch" if gate and branch else "other"
 
-    def history_expect(self, repo, kind, mode="other"):
+    def history_expect(self, repo, kind, mode="other", records=None):
         """Expected seconds of a run of repo, kind and mode (run_mode): the median held time of
         its finished (how: done) runs of that mode, at least history_min_s; None with fewer than
         history_min_runs of them, so a thin mode falls back to the kind's guide, not to the
         other modes' median. A line written under a kind's retired name (an alias in the kinds
-        table) counts as a line of the kind it now names."""
+        table) counts as a line of the kind it now names. records: history_records() already
+        read (book reads it once for this and history_mem); None reads it here."""
         from kitlib.lock import kinds as kinds_mod      # kinds imports no store: no cycle
         s, al = self.settings, kinds_mod.aliases(self.kinds_path)
         kind = kinds_mod.canonical(kind, table_aliases=al)
-        ds = sorted(float(d["held_s"]) for d in self.history_records()
+        if records is None:
+            records = self.history_records()
+        ds = sorted(float(d["held_s"]) for d in records
                     if d.get("repo") == repo and d.get("how") == "done"
                     and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
                     and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
@@ -947,16 +950,19 @@ class Store:
         m = ds[len(ds) // 2] if len(ds) % 2 else (ds[len(ds) // 2 - 1] + ds[len(ds) // 2]) / 2
         return max(s.history_min_s, int(round(m)))
 
-    def history_mem(self, repo, kind, mode="other", since=None):
+    def history_mem(self, repo, kind, mode="other", since=None, records=None):
         """Memory need in MB of a run of repo, kind and mode, as history_expect counts them: the
         p90 (nearest rank) of the peak commit (peak_commit_mb) of its finished runs of that mode
         that ended on or after `since` (a kind's mem_since, "YYYY-MM-DD" UTC; None: all); None
-        with fewer than mem_min_runs of them, so the kind's mem_mb floor stands in until then."""
+        with fewer than mem_min_runs of them, so the kind's mem_mb floor stands in until then.
+        records: as history_expect's."""
         from kitlib.lock import kinds as kinds_mod
         al = kinds_mod.aliases(self.kinds_path)
         kind = kinds_mod.canonical(kind, table_aliases=al)
         start = since and since + "T00:00:00Z"          # ended is "%Y-%m-%dT%H:%M:%SZ": sorts as text
-        ds = sorted(int(d["peak_commit_mb"]) for d in self.history_records()
+        if records is None:
+            records = self.history_records()
+        ds = sorted(int(d["peak_commit_mb"]) for d in records
                     if d.get("repo") == repo and d.get("how") == "done"
                     and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
                     and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode

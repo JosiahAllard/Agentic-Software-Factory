@@ -1513,15 +1513,16 @@ def check_mem(mem_mb):
                         % (mem_mb,))
 
 
-def mem_need(store, repo, kind, mode, mem_mb, entry):
+def mem_need(store, repo, kind, mode, mem_mb, entry, records=None):
     """(need_mem_mb, mem_from) of a run: mem_mb (--mem) when given ("flag"); else its history's
     need (Store.history_mem, from entry's mem_since) once that has mem_min_runs runs ("history");
     else its kind entry's mem_mb floor ("kind"); else settings.mem_default_mb ("default"), never
-    0: a run whose need nobody knows is not admitted as needing nothing."""
+    0: a run whose need nobody knows is not admitted as needing nothing. records: the history
+    already read (Store.history_records), else history_mem reads it."""
     if mem_mb is not None:
         return mem_mb, "flag"
     entry = entry or {}
-    hist = store.history_mem(repo, kind, mode, entry.get("mem_since"))
+    hist = store.history_mem(repo, kind, mode, entry.get("mem_since"), records=records)
     if hist is not None:
         return hist, "history"
     if entry.get("mem_mb") is not None:
@@ -1646,10 +1647,13 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     rid, mutex = claim_id(store, rid)
     try:
         run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env, log)
+        mode = store.run_mode(priority, branch, gate)
+        # History is read once, and only when a guess needs it: it is every line of the last
+        # history_keep_days, and this mutex is held meanwhile.
+        recs = store.history_records() if expect_s is None or mem_mb is None else None
         hist = None if expect_s is not None else store.history_expect(
-            repo, kind, store.run_mode(priority, branch, gate))
-        need_mem, mem_from = mem_need(
-            store, repo, kind, store.run_mode(priority, branch, gate), mem_mb, k)
+            repo, kind, mode, records=recs)
+        need_mem, mem_from = mem_need(store, repo, kind, mode, mem_mb, k, records=recs)
         run.rec.update(expect_s=expect_s if expect_s is not None else hist if hist is not None
                        else k["warn_min"] * 60,
                        expect_from="--expect" if expect_s is not None else "history"

@@ -556,6 +556,8 @@ def main(argv=None):
     except Refused as e:
         sys.stderr.write('REFUSED: %s\n' % e)
         return 1
+    except Failed as e:
+        return fail(str(e))
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ import collections
 import os
 
 from kitlib.config.user import files_of
+from kitlib.git import repo as gitrepo
 
 from . import read, rulebook, safepath, standing
 from .errors import Usage
@@ -48,16 +49,12 @@ def readable(files):
     return ([(None, files.frozen)] if files.frozen else []) + list(files.repos.items())
 
 
-def same_path(a, b):
-    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
-
-
 def others(files, path):
     """`(texts, whys)`: the text of every readable file but `path` that exists (LF), and one line
     for each that cannot be read. Where `under <id>` may point, and what may cite an entry."""
     texts, whys = [], []
     for _, p in readable(files):
-        if same_path(p, path) or not os.path.exists(p):
+        if gitrepo.same_path(p, path) or not os.path.exists(p):
             continue
         text, why = read.read_file(p)
         if text is None:
@@ -65,13 +62,6 @@ def others(files, path):
         else:
             texts.append(text.replace('\r\n', '\n'))
     return texts, whys
-
-
-def under(path, folder):
-    """True when `path` is `folder` or anywhere below it (spelling, case and `..` resolved)."""
-    f = os.path.normcase(os.path.abspath(folder))
-    p = os.path.normcase(os.path.abspath(path))
-    return p == f or p.startswith(f.rstrip(os.sep) + os.sep)
 
 
 def views(found, repo):

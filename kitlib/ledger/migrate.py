@@ -23,6 +23,8 @@ import hashlib
 import os
 import re
 
+from kitlib.git import repo as gitrepo
+
 from . import files, fmt, read, rulebook, standing, write
 from .errors import Failed, Usage
 from .fmt import ID, RID_RE
@@ -358,7 +360,7 @@ def check_out(found, out, digest_path=None):
     """Usage unless `out` is a safe place for a report: not a ledger file, the digest or inside
     the rules folder."""
     protected = [p for _, p in files.readable(found)] + [found.digest, digest_path or found.digest]
-    if any(files.same_path(out, p) for p in protected) or (found.rules and files.under(out, found.rules)):
+    if any(gitrepo.same_path(out, p) for p in protected) or (found.rules and gitrepo.inside(out, found.rules)):
         raise Usage('--out must not be a ledger file, the digest or in the rules folder')
 
 

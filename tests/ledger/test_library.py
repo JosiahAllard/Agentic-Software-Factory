@@ -1,4 +1,4 @@
-"""The kitlib.ledger functions tools/ledger.py used to hold: files.under and read_views,
+"""The kitlib.ledger functions tools/ledger.py used to hold: files.read_views,
 migrate.report_for and check_out, audit.check_all (the CLI tests pin their printed output)."""
 import os
 import tempfile
@@ -28,11 +28,6 @@ class Base(unittest.TestCase):
 
 
 class FilesTest(Base):
-    def test_under_is_the_folder_or_anything_below_it(self):
-        self.assertTrue(files.under(os.path.join(self.dir, 'a', '..', 'b'), self.dir))
-        self.assertTrue(files.under(self.dir, self.dir))
-        self.assertFalse(files.under(self.dir + 'x', self.dir))
-
     def test_read_views_reads_the_ledger_and_names_an_unreadable_one(self):
         texts, why = files.read_views(self.found, None)
         self.assertIsNone(why)

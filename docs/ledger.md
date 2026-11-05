@@ -1,6 +1,6 @@
 # The rulings ledger
 
-Append-only files hold the owner's rulings for every repository on the machine: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger` (`read` the one reader, `fmt` the format, `files` which file holds what, `write` the writes, `vcs` the git, `standing` the standing digest, `rulebook` the rulebooks, `migrate` the digest-to-rulebook migration, `move` `split-move`, `safepath` the path checks, `errors` the exceptions, `precommit` the opt-in hook).
+Append-only files hold the owner's rulings for every repository on the machine: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger` (`read` the one reader, `fmt` the format, `files` which file holds what, `write` the writes, `vcs` the git, `standing` the standing digest, `rulebook` the rulebooks, `migrate` the digest-to-rulebook migration, `audit` the whole-ledger `check`, `move` `split-move`, `safepath` the path checks, `errors` the exceptions, `precommit` the opt-in hook).
 
 ## Format
 

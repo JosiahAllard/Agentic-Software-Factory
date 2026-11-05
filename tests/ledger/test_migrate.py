@@ -275,6 +275,16 @@ class CliTest(Base):
         self.assertIn('cannot write', r.stderr)
         self.assertNotIn('Traceback', r.stderr)
 
+    def test_a_missing_digest_or_report_is_a_clean_exit_1(self):
+        r = self.out_from(self.dir, '--digest', os.path.join(self.dir, 'none.md'))
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn('ledger.py: no standing digest at', r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+        r = self.apply()
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertTrue(r.stderr.startswith('ledger.py: '), r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+
     def test_a_rule_citing_an_id_is_refused_before_any_write(self):
         self.make_report()
         self.put(self.report, self.read(self.report).replace(

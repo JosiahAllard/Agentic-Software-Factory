@@ -337,7 +337,7 @@ class Tick(Base):
         self.schedules = [sched()]
         self.seed({'worktree-sweep-demo': {'at': '2026-10-20T09:01:00', 'what': 'started'}})
         with mock.patch.object(T.spawn, 'console_python', return_value=None), \
-                mock.patch.object(T.sys, 'platform', 'win32'):
+                mock.patch.object(T.platform, 'NAME', 'windows'):
             code, lines = T.tick(home=self.home, kit=self.kit, now=NOW, fetch=lambda: self.schedules,
                                  start=self.start, repos=lambda: [('demo', MAIN, 'demo')])
         self.assertEqual((code, self.started), (T.EXIT_OK, []))
@@ -348,7 +348,7 @@ class Tick(Base):
         self.schedules = [sched()]
         self.seed({'worktree-sweep-demo': {'at': '2026-10-20T09:01:00', 'what': 'started'}})
         with mock.patch.object(T.spawn, 'console_python', return_value=None), \
-                mock.patch.object(T.sys, 'platform', 'linux'):
+                mock.patch.object(T.platform, 'NAME', 'linux'):
             code, lines = T.tick(home=self.home, kit=self.kit, now=NOW, fetch=lambda: self.schedules,
                                  start=self.start, repos=lambda: [('demo', MAIN, 'demo')])
         self.assertEqual(code, T.EXIT_OK)

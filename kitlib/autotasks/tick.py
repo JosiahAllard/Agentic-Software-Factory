@@ -74,7 +74,7 @@ def tool_path(name, kit):
 
 def _console_python():
     """The python.exe beside this interpreter; off Windows there is none, so this interpreter."""
-    return spawn.console_python() or (sys.executable if sys.platform != 'win32' else None)
+    return spawn.console_python() or (sys.executable if platform.NAME == 'linux' else None)
 
 
 def argv(name, kit, main=None, python=None):

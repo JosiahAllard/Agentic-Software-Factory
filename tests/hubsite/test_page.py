@@ -5535,18 +5535,24 @@ class TriageShellTest(unittest.TestCase):
         """, snapshot(collections=LISTS), hash="#home")
         self.assertEqual(down, "–")                                           # a failed read keeps the dash
 
-    def test_a_wait_with_no_new_revision_reads_no_findings_and_a_new_revision_reads_them(self):
+    def test_a_timeout_wake_reads_findings_only_after_the_interval_and_a_new_revision_always(self):
         route = FINDINGS_ROUTE.replace("FOUND", json.dumps(FOUND[:2])).replace("MARKS", "[]").replace("RUNS", "[]")
         got = dom(route + """
+            let clock = 1000000; Date.now = () => clock;
             const reads = () => calls.filter(c => c.method === "GET" && c.path === "/findings").length;
             await start();
-            const start_ = reads();
-            await wake();                                 // the wait ended with the revision as it was (a timeout)
+            const first = reads();
+            clock += 60000; await wake();                 // the wait timed out with the revision as it was, inside the interval
             const quiet = reads();
             server.snap.revision++; await wake();         // a new revision
-            return { start_, quiet, loud: reads(), n: text($("#n-f")) };
+            const changed = reads();
+            clock += 299000; await wake();                // timed out, 299 s after that count
+            const near = reads();
+            clock += 2000; await wake();                  // timed out, past 300 s
+            return { first, quiet, changed, near, late: reads(), n: text($("#n-f")) };
         """, snapshot(collections=LISTS), hash="#home")
-        self.assertEqual((got["start_"], got["quiet"], got["loud"], got["n"]), (1, 1, 2, "2"))
+        self.assertEqual([got[k] for k in ("first", "quiet", "changed", "near", "late")], [1, 1, 2, 2, 3])
+        self.assertEqual(got["n"], "2")
 
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
@@ -5592,13 +5598,49 @@ class TriageViewsTest(unittest.TestCase):
             await click($("#sections [data-s=backlog]"));
             await settle();
             const reads = () => calls.filter(c => c.method === "GET" && c.path.startsWith("/records/")).length;
-            const opened = reads();
-            for (const v of ["t", "th", "thr", "thre", "three"]) await type($("input[type=search]"), v);
+            const opened = reads(), card = $("#pane-detail article").id;
+            for (const v of ["o", "on", "one", "on", "one"]) await type($("input[type=search]"), v);
             await settle();
-            return { opened, typed: reads(), facts: text(document.getElementById("rf-B-3")) || text($("#pane-detail")) };
+            return { opened, typed: reads(), card, facts: text(document.getElementById("rf-B-1")) };
         """, snapshot(views=self.VIEWS))
+        self.assertEqual(got["card"], "item-alpha:B-1")
         self.assertEqual(got["opened"], 1)
         self.assertEqual(got["typed"], 1)                                       # five keystrokes redraw the card, none reads the record again
+        self.assertIn("Effort: S", got["facts"])
+        self.assertIn("a.md", got["facts"])
+
+    def test_a_failed_record_read_is_not_kept_and_a_save_from_the_page_reads_the_record_again(self):
+        got = dom("""
+            let fail = true, rec = { ok: true, id: "B-1", repo: "alpha", version: "c1:s1", where: "open", readable: true, blockers: [], hold: {}, fields: [["id", "B-1"], ["summary", "one"], ["effort", "S"], ["scope", "a.md"]], body: "b" };
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? (fail ? { status: 500, body: { ok: false, error: { code: "x", message: "down", field: "" } } } : { status: 200, body: rec })
+              : c.method === "POST" && c.path === "/records/alpha/B-1/edit" ? { status: 200, body: { ok: true, lines: [], record: Object.assign({}, rec, { version: "c2:s2" }) } } : undefined;
+            const reads = () => calls.filter(c => c.method === "GET" && c.path === "/records/alpha/B-1").length;
+            await start();
+            await click($("#sections [data-s=backlog]"));
+            await settle();
+            const failed = text(document.getElementById("rf-B-1"));
+            fail = false;
+            await type($("input[type=search]"), "o");                     // a redraw: the failed read was not kept
+            await settle();
+            const afterFail = { reads: reads(), facts: text(document.getElementById("rf-B-1")) };
+            await type($("input[type=search]"), "on"); await settle();
+            const cached = reads();
+            rec = { ok: true, id: "B-1", repo: "alpha", version: "c2:s2", where: "open", readable: true, blockers: [], hold: {}, fields: [["id", "B-1"], ["summary", "one"], ["effort", "M"], ["scope", "b.md"]], body: "b" };
+            await click(button($("#pane-detail"), "Edit fields"));
+            const pk = $$("#list .rec .pk")[0], ta = pk.querySelector("textarea");
+            await type(ta, ta.value + "\\nsummary: two");
+            await click(button(pk, "Save"));
+            await click(button($("#list"), "Back to the backlog"));
+            await settle();
+            return { failed, afterFail, cached, after: reads(), facts: text(document.getElementById("rf-B-1")) };
+        """, snapshot(views=self.VIEWS))
+        self.assertIn("Cannot read the record", got["failed"])
+        self.assertEqual(got["afterFail"]["reads"], 2)
+        self.assertIn("Effort: S", got["afterFail"]["facts"])
+        self.assertEqual(got["cached"], 2)                                      # kept once it was read
+        self.assertGreater(got["after"], got["cached"])                         # the page's own save drops it
+        self.assertIn("Effort: M", got["facts"])
+        self.assertIn("b.md", got["facts"])
 
     def test_edit_body_opens_the_record_with_only_the_body_editor_open(self):
         got = dom("""

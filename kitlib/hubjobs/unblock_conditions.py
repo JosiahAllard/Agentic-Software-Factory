@@ -81,16 +81,20 @@ class Readers(object):
 
     scope = None            # (store root, snapshot) of the repository being read: `at`
     why = None              # why the last resource_free could not tell
+    _read = None            # the scope's resource reads, made once per `at`: capacity, remote, split
 
     def at(self, root, snap):
-        """Read `resource:` conditions against the store at `root`, read as `snap`."""
+        """Read `resource:` conditions against the store at `root`, read as `snap`. Each `at`
+        starts the pass's resource reads afresh (resource_free reads them once per call of it)."""
         self.scope = (root, snap)
+        self._read = {}
 
     def resource_free(self, name):
         """True when fewer live pulls use resource `name` than `.kit.json` backlog.resources
         declares for it (offer.resource_load's count), False when every unit is taken, None when
         that cannot be told (`why` says why): no store, a `.kit.json` that cannot be read, a name it
-        does not declare, or git that cannot tell which pulls are live."""
+        does not declare, or git that cannot tell which pulls are live. The `.kit.json` and git
+        reads are made once per `at`, whatever number of `resource:` conditions ask."""
         from kitlib import config as kconfig
         from kitlib.backlog import offer, opener
         self.why = None
@@ -98,16 +102,22 @@ class Readers(object):
             self.why = 'no store is being read'
             return None
         root, snap = self.scope
-        try:
-            capacity = opener.repo_resources(root)
-            remote = kconfig.load(root).remote
-        except Exception:               # noqa: BLE001 - not told: the condition waits
+        read = self._read if self._read is not None else {}
+        if 'config' not in read:
+            try:
+                read['config'] = (opener.repo_resources(root), kconfig.load(root).remote)
+            except Exception:           # noqa: BLE001 - not told: the condition waits
+                read['config'] = None
+        if read['config'] is None:
             self.why = '.kit.json cannot be read'
             return None
+        capacity, remote = read['config']
         if name not in capacity:
             self.why = '.kit.json does not declare resource %s' % name
             return None
-        holding, _dead, git_why = offer.in_flight_split(snap, root, remote)
+        if 'split' not in read:
+            read['split'] = offer.in_flight_split(snap, root, remote)
+        holding, _dead, git_why = read['split']
         if git_why:
             self.why = 'git cannot tell which pulls are live (%s)' % git_why
             return None
@@ -260,12 +270,15 @@ class UnblockJob(object):
             if ctx.stop.is_set():
                 break
             try:
-                snap, _store = self.snapshot(root)
+                snap, store = self.snapshot(root)
             except Exception as e:      # noqa: BLE001 - one store's fault leaves the others
                 failed.append('%s: the store could not be read (%s)' % (repo, type(e).__name__))
                 continue
             if snap is None:
                 continue
+            seed = getattr(getattr(readers, 'record_closed', None), 'seed', None)
+            if callable(seed):
+                seed(repo, snap, store)     # a `record:` condition reuses this load
             at = getattr(readers, 'at', None)
             if callable(at):
                 at(root, snap)
@@ -329,6 +342,11 @@ class RecordReader(object):
         self.settings = settings
         self.snapshot = snapshot or open_snapshot
         self._read = {}
+
+    def seed(self, repo, snap, store):
+        """Take the pass's own read of `repo`'s store (UnblockJob has it already) in place of a
+        second one; a read made earlier in the pass stands."""
+        self._read.setdefault(repo, (snap, store))
 
     def __call__(self, repo, rid):
         from kitlib.hubjobs import coord_restart

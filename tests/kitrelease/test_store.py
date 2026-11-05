@@ -1,3 +1,4 @@
+import errno
 import json
 from pathlib import Path
 import tempfile
@@ -256,3 +257,37 @@ class Store(unittest.TestCase):
 
         with mock.patch.object(Path, 'lstat', metadata), self.assertRaises(S.StoreError):
             S.current(self.store, self.first['identity'])
+
+    def _race_rename(self, error):
+        # A competing creator publishes a complete layout, then our rename loses.
+        real = S.os.rename
+
+        def rename(stage, root):
+            real(stage, root)
+            Path(stage).mkdir()
+            raise error
+
+        return rename
+
+    def test_create_accepts_racing_creator_for_exists_errors(self):
+        for error in (FileExistsError(errno.EEXIST, 'exists'),
+                      OSError(errno.ENOTEMPTY, 'not empty'),
+                      OSError(errno.EEXIST, 'exists')):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'store'
+                with mock.patch.object(S.os, 'rename', self._race_rename(error)):
+                    try:
+                        created = S._create(root)
+                    except OSError as raised:
+                        self.fail('racing creator not accepted: %r' % raised)
+                self.assertEqual(created, root)
+                state = S._load(root)[1]
+                self.assertEqual(state['current'], None)
+
+    def test_create_reraises_other_oserror(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'store'
+            with mock.patch.object(S.os, 'rename', self._race_rename(OSError(errno.EACCES, 'denied'))):
+                with self.assertRaises(OSError) as raised:
+                    S._create(root)
+            self.assertEqual(raised.exception.errno, errno.EACCES)

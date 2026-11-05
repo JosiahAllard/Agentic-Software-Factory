@@ -3,6 +3,7 @@
 Expected identities come from reviewed preparation, not the marker being checked.
 The mutable pointer binds both thin plugins to one immutable dependency directory.
 """
+import errno
 import json
 import os
 from pathlib import Path
@@ -115,7 +116,10 @@ def _create(root):
         (stage / 'releases').mkdir()
         try:
             os.rename(stage, root)
-        except FileExistsError:
+        except OSError as error:
+            # Linux reports a rename onto a non-empty directory as ENOTEMPTY, not FileExistsError.
+            if not isinstance(error, FileExistsError) and error.errno not in (errno.EEXIST, errno.ENOTEMPTY):
+                raise
             # A competing creator is acceptable only if it published our complete layout.
             _load(root)
     finally:

@@ -257,24 +257,31 @@ class MediaWarningTest(unittest.TestCase):
     def test_media_the_policy_blocks_warns_naming_element_and_workaround(self):
         for tag in ('video', 'audio'):
             with self.subTest(tag=tag):
-                html = '<%s src="data:video/mp4;base64,AA" controls></%s>' % (tag, tag)
-                self.assertIsNone(pagecheck.check(html))
+                html = '<%s src="https://x.test/a.mp4" controls></%s>' % (tag, tag)
                 out = pagecheck.warnings(html)
                 self.assertEqual(len(out), 1)
                 self.assertIn('<%s>' % tag, out[0])
                 self.assertIn('GIF or WebP', out[0])
-        out = pagecheck.warnings('<video controls><source src="data:video/mp4;base64,AA"></video>')
+        out = pagecheck.warnings('<video controls><source src="clip.mp4"></video>')
         self.assertEqual(len(out), 1)
         self.assertIn('<source>', out[0])
+
+    def test_data_media_plays_and_does_not_warn(self):
+        for html in ('<video src="data:video/mp4;base64,AA" controls></video>',
+                     '<audio src="DATA:audio/mpeg;base64,AA"></audio>',
+                     '<video controls><source src="data:video/mp4;base64,AA"></video>'):
+            with self.subTest(html=html):
+                self.assertIsNone(pagecheck.check(html))
+                self.assertEqual(pagecheck.warnings(html), [])
 
     def test_a_page_without_media_does_not_warn(self):
         self.assertEqual(pagecheck.warnings('<p>hi</p><img src="data:image/png;base64,AA">'), [])
         self.assertEqual(pagecheck.warnings('<video controls></video>'), [])
 
     def test_an_allowed_source_does_not_warn(self):
-        html = '<video src="data:video/mp4;base64,AA"></video>'
+        html = '<video src="https://x.test/a.mp4"></video>'
         old = pagecheck.MEDIA_SRC_ALLOWED
-        pagecheck.MEDIA_SRC_ALLOWED = ('data:',)
+        pagecheck.MEDIA_SRC_ALLOWED = ('https://x.test/',)
         try:
             self.assertEqual(pagecheck.warnings(html), [])
         finally:

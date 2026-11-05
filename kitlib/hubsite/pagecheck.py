@@ -69,7 +69,7 @@ CSS_FUNCTIONS = ('image-set(', '-webkit-image-set(', 'image(', 'src(')  # each c
 TEXT_ATTRS = ('title', 'alt')               # read only as text; so are aria-* (_text_attr)
 STYLE_NEVER = ('<', '&')                    # in a style element's text (module docstring)
 MEDIA_TAGS = ('video', 'audio', 'source')
-MEDIA_SRC_ALLOWED = ()                      # url prefixes of the frame's media-src (index.html DOC_CSP); none today
+MEDIA_SRC_ALLOWED = ('data:',)              # url prefixes of the frame's media-src (index.html DOC_CSP)
 
 _SURROGATE = re.compile('[\ud800-\udfff]')
 _URL = re.compile(r'url\(\s*([\'"]?)(.*?)\1\s*\)', re.I | re.S)
@@ -226,8 +226,9 @@ def warnings(html):
         parser.close()
     except Exception:                           # check() owns refusing a body this cannot read
         pass
-    return ['the page has a <%s> with a src: the page policy allows media from %s, so it will not '
-            'play and the viewer sees nothing; use an animated GIF or WebP in an <img> instead'
+    return ['the page has a <%s> with a src the page policy blocks: it allows media only from %s, so '
+            'it will not play and the viewer sees nothing; use a data: src, or an animated GIF or '
+            'WebP in an <img>'
             % (tag, ', '.join(MEDIA_SRC_ALLOWED) or 'nowhere') for tag in parser.blocked]
 
 

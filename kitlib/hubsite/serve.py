@@ -218,15 +218,14 @@ message.
 
 ask() is the one request every local client makes (`hub status`, `hub open`, and
 kitlib.hubsite.client for the other verbs): to the loopback listener through http.client, which
-uses no proxy, so a token never leaves this machine. It names itself USER_AGENT.
+uses no proxy, so a token never leaves this machine. It names itself USER_AGENT. It lives in
+kitlib.hubsite.localask (the client imports it without this server) and is re-exported here.
 """
 import datetime
 import functools
-import http.client
 import json
 import os
 import re
-import socket
 import threading
 import time
 
@@ -240,6 +239,8 @@ from . import jobs as _jobs
 from . import push as _push
 from . import access, auth, backlog, codestale, derived, gitsync, httpd, recordwrite, tunnel
 from . import repoweb, selfrestart, skilledits
+from .localask import (ASK_TIMEOUT_S, MAX_ANSWER, USER_AGENT, VIA_CLI, VIA_MCP,     # noqa: F401
+                       NoAnswer, NotRunning, ServeError, ask)
 from .store import HubError, Store, StoreBusy
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
@@ -247,11 +248,6 @@ CLOSE_TIMEOUT_S = 10            # each step of the clean close
 STALE_CODE = codestale.text()   # the console line; GET health's `code` and the page say it too
 CODE_LOOK_S = 30                # at most one look at the hub code's files in this many seconds
 POLL_S = 0.5                    # run()'s wait between two looks at `stop` (and at Ctrl+C)
-ASK_TIMEOUT_S = 10
-MAX_ANSWER = 16 << 20           # bytes of one answer ask() reads
-VIA_CLI = 'cli'
-VIA_MCP = 'mcp'                 # the hub MCP server's writes (kitlib.hubmcp, docs/hub-mcp.md)
-USER_AGENT = 'hub-client'       # what ask() calls itself: it names no person and no machine
 SYNC_OFF = 'git sync is off on this server'
 SYNC_REFUSED = 'git sync was refused at start-up: the server console says why'
 TUNNEL_ON = 'on'                # GET health's `tunnel`, and `Hub.tunnel`
@@ -317,24 +313,6 @@ def _failure(sync):
     if not failed:
         return '', ''
     return str(failed), scrub(status.get('detail') or '')
-
-
-class ServeError(Exception):
-    """The server cannot start, or a local request to it failed. The text is for the owner's
-    console and may name a folder."""
-
-
-class NotRunning(ServeError):
-    """Nothing listens on the port: the hub server is not running there."""
-
-    def __init__(self, port):
-        ServeError.__init__(self, 'no hub server is listening on port %d' % port)
-        self.port = port
-
-
-class NoAnswer(ServeError):
-    """The connection was made and the request sent, and no answer came in the call's time:
-    a long-poll (client.Client.wait) asks again; any other caller reads it as a ServeError."""
 
 
 class NoRepoList(Exception):
@@ -1794,46 +1772,8 @@ def run(hub, started=None, stop=None):
 
 # ------------------------------------------------------------------ the local client
 
-def ask(port, method, path, token=None, body=None, timeout=ASK_TIMEOUT_S, via=VIA_CLI):
-    """One request to the hub server on this machine's `port`: (status, the JSON object it
-    answered). `token` is sent as a Bearer token; a POST carries `body` as JSON with the Origin
-    and Content-Type the listener requires and names itself `via` (VIA_CLI by default; the hub
-    MCP server passes VIA_MCP). NotRunning when nothing listens there, NoAnswer (a ServeError)
-    when the connection was made and `timeout` passed with no answer, ServeError when what
-    answers is not the hub or the connection could not be made."""
-    headers = {'Accept': httpd.JSON, 'User-Agent': USER_AGENT}
-    if token:
-        headers['Authorization'] = 'Bearer %s' % token
-    data = None
-    if method == 'POST':
-        data = json.dumps({} if body is None else body).encode('utf-8')
-        headers.update({'Content-Type': httpd.JSON, httpd.VIA_HEADER: via,
-                        'Origin': 'http://%s:%d' % (httpd.LOOPBACK, port)})
-    conn = http.client.HTTPConnection(httpd.LOOPBACK, port, timeout=timeout)
-    connected = False
-    try:
-        conn.connect()
-        connected = True
-        conn.request(method, path, body=data, headers=headers)
-        answer = conn.getresponse()
-        status, raw = answer.status, answer.read(MAX_ANSWER + 1)
-    except ConnectionRefusedError:
-        raise NotRunning(port)
-    except (OSError, http.client.HTTPException) as e:
-        why = 'port %d did not answer as the hub does: %s' % (port, type(e).__name__)
-        if connected and isinstance(e, socket.timeout):
-            raise NoAnswer(why)
-        raise ServeError(why)
-    finally:
-        conn.close()
-    try:
-        obj = json.loads(raw.decode('utf-8')) if len(raw) <= MAX_ANSWER else None
-    except ValueError:
-        obj = None
-    if not isinstance(obj, dict):
-        raise ServeError('port %d answered %d with something that is not the hub\'s JSON'
-                         % (port, status))
-    return status, obj
+#   ask() and its errors (ServeError, NotRunning, NoAnswer) and constants: kitlib.hubsite.localask,
+#   imported at the top and re-exported here.
 
 
 def _age(text, now):

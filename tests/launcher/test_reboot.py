@@ -4,6 +4,7 @@ the PM resume."""
 import os
 import subprocess
 import unittest
+from unittest import mock
 
 from kitlib.launcher import reboot, start, window
 from kitlib.launcher import settings as S
@@ -19,6 +20,38 @@ PM = {'pm_session_id': 'pm-sid-1', 'pm_folder': None, 'pm_account': 2}
 STORE = {'Name': 'claude.exe', 'ProcessId': 5, 'ExecutablePath': 'C:' + chr(92) + 'Program Files' + chr(92)
          + 'WindowsApps' + chr(92) + 'claude.exe', 'CommandLine': 'claude'}
 UNNAMED = {'Name': 'claude.exe', 'ProcessId': 6, 'ExecutablePath': r'C:\bin\claude.exe', 'CommandLine': 'claude'}
+
+
+LINUX_PM = {'Name': 'claude', 'ProcessId': 7, 'ExecutablePath': '/usr/bin/claude',
+            'CommandLine': "claude --resume 'pm-sid-1' -n 'kit-pm'"}
+LINUX_TEST = {'Name': 'claude', 'ProcessId': 8, 'ExecutablePath': '/usr/bin/claude',
+              'CommandLine': "claude --remote-control 'autostart-test' -n 'autostart-test'"}
+WIN_PM = dict(LINUX_PM, Name='claude.exe')
+
+
+class ProcessImages(unittest.TestCase):
+    """The checks matched only Name == claude.exe, so on Linux (Name 'claude') none ever fired."""
+
+    def test_linux_rows_match_runs_session_and_running(self):
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            self.assertTrue(reboot.runs_session([LINUX_PM], 'pm-sid-1'))
+            self.assertFalse(reboot.runs_session([LINUX_PM], 'other'))
+            self.assertTrue(reboot.running([LINUX_TEST], reboot.TEST_NAME))
+            self.assertFalse(reboot.desktop_app_running([LINUX_PM]))      # Linux has no desktop app
+
+    def test_windows_rows_still_match(self):
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertTrue(reboot.runs_session([WIN_PM], 'pm-sid-1'))
+            self.assertFalse(reboot.runs_session([LINUX_PM], 'pm-sid-1'))
+            self.assertTrue(reboot.desktop_app_running([UNNAMED]))
+
+    def test_a_second_test_run_is_skipped_on_linux(self):
+        h = Home(self)
+        host = FakeHost(h.root, procs=[LINUX_TEST])
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            out = reboot.run(h.settings, host, test=True)
+        self.assertEqual(host.opened, [])
+        self.assertEqual(out[-1], 'test session already running')
 
 
 class FailingHost(FakeHost):
@@ -344,6 +377,21 @@ class SaidAsItHappens(unittest.TestCase):
         self.assertTrue(out[-1].startswith('started %s' % reboot.TEST_NAME), out)
         self.assertIn('minimized', out[-1])
         self.assertIn('taskbar', out[-1])
+
+    def test_a_refused_test_window_is_logged_not_raised(self):
+        h = Home(self)
+        host = FailingHost(h.root, reboot.TEST_NAME, S.LaunchError('duplicate session'))
+        out = reboot.run(h.settings, host, test=True)
+        self.assertTrue(out[-1].startswith('FAILED to start %s : duplicate session' % reboot.TEST_NAME), out)
+
+    def test_a_missing_tmux_in_the_test_window_is_logged_not_raised(self):
+        h = Home(self)
+        host = FailingHost(h.root, reboot.TEST_NAME, RuntimeError('tmux not found'))
+        try:
+            out = reboot.run(h.settings, host, test=True)
+        except RuntimeError as e:
+            self.fail('run raised %r' % e)
+        self.assertTrue(out[-1].startswith('FAILED to start %s : RuntimeError: tmux not found' % reboot.TEST_NAME), out)
 
     def test_a_dry_run_says_its_lines_too(self):
         h = Home(self)

@@ -173,7 +173,7 @@ class PullTakeover(StoreCase):
         self.seed(self.pulled('DEAD', GONE))
         with self.assertRaises(Failure) as cm:
             self.verb('pull', 'DEAD')
-        self.assertIn('cannot read the code main `no-such-main`', str(cm.exception))
+        self.assertIn('the code main `no-such-main` does not resolve here', str(cm.exception))
         self.assertEqual(self.get('DEAD').get('pulled_by'), GONE)
 
     def test_the_landing_is_looked_for_on_the_code_main_not_the_stores(self):

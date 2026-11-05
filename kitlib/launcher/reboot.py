@@ -50,10 +50,7 @@ def why(e):
 
 def desktop_app_running(procs):
     """True when a Claude process runs that no launcher started: the desktop app (the Store
-    install under WindowsApps) or a session with no Remote Control name. Linux has no desktop app,
-    so there it is always False."""
-    if platform.NAME == 'linux':
-        return False
+    install under WindowsApps) or a session with no Remote Control name."""
     for p in procs:
         if (p.get('Name') or '').lower() != 'claude.exe':
             continue
@@ -127,7 +124,7 @@ def run(settings, host, test=False, dry_run=False, say=None, permission_mode=Non
             return out
         try:
             host.open_window(text, **window.open_args(TEST_NAME, settings))
-        except LaunchError as e:                     # e.g. tmux refusing a duplicate window name
+        except Exception as e:                       # a duplicate window name, tmux missing
             log('FAILED to start %s : %s' % (TEST_NAME, why(e)))
             return out
         if platform.NAME == 'linux':

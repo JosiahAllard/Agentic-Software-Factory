@@ -26,8 +26,9 @@ the new approval's id. Run in this order:
      ledger id: a live owner entry, written in the last MAX_AGE, whose Decides
      is the run line.
   5. the preconditions: file-exists, branch-landed, checklist-line.
-  6. the claim, under the runner lock: no live runner entry (Source `under <anchor>: D-nnn
-     <trigger>`) has this anchor or this trigger and the ledger is valid; a hub approval is then
+  6. the claim, under the runner lock and the ledger write lock: no live runner entry (Source
+     `under <anchor>: D-nnn <trigger>`) has this anchor or this trigger, the repo is accepted and
+     the existing ledger with the new entry validates; a hub approval is then
      consumed on the hub, pinned to the version it verified at (of two racing runners one wins,
      and one that cannot consume it runs nothing and logs nothing), so a claim refused by those
      checks leaves the approval unspent; then one ledger entry, provenance delegated, is added

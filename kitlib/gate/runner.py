@@ -690,10 +690,15 @@ def merged_tip(cfg, root, branch, tree):
 
 
 def merged_refusal(branch, merged, base, then):
-    """The REFUSED outcome of a gate merged_tip found not needed; `then` says what was done."""
+    """The REFUSED outcome of a gate merged_tip found not needed; `then` says what was done. Its
+    Instead line names the way to gate that tip on purpose: a detached HEAD, which merged_tip
+    never refuses."""
     head, ref = merged
-    return G.Outcome(G.REFUSED, ['REFUSED: %s at %s is already in %s, so it needs no gate; %s' % (
-        branch, head[:10], ref, then)], base=base, record=None,
+    return G.Outcome(G.REFUSED, [
+        'REFUSED: %s at %s is already in %s, so it needs no gate; %s' % (
+            branch, head[:10], ref, then),
+        'Instead: to gate that tip on purpose, gate a detached-HEAD worktree of it: '
+        'git worktree add --detach <path> %s' % head], base=base, record=None,
         no_record='the tip is already in %s' % ref)
 
 

@@ -16,8 +16,12 @@ Each write takes `actor` and returns
 and never raises for a refusal. Who may do what is decided in one place, authorize(), whose owner
 check is the one hook (set_owner_check). On the machine's store the writes read who is asking from
 the calling process's tree (who()); `actor` gives only a name for the records.
+
+Library calls, outside that contract (a store in, plain values out, no actor; the caller decides
+who may ask): stop_asked, stop_waiting (kitlib.gate.gatecap, docs/gate.md "The gate queue").
 """
 import datetime
+import os
 import subprocess
 import time
 
@@ -635,6 +639,28 @@ def end_run(actor, rid, store=None):
             raise ApiError("not_found", "no live run %s" % rid, "id")
         return {"id": rid, "requested": True}
     return _write(store, go)
+
+
+def stop_asked(store, rid):
+    """Whether run rid's stop request (request_stop) is there: the run is about to end."""
+    return os.path.exists(store.path("active", rid + ".stop"))
+
+
+def stop_waiting(store, rid, by, session=None):
+    """Asks run rid to stop only while its queue entry still waits for its slots: the entry is
+    read and the request written (request_stop) under the queue mutex the lock starts runs under.
+    A run that starts holding just after the request is written still sees it (Slot.stop_asked)
+    and ends `cancelled`. None: nothing was asked, since the entry does not wait (it holds, there
+    is none, or the queue cannot be read); True: the request is written; False: the entry waited
+    but the run has ended (request_stop). The caller checks who may stop rid."""
+    with store.lock("queue", store.settings.queue_lock_s):
+        try:
+            e = qm.entry_of(qm.load(store), rid)
+        except (OSError, ValueError):
+            return None
+        if not e or e.get("state") != "waiting":
+            return None
+        return request_stop(store, rid, by, session)
 
 
 def move_to_top(actor, rid, store=None):

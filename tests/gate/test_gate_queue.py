@@ -14,6 +14,7 @@ from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.gate import gatecap, result, runner
 from kitlib.git import refs
+from kitlib.lock import api as lockapi
 from kitlib.lock import queue as lockqueue
 from kitlib.lock import run as lockrun
 from tests.gate import fixtures
@@ -116,7 +117,15 @@ class TipInMain(QueueCase):
         out, _ = self.gate()
         self.assertEqual(out.code, G.REFUSED, out.lines)
         self.assertIn('needs no gate; nothing queued', out.lines[0])
+        self.assertIn('git worktree add --detach <path> %s' % self.tip, out.lines[1])
         self.assertEqual(self.book_calls, [])
+
+    def test_a_detached_head_at_a_tip_in_main_is_gated(self):
+        self.main_takes_tip()
+        self.repo.git('checkout', '-q', '--detach', self.tip, cwd=self.wt)
+        out, _ = self.gate()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(len(self.book_calls), 1)
 
     def test_no_answer_from_git_never_drops_a_gate(self):
         self.main_takes_tip()
@@ -152,6 +161,13 @@ class Duplicate(QueueCase):
             out, _ = self.gate()
             self.assertEqual(out.code, G.OK, (fields, out.lines))
             self.assertFalse(self.stop_asked(rid), fields)
+
+    def test_a_queued_twin_already_asked_to_stop_is_no_twin(self):
+        rid = self.queued_run()
+        self.assertIs(lockapi.stop_waiting(self.store, rid, 'reap'), True)  # gate.py stop, a reap
+        out, _ = self.gate()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(len(self.book_calls), 1)
 
     def test_a_dirty_work_tree_is_never_refused(self):
         self.queued_run()

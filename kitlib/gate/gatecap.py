@@ -26,8 +26,8 @@ import time
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 from kitlib.gate import budget
+from kitlib.lock import api as lockapi
 from kitlib.lock import queue as lockqueue
-from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
 
 KEY = 'coordinator_start'
@@ -210,27 +210,30 @@ def _waiting(store, rid):
 def queued_twin(store, repo, branch, note, tree, runs=None):
     """The id of a live gate run of repo that waits in the queue (its entry `waiting`) for the
     same branch, note (queue_note) and tree (runner.tested_tree, not None), or None. Such a run
-    gates exactly what this gate would: a second booking only waits behind it. `runs`: the live
-    runs, when already read. A soft check: the queue is read once, before this gate books."""
+    gates exactly what this gate would: a second booking only waits behind it. A run already
+    asked to stop (gate.py stop, the stale-run reap, replace_stale) is about to end with nothing
+    run, so it is no twin. `runs`: the live runs, when already read. A soft check: the queue is
+    read once, before this gate books."""
     if not (branch and note and tree):
         return None
     for r in _gate_runs(store.live_runs() if runs is None else runs, repo):
+        rid = r.get('id')
         if (r.get('branch') == branch and r.get('note') == note and r.get('tree') == tree
-                and _waiting(store, r.get('id'))):
-            return r.get('id')
+                and rid and _waiting(store, rid) and not lockapi.stop_asked(store, rid)):
+            return rid
     return None
 
 
 def replace_stale(store, repo, branch, head, say, who=None):
     """Stops the session's own queued branch gates of `branch` booked at another tip than `head`
     (their note's tip, note_tip): a gate of the branch's old tip that has not started is not
-    needed once the branch moved. Only a run whose queue entry still waits, checked under the
-    queue mutex the lock starts runs under, is stopped: its stop request is written there
-    (kitlib.lock.run.request_stop, as api.end_run writes it for a session's own run), so it leaves
-    the queue and its gate ends stopped with nothing run; a held run is never touched. Another session's runs, a
-    rerun's or a landing's (no queue_note), and every run when the caller's host cannot be read
-    are left alone. Says one line per run stopped, or per run it could not stop (both stay
-    queued). The ids stopped. Never raises."""
+    needed once the branch moved. Only a run whose queue entry still waits is stopped
+    (kitlib.lock.api.stop_waiting: checked and written under the queue mutex the lock starts runs
+    under), so its gate ends stopped with nothing run, or `cancelled` with nothing run when it
+    started holding just after; a held run is never touched. Another session's runs, a rerun's or
+    a landing's (no queue_note), and every run when the caller's host cannot be read are left
+    alone. Says one line per run stopped, or per run that ended before its stop was written. The
+    ids stopped. Never raises."""
     done = []
     try:
         if not branch or not head:
@@ -245,10 +248,9 @@ def replace_stale(store, repo, branch, head, say, who=None):
         by = who.get('name') or who.get('session')
         for r in in_flight(store, who, repo, runs=runs):
             rid = r.get('id')
-            with store.lock('queue', store.settings.queue_lock_s):
-                if not _waiting(store, rid):
-                    continue
-                asked = lockrun.request_stop(store, rid, by, who.get('session'))
+            asked = lockapi.stop_waiting(store, rid, by, who.get('session'))
+            if asked is None:
+                continue
             old = note_tip(r.get('note'))[:10]
             if asked:
                 done.append(rid)

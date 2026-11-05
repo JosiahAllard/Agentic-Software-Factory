@@ -51,20 +51,23 @@ class ParkPulled(StoreCase):
         self.assert_parked('FOO')
         self.assertIn('  pull by %s given up: its scope is free and it is out of the offer'
                       % BRANCH, change.lines)
+        self.assertIn('  was pulled_by: %s' % BRANCH, change.lines)
 
     def test_anybody_parks_a_dead_pull(self):
         self.seed(priced('FOO', pulled_by='tools/gone', **PULLED))
-        self.verb('set_status', 'FOO', 'parked', None)
+        change = self.verb('set_status', 'FOO', 'parked', None)
         self.assert_parked('FOO')
+        self.assertIn('  was pulled_by: tools/gone (dead)', change.lines)
 
     def test_anybody_parks_a_pull_whose_worktree_the_probe_finds_dead(self):
         self.repo.git('branch', OTHER)
         self.seed(priced('FOO', pulled_by=OTHER, **PULLED))
         asked = []
         self.ctx.liveness = lambda b: (asked.append(b), (None, None))[1]
-        self.verb('set_status', 'FOO', 'parked', None)
+        change = self.verb('set_status', 'FOO', 'parked', None)
         self.assertEqual(asked, [OTHER])
         self.assert_parked('FOO')
+        self.assertIn('  was pulled_by: %s (its worktree is dead)' % OTHER, change.lines)
 
 
 if __name__ == '__main__':

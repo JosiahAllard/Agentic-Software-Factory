@@ -1452,7 +1452,7 @@ def plan_set_status(snap, ctx, rid, status, q=None):
                        'a branch or worktree by that name exists',
                        holder_form(rec, holder, 'set-status %s parked%s'
                                    % (rid, ' --q %s' % q if q else ''))))
-        stop_pull(ctx, rid, holder, live, kept=False)
+        found = stop_pull(ctx, rid, holder, live, kept=False)[1]
     pairs = [(k, v) for k, v in rec.pairs() if k not in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(pairs, [('state', ['parked']), ('q', [q] if q else []),
                                        ('parked_at', [ctx.date()])])
@@ -1460,6 +1460,7 @@ def plan_set_status(snap, ctx, rid, status, q=None):
     if state == 'pulled':
         lines.append('  pull by %s given up: its scope is free and it is out of the offer'
                      % rec.get('pulled_by'))
+        lines += found
     return Change({rid: _text(pairs, rec.body)},
                   'backlog: park %s%s' % (rid, ' on %s' % q if q else ''), lines)
 

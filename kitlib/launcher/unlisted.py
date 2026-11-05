@@ -10,11 +10,12 @@ their windows, so the hub's usage crossover can start each one again on another 
       sessions.json keys (an unlisted session whose key is one of them is never crossed).
 
 A session is read from its window, the powershell.exe parent (on Linux the `/bin/bash -c` parent,
-linuxwin.script) whose script start.py wrote (window.script): its title and the claude line both carry the session's name, PM_KIT_ROLE is
-consultant or deep-worker and matches its --agent, CLAUDE_CONFIG_DIR (or its removal: the default
-folder) is the folder of exactly one account in launcher.accounts, and its first message is one of
-start.py's (CONSULTANT_PROMPT, DEEP_PROMPT, DEEP_SUCCESSOR_PROMPT), from which the notes file, the
-brief, the requester and the repository come back. The key: a consultant's name; a deep-worker's
+linuxwin.script) whose script start.py wrote (window.script): its title and the claude line both
+carry the session's name, PM_KIT_ROLE is consultant or deep-worker and matches its --agent,
+CLAUDE_CONFIG_DIR (or its removal: the default folder) is the folder of exactly one account in
+launcher.accounts, and its first message is one of start.py's (CONSULTANT_PROMPT, DEEP_PROMPT,
+DEEP_SUCCESSOR_PROMPT), from which the notes file, the brief, the requester and the repository come
+back. The key: a consultant's name; a deep-worker's
 name, without the -a<N> a successor's name carries. Nothing here reads a file or a process itself.
 """
 import collections
@@ -51,7 +52,8 @@ _SET = re.compile(r"; Set-Location %s; (%s .*)\Z" % (_Q, _PROGRAM), re.S)
 
 def _command(qx):
     """The regex of the claude line start.py writes, its quoted values matching `qx`."""
-    return re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?(?: --effort (?P<effort>\S+))?"
+    return re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?"
+                       r"(?: --effort (?P<effort>\S+))?"
                        r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>{q}))?(?: --permission-mode \S+)?"
                        r" --remote-control (?P<rc>{q}) -n (?P<n>{q}) (?P<prompt>{q})\Z").replace('{q}', qx), re.S)
 

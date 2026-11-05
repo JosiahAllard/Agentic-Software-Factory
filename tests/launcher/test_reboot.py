@@ -7,7 +7,7 @@ import unittest
 
 from kitlib.launcher import reboot, start, window
 from kitlib.launcher import settings as S
-from tests.launcher.fakes import NOW, FakeHost, Home, role_of, session
+from tests.launcher.fakes import NOW, FakeHost, Home, role_of, session, windows_text
 
 # plain sessions (agent false): the ones after-reboot starts
 ALPHA = {'repo': 'alpha', 'agent': False, 'stem': 'alpha-coord', 'state': 's.md', 'account': 1, 'name': 'alpha-coord-a1'}
@@ -28,10 +28,10 @@ class FailingHost(FakeHost):
         FakeHost.__init__(self, home, **kw)
         self.bad, self.exc = bad, exc
 
-    def open_window(self, text):
+    def open_window(self, text, **kw):
         if "-n '%s" % self.bad in text:
             raise self.exc
-        FakeHost.open_window(self, text)
+        FakeHost.open_window(self, text, **kw)
 
 
 class FailedStarts(unittest.TestCase):
@@ -114,6 +114,7 @@ class Briefs(unittest.TestCase):
 
 class ResumePm(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self)
         self.lines = []
 
@@ -316,9 +317,9 @@ class SaidAsItHappens(unittest.TestCase):
             self.at_sleep = list(self.said)
             FakeHost.sleep(self, seconds)
 
-        def open_window(self, text):
+        def open_window(self, text, **kw):
             self.at_open = list(self.said)
-            FakeHost.open_window(self, text)
+            FakeHost.open_window(self, text, **kw)
 
     def test_the_wait_is_said_before_it_starts_and_say_takes_every_line(self):
         h = Home(self)

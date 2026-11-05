@@ -13,8 +13,8 @@ slots. memory_mb is only this check: what a job needs is the owner's to know.
 
 Of those that qualify the one with the most free cpu slots wins; a tie goes to the main machine,
 then to the node first in the registry. When none qualifies the job runs on the main machine,
-whose lock queues it. Nothing here touches the network or prints: the caller asks the nodes
-(kitlib.loadnode.remote.query_all) and passes their results in.
+whose lock queues it. Nothing here prints: `decide` asks the nodes through the `query` callable it
+is given (kitlib.loadnode.remote.query_all), and `choose` takes their results.
 """
 import collections
 

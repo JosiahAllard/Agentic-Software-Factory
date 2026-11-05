@@ -165,6 +165,11 @@ class Decide(unittest.TestCase):
         self.assertEqual((d.action, said), ('main', ['cannot size (boom)']))
         with self.assertRaises(ValueError):
             self.go(need=bad)
+        # cmd_gate's real template
+        tmpl = 'the gate\'s kind %s cannot be sized here (%%s); gating on main' % 'k1'
+        d, said = self.go(need=bad, action='gate', size_fail=tmpl)
+        self.assertEqual((d.action, said),
+                         ('main', ['the gate\'s kind k1 cannot be sized here (boom); gating on main']))
 
     def test_a_node_without_the_verb_is_left_out_and_said(self):
         res = [ok('n1', verbs=list(box.RUN_VERBS))]
@@ -180,6 +185,9 @@ class Decide(unittest.TestCase):
         d, said = self.go(main=bad)
         self.assertEqual((d.action, said),
                          ('main', ['the main machine\'s lock cannot be read (OSError); running on main']))
+        d, said = self.go(main=bad, action='gate')
+        self.assertEqual((d.action, said),
+                         ('main', ['the main machine\'s lock cannot be read (OSError); gating on main']))
 
     def test_the_choice_decides_and_is_said(self):
         d, said = self.go(main=lambda: lock(cpu_free=0), results=[ok('n1', cpu_free=4)])

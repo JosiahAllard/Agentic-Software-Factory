@@ -1460,6 +1460,13 @@ class DomTest(unittest.TestCase):
                                            "push": "Push delivery is down (last try: not-written); 2 items undelivered."})
         self.assertEqual(dom(body, snapshot(collections=LISTS))["push"], "Push notifications are off on this hub server.")
 
+    def test_the_pm_line_says_the_watcher_has_stopped(self):
+        got = dom("""
+            await start();
+            return text($("#pmseen"));
+        """, snapshot(collections=LISTS, watcher={"state": "down", "age": 600}))
+        self.assertIn("watcher has stopped", got)
+
     def test_an_empty_to_pm_queue_says_to_add_first(self):
         hint = "Nothing is queued. Write your message below and press Add, then Send all."
         got = dom("""

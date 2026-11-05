@@ -334,6 +334,34 @@ class TargetsTest(unittest.TestCase):
             self.assertEqual(precommit.check(commit, self.home), (0, None))
         run.assert_not_called()
 
+    def test_a_staged_rulebook_deletion_is_a_target_and_runs_the_check(self):
+        """The deleted file is on no disk for `rulebook.paths`; the check still runs for it."""
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        commit = FakeCommit(self.root, ['rulings/rules/kit.md'])
+        with mock.patch.object(precommit.spawn, 'call', return_value=0) as run, \
+                mock.patch.object(precommit, 'unstaged', return_value=[]) as diff:
+            self.assertEqual(precommit.check(commit, self.home), (0, None))
+        run.assert_called_once()
+        self.assertIn('rulings/rules/kit.md', diff.call_args[0][1])
+
+    def test_a_failing_check_refuses_a_staged_rulebook_deletion(self):
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        commit = FakeCommit(self.root, ['rulings/rules/kit.md'])
+        with mock.patch.object(precommit.spawn, 'call', return_value=1), \
+                mock.patch.object(precommit, 'unstaged', return_value=[]):
+            code, message = precommit.check(commit, self.home)
+        self.assertEqual(code, 1)
+        self.assertIn('commit refused', message)
+
+    def test_only_rulebook_names_in_the_rules_folder_count_as_deleted_rulebooks(self):
+        self.ledger_at(os.path.join(self.root, 'rulings', 'LEDGER.md'))
+        folder = precommit.rules_folder(self.home)
+        staged = ['rulings/rules/kit.md', 'rulings/rules/notes.txt', 'rulings/rules/Up.md',
+                  'rulings/rules/sub/x.md', 'rulings/kit.md', 'other/rules/kit.md']
+        self.assertEqual(precommit.staged_rulebooks(self.root, staged, folder),
+                         ['rulings/rules/kit.md'])
+        self.assertEqual(precommit.staged_rulebooks(self.root, staged, None), [])
+
     def test_not_staged_runs_no_check_and_no_further_git(self):
         self.ledger_at(os.path.join(self.root, 'LEDGER.md'))
         with mock.patch.object(precommit.subprocess, 'call') as run, \

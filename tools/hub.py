@@ -1123,7 +1123,10 @@ def _start_command():
 
 
 def _job():
-    """What starts the server, in words: the scheduled task (Windows) or the Linux job."""
+    """What starts the server, in words: the scheduled task (Windows), the Linux systemd job or
+    its XDG autostart entry."""
+    if _xdg():
+        return "the XDG autostart entry '%s'" % os.path.basename(hub_autostart.linux_desktop_path())
     if _linux():
         return "the job '%s'" % hub_autostart.linux_unit()
     return "the scheduled task '%s'" % hub_autostart.TASK_NAME
@@ -1135,11 +1138,12 @@ def not_started(outcome):
         return NOT_STARTED[outcome]
     unit = hub_autostart.linux_unit()
     if _xdg():
+        entry = os.path.basename(hub_autostart.linux_desktop_path())
         if outcome == control.DISABLED:
             return ("the XDG autostart entry '%s' is disabled (Hidden=true), so nothing was "
-                    "started" % unit)
-        return ("the job '%s' is an XDG autostart entry: restart cannot start one and systemctl "
-                "does not manage it, so nothing was started" % unit)
+                    "started" % entry)
+        return ("the job is the XDG autostart entry '%s': hub.py restart cannot start one and "
+                "systemctl does not manage it, so nothing was started" % entry)
     return {
         control.NO_TASK: "there is no job '%s' for systemctl --user (hub.py setup --autostart "
                          "makes it), so nothing was started" % unit,
@@ -1157,9 +1161,9 @@ def task_advice(outcome):
     if _xdg():
         if outcome == control.DISABLED:
             return ('enable the XDG autostart entry by removing the Hidden=true line from '
-                    '~/.config/autostart/%s.desktop (it then starts at your next sign-in to the '
-                    'desktop), or start the server now with hub.py serve in a console: %s'
-                    % (hub_autostart.linux_unit()[:-len('.service')], START))
+                    '%s (it then starts at your next sign-in to the desktop), or start the '
+                    'server now with hub.py serve in a console: %s'
+                    % (hub_autostart.linux_desktop_path(), START))
         return ('an XDG autostart entry starts the server at your next sign-in to the desktop; '
                 'to start it now, run hub.py serve in a console: %s' % START)
     if outcome == control.NO_TASK:
@@ -1223,7 +1227,7 @@ def _restart(a, stop):
         # the stop went through: say so, then why nothing was started and how to start it
         _stopped(port, e.stopped)
         print(serve.scrub('%s could not be started: %s' % (
-            'the job' if _linux() else 'the scheduled task', e.reason)), file=sys.stderr)
+            _job() if _linux() else 'the scheduled task', e.reason)), file=sys.stderr)
         print(task_advice(None), file=sys.stderr)
         return 1
     except control.TimedOut as e:

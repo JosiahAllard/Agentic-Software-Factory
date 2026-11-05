@@ -183,6 +183,12 @@ def linux_unit():
     return schedule.unit(LINUX_JOB) + '.service'
 
 
+def linux_desktop_path(home=None):
+    """The path of the Linux job's XDG autostart entry (under XDG_CONFIG_HOME when it is set)."""
+    from kitlib.platform.linux import schedule
+    return schedule.desktop_path(LINUX_JOB, home)
+
+
 def linux_is_autostart(home=None):
     """True when the Linux job is an XDG autostart entry (no systemctl start for it); False for
     a systemd service, for no job, or when the job cannot be read (including a home the password
@@ -190,7 +196,7 @@ def linux_is_autostart(home=None):
     from kitlib.platform.linux import schedule
     try:
         task = schedule.find(LINUX_JOB, schedule.written(home))
-    except (schedule.ScheduleError, KeyError, OSError):
+    except (schedule.ScheduleError, KeyError):
         return False
     return task is not None and task['backend'] == schedule.AUTOSTART
 

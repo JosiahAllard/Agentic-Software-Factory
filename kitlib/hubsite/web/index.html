@@ -3617,14 +3617,14 @@ ul.hist .sch-line{display:block}
     const untimedRows = rows => rows.map(r => ({ ...r, posted_at: null }));
     const cheap = JSON.stringify([next.revision, next.gone, next.partial, next.stale, next.strong, next.repos, untimedRows(next.backlog), untimedRows(next.completed), next.usage.map(u => ({ ...u, measured_at: null })), next.agents, next.skills, next.notices]);
     if (ready && next.revision === rev && cheap === lastCheap) {
-      for (const k of ["seen", "push"]) state[k] = next[k];
+      for (const k of ["seen", "push", "watcher"]) state[k] = next[k];
       lastRead = Date.now(); seenLine();
       return;
     }
     lastCheap = cheap;
     rev = next.revision;
     const first = !ready; ready = true; lastRead = Date.now();
-    for (const k of ["docs", "inbox", "todos", "stories", "topm", "repos", "backlog", "completed", "parked", "usage", "agents", "skills", "skilledits", "landings", "notices", "pages", "gone", "partial", "stale", "seen", "push", "approvals", "decided", "strong"]) state[k] = next[k];
+    for (const k of ["docs", "inbox", "todos", "stories", "topm", "repos", "backlog", "completed", "parked", "usage", "agents", "skills", "skilledits", "landings", "notices", "pages", "gone", "partial", "stale", "seen", "push", "watcher", "approvals", "decided", "strong"]) state[k] = next[k];
     // An edit outlasts its item: one that is gone, or no longer the owner's to edit, keeps its card (loseEdit).
     for (const id of [...state.pmEdit.keys()]) if (!state.topm.some(x => x.id === id && x.status === "queued")) loseEdit(state.pmEdit, id);
     for (const id of [...state.todoEdit.keys()]) if (!state.todos.some(t => t.id === id && t.from === "you")) loseEdit(state.todoEdit, id);

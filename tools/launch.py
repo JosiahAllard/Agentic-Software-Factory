@@ -213,10 +213,10 @@ def session_conflicts(a):
 def push_delivery(settings):
     """The host adapter's hub push delivery over the launcher's settings
     (kitlib.launcher.pushdelivery), or None when there is none: pm-relaunch and pm-crossover then
-    say the stand-down is the owner's to send. Only an adapter that will not import counts as none;
-    any other fault surfaces."""
+    say the stand-down is the owner's to send. Only an adapter that will not import (or has no
+    ADAPTER) counts as none; any other fault surfaces."""
     import _host
-    return pushdelivery.push_delivery(_host.adapter_module, settings, catch=ImportError)[0]
+    return pushdelivery.push_delivery(_host.adapter_module, settings, catch=(ImportError, AttributeError))[0]
 
 
 def run(a, settings, host):

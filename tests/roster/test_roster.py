@@ -184,7 +184,8 @@ class NoToolImportTest(unittest.TestCase):
         with open(cli.__file__, encoding='utf-8') as f:
             tree = ast.parse(f.read())
         imported = [n.module or '' for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)] + \
-                   [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names]
+                   [a.name for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for a in n.names]
         self.assertEqual([m for m in imported if 'render_content' in m], [])
 
     def test_its_tier_maps_are_every_registered_hosts(self):

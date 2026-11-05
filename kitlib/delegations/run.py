@@ -696,7 +696,7 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
                 if errs:
                     raise LedgerRefused('the ledger is already invalid:\n  %s' % '\n  '.join(errs))
                 before()
-            q ='Run delegated operation %s (%s)?' % (op.id, op.what)
+            q = 'Run delegated operation %s (%s)?' % (op.id, op.what)
             added = lwrite.add(path, col, PROV, q, answer, line,
                                'under %s: %s %s' % (order.anchor, op.id, order.trigger),
                                when=when, repos=repos, split=split, others=others)

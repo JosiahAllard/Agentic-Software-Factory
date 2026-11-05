@@ -1,4 +1,4 @@
-"""kitlib.launcher.pushdelivery, and the launch.py entry's use of it."""
+"""kitlib.launcher.pushdelivery, and the launch.py entry's refusal stream."""
 import io
 import types
 import unittest
@@ -32,21 +32,21 @@ class PushDelivery(unittest.TestCase):
         self.assertEqual(pushdelivery.push_delivery(adapter_with(None), Settings(), notes.append), (None, None))
         self.assertEqual(notes, ['push notifications off: this host has no delivery'])
 
-    def test_any_fault_is_none_with_its_reason(self):
+    def test_any_fault_is_none_with_its_reason_by_default(self):
         notes = []
         for err in (ImportError('no adapter'), RuntimeError('broken')):
             self.assertEqual(pushdelivery.push_delivery(raising(err), Settings(), notes.append), (None, None))
         self.assertEqual(notes, ['push notifications off: ImportError: no adapter',
                                  'push notifications off: RuntimeError: broken'])
 
+    def test_catch_narrows_what_is_swallowed(self):
+        self.assertEqual(pushdelivery.push_delivery(raising(ImportError('x')), Settings(), catch=ImportError),
+                         (None, None))
+        with self.assertRaises(RuntimeError):
+            pushdelivery.push_delivery(raising(RuntimeError('x')), Settings(), catch=ImportError)
+
 
 class LaunchEntry(unittest.TestCase):
-    def test_launch_uses_the_library_and_drops_a_broken_adapter(self):
-        import sys
-        from tools import launch
-        with mock.patch.dict(sys.modules, {'_host': types.SimpleNamespace(adapter_module=raising(RuntimeError('x')))}):
-            self.assertIsNone(launch.push_delivery(Settings()))
-
     def test_a_refusal_goes_to_stderr(self):
         from tools import launch
         err, out = io.StringIO(), io.StringIO()

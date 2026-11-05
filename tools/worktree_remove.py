@@ -67,11 +67,13 @@ def usage(message):
 
 def split_root(argv):
     """`(root, rest)`, or `(None, why)` when -C is repeated or has no value. The value after
-    --abandon, --tag or --mark-stale is kept whole: a reason or tag that starts with -C is not -C."""
+    --abandon, --tag or --mark-stale is kept whole: a reason or tag that starts with -C is not -C. An exact -C there is still the
+    option (a reason or tag spelled just -C is not possible)."""
     root, rest, i = None, [], 0
     while i < len(argv):
         a = argv[i]
-        if a in VALUE_OPTIONS and i + 1 < len(argv) and not argv[i + 1].startswith('--'):
+        if a in VALUE_OPTIONS and i + 1 < len(argv) and not argv[i + 1].startswith('--') \
+                and argv[i + 1] != '-C':
             rest.extend(argv[i:i + 2])
             i += 2
             continue

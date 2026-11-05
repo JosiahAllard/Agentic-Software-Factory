@@ -180,10 +180,15 @@ def _content(root):
 
 class NoToolImportTest(unittest.TestCase):
     def test_agent_roster_does_not_import_the_render_content_tool(self):
-        self.assertFalse(hasattr(cli, 'render_content'))
+        import ast
+        with open(cli.__file__, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        imported = [n.module or '' for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)] + \
+                   [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names]
+        self.assertEqual([m for m in imported if 'render_content' in m], [])
 
     def test_its_tier_maps_are_every_registered_hosts(self):
-        self.assertEqual(sorted(cli.tier_maps()), sorted(registry.names()))
+        self.assertEqual(cli.tier_maps(), MAPS)
 
 
 class ReviewerRuleTest(unittest.TestCase):

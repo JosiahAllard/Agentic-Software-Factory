@@ -429,7 +429,8 @@ class Cli(unittest.TestCase):
         with mock.patch.dict(sys.modules, {'_host': fake(ImportError('no adapter'))}):
             self.assertIsNone(launch.push_delivery(types.SimpleNamespace(state_dir=lambda: 's')))
         with mock.patch.dict(sys.modules, {'_host': fake(RuntimeError('broken'))}):
-            self.assertIsNone(launch.push_delivery(types.SimpleNamespace(state_dir=lambda: 's')))      # hub's broader handling (pushdelivery)
+            with self.assertRaises(RuntimeError):
+                launch.push_delivery(types.SimpleNamespace(state_dir=lambda: 's'))
 
 
     def test_the_parser_takes_pm_crossover(self):

@@ -12,12 +12,17 @@ class SplitRoot(unittest.TestCase):
 
     def test_a_tag_and_a_mark_stale_reason_keep_their_values(self):
         self.assertEqual(tool.split_root(['--tag', '-Cx', 'slug']), ('.', ['--tag', '-Cx', 'slug']))
-        self.assertEqual(tool.split_root(['b', '--mark-stale', '-C']), ('.', ['b', '--mark-stale', '-C']))
+        self.assertEqual(tool.split_root(['b', '--mark-stale', '-Cx']), ('.', ['b', '--mark-stale', '-Cx']))
 
     def test_a_real_c_beside_an_abandon_still_names_the_root(self):
         self.assertEqual(tool.split_root(['-C', 'repo', 's', '--abandon', '-Cfoo']),
                          ('repo', ['s', '--abandon', '-Cfoo']))
         self.assertEqual(tool.split_root(['s', '--abandon', 'why', '-Crepo']), ('repo', ['s', '--abandon', 'why']))
+
+    def test_an_exact_c_after_a_value_option_is_still_the_option(self):
+        self.assertEqual(tool.split_root(['s', '--abandon', '-C', '/repo']), ('/repo', ['s', '--abandon']))
+        self.assertEqual(tool.split_root(['s', '--tag', '-C', '/repo']), ('/repo', ['s', '--tag']))
+        self.assertEqual(tool.split_root(['s', '--abandon', '-C']), (None, '-C needs a directory'))
 
     def test_c_twice_or_without_a_value_is_still_refused(self):
         self.assertEqual(tool.split_root(['-Ca', '-Cb'])[0], None)

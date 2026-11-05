@@ -7,10 +7,11 @@ that imports the adapter."""
 from kitlib.launcher import settings as launcher_settings
 
 
-def push_delivery(adapter_module, settings=None, note=None):
+def push_delivery(adapter_module, settings=None, note=None, catch=Exception):
     """`(delivery, state folder)` of the host adapter's push over `settings` (default: the
-    launcher's loaded settings), or `(None, None)` when there is none: no adapter, an adapter
-    without push, or any fault loading either. `note(text)` is told why, when given."""
+    launcher's loaded settings), or `(None, None)` when there is none: an adapter without push, or
+    a fault of a type in `catch` (default: any) loading the settings or the adapter; any other
+    fault surfaces. `note(text)` is told why, when given."""
     try:
         launch = launcher_settings.load() if settings is None else settings
         folder = launch.state_dir()
@@ -20,7 +21,7 @@ def push_delivery(adapter_module, settings=None, note=None):
                 note('push notifications off: this host has no delivery')
             return None, None
         return make(launch), folder
-    except Exception as e:              # noqa: BLE001 - the caller goes on without push
+    except catch as e:                  # the caller goes on without push
         if note:
             note('push notifications off: %s: %s' % (type(e).__name__, e))
         return None, None

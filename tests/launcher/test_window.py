@@ -41,6 +41,35 @@ class ClaudeCommand(unittest.TestCase):
         self.assertIn(" -n 'n' ", got)
 
 
+@unittest.skipIf(window._linux(), 'the PowerShell window script; Linux writes a bash one')
+class CurlyQuotes(unittest.TestCase):
+    """PowerShell reads U+2018 to U+201B as single quotes: q doubles each, the readers undo it."""
+
+    def test_q_doubles_every_single_quote_character(self):
+        for c in "'\u2018\u2019\u201a\u201b":
+            self.assertEqual(window.q('it%ss' % c), "'it%s%ss'" % (c, c))
+        self.assertEqual(window.q('it\u2019s'), "'it\u2019\u2019s'")
+
+    def test_a_script_with_curly_quotes_reads_back_through_unlisted(self):
+        from kitlib.launcher import unlisted
+        name = 'deep-x\u2019y'
+        prompt = "fix the owner\u2019s \u2018bug\u2019 isn't \u201a\u201b"
+        folder = 'C:/a\u2019b'
+        cmd = window.claude_command(name, prompt, 'deep-worker', model='m\u2018x', effort='high',
+                                    add_dir='D:/d\u201bz', remote_control=True)
+        script = window.script(name, 'deep-worker', folder, cmd, config_dir='C:/cfg\u2019s',
+                               agent_temp='C:/t\u201amp')
+        got = unlisted.read_window(script, name)
+        self.assertEqual((got['prompt'], got['folder']), (prompt, folder))
+        self.assertEqual((got['model'], got['add_dir']), ('m\u2018x', 'D:/d\u201bz'))
+        self.assertEqual((got['config_dir'], got['agent_temp']), ('C:/cfg\u2019s', 'C:/t\u201amp'))
+
+    def test_a_mixed_pair_reads_as_its_second_character(self):
+        from kitlib.launcher import unlisted
+        self.assertEqual(unlisted._unq("'a\u2019\u2018b'"), 'a\u2018b')
+        self.assertEqual(unlisted._unq("'a\u2019\u2019b'"), 'a\u2019b')
+
+
 class ScriptOrder(unittest.TestCase):
     def setUp(self):
         self.text = window.script('alpha-coord-a2', 'coordinator', '/repos/alpha', 'claude --x',

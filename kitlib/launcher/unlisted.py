@@ -39,13 +39,17 @@ Session = collections.namedtuple(
     'Session', 'kind key name pid created account model effort autocompact repo_path home '
                'requester brief notes slug agent_temp predecessor')
 
-_Q = r"'((?:[^']|'')*)'"
+# a quoted string of window.q: any of PowerShell's single-quote characters, doubled inside
+_QC = '[' + window.QUOTES + ']'
+_QX = '%s(?:[^%s]|%s{2})*%s' % (_QC, window.QUOTES, _QC, _QC)
+_Q = '%s((?:[^%s]|%s{2})*)%s' % (_QC, window.QUOTES, _QC, _QC)
+_UNDOUBLE = re.compile('%s(%s)' % (_QC, _QC))     # a doubled pair is its second character, as PowerShell reads it
 # the host program window.session_command runs, read from it: the host's name stays out of kitlib
 _PROGRAM = re.escape(window.session_command('n', 'p').split(' ', 1)[0])
 _SET = re.compile(r"; Set-Location %s; (%s .*)\Z" % (_Q, _PROGRAM), re.S)
-_CMD = re.compile(r"^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>'(?:[^']|'')*'))?(?: --effort (?P<effort>\S+))?"
-                  r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>'(?:[^']|'')*'))?(?: --permission-mode \S+)?"
-                  r" --remote-control (?P<rc>'(?:[^']|'')*') -n (?P<n>'(?:[^']|'')*') (?P<prompt>'(?:[^']|'')*')\Z",
+_CMD = re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?(?: --effort (?P<effort>\S+))?"
+                   r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>{q}))?(?: --permission-mode \S+)?"
+                   r" --remote-control (?P<rc>{q}) -n (?P<n>{q}) (?P<prompt>{q})\Z").replace('{q}', _QX),
                   re.S)
 _ROLE = re.compile(r"(?:^|; )\$env:%s = %s" % (re.escape(window.ROLE_ENV), _Q))
 _CONFIG = re.compile(r"(?:^|; )\$env:%s = %s" % (re.escape(window.CONFIG_ENV), _Q))
@@ -56,12 +60,12 @@ _SUFFIX = re.compile(r'-a\d+\Z')
 
 def _unq(text):
     """A single-quoted value (window.q), quotes included, back to its text; None stays None."""
-    return text[1:-1].replace("''", "'") if text else text
+    return _UNDOUBLE.sub(r'\1', text[1:-1]) if text else text
 
 
 def _val(m):
     """The text of a match of _Q's group 1 (quotes left out); None for no match."""
-    return m.group(1).replace("''", "'") if m else None
+    return _UNDOUBLE.sub(r'\1', m.group(1)) if m else None
 
 
 def _pattern(template):

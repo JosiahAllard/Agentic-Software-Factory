@@ -11,7 +11,9 @@ PM = {'pm_session_id': SID, 'pm_account': 2}
 # a topic session: its own name, and a brief in the PM's scratchpad (which holds the PM's id)
 TOPIC = ("claude --agent pm-kit:topic --remote-control 'topic-x' -n 'topic-x' "
          "'Read Z:\\AgentTemp\\claude\\proj\\%s\\scratchpad\\topic-x-brief.md'" % SID)
-TOPICS = (TOPIC, "claude --resume 'other-sid' --remote-control 'topic-x' -n 'topic-x' 'see %s'" % SID)
+TOPICS = (TOPIC,
+          "claude --resume ‘other-sid’ --remote-control 'topic-x' -n 'topic-x' ‘see %s’" % SID,
+          "claude --resume 'other-sid' --remote-control 'topic-x' -n 'topic-x' 'see %s'" % SID)
 # the PM's real forms: the id as the value of --resume, -r or --session-id, bare or quoted
 PM_FORMS = ("claude --resume %s --remote-control 'x' -n 'x'" % SID,
             "claude --resume=%s --remote-control 'x' -n 'x'" % SID,
@@ -19,7 +21,9 @@ PM_FORMS = ("claude --resume %s --remote-control 'x' -n 'x'" % SID,
             "claude --session-id %s --remote-control 'x' -n 'x'" % SID,
             "claude --resume '%s' --remote-control 'x' -n 'x'" % SID,
             'claude --resume "%s" --remote-control \'x\' -n \'x\'' % SID,
-            "claude --session-id='%s' --remote-control 'x' -n 'x'" % SID)
+            "claude --session-id='%s' --remote-control 'x' -n 'x'" % SID,
+            "claude --resume ’%s’ --remote-control 'x' -n 'x'" % SID,
+            "claude -r ‘%s‘ --remote-control 'x' -n 'x'" % SID)
 
 
 def proc(pid, cmd):

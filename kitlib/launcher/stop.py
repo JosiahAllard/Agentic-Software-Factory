@@ -37,7 +37,7 @@ PM_RC_NAME = 'pm-session'
 LOG = 'stop.log'
 _ENC = re.compile(r'(?:^|\s)-(?:EncodedCommand|enc|ec)\s+([A-Za-z0-9+/=]+)', re.I)
 # the session id a claude command line runs as: the value of --resume (-r) or --session-id
-_SID = re.compile(r"""(?:^|\s)(?:--resume|-r|--session-id)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))""")
+_SID = re.compile(r"""(?:^|\s)(?:--resume|-r|--session-id)(?:=|\s+)(?:"([^"]*)"|[%s]([^%s]*)[%s]|(\S+))""" % ((window.QUOTES,) * 3))
 
 
 class Refused(LaunchError):

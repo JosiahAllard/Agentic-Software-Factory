@@ -3,6 +3,7 @@ import re
 import unittest
 
 from kitlib.launcher import window
+from tests.launcher.fakes import windows_text
 
 
 class ClaudeCommand(unittest.TestCase):
@@ -72,6 +73,7 @@ class CurlyQuotes(unittest.TestCase):
 
 class ScriptOrder(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.text = window.script('alpha-coord-a2', 'coordinator', '/repos/alpha', 'claude --x',
                                   config_dir='/acct2', agent_temp='/agent-temp')
 
@@ -126,6 +128,9 @@ class FakeRun(object):
 
 class OpenWindow(unittest.TestCase):
     TEXT = "Set-Location '/r'; claude 'it''s'"
+
+    def setUp(self):
+        windows_text(self)
 
     def test_runner_script_runs_conhost_minimized_with_the_encoded_script(self):
         r = window.runner_script(self.TEXT)

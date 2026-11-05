@@ -498,6 +498,8 @@ ul.hist .sch-line{display:block}
       throw err;
     },
     snapshot(){ return this.call("GET", "/snapshot"); },
+    // The snapshot less its documents (api.snapshot, bare): what can move with no write, read after a wait that timed out.
+    bare(){ return this.call("GET", "/snapshot?bare=1"); },
     // The server answers a wait within about 55 s; the page gives up on one that says nothing for 90 s.
     wait(since, stop){ return this.call("GET", "/wait?since=" + encodeURIComponent(String(since)), null, 90000, stop); },
     post(path, body){ return this.call("POST", path, body); }
@@ -3612,14 +3614,24 @@ ul.hist .sch-line{display:block}
   // snapshot is read again. A failure is said at the top, in its own words: an unpaired browser is told how to
   // pair and reads again only every HUB_UNPAIRED_MS (a refusal at a server restart heals by itself), a busy
   // server is given the wait it asked for, and anything else is tried again after hubRetryMs.
-  let rev = 0, lastKey = "", lastCheap = "", fails = 0;
+  let rev = 0, lastKey = "", lastCheap = "", fails = 0, lastSnap = null;
   function loadSay(text){ const b = $("#loaderr"); b.textContent = text; b.hidden = !text; }
   // The server's own word that hub code newer than it has landed: its restart text (the owner's step), shown until it restarts.
   function codeSay(code){ const b = $("#codeerr"), t = code && code.stale === true && typeof code.restart === "string" ? code.restart : ""; b.textContent = t; b.hidden = !t; }
   const typing = () => { const a = document.activeElement; return !!a && a !== document.body && a.matches("input:not([type=checkbox]):not([type=radio]), textarea"); };
-  async function refresh(){
-    const next = hubState(await hub.snapshot());
+  // quiet: the wait timed out, so no write moved the store's documents. Only what moves with no write is read (the
+  // bare snapshot: the git-backed views and the status), over the documents last read, when its revision is still the
+  // one they were read at; another revision reads the whole snapshot.
+  async function refresh(quiet){
+    let snap = null;
+    if (quiet && lastSnap) {
+      const b = await hub.bare();
+      if (b && b.revision === lastSnap.revision) snap = { ...b, collections: lastSnap.collections };
+    }
+    if (!snap) snap = await hub.snapshot();
+    const next = hubState(snap);
     if (ready && next.revision < rev) return;         // an older answer that arrived late
+    lastSnap = snap;
     codeSay(next.code);
     // The same revision and the same of everything a revision does not cover (the git-backed views: backlogs, usage,
     // agents, repos, notices, what is stale, partial or unavailable) is the page already drawn: only what moves on every
@@ -3685,7 +3697,7 @@ ul.hist .sch-line{display:block}
         const was = rev;                                // before the wait: a refresh by a write of this page during it must not hide the change
         const w = await hub.wait(rev, stop.signal);
         if (w.reset) rev = 0;                           // the server's history does not reach back to rev: take whatever it holds now
-        await refresh();
+        await refresh(w.timed_out === true && !w.reset);   // a timeout reads the bare snapshot, not the documents
         if (w.reset || rev !== was || Date.now() - countedAt >= FINDINGS_EVERY) countFindings();   // a timeout inside the interval reads no /findings
         fails = 0; loadSay("");
       } catch (e) {

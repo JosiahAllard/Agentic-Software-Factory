@@ -37,6 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib import maintlint                                       # noqa: E402
 from kitlib.maintlint import gatetime, page, publish, result as rmod, slot   # noqa: E402
 from kitlib.modulemap import scopelog                              # noqa: E402
@@ -72,23 +73,25 @@ def main(argv=None):
         a = ap.parse_args(argv)
     except SystemExit as exc:
         return 2 if exc.code else 0
-    root = os.path.abspath(a.root)
-    if not os.path.isdir(root):
-        print('USAGE: -C %s is not a folder' % a.root, file=sys.stderr)
+    root, why = gitrepo.toplevel(os.path.abspath(a.root))
+    if root is None:
+        print('USAGE: -C: %s' % why, file=sys.stderr)
         return 2
+    # The repository's name is the main checkout's, never a linked worktree's folder.
+    name = maintlint.repo_name(gitrepo.main_checkout_toplevel(root) or root)
     if a.dry_run and not a.out:
         print('USAGE: --dry-run writes only the page, so it needs --out FILE', file=sys.stderr)
         return 2
     path = a.result
     if not path:
-        folder, why = rmod.default_dir(maintlint.repo_name(root))
+        folder, why = rmod.default_dir(name)
         if folder is None and not a.dry_run:
             print('USAGE: no --result, and no pm_data folder to put it in: %s' % why,
                   file=sys.stderr)
             return 2
         path = os.path.join(folder, rmod.NAME) if folder else None
     try:
-        return _run(root, path, a)
+        return _run(root, path, a, name)
     except Exception as e:
         # Python's own exit 1 for a traceback would read as findings. BaseException (Ctrl+C,
         # SystemExit, a deliberate BaseException) is not caught.
@@ -96,12 +99,12 @@ def main(argv=None):
         return EXIT_ERROR
 
 
-def _run(root, path, a):
+def _run(root, path, a, name):
     """The lint after its arguments were checked: --dry-run, or inside the held slot."""
     if a.dry_run:
         return _report(_lint(root, path, a.out, False)[0])
     try:
-        held = slot.take(maintlint.repo_name(root))
+        held = slot.take(name)
     except slot.Skipped as e:
         print(e, flush=True)
         try:

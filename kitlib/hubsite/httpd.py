@@ -15,6 +15,7 @@
   Request   .method .target .path .query .headers .client .port, then .role .strong .via .body
   Response(status, body=b'', content_type=JSON, headers=())
   json_response(status, obj, headers=())    refusal(status, code, message, field='', headers=())
+  gzipped(response, accept)        the body to send and its encoding headers ("Compression")
   strong_words(request)            {'strong': True} for the strong owner's request, else {}
   local_hosts(host, port)          the local listener's host_rule
   local_gate(creds)                the local listener's gate, over kitlib.hubsite.auth.Credentials
@@ -100,6 +101,11 @@ status, the code and the field unchanged. That is the tunnel listener, whose ans
 machine; the local listener is made without it and tells the owner the error's own text. Every
 response closes its connection and carries SECURITY_HEADERS; none names the software.
 
+Compression. A JSON answer of at least GZIP_MIN bytes is sent gzipped (Content-Encoding: gzip)
+when the request's one Accept-Encoding header takes gzip (a q of 0 refuses it), and says Vary:
+Accept-Encoding either way; GET snapshot is several megabytes and compresses to about a quarter.
+A static file and a smaller answer go as they are.
+
 log(level, text). level is 'access' (one line a request: client address, method, path, status,
 role) or 'error'. The path is logged without its query, and no header is ever logged, so a line
 holds no token, no cookie and no pairing code. With no `log` nothing is written anywhere.
@@ -112,6 +118,7 @@ nothing either. A missing INDEX is a plain 404.
 
 Nothing here reads a setting, opens the store, prints or exits; kitlib.hubsite.serve wires it.
 """
+import gzip
 import http.server
 import io
 import json
@@ -142,6 +149,8 @@ LINGER_S = 2                   # reading away what a client still sends after it
 LINGER_BYTES = 4 << 20          # and never more than this much of it
 METHODS = ('GET', 'HEAD', 'POST')
 JSON = 'application/json'
+GZIP_MIN = 1024                 # bytes of a JSON body below which it is never gzipped
+GZIP_LEVEL = 6
 INDEX = 'index.html'
 VIA_HEADER = 'X-Hub-Via'
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's own source: no VIA_HEADER may claim it
@@ -242,6 +251,37 @@ def json_response(status, obj, headers=()):
 def refusal(status, code, message, field='', headers=()):
     """A refusal in the Api's error shape."""
     return json_response(status, _api.error_body(code, message, field), headers)
+
+
+def _takes_gzip(accept):
+    """Whether an Accept-Encoding value (None: not sent, or sent more than once) names gzip
+    with a q above 0."""
+    for part in (accept or '').split(','):
+        name, _, params = part.partition(';')
+        if name.strip().lower() != 'gzip':
+            continue
+        for p in params.split(';'):
+            key, _, value = p.partition('=')
+            if key.strip().lower() == 'q':
+                try:
+                    return float(value) > 0
+                except ValueError:
+                    return False
+        return True
+    return False
+
+
+def gzipped(response, accept):
+    """The bytes to send for `response` and the headers that say how: a JSON body of at least
+    GZIP_MIN bytes is gzipped when `accept` (the request's Accept-Encoding) takes gzip, with
+    Content-Encoding: gzip; every such body says Vary: Accept-Encoding. Anything else goes as
+    it is, with no header."""
+    if response.content_type != JSON or len(response.body) < GZIP_MIN:
+        return response.body, ()
+    vary = (('Vary', 'Accept-Encoding'),)
+    if not _takes_gzip(accept):
+        return response.body, vary
+    return gzip.compress(response.body, GZIP_LEVEL, mtime=0), vary + (('Content-Encoding', 'gzip'),)
 
 
 def strong_words(request):
@@ -593,17 +633,19 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                                        _shown(request.path), response.status, request.role or '-')
         # logged before it is sent: a client that has its answer finds the line written
         self.server.listener._say('access', line)
+        body, coded = gzipped(response, request.header('Accept-Encoding')
+                              if request is not None else None)
         try:
             self.send_response_only(response.status)
             self.send_header('Content-Type', response.content_type)
-            self.send_header('Content-Length', str(len(response.body)))
+            self.send_header('Content-Length', str(len(body)))
             extra = request.reply_headers if request is not None else ()
-            for name, value in SECURITY_HEADERS + tuple(extra) + response.headers:
+            for name, value in SECURITY_HEADERS + tuple(extra) + response.headers + coded:
                 self.send_header(name, value)
             self.send_header('Connection', 'close')
             self.end_headers()
-            if getattr(self, 'command', None) != 'HEAD' and response.body:
-                self.wfile.write(response.body)
+            if getattr(self, 'command', None) != 'HEAD' and body:
+                self.wfile.write(body)
             self.wfile.flush()
         except OSError:
             pass                    # the client went away: nothing to tell it

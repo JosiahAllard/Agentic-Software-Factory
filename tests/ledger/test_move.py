@@ -10,6 +10,7 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib.git import repo as gitrepo
 from kitlib.guard import context
 from kitlib.ledger import files, move, rulebook, safepath, standing, write
 from kitlib.ledger.errors import Refused
@@ -264,7 +265,7 @@ class GitMoveTest(unittest.TestCase):
         steps = move.git_steps(got)
         self.assertEqual(len(steps), 1)
         top, paths = steps[0]
-        self.assertTrue(files._same(top, self.repo.root))
+        self.assertTrue(gitrepo.same_path(top, self.repo.root))
         return paths
 
     def test_the_git_step_names_the_old_and_new_paths(self):

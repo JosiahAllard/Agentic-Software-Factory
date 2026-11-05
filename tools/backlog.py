@@ -278,6 +278,8 @@ def do_next(args, ctx, snap):
     for o in offers:
         say(row(o.rec, ranks) + ('  (--with)' if o.seeded else '')
             + ('  (narrows, below)' if o.split is not None else ''))
+        for path, rid in o.shares:
+            say('    ' + omod.shares_line(path, rid))
     for p in passed:
         say('  passed over %s (rank %s): %s' % (p.rec.id, p.rank, p.why))
     if cap is None or len(offers) < cap:
@@ -414,8 +416,15 @@ def do_check(args, ctx, snap):
     from kitlib.backlog import check as checkmod    # `check`'s own; `next` and the rest never load it
     say('CHECK %s (%s)' % (snap.head_label(), snap.where))
     red = False
-    for res in checkmod.check_store(snap, implicit=getattr(ctx.store.backend, 'implicit', False),
-                                    resources=ctx.capacity(snap)):
+    try:
+        shared, unread = ctx.shared_entries, None
+    except Failure as exc:              # a broken main .kit.json: one FAIL row, not no results
+        shared, unread = None, str(exc)
+    results = checkmod.check_store(snap, implicit=getattr(ctx.store.backend, 'implicit', False),
+                                   resources=ctx.capacity(snap), shared=shared)
+    if unread is not None:
+        results.append(checkmod.shared_paths_unread(unread))
+    for res in results:
         say(res.line())
         for f in res.findings:
             say('    FAIL %s:%s %s' % (f.path, f.line, f.message))

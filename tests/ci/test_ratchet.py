@@ -16,6 +16,7 @@ import unittest
 from unittest import mock
 
 from kitlib.ci import ratchet
+from tests import gitfixture
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -227,7 +228,7 @@ class Baselines(Tree):
         path = os.path.join(KIT, 'tests', 'linux-baseline.txt')
         self.assertEqual(ratchet.read_baseline(path), [])
         with open(path, encoding='utf-8') as f:
-            self.assertIn('broken run', f.read())
+            self.assertIn('no Linux failure is accepted', f.read())
 
 
 class Results(Tree):
@@ -267,6 +268,16 @@ class Results(Tree):
 
 
 class Cli(Tree):
+
+    def tree(self, *a, **kw):
+        fx = gitfixture.TempRepo()               # -C is resolved to a git top
+        self.addCleanup(fx.cleanup)
+        root = fx.root
+        os.makedirs(os.path.join(root, 'tests'))
+        self.write(root, 'tests/__init__.py', kw.pop('init', a[0] if a else ''))
+        for name, text in kw.items():
+            self.write(root, 'tests/%s.py' % name, text)
+        return root
 
     def main(self, *argv):
         out = io.StringIO()

@@ -429,6 +429,33 @@ class Readers(Case):
         self.assertIsNone(closed('kit', 'NEVER'))
         self.assertIsNone(closed('other', 'FOO'))
 
+    def test_a_record_condition_reuses_the_passes_store_load(self):
+        self.seed(rec('FOO'),
+                  rec('WAIT', state='blocked', blocked_on='live-client',
+                      until='live-client record:kit:FOO closed'))
+        loads = []
+
+        def counted(root):
+            loads.append(root)
+            return U.open_snapshot(root)
+
+        job = U.UnblockJob(lambda: ([('kit', self.repo.root)], []),
+                           lambda: U.Readers(self.hub, self.plugins,
+                                             U.RecordReader(Settings({'kit': self.repo.root}),
+                                                            snapshot=counted)),
+                           write=self.write, snapshot=counted)
+        note = job(Ctx())
+        self.assertIsInstance(note, jobs.Skip)      # FOO is open: the condition is not met
+        self.assertEqual(loads, [self.repo.root], 'one load of the store for the pass')
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')
+
+    def test_a_seeded_read_does_not_replace_one_already_made(self):
+        closed = U.RecordReader(Settings({'kit': self.repo.root}),
+                                snapshot=lambda root: (mock.Mock(get=lambda rid: object()), None))
+        self.assertIs(closed('kit', 'FOO'), False)
+        closed.seed('kit', None, None)
+        self.assertIs(closed('kit', 'FOO'), False)
+
     def test_repo_roots_skips_a_repo_it_cannot_place(self):
         roots, notes = U.repo_roots(Settings({'kit': self.repo.root,
                                               'gone': os.path.join(self.tmp, 'nowhere')}))

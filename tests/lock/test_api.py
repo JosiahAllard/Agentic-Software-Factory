@@ -757,6 +757,48 @@ class MoveToTop(ApiCase):
         self.assertEqual(self.order(), [R_A, R_B])
 
 
+class StopWaiting(ApiCase):
+    """stop_waiting (kitlib.gate.gatecap.replace_stale's): a run's stop request is written only
+    while its queue entry waits, under the queue mutex; a held run is never asked. stop_asked
+    reads the request back."""
+
+    entry = MoveToTop.entry
+
+    def setUp(self):
+        ApiCase.setUp(self)
+        n = self.layout()["cpu_slots"]
+        self.store.write("queue.json", {"ticket": 3, "entries": [
+            self.entry(R_H, 1, "held", cores=range(n)),
+            self.entry(R_A, 2), self.entry(R_B, 3)]})
+        self.live_record(R_H, state="held")
+        self.live_record(R_B, state="waiting", held_since=None)
+
+    def test_a_waiting_run_is_asked_to_stop_and_keeps_its_place(self):
+        before = self.store.read("queue.json")
+        self.assertFalse(api.stop_asked(self.store, R_B))
+        self.assertIs(api.stop_waiting(self.store, R_B, "t", "sess-A"), True)
+        self.assertTrue(api.stop_asked(self.store, R_B))
+        stop = self.store.read("active/%s.stop" % R_B)
+        self.assertEqual((stop["by"], stop["session"]), ("t", "sess-A"))
+        self.assertEqual(self.store.read("queue.json"), before)
+
+    def test_a_held_run_or_one_with_no_entry_is_never_asked(self):
+        for rid in (R_H, R_NONE):
+            with self.subTest(rid=rid):
+                self.assertIsNone(api.stop_waiting(self.store, rid, "t"))
+                self.assertFalse(api.stop_asked(self.store, rid))
+
+    def test_a_waiting_entry_whose_run_has_ended_is_false(self):
+        self.assertIs(api.stop_waiting(self.store, R_A, "t"), False)
+        self.assertFalse(api.stop_asked(self.store, R_A))
+
+    def test_a_queue_that_cannot_be_read_asks_nothing(self):
+        with open(self.store.path("queue.json"), "w", encoding="utf-8") as f:
+            f.write("{not json")
+        self.assertIsNone(api.stop_waiting(self.store, R_B, "t"))
+        self.assertFalse(api.stop_asked(self.store, R_B))
+
+
 class RecordIds(ApiCase):
     """An id names a file (active/<id>.json, ended/<id>.json), so the record reads and end_run take
     only an id the lock makes (store.ID_RE) with the right prefix (red before it: run_record and

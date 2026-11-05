@@ -13,8 +13,8 @@ slots. memory_mb is only this check: what a job needs is the owner's to know.
 
 Of those that qualify the one with the most free cpu slots wins; a tie goes to the main machine,
 then to the node first in the registry. When none qualifies the job runs on the main machine,
-whose lock queues it. Nothing here touches the network or prints: the caller asks the nodes
-(kitlib.loadnode.remote.query_all) and passes their results in.
+whose lock queues it. Nothing here prints: `decide` asks the nodes through the `query` callable it
+is given (kitlib.loadnode.remote.query_all), and `choose` takes their results.
 """
 import collections
 
@@ -119,3 +119,68 @@ def choose(nodes, results, repo, main_lock, need, verbs=None):
         return Choice(MAIN, None, 'main has %d cpu slots free%s' % (best[0], passed))
     return Choice(best[1], best[2], '%s has %d cpu slots free (main: %s%s)'
                   % (best[1], best[0], why_main or 'fewer', passed))
+
+
+# `decide`: the action's verb -> (what a node does with HEAD, the gerund of the main-machine lines)
+_WORDS = {'run': ('runs', 'running'), 'gate': ('gates', 'gating')}
+
+Decision = collections.namedtuple('Decision', 'action node named err')
+# action: 'usage' (err is the refusal text), 'main' or 'node' (named: the node was asked for by name,
+# so a node that fails is not given way to main)
+
+
+def decide(action, name, nodes, repo, dirty, top, need, main_lock, query, say, serves=None,
+           size_fail=None):
+    """Where a job of `repo` in the checkout `top` goes: a Decision. `action`: 'run' or 'gate';
+    `name`: the --node value ('auto' or a node's name); `nodes` the registry's Nodes; `dirty`: tracked
+    changes not committed; `need`: a callable giving main's need (it may raise; with `size_fail`, a
+    format taking the error, that is said and the job goes to main); `main_lock`: a callable giving
+    main's lock dict (when it raises, main); `query`: a callable asking the nodes it is given
+    (remote.query_all); `say`: where progress lines go; `serves`: a verb a node must serve to be
+    asked (a node that does not is said and left out). Nothing is printed here."""
+    runs, ing = _WORDS[action]
+    if name != 'auto':
+        node = next((n for n in nodes if n.name == name), None)
+        if node is None:
+            return Decision('usage', None, True, 'USAGE: no node named %s in the registry' % name)
+        if repo not in node.repos:
+            return Decision('usage', None, True,
+                            'USAGE: %s has not opted in %s: add it to the node\'s "repos" in the '
+                            'registry' % (node.name, repo))
+        if dirty:
+            return Decision('usage', None, True,
+                            'USAGE: %s has tracked changes not committed; a node %s HEAD: commit '
+                            'first' % (top, runs))
+        return Decision('node', node, True, '')
+    takers = [n for n in nodes if repo in n.repos]
+    if dirty or not takers:
+        say('%s on main: %s' % (ing, 'tracked changes are not committed' if dirty
+                                else 'no node has opted in %s' % repo))
+        return Decision('main', None, False, '')
+    try:
+        size = need()
+    except Exception as e:
+        if size_fail is None:
+            raise
+        say(size_fail % e)
+        return Decision('main', None, False, '')
+    results = query(takers)
+    if serves is not None:
+        by_name = {r.name: r for r in results}
+        asked = []
+        for n in takers:
+            r = by_name.get(n.name)
+            if r is not None and r.reply and serves not in (r.reply.get('verbs') or ()):
+                say('%s: its kit serves no %s verb (update it)' % (n.name, serves))
+                continue
+            asked.append(n)
+        takers = asked
+    try:
+        lock = main_lock()
+    except Exception as e:
+        say('the main machine\'s lock cannot be read (%s); %s on main' % (type(e).__name__, ing))
+        return Decision('main', None, False, '')
+    choice = choose(takers, results, repo, lock, size)
+    say('%s: %s' % ('%s on main' % ing if choice.node is None else '%s on %s' % (ing, choice.where),
+                    choice.why))
+    return Decision('main' if choice.node is None else 'node', choice.node, False, '')

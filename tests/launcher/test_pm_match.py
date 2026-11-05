@@ -4,7 +4,7 @@ session whose brief path, in the PM's scratchpad folder, carries the PM's id is 
 import unittest
 
 from kitlib.launcher import reboot, relaunch
-from tests.launcher.fakes import FakeHost, Home, session
+from tests.launcher.fakes import FakeHost, Home, session, windows_text
 
 SID = 'pm-sid-1'
 PM = {'pm_session_id': SID, 'pm_account': 2}
@@ -32,6 +32,7 @@ def proc(pid, cmd):
 
 class RebootResumePm(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self)
 
     def resume(self, cmd):

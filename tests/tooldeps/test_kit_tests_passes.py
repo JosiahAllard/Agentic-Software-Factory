@@ -80,8 +80,8 @@ class Harness(object):
                 mock.patch.object(cli.selftree, 'config', return_value={'serial': []}), \
                 mock.patch.object(cli.selftree, 'all_test_modules', return_value=MODULES), \
                 mock.patch.object(cli.selftree, 'changed_paths', side_effect=self.paths), \
-                mock.patch.object(cli, 'default_base', return_value=('main', None)), \
-                mock.patch.object(cli, 'plan', return_value=SELECTED), \
+                mock.patch.object(cli.kitrun, 'default_base', return_value=('main', None)), \
+                mock.patch.object(cli.kitrun, 'plan', return_value=SELECTED), \
                 mock.patch.object(cli.giveback, 'drainer', side_effect=self.drainer), \
                 mock.patch.object(cli.selfrun, 'count_units', side_effect=self.count_units), \
                 mock.patch.object(cli.selfrun, 'run', side_effect=self.run), \

@@ -1,5 +1,6 @@
 """kitlib.hubsite.httpd: the loopback listener. Every test binds port 0 on the loopback address,
 talks to it over a real socket, and stops what it started."""
+import gzip
 import http.client
 import json
 import os
@@ -51,6 +52,42 @@ class Recorder(object):
 class Broken(object):
     def call(self, *a, **kw):
         raise RuntimeError('boom in D:\\secret\\place')
+
+
+class Large(object):
+    """An Api whose every answer is a JSON body of several kilobytes, as GET snapshot's."""
+
+    def call(self, *a, **kw):
+        return 200, {'ok': True, 'rows': ['row %d' % i for i in range(2000)]}
+
+
+# ------------------------------------------------------------------ compression
+class GzipCase(httpfix.ListenerCase):
+    # KIT-HUB-SNAPSHOT-EVERY-WAIT: GET snapshot (4.7 MB) went uncompressed to a browser that asks
+    # for gzip, over the tunnel too
+    def test_a_json_answer_is_gzipped_only_when_the_request_takes_gzip(self):
+        lis = self.listener(Large())
+        want = Large().call()[1]
+        for accept, coded in (('gzip, deflate, br', True), ('GZIP', True), ('br;q=1, gzip;q=0.5', True),
+                              (None, False), ('gzip;q=0', False), ('deflate, br', False), ('identity', False)):
+            with self.subTest(accept=accept):
+                r = get(lis.port, BASE + '/snapshot', self.owner,
+                        [('Accept-Encoding', accept)] if accept is not None else [])
+                self.assertEqual(r.status, 200)
+                self.assertEqual(r.header('Vary'), ['Accept-Encoding'])
+                self.assertEqual(r.header('Content-Encoding'), ['gzip'] if coded else [])
+                self.assertEqual(r.header('Content-Length'), [str(len(r.body))])
+                body = gzip.decompress(r.body) if coded else r.body
+                self.assertEqual(json.loads(body.decode('utf-8')), want)
+                if coded:
+                    self.assertLess(len(r.body), len(body) // 4)
+
+    def test_a_small_answer_goes_as_it_is(self):
+        r = get(self.listener().port, HEALTH, self.owner, [('Accept-Encoding', 'gzip')])
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.header('Content-Encoding'), [])
+        self.assertEqual(r.header('Vary'), [])
+        self.assertIs(r.json()['ok'], True)
 
 
 # ------------------------------------------------------------------ the address

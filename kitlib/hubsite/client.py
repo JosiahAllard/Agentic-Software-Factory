@@ -44,7 +44,8 @@ import time
 import urllib.parse
 
 from . import api as _api
-from . import auth, serve
+from . import auth
+from . import localask as serve         # ask, its errors and constants: serve re-exports them
 
 OK, REFUSED, USAGE, NOT_RUNNING, TIMED_OUT = 0, 1, 2, 3, 4
 OWNER, AGENT, ANY = _api.OWNER, _api.AGENT, _api.ANY

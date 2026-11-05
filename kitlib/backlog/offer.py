@@ -271,8 +271,12 @@ def unmet_requires(rec, snap, history, root, main_ref):
 
 class Offer(object):
     # `split`: the Split `next` shows for a record offered only by narrowing (NARROWS), else None.
-    def __init__(self, rec, rank, seeded=False, split=None):
+    # `shares`: `[(shared path, record id)]`, each scope collision with a record taken first that
+    # `.kit.json` "backlog".shared_paths exempts (`next` prints them; docs/backlog.md "Shared
+    # paths").
+    def __init__(self, rec, rank, seeded=False, split=None, shares=None):
         self.rec, self.rank, self.seeded, self.split = rec, rank, seeded, split
+        self.shares = list(shares or [])
 
 
 class PassedOver(object):
@@ -337,7 +341,31 @@ def held_for_batch(rec, branch):
     return batch if batch is not None and batch != branch else None
 
 
-def _narrowed(rec, scopes, against, against_by, live_ids, narrow):
+def scope_hits(scopes, against, against_by, shared=()):
+    """`(hit, shares)` for `scopes` against the members taken, `against` (`against_by[i]` the
+    record that took `against[i]`): `hit` is scope.colliding_pairs(scopes, against, shared);
+    `shares` is `[(shared path, record id)]`, each pair `shared` exempts, once, in order. One pass,
+    and `shared` is asked only of a pair that collides without it."""
+    hit, shares = [], []
+    for c in scopes:
+        for m, by in zip(against, against_by):
+            if not smod.members_collide(c, m):
+                continue
+            if smod.is_shared(c, shared) or smod.is_shared(m, shared):
+                share = (c if smod.is_shared(c, shared) else m, by.id)
+                if share not in shares:
+                    shares.append(share)
+            else:
+                hit.append((c, m))
+    return hit, shares
+
+
+def shares_line(path, rid):
+    """`next`'s and `pull`'s line for a collision a shared path exempts."""
+    return 'shares %s with %s (shared path)' % (path, rid)
+
+
+def _narrowed(rec, scopes, against, against_by, live_ids, narrow, shared=()):
     """The Split `narrow(rec, others)` gives when every entry of `against` (the members taken,
     `against_by[i]` the record that took `against[i]`) that collides with `scopes` was taken by
     a live pull (`live_ids`), `others` those live pulls, each record once, in the order first
@@ -350,7 +378,8 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow):
     all of which Split.keep is clear of."""
     hitters = []
     for m, by in zip(against, against_by):
-        if any(smod.members_collide(c, m) for c in scopes) and not any(by is h for h in hitters):
+        if (any(smod.members_collide(c, m, shared) for c in scopes)
+                and not any(by is h for h in hitters)):
             hitters.append(by)
     if not hitters or any(id(h) not in live_ids for h in hitters):
         return None
@@ -361,7 +390,8 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow):
 
 
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
-               folded=None, capacity=None, branch=None, narrow=None, session_live=None):
+               folded=None, capacity=None, branch=None, narrow=None, session_live=None,
+               shared=()):
     """`((offers, passed), refusals, ranks)`. `holding` are the live pulls whose scopes are taken
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
@@ -391,7 +421,10 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     SessionLiveness) is asked of another session's record (one with a `session:`) about to take
     its place: a session not running takes nothing, scope or resource, and is added to
     `session_live.idle`; one whose liveness cannot be read reserves as before, its holder named
-    `(liveness unread, so reserved)`. Nothing is written."""
+    `(liveness unread, so reserved)`.
+    `shared` (`.kit.json` "backlog".shared_paths): a scope pair where either member is one of
+    them is no collision (scope.members_collide); an offer lists each such pair it met in
+    Offer.shares. Nothing is written."""
     capacity = capacity or {}
     ranks = ranked(snap)
     occupied, occupied_by = [], []      # each member taken, and the record that took it
@@ -448,7 +481,7 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
         against = live if id(rec) in seeded else occupied
         against_by = live_by if id(rec) in seeded else occupied_by
         try:
-            hit = smod.colliding_pairs(scopes, against) if against else []
+            hit, shares = scope_hits(scopes, against, against_by, shared)
         except smod.UndecidableScope as exc:
             if own(rec):
                 passed.append(PassedOver(rec, ranks.get(rid, '-'),
@@ -456,7 +489,7 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
             continue
         split = None
         if hit and narrow is not None and own(rec):
-            split = _narrowed(rec, scopes, against, against_by, live_ids, narrow)
+            split = _narrowed(rec, scopes, against, against_by, live_ids, narrow, shared)
         if hit and split is None:
             if own(rec):
                 holder, who = holders.get(hit[0][1]) or (None, None)
@@ -514,7 +547,9 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
             takers[name].append(taker)
         if not own(rec):
             continue
-        offers.append(Offer(rec, ranks.get(rid, '-'), id(rec) in seeded, split))
+        if split is not None:       # what it keeps is what it shares
+            _hit, shares = scope_hits(scopes, against, against_by, shared)
+        offers.append(Offer(rec, ranks.get(rid, '-'), id(rec) in seeded, split, shares))
         if cap is not None and len(offers) >= cap:
             break
     for rec in ordered:
@@ -974,7 +1009,7 @@ class Split(object):
         return any(p.l_changes for p in self.parts)
 
 
-def split_all(c_scopes, parts, tree):
+def split_all(c_scopes, parts, tree, shared=()):
     """`(Split, None)`, or `(None, why)` when the candidate whose scope is `c_scopes` cannot be
     narrowed clear of every live pull of `parts`, `[(other, protected, plan)]`, one per record.
     `protected` is T, that live pull's protected set (the paths its branch changed, its
@@ -990,14 +1025,16 @@ def split_all(c_scopes, parts, tree):
     or from a member of either side (the candidate side matches T in any case, the live-pull
     side in exact case, so the path would be held by nobody), complement gives None, a side is
     left with no scope, a member is not a legal scope, a comparison is undecidable, or what the
-    candidate keeps still touches any T or collides with any live pull's kept scope."""
+    candidate keeps still touches any T or collides with any live pull's kept scope. `shared`
+    (`.kit.json` "backlog".shared_paths): a pair or a touch where either side is a shared path
+    counts for nothing (scope.members_collide), and a shared path in a T is not given up."""
     try:
-        return _split(c_scopes, parts, tree)
+        return _split(c_scopes, parts, tree, shared)
     except smod.UndecidableScope as exc:
         return None, 'undecidable: %s' % exc
 
 
-def _split(c_scopes, parts, tree):
+def _split(c_scopes, parts, tree, shared=()):
     base, rel, within = smod.member_base, smod.paths_related, smod.path_within
     if not parts:
         return None, 'no live pull to narrow against'
@@ -1006,7 +1043,7 @@ def _split(c_scopes, parts, tree):
     sides = []      # (other, its scope, colliding pairs, its sorted T, plan)
     for other, protected, plan in parts:
         l_scopes = other.all('scope')
-        pairs = smod.colliding_pairs(c_scopes, l_scopes)
+        pairs = smod.colliding_pairs(c_scopes, l_scopes, shared)
         if not pairs:
             return None, 'no collision with %s' % other.id
         sides.append((other, l_scopes, pairs, sorted(set(protected)), plan))
@@ -1033,7 +1070,7 @@ def _split(c_scopes, parts, tree):
             if not ls:
                 continue
             c_hit.setdefault(c, []).append(i)
-            removed += [t for t in prot if rel(base(c), t)]
+            removed += [t for t in prot if rel(base(c), t) and not smod.is_shared(t, shared)]
             if not plan:
                 for l in ls:
                     if not (smod.strictly_inside(l, c) or smod.inside_bare_folder(l, c)):
@@ -1087,9 +1124,10 @@ def _split(c_scopes, parts, tree):
         if err is not None:
             return None, '`%s` is not a scope: %s' % (m, err)
     for side, other_keep in zip(sides, other_keeps):
-        if smod.colliding_pairs(keep, other_keep):
+        if smod.colliding_pairs(keep, other_keep, shared):
             return None, 'what is kept still collides with %s' % side[0].id
-        if any(rel(base(k), t) for k in keep for t in side[3]):
+        if any(rel(base(k), t) and not (smod.is_shared(k, shared) or smod.is_shared(t, shared))
+               for k in keep for t in side[3]):
             return None, 'what is kept still touches the protected set of %s' % side[0].id
     all_other_keep = [m for ok in other_keeps for m in ok]
     c_changes, changed = [], []
@@ -1098,10 +1136,11 @@ def _split(c_scopes, parts, tree):
             continue
         changed.append(c)
         dropped = []
-        for m in all_other_keep:
-            if rel(base(m), base(c)) and m not in dropped:
+        for m in all_other_keep:        # a shared path is kept, so never listed as dropped
+            if rel(base(m), base(c)) and m not in dropped and not smod.is_shared(m, shared):
                 dropped.append(m)
         dropped += [t for t in prot_all if rel(base(c), t) and t not in dropped
+                    and not smod.is_shared(t, shared)
                     and not any(rel(base(m), t) for m in dropped)]
         c_changes.append((c, sorted(dropped), kept))
     out = []

@@ -61,6 +61,24 @@ WRITTEN_BY.update((k, 'no verb: an owner gate is a role now (kitlib/backlog/role
 _STORE_SESSION = object()
 
 
+class SharedPaths(object):
+    """A sequence of shared paths `read()` gives, called on first use (iterating, `len`, truth)."""
+
+    def __init__(self, read):
+        self._read, self._paths = read, None
+
+    def _get(self):
+        if self._paths is None:
+            self._paths = tuple(self._read())
+        return self._paths
+
+    def __iter__(self):
+        return iter(self._get())
+
+    def __len__(self):
+        return len(self._get())
+
+
 class Context(object):
     """What a plan needs beyond the snapshot. `branch` None: the branch checked out in `root`.
     `code_main` (None: `main_branch`) is the branch code lands on, which `add --found-on`
@@ -73,10 +91,14 @@ class Context(object):
     `cap` (None: offer.DEFAULT_CAP; a callable: read on first use) is the most records `next` offers and `pull` takes in order
     (`.kit.json` backlog.cap, opener.repo_cap); `next --cap` overrides it for that call.
     `resources` (None: none; a callable: read on first use) is {name: capacity} (`.kit.json`
-    backlog.resources, opener.repo_resources)."""
+    backlog.resources, opener.repo_resources).
+    `shared` (None: none; a callable: read on first use) is `[(path, why)]`, the `.kit.json`
+    backlog.shared_paths entries (opener.repo_shared_paths); `shared_paths` is those with no
+    `why`, the paths every scope collision check here exempts (scope.members_collide)."""
 
     def __init__(self, store, root, remote='origin', main_branch='main', branch=None, today=None,
-                 code_main=None, code_remote=None, liveness=None, cap=None, resources=None):
+                 code_main=None, code_remote=None, liveness=None, cap=None, resources=None,
+                 shared=None):
         self.store = store
         self.root = root
         self.remote = remote
@@ -97,6 +119,22 @@ class Context(object):
         self._cap = cap
         self._resources = resources
         self._histories = (None, {})    # (the last store tip asked about, {rid: history})
+        self._shared = shared
+
+    @property
+    def shared_entries(self):
+        """`[(path, why)]`, a callable given for it called on first read, as `cap`."""
+        if callable(self._shared):
+            self._shared = self._shared()
+        return list(self._shared or [])
+
+    @property
+    def shared_paths(self):
+        """The shared paths a scope collision exempts: the entries with no `why`, as a SharedPaths
+        that reads them on first use. The scope checks ask it only of a pair that collides
+        without it, so an offer or a pull that meets no collision never reads the config (as
+        `next --all` never reads the cap)."""
+        return SharedPaths(lambda: [p for p, why in self.shared_entries if why is None])
 
     @property
     def cap(self):
@@ -243,6 +281,12 @@ def reason_error(reason, flag):
     return None
 
 
+def shared_of(ctx):
+    """`ctx.shared_paths` (`.kit.json` backlog.shared_paths), () for a context that has none: the
+    one set every scope collision check of a plan exempts (docs/backlog.md "Shared paths")."""
+    return getattr(ctx, 'shared_paths', ())
+
+
 def own_branch(ctx, branch=None):
     """The branch whose own live pulls an offer leaves out, so a record overlapping only them is
     bundled onto it rather than passed over: `branch`, else `--as` (ctx.branch), else the branch
@@ -286,7 +330,8 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False, why
                                                branch=own,
                                                narrow=_narrower(ctx, live, whys) if narrow
                                                else None,
-                                               session_live=getattr(ctx, 'session_live', None))
+                                               session_live=getattr(ctx, 'session_live', None),
+                                               shared=shared_of(ctx))
     if refusals:
         raise Failure('`next` cannot compute an offer: %s' % '; '.join(refusals))
     return result[0], result[1], holding, own
@@ -351,7 +396,7 @@ def _narrower(ctx, live, whys=None):
         tree, why = read('tree', lambda: _tracked_tree(ctx))
         if not tree:
             return failed(rec, why or 'the code main tree is empty')
-        out, why = omod.split_all(rec.all('scope'), parts, tree)
+        out, why = omod.split_all(rec.all('scope'), parts, tree, shared=shared_of(ctx))
         if out is None:
             return failed(rec, why)
         if out.narrows_other() and not _shared_store(ctx):
@@ -455,7 +500,8 @@ def current_offer(snap, ctx, branch=None, seeds=(), whys=None):
                                                    folded=_offer_folds(ctx, holding, None, diffs),
                                                    capacity=ctx.capacity(snap),
                                                    session_live=getattr(ctx, 'session_live',
-                                                                        None))
+                                                                        None),
+                                                   shared=shared_of(ctx))
         if refusals:
             notes.append('NOTE: the offer without branch %s cannot be computed (%s); only the '
                          'offer as %s was checked' % (own, '; '.join(refusals), own))
@@ -654,7 +700,8 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
     compared; a landed branch has no diff to compare; the pulled scopes are checked either way.
     Every ref name is matched in any letter case, against git's own list of names
     (`_ref_names`), so a packed ref is found as a loose one is. Failure when git cannot answer
-    or there is no base to measure from."""
+    or there is no base to measure from. `backlog.shared_paths` exempts nothing here: a finding
+    in a shared file the branch changed still belongs to that branch (pull and next exempt it)."""
     notes, hits = [], []
     tips, note = _branch_tips(ctx, branch, _ref_names(ctx, branch))
     for label, tip in tips:
@@ -763,12 +810,14 @@ def _spelling(names, ref):
     return near[0] if near else ref
 
 
-def _overlaps(scopes, others, source):
+def _overlaps(scopes, others, source, shared=()):
+    """An overlap line per (member of `scopes`, member or path of `others`) that collide; a pair
+    either side of which is one of `shared` (scope.members_collide) is none."""
     out = []
     for s in scopes:
         for o in others:
             try:
-                hit = smod.members_collide(s, o)
+                hit = smod.members_collide(s, o, shared)
             except smod.UndecidableScope as exc:
                 out.append('%s vs %s %s - cannot be compared, so it counts: %s'
                            % (s, o, source, exc))
@@ -870,14 +919,15 @@ def _one_branch(ctx, name, refnames, base, sha, notes):
     return out
 
 
-def _change_hits(scopes, changes):
+def _change_hits(scopes, changes, shared=()):
     """An overlap line for each member of `scopes` that overlaps a path in `changes`
-    (`_live_changes`), branch by branch in name order; one that cannot be compared counts."""
+    (`_live_changes`), branch by branch in name order; one that cannot be compared counts. A
+    shared path (`shared`) on either side overlaps nothing."""
     hits = []
     for name in sorted(changes):
         for label, paths in changes[name]:
             for path in paths:
-                hits += _overlaps(scopes, [path], '(changed on %s)' % label)
+                hits += _overlaps(scopes, [path], '(changed on %s)' % label, shared)
     return hits
 
 
@@ -888,7 +938,7 @@ def _pull_fold_hits(ctx, scopes, holding, branch):
     changes, notes, unknown = _live_changes(ctx, holding, branch)
     for name in sorted(unknown):
         raise unknown[name]
-    return _change_hits(scopes, changes), notes
+    return _change_hits(scopes, changes, shared_of(ctx)), notes
 
 
 def _live_reader(ctx, holding, own, diffs=None):
@@ -922,7 +972,7 @@ def _offer_folds(ctx, holding, own, diffs=None, live=None):
 
     def folded(rec, scopes=None):
         changes, _notes, unknown = live()
-        hits = _change_hits(scopes or rec.all('scope'), changes)
+        hits = _change_hits(scopes or rec.all('scope'), changes, shared_of(ctx))
         if hits:
             where = _fold_where(hits)
             return ('scope overlaps the work of %s (%s); fold it into %s, or pull it after %s '
@@ -1106,7 +1156,8 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
         added = widened_members(rec.all('scope'), get('scope'))
         if added:
             holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            widen_hits = live_hits(added, holding, skip=rid, branch=rec.get('pulled_by'))
+            widen_hits = live_hits(added, holding, skip=rid, branch=rec.get('pulled_by'),
+                                   shared=shared_of(ctx))
             # The fold-in guard, as `pull` runs it.
             folds, notes = _pull_fold_hits(ctx, added, holding, rec.get('pulled_by'))
     new_uses = [n for n in get('uses') if n not in rec.all('uses')]
@@ -1732,7 +1783,9 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
         # narrowed against by construction
         against = [p.other for p in split.parts]
         scopes, others = split.keep, [r for r in holding if not any(r is o for o in against)]
-    hits = live_hits(scopes, others, skip=rid, branch=branch)
+    shared = shared_of(ctx)
+    hits = live_hits(scopes, others, skip=rid, branch=branch, shared=shared)
+    shares = live_shares(scopes, others, skip=rid, branch=branch, shared=shared)
     full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)
     folds, notes = _pull_fold_hits(ctx, scopes, holding, branch)
     # The fold refusal first: `next` passes a folding record over, so "not in the offer" would
@@ -1764,7 +1817,7 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
         raise Refusal('`%s` collides with a live pull: %s. `--reason` alone never overrides it: '
                       'pulling it anyway is %s' % (rid, '; '.join(hits + full), override))
     lines = offer_notes + notes + ['PULLED %s - state: open -> pulled' % rid, '  pulled_at:  %s' % ctx.date(),
-                     '  pulled_by:  %s' % branch]
+                     '  pulled_by:  %s' % branch] + ['  ' + s for s in shares]
     resume = resume_line(rec.body)
     if resume:
         lines.append(resume)
@@ -1777,7 +1830,7 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
         recorded = reason
         if blocker is not None:
             recorded += ' (unblocks %s)' % blocker
-        lines += _collisions(rec, holding)
+        lines += _collisions(rec, holding, shared)
         lines += ['warning: %s' % f for f in full + folds]
         offers = [o for o in offers if o.rec is not rec]
         displaced = ['%s rank %s priority %s' % (o.rec.id, o.rank, o.rec.get('priority'))
@@ -1860,23 +1913,41 @@ def uses_shown(snap, ctx, rec):
     return omod.uses_line(rec, holding, capacity)
 
 
-def live_hits(scopes, holding, skip=None, branch=None):
+def live_hits(scopes, holding, skip=None, branch=None, shared=()):
     """`scope A collides with B already taken by ID (in flight on BRANCH)` for each collision of
     `scopes` with a live pull in `holding`, bar the record id `skip` and any pull by `branch`: one
     branch holding overlapping records is not a collision. A comparison that cannot be decided is
-    a hit, never a clearance."""
+    a hit, never a clearance. A pair either member of which is one of `shared` is no hit
+    (live_shares names it)."""
     hits = []
     for other in holding:
         if other.id == skip or (branch and other.get('pulled_by') == branch):
             continue
         who = '%s (in flight on %s)' % (other.id, other.get('pulled_by') or '?')
         try:
-            pairs = smod.colliding_pairs(scopes, other.all('scope'))
+            pairs = smod.colliding_pairs(scopes, other.all('scope'), shared)
         except smod.UndecidableScope as exc:
             hits.append('scope cannot be compared with %s, so it is a collision: %s' % (who, exc))
             continue
         hits += ['scope %s collides with %s already taken by %s' % (a, b, who) for a, b in pairs]
     return hits
+
+
+def live_shares(scopes, holding, skip=None, branch=None, shared=()):
+    """`shares P with ID (shared path)` for each shared path P (`shared`) on which `scopes` meets
+    a live pull ID of `holding`, a pair `shared` exempts (scope.shared_hits); the pulls live_hits
+    leaves out are left out here too. A comparison that cannot be decided is live_hits' to
+    report, so it adds nothing here."""
+    out = []
+    for other in holding:
+        if other.id == skip or (branch and other.get('pulled_by') == branch):
+            continue
+        try:
+            paths = smod.shared_hits(scopes, other.all('scope'), shared)
+        except smod.UndecidableScope:
+            continue
+        out += [omod.shares_line(p, other.id) for p in paths]
+    return out
 
 
 def widened_members(old, new):
@@ -1902,13 +1973,13 @@ def widened_members(old, new):
     return added
 
 
-def _collisions(rec, holding):
+def _collisions(rec, holding, shared=()):
     """A warning line for each in-flight record in `holding` whose scope collides with `rec`'s
-    (or cannot be compared with it)."""
+    (or cannot be compared with it); a shared path (`shared`) collides with nothing."""
     lines = []
     for other in holding:
         try:
-            if smod.scopes_collide(rec.all('scope'), other.all('scope')):
+            if smod.scopes_collide(rec.all('scope'), other.all('scope'), shared):
                 lines.append('warning: scope collides with `%s`, in flight on %s'
                              % (other.id, other.get('pulled_by')))
         except smod.UndecidableScope as exc:
@@ -1972,7 +2043,8 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
         raise Refusal('`%s` is a dead pull of this session, and it is marked for review (review: '
                       '%s); a coordinator clears it with `clear-review %s --reason T` before '
                       'anyone takes it over' % (rid, rec.get('review'), rid))
-    hits = live_hits(rec.all('scope'), holding, skip=rid, branch=ctx.current_branch())
+    hits = live_hits(rec.all('scope'), holding, skip=rid, branch=ctx.current_branch(),
+                     shared=shared_of(ctx))
     full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid,
                          branch=ctx.current_branch())
     folds, notes = _pull_fold_hits(ctx, rec.all('scope'), holding, ctx.current_branch())
@@ -2006,7 +2078,7 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
     resume = resume_line(rec.body)
     if resume:
         lines.append(resume)
-    lines += _collisions(rec, holding)
+    lines += _collisions(rec, holding, shared_of(ctx))
     lines += ['warning: %s' % f for f in full + folds]
     change = Change({rid: _text(pairs, rec.body)},
                     'backlog: pull %s onto %s, taking over a dead pull from %s' % (rid, branch, old),
@@ -2141,7 +2213,8 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
         return 'its stopped tip %s has landed on %s' % (tip, ctx.code_main)
     holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
     lead = '; a lead may re-pull it (the pull-collision row)'
-    hits = live_hits(rec.all('scope'), holding, skip=rec.id, branch=branch)
+    hits = live_hits(rec.all('scope'), holding, skip=rec.id, branch=branch,
+                     shared=shared_of(ctx))
     if hits:
         return hits[0] + lead
     folds, notes = _pull_fold_hits(ctx, rec.all('scope'), holding, branch)

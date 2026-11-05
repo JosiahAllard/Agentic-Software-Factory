@@ -854,6 +854,19 @@ class SnapshotCostTest(ApiCase):
         whole = self.ok('GET', '/snapshot', OWNER)
         self.assertEqual(self.ok('GET', '/snapshot', OWNER, None, {'collections': ' , '}), whole)
 
+    def test_a_bare_snapshot_is_the_whole_one_less_its_documents(self):
+        # KIT-HUB-SNAPSHOT-EVERY-WAIT: the page reads it after a wait that timed out
+        self.ok('POST', '/inbox', AGENT, {'text': 'x', 'title': 't'})
+        self.question()
+        whole = self.ok('GET', '/snapshot', OWNER)
+        obj, seen = self.copied(lambda: self.ok('GET', '/snapshot', OWNER, None, {'bare': '1'}))
+        self.assertEqual(obj, dict(whole, collections={}))
+        self.assertEqual(self.holding(seen, 'questions'), [])
+        self.assertEqual(self.ok('GET', '/snapshot', OWNER, None, {'bare': '0'}), whole)
+        self.refused('invalid', 'bare', 'GET', '/snapshot', OWNER, None,
+                     {'bare': '1', 'collections': 'inbox'})
+        self.refused('invalid', 'bare', 'GET', '/snapshot', OWNER, None, {'bare': 'yes please'})
+
 
 class PendingReadsTest(ApiCase):
     """One pending read reads sessions.json once and copies no whole question
@@ -944,6 +957,16 @@ class PagesTest(ApiCase):
         got = self.ok('GET', '/pages/plan-1', OWNER)
         self.assertEqual((got['id'], got['html'], got['version']), ('plan-1', PAGE, 1))
         self.assertEqual([d['id'] for d in self.ok('GET', '/pages', AGENT)['items']], ['plan-1'])
+
+    def test_a_page_with_blocked_media_publishes_and_the_reply_warns(self):
+        status, obj = self.publish(html='<video src="data:video/mp4;base64,AA"></video>')
+        self.assertEqual(status, 200)
+        self.assertEqual([(w['level'], w['code'], w['field']) for w in obj['warnings']],
+                         [('warn', 'media-blocked', 'html')])
+        self.assertIn('<video>', obj['warnings'][0]['message'])
+        self.assertIn('GIF or WebP', obj['warnings'][0]['message'])
+        self.assertEqual(self.store.get('page_html', 'plan-1')['html'][:6], '<video')
+        self.assertEqual(self.publish(doc_id='plan-2')[1]['warnings'], [])
 
     def test_the_bytes_are_utf8(self):
         html = '<p>é\U0001f600</p>'

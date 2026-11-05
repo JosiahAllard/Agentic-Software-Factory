@@ -71,6 +71,12 @@ class Headroom(unittest.TestCase):
         with self.assertRaisesRegex(A.LaunchError, "Account 2 is at 95% of its seven_day window"):
             A.check_headroom(h.settings, '2', NOW, False, [])
 
+    def test_a_week_that_rounds_to_the_limit_is_refused_as_pick_skips_it(self):
+        h = Home(self, accounts=('1',))
+        h.usage('1', week=(94.6, NOW + DAY))
+        with self.assertRaisesRegex(A.LaunchError, "Account 1 is at 95% of its seven_day window"):
+            A.check_headroom(h.settings, '1', NOW, False, [])
+
     def test_no_usage_file_is_said_not_refused(self):
         h = Home(self)
         out = []

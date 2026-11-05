@@ -3,13 +3,15 @@ runs, prune, the refresh pid file and the behind lines (docs/plugin-source.md)."
 import datetime
 import json
 import os
+import shutil
+import tempfile
 import time
 import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
 from kitlib.pluginsource import claude
-from tests.platforms import posix_only
+from tests.platforms import posix_only, windows_only
 from tests.pluginsource import FakeProc, Kit, MANIFEST, read_json
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
@@ -398,11 +400,42 @@ class RefreshLockTest(Base):
             second = P.RefreshLock(self.k.root, own=(2, 20), alive=alive)
             second.acquire()
             self.assertTrue(second.held)
+            self.assertFalse([n for n in os.listdir(self.k.root) if '.break-' in n])
             second.release()
             self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
             first.acquire()
         first.release()
         self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
+
+    def test_two_starters_breaking_one_stale_file_never_both_hold(self):
+        # A dead holder (pid 9) left refresh.pid. B reads it as stale; before B breaks it, A breaks
+        # it too and takes the lock (run from B's liveness check, the race point). B must then
+        # refuse, and leave A's file where it was. Both ways of putting a claim back are run
+        # (os.link on Linux, os.rename on Windows).
+        os.makedirs(self.k.root)
+        pidfile = os.path.join(self.k.root, P.PIDFILE)
+        for name in ('windows', 'linux'):
+            with self.subTest(platform=name), mock.patch.object(P.kitplatform, 'NAME', name):
+                with open(pidfile, 'w', encoding='utf-8') as fh:
+                    json.dump({'pid': 9, 'ctime': 90}, fh)
+                a = P.RefreshLock(self.k.root, own=(1, 10), alive=lambda pid, ct: pid != 9)
+                raced = []
+
+                def b_alive(pid, ct):
+                    if pid == 9 and not raced:
+                        raced.append(1)
+                        a.acquire()
+                    return pid != 9
+
+                b = P.RefreshLock(self.k.root, own=(2, 20), alive=b_alive)
+                with self.assertRaises(P.Busy):
+                    b.acquire()
+                self.assertTrue(raced)
+                self.assertEqual((a.held, b.held), (True, False))
+                self.assertEqual(read_json(pidfile)['pid'], 1)
+                self.assertEqual(os.listdir(self.k.root), [P.PIDFILE])     # no claim left
+                a.release()
+                self.assertFalse(os.path.exists(pidfile))
 
     def test_release_leaves_a_file_another_run_took_over(self):
         os.makedirs(self.k.root)
@@ -415,11 +448,16 @@ class RefreshLockTest(Base):
 
 class SettingsTest(unittest.TestCase):
     def test_defaults_and_checks(self):
-        s = P.settings(None, environ={'LOCALAPPDATA': r'C:\lad'})
-        self.assertEqual(s, P.Settings(os.path.normpath(r'C:\lad\pm-kit\plugin'), False, 'origin'))
-        with self.assertRaises(P.RefreshError):
-            P.settings(None, environ={})
-        self.assertEqual(P.settings({'export_dir': r'D:\x', 'auto_refresh': True}, environ={}).auto_refresh, True)
+        # the LOCALAPPDATA default is Windows' (kitlib.platform.NAME patched); paths absolute on either
+        lad = os.path.join(os.path.abspath(os.sep), 'lad')
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            s = P.settings(None, environ={'LOCALAPPDATA': lad})
+            self.assertEqual(s, P.Settings(os.path.normpath(os.path.join(lad, 'pm-kit', 'plugin')),
+                                           False, 'origin'))
+            with self.assertRaises(P.RefreshError):
+                P.settings(None, environ={})
+        mine = os.path.join(os.path.abspath(os.sep), 'x')
+        self.assertEqual(P.settings({'export_dir': mine, 'auto_refresh': True}, environ={}).auto_refresh, True)
         for bad in ({'export_dir': 'rel'}, {'auto_refresh': 'yes'}, {'remote': '-x'}, {'nope': 1}, []):
             self.assertTrue(P.check(bad), bad)
 
@@ -721,6 +759,7 @@ class PruneRulesTest(Base):
         self.assertEqual((removed, failed), ([stale], []))
         self.assertTrue(os.path.isdir(mine))
 
+    @windows_only('a directory junction is a Windows feature')
     def test_a_junction_is_never_a_candidate(self):
         import _winapi
         target = os.path.join(self.k.base, 'elsewhere', '%012x' % 5)
@@ -768,15 +807,47 @@ class SafePathTest(unittest.TestCase):
 
 class PlacementTest(unittest.TestCase):
     def test_an_export_root_inside_the_kit_or_the_sweep_root_is_refused(self):
-        kit, sweep = r'C:\work\kit', r'D:\scratch'
-        self.assertTrue(P.check({'export_dir': r'C:\work\kit\export'}, kit=kit))
-        self.assertTrue(P.check({'export_dir': r'D:\Scratch\pm'}, sweep_dir=sweep))
-        self.assertEqual(P.check({'export_dir': r'C:\work\kit2'}, kit=kit, sweep_dir=sweep), [])
+        top = os.path.abspath(os.sep)
+        kit, sweep = os.path.join(top, 'work', 'kit'), os.path.join(top, 'scratch')
+        self.assertTrue(P.check({'export_dir': os.path.join(kit, 'export')}, kit=kit))
+        self.assertTrue(P.check({'export_dir': os.path.join(sweep, 'pm')}, sweep_dir=sweep))
+        self.assertEqual(P.check({'export_dir': kit + '2'}, kit=kit, sweep_dir=sweep), [])
         with self.assertRaises(P.RefreshError):
             P.settings({'export_dir': kit}, kit=kit)
-        with self.assertRaises(P.RefreshError):
-            P.settings(None, environ={'LOCALAPPDATA': r'D:\scratch\lad'}, sweep_dir=sweep)
-        self.assertEqual(P.settings({'export_dir': r'E:\pm'}, kit=kit, sweep_dir=sweep).export_dir, r'E:\pm')
+        with mock.patch('kitlib.platform.NAME', 'windows'), self.assertRaises(P.RefreshError):
+            P.settings(None, environ={'LOCALAPPDATA': os.path.join(sweep, 'lad')}, sweep_dir=sweep)
+        elsewhere = os.path.join(top, 'pm')
+        self.assertEqual(P.settings({'export_dir': elsewhere}, kit=kit, sweep_dir=sweep).export_dir,
+                         elsewhere)
+
+    @windows_only('Windows paths compare without case')
+    def test_the_sweep_root_matches_in_any_case(self):
+        self.assertTrue(P.check({'export_dir': r'D:\Scratch\pm'}, sweep_dir=r'D:\scratch'))
+
+
+class SpawnRefreshTest(unittest.TestCase):
+    """spawn_refresh's Popen arguments per platform (kitlib.platform.NAME and Popen patched)."""
+
+    def spawned(self, name):
+        base = tempfile.mkdtemp(prefix='kit-spawn-')
+        self.addCleanup(shutil.rmtree, base, True)
+        root = os.path.join(base, 'root')
+        with mock.patch('kitlib.platform.NAME', name), \
+                mock.patch('kitlib.machinesetup.extras.pythonw', return_value='pythonw'), \
+                mock.patch.object(P.subprocess, 'Popen') as popen:
+            P.spawn_refresh('kit', root)
+        self.assertEqual(popen.call_count, 1)
+        return popen.call_args.kwargs
+
+    def test_linux_starts_the_refresh_in_its_own_session(self):
+        kw = self.spawned('linux')
+        self.assertIs(kw.get('start_new_session'), True)
+        self.assertEqual(kw.get('creationflags'), 0)
+
+    def test_windows_starts_it_detached_and_windowless(self):
+        kw = self.spawned('windows')
+        self.assertEqual(kw.get('creationflags'), P._DETACHED | P._NOWIN)
+        self.assertIs(kw.get('start_new_session'), False)
 
 
 class AccountFoldersTest(unittest.TestCase):

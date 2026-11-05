@@ -199,7 +199,7 @@ UNPROVEN_MESSAGE = ('home lookup refused under the kit\'s tests: the system did 
                     'folder (%s), so no home can be shown to be a temp folder (docs/test-tools.md '
                     '"Home fence")')
 # The fence's marker: the home folder the kit's test run started with, in the environment of the
-# test units (tools/kit_tests.py run_pass) and of a process that imports the tests package
+# test units (kitlib/tooldeps/kitrun.py run_pass) and of a process that imports the tests package
 # (tests/__init__.py), so the tools a test starts inherit it. Set by fence_env only; read by
 # home_dir() and fenced() only, at each call. Unset or empty: no marker. A real run never has it.
 FENCE_ENV = 'KIT_HOME_FENCE'

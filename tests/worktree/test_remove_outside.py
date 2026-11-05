@@ -423,16 +423,20 @@ class MoreRefusals(OutsideCase):
             self.assertKept(unlanded, rc, out, 'its HEAD reflog broke; nothing was tagged or removed')
         self.assertEqual(self.tag('archive/blue'), '')
 
-    def test_a_failed_ref_list_refuses_abandon(self):
+    def test_a_failed_reach_walk_refuses_abandon(self):
         path = self.tree(commit=self.topic_tip)
         real = remove.git
 
         def failing(cwd, *args, **kw):
-            if args[:1] == ('for-each-ref',) and 'refs/tags' in args:
+            if args[:1] == ('rev-list',):
                 return 128, '', 'fatal: refs unreadable'
             return real(cwd, *args, **kw)
 
-        with mock.patch.object(remove, 'git', failing):
+        # A reflog commit besides HEAD, so the walk runs (the fake git writes no reflog).
+        from kitlib.worktree import scratch
+        logged = mock.patch.object(scratch, 'reflog',
+                                   return_value=([self.base, self.topic_tip], None))
+        with mock.patch.object(remove, 'git', failing), logged:
             rc, out = self.run_abandon(path)
         self.assertKept(path, rc, out, 'whether a ref reaches its HEAD reflog is unknown')
         self.assertIn('refs unreadable', out)

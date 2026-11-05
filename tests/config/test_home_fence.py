@@ -6,7 +6,6 @@ reports, under any spelling.
 
 Every child here gets temp folders as its home and as its marker. The two tests that hand a
 child the real profile folder only compute the home's path: nothing under it is read."""
-import _winapi
 import ctypes
 import os
 import subprocess
@@ -86,6 +85,7 @@ class ChildCase(unittest.TestCase):
     def junction(self, target):
         """A new junction to the folder `target`. The link goes when the test ends, before any
         folder does: os.rmdir removes the link and never what it points at."""
+        import _winapi
         link = os.path.join(self.folder('kit-fence-link-'), 'home')
         _winapi.CreateJunction(target, link)
         self.addCleanup(os.rmdir, link)

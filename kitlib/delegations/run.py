@@ -660,11 +660,28 @@ def preconditions(pres, checks):
 
 # --- The run ----------------------------------------------------------------------------------
 
+def _would_add(path, col, split, repos, others, when, q, answer, line, source):
+    """LedgerRefused or LedgerUsage when lwrite.add would refuse this entry for its repo or for
+    the ledger's validity, as add checks them; nothing is written."""
+    bad = lwrite.split_repo_problem(path, col, repos) if split else fmt.repo_problem(col, repos)
+    if bad:
+        raise LedgerUsage(bad)
+    mine = col if split else None
+    text = lwrite.read_text(path)
+    rid = fmt.next_id(fmt.split_entries(text)[1], mine)
+    block = fmt.render(rid, when, col, PROV, q, answer, line, source, '-')
+    errs = lwrite.check(text.rstrip('\n') + '\n\n' + block, None, repos, mine, others)
+    if errs:
+        raise LedgerRefused('the ledger or the new entry is invalid:\n  %s' % '\n  '.join(errs))
+
+
 def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
     """Add the run's ledger entry under the runner lock; its id. RunRefused when the trigger or
     its anchor already ran, or the ledger refuses the entry. `before` (a hub approval's
-    consume) is called under the lock once every check that can refuse the claim has passed,
-    just before the entry is added, so a refused claim never spends the approval."""
+    consume) is called under the runner lock and the ledger's once the already-ran scan, the
+    repo and the validity of the ledger with the new entry have passed, just before the entry is
+    added. It is spent and the claim still refused only when the write itself then fails (the
+    file cannot be written, or changed since the check)."""
     col, path, split = target(found, op.repo)
     folder = os.path.dirname(os.path.abspath(path))      # every ledger file's folder: one lock
     if order.kind == HUB:
@@ -690,16 +707,14 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
                 if whys:
                     raise RunRefused('cannot read the other ledger files: %s' % '; '.join(whys))
             when, repos = now.strftime(LEDGER_WHEN), cfg.get('ledger_repos')
-            if before:
-                errs = lwrite.check(lwrite.read_text(path), None, repos, op.repo if split else None,
-                                    others)
-                if errs:
-                    raise LedgerRefused('the ledger is already invalid:\n  %s' % '\n  '.join(errs))
-                before()
             q = 'Run delegated operation %s (%s)?' % (op.id, op.what)
-            added = lwrite.add(path, col, PROV, q, answer, line,
-                               'under %s: %s %s' % (order.anchor, op.id, order.trigger),
-                               when=when, repos=repos, split=split, others=others)
+            source = 'under %s: %s %s' % (order.anchor, op.id, order.trigger)
+            with lwrite.locked(path):       # the runner lock, then the ledger's: add nests in it
+                if before:
+                    _would_add(path, col, split, repos, others, when, q, answer, line, source)
+                    before()
+                added = lwrite.add(path, col, PROV, q, answer, line, source,
+                                   when=when, repos=repos, split=split, others=others)
     except writelock.WriteLockError as e:
         raise RunRefused('cannot take the runner lock: %s' % e)
     except (LedgerRefused, LedgerUsage) as e:

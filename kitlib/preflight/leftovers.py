@@ -23,7 +23,8 @@ def _open(top, place, wts):
     already has (no second `rev-parse --git-common-dir`, no second `git worktree list`); listing is
     None when remove must ask git for it. Anything the report's answers cannot vouch for falls back
     to remove.open_ctx."""
-    if place is None or place.kind not in (repo.MAIN, repo.LINKED) or not wts             or repo.real(os.path.join(wts[0].path, '.git')) != place.common:
+    if place is None or place.kind not in (repo.MAIN, repo.LINKED) or not wts \
+            or repo.real(os.path.join(wts[0].path, '.git')) != place.common:
         return (*remove.open_ctx(top, cwd=top), None)
     main = os.path.realpath(os.path.abspath(wts[0].path))
     try:

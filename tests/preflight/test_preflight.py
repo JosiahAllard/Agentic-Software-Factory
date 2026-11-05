@@ -19,6 +19,7 @@ from kitlib.config import ConfigError, load as load_config
 from kitlib.git import cmd
 from kitlib.config import user
 from kitlib.preflight import configline, hooks, lockline, machine, nextblock, report, settings as st
+from kitlib.worktree import remove
 from tests import gitfixture
 from tests.home import PM_REPO_FENCE_ENV, machine_config
 from tools import preflight
@@ -525,23 +526,37 @@ class TheLeftoversLine(Fixture):
 
 
 class TheGitCalls(Fixture):
-    """preflight asks git each question once: the Place, the worktree list and the PM-repo pointer
-    answer are taken once and passed on (KIT-PREFLIGHT-REPEATED-GIT)."""
+    """preflight asks git for the worktree list, the main checkout and the PM-repo pointer answer
+    once each (KIT-PREFLIGHT-REPEATED-GIT)."""
 
-    def test_no_question_is_asked_twice(self):
+    def test_worktree_list_common_dir_and_pointer_are_asked_once(self):
         self.config(repo={'main_branch': 'master'})
         self.repo.worktree('open', 'x/open')
         real_pointer = report.configline.pointer.read
         # no PM-repo pointer: its own check classifies the PM repository, a different question
-        with Spawns() as spawns, mock.patch.object(user, '_POINTERS', {}),                 mock.patch.dict(os.environ, {PM_REPO_FENCE_ENV: ''}),                 mock.patch.object(report.configline.pointer, 'read', side_effect=real_pointer) as ptr:
+        with Spawns() as spawns, mock.patch.object(user, '_POINTERS', {}), \
+                mock.patch.dict(os.environ, {PM_REPO_FENCE_ENV: ''}), \
+                mock.patch.object(report.configline.pointer, 'read',
+                                  side_effect=real_pointer) as ptr:
             code, out = self.run_preflight()
         self.assertEqual(code, 0, out)
         argvs = [' '.join(a) for a in spawns.argvs]
-        # the Place is asked for twice (main's toplevel, the report's) until the entry point
-        # passes its own on; the leftovers check no longer asks for the main checkout again
+        # the Place: the entry point's toplevel and the report's own (the stray check, a third,
+        # is stubbed here); passing the entry point's on is not done yet
+        self.assertEqual(len([a for a in argvs if '--show-toplevel' in a]), 2, argvs)
         self.assertEqual(len([a for a in argvs if 'worktree list' in a]), 1, argvs)
         self.assertEqual(len([a for a in argvs if a.endswith('--git-common-dir')]), 0, argvs)
         self.assertEqual(ptr.call_count, 1)
+
+
+    def test_without_the_reports_worktree_list_leftovers_asks_git_itself(self):
+        self.config(repo={'main_branch': 'master'})
+        with mock.patch.object(report.repo, 'worktrees', return_value=(None, 'boom')), \
+                mock.patch('kitlib.worktree.remove.worktree_listing',
+                           side_effect=remove.GitReadError('no listing')):
+            code, out = self.run_preflight()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.line(out, 'leftovers '), 'leftovers WARN not checked: GitReadError: no listing')
 
 
 class TheNextBlock(Fixture):

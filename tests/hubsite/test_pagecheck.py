@@ -234,10 +234,6 @@ class CheckTest(unittest.TestCase):
         self.assertIn('surrogate', pagecheck.check('<p>\ud800</p>'))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 INDEX = os.path.join(os.path.dirname(__file__), '..', '..', 'kitlib', 'hubsite', 'web', 'index.html')
 
 
@@ -283,3 +279,7 @@ class MediaWarningTest(unittest.TestCase):
             self.assertEqual(pagecheck.warnings(html), [])
         finally:
             pagecheck.MEDIA_SRC_ALLOWED = old
+
+
+if __name__ == '__main__':
+    unittest.main()

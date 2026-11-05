@@ -183,6 +183,17 @@ def linux_unit():
     return schedule.unit(LINUX_JOB) + '.service'
 
 
+def linux_is_autostart(home=None):
+    """True when the Linux job is an XDG autostart entry (no systemctl start for it); False for
+    a systemd service, for no job, or when the job cannot be read."""
+    from kitlib.platform.linux import schedule
+    try:
+        task = schedule.find(LINUX_JOB, schedule.written(home))
+    except schedule.ScheduleError:
+        return False
+    return task is not None and task['backend'] == schedule.AUTOSTART
+
+
 def linux_job(hub_py, python):
     """The Linux job: `python hub_py serve` in the kit folder, at sign-in."""
     from kitlib.platform.linux import schedule

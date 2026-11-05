@@ -1027,9 +1027,18 @@ def _setup(a, stop):
         print('NOTE: no store folder is set: set hub.store or pm_data in the machine config '
               '(this tool does not write it), or start with --store PATH')
     if a.autostart:
-        print('start the server detached, once the task is registered: %s' % _start_command())
+        if not _linux():
+            print('start the server detached, once the task is registered: %s' % _START_TASK)
         for line in hub_autostart.install(os.path.abspath(__file__)):
             print(line)
+        if _linux():
+            # said after the install: which job it wrote (systemd service or XDG entry) decides it
+            if _xdg():
+                print('the XDG autostart entry starts the server at your next sign-in to the '
+                      'desktop; to start it now: %s' % START)
+            else:
+                print('start the server detached, once the job is registered: %s'
+                      % _start_command())
     else:
         print('start the server with: %s' % START)
     return 0
@@ -1101,6 +1110,11 @@ def _linux():
     return platform.NAME == 'linux'
 
 
+def _xdg():
+    """On Linux, the hub job is an XDG autostart entry: systemctl cannot start it."""
+    return _linux() and hub_autostart.linux_is_autostart()
+
+
 def _start_command():
     """The command that starts the task (Windows) or the systemd user service (Linux)."""
     if _linux():
@@ -1113,13 +1127,16 @@ def not_started(outcome):
     if not _linux():
         return NOT_STARTED[outcome]
     unit = hub_autostart.linux_unit()
+    if _xdg():
+        return ("the job '%s' is an XDG autostart entry, which systemctl cannot start and restart "
+                "does not, so nothing was started" % unit)
     return {
-        control.NO_TASK: "there is no job '%s' (hub.py setup --autostart makes it), so nothing "
-                         "was started" % unit,
-        control.DISABLED: "the job '%s' is disabled, so nothing was started" % unit,
-        control.HAND_STARTED: "the server was not started by the job '%s' (by hand, or by an XDG "
-                              "autostart entry, which restart cannot start), so nothing was "
-                              "started" % unit,
+        control.NO_TASK: "there is no job '%s' for systemctl --user (hub.py setup --autostart "
+                         "makes it), so nothing was started" % unit,
+        control.DISABLED: "the job '%s' is disabled in systemctl --user, so nothing was started"
+                          % unit,
+        control.HAND_STARTED: "the server was not started by the job '%s' (systemctl --user), so "
+                              "nothing was started" % unit,
     }[outcome]
 
 
@@ -1127,6 +1144,9 @@ def task_advice(outcome):
     """The last line when a restart started nothing, by control's outcome (None: the task could
     not be started). `serve` is not it: a server started in a console ends with that shell; the
     scheduled task runs it detached and windowless. On Linux the job is a systemd user service."""
+    if _xdg():
+        return ('an XDG autostart entry starts the server at your next sign-in to the desktop; '
+                'to start it now, run hub.py serve in a console: %s' % START)
     if outcome == control.NO_TASK:
         return 'register the task, then start it: python "%s" setup --autostart; %s' % (
             os.path.abspath(__file__), _start_command())

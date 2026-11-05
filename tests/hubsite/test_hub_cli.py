@@ -687,6 +687,33 @@ class SetupCase(CliCase):
         self.assertNotIn('NOTE', out)
         self.assertFalse(os.path.exists(self.store_dir), 'setup opened the store')
 
+    def setup_autostart(self, name, xdg=False):
+        if not getattr(self, 'configured', False):
+            self.config({'hub': {'store': self.store_dir}})
+            self.configured = True
+        with mock.patch.object(HUB, '_linux', lambda: name == 'linux'), \
+                mock.patch.object(HUB.hub_autostart, 'refusals', lambda *a, **k: []), \
+                mock.patch.object(HUB.hub_autostart, 'install', lambda *a, **k: ['INSTALLED']), \
+                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: xdg):
+            code, out, err = self.run_cli('setup', '--autostart')
+        self.assertEqual((code, err), (0, ''))
+        return out.splitlines()
+
+    def test_setup_autostart_on_windows_prints_the_scheduled_task_line(self):
+        lines = self.setup_autostart('windows')
+        task = "-TaskName 'PM kit hub server'"
+        self.assertEqual(lines[-2:], ['start the server detached, once the task is registered: '
+                                      'Start-ScheduledTask ' + task, 'INSTALLED'])
+
+    def test_setup_autostart_on_linux_names_the_job_the_install_wrote(self):
+        lines = self.setup_autostart('linux')
+        self.assertEqual(lines[-2:], ['INSTALLED', 'start the server detached, once the job is '
+                                      'registered: systemctl --user start pm-kit-hub.service'])
+        lines = self.setup_autostart('linux', xdg=True)
+        self.assertEqual(lines[-2], 'INSTALLED')
+        self.assertIn('XDG autostart entry', lines[-1])
+        self.assertNotIn('systemctl', lines[-1])
+
     def test_setup_refuses_a_token_file_that_cannot_serve(self):
         os.makedirs(self.tokens)
         bad = os.path.join(self.tokens, auth.TOKEN_FILES[auth.OWNER])
@@ -1123,11 +1150,13 @@ class StopRestartCase(CliCase):
 
     def test_restart_advice_on_linux_names_systemctl_and_never_the_scheduled_task(self):
         unit = 'pm-kit-hub.service'
-        with mock.patch('kitlib.platform.NAME', 'linux'):
+        with mock.patch('kitlib.platform.NAME', 'linux'), \
+                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: False):
             for outcome in (HUB.control.NO_TASK, HUB.control.DISABLED, HUB.control.HAND_STARTED):
                 said = HUB.not_started(outcome)
                 advice = HUB.task_advice(outcome)
                 self.assertIn(unit, said)
+                self.assertIn('systemctl', said)
                 self.assertNotIn('scheduled task', said)
                 self.assertIn('systemctl --user start ' + unit, advice)
                 for text in (said, advice):
@@ -1139,6 +1168,19 @@ class StopRestartCase(CliCase):
             self.assertEqual(HUB.not_started(HUB.control.NO_TASK),
                              HUB.NOT_STARTED[HUB.control.NO_TASK])
             self.assertIn('Start-ScheduledTask', HUB.task_advice(None))
+
+    def test_restart_advice_for_an_xdg_autostart_entry_offers_no_systemctl_start(self):
+        with mock.patch('kitlib.platform.NAME', 'linux'), \
+                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: True):
+            for outcome in (HUB.control.DISABLED, HUB.control.HAND_STARTED):
+                said = HUB.not_started(outcome)
+                advice = HUB.task_advice(outcome)
+                self.assertIn('XDG autostart entry', said)
+                self.assertIn('XDG autostart entry', advice)
+                self.assertIn(HUB.START, advice)
+                for text in (said, advice):
+                    self.assertNotIn('systemctl --user start', text)
+                    self.assertNotIn('ScheduledTask', text)
 
     def test_restart_says_where_the_task_s_server_answers(self):
         self.assertEqual(self.run_cli('setup')[0], 0)

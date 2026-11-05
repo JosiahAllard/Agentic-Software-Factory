@@ -958,13 +958,10 @@ class PagesTest(ApiCase):
         self.assertEqual((got['id'], got['html'], got['version']), ('plan-1', PAGE, 1))
         self.assertEqual([d['id'] for d in self.ok('GET', '/pages', AGENT)['items']], ['plan-1'])
 
-    def test_a_page_with_blocked_media_publishes_and_the_reply_warns(self):
+    def test_a_page_with_data_media_publishes_with_no_warning(self):
         status, obj = self.publish(html='<video src="data:video/mp4;base64,AA"></video>')
         self.assertEqual(status, 200)
-        self.assertEqual([(w['level'], w['code'], w['field']) for w in obj['warnings']],
-                         [('warn', 'media-blocked', 'html')])
-        self.assertIn('<video>', obj['warnings'][0]['message'])
-        self.assertIn('GIF or WebP', obj['warnings'][0]['message'])
+        self.assertEqual(obj['warnings'], [])
         self.assertEqual(self.store.get('page_html', 'plan-1')['html'][:6], '<video')
         self.assertEqual(self.publish(doc_id='plan-2')[1]['warnings'], [])
 

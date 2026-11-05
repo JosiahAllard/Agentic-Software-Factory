@@ -3254,9 +3254,9 @@ ul.hist .sch-line{display:block}
   // agent-written html, read from the server (GET /api/v1/pages/<id>) when it is opened: it is shown only in the
   // reader's one frame, made below with a sandbox that grants nothing (no scripts, no forms, no same-origin, no
   // navigation of the page) and a policy in front of the body that blocks its own loads (inline styles and data:
-  // images only). A clicked link still navigates the frame itself, outside this policy (the sandbox still holds
+  // images and media only). A clicked link still navigates the frame itself, outside this policy (the sandbox still holds
   // there); docs/action-hub.md says what that leaves open.
-  const DOC_CSP = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'\">";
+  const DOC_CSP = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'\">";
   // A srcdoc document's base URL is the hub page's, so a bare href="#x" is a link to the hub page plus #x: the
   // frame navigated away instead of scrolling (and :target never matched). Spelled about:srcdoc#x it is the
   // frame's own address, so the browser scrolls and sets :target. The sandbox and the policy are untouched.

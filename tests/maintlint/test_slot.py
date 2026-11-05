@@ -110,6 +110,10 @@ class Tool(unittest.TestCase):
         fx = gitfixture.TempRepo()               # -C is resolved to a git top
         self.addCleanup(fx.cleanup)
         self.repo = fx.root
+        self.repo_before = sorted(os.listdir(self.repo))
+
+    def assertRepoUntouched(self):
+        self.assertEqual(sorted(os.listdir(self.repo)), self.repo_before)
 
     def main(self, *argv):
         out, err = io.StringIO(), io.StringIO()
@@ -137,6 +141,7 @@ class Tool(unittest.TestCase):
             self.assertEqual(fh.read(), b'{"findings": [], "previous": true}\n')
         self.assertEqual(os.stat(self.result).st_mtime_ns, before.st_mtime_ns)
         self.assertEqual(sorted(os.listdir(self.dir)), ['result.json', 'skipped.json'])
+        self.assertRepoUntouched()
 
     def test_a_skipped_run_leaves_a_marker_with_its_reason_and_time(self):
         for code, reason in ((EXIT_TIMEOUT, 'timeout'), (EXIT_BUSY, 'busy'),
@@ -166,6 +171,7 @@ class Tool(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIsNone(slot.read_skip(self.result))
         self.assertEqual(sorted(os.listdir(self.dir)), ['page.html', 'result.json'])
+        self.assertRepoUntouched()
 
     def test_read_skip_is_none_for_no_marker_or_one_of_another_shape(self):
         self.assertIsNone(slot.read_skip(self.result))
@@ -293,6 +299,7 @@ class Tool(unittest.TestCase):
                                        '--out', page)
         self.assertEqual(code, 0, err)
         self.assertEqual(os.listdir(self.dir), ['page.html'])
+        self.assertRepoUntouched()
 
 
 if __name__ == '__main__':

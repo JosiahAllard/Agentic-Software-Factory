@@ -12,7 +12,9 @@ counts as an overlap, as it does there: a name holding a comma, a control charac
 tab (a tab is an ordinary character, tab_ok=True), leading or trailing whitespace, a backslash or
 a wildcard character (`*?[]{}`), or one starting with a drive letter (`c:x`). One difference: here
 `none` (in any case) is the root file of that name, never the backlog's empty-scope sentinel, so
-it is compared as a path.
+it is compared as a path. And the pull check also exempts a pair either side of which is one of
+`.kit.json` "backlog".shared_paths; here no shared path is exempt (members_collide is called
+without them).
 
 A ref is every one under refs/heads/ and refs/remotes/ except a symbolic one (`origin/HEAD`); it
 is merged, and skipped, when its tip is an ancestor of the base. Refs that carry one branch name

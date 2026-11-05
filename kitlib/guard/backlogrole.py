@@ -12,7 +12,9 @@
                      path that is not a regular file refused (script_file).
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
                      python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
-                     tools/backlog.py; any session's but the owner's python code naming the hub's
+                     tools/backlog.py (a script file's: only where its code can run it, py_reach,
+                     or what it prints may run as code, piped_script);
+                     any session's but the owner's python code naming the hub's
                      record writer by its module name, not its file's path
                      (kitlib.hubsite.recordwrite, plan_answer: hub_writer_code);
                      any session's but the owner's git write of the store's ref
@@ -45,7 +47,9 @@ UNIDENTIFIED = 'unidentified'                   # kitlib.host.hookmain.UNIDENTIF
 ASK = ('Ask a session whose role may take it (your coordinator; a coordinator asks the PM) to run it, '
        'and say why. Every role may read the record:')
 # python code that reaches the backlog's library or runs its tool: an import of kitlib.backlog
-# in any spelling, a name of tools/backlog.py, or the kit command naming it (['kit', 'backlog', ...])
+# in any spelling, a name of tools/backlog.py, or the kit command naming it (['kit', 'backlog', ...]).
+# -c and standard-input code is refused on it alone (backlog_code); a script file's text is then
+# read as python (py_reach), so a name it only prints or holds in a comment passes.
 CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n;]*\bbacklog\b|'
                      r'\btools\s*[./\\]\s*backlog\b|\bbacklog\.py\b|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog\b')
 # python code that names the hub's record writer or the store's answer filing: hubsite then
@@ -75,8 +79,10 @@ def read_record(root, rid):
 
 
 def shell(event, ctx, cmd, inv, cwd, role):
-    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file."""
-    return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role)
+    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file and
+    piped_script."""
+    return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role) or \
+        piped_script(event, ctx, cmd, inv, cwd, role)
 
 
 def runs(event, ctx, cmd, inv, cwd, role):
@@ -652,20 +658,176 @@ def script_file(event, ctx, cmd, inv, cwd, role):
     return None
 
 
+PIPE_RUNNERS = cm.BASH_SHELLS | cm.PS_SHELLS | {'cmd', 'eval', 'iex', 'invoke-expression'} | set(SOURCERS)
+
+
+def _runs_piped_text(inv):
+    """True when the program `inv` names takes the text piped into it as code or a command line:
+    a shell, eval, source, iex or cmd (fallback.RUNNERS, whatever its arguments), python reading
+    its code from standard input (reads_stdin), any program xargs runs (the text becomes its
+    words), or a program the line does not name (fail closed)."""
+    if inv is None:
+        return False
+    if inv.dyn or inv.via == 'xargs':
+        return True
+    return (inv.name or '').lower() in PIPE_RUNNERS or reads_stdin(inv) == 'py'
+
+
+def piped_script(event, ctx, cmd, inv, cwd, role):
+    """A subagent's python script whose output may run as code, judged by CODE_RE alone, as -c
+    code is, and not by py_reach's reading of its own code: piped, straight or through other
+    commands, into a runner (_runs_piped_text: `python gen.py | bash`, `... | tee log | python`),
+    or held in another command's word (`eval "$(python gen.py)"`, `bash <(python gen.py)`, a
+    nested shell's text: shell.Command.nested_in), whose program then reads what it prints, or run
+    in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has no
+    pipe_from). The kit's own (_kit_code) is not judged."""
+    if not _judged_subagent(event):
+        return None
+    if cmd.nested_in is not None or cmd.groups:
+        how = 'and what it prints is a word of `%s`' % rules.hub_line(rules.bare(cmd.nested_in)) \
+            if cmd.nested_in is not None else 'in a group, whose output the guard does not follow'
+        d = _printed_name(ctx, role, cmd, [cmd], how)
+        if d:
+            return d
+    if cmd.pipe_from is None or not _runs_piped_text(inv):
+        return None
+    chain, up = [cmd], cmd.pipe_from
+    while up is not None:
+        chain.insert(0, up)
+        d = _printed_name(ctx, role, up, chain, 'and pipes what it prints into a command that runs it as code')
+        if d:
+            return d
+        up = up.pipe_from
+    return None
+
+
+def _printed_name(ctx, role, cmd, chain, how):
+    """piped_script's refusal when `cmd` runs a python script file whose text CODE_RE matches (not
+    the kit's own); else None."""
+    ci = cm.invocation(cmd)
+    found = script_file_word(ci) if ci is not None and not ci.dyn else None
+    if not found or found[1] != 'py':
+        return None
+    path, text = _script_text(cmd, found[0].text)
+    m = CODE_RE.search(text) if isinstance(text, str) else None
+    if not m or (path and _kit_code(ctx, path)):
+        return None
+    line = rules.hub_line(' | '.join(rules.bare(c) for c in chain))
+    return rules.refuse(RAW_RULE, role, '`%s` runs %s, whose code names %s, %s: a tools/backlog.py line printed '
+                        'that way skips the guard\'s role check, so it is a raw write (kitlib/backlog/roles.py). '
+                        '%s' % (line, rules.fwd(path), m.group(0), how, LITERAL_WHY), literal_form(ctx))
+
+
+# python a script file runs (py_reach): what can run code or a process, as python names it. An
+# import naming one of PY_RUN_MODULES (any part of its dotted path, or a name it takes); a name or
+# attribute in PY_RUN_ATTRS (os.system, from os import system, obj.__subclasses__); a bare name in
+# PY_RUN_BUILTINS (exec(...), breakpoint(), not re.compile); a string that is one of these, whole
+# or a dotted part of it (getattr(os, 'system'), sys.modules['subprocess'], resolve('os.system')).
+# Wide on purpose: a script that names the tool and holds any of them is refused as before.
+PY_RUN_MODULES = frozenset((
+    'subprocess', 'runpy', 'importlib', 'imp', 'pkgutil', 'zipimport', 'pty', 'ctypes', 'cffi', '_winapi',
+    '_posixsubprocess', 'multiprocessing', 'code', 'codeop', 'timeit', 'pdb', 'bdb', 'cProfile', 'profile',
+    'trace', 'doctest', 'unittest', 'webbrowser', 'pydoc', 'pipes', 'tkinter', 'Tkinter', '_tkinter',
+    'pickle', '_pickle', 'cPickle', 'shelve', 'marshal', 'builtins', '__builtin__', 'distutils',
+    'setuptools', 'pexpect', 'plumbum', 'sh', 'commands', 'popen2'))
+PY_RUN_ATTRS = frozenset((
+    'system', 'popen', 'Popen', 'startfile', 'execl', 'execle', 'execlp', 'execlpe', 'execv', 'execve',
+    'execvp', 'execvpe', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'spawnv', 'spawnve', 'spawnvp',
+    'spawnvpe', 'posix_spawn', 'posix_spawnp', 'create_subprocess_exec', 'create_subprocess_shell',
+    'subprocess_exec', 'subprocess_shell', 'import_module', 'run_path', 'run_module', 'load_module',
+    'exec_module', 'attrgetter', 'methodcaller', 'FunctionType', 'CodeType', 'dictConfig', 'fileConfig',
+    '__import__', '__builtins__', '__dict__', '__subclasses__', '__globals__', '__code__',
+    '__getattribute__', '__loader__'))
+PY_RUN_BUILTINS = frozenset(('exec', 'eval', 'compile', 'execfile', 'getattr', 'globals', 'locals', 'vars',
+                             'breakpoint'))
+# an import that reaches the tool or the kit's library: a dotted part (or a name it takes) that is
+# backlog (kitlib.backlog, tools.backlog, a bare `import backlog`), kitlib or kit (tools/kit.py)
+PY_REACH_PARTS = frozenset(('backlog', 'kitlib', 'kit'))
+# a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
+PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
+PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
+
+
+def py_reach(text):
+    """How the python `text` a script file runs reaches the backlog, as the refusal's words
+    ('names backlog.py', 'imports kitlib.backlog.store', 'names backlog.py and can run it
+    (subprocess)'), or None. CODE_RE finds a name first: none, None. The text is then read as
+    python's own syntax tree, so a name that is only in a string or a comment passes unless the
+    code can run something (PY_RUN_*) or imports the tool or the kit's library (PY_REACH_PARTS). It
+    is read twice: whole, and from its second line on (python -x skips the first line); a reading
+    python -x cannot parse runs nothing. Fails closed to the name, as CODE_RE alone judged it,
+    when the text does not parse, may be cut at SCRIPT_CAP, or declares a coding other than UTF-8
+    (python would read its bytes as other text than the guard does)."""
+    m = CODE_RE.search(text)
+    if not m:
+        return None
+    named = 'names %s' % m.group(0)
+    if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
+        return named
+    cut = text.find('\n')                       # python -x skips up to the first \n only
+    for head in (text, text[cut + 1:]) if cut >= 0 else (text,):
+        for line in re.split(r'\r\n?|\n', head, maxsplit=3)[:3]:   # a lone \r ends a line too
+            c = PY_CODING_RE.match(line)
+            if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
+                return named
+    import ast
+    import warnings
+    for k, view in enumerate((text, text[cut + 1:] if cut >= 0 else '')):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')     # a SyntaxWarning ("\q") is the script's, not the hook's output
+                tree = ast.parse(view)
+        except Exception:                       # noqa: BLE001 - SyntaxError, ValueError (a NUL), RecursionError
+            if k == 0:
+                return named
+            continue                            # python -x cannot run it either
+        why = _tree_reach(ast, tree)
+        if why:
+            return why if why.startswith('imports ') else '%s and can run it (%s)' % (named, why)
+    return None
+
+
+def _tree_reach(ast, tree):
+    """py_reach's reading of one syntax tree: 'imports <module>' for an import that reaches the
+    tool or the kit's library (PY_REACH_PARTS), else the first name that can run code or a process
+    (PY_RUN_*), else None."""
+    runner = None
+    for node in ast.walk(tree):
+        found = ()
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            mod = (node.module or '') if isinstance(node, ast.ImportFrom) else ''
+            paths = ([mod] if mod else []) + [a.name for a in node.names]
+            parts = set(p for path in paths for p in path.split('.'))
+            if parts & PY_REACH_PARTS:
+                return 'imports %s' % (mod or ', '.join(a.name for a in node.names))
+            found = parts & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
+        elif isinstance(node, ast.Name):
+            found = {node.id} & (PY_RUN_ATTRS | PY_RUN_BUILTINS)
+        elif isinstance(node, ast.Attribute):
+            found = {node.attr} & PY_RUN_ATTRS
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
+            found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
+        if found and runner is None:
+            runner = sorted(found)[0]
+    return runner
+
+
 def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1):
     """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`:
     shell.BASH, shell.PS or 'py'): a shell's text is read as a command line in the shell that runs
     it and its commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
     fallback.named_runs at `level` (past level 0 it reads no file the text names); a judged
-    subagent's python is judged as backlog_code judges -c code (CODE_RE), except the kit's own
-    (_kit_code of `path`). A refusal is reworded to begin with `head`."""
+    subagent's python by py_reach (CODE_RE, then its syntax tree: a name only printed or in a
+    comment passes), except the kit's own (_kit_code of `path`). -c code stays backlog_code's
+    CODE_RE alone. A refusal is reworded to begin with `head`."""
     if kind == 'py':
-        m = CODE_RE.search(text) if _judged_subagent(event) else None
-        if not m or (path and _kit_code(ctx, path)):
+        why = py_reach(text) if _judged_subagent(event) else None
+        if not why or (path and _kit_code(ctx, path)):
             return None
-        return rules.refuse(RAW_RULE, role, '%s, whose code names %s: code that reaches the backlog\'s library or '
+        return rules.refuse(RAW_RULE, role, '%s, whose code %s: code that reaches the backlog\'s library or '
                             'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '
-                            'write (kitlib/backlog/roles.py). %s' % (head, m.group(0), LITERAL_WHY),
+                            'write (kitlib/backlog/roles.py). %s' % (head, why, LITERAL_WHY),
                             literal_form(ctx))
     from . import fallback, gaterole
     p = cm.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))

@@ -424,7 +424,8 @@ class DefaultBaseNote(fixtures.GateRepoCase):
 
     def gated(self, **kw):
         stale, fresh = gitfixture.stale_local_main(self.repo)
-        wt = self.repo.worktree('feature')
+        # A commit of its own: a branch whose tip is already in main needs no gate (gate queue).
+        wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
         lines = []
         out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=self.logs, say=lines.append, **kw)
         return stale, fresh, out, lines

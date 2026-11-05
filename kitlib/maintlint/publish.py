@@ -4,7 +4,8 @@
                                    each run
   publish(res, html, client)       `(line, notes)`: the page sent with POST /pages, with the agent
                                    token and `from` FROM, as `PUBLISHED <id> v<n>`; or
-                                   `(None, [note])` when it was not sent
+                                   `(None, [note])` when it was not sent; the notes of a sent page
+                                   are pagecheck.warnings, each `hub page warning: ...`
 
 A scheduled run has no hub session key and needs none: a page is an agent's write, and `from` is a
 name (docs/action-hub.md "pages/<id> and page_html/<id>"). Over a page already there it sends that
@@ -66,4 +67,5 @@ def publish(res, html, client=None):
     except (serve.ServeError, ConfigError, OSError) as e:
         return None, [_note(e)]
     version = got.get('version') if isinstance(got, dict) else None
-    return 'PUBLISHED %s%s' % (doc_id, ' v%s' % version if version else ''), []
+    return ('PUBLISHED %s%s' % (doc_id, ' v%s' % version if version else ''),
+            ['hub page warning: %s' % w for w in pagecheck.warnings(html)])

@@ -10,6 +10,7 @@ import os
 import re
 import tempfile
 import unittest
+from unittest import mock
 
 from kitlib.stubs import memory
 
@@ -59,6 +60,41 @@ class Value(unittest.TestCase):
             src = fh.read()
         self.assertEqual(re.findall(r'[A-Za-z]:[\\/]', src), [])
         self.assertEqual(src.count("'Agent-memory'"), 1)
+
+
+class Posix(unittest.TestCase):
+    """On POSIX the root is under the home folder (not '/'), and a leading '/' is an absolute folder."""
+
+    TOP = '/home/u/src/proj'
+    WANT = '/home/u/Agent-memory/proj'
+
+    def setUp(self):
+        for p in (mock.patch('kitlib.platform.NAME', 'linux'),
+                  mock.patch('os.path.expanduser', lambda path: '/home/u' if path == '~' else path)):
+            p.start()
+            self.addCleanup(p.stop)
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.root = os.path.realpath(d.name)
+
+    def test_the_root_is_under_the_home_folder(self):
+        self.assertEqual(memory.memory_root(self.TOP), '/home/u/Agent-memory')
+        self.assertEqual(memory.wanted(self.TOP, main_top=fake_top(self.TOP)), self.WANT)
+
+    def test_survey_calls_the_value_apply_wrote_ok(self):
+        m = memory.survey(self.root, main_top=fake_top(self.TOP))
+        self.assertEqual((m.state, m.want), (memory.MISSING, self.WANT))
+        memory.apply(m)
+        again = memory.survey(self.root, main_top=fake_top(self.TOP))
+        self.assertEqual((again.state, again.value), (memory.OK, self.WANT))
+
+    def test_another_posix_folder_is_kept_not_bad(self):
+        path = os.path.join(self.root, '.claude', 'settings.local.json')
+        os.makedirs(os.path.dirname(path))
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump({'autoMemoryDirectory': '/srv/mem/proj'}, fh)
+        m = memory.survey(self.root, main_top=fake_top(self.TOP))
+        self.assertEqual((m.state, m.value), (memory.OTHER, '/srv/mem/proj'))
 
 
 class Files(unittest.TestCase):

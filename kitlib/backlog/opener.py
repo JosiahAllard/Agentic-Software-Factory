@@ -10,6 +10,7 @@ docs/backlog.md).
                        (store.worktree_live_store)
   repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
   repo_resources(top) -> the main checkout's `.kit.json` backlog.resources, {name: capacity}
+  repo_shared_paths(top) -> the main checkout's `.kit.json` backlog.shared_paths, [(path, why)]
   planner(args, ctx) -> the plan `Store.write` runs for `args.verb` (one of WRITES, `retarget` or
                        `uncite`); Usage for any other verb, raised before a plan exists
   retarget_dry(args, ctx) -> the Change `retarget` would write, checked as a write would be;
@@ -19,6 +20,8 @@ docs/backlog.md).
 `planner` and `retarget_dry` take an object with tools/backlog.py's argument names (`verb`, `id`,
 `f_<field>`, `old`, `new`...).
 """
+import os
+
 import kitlib.config as kconfig
 from kitlib.config.types import is_note
 from kitlib.git import repo as gitrepo
@@ -28,6 +31,7 @@ from . import policy
 from . import pull_branch as pullmod
 from . import record as rmod
 from . import retarget as retmod
+from . import scope as bscope
 from . import store as smod
 from .errors import Failure, Refusal, Usage
 
@@ -65,7 +69,8 @@ def open_store(root, fetch=True, session=None, branch=None):
                        branch=branch, code_main=code_main or cfg.main_branch,
                        code_remote=code_remote, liveness=lambda name: liveness(top, name),
                        cap=lambda: repo_cap(top, worktrees=listing),
-                       resources=lambda: repo_resources(top, worktrees=listing))
+                       resources=lambda: repo_resources(top, worktrees=listing),
+                       shared=lambda: repo_shared_paths(top, worktrees=listing))
     return ctx
 
 
@@ -88,6 +93,22 @@ def repo_resources(top, *, worktrees=None):
     repo_cap reads the cap and for the same reason (plan.Context.resources). No key: {}."""
     section, _main = _main_backlog(top, 'the backlog resources', worktrees=worktrees)
     return {k: v for k, v in section['resources'].items() if not is_note(k)}
+
+
+def repo_shared_paths(top, *, worktrees=None):
+    """`[(path, why)]` for each `.kit.json` "backlog".shared_paths entry of the main checkout,
+    read as repo_cap reads the cap (plan.Context.shared_paths): `why` None for a literal file,
+    else why the entry is no shared path (a glob, a bad path: scope.shared_path_error; a folder
+    in the main checkout's tree). An entry with a `why` exempts nothing, and `check` reports it.
+    No key: []."""
+    section, main = _main_backlog(top, 'the backlog shared paths', worktrees=worktrees)
+    out = []
+    for p in section['shared_paths']:
+        why = bscope.shared_path_error(p)
+        if why is None and os.path.isdir(os.path.join(main, p)):
+            why = '`%s` is a folder: a shared path is one literal file' % p
+        out.append((p, why))
+    return out
 
 
 def _main_backlog(top, what, *, worktrees=None):

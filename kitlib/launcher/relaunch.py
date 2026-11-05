@@ -314,7 +314,8 @@ def crossover(settings, host, account, name=None, state_path=None, delivery=None
     """Start a fresh PM on `account` from the hand-off file and make it the PM; the lines it says
     (module docstring "PM crossover"). LaunchError, with the lines so far, when it was not
     confirmed or coordinators.json was not written."""
-    pipes.require_peer_support()
+    if not what_if:         # the dry run opens nothing and needs no registry match
+        pipes.require_peer_support()
     account = str(account)
     sid, folder, acct = recorded_pm(settings)
     if str(acct) == account:

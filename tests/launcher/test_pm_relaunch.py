@@ -67,9 +67,6 @@ class Delivery(object):
 class Base(unittest.TestCase):
     def setUp(self):
         windows_text(self)
-        patch = mock.patch('kitlib.platform.NAME', 'windows')      # these fixtures are the Windows registry
-        patch.start()
-        self.addCleanup(patch.stop)
         self.h = Home(self, repos=('alpha', 'pm'))
         self.folder = self.h.repos['pm']
         self.coords = {'alpha': 1, 'pm_session_id': OLD, 'pm_folder': self.folder, 'pm_account': 2}
@@ -269,6 +266,14 @@ class LinuxRefusal(Base):
         self.assertEqual(host.opened, [], 'no window opened')
         self.assertEqual(self.h.read_state('coordinators.json'), self.coords)
 
+    def test_crossover_what_if_still_prints_its_plan_on_linux(self):
+        self.record(70, 'pm-session', OLD)
+        host = ForkHost(self.h.root)
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            out = relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)
+        self.assertIn('Would start %s' % NEW, out[0])
+        self.assertEqual(host.opened, [])
+
 
 class AfterTheRelaunch(Base):
     """The fork's command line carries the old id, so stop and after-reboot know it by pm_name."""
@@ -427,6 +432,9 @@ class Crossover(Base):
 
 
 class Cli(unittest.TestCase):
+    def setUp(self):
+        windows_text(self)
+
     def test_the_parser_takes_pm_relaunch_name(self):
         from tools import launch
         a = launch.parser().parse_args(['pm-relaunch', '--name', NEW])

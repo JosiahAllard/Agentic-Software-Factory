@@ -92,11 +92,12 @@ def proc_start(rec):
 
 
 def require_peer_support():
-    """LaunchError on Linux: what Claude Code writes as procStart there is not known, so no record
-    can be matched to a process and a fork could never be confirmed. Windows: nothing."""
+    """LaunchError on Linux: the procStart Claude Code writes there is not known to match the
+    kit's creation time, so a fork could not be confirmed. Windows: nothing."""
     if platform.NAME == 'linux':
-        raise LaunchError('Linux peer support is deferred (docs/linux-support-plan.md): the session registry '
-                          'record cannot be matched to a process on Linux; nothing was started.')
+        raise LaunchError('Linux peer support is deferred (docs/linux-support-plan.md): the procStart '
+                          'Claude Code writes on Linux is not known to match, so a fork cannot be confirmed; '
+                          'nothing was started.')
 
 
 def is_live(rec, ctime):

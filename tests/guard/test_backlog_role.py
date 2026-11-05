@@ -739,6 +739,41 @@ class RawCode(Base):
     def test_a_main_session_is_not_judged_here(self):
         self.allowed(self.cmd('python -c "from kitlib.backlog import store"', sub=False, env=COORDINATOR))
 
+    # a path under kitlib/backlog given to -c code as data (seen refused live: a worker profiling the
+    # test selector); backlogrole.py_reach reads the -c code as python
+    SELECTOR = ("python -c \"from kitlib.tooldeps import selftree, config; import time; cfg = config.load('.'); "
+                "tree = selftree.tree('.'); t = time.time(); "
+                "print(selftree.selection(['kitlib/backlog/store.py'], tree, cfg), time.time() - t)\"")
+
+    def test_a_backlog_path_given_to_c_code_as_data_runs(self):
+        for text in (self.SELECTOR, self.SELECTOR + ' 2>&1 | tail -20',
+                     'python -c "import os; print(os.path.getsize(\'kitlib/backlog/store.py\'))"',
+                     "python -c \"print(open('kitlib/backlog/store.py').read()[:200])\""):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    def test_c_code_that_loads_the_backlog_stays_refused(self):
+        for text in ('python -c "import kitlib.backlog.store"',
+                     'python -c "import runpy; runpy.run_path(\'kitlib/backlog/store.py\')"',
+                     "python -c \"import importlib; importlib.import_module('kitlib.backlog.store')\"",
+                     "python -c \"exec(open('kitlib/backlog/store.py').read())\"",
+                     "python -c \"__import__('kitlib.backlog.store')\"",
+                     'python -c "import kitlib.tooldeps; kitlib.backlog.store.save()"',
+                     "python -c \"from kitlib.tooldeps import selftree; import sys; sys.modules['kitlib.backlog.store']\"",
+                     "python -c \"import sys; sys.path.insert(0, 'kitlib/backlog'); import store\"",
+                     "python -c \"from sys import path; path.append('kitlib/backlog'); import store\"",
+                     "python -c \"import os; os.chdir('kitlib/backlog'); import store\"",
+                     'python -c "import sys; exec(open(sys.argv[1]).read())" kitlib/backlog/store.py',
+                     "python \"-cimport kitlib.backlog.store\"", "python -Ic \"import kitlib.backlog.store\"",
+                     'python -c "print(\'kitlib/backlog/store.py\')" | bash',
+                     'python -c "print(\'kitlib/backlog/store.py\')" | xargs python',
+                     'python $(python -c "print(\'kitlib/backlog/store.py\')")',
+                     '(python -c "print(\'kitlib/backlog/store.py\')") | bash',
+                     "python -c \"print('kitlib/backlog/store.py'\""):
+            with self.subTest(text):
+                self.refused(self.cmd(text), 'backlog-raw-write')
+                self.allowed(self.cmd(text, sub=False, env=COORDINATOR))
+
 
 class HubWriterCode(Base):
     """Code that names the hub's record writer (kitlib.hubsite.recordwrite) or the store's

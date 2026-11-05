@@ -63,10 +63,13 @@ def skipped(branch):
              'branch are left as they are' % branch])
 
 
-def _worktrees(ctx, branch):
-    """The registered worktrees (not the main checkout) on `branch`: [path as registered]."""
+def _worktrees(ctx, branch, listing=None):
+    """The registered worktrees (not the main checkout) on `branch`: [path as registered].
+    `listing` is a `git worktree list --porcelain` already read; None reads it here."""
     main = canon(ctx.main)
-    return [e['path'] for e in remove.worktree_entries(remove.worktree_listing(ctx.main))
+    if listing is None:
+        listing = remove.worktree_listing(ctx.main)
+    return [e['path'] for e in remove.worktree_entries(listing)
             if e['branch'] == branch and canon(e['path']) != main]
 
 
@@ -105,10 +108,13 @@ def _left(ctx, branch):
     return now, None
 
 
-def clean_branch(ctx, branch, landed, apply=True, git_env=None):
+def clean_branch(ctx, branch, landed, apply=True, git_env=None, remote_sha=None, listing=None):
     """One branch: `(entry, lines)`. `ctx` is kitlib.worktree.remove's (the main checkout and its
     settings); `landed(sha)` is `(True, None)` when main contains `sha`, else `(False, why)` or
-    `(None, why)`. `apply` False changes nothing and says what would go."""
+    `(None, why)`. `apply` False changes nothing and says what would go. The sweep passes what it
+    read once for every branch: `remote_sha` (the branch's tip on the remote, '' when it has none)
+    and `listing` (`git worktree list --porcelain`); None reads each here. A stale `remote_sha`
+    deletes nothing: the delete's lease refuses a branch that moved since."""
     remote = ctx.s['remote']
     e = entry()
     lines = []
@@ -116,7 +122,10 @@ def clean_branch(ctx, branch, landed, apply=True, git_env=None):
     def keep(part, why):
         e['kept'].append('%s: %s' % (part, why))
 
-    sha, why = refs.ls_remote(remote, 'refs/heads/%s' % branch, ctx.main)
+    if remote_sha is None:
+        sha, why = refs.ls_remote(remote, 'refs/heads/%s' % branch, ctx.main)
+    else:
+        sha, why = remote_sha, None
     if sha is None:
         e['remote_branch'] = KEPT
         keep('remote branch', 'it could not be read (%s)' % why)
@@ -137,7 +146,7 @@ def clean_branch(ctx, branch, landed, apply=True, git_env=None):
     if tip is None:
         e['local_branch'] = KEPT
         keep('local branch', 'it could not be read (%s)' % why)
-    trees = _worktrees(ctx, branch) if tip else []
+    trees = _worktrees(ctx, branch, listing) if tip else []
     if tip:
         ok, why = landed(tip)
         if not ok:
@@ -291,9 +300,16 @@ def sweep(top, apply=False, git_env=None):
                    and any(landed(t)[0] for t in (local.get(b), remote.get(b)) if t))
     lines = ['sweep     %s: %d branch(es) main contains (%s %s)' % (
         'cleaning' if apply else 'dry run', len(names), ctx.s['upstream'], base[:10])]
+    listing = None
+    if names:
+        try:        # one read for every branch; unreadable, each branch reads (and warns) itself
+            listing = remove.worktree_listing(ctx.main)
+        except remove.GitReadError:
+            pass
     for b in names:
         try:
-            _, said = clean_branch(ctx, b, landed, apply=apply, git_env=git_env)
+            _, said = clean_branch(ctx, b, landed, apply=apply, git_env=git_env,
+                                   remote_sha=remote.get(b, ''), listing=listing)
         except Exception as e:      # noqa: BLE001 - one branch never stops the others
             said = ['WARNING: %s: the cleanup stopped (%s: %s)' % (b, type(e).__name__, e)]
         lines.extend(said)

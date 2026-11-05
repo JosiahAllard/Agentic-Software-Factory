@@ -8,9 +8,13 @@ from unittest import mock
 from kitlib.ledger import audit, files, migrate, vcs
 from kitlib.ledger.errors import Failed, Usage
 
-ENTRY = ('## R-0001 | 2026-10-01 08:00Z | alpha | selected\n'
+def rid(n):
+    return 'R-%04d' % n
+
+
+ENTRY = ('## ' + rid(1) + ' | 2026-10-01 08:00Z | alpha | selected\n'
          'Q: q\nA: a\nDecides: Rule one.\nSource: s\nSupersedes: -\n')
-DIGEST = '# Standing rulings\n\n## alpha\n\n### Landing\n- R-0001: land one branch at a time.\n'
+DIGEST = '# Standing rulings\n\n## alpha\n\n### Landing\n- %s: land one branch at a time.\n' % rid(1)
 
 
 class Base(unittest.TestCase):
@@ -31,7 +35,7 @@ class FilesTest(Base):
     def test_read_views_reads_the_ledger_and_names_an_unreadable_one(self):
         texts, why = files.read_views(self.found, None)
         self.assertIsNone(why)
-        self.assertIn('R-0001', texts[0])
+        self.assertIn(rid(1), texts[0])
         os.remove(self.log)
         texts, why = files.read_views(self.found, None)
         self.assertIsNone(texts)
@@ -45,7 +49,7 @@ class FilesTest(Base):
 
 class MigrateTest(Base):
     def test_report_for_proposes_each_rule_and_fails_without_a_digest(self):
-        self.assertIn('R-0001', migrate.report_for(self.found))
+        self.assertIn(rid(1), migrate.report_for(self.found))
         os.remove(self.digest)
         with self.assertRaises(Failed):
             migrate.report_for(self.found)
@@ -65,7 +69,7 @@ class AuditTest(Base):
             self.assertEqual(got.problems, 0, got.lines)
             self.assertEqual(got.lines[-1], 'ledger: 1 entries, OK')
             with open(self.digest, 'a', encoding='utf-8', newline='\n') as f:
-                f.write('- R-0009: cites nothing live.\n')
+                f.write('- %s: cites nothing live.\n' % rid(9))
             bad = audit.check_all(self.found, ['alpha'])
         self.assertGreaterEqual(bad.problems, 1)
         self.assertTrue(bad.lines[0].startswith('FAIL '))

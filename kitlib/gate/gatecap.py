@@ -17,15 +17,23 @@ queued in the lock) again (gave_way) and gives its slots back while those are at
 
 The cap is the machine config's "coordinator_start".gate_cap {repo name: int}. Unset, 0 or null: no cap. A value the cap cannot use, or a machine
 config that cannot be read, is said once as a WARNING and nothing is capped.
+
+The gate queue (docs/gate.md "The gate queue"): a branch gate books with the note queue_note
+(its tip and options), so a second gate of the same branch, tip, options and tree that would only
+wait behind it is found (queued_twin), and a session's own queued gate of the branch at an older
+tip is stopped before it starts (replace_stale). A held run is never touched.
 """
 import os
 import random
+import re
 import time
 
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 from kitlib.fs import replace as fsreplace
 from kitlib.gate import budget
+from kitlib.lock import api as lockapi
+from kitlib.lock import queue as lockqueue
 from kitlib.lock import store as lockstore
 from kitlib.proc import process
 
@@ -35,6 +43,8 @@ POLL_S = 5.0        # how often a waiting gate counts again; never below the loc
 WAITERS = 'gatecap'     # the lock store's folder of gates waiting at the cap: <token>.json each
 DROP_WAIT_S = 2.0       # how long a refused remove of a waiter file is retried
 _WAITING = set()        # the tokens this process waits under now; its other files are leftovers
+NOTE = 'branch gate at '
+_NOTE_TIP = re.compile(r'^branch gate at ([0-9a-f]{40})(?: |$)')
 
 
 def configured(repo, home=None):
@@ -274,3 +284,93 @@ def stopped(slot):
     """Whether released `slot`'s run was asked to stop before it ended: Run.finish keeps the stop
     request it found as the ended record's `stopped_by`, then removes the request."""
     return bool((getattr(slot, 'ended', None) or {}).get('stopped_by'))
+
+
+# ---------------------------------------------------------------- the gate queue
+
+def queue_note(head, full=False, only=None, base=None):
+    """The note a branch gate's lock run is booked with: `branch gate at <head>`, then its options
+    as given (` --full`, ` --only a,b`, ` --base X`). Two gates of one note gate the same thing.
+    Never `landing: ...` (kitlib.gate.stop reads that prefix as a landing's run)."""
+    note = NOTE + head
+    if full:
+        note += ' --full'
+    if only:
+        note += ' --only ' + (only if isinstance(only, str) else ','.join(only))
+    if base:
+        note += ' --base %s' % base
+    return note
+
+
+def note_tip(note):
+    """The tip of a queue_note, or None for any other note (a rerun's none, a landing's)."""
+    m = _NOTE_TIP.match(note) if isinstance(note, str) else None
+    return m.group(1) if m else None
+
+
+def _waiting(store, rid):
+    """Whether run rid's queue entry waits for its slots (state `waiting`). An entry that holds,
+    none, or a queue that cannot be read: False, so nothing is refused or stopped on it."""
+    try:
+        e = lockqueue.entry_of(lockqueue.load(store), rid)
+    except (OSError, ValueError):
+        return False
+    return bool(e) and e.get('state') == 'waiting'
+
+
+def queued_twin(store, repo, branch, note, tree, runs=None):
+    """The id of a live gate run of repo that waits in the queue (its entry `waiting`) for the
+    same branch, note (queue_note) and tree (runner.tested_tree, not None), or None. Such a run
+    gates exactly what this gate would: a second booking only waits behind it. A run already
+    asked to stop (gate.py stop, the stale-run reap, replace_stale) is about to end with nothing
+    run, so it is no twin. `runs`: the live runs, when already read. A soft check: the queue is
+    read once, before this gate books."""
+    if not (branch and note and tree):
+        return None
+    for r in _gate_runs(store.live_runs() if runs is None else runs, repo):
+        rid = r.get('id')
+        if (r.get('branch') == branch and r.get('note') == note and r.get('tree') == tree
+                and rid and _waiting(store, rid) and not lockapi.stop_asked(store, rid)):
+            return rid
+    return None
+
+
+def replace_stale(store, repo, branch, head, say, who=None):
+    """Stops the session's own queued branch gates of `branch` booked at another tip than `head`
+    (their note's tip, note_tip): a gate of the branch's old tip that has not started is not
+    needed once the branch moved. Only a run whose queue entry still waits is stopped
+    (kitlib.lock.api.stop_waiting: checked and written under the queue mutex the lock starts runs
+    under), so its gate ends stopped with nothing run, or `cancelled` with nothing run when it
+    started holding just after; a held run is never touched. Another session's runs, a rerun's or
+    a landing's (no queue_note), and every run when the caller's host cannot be read are left
+    alone. Says one line per run stopped, or per run that ended before its stop was written. The
+    ids stopped. Never raises."""
+    done = []
+    try:
+        if not branch or not head:
+            return done
+        runs = [r for r in _gate_runs(store.live_runs(), repo) if r.get('branch') == branch
+                and note_tip(r.get('note')) not in (None, head)]
+        if not runs:
+            return done
+        who = actor() if who is None else who
+        if not _hosted(who):
+            return done
+        by = who.get('name') or who.get('session')
+        for r in in_flight(store, who, repo, runs=runs):
+            rid = r.get('id')
+            asked = lockapi.stop_waiting(store, rid, by, who.get('session'))
+            if asked is None:
+                continue
+            old = note_tip(r.get('note'))[:10]
+            if asked:
+                done.append(rid)
+                say('the gate replaces queued run %s of %s at %s (the branch is at %s now): it is '
+                    'stopped before it starts' % (rid, branch, old, head[:10]))
+            else:
+                say('the gate could not replace queued run %s of %s at %s: it has ended' % (
+                    rid, branch, old))
+    except Exception as e:          # noqa: BLE001 - a stale run left queued never fails the gate
+        say('the gate could not check for its queued runs at an older tip: %s: %s' % (
+            type(e).__name__, e))
+    return done

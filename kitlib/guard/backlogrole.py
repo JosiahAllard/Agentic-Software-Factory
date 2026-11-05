@@ -704,10 +704,13 @@ def py_reach(text):
         if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
             return named
     import ast
+    import warnings
     cut = text.find('\n')
     for k, view in enumerate((text, text[cut + 1:] if cut >= 0 else '')):
         try:
-            tree = ast.parse(view)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')     # a SyntaxWarning ("\q") is the script's, not the hook's output
+                tree = ast.parse(view)
         except Exception:                       # noqa: BLE001 - SyntaxError, ValueError (a NUL), RecursionError
             if k == 0:
                 return named

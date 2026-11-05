@@ -1,5 +1,5 @@
 """review_pack reads each side's `.kit.json` once and runs `git merge-base` once, though the pack,
-owner_rules and the gate line each need them (KIT-REVIEWPACK-REPEATED-GIT)."""
+owner_rules and the gate line each need them."""
 from unittest import mock
 
 from kitlib import reviewpack

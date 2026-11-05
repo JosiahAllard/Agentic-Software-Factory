@@ -79,7 +79,7 @@ class KitSyncCannotReadTest(unittest.TestCase):
         for target, name, value in ((repo, "main_checkout_toplevel", "D:/kit"),
                                     (refs, "current_branch", ("main", "")),
                                     (refs, "merge_in_progress", (False, "")),
-                                    (repo, "git_path", ("D:/kit/.git/none", "")),
+                                    (gitcmd, "run_text", ("\n".join("D:/kit/.git/none%d" % i for i in range(4)), None)),
                                     (refs, "is_clean", (True, "")),
                                     (gitcmd, "run", ("", ""))):
             p = mock.patch.object(target, name, return_value=value)
@@ -94,11 +94,28 @@ class KitSyncCannotReadTest(unittest.TestCase):
                  (refs, "current_branch", (None, "bad"), "cannot read the kit's branch: bad"),
                  (refs, "merge_in_progress", (None, "bad"),
                   "cannot tell whether a merge is in progress: bad"),
-                 (repo, "git_path", (None, "bad"), "cannot look for a cherry-pick is in progress: bad"),
+                 (gitcmd, "run_text", (None, "bad"), "cannot look for a cherry-pick is in progress: bad"),
                  (refs, "is_clean", (None, "bad"), "cannot read the kit's status: bad"))
         for target, name, value, text in cases:
             with self.subTest(name), mock.patch.object(target, name, return_value=value):
                 self.assertEqual(pmstart.kit_sync(self.SETTINGS), ["kit not updated: " + text])
+
+    def test_the_operation_markers_are_one_git_call(self):
+        with mock.patch.object(gitcmd, "run_text", return_value=("\n".join(
+                "D:/kit/.git/none%d" % i for i in range(4)), None)) as run_text:
+            pmstart.kit_sync(self.SETTINGS)
+        self.assertEqual(run_text.call_count, 1)
+        args = run_text.call_args[0][0]
+        self.assertEqual([a for a in args if a != "--git-path" and not a.startswith("rev-parse")
+                          and not a.startswith("--path")],
+                         [n for n, _ in pmstart._OPERATIONS])
+
+    def test_the_second_marker_present_is_named(self):
+        out = "\n".join(["D:/kit/.git/none0", os.path.join(KIT, "kitlib"), "D:/kit/.git/none2",
+                         "D:/kit/.git/none3"])
+        with mock.patch.object(gitcmd, "run_text", return_value=(out, None)):
+            self.assertEqual(pmstart.kit_sync(self.SETTINGS),
+                             ["kit not updated: a revert is in progress in the kit checkout"])
 
     def test_failed_ancestry_reads(self):
         with mock.patch.object(refs, "is_ancestor", return_value=(None, "bad")):

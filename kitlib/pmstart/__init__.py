@@ -294,11 +294,12 @@ FILED_FALLBACK = datetime.timedelta(hours=24)
 HUB_DONE_BY = "hub"   # a question's done_by when the hub marked it done (kitlib.hubsite.api)
 
 
-def filed_stamp_file():
+def filed_stamp_file(load=None):
     """The PM-start stamp: pm-start-last.json beside the pm_watch state file (the `state_file` of
-    the pm_watch config, else pmwatch.default_state_file)."""
+    the pm_watch config, else pmwatch.default_state_file). `load`: the pm_watch config reader
+    (pmwatch.load_config; the checklist gives one read for both its users)."""
     from kitlib import pmwatch
-    state = pmwatch.load_config().get("state_file") or pmwatch.default_state_file()
+    state = (load or pmwatch.load_config)().get("state_file") or pmwatch.default_state_file()
     return os.path.join(os.path.dirname(os.path.abspath(state)), FILED_STAMP_NAME)
 
 
@@ -373,11 +374,11 @@ def filed_digest(hub, stamp, now=None):
     return [line]
 
 
-def read_heartbeat():
+def read_heartbeat(load=None):
     """The pm_watch heartbeat ({pid, beat, stream, started}) at the state file pm_watch uses, or None
-    (kitlib.pmwatch.heartbeat_file, read_heartbeat)."""
+    (kitlib.pmwatch.heartbeat_file, read_heartbeat). `load`: as filed_stamp_file."""
     from kitlib import pmwatch
-    state = pmwatch.load_config().get("state_file") or pmwatch.default_state_file()
+    state = (load or pmwatch.load_config)().get("state_file") or pmwatch.default_state_file()
     return pmwatch.read_heartbeat(pmwatch.heartbeat_file(state))
 
 
@@ -572,7 +573,7 @@ def live_session_names(procs):
     return names
 
 
-def liveness(cfg, procs, read=None, account=None, repos=None):
+def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
     path = cfg.get("sessions_file")
     if not path:
         raise KeyError("sessions_file not configured")
@@ -590,7 +591,7 @@ def liveness(cfg, procs, read=None, account=None, repos=None):
             label = "auto" if label == accounts.DEFAULT_LABEL else label
         out.append("coordinator %s (%s) is not running: launch.py start --session %s --account %s"
                    % (key, e["name"], key, label))
-    return out + _consultants_missing(sessions, alive, repos)
+    return out + _consultants_missing(sessions, alive, repos, load_repos)
 
 
 def down_entries(sessions, alive):
@@ -603,7 +604,7 @@ def down_entries(sessions, alive):
             and e["name"] not in alive]
 
 
-def _consultants_missing(sessions, alive, repos=None):
+def _consultants_missing(sessions, alive, repos=None, load_repos=None):
     """One line per repository in sessions (an entry's "repo") with no live consultant-<repo> session
     (launch.py consultant names it so, kitlib.launcher.start.consultant). A repository with a
     consultant entry of its own is left to the coordinator lines above. The line names the repository's
@@ -618,7 +619,7 @@ def _consultants_missing(sessions, alive, repos=None):
         if repo not in covered and "consultant-" + slug not in alive:
             if folders is None:
                 try:
-                    folders = launcher_repos() if repos is None else repos
+                    folders = (load_repos or launcher_repos)() if repos is None else repos
                 except Exception:
                     folders = {}
             out.append("consultant-%s is not running: launch.py consultant --repo %s --repo-path %s"
@@ -682,6 +683,18 @@ _OPERATIONS = (("CHERRY_PICK_HEAD", "a cherry-pick is in progress"),
                ("rebase-apply", "a rebase or am is in progress"))
 
 
+def _git_paths(kit, names):
+    """([absolute path of git's own file for each of `names` in the work tree at `kit`, None where git
+    gave none], why): one `git rev-parse --git-path` for all (kitlib.git.repo.git_path asks for one)."""
+    from kitlib.git import cmd as gitcmd, repo
+    args = ["rev-parse", "--path-format=absolute"] + [a for n in names for a in ("--git-path", n)]
+    out, why = gitcmd.run_text(args, repo.existing_dir(kit))
+    found = out.split("\n") if out else []
+    if len(found) != len(names):
+        return [None] * len(names), why or "git rev-parse --git-path printed nothing"
+    return [os.path.normpath(f) if f else None for f in found], why or "git rev-parse --git-path printed nothing"
+
+
 def kit_sync(settings):
     """Lines for the kit-currency check (docs/pm-data-branch.md "Session start: keep the kit current").
 
@@ -707,8 +720,8 @@ def kit_sync(settings):
         return ["kit not updated: cannot tell whether a merge is in progress: %s" % why]
     if merging:
         return ["kit not updated: a merge is in progress in the kit checkout"]
-    for name, what in _OPERATIONS:
-        path, why = repo.git_path(kit, name)
+    paths, why = _git_paths(kit, [name for name, _ in _OPERATIONS])
+    for (name, what), path in zip(_OPERATIONS, paths):
         if path is None:
             return ["kit not updated: cannot look for %s: %s" % (what, why)]
         if os.path.exists(path):
@@ -780,7 +793,7 @@ def _pm_memory_folder(top):
     return m.want or kmemory.wanted(top)
 
 
-def memory(cfg, repos=None, check=None, pm_repo=None, folder=None):
+def memory(cfg, repos=None, check=None, pm_repo=None, folder=None, load_repos=None):
     """The agent memory folder (kitlib.stubs.memory; docs/pm-start.md): one line per repository in
     launcher.repos, and for the PM's own repository, whose .claude/settings.json has no
     autoMemoryDirectory (an owner step: the command that adds it) or cannot be read; then one line
@@ -791,7 +804,7 @@ def memory(cfg, repos=None, check=None, pm_repo=None, folder=None):
     if check is None:
         check = kmemory.problem_line
     folder = folder or _pm_memory_folder
-    repos = launcher_repos() if repos is None else repos
+    repos = (load_repos or launcher_repos)() if repos is None else repos
     lines = []
     for name in sorted(repos):
         path = repos[name]
@@ -826,7 +839,7 @@ def memory(cfg, repos=None, check=None, pm_repo=None, folder=None):
     return lines
 
 
-def allow_rules(cfg, repos=None, pm_repo=None, settings=None):
+def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, load_settings=None):
     """Permission rules naming a plugin export other than the current one (kitlib.allowrules;
     docs/pm-start.md "Allow rules"): for each repository in launcher.repos and the PM's own, one
     line per settings file (.claude/settings.local.json, .claude/settings.json) and state (gone,
@@ -836,14 +849,14 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None):
     plugin_settings) that gives None checks nothing."""
     from kitlib import allowrules, kitroot, pluginsource
     from kitlib.stubs import memory as kmemory
-    repos = launcher_repos() if repos is None else repos
+    repos = (load_repos or launcher_repos)() if repos is None else repos
     targets = [(name, repos[name]) for name in sorted(repos)]
     top = (pm_repo or pm_memory_repo)(cfg)
     if top and not any(_same_folder(top, p) for p in repos.values()):
         targets.append(("PM repo", top))
     if not targets:
         return []
-    s = plugin_settings() if settings is None else settings
+    s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     root = s.export_dir
@@ -876,7 +889,7 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None):
     return lines
 
 
-def repo_prep(repos=None, prep=None):
+def repo_prep(repos=None, prep=None, load_repos=None):
     """The first-use repo prep (kitlib.git.prep.run; docs/new-worktree.md "First-use prep") of each
     repository in launcher.repos, the repositories the kit's workers make worktrees in: its lines,
     none for a repository already prepared. A folder that is not there is that repo's own "could
@@ -884,7 +897,7 @@ def repo_prep(repos=None, prep=None):
     if prep is None:
         from kitlib.git import prep as gitprep
         prep = gitprep.run
-    repos = launcher_repos() if repos is None else repos
+    repos = (load_repos or launcher_repos)() if repos is None else repos
     lines = []
     for name in sorted(repos):
         path = repos[name]
@@ -901,20 +914,20 @@ def plugin_settings():
     return pluginsource.load()
 
 
-def plugin_current(settings=None, kit=None, folders=None):
+def plugin_current(settings=None, kit=None, folders=None, load_settings=None):
     """Lines when the pm-kit plugin export is missing or behind the kit's
     refs/remotes/<remote>/main (which kit_sync, just before, has fetched), an account folder is not
     migrated, or one's last refresh failed (kitlib.pluginsource.current_lines; docs/plugin-source.md
     "Behind warnings"). None for `settings` reads the machine config; a loader that gives None
     checks nothing. None for `folders`: this machine's account folders."""
     from kitlib import pluginsource
-    s = plugin_settings() if settings is None else settings
+    s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     return pluginsource.current_lines(kit or pluginsource.kit_root(), s, folders=folders)
 
 
-def plugin_enabled(settings=None, folders=None):
+def plugin_enabled(settings=None, folders=None, load_settings=None):
     """One line naming the account folders whose settings.json does not enable the pm-kit plugin
     (enabledPlugins["pm-kit@pm-kit"] absent), with the machine setup command that installs it
     (docs/machine-setup.md "Default mode"); false is the owner's choice and is silent. A settings.json
@@ -923,7 +936,7 @@ def plugin_enabled(settings=None, folders=None):
     machine's account folders (kitlib.pluginsource.account_folders)."""
     from kitlib import pluginsource
     from kitlib.machinesetup import plugin
-    s = plugin_settings() if settings is None else settings
+    s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     lines, absent = [], []
@@ -1041,7 +1054,7 @@ def cdrive_lines(environ=None, realpath=None):
     return ["on the C: drive: " + ", ".join(hits)] if hits else []
 
 
-def worktree_sweep_lines(repos=None, read=None, plugin=None):
+def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
     """One line per repository in launcher.repos whose `<repo>-worktree-sweep` task is missing, or
     runs from a removed plugin export (kitlib.machinesetup.worktreesweep, docs/machine-setup.md
     "Extras"); none when every task is current. A task list that cannot be read is one "could not
@@ -1051,7 +1064,7 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None):
     presence only."""
     from kitlib.machinesetup import worktreesweep
     from kitlib.worktree.task import task_name
-    repos = launcher_repos() if repos is None else repos
+    repos = (load_repos or launcher_repos)() if repos is None else repos
     if not repos:
         return []
     try:
@@ -1135,6 +1148,28 @@ def rulebook_lines(machine, repo=None):
             % (found.rules, counts, cmd)]
 
 
+def _once(fn):
+    """`fn`, run on the first call only: later calls give its result, or raise its exception again."""
+    box = []
+
+    def get():
+        if not box:
+            try:
+                box.append((True, fn()))
+            except Exception as e:
+                box.append((False, e))
+        ok, value = box[0]
+        if ok:
+            return value
+        raise value
+    return get
+
+
+def _watch_config():
+    from kitlib import pmwatch
+    return pmwatch.load_config()
+
+
 def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
     """The full session-start text. A failed check is one "could not check X: reason" line.
     `check_only` reads without changing state: no filed-answers stamp write and no kit_sync (its
@@ -1143,6 +1178,16 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
     lines = []
     box = {}
     repos = {"repos": fakes["repos"]} if "repos" in fakes else {}
+    # A read several checks make is made once, by the first check that needs it; a failure is raised
+    # again to each check that asks, as its own. A check's own fake replaces the shared reader.
+    load_repos = _once(lambda: launcher_repos())
+    load_settings = _once(lambda: plugin_settings())
+    load_tasks = _once(lambda: consoletasks.read_tasks())
+    load_pm_top = _once(lambda: pm_memory_repo(cfg))
+    load_watch = _once(lambda: _watch_config())
+
+    def kw(name, default=None, **shared):
+        return dict(shared, **fakes.get(name, {} if default is None else default))
 
     def procs_once():
         if "p" not in box:
@@ -1154,25 +1199,28 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
         ("machine_config", lambda: configcheck.lines(**fakes.get("machine_config", {}))),
         ("eng_review", lambda: eng_review(cfg)),
         ("rulebooks", lambda: rulebook_lines(fakes["machine"] if "machine" in fakes else _user_config())),
-        ("hub", lambda: hub_site(**dict({"stamp": None if check_only else filed_stamp_file},
+        ("hub", lambda: hub_site(**dict({"stamp": None if check_only else lambda: filed_stamp_file(load_watch)},
                                                      **fakes.get("hub_site", {})))),
-        ("watcher", lambda: watcher(cfg, procs_once(), **fakes.get("watcher", {}))),
-        ("handoff", lambda: handoff(cfg, **fakes.get("handoff", {}))),
+        ("watcher", lambda: watcher(cfg, procs_once(), **kw("watcher", beat=lambda: read_heartbeat(load_watch)))),
+        ("handoff", lambda: handoff(cfg, **kw("handoff", pm_repo=lambda c: load_pm_top()))),
         ("reminders", lambda: reminders(cfg, today, **fakes.get("reminders", {}))),
-        ("liveness", lambda: liveness(cfg, procs_once(), **fakes.get("liveness", {}))),
+        ("liveness", lambda: liveness(cfg, procs_once(), **kw("liveness", load_repos=load_repos))),
         ("kit_sync", lambda: [] if check_only else kit_sync(fakes.get("pm_data", pm_data_settings)())),
-        ("plugin_current", lambda: plugin_current(**fakes.get("plugin_current", {}))),
+        ("plugin_current", lambda: plugin_current(**kw("plugin_current", load_settings=load_settings))),
         # A plugin_current fake's settings and folders stand for this check's too.
-        ("plugin_enabled", lambda: plugin_enabled(**fakes.get("plugin_enabled", {
-            k: v for k, v in fakes.get("plugin_current", {}).items() if k in ("settings", "folders")}))),
+        ("plugin_enabled", lambda: plugin_enabled(**kw("plugin_enabled", {
+            k: v for k, v in fakes.get("plugin_current", {}).items() if k in ("settings", "folders")},
+            load_settings=load_settings))),
         # A repos fake stands for launcher.repos in each check that reads it.
-        ("memory", lambda: memory(cfg, **fakes.get("memory", repos))),
-        ("allow_rules", lambda: allow_rules(cfg, **fakes.get("allow_rules", repos))),
-        ("repo_prep", lambda: repo_prep(**fakes.get("repo_prep", {}))),
+        ("memory", lambda: memory(cfg, **kw("memory", repos, load_repos=load_repos, pm_repo=lambda c: load_pm_top()))),
+        ("allow_rules", lambda: allow_rules(cfg, **kw("allow_rules", repos, load_repos=load_repos, load_settings=load_settings,
+                                                 pm_repo=lambda c: load_pm_top()))),
+        ("repo_prep", lambda: repo_prep(**kw("repo_prep", load_repos=load_repos))),
         ("agent_temp", lambda: agent_temp_lines(**fakes.get("agent_temp", {}))),
         ("cdrive", lambda: cdrive_lines(**fakes.get("cdrive", {}))),
-        ("worktree_sweep", lambda: worktree_sweep_lines(**fakes.get("worktree_sweep", repos))),
-        ("console_tasks", lambda: consoletasks.check(cfg, **fakes.get("console_tasks", {}))),
+        ("worktree_sweep", lambda: worktree_sweep_lines(**kw("worktree_sweep", repos, load_repos=load_repos, read=load_tasks,
+                                                          plugin=load_settings))),
+        ("console_tasks", lambda: consoletasks.check(cfg, **kw("console_tasks", read=load_tasks))),
         ("foreground_lock", lambda: fglock.check(cfg, **fakes.get("foreground_lock", {}))),
     ]
     for name, fn in checks:

@@ -31,7 +31,7 @@ def setUpModule():
     for obj, name, value in ((configcheck, 'lines', tpm.REAL_CONFIG_LINES),
                              (pmstart, 'pm_data_settings', lambda: None),
                              (fglock, 'read_live', lambda user32=None: 0),
-                             (pmstart, 'read_heartbeat', lambda: None)):
+                             (pmstart, 'read_heartbeat', lambda load=None: None)):
         p = mock.patch.object(obj, name, value)
         p.start()
         unittest.addModuleCleanup(p.stop)

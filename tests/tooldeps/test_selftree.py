@@ -170,9 +170,9 @@ class FixtureTree(unittest.TestCase):
                                       'tests.shared.__init__', 'tests.shared.helpers'})
         self.assertNotIn('tests.shared.helpers', self.tree.modules['tests.shared.test_shared'].files)
         # relative imports resolve against the file's package
-        self.assertEqual(selftree._test_imports(selftree._parse('from .w import a\nfrom . import b\n'
-                                                                'from ..x import c\n'),
-                                                'tests.p.q.test_m'),
+        nodes = selftree._nodes(selftree._parse('from .w import a\nfrom . import b\n'
+                                                'from ..x import c\n'))
+        self.assertEqual(selftree._test_imports(nodes, 'tests.p.q.test_m'),
                          {'tests.p.q.w', 'tests.p.q.w.a', 'tests.p.q', 'tests.p.q.b', 'tests.p.x',
                           'tests.p.x.c'})
 
@@ -267,6 +267,100 @@ class FixtureTree(unittest.TestCase):
         self.assertEqual(selftree.code_refs("X = '-m kitlib.leaf.run'\n")[0], {'leaf'})
         self.assertEqual(selftree.code_refs('from kitlib import a, b\n')[0], {'a', 'b'})
         self.assertEqual(selftree.code_refs('def f(:\n kitlib.leaf\n')[0], {'leaf'})
+
+
+_ROOT_LINE = 'import os\nROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))\n'
+# Tests that load a tool by bare name, and tests that list a repo folder (FILES plus these).
+LISTING_FILES = {
+    'tools/lonely.py': 'import os\n',
+    'docs/sub/b.md': '',
+    'tests/loader/__init__.py': '',
+    'tests/loader/test_loader.py': ('def load_tool(name):\n    return name\n\n\n'
+                                    "WRAPPER = load_tool('wrapper')\n" + PASSING),
+    'tests/loader/test_bypath.py': _ROOT_LINE + "SOLO = os.path.join(ROOT, 'tools', 'solo')\n"
+                                   + PASSING,
+    'tests/walker/__init__.py': '',
+    'tests/walker/test_every_tool.py': (_ROOT_LINE + "import glob\nTOOLS = os.path.join(ROOT, "
+                                        "'tools')\n\n\ndef tools():\n    return glob.glob("
+                                        "os.path.join(TOOLS, '*.py'))\n" + PASSING),
+    # a helper that lists docs/sub through a loop variable; its users list it too
+    'tests/walker/lister.py': (_ROOT_LINE + "PLACES = [os.path.join(ROOT, 'docs', 'sub')]\n\n\n"
+                               'def listing():\n    for place in PLACES:\n'
+                               '        yield os.listdir(place)\n'),
+    'tests/walker/test_uses_lister.py': 'from tests.walker import lister  # noqa: F401\n' + PASSING,
+    # importing another test module does not run its listing here
+    'tests/walker/test_imports_walker.py': ('from tests.walker import test_every_tool  # noqa: F401\n'
+                                            + PASSING),
+    'tests/walker/test_temp.py': ('import os\nimport tempfile\n\n\ndef names():\n'
+                                  '    return os.listdir(tempfile.mkdtemp())\n' + PASSING),
+}
+
+
+class LoadsAndListings(unittest.TestCase):
+    """A tool loaded by bare name selects its loader; a listed folder selects its listers."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='kit-selftree-')
+        self.addCleanup(rmtree, self.root)
+        write_tree(self.root)
+        for rel, text in LISTING_FILES.items():
+            full = os.path.join(self.root, *rel.split('/'))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, 'w', encoding='utf-8', newline='\n') as fh:
+                fh.write(text)
+        self.tree = selftree.scan(self.root)
+        self.cfg = selftree.config(self.root)
+
+    def select(self, *paths):
+        return selftree.selection(list(paths), self.tree, self.cfg)
+
+    def test_a_tool_loaded_by_bare_name_selects_its_loader(self):
+        picked, why, _ = self.select('tools/wrapper.py')
+        self.assertIn('tests.loader.test_loader', picked)
+        self.assertEqual(why['tests.loader.test_loader'], ['names tools/wrapper.py'])
+        # and a tool it imports reaches the loader through it
+        picked, why, _ = self.select('tools/leaftool.py')
+        self.assertEqual(why['tests.loader.test_loader'],
+                         ['names tools/wrapper.py, which imports tools/leaftool.py'])
+
+    def test_a_tool_path_built_from_its_bare_name_selects_the_test(self):
+        # tools/solo.py: no test names solo.py, but test_bypath joins 'tools', 'solo'
+        picked, why, _ = self.select('tools/solo.py')
+        self.assertIsNot(picked, ALL)
+        self.assertEqual(why['tests.loader.test_bypath'], ['names tools/solo.py'])
+
+    def test_tool_loads_reads_loader_calls_and_tool_paths(self):
+        nodes = selftree._nodes(selftree._parse(
+            "load_tool('gate')\ninproc.load_tool('backlog')\ntool('commit')\n"
+            "os.path.join(ROOT, 'tools', 'land')\nprint('hello')\nload('a b')\n"
+            "load_tool(NAME)\n"))
+        self.assertEqual(selftree._tool_loads(nodes), {'gate', 'backlog', 'commit', 'land'})
+
+    def test_a_test_listing_a_folder_is_selected_by_a_change_in_it(self):
+        picked, why, _ = self.select('tools/solo.py')
+        self.assertEqual(why['tests.walker.test_every_tool'], ['lists tools/ (tools/solo.py)'])
+        self.assertNotIn('tests.walker.test_imports_walker', picked)
+        # a prose file in a listed folder is not a note: a test reads it
+        picked, why, notes = self.select('docs/sub/new.md')
+        self.assertEqual(picked, ['tests.walker.test_uses_lister'])
+        self.assertEqual(why['tests.walker.test_uses_lister'],
+                         ['lists docs/sub/ (docs/sub/new.md)'])
+        self.assertEqual(notes, [])
+        # docs/ itself is not listed
+        self.assertEqual(self.select('docs/other.md')[0], [])
+
+    def test_folders_come_from_the_module_and_its_helpers_only(self):
+        mods = self.tree.modules
+        self.assertEqual(mods['tests.walker.test_every_tool'].walks, {'tools'})
+        self.assertEqual(mods['tests.walker.test_uses_lister'].walks, {'docs/sub'})
+        self.assertEqual(mods['tests.walker.test_imports_walker'].walks, set())
+        self.assertEqual(mods['tests.walker.test_temp'].walks, set())   # names no repo folder
+
+    def test_a_lister_never_stands_in_for_a_test_using_the_tool(self):
+        # test_every_tool lists tools/, but no test uses tools/lonely.py: everything runs
+        picked, why, _ = self.select('tools/lonely.py')
+        self.assertIs(picked, ALL)
+        self.assertEqual(why, ['full suite: nothing maps tools/lonely.py to a test'])
 
 
 class Config(unittest.TestCase):
@@ -568,6 +662,14 @@ class KitTree(unittest.TestCase):
         self.assertTrue(self.cfg['long'])
         for module in self.cfg['long']:
             self.assertIn(module, mods)
+
+    def test_a_tool_loaded_by_bare_name_selects_its_loader(self):
+        # tests/backlog/test_audit.py loads it as inproc.load_tool('backlog_audit')
+        self.assertIn('tests.backlog.test_audit', self.select('tools/backlog_audit.py'))
+
+    def test_a_test_listing_tools_follows_any_tool_change(self):
+        # tests/preflight/test_preflight.py lists tools/
+        self.assertIn('tests.preflight.test_preflight', self.select('tools/backlog_audit.py'))
 
     def test_every_test_package_is_selected_by_its_own_change(self):
         for pkg in self.tree.tests:

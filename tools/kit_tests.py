@@ -18,11 +18,14 @@ branch changed (docs/test-tools.md "kit_tests").
 --select diffs the checkout against its merge-base with B (default: origin/main when it resolves,
 else main - docs/gate.md "Default base" - and a line says when the local main differs), work
 tree and untracked files included (or takes the --changed list), maps the paths through
-kitlib.tooldeps.selftree and the table tests/selection.json, prints each selected test package or
-module with the reasons it was picked, and
-runs `python -m unittest <its test modules>`. A shared-core, test-helper, selector or unmapped
-change runs the full suite instead, and says why. --full runs `python -m unittest discover -s
-tests -t .`'s modules; the daily full run and go-live use it (a landing gates with --select). --plan prints and runs nothing.
+kitlib.tooldeps.selftree and the table tests/selection.json to the change's direct users (the
+test modules that import, name or load what changed, or list a folder it is in; never the
+transitive closure), prints each selected test package or single module with the reasons it was
+picked, and runs those test modules. A shared-core, test-helper, selector or unmapped change, or
+a tool no test uses, runs the full suite instead, and says why. --full runs `python -m unittest
+discover -s tests -t .`'s modules; the landing's merged gate ("landing".gate_once), the daily
+full run and go-live use it, and catch what a direct-users selection leaves out. --plan prints
+and runs nothing.
 The modules run in parallel worker processes (kitlib.tooldeps.selfrun), --jobs at a time - by
 default the logical processors the machine lock run holds - longest first by the times recorded
 in the git common dir (kit-tests-times.json), long modules split by class - then the table's

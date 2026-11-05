@@ -585,7 +585,7 @@ def gate_line(top, branch, cfg=None, base=None):
         return ('%s; landing will refuse until the scoped final gate (gate.py without --full) '
                 'passes on this tip' % head)
     if gate_once(cfg):
-        return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
+        return ('gate     tip %s: scoped gate OK (the base has "landing".gate_once on), ended %s;'
                 ' a gate config change still needs --full'
                 % (tip[:10], scoped.get('ended_utc')))
     return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s, steps not '

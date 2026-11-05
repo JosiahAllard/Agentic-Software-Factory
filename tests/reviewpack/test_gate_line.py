@@ -27,6 +27,9 @@ class GateLineCase(PackCase):
 
 
 class GateLine(GateLineCase):
+    """A base with "landing".gate_once off (it is on by default: GateOnceLine)."""
+    CONFIG = {'owner': {'email': EMAIL}, 'landing': {'gate_once': False}}
+
     def test_no_record_is_said_and_the_exit_status_is_unchanged(self):
         tip = self.feature()
         code, out = self.run_pack('feature', '--base', 'main')
@@ -64,7 +67,7 @@ class GateLine(GateLineCase):
 
 
 class GateOnceLine(GateLineCase):
-    """A base that sets "landing".gate_once takes a default-mode record (docs/gate.md "Gate once
+    """A base with "landing".gate_once on takes a default-mode record (docs/gate.md "Gate once
     at landing"): the line says so instead of "landing will refuse", a strict branch's included
     (its merged gate runs --full --fresh; docs/gate.md "The final gate")."""
     CONFIG = {'owner': {'email': EMAIL}, 'landing': {'gate_once': True}}
@@ -81,8 +84,8 @@ class GateOnceLine(GateLineCase):
         code, out = self.run_pack('feature', '--base', 'main')
         self.assertEqual(code, 0, out)
         line = self.gate_line(out)
-        self.assertTrue(line.startswith('gate     tip %s: scoped gate OK (the base sets '
-                                        '"landing".gate_once), ended %s'
+        self.assertTrue(line.startswith('gate     tip %s: scoped gate OK (the base has '
+                                        '"landing".gate_once on), ended %s'
                                         % (tip[:10], rec['ended_utc'])), line)
         self.assertNotIn('landing will refuse', line)
 
@@ -92,8 +95,8 @@ class GateOnceLine(GateLineCase):
         code, out = self.run_pack('feature', '--base', 'main')
         self.assertEqual(code, 0, out)
         line = self.gate_line(out)
-        self.assertEqual(line, 'gate     tip %s: scoped gate OK (the base sets "landing".gate_once), '
-                         'ended %s; a gate config change still needs --full'
+        self.assertEqual(line, 'gate     tip %s: scoped gate OK (the base has "landing".gate_once '
+                         'on), ended %s; a gate config change still needs --full'
                          % (tip[:10], rec['ended_utc']))
 
     def test_a_docs_record_is_still_not_enough(self):
@@ -122,10 +125,10 @@ class GateOnceLine(GateLineCase):
 
 
 class SmokeStepsLine(GateLineCase):
-    """A base with "gate".smoke_steps and neither gate_once nor shared_paths: the landing's record
+    """A base with "gate".smoke_steps, gate_once off and no shared_paths: the landing's record
     check takes a select record even of a strict path (the merged gate escalates), so the line must
     not say it refuses; the procedure's --full is named instead."""
-    CONFIG = {'owner': {'email': EMAIL},
+    CONFIG = {'owner': {'email': EMAIL}, 'landing': {'gate_once': False},
               'gate': {'smoke_steps': ['boot'],
                        'steps': [{'name': 'suite', 'always': True, 'cmd': ['x'], 'pass': 'x'},
                                  {'name': 'boot', 'manual': True, 'cmd': ['x'], 'pass': 'x'}]}}

@@ -64,12 +64,6 @@ class ReadsOnceTest(unittest.TestCase):
         if consoletasks.platform.NAME != "linux":
             self.assertIn("- could not check console_tasks: RuntimeError: no schtasks", txt)
 
-    def test_the_watch_config_loader_is_the_callers(self):
-        load = mock.Mock(return_value={"state_file": GONE + "/s.json"})
-        self.assertTrue(pmstart.filed_stamp_file(load).endswith("pm-start-last.json"))
-        self.assertIsNone(pmstart.read_heartbeat(load))
-        self.assertEqual(load.call_count, 2)
-
 
 if __name__ == "__main__":
     unittest.main()

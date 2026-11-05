@@ -387,7 +387,10 @@ class SaidAsItHappens(unittest.TestCase):
     def test_a_missing_tmux_in_the_test_window_is_logged_not_raised(self):
         h = Home(self)
         host = FailingHost(h.root, reboot.TEST_NAME, RuntimeError('tmux not found'))
-        out = reboot.run(h.settings, host, test=True)
+        try:
+            out = reboot.run(h.settings, host, test=True)
+        except RuntimeError as e:
+            self.fail('run raised %r' % e)
         self.assertTrue(out[-1].startswith('FAILED to start %s : RuntimeError: tmux not found' % reboot.TEST_NAME), out)
 
     def test_a_dry_run_says_its_lines_too(self):

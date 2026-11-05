@@ -289,7 +289,7 @@ class SharedPathCallers(unittest.TestCase):
                 self.assertIsNone(why)
                 self.assertEqual(out.keep, [LIST, 'docs/y.md'])     # narrows off docs/x.md only
                 self.assertEqual(out.c_changes,
-                                 [('docs/**', [LIST, 'docs/x.md'], [LIST, 'docs/y.md'])])
+                                 [('docs/**', ['docs/x.md'], [LIST, 'docs/y.md'])])
                 self.assertEqual(out.parts[0].other_keep, [LIST, 'docs/x.md'])
 
 

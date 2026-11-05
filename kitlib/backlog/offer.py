@@ -1136,10 +1136,11 @@ def _split(c_scopes, parts, tree, shared=()):
             continue
         changed.append(c)
         dropped = []
-        for m in all_other_keep:
-            if rel(base(m), base(c)) and m not in dropped:
+        for m in all_other_keep:        # a shared path is kept, so never listed as dropped
+            if rel(base(m), base(c)) and m not in dropped and not smod.is_shared(m, shared):
                 dropped.append(m)
         dropped += [t for t in prot_all if rel(base(c), t) and t not in dropped
+                    and not smod.is_shared(t, shared)
                     and not any(rel(base(m), t) for m in dropped)]
         c_changes.append((c, sorted(dropped), kept))
     out = []

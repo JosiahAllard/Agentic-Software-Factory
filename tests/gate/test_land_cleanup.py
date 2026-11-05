@@ -294,6 +294,24 @@ class Sweep(CleanupCase):
             self.assertFalse([l for l in out.lines if b + ':' in l and 'would' in l], out.lines)
         self.assertIn('--apply', out.lines[-1])
 
+    def test_a_sweep_reads_the_remote_and_the_worktrees_once(self):
+        # Three branches swept (kit/done, kit/old, kit/remote-only): the sweep's one
+        # `ls-remote --heads` and one `git worktree list` serve them all, not a read per branch.
+        real = cmd.spawner()
+        ran = []
+
+        def run(argv, cwd=None, input=None, timeout=None, env=None):
+            ran.append(list(argv[1:]))
+            return real(argv, cwd=cwd, input=input, timeout=timeout, env=env)
+        with mock.patch.object(cmd, '_run', side_effect=run):
+            out = sweep(self.repo.root, git_env=self.env)
+        self.assertEqual(out.code, G.OK, out.lines)
+        swept = [b for b in ('kit/done', 'kit/old', 'kit/remote-only')
+                 if [l for l in out.lines if b + ':' in l and 'would' in l]]
+        self.assertEqual(len(swept), 3, out.lines)
+        self.assertEqual(len([a for a in ran if a[:1] == ['ls-remote']]), 1, ran)
+        self.assertEqual(len([a for a in ran if a[:2] == ['worktree', 'list']]), 1, ran)
+
     def test_apply_cleans_what_main_contains_and_keeps_the_rest(self):
         out = sweep(self.repo.root, apply=True, git_env=self.env)
         self.assertEqual(out.code, G.OK, out.lines)

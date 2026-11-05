@@ -77,14 +77,13 @@ Parallel runs (kitlib/tooldeps/selfrun.py):
 - `--jobs 1` runs the single `python -m unittest` process instead.
 - `--pid-hold` (opt-in, off by default) first starts the pid hold (section "The pid shield"), so no process a test starts can be given a pid that a stale taskkill still names.
 
-The import graph is derived on each run, never written by hand. A changed path selects as follows:
+The import graph is derived on each run, never written by hand. `--select` picks the change's direct users only, as single test modules, not the transitive closure. A test module uses what its own file, its packages' `__init__` files and the test files it imports import or name (`from kitlib import X` counts; the test files are followed transitively, since they are its fixture). A changed path selects as follows:
 
-- `kitlib/<m>/...` selects `tests/<m>`, the tests of every kitlib package that imports `m` transitively, the test packages that use any of them (`from kitlib import X` counts), and the test packages naming a tool that imports them.
-- `tools/<x>.py` selects the tests of the kitlib packages `x` imports, leaving out the shared core, and the test packages naming `x` or a tool that imports it. A deleted tool still selects the tests of the tools that import it and of the packages that run it.
-- A kitlib package whose code holds a string naming `<x>.py` runs that tool, so a change reaching `x` also selects that package and what imports it. A shared-core package that runs it adds only its own tests.
+- `kitlib/<m>/...` selects the whole `tests/<m>`, the test modules that use `kitlib.m`, and the test modules naming a tool that imports it.
+- `tools/<x>.py` selects the test modules that import `x` or name `x.py` (a whole name: `test_x.py` does not count), or name a tool that imports it; a deleted tool too, by name. A tool no test module uses runs everything.
+- `tests/<t>/<file>.py` selects the test modules that use it (a changed test module, itself), or the whole `tests/<t>` when none does. Any other file under `tests/<t>` selects the whole `tests/<t>` and the test modules naming `tests.<t>`.
 
-Known limits: a run is seen only as a string literal naming `<x>.py`, so a path built at run time is missed; and a shared-core package that runs a reached tool selects only its own tests, not its importers.
-- `tests/<t>/...` selects `t` and the test packages importing `tests.<t>`.
+What a branch gate does not catch: a test that reaches the change only through another package (it uses kitlib/a, which imports the changed kitlib/b), or through a kitlib package that runs a changed tool by path. The landing's merged gate runs `--full` (`landing.gate_once` in the kit's `.kit.json`), so that breakage is caught there, before main moves, not on the branch.
 
 `tests/selection.json` holds the table; a change to it runs the full suite.
 

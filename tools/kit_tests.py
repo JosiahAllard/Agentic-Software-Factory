@@ -1,5 +1,5 @@
-"""kit_tests.py: run the kit's own test suite, whole or only the test packages a branch's change can
-reach (docs/test-tools.md "kit_tests").
+"""kit_tests.py: run the kit's own test suite, whole or only the tests that directly use what a
+branch changed (docs/test-tools.md "kit_tests").
 
   kit_tests.py [-C DIR] --select [--smoke] [--base B] [--changed PATH ...] [--plan] [--jobs N]
   kit_tests.py [-C DIR] --full [--base B] [--plan] [--jobs N]
@@ -18,7 +18,8 @@ reach (docs/test-tools.md "kit_tests").
 --select diffs the checkout against its merge-base with B (default: origin/main when it resolves,
 else main - docs/gate.md "Default base" - and a line says when the local main differs), work
 tree and untracked files included (or takes the --changed list), maps the paths through
-kitlib.tooldeps.selftree and the table tests/selection.json, prints each selected package with the reasons it was picked, and
+kitlib.tooldeps.selftree and the table tests/selection.json, prints each selected test package or
+module with the reasons it was picked, and
 runs `python -m unittest <its test modules>`. A shared-core, test-helper, selector or unmapped
 change runs the full suite instead, and says why. --full runs `python -m unittest discover -s
 tests -t .`'s modules; the daily full run and go-live use it (a landing gates with --select). --plan prints and runs nothing.

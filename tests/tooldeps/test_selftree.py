@@ -52,19 +52,19 @@ FILES = {
     'tests/leaf/helper.py': '',
     'tests/leaf/loose/test_skipped.py': PASSING,
     'tests/mid/__init__.py': '',
-    'tests/mid/test_mid.py': PASSING,
+    'tests/mid/test_mid.py': PASSING + '# runs tools/my_leaftool.py, not the leaf tool\n',
     'tests/top/__init__.py': '',
     'tests/top/test_top.py': PASSING,
     'tests/child/__init__.py': '',
-    'tests/child/test_child.py': PASSING,
+    'tests/child/test_child.py': PASSING + '# runs tools/leaftool.py\n',
     'tests/lone/__init__.py': '',
-    'tests/lone/test_lone.py': PASSING,
+    'tests/lone/test_lone.py': PASSING + '# checks kitlib.leaf\n',
     'tests/cli/__init__.py': '',
     'tests/cli/test_cli.py': PASSING + '# runs tools/wrapper.py\n',
     'tests/docsy/__init__.py': '',
     'tests/docsy/test_docs.py': PASSING + '# reads docs/guide.md\n',
     'tests/shared/__init__.py': '',
-    'tests/shared/helpers.py': '',
+    'tests/shared/helpers.py': '# a fixture over kitlib.leaf\n',
     'tests/shared/test_shared.py': PASSING,
     'tests/user/__init__.py': '',
     'tests/user/test_user.py': 'from tests.shared import helpers  # noqa: F401\n' + PASSING,
@@ -102,14 +102,20 @@ class FixtureTree(unittest.TestCase):
     def select(self, *paths):
         return selftree.selection(list(paths), self.tree, self.cfg)
 
-    def test_leaf_change_selects_its_tests_and_its_importers_only(self):
+    def test_a_change_selects_its_direct_users_not_the_transitive_closure(self):
         picked, why, notes = self.select('kitlib/leaf/x.py')
-        # leaf; mid imports it, top imports mid; child runs it in a `-c` child; cli names a
-        # tool that imports a tool that imports it; fromimp has `from kitlib import mid`. lone
-        # only names it in a label and a docstring.
-        self.assertEqual(picked, ['child', 'cli', 'fromimp', 'leaf', 'mid', 'top'])
-        self.assertEqual(why['leaf'][0], 'own tests of changed kitlib/leaf')
-        self.assertIn('kitlib/top imports kitlib/leaf (kitlib/leaf/x.py)', why['top'])
+        # Direct users: leaf's own tests whole; test_lone names kitlib.leaf; test_child names
+        # tools/leaftool.py, which imports it; test_user imports the tests.shared helper that
+        # names it. Not selected: mid and top (kitlib/mid imports leaf, kitlib/top imports mid),
+        # child as a package (kitlib/child runs leaf in a child), cli (it names wrapper.py, which
+        # imports leaftool), fromimp (it uses mid), and test_shared (it does not use the helper).
+        self.assertEqual(picked, ['leaf', 'tests.child.test_child', 'tests.lone.test_lone',
+                                  'tests.user.test_user'])
+        self.assertEqual(why['leaf'], ['own tests of changed kitlib/leaf'])
+        self.assertEqual(why['tests.lone.test_lone'], ['uses kitlib/leaf (kitlib/leaf/x.py)'])
+        self.assertEqual(why['tests.user.test_user'], ['uses kitlib/leaf (kitlib/leaf/x.py)'])
+        self.assertEqual(why['tests.child.test_child'],
+                         ['names tools/leaftool.py, which imports kitlib/leaf (kitlib/leaf/x.py)'])
         self.assertEqual(notes, [])
 
     def test_a_change_with_no_importers_selects_only_its_own_tests(self):
@@ -137,24 +143,38 @@ class FixtureTree(unittest.TestCase):
             self.assertIs(picked, ALL, path)
             self.assertIn('test helper or the selection itself', why[0])
 
-    def test_tool_change_selects_its_package_but_not_the_shared_core(self):
+    def test_tool_change_selects_the_tests_naming_it_or_a_tool_importing_it(self):
         picked, why, _ = self.select('tools/leaftool.py')
-        self.assertEqual(picked, ['cli', 'leaf'])
-        self.assertIn('names tools/wrapper.py, which tools/leaftool.py reaches', why['cli'])
+        # not tests/leaf: a tool's change cannot break the kitlib package it calls; not test_mid,
+        # whose my_leaftool.py is another name
+        self.assertEqual(picked, ['tests.child.test_child', 'tests.cli.test_cli'])
+        self.assertEqual(why['tests.child.test_child'], ['names tools/leaftool.py'])
+        self.assertEqual(why['tests.cli.test_cli'],
+                         ['names tools/wrapper.py, which imports tools/leaftool.py'])
 
-    def test_test_package_from_kitlib_import_counts(self):
+    def test_test_module_from_kitlib_import_counts(self):
         self.assertIn('mid', self.tree.tests['fromimp'].kitlib)
-        self.assertIn('fromimp', self.select('kitlib/mid/a.py')[0])
+        self.assertIn('mid', self.tree.modules['tests.fromimp.test_fromimp'].kitlib)
+        self.assertIn('tests.fromimp.test_fromimp', self.select('kitlib/mid/a.py')[0])
 
-    def test_tool_run_by_path_selects_its_runners_and_their_importers(self):
+    def test_a_tool_only_run_by_path_selects_everything(self):
+        # kitlib/runner (and kitlib/git) run tools/solo.py by path, but no test names it: the
+        # runners' tests are not direct users, and a tool no test uses runs everything
         picked, why, _ = self.select('tools/solo.py')
-        # runner runs it, runneruser imports runner; git (shared core) runs it too, but only
-        # git's own tests run, not everything that imports git.
-        self.assertEqual(picked, ['git', 'runner', 'runneruser'])
-        self.assertIn('kitlib/runner runs tools/solo.py, which tools/solo.py reaches',
-                      why['runner'])
-        self.assertIn('kitlib/git (shared core) runs tools/solo.py, which tools/solo.py reaches',
-                      why['git'])
+        self.assertIs(picked, ALL)
+        self.assertEqual(why, ['full suite: nothing maps tools/solo.py to a test'])
+
+    def test_a_module_s_test_files_are_its_fixture_followed_transitively(self):
+        user = self.tree.modules['tests.user.test_user']
+        self.assertEqual(user.files, {'tests.user.__init__', 'tests.user.test_user',
+                                      'tests.shared.__init__', 'tests.shared.helpers'})
+        self.assertNotIn('tests.shared.helpers', self.tree.modules['tests.shared.test_shared'].files)
+        # relative imports resolve against the file's package
+        self.assertEqual(selftree._test_imports(selftree._parse('from .w import a\nfrom . import b\n'
+                                                                'from ..x import c\n'),
+                                                'tests.p.q.test_m'),
+                         {'tests.p.q.w', 'tests.p.q.w.a', 'tests.p.q', 'tests.p.q.b', 'tests.p.x',
+                          'tests.p.x.c'})
 
     def test_tool_no_test_reaches_selects_everything(self):
         with open(os.path.join(self.root, 'tools', 'orphan.py'), 'w') as fh:
@@ -162,12 +182,25 @@ class FixtureTree(unittest.TestCase):
         tree = selftree.scan(self.root)
         self.assertIs(selftree.selection(['tools/orphan.py'], tree, self.cfg)[0], ALL)
 
-    def test_test_package_change_selects_it_and_its_importers(self):
-        self.assertEqual(self.select('tests/shared/helpers.py')[0], ['shared', 'user'])
-        self.assertEqual(self.select('tests/leaf/test_leaf.py')[0], ['leaf'])
+    def test_a_test_file_change_selects_the_test_modules_using_it(self):
+        picked, why, _ = self.select('tests/shared/helpers.py')
+        self.assertEqual(picked, ['tests.user.test_user'])
+        self.assertEqual(why['tests.user.test_user'],
+                         ['uses tests.shared.helpers (tests/shared/helpers.py)'])
+        self.assertEqual(self.select('tests/leaf/test_leaf.py')[0], ['tests.leaf.test_leaf'])
+        # a test file no module uses, and a file the scan did not read, run the whole package;
+        # the second also runs the modules naming the package
+        self.assertEqual(self.select('tests/leaf/helper.py')[0], ['leaf'])
+        self.assertEqual(self.select('tests/shared/data.json')[0],
+                         ['shared', 'tests.user.test_user'])
+
+    def test_a_module_whose_package_is_picked_whole_is_dropped(self):
+        picked = self.select('kitlib/leaf/x.py', 'tests/lone/data.json')[0]
+        self.assertIn('lone', picked)
+        self.assertNotIn('tests.lone.test_lone', picked)
 
     def test_prose_selects_the_tests_naming_it_or_nothing(self):
-        self.assertEqual(self.select('docs/guide.md')[0], ['docsy'])
+        self.assertEqual(self.select('docs/guide.md')[0], ['tests.docsy.test_docs'])
         picked, _why, notes = self.select('docs/other.md', 'README.md')
         self.assertEqual(picked, [])
         self.assertEqual(notes, ['README.md', 'docs/other.md'])
@@ -202,7 +235,8 @@ class FixtureTree(unittest.TestCase):
         modules = cli.kitrun.plan(self.root, ['kitlib/top/a.py'], cfg, out.append)
         self.assertEqual(modules, ['tests.top.test_top', 'tests.leaf.test_leaf'])
         self.assertTrue(any(l.strip().startswith('tests/leaf/test_leaf ') for l in out), out)
-        self.assertIn('selected 1 of', out[-1])         # packages count only the package
+        self.assertIn('selected 2 of 14 test module(s) (1 of %d test package(s) whole)'
+                      % FIXTURE_TEST_PACKAGES, out[-1])
 
     def test_always_dotted_name_must_be_tests_pkg_module(self):
         for bad in ('a.b', 'tests.proc', 'tests.proc.x.y'):
@@ -324,21 +358,20 @@ class GitAndCli(TempHomeCase):
         tree, cfg = selftree.scan(self.repo.root), selftree.config(self.repo.root)
         self.assertNotIn('leaftool', tree.tools)
         picked, why, _ = selftree.selection(paths, tree, cfg)
-        # tools/wrapper.py still imports the deleted tool; tests/cli names wrapper.py
-        self.assertEqual(picked, ['cli'])
-        self.assertIn('names tools/wrapper.py, which tools/leaftool.py reaches', why['cli'])
+        # tests/child names the deleted tool; tools/wrapper.py still imports it, tests/cli names
+        # wrapper.py
+        self.assertEqual(picked, ['tests.child.test_child', 'tests.cli.test_cli'])
+        self.assertIn('names tools/wrapper.py, which imports tools/leaftool.py',
+                      why['tests.cli.test_cli'])
 
-    def test_deleted_tool_selects_the_packages_that_ran_it(self):
+    def test_deleted_tool_no_test_names_selects_everything(self):
         self.repo.git('rm', '-q', 'tools/solo.py')
         self.repo.git('commit', '-q', '-m', 'delete')
         paths, _ = selftree.changed_paths('main', self.repo.root)
         self.assertEqual(paths, ['tools/solo.py'])
         tree, cfg = selftree.scan(self.repo.root), selftree.config(self.repo.root)
-        picked, why, _ = selftree.selection(paths, tree, cfg)
-        # kitlib/runner still names tools/solo.py, so it and its importer run, not everything
-        self.assertEqual(picked, ['git', 'runner', 'runneruser'])
-        self.assertIn('kitlib/runner runs tools/solo.py, which tools/solo.py reaches',
-                      why['runner'])
+        # kitlib/runner still names tools/solo.py, but no test does
+        self.assertIs(selftree.selection(paths, tree, cfg)[0], ALL)
 
     def test_deleted_kitlib_package_selects_everything(self):
         self.repo.git('rm', '-q', '-r', 'kitlib/lone')
@@ -360,9 +393,10 @@ class GitAndCli(TempHomeCase):
         self.assertIn('kit_tests: --select against the merge-base with main: 1 changed path(s)', out)
         self.assertIn('tests/mid', out)
         self.assertIn('own tests of changed kitlib/mid', out)
-        self.assertIn('tests/top', out)
-        self.assertIn('kit_tests: selected 3 of %d test package(s), 3 module(s)'
-                      % FIXTURE_TEST_PACKAGES, out)
+        self.assertIn('tests/fromimp/test_fromimp', out)
+        self.assertNotIn('tests/top', out)          # kitlib/top imports mid: not a direct user
+        self.assertIn('kit_tests: selected 2 of 14 test module(s) (1 of %d test package(s) '
+                      'whole), from 1 changed path(s)' % FIXTURE_TEST_PACKAGES, out)
 
     def test_plan_names_the_full_suite_and_why(self):
         rc, out = self.run_cli('--select', '--changed', 'kitlib/git/a.py', '--plan')

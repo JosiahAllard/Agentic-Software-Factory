@@ -13,6 +13,7 @@
   ],
   "paths": [
     ["hosts/**", ["host"]],
+    ["tests/host/fakehost/**", ["host"]],
     ["content/roles/**", ["content", "agents", "roster", "host"]],
     ["content/skills/**", ["content", "skills", "host"]],
     ["hosts/claude/adapter/**", ["content"]],

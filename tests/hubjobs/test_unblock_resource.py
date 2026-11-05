@@ -3,6 +3,7 @@ of the repo's declared resource is taken by a live pull, clears when one frees, 
 reason said) when the capacity cannot be read."""
 from unittest import mock
 
+from kitlib.backlog import offer, opener
 from kitlib.hubjobs import unblock_conditions as U
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.hubjobs.test_unblock_conditions import Case, Ctx
@@ -39,6 +40,46 @@ class ResourceFree(Case):
         self.job()(ctx)
         self.assertEqual(self.get('WAIT').get('state'), 'open')
         self.assertEqual(ctx.events, [(U.EVENT,'kit:WAIT')])
+
+    def test_two_conditions_on_one_repo_read_its_resources_once(self):
+        kit_json_ref(self.repo, {'backlog': {'resources': {'dev-clone': 1, 'gpu': 1}}})
+        self.seed(waiting(),
+                  rec('GPU', state='blocked', blocked_on='live-client',
+                      until='live-client resource:gpu free'),
+                  holder())
+        with mock.patch('kitlib.backlog.opener.repo_resources',
+                        wraps=opener.repo_resources) as caps, \
+                mock.patch('kitlib.backlog.offer.in_flight_split',
+                           wraps=offer.in_flight_split) as split:
+            self.job()(Ctx())
+        # (kitlib.config.load also runs for the store open and the write, so it is not counted)
+        self.assertEqual((caps.call_count, split.call_count), (1, 1))
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')      # dev-clone is taken
+        self.assertEqual(self.get('GPU').get('state'), 'open')          # gpu is free
+
+    def test_an_unreadable_config_is_read_once_per_pass_and_says_the_same_why(self):
+        readers = U.Readers(self.hub, self.plugins, lambda repo, rid: None)
+        readers.at(self.repo.root, None)
+        with mock.patch('kitlib.backlog.opener.repo_resources',
+                        side_effect=ValueError('x')) as caps:
+            self.assertIsNone(readers.resource_free('dev-clone'))
+            first = readers.why
+            self.assertIsNone(readers.resource_free('gpu'))
+            self.assertEqual(readers.why, first)
+        self.assertIn('.kit.json cannot be read', first)
+        self.assertEqual(caps.call_count, 1)
+
+    def test_each_at_reads_afresh(self):
+        readers = U.Readers(self.hub, self.plugins, lambda repo, rid: None)
+        readers.at(self.repo.root, None)
+        with mock.patch('kitlib.backlog.offer.in_flight_split',
+                        return_value=([], [], None)) as split:
+            readers.resource_free('dev-clone')
+            readers.resource_free('dev-clone')
+            self.assertEqual(split.call_count, 1)
+            readers.at(self.repo.root, None)
+            readers.resource_free('dev-clone')
+            self.assertEqual(split.call_count, 2)
 
     def test_a_dead_pull_takes_no_unit(self):
         self.seed(waiting(), holder())

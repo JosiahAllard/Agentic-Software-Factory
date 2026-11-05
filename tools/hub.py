@@ -287,7 +287,7 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import hubapprove, hubvalidate                         # noqa: E402
+from kitlib import hubapprove, hubvalidate, platform               # noqa: E402
 from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubsite import access, api, auth, client, httpd, serve, settings, tunnel   # noqa: E402
@@ -1027,9 +1027,18 @@ def _setup(a, stop):
         print('NOTE: no store folder is set: set hub.store or pm_data in the machine config '
               '(this tool does not write it), or start with --store PATH')
     if a.autostart:
-        print('start the server detached, once the task is registered: %s' % _START_TASK)
+        if not _linux():
+            print('start the server detached, once the task is registered: %s' % _START_TASK)
         for line in hub_autostart.install(os.path.abspath(__file__)):
             print(line)
+        if _linux():
+            # said after the install: which job it wrote (systemd service or XDG entry) decides it
+            if _xdg():
+                print('the XDG autostart entry starts the server at your next sign-in to the '
+                      'desktop; to start it now: %s' % START)
+            else:
+                print('start the server detached, once the job is registered: %s'
+                      % _start_command())
     else:
         print('start the server with: %s' % START)
     return 0
@@ -1097,21 +1106,81 @@ _TASK = "-TaskName '%s'" % hub_autostart.TASK_NAME
 _START_TASK = 'Start-ScheduledTask %s' % _TASK
 
 
+def _linux():
+    return platform.NAME == 'linux'
+
+
+def _xdg():
+    """On Linux, the hub job is an XDG autostart entry: systemctl cannot start it."""
+    return _linux() and hub_autostart.linux_is_autostart()
+
+
+def _start_command():
+    """The command that starts the task (Windows) or the systemd user service (Linux)."""
+    if _linux():
+        return 'systemctl --user start %s' % hub_autostart.linux_unit()
+    return _START_TASK
+
+
+def _job():
+    """What starts the server, in words: the scheduled task (Windows), the Linux systemd job or
+    its XDG autostart entry."""
+    if _xdg():
+        return "the XDG autostart entry '%s'" % os.path.basename(hub_autostart.linux_desktop_path())
+    if _linux():
+        return "the job '%s'" % hub_autostart.linux_unit()
+    return "the scheduled task '%s'" % hub_autostart.TASK_NAME
+
+
+def not_started(outcome):
+    """Why a restart started nothing, by control's outcome; the Linux job's words on Linux."""
+    if not _linux():
+        return NOT_STARTED[outcome]
+    unit = hub_autostart.linux_unit()
+    if _xdg():
+        entry = os.path.basename(hub_autostart.linux_desktop_path())
+        if outcome == control.DISABLED:
+            return ("the XDG autostart entry '%s' is disabled (Hidden=true), so nothing was "
+                    "started" % entry)
+        return ("the job is the XDG autostart entry '%s': hub.py restart cannot start one and "
+                "systemctl does not manage it, so nothing was started" % entry)
+    return {
+        control.NO_TASK: "there is no job '%s' for systemctl --user (hub.py setup --autostart "
+                         "makes it), so nothing was started" % unit,
+        control.DISABLED: "the job '%s' is disabled in systemctl --user, so nothing was started"
+                          % unit,
+        control.HAND_STARTED: "the server was not started by the job '%s' (systemctl --user), so "
+                              "nothing was started" % unit,
+    }[outcome]
+
+
 def task_advice(outcome):
     """The last line when a restart started nothing, by control's outcome (None: the task could
     not be started). `serve` is not it: a server started in a console ends with that shell; the
-    scheduled task runs it detached and windowless."""
+    scheduled task runs it detached and windowless. On Linux the job is a systemd user service."""
+    if _xdg():
+        if outcome == control.DISABLED:
+            return ('enable the XDG autostart entry by removing the Hidden=true line from '
+                    '%s (it then starts at your next sign-in to the desktop), or start the '
+                    'server now with hub.py serve in a console: %s'
+                    % (hub_autostart.linux_desktop_path(), START))
+        return ('an XDG autostart entry starts the server at your next sign-in to the desktop; '
+                'to start it now, run hub.py serve in a console: %s' % START)
     if outcome == control.NO_TASK:
-        return 'register the task, then start it: python "%s" setup --autostart; %s' % (
-            os.path.abspath(__file__), _START_TASK)
+        return 'register the %s, then start it: python "%s" setup --autostart; %s' % (
+            'job' if _linux() else 'task', os.path.abspath(__file__), _start_command())
     if outcome == control.DISABLED:
+        if _linux():
+            return 'enable the job, then start it: systemctl --user enable %s; %s' % (
+                hub_autostart.linux_unit(), _start_command())
         return 'enable the task, then start it: Enable-ScheduledTask %s; %s' % (_TASK, _START_TASK)
-    return 'start it with: %s' % _START_TASK
+    return 'start it with: %s' % _start_command()
 
 
 # a server the task starts has no console: what it says at start-up goes nowhere
 NO_CONSOLE = ('a server the scheduled task starts has no console, so its start-up lines are not '
               'shown: run hub.py serve in a console to see why it does not answer: %s' % START)
+NO_CONSOLE_LINUX = NO_CONSOLE.replace('the scheduled task', 'the job')
 
 
 def _owner_token():
@@ -1157,23 +1226,22 @@ def _restart(a, stop):
     except control.StartFailed as e:
         # the stop went through: say so, then why nothing was started and how to start it
         _stopped(port, e.stopped)
-        print(serve.scrub('the scheduled task could not be started: %s' % e.reason),
-              file=sys.stderr)
+        print(serve.scrub('%s could not be started: %s' % (
+            _job() if _linux() else 'the scheduled task', e.reason)), file=sys.stderr)
         print(task_advice(None), file=sys.stderr)
         return 1
     except control.TimedOut as e:
         print(serve.scrub('TIMED OUT: %s' % e), file=sys.stderr)
         if e.phase == control.ANSWER_PHASE:
             # the task was started and its server never answered: why is in its start-up lines
-            print(NO_CONSOLE, file=sys.stderr)
+            print(NO_CONSOLE_LINUX if _linux() else NO_CONSOLE, file=sys.stderr)
         return client.TIMED_OUT
     _stopped(port, got.stopped)
     if got.outcome != control.RESTARTED:
-        print(NOT_STARTED[got.outcome])
+        print(not_started(got.outcome))
         print(task_advice(got.outcome))
         return client.NOT_RUNNING
-    print("RESTARTED: the hub server answers on port %d (the scheduled task '%s' started it)"
-          % (got.port, hub_autostart.TASK_NAME))
+    print("RESTARTED: the hub server answers on port %d (%s started it)" % (got.port, _job()))
     return 0
 
 

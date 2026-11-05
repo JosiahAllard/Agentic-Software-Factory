@@ -509,6 +509,7 @@ class PushWorker(object):
         self._rev = 0
         self._fps = {}
         self._kinds = {}                # approval key -> its document's kind (an op's 'op')
+        self._superseded = {}           # approval key -> its `superseded` note (the phase reads it)
         self._outbox = {}
         self._before = {}               # {key: fingerprint before a question's filing}, _fire
         self._dirty = False
@@ -785,7 +786,8 @@ class PushWorker(object):
         for key in keys:
             fp = self._fps[key]
             phase = approval_phase({'status': fp[0], 'decided_at': fp[1],
-                                    'kind': self._kinds.get(key)}, now)
+                                    'kind': self._kinds.get(key),
+                                    'superseded': self._superseded.get(key)}, now)
             if phase != fp[2]:
                 self._changed('approval', key.split(':', 1)[1])
 
@@ -805,11 +807,13 @@ class PushWorker(object):
         if doc is None:
             self._fps.pop(key, None)
             self._kinds.pop(key, None)
+            self._superseded.pop(key, None)
             self._before.pop(key, None)
             self._drop(key)
             return
         if kind == 'approval':
             self._kinds[key] = doc.get('kind')
+            self._superseded[key] = doc.get('superseded')
         old, fp = self._fps.get(key), self._print(kind, doc)
         self._fps[key] = fp
         if fp != old:
@@ -1239,14 +1243,15 @@ class PushWorker(object):
 
     # ------------------------------------------------------------------ files
     def _prints(self, docs):
-        """Every item's fingerprint, and (kept for _tick) each approval's kind."""
+        """Every item's fingerprint, and (kept for _tick) each approval's kind and `superseded` note."""
         out, now = {}, (self._at() if docs.get('approvals') else None)
-        self._kinds = {}
+        self._kinds, self._superseded = {}, {}
         for coll, kind in COLLECTIONS.items():
             for doc_id, d in docs.get(coll, {}).items():
                 out['%s:%s' % (kind, doc_id)] = self._print(kind, d, now)
                 if kind == 'approval':
                     self._kinds['approval:%s' % doc_id] = d.get('kind')
+                    self._superseded['approval:%s' % doc_id] = d.get('superseded')
         return out
 
     def _load(self):
@@ -1321,8 +1326,15 @@ def _entry_ok(key, e):
         return False
     if e.get('event') not in EVENTS:
         return False
+    if not isinstance(e.get('repo'), str) or not isinstance(e.get('from'), str):
+        return False                # _send reads both (and status) as keys
+    if 'status' not in e or not (e['status'] is None or isinstance(e['status'], str)):
+        return False
     for st in e['recipients'].values():
         if (not isinstance(st, dict) or type(st.get('attempt')) is not int
                 or not isinstance(st.get('next_at'), (int, float)) or isinstance(st.get('next_at'), bool)):
             return False
-    return e.get('first_at') is None or isinstance(e.get('first_at'), (int, float))
+    if 'first_at' not in e:
+        return False                # _send_due reads it as a key
+    return e['first_at'] is None or (isinstance(e['first_at'], (int, float))
+                                     and not isinstance(e['first_at'], bool))

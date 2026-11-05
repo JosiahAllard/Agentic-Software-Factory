@@ -222,6 +222,16 @@ class SweepOpenClaim(SweepCase):
         self.assertIn('a backlog record is still pulled by kit/claim (an open claim): T-002', out)
         self.assertTrue(os.path.isdir(path))
 
+    def test_a_record_pulled_under_another_case_is_an_open_claim(self):
+        path = self.workstream('claim')
+        self.fx.write('docs/backlog/T-002.md', 'id: T-002\nstate: pulled\npulled_by: Kit/Claim\n')
+        self.fx.commit('claim', 'docs/backlog/T-002.md')
+        self.land('kit/claim')
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('a backlog record is still pulled by kit/claim (an open claim): T-002', out)
+        self.assertTrue(os.path.isdir(path))
+
     def test_a_done_record_is_no_claim(self):
         path = self.workstream('done')
         self.fx.write('docs/backlog/T-003.md', 'id: T-003\nstate: done\npulled_by: kit/done\n')

@@ -91,13 +91,14 @@ def _ref_commits(repo):
 def pathspec(ctx, specs):
     """A Pathspec from command-line paths; absolute paths inside the work tree are allowed."""
     prefix = ctx.prefix or ''
+    literal = _u.literal_pathspecs(ctx.env)
     ps = _u.Pathspec(prefix, [])
     for s in specs:
         if os.path.isabs(s) or re.match(r'^[A-Za-z]:[\\/]', s):
             full = _u.to_top(ctx, s)
-            ps.items.append((full, bool(re.search(r'[*?\[]', full)), s))
+            ps.items.append((full, not literal and bool(re.search(r'[*?\[]', full)), s))
         else:
-            ps.items.extend(_u.Pathspec(prefix, [s]).items)
+            ps.items.extend(_u.Pathspec(prefix, [s], literal=literal).items)
     ps.empty = not ps.items
     return ps
 
@@ -1259,6 +1260,10 @@ def _checkout_paths(ctx, repo, rev, items, quiet):
             tree.conv.guard(ix)      # git falls back to the index's .gitattributes: Unsupported
         matched = []
         for p in ix.paths():
+            if src is not None and p not in src:
+                # checkout.c mark_ce_for_checkout_overlay: with a tree-ish, an index entry not
+                # in its tree is left alone and matches no pathspec item
+                continue
             hit = ps.matched_items(p)
             if hit:
                 seen.update(hit)

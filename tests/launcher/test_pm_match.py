@@ -4,14 +4,16 @@ session whose brief path, in the PM's scratchpad folder, carries the PM's id is 
 import unittest
 
 from kitlib.launcher import reboot, relaunch
-from tests.launcher.fakes import FakeHost, Home, session
+from tests.launcher.fakes import FakeHost, Home, session, windows_text
 
 SID = 'pm-sid-1'
 PM = {'pm_session_id': SID, 'pm_account': 2}
 # a topic session: its own name, and a brief in the PM's scratchpad (which holds the PM's id)
 TOPIC = ("claude --agent pm-kit:topic --remote-control 'topic-x' -n 'topic-x' "
          "'Read Z:\\AgentTemp\\claude\\proj\\%s\\scratchpad\\topic-x-brief.md'" % SID)
-TOPICS = (TOPIC, "claude --resume 'other-sid' --remote-control 'topic-x' -n 'topic-x' 'see %s'" % SID)
+TOPICS = (TOPIC,
+          "claude --resume ‘other-sid’ --remote-control 'topic-x' -n 'topic-x' ‘see %s’" % SID,
+          "claude --resume 'other-sid' --remote-control 'topic-x' -n 'topic-x' 'see %s'" % SID)
 # the PM's real forms: the id as the value of --resume, -r or --session-id, bare or quoted
 PM_FORMS = ("claude --resume %s --remote-control 'x' -n 'x'" % SID,
             "claude --resume=%s --remote-control 'x' -n 'x'" % SID,
@@ -19,7 +21,9 @@ PM_FORMS = ("claude --resume %s --remote-control 'x' -n 'x'" % SID,
             "claude --session-id %s --remote-control 'x' -n 'x'" % SID,
             "claude --resume '%s' --remote-control 'x' -n 'x'" % SID,
             'claude --resume "%s" --remote-control \'x\' -n \'x\'' % SID,
-            "claude --session-id='%s' --remote-control 'x' -n 'x'" % SID)
+            "claude --session-id='%s' --remote-control 'x' -n 'x'" % SID,
+            "claude --resume ’%s’ --remote-control 'x' -n 'x'" % SID,
+            "claude -r ‘%s‘ --remote-control 'x' -n 'x'" % SID)
 
 
 def proc(pid, cmd):
@@ -28,6 +32,7 @@ def proc(pid, cmd):
 
 class RebootResumePm(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self)
 
     def resume(self, cmd):

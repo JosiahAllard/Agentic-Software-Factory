@@ -80,8 +80,15 @@ pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folde
 if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
 stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
 kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
-GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out:
-the Docs tab reads a body when it is opened. POST pages/{id}/delete (OWNER, if_version
+GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out
+(and `handoffs`): the Docs tab reads a body when it is opened. GET snapshot?collections=a,b
+answers {revision, collections} with those collections alone, cut as the whole snapshot cuts
+them, and no views, pending or status; a name that is not one of its collections is `invalid`,
+field collections (Client.inbox reads it so; an older hub ignores the query and answers whole).
+GET snapshot?bare=1 answers the whole snapshot with `collections` {}: the revision, views,
+pending and status, which can move with no store write. The page reads it after a wait that
+timed out (no write ended it) and keeps the documents it holds when the revision is the one it
+drew; bare with collections is `invalid`, field bare. POST pages/{id}/delete (OWNER, if_version
 optional) deletes the card, then the body; a
 body delete that fails leaves the card deleted and the body an orphan, as above. One process
 lock is enough: Store.open lets one process write a store (`_store.lock`).
@@ -405,6 +412,7 @@ store's folder to the owner only.
 """
 import collections
 import contextlib
+import contextvars
 import datetime
 import json
 import math
@@ -636,10 +644,48 @@ def _reason(e):
     return e.code if isinstance(e, HubError) else type(e).__name__
 
 
+# launcher_keys' read inside one sessions_once(): a context variable, so each thread (each
+# request) has its own
+_ONCE = contextvars.ContextVar('kitlib.hubsite.api.sessions_once', default=None)
+
+
+@contextlib.contextmanager
+def sessions_once():
+    """Within it, launcher_keys() reads sessions.json at most once in this thread's context, and
+    every later call gives that read (or raises its error again): one pending call
+    (Api._routed) reads the file once, however many of its items ask (the session keys, each
+    approval's repository name, the kit coordinator's key). A scope inside another shares the
+    outer one's read."""
+    if _ONCE.get() is not None:
+        yield
+        return
+    token = _ONCE.set({})
+    try:
+        yield
+    finally:
+        _ONCE.reset(token)
+
+
 def launcher_keys():
     """The session keys of the launcher's sessions.json (kitlib.launcher, imported when this
-    module loads), read now. A launcher whose settings or that file cannot be read raises: the
-    caller says so (Api.read_session_keys), never an empty set that reads as "no sessions"."""
+    module loads), read now (inside sessions_once(), read once there). A launcher whose settings
+    or that file cannot be read raises: the caller says so (Api.read_session_keys), never an
+    empty set that reads as "no sessions"."""
+    memo = _ONCE.get()
+    if memo is None:
+        return _read_launcher_keys()
+    if 'keys' not in memo:
+        try:
+            memo['keys'] = (frozenset(_read_launcher_keys()), None)
+        except Exception as e:      # noqa: BLE001 - kept, and raised to each caller in the scope
+            memo['keys'] = (None, e)
+    keys, err = memo['keys']
+    if err is not None:
+        raise err
+    return set(keys)
+
+
+def _read_launcher_keys():
     return {k for k, _ in lstate.entries(lstate.read_sessions(lsettings.load()))}
 
 
@@ -966,8 +1012,18 @@ class Api(object):
     def _routed(self):
         """([item], `now` of the next route change or None): the pending items with `from` and
         `route`. Hand-overs of items no longer pending are forgotten here. Each approval's
-        repository is resolved (repo_key) once per call, however many approvals name it."""
-        found, keys, out, repo_keys = self.store.pending(), None, [], {}
+        repository is resolved (repo_key) once per call, however many approvals name it, the
+        kit coordinator's key (kit_session_key) once for every skill edit, and sessions.json is
+        read once for all of them (sessions_once)."""
+        with sessions_once():
+            return self._routed_once()
+
+    def _routed_once(self):
+        found, keys, out, repo_keys, kit = self.store.pending(), None, [], {}, None
+        # the fields of the pending questions read below, in one hold of the store and with no
+        # copy of a whole question
+        asked = self.store.pick('questions', [p.id for p in found if p.kind == 'question'],
+                                ('standing', 'record', 'class'))
         for p in found:
             d = p._asdict()
             sender = d.pop('sender')
@@ -978,13 +1034,15 @@ class Api(object):
                     repo_keys[repo] = self.repo_key(repo)
                 sender = repo_keys[repo]
             elif d['kind'] == 'skill_edit':
-                sender = self.kit_session_key()     # the kit's coordinator commits it
+                if kit is None:
+                    kit = self.kit_session_key()    # the kit's coordinator commits it
+                sender = kit
             mine = sender and sender not in (AGENT_FROM, OWNER_FROM)
             if mine and keys is None:
                 keys = self.session_keys()          # read once, and only when it can matter
             d['from'] = sender if mine and sender in keys else AGENT_FROM
             if d['kind'] == 'question':
-                q = self.store.get('questions', d['id']) or {}
+                q = asked.get(d['id']) or {}
                 if d.get('note') == 'filed' and isinstance(q.get('standing'), dict):
                     d['standing'] = True        # the PM logs it too (_for)
                 if not isinstance(q.get('record'), dict) and q.get('class') in QUESTION_CLASSES:
@@ -2468,7 +2526,7 @@ def to_pm_send(api, req):
     _fields(req, ())
     at = api.clock()
     changes = {'status': 'sent', 'sent_at': at, 'via': _via(req)}
-    _, docs = api.store.snapshot()
+    _, docs = api.store.snapshot(('to_pm',))
     queued = sorted((i for i, d in docs['to_pm'].items() if d.get('status') == 'queued'),
                     key=_natural)
     for doc_id in queued:           # every one is checked before any is sent: a bad one sends none
@@ -3665,10 +3723,37 @@ def skill_edits_fail(api, req):
     return api.change('skill_edits', doc_id, d, changes, req, {'status': changes['status']})
 
 
+# never copied for GET snapshot: a page body is read on its own (GET pages/{id}, "Pages"), the
+# hand-offs with GET handoffs, newest per session ("Hand-offs")
+SNAPSHOT_SKIP = ('page_html', 'handoffs')
+
+
+def _snapshot_colls(req):
+    """The collections a GET snapshot's `collections` query names (comma-separated), or None
+    when it names none; a name that is no collection the snapshot gives is `invalid`."""
+    raw = _q(req, 'collections')
+    names = [n.strip() for n in raw.split(',') if n.strip()]
+    if not names:
+        return None
+    for n in names:
+        if n not in schema.COLLECTIONS or n in SNAPSHOT_SKIP:
+            raise _invalid('collections names collections of the snapshot, not %s' % ascii(n),
+                           'collections')
+    return tuple(dict.fromkeys(names))
+
+
 def snapshot(api, req):
-    revision, docs = api.store.snapshot()
-    docs.pop('page_html', None)     # a body is read on its own (GET pages/{id}, "Pages")
-    docs.pop('handoffs', None)      # read with GET handoffs, newest per session ("Hand-offs")
+    colls = _snapshot_colls(req)
+    if _q(req, 'bare') and _q_flag(req, 'bare'):
+        # the snapshot less its documents: what can move with no store write (the views, the
+        # pending routes, the status). The page reads it after a wait that timed out, which no
+        # write ended, keeping the documents it holds for that revision (module docstring)
+        if colls is not None:
+            raise _invalid('bare leaves every collection out: give collections or bare, not both',
+                           'bare')
+        revision, docs = api.store.revision, {}
+    else:
+        revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
     if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings")
         feed = docs['landings']
         docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-FEED_MAX:]}
@@ -3681,6 +3766,8 @@ def snapshot(api, req):
                 marks[doc_id] = _seen(m, req)
     if docs.get('finding_marks'):   # the marks GET finding_marks gives: resolved ones hidden
         docs['finding_marks'] = _unresolved_marks(api, docs['finding_marks'])
+    if colls is not None:           # those collections alone: no views, pending or status
+        return {'revision': revision, 'collections': docs}
     views, missing = {}, {}
     for name in VIEWS:
         try:

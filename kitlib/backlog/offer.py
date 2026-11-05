@@ -815,14 +815,23 @@ def wants_narrowing(passed):
                and (is_broad(p.pair[0]) or is_broad(p.pair[1])) for p in passed)
 
 
-def narrowings(passed, holding, changes, unknown):
+_UNQUOTED = re.compile(r'[^A-Za-z0-9_./@%+=:,-]')
+
+
+def narrowings(passed, holding, changes, unknown, dirty=None):
     """`next`'s NARROW lines: one for each record passed over on a scope collision with a live
     pull (in `holding`) where either member is broad (`is_broad`). `changes` and `unknown` are
     plan `_live_changes`'s: `{branch: [(label, paths)]}`, the paths each live branch changed
     since its merge base with the code main, and `{branch: error}`. A broad taken member gets the
     `set --scope` that narrows the live pull to the files its branch changed there, unless those
     files overlap this record too (then it waits for the landing); a broad member of this record
-    only gets the overlap named."""
+    only gets the overlap named. `dirty` is `{branch: (paths, why)}` (plan `live_dirty`): the
+    uncommitted files of each live branch's worktree, or `(None, why)` when they could not be
+    read. The `set` keeps those files and the pull's `## Files` paths with the committed ones (the
+    NARROWS split's protected set, plan `_narrower`). It is not suggested when either cannot be
+    read, when `dirty` has no entry for the branch, or when a kept member has a quote (a member
+    with a space or another shell-special character, a glob included, is single-quoted)."""
+    dirty = dirty or {}
     live = {r.id: r for r in holding}
     out = []
     for p in passed:
@@ -843,18 +852,35 @@ def narrowings(passed, holding, changes, unknown):
         if branch not in changes:
             out.append('%s; %s\'s diff was not compared' % (head, branch))
             continue
-        paths = sorted(set(q for _label, qs in changes[branch] for q in qs))
+        files, files_why = files_section(other.body)
+        extra, extra_why = dirty.get(branch) or (None, 'its uncommitted files were not read')
+        unread = files_why if files is None else (extra_why if extra is None else None)
+        paths = sorted(set(q for _label, qs in changes[branch] for q in qs)
+                       | set(extra or []) | set(files or []))
         there = _under(theirs, paths)
+        if not there and unread and is_broad(theirs):
+            out.append('%s; not narrowing %s: %s' % (head, other.id, unread))
+            continue
         if not there:
             out.append('%s, which changed nothing under %s yet' % (head, theirs))
             continue
         head = '%s, which changed %d file(s) there: %s' % (head, len(there), _named(there))
         overlap = _under(mine, there)
-        if is_broad(theirs) and not overlap:
+        if is_broad(theirs) and not overlap and unread:
+            out.append('%s; not narrowing %s: %s' % (head, other.id, unread))
+        elif is_broad(theirs) and not overlap:
             keep = [m for m in other.all('scope') if m != theirs]
-            keep += [q for q in there if q not in keep]
-            out.append('%s -> `set %s %s`' % (
-                head, other.id, ' '.join('--scope %s' % m for m in keep)))
+            added = [q for q in there if q not in keep]
+            # a member a shell would split or expand is single-quoted; one with a quote itself
+            # cannot be, so no set
+            odd = [m for m in keep + added if "'" in m]
+            if odd:
+                out.append('%s; not narrowing %s: %s has a quote and would split when pasted '
+                           'into a shell' % (head, other.id, odd[0]))
+                continue
+            out.append('%s -> `set %s %s`' % (head, other.id, ' '.join(
+                "--scope '%s'" % m if _UNQUOTED.search(m) else '--scope %s' % m
+                for m in keep + added)))
         elif is_broad(mine) and not is_broad(theirs):
             out.append('%s; %s is broad: narrow %s\'s own scope to leave out %s' % (
                 head, mine, p.rec.id, theirs))
@@ -960,9 +986,11 @@ def split_all(c_scopes, parts, tree):
     folder). A live pull with a plan loses the tracked part of its overlap with the candidate
     that is in no live pull's T (so no path one gives up is left held by nobody), keeping every
     path of its own T under it (a file it adds that the tree has not got included). Fails
-    closed, for every part if for one: complement gives None, a side is left with no scope, a
-    member is not a legal scope, a comparison is undecidable, or what the candidate keeps still
-    touches any T or collides with any live pull's kept scope."""
+    closed, for every part if for one: a T path differs only in letter case from a tracked path
+    or from a member of either side (the candidate side matches T in any case, the live-pull
+    side in exact case, so the path would be held by nobody), complement gives None, a side is
+    left with no scope, a member is not a legal scope, a comparison is undecidable, or what the
+    candidate keeps still touches any T or collides with any live pull's kept scope."""
     try:
         return _split(c_scopes, parts, tree)
     except smod.UndecidableScope as exc:
@@ -985,6 +1013,18 @@ def _split(c_scopes, parts, tree):
     prot_all = sorted(set(t for side in sides for t in side[3]))
     pset_all = set(prot_all)
     tracked = list(tree)
+    tracked_set, folded = set(tracked), {}
+    for p in tracked:
+        folded.setdefault(p.casefold(), p)
+    bases = [base(m) for m in c_scopes] + [base(l) for side in sides for l in side[1]]
+    for t in prot_all:
+        if t not in tracked_set and t.casefold() in folded:
+            return None, ('protected path %s is spelled %s in the tree: letter case differs'
+                          % (t, folded[t.casefold()]))
+        for b in bases:
+            if rel(b, t) and not (within(b, t) or within(t, b)):
+                return None, ('protected path %s differs in letter case from scope %s'
+                              % (t, b))
     c_kept, c_hit = [], {}          # c_hit: candidate member -> the indexes of the sides it hits
     for c in c_scopes:
         removed = []

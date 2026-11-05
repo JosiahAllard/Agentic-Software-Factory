@@ -510,6 +510,69 @@ class RestartTest(PushCase):
         self.later(push.SCHEDULE_S[0])
         self.assertEqual((self.attempts('kit'), self.attempts('pm')), ([1, 2], [1, 2]))
 
+    def test_an_outbox_entry_with_no_status_is_dropped_and_the_others_still_go(self):
+        # red proof: without the key checks in _entry_ok the entry survives begin() and every
+        # round raises KeyError in _send, so the intact entry is never retried
+        q1 = self.ask(**{'from': 'kit'})
+        self.answer(q1)
+        q2 = self.ask(**{'from': 'kit'})
+        self.answer(q2)
+        self.worker.poll()
+        path = os.path.join(self.folder, push.OUTBOX)
+        with open(path, encoding='utf-8') as f:
+            outbox = json.load(f)
+        del outbox['question:%s' % q2]['status']
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(outbox, f)
+        self.worker = self.make()
+        self.assertNotIn('question:%s' % q2, self.worker._outbox)
+        self.later(push.SCHEDULE_S[0])
+        self.assertEqual(self.attempts('kit'), [1, 1, 2])
+        self.assertNotIn(q2, ''.join(self.push.to('kit')[1:]))
+
+    def test_outbox_entries_with_a_bad_repo_from_status_or_first_at_are_dropped(self):
+        ids = [self.ask(**{'from': 'kit'}) for _ in range(8)]
+        for qid in ids:
+            self.answer(qid)
+        self.worker.poll()
+        path = os.path.join(self.folder, push.OUTBOX)
+        with open(path, encoding='utf-8') as f:
+            outbox = json.load(f)
+        keys = ['question:%s' % q for q in ids]
+        del outbox[keys[1]]['repo']
+        outbox[keys[2]]['from'] = 5
+        outbox[keys[3]]['status'] = 5
+        del outbox[keys[4]]['first_at']
+        outbox[keys[5]]['repo'] = 5
+        outbox[keys[6]]['first_at'] = 'x'
+        outbox[keys[7]]['first_at'] = True
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(outbox, f)
+        self.worker = self.make()
+        self.assertEqual(sorted(self.worker._outbox), [keys[0]])
+        self.later(push.SCHEDULE_S[0])
+        self.assertEqual(self.attempts('kit'), [1] * 8 + [2])
+        self.assertNotIn(ids[1], ''.join(self.push.to('kit')[1:]))
+
+    def test_a_superseded_approval_is_not_read_again_at_every_round(self):
+        # red proof: _tick rebuilding the phase without `superseded` reads 'decided' while the
+        # fingerprint holds None, so each round runs _changed (a store.get) for it
+        self.store.put('approvals', 'A-001', {
+            'title': 'T', 'op': 'x', 'line': 'x', 'args_sha256': 'a' * 64,
+            'status': 'approved', 'kind': 'op', 'repo': 'kit', 'created_at': '1970-01-12T13:00:00+00:00',
+            'decided_at': '1970-01-12T13:46:00+00:00', 'superseded': {'by': 'A-002'}})
+        self.worker = self.make()
+        gets = []
+        real = self.store.get
+
+        def counting(coll, doc_id):
+            gets.append((coll, doc_id))
+            return real(coll, doc_id)
+        self.store.get = counting
+        self.worker.poll()
+        self.worker.poll()
+        self.assertEqual([g for g in gets if g[0] == 'approvals'], [])
+
     def test_a_broken_outbox_is_read_as_empty(self):
         with open(os.path.join(self.folder, push.OUTBOX), 'w', encoding='utf-8') as f:
             f.write('{"question:Q-001": {"kind": "question"}, "x": 1')

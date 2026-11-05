@@ -8,7 +8,7 @@ import unittest
 from kitlib.hubsite import push
 from kitlib.launcher import pipes, reboot, relaunch, stop, window
 from kitlib.launcher.settings import LaunchError
-from tests.launcher.fakes import FakeHost, Home, role_of, session
+from tests.launcher.fakes import FakeHost, Home, role_of, session, windows_text
 
 OLD = 'pm-sid-1'
 NEW = 'pm-b'
@@ -65,6 +65,7 @@ class Delivery(object):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self, repos=('alpha', 'pm'))
         self.folder = self.h.repos['pm']
         self.coords = {'alpha': 1, 'pm_session_id': OLD, 'pm_folder': self.folder, 'pm_account': 2}
@@ -287,6 +288,7 @@ class Crossover(Base):
     """launch.py pm-crossover (relaunch.crossover): a fresh PM on another account."""
 
     def setUp(self):
+        windows_text(self)
         self.h = Home(self, accounts=('1', '2', '3'), signed_out=('3',), repos=('alpha', 'pm'))
         self.folder = self.h.repos['pm']
         self.coords = {'alpha': 1, 'pm_session_id': OLD, 'pm_folder': self.folder, 'pm_account': 2}

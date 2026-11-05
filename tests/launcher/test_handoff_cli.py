@@ -13,7 +13,7 @@ from unittest import mock
 from kitlib.launcher import autostart, handoff, reboot
 from kitlib.launcher import host as hostmod
 from tests.home import machine_config
-from tests.launcher.fakes import FakeHost, Home, role_of, session
+from tests.launcher.fakes import FakeHost, Home, role_of, session, windows_text
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), 'tools'))
@@ -79,6 +79,7 @@ class Handoff(unittest.TestCase):
 
 class AfterReboot(unittest.TestCase):
     def test_skips_running_stems_autostart_off_and_a_running_desktop_app(self):
+        windows_text(self)
         h = Home(self)
         h.write_state('sessions.json', {'alpha': dict(ALPHA, agent=False), 'helper': dict(HELPER, autostart=False)})
         h.write_state('coordinators.json', {'pm_session_id': 's1', 'pm_folder': h.root, 'pm_account': 1})
@@ -192,7 +193,7 @@ class Cli(unittest.TestCase):
 
     def test_a_window_timeout_exits_1(self):
         class Slow(FakeHost):
-            def open_window(self, text):
+            def open_window(self, text, **kw):
                 raise subprocess.TimeoutExpired(['powershell'], 60)
         code, _, err, _ = self.main(['start', '--repo', 'alpha', '--account', '1'], host=Slow(self.h.root))
         self.assertEqual(code, 1)

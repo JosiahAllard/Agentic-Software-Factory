@@ -75,6 +75,29 @@ def targets(home=None):
             + tuple(rulebook.paths(found.rules).values()))
 
 
+def rules_folder(home=None):
+    """The rulebook folder from the machine config (None when it sets no ledger)."""
+    found = files.of_config(config.user_config(home))
+    return found.rules if found is not None else None
+
+
+def staged_rulebooks(root, staged, folder):
+    """The entries of `staged` that are a rulebook file name in `folder`, present or not: a staged
+    deletion leaves no file for `rulebook.paths` to list, yet the check must still run for it."""
+    if not folder:
+        return []
+    want, want_real = _key(folder), _real(folder)
+    out = []
+    for rel in staged:
+        name = rel[:-3].rsplit('/', 1)[-1]
+        if not (rel.endswith('.md') and rulebook.NAME_RE.match(name) and name == name.lower()):
+            continue
+        where = os.path.dirname(os.path.join(root, rel))
+        if _key(where) == want or _real(where) == want_real:
+            out.append(rel)
+    return out
+
+
 def _key(path):
     return os.path.normcase(os.path.abspath(path))
 
@@ -139,11 +162,17 @@ def check(commit, home=None):
         paths = targets(home)
     except ConfigError as e:
         return 1, 'pre-commit: ledger check cannot run: %s%s' % (e, REFUSED)
-    hit = staged_targets(root, commit.staged(), paths)
+    staged = commit.staged()
+    hit = staged_targets(root, staged, paths)
+    # A staged rulebook deletion is a target too: the file is gone, so `paths` does not list it.
+    # The check then runs as for any rulebook change (tools/ledger.py check --base HEAD judges the
+    # rulebooks left against HEAD and the ledger's entries for the drop).
+    gone = [r for r in staged_rulebooks(root, staged, rules_folder(home)) if r not in hit]
+    hit += gone
     if not hit:
         return 0, None
     # The check reads the working ledger AND digest, so neither may differ from the index.
-    dirty = unstaged(root, under_root(root, paths) or hit)
+    dirty = unstaged(root, under_root(root, paths + tuple(os.path.join(root, r) for r in gone)) or hit)
     if dirty:
         return 1, ('pre-commit: %s has unstaged changes and the ledger check reads the working file: '
                    'stage them (git add) or set them aside, then commit again%s'

@@ -19,7 +19,6 @@ import subprocess
 import sys
 
 from kitlib.git import cmd
-from kitlib.proc import spawn
 
 RENDER_TOOL = 'tools/render_content.py'
 SOURCE_DIRS = ('content/',)
@@ -52,6 +51,7 @@ def render(root, python=None):
     """(sorted repo-relative paths the render wrote or removed, None), or (None, why) when it could
     not run or failed. `python` defaults to this interpreter."""
     argv = [python or sys.executable, os.path.join(root, *RENDER_TOOL.split('/')), '-C', root, '--write']
+    from kitlib.proc import spawn   # here, not at the top: it loads ctypes on every guard hook call
     try:
         r = spawn.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
                       timeout=RENDER_TIMEOUT)

@@ -12,7 +12,6 @@ reports it) when none is found. A bash named by a path is left alone.
 """
 import os
 import re
-import shutil
 
 NAMES = ("bash", "bash.exe")
 # A shell string whose first word is a bare bash, quoted or not.
@@ -38,10 +37,14 @@ def _is_system(path, env):
     return False
 
 
-def git_bash(env=None, which=shutil.which, isfile=os.path.isfile):
+def git_bash(env=None, which=None, isfile=os.path.isfile):
     """The bash.exe a bare bash should run, or None: the first on PATH that is not WSL's, else
-    Git's own (bin/bash.exe, then usr/bin/bash.exe, beside the git found on PATH)."""
+    Git's own (bin/bash.exe, then usr/bin/bash.exe, beside the git found on PATH). `which` None
+    means shutil.which, imported here: the guard imports this module on every hook call."""
     env = os.environ if env is None else env
+    if which is None:
+        import shutil
+        which = shutil.which
     for d in (env.get("PATH") or "").split(os.pathsep):
         d = d.strip().strip('"')
         if not d:

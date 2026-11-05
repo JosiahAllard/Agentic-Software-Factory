@@ -10,7 +10,7 @@ import unittest
 from kitlib.launcher import start, window
 from kitlib.launcher import settings as S
 from kitlib.lockmcp import PLUGIN_NAME
-from tests.launcher.fakes import EXE, NOW, FakeHost, Home, role_of, session
+from tests.launcher.fakes import EXE, NOW, FakeHost, Home, role_of, session, windows_text
 
 DAY = datetime.timedelta(days=1)
 STORE_EXE = 'C:' + chr(92) + 'Program Files' + chr(92) + 'WindowsApps' + chr(92) + 'a' + chr(92) + 'claude.exe'
@@ -22,6 +22,7 @@ def proc(pid, cmd, exe=EXE, name='claude.exe'):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self, accounts=('1', '2', '3'), repos=('alpha',))
         for n in ('1', '2', '3'):
             self.h.usage(n, five=(10, NOW + DAY / 8), week=(10, NOW + 2 * DAY))
@@ -173,7 +174,7 @@ class Deep(Base):
 
     def test_failed_launch_removes_the_brief(self):
         class Broken(FakeHost):
-            def open_window(self, text):
+            def open_window(self, text, **kw):
                 raise RuntimeError('fake launch failure')
         self.host = Broken(self.h.root)
         e = self.refused('fake launch failure', plan=False, brief=None, brief_text='the brief')

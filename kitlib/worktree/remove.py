@@ -394,22 +394,25 @@ def merged_worktrees(ctx, listing, skip=()):
     base, why = base_commit(ctx)
     if base is None:
         return None, why
-    got, why = ancestry(ctx, base)
-    if got is None:
-        return None, 'git rev-list --parents %s: %s' % (base, why)
-    chain, ancestors = got
-    home = canon(home_of(ctx))
     skipped = {canon(p) for p in skip}
-    out = []
+    candidates = []
     for e in worktree_entries(listing):
         path = e['path']
         if not is_workstream(ctx, path) or canon(path) in skipped \
                 or exemption(ctx.s, path) or not os.path.isdir(path):
             continue
-        if not e['head'] or e['head'] in chain:
-            continue
-        if e['head'] in ancestors:
-            out.append((os.path.normpath(path), e['branch']))
+        if e['head']:
+            candidates.append(e)
+    if not candidates:
+        return [], None
+    got, why = ancestry(ctx, base)
+    if got is None:
+        return None, 'git rev-list --parents %s: %s' % (base, why)
+    chain, ancestors = got
+    out = []
+    for e in candidates:
+        if e['head'] not in chain and e['head'] in ancestors:
+            out.append((os.path.normpath(e['path']), e['branch']))
     return out, None
 
 
@@ -1303,19 +1306,22 @@ def local_branch(main, name):
 
 
 def pulled_by(ctx, rev, branch):
-    """`(ids, None)`: backlog records `state: pulled` with `pulled_by: <branch>`, or `(None, why)`
-    (pulled_index, for one branch)."""
+    """`(ids, None)`: backlog records `state: pulled` with `pulled_by: <branch>`, matched without
+    regard to case (`.lower()`, as backlog.py does), or `(None, why)` (pulled_index, for one
+    branch)."""
     index, why = pulled_index(ctx, rev)
     if index is None:
         return None, why
-    return index.get(branch, []), None
+    want = branch.lower()
+    return sorted(i for b, ids in index.items() if b.lower() == want for i in ids), None
 
 
 def pulled_index(ctx, rev):
     """`({branch: sorted ids}, None)` over every backlog record `state: pulled`, keyed by its
-    `pulled_by`, or `(None, why)`: one store read for every branch. A main or folder store is read
-    in the tree of `rev`; a ref or branch store at its local ref as it stands (never fetched; `rev`
-    is not used), an absent ref holding no records."""
+    `pulled_by` as written (callers match it case-blind), or `(None, why)`: one store read for every
+    branch. A main or folder store is read in the tree of `rev`; a ref or branch store at its
+    local ref as it stands (never fetched; `rev` is not used), an absent ref holding no
+    records."""
     try:
         backend = backlog_store.open_backend(ctx.main, ctx.cfg, fetch=False)
     except (BacklogFailure, ConfigError, KeyError) as e:

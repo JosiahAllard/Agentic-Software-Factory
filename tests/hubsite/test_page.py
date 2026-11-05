@@ -267,18 +267,6 @@ class PlaceTest(httpfix.ListenerCase):
 class LogicTest(unittest.TestCase):
     """The To PM rows and the freshness, on the page's pure block."""
 
-    def test_next_id(self):
-        self.assertEqual(js("pmNextId(items)", []), "P-001")
-        self.assertEqual(js("pmNextId(items)", [item(1, "done"), item(7, "sent"), {"id": "x"}]), "P-008")
-        self.assertEqual(js("pmNextId(items)", [item(999, "done")]), "P-1000")
-
-    def test_send_all_moves_only_queued(self):
-        items = [item(1, "queued"), item(2, "sent"), item(3, "queued"), item(4, "done")]
-        got = js('pmSendAll(items, "%s")' % NOW, items)
-        self.assertEqual(got, [{"id": "P-001", "patch": {"status": "sent", "sent_at": NOW}},
-                               {"id": "P-003", "patch": {"status": "sent", "sent_at": NOW}}])
-        self.assertEqual(js('pmSendAll(items, "%s")' % NOW, [item(2, "sent")]), [])
-
     def test_badge_is_queued_plus_sent(self):
         items = [item(1, "queued"), item(2, "sent"), item(3, "done"), item(4, "sent", urgent=True)]
         self.assertEqual(js("pmBadge(items)", items), {"n": 3, "hot": True})
@@ -307,22 +295,9 @@ class LogicTest(unittest.TestCase):
         got = js("pmRows(items, 'queued', 0, false)", items)
         self.assertEqual([r["id"] for r in got["rows"]], ["P-003", "P-002", "P-001"])
 
-    def test_alert_lists_sent_only(self):
-        items = [item(1, "queued"), item(2, "sent", kind="fyi", repo="pm", text="line one\nline two"),
-                 item(3, "sent", urgent=True), item(4, "done")]
-        lines = js("pmAlertLines(items)", items)
-        self.assertEqual(len(lines), 4)                                       # blank, heading, two items
-        self.assertIn("P-002 [FYI, pm]: line one line two", lines[2])
-        self.assertIn("P-003 [Question] (urgent)", lines[3])
-        self.assertEqual(js("pmAlertLines(items)", [item(1, "queued")]), [])
-
     def test_refs_hide_both_ledger_id_forms(self):
         refs = ["Q-12", "R-" + "0007", "H-" + "kit-0007", "H-" + "some-long-repo-0001", "H-x"]
         self.assertEqual(js("keptRefs(items)", refs), ["Q-12", "H-x"])
-
-    def test_an_act_note_is_its_own_kind_in_the_alert(self):
-        lines = js("pmAlertLines(items)", [item(5, "sent", kind="act", repo="alpha", text="Act on maintenance finding unpriced R-1")])
-        self.assertIn("P-005 [Act, alpha]: Act on maintenance finding unpriced R-1", lines[2])
 
     def test_freshness(self):
         now = "Date.parse('2026-10-11T12:00:00Z')"
@@ -1460,6 +1435,13 @@ class DomTest(unittest.TestCase):
                                            "push": "Push delivery is down (last try: not-written); 2 items undelivered."})
         self.assertEqual(dom(body, snapshot(collections=LISTS))["push"], "Push notifications are off on this hub server.")
 
+    def test_the_pm_line_says_the_watcher_has_stopped(self):
+        got = dom("""
+            await start();
+            return text($("#pmseen"));
+        """, snapshot(collections=LISTS, watcher={"state": "down", "age": 600}))
+        self.assertIn("watcher has stopped", got)
+
     def test_an_empty_to_pm_queue_says_to_add_first(self):
         hint = "Nothing is queued. Write your message below and press Add, then Send all."
         got = dom("""
@@ -2486,6 +2468,73 @@ class RecordPageTest(unittest.TestCase):
         self.assertIn("priority: 2", got["after"])
         self.assertTrue(got["back"])
 
+    def test_a_section_save_refused_as_stale_reads_the_record_again_and_the_next_save_is_pinned_to_it(self):
+        newer = record(version="c2:s2", fields=[["id", "B-1"], ["summary", "theirs"], ["scope", "tools/x.py"], ["effort", "s"]])
+        after = record(version="c3:s3", fields=[["id", "B-1"], ["summary", "mine"], ["scope", "tools/x.py"], ["effort", "s"]])
+        got = self.page("""
+            let reads = 0, edits = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: ++reads > 1 ? NEWER : REC }     // the detail's own read came before this route
+              : c.path === "/records/alpha/B-1/edit" ? (edits++ ? { status: 200, body: { ok: true, lines: ["SET B-1"], record: AFTER } }
+                : { status: 409, body: { ok: false, error: { code: "conflict", message: "changed on the hub server", field: "version" } } })
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const fields = $$("#list .rec .pk")[0], ta = fields.querySelector("textarea");
+            await type(ta, "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await click(button(fields, "Save"));
+            const out = { status: text(fields.querySelector(".status")), kept: ta.value, enabled: !button(fields, "Save").disabled,
+                          theirs: text(fields.querySelector(".ans")) };
+            await click(button(fields, "Save"));
+            out.sent = calls.filter(c => c.path.endsWith("/edit")).map(c => c.body.version);
+            out.after = text($("#list"));
+            return out;
+        """, NEWER=newer, AFTER=after)
+        self.assertIn("changed on the hub server", got["status"])
+        self.assertIn("Your text is kept", got["status"])
+        self.assertEqual(got["kept"], "id: B-1\nsummary: mine\nscope: tools/x.py\neffort: s")
+        self.assertTrue(got["enabled"])
+        self.assertIn("summary: theirs", got["theirs"])
+        self.assertEqual(got["sent"], ["c1:s1", "c2:s2"])
+        self.assertIn("summary: mine", got["after"])
+
+    def test_a_stale_refusal_moves_only_its_own_section_so_another_open_section_is_refused_too(self):
+        newer = record(version="c2:s2", fields=[["id", "B-1"], ["summary", "theirs"], ["scope", "tools/x.py"], ["effort", "s"]])
+        got = self.page("""
+            let reads = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: ++reads > 1 ? NEWER : REC }
+              : c.path === "/records/alpha/B-1/edit" ? { status: 409, body: { ok: false, error: { code: "conflict", message: "changed", field: "version" } } }
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const secs = $$("#list .rec .pk"), fields = secs[0], body = secs[2];
+            await click(button(body, "Edit body"));
+            await type(fields.querySelector("textarea"), "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await type(body.querySelector("textarea"), "my body");
+            await click(button(fields, "Save"));
+            await click(button(body, "Save"));
+            return { sent: calls.filter(c => c.path.endsWith("/edit")).map(c => c.body.version), body: text(body.querySelector(".status")),
+                     theirs: text(body.querySelector(".ans")) };
+        """, NEWER=newer)
+        self.assertEqual(got["sent"], ["c1:s1", "c1:s1"])                         # the first section's re-read did not move the body's pin
+        self.assertIn("changed on the hub server", got["body"])
+        self.assertIn("The hub server now holds", got["theirs"])
+
+    def test_a_stale_refusal_whose_re_read_fails_keeps_the_text_and_says_so(self):
+        got = self.page("""
+            let reads = 0;
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? (++reads > 1 ? { status: 500, body: { ok: false, error: { code: "unavailable", message: "down", field: "" } } } : { status: 200, body: REC })
+              : c.path === "/records/alpha/B-1/edit" ? { status: 409, body: { ok: false, error: { code: "conflict", message: "changed", field: "version" } } }
+              : undefined;
+            await click(button($("#pane-detail"), "Edit fields"));
+            const fields = $$("#list .rec .pk")[0], ta = fields.querySelector("textarea");
+            await type(ta, "id: B-1\\nsummary: mine\\nscope: tools/x.py\\neffort: s");
+            await click(button(fields, "Save"));
+            return { status: text(fields.querySelector(".status")), kept: ta.value, enabled: !button(fields, "Save").disabled, theirs: fields.querySelector(".ans").hidden };
+        """)
+        self.assertIn("could not be read again", got["status"])
+        self.assertIn("press Save again to try reading the record again", got["status"])
+        self.assertEqual(got["kept"], "id: B-1\nsummary: mine\nscope: tools/x.py\neffort: s")
+        self.assertTrue(got["enabled"])
+        self.assertTrue(got["theirs"])
+
     def test_a_parked_rows_id_opens_its_record(self):
         views = {"repos": [{"name": "alpha"}],
                  "backlog": [dict(BACKLOG[0], items=[{"id": "B-4", "t": "waits", "p": 1, "s": "parked", "parked_at": NOW}])]}
@@ -2497,7 +2546,7 @@ class RecordPageTest(unittest.TestCase):
             await click(button($("#pane-detail"), "Edit fields"));
             return { reads: calls.filter(c => c.path.startsWith("/records")).map(c => c.method + " " + c.path), page: !!$("#list .rec") };
         """.replace("REC", json.dumps(record(id="B-4", fields=[["id", "B-4"], ["summary", "waits"]]))), snapshot(views=views))
-        self.assertEqual(got["reads"], ["GET /records/alpha/B-4"] * 3)                  # the detail (drawn twice), then the record page
+        self.assertEqual(got["reads"], ["GET /records/alpha/B-4"] * 2)                  # the detail (drawn twice, read once), then the record page
         self.assertTrue(got["page"])
 
     def test_delete_waits_for_a_reason_and_the_typed_id_then_shows_the_record_deleted(self):
@@ -5325,7 +5374,7 @@ class PageTextTest(unittest.TestCase):
         self.assertNotIn("style:", self.script)
 
     def test_only_the_decided_routes(self):
-        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/wait"])
+        self.assertEqual(sorted(re.findall(r'call\("GET", "(/[a-z_]+)', self.script)), ["/finding_marks", "/findings", "/findings", "/lock", "/lock", "/pages", "/records", "/records", "/records", "/schedules", "/skill_edits", "/skills", "/skills", "/snapshot", "/snapshot", "/wait"])
         roots = set(re.findall(r'(?:write|writeQuick|hub\.post|delButton)\("(/[a-z_]+)', self.script))
         self.assertEqual(roots, {"/questions", "/todos", "/stories", "/records", "/to_pm", "/inbox", "/approvals", "/pages", "/schedules",
                                  "/finding_marks", "/skill_edits"})
@@ -5486,6 +5535,57 @@ class TriageShellTest(unittest.TestCase):
         """, snapshot(collections=LISTS), hash="#home")
         self.assertEqual(down, "–")                                           # a failed read keeps the dash
 
+    def test_a_timeout_wake_reads_findings_only_after_the_interval_and_a_new_revision_always(self):
+        route = FINDINGS_ROUTE.replace("FOUND", json.dumps(FOUND[:2])).replace("MARKS", "[]").replace("RUNS", "[]")
+        got = dom(route + """
+            let clock = 1000000; Date.now = () => clock;
+            const reads = () => calls.filter(c => c.method === "GET" && c.path === "/findings").length;
+            await start();
+            const first = reads();
+            clock += 60000; await wake();                 // the wait timed out with the revision as it was, inside the interval
+            const quiet = reads();
+            server.snap.revision++; await wake();         // a new revision
+            const changed = reads();
+            clock += 299000; await wake();                // timed out, 299 s after that count
+            const near = reads();
+            clock += 2000; await wake();                  // timed out, past 300 s
+            return { first, quiet, changed, near, late: reads(), n: text($("#n-f")) };
+        """, snapshot(collections=LISTS), hash="#home")
+        self.assertEqual([got[k] for k in ("first", "quiet", "changed", "near", "late")], [1, 1, 2, 2, 3])
+        self.assertEqual(got["n"], "2")
+
+    def test_a_timed_out_wait_reads_the_bare_snapshot_not_the_documents(self):
+        # KIT-HUB-SNAPSHOT-EVERY-WAIT: a timeout re-read only what moves with no write (the git-backed views), over
+        # the documents it holds; a bare answer at another revision, and a wake by a write, read the whole snapshot.
+        bare_views = {"backlog": [dict(BACKLOG[0], items=[{"id": "B-9", "t": "landed meanwhile", "p": 1, "s": "open"}])]}
+        got = dom("""
+            let bareRev = null;
+            server.route = c => c.path === "/snapshot?bare=1"
+              ? { status: 200, body: { revision: bareRev === null ? server.snap.revision : bareRev, collections: {}, views: BARE, unavailable: {} } }
+              : undefined;
+            const reads = () => calls.filter(c => c.method === "GET" && c.path.startsWith("/snapshot")).map(c => c.path);
+            await start();
+            const first = reads().length;
+            await answerWait(200, { ok: true, revision: server.snap.revision, reset: false, timed_out: true, changes: [], pending: [] });
+            const quiet = reads().slice(first);
+            await click($("#sections [data-s=backlog]"));
+            const landed = text(body).includes("landed meanwhile");
+            await click($("#sections [data-s=todo]"));
+            const todo = text(body).includes("mine");
+            const n = reads().length;
+            bareRev = server.snap.revision + 1;
+            await answerWait(200, { ok: true, revision: server.snap.revision, reset: false, timed_out: true, changes: [], pending: [] });
+            const moved = reads().slice(n);
+            const m = reads().length;
+            await wake();
+            return { quiet, landed, todo, moved, woke: reads().slice(m) };
+        """.replace("BARE", json.dumps(bare_views)), snapshot(collections=LISTS, views={"backlog": BACKLOG}), hash="#home")
+        self.assertEqual(got["quiet"], ["/snapshot?bare=1"])                  # no /snapshot: the documents are kept
+        self.assertTrue(got["landed"])                                        # the views it read are drawn
+        self.assertTrue(got["todo"])                                          # over the documents it kept
+        self.assertEqual(got["moved"], ["/snapshot?bare=1", "/snapshot"])     # the revision moved: the whole snapshot
+        self.assertEqual(got["woke"], ["/snapshot"])                          # a wake by a write reads it whole
+
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
 class TriageViewsTest(unittest.TestCase):
@@ -5522,6 +5622,57 @@ class TriageViewsTest(unittest.TestCase):
         self.assertEqual(got["done"]["rows"], ["row-alpha:B-0"])
         self.assertEqual(got["done"]["detail"], ["done-alpha:B-0"])
         self.assertIn("Open the record", got["done"]["buttons"])
+
+    def test_typing_in_the_backlog_search_reads_the_open_record_once(self):
+        got = dom("""
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? { status: 200, body: { ok: true, id: "B-1", version: 2, fields: [["effort", "S"], ["scope", "a.md"]], body: "the body" } } : undefined;
+            await start();
+            await click($("#sections [data-s=backlog]"));
+            await settle();
+            const reads = () => calls.filter(c => c.method === "GET" && c.path.startsWith("/records/")).length;
+            const opened = reads(), card = $("#pane-detail article").id;
+            for (const v of ["o", "on", "one", "on", "one"]) await type($("input[type=search]"), v);
+            await settle();
+            return { opened, typed: reads(), card, facts: text(document.getElementById("rf-B-1")) };
+        """, snapshot(views=self.VIEWS))
+        self.assertEqual(got["card"], "item-alpha:B-1")
+        self.assertEqual(got["opened"], 1)
+        self.assertEqual(got["typed"], 1)                                       # five keystrokes redraw the card, none reads the record again
+        self.assertIn("Effort: S", got["facts"])
+        self.assertIn("a.md", got["facts"])
+
+    def test_a_failed_record_read_is_not_kept_and_a_save_from_the_page_reads_the_record_again(self):
+        got = dom("""
+            let fail = true, rec = { ok: true, id: "B-1", repo: "alpha", version: "c1:s1", where: "open", readable: true, blockers: [], hold: {}, fields: [["id", "B-1"], ["summary", "one"], ["effort", "S"], ["scope", "a.md"]], body: "b" };
+            server.route = c => c.method === "GET" && c.path === "/records/alpha/B-1" ? (fail ? { status: 500, body: { ok: false, error: { code: "x", message: "down", field: "" } } } : { status: 200, body: rec })
+              : c.method === "POST" && c.path === "/records/alpha/B-1/edit" ? { status: 200, body: { ok: true, lines: [], record: Object.assign({}, rec, { version: "c2:s2" }) } } : undefined;
+            const reads = () => calls.filter(c => c.method === "GET" && c.path === "/records/alpha/B-1").length;
+            await start();
+            await click($("#sections [data-s=backlog]"));
+            await settle();
+            const failed = text(document.getElementById("rf-B-1"));
+            fail = false;
+            await type($("input[type=search]"), "o");                     // a redraw: the failed read was not kept
+            await settle();
+            const afterFail = { reads: reads(), facts: text(document.getElementById("rf-B-1")) };
+            await type($("input[type=search]"), "on"); await settle();
+            const cached = reads();
+            rec = { ok: true, id: "B-1", repo: "alpha", version: "c2:s2", where: "open", readable: true, blockers: [], hold: {}, fields: [["id", "B-1"], ["summary", "one"], ["effort", "M"], ["scope", "b.md"]], body: "b" };
+            await click(button($("#pane-detail"), "Edit fields"));
+            const pk = $$("#list .rec .pk")[0], ta = pk.querySelector("textarea");
+            await type(ta, ta.value + "\\nsummary: two");
+            await click(button(pk, "Save"));
+            await click(button($("#list"), "Back to the backlog"));
+            await settle();
+            return { failed, afterFail, cached, after: reads(), facts: text(document.getElementById("rf-B-1")) };
+        """, snapshot(views=self.VIEWS))
+        self.assertIn("Cannot read the record", got["failed"])
+        self.assertEqual(got["afterFail"]["reads"], 2)
+        self.assertIn("Effort: S", got["afterFail"]["facts"])
+        self.assertEqual(got["cached"], 2)                                      # kept once it was read
+        self.assertGreater(got["after"], got["cached"])                         # the page's own save drops it
+        self.assertIn("Effort: M", got["facts"])
+        self.assertIn("b.md", got["facts"])
 
     def test_edit_body_opens_the_record_with_only_the_body_editor_open(self):
         got = dom("""

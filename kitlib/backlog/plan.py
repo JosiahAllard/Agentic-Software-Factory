@@ -821,6 +821,21 @@ def _live_changes(ctx, holding, branch):
     return changes, notes, unknown
 
 
+def live_dirty(ctx, holding, changes):
+    """`{branch: (paths, why)}` for the narrowing hint of `next` (omod.narrowings): the
+    uncommitted paths of each live pull's one worktree (`_dirty_paths`) for each branch in
+    `changes`, or `(None, why)` when they cannot be read. Read only."""
+    out = {}
+    for other in holding:
+        branch = other.get('pulled_by')
+        if branch in changes and branch not in out:
+            try:
+                out[branch] = (_dirty_paths(ctx, branch), None)
+            except (Failure, Usage) as exc:
+                out[branch] = (None, 'its uncommitted files cannot be read (%s)' % exc)
+    return out
+
+
 def _one_branch(ctx, name, refnames, base, sha, notes):
     """`[(label, paths)]` for one live branch of `_live_changes`, its NOTEs added to `notes`."""
     out = []
@@ -1423,6 +1438,21 @@ def plan_set_status(snap, ctx, rid, status, q=None):
     if state not in ('open', 'pulled'):
         raise Refusal('`%s` is `state: %s`; only an open or pulled record is parked. %s first'
                       % (rid, state, 'Unblock it' if state == 'blocked' else 'Open it'))
+    if state == 'pulled':
+        # Parking gives up the pull, so it takes block's and release's holder check: only the
+        # holder, or anybody when the pull or its worktree is dead (stop_pull). Park writes no
+        # body line, so stop_pull reads no branch (kept=False).
+        holder = rec.get('pulled_by')
+        if not holder:
+            raise Failure('`%s` is pulled with no `pulled_by`; `check` names it' % rid)
+
+        def live(why):
+            return ('`%s` is in flight (pulled by %s), and %s. Its holder parks or releases it: %s'
+                    % (rid, holder, 'its tree is live: %s' % why if why else
+                       'a branch or worktree by that name exists',
+                       holder_form(rec, holder, 'set-status %s parked%s'
+                                   % (rid, ' --q %s' % q if q else ''))))
+        found = stop_pull(ctx, rid, holder, live, kept=False)[1]
     pairs = [(k, v) for k, v in rec.pairs() if k not in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(pairs, [('state', ['parked']), ('q', [q] if q else []),
                                        ('parked_at', [ctx.date()])])
@@ -1430,6 +1460,7 @@ def plan_set_status(snap, ctx, rid, status, q=None):
     if state == 'pulled':
         lines.append('  pull by %s given up: its scope is free and it is out of the offer'
                      % rec.get('pulled_by'))
+        lines += found
     return Change({rid: _text(pairs, rec.body)},
                   'backlog: park %s%s' % (rid, ' on %s' % q if q else ''), lines)
 

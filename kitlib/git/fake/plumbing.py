@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 
+from kitlib import platform as _platform
 from . import command
 from . import config as _config
 from . import index as _index
@@ -1454,6 +1455,11 @@ _INIT = _u.Spec('init', flags='q|quiet bare', values='b|initial-branch object-fo
 _TEMPLATE_CACHE = {}
 
 
+def _is_posix():
+    """Whether init writes a POSIX repository's core config (a seam the tests patch)."""
+    return _platform.NAME == 'linux'
+
+
 def _template_dir(ctx, cfg_get):
     d = ctx.env.get('GIT_TEMPLATE_DIR') or cfg_get('init.templatedir')
     if d:
@@ -1537,11 +1543,16 @@ def init(ctx, args):
     lines = []
     if algo == 'sha256':
         lines += ['[extensions]', '\tobjectformat = sha256']
+    # What git's init probes and writes: a POSIX file system keeps the mode bit and tells case
+    # apart (filemode = true, no symlinks or ignorecase line); the Windows lines are fixed.
+    posix = _is_posix()
     lines += ['[core]', '\trepositoryformatversion = %d' % (1 if algo == 'sha256' else 0),
-              '\tfilemode = false', '\tbare = %s' % ('true' if bare else 'false')]
+              '\tfilemode = %s' % ('true' if posix else 'false'),
+              '\tbare = %s' % ('true' if bare else 'false')]
     if not bare:
         lines.append('\tlogallrefupdates = true')
-    lines += ['\tsymlinks = false', '\tignorecase = true']
+    if not posix:
+        lines += ['\tsymlinks = false', '\tignorecase = true']
     with open(os.path.join(gitdir, 'config'), 'wb') as f:
         f.write(('\n'.join(lines) + '\n').encode('utf-8'))
     if not opts.get('quiet'):

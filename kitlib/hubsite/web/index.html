@@ -498,13 +498,20 @@ ul.hist .sch-line{display:block}
       throw err;
     },
     snapshot(){ return this.call("GET", "/snapshot"); },
+    // The snapshot less its documents (api.snapshot, bare): what can move with no write, read after a wait that timed out.
+    bare(){ return this.call("GET", "/snapshot?bare=1"); },
     // The server answers a wait within about 55 s; the page gives up on one that says nothing for 90 s.
     wait(since, stop){ return this.call("GET", "/wait?since=" + encodeURIComponent(String(since)), null, 90000, stop); },
     post(path, body){ return this.call("POST", path, body); }
   };
   const seg = id => encodeURIComponent(String(id));
   // One write, then the lists are read again, so the page shows what the server holds and not a guess.
-  async function write(path, body){ const r = await hub.post(path, body); await refresh().catch(() => {}); return r; }
+  async function write(path, body){
+    const r = await hub.post(path, body);
+    const m = /^\/records\/([^/]+)\/([^/]+)/.exec(path);                 // the record's facts are read again at the next draw
+    if (m) { try { factsCache.delete(decodeURIComponent(m[1]) + ":" + decodeURIComponent(m[2])); } catch (e) { factsCache.clear(); } }
+    await refresh().catch(() => {}); return r;
+  }
   // A write the owner repeats at once (a tick, a flag, a read mark): the caller has already painted the new state, the
   // POST goes out without waiting for the lists to be read again (the watch loop reconciles), and a failure of any kind
   // (a 409 too) puts the old paint back through `undo` and says "Not saved" in `say`, so a real failure stays in sight.
@@ -1042,7 +1049,6 @@ ul.hist .sch-line{display:block}
   // The pure logic between the markers has no DOM; tests/hubsite/test_page.py runs it under node.
   // pm-pure:begin
   const PM_DAY = 86400000, PM_DONE_DAYS = 30;
-  const pmNextId = items => { let m = 0; for (const x of items) { const n = /^P-(\d+)$/.exec(String(x.id)); if (n) m = Math.max(m, +n[1]); } return "P-" + String(m + 1).padStart(3, "0"); };
   const pmDoneAt = x => x.done_at || x.sent_at || x.created_at || "";
   const pmWhen = (x, tab) => tab === "queued" ? x.created_at : tab === "sent" ? x.sent_at : pmDoneAt(x);
   const pmRecent = (x, now) => { const t = new Date(pmDoneAt(x)).getTime(); return isNaN(t) || t >= now - PM_DONE_DAYS * PM_DAY; };
@@ -1055,19 +1061,10 @@ ul.hist .sch-line{display:block}
     return { rows, hidden };
   }
   const pmBadge = items => { const w = items.filter(x => x.status === "queued" || x.status === "sent"); return { n: w.length, hot: w.some(x => x.urgent) }; };
-  const pmSendAll = (items, iso) => items.filter(x => x.status === "queued").map(x => ({ id: x.id, patch: { status: "sent", sent_at: iso } }));
   // Refs may be question ids (Q-nnn); entries shaped like a ledger id are never shown.
   const keptRefs = a => Array.isArray(a) ? a.filter(r => !/^(?:R-\d+|H-[a-z0-9][a-z0-9-]*-\d+)$/.test(String(r))) : [];
   // A note's kind as the page names it: an act note (a lint finding passed on, docs/action-hub.md) is its own kind.
   const pmKindText = k => k === "fyi" ? "FYI" : k === "act" ? "Act" : "Question";
-  // The sent items, one line each with its id.
-  function pmAlertLines(items){
-    const sent = items.filter(x => x.status === "sent");
-    if (!sent.length) return [];
-    const L = ["", "To PM (owner's questions and FYIs; reply in to_pm/ and set status done, with reply):"];
-    for (const x of sent) L.push("- " + x.id + " [" + pmKindText(x.kind) + (x.repo ? ", " + x.repo : "") + "]" + (x.urgent ? " (urgent)" : "") + ": " + String(x.text || "").replace(/\s+/g, " ").slice(0, 300));
-    return L;
-  }
   // A todo's commands as a list: an array, a lone string, or the older `command`.
   const pmCommands = t => Array.isArray(t.commands) ? t.commands.filter(c => typeof c === "string" && c.trim()) : typeof t.commands === "string" && t.commands.trim() ? [t.commands] : typeof t.command === "string" && t.command.trim() ? [t.command] : [];
   // The question tab a doc belongs to: a done one (no ruling needed) sits with logged, and an
@@ -1672,12 +1669,25 @@ ul.hist .sch-line{display:block}
   // route the record page uses) when it opens, and fills its Effort, Scope and Body in; a failed read says so. The
   // backlog view shortens a long title (kitlib.hubbacklog TITLE_MAX); the record's own summary, when it is not the
   // `shown` title, is put first as Full title, so no title is cut off with no way to read the rest.
+  // The read is kept per repo:id (the draw runs on every keystroke in the search box). It is read again when the page's own
+  // write to that record drops it (write), when a snapshot read changed what the page shows (refresh clears it; the snapshot
+  // does not carry effort, scope or body), or after FACTS_TTL. So an edit made outside this page shows after at most
+  // FACTS_TTL. A failed read is not kept.
+  const factsCache = new Map(), FACTS_TTL = 60000;
+  function recordRead(repo, id){
+    const k = repo + ":" + id, hit = factsCache.get(k);
+    if (hit && Date.now() - hit.at < FACTS_TTL) return hit.read;
+    const read = hub.call("GET", "/records/" + seg(repo) + "/" + seg(id));
+    factsCache.set(k, { at: Date.now(), read });
+    read.catch(() => { if (factsCache.get(k) && factsCache.get(k).read === read) factsCache.delete(k); });
+    return read;
+  }
   function recordFacts(repo, id, shown){
     const box = el("div", {class:"rfacts", id: "rf-" + id}, el("p", {class:"status", role:"status", text:"Reading the record…"}));
     (async () => {
       let kids;
       try {
-        const d = await hub.call("GET", "/records/" + seg(repo) + "/" + seg(id));
+        const d = await recordRead(repo, id);
         const fields = Array.isArray(d.fields) ? d.fields : [];
         const effort = fields.filter(f => f[0] === "effort").map(f => f[1]).join(", ");
         const scope = fields.filter(f => f[0] === "scope").map(f => f[1]).filter(Boolean);
@@ -1790,14 +1800,18 @@ ul.hist .sch-line{display:block}
   function showRecord(d){ recView = recPage(recordView(d)); render(); }
   // One section: what it shows, and an Edit that opens its text; post turns the text into the edit's body
   // (null: nothing changed). Every save is pinned to the version the page read.
-  function recSection(d, title, shown, text, post){
+  function recSection(d, title, shown, text, post, again){
     const box = el("div", {class:"pk"}, el("h2", {text: title}), el("div", {}, ...shown));
     if (!post || d.where !== "open") return box;
     const ta = el("textarea", {"aria-label": title}), status = el("span", {class:"status", role:"status"});
     const save = el("button", {class:"primary", type:"button", text:"Save"}), cancel = el("button", {class:"link", type:"button", text:"Cancel"});
-    const pane = el("div", {class:"pmf", hidden:true}, ta, el("div", {class:"act"}, save, cancel, status));
+    // Each section is pinned to its own version: a re-read after a refusal moves this section only, so another open section still holds
+    // the version its text was read at and is refused if the record changed under it.
+    let ver = d.version;
+    const theirs = el("div", {class:"ans", hidden:true});
+    const pane = el("div", {class:"pmf", hidden:true}, ta, theirs, el("div", {class:"act"}, save, cancel, status));
     const open = el("button", {class:"link", type:"button", text:"Edit " + title.toLowerCase()});
-    const show = () => { ta.value = text; pane.hidden = false; open.hidden = true; recSay(status, "status", ""); };
+    const show = () => { ta.value = text; theirs.hidden = true; pane.hidden = false; open.hidden = true; recSay(status, "status", ""); };
     open.addEventListener("click", show); recOpeners[title] = show;
     cancel.addEventListener("click", () => { pane.hidden = true; open.hidden = false; });
     save.addEventListener("click", async () => {
@@ -1805,8 +1819,19 @@ ul.hist .sch-line{display:block}
       try { body = post(ta.value); } catch (e) { recSay(status, "status err", why(e)); return; }
       if (!body) { recSay(status, "status", "Nothing changed."); return; }
       save.disabled = true; recSay(status, "status", "Saving…");
-      try { const out = await write("/records/" + seg(d.repo) + "/" + seg(d.id) + "/edit", Object.assign({version: d.version}, body)); showRecord(out.record); }
-      catch (e) { recSay(status, "status err", "Not saved: " + why(e)); save.disabled = false; }
+      try { const out = await write("/records/" + seg(d.repo) + "/" + seg(d.id) + "/edit", Object.assign({version: ver}, body)); showRecord(out.record); }
+      catch (e) {
+        save.disabled = false;
+        if (e.status !== 409 || !again) { recSay(status, "status err", "Not saved: " + why(e)); return; }
+        // The record changed meanwhile: it is read again, the next Save is pinned to the version now held, and what the server
+        // holds is shown under the draft. The draft stays; nothing is put in place of the server's text until Save is pressed again.
+        try {
+          const cur = await hub.call("GET", "/records/" + seg(d.repo) + "/" + seg(d.id));
+          ver = cur.version;
+          theirs.replaceChildren(el("b", {text: "The hub server now holds:"}), el("pre", {class:"kv", text: again(cur)})); theirs.hidden = false;
+          recSay(status, "status err", "Not saved: this record changed on the hub server while you were editing. Your text is kept; press Save again to put it in place of what the server holds now.");
+        } catch (e2) { recSay(status, "status err", "Not saved: this record changed on the hub server and could not be read again (" + why(e2) + "). Your text is kept; press Save again to try reading the record again."); }
+      }
     });
     box.append(open, pane);
     return box;
@@ -1833,11 +1858,11 @@ ul.hist .sch-line{display:block}
     const parts = [el("div", {class:"meta"}, el("span", {class:"id", text: d.id}), el("span", {class:"chip", text: d.repo}), el("span", {class:"chip", text: d.where}))];
     if (d.removed) parts.push(el("p", {class:"gone", role:"status", text: "This record is " + d.removed.how + (d.removed.at ? " (" + d.removed.at + ")" : "") + (d.removed.subject ? ": " + d.removed.subject : "") + "."}));
     if (!d.readable) parts.push(el("p", {class:"gone", role:"status", text: "A header line of this record is not key: value; the store refuses edits until it is fixed."}));
-    parts.push(recSection(d, "Fields", plain.map(f => kv(f[0], f[1])), kvText(plain), fieldPost(d, plain)));
+    parts.push(recSection(d, "Fields", plain.map(f => kv(f[0], f[1])), kvText(plain), fieldPost(d, plain), r => kvText(r.fields.filter(f => !HOLD.includes(f[0])))));
     const held = [...d.blockers.map(b => el("p", {class:"kv"}, el("b", {text: "blocked on: "}), b.value + " ", b.target ? el("button", {class:"link", type:"button", text:"open " + b.target, onclick: () => openRecord(d.repo, b.target)}) : null)),
       ...["owner_ask", "hold_ruling", "q"].filter(k => d.hold[k]).map(k => kv(k, d.hold[k]))];
-    parts.push(recSection(d, "Blocker or hold", held.length ? held : [el("p", {class:"status", text:"Not blocked or held."})], kvText(hold), fieldPost(d, hold)));
-    parts.push(recSection(d, "Body", [el("p", {class:"kv", text: d.body || "(no body)"})], d.body || "", txt => txt === (d.body || "") ? null : {body: txt}));
+    parts.push(recSection(d, "Blocker or hold", held.length ? held : [el("p", {class:"status", text:"Not blocked or held."})], kvText(hold), fieldPost(d, hold), r => kvText(r.fields.filter(f => HOLD.includes(f[0])))));
+    parts.push(recSection(d, "Body", [el("p", {class:"kv", text: d.body || "(no body)"})], d.body || "", txt => txt === (d.body || "") ? null : {body: txt}, r => r.body || ""));
     const b = d.branch;
     parts.push(recSection(d, "Branch", b ? [kv("branch", b.name + " (" + b.source + ")"),
       ...(b.error ? [kv("error", b.error)] : b.exists ? [kv("tip", b.tip + " " + b.subject), kv("date", b.date), kv("worktree", b.worktree || "none"), kv("ahead / behind main", b.ahead + " / " + b.behind)] : [kv("tip", "not found")])]
@@ -2302,11 +2327,14 @@ ul.hist .sch-line{display:block}
     return read;
   }
   // The sidebar's Lint findings count is read behind the page's draw: one GET /findings at the start and after each wait
-  // wake, without drawing the section. A failed read keeps the last count (or the dash).
-  let counting = false;
+  // wake that brought a new revision or after FINDINGS_EVERY, without drawing the section. A failed read keeps the last count (or the dash).
+  // The findings are not in the snapshot and a change in them moves no revision (they come from the lint run's files), so
+  // a wait that timed out is also followed by a read once the last count is FINDINGS_EVERY old.
+  let counting = false, countedAt = 0;
+  const FINDINGS_EVERY = 300000;
   async function countFindings(){
     if (counting || lint.reading) return;
-    counting = true;
+    counting = true; countedAt = Date.now();
     try {
       const f = await hub.call("GET", "/findings");
       state.lintOpen = lintRows(f, "items").filter(x => typeof x.fingerprint === "string").length;
@@ -3586,14 +3614,24 @@ ul.hist .sch-line{display:block}
   // snapshot is read again. A failure is said at the top, in its own words: an unpaired browser is told how to
   // pair and reads again only every HUB_UNPAIRED_MS (a refusal at a server restart heals by itself), a busy
   // server is given the wait it asked for, and anything else is tried again after hubRetryMs.
-  let rev = 0, lastKey = "", lastCheap = "", fails = 0;
+  let rev = 0, lastKey = "", lastCheap = "", fails = 0, lastSnap = null;
   function loadSay(text){ const b = $("#loaderr"); b.textContent = text; b.hidden = !text; }
   // The server's own word that hub code newer than it has landed: its restart text (the owner's step), shown until it restarts.
   function codeSay(code){ const b = $("#codeerr"), t = code && code.stale === true && typeof code.restart === "string" ? code.restart : ""; b.textContent = t; b.hidden = !t; }
   const typing = () => { const a = document.activeElement; return !!a && a !== document.body && a.matches("input:not([type=checkbox]):not([type=radio]), textarea"); };
-  async function refresh(){
-    const next = hubState(await hub.snapshot());
+  // quiet: the wait timed out, so no write moved the store's documents. Only what moves with no write is read (the
+  // bare snapshot: the git-backed views and the status), over the documents last read, when its revision is still the
+  // one they were read at; another revision reads the whole snapshot.
+  async function refresh(quiet){
+    let snap = null;
+    if (quiet && lastSnap) {
+      const b = await hub.bare();
+      if (b && b.revision === lastSnap.revision) snap = { ...b, collections: lastSnap.collections };
+    }
+    if (!snap) snap = await hub.snapshot();
+    const next = hubState(snap);
     if (ready && next.revision < rev) return;         // an older answer that arrived late
+    lastSnap = snap;
     codeSay(next.code);
     // The same revision and the same of everything a revision does not cover (the git-backed views: backlogs, usage,
     // agents, repos, notices, what is stale, partial or unavailable) is the page already drawn: only what moves on every
@@ -3602,14 +3640,14 @@ ul.hist .sch-line{display:block}
     const untimedRows = rows => rows.map(r => ({ ...r, posted_at: null }));
     const cheap = JSON.stringify([next.revision, next.gone, next.partial, next.stale, next.strong, next.repos, untimedRows(next.backlog), untimedRows(next.completed), next.usage.map(u => ({ ...u, measured_at: null })), next.agents, next.skills, next.notices]);
     if (ready && next.revision === rev && cheap === lastCheap) {
-      for (const k of ["seen", "push"]) state[k] = next[k];
+      for (const k of ["seen", "push", "watcher"]) state[k] = next[k];
       lastRead = Date.now(); seenLine();
       return;
     }
     lastCheap = cheap;
     rev = next.revision;
     const first = !ready; ready = true; lastRead = Date.now();
-    for (const k of ["docs", "inbox", "todos", "stories", "topm", "repos", "backlog", "completed", "parked", "usage", "agents", "skills", "skilledits", "landings", "notices", "pages", "gone", "partial", "stale", "seen", "push", "approvals", "decided", "strong"]) state[k] = next[k];
+    for (const k of ["docs", "inbox", "todos", "stories", "topm", "repos", "backlog", "completed", "parked", "usage", "agents", "skills", "skilledits", "landings", "notices", "pages", "gone", "partial", "stale", "seen", "push", "watcher", "approvals", "decided", "strong"]) state[k] = next[k];
     // An edit outlasts its item: one that is gone, or no longer the owner's to edit, keeps its card (loseEdit).
     for (const id of [...state.pmEdit.keys()]) if (!state.topm.some(x => x.id === id && x.status === "queued")) loseEdit(state.pmEdit, id);
     for (const id of [...state.todoEdit.keys()]) if (!state.todos.some(t => t.id === id && t.from === "you")) loseEdit(state.todoEdit, id);
@@ -3619,6 +3657,7 @@ ul.hist .sch-line{display:block}
     const unsince = Object.fromEntries(Object.entries(next.stale).map(([v, rows]) => [v, rows.map(o => ({ ...o, since: null }))]));
     const key = JSON.stringify({ ...next, revision: 0, seen: null, push: null, watcher: null, stale: unsince, usage: next.usage.map(u => ({ ...u, measured_at: null })), backlog: untimed(next.backlog), completed: untimed(next.completed), parked: untimed(next.parked) });
     const same = key === lastKey; lastKey = key;
+    if (!same) factsCache.clear();
     // A list that cannot be drawn: the counts drawn before it stay, the page is left as ready as it was before
     // this read (not ready on a first read, so its controls stay hidden and the next snapshot is drawn whatever
     // its revision), the next read draws again, and the error goes up to be said at the top.
@@ -3655,10 +3694,11 @@ ul.hist .sch-line{display:block}
       try {
         if (again) { await refresh(); again = false; loadSay(""); countFindings(); }    // fails is kept: only a wait that answers ends the run of failures
         read = true;
+        const was = rev;                                // before the wait: a refresh by a write of this page during it must not hide the change
         const w = await hub.wait(rev, stop.signal);
         if (w.reset) rev = 0;                           // the server's history does not reach back to rev: take whatever it holds now
-        await refresh();
-        countFindings();
+        await refresh(w.timed_out === true && !w.reset);   // a timeout reads the bare snapshot, not the documents
+        if (w.reset || rev !== was || Date.now() - countedAt >= FINDINGS_EVERY) countFindings();   // a timeout inside the interval reads no /findings
         fails = 0; loadSay("");
       } catch (e) {
         // A nudge ended the wait: read again at once, with no failure counted and nothing said.

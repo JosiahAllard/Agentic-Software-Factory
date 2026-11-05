@@ -1,20 +1,32 @@
 """kitlib.hubsite.auth: the local listener's roles. Token files live in a temp folder; the real
 machine config folder is never read or written."""
+import contextlib
 import email.message
 import hashlib
 import hmac
 import json
 import os
 import shutil
+import sys
 import tempfile
 import time
 import unittest
 from unittest import mock
 
+from kitlib import platform as kitplatform
 from kitlib.config import user
 from kitlib.config.types import ConfigError
 from kitlib.hubsite import auth
 from tests.home import PM_REPO_FENCE_ENV, pm_repo
+
+# the os call that moves a new secret file into place, by platform (auth._make_secret)
+MOVES = (('windows', 'rename'), ('linux', 'link'))
+
+
+def real_moves():
+    """The MOVES this machine runs with their real semantics: a rename refuses an existing
+    target only on Windows, a hard link everywhere."""
+    return [(name, call) for name, call in MOVES if name != 'windows' or sys.platform == 'win32']
 
 
 class Clock(object):
@@ -102,43 +114,79 @@ class TokenFileTest(Case):
         self.assertEqual(sorted(os.listdir(self.folder)), ['agent.token', 'owner.token'])
 
     def test_a_lost_race_uses_the_winners_token_and_leaves_no_temp_file(self):
-        path, real = self.paths[auth.OWNER], os.rename
+        path = self.paths[auth.OWNER]
+        for name, call in real_moves():
+            with self.subTest(platform=name):
+                os.remove(path)
+                real = getattr(os, call)
+
+                def late(src, dst, real=real):
+                    with open(dst, 'w', encoding='ascii') as f:  # another process got there first
+                        f.write('w' * 50 + '\n')
+                    return real(src, dst)
+
+                with mock.patch.object(kitplatform, 'NAME', name), \
+                        mock.patch.object(auth.os, call, late):
+                    self.assertEqual(auth.ensure_tokens(self.folder), self.paths)
+                self.assertEqual(auth.read_token(self.folder, auth.OWNER), 'w' * 50)
+                self.assertEqual(sorted(os.listdir(self.folder)), ['agent.token', 'owner.token'])
+
+    def test_a_secret_file_that_exists_is_never_replaced(self):
+        # the files appear after the check that nothing is there; os.replace stands in for a
+        # POSIX rename, which replaces its target, on any machine
+        self.put(auth.OWNER, 'w' * 50 + '\n')
+        for name, _ in real_moves():
+            with self.subTest(platform=name):
+                patches = [mock.patch.object(kitplatform, 'NAME', name),
+                           mock.patch.object(auth.os.path, 'lexists', return_value=False)]
+                if name != 'windows':
+                    patches.append(mock.patch.object(auth.os, 'rename', os.replace))
+                with contextlib.ExitStack() as stack:
+                    for patch in patches:
+                        stack.enter_context(patch)
+                    self.assertEqual(auth.ensure_tokens(self.folder), self.paths)
+                    auth.ensure_approval_key(self.folder)
+                    key = auth.read_approval_key(self.folder)
+                    auth.ensure_approval_key(self.folder)
+                self.assertEqual(auth.read_token(self.folder, auth.OWNER), 'w' * 50)
+                self.assertEqual(auth.read_token(self.folder, auth.AGENT), self.agent)
+                self.assertEqual(auth.read_approval_key(self.folder), key)
+                self.assertEqual(sorted(os.listdir(self.folder)),
+                                 sorted(['agent.token', 'owner.token', auth.APPROVAL_FILE]))
+
+    def test_a_failed_move_leaves_no_token_file_and_no_temp_file(self):
+        path = self.paths[auth.OWNER]
         os.remove(path)
+        for name, call in MOVES:
+            with self.subTest(platform=name):
+                seen = []
 
-        def late(src, dst):
-            with open(dst, 'w', encoding='ascii') as f:      # another process got there first
-                f.write('w' * 50 + '\n')
-            return real(src, dst)
+                def fail(src, dst, seen=seen):
+                    with open(src, 'rb') as f:
+                        seen.append((f.read(), dst, os.path.lexists(dst)))
+                    raise PermissionError('the move failed')
 
-        with mock.patch.object(auth.os, 'rename', late):
-            self.assertEqual(auth.ensure_tokens(self.folder), self.paths)
-        self.assertEqual(auth.read_token(self.folder, auth.OWNER), 'w' * 50)
-        self.assertEqual(sorted(os.listdir(self.folder)), ['agent.token', 'owner.token'])
+                with mock.patch.object(kitplatform, 'NAME', name), \
+                        mock.patch.object(auth.os, call, fail):
+                    with self.assertRaises(PermissionError):
+                        auth.ensure_tokens(self.folder)
+                (raw, dst, there), = seen
+                self.assertEqual((dst, there), (path, False))    # whole before it is moved in
+                self.assertEqual(len(raw), auth.MIN_TOKEN + 1)
+                self.assertEqual(os.listdir(self.folder), ['agent.token'])
 
-    def test_a_failed_rename_leaves_no_token_file_and_no_temp_file(self):
-        path, seen = self.paths[auth.OWNER], []
-        os.remove(path)
-
-        def fail(src, dst):
-            with open(src, 'rb') as f:
-                seen.append((f.read(), dst, os.path.lexists(dst)))
-            raise PermissionError('the rename failed')
-
-        with mock.patch.object(auth.os, 'rename', fail):
-            with self.assertRaises(PermissionError):
-                auth.ensure_tokens(self.folder)
-        (raw, dst, there), = seen
-        self.assertEqual((dst, there), (path, False))            # whole before it is moved in
-        self.assertEqual(len(raw), auth.MIN_TOKEN + 1)
-        self.assertEqual(os.listdir(self.folder), ['agent.token'])
-
-    def test_a_failed_cleanup_does_not_hide_the_renames_error(self):
+    def test_a_failed_cleanup_does_not_hide_the_moves_error(self):
         os.remove(self.paths[auth.OWNER])
-        with mock.patch.object(auth.os, 'rename', side_effect=PermissionError('the rename failed')), \
-                mock.patch.object(auth.os, 'remove', side_effect=OSError('the cleanup failed')):
-            with self.assertRaises(PermissionError) as cm:
-                auth.ensure_tokens(self.folder)
-        self.assertIn('the rename failed', str(cm.exception))
+        for name, call in MOVES:
+            with self.subTest(platform=name):
+                with mock.patch.object(kitplatform, 'NAME', name), \
+                        mock.patch.object(auth.os, call,
+                                          side_effect=PermissionError('the move failed')), \
+                        mock.patch.object(auth.os, 'remove',
+                                          side_effect=OSError('the cleanup failed')):
+                    with self.assertRaises(PermissionError) as cm:
+                        auth.ensure_tokens(self.folder)
+                self.assertIn('the move failed', str(cm.exception))
         with mock.patch.object(auth.os, 'remove', side_effect=OSError('the cleanup failed')):
             self.assertEqual(auth.ensure_tokens(self.folder), self.paths)   # and none at all is fine
         self.assertIsNotNone(auth.read_token(self.folder, auth.OWNER))

@@ -33,6 +33,7 @@ entry, ENTRY, followed by the host and the script's words (RETIRED): `guard.py` 
 file written before plan step 14 keeps its one guard entry and its PM hook. Any other name in those
 folders, or a kit with no ENTRY, is refused.
 """
+import copy
 import difflib
 import json
 import os
@@ -93,8 +94,11 @@ def survey(plan, d, ctx):
         plan.refuse('%s: "hooks" is not a JSON object; this step cannot read it' % path)
         return
     try:
-        ed.did.extend(repoint_moved(data, ctx))
-        ed.did.extend(repoint_links(data, ctx))
+        for event in sorted(hooks) if isinstance(hooks, dict) else []:
+            for h in _hooks(data, event):                  # per hook: ed.hook drops a dropped hook's lines
+                one = {'hooks': {event: [{'hooks': [h]}]}}
+                ed.pending[id(h)] = repoint_moved(one, ctx) + repoint_links(one, ctx)
+        ed.did.extend(repoint_links({'statusLine': data['statusLine']} if 'statusLine' in data else {}, ctx))
     except ValueError as e:
         plan.refuse('%s: %s' % (path, e))
         return
@@ -238,7 +242,7 @@ def _survey_fresh(plan, path, ctx):
     _guard_on_failure(data, ctx, did)
     if _wants_guard(plan, path, data, ctx):
         try:
-            entry = ctx.host.guard_entry(ctx.kit)
+            entry = guard_entry(ctx)
         except (OSError, RuntimeError, ValueError) as e:
             plan.refuse('cannot read boot/hook.py --settings-entry: %s' % e)
             return
@@ -247,6 +251,17 @@ def _survey_fresh(plan, path, ctx):
         did.append('add the guard\'s PreToolUse entry')
     if did:
         _plan_write(plan, ctx, path, raw, layout, data, did)
+
+
+def guard_entry(ctx):
+    """The guard's settings entry (ctx.host.guard_entry), read once per survey: it depends on the kit
+    and the default host only, so the first read is kept on ctx and every account gets a copy. A read
+    that raises is not kept; the host's exception reaches each caller."""
+    cache = ctx.__dict__.setdefault('_guard_entries', {})
+    key = (ctx.kit, registry.default())
+    if key not in cache:
+        cache[key] = ctx.host.guard_entry(ctx.kit)
+    return copy.deepcopy(cache[key])
 
 
 def host_name():
@@ -272,6 +287,12 @@ def _moved(tok, ctx):
     return None
 
 
+def _quote_for(q, path, whole):
+    """The quote to put round the new `path` that replaces a token quoted with `q` ('' when it was not):
+    an unquoted token that gains a space is quoted, or the shell splits it; a whole argument never is."""
+    return '"' if not q and not whole and ' ' in path else q
+
+
 def _sub_moved(s, ctx, event, did, whole):
     """(`s` with each retired hook script path of this kit (_moved) replaced by ENTRY, [the words a
     whole argument adds after it]). In a command line the words follow the path; for a whole
@@ -292,7 +313,9 @@ def _sub_moved(s, ctx, event, did, whole):
         if not os.path.isfile(new):
             raise ValueError('a %s hook runs %s, now %s, which the kit lacks' % (event, bare, new))
         added = entry_words(name.lower())
-        out.append(s[last:a] + q + new.replace('\\', '/') + q + ('' if whole else ' ' + ' '.join(added)))
+        fwd = new.replace('\\', '/')
+        q = _quote_for(q, fwd, whole)
+        out.append(s[last:a] + q + fwd + q + ('' if whole else ' ' + ' '.join(added)))
         words = added if whole else words
         last = b
         did.append('re-point the %s hook %s from %s/ to %s %s' % (event, name, folder, ENTRY, ' '.join(added)))
@@ -367,8 +390,7 @@ def _sub_links(s, ctx, dirs, where, did, whole):
             raise ValueError('%s runs %s through the tools link %s, and the kit has no %s for it to reach'
                              % (where, bare, name, new))
         fwd = new.replace('\\', '/')
-        if not q and not whole and ' ' in fwd:
-            q = '"'
+        q = _quote_for(q, fwd, whole)
         out.append(s[last:a] + q + fwd + q)
         last = b
         did.append('re-point the %s path %s (through the tools link %s) to %s' % (where, bare, name, fwd))
@@ -446,7 +468,7 @@ def survey_pm(plan, ctx):
             _plan_write(plan, ctx, path, raw, layout, data, did)
         return
     try:
-        exe = ctx.host.guard_entry(ctx.kit)['PreToolUse'][0]['hooks'][0]['command']
+        exe = guard_entry(ctx)['PreToolUse'][0]['hooks'][0]['command']
         if not isinstance(exe, str) or not exe.strip():
             raise ValueError('its command is %r' % (exe,))
     except (OSError, RuntimeError, ValueError, KeyError, IndexError, TypeError) as e:
@@ -596,23 +618,32 @@ class _Editor(object):
     def __init__(self, ctx, d, path, plan):
         self.ctx, self.d, self.path, self.plan = ctx, d, path, plan
         self.did = []
+        self.pending = {}                       # id(hook) -> the lines survey's re-points of it made
         self._entry = None
 
     def guard_entry(self):
         """The guard's settings entry (boot/hook.py --settings-entry), read once per file; raises what
         the host raises."""
         if self._entry is None:
-            self._entry = self.ctx.host.guard_entry(self.ctx.kit)
+            self._entry = guard_entry(self.ctx)
         return self._entry
 
     def hook(self, event, h):
         """True when `h` is an old kit hook to drop; otherwise its paths are re-pointed in place and a
         shell-form SessionStart hook running the kit's hook entry is written in exec form."""
         where = '%s hook' % event
+        mark = len(self.did)
+        self.did.extend(self.pending.pop(id(h), []))
+
+        def dropped():
+            """Keep only the drop line `rewrite` just recorded: a dropped hook prints that one line."""
+            self.did[mark:] = self.did[-1:]
+            return True
+
         if isinstance(h.get('command'), str):
             h['command'], drop, _ = self.rewrite(h['command'], where, True)
             if drop:
-                return True
+                return dropped()
         args = h.get('args')
         if isinstance(args, list):
             out = []
@@ -620,7 +651,7 @@ class _Editor(object):
                 if isinstance(a, str):
                     a, drop, words = self.rewrite(a, where, True, whole=True)
                     if drop:
-                        return True
+                        return dropped()
                     out += [a] + words
                 else:
                     out.append(a)
@@ -693,6 +724,7 @@ class _Editor(object):
                 continue
             fwd = target.replace('\\', '/')
             added = entry_words(base) if rel == ENTRY else []
+            q = _quote_for(q, fwd, whole)
             out.append(s[last:a] + q + fwd + q + ('' if whole or not added else ' ' + ' '.join(added)))
             words = added if whole else words
             last = b

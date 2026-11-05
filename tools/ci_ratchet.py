@@ -13,7 +13,7 @@ On Windows the gate (`gate.py --full`) runs the suite; this tool is for the plat
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.ci.ratchet, prints, exits.
 It loads no kitlib.proc beyond kitlib/__init__'s console hook, and no kitlib.config or kitlib.git,
-so it runs where those cannot import.
+so it runs where those cannot import; -C is resolved to its checkout top by walking up to a .git.
 Exit codes: 0 green (the failing tests are exactly the baseline), 1 a difference, 2 USAGE, a
 malformed or missing baseline, or a broken run (the tests package did not import, the child died,
 timed out or printed no result, no test ran, or this tool met an unexpected error).
@@ -64,8 +64,25 @@ def main(argv=None, out=None):
         return USAGE
 
 
+def _checkout_top(path):
+    """The nearest folder at or above `path` holding a .git (a folder, or a linked worktree's
+    file), or None: this tool loads no kitlib.git, so it walks up instead of asking git."""
+    here = path
+    while os.path.isdir(here):
+        if os.path.exists(os.path.join(here, '.git')):
+            return here
+        parent = os.path.dirname(here)
+        if parent == here:
+            return None
+        here = parent
+    return None
+
+
 def _run(a, say):
-    root =os.path.abspath(a.root)
+    root = _checkout_top(os.path.abspath(a.root))
+    if root is None:
+        say('ci_ratchet: refused: -C: %s is in no git work tree' % os.path.abspath(a.root))
+        return USAGE
     if not os.path.isdir(os.path.join(root, 'tests')):
         say('ci_ratchet: refused: no tests folder in %s' % root)
         return USAGE

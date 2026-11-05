@@ -83,6 +83,7 @@ import secrets
 import threading
 import time
 
+from kitlib import platform
 from kitlib.config import user
 from kitlib.config.types import ConfigError
 
@@ -152,8 +153,8 @@ def ensure_tokens(folder):
     """Make `folder` and each token file that is absent, with a fresh random token, and return
     {role: path}. A token file that exists and read_token cannot use (empty, shorter than
     MIN_TOKEN, not ASCII, a directory) is a TokenFileError naming it: it is never replaced and
-    never adopted. A new file is written whole beside its place and renamed in, so a crash
-    leaves no empty token file; the rename never replaces a file another process made first
+    never adopted. A new file is written whole beside its place and moved in, so a crash
+    leaves no empty token file; the move never replaces a file another process made first
     (that process's token is then the one in use). A hard kill can leave a `<file>.<hex>.tmp`
     beside it: harmless, never read as a token, and nothing sweeps it. OSError propagates; a
     failure to remove the temp file never hides it."""
@@ -189,19 +190,24 @@ def ensure_approval_key(folder):
 
 def _make_secret(path):
     """Write a fresh random secret to `path` when nothing is there (ensure_tokens): whole beside
-    it, then renamed in, never over a file another process made first."""
+    it, then moved in, never over a file another process made first. The move is a rename on
+    Windows, which refuses an existing target, and a hard link elsewhere, since a POSIX rename
+    would replace it."""
     if os.path.lexists(path):
         return
     tmp = '%s.%s.tmp' % (path, secrets.token_hex(8))
     try:
         with open(tmp, 'x', encoding='ascii', newline='\n') as f:
             f.write(secrets.token_urlsafe(TOKEN_BYTES) + '\n')
-        os.rename(tmp, path)       # Windows: fails when `path` exists, never replaces
+        if platform.NAME == 'windows':
+            os.rename(tmp, path)
+        else:
+            os.link(tmp, path)
     except FileExistsError:
         pass
     finally:
         try:
-            os.remove(tmp)         # gone already after a rename that worked
+            os.remove(tmp)         # gone already after a rename; after a link, its second name
         except OSError:
             pass
 

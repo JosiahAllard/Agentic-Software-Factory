@@ -22,8 +22,13 @@ class Lookup(unittest.TestCase):
         live = lookup.claude_sessions(procs)
         self.assertEqual([p['ProcessId'] for p in lookup.find_exact(live, 'x-a1')], [1])
         self.assertEqual(lookup.pids(lookup.find_exact(live, 'x-a1-r2')), '2')
-        self.assertTrue(lookup.running_stem(procs, 'x-'))
-        self.assertFalse(lookup.running_stem(procs, 'y-'))
+        self.assertTrue(lookup.running_stem(procs, 'x'))
+        self.assertFalse(lookup.running_stem(procs, 'y'))
+
+    def test_running_stem_is_the_stems_own_names_not_a_longer_stem(self):
+        self.assertFalse(lookup.running_stem([session(1, 'demo-lane-a1')], 'demo'))
+        self.assertTrue(lookup.running_stem([session(1, 'demo-a2-r3')], 'demo'))
+        self.assertTrue(lookup.running_stem([session(1, 'demo-a1')], 'demo'))
 
 
 def rc_off(pid, name, parent=1):
@@ -50,7 +55,7 @@ class RcOff(unittest.TestCase):
         procs = [rc_off(1, 'x-a1'), rc_off(2, 'x-a1-r2')]
         live = lookup.claude_sessions(procs)
         self.assertEqual([p['ProcessId'] for p in lookup.find_exact(live, 'x-a1')], [1])
-        self.assertTrue(lookup.running_stem(procs, 'x-'))
+        self.assertTrue(lookup.running_stem(procs, 'x'))
 
     def test_an_unrelated_claude_matches_no_name(self):
         other = dict(session(5, 'x'), CommandLine='claude --resume abc --permission-mode auto')

@@ -474,16 +474,33 @@ class Split(unittest.TestCase):
         self.assertIn('H2', why)
 
     def test_every_case_complement_cannot_narrow_stays_held(self):
-        cases = [(['kit/a.py'], 'kit/**', ['kit/a.py'], True),          # a single file
-                 (['kit/sub/**'], 'kit/**', ['kit/sub/c.py', 'kit/sub/d.py'], True),  # nothing left
-                 (['kit/**'], 'kit/**', ['kit\\x.py'], True),            # undecidable
-                 (['kit/**'], 'kit/**', ['kit/a.py'], True, []),         # no tree
-                 (['kit/**'], 'kit/**', [], True)]                       # nothing protected
-        for case in cases:
+        cases = [((['kit/a.py'], 'kit/**', ['kit/a.py'], True),           # a single file
+                  'complement cannot narrow kit/a.py'),
+                 ((['kit/sub/**'], 'kit/**', ['kit/sub/c.py', 'kit/sub/d.py'], True),
+                  "nothing of the candidate's scope is left"),
+                 ((['kit/**'], 'kit/**', ['kit/x\\y.py'], True),          # undecidable
+                  'undecidable: '),
+                 ((['kit/**'], 'kit/**', ['kit/a.py'], True, []),          # no tree
+                  'complement cannot narrow kit/**'),
+                 ((['kit/**'], 'kit/**', [], True),                        # nothing protected
+                  "nothing of HOLD's scope is left")]
+        for case, reason in cases:
             with self.subTest(case=case):
                 out, why = self.split(*case)
                 self.assertIsNone(out)
-                self.assertTrue(why)
+                self.assertTrue(why.startswith(reason), why)
+
+    def test_a_protected_path_in_another_letter_case_stays_held(self):
+        # The candidate side matches T in any letter case, the live pull's side in exact case:
+        # a split would leave kit/a.py (or the new kit/new.py) in neither scope.
+        for protected, reason in ((['Kit/a.py', 'kit/b.py'], 'protected path Kit/a.py is '
+                                   'spelled kit/a.py in the tree'),
+                                  (['Kit/new.py', 'kit/b.py'], 'protected path Kit/new.py '
+                                   'differs in letter case from scope kit')):
+            with self.subTest(protected=protected):
+                out, why = self.split(['kit/**'], 'kit/**', protected, True)
+                self.assertIsNone(out)
+                self.assertTrue(why.startswith(reason), why)
 
     def test_the_narrows_line(self):
         s = snap(live(), priced('FOO', priority='3', scope='kit/**'))
@@ -542,7 +559,8 @@ class NextNarrows(unittest.TestCase):
         offers, passed = self.offer(s, holding, narrow=self.narrow(['kit/a.py']))
         self.assertEqual(offers, [])
         lines = omod.narrowings(list(passed.values()), holding,
-                                {'kit/b': [('kit/b', ['kit/a.py'])]}, {})
+                                {'kit/b': [('kit/b', ['kit/a.py'])]}, {},
+                                {'kit/b': ([], None)})
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith('NARROW FOO (rank 2): kit/a.py collides'), lines)
 

@@ -29,7 +29,7 @@ import subprocess
 import sys
 import time
 
-from kitlib import pluginsource
+from kitlib import platform, pluginsource
 from kitlib.proc import process     # loaded now: refresh.pid reads it mid-run; kill_tree
 from kitlib.proc import spawn
 from kitlib.hubsite import jobs
@@ -40,7 +40,7 @@ RETRY_S = 1800
 REFRESH_TIMEOUT_S = 1800
 KILL_WAIT_S = 10                    # after a timeout's kill: the pipe's last bytes
 BUSY = 'a refresh is already running'
-_NOWIN = 0x08000000                 # CREATE_NO_WINDOW
+_NOWIN = 0x08000000                 # CREATE_NO_WINDOW (Windows only: POSIX Popen refuses any creationflags but 0)
 
 
 class RefreshFailed(Exception):
@@ -86,7 +86,8 @@ def run_child(argv, cwd, start=None, kill_tree=None, ctime=None):
     ctime = ctime or process.proc_ctime
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     p = start(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT, creationflags=_NOWIN)
+              stderr=subprocess.STDOUT,
+              creationflags=_NOWIN if platform.NAME == 'windows' else 0)
     born = ctime(p.pid)
     try:
         out, _ = p.communicate(timeout=REFRESH_TIMEOUT_S)

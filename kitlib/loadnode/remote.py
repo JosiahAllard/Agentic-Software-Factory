@@ -334,6 +334,9 @@ class Link(object):
                 if on_data(chunk) is False:
                     p.kill()
                     break
+        except BaseException:                     # on_data raised: ssh is still running, unread
+            p.kill()
+            raise
         finally:
             done.set()
             p.wait()

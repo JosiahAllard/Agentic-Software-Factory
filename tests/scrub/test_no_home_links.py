@@ -46,6 +46,37 @@ def scan():
     return out
 
 
+class HomeLinkRegex(unittest.TestCase):
+    """The regex itself: every form it is meant to catch, and what it must leave alone. The
+    fixtures are built by concatenation so this file does not trip the scan."""
+
+    CLAUDE = '.' + 'claude'
+    FORMS = {
+        'tilde': '~/' + CLAUDE + '/tools/x',
+        'tilde, backslash': '~\\' + CLAUDE + '\\knowledge\\x',
+        'USERPROFILE': '%USER' + 'PROFILE%\\' + CLAUDE + '-2\\knowledge\\x',
+        'env USERPROFILE': '$env:USER' + 'PROFILE\\' + CLAUDE + '\\tools\\x',
+        'HOME': '$HO' + 'ME/' + CLAUDE + '/tools/x',
+        'braced HOME': '${HO' + 'ME}/' + CLAUDE + '/knowledge/x',
+        'dotted account folder': '~/' + CLAUDE + '-a.b_c/tools/x',
+        'upper case': '~/' + CLAUDE.upper() + '/TOOLS/x',
+    }
+
+    def test_each_form_is_one_hit(self):
+        for name, path in self.FORMS.items():
+            with self.subTest(name):
+                found = hits('x.py', 'run ' + path + ' now\n')
+                self.assertEqual(len(found), 1, found)
+                self.assertTrue(path.startswith(found[0][2]), found)
+
+    def test_other_text_is_no_hit(self):
+        for text in ('<kit>/tools/x', 'see ' + '~/' + self.CLAUDE + '/settings.json',
+                     '~/' + self.CLAUDE + '/toolset/x', 'HOME/' + self.CLAUDE + '/tools/x',
+                     'C:/kit/' + self.CLAUDE + '/tools/x'):
+            with self.subTest(text):
+                self.assertEqual(hits('x.py', text + '\n'), [])
+
+
 class NoHomeLinks(unittest.TestCase):
 
     maxDiff = None

@@ -1,5 +1,6 @@
 """kitlib.hubsite.httpd: the loopback listener. Every test binds port 0 on the loopback address,
 talks to it over a real socket, and stops what it started."""
+import gzip
 import http.client
 import json
 import os
@@ -8,12 +9,14 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib import platform as kitplatform
 from kitlib.hubsite import api, auth, httpd
 from kitlib.hubsite.api import AGENT, ANY, BASE, OWNER
 from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
 from tests.hubsite import test_api_roles as roles
 from tests.hubsite.httpfix import TIMEOUT, get, post, send
+from tests.platforms import posix_only, windows_only
 
 HEALTH = BASE + '/health'
 TODOS = BASE + '/todos'
@@ -49,6 +52,42 @@ class Recorder(object):
 class Broken(object):
     def call(self, *a, **kw):
         raise RuntimeError('boom in D:\\secret\\place')
+
+
+class Large(object):
+    """An Api whose every answer is a JSON body of several kilobytes, as GET snapshot's."""
+
+    def call(self, *a, **kw):
+        return 200, {'ok': True, 'rows': ['row %d' % i for i in range(2000)]}
+
+
+# ------------------------------------------------------------------ compression
+class GzipCase(httpfix.ListenerCase):
+    # KIT-HUB-SNAPSHOT-EVERY-WAIT: GET snapshot (4.7 MB) went uncompressed to a browser that asks
+    # for gzip, over the tunnel too
+    def test_a_json_answer_is_gzipped_only_when_the_request_takes_gzip(self):
+        lis = self.listener(Large())
+        want = Large().call()[1]
+        for accept, coded in (('gzip, deflate, br', True), ('GZIP', True), ('br;q=1, gzip;q=0.5', True),
+                              (None, False), ('gzip;q=0', False), ('deflate, br', False), ('identity', False)):
+            with self.subTest(accept=accept):
+                r = get(lis.port, BASE + '/snapshot', self.owner,
+                        [('Accept-Encoding', accept)] if accept is not None else [])
+                self.assertEqual(r.status, 200)
+                self.assertEqual(r.header('Vary'), ['Accept-Encoding'])
+                self.assertEqual(r.header('Content-Encoding'), ['gzip'] if coded else [])
+                self.assertEqual(r.header('Content-Length'), [str(len(r.body))])
+                body = gzip.decompress(r.body) if coded else r.body
+                self.assertEqual(json.loads(body.decode('utf-8')), want)
+                if coded:
+                    self.assertLess(len(r.body), len(body) // 4)
+
+    def test_a_small_answer_goes_as_it_is(self):
+        r = get(self.listener().port, HEALTH, self.owner, [('Accept-Encoding', 'gzip')])
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.header('Content-Encoding'), [])
+        self.assertEqual(r.header('Vary'), [])
+        self.assertIs(r.json()['ok'], True)
 
 
 # ------------------------------------------------------------------ the address
@@ -750,6 +789,7 @@ class LimitCase(httpfix.ListenerCase):
             self.assertEqual(lis.waiting, 0)
         self.assertEqual(len(self.errors()), 3)
 
+    @windows_only('SO_EXCLUSIVEADDRUSE is Windows only')
     def test_the_port_is_bound_exclusively_and_no_resolver_is_asked(self):
         with mock.patch.object(socket, 'getfqdn',
                                side_effect=AssertionError('the resolver was asked')):
@@ -759,6 +799,37 @@ class LimitCase(httpfix.ListenerCase):
         sock = lis._server.socket
         self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE), 1)
         self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR), 0)
+
+    def test_on_linux_the_port_is_bound_with_reuse_address_and_on_windows_not(self):
+        for name, reuse in (('linux', 1), ('windows', 0)):
+            with self.subTest(platform=name):
+                with mock.patch.object(kitplatform, 'NAME', name):
+                    lis = self.listener(start=False)
+                sock = lis._server.socket
+                self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR), reuse)
+                exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+                if exclusive is not None:
+                    self.assertEqual(sock.getsockopt(socket.SOL_SOCKET, exclusive), 1 - reuse)
+
+    @posix_only('the listener sets SO_REUSEADDR on Linux only')
+    def test_on_linux_a_restart_binds_its_port_again_at_once(self):
+        lis = self.listener()
+        port = lis.port
+        # one request, read until the listener closes, so the listener's side is the one that
+        # closed first and keeps the connection in TIME_WAIT (no abort_on_close here)
+        s = socket.create_connection((httpd.LOOPBACK, port), timeout=TIMEOUT)
+        try:
+            s.sendall(('GET %s HTTP/1.1\r\nHost: %s:%d\r\n\r\n'
+                       % (HEALTH, httpd.LOOPBACK, port)).encode('ascii'))
+            self.assertTrue(httpfix.read_all(s).startswith(b'HTTP/1.1 '))
+        finally:
+            s.close()
+        self.assertTrue(lis.stop(TIMEOUT))
+        again = httpd.Listener((httpd.LOOPBACK, port), self.api, None)
+        self.addCleanup(again.stop, TIMEOUT)
+        self.assertEqual(again.port, port)
+        with self.assertRaises(httpd.BindRefused):     # a port in LISTEN is still refused
+            httpd.Listener((httpd.LOOPBACK, port), self.api, None)
 
     def test_a_silent_connection_and_a_stalled_body_end_at_the_socket_timeout(self):
         self.assertEqual((httpd._Handler.timeout, httpd.SOCKET_TIMEOUT_S), (30, 30))

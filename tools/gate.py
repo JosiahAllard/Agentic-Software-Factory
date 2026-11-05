@@ -27,7 +27,8 @@
       0 FLAKE (the tip lands on that record), 1 REAL (or VOID), 4 nothing to rerun (kitlib.gate.
       rerun; docs/gate.md "Targeted rerun")
   gate.py --measure --out PATH [--days N]
-      write a proposed kinds table from the lock's run history (never the live table)
+      write a proposed kinds table from the lock's run history (never the live table;
+      kitlib.gate.measure.write_proposal); any other flag, -C, --slug and --log-dir too, is USAGE
   gate.py wait-result BRANCH --tip SHA [--kind gate|land] [--timeout S] [-C DIR]
       wait for BRANCH's result record at SHA, print it; 0 pass, 1 any other verdict, 7 no record
       at that tip within S seconds. Its one write: a running record at SHA whose process died is
@@ -48,7 +49,6 @@ LANDED_UNGATED is retired (no landing gives it); a machine lock refusal passes i
 through (6, 8, 10, 11, 12); 130 Ctrl+C.
 """
 import argparse
-import json
 import os
 import re
 import sys
@@ -80,14 +80,12 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
 
 from kitlib import gate as G                                       # noqa: E402
 from kitlib import pluginsource                                    # noqa: E402
-from kitlib.config import policy                                  # noqa: E402
 from kitlib.coordstate import log as coordlog                       # noqa: E402
 from kitlib.gate import land as landmod                            # noqa: E402
 from kitlib.gate import budget, caller, measure, outfile, rerun, runner  # noqa: E402
 from kitlib.gate import result as resultmod                       # noqa: E402
 from kitlib.gate import stop as stopmod                            # noqa: E402
 from kitlib.gate import submit as submitmod                        # noqa: E402
-from kitlib.lock import layout as lay                              # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402
 
 
@@ -155,38 +153,6 @@ def land_parser():
     return p
 
 
-def land_again_args(a, root):
-    """This submission's arguments, `land` first, for the Instead: command of one that did not
-    name its reviewer (submit.again_line): -C absolute with forward slashes."""
-    args = ['land', a.branch, '-C', root.replace('\\', '/'), '--expect-tip', a.expect_tip]
-    if a.expect_main:
-        args += ['--expect-main', a.expect_main]
-    if a.summary:
-        args += ['--summary', a.summary]
-    if a.wait is not None:
-        args += ['--wait', str(a.wait)]
-    if a.log_dir:
-        args += ['--log-dir', a.log_dir]
-    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
-                                         ('--keep-branch', a.keep_branch)) if on]
-
-
-def land_child_args(a, root):
-    """The arguments of the detached landing `gate.py land --submit` starts: `land`, then this
-    landing's, -C and --log-dir absolute."""
-    args = ['land', a.branch, '-C', root, '--expect-tip', a.expect_tip]
-    if a.expect_main:
-        args += ['--expect-main', a.expect_main]
-    if a.summary:
-        args += ['--summary', a.summary]
-    if a.wait is not None:
-        args += ['--wait', str(a.wait)]
-    if a.log_dir:
-        args += ['--log-dir', os.path.abspath(a.log_dir)]
-    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
-                                         ('--keep-branch', a.keep_branch)) if on]
-
-
 def do_land(argv):
     p = land_parser()
     a = p.parse_args(argv)
@@ -197,29 +163,24 @@ def do_land(argv):
         p.error('--submit starts the landing that --submitted runs; not both')
     if a.reviewed_by and not a.submit:
         p.error('%s goes with --submit' % submitmod.REVIEWED_BY)
+    branches, tips = [a.branch], [a.expect_tip]
     if a.submit:
+        tool = submitmod.GATE_TOOL
         out = submitmod.submit(
-            root, __file__, land_child_args(a, root), [a.branch], [a.expect_tip],
+            root, __file__, submitmod.child_args(tool, a, root, branches, tips), branches, tips,
             expect_main=a.expect_main, reviewed_by=a.reviewed_by,
-            again=lambda ids: submitmod.again_line('gate.py', land_again_args(a, root), ids))
+            again=lambda ids: submitmod.again_line(
+                tool, submitmod.again_args(tool, a, root, branches, tips), ids))
         code = emit(out)
-        coordlog.note_submit(out, [a.branch], [a.expect_tip], a.reviewed_by)   # docs/coord-state.md
+        coordlog.note_submit(out, branches, tips, a.reviewed_by)   # docs/coord-state.md
         return code
     submitted = None
     if a.submitted:
-        try:
-            submitted = submitmod.restore(root, a.submitted, [a.branch], [a.expect_tip],
-                                          expect_main=a.expect_main)
-        except submitmod.Untrusted as e:       # no record written; the line also in its log
-            sys.stderr.write(submitmod.untrusted_refusal(a.submitted, e) + '\n')
-            return G.REFUSED
-        except submitmod.SubmitError as e:     # its records are finished, never left running
-            return emit(submitmod.abandon(root, a.submitted, str(e)))
-        if submitted.get('output'):
-            try:
-                submitmod.redirect_output(submitted['output'])
-            except OSError as e:
-                print('WARNING: the output stays on the hidden console: %s' % e, flush=True)
+        submitted, said = submitmod.restore_landing(root, a.submitted, branches, tips,
+                                                    expect_main=a.expect_main)
+        code = emit(said)
+        if submitted is None:
+            return code
     # A detached landing waits the configured "landing".wait_s for its turn; one run here, 0.
     wait_s = a.wait if a.wait is not None or submitted is not None else 0
     return emit(guarded(landmod.land, root, a.branch, a.expect_main, a.expect_tip,
@@ -289,7 +250,7 @@ def do_allow(argv):
         print('USAGE: %s' % e, file=sys.stderr)
         return G.USAGE
     except budget.BudgetError as e:
-        print('REFUSED: %s; nothing written' % e)
+        print('REFUSED: %s; nothing written' % e, file=sys.stderr)
         return G.REFUSED
     print('ALLOWED %s: %d gate runs (%d used); %s' % (a.branch, a.runs, used, path))
     return G.OK
@@ -314,8 +275,10 @@ def do_stop(argv):
 
 
 def emit(outcome):
+    """Print the Outcome's lines, to stderr when it has the fact stderr=True; its code."""
+    stream = sys.stderr if outcome.facts.get('stderr') else sys.stdout
     for line in outcome.lines:
-        print(line, flush=True)
+        print(line, file=stream, flush=True)
     return outcome.code
 
 
@@ -336,44 +299,7 @@ def do_measure(a):
     if a.days < 1:
         print('USAGE: --days must be at least 1', file=sys.stderr)
         return G.USAGE
-    out = os.path.abspath(a.out)
-    live = os.path.abspath(policy.KINDS_FILE)
-    try:                            # a link or another spelling of the live table is the table
-        same = os.path.normcase(out) == os.path.normcase(live) or (
-            os.path.exists(out) and os.path.samefile(out, live))
-    except OSError as e:
-        print('REFUSED: cannot tell whether %s is the live kinds table: %s' % (out, e))
-        return G.REFUSED
-    if same:
-        print('REFUSED: %s is the live kinds table; sizes change only by a PM-reviewed commit'
-              % live)
-        return G.REFUSED
-    try:
-        with open(live, encoding='utf-8') as f:
-            live_doc = json.load(f)
-        table, aliases = live_doc['kinds'], live_doc.get('aliases')
-        store = Store(say=say)
-        layout = lay.in_force(store)['layout']
-        history = store.history_records(a.days)
-    except (OSError, ValueError, KeyError) as e:
-        print('REFUSED: cannot read the kinds table or the lock history: %s' % e)
-        return G.REFUSED
-    kinds, notes = measure.propose(table, history, layout['medium_cores'],
-                                   store.settings.history_min_runs, agent_cap=layout['agent_cap'],
-                                   aliases=aliases)
-    doc = measure.document(kinds, 'PROPOSED by gate.py --measure from %d day(s) of history; '
-                                  'review, then commit to kitlib/lock/kinds.json.' % a.days,
-                           aliases)
-    try:
-        with open(out, 'w', encoding='utf-8') as f:
-            f.write(json.dumps(doc, indent=1) + '\n')
-    except OSError as e:
-        print('REFUSED: cannot write the proposal %s: %s' % (out, e))
-        return G.REFUSED
-    for n in notes:
-        print(n)
-    print('proposal written: %s' % out)
-    return G.OK
+    return emit(measure.write_proposal(a.out, a.days, say=say))
 
 
 def main(argv):
@@ -390,7 +316,8 @@ def main(argv):
             return do_stop(argv[1:])
         a = gate_parser().parse_args(argv)
         if a.measure:
-            if a.only or a.full or a.rerun or a.plan or a.base:
+            if (a.only or a.full or a.rerun or a.plan or a.base or a.root is not None
+                    or a.slug or a.log_dir):
                 print('USAGE: --measure takes only --out and --days', file=sys.stderr)
                 return G.USAGE
             return do_measure(a)

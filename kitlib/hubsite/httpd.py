@@ -15,6 +15,7 @@
   Request   .method .target .path .query .headers .client .port, then .role .strong .via .body
   Response(status, body=b'', content_type=JSON, headers=())
   json_response(status, obj, headers=())    refusal(status, code, message, field='', headers=())
+  gzipped(response, accept)        the body to send and its encoding headers ("Compression")
   strong_words(request)            {'strong': True} for the strong owner's request, else {}
   local_hosts(host, port)          the local listener's host_rule
   local_gate(creds)                the local listener's gate, over kitlib.hubsite.auth.Credentials
@@ -26,7 +27,8 @@
 The address. Only LOOPBACK is bound: any other host in `addr` (a name, the empty string, the any
 address, an IPv6 one) is BindRefused in code, whatever a setting says. The port is bound by the
 constructor, exclusively (a second process cannot share or take it), so a taken port is a
-BindRefused at once and `.port` is real before start().
+BindRefused at once and `.port` is real before start(). On Linux the port's own TIME_WAIT
+connections do not hold it, so a restarted hub binds it again at once.
 
 One request, in this order, for every method and every path:
   1. gate(request). It answers a role (auth.OWNER, auth.AGENT), None (no role: the Api refuses
@@ -99,6 +101,11 @@ status, the code and the field unchanged. That is the tunnel listener, whose ans
 machine; the local listener is made without it and tells the owner the error's own text. Every
 response closes its connection and carries SECURITY_HEADERS; none names the software.
 
+Compression. A JSON answer of at least GZIP_MIN bytes is sent gzipped (Content-Encoding: gzip)
+when the request's one Accept-Encoding header takes gzip (a q of 0 refuses it), and says Vary:
+Accept-Encoding either way; GET snapshot is several megabytes and compresses to about a quarter.
+A static file and a smaller answer go as they are.
+
 log(level, text). level is 'access' (one line a request: client address, method, path, status,
 role) or 'error'. The path is logged without its query, and no header is ever logged, so a line
 holds no token, no cookie and no pairing code. With no `log` nothing is written anywhere.
@@ -111,6 +118,7 @@ nothing either. A missing INDEX is a plain 404.
 
 Nothing here reads a setting, opens the store, prints or exits; kitlib.hubsite.serve wires it.
 """
+import gzip
 import http.server
 import io
 import json
@@ -122,6 +130,8 @@ import threading
 import time
 import traceback
 import urllib.parse
+
+from kitlib import platform
 
 from . import api as _api
 from . import auth
@@ -139,6 +149,8 @@ LINGER_S = 2                   # reading away what a client still sends after it
 LINGER_BYTES = 4 << 20          # and never more than this much of it
 METHODS = ('GET', 'HEAD', 'POST')
 JSON = 'application/json'
+GZIP_MIN = 1024                 # bytes of a JSON body below which it is never gzipped
+GZIP_LEVEL = 6
 INDEX = 'index.html'
 VIA_HEADER = 'X-Hub-Via'
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's own source: no VIA_HEADER may claim it
@@ -239,6 +251,37 @@ def json_response(status, obj, headers=()):
 def refusal(status, code, message, field='', headers=()):
     """A refusal in the Api's error shape."""
     return json_response(status, _api.error_body(code, message, field), headers)
+
+
+def _takes_gzip(accept):
+    """Whether an Accept-Encoding value (None: not sent, or sent more than once) names gzip
+    with a q above 0."""
+    for part in (accept or '').split(','):
+        name, _, params = part.partition(';')
+        if name.strip().lower() != 'gzip':
+            continue
+        for p in params.split(';'):
+            key, _, value = p.partition('=')
+            if key.strip().lower() == 'q':
+                try:
+                    return float(value) > 0
+                except ValueError:
+                    return False
+        return True
+    return False
+
+
+def gzipped(response, accept):
+    """The bytes to send for `response` and the headers that say how: a JSON body of at least
+    GZIP_MIN bytes is gzipped when `accept` (the request's Accept-Encoding) takes gzip, with
+    Content-Encoding: gzip; every such body says Vary: Accept-Encoding. Anything else goes as
+    it is, with no header."""
+    if response.content_type != JSON or len(response.body) < GZIP_MIN:
+        return response.body, ()
+    vary = (('Vary', 'Accept-Encoding'),)
+    if not _takes_gzip(accept):
+        return response.body, vary
+    return gzip.compress(response.body, GZIP_LEVEL, mtime=0), vary + (('Content-Encoding', 'gzip'),)
 
 
 def strong_words(request):
@@ -407,8 +450,9 @@ def _shown(text, limit=200):
 
 
 class _Server(http.server.ThreadingHTTPServer):
-    """The socket and the accept loop of one Listener."""
-    allow_reuse_address = False     # on Windows the option would let a second process bind too
+    """The socket and the accept loop of one Listener. server_bind sets the socket options
+    itself, so the two allow_reuse_* flags below are never read."""
+    allow_reuse_address = False
     allow_reuse_port = False
     daemon_threads = True
     block_on_close = False
@@ -419,9 +463,15 @@ class _Server(http.server.ThreadingHTTPServer):
         http.server.ThreadingHTTPServer.__init__(self, addr, handler)
 
     def server_bind(self):
-        exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
-        if exclusive is not None:
-            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        if platform.NAME == 'linux':
+            # binds over this port's TIME_WAIT connections, which each answer leaves (the
+            # listener closes first), so a restart can bind again at once; a port in LISTEN is
+            # still refused. On Windows the option would let a second process bind the port too.
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        else:
+            exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+            if exclusive is not None:
+                self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         self.socket.bind(self.server_address)
         self.server_address = self.socket.getsockname()
         # no socket.getfqdn here (HTTPServer's own asks the resolver, which can take seconds)
@@ -583,17 +633,19 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                                        _shown(request.path), response.status, request.role or '-')
         # logged before it is sent: a client that has its answer finds the line written
         self.server.listener._say('access', line)
+        body, coded = gzipped(response, request.header('Accept-Encoding')
+                              if request is not None else None)
         try:
             self.send_response_only(response.status)
             self.send_header('Content-Type', response.content_type)
-            self.send_header('Content-Length', str(len(response.body)))
+            self.send_header('Content-Length', str(len(body)))
             extra = request.reply_headers if request is not None else ()
-            for name, value in SECURITY_HEADERS + tuple(extra) + response.headers:
+            for name, value in SECURITY_HEADERS + tuple(extra) + response.headers + coded:
                 self.send_header(name, value)
             self.send_header('Connection', 'close')
             self.end_headers()
-            if getattr(self, 'command', None) != 'HEAD' and response.body:
-                self.wfile.write(response.body)
+            if getattr(self, 'command', None) != 'HEAD' and body:
+                self.wfile.write(body)
             self.wfile.flush()
         except OSError:
             pass                    # the client went away: nothing to tell it

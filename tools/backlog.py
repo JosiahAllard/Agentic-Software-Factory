@@ -42,9 +42,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib import kitroot                                          # noqa: E402
-from kitlib.backlog import audit                                    # noqa: E402
-from kitlib.backlog import check as checkmod                        # noqa: E402
-from kitlib.backlog import find as findmod                          # noqa: E402
+from kitlib.backlog import find as findmod                        # noqa: E402
 from kitlib.backlog import landable as landmod                      # noqa: E402
 from kitlib.backlog import offer as omod                            # noqa: E402
 from kitlib.backlog import plan as pmod                             # noqa: E402
@@ -67,9 +65,10 @@ def audit_line(verb, rid, rows, tip, session):
     note or warning when there is none. Never a refusal: the write stands, so any failure here,
     one after_write does not catch too, is a warning and the exit code is the write's."""
     try:
+        from kitlib.backlog import audit        # a write's; the read verbs never load it
         said = audit.after_write(verb, rid, rows, tip, session)
     except Exception as exc:                    # noqa: BLE001 - the write is published; say, never fail it
-        said = (audit.WARNING, 'the write stands, but its audit line was not written: %s: %s'
+        said = ('WARNING', 'the write stands, but its audit line was not written: %s: %s'
                 % (type(exc).__name__, ' '.join(str(exc).split())))
     if said:
         sys.stderr.write('%s: %s\n' % said)
@@ -329,7 +328,8 @@ def narrow_lines(ctx, passed, holding, own):
     if not omod.wants_narrowing(passed):
         return []
     changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
-    return omod.narrowings(passed, holding, changes, unknown)
+    dirty = pmod.live_dirty(ctx, holding, changes)
+    return omod.narrowings(passed, holding, changes, unknown, dirty)
 
 
 def do_show(args, ctx, snap):
@@ -411,6 +411,7 @@ def do_stale(args, ctx, snap):
 
 
 def do_check(args, ctx, snap):
+    from kitlib.backlog import check as checkmod    # `check`'s own; `next` and the rest never load it
     say('CHECK %s (%s)' % (snap.head_label(), snap.where))
     red = False
     for res in checkmod.check_store(snap, implicit=getattr(ctx.store.backend, 'implicit', False),
@@ -542,6 +543,7 @@ def main(argv=None):
                 policy.check(args, ctx, None)    # the commit takes the `catch-up` row (roles.py)
             return do_catch_up(args, store)
         if args.verb == 'check':
+            from kitlib.backlog import check as checkmod
             snap, note = checkmod.load_for_check(store)
             if note:
                 say('NOTE: %s' % note)

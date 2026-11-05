@@ -53,6 +53,13 @@ class Decide(unittest.TestCase):
         d = decide(record={'seen_at': NOW - 900, 'account': '2'})
         self.assertEqual((d.start, d.account), (True, '2'))
 
+    def test_a_longer_stem_sharing_the_prefix_is_not_the_stem_running(self):
+        demo = dict(ENTRY, stem='demo')
+        self.assertTrue(decide(demo, live=['demo-lane-a1']).start)
+        for name in ('demo-a2-r3', 'demo-a1'):
+            d = decide(demo, live=[name])
+            self.assertEqual((d.start, d.reason), (False, 'running'))
+
     def test_a_live_session_of_the_stem_is_never_a_second_copy(self):
         d = decide(live=['kit-coord-a2-r3'])
         self.assertFalse(d.start)
@@ -388,6 +395,18 @@ class Job(JobBase):
         self.run_job()                                            # backoff: no second start
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(self.ctx.events, [])
+
+    def test_a_longer_stem_running_does_not_hide_a_down_coordinator(self):
+        self.live = ['kit-coord-a2']
+        self.run_job()                                            # seen running on account 2
+        self.live = ['kit-coord-docs-a1']                         # another stem that starts with kit-coord
+        self.now += 300
+        self.run_job()                                            # down once
+        self.now += 300
+        note = self.run_job()
+        self.assertNotIsInstance(note, jobs.Skip)
+        self.assertIn('kit: started on account 2', note)
+        self.assertEqual(self.calls[0][-5:], ['start', '--session', 'kit', '--account', '2'])
 
     def test_the_plain_session_is_never_started(self):
         for _ in range(3):
@@ -1354,6 +1373,31 @@ class OwnerJob(JobBase):
             job.run.pending('kit', ENTRY)                         # the hub has not set it yet
         src.pending = lambda key: [item('question', 'EX-Q1', NOW), item('todo', 'EX-T1', NOW)]
         self.assertEqual([i['id'] for i in job.run.pending('kit', ENTRY)], ['EX-Q1'])
+
+
+class ChildFlags(unittest.TestCase):
+    """The real run_child and spawn_detached, subprocess stubbed: POSIX Popen refuses any
+    creationflags but 0, so Linux must pass 0 (and a new session for the detached child)."""
+
+    def _calls(self, name):
+        with mock.patch('kitlib.platform.NAME', name), \
+                mock.patch('subprocess.run') as run, mock.patch('subprocess.Popen') as popen:
+            run.return_value = mock.Mock(returncode=0, stdout=b'ok\n', stderr=b'')
+            self.assertEqual(C.run_child(['x'], '.'), (0, ['ok']))
+            C.spawn_detached(['x'], '.')
+        return run.call_args.kwargs, popen.call_args.kwargs
+
+    def test_linux_passes_no_creationflags_and_detaches_into_a_new_session(self):
+        run_kw, popen_kw = self._calls('linux')
+        self.assertEqual(run_kw['creationflags'], 0)
+        self.assertEqual(popen_kw['creationflags'], 0)
+        self.assertIs(popen_kw['start_new_session'], True)
+
+    def test_windows_keeps_create_no_window_and_no_new_session(self):
+        run_kw, popen_kw = self._calls('windows')
+        self.assertEqual(run_kw['creationflags'], 0x08000000)
+        self.assertEqual(popen_kw['creationflags'], 0x08000000)
+        self.assertIs(popen_kw.get('start_new_session', False), False)
 
 
 if __name__ == '__main__':

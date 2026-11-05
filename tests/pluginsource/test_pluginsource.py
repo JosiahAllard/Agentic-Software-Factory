@@ -9,6 +9,7 @@ from unittest import mock
 
 from kitlib import pluginsource as P
 from kitlib.pluginsource import claude
+from tests.platforms import posix_only
 from tests.pluginsource import FakeProc, Kit, MANIFEST, read_json
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
@@ -54,6 +55,37 @@ class ExportTest(Base):
         self.assertEqual(files, ['.claude-plugin/marketplace.json', '.claude-plugin/plugin.json',
                                  P.MARKER, 'README.md', 'tools/x.py'])
         self.assertFalse(os.path.exists(folder + '.tmp'))
+
+    def _export_with_hook(self, root=None):
+        """Export a tree whose githooks/pre-push is mode 100755 (the fake git cannot set the bit,
+        so the tree listing is rewritten) and githooks/notes.txt is 100644."""
+        r = self.k.repo
+        if not os.path.exists(os.path.join(r.root, 'githooks', 'pre-push')):
+            r.write('githooks/pre-push', '#!/bin/sh\n')
+            r.write('githooks/notes.txt', 'plain\n')
+            r.commit('hooks', 'githooks/pre-push', 'githooks/notes.txt')
+            r.git('push', '-q', 'origin', 'main')
+        sha = P.remote_main(self.k.kit, 'origin')
+        real = P._tree
+        tree = lambda kit, s: [('100755',) + e[1:] if e[3] == 'githooks/pre-push' else e
+                               for e in real(kit, s)]
+        with mock.patch.object(P, '_tree', tree):
+            return P.export(self.k.kit, sha, root or self.k.root, NOW)[0]
+
+    @posix_only('the exec bit is a POSIX file mode')
+    def test_a_100755_blob_is_exported_executable_and_a_100644_blob_is_not(self):
+        folder = self._export_with_hook()
+        self.assertTrue(os.access(os.path.join(folder, 'githooks', 'pre-push'), os.X_OK))
+        self.assertFalse(os.access(os.path.join(folder, 'githooks', 'notes.txt'), os.X_OK))
+
+    def test_the_export_chmods_only_the_100755_blobs_off_windows(self):
+        for name, expect in (('linux', [os.path.join('githooks', 'pre-push')]), ('windows', [])):
+            with self.subTest(name), mock.patch.object(P.kitplatform, 'NAME', name), \
+                    mock.patch.object(P.os, 'chmod') as chmod:
+                folder = self._export_with_hook(os.path.join(self.k.root, name))
+                # the fake git also chmods its own objects (0o444); only the export's 0o755 counts
+                self.assertEqual([os.path.join(*c.args[0].split(os.sep)[-2:]) for c in chmod.call_args_list
+                                  if c.args[1] == 0o755], expect)
 
     def test_the_kits_tests_folder_is_left_out(self):
         """Half an export was the kit's tests/, which nothing reads from an export (a gate runs
@@ -366,11 +398,42 @@ class RefreshLockTest(Base):
             second = P.RefreshLock(self.k.root, own=(2, 20), alive=alive)
             second.acquire()
             self.assertTrue(second.held)
+            self.assertFalse([n for n in os.listdir(self.k.root) if '.break-' in n])
             second.release()
             self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
             first.acquire()
         first.release()
         self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
+
+    def test_two_starters_breaking_one_stale_file_never_both_hold(self):
+        # A dead holder (pid 9) left refresh.pid. B reads it as stale; before B breaks it, A breaks
+        # it too and takes the lock (run from B's liveness check, the race point). B must then
+        # refuse, and leave A's file where it was. Both ways of putting a claim back are run
+        # (os.link on Linux, os.rename on Windows).
+        os.makedirs(self.k.root)
+        pidfile = os.path.join(self.k.root, P.PIDFILE)
+        for name in ('windows', 'linux'):
+            with self.subTest(platform=name), mock.patch.object(P.kitplatform, 'NAME', name):
+                with open(pidfile, 'w', encoding='utf-8') as fh:
+                    json.dump({'pid': 9, 'ctime': 90}, fh)
+                a = P.RefreshLock(self.k.root, own=(1, 10), alive=lambda pid, ct: pid != 9)
+                raced = []
+
+                def b_alive(pid, ct):
+                    if pid == 9 and not raced:
+                        raced.append(1)
+                        a.acquire()
+                    return pid != 9
+
+                b = P.RefreshLock(self.k.root, own=(2, 20), alive=b_alive)
+                with self.assertRaises(P.Busy):
+                    b.acquire()
+                self.assertTrue(raced)
+                self.assertEqual((a.held, b.held), (True, False))
+                self.assertEqual(read_json(pidfile)['pid'], 1)
+                self.assertEqual(os.listdir(self.k.root), [P.PIDFILE])     # no claim left
+                a.release()
+                self.assertFalse(os.path.exists(pidfile))
 
     def test_release_leaves_a_file_another_run_took_over(self):
         os.makedirs(self.k.root)

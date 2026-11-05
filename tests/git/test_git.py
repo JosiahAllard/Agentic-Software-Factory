@@ -9,6 +9,9 @@ from unittest import mock
 
 from kitlib import git
 from kitlib.git import batch, cmd, refs, repo
+from kitlib.git import fake as gitfake
+from kitlib.git.fake import refs as fakerefs
+from kitlib.git.fake.errors import GitExit
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.platforms import windows_only
@@ -878,6 +881,102 @@ class BatchProcessTest(RepoFixture):
         with mock.patch.object(batch.subprocess, 'Popen', spy), batch.CatFile(self.wt) as cat:
             self.assertEqual(cat.read('HEAD', 'feature.txt'), b'f\n')
         self.assertEqual((seen['LC_ALL'], seen['LANGUAGE']), ('C', 'C'))
+
+
+class FakeEmptyRefDirTest(unittest.TestCase):
+    """kitlib.git.fake.refs: a failed ref delete or update leaves no empty folder that blocks a
+    later ref of that name. Locking refs/heads/demo/x makes the folder refs/heads/demo; a delete of
+    a missing ref, or an update refused on its old value, used to leave it behind, and `branch
+    demo` then failed with "there is a non-empty directory" though the folder held nothing. Real
+    git removes an empty folder in its way when it locks the ref. A folder holding a ref still
+    blocks it."""
+
+    WRONG = '1' * 40
+
+    def setUp(self):
+        self.repo = gitfixture.TempRepo()
+        self.addCleanup(self.repo.cleanup)
+
+    def fake(self, *args):
+        """`git <args>` on the fake git in this process (whatever git the suite runs on)."""
+        return gitfake.completed(('git',) + args, cwd=self.repo.root, capture_output=True,
+                                 text=True, encoding='utf-8', errors='replace',
+                                 env=gitfixture.fixture_env())
+
+    def assert_branch_demo_made(self):
+        r = self.fake('branch', 'demo')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.fake('rev-parse', 'refs/heads/demo')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), self.repo.initial)
+
+    def demo_dir(self):
+        return self.repo.path('.git', 'refs', 'heads', 'demo')
+
+    def test_delete_of_a_missing_ref_then_branch_of_the_parent_name(self):
+        r = self.fake('update-ref', '-d', 'refs/heads/demo/x')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.isdir(self.demo_dir()))     # delete() pruned the lock's folder
+        self.assert_branch_demo_made()
+
+    def test_update_refused_on_its_old_value_then_branch_of_the_parent_name(self):
+        r = self.fake('update-ref', 'refs/heads/demo/x', self.repo.initial, self.WRONG)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(os.path.isdir(self.demo_dir()))     # update() pruned the lock's folder
+        self.assert_branch_demo_made()
+
+    def test_a_folder_holding_only_a_lock_file_still_blocks_the_ref(self):
+        os.makedirs(self.demo_dir())
+        lock = os.path.join(self.demo_dir(), 'x.lock')
+        with open(lock, 'wb'):
+            pass
+        r = self.fake('branch', 'demo')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('non-empty directory', r.stderr)
+        self.assertTrue(os.path.isfile(lock))
+
+    def _lock_dir_pruned_before_open(self, times):
+        """A RefLock on <tmp>/refs/heads/demo whose folder another writer removes between the
+        makedirs and the open of the lock file, `times` times."""
+        base = tempfile.mkdtemp(dir=gitfixture.fixture_parent())
+        self.addCleanup(gitfixture.rmtree, base)
+        path = os.path.join(base, 'refs', 'heads', 'demo')
+        lk = fakerefs.RefLock(path, 'refs/heads/demo')
+        real_open, left = os.open, [times]
+
+        def racing_open(p, *a, **kw):
+            if p == lk.lock and left[0] > 0:
+                left[0] -= 1
+                os.rmdir(os.path.dirname(path))
+            return real_open(p, *a, **kw)
+        return lk, path, mock.patch.object(fakerefs.os, 'open', racing_open)
+
+    def test_lock_folder_pruned_by_another_writer_is_made_again(self):
+        lk, path, race = self._lock_dir_pruned_before_open(1)
+        with race:
+            lk.acquire()
+        lk.commit(b'%s\n' % self.repo.initial.encode('ascii'))
+        with open(path, 'rb') as fh:
+            self.assertEqual(fh.read().strip().decode('ascii'), self.repo.initial)
+
+    def test_lock_folder_pruned_every_time_is_a_git_error(self):
+        lk, _path, race = self._lock_dir_pruned_before_open(fakerefs.RefLock.MISSING_DIR_TRIES + 1)
+        with race, self.assertRaises(GitExit) as cm:
+            lk.acquire()
+        self.assertEqual(cm.exception.rc, 128)
+        self.assertIn('unable to create directory', cm.exception.err)
+
+    def test_an_empty_folder_left_by_anything_does_not_block_the_ref(self):
+        os.makedirs(self.repo.path('.git', 'refs', 'heads', 'demo', 'a', 'b'))
+        self.assert_branch_demo_made()
+
+    def test_a_folder_holding_a_ref_still_blocks_it(self):
+        r = self.fake('update-ref', 'refs/heads/demo/x', self.repo.initial)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.fake('branch', 'demo')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("'refs/heads/demo/x' exists", r.stderr)
+        self.assertTrue(os.path.isfile(self.repo.path('.git', 'refs', 'heads', 'demo', 'x')))
 
 
 if __name__ == '__main__':

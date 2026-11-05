@@ -259,26 +259,32 @@ class MachineTest(StatusCase):
 class OthersTest(unittest.TestCase):
     def procs(self):
         rc = '"C:/tools/claude.exe" --remote-control "%s" -n x'
-        return [proc(1, 0, "claude.exe", rc % "alpha-coordinator-a2-n5", created="2026-10-06T08:00"),
-                proc(2, 0, "claude.exe", rc % "alpha-coordinator-a2-n6", created="2026-10-06T09:00"),
+        return [proc(1, 0, "claude.exe", rc % "alpha-coordinator-a2-r5", created="2026-10-06T08:00"),
+                proc(2, 0, "claude.exe", rc % "alpha-coordinator-a2-r6", created="2026-10-06T09:00"),
                 proc(3, 2, "bash.exe", "bash", exe="C:/bash.exe"),
                 proc(4, 3, "python.exe", "hook", exe="C:/py.exe"),
                 proc(5, 0, "claude.exe", rc % "beta-coordinator-a2"),
                 proc(6, 0, "claude.exe", "Claude.exe", exe="C:/Program Files/WindowsApps/Claude/Claude.exe")]
 
     def test_own_name_from_process_tree(self):
-        self.assertEqual(coordinatorstart.own_name(self.procs(), {}, 4), "alpha-coordinator-a2-n6")
+        self.assertEqual(coordinatorstart.own_name(self.procs(), {}, 4), "alpha-coordinator-a2-r6")
         self.assertEqual(coordinatorstart.own_name(self.procs(), {"PM_KIT_SESSION_NAME": "z"}, 4), "z")
         self.assertIsNone(coordinatorstart.own_name(self.procs(), {}, 99))
 
     def test_lists_predecessor(self):
         out = coordinatorstart.others(ENTRY, self.procs(), {}, 4)
         self.assertEqual(len(out), 1)
-        self.assertIn("also running: alpha-coordinator-a2-n5; if one is your predecessor handing off", out[0])
+        self.assertIn("also running: alpha-coordinator-a2-r5; if one is your predecessor handing off", out[0])
         self.assertNotIn("beta", out[0])
 
+    def test_a_longer_stem_sharing_the_prefix_is_not_also_running(self):
+        rc = '"C:/tools/claude.exe" --remote-control "%s" -n x'
+        procs = [proc(1, 0, "claude.exe", rc % "alpha-coordinator-docs-a1", created="2026-10-06T08:00"),
+                 proc(2, 0, "claude.exe", rc % "alpha-coordinator-a2", created="2026-10-06T09:00")]
+        self.assertEqual(coordinatorstart.others(ENTRY, procs, {}, 99), [])
+
     def test_unknown_self_is_newest_and_alone_prints_nothing(self):
-        self.assertIn("a2-n5", coordinatorstart.others(ENTRY, self.procs(), {}, 99)[0])
+        self.assertIn("a2-r5",coordinatorstart.others(ENTRY, self.procs(), {}, 99)[0])
         self.assertEqual(coordinatorstart.others(ENTRY, self.procs()[1:], {}, 4), [])
         self.assertEqual(coordinatorstart.others(ENTRY, [], {}, 4), [])
 

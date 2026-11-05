@@ -3,6 +3,9 @@ cited hub id or `item:` blocker is already met is a RELEASABLE line with its `un
 passed over on a broad scope member (`x/**`, a literal `.md`) colliding with a live pull is a
 NARROW line naming what that pull's branch actually changed there; a `counts:` line closes it. The
 hub is read with a short timeout and any failure is one note line, never a traceback."""
+import os
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
@@ -154,12 +157,92 @@ class Narrowings(unittest.TestCase):
         self.hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
                            scope=['brain/**', 'tools/t.py'])
 
-    def lines(self, cand_scope, changes, unknown=None):
-        s = snap(self.hold, priced('FOO', priority='3', scope=cand_scope))
+    def lines(self, cand_scope, changes, unknown=None, dirty=None, hold=None):
+        if dirty is None:       # a clean worktree, read
+            dirty = {'kit/b': ([], None)}
+        s = snap(hold or self.hold, priced('FOO', priority='3', scope=cand_scope))
         holding = [s.get('HOLD')]
         (_offers, passed), _, _ = omod.next_offer(s, holding)
         self.assertTrue(omod.wants_narrowing(passed))
-        return omod.narrowings(passed, holding, changes, unknown or {})
+        return omod.narrowings(passed, holding, changes, unknown or {}, dirty)
+
+    def test_the_set_keeps_the_uncommitted_files_of_the_worktree(self):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
+                         dirty={'kit/b': (['brain/wip.py', 'other/z.py'], None)})
+        self.assertIn('which changed 2 file(s) there: brain/a.py, brain/wip.py -> `set HOLD '
+                      '--scope tools/t.py --scope brain/a.py --scope brain/wip.py`', got[0])
+
+    def test_the_set_keeps_the_files_plan(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'tools/t.py'], body='## Files\n\n- `brain/plan.py`\n')
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
+                         hold=hold)
+        self.assertIn('--scope brain/a.py --scope brain/plan.py`', got[0])
+
+    def test_unreadable_uncommitted_files_drop_the_set(self):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
+                         dirty={'kit/b': (None, 'no worktree')})
+        self.assertNotIn('`set ', got[0])
+        self.assertIn('not narrowing HOLD: no worktree', got[0])
+
+    def test_uncommitted_files_not_read_at_all_drop_the_set(self):
+        for dirty in ({}, {'kit/x': ([], None)}, {'kit/b': None}):
+            s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
+            holding = [s.get('HOLD')]
+            (_o, passed), _, _ = omod.next_offer(s, holding)
+            got = omod.narrowings(passed, holding, {'kit/b': [('kit/b', ['brain/a.py'])]}, {},
+                                  dirty)
+            self.assertNotIn('`set ', got[0])
+            self.assertIn('not narrowing HOLD: its uncommitted files were not read', got[0])
+        s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
+        (_o, passed), _, _ = omod.next_offer(s, [s.get('HOLD')])
+        got = omod.narrowings(passed, [s.get('HOLD')],
+                              {'kit/b': [('kit/b', ['brain/a.py'])]}, {})
+        self.assertNotIn('`set ', got[0])
+
+    def test_nothing_committed_under_the_glob_but_unreadable_is_not_nothing_yet(self):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['other/z.py'])]},
+                         dirty={'kit/b': (None, 'no worktree')})
+        self.assertEqual(len(got), 1)
+        self.assertNotIn('changed nothing', got[0])
+        self.assertTrue(got[0].endswith('; not narrowing HOLD: no worktree'), got)
+
+    def test_a_second_glob_member_is_kept_and_single_quoted(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'tools/**'])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertIn("-> `set HOLD --scope 'tools/**' --scope brain/a.py`", got[0])
+
+    def test_a_kept_member_with_a_quote_drops_the_set(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', "tools/it's.py"])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertNotIn('`set ', got[0])
+        self.assertIn('has a quote', got[0])
+
+    def test_a_kept_path_a_shell_would_split_drops_the_set(self):
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ["brain/it's.py"])]})
+        self.assertNotIn('`set ', got[0])
+        self.assertIn("not narrowing HOLD: brain/it's.py has a quote", got[0])
+
+    def test_an_added_path_a_shell_would_split_is_single_quoted(self):
+        for odd in ('brain/a b.py', 'brain/a;b.py', 'brain/a"b.py'):
+            got = self.lines('brain/b.py', {'kit/b': [('kit/b', [odd])]})
+            self.assertIn("--scope tools/t.py --scope '%s'`" % odd, got[0])
+
+    def test_a_own_member_with_a_space_is_single_quoted(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'docs/my notes.md'])
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]}, hold=hold)
+        self.assertIn("-> `set HOLD --scope 'docs/my notes.md' --scope brain/a.py`", got[0])
+
+    def test_an_unreadable_files_plan_drops_the_set(self):
+        hold = priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/b',
+                      scope=['brain/**', 'tools/t.py'], body='## Files\n\n- a.py: rewrite\n')
+        got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py'])]},
+                         hold=hold)
+        self.assertNotIn('`set ', got[0])
+        self.assertIn('not narrowing HOLD', got[0])
 
     def test_a_broad_live_pull_is_narrowed_to_what_its_branch_changed(self):
         got = self.lines('brain/b.py', {'kit/b': [('kit/b', ['brain/a.py', 'other/z.py'])]})
@@ -191,7 +274,7 @@ class Narrowings(unittest.TestCase):
                         scope='tools/t.py'), priced('FOO', priority='3', scope='tools/t.py'))
         (_o, passed), _, _ = omod.next_offer(s, [s.get('HOLD')])
         self.assertFalse(omod.wants_narrowing(passed))
-        self.assertEqual(omod.narrowings(passed, [s.get('HOLD')], {}, {}), [])
+        self.assertEqual(omod.narrowings(passed, [s.get('HOLD')], {}, {}, {}), [])
 
     def test_counts_by_reason(self):
         s = snap(self.hold, priced('FOO', priority='3', scope='brain/b.py'))
@@ -267,16 +350,29 @@ class NextCli(unittest.TestCase):
         self.assertIn('BBB', out)
         self.assertIn('| 0 releasable |', out)
 
-    def test_a_broad_live_pull_gets_a_narrow_line_from_its_branch_diff(self):
+    def live_pull(self, worktree=True, dirty=None):
+        """HOLD (broad `brain/**`) live on kit/holder, which committed brain/a.py; `worktree`
+        checks the branch out (in a temp folder) and `dirty` writes an uncommitted file there."""
         self.repo.git('checkout', '-q', '-b', 'kit/holder')
         self.repo.write('brain/a.py', 'x\n')
         self.repo.git('add', '-A')
         self.repo.git('commit', '-q', '-m', 'work on kit/holder')
         self.repo.git('checkout', '-q', '-f', 'main')
+        if worktree:
+            wt = os.path.join(tempfile.mkdtemp(), 'holder')
+            self.repo.git('worktree', 'add', '-q', wt, 'kit/holder')
+            self.addCleanup(shutil.rmtree, os.path.dirname(wt), True)
+            if dirty:
+                os.makedirs(os.path.join(wt, 'brain'), exist_ok=True)
+                with open(os.path.join(wt, dirty), 'w') as f:
+                    f.write('wip\n')
         self.publish({
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
                                 pulled_at=TODAY, pulled_by='kit/holder', scope='brain/**'),
             'FOO': record_text(id='FOO', priority='3', priority_by='agent', scope='brain/b.py')})
+
+    def test_a_broad_live_pull_gets_a_narrow_line_from_its_branch_diff(self):
+        self.live_pull()
         out = self.ok('next')
         self.assertIn('passed over FOO', out)
         self.assertIn('NARROW FOO (rank 2): brain/b.py collides with brain/** of HOLD on '
@@ -285,6 +381,19 @@ class NextCli(unittest.TestCase):
         self.assertTrue(out.rstrip('\n').endswith(
             'counts: 0 offered | 1 pullable | 1 passed over (1 scope) | 0 releasable | 1 narrow'),
             out)
+
+    def test_the_narrow_set_keeps_an_uncommitted_file_of_the_live_pull(self):
+        self.live_pull(dirty='brain/wip.py')
+        out = self.ok('next')
+        self.assertIn('which changed 2 file(s) there: brain/a.py, brain/wip.py -> `set HOLD '
+                      '--scope brain/a.py --scope brain/wip.py`', out)
+
+    def test_no_set_when_the_live_pulls_worktree_cannot_be_read(self):
+        self.live_pull(worktree=False)
+        out = self.ok('next')
+        self.assertIn('NARROW FOO', out)
+        self.assertNotIn('`set HOLD', out)
+        self.assertIn('not narrowing HOLD', out)
 
 
 if __name__ == '__main__':

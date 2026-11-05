@@ -14,13 +14,14 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.hubjobs import unblock_conditions as U
 from kitlib import hubvalidate
+from kitlib import platform as kplatform
 from kitlib.hubsite import approvals, jobs, recordwrite
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
 VAR = 'KIT_UNBLOCK_TEST_DIR'
-FLAG = 'path:%%%s%%\\flag exists' % VAR
+FLAG = 'path:%%%s%%/flag exists' % VAR
 # An invented question id: the question form takes only `Q-<digits>`, so it is built here rather
 # than written out, which the owner-text scrub (tests/scrub) would read as a real record id.
 QID = 'Q' + '-4'
@@ -392,6 +393,15 @@ class Readers(Case):
             for path in off:
                 self.assertIsNone(r.path_exists(path), path)
 
+    def test_linux_absolute_paths_are_told_and_unc_or_dotdot_are_not(self):
+        r = U.Readers(self.hub, self.plugins, None)
+        with mock.patch.object(kplatform, 'NAME', 'linux'), \
+                mock.patch.object(U.os.path, 'exists', side_effect=lambda p: p == '/t/flag'):
+            self.assertIs(r.path_exists('/t/flag'), True)
+            self.assertIs(r.path_exists('/t/missing'), False)
+            for path in ('//host/x', '/a/../b', 'rel/flag', 'C:/x/flag'):
+                self.assertIsNone(r.path_exists(path), path)
+
     def test_a_variable_that_expands_off_a_local_drive_cannot_be_told(self):
         from kitlib.backlog import conditions as condmod
         r = U.Readers(self.hub, self.plugins, None)
@@ -418,6 +428,33 @@ class Readers(Case):
         self.assertIs(closed('kit', 'BAR'), True)
         self.assertIsNone(closed('kit', 'NEVER'))
         self.assertIsNone(closed('other', 'FOO'))
+
+    def test_a_record_condition_reuses_the_passes_store_load(self):
+        self.seed(rec('FOO'),
+                  rec('WAIT', state='blocked', blocked_on='live-client',
+                      until='live-client record:kit:FOO closed'))
+        loads = []
+
+        def counted(root):
+            loads.append(root)
+            return U.open_snapshot(root)
+
+        job = U.UnblockJob(lambda: ([('kit', self.repo.root)], []),
+                           lambda: U.Readers(self.hub, self.plugins,
+                                             U.RecordReader(Settings({'kit': self.repo.root}),
+                                                            snapshot=counted)),
+                           write=self.write, snapshot=counted)
+        note = job(Ctx())
+        self.assertIsInstance(note, jobs.Skip)      # FOO is open: the condition is not met
+        self.assertEqual(loads, [self.repo.root], 'one load of the store for the pass')
+        self.assertEqual(self.get('WAIT').get('state'), 'blocked')
+
+    def test_a_seeded_read_does_not_replace_one_already_made(self):
+        closed = U.RecordReader(Settings({'kit': self.repo.root}),
+                                snapshot=lambda root: (mock.Mock(get=lambda rid: object()), None))
+        self.assertIs(closed('kit', 'FOO'), False)
+        closed.seed('kit', None, None)
+        self.assertIs(closed('kit', 'FOO'), False)
 
     def test_repo_roots_skips_a_repo_it_cannot_place(self):
         roots, notes = U.repo_roots(Settings({'kit': self.repo.root,

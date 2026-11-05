@@ -337,11 +337,15 @@ def _same_path(a, b):
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
-def pm_data_root(root):
+def pm_data_root(root, *, worktrees=None):
     """`(path, None)` of the worktree of `root`'s repository that has the PM data branch checked
     out (the branch kit-pm-data.json records; kitlib.pmdata), `(None, None)` when the repository
-    has no PM data record, or `(None, why)` when there is one and that worktree cannot be found."""
-    common, why = gitrepo.common_dir(root)
+    has no PM data record, or `(None, why)` when there is one and that worktree cannot be found.
+    `worktrees` is a gitrepo.Worktrees, when the caller has one: it holds the list and the common
+    dir (`common`) of the repository, each asked of git once."""
+    common, why = (worktrees.common if worktrees is not None else None), None
+    if common is None:
+        common, why = gitrepo.common_dir(root)
     if common is None:
         return None, 'cannot find the git directory to look for the PM data record: %s' % why
     try:
@@ -350,7 +354,7 @@ def pm_data_root(root):
         return None, 'cannot read the PM data record: %s' % exc
     if record is None:
         return None, None
-    wts, why = gitrepo.worktrees(root)
+    wts, why = (worktrees or gitrepo.worktrees)(root)
     if wts is None:
         return None, 'cannot list the worktrees: %s' % why
     for wt in wts:

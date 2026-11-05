@@ -6,10 +6,18 @@ import os
 import re
 import shutil
 import tempfile
+from unittest import mock
 
 from kitlib.git import repo as gitrepo
 from kitlib.launcher import settings as S
 from kitlib.launcher.host import Host
+
+def windows_text(test):
+    """Run `test` as on Windows: window scripts are PowerShell text and process rows are claude.exe."""
+    patch = mock.patch('kitlib.platform.NAME', 'windows')
+    patch.start()
+    test.addCleanup(patch.stop)
+
 
 NOW = datetime.datetime(2026, 10, 10, 12, 0, tzinfo=datetime.timezone.utc)
 ROLE = re.compile(r"(?:\$env:PM_KIT_ROLE = |^export PM_KIT_ROLE=)'([^']*)'", re.M)

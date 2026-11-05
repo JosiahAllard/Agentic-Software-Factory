@@ -72,11 +72,12 @@ def home_path(main, name):
     return os.path.join(os.path.normpath(main), folder(), PREFIX + slug)
 
 
-def _git(args, cwd, git):
+def _git(args, cwd, git, lead=False):
     r = git(args, cwd)
     if r.rc != 0:
         return None, (r.err or '').strip() or 'git %s exited %s' % (' '.join(args[:2]), r.rc)
-    return cmd.text(r.out).strip(), None
+    out = cmd.text(r.out)
+    return (out.rstrip() if lead else out.strip()), None
 
 
 def _canon(path):
@@ -281,7 +282,8 @@ def ensure(main, path, whatif=False, git=cmd.call):
             if why is not None:
                 raise LaunchError('git worktree lock %s failed: %s' % (path, why))
             out.append('Locked the home worktree %s.' % path)
-    status, why = _git(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], path, git)
+    status, why = _git(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], path, git,
+                       lead=True)
     if status is None:
         raise LaunchError('git status in %s failed: %s' % (path, why), out)
     dirty = [l for l in status.splitlines() if l.strip()]

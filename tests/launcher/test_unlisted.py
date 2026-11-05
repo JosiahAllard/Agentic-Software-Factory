@@ -5,8 +5,8 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib.launcher import start, unlisted, window
-from tests.launcher.fakes import EXE, FakeHost, Home, NOW
+from kitlib.launcher import linuxwin, start, unlisted, window
+from tests.launcher.fakes import EXE, FakeHost, Home, NOW, windows_text
 
 DAY = datetime.timedelta(days=1)
 
@@ -22,6 +22,7 @@ def rows(text, pid, name, parent_name='powershell.exe'):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        windows_text(self)
         self.h = Home(self, accounts=('1', '2'), repos=('alpha',))
         for n in ('1', '2'):
             self.h.usage(n, five=(10, NOW + DAY / 8), week=(10, NOW + 2 * DAY))
@@ -102,6 +103,51 @@ class RoundTrip(Base):
         text = self.deep(brief=brief, checkin=os.path.join(self.temp, 'c'))
         found, _ = self.classify(rows(text, 740, 'deep-net-race'))
         self.assertEqual(found['deep-net-race'][0].brief, brief)
+
+
+class LinuxWindow(Base):
+    """The same sessions, read from the Linux window: /bin/bash -c <linuxwin.script>."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch('kitlib.platform.NAME', 'linux')
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def bash_rows(self, text, pid, name):
+        parent = {'Name': 'bash', 'ProcessId': pid + 1, 'ParentProcessId': 1,
+                  'CommandLine': linuxwin.SHELL + ' -c ' + text}
+        child = {'Name': 'claude', 'ProcessId': pid, 'ParentProcessId': pid + 1, 'ExecutablePath': '/usr/bin/claude',
+                 'Created': '2026-10-10T11:00:00', 'CommandLine': 'claude --remote-control %s -n %s x' % (name, name)}
+        return [parent, child]
+
+    def test_a_deep_worker_comes_back_from_the_bash_window(self):
+        text = self.deep(requester="o'brien-coord-a1", brief=self.brief)
+        self.assertEqual(text.split('\n', 1)[0], linuxwin.script('deep-net-race', 'r', '/', 'c').split('\n', 1)[0])
+        found, never = self.classify(self.bash_rows(text, 900, 'deep-net-race'))
+        self.assertEqual(never, {})
+        s, = found['deep-net-race']
+        self.assertEqual((s.kind, s.key, s.pid, s.account, s.requester, s.brief, s.repo_path, s.home),
+                         (unlisted.DEEP, 'deep-net-race', 900, '1', "o'brien-coord-a1", self.brief, self.repo, False))
+        self.assertEqual((s.model, s.effort, s.autocompact, s.agent_temp), ('opus[1m]', 'xhigh', 500000, self.temp))
+
+    def test_a_consultant_comes_back_from_the_bash_window(self):
+        found, never = self.classify(self.bash_rows(self.consultant(), 910, 'consultant-alpha'))
+        self.assertEqual(never, {})
+        self.assertEqual(found['consultant-alpha'][0].repo_path, self.repo)
+
+    def test_the_default_folder_is_read_from_unset(self):
+        text = self.deep()
+        cfg = 'export CLAUDE_CONFIG_DIR=%s' % linuxwin.q(self.h.accounts['1'][0])
+        self.assertIn(cfg, text)
+        with mock.patch.object(self.h.settings, 'is_default', lambda d: d == self.h.accounts['1'][0]):
+            found, _ = self.classify(self.bash_rows(text.replace(cfg, 'unset CLAUDE_CONFIG_DIR'), 920, 'deep-net-race'))
+        self.assertEqual(found['deep-net-race'][0].account, '1')
+
+    def test_a_bash_that_is_not_the_window_is_no_window(self):
+        procs = self.bash_rows(self.deep(), 930, 'deep-net-race')
+        procs[0]['CommandLine'] = '/bin/bash -i'
+        self.assertEqual(self.classify(procs), ({}, {'deep-net-race': unlisted.NO_WINDOW}))
 
 
 class Never(Base):

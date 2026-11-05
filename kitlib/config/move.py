@@ -23,7 +23,7 @@ import os
 import re
 import tempfile
 
-from kitlib import pmdata
+from kitlib import platform, pmdata
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs, repo
 
@@ -372,15 +372,22 @@ def survey(home=None):
 
 def _write_new(full, data):
     """Write `data` to `full`, which must not exist: a new temp file beside it (named
-    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a rename that fails when the target
-    appeared meanwhile. On any failure the temp file is removed."""
+    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a move that fails when the target
+    appeared meanwhile (os.link on Linux, os.rename on Windows). On any failure the temp file is removed."""
     os.makedirs(os.path.dirname(full), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix='.%s.' % os.path.basename(full), suffix=TMP_SUFFIX,
                                dir=os.path.dirname(full))
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        os.rename(tmp, full)
+        if platform.NAME == 'linux':
+            os.link(tmp, full)              # rename replaces an existing target on POSIX
+            try:
+                os.remove(tmp)              # the target is written: a stray temp file is not a failure
+            except OSError:
+                pass
+        else:
+            os.rename(tmp, full)            # fails when the target exists (Windows); needs no hard links
     except BaseException:
         try:
             os.remove(tmp)

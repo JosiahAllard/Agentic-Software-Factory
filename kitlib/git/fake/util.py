@@ -4,6 +4,7 @@ import os
 import re
 import time
 
+from . import config as _config
 from . import ignore as _ignore
 from .errors import GitExit, Unsupported, die
 
@@ -173,6 +174,16 @@ def path_out(ctx, path, z):
 # -- pathspecs ------------------------------------------------------------------------------
 
 _GLOB = re.compile(r'[*?\[]')
+
+
+def literal_pathspecs(env):
+    """GIT_LITERAL_PATHSPECS (git_env_bool): every pathspec is a literal path, no glob, no magic.
+    The other pathspec switches of the environment are Unsupported."""
+    for k in ('GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS'):
+        if env.get(k) is not None:
+            raise Unsupported(k)
+    v = env.get('GIT_LITERAL_PATHSPECS')
+    return v is not None and _config.parse_bool(v, 'GIT_LITERAL_PATHSPECS')
 
 
 class Pathspec:

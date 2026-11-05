@@ -25,6 +25,7 @@ import sys
 from kitlib import kitroot, pmstart, sessionmark
 from kitlib.config import user as kuser
 from kitlib.git import cmd as gitcmd
+from kitlib.launcher import lookup
 from kitlib.pmstart import configcheck
 from kitlib.coordinatorstart import parts
 from kitlib.records import landing
@@ -262,7 +263,7 @@ def ledger_name(repo):
 
 
 def others(entry, procs, env, pid):
-    """Other live sessions whose Remote Control name starts with this coordinator's stem."""
+    """Other live sessions of this coordinator's stem (lookup.of_stem: the stem or <stem>-a<N>[-r<k>])."""
     stem = _need(entry, "stem")
     me = own_name(procs, env, pid)
     cand = []
@@ -271,7 +272,7 @@ def others(entry, procs, env, pid):
         if (p.get("Name") in images and p.get("CommandLine")
                 and pmstart.STORE_DIR not in (p.get("ExecutablePath") or "") and pmstart.runs_a_cli(p, clis)):
             n = pmstart.rc_name(p["CommandLine"])
-            if n and n.startswith(stem):
+            if lookup.of_stem(n, stem):
                 cand.append((p.get("Created") or "", n))
     if me is None and cand:
         me = max(cand)[1]  # unknown: the newest is this one

@@ -607,6 +607,29 @@ class Preconditions(Fixture):
             self.assertIn('no PM start checklist line',
                           drun.checklist_line({'kind': 'checklist-line', 'text': 'cap: kit'}))
 
+    def test_a_checklist_line_check_changes_no_state(self):
+        stamp = os.path.join(self.dir, 'pm-start-last.json')
+        with open(stamp, 'w') as f:
+            f.write('{"at": "2026-01-01T00:00:00+00:00"}')
+
+        def hub_site(stamp=None, **kw):
+            if stamp is not None:
+                with open(stamp() if callable(stamp) else stamp, 'w') as f:
+                    f.write('{"at": "2026-02-02T00:00:00+00:00"}')
+            return ['hub key: demo']
+
+        quiet = dict.fromkeys(
+            ('standing', 'eng_review', 'watcher', 'handoff', 'reminders', 'liveness', 'plugin_current',
+             'plugin_enabled', 'memory', 'allow_rules', 'repo_prep', 'agent_temp_lines', 'cdrive_lines',
+             'worktree_sweep_lines', 'rulebook_lines', 'list_processes', 'pm_data_settings'), lambda *a, **k: [])
+        with open(stamp) as f:
+            before = f.read()
+        with mock.patch('kitlib.pmstart.load_config', return_value={}),                 mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
+            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+            sync.assert_not_called()
+            with open(stamp) as f:
+                self.assertEqual(f.read(), before)
+
     def test_no_pm_start_config_is_refused(self):
         with mock.patch('kitlib.pmstart.load_config', return_value=None):
             self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}))
@@ -820,8 +843,16 @@ class HubApproval(Fixture):
         return str(cm.exception)
 
     def test_the_run_is_verified_checked_consumed_claimed_then_started(self):
-        res = self.approve()
-        self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume', 'spawn'])
+        real = lwrite.add
+
+        def add(*a, **kw):
+            added = real(*a, **kw)
+            self.events.append('claimed')
+            return added
+        with mock.patch.object(lwrite, 'add', add):
+            res = self.approve()
+        self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume', 'claimed',
+                                       'spawn'])
         self.assertEqual((res.returncode, res.error), (0, None))
         self.assertEqual(res.argv, [os.path.normpath(self.exe), self.dest])
         sha = hubapprovals.line_sha256(self.line)
@@ -1024,6 +1055,79 @@ class HubApproval(Fixture):
                 self.assertIn('nothing was run', msg)
                 self.assertEqual(self.events, ['verify', 'precondition', 'cwd', 'consume'])
                 self.assertFalse(os.path.exists(self.cwds[0]))
+
+    def test_a_refused_claim_leaves_the_approval_unspent(self):
+        self.add(decides='run D-001 name=alpha')
+        with open(self.ledger, 'a', encoding='utf-8') as fh:
+            fh.write('\n## H-kit-0009 | broken\n')
+        with self.assertRaises(drun.RunRefused) as cm:
+            self.approve()
+        self.assertIn('the ledger refused the run entry', str(cm.exception))
+        self.assertNotIn('consume', self.events)
+        self.assertEqual([c[0] for c in self.hub.calls], ['get'])
+        self.assertEqual(self.spawn.calls, [])
+        self.assertFalse(os.path.exists(self.cwds[0]))
+
+    def test_a_star_op_on_a_split_ledger_runs_with_pm_entries_present(self):
+        self.add(repo='pm', decides='run D-002 other=1')
+        try:
+            res = self.approve(op=self.op(repo='*'))
+        except drun.RunRefused as e:
+            self.fail('a * run was refused: %s' % e)
+        self.assertEqual((res.returncode, res.error), (0, None))
+        self.assertEqual(self.events.count('consume'), 1)
+        with open(os.path.join(self.folder, 'pm.md'), encoding='utf-8') as fh:
+            self.assertIn('| pm | delegated', fh.read())
+
+    def test_a_repo_outside_ledger_repos_leaves_the_approval_unspent(self):
+        path = os.path.join(self.dir, 'LEDGER.md')
+        cfg = dict(self.cfg, ledger_path=path, ledger_repos=['pm'])
+        del cfg['ledger_dir']
+        with self.assertRaises(drun.RunRefused) as cm:
+            self.approve(cfg=cfg)
+        self.assertIn('the ledger refused the run entry', str(cm.exception))
+        self.assertNotIn('consume', self.events)
+
+    def test_a_busy_ledger_write_lock_leaves_the_approval_unspent(self):
+        self.add()
+        with mock.patch.object(lwrite, 'LOCK_WAIT', 0.2), lwrite.locked(self.ledger):
+            out = {}
+
+            def other():
+                try:
+                    self.approve()
+                except drun.RunRefused as e:
+                    out['e'] = str(e)
+            holder = threading.Thread(target=other)
+            holder.start()
+            holder.join(30)
+        self.assertIn('the ledger refused the run entry', out.get('e', ''))
+        self.assertNotIn('consume', self.events)
+
+    def test_a_racing_runner_that_claimed_first_refuses_before_the_consume(self):
+        inside, out, events = threading.Event(), {}, {'a': [], 'b': []}
+        hubs = {n: ApprovalHub(events[n]) for n in events}
+
+        def pause():
+            inside.set()
+            time.sleep(0.5)
+
+        def one(name, **kw):
+            try:
+                out[name] = self.approve(hub=hubs[name], **kw).entry
+            except drun.RunRefused as e:
+                out[name] = 'refused: %s' % e
+        a = threading.Thread(target=one, args=('a',), kwargs={'pause': pause})
+        a.start()
+        self.assertTrue(inside.wait(10))
+        b = threading.Thread(target=one, args=('b',))
+        b.start()
+        a.join(30)
+        b.join(30)
+        self.assertEqual(out['a'], 'H-kit-0001', out)
+        self.assertIn('already ran', out['b'], out)
+        self.assertEqual(events['a'].count('consume'), 1)
+        self.assertNotIn('consume', events['b'])
 
     def test_a_consume_answering_another_status_runs_nothing(self):
         for answer in ({'status': 'approved'}, {}, ['consumed'], {'status': None}):

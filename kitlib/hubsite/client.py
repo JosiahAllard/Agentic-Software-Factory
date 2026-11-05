@@ -21,8 +21,9 @@ Client(port, tokens, via=serve.VIA_CLI)
   listing(collection, status, repo)     the items of GET /<collection>
   pending(for_key)                      the items of GET /pending (for_key: only that session
                                         key's)
-  inbox()                               the inbox documents, from GET /snapshot (the api has no
-                                        route that lists them)
+  inbox()                               the inbox documents, from GET /snapshot?collections=inbox
+                                        (the api has no route that lists them; a hub older than
+                                        that filter answers the whole snapshot, read the same)
   page(id)                              a published page's body, from GET /pages/<id>
   version(collection, id)               the version of one document now, for a write that pins it
   wait(since, timeout, pending, for_key) the long-poll: GET /wait again and again, each for at
@@ -136,7 +137,10 @@ class Client(object):
         return self.get('/pending', ANY, {'for': for_key or None}).get('items') or []
 
     def inbox(self):
-        docs = (self.get('/snapshot').get('collections') or {}).get('inbox') or {}
+        # the inbox collection alone; a hub older than the filter ignores the query and answers
+        # the whole snapshot, whose `inbox` is read the same way
+        got = self.get('/snapshot', ANY, {'collections': 'inbox'})
+        docs = (got.get('collections') or {}).get('inbox') or {}
         return [dict(docs[k], id=k) for k in sorted(docs, key=_api._natural)]
 
     def page(self, doc_id):

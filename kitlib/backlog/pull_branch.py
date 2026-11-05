@@ -46,12 +46,15 @@ def refusal(rid, branch, main_branch, session=None):
             % (rid, branch, rid, flag, rid, rid))
 
 
-def _main_checkout(root):
+def _main_checkout(root, *, worktrees=None):
     """The main checkout's path when `root` is the code repository's PM data worktree (the
     repository has a PM data record and `root` has the recorded data branch checked out); '' for
     any other checkout, or when the PM data record cannot be read (no data branch is known); None
-    when it is a PM data repository whose worktrees git cannot list."""
-    common, _why = gitrepo.common_dir(root)
+    when it is a PM data repository whose worktrees git cannot list. `worktrees` is a gitrepo.Worktrees
+    when the caller has one: the list and the common dir (`common`) it holds are not asked again."""
+    common = worktrees.common if worktrees is not None else None
+    if common is None:
+        common, _why = gitrepo.common_dir(root)
     if common is None:
         return ''
     try:
@@ -60,10 +63,10 @@ def _main_checkout(root):
         return ''
     if record is None:
         return ''
-    wts, _why = gitrepo.worktrees(root)
+    wts, _why = (worktrees or gitrepo.worktrees)(root)
     if not wts:
         return None
-    here = [w for w in wts if not w.bare and _same_path(w.path, root)]
+    here =[w for w in wts if not w.bare and _same_path(w.path, root)]
     if not here or here[0].branch != record.branch:
         return ''
     return wts[0].path
@@ -86,12 +89,12 @@ def code_mains(root):
         return FALLBACK_MAINS
 
 
-def code_config(root):
+def code_config(root, *, worktrees=None):
     """The main checkout's Config when `root` is the PM data worktree (_main_checkout), else None;
     None too when it cannot be read. kitlib.backlog.opener.open_store measures the code main on
     its `remote` (docs/backlog.md "The fold-in guard"); with None the store's own configuration is
     used, as for any other checkout."""
-    path = _main_checkout(root)
+    path = _main_checkout(root, worktrees=worktrees)
     if not path:
         return None
     try:

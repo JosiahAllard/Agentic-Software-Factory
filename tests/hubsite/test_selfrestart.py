@@ -291,6 +291,26 @@ class FailureCase(Case):
         self.assertEqual(self.checked, [NEW, NEWER], 'newer code is tried')
         self.assertEqual(len(self.launched), 1)
 
+    def test_a_failed_check_of_superseded_code_posts_nothing_and_the_new_code_is_tried(self):
+        self.check_says = (False, 'exit 1: ImportError: x')
+        held = []
+        self.watcher(run=held.append)
+        self.at(0, NEW)
+        held.pop()()                                    # the probe ends
+        self.at(selfrestart.SETTLE_S, NEW)              # collected, the check is handed off
+        self.assertEqual(len(held), 1)
+        held.pop()()                                    # the old check ends, failed, unread
+        self.at(1, NEWER)                               # the code changed: the result is in the box
+        self.assertEqual(self.texts('error'), [], 'no CHECK_FAILED for superseded code')
+        self.assertFalse(self.w.stale)
+        self.assertNotIn(NEW, self.w._done)
+        self.check_says = (True, None)
+        self.at(selfrestart.SETTLE_S, NEWER)
+        held.pop()()
+        self.at(1, NEWER)
+        self.assertEqual(self.checked, [NEW, NEWER], 'the new code is tried')
+        self.assertEqual(len(self.launched), 1)
+
     def test_a_check_that_raises_is_a_failed_check(self):
         self.check_says = OSError('no python')
         self.watcher()

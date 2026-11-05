@@ -140,11 +140,12 @@ def week_state(data, now):
 
 def over_limit(data, now, limit=HEADROOM_LIMIT):
     """The week at or over `limit`% that has not reset yet (week_state), as ['N% of its seven_day
-    window (resets ddd HH:mm)'], else []. A five_hour window is never read."""
+    window (resets ddd HH:mm)'], else []. The percentage is whole() as pick counts it, so 94.6 is
+    95 and is over. A five_hour window is never read."""
     pct, reset, _ = week_state(data, now)
-    if pct is None or pct < limit:
+    if pct is None or whole(pct) < limit:
         return []
-    return ['%d%% of its seven_day window (resets %s)' % (int(pct), short(reset))]
+    return ['%d%% of its seven_day window (resets %s)' % (whole(pct), short(reset))]
 
 
 def check_headroom(settings, n, now, force, out, limit=HEADROOM_LIMIT):

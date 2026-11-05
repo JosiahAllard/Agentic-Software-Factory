@@ -418,6 +418,8 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py', platform
     and stamped (host_manifests), and the marker (`made_by`: the tool that wrote it;
     `checkout`: the main checkout of `kit`'s repository, left out when git cannot place it). Written into <sha12>.tmp and renamed, so a folder by the
     final name is always whole. An existing folder whose marker names `sha` is kept as it is.
+    A 100755 blob is chmodded 0o755 unless the running host is Windows (kitplatform.NAME, not
+    the `platform` argument, which picks only the manifests), so git runs the kit githooks.
     Returns (folder, version)."""
     name = folder_name(sha)
     dest = os.path.join(root, name)
@@ -439,6 +441,7 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py', platform
         raise RefreshError('%s has no %s' % (sha[:12], MANIFEST))
     version = stamped_version(kit_version(manifest[1]), _count(kit, sha))
     oids = {e[3]: e[2] for e in blobs}
+    modes = {e[3]: e[0] for e in blobs}
     swap = platform_manifests(oids, kitplatform.NAME if platform is None else platform)
     placed = host_manifests(oids)
     tmp = dest + '.tmp'
@@ -457,6 +460,8 @@ def export(kit, sha, root, now=None, made_by='tools/plugin_refresh.py', platform
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, 'wb') as fh:
             fh.write(body)
+        if modes.get(path) == '100755' and kitplatform.NAME != 'windows':
+            os.chmod(full, 0o755)  # git skips a non-executable hook (githooks/pre-push)
     skipped = [e[3] for e in entries if e not in blobs]
     marker = {'sha': sha, 'version': version, 'exported_at': _stamp(now),
               'skipped': skipped, 'made_by': made_by}

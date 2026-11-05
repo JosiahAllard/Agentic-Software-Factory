@@ -192,11 +192,15 @@ class SubagentStart(unittest.TestCase):
         # the machine config's pointer is read from the filesystem: no git child per tool hook
         self.start()                                  # a record for s1-a1 naming the new export
         import subprocess
-        # a cold process: the pointer cache the start above filled is empty, as in a fresh hook
-        with mock.patch.dict(user._POINTERS, clear=True),                 mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
+        from kitlib.proc import job
+        # a cold process: the pointer cache the start above filled is empty, as in a fresh hook.
+        # Git starts through kitlib.proc.job.start (a fake git on the unit tier), so watch both it
+        # and subprocess.Popen
+        with mock.patch.dict(user._POINTERS, clear=True),                 mock.patch.object(job, 'start', wraps=job.start) as started,                 mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
             later = time.time() + headerfollow.EVERY_S + 1
             headerfollow.line(self.old, self.payload, 'a1', self.env, now=later, write=False)
             self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        started.assert_not_called()
         popen.assert_not_called()
 
     def test_the_record_names_the_folder_the_header_named(self):

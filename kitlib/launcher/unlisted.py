@@ -9,8 +9,8 @@ their windows, so the hub's usage crossover can start each one again on another 
       `skip`: the names to leave out (the sessions.json entries' sessions, the PM); `keys`: the
       sessions.json keys (an unlisted session whose key is one of them is never crossed).
 
-A session is read from its window, the powershell.exe parent whose script start.py wrote
-(window.script): its title and the claude line both carry the session's name, PM_KIT_ROLE is
+A session is read from its window, the powershell.exe parent (on Linux the `/bin/bash -c` parent,
+linuxwin.script) whose script start.py wrote (window.script): its title and the claude line both carry the session's name, PM_KIT_ROLE is
 consultant or deep-worker and matches its --agent, CLAUDE_CONFIG_DIR (or its removal: the default
 folder) is the folder of exactly one account in launcher.accounts, and its first message is one of
 start.py's (CONSULTANT_PROMPT, DEEP_PROMPT, DEEP_SUCCESSOR_PROMPT), from which the notes file, the

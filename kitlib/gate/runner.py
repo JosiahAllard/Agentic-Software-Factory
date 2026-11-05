@@ -564,7 +564,10 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
     in the store it books in) and, once it holds, gives its slot back and books again while the
     session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and
-    the daily full run leave it False and never wait.
+    the daily full run leave it False and never wait. A capped gate whose tip is already in the
+    main branch (merged_tip) is REFUSED before it books, and again once its booking holds, before
+    any step (released `not started`); before it books it also stops the session's own queued
+    gates of the branch at an older tip (gatecap.replace_stale; docs/gate.md "The gate queue").
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
     first, before the cap is waited for or anything is booked: `(None, REFUSED Outcome)` when it
     is spent. None: not asked (a detached HEAD). The run is booked with it as book's `branch`,
@@ -610,11 +613,15 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
         slot.end_tree()
         return results, None
     if capped:
+        merged = merged_tip(cfg, root, budget_branch, tree)
+        if merged:
+            return None, merged_refusal(budget_branch, merged, base, 'nothing queued')
         store = (book_kw or {}).get('store') or Store()
         over = budget.refusal(root, store, name, budget_branch, say)
         if over:
             return None, G.Outcome(G.REFUSED, over, record=None,
                                    no_record='the branch gate budget')
+        gatecap.replace_stale(store, name, budget_branch, refs.head(root)[0], say)
     mine = {'branch': budget_branch} if capped and budget_branch else {}
     while True:
         if capped:
@@ -625,6 +632,15 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
         except LockError as e:
             return None, book_refusal(e, log_dir, base)
         with slot:
+            # Its turn: a tip the main branch took while it queued needs no gate. A run asked to
+            # stop is left to its stop (no step starts).
+            if capped and not slot.stop_asked():
+                merged = merged_tip(cfg, root, budget_branch, tested_tree(root))
+                if merged:
+                    slot.release(1, budget.NOT_STARTED)
+                    return None, merged_refusal(
+                        budget_branch, merged, base,
+                        'the queued gate (run %s) was dropped at its turn; nothing ran' % slot.id)
             # Counted and booked in two steps: at the cap now, it gives the slot back and books
             # again (gatecap.gave_way), unless a stop came while it gave the run back.
             if capped and gatecap.gave_way(store, name, slot, say):
@@ -652,6 +668,33 @@ def tested_tree(root):
         return None
     tree, _ = refs.tree_of('HEAD', root)
     return tree or None
+
+
+def merged_tip(cfg, root, branch, tree):
+    """`(HEAD, main ref)` when a branch gate of `root` is not needed: its HEAD is already in the
+    main branch (default_base, `<remote>/<main>` else `<main>`). Only on git's exact yes
+    (refs.is_ancestor) for a clean work tree (`tree`, tested_tree, not None) on a branch other
+    than the main branch; None otherwise: a detached HEAD, uncommitted files (they are what is
+    gated), a no, or any git failure (the gate runs)."""
+    if not branch or tree is None or branch == cfg.main_branch:
+        return None
+    try:
+        head, _ = refs.head(root)
+        ref, _ = default_base(cfg, root)
+        if not head or not ref:
+            return None
+        yes, _ = refs.is_ancestor(head, ref, root)
+    except Exception:               # noqa: BLE001 - a check that cannot answer never drops a gate
+        return None
+    return (head, ref) if yes is True else None
+
+
+def merged_refusal(branch, merged, base, then):
+    """The REFUSED outcome of a gate merged_tip found not needed; `then` says what was done."""
+    head, ref = merged
+    return G.Outcome(G.REFUSED, ['REFUSED: %s at %s is already in %s, so it needs no gate; %s' % (
+        branch, head[:10], ref, then)], base=base, record=None,
+        no_record='the tip is already in %s' % ref)
 
 
 def window_results(slot, say, seen=None):
@@ -727,8 +770,14 @@ def branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, l
     `running` before it, the outcome's after it, or `error` when an exception, SystemExit or
     Ctrl+C escapes it (raised again, unchanged); the `error` record names the run's log folder
     once it was made, else none. None with `plan` or on a detached HEAD. The record lines are
-    said as progress, never added to the outcome's lines."""
+    said as progress, never added to the outcome's lines. A gate that only repeats one already
+    queued (queued_refusal) is REFUSED before either record: the queued run's records stay its
+    own."""
     say = say or _quiet
+    if not plan:
+        twin = queued_refusal(root, base, full, only, book_kw)
+        if twin is not None:
+            return twin
     run = None if plan else _result_run(root)
     if run is not None:
         say(run.start()[1])
@@ -748,6 +797,46 @@ def branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, l
         say(line)
         out.facts['result_record'] = path
     return out
+
+
+def queued_refusal(root, base, full, only, book_kw):
+    """REFUSED, naming the run, when a gate of the checkout `root` is in already waits in the
+    machine lock's queue for the same branch, tip, options and clean tree
+    (gatecap.queued_twin): this one would gate the same thing after it. None otherwise, and
+    whenever the checkout, its config, git or the lock store cannot be read (the gate runs).
+    A detached HEAD or uncommitted files are never refused. The lock store is read only when the
+    branch's result record says a gate at this tip is `running` (a queued gate wrote it before it
+    booked): a gate with none reads no more of the store here than it did before."""
+    try:
+        top, _ = repo.toplevel(root)
+        if not top:
+            return None
+        branch, _ = refs.current_branch(top)
+        head, _ = refs.head(top)
+        if not branch or not head:
+            return None
+        rec, _ = result.read(top, branch, 'gate')
+        if not (rec and rec.get('verdict') == result.RUNNING
+                and result.at_tip(rec, branch, 'gate', head)):
+            return None
+        note = gatecap.queue_note(head, full, only, base)
+        store = (book_kw or {}).get('store') or Store()
+        runs = [r for r in store.live_runs() if r.get('note') == note
+                and r.get('branch') == branch]
+        if not runs:
+            return None
+        cfg = kconfig.load(top)
+        rid = gatecap.queued_twin(store, repo_name(cfg, top), branch, note, tested_tree(top),
+                                  runs=runs)
+    except Exception:               # noqa: BLE001 - a check that cannot answer never refuses
+        return None
+    if not rid:
+        return None
+    return G.Outcome(G.REFUSED, [
+        'REFUSED: a gate of %s at %s with the same options is already queued: run %s; '
+        'nothing queued' % (branch, head[:10], rid),
+        'Instead: wait for its result: gate.py wait-result %s --tip %s -C %s' % (branch, head, top)],
+        record=None, no_record='the same gate is already queued (run %s)' % rid, queued=rid)
 
 
 def _result_run(root):
@@ -811,6 +900,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     known, with the steps the merge base owes, and set back in seen[0]."""
     eff = seen[0]
     gate = eff.gate
+    asked_base = base                 # the queue note names the --base given, not the default
     if gate.get('worktree_guard') and repo.classify(top).kind == repo.MAIN:
         return G.Outcome(G.REFUSED, ['REFUSED: %s is a main checkout, and "gate".worktree_guard '
                                      'gates only linked worktrees' % top])
@@ -905,9 +995,11 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
-        # run book through gated() without them, and a fully reused gate never gets here.
+        # run book through gated() without them, and a fully reused gate never gets here. Its
+        # lock run's note names its tip and options (gatecap.queue_note): the gate queue's key.
+        noted = dict({'note': gatecap.queue_note(head, full, only, asked_base)}, **(book_kw or {}))
         results, refused = gated(cfg, top, mb, changed, run, gate['kind'], name,
-                                 slug or slug_of(branch or head[:10]), logs, say, book_kw,
+                                 slug or slug_of(branch or head[:10]), logs, say, noted,
                                  gate=gate, seen=watched, capped=True,
                                  budget_branch=branch or None)
         if refused is not None:

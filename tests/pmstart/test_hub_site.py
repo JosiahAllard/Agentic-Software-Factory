@@ -32,7 +32,7 @@ def setUpModule():
     # the checklist must not read this machine's pm_data setting, foreground lock or heartbeat
     for owner, name, value in ((pmstart, "pm_data_settings", lambda: None),
                                (fglock, "read_live", lambda user32=None: 0),
-                               (pmstart, "read_heartbeat", lambda: None)):
+                               (pmstart, "read_heartbeat", lambda load=None: None)):
         p = mock.patch.object(owner, name, value)
         p.start()
         unittest.addModuleCleanup(p.stop)
@@ -641,7 +641,7 @@ class FiledDigestTest(unittest.TestCase):
 
     def test_the_checklist_gives_the_hub_check_the_stamp_file(self):
         c = FiledClient(filed(datetime.datetime.now(UTC)))
-        with mock.patch.object(pmstart, "filed_stamp_file", lambda: self.stamp):
+        with mock.patch.object(pmstart, "filed_stamp_file", lambda load=None: self.stamp):
             txt = pmstart.checklist({}, NOW, procs=[], hub_site={
                 "load": lambda: SET, "make_client": lambda port: c}, **FAKES)
         self.assertIn("- hub: 1 answer(s) filed into records since ", txt)

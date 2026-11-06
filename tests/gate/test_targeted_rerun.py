@@ -8,10 +8,6 @@ has. Every missing, unreadable or altered record refuses."""
 import json
 import os
 import re
-import shutil
-import tempfile
-import threading
-import time
 import unittest
 from unittest import mock
 
@@ -254,52 +250,6 @@ class JudgeClass(unittest.TestCase):
         self.assertFalse(rerun.judge_class(text, 0, ['m.D.setUpClass'])[0])
 
 
-class EndOnce(unittest.TestCase):
-    """A timed class run's kill (its timer thread) and a stop (Slot.wait, the caller's thread)
-    end the slot's tree once between them, never both at once."""
-
-    class Slot:
-        def __init__(self):
-            self.calls, self.inside, self.most = 0, 0, 0
-            self.entered = threading.Event()
-
-        def end_tree(self):
-            self.calls += 1
-            self.inside += 1
-            self.most = max(self.most, self.inside)
-            self.entered.set()
-            time.sleep(0.3)
-            self.inside -= 1
-
-    class Launcher:                                 # as kitlib.lock.run.Launcher.kill
-        def __init__(self, slot):
-            self._slot = slot
-
-        def kill(self):
-            self._slot.end_tree()
-
-    def test_a_stop_while_the_time_limit_kills_does_not_end_the_tree_again(self):
-        slot = self.Slot()
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        log = os.path.join(tmp, 'class.log')
-
-        def start(launcher, argv, cwd, env, log):
-            self.assertTrue(slot.entered.wait(10), 'the time limit never killed')
-            slot.end_tree()                         # the stop path, during the kill
-            open(log, 'w').close()
-            return 1
-        c = {'cls': 'm.C', 'env': {}, 'cwd': '', 'ids': ['m.C.test_a']}
-        with mock.patch.object(rerun, '_start', start), \
-                mock.patch.object(runner, 'child_env', lambda launcher: {}):
-            rc, text = rerun.run_class(self.Launcher(slot), tmp, c, log, timeout=0.05)
-        self.assertEqual((rc, slot.calls, slot.most), (None, 1, 1))
-        self.assertIn(rerun.TIMED_OUT, text)
-        self.assertNotIn('end_tree', vars(slot))    # the slot's own end_tree is back
-        slot.end_tree()
-        self.assertEqual(slot.calls, 2)
-
-
 class AddLine(unittest.TestCase):
     def test_the_summary_stays_a_title_however_many_long_tests_failed(self):
         long = 'tests.gate.test_' + 'x' * 70
@@ -429,10 +379,10 @@ class Stopped(RerunCase):
         self.red(wt)
         real, real_steps, started, ran = rerun._start, runner.run_steps, [], []
 
-        def start(launcher, argv, cwd, env, log):
+        def start(launcher, argv, cwd, env, log, timeout=None):
             started.append(log)
             self.ask_stop()
-            return real(launcher, argv, cwd, env, log)
+            return real(launcher, argv, cwd, env, log, timeout)
 
         def run_steps(*args, **kw):
             ran.extend(real_steps(*args, **kw))

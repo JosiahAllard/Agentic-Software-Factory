@@ -14,7 +14,7 @@ from kitlib.config import policy
 from kitlib.config.types import ConfigError
 from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
-from kitlib.gate import rerun
+from kitlib.gate import hookrev, rerun, runner
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import LockError
 from tests import gitfixture
@@ -408,24 +408,27 @@ class ProbeCannotFinish(ProbeCase):
 
 
 class LoadChecks(unittest.TestCase):
-    """rerun.load_checks, the targeted rerun's and the probe's: a hook module that cannot load
-    refuses with why, a SystemExit included (as runner.gated)."""
+    """runner.load_checks, the gate's, the targeted rerun's and the probe's: a hook module that
+    cannot load refuses with why, a SystemExit included; with a commit it loads from that
+    commit (hookrev), as a landing's gate does."""
 
     def test_each_outcome(self):
         none, check = mock.Mock(check=None), mock.Mock(check='a_check')
         cases = [
-            ('no step has a check', none, None, ({}, {}, None)),
-            ('loaded', check, ({'c': 1}, {'o': 2}), ({'c': 1}, {'o': 2}, None)),
-            ('config error', check, ConfigError('bad hook'), (None, None, 'bad hook')),
-            ('module exits', check, SystemExit(3), (None, None, (
+            ('no step has a check', none, None, None, ({}, {}, None)),
+            ('loaded', check, None, ({'c': 1}, {'o': 2}), ({'c': 1}, {'o': 2}, None)),
+            ('loaded at a commit', check, 'abc', ({'c': 1}, {}), ({'c': 1}, {}, None)),
+            ('config error', check, None, ConfigError('bad hook'), (None, None, 'bad hook')),
+            ('module exits', check, 'abc', SystemExit(3), (None, None, (
                 'the hook module exited while it was loaded (SystemExit, code 3); nothing ran'))),
         ]
-        for what, step, load, want in cases:
+        for what, step, rev, load, want in cases:
             with self.subTest(what):
                 fake = (mock.Mock(side_effect=load) if isinstance(load, BaseException)
                         else mock.Mock(return_value=load))
-                with mock.patch.object(policy, 'load_gate_checks', fake):
-                    self.assertEqual(rerun.load_checks(object(), [step]), want)
+                there = 'load_gate_checks_at' if rev else 'load_gate_checks'
+                with mock.patch.object(hookrev if rev else policy, there, fake):
+                    self.assertEqual(runner.load_checks(object(), [step], 'root', rev), want)
                 self.assertEqual(fake.called, step is check)
 
 

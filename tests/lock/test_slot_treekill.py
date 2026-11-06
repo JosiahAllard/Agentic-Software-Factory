@@ -1,5 +1,5 @@
-"""kitlib.lock.run.slot(): a run that is stopped, raises, is interrupted (Ctrl+C) or is killed
-through its launcher ends its command's whole process tree - child and grandchild, and a subtree
+"""kitlib.lock.run.slot(): a run that is stopped, raises, is interrupted (Ctrl+C), is killed
+through its launcher or runs past its wait's timeout ends its command's whole process tree - child and grandchild, and a subtree
 whose top has already exited - because every process the launcher starts is in the run's job
 (kitlib.proc.job) and the slot's kill path (Slot.end_tree) ends the job. These trees hold no
 build daemon, so end_tree ends the whole job (TerminateJobObject); a job with a shared daemon in
@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 from .helpers import StoreCase, clean_env
 
@@ -196,6 +197,38 @@ class SlotTreeKill(StoreCase):
             launch.kill()
             self.assertEqual(launch.wait(p), 1)
             self.assert_gone(handles)
+
+    def test_a_wait_past_its_timeout_ends_the_whole_tree(self):
+        argv, d = self.tree()
+        with self.slot() as launch:
+            rid = launch.id
+            p = launch.start(argv)
+            self.addCleanup(self.reap, p)
+            handles = self.hold(self.pids(d), launch.pids())
+            self.assertIsNone(launch.wait(p, 0.5))
+            self.assert_gone(handles)
+        self.assertEqual(self.ended(rid), ("timeout", 1))
+
+    def test_a_stop_at_the_timeout_ends_the_tree_once(self):
+        # The stop and the timeout are both due at the first poll: the stop wins, and the tree
+        # is ended once over the wait and the release (end_sparing is the kill path's one call).
+        argv, d = self.tree()
+        real, ends = rm.end_sparing, []
+
+        def end_sparing(*args, **kw):
+            ends.append(threading.get_ident())
+            return real(*args, **kw)
+        with mock.patch.object(rm, "end_sparing", end_sparing):
+            with self.slot() as launch:
+                rid = launch.id
+                p = launch.start(argv)
+                self.addCleanup(self.reap, p)
+                handles = self.hold(self.pids(d), launch.pids())
+                self.assertTrue(rm.request_stop(self.store, rid, "test"))
+                self.assertEqual(launch.wait(p, 0), 1)
+                self.assert_gone(handles)
+        self.assertEqual(ends, [threading.get_ident()])
+        self.assertEqual(self.ended(rid), ("cancelled", 1))
 
     def test_control_killing_only_the_top_leaves_its_descendants(self):
         # The same tree outside any slot: ending its top process alone ends nothing below it.

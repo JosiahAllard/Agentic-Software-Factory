@@ -209,8 +209,8 @@ class Prober(object):
             return None, [], 'the gate at %s: %s' % (sha[:10], e)
         # A setup Step carries no check (steps.build), so this loads nothing today; it is the
         # rerun's load all the same, which refuses a SystemExit as runner.gated does.
-        checks, options, why = rerun.load_checks(cfg, setup)
-        if why:
+        checks, options, why = runner.load_checks(cfg, setup)
+        if checks is None:
             return None, [], 'the gate at %s: %s' % (sha[:10], why)
         timeout = rerun.class_timeout(self.wt, cfg)
         self.say('daily: bisect probe %d at %s: %s, its failing tests only (%d class(es))'

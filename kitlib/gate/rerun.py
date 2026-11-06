@@ -47,13 +47,11 @@ import re
 import secrets
 import subprocess
 import sys
-import threading
 import time
 
 from kitlib import gate as G
 from kitlib import kitroot
 import kitlib.config as kconfig
-from kitlib.config import policy
 from kitlib.config.types import ConfigError
 from kitlib.gate import budget
 from kitlib.gate import detect
@@ -565,7 +563,12 @@ def judge_class(text, rc, ids):
     return whole and all(v == 'ok' for v in out.values()), out
 
 
-def _start(launcher, argv, cwd, env, log_path):
+def _start(launcher, argv, cwd, env, log_path, timeout=None):
+    """The exit code of `argv` started by `launcher`, its output in the file `log_path`. None
+    when it did not start (the log says why), or when it was still running after `timeout`
+    seconds (None: no limit): the launcher's wait (Slot.wait, which watches for a stop on the
+    same thread, so the tree is ended once) then ended its tree, and the log ends with a
+    TIMED_OUT line."""
     with open(log_path, 'wb') as log:
         try:
             p = launcher.start(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log,
@@ -573,81 +576,27 @@ def _start(launcher, argv, cwd, env, log_path):
         except (OSError, JobError, LockError) as e:
             log.write(('rerun: could not start %s: %s\n' % (argv, e)).encode('utf-8'))
             return None
-        return launcher.wait(p)
-
-
-def _end_once(launcher):
-    """For one timed class run: the launcher's slot ends its tree once. The time limit's kill
-    (Launcher.kill, on run_class's timer thread) and a stop (Slot.wait, on the caller's thread)
-    both call the slot's end_tree; on the slot instance it is replaced by one that takes a lock
-    and does nothing once either has ended the tree, so the two never run end_tree at once or
-    twice. A call cut short by a BaseException counts as not run, so the next caller ends the
-    tree. Returns the undo, which puts the slot's own end_tree back; a launcher with no slot
-    (a test's fake) gets nothing done to it."""
-    slot = getattr(launcher, '_slot', None)
-    if slot is None or not callable(getattr(slot, 'end_tree', None)):
-        return lambda: None
-    real, mine = slot.end_tree, vars(slot).get('end_tree')
-    lock, ended = threading.Lock(), {'done': False}
-
-    def end_tree():
-        with lock:
-            if ended['done']:
-                return
-            real()
-            ended['done'] = True
-    slot.end_tree = end_tree
-
-    def undo():
-        if mine is None:
-            vars(slot).pop('end_tree', None)
-        else:
-            slot.end_tree = mine
-    return undo
+        rc = launcher.wait(p, timeout)
+    if rc is None:
+        try:
+            with open(log_path, 'a', encoding='utf-8') as log:
+                log.write('\n%s: %s was still running after %s s; its process tree was ended\n'
+                          % (TIMED_OUT, argv[-1], timeout))
+        except OSError:
+            pass
+    return rc
 
 
 def run_class(launcher, top, c, log, timeout=None):
     """`(rc, log text)` of `python -m unittest -v <class>` for one entry `c` of classes_of, run
     in the tree `top` (its directory `c['cwd']`) with the launcher's child environment and the
     mode's variables `c['env']`, its output in the file `log`. rc is None when it did not start,
-    or when it ran past `timeout` seconds (None: no limit): its tree is then ended
-    (Launcher.kill) and the log ends with a TIMED_OUT line. That kill and a stop end the tree
-    once between them (_end_once)."""
+    or when it was still running after `timeout` seconds (None: no limit; _start)."""
     env = runner.child_env(launcher)
     env.update(c['env'])
     argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
     cwd = os.path.join(top, *c['cwd'].split('/')) if c['cwd'] else top
-    if not timeout:
-        return _start(launcher, argv, cwd, env, log), _read(log)
-    state, guard = {'done': False, 'killed': False}, threading.Lock()
-
-    def kill():
-        with guard:
-            if state['done']:
-                return
-            state['killed'] = True
-        launcher.kill()             # its wait (Slot.wait) then sees the child end
-    undo = _end_once(launcher)
-    timer = threading.Timer(timeout, kill)
-    timer.daemon = True
-    timer.start()
-    try:
-        rc = _start(launcher, argv, cwd, env, log)
-    finally:
-        with guard:
-            state['done'] = True
-        timer.cancel()
-        timer.join()                # a kill under way ends before anything else starts
-        undo()
-    if not state['killed']:
-        return rc, _read(log)
-    try:
-        with open(log, 'a', encoding='utf-8') as f:
-            f.write('\n%s: %s was still running after %s s; its process tree was ended\n'
-                    % (TIMED_OUT, c['cls'], timeout))
-    except OSError:
-        pass
-    return None, _read(log)
+    return _start(launcher, argv, cwd, env, log, timeout), _read(log)
 
 
 def class_timeout(top, cfg):
@@ -661,23 +610,6 @@ def class_timeout(top, cfg):
     if is_kit(top):
         return UNIT_TIMEOUT
     return cfg.section('tool_tests')['unit_timeout']
-
-
-def load_checks(cfg, steps):
-    """`(checks, options, None)`: the hook module's checks when a step of `steps` has a check
-    (policy.load_gate_checks), else `({}, {}, None)`. `(None, None, why)` when the module cannot
-    be loaded: a ConfigError, or a SystemExit from the repo's module-level code, which
-    runner.gated refuses the same way."""
-    if not any(s.check for s in steps):
-        return {}, {}, None
-    try:
-        checks, options = policy.load_gate_checks(cfg)
-    except ConfigError as e:
-        return None, None, str(e)
-    except SystemExit as e:         # the repo's module-level code; nothing has run yet
-        return None, None, ('the hook module exited while it was loaded (SystemExit, code %r); '
-                            'nothing ran' % (e.code,))
-    return checks, options, None
 
 
 def run_classes(kind, name, slug, book_kw, tree, top, classes, gate, ctx, logs, base, say,
@@ -858,8 +790,8 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if missing:
         return G.Outcome(G.REFUSED, ['REFUSED: the gate has no step %s now' % ', '.join(missing)])
     steps = [built[n] for n in not_run]
-    checks, options, why = load_checks(cfg, steps)
-    if why:
+    checks, options, why = runner.load_checks(cfg, steps)
+    if checks is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     changed, _ = runner.changed_since(top, base)
     name = runner.repo_name(cfg, top)

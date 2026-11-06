@@ -1283,7 +1283,7 @@ class CrossoverJob(object):
                     never[s.name] = (UL.SEVERAL, s.account)
                 continue
             sess = group[0] if len(group) == 1 else None
-            live = [l for l in lives if l.name == key or re.match(re.escape(key) + r'-a\d+\Z', l.name)]
+            live = [l for l in lives if C.of_stem(l.name, key)]
 
             def step():
                 cur = doc['crossings'].get(key)

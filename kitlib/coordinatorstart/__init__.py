@@ -149,7 +149,7 @@ def find_entry(sessions, cwd, name=None, root=None):
     if len(hits) == 1:
         return hits[0], None
     for e in hits:
-        if name and (e.get("name") == name or name.startswith(str(e.get("stem") or "\0"))):
+        if name and (e.get("name") == name or lookup.of_stem(name, e.get("stem"))):
             return e, None
     return hits[0], "%d sessions entries match repo %s; took the first (%s)" % (len(hits), top, hits[0].get("name"))
 

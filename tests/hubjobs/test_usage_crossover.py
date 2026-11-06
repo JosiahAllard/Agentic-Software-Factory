@@ -1858,6 +1858,12 @@ class Unlisted(JobBase):
         self.assertIsNone(self.crossing(DEEP))
         self.assertEqual((len(self.sent), len(self.calls)), (1, 2))
 
+    def test_a_recycled_session_of_the_key_counts_as_live_so_the_crossing_holds(self):
+        self.deep()
+        self.live.append(U.Live(DEEP + '-a2-r1', 77, CREATED))    # <key>-a<N>-r<k>: lookup.of_stem
+        self.run_job()
+        self.assertEqual((self.sent, self.calls, self.crossing(DEEP)), ([], [], None))
+
     def test_a_consultant_is_stopped_first_then_started_again_under_its_own_name(self):
         self.consultant()
         self.run_job()

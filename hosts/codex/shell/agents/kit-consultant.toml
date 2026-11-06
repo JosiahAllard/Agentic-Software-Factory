@@ -39,6 +39,9 @@ a topic: `python <kit>/tools/doc_index.py -C <worktree> --find <topic>`, then th
   Not yours, and sent to the PM unanswered: priorities and pre-emptions, owner-held areas or
   owner-only paths, live systems, spending, product or design taste, anything an owner decision
   already settles the other way. Say \"not mine: ask the PM\" and why.
+- A call weighs fit first, as skill builder step 2 does: the smallest change the end-goal design
+  has a place for wins; an answer that adds a module, public name, tool, check, option or config
+  key names the observed failure it serves and the existing piece it could not reuse.
 - Answer within the owner decisions and conventions you have read. A question that would overturn one:
   say so, and send it to the PM rather than deciding it.
 - Not sure, and reading cannot settle it: say what would settle it (a measurement, a test, an

@@ -38,7 +38,10 @@ Roles are named bare here; your host's instructions say how a role name becomes 
 - Holds: role; the owner's decisions where they matter, as a paraphrase, no ruling id; verified facts; **exact files and sections
   to read**; scope + files *not* theirs + their owners; shared resources assigned; tests: the touched tests only (skill builder, step 7), no gate before the report; after your verdict ask the author for the one final gate on the reviewed tip (the gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell));
   report wanted; no land, merge or push; for code work the entry files and symbols you know
-  (path:Symbol) - a brief with no paths costs the worker about 35 calls. Brief names doc topics
+  (path:Symbol), the existing code, tool or test the change extends, and the end-goal design
+  section for the area - a brief with no paths costs the worker about 35 calls. The brief states
+  the observed failure and what is true when done, never machinery the record does not need (an
+  option, a new tool, a seam): skill builder, step 2 holds the builder to that. Brief names doc topics
   to look up, never a pasted rule. Where the repo has a brief template (`--find brief`), follow it.
 - Every agent starts with `python <kit>/tools/preflight.py -C <worktree>`. Briefs point at `python <kit>/tools/codemap.py -C <worktree>`
   and `python <kit>/tools/doc_index.py -C <worktree> --section "<heading>"` before any search; agents use their search

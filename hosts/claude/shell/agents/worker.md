@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: worker
-description: Default coder for routine low- and medium-risk work - additive content, UI, pure logic with tests, small known-cause fixes (even on a High-risk path; the review stays strong), behaviour-neutral moves, plan-only and sync work. Networking, concurrency, ordering, CI, crash hunts or design go to `pm-kit:strong-worker` or `pm-kit:senior-worker`; small, well-defined low-risk changes can go to `pm-kit:weak-worker`.
+description: Default coder for routine low- and medium-risk work - additive content, UI, pure logic with tests, small known-cause fixes (even on a High-risk path; the review stays strong), behaviour-neutral moves, plan-only and sync work. Otherwise networking, concurrency, ordering, CI, crash hunts or design go to `pm-kit:strong-worker` or `pm-kit:senior-worker`; small, well-defined low-risk changes can go to `pm-kit:weak-worker`.
 model: sonnet
 effort: medium
 experimental:
@@ -50,6 +50,6 @@ commits, the gate, follow-ups, the report, the kit tools and what you never do. 
 
 Stop and report when: the change turns out to touch networking, concurrency, wire
 formats, schemas, simulation or ordering behaviour, CI, or anything the profile's
-`python <kit>/tools/doc_index.py -C <worktree> --find risk` marks high; a failure's cause is unclear
+`python <kit>/tools/doc_index.py -C <worktree> --find risk` marks high (unless your brief dispatched you for a small known-cause fix on that path); a failure's cause is unclear
 after one honest attempt; the brief's approach does not fit the code as it is. Say what you found
 and what it needs: a stronger agent taking it is the intended path, not a failure.

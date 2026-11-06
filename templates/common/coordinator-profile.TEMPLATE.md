@@ -12,7 +12,7 @@ only the owner makes.
 - Tool requests (the weekly upkeep run, skill coordinator-dispatch "Upkeep"): `docs/ops/tool-requests.md`.
 
 ## Risk map, for review depth
-Which paths or areas are high risk (a branch there gets a fresh reviewer and a stronger worker)
+Which paths or areas are high risk (a branch there gets a fresh reviewer and a stronger worker, except a small known-cause fix)
 and which are low, and what a review of each must check.
 
 ## Agent types used here

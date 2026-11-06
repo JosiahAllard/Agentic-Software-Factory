@@ -8,7 +8,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
 ## Roles and what each is for
 
 - weak-worker: small, well-defined, low-risk changes the brief sizes by listing them: named files, named edits, a few files (doc lines, small additive changes with their test).
-- worker: routine coding, low and medium risk, and a small fix with a known cause even on a High-risk path (its review still runs strong); plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation).
+- worker: routine coding, low and medium risk; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation).
 - strong-worker: the default for High-risk build and fix work on standard paths (API changes, live fixes, ordinary tool features, generated-data wiring).
 - senior-worker: concurrency, networking, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes.
 - deep-worker: its own launched session for the hardest issues; never a subagent dispatch.
@@ -31,9 +31,9 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   with tests, known-cause fixes, behaviour-preserving moves and renames (brief names **Moves and
   renames**; its equivalence check is not optional). Coding ladder by need:
   weak-worker (light/high: Low, small and well-defined, sized by what the brief lists) -> worker
-  (standard/medium: Low, Medium, or a small known-cause fix at High) -> strong-worker (strong/medium: High-risk build and fix work -
-  API changes, live fixes, ordinary tool features, generated-data wiring; never plan-only or
-  sync/prep) -> senior-worker (strong/high: concurrency, networking, simulation or ordering,
+  (standard/medium: Low, Medium, or a small known-cause fix at High, its review still strong)
+  -> strong-worker (strong/medium: High-risk build and fix work - API changes, live fixes,
+  ordinary tool features, generated-data wiring; never plan-only or sync/prep) -> senior-worker (strong/high: concurrency, networking, simulation or ordering,
   migrations, CI config, landing/gate/lock tools, build-cache correctness, codegen design; builds
   and designs of those kinds, never plan-only) -> deep-worker (deep/xhigh, own session: root cause or concurrency work
   senior-worker failed at or plainly cannot do). weak-worker not installed -> the worker.
@@ -66,9 +66,8 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
 - **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier, whoever
   built the area (it judges a look, not a diff).
 - Effort is not settable per dispatch: pick the role for it. High risk -> strong-worker, or
-  senior-worker for the kinds the ladder names; except a small fix with a known cause, which may
-  go to the worker on a High-risk path, its review still strong. Only when senior-worker has been defeated, or
-  plainly will be, on a race or crash root-cause or subtle concurrency (never a build or a
+  senior-worker for the kinds the ladder names, except a small known-cause fix (the worker).
+  Only when senior-worker has been defeated, or plainly will be, on a race or crash root-cause or subtle concurrency (never a build or a
   plan): request a deep-worker session; say in status when and why.
 - The deep-worker is never a subagent dispatch: it is its own session - own window, deep tier,
   long auto-compact window - for the most difficult issues only. You request it; the PM launches

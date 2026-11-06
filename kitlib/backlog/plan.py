@@ -129,6 +129,7 @@ class Context(object):
         self._histories = (None, {})    # (the last store tip asked about, {rid: history})
         self._shared = shared
         self._unmet_base = None         # the code main `unmet` resolved, once, on first need
+        self._live = (None, None)       # (the snapshot, offer.live_branches' names for it)
 
     @property
     def shared_entries(self):
@@ -199,6 +200,22 @@ class Context(object):
                 seen[rid] = self.store.history(rid, snap)
             return seen[rid]
         return history
+
+    def live_branches(self, snap):
+        """`(names, None)` or `(None, why)`, offer.live_branches asked once per snapshot (a command
+        reads the branch set several times over the one snapshot it loaded; a Context a caller
+        keeps across writes asks again under each new snapshot). A failed probe is not kept."""
+        if self._live[0] is not snap:
+            names, why = omod.live_branches(self.root, self.remote)
+            if names is None:
+                return None, why
+            self._live = (snap, names)
+        return self._live[1], None
+
+    def in_flight_split(self, snap):
+        """offer.in_flight_split(snap) over this Context's one live-branch read of `snap`."""
+        return omod.in_flight_split(snap, self.root, self.remote,
+                                    live=lambda: self.live_branches(snap))
 
     def unmet(self, snap):
         """`unmet(rec)` -> `[(member, why)]` (offer.unmet_requires). The code main it checks a
@@ -341,7 +358,7 @@ def _offer(snap, ctx, branch, cap, seeds, holding, diffs=None, narrow=False, why
     `whys` the dict `_narrower` notes why a narrowing failed in."""
     own = own_branch(ctx, branch)
     if holding is None:
-        holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+        holding, _dead, _why = ctx.in_flight_split(snap)
     taken = [r for r in holding if not (own and r.get('pulled_by') == own)]
     live = _live_reader(ctx, holding, own, diffs)
     folded = _offer_folds(ctx, holding, own, live=live)
@@ -1187,7 +1204,7 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
     if 'scope' in keys and was_pulled:
         added = widened_members(rec.all('scope'), get('scope'))
         if added:
-            holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+            holding, _dead, _why = ctx.in_flight_split(snap)
             widen_hits = live_hits(added, holding, skip=rid, branch=rec.get('pulled_by'),
                                    shared=shared_of(ctx))
             # The fold-in guard, as `pull` runs it.
@@ -1195,7 +1212,7 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
     new_uses = [n for n in get('uses') if n not in rec.all('uses')]
     full = []
     if 'uses' in keys and was_pulled and new_uses:
-        holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+        holding, _dead, _why = ctx.in_flight_split(snap)
         full = resource_hits(new_uses, holding, ctx.resources, skip=rid,
                              branch=rec.get('pulled_by'))
     if (widen_hits or full or folds) and not may_collide:
@@ -1944,7 +1961,7 @@ def uses_shown(snap, ctx, rec):
         capacity = ctx.resources
     except Failure as exc:
         return 'uses %s (capacity not read: %s)' % (', '.join(omod.uses(rec)), exc)
-    holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    holding, _dead, _why = ctx.in_flight_split(snap)
     return omod.uses_line(rec, holding, capacity)
 
 
@@ -2071,7 +2088,7 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
                    % (rid, rec.get('pulled_at'), old))
     if not ctx.session or rec.get('session') != ctx.session:
         raise busy
-    holding, dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    holding, dead, _why = ctx.in_flight_split(snap)
     if rec not in dead:
         raise busy
     if rec.has('review'):
@@ -2420,7 +2437,7 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
     """Why the pull `block` stopped on `branch` at `tip` does not come back, None when it does.
     Failure when git cannot tell any of it."""
     what = 'whether the pull of `%s` by %s comes back' % (rec.id, branch)
-    names = _git_answer(omod.live_branches(ctx.root, ctx.remote), what)
+    names = _git_answer(ctx.live_branches(snap), what)
     if branch not in names:
         return 'no branch or worktree by that name'
     full = _git_answer(refs.resolve(tip, ctx.root, known=True), what)
@@ -2436,7 +2453,7 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
     _base, main = _code_main(ctx)
     if main and _git_answer(refs.is_ancestor(full, main, ctx.root), what):
         return 'its stopped tip %s has landed on %s' % (tip, ctx.code_main)
-    holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    holding, _dead, _why = ctx.in_flight_split(snap)
     lead = '; a lead may re-pull it (the pull-collision row)'
     hits = live_hits(rec.all('scope'), holding, skip=rec.id, branch=branch,
                      shared=shared_of(ctx))
@@ -2632,7 +2649,7 @@ def _refuse_live_pulls(snap, ctx, recs, note='  dead pull on `%s` dropped with t
     pulled = [r for r in recs if r.get('state') == 'pulled']
     if not pulled:
         return []
-    holding, _dead, probe = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    holding, _dead, probe = ctx.in_flight_split(snap)
     live = set(r.id for r in holding)
     notes, building = [], []
     for rec in pulled:

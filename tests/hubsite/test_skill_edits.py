@@ -374,6 +374,16 @@ class PushTest(unittest.TestCase):
         self.api.coordinators = lambda: {}
         self.assertEqual(self.api.kit_session_key(), 'Kit-Repo')
 
+    def test_a_submitted_edit_is_routed_and_pushed_to_the_coordinators_session_key(self):
+        self.api.kit_key = lambda: 'Kit-Repo'
+        self.api.coordinators = lambda: {'kit': 'kit-repo'}
+        eid = self.ok('POST', '/skill_edits', OWNER, {'skill': 'builder', 'text': NEW})['id']
+        self.ok('POST', '/skill_edits/%s/edit' % eid, OWNER, {'submit': True, 'if_version': 1})
+        items = self.api.pending('kit')
+        self.assertEqual([(d['kind'], d['from']) for d in items], [('skill_edit', 'kit')])
+        self.worker.poll()
+        self.assertEqual(sorted(r for r, _ in self.push.calls), ['kit', 'pm'])
+
     def test_a_submitted_edit_pushes_to_the_kit_coordinator_and_done_acknowledges_it(self):
         eid = self.ok('POST', '/skill_edits', OWNER, {'skill': 'builder', 'text': NEW})['id']
         self.worker.poll()

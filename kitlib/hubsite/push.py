@@ -179,7 +179,7 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
+from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
@@ -964,7 +964,7 @@ class PushWorker(object):
             flags['record'] = '%s:%s' % (record.get('repo') or '', record.get('id') or '')
             flags['record_repo'] = record.get('repo') or ''
             if flags['record_repo'] and flags['record_repo'].lower() == self._pm_folder().lower():
-                flags['record_repo'] = self._kit_key() or flags['record_repo']    # the kit's
+                flags['record_repo'] = self._kit_name() or flags['record_repo']    # the kit's
         if not recipients:
             if flags.get('has_it'):
                 self._hub_done(dict(flags, id=doc_id, fingerprint=fp))
@@ -1033,13 +1033,16 @@ class PushWorker(object):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
         keys = []
-        rrepo = record.get('repo')
-        if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
-            # the kit's records are bound under the PM folder's name
-            rkeys, rrepo = self._kit_keys(), self._kit_key()
-        else:
-            rkeys = self._repo_keys(rrepo)
-        for k in [asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo')) + [doc.get('repo')]:
+        with sessions_once():           # sessions.json is read once for the whole walk
+            rrepo = record.get('repo')
+            if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
+                # the kit's records are bound under the PM folder's name
+                rkeys, rrepo = self._kit_keys(), self._kit_key()
+            else:
+                rkeys = self._repo_keys(rrepo)
+            cands = ([asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo'))
+                     + [doc.get('repo')])
+        for k in cands:
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
         for k in keys:
@@ -1088,6 +1091,17 @@ class PushWorker(object):
         if not isinstance(got, list):
             return [self._repo_key(repo)]
         return [k for k in got if isinstance(k, str)]
+
+    def _kit_name(self):
+        """The kit repository's configured name (Api.kit_key), '' when none: what the PM's text
+        names, where _kit_key is the coordinator's session key."""
+        fn = getattr(self.api, 'kit_key', None)
+        try:
+            got = fn() if fn is not None else ''
+        except Exception as e:          # noqa: BLE001 - a host fault: the PM folder's name stands
+            self.log('push: kit_key failed: %s' % type(e).__name__)
+            got = ''
+        return got if isinstance(got, str) else ''
 
     def _kit_keys(self):
         """Every key the kit coordinator may have (Api.kit_session_keys), [_kit_key()] when the

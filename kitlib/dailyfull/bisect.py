@@ -16,17 +16,19 @@ logging to `<log dir>/bisect-<n>-<sha10>`:
 
 - Failing tests only, when every red step's log at S names its failing tests and nothing in it
   is uncovered (kitlib.gate.rerun cover_step: kit_tests and unittest logs). In one machine-lock
-  slot of that commit's gate kind it runs `setup` when the gate has one, then each failing class
-  with the targeted rerun's class runner (rerun.run_class), in the mode it failed in. The probe
-  is red when one of S's failing ids fails or errors again, or when the class cannot be loaded
-  though the tree defines it. A test the commit does not have counts as green (judge).
+  slot of that commit's gate kind (rerun.run_classes, the targeted rerun's) it runs `setup` when
+  the gate has one, then each failing class with `python -m unittest -v <class>`, in the mode it
+  failed in, for at most rerun.class_timeout seconds. The probe is red when one of S's failing
+  ids, or a fixture of its class or module, fails or errors again, or when the class cannot be
+  loaded though the tree defines it. A test the commit does not have counts as green (judge).
 - The whole red steps otherwise (and setup), through kitlib.gate.runner.gated, in a slot of the
   run's own kind. Red when a red step FAILs, green when every red step it has passed or warned.
 
 When the failing tests pass alone at S, one whole-step probe runs at S before a flake is said; if
 that is red, the rest of the search runs whole steps (`mode` says so). A commit whose gate lacks a
 red step counts as green for that step. Anything else (a switch, config or plan failure, a lock
-refusal, a failed setup, a red step or class that did not run) stops the bisect as inconclusive.
+refusal, a stop, a failed setup, a red step or class that did not run or ran past its time
+limit) stops the bisect as inconclusive.
 Afterwards the worktree is put back at S.
 
 Nothing here prints or exits; the caller says the lines.
@@ -35,14 +37,11 @@ import os
 import re
 
 from kitlib.config import load as load_config
-from kitlib.config import policy
 from kitlib.config.types import ConfigError
 from kitlib.gate import detect
 from kitlib.gate import rerun
 from kitlib.gate import runner
 from kitlib.gate import steps as S
-from kitlib.lock import run as lockrun
-from kitlib.lock.store import LockError
 
 FLAKE = 'did not reproduce: possible flake'
 RED, GREEN = 'red', 'green'
@@ -98,6 +97,10 @@ def targets(red, steps):
 def present(top, cls):
     """Whether the tree at `top` defines the test class (or module) `cls`: its file is there and,
     for a class, holds `class <Name>`."""
+    # Not rerun.ABSENT: that reads the log of a class that would not load (an import error, a
+    # missing attribute), which a commit whose test module is broken writes as well as one that
+    # lacks the class. This reads the commit's source, so a defined class that fails to load
+    # stays red. A class bound by import or assignment, not `class`, reads as absent here.
     rel = rerun.scope_of(top, cls)
     path = os.path.join(top, *rel.split('/'))
     if not rel.endswith('.py') or not os.path.isfile(path):
@@ -114,26 +117,32 @@ def present(top, cls):
 
 
 def judge(text, rc, ids, defined):
-    """RED, GREEN or None (inconclusive) of one class run's log `text` (rc None: it did not start)
-    for S's failing `ids`. RED: one of them shows FAIL or ERROR, or the class could not be loaded
-    and `defined()` (the commit defines it). GREEN: the class could not be loaded and the commit
-    does not define it, or the run reached its `Ran N` line (the ids passed, or the commit lacks
-    them). None: anything else (no `Ran` line: a crash)."""
+    """RED, GREEN or None (inconclusive) of one class run's log `text` (rc None: it did not start
+    or ran past its timeout) for S's failing `ids`. RED: one of them shows FAIL or ERROR; or a
+    fixture (setUpClass, setUpModule and the like) of a class or module one of them is in does,
+    so its tests never ran; or the class could not be loaded and `defined()` (the commit defines
+    it). GREEN: the class could not be loaded and the commit does not define it, or the run
+    reached its `Ran N` line (the ids passed, or the commit lacks them). None: anything else (no
+    `Ran` line: a crash)."""
     if rc is None:
         return None
     lines = (text or '').splitlines()
-    want, unloaded = set(ids), False
+    want, not_loaded = set(ids), False
     for line in lines:
         m = rerun.TEST_LINE.match(line)
         if not m:
             continue
         paren = m.group(3)
-        if paren.startswith('unittest.') or '_FailedTest' in paren:
-            unloaded = True
+        if rerun.unloaded(paren):
+            not_loaded = True
             continue
-        if rerun.test_id(m.group(2), paren)[0] in want:
+        tid = rerun.test_id(m.group(2), paren)[0]
+        if tid in want:
             return RED
-    if unloaded:
+        owner, method = tid.rsplit('.', 1)
+        if method in rerun.FIXTURES and any(w.startswith(owner + '.') for w in want):
+            return RED
+    if not_loaded:
         return RED if defined() else GREEN
     if any(rerun.RAN.match(line) for line in lines):
         return GREEN
@@ -193,50 +202,43 @@ class Prober(object):
                          failures=[dict(f, cwd=rel) for f in self.covers[n]['failures']])
             runs += [(n, c) for c in rerun.classes_of({'steps': [entry]})]
         setup = [s for s in chosen if s.name == 'setup']
-        checks, options = {}, {}
         try:
             gate = detect.effective(cfg, self.wt).gate
-            if any(s.check for s in setup):
-                checks, options = policy.load_gate_checks(cfg)
         except (ConfigError, detect.DetectError, S.GateConfigError) as e:
             return None, [], 'the gate at %s: %s' % (sha[:10], e)
+        # A setup Step carries no check (steps.build), so this loads nothing today; it is the
+        # rerun's load all the same, which refuses a SystemExit as runner.gated does.
+        checks, options, why = rerun.load_checks(cfg, setup)
+        if why:
+            return None, [], 'the gate at %s: %s' % (sha[:10], why)
+        timeout = rerun.class_timeout(self.wt, cfg)
         self.say('daily: bisect probe %d at %s: %s, its failing tests only (%d class(es))'
                  % (self.count, sha[:10], ', '.join(names), len(runs)))
-        try:
-            slot = lockrun.book(gate['kind'], self.name, self.slug,
-                                **dict(self.book_kw or {}, gate=True,
-                                       tree=runner.tested_tree(self.wt)))
-        except LockError as e:
-            return None, [], 'the machine lock refused a probe: %s' % '; '.join(
-                runner.book_refusal(e, logs, sha).lines)
-        failed, idle, broke = [], [], None
-        with slot:
-            self.say(slot.held_text())
-            if setup:
-                ctx = {'root': self.wt, 'base': sha, 'merged': False, 'changed': [],
-                       'options': options}
-                done = runner.run_steps(slot.launcher, setup, gate, ctx, logs, self.say, checks,
-                                        halted=slot.stop_asked)
-                if any(r['status'] == 'FAIL' for r in done):
-                    broke = 'setup failed at %s' % sha[:10]
-            for i, (n, c) in enumerate(runs if broke is None else []):
-                if slot.stop_asked():
-                    break
-                rc, text = rerun.run_class(slot.launcher, self.wt, c,
-                                           os.path.join(logs, 'class-%d.log' % (i + 1)))
-                top = os.path.join(self.wt, *c['cwd'].split('/')) if c['cwd'] else self.wt
-                v = judge(text, rc, c['ids'], lambda: present(top, c['cls']))
-                if v == RED and n not in failed:
-                    failed.append(n)
-                elif v is None:
-                    idle.append(c['cls'])
-            runner.window_results(slot, self.say)
-            if slot.stop_asked():
-                slot.release(1, 'cancelled')
-                return None, [], 'probe %d at %s was stopped' % (self.count, sha[:10])
-            slot.release(1 if failed or broke or idle else 0, 'done')
-        if broke:
-            return None, [], broke
+        failed, idle = [], []
+
+        def each(i, c, rc, text, log, slot):
+            top = os.path.join(self.wt, *c['cwd'].split('/')) if c['cwd'] else self.wt
+            v = judge(text, rc, c['ids'], lambda: present(top, c['cls']))
+            if v == RED and runs[i][0] not in failed:
+                failed.append(runs[i][0])
+            elif v is None:
+                idle.append(c['cls'] + (' (still running after %s s)' % timeout
+                                        if rerun.TIMED_OUT in (text or '') else ''))
+
+        def broke(out):
+            return any(r['status'] == 'FAIL' for r in out['setup'])
+        ctx = {'root': self.wt, 'base': sha, 'merged': False, 'changed': [], 'options': options}
+        out, refused = rerun.run_classes(
+            gate['kind'], self.name, self.slug, self.book_kw, runner.tested_tree(self.wt),
+            self.wt, [c for _n, c in runs], gate, ctx, logs, sha, self.say, setup=setup,
+            checks=checks, timeout=timeout, each=each,
+            code=lambda o: 1 if failed or idle or broke(o) else 0)
+        if refused is not None:
+            return None, [], 'the machine lock refused a probe: %s' % '; '.join(refused.lines)
+        if out['stopped'] is not None:
+            return None, [], 'probe %d at %s was stopped' % (self.count, sha[:10])
+        if broke(out):
+            return None, [], 'setup failed at %s' % sha[:10]
         if failed:
             return RED, failed, None
         if idle:

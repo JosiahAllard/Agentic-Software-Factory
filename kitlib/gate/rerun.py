@@ -6,7 +6,8 @@ status and, for each FAIL step, the failing test ids parsed from its log (parse_
 mode each failed in, or why the step is uncovered. `gate.py --rerun` (rerun_gate) then runs,
 under one machine-lock slot booked as a gate run of the branch (so it counts toward the branch
 gate budget, kitlib.gate.budget), each failing test class with `python -m unittest -v <class>`
-at the tip, each paired with the same class at the merge base in a throwaway tree (the
+at the tip (run_classes; a class still running after class_timeout seconds is ended and does
+not pass), each paired with the same class at the merge base in a throwaway tree (the
 control), and every step the red run did not reach (NOT RUN) whole. It writes a rerun record
 and says FLAKE or REAL.
 
@@ -37,6 +38,7 @@ once (red-<ns>-<token>.json, rerun-<ns>-<token>.json), each carrying the sha256 
 canonical JSON. A commit's history is every file there; it is never rewritten. A branch's
 history is the history of the tip and of every commit `git rev-list <tip> ^<merge base>` names.
 """
+import contextlib
 import hashlib
 import json
 import os
@@ -44,6 +46,7 @@ import re
 import secrets
 import subprocess
 import sys
+import threading
 import time
 
 from kitlib import gate as G
@@ -71,6 +74,7 @@ RED, RERUN = 'red', 'rerun'
 FLAKE, REAL, VOID = 'FLAKE', 'REAL', 'VOID'
 PASSING = ('PASS', 'WARN', 'SKIP', 'REUSED')
 FIXTURES = ('setUpClass', 'tearDownClass', 'setUpModule', 'tearDownModule')
+TIMED_OUT = 'rerun: TIMEOUT'         # the line run_class ends a class log with past its timeout
 FILE_NAME = re.compile(r'^(red|rerun)-(\d+)-([0-9a-f]{8})\.json$')
 
 SECTION = re.compile(r'^==== (\S+) \((\d+) tests?, [\d.]+s, (.+?)\) ====\s*$')
@@ -249,6 +253,12 @@ def test_id(method, paren):
     return '%s.%s' % (paren, method), paren
 
 
+def unloaded(paren):
+    """Whether a FAIL/ERROR line's parenthesis names a test unittest could not load (a module that
+    does not import, a name the module lacks: `unittest.loader._FailedTest`), not a test."""
+    return paren.startswith('unittest.') or '_FailedTest' in paren
+
+
 def _counts(summary):
     out = {}
     for part in summary.split(','):
@@ -268,7 +278,7 @@ def _parse_block(lines, env, where):
         if not m:
             continue
         method, paren = m.group(2), m.group(3)
-        if paren.startswith('unittest.') or '_FailedTest' in paren:
+        if unloaded(paren):
             uncovered.append('%s: a test could not be loaded (%s)' % (where, paren))
             continue
         tid, cls = test_id(method, paren)
@@ -564,16 +574,126 @@ def _start(launcher, argv, cwd, env, log_path):
         return launcher.wait(p)
 
 
-def run_class(launcher, top, c, log):
+def run_class(launcher, top, c, log, timeout=None):
     """`(rc, log text)` of `python -m unittest -v <class>` for one entry `c` of classes_of, run
     in the tree `top` (its directory `c['cwd']`) with the launcher's child environment and the
-    mode's variables `c['env']`, its output in the file `log`. rc is None when it did not start."""
+    mode's variables `c['env']`, its output in the file `log`. rc is None when it did not start,
+    or when it ran past `timeout` seconds (None: no limit): its tree is then ended
+    (Launcher.kill) and the log ends with a TIMED_OUT line."""
     env = runner.child_env(launcher)
     env.update(c['env'])
     argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
-    rc = _start(launcher, argv, os.path.join(top, *c['cwd'].split('/')) if c['cwd'] else top,
-                env, log)
-    return rc, _read(log)
+    cwd = os.path.join(top, *c['cwd'].split('/')) if c['cwd'] else top
+    if not timeout:
+        return _start(launcher, argv, cwd, env, log), _read(log)
+    state, guard = {'done': False, 'killed': False}, threading.Lock()
+
+    def kill():
+        with guard:
+            if state['done']:
+                return
+            state['killed'] = True
+        launcher.kill()             # its wait (Slot.wait) then sees the child end
+    timer = threading.Timer(timeout, kill)
+    timer.daemon = True
+    timer.start()
+    try:
+        rc = _start(launcher, argv, cwd, env, log)
+    finally:
+        with guard:
+            state['done'] = True
+        timer.cancel()
+        timer.join()                # a kill under way ends before anything else starts
+    if not state['killed']:
+        return rc, _read(log)
+    try:
+        with open(log, 'a', encoding='utf-8') as f:
+            f.write('\n%s: %s was still running after %s s; its process tree was ended\n'
+                    % (TIMED_OUT, c['cls'], timeout))
+    except OSError:
+        pass
+    return None, _read(log)
+
+
+def class_timeout(top, cfg):
+    """Seconds one class run may take (run_class). A gate step has no time limit of its own, so
+    this is the per-unit limit of the test runner the red logs come from, as
+    kitlib.redfirst.run.run_timeout chooses it: in the kit, kit_tests' UNIT_TIMEOUT; elsewhere
+    `.kit.json` "tool_tests".unit_timeout (pytests'; its schema default when unset). `cfg`: the
+    loaded configuration of `top`."""
+    from kitlib.content.oncommit import is_kit
+    from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
+    if is_kit(top):
+        return UNIT_TIMEOUT
+    return cfg.section('tool_tests')['unit_timeout']
+
+
+def load_checks(cfg, steps):
+    """`(checks, options, None)`: the hook module's checks when a step of `steps` has a check
+    (policy.load_gate_checks), else `({}, {}, None)`. `(None, None, why)` when the module cannot
+    be loaded: a ConfigError, or a SystemExit from the repo's module-level code, which
+    runner.gated refuses the same way."""
+    if not any(s.check for s in steps):
+        return {}, {}, None
+    try:
+        checks, options = policy.load_gate_checks(cfg)
+    except ConfigError as e:
+        return None, None, str(e)
+    except SystemExit as e:         # the repo's module-level code; nothing has run yet
+        return None, None, ('the hook module exited while it was loaded (SystemExit, code %r); '
+                            'nothing ran' % (e.code,))
+    return checks, options, None
+
+
+def run_classes(kind, name, slug, book_kw, tree, top, classes, gate, ctx, logs, base, say,
+                setup=(), after=(), checks=None, timeout=None, scope=None, each=None, code=None):
+    """One machine-lock slot, booked as a gate run of `kind` (lockrun.book with `book_kw`,
+    gate=True and the tested `tree`), that runs the `setup` steps, then each entry of `classes`
+    (classes_of) with run_class in the tree `top` (at most `timeout` seconds each), then the
+    `after` steps, then the console-window report (runner.window_results). Steps run through
+    runner.run_steps with `gate`, `ctx` and `checks`, logs in `logs`. A setup step that FAILs
+    runs no class; a stop asked of the run starts nothing more. The targeted rerun
+    (rerun_gate) and the daily full run's bisect probe (kitlib.dailyfull.bisect) both run here.
+
+    `scope()`: a context manager entered once the slot is held and left before it is released
+    (the rerun's control tree). `each(i, c, rc, text, log, slot)`: called once class i ran (the
+    rerun runs its control there). `code(out)`: the release code when not stopped (default 0).
+
+    `(out, None)`: out {setup, steps: run_steps results (`steps` with the window report),
+    classes: [(c, rc, text, log)], stopped: None, or runner.stopped_outcome when the run was
+    stopped and released `cancelled`}. `(None, Outcome)` when the booking is refused
+    (runner.book_refusal)."""
+    try:
+        slot = lockrun.book(kind, name, slug, **dict(book_kw or {}, gate=True, tree=tree))
+    except LockError as e:
+        return None, runner.book_refusal(e, logs, base)
+    out = {'setup': [], 'classes': [], 'steps': [], 'stopped': None}
+    with slot:
+        say(slot.held_text())
+        with scope() if scope else contextlib.nullcontext():
+            if setup:
+                out['setup'] = runner.run_steps(slot.launcher, list(setup), gate, ctx, logs, say,
+                                                checks or {}, halted=slot.stop_asked)
+            broke = any(r['status'] == 'FAIL' for r in out['setup'])
+            for i, c in enumerate([] if broke else classes):
+                if slot.stop_asked():
+                    break
+                log = os.path.join(logs, 'class-%d.log' % (i + 1))
+                rc, text = run_class(slot.launcher, top, c, log, timeout)
+                out['classes'].append((c, rc, text, log))
+                if each:
+                    each(i, c, rc, text, log, slot)
+            if after:
+                out['steps'] = runner.run_steps(slot.launcher, list(after), gate, ctx, logs, say,
+                                                checks or {}, halted=slot.stop_asked)
+            out['steps'] += runner.window_results(slot, say)
+        if slot.stop_asked():
+            slot.release(1, 'cancelled')
+            out['stopped'] = runner.stopped_outcome('gate run %s was stopped' % slot.id, logs,
+                                                    base)
+            return out, None
+        slot.release(code(out) if code else 0, 'done')
+    return out, None
 
 
 def classes_of(red):
@@ -703,12 +823,9 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if missing:
         return G.Outcome(G.REFUSED, ['REFUSED: the gate has no step %s now' % ', '.join(missing)])
     steps = [built[n] for n in not_run]
-    checks, options = {}, {}
-    if any(s.check for s in steps):
-        try:
-            checks, options = policy.load_gate_checks(cfg)
-        except ConfigError as e:
-            return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
+    checks, options, why = load_checks(cfg, steps)
+    if why:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     changed, _ = runner.changed_since(top, base)
     name = runner.repo_name(cfg, top)
     logs = runner.new_log_dir(cfg, top, name, 'rerun-' + (branch or head[:10]), log_dir)
@@ -721,54 +838,55 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if over:
         return G.Outcome(G.REFUSED, over)
     gatecap.wait_turn(store, name, say)
-    try:
-        mine = {'branch': branch} if branch else {}
-        slot = lockrun.book(gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
-                            **dict(book_kw or {}, gate=True, tree=red['tree'], **mine))
-    except LockError as e:
-        return runner.book_refusal(e, logs, base)
-    done, results = [], []
-    with slot:
-        say(slot.held_text())
+    timeout = class_timeout(top, cfg)
+    done, ctl = [], {'tw': None}
+
+    @contextlib.contextmanager
+    def control_tree():
         main, tw, why = _control_tree(top, cfg, base, say)
         if why:
             say('control: no tree at the base %s (%s); the controls are not run' % (base[:10], why))
+        ctl['tw'] = tw
         try:
-            for i, c in enumerate(classes):
-                if slot.stop_asked():
-                    break
-                log = os.path.join(logs, 'class-%d.log' % (i + 1))
-                rc, text = run_class(slot.launcher, top, c, log)
-                passed, got = judge_class(text, rc, c['ids'])
-                control, clog = 'not run', None
-                if tw and not slot.stop_asked():
-                    clog = os.path.join(logs, 'class-%d.base.log' % (i + 1))
-                    crc, ctext = run_class(slot.launcher, tw, c, clog)
-                    cpass, _ = judge_class(ctext, crc, c['ids'])
-                    control = 'green' if cpass else (
-                        'absent' if ABSENT.search(ctext or '') else 'red')
-                say('%-5s %s%s at the tip; control at the base %s: %s%s' % (
-                    'PASS' if passed else 'FAIL', c['cls'],
-                    ' (%s)' % ', '.join('%s=%s' % kv for kv in sorted(c['env'].items()))
-                    if c['env'] else '', base[:10], control,
-                    ' (also red at base)' if control == 'red' else ''))
-                done.append(dict(c, tip='pass' if passed else 'fail', ids=got, log=log,
-                                 control=control, control_log=clog))
-            if steps:
-                ctx = {'root': top, 'base': base, 'merged': False, 'changed': list(changed or []),
-                       'options': options}
-                results = runner.run_steps(slot.launcher, steps, gate, ctx, logs, say, checks,
-                                           halted=slot.stop_asked)
-            results += runner.window_results(slot, say)
+            yield
         finally:
             if tw:
                 _drop_tree(main, tw, base, cfg, say)
-        if slot.stop_asked():       # no rerun record: the red run keeps its one rerun
-            slot.release(1, 'cancelled')
-            return runner.stopped_outcome('gate run %s was stopped' % slot.id, logs, base)
-        flake = (all(c['tip'] == 'pass' for c in done) and
-                 all(r['status'] in PASSING for r in results))
-        slot.release(0 if flake else 1, 'done')
+
+    def each(i, c, rc, text, log, slot):
+        passed, got = judge_class(text, rc, c['ids'])
+        control, clog = 'not run', None
+        if ctl['tw'] and not slot.stop_asked():
+            clog = os.path.join(logs, 'class-%d.base.log' % (i + 1))
+            crc, ctext = run_class(slot.launcher, ctl['tw'], c, clog, timeout)
+            cpass, _ = judge_class(ctext, crc, c['ids'])
+            control = 'green' if cpass else (
+                'absent' if ABSENT.search(ctext or '') else 'red')
+        say('%-5s %s%s at the tip; control at the base %s: %s%s' % (
+            'PASS' if passed else 'FAIL', c['cls'],
+            ' (%s)' % ', '.join('%s=%s' % kv for kv in sorted(c['env'].items()))
+            if c['env'] else '', base[:10], control,
+            ' (also red at base)' if control == 'red' else ''))
+        done.append(dict(c, tip='pass' if passed else 'fail', ids=got, log=log,
+                         control=control, control_log=clog))
+
+    def flaky(out):
+        return (all(c['tip'] == 'pass' for c in done) and
+                all(r['status'] in PASSING for r in out['steps']))
+    ctx = {'root': top, 'base': base, 'merged': False, 'changed': list(changed or []),
+           'options': options}
+    mine = {'branch': branch} if branch else {}
+    out, refused = run_classes(
+        gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
+        dict(book_kw or {}, **mine), red['tree'], top, classes, gate, ctx, logs, base, say,
+        after=steps, checks=checks, timeout=timeout, scope=control_tree, each=each,
+        code=lambda o: 0 if flaky(o) else 1)
+    if refused is not None:
+        return refused
+    if out['stopped'] is not None:      # no rerun record: the red run keeps its one rerun
+        return out['stopped']
+    results = out['steps']
+    flake = flaky(out)
     after, _ = gitstatus.status(top)
     head_now, _ = refs.head(top)
     void = None

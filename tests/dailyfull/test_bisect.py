@@ -2,14 +2,21 @@
 commit that turned it red, and the backlog record filed for it through the real store (a ref
 store in the scratch repository, pushed to its bare remote). The record is always priced at
 priority 2 by an agent."""
+import contextlib
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from kitlib import dailyfull as D
 from kitlib.backlog import opener
+from kitlib.config import policy
+from kitlib.config.types import ConfigError
 from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
+from kitlib.gate import rerun
+from kitlib.lock import run as lockrun
+from kitlib.lock.store import LockError
 from tests import gitfixture
 from tests.gate import fixtures
 
@@ -172,6 +179,7 @@ class Flake(BisectCase):
 
 
 PROBE_MODULE = '''import os
+import time
 import unittest
 
 COUNT = %(count)r
@@ -194,6 +202,8 @@ class Other(unittest.TestCase):
 
 class Target(unittest.TestCase):
     def test_red(self):
+        if os.path.exists(COUNT + '.hang'):
+            time.sleep(120)
         self.assertFalse(%(red)s)
 '''
 NEW_METHOD = '''
@@ -311,6 +321,114 @@ class TestsFlakeAtS(ProbeCase):
         self.assertEqual(self.daily_head(), r['sha'])
 
 
+class ProbeCannotFinish(ProbeCase):
+    """A narrowed probe at S that cannot finish stops the bisect there as inconclusive. Each case
+    acts only while the bisect runs (B.bisect), never in the daily runs themselves; the gate has a
+    setup step that fails while the flag file is there."""
+
+    def setUp(self):
+        flags = tempfile.mkdtemp(prefix='kit-probe-flags-')
+        self.addCleanup(gitfixture.rmtree, flags)
+        self.flag = os.path.join(flags, 'setup-fail')
+        self.GATE = dict(ProbeCase.GATE, setup=[
+            '{python}', '-c',
+            'import os, sys; print("setup"); sys.exit(os.path.exists(%r))' % self.flag])
+        ProbeCase.setUp(self)
+
+    @contextlib.contextmanager
+    def flag_file(self, path):
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('x\n')
+        try:
+            yield
+        finally:
+            os.remove(path)
+
+    def refused(self):
+        real = lockrun.book
+
+        def book(kind, *args, **kw):
+            if kind == 'test':                          # the narrowed probe's, not the runs'
+                raise LockError(6, 'busy: the test refuses the probe')
+            return real(kind, *args, **kw)
+        return mock.patch.object(lockrun, 'book', book)
+
+    def stopped(self):
+        real = rerun.run_class
+
+        def run_class(launcher, *args, **kw):
+            for d in self.store.live_runs():
+                if d.get('kind') == 'test':
+                    lockrun.request_stop(self.store, d['id'], 'test')
+            return real(launcher, *args, **kw)
+        return mock.patch.object(rerun, 'run_class', run_class)
+
+    @contextlib.contextmanager
+    def hangs(self):
+        with mock.patch.object(rerun, 'class_timeout', lambda top, cfg: 2), \
+                self.flag_file(self.count + '.hang'):
+            yield
+
+    CASES = {
+        'setup': (lambda self: self.flag_file(self.flag), 'setup failed at '),
+        'refused': (refused, 'the machine lock refused a probe: '),
+        'stopped': (stopped, 'probe 1 at '),
+        'timeout': (hangs, 'probe_test.Target (still running after 2 s)'),
+    }
+
+    def check(self, case):
+        act, why = self.CASES[case]
+        real = B.bisect
+
+        def bisect(*args, **kw):
+            with act(self):
+                return real(*args, **kw)
+        with mock.patch.object(B, 'bisect', bisect):
+            _, r = self.red_history()
+        found = r['bisect']
+        self.assertTrue(found['verdict'].startswith('inconclusive: '), (found, self.lines))
+        self.assertIn(why, found['verdict'])
+        self.assertEqual([p['verdict'] for p in found['probes']], ['inconclusive'])
+        self.assertEqual(found['probes'][0]['sha'], r['sha'])
+        self.assertEqual(self.whole_runs(), 2)          # no whole-step probe
+        self.assertEqual(self.daily_head(), r['sha'])
+        return found
+
+    def test_a_failed_setup(self):
+        self.check('setup')
+
+    def test_a_refused_booking(self):
+        self.check('refused')
+
+    def test_a_stop(self):
+        self.assertIn('was stopped', self.check('stopped')['verdict'])
+
+    def test_a_class_past_its_time_limit_is_ended(self):
+        self.check('timeout')
+
+
+class LoadChecks(unittest.TestCase):
+    """rerun.load_checks, the targeted rerun's and the probe's: a hook module that cannot load
+    refuses with why, a SystemExit included (as runner.gated)."""
+
+    def test_each_outcome(self):
+        none, check = mock.Mock(check=None), mock.Mock(check='a_check')
+        cases = [
+            ('no step has a check', none, None, ({}, {}, None)),
+            ('loaded', check, ({'c': 1}, {'o': 2}), ({'c': 1}, {'o': 2}, None)),
+            ('config error', check, ConfigError('bad hook'), (None, None, 'bad hook')),
+            ('module exits', check, SystemExit(3), (None, None, (
+                'the hook module exited while it was loaded (SystemExit, code 3); nothing ran'))),
+        ]
+        for what, step, load, want in cases:
+            with self.subTest(what):
+                fake = (mock.Mock(side_effect=load) if isinstance(load, BaseException)
+                        else mock.Mock(return_value=load))
+                with mock.patch.object(policy, 'load_gate_checks', fake):
+                    self.assertEqual(rerun.load_checks(object(), [step]), want)
+                self.assertEqual(fake.called, step is check)
+
+
 class Judge(unittest.TestCase):
     """judge() of one class run's log for S's failing ids, and present()."""
     ID = 'probe_test.Target.test_red'
@@ -333,6 +451,12 @@ class Judge(unittest.TestCase):
              'Ran 2 tests in 0.1s\nFAILED (failures=1)\n', 1, False, B.GREEN),
             ('the method is absent', 'test_x (probe_test.Target.test_x) ... ok\n'
              'Ran 1 test in 0.1s\nOK\n', 0, False, B.GREEN),
+            ('its class setUpClass errors', 'ERROR: setUpClass (probe_test.Target)\n'
+             'Ran 0 tests in 0.001s\nFAILED (errors=1)\n', 1, True, B.RED),
+            ('its module setUpModule errors', 'ERROR: setUpModule (probe_test)\n'
+             'Ran 0 tests in 0.001s\nFAILED (errors=1)\n', 1, True, B.RED),
+            ('another class setUpClass errors', 'ERROR: setUpClass (probe_test.Other)\n'
+             'Ran 0 tests in 0.001s\nFAILED (errors=1)\n', 1, True, B.GREEN),
             ('not loaded, class defined', self.LOAD_FAILED, 1, True, B.RED),
             ('not loaded, class absent', self.LOAD_FAILED, 1, False, B.GREEN),
             ('no Ran line', 'Traceback (most recent call last):\n', 1, False, None),

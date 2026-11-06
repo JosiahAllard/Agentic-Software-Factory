@@ -432,8 +432,8 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     equals `session` are offered; another session's record takes its scope silently. A record
     passed over on a collision names the holder: a live pull by id and branch, another session's
     record by id and session, a record already in this offer as `(offered above)`. A record of
-    `session` passed over only because its scope collides with live pulls (and with no unmet
-    `requires:`) still reserves its scope, its holder named `ID (waiting on P on B)`, so a lower
+    `session` whose scope collides only with live pulls, and that would otherwise be offered (every
+    resource it uses declared and with room, no unmet `requires:`), still reserves its scope, its holder named `ID (waiting on P on B)`, so a lower
     record overlapping it is not pulled ahead of it; one passed over on such a reserve, or on any
     other reason, reserves nothing (no cascade). Scopes are each record's current `scope:` lines, so a pulled record
     narrowed with `set --scope` frees what it gave up. A seed (`next --with`) goes first and is
@@ -479,6 +479,15 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
 
     def own(r):
         return r.get('session') == session
+
+    def startable(r):
+        """Whether `r`, its scope collision aside, passes the checks an offer of it would make:
+        every resource it uses declared and with room (as counted so far), and no unmet
+        `requires:`."""
+        room = live_takers if id(r) in seeded else takers
+        if any(n not in capacity or len(room[n]) >= capacity[n] for n in uses(r)):
+            return False
+        return not (unmet is not None and unmet(r))
 
     candidates = sorted((r for r in snap.readable if classify(r)[0] == PULLABLE), key=rank_key)
     mine_by_id = {r.id: r for r in candidates if own(r)}
@@ -540,9 +549,10 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
                                              '; %s' % waits_mark(rec, h) for h in waits)),
                                          who, hit[0], waits))
                 waits_on = hitters if all(id(h) in live_ids for h in hitters) else []
-                if waits_on and not (unmet is not None and unmet(rec)):
-                    # Held only by live pulls: it still reserves its scope (no cascade: one
-                    # passed over on this reserve hits a hitter that is no live pull).
+                if waits_on and startable(rec):
+                    # Held only by live pulls and otherwise startable: it still reserves its
+                    # scope (no cascade: one passed over on this reserve hits a hitter that is
+                    # no live pull).
                     occupied.extend(scopes)
                     occupied_by.extend(rec for _m in scopes)
                     label = '%s (waiting on %s)' % (rid, ', '.join(

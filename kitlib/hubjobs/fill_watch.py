@@ -150,8 +150,9 @@ PULL_DO_LINE = ('The hub fill watch pulled these records for you, each on its ow
 WAITS = '_waits'                # the told state's key of the waits notices (no sessions.json key)
 WAITS_PM_AFTER_S = 86400        # a pair still waiting this long after first sight tells the PM
 WAITS_DO_LINE = ('A notice only: each record named outranks the live pull its scope collides with '
-                 'and is offered once that pull lands. Never stop or override the live pull for '
-                 'it. No reply is needed.')
+                 'and becomes eligible once that pull lands (capacity or an unmet requires may '
+                 'still hold it). Never stop or override the live pull for it. No reply is '
+                 'needed.')
 
 
 class StandDownUnread(Exception):
@@ -204,7 +205,8 @@ def read_waits(settings, key, entry, session_live=None):
     """[(id, priority, live pull id, its priority, its branch)]: the records of the coordinator of
     sessions.json entry `key` that `next --all` passes over on a live pull they outrank
     (offer.outranks, PassedOver.waits), each pair once, read as coord_restart.read_offer reads
-    the offer (no fetch, every session of wake_sessions). BacklogUnread when it cannot be read."""
+    the offer (no fetch, every session of wake_sessions) and with `next`'s narrowing. BacklogUnread
+    when it cannot be read, the live pulls' branches included."""
     from kitlib.backlog import opener, plan
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
@@ -217,8 +219,13 @@ def read_waits(settings, key, entry, session_live=None):
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls
                 snap = ctx.store.load()
-                holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            _offers, passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding)
+                holding, _dead, why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+                if why:                 # every pull would hold its scope: no notice is sure
+                    raise coord_restart.BacklogUnread('the branches could not be read (%s)'
+                                                      % why)
+            # As `next --all` reads it: no cap, and a record a narrowing clears is offered.
+            _offers, passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding,
+                                                             narrow=True)
             for p in passed:
                 for other in p.waits:
                     row = (p.rec.id, p.rec.get('priority'), other.id, other.get('priority'),

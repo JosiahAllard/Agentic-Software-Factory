@@ -17,6 +17,7 @@ from kitlib.hubsite import jobs
 from kitlib.hubsite import push as P
 from kitlib.launcher import settings as lsettings
 from tests import gitfixture
+from tests.backlog import helpers as _bh
 
 def ctx():
     return jobs.Ctx(threading.Event(), lambda word, detail=None: None)
@@ -325,16 +326,24 @@ class Slots(unittest.TestCase):
         class Ctx(object):
             def __init__(s, root, session):
                 s.root, s.remote, s.store, s.session = root, 'origin', Store(), session
+        asked, why = [], [None]
+
+        def offer_for(snap, ctx, cap=5, holding=None, narrow=False):
+            asked.append((cap, narrow))
+            return [], passed, holding, None
         with mock.patch.object(opener, 'open_store', lambda root, fetch=True, session=None:
                                Ctx(root, session)), \
-                mock.patch.object(plan, 'offer_for',
-                                  lambda snap, ctx, cap=5, holding=None: ([], passed, holding,
-                                                                          None)), \
+                mock.patch.object(plan, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
-                                  lambda snap, root, remote: ([low], [], None)):
+                                  lambda snap, root, remote: ([low], [], why[0])):
             rows = W.read_waits(self.settings, 'game', dict(COORD))
-        self.assertEqual(rows, [('EX-H', '1', 'EX-L', '3', 'game/ex-l')])   # both sessions: once
-        self.assertEqual(len(self.loads), 1)
+            self.assertEqual(rows, [('EX-H', '1', 'EX-L', '3', 'game/ex-l')])   # once
+            self.assertEqual(len(self.loads), 1)
+            self.assertEqual(asked, [(None, True), (None, True)])   # `next --all`, narrowing
+            why[0] = 'git failed'           # every pull would hold its scope: unread
+            with self.assertRaises(C.BacklogUnread) as cm:
+                W.read_waits(self.settings, 'game', dict(COORD))
+            self.assertIn('git failed', str(cm.exception))
 
     def test_a_cap_that_cannot_be_read_is_unread(self):
         from kitlib.backlog import opener
@@ -1422,6 +1431,35 @@ class PullOnAStore(unittest.TestCase):
         got = self.pull(['BAZ', 'FOO', 'BAR'], 1)
         self.assertEqual(got, ([('FOO', 'kit/fill-foo')], [('BAZ', 'refused')]))
         self.assertNotIn('kit/fill-bar', self.trees())
+
+
+class WaitsOnAStore(_bh.StoreCase):
+    """read_waits on a real store and branch: HOLD (p2) is pulled on kit/holder, whose tree
+    changed kitlib/x/a.py; FOO (p1, kitlib/**) overlaps it, but `next`'s narrowing clears it,
+    so it waits on nothing."""
+
+    def setUp(self):
+        super().setUp()
+        for p in ('kitlib/x/a.py', 'kitlib/y/d.py'):
+            self.repo.write(p, 'x\n')
+        self.repo.commit('code', 'kitlib')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt = self.repo.worktree('holder', 'kit/holder')
+        self.repo.write('kitlib/x/a.py', 'changed\n', root=wt)
+        self.repo.commit('work', 'kitlib/x/a.py', cwd=wt)
+        self.seed(_bh.priced('HOLD', state='pulled', pulled_at=_bh.TODAY,
+                             pulled_by='kit/holder', scope='kitlib/x/**'),
+                  _bh.priced('FOO', priority='1', scope='kitlib/**'))
+
+    def test_a_record_the_narrowing_clears_is_not_a_waits_pair(self):
+        from kitlib.backlog import opener, plan
+        _o, passed, _h, _w = plan.offer_for(self.store.load(), self.ctx)      # unnarrowed
+        self.assertEqual([(p.rec.id, [w.id for w in p.waits]) for p in passed],
+                         [('FOO', ['HOLD'])])
+        with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
+                mock.patch.object(opener, 'open_store',
+                                  lambda root, fetch=True, session=None: self.ctx):
+            self.assertEqual(W.read_waits(None, 'game', dict(COORD)), [])
 
 
 class Keys(unittest.TestCase):

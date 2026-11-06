@@ -291,6 +291,23 @@ class CollisionReserve(unittest.TestCase):
         self.assertEqual(ids, ['L'])
         self.assertIn('already taken by P', passed['H'])
 
+    def test_a_record_also_held_by_capacity_or_an_undeclared_resource_reserves_nothing(self):
+        # H collides only with live P, but P holds the one gpu H uses: H could not start.
+        p = priced('P', priority='3', state='pulled', pulled_at='2026-10-01',
+                   pulled_by='kit/p', scope='a/x', uses='gpu')
+        for uses in ('gpu', 'tpu'):                 # full, and not declared
+            s = snap(p, priced('H', priority='1', scope=['a/**', 'b/**'], uses=uses),
+                     priced('L', priority='2', scope='b/y'))
+            ids, passed = offer_ids(s, holding=[s.get('P')], capacity={'gpu': 1})
+            self.assertEqual(ids, ['L'], uses)
+            self.assertIn('already taken by P', passed['H'])
+            self.assertNotIn('waiting on', passed.get('L', ''))
+        s = snap(p, priced('H', priority='1', scope=['a/**', 'b/**'], uses='gpu'),
+                 priced('L', priority='2', scope='b/y'))
+        ids, passed = offer_ids(s, holding=[s.get('P')], capacity={'gpu': 2})
+        self.assertEqual(ids, [])                   # with room, H reserves its scope again
+        self.assertIn('(waiting on P on kit/p)', passed['L'])
+
     def test_a_batch_pass_or_a_hold_reserves_nothing(self):
         s = snap(self.hold('a/x'),
                  priced('H', priority='1', scope=['a/**', 'b/**'], batch='kit/other'),

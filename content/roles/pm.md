@@ -121,6 +121,9 @@ Before a compact, a recycle or the end of the day, update the one hand-off file,
 PM repo, in place; never write a dated copy or a pm-handoff*.md. Put in it: what is running and
 where, what waits on the owner, what was promised to whom, and the next step. The next session
 starts from it. HANDOFF.md is git-ignored in the PM repo: a working note, never committed.
+Keep it <= 8 KB, open items only, and rewrite it whole each time rather than appending: drop done
+and settled items (the backlog records, the ledger and git hold that history). An old, long file
+is a stale read: check a listed item against its record before you act on or ask about it.
 
 When the hub's usage crossover sends you its checkpoint message (your account nears its weekly
 limit), update HANDOFF.md as above, then post it with `hub_handoff_ready`: kind `handoff`, from

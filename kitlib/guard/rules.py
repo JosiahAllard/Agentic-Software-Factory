@@ -5842,11 +5842,16 @@ GIT_STRICT_READ_OPTS = {'branch': (GIT_LISTING_OPTS | {'--all', '--remotes', '-v
 # names, so a computed word (any number of words) leaves them reads; and reads with such an option
 # (log, show and diff: --output), where a computed word stays a read only when the text pins it to
 # one argument that is no option, or the value of one of GIT_DYN_VALUE_OPTS
-GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref', 'rev-list', 'ls-tree'}
-GIT_DYN_PINNED_READS = {'log', 'show', 'diff'}
+GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref', 'ls-tree'}
+# rev-list takes the diff options too (--output opens a file for writing)
+GIT_DYN_PINNED_READS = {'log', 'show', 'diff', 'rev-list'}
 # a literal word after which git reads no option (log "$A" --end-of-options "$B"): the computed
-# words behind it are revisions or paths, so they cannot be --output
+# words behind it are revisions or paths, so they cannot be --output; not when it is the value of
+# the option before it (--grep --end-of-options), unless that option is known to take no value
 END_OF_OPTIONS = '--end-of-options'
+NO_VALUE_OPTS = frozenset(('--oneline', '--stat', '--patch', '-p', '--name-only', '--name-status', '--numstat',
+                           '--shortstat', '--cached', '--staged', '--no-color', '--count', '--graph', '--all'))
+NO_VALUE_NUM_RE = re.compile(r'-\d+$')
 GIT_DYN_VALUE_OPTS = ('--format=', '--pretty=')
 # characters a pinned word may carry outside quotes: none the shell expands, splits or joins on
 # (bash globs and braces, PowerShell's array comma and splat @), and no backslash or backtick
@@ -5984,10 +5989,14 @@ def strict_dyn_read(gc):
         return True
     if gc.sub not in GIT_DYN_PINNED_READS:
         return False
-    rest, done = gc.rest, False
-    for w in rest:
+    done, prev = False, None
+    for w in gc.rest:
+        before, prev = prev, w
         if not w.dyn:
-            done = done or w.text == END_OF_OPTIONS
+            if w.text == END_OF_OPTIONS and (before is None or not before.dyn and (
+                    not before.text.startswith('-') or before.text in NO_VALUE_OPTS
+                    or NO_VALUE_NUM_RE.match(before.text))):
+                done = True
             continue
         if done:
             continue

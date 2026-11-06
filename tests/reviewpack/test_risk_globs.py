@@ -65,7 +65,13 @@ class Matching(unittest.TestCase):
 
     def test_a_plain_prefix_still_matches_as_a_prefix(self):
         self.assertEqual(lv('net/x.py', ('High', 'net/')), 'High')
-        self.assertEqual(lv('network/x.py', ('High', 'net/')), 'High')
+        self.assertEqual(lv('net/sub/x.py', ('High', 'net/')), 'High')
+
+    def test_a_plain_rule_does_not_match_a_longer_name_that_starts_with_it(self):
+        self.assertEqual(lv('network/x.py', ('Low', 'net/')), 'unlisted (= High)')
+        self.assertEqual(lv('toolsx.py', ('Low', 'tools')), 'unlisted (= High)')
+        self.assertEqual(lv('tools/a.py', ('Low', 'tools')), 'Low')
+        self.assertEqual(lv('tools', ('Low', 'tools')), 'Low')
 
     def test_a_question_mark_matches_one_character_within_a_segment(self):
         body = ('Medium', 'a/x?.py')

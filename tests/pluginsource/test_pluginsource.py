@@ -453,7 +453,8 @@ class SettingsTest(unittest.TestCase):
         with mock.patch('kitlib.platform.NAME', 'windows'):
             s = P.settings(None, environ={'LOCALAPPDATA': lad})
             self.assertEqual(s, P.Settings(os.path.normpath(os.path.join(lad, 'pm-kit', 'plugin')),
-                                           False, 'origin'))
+                                           False, 'origin',
+                                           os.path.normpath(os.path.join(lad, 'pm-kit', 'plugin-live.json'))))
             with self.assertRaises(P.RefreshError):
                 P.settings(None, environ={})
         mine = os.path.join(os.path.abspath(os.sep), 'x')
@@ -476,7 +477,8 @@ class DefaultExportDirTest(unittest.TestCase):
     def test_linux_is_under_the_profile_from_the_password_database(self):
         self.on('linux', lambda: '/var/lib/kit')
         s = P.settings(None, environ={})
-        self.assertEqual(s, P.Settings(os.path.normpath(self.LINUX), False, 'origin'))
+        self.assertEqual(s, P.Settings(os.path.normpath(self.LINUX), False, 'origin',
+                                       '/var/lib/kit/.local/share/pm-kit/plugin-live.json'))
         self.assertEqual(P.default_export_dir({}), self.LINUX)
 
     def test_linux_reads_no_environment(self):
@@ -860,6 +862,130 @@ class AccountFoldersTest(unittest.TestCase):
         env = claude.env_for(a, k.home, {'CLAUDE_CONFIG_DIR': b, 'X': '1'})
         self.assertNotIn('CLAUDE_CONFIG_DIR', env)
         self.assertEqual(claude.env_for(b, k.home, {})['CLAUDE_CONFIG_DIR'], b)
+
+
+def outside_reader(pointer):
+    """What a PowerShell or stdlib-only script does (no kitlib): read the pointer, check the folder."""
+    with open(pointer, encoding='utf-8') as fh:
+        data = json.load(fh)
+    return data['path'] if os.path.isfile(os.path.join(data['path'], '.pm-kit-export')) else None
+
+
+class LivePointerTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.pointer = os.path.join(self.k.base, 'plugin-live.json')
+        self.s = P.Settings(self.k.root, False, 'origin', self.pointer)
+
+    def test_refresh_writes_it_and_a_reader_without_kitlib_finds_the_folder(self):
+        self.assertEqual(self.refresh(self.k.folders('.claude')), 1)     # not migrated: export only
+        sha = self.remote_sha()
+        want = os.path.join(self.k.root, sha[:12])
+        self.assertEqual(outside_reader(self.pointer), want)
+        d = read_json(self.pointer)
+        self.assertEqual((d['schema'], d['root'], d['folder'], d['sha']),
+                         (1, self.k.root, sha[:12], sha))
+        self.assertTrue(d['version'] and d['exported_at'])
+        self.assertFalse(os.path.exists(self.pointer + '.tmp'))
+        self.assertFalse(self.pointer.startswith(self.k.root + os.sep))   # beside the root, not in it
+
+    def test_a_new_export_replaces_it(self):
+        self.refresh([])
+        first = read_json(self.pointer)['folder']
+        new = self.k.push_from_clone()
+        self.k.repo.git('fetch', '-q', 'origin')
+        self.refresh([])
+        d = read_json(self.pointer)
+        self.assertEqual((d['sha'], d['folder']), (new, new[:12]))
+        self.assertNotEqual(first, d['folder'])
+        self.assertFalse(os.path.exists(self.pointer + '.tmp'))
+
+    def test_no_pointer_setting_writes_none(self):
+        self.s = P.Settings(self.k.root, False, 'origin')
+        self.refresh([])
+        self.assertFalse(os.path.exists(self.pointer))
+
+    def test_a_current_export_gets_a_missing_pointer_and_an_unchanged_one_is_not_rewritten(self):
+        self.refresh([])
+        os.remove(self.pointer)
+        self.refresh([])
+        self.assertEqual(outside_reader(self.pointer), os.path.join(self.k.root, self.remote_sha()[:12]))
+        with mock.patch.object(P, '_write_json') as w:
+            self.refresh([])
+        w.assert_not_called()
+
+    def test_ensure_export_writes_it_too(self):
+        P.ensure_export(self.k.kit, self.s, now=NOW, own=ME, alive=never_alive)
+        os.remove(self.pointer)
+        P.ensure_export(self.k.kit, self.s, now=NOW, own=ME, alive=never_alive)
+        self.assertEqual(outside_reader(self.pointer), os.path.join(self.k.root, self.remote_sha()[:12]))
+
+    def test_a_failed_write_is_a_warning_and_the_export_stands(self):
+        blocker = os.path.join(self.k.base, 'blocker')
+        with open(blocker, 'w') as fh:
+            fh.write('x')
+        self.s = P.Settings(self.k.root, False, 'origin', os.path.join(blocker, 'plugin-live.json'))
+        self.assertEqual(self.refresh([]), 0)
+        self.assertIn('WARNING: live pointer', '\n'.join(self.lines))
+        self.assertEqual(P.current_folder(self.k.root), self.remote_sha()[:12])
+
+    def test_a_stale_pointer_is_not_trusted_by_the_reader(self):
+        self.refresh([])
+        gone = read_json(self.pointer)['path']
+        shutil.rmtree(gone)
+        self.assertIsNone(outside_reader(self.pointer))
+
+    def test_the_pointer_is_fixed_even_with_a_custom_export_dir(self):
+        lad = os.path.join(os.path.abspath(os.sep), 'lad')
+        mine = os.path.join(os.path.abspath(os.sep), 'srv', 'pm-export')
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            got = P.settings({'export_dir': mine}, environ={'LOCALAPPDATA': lad})
+        self.assertEqual(got.export_dir, os.path.normpath(mine))
+        self.assertEqual(got.live_pointer, os.path.normpath(os.path.join(lad, 'pm-kit', 'plugin-live.json')))
+
+
+class PrunePointerTest(Base):
+    make = PruneTest.make
+
+    def setUp(self):
+        super().setUp()
+        self.pointer = os.path.join(self.k.base, 'plugin-live.json')
+
+    def point(self, folder, root=None):
+        with open(self.pointer, 'w', encoding='utf-8') as fh:
+            json.dump({'schema': 1, 'root': root or self.k.root, 'folder': folder}, fh)
+
+    def names(self):
+        names = ['%012x' % i for i in range(1, 7)]
+        for i, n in enumerate(names):
+            self.make(n, '2026-10-0%dT00:00:00' % (i + 1))
+        P.write_marketplace(self.k.root, names[0])
+        return names
+
+    def test_the_folder_the_pointer_names_survives(self):
+        names = self.names()
+        self.point(names[1])
+        removed, failed = P.prune(self.k.root, now=NOW, pointer=self.pointer)
+        self.assertEqual(failed, [])
+        self.assertEqual([os.path.basename(r) for r in removed], [names[2]])
+        self.assertTrue(os.path.isdir(os.path.join(self.k.root, names[1])))
+
+    def test_a_pointer_naming_nothing_markered_keeps_nothing_extra(self):
+        names = self.names()
+        base = P.prune(self.k.root, now=NOW)[0]
+        self.assertEqual(sorted(os.path.basename(r) for r in base), names[1:3])
+        for case, folder, root in (('no marker', 'abcdefabcdef', None), ('no folder', 'fedcbafedcba', None),
+                                   ('another root', names[1], os.path.join(self.k.base, 'else')),
+                                   ('not a sha12', '..', None)):
+            with self.subTest(case):
+                for n in names[1:3]:                      # put the two back
+                    if not os.path.isdir(os.path.join(self.k.root, n)):
+                        self.make(n, '2026-10-0%dT00:00:00' % (names.index(n) + 1))
+                if folder == 'abcdefabcdef':
+                    self.make(folder, '', marker=False)
+                self.point(folder, root)
+                removed, _f = P.prune(self.k.root, now=NOW, pointer=self.pointer)
+                self.assertEqual(sorted(os.path.basename(r) for r in removed), names[1:3])
 
 
 if __name__ == '__main__':

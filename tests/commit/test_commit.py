@@ -1200,7 +1200,7 @@ class AnotherWriterStagesDuringTheCallRealGit(AnotherWriterStagesDuringTheCall):
 
 @real_git('ls-files --debug prints an entry\'s stat data: the fake has no --debug')
 class ThePrivateIndexKeepsStatData(LinkedCase):
-    """KIT-COMMIT-PRECOMMIT-TIMEOUT: a path the commit does not name keeps the real index's stat
+    """A path the commit does not name keeps the real index's stat
     data in the private index, so `git commit` does not hash every tracked work-tree file again
     (a read-tree index records size 0 for every entry)."""
 

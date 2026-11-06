@@ -818,8 +818,8 @@ def private_index(root, tmp, head, snap):
     The private index starts as a copy of the real index (_copied_index), with every other path
     that differs from `head` (staged, unmerged, or absent) put back to `head`'s entry, so the
     entries `git commit` refreshes keep their stat data. A read-tree index has none, and `git
-    commit` then hashes every tracked work-tree file, past cmd.GIT_TIMEOUT in a large tree
-    (KIT-COMMIT-PRECOMMIT-TIMEOUT). When the copy cannot be used, and on an unborn branch, the
+    commit` then hashes every tracked work-tree file, past cmd.GIT_TIMEOUT in a large tree.
+    When the copy cannot be used, and on an unborn branch, the
     private index is read-tree'd (`read-tree -m` would refuse an unmerged real index)."""
     env = dict(cmd.scrubbed_env(), GIT_INDEX_FILE=private_index_file(tmp))
     zero = '0' * (len(head) or 40)
@@ -841,8 +841,8 @@ def private_index(root, tmp, head, snap):
     return env, None
 
 
-EMPTY_BLOB_SHA1 = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
-EMPTY_BLOB_SHA256 = '473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813'
+EMPTY_BLOB_SHA1 = hashlib.sha1(b'blob 0\0').hexdigest()
+EMPTY_BLOB_SHA256 = hashlib.sha256(b'blob 0\0').hexdigest()
 
 
 def _copied_index(root, env, head, snap):

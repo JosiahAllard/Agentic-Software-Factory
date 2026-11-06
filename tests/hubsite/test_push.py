@@ -958,7 +958,7 @@ class FiledPushCase(PushCase):
     def bind(self, before, after=None, live=None):
         self.views = RecordViews(before, after)
         self.api = api.Api(self.store, views=self.views, clock=self.ticks,
-                           session_keys=lambda: {'kit', 'zeta'})
+                           session_keys=lambda: {'kit', 'zeta'}, coordinators=dict)
         if live is not None:
             self.push = ResolvingPush(live)
         self.worker = self.make()
@@ -1128,6 +1128,21 @@ class FiledRecipientsTest(FiledPushCase):
         self.assertEqual([r for r, _t in self.push.calls], ['kitcoord'])
         self.assertNotIn('start one', self.push.to('kitcoord')[0])
         self.assertEqual(self.push.to(push.PM_KEY), [])
+
+    def test_the_kit_coordinator_is_its_session_key_not_the_repo_name(self):
+        # kit_key gives the repo's NAME; the coordinator's sessions.json key is `kit`, and a
+        # second session (`agents`) shares the repo but is no coordinator
+        self.bind('blocked', 'open', live={'kit'})
+        self.views.also = {'pmrepo': 'KIT-X'}
+        self.api.kit_key = lambda: 'Kit-Repo'
+        self.api._session_keys = lambda: {'kit', 'agents', 'zeta'}
+        self.api.coordinators = lambda: {'kit': 'kit-repo'}
+        self.worker.pm_folder = lambda: 'pmrepo'
+        qid = self.ask(**{'from': 'zeta', 'repo': 'elsewhere',
+                       'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
 
     def test_a_todo_bound_to_the_pm_folder_pushes_with_no_start_one_line(self):
         self.bind_pm_folder({'kitcoord'})

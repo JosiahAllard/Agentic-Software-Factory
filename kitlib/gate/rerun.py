@@ -15,7 +15,8 @@ FLAKE: every failing id passed at the tip, every NOT RUN step passed, warned or 
 was uncovered, and no id that failed on the tip has failed twice on the branch (branch_twice).
 Anything else is REAL. The
 control is information only: a red control never turns a REAL into a FLAKE; it is said and
-recorded as `also red at base`. A FLAKE prints the `backlog.py add` line the builder reports;
+recorded as `also red at base`; a control past the time limit is recorded `timed out`, neither
+red nor green. A FLAKE prints the `backlog.py add` line the builder reports;
 the coordinator decides on filing it.
 
 A landing (kitlib.gate.land) takes a tip with no full gate-OK record when verify_flake finds
@@ -75,6 +76,7 @@ FLAKE, REAL, VOID = 'FLAKE', 'REAL', 'VOID'
 PASSING = ('PASS', 'WARN', 'SKIP', 'REUSED')
 FIXTURES = ('setUpClass', 'tearDownClass', 'setUpModule', 'tearDownModule')
 TIMED_OUT = 'rerun: TIMEOUT'         # the line run_class ends a class log with past its timeout
+TIMED_OUT_CONTROL = 'timed out'     # a control past its timeout: neither red nor green at base
 FILE_NAME = re.compile(r'^(red|rerun)-(\d+)-([0-9a-f]{8})\.json$')
 
 SECTION = re.compile(r'^==== (\S+) \((\d+) tests?, [\d.]+s, (.+?)\) ====\s*$')
@@ -574,12 +576,43 @@ def _start(launcher, argv, cwd, env, log_path):
         return launcher.wait(p)
 
 
+def _end_once(launcher):
+    """For one timed class run: the launcher's slot ends its tree once. The time limit's kill
+    (Launcher.kill, on run_class's timer thread) and a stop (Slot.wait, on the caller's thread)
+    both call the slot's end_tree; on the slot instance it is replaced by one that takes a lock
+    and does nothing once either has ended the tree, so the two never run end_tree at once or
+    twice. A call cut short by a BaseException counts as not run, so the next caller ends the
+    tree. Returns the undo, which puts the slot's own end_tree back; a launcher with no slot
+    (a test's fake) gets nothing done to it."""
+    slot = getattr(launcher, '_slot', None)
+    if slot is None or not callable(getattr(slot, 'end_tree', None)):
+        return lambda: None
+    real, mine = slot.end_tree, vars(slot).get('end_tree')
+    lock, ended = threading.Lock(), {'done': False}
+
+    def end_tree():
+        with lock:
+            if ended['done']:
+                return
+            real()
+            ended['done'] = True
+    slot.end_tree = end_tree
+
+    def undo():
+        if mine is None:
+            vars(slot).pop('end_tree', None)
+        else:
+            slot.end_tree = mine
+    return undo
+
+
 def run_class(launcher, top, c, log, timeout=None):
     """`(rc, log text)` of `python -m unittest -v <class>` for one entry `c` of classes_of, run
     in the tree `top` (its directory `c['cwd']`) with the launcher's child environment and the
     mode's variables `c['env']`, its output in the file `log`. rc is None when it did not start,
     or when it ran past `timeout` seconds (None: no limit): its tree is then ended
-    (Launcher.kill) and the log ends with a TIMED_OUT line."""
+    (Launcher.kill) and the log ends with a TIMED_OUT line. That kill and a stop end the tree
+    once between them (_end_once)."""
     env = runner.child_env(launcher)
     env.update(c['env'])
     argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
@@ -594,6 +627,7 @@ def run_class(launcher, top, c, log, timeout=None):
                 return
             state['killed'] = True
         launcher.kill()             # its wait (Slot.wait) then sees the child end
+    undo = _end_once(launcher)
     timer = threading.Timer(timeout, kill)
     timer.daemon = True
     timer.start()
@@ -604,6 +638,7 @@ def run_class(launcher, top, c, log, timeout=None):
             state['done'] = True
         timer.cancel()
         timer.join()                # a kill under way ends before anything else starts
+        undo()
     if not state['killed']:
         return rc, _read(log)
     try:
@@ -861,12 +896,15 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             crc, ctext = run_class(slot.launcher, ctl['tw'], c, clog, timeout)
             cpass, _ = judge_class(ctext, crc, c['ids'])
             control = 'green' if cpass else (
+                TIMED_OUT_CONTROL if crc is None and TIMED_OUT in (ctext or '') else
                 'absent' if ABSENT.search(ctext or '') else 'red')
         say('%-5s %s%s at the tip; control at the base %s: %s%s' % (
             'PASS' if passed else 'FAIL', c['cls'],
             ' (%s)' % ', '.join('%s=%s' % kv for kv in sorted(c['env'].items()))
             if c['env'] else '', base[:10], control,
-            ' (also red at base)' if control == 'red' else ''))
+            ' (also red at base)' if control == 'red' else
+            ' (still running after %s s; inconclusive)' % timeout
+            if control == TIMED_OUT_CONTROL else ''))
         done.append(dict(c, tip='pass' if passed else 'fail', ids=got, log=log,
                          control=control, control_log=clog))
 

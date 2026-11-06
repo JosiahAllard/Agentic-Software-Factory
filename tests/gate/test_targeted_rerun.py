@@ -8,6 +8,10 @@ has. Every missing, unreadable or altered record refuses."""
 import json
 import os
 import re
+import shutil
+import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -24,7 +28,9 @@ ID = 'flaky_mod.Case.test_flaky'
 # test_flaky fails when the file FLAKY_STATE names says `red`, or says `once` (it then says
 # `done`, so the next run passes), or when the tree it runs in has no MARK (the base, in the
 # test that commits flaky_mod.py on main). FLAKY_STATE saying `import` breaks the module's import.
+# In a tree with no MARK, test_flaky hangs while the file FLAKY_HANG names exists.
 FLAKY = '''import os
+import time
 import unittest
 
 
@@ -42,6 +48,8 @@ if state() == 'import':
 
 class Case(unittest.TestCase):
     def test_flaky(self):
+        if not os.path.exists('MARK') and os.path.exists(os.environ.get('FLAKY_HANG', '?')):
+            time.sleep(120)
         now = state()
         if now == 'once':
             with open(os.environ['FLAKY_STATE'], 'w', encoding='utf-8') as f:
@@ -235,6 +243,52 @@ class JudgeClass(unittest.TestCase):
         text = self.run_log('test_a (m.C.test_a) ... ok')
         self.assertTrue(rerun.judge_class(text, 0, ['m.C.setUpClass'])[0])
         self.assertFalse(rerun.judge_class(text, 0, ['m.D.setUpClass'])[0])
+
+
+class EndOnce(unittest.TestCase):
+    """A timed class run's kill (its timer thread) and a stop (Slot.wait, the caller's thread)
+    end the slot's tree once between them, never both at once."""
+
+    class Slot:
+        def __init__(self):
+            self.calls, self.inside, self.most = 0, 0, 0
+            self.entered = threading.Event()
+
+        def end_tree(self):
+            self.calls += 1
+            self.inside += 1
+            self.most = max(self.most, self.inside)
+            self.entered.set()
+            time.sleep(0.3)
+            self.inside -= 1
+
+    class Launcher:                                 # as kitlib.lock.run.Launcher.kill
+        def __init__(self, slot):
+            self._slot = slot
+
+        def kill(self):
+            self._slot.end_tree()
+
+    def test_a_stop_while_the_time_limit_kills_does_not_end_the_tree_again(self):
+        slot = self.Slot()
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        log = os.path.join(tmp, 'class.log')
+
+        def start(launcher, argv, cwd, env, log):
+            self.assertTrue(slot.entered.wait(10), 'the time limit never killed')
+            slot.end_tree()                         # the stop path, during the kill
+            open(log, 'w').close()
+            return 1
+        c = {'cls': 'm.C', 'env': {}, 'cwd': '', 'ids': ['m.C.test_a']}
+        with mock.patch.object(rerun, '_start', start), \
+                mock.patch.object(runner, 'child_env', lambda launcher: {}):
+            rc, text = rerun.run_class(self.Launcher(slot), tmp, c, log, timeout=0.05)
+        self.assertEqual((rc, slot.calls, slot.most), (None, 1, 1))
+        self.assertIn(rerun.TIMED_OUT, text)
+        self.assertNotIn('end_tree', vars(slot))    # the slot's own end_tree is back
+        slot.end_tree()
+        self.assertEqual(slot.calls, 2)
 
 
 class AddLine(unittest.TestCase):
@@ -433,6 +487,28 @@ class Flake(RerunCase):
                         out.lines)
         self.assertTrue(any('(also red at base)' in s for s in out.said), out.said)
         self.assertEqual(self.loaded(tip)[1][0]['classes'][0]['control'], 'red')
+
+    def test_a_control_past_the_time_limit_is_timed_out_not_red(self):
+        self.repo.write('flaky_mod.py', FLAKY)          # on main, with no MARK: it hangs there
+        self.main = self.repo.commit('flaky on main', 'flaky_mod.py')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt, tip = self.work('once')
+        self.red(wt)
+        hang = os.path.join(self.tmp, 'hang')
+        self.env['FLAKY_HANG'] = hang
+        with open(hang, 'w', encoding='utf-8') as f:
+            f.write('hang')
+        with mock.patch.object(rerun, 'class_timeout', lambda *args: 5):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+        said = [s for s in out.said if 'control at the base' in s]
+        self.assertEqual(len(said), 1, out.said)
+        self.assertIn(': timed out (still running after 5 s; inconclusive)', said[0])
+        self.assertNotIn('also red at base', '\n'.join(out.lines + out.said))
+        cls = self.loaded(tip)[1][0]['classes'][0]
+        self.assertEqual((cls['tip'], cls['control']), ('pass', rerun.TIMED_OUT_CONTROL))
+        with open(cls['control_log'], encoding='utf-8') as f:
+            self.assertIn(rerun.TIMED_OUT, f.read())
 
     def test_a_tampered_record_refuses_the_landing(self):
         wt, tip = self.work('once')

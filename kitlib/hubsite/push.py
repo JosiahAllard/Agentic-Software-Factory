@@ -1035,12 +1035,11 @@ class PushWorker(object):
         keys = []
         rrepo = record.get('repo')
         if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
-            rrepo = self._kit_key()     # the kit's records are bound under the PM folder's name
-            rkey = rrepo
+            # the kit's records are bound under the PM folder's name
+            rkeys, rrepo = self._kit_keys(), self._kit_key()
         else:
-            rkey = self._repo_key(rrepo)
-        for k in (asker, rkey, rrepo,
-                  self._repo_key(doc.get('repo')), doc.get('repo')):
+            rkeys = self._repo_keys(rrepo)
+        for k in [asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo')) + [doc.get('repo')]:
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
         for k in keys:
@@ -1075,6 +1074,33 @@ class PushWorker(object):
             self.log('push: repo_key failed: %s' % type(e).__name__)
             got = ''
         return got if isinstance(got, str) else ''
+
+    def _repo_keys(self, repo):
+        """Every session key that may be the coordinator of an approval's repository
+        (Api.coordinator_keys: its name and the coordinator sessions of that repository), the
+        one _repo_key gives when the Api has no such list."""
+        fn = getattr(self.api, 'coordinator_keys', None)
+        try:
+            got = fn(repo) if fn is not None else None
+        except Exception as e:          # noqa: BLE001 - a host fault: the name alone
+            self.log('push: coordinator_keys failed: %s' % type(e).__name__)
+            got = None
+        if not isinstance(got, list):
+            return [self._repo_key(repo)]
+        return [k for k in got if isinstance(k, str)]
+
+    def _kit_keys(self):
+        """Every key the kit coordinator may have (Api.kit_session_keys), [_kit_key()] when the
+        Api has no such list."""
+        fn = getattr(self.api, 'kit_session_keys', None)
+        try:
+            got = fn() if fn is not None else None
+        except Exception as e:          # noqa: BLE001 - a host fault: the one key
+            self.log('push: kit_session_keys failed: %s' % type(e).__name__)
+            got = None
+        if not isinstance(got, list):
+            return [self._kit_key()]
+        return [k for k in got if isinstance(k, str)]
 
     def _pm_folder(self):
         """The PM repository's folder name, '' when unknown. Read once per worker; a failing

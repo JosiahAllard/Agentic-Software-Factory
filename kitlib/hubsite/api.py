@@ -795,14 +795,20 @@ class Api(object):
         configured name, and the key is, by coordinator_keys' rule, a coordinator session of
         sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
         none. '' when kit_key fails or gives no string. Whether that session exists is for the
-        caller (the route checks session_keys, the push resolves it live)."""
+        caller (the route checks session_keys, the push resolves it live). The first of
+        kit_session_keys()."""
+        return (self.kit_session_keys() or [''])[0]
+
+    def kit_session_keys(self):
+        """Every key kit_session_key may be, a session's key before the name, [] for none: the
+        push tries each for a live session."""
         try:
             name = self.kit_key()
         except Exception:           # noqa: BLE001 - no kit coordinator known: the PM hears it
             name = ''
         if not isinstance(name, str) or not name:
-            return ''
-        return (self._keys_named(name)[1:] + [name])[0]     # a session's key before the name
+            return []
+        return self._keys_named(name)[1:] + [name]
 
     def repo_key(self, repo):
         """The session key of the coordinator of the repository whose remote is the repo_id

@@ -1144,6 +1144,27 @@ class FiledRecipientsTest(FiledPushCase):
         self.worker.poll()
         self.assertEqual([r for r, _t in self.push.calls], ['kit'])
 
+    def test_with_two_coordinator_sessions_on_the_kit_repo_the_live_one_is_pushed(self):
+        self.bind('blocked', 'open', live={'kit'})
+        self.views.also = {'pmrepo': 'KIT-X'}
+        self.api.kit_key = lambda: 'Kit-Repo'
+        self.api.coordinators = lambda: {'dead': 'kit-repo', 'kit': 'kit-repo'}
+        self.worker.pm_folder = lambda: 'pmrepo'
+        qid = self.ask(**{'from': 'zeta', 'repo': 'elsewhere',
+                          'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+
+    def test_a_question_filed_under_the_kit_repo_name_reaches_the_coordinators_session_key(self):
+        self.bind('blocked', 'open', live={'kit'})
+        self.api.repo_name = lambda repo: 'Kit-Repo' if repo == 'kit' else None
+        self.api.coordinators = lambda: {'kit': 'kit-repo', 'agents': 'kit-repo'}
+        qid = self.ask(**{'from': 'zeta', 'record': {'repo': 'kit', 'id': 'EX-1'}})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual([r for r, _t in self.push.calls], ['kit'])
+
     def test_a_todo_bound_to_the_pm_folder_pushes_with_no_start_one_line(self):
         self.bind_pm_folder({'kitcoord'})
         tid = self.todo(**{'from': 'kitcoord', 'record': {'repo': 'pmrepo', 'id': 'KIT-X'}})

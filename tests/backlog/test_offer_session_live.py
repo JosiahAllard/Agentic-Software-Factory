@@ -1,6 +1,6 @@
 """`next`: another session's unpulled record reserves its scope only while that session runs
 (KIT-OFFER-DEAD-SESSION). Liveness is omod.SessionLiveness: the launcher's sessions.json key ->
-its stem, live when a running session's name starts with that stem; unreadable reserves as
+its stem, live when a running session's name is of that stem (lookup.of_stem); unreadable reserves as
 before and says so. The offer cases run on snapshots built in memory with stubbed readers; the
 CLI case runs tools/backlog.py in process with the readers patched."""
 import unittest
@@ -59,6 +59,13 @@ class SessionLive(unittest.TestCase):
         self.assertEqual(omod.blocker_summary(list(passed.values())),
                          ['blocks 1: session alpha (HIGH)'])
         self.assertEqual(omod.idle_lines(live), [])
+
+    def test_a_name_that_only_prefixes_the_stem_is_not_the_session(self):
+        for name, running in (('demo', True), ('demo-a2', True), ('demo-a2-r1', True),
+                              ('demo-lane-a1', False), ('demo2', False)):
+            with self.subTest(name=name):
+                self.assertEqual(liveness({'k': 'demo'}, names=[name]).live('k'),
+                                 (running, None))
 
     def test_unreadable_liveness_reserves_and_says_so(self):
         for live, why in ((liveness(fail=OSError('no sessions.json')), 'no sessions.json'),
@@ -131,7 +138,7 @@ class RealReaders(unittest.TestCase):
         with open(os.path.join(root, 'sessions.json'), 'w', encoding='utf-8') as f:
             json.dump({'_note': 'x', 'alpha': {'repo': 'app', 'stem': 'alpha-coordinator'},
                        'kit': {'repo': 'kit', 'stem': 'coord-example'}}, f)
-        rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control coord-example-2'},
+        rows = [{'Name': 'claude.exe', 'CommandLine': 'claude --remote-control coord-example-a2'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude -n other-session'},
                 {'Name': 'claude.exe', 'CommandLine': 'claude'}]
         with mock.patch.object(lsettings, 'load',
@@ -140,7 +147,7 @@ class RealReaders(unittest.TestCase):
                 mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
             self.assertEqual(omod.launcher_stems(), {'alpha': 'alpha-coordinator',
                                                      'kit': 'coord-example'})
-            self.assertEqual(omod.running_names(), ['coord-example-2', 'other-session'])
+            self.assertEqual(omod.running_names(), ['coord-example-a2', 'other-session'])
             live = omod.SessionLiveness()
             self.assertEqual(live.live('kit'), (True, None))
             self.assertEqual(live.live('alpha'), (False, None))

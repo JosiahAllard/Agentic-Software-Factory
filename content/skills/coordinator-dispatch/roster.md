@@ -35,7 +35,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   API changes, live fixes, ordinary tool features, generated-data wiring; never plan-only or
   sync/prep) -> senior-worker (strong/high: concurrency, networking, simulation or ordering,
   migrations, CI config, landing/gate/lock tools, build-cache correctness, codegen design; builds
-  and plans) -> deep-worker (deep/xhigh, own session: root cause or concurrency work
+  and designs of those kinds, never plan-only) -> deep-worker (deep/xhigh, own session: root cause or concurrency work
   senior-worker failed at or plainly cannot do). weak-worker not installed -> the worker.
   strong-worker not installed -> the worker raised to strong. Never the host's general-purpose
   agent for code. An escalation = reassign upward with its findings, not a failure. A

@@ -13,8 +13,9 @@ The machine lock: a run whose command is heavy books it once, before the tree is
 (lock_kind, book_slot: kitlib.lock.run.book for `<repo name>/redfirst-<base10>`), runs every
 command in the booked run's job (locked_run) and releases before the cleanup. The kind is the
 runner's `lock`, else build for a command runner (COMMAND_LOCK), else the kind of the heavy-list
-entry its command matches (kitlib.config.heavy_match: build for gradle and dotnet, none for the
-python runner, which books nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
+entry its command matches (kitlib.config.heavy_match: quick-test for its filtered gradle and dotnet
+commands, which red-first books as build, QUICK_TEST; none for the python runner, which books
+nothing). Inside a run that already holds enough (MACHINE_LOCK_RUN) the booking takes nothing more;
 inside one that holds less the lock refuses it. A refusal makes no tree and runs nothing (the log
 folder, made first, stays): exit 2 for the lock's usage refusals, the lock's own exit code for the
 others (LOCK_CODES). The booked run's record ends, before the cleanup, with the code the verdicts
@@ -663,8 +664,9 @@ def lock_kind(sel, heavy):
     # takes as quick-test; but a red-first run builds a throwaway tree at both base and head, not a
     # short warm run, so it books build.
     kind = COMMAND_LOCK if entry['kind'] == QUICK_TEST else entry['kind']
-    return kind, ('the heavy list takes `%s` as %s; a runner\'s `lock` in %s names '
-                  'another kind' % (' '.join([os.path.basename(argv[0])] + argv[1:2]), kind, KEY))
+    booked = ', which red-first books as %s' % kind if kind != entry['kind'] else ''
+    return kind, ('the heavy list takes `%s` as %s%s; a runner\'s `lock` in %s names another kind'
+                  % (' '.join([os.path.basename(argv[0])] + argv[1:2]), entry['kind'], booked, KEY))
 
 
 def one_lock(sels, heavy):

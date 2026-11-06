@@ -97,7 +97,9 @@ class Cli(unittest.TestCase):
         self.ok('--as', 'tools/wk', 'pull', 'HELD', '--reason', 'the branch starts with this one')
         plain = self.ok('next')                      # the main checkout: no branch bundles
         self.assertIn('passed over X', plain)
-        self.assertNotIn('passed over Y', plain)
+        # X waits only on the live pull HELD, so it still reserves docs/y.md: Y waits behind it.
+        self.assertIn('passed over Y (rank 3): scope docs/y.md collides with docs/y.md already '
+                      'taken by X (waiting on HELD on tools/wk)', plain)
         mine = self.ok('--as', 'tools/wk', 'next')   # as the branch: X bundles onto it
         self.assertIn('passed over Y', mine)
         self.assertNotIn('passed over X', mine)

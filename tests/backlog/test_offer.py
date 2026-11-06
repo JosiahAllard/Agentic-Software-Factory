@@ -256,7 +256,7 @@ class CollisionHolder(unittest.TestCase):
 
 
 class CollisionReserve(unittest.TestCase):
-    """KIT-OFFER-COLLISION-RESERVE: a record passed over only on a live pull still reserves its
+    """The collision reserve: a record passed over only on a live pull still reserves its
     scope; nothing passed over on that reserve, or for another reason, reserves (no cascade)."""
 
     def hold(self, scope='a/**'):
@@ -311,7 +311,7 @@ class CollisionReserve(unittest.TestCase):
 
 
 class WaitsMark(unittest.TestCase):
-    """KIT-OFFER-HIGHER-WAITS-NOTICE: a record passed over on a live pull it outranks, in a strictly
+    """The waits mark: a record passed over on a live pull it outranks, in a strictly
     higher band or as a pre-emption, is marked `p<n> waits on p<m> pull X on B (lands first)`; a
     tie within a band is not. A notice only: the live pull keeps its scope."""
 

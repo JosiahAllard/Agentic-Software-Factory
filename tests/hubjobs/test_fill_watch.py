@@ -1037,7 +1037,7 @@ class AutoPull(WatchFixture, unittest.TestCase):
 
 
 class Waits(WatchFixture, unittest.TestCase):
-    """KIT-OFFER-HIGHER-WAITS-NOTICE: a record waiting on a lower live pull it outranks is one push
+    """The waits notices: a record waiting on a lower live pull it outranks is one push
     to the coordinator per pair, and one `fill` event to the PM 24 h after first sight."""
 
     ROW = ('EX-H', '1', 'EX-L', '3', 'game/ex-l')

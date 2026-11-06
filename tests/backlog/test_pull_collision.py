@@ -139,19 +139,20 @@ class PullCollision(StoreCase):
 
     def seed_x_y(self):
         # The branch holds a/**. X (rank 1) overlaps it and docs/y.md; Y (rank 2) is docs/y.md.
-        # `next` without the branch passes X over (a/x.py is taken) and offers Y; `next` as the
+        # `next` without the branch passes X over (a/x.py is taken) and, X waiting only on the
+        # live pull MINE, X still reserves docs/y.md, so Y is passed over too; `next` as the
         # branch offers X and passes Y over (X is offered above).
         self.seed(mine('a/**'), priced('X', priority='1', scope=['a/x.py', 'docs/y.md']),
                   priced('Y', priority='2', scope='docs/y.md'))
 
-    def test_a_record_next_offers_without_the_branch_pulls_plainly(self):
-        # Y is in `next`'s offer as the coordinator in the main checkout reads it, so pulling it
-        # onto the branch must not count X, which that `next` passed over, as offered above.
+    def test_a_record_waiting_behind_one_that_waits_on_a_live_pull_is_refused(self):
+        # Y is in neither offer: without the branch X reserves docs/y.md while it waits on MINE,
+        # and as the branch X is offered above. Pulling Y would jump the higher-ranked X.
         self.seed_x_y()
-        change = self.verb('pull', 'Y')
-        r = self.get('Y')
-        self.assertEqual((r.get('state'), r.get('preempt')), ('pulled', None))
-        took_none(self, change)
+        with self.assertRaises(Refusal) as cm:
+            self.verb('pull', 'Y')
+        self.assertIn('already taken by X', str(cm.exception))
+        self.assertEqual(self.get('Y').get('state'), 'open')
 
     def test_a_record_next_offers_as_the_branch_pulls_plainly(self):
         self.seed_x_y()
@@ -169,7 +170,9 @@ class PullCollision(StoreCase):
         self.ctx.branch = 'main'                      # a main never bundles: its pulls hold scope
         offers, passed, _holding, own = pmod.offer_for(snap, self.ctx)
         self.assertIsNone(own)
-        self.assertEqual([o.rec.id for o in offers], ['Y'])
+        self.assertEqual([o.rec.id for o in offers], [])     # X waits on MINE and reserves
+        self.assertEqual([p.rec.id for p in passed], ['X', 'Y'])
+        self.assertIn('(waiting on MINE on %s)' % BRANCH, passed[1].why)
 
     def assert_still_collides(self, by):
         if by != BRANCH:
@@ -209,15 +212,17 @@ class PullCollision(StoreCase):
     def test_the_offer_leaves_out_only_the_branch_spelt_exactly(self):
         # Direct, so a refusal from another check cannot pass it: as BRANCH, X is offered (its
         # a/x.py overlaps only the branch's own MINE); as any other spelling, MINE holds a/** and
-        # X is passed over, so a case-insensitive or prefix match would offer X here.
+        # X is passed over (and, waiting on MINE, reserves docs/y.md, so Y is too), so a
+        # case-insensitive or prefix match would offer X here.
         self.seed_x_y()
         snap = self.store.load()
         for name in (BRANCH.upper(), 'tools/some', BRANCH + '-two', 'refs/heads/' + BRANCH):
             self.ctx.branch = name
             offers, passed, _holding, own = pmod.offer_for(snap, self.ctx)
             self.assertEqual(own, name)
-            self.assertEqual([o.rec.id for o in offers], ['Y'], name)
-            self.assertEqual([p.rec.id for p in passed], ['X'], name)
+            self.assertEqual([o.rec.id for o in offers], [], name)
+            self.assertEqual([p.rec.id for p in passed], ['X', 'Y'], name)
+            self.assertIn('already taken by MINE', passed[0].why, name)
 
     def test_a_detached_head_names_no_branch_of_its_own(self):
         self.repo.git('checkout', '-b', 'tools/other')

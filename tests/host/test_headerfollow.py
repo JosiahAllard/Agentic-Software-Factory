@@ -128,9 +128,12 @@ class Follow(unittest.TestCase):
 
     def test_the_machine_config_comes_from_the_hook_environments_home_only(self):
         self.assertIn('error', headerfollow._Ctx('C:/kit', {}).user())
-        with mock.patch('kitlib.config.user.user_config', return_value={'plugin': None}) as cfg:
-            self.assertEqual(headerfollow._Ctx('C:/kit', {'USERPROFILE': self.root}).user(), {'plugin': None})
-        cfg.assert_called_once_with(self.root)
+        where = object()                              # the filesystem reading's Location
+        with mock.patch('kitlib.guard.place.fs_location', return_value=where) as fs:
+            with mock.patch('kitlib.config.user.user_config', return_value={'plugin': None}) as cfg:
+                self.assertEqual(headerfollow._Ctx('C:/kit', {'USERPROFILE': self.root}).user(), {'plugin': None})
+        fs.assert_called_once_with(self.root)
+        cfg.assert_called_once_with(self.root, location=where)
 
 
 class SubagentStart(unittest.TestCase):
@@ -186,6 +189,45 @@ class SubagentStart(unittest.TestCase):
         self.assertTrue(text.startswith('PM kit header. The kit folder is %s.' % self.fwd(self.new)), text)
         self.assertIn('%s/tools/new_worktree.py' % self.fwd(self.new), text)
         self.assertNotIn(OLD, text)
+
+    def test_the_line_and_the_start_run_no_subprocess(self):
+        # the machine config's pointer is read from the filesystem: no git child per tool hook
+        self.start()                                  # a record for s1-a1 naming the new export
+        headerfollow._write(os.path.join(self.plugin, headerfollow.HEADERS, 's1-a1'), self.old)
+        import subprocess
+        from kitlib.git import refs, repo
+        from kitlib.proc import job
+        # a cold process: the pointer cache the start above filled is empty, as in a fresh hook.
+        # Git starts through repo.classify and refs.current_branch (pointer's defaults; a fake git
+        # on the unit tier) and kitlib.proc.job.Job.start, so watch those and subprocess.Popen
+        with mock.patch.dict(user._POINTERS, clear=True):
+            with mock.patch.object(repo, 'classify', wraps=repo.classify) as classify:
+                with mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch:
+                    with mock.patch.object(job.Job, 'start', autospec=True,
+                                           side_effect=job.Job.start) as started:
+                        with mock.patch('subprocess.Popen', wraps=subprocess.Popen) as popen:
+                            later = time.time() + headerfollow.EVERY_S + 1
+                            said = headerfollow.line(self.old, self.payload, 'a1', self.env,
+                                                     now=later, write=False)
+                            self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        self.assertIn(self.fwd(self.new), said)
+        for seam in (classify, branch, started, popen):
+            seam.assert_not_called()
+
+    def test_a_layout_the_filesystem_reading_hands_to_git_gives_the_same_answer(self):
+        # a variable in place.FALLBACK_ENV sends place.classify to git. It must be one that leaves
+        # git's answer alone: GIT_OBJECT_DIRECTORY naming a missing folder makes git itself say
+        # "not a git repository", so the pointer would read BAD on either path. Command-line config
+        # (GIT_CONFIG_COUNT, a key git ignores) changes nothing about where the repository is, so
+        # the pointer still checks out and the header names the current export, through git
+        from kitlib.git import repo
+        self.start()
+        config = {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'kittest.probe', 'GIT_CONFIG_VALUE_0': '1'}
+        with mock.patch.dict(os.environ, config):
+            with mock.patch.dict(user._POINTERS, clear=True):
+                with mock.patch.object(repo, 'classify', wraps=repo.classify) as classify:
+                    self.assertEqual(headerfollow.start_kit(self.old, self.env), self.new)
+        classify.assert_called()                      # git answered, not the filesystem reading
 
     def test_the_record_names_the_folder_the_header_named(self):
         self.start()

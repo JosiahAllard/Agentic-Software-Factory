@@ -57,15 +57,19 @@ _HEX = frozenset('0123456789abcdef')
 
 def head_branch(git_dir):
     """The branch named by `git_dir`'s HEAD file: (name, None), ('', None) for a detached HEAD,
-    or None when the file cannot be read or holds neither (the caller asks git)."""
+    or None when the file cannot be read or holds neither (the caller asks git). A reftable
+    repository (a reftable folder in the common dir) is None too: its HEAD file is a stub naming
+    `refs/heads/.invalid`, a name git refuses as a branch, and the real HEAD is in the table."""
     try:
         with open(os.path.join(git_dir, 'HEAD'), encoding='utf-8') as f:
             text = f.read().strip()
-    except (OSError, UnicodeDecodeError):
+        if os.path.isdir(os.path.join(_common(git_dir), 'reftable')):
+            return None
+    except (OSError, UnicodeDecodeError, _Fallback):
         return None
     if text.startswith('ref: refs/heads/'):
         name = text[len('ref: refs/heads/'):]
-        return (name, None) if name else None
+        return (name, None) if name and name != '.invalid' else None
     if len(text) in (40, 64) and all(c in _HEX for c in text):
         return '', None
     return None
@@ -85,6 +89,35 @@ def classify(path, fallback=None, environ=None, owned=None):
         return _walk(path, owned or owned_by_me)
     except Exception:                       # _Fallback, or a read that failed: git decides
         return fallback(path)
+
+
+def fs_location(home, fallback=None):
+    """kitlib.config.user.locate(home) with the PM-repo pointer checked through `classify` (this
+    module's reading, `fallback` where it hands a layout to git) and the work tree's HEAD file
+    (head_branch). With the default fallback, git: repo.classify for the layouts this module hands
+    on, and refs.current_branch when the HEAD file does not say (as kitlib.guard.context reads
+    it), so git runs only for those. A caller's own fallback keeps the branch to the HEAD file: one
+    that answers None (no git child at all, kitlib.guard.refusal_log) makes a pointer the
+    filesystem cannot check read as BAD."""
+    from kitlib.config import pointer, user
+    from kitlib.git import refs
+    places = {}
+
+    def check(path):
+        if path not in places:
+            found = classify(path, fallback=fallback)
+            if found is None:
+                found = repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
+            places[path] = found
+        return places[path]
+
+    def branch(path):
+        found = check(path)
+        answer = head_branch(found.git_dir) if found.git_dir else None
+        if answer is not None:
+            return answer
+        return refs.current_branch(path) if fallback is None else (None, 'its HEAD file cannot tell')
+    return user.locate(home, ptr=pointer.read(classify=check, branch=branch))
 
 
 def _walk(path, owned):

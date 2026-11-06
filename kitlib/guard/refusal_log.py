@@ -148,24 +148,10 @@ def append(pm_data, fields, wait=WAIT):
 
 
 def _location(home):
-    """kitlib.config.user.locate(home) with the PM-repo pointer checked from the filesystem only
-    (kitlib.guard.place and its HEAD-file read, no git child): a pointer the filesystem cannot
-    check reads as BAD, and record writes no line."""
-    from kitlib.config import pointer, user
-    from kitlib.git import repo
+    """The machine config's Location from the filesystem only: kitlib.guard.place.fs_location with
+    no git fallback, so record writes no line for a pointer the filesystem cannot check."""
     from kitlib.guard import place
-
-    def classify(path):
-        found = place.classify(path, fallback=_none)
-        if found is None:
-            return repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
-        return found
-
-    def branch(path):
-        found = classify(path)
-        answer = place.head_branch(found.git_dir) if found.git_dir else None
-        return answer if answer is not None else (None, 'its HEAD file cannot tell')
-    return user.locate(home, ptr=pointer.read(classify=classify, branch=branch))
+    return place.fs_location(home, fallback=_none)
 
 
 def record(decision, action, host, role, environ=None, home=None, now=None):

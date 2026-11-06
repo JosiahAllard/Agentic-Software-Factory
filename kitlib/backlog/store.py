@@ -1359,6 +1359,20 @@ def pm_data_live_store(root, *, worktrees=None):
     return pm_root, named, None
 
 
+def live_store_root(root, cfg=None):
+    """`(path, why)`: the checkout whose configured store holds `root`'s records: `root` when its
+    `.kit.json` (`cfg`, default load_config(root)) names a "backlog".store, else its PM data
+    worktree when that names one (pm_data_live_store), else `root` (the implicit store). `why` is
+    pm_data_live_store's, None when it found nothing wrong; `path` is then `root` only because the
+    PM data worktree could not be found or read, which a caller that must not read a wrong store
+    refuses on. A `.kit.json` that cannot be read raises ConfigError or OSError."""
+    from kitlib.config import load as load_config
+    if (load_config(root) if cfg is None else cfg).written('backlog', 'store') is not None:
+        return root, None
+    pm_root, named, why = pm_data_live_store(root)
+    return (pm_root if pm_root and named is not None else root), why
+
+
 def worktree_live_store(top, cfg):
     """`(pm_root, branch)` when a run from the checkout `top` opens the live store in the PM data
     worktree instead of its own: `top`'s `.kit.json` (`cfg`) names no "backlog".store, `top` is a

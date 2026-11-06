@@ -59,6 +59,13 @@ WORK_DIR_NAME = 'kit-work'
 SESSION_VARS = ('AGENT_TEMP', 'TEMP', 'TMP')
 
 
+def agent_temp(get=os.environ.get, home=None):
+    """The agents' temp folder: AGENT_TEMP, else TEMP, else the home folder (`home`, default
+    the user's). `get(name)` reads a variable (default this process's environment); an empty one
+    counts as unset. Always a string; nothing here raises."""
+    return get('AGENT_TEMP') or get('TEMP') or (home if home is not None else os.path.expanduser('~'))
+
+
 class AbsPath(Str):
     def __init__(self):
         Str.__init__(self, what='an absolute path')

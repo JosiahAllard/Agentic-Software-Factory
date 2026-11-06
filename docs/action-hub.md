@@ -614,6 +614,8 @@ store's git push (the `push` setting).
   Twenty minutes into an episode with no stand-down the hub pulls up to the free count itself, each record
   on its own new worktree under Session `hub-fill`, and tells the coordinator what it pulled; a stand-down,
   or slots the pull left free, push `fill` to the PM once per episode, detail `<key>:<free>:<why>`.
+  A PM hold (`launch.py fill-hold`) or the usage stand-down (every account at its week limit) sends nothing:
+  no nudge, no waits notice, no pull, no PM event (docs/hub-fill.md "PM hold and usage").
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its

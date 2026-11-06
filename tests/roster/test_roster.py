@@ -178,6 +178,20 @@ def _content(root):
     return content.Content(roles=content.load_roles(root), skills=())
 
 
+class NoToolImportTest(unittest.TestCase):
+    def test_agent_roster_does_not_import_the_render_content_tool(self):
+        import ast
+        with open(cli.__file__, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        imported = [n.module or '' for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)] + \
+                   [a.name for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for a in n.names]
+        self.assertEqual([m for m in imported if 'render_content' in m], [])
+
+    def test_its_tier_maps_are_every_registered_hosts(self):
+        self.assertEqual(cli.tier_maps(), MAPS)
+
+
 class ReviewerRuleTest(unittest.TestCase):
     """The "Reviewer model" rule in the dispatch skill's roster.md is prose a coordinator follows by
     matching strings: the builder roles its rows name. Each row names exactly its builders, each a

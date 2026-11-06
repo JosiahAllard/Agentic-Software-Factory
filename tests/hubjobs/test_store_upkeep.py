@@ -53,6 +53,13 @@ class UpkeepCase(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.job = su.StoreUpkeep(self.root, book=self.fake_book, clock=lambda: NOW)
+        self.holder_pids = []       # live git processes that may hold maintenance.lock
+        self.job.holders = self.fake_holders
+
+    def fake_holders(self):
+        if isinstance(self.holder_pids, Exception):
+            raise self.holder_pids
+        return list(self.holder_pids)
 
     def fake_run(self, args, cwd, timeout=cmd.GIT_TIMEOUT):
         self.calls.append((list(args), cwd, timeout))
@@ -171,29 +178,80 @@ class Steps(UpkeepCase):
 
 
 class Findings(UpkeepCase):
-    def test_old_leftovers_are_reported_and_left_in_place(self):
+    def test_old_idx_less_packs_are_reported_and_left_in_place(self):
         orphan = self.place('objects/pack/pack-old.pack', su.PACK_AGE_S + 60)
         young = self.place('objects/pack/pack-young.pack', su.PACK_AGE_S - 60)
         whole = self.place('objects/pack/pack-whole.pack', 10 * su.PACK_AGE_S)
         idx = self.place('objects/pack/pack-whole.idx', 10 * su.PACK_AGE_S)
-        lock = self.place('objects/maintenance.lock', su.LOCK_AGE_S + 60)
         self.loose = 10
         out = self.run_job()
-        self.assertEqual(self.events, [('findings', '2')])
+        self.assertEqual(self.events, [('findings', '1')])
         self.assertIn('finding: pack-old.pack has no .idx (24 h old)', out)
-        self.assertIn('finding: objects/maintenance.lock is 12 h old', out)
         self.assertNotIn('pack-young', out)
         self.assertNotIn('pack-whole', out)
-        for path in (orphan, young, whole, idx, lock):
+        for path in (orphan, young, whole, idx):
             self.assertTrue(os.path.exists(path), path)
 
-    def test_a_young_maintenance_lock_is_no_finding(self):
-        self.place('objects/maintenance.lock', su.LOCK_AGE_S - 60)
-        self.assertEqual(su.scan(self.common, NOW), [])
-
     def test_ages_past_two_days_read_in_days(self):
-        self.place('objects/maintenance.lock', 3 * 86400)
+        self.place('objects/pack/pack-old.pack', 3 * 86400)
         self.assertIn('3 d old', su.scan(self.common, NOW)[0])
+
+
+class StaleLock(UpkeepCase):
+    """The recurrence check: a planted objects/maintenance.lock older than LOCK_AGE_S."""
+
+    def test_a_stale_lock_with_no_git_alive_is_pushed_to_the_pm_and_left_in_place(self):
+        lock = self.place('objects/maintenance.lock', 13 * 3600)
+        self.loose = 10
+        out = self.run_job()
+        self.assertEqual(self.events, [('stale-lock', '13h')])
+        self.assertIn('finding: stale %s, 13 h old, no git maintenance or gc alive' % lock, out)
+        self.assertTrue(os.path.exists(lock))
+        # the push names the job event; push.JOB_EACH gives the PM its text, once per detail
+        from kitlib.hubsite import push
+        self.assertIn('maintenance.lock', push.JOB_EACH['stale-lock'])
+
+    def test_it_is_pushed_again_every_pass_while_it_stays(self):
+        self.place('objects/maintenance.lock', 13 * 3600)
+        self.run_job()
+        self.run_job()
+        self.assertEqual(self.events, [('stale-lock', '13h')] * 2)
+
+    def test_a_lock_a_live_git_may_hold_is_a_note_not_a_push(self):
+        lock = self.place('objects/maintenance.lock', 13 * 3600)
+        self.holder_pids = [4242]
+        out = self.run_job()
+        self.assertEqual(self.events, [])
+        self.assertIn('%s is 13 h old, but a git that may hold it is alive (pid 4242)' % lock, out)
+
+    def test_a_process_listing_that_fails_still_pushes(self):
+        self.place('objects/maintenance.lock', 3 * 86400)
+        self.holder_pids = OSError('no snapshot')
+        out = self.run_job()
+        self.assertEqual(self.events, [('stale-lock', '72h')])
+        self.assertIn('3 d old', out)
+        self.assertIn('could not be listed (no snapshot)', out)
+
+    def test_a_young_lock_is_left_alone(self):
+        self.place('objects/maintenance.lock', su.LOCK_AGE_S - 60)
+        self.holder_pids = AssertionError('a young lock lists no processes')
+        out = self.run_job()
+        self.assertEqual(self.events, [])
+        self.assertNotIn('maintenance.lock', out)
+
+    def test_lock_holders_are_the_gits_running_maintenance_or_gc_or_unreadable(self):
+        rows = [(10, 1, 'git.exe'), (11, 1, 'git.exe'), (12, 1, 'git'), (13, 1, 'python.exe'),
+                (14, 1, 'git.exe'), (os.getpid(), 1, 'git.exe'), (15, 1, 'GIT.EXE')]
+        lines = {10: '"C:\\Git\\cmd\\git.exe" maintenance run --auto --no-quiet',
+                 11: 'git cat-file --batch', 12: 'git -C /x gc --auto', 13: 'python gc maintenance',
+                 14: None, os.getpid(): 'git gc', 15: 'git.exe fetch origin'}
+        got = su.lock_holders(snapshot=lambda: rows, command_line=lines.get)
+        self.assertEqual(got, [10, 12, 14])
+
+    def test_an_unreadable_git_gone_by_a_second_listing_is_no_holder(self):
+        listings = [[(20, 1, 'git.exe'), (21, 1, 'git.exe')], [(21, 1, 'git.exe')]]
+        got = su.lock_holders(snapshot=lambda: listings.pop(0), command_line=lambda pid: None)
+        self.assertEqual(got, [21])
 
 
 class Make(unittest.TestCase):

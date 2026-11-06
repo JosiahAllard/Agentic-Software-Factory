@@ -582,7 +582,7 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
@@ -692,10 +692,17 @@ common dir of the PM data worktree only:
    so no landing runs beside it. When the lock gives no slot within 10 min, or an owner or game
    hold is in place, the gc waits for the next pass.
 
-The job deletes nothing itself. It reports two leftovers: a `.pack` with no `.idx` that is more
-than a day old, and a `maintenance.lock` more than 12 h old. Each pass names them in its health
-note and pushes `findings` with their count as the detail. A failed git step or another lock
-refusal is a job failure; the other step still runs.
+The job deletes nothing itself. A `.pack` with no `.idx` that is more than a day old is a finding:
+each pass names it in its health note and pushes `findings` with their count as the detail.
+
+A `maintenance.lock` more than 12 h old is the sign the fault came back. When no git process that
+could hold it is alive (a git whose command line names `maintenance` or `gc`, or one whose command
+line cannot be read and which is still listed a moment later), each pass names it in its note and
+pushes `[hub push] job store-upkeep stale-lock detail:<hours>h` to the PM, every day while the lock
+stays. It is never removed by the hub: moving it aside is a planned window's work. With such a git
+alive the pass only names it in its note. When the processes cannot be listed, it still pushes.
+
+A failed git step or another lock refusal is a job failure; the other step still runs.
 
 ## questions/Q-NNN
 | Field | Written by | Meaning |

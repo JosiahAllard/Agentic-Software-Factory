@@ -2,8 +2,10 @@
 worktree shares with the kit's checkouts (docs/action-hub.md "Store upkeep").
 
   make(sources) -> jobs.Job | None   the job; None when this machine has no PM data worktree
-  StoreUpkeep(root, book=None, clock=None)   its run(ctx): one pass
-  scan(common, now)                  [finding text] for the common dir's leftovers
+  StoreUpkeep(root, book=None, clock=None, holders=None)   its run(ctx): one pass
+  scan(common, now)                  [finding text] for the common dir's .idx-less packs
+  lock_age(common, now)              seconds since objects/maintenance.lock changed, or None
+  lock_holders(snapshot, command_line)   [pid] of live git processes that may hold that lock
 
 Every kit git child runs with auto gc and auto maintenance off (kitlib.git.cmd), so nothing packs
 the store by itself any more; this job does, on the common dir of the PM data worktree only. One
@@ -19,9 +21,18 @@ pass, in order:
      (kitlib.gate.land.queue_key), so no landing runs beside it. A lock that stays busy for
      WAIT_S, or an owner or game hold, skips the gc to the next pass.
 
-It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S, and an
-objects/maintenance.lock older than LOCK_AGE_S, are findings: named in the pass's note and pushed
-as the job event `findings` with their count. git's own gc may still prune what it prunes.
+It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S is a finding:
+named in the pass's note and pushed as the job event `findings` with their count. git's own gc may
+still prune what it prunes.
+
+The recurrence check: an objects/maintenance.lock older than LOCK_AGE_S while no git process that
+could hold it is alive (lock_holders: a git whose command line names maintenance or gc, or whose
+command line cannot be read and which is still listed a moment later) is a stale lock. git then skips its maintenance silently for good,
+so every pass that sees one names it in the note and pushes the job event STALE_EVENT, detail
+its age in hours (`13h`), to the PM: ctx.event, which the hub's push worker sends as
+`[hub push] job store-upkeep stale-lock detail:13h` (kitlib.hubsite.push PushWorker.job_event,
+text in push.JOB_EACH). A lock with such a git alive is named in the note and not pushed; a
+process listing that fails is pushed, the note saying the holders could not be listed.
 
 Outcomes (kitlib.hubsite.jobs): the note says what each step did; a pass that only found nothing
 to do is still a success (the commit graph is rewritten each time). A git step that fails, or a
@@ -45,6 +56,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.hubsite import jobs
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_BUSY, EXIT_RESERVED, EXIT_TIMEOUT, LockError
+from kitlib.proc import process
 
 NAME = 'store-upkeep'
 EVERY_S = 86400
@@ -60,6 +72,8 @@ GRAPH = ['commit-graph', 'write', '--reachable', '--changed-paths', '--split']
 GC = ['-c', 'gc.writeCommitGraph=false', '-c', 'gc.packRefs=false',
       '-c', 'pack.threads=%d' % CORES, 'gc', '--quiet']
 NOT_NOW = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_RESERVED)
+STALE_EVENT = 'stale-lock'
+HOLDER_WORDS = frozenset(('maintenance', 'gc'))     # the git subcommands that take maintenance.lock
 
 
 class UpkeepFailed(Exception):
@@ -83,18 +97,47 @@ def _run(args, cwd, timeout=cmd.GIT_TIMEOUT):
 
 def scan(common, now):
     """[finding text] for the common dir `common`: each .pack with no .idx beside it older than
-    PACK_AGE_S, and an objects/maintenance.lock older than LOCK_AGE_S. Reads only."""
+    PACK_AGE_S. Reads only."""
     found = []
     for pack in sorted(glob.glob(os.path.join(glob.escape(common), 'objects', 'pack', '*.pack'))):
         age = _age(pack, now)
         if age is not None and age >= PACK_AGE_S and not os.path.exists(pack[:-5] + '.idx'):
             found.append('%s has no .idx (%s old)' % (os.path.basename(pack), _span(age)))
-    lock = os.path.join(common, 'objects', 'maintenance.lock')
-    age = _age(lock, now)
-    if age is not None and age >= LOCK_AGE_S:
-        found.append('objects/maintenance.lock is %s old: git skips its maintenance while it is '
-                     'there' % _span(age))
     return found
+
+
+def lock_age(common, now):
+    """Seconds since the common dir's objects/maintenance.lock last changed, or None (none)."""
+    return _age(os.path.join(common, 'objects', 'maintenance.lock'), now)
+
+
+def lock_holders(snapshot=None, command_line=None):
+    """[pid] of the live git processes that may hold objects/maintenance.lock: a git (exe name
+    git or git.exe) whose command line names maintenance or gc (HOLDER_WORDS), or whose command
+    line cannot be read and which a second listing still shows (it might; most kit gits end in
+    well under a second, so one gone by the read is not counted). This process is left out.
+    snapshot and command_line default to kitlib.proc.process's; OSError when the processes cannot
+    be listed."""
+    snapshot = snapshot or process.snapshot
+    command_line = command_line or process.command_line
+    out, unread = [], []
+    for pid in _gits(snapshot()):
+        line = command_line(pid)
+        if line is None:
+            unread.append(pid)
+        elif HOLDER_WORDS & set(line.replace('"', ' ').split()):
+            out.append(pid)
+    if unread:
+        still = set(_gits(snapshot()))
+        out.extend(pid for pid in unread if pid in still)
+    return sorted(out)
+
+
+def _gits(rows):
+    """The pids of the git processes in snapshot rows, this process left out."""
+    me = os.getpid()
+    return [pid for pid, _ppid, name in rows
+            if pid != me and os.path.basename(name or '').lower() in ('git', 'git.exe')]
 
 
 def _age(path, now):
@@ -129,21 +172,25 @@ def _failed(what, r):
 
 class StoreUpkeep(object):
     """run(ctx) is the job. `root` is the PM data worktree. The tests' seams: `book` (default
-    kitlib.lock.run.book), `clock` epoch seconds, and the module's `_run`."""
+    kitlib.lock.run.book), `clock` epoch seconds, `holders` (default lock_holders), and the
+    module's `_run`."""
 
-    def __init__(self, root, book=None, clock=None):
+    def __init__(self, root, book=None, clock=None, holders=None):
         self.root = root
         self.book = book or lockrun.book
         self.clock = clock or time.time
+        self.holders = holders or lock_holders
 
     def __call__(self, ctx):
         common, why = gitrepo.common_dir(self.root)
         if not common:
             raise UpkeepFailed('the git common dir of %s: %s' % (self.root, why))
-        findings = scan(common, self.clock())
+        now = self.clock()
+        findings = scan(common, now)
         if findings:
             ctx.event('findings', str(len(findings)))
         notes, errors = [], []
+        self._stale_lock(ctx, common, now, findings, notes)
         r = _run(GRAPH, self.root, timeout=None)
         if r.rc == 0:
             notes.append('commit graph written')
@@ -157,6 +204,27 @@ class StoreUpkeep(object):
         if errors:
             raise UpkeepFailed(text)
         return text
+
+    def _stale_lock(self, ctx, common, now, findings, notes):
+        """The recurrence check (module doc): a maintenance.lock older than LOCK_AGE_S with no git
+        alive that may hold it is a finding and pushes STALE_EVENT; one with such a git alive is
+        a note."""
+        age = lock_age(common, now)
+        if age is None or age < LOCK_AGE_S:
+            return
+        path = os.path.join(common, 'objects', 'maintenance.lock')
+        try:
+            pids = self.holders()
+            unlisted = ''
+        except OSError as e:
+            pids, unlisted = [], '; the git processes could not be listed (%s)' % e
+        if pids:
+            notes.append('%s is %s old, but a git that may hold it is alive (pid %s): not pushed '
+                         'this pass' % (path, _span(age), ', '.join(str(p) for p in pids)))
+            return
+        findings.append('stale %s, %s old, no git maintenance or gc alive%s: git skips its '
+                        'maintenance while it is there' % (path, _span(age), unlisted))
+        ctx.event(STALE_EVENT, '%dh' % int(age // 3600))
 
     def _gc(self, common, notes, errors):
         r = _run(['count-objects', '-v'], self.root)

@@ -259,7 +259,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                     'slots>:<why>: `unfilled` (the auto-pull filled none or not all of them) or '
                     'a stand-down code (off, queued, idle, unread, handoff; docs/hub-fill.md). '
                     'Check on that coordinator: if it is not dispatching, ask it why, or clear '
-                    'what stands the auto-pull down. Once per episode; no reply is needed.'}
+                    'what stands the auto-pull down. Once per episode; no reply is needed.',
+            'stale-lock': 'The hub store-upkeep job found objects/maintenance.lock in the git '
+                          'common dir of the PM data worktree older than 12 h, with no git '
+                          'maintenance or gc process alive: git skips its own maintenance while '
+                          'that file is there. Detail is its age (<hours>h); hub health '
+                          'jobs.store-upkeep names the path. The hub never removes it: plan a '
+                          'window to move it aside. Pushed again each daily pass while it stays.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

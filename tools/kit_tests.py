@@ -42,7 +42,9 @@ none, one pass and a line `kit_tests: real-git pass: no added or changed test mo
 added or changed test modules on 0. Two passes print `kit_tests: OK` only when both passed; each
 pass's own lines read `kit_tests [fake git]: ` / `kit_tests [real git]: `. The fake pass gives cpu
 slots back as it drains, down to what the real pass can use at once (tiers.keep_for_next); one
-drainer serves both passes.
+drainer serves both passes. `--full --both-tiers` (the daily run) also appends each module's
+tests, seconds and cpu to the cost history; `--cost-report [--since DATE]` prints it and runs
+nothing (kitlib/tooldeps/testcost.py).
 The units also get the home fence's marker (docs/test-tools.md "Home fence"): KIT_HOME_FENCE, the
 home folder this process resolves, unless the environment already carries one. The tools a test
 starts inherit it and refuse that home.
@@ -63,6 +65,7 @@ import argparse
 import os
 import subprocess          # noqa: F401  (kept as a handle for test patches: cli.subprocess.call)
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -99,6 +102,16 @@ def build_parser():
     g.add_argument('--scrub', action='store_true',
                    help='only the scrub test package, one pass (no kit gate step runs it: '
                         'the kit sets no docs_only)')
+    g.add_argument('--cost-report', dest='cost_report', action='store_true',
+                   help='print the per-module cpu, wall and test counts of the daily full runs on '
+                   'record, with growth since --since; run nothing')
+    p.add_argument('--since', metavar='YYYY-MM-DD',
+                   help='--cost-report: measure growth from the latest run on or before this date '
+                   '(default: the earliest on record)')
+    p.add_argument('--top', type=int, default=30, metavar='N',
+                   help='--cost-report: modules listed (default 30)')
+    p.add_argument('--sort', choices=('cpu', 'wall'), default='cpu',
+                   help='--cost-report: rank modules by this (default cpu)')
     p.add_argument('--smoke', action='store_true',
                    help='--select: add the table\'s "smoke" modules unless every changed path '
                    'is prose')
@@ -144,6 +157,18 @@ def main(argv=None, out=None):
         parser.error('--both-tiers already runs the real-git tier; drop --real-git')
     if a.both_tiers and a.pid_hold:
         parser.error('--both-tiers takes no --pid-hold (one hold cannot span two passes)')
+    if a.since is not None:
+        try:
+            time.strptime(a.since, '%Y-%m-%d')
+        except ValueError:
+            parser.error('--since takes a date as YYYY-MM-DD')
+    if a.top < 1:
+        parser.error('--top must be at least 1')
+    if not a.cost_report:
+        for flag, used in (('--since', a.since is not None), ('--top', a.top != 30),
+                           ('--sort', a.sort != 'cpu')):
+            if used:
+                parser.error('%s goes with --cost-report' % flag)
     if a.list_tests:
         for flag, used in (('--jobs', a.jobs is not None), ('--plan', a.plan),
                            ('--real-git', a.real_git), ('--both-tiers', a.both_tiers),
@@ -156,6 +181,8 @@ def main(argv=None, out=None):
         if not top:
             say('kit_tests: refused: %s' % why)
             return USAGE
+        if a.cost_report:
+            return kitrun.cost_report(a, top, out)
         if a.list_tests:
             modules = selftree.all_test_modules(top)
             env = child_env()

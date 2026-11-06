@@ -470,6 +470,105 @@ class ResourceExclusion(unittest.TestCase):
 
 
 @windows_only("the lock is Windows only")
+class WaitCause(unittest.TestCase):
+    """plan's why and by: what kept each waiting entry from starting now, read at its first
+    planned time; None for an entry planned now. wait_cause: one look's cause in acquire."""
+
+    def setUp(self):
+        self.L = lay.derive(lay.fake_hardware(threads=8, smt=2, gpus=0))     # 4 cpu slots
+
+    def plan(self, entries):
+        return qm.plan(self.L, {"ticket": 9, "entries": entries}, now=NOW)[0]
+
+    def why(self, info):
+        return info.get("why"), info.get("by")
+
+    def test_too_few_free_is_slots_and_names_the_pool(self):
+        got = self.plan([holder("r-h", [0, 1, 2], NOW - 100, 1000),
+                         waiter("r-a", 2, 100, 2), waiter("r-b", 1, 100, 3)])
+        self.assertEqual(self.why(got["r-a"]), ("slots", "cpu"))
+        self.assertTrue(got["r-b"]["now"])
+        self.assertEqual(self.why(got["r-b"]), (None, None))
+
+    def test_barred_behind_the_head_is_backfill_and_names_the_head(self):
+        got = self.plan([holder("r-h", [0, 1], NOW - 100, 1000),
+                         waiter("r-big", 4, 100, 2), waiter("r-long", 2, 2000, 3)])
+        self.assertEqual(self.why(got["r-big"]), ("slots", "cpu"))
+        self.assertEqual(self.why(got["r-long"]), ("backfill", "r-big"))
+
+    def test_barred_from_a_within_set_is_backfill_and_names_that_run(self):
+        # r-w waits on its within slots 0-2 (planned on 0-1); r-x would fit on 2-3 now but may
+        # not take slot 2, which r-w may still get.
+        got = self.plan([holder("r-h", [0, 1], NOW - 100, 1000),
+                         waiter("r-w", 2, 100, 2, within={"cpu": [0, 1, 2]}),
+                         waiter("r-x", 2, 2000, 3)])
+        self.assertEqual(self.why(got["r-w"]), ("slots", "cpu"))
+        self.assertEqual(self.why(got["r-x"]), ("backfill", "r-w"))
+
+    def test_slots_free_and_the_resource_held_is_resource_and_names_it(self):
+        h = holder("r-h", [0], NOW - 100, 1000)
+        h["resource"] = LAND
+        got = self.plan([h, land("r-l", 1, 100, 2)])
+        self.assertEqual(self.why(got["r-l"]), ("resource", LAND))
+
+    def test_a_parked_entry_is_hold_and_names_the_holds(self):
+        got = self.plan([waiter("r-p", 1, 100, 2, parked=True, clear_at=NOW + 600,
+                                avoid_after={}, blocked_by=["h-1", "h-2"])])
+        self.assertEqual(self.why(got["r-p"]), ("hold", "h-1,h-2"))
+
+    def test_a_hand_edited_blocked_by_never_breaks_the_plan(self):
+        # queue.json is a file a person may edit: a non-string id is written as text, and a
+        # blocked_by that is no list names no hold.
+        got = self.plan([waiter("r-p", 1, 100, 2, parked=True, clear_at=NOW + 600,
+                                avoid_after={}, blocked_by=["h-1", 7, None]),
+                         waiter("r-q", 1, 100, 3, parked=True, clear_at=NOW + 600,
+                                avoid_after={}, blocked_by="h-9")])
+        self.assertEqual(self.why(got["r-p"]), ("hold", "h-1,7,None"))
+        self.assertEqual(self.why(got["r-q"]), ("hold", None))
+
+    def test_wait_cause_tests_hold_then_plan_then_bg(self):
+        now = {"now": True, "why": None, "by": None}
+        later = {"now": False, "why": "backfill", "by": "r-big"}
+        bg = {"cpu": [{"id": "r-bg"}], "gpu": []}
+        self.assertEqual(qm.wait_cause(later, ["h-1"], {}), ("hold", "h-1"))
+        self.assertEqual(qm.wait_cause(later, [], {}), ("backfill", "r-big"))
+        self.assertEqual(qm.wait_cause({"now": False}, [], {}), ("slots", None))
+        self.assertEqual(qm.wait_cause(now, [], bg), ("bg", "r-bg"))
+        self.assertEqual(qm.wait_cause(now, [], {"cpu": [], "gpu": []}), (None, None))
+
+    def test_a_run_in_the_way_with_an_empty_id_is_still_bg(self):
+        # queue.load takes any string id: a run in the way keeps the waiter out whatever it is.
+        now = {"now": True, "why": None, "by": None}
+        self.assertEqual(qm.wait_cause(now, [], {"cpu": [{"id": ""}], "gpu": []}), ("bg", ""))
+
+
+@windows_only("the lock is Windows only")
+class Tally(unittest.TestCase):
+    """WaitTally: each note's time goes to the note before it; fields() is the record's
+    wait_by and wait_on."""
+
+    def tally(self, notes):
+        clock = iter([at for at, _c, _b in notes])
+        t = qm.WaitTally(clock=lambda: next(clock))
+        for _at, c, b in notes:
+            t.note(c, b)
+        return t.fields()
+
+    def test_seconds_go_to_the_cause_before_and_the_longest_blocker_is_named(self):
+        got = self.tally([(0, "slots", "cpu"), (10, "backfill", "r-x"), (15, "slots", "cpu"),
+                          (20, "backfill", "r-y"), (50, None, None)])
+        self.assertEqual(got["wait_by"], {"slots": 15.0, "backfill": 35.0})
+        self.assertEqual(got["wait_on"], {"slots": ["cpu", 15.0], "backfill": ["r-y", 30.0]})
+
+    def test_a_run_that_takes_its_slots_at_its_first_look_waited_on_nothing(self):
+        self.assertEqual(self.tally([(5, None, None)]), {"wait_by": {}, "wait_on": {}})
+
+    def test_a_cause_with_no_blocker_has_no_wait_on(self):
+        got = self.tally([(0, "mem", None), (2.5, None, None)])
+        self.assertEqual(got, {"wait_by": {"mem": 2.5}, "wait_on": {}})
+
+
+@windows_only("the lock is Windows only")
 class BackfillLabel(StoreCase):
     """What status (and the wait line, which shares queue.BACKFILL_TEXT) says of a backfill:
     planned before a run ahead of it, never that it starts now."""

@@ -29,6 +29,9 @@ unit FAILS, not run.
 starts: the processes started in its worker's job while it ran, read once per unit from the job's
 accounting (Job.processes), so conhosts and processes in nested jobs (each git kitlib.git.cmd
 starts) count, and a process the unit's tests start counts however it was started.
+`cpu` gives each unit's cpu seconds the same way: the worker job's cpu accounting (user + kernel,
+every process the unit started included, ended ones too) read once per unit and differenced; the
+worker's preload before its first unit is not charged to it.
 `close` ends them all: stdin closed so
 each exits, and its job closed (KILL_ON_JOB_CLOSE) after CLOSE_WAIT seconds at the latest.
 Ending a worker returns once every process in its job has ended, GONE_WAIT seconds at most:
@@ -111,6 +114,7 @@ class Worker:
             raise WorkerError('could not list the processes in a pool worker\'s job (%s); '
                               'ended it' % e)
         self.counted = self.job.processes()     # starts() counts from here: the worker's own
+        self.seen = self._cpu_now()             # cpu() counts from here: not the preload's
 
     def starts(self):
         """The process starts in the worker's job since the last call (the first time, since it
@@ -121,6 +125,21 @@ class Worker:
         if now is None or before is None:
             return None
         return now - before
+
+    def _cpu_now(self):
+        u = self.job.usage()
+        return None if u is None else u[0]
+
+    def cpu(self):
+        """The cpu seconds (user + kernel) every process in the worker's job has used since the
+        last call (the first time, since it was ready): the unit it just ran, in the worker and
+        in each process it started, ended ones included (the job's accounting). None when the job
+        cannot be asked. One query."""
+        now = self._cpu_now()
+        before, self.seen = self.seen, now
+        if now is None or before is None:
+            return None
+        return max(0.0, now - before)
 
     def _read(self):
         try:
@@ -265,6 +284,7 @@ class WorkerPool:
         self.ended = {}             # why -> workers ended before the pool closed
         self.replaced = []          # (unit, why) for each of them, in order
         self.spawned = {}           # unit -> the process starts in its worker's job while it ran
+        self.used = {}              # unit -> the cpu seconds its worker's job used while it ran
 
     def stats(self):
         """(workers started, {why: workers ended early})."""
@@ -278,11 +298,19 @@ class WorkerPool:
         with self.lock:
             return dict(self.spawned) if unit is None else self.spawned.get(unit)
 
+    def cpu(self, unit=None):
+        """{unit: the cpu seconds its worker's job used while it ran (Worker.cpu)}; a unit whose
+        job could not be asked is not in it. With `unit`, that unit's seconds or None."""
+        with self.lock:
+            return dict(self.used) if unit is None else self.used.get(unit)
+
     def _count(self, w, name):
-        n = w.starts()
-        if n is not None:
-            with self.lock:
+        n, c = w.starts(), w.cpu()
+        with self.lock:
+            if n is not None:
                 self.spawned[name] = n
+            if c is not None:
+                self.used[name] = c
 
     def why_replaced(self):
         """[(unit, why)]: the unit each early-ended worker was running, and why it ended."""

@@ -300,6 +300,8 @@ def snapshot(store=None, history_days=7, since=None, until=None):
                     key=lambda x: ((planned.get(x["id"]) or {}).get("position") or 1 << 30,
                                    x.get("ticket") or 0)):
         info = planned.get(e["id"]) or {}
+        # The row's "why" is a sentence for a person; plan's info["why"] is a short wait code
+        # (queue.plan, recorded as wait_by) and is not shown here.
         if e.get("parked"):
             ids = e.get("blocked_by") or []
             why = "parked: %s keeps it waiting" % "; ".join(

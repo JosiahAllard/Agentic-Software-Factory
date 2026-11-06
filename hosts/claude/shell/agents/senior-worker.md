@@ -7,8 +7,8 @@ effort: high
 ---
 
 A coordinator dispatched you because the task is risky enough to be worth more
-careful reasoning. Spend it on the problem, not on ceremony. Builds and plans (designs) stay
-with you; only a root cause or concurrency problem you have failed at, or plainly cannot
+careful reasoning. Spend it on the problem, not on ceremony. Builds and designs stay with
+you, but a plan-only brief is the worker's (the dispatch roster); only a root cause or concurrency problem you have failed at, or plainly cannot
 solve, goes up to a deep-worker session: stop and report.
 
 The project's own instructions (CLAUDE.md or equivalent) bind you. Your brief is

@@ -473,6 +473,7 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
     mem_said = False
     told = said = seen = yielding = ypool = qbad = hbad = stale_at = None
     joined = back = reaped = False
+    tally = qm.WaitTally()      # its wait by cause, for its record and history line (wait_by)
     while True:
         now = utc_now()
         game.sync(store, L)
@@ -576,13 +577,16 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                 held = qm.holders(L, q, run.id)
                 in_way = {p: [held[p][i] for i in info[PICK[p]] if i in held[p]] for p in POOLS}
                 # A parked run takes nothing, even planned now: it looks again with the holds
-                # read anew.
-                ready = info["now"] and not park and not any(in_way.values())
-                bg_only = info["now"] and not ready
+                # read anew. cause: (None, None) when its slots are free to take (wait_cause).
+                cause = qm.wait_cause(info, ids, in_way)
+                bg_only = info["now"] and cause[0] is not None
                 # Its slots free, its memory need must fit the headroom read now; short, it keeps
                 # its entry, ticket and plan, takes nothing, and looks again.
-                fits, head = qm.mem_fits(store, q, e, need_mem) if ready else (True, None)
-                ready = ready and fits
+                fits, head = (qm.mem_fits(store, q, e, need_mem) if cause[0] is None
+                              else (True, None))
+                cause = cause if fits else ("mem", None)
+                ready = cause[0] is None
+                tally.note(*cause)
                 if not fits:
                     e["mem_wait"] = need_mem
                 else:
@@ -693,9 +697,11 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                 now_cover = hl.cover_plan(store, L, need, span, own=hid)[0]
             except hl.HoldsUnreadable:
                 qm.give_back(store, run.id)     # it looks again; the loop's top waits on them
+                tally.note("hold", None)        # its wait from here counts, as a hold's
                 continue
             hit = [now_cover[p][i] for p in POOLS for i in got[p] if i in now_cover.get(p, {})]
             if hit and qm.give_back(store, run.id):
+                tally.note("hold", hit[0].get("id"))
                 say("run %s: %s now covers %s; it gives it back and plans again" % (
                     run.id, hl.text(hit[0]),
                     " + ".join(lay.slots_text(p, got[p]) for p in POOLS if got[p])))
@@ -703,7 +709,8 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
             with contextlib.suppress(OSError):
                 run.save(state="held", held_since=iso(), blocked_by=None, cores=got["cpu"],
                          gpus=got["gpu"], slots={p: got[p] for p in POOLS if got[p]},
-                         holding=[p for p in POOLS if got[p]], **({"moved": moved} if moved else {}))
+                         holding=[p for p in POOLS if got[p]], **tally.fields(),
+                         **({"moved": moved} if moved else {}))
             return got
         time.sleep(s.queue_poll_s)
 

@@ -31,7 +31,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
   with tests, known-cause fixes, behaviour-preserving moves and renames (brief names **Moves and
   renames**; its equivalence check is not optional). Coding ladder by need:
   weak-worker (light/high: Low, small and well-defined, sized by what the brief lists) -> worker
-  (standard/medium: Low, Medium) -> strong-worker (strong/medium: High-risk build and fix work -
+  (standard/medium: Low, Medium, or a small known-cause fix at High) -> strong-worker (strong/medium: High-risk build and fix work -
   API changes, live fixes, ordinary tool features, generated-data wiring; never plan-only or
   sync/prep) -> senior-worker (strong/high: concurrency, networking, simulation or ordering,
   migrations, CI config, landing/gate/lock tools, build-cache correctness, codegen design; builds

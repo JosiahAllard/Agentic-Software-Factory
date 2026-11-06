@@ -516,15 +516,25 @@ class WaitCause(unittest.TestCase):
                                 avoid_after={}, blocked_by=["h-1", "h-2"])])
         self.assertEqual(self.why(got["r-p"]), ("hold", "h-1,h-2"))
 
-    def test_wait_cause_tests_hold_then_plan_then_bg_then_memory(self):
+    def test_a_hand_edited_blocked_by_never_breaks_the_plan(self):
+        # queue.json is a file a person may edit: a non-string id is written as text, and a
+        # blocked_by that is no list names no hold.
+        got = self.plan([waiter("r-p", 1, 100, 2, parked=True, clear_at=NOW + 600,
+                                avoid_after={}, blocked_by=["h-1", 7, None]),
+                         waiter("r-q", 1, 100, 3, parked=True, clear_at=NOW + 600,
+                                avoid_after={}, blocked_by="h-9")])
+        self.assertEqual(self.why(got["r-p"]), ("hold", "h-1,7,None"))
+        self.assertEqual(self.why(got["r-q"]), ("hold", None))
+
+    def test_wait_cause_tests_hold_then_plan_then_bg(self):
         now = {"now": True, "why": None, "by": None}
         later = {"now": False, "why": "backfill", "by": "r-big"}
         bg = {"cpu": [{"id": "r-bg"}], "gpu": []}
-        self.assertEqual(qm.wait_cause(later, ["h-1"], {}, True), ("hold", "h-1"))
-        self.assertEqual(qm.wait_cause(later, [], {}, True), ("backfill", "r-big"))
-        self.assertEqual(qm.wait_cause(now, [], bg, True), ("bg", "r-bg"))
-        self.assertEqual(qm.wait_cause(now, [], {"cpu": [], "gpu": []}, False), ("mem", None))
-        self.assertEqual(qm.wait_cause(now, [], {"cpu": [], "gpu": []}, True), (None, None))
+        self.assertEqual(qm.wait_cause(later, ["h-1"], {}), ("hold", "h-1"))
+        self.assertEqual(qm.wait_cause(later, [], {}), ("backfill", "r-big"))
+        self.assertEqual(qm.wait_cause({"now": False}, [], {}), ("slots", None))
+        self.assertEqual(qm.wait_cause(now, [], bg), ("bg", "r-bg"))
+        self.assertEqual(qm.wait_cause(now, [], {"cpu": [], "gpu": []}), (None, None))
 
 
 @windows_only("the lock is Windows only")

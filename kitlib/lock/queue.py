@@ -21,6 +21,14 @@ start ahead of its turn only when it ends before every run ahead of it is planne
 (backfill), but for a run ahead whose start its resource alone put off: that one keeps out only
 the runs naming its resource, and keeps no slots when that resource's holder is overrun. How long
 a holder still holds is holder_end.
+
+Wait causes: plan also gives each waiting entry not planned now its why and by, a short code
+for what kept it from starting now and its blocker (plan's docstring). wait_cause turns one look
+at the queue by a waiting run (kitlib.lock.run.acquire) into one cause, from those and the holds,
+background runs and memory acquire sees, and WaitTally adds up the seconds by cause; acquire
+writes them on the run record as wait_by and wait_on, which its history line keeps
+(Store.HISTORY_KEYS; docs/lock-api.md "Why a run waited"). They record the wait only: nothing
+plans or admits by them.
 """
 import contextlib
 import datetime
@@ -283,7 +291,9 @@ def plan(L, q, now=None):
     q's waiting entries, {pool: slots background runs hold}). why and by are None for an entry
     planned now; else why says what kept it from starting now: "hold" (it is parked; by: its
     blocked_by ids), "resource" (its slots were free; by: the resource), "backfill" (a run planned
-    ahead of it bars it; by: that run's id) or "slots" (too few free; by: the pool short).
+    ahead of it bars it; by: that run's id) or "slots" (too few free; by: the pool short). This
+    why is a code for the wait record (wait_cause), not the snapshot queue row's `why`, which is
+    busy_text's sentence (kitlib.lock.api).
 
     Order: own_turn entries, then entries the owner moved to the top (the latest move first),
     then priority "land" entries (ticket order), then a gpu entry whose gpu slots are free, then
@@ -413,25 +423,27 @@ def plan(L, q, now=None):
         elif e.get("parked"):
             starts.append((t0, None, e["id"]))
         if e.get("parked"):
-            cause = ("hold", ",".join(e.get("blocked_by") or []) or None)
+            bb = e.get("blocked_by")    # a hand-edited queue.json may hold anything here
+            cause = ("hold", ",".join(str(x) for x in bb) if isinstance(bb, list) and bb else None)
         if not info["now"]:
             info.update(why=cause[0], by=cause[1])
     return out, soft
 
 
-def wait_cause(info, park, in_way, fits):
-    """(cause, by) of one look at the queue by a waiting run (acquire): (None, None) when it takes
-    its slots, else "hold" (park: the ids of the holds that park it), "bg" (the background run
-    holding a slot it is planned on), "mem" (its memory need does not fit: fits False), or plan's
-    why and by for its entry (info)."""
+def wait_cause(info, park, in_way):
+    """(cause, by) of one look at the queue by a waiting run (acquire): (None, None) when its
+    slots are free to take, else "hold" (park: the ids of the holds that park it, its own whole
+    hold when that has not started), plan's why and by for its entry (info) when not planned
+    now, or "bg" (the background run holding a slot it is planned on; in_way: {pool: [entry]}).
+    acquire then checks memory only on (None, None), and names a short one "mem"."""
     if park:
-        return "hold", ",".join(park)
+        return "hold", ",".join(str(x) for x in park)
     if not info["now"]:
-        return info["why"], info["by"]
+        return info.get("why") or "slots", info.get("by")
     bg = next((x["id"] for p in POOLS for x in in_way.get(p) or []), None)
     if bg:
         return "bg", bg
-    return ("mem", None) if not fits else (None, None)
+    return None, None
 
 
 class WaitTally:

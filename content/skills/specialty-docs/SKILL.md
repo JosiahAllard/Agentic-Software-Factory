@@ -18,7 +18,7 @@ Two jobs, one procedure; the brief names which. **Records**: you transcribe and 
 ## Spec
 
 1. Inputs: the document and the section you own in it; the owner's answers, each as a paraphrase, no ruling id; the code the spec depends on, as paths. Read those only: no repository tour, no plan file beyond the sections named.
-2. Findings first: code contradicting the spec, or an assumption in your brief, is a finding at the top of your report, with the symbol that shows it.
+2. Findings first: code contradicting the spec, a spec part the code already has (the spec reuses it, never specs a second one), or an assumption in your brief, is a finding at the top of your report, with the symbol that shows it.
 3. The owner's answer first, as a paraphrase, then what it means for the build; keep the two visibly apart. Mark every inference: "the owner said X" and "I read X as implying Y" are different sentences.
 4. Never invent questions for the owner. A real gap gets a proposed default, labelled a default, under "open - needs the owner", each labelled by subject, not by letter. The coordinator decides what reaches the owner.
 5. Break the work into independently landable tasks: size (S/M/L), the gate or test tier it reaches (`--find gate`, `--find test`), what it waits for.

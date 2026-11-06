@@ -92,6 +92,10 @@ class Configured(TempHome):
 class CapCase(fixtures.GateRepoCase):
     def setUp(self):
         fixtures.GateRepoCase.setUp(self)
+        # This thread starts and ends with no turn (removed before the store's folder is): a turn
+        # left by an earlier test would make gave_way write into that test's removed folder.
+        gatecap._TURN.mine = None
+        self.addCleanup(gatecap._leave)
         self.wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
         self.name = runner.repo_name(kconfig.load(self.wt), self.wt)
         self.n = 0

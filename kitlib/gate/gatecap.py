@@ -6,8 +6,12 @@ A run is the session's when its recorded ancestors hold the session's nearest ag
 (kitlib.lock.store.owns): a coordinator and its in-process subagents share one host. The owner
 (role owner, no agent host above the caller) counts nothing and never waits. An agent with no
 readable host counts every gate run of the repository (fail closed). A landing's runs
-(priority "land") are not counted; a landing and the daily full run never call wait_turn
-(kitlib.gate.runner `gated`, with capped=True from `_gate_checkout` only, is the one caller).
+(priority "land") are not counted; a landing and the daily full run never call wait_turn.
+It has two callers: kitlib.gate.runner `gated` (capped=True, from `_gate_checkout` only), which
+calls gave_way once its booking holds, and kitlib.gate.rerun `rerun_gate` (a targeted rerun),
+which books straight after wait_turn and never calls gave_way: its turn names no run, and the
+count nets it against the rerun's own run (a run of the same process that no turn names), so it
+counts once; the turn lasts until the gate.py process exits (a reader then removes its file).
 A gate counts and takes its turn in one step, under the lock store's MUTEX: with room under the
 cap it writes a turn file (TURNS folder) before it returns to book, so the gates of a session
 that start together (a burst) count each other's turns, and those over the cap wait before they
@@ -246,14 +250,16 @@ def _bind(run_id):
     _TURN.mine = (rec, mine[1])
 
 
-def _guarded(store, step):
-    """step() under the store mutex MUTEX; unguarded when the mutex is not had in time, as the
-    count was before it."""
+def _guarded(store, step, say):
+    """step() under the store mutex MUTEX; unguarded when the mutex is not had in time (within
+    the store's store_lock_s), as the count was before it, and then say(line) once."""
     with contextlib.ExitStack() as stack:
         try:
             stack.enter_context(store.lock(MUTEX))
-        except OSError:
-            pass
+        except OSError as e:
+            say('the gate counts for the session gate cap without the store mutex %r (%s): gates '
+                'of the session that count at the same moment may book past the cap'
+                % (MUTEX, e))
         return step()
 
 
@@ -287,7 +293,8 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
     runs in flight and nothing per poll; its waiter file is removed as it returns or raises.
     This thread's turn from before (a gate that gave its slot back, or ended) is removed first.
     The cap is read first: with none, the caller is not read and no turn is taken; the owner
-    takes none either."""
+    takes none either. A mutex not had within the store's store_lock_s: it counts without it,
+    as before turns, and says so in one line."""
     _leave()
     if cap is None:
         cap, warning = configured(repo, home)
@@ -306,7 +313,13 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
             _take(store, who, repo)
             return None
         return mine, turns, ahead, _join(store, who, repo, ahead)
-    waiting = _guarded(store, first)
+    unguarded = []
+
+    def once(line):                     # the mutex timed out: said once per wait, not per poll
+        if not unguarded:
+            unguarded.append(line)
+            say(line)
+    waiting = _guarded(store, first, once)
     if waiting is None:
         return
     mine, turns, ahead, (me, path) = waiting
@@ -333,7 +346,7 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
     try:
         while True:
             sleep(interval)
-            if _guarded(store, again):
+            if _guarded(store, again, once):
                 return
     finally:
         if path:

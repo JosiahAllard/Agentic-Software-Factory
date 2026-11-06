@@ -21,6 +21,7 @@ import datetime
 import json
 import os
 
+from kitlib.fs import atomic
 from kitlib.launcher.settings import LaunchError
 
 SESSIONS = 'sessions.json'
@@ -45,10 +46,7 @@ def read_json(p):
 
 
 def write_json(p, data):
-    tmp = p + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(json.dumps(data, indent=4, ensure_ascii=False) + '\n')
-    os.replace(tmp, p)
+    atomic.write_text(p, json.dumps(data, indent=4, ensure_ascii=False) + '\n')
 
 
 def read_sessions(settings):

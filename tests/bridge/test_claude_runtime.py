@@ -171,7 +171,7 @@ class ClaudeRuntimeTests(unittest.TestCase):
         class Calls:
             def observe(calls,metadata): return SenderAuthority(sender,'root')
             def require_live(calls,binding): return binding==sender
-        for name,expected in (('kit-coordinator-a1',{'title':'kit-coordinator-a1'}),(None,{})):
+        for name,expected in (('demo-session-x1',{'title':'demo-session-x1'}),(None,{})):
             snapshot=ClaudeSession(self.cli,os.getpid(),own_ctime(),'terminal',r'\\.\pipe\x',str(self.root),
                 (0,0),'a'*64,name,Path(sys.executable))
             with patch.object(self.sources,'_native',return_value=snapshot):

@@ -126,7 +126,12 @@ holding theirs can stall the owner's writes behind them (a tab opened hidden and
 waits). Shown again, the page reads once. An answer sent shows on its card at once ("Your answer was sent. Reading it back from the hub
 server…") while the lists are read again behind it. A redirect is the tunnel's sign-in (Cloudflare Access) running
 out: the page says to reload it to sign in again, and tries every 45 s until then. A view the
-server cannot give says so at the top.
+server cannot give says so at the top. `GET /api/v1/snapshot?collections=a,b` (comma-separated) answers
+`{revision, collections}` with those collections alone, cut as the whole snapshot cuts them, and no
+views, pending or status; the hub client reads its inbox so (`collections=inbox`). With no
+`collections` (or an empty one) the whole snapshot answers. A name that is not a collection of the
+snapshot (`page_html` and `handoffs` are never in it) is `invalid`, field `collections`. An older hub
+ignores the query and answers whole.
 
 Links ending `#home`, `#questions`, `#inbox`, `#approvals`, `#more`, `#todo`, `#topm`, `#backlog` (or
 `#stories`), `#parked`, `#docs`, `#schedule`, `#autotasks`, `#findings` or `#info` open that section;

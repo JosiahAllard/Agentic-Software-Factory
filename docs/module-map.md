@@ -377,6 +377,36 @@ Known limits:
 - The tree covers the paths of modules the map names; it does not hide the rest of the machine
   (an absolute path, a sibling checkout, an installed package).
 
+## The kit's own map
+
+The kit keeps its own map (record KIT-MODULE-MAP-OWN) so its package cycle cannot grow. The map file
+`docs/module-map.json` is owner-only (`.kit.json` `owner.paths`); the ceilings
+(`docs/module-ceilings.json`) and the page (`docs/module-architecture.md`, not
+`architecture.md`: that name collides with ARCHITECTURE.md on a case-blind file system) are
+ordinary files.
+
+- Modules: each `kitlib/<pkg>` (nested folders such as `git/fake` stay in their parent), the
+  loose `kitlib/*.py` files (`kitlib-root`), `boot`, `hosts`, `tools`, `mcp`, the top-level
+  `githooks` folder (`githooks-dir`; `githooks` is `kitlib/githooks`) and each `optional/<pkg>`
+  (`opt-<pkg>`). `tests/` is left out: the branch gate selects tests by module.
+- Layers (ARCHITECTURE.md "Layers"): foundation (`git`, `proc`, `lock`, `records`, `config`,
+  `fs`, `platform`, `ci`, `kitlib-root`, `machinepaths`, `mcpwire`, `pending`), policy (`gate`,
+  `guard`, `host`, `content`, `roster`, `attribution`), feature (every other package), outer
+  (`hosts`, `boot`, `tools`, `mcp`, `githooks-dir`, `opt-*`).
+- Allowed `edges` freeze every import that points down or sideways as of 2026-11-06, one
+  `build` edge per package pair with a per-layer `why`. Each import counts, a function-local one
+  as much as a top-level one.
+- `ratchets` hold every import that points up the layers or back against the order inside a
+  layer (an order picked to leave the fewest back imports): one ratchet per package pair, goal 0,
+  ceiling the count of 2026-11-06. Today that is 60 pairs and 149 crossings (including
+  `pytests -> (root)` tree, 3). Breaking an edge lowers its ceiling; a new upward or cyclic
+  import is refused, and a raise needs the owner ("Raises").
+- Regenerate with `module_map.py --baseline --map FILE` (a draft map) and read the counts back;
+  the page comes from `--page --write`.
+- `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the map
+  and every ratchet to a ceiling. It skips while the map file is absent.
+- `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it.
+
 ## Running
 
 ```

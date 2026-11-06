@@ -2,6 +2,7 @@
 turn counts only the session's gate runs that have started, never those still queued in the
 lock; and gates waiting at the cap book in the order they began waiting, one per freed slot.
 No real lock, no real sleep: each waiting gate's sleep is a handshake with the test."""
+import contextlib
 import os
 import queue
 import shutil
@@ -12,6 +13,7 @@ import unittest
 from unittest import mock
 
 from kitlib.gate import budget, gatecap
+from kitlib.proc import process
 
 REPO = 'Some-Repo'
 HOST = [912345, 77]
@@ -20,25 +22,34 @@ STEP_S = 10         # the longest a handshake with a waiting gate's thread may t
 
 
 class FakeStore:
-    """live_runs from a list the test edits; the waiter files in a temp folder."""
+    """live_runs from a list the test edits; the waiter and turn files in a temp folder; the
+    store mutex a lock of this process."""
 
     def __init__(self, root):
         self.root = root
         self.runs = []
         self.settings = types.SimpleNamespace(queue_poll_s=1.0)
         self.n = 0
+        self.mutex = threading.RLock()
 
     def path(self, *parts):
         return os.path.join(self.root, *parts)
+
+    @contextlib.contextmanager
+    def lock(self, _name):
+        with self.mutex:
+            yield
 
     def live_runs(self):
         return [dict(r) for r in self.runs]
 
     def add(self, state='held'):
+        """A gate run booked by this process, as the gates the tests run here book."""
         self.n += 1
         rid = 'r-20261105T000000Z-%06x' % self.n
         self.runs.append({'id': rid, 'state': state, 'gate': True, 'repo': REPO,
-                          'ancestors': [HOST], 'pid': 1, 'ctime': 1})
+                          'ancestors': [HOST], 'pid': os.getpid(),
+                          'ctime': process.own_ctime()})
         return rid
 
     def drop(self, rid):
@@ -183,6 +194,7 @@ class InTheOrderTheyWaited(Case):
         for other_run in (False, True):
             with self.subTest(other_session_run=other_run):
                 self.store.runs[:] = []
+                shutil.rmtree(self.store.path(gatecap.TURNS), True)  # the last subtest's gates end
                 self.store.add(state='waiting')
                 a = self.start('a', cap=1)
                 self.store.runs[:] = []                 # the session's run ends

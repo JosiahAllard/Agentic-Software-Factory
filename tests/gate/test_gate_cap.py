@@ -182,10 +182,29 @@ class BranchGateWaits(CapCase):
         off = TempHome.home(self, {'coordinator_start': {'gate_cap': {self.name: 0}}})
         gatecap.wait_turn(self.store, self.name, lambda t: None, who=AGENT, home=off, sleep=never)
 
-    def test_with_nothing_in_flight_it_reads_neither_caller_nor_config(self):
+    def test_with_no_cap_it_reads_no_caller_and_takes_no_turn(self):
         with mock.patch.object(gatecap, 'actor', side_effect=AssertionError('caller read')), \
-                mock.patch.object(gatecap, 'configured', side_effect=AssertionError('config read')):
+                mock.patch.object(gatecap, 'configured', return_value=(None, None)):
             gatecap.wait_turn(self.store, self.name, lambda t: None, sleep=never)
+        self.assertFalse(os.path.exists(self.store.path(gatecap.TURNS)))
+
+    def test_with_nothing_in_flight_it_takes_its_turn_and_the_next_counts_it(self):
+        """The first gate of a burst sees nothing in flight, yet its turn counts for the next one
+        before its booking is written. Red before: it returned without a trace."""
+        gatecap.wait_turn(self.store, self.name, lambda t: None, cap=1, who=AGENT, sleep=never)
+        self.assertEqual(gatecap.count(self.store, AGENT, self.name), ([], 1))
+        done = threading.Event()
+
+        def other():                    # another thread: the turn above is not its own
+            with self.assertRaises(Wrongful):
+                gatecap.wait_turn(self.store, self.name, lambda t: None, cap=1, who=AGENT,
+                                  sleep=never)
+            done.set()
+        t = threading.Thread(target=other)
+        t.start()
+        t.join(20)
+        self.assertTrue(done.is_set())
+        self.assertEqual(gatecap.count(self.store, OWNER, self.name), ([], 0))  # owner: nothing
 
 
 class HostlessAgentCountsAll(CapCase):
@@ -222,9 +241,10 @@ class HostlessAgentCountsAll(CapCase):
 
 
 class CountedTogether(CapCase):
-    """wait_turn counts, then the gate books: two gates of one session that count together both
-    pass a cap of 1. Once its booking holds, a gate counts again (gatecap.gave_way) and gives its
-    slot back at the cap, so one runs and the other waits for it."""
+    """Gates of one session that count at the same moment: each takes its turn under the cap's
+    mutex (a turn file each, gatecap.TURNS), so a burst books no more than the cap and the rest
+    wait before they book. gatecap.gave_way, the backstop for a count that missed a run, gives a
+    held slot back at the cap."""
 
     def book(self, branch='kit/demo'):
         slot = fixtures.REAL_BOOK('engine-test', self.name, 'demo', gate=True, branch=branch,
@@ -232,50 +252,54 @@ class CountedTogether(CapCase):
         self.addCleanup(slot.release)
         return slot
 
-    def test_two_gates_that_count_together_run_one_at_a_time(self):
-        """Red before: both booked past the cap and ran together."""
+    def test_a_burst_of_gates_books_no_more_than_the_cap(self):
+        """Four gates of one session start at once at a cap of 2: no more than 2 are ever in the
+        lock (booked and not yet run), none gives its slot back, and each books once. Red before
+        (KIT-GATECAP-BURST): every gate of the burst counted before any sibling's booking was
+        written, saw nothing in flight and booked, so all four entered the lock queue."""
+        cap, n = 2, 4
         own = own_affinity()
-        if len([1 for ts in self.layout()['slots_cpu'] if set(ts) <= own]) < 2:
-            self.skipTest('two gates need two fake cpu slots this process may run on')
+        if len([1 for ts in self.layout()['slots_cpu'] if set(ts) <= own]) < cap:
+            self.skipTest('the gates need %d fake cpu slots this process may run on' % cap)
         anc = lockrun.run_ancestors(False, self.env)     # what the real book's records keep
         if not anc:
             self.skipTest('this process has no ancestor to stand for the agent host')
         who = dict(AGENT, host=anc[0], ancestors=anc)
         cfg = kconfig.load(self.wt)
         chosen = S.build(cfg.section('gate'), self.wt, self.main, cfg.tools_dir, full=True)
-        guard, gave = threading.Lock(), threading.Event()
-        state = {'running': 0, 'most': 0, 'ran': 0, 'booked': 0}
+        guard, settled = threading.Lock(), threading.Event()
+        state = {'in_lock': 0, 'most': 0, 'booked': 0, 'waits': 0, 'ran': 0}
         lines = []
 
+        def settle():                   # under guard: every gate has booked or waits
+            if state['booked'] + state['waits'] >= n:
+                settled.set()
+
         def say(text):
-            lines.append(text)
-            if 'gives back run' in text:
-                gave.set()
-
-        def run_steps(*_a, **_k):       # runs until the other gate runs too or gives way
             with guard:
-                state['running'] += 1
-                state['ran'] += 1
-                state['most'] = max(state['most'], state['running'])
-            end = time.monotonic() + 20
-            while time.monotonic() < end and not gave.is_set():
-                with guard:
-                    if state['running'] > 1:
-                        break
-                time.sleep(0.01)
-            with guard:
-                state['running'] -= 1
-            return []
+                lines.append(text)
+                if 'gives back run' in text:
+                    state['in_lock'] -= 1
+                if 'waits for the session gate cap' in text:
+                    state['waits'] += 1
+                    settle()
 
-        both, booked = threading.Barrier(2, timeout=20), lockrun.book
+        booked = lockrun.book
 
-        def book(*a, **k):              # the first two book only once both have counted
+        def book(*a, **k):              # no booking is written before the burst has settled
             with guard:
                 state['booked'] += 1
-                first = state['booked'] <= 2
-            if first:
-                both.wait()
+                state['in_lock'] += 1
+                state['most'] = max(state['most'], state['in_lock'])
+                settle()
+            settled.wait(20)
             return booked(*a, **k)
+
+        def run_steps(*_a, **_k):
+            with guard:
+                state['ran'] += 1
+                state['in_lock'] -= 1
+            return []
 
         out = {}
 
@@ -288,22 +312,24 @@ class CountedTogether(CapCase):
                                         capped=True)
             except BaseException as e:      # noqa: BLE001 - reported by the assertion below
                 out[tag] = e
-        with mock.patch.object(gatecap, 'configured', return_value=(1, None)), \
+        tags = [chr(ord('a') + i) for i in range(n)]
+        with mock.patch.object(gatecap, 'configured', return_value=(cap, None)), \
                 mock.patch.object(gatecap, 'actor', return_value=who), \
                 mock.patch.object(gatecap, 'POLL_S', 0.02), \
                 mock.patch.object(runner, 'run_steps', run_steps), \
                 mock.patch.object(lockrun, 'book', book):
-            threads = [threading.Thread(target=gate, args=(t,)) for t in ('a', 'b')]
+            threads = [threading.Thread(target=gate, args=(t,)) for t in tags]
             for t in threads:
                 t.start()
             for t in threads:
                 t.join(60)
-        self.assertEqual(sorted(out), ['a', 'b'], lines)
+        self.assertEqual(sorted(out), tags, lines)
         for tag, got in out.items():
             self.assertIsInstance(got, tuple, (tag, got))
             self.assertIsNone(got[1], (tag, got))
-        self.assertEqual((state['ran'], state['most']), (2, 1), lines)     # one ran, then the other
-        self.assertTrue(gave.is_set(), lines)
+        self.assertLessEqual(state['most'], cap, lines)        # never more than the cap booked
+        self.assertEqual((state['booked'], state['ran']), (n, n), lines)   # each booked once
+        self.assertFalse([t for t in lines if 'gives back run' in t], lines)
 
     def test_at_the_cap_its_slot_goes_back_as_a_run_that_started_nothing(self):
         """The slot it gives back ends `not started`, which the branch gate budget never counts."""

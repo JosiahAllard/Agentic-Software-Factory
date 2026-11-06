@@ -129,7 +129,7 @@ class Context(object):
         self._histories = (None, {})    # (the last store tip asked about, {rid: history})
         self._shared = shared
         self._unmet_base = None         # the code main `unmet` resolved, once, on first need
-        self._live = None               # offer.live_branches' answer, once, on first need
+        self._live = (None, None)       # (the snapshot, offer.live_branches' names for it)
 
     @property
     def shared_entries(self):
@@ -201,19 +201,21 @@ class Context(object):
             return seen[rid]
         return history
 
-    def live_branches(self):
-        """`(names, None)` or `(None, why)`, offer.live_branches asked once per Context (a command
-        reads the branch set several times). A failed probe is not kept: it is asked again."""
-        if self._live is None:
+    def live_branches(self, snap):
+        """`(names, None)` or `(None, why)`, offer.live_branches asked once per snapshot (a command
+        reads the branch set several times over the one snapshot it loaded; a Context a caller
+        keeps across writes asks again under each new snapshot). A failed probe is not kept."""
+        if self._live[0] is not snap:
             names, why = omod.live_branches(self.root, self.remote)
             if names is None:
                 return None, why
-            self._live = names
-        return self._live, None
+            self._live = (snap, names)
+        return self._live[1], None
 
     def in_flight_split(self, snap):
-        """offer.in_flight_split(snap) over this Context's one live-branch read."""
-        return omod.in_flight_split(snap, self.root, self.remote, live=self.live_branches)
+        """offer.in_flight_split(snap) over this Context's one live-branch read of `snap`."""
+        return omod.in_flight_split(snap, self.root, self.remote,
+                                    live=lambda: self.live_branches(snap))
 
     def unmet(self, snap):
         """`unmet(rec)` -> `[(member, why)]` (offer.unmet_requires). The code main it checks a
@@ -2363,7 +2365,7 @@ def stop_pull(ctx, rid, holder, live, kept=True, quiet=None):
         bad = branch_name_error(holder, ctx.root)
         if bad:
             raise Refusal('%s, so what holds the pull of `%s` cannot be checked' % (bad, rid))
-        names, why = ctx.live_branches()
+        names, why = omod.live_branches(ctx.root, ctx.remote)
         if names is None:
             raise Failure('cannot tell whether the pull of `%s` by `%s` is dead: %s'
                           % (rid, holder, why))
@@ -2435,7 +2437,7 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
     """Why the pull `block` stopped on `branch` at `tip` does not come back, None when it does.
     Failure when git cannot tell any of it."""
     what = 'whether the pull of `%s` by %s comes back' % (rec.id, branch)
-    names = _git_answer(ctx.live_branches(), what)
+    names = _git_answer(ctx.live_branches(snap), what)
     if branch not in names:
         return 'no branch or worktree by that name'
     full = _git_answer(refs.resolve(tip, ctx.root, known=True), what)

@@ -153,6 +153,26 @@ class Admission(MemCase):
         self.assertEqual((mine["state"], mine["ticket"]), ("held", ticket))
         self.assertNotIn("mem_wait", mine)
 
+    def test_a_memory_wait_is_kept_as_its_cause(self):
+        """Its record, then its history line, say how long it waited on memory (wait_by)."""
+        self.holder()
+        self.mem["commit_mb"] = 72000                       # headroom 3208 MB
+        t, out = self.in_thread(lambda: self.book("big", mem_mb=6000, wait_s=60))
+        self.waiting_entry("big")
+        time.sleep(0.3)
+        self.mem["commit_mb"] = 60000                       # it fits
+        t.join(30)
+        [s] = out
+        self.assertNotIsInstance(s, BaseException)
+        rec = self.store.read("active/%s.json" % s.id)
+        self.assertGreater(rec["wait_by"]["mem"], 0)
+        self.assertEqual(set(rec["wait_by"]), {"mem"})
+        self.assertEqual(rec["wait_on"], {})
+        s.release()
+        [line] = [x for x in self.store.history_records() if x["id"] == s.id]
+        self.assertEqual(line["wait_by"], rec["wait_by"])
+        self.assertIn("wait_on", line)
+
     def test_a_run_with_nothing_else_held_starts_whatever_the_memory(self):
         self.mem["commit_mb"] = 90000                       # past the limit itself
         s = self.book("alone", mem_mb=60000, no_wait=True)

@@ -164,7 +164,7 @@ A held run can hand back cpu slots its command no longer needs, while the comman
 - A lost ack: once the queue write lands the slots are given back, and nothing after it undoes that: not a failed ack write (widening the job again would book slots the queue has freed twice), not an interrupt, Ctrl+C included. `giveback.shrink` reads queue.json back under the mutex to tell whether the write landed (`giveback.queue_books`), and puts the record back only when the read-back says it did not. A read-back that finds queue.json unreadable counts as landed: the job stays narrow and the queue may still book the slots, which leaves them unused until the run ends but never books them twice. The wrapper writes the ack again on its next poll (`Slot.ack_due`), so the asker hears "given" late, or "timeout" if its wait ends first; `Offer.held` then shows the narrower `cores`, and `giveback.drainer` logs "no answer" with the cores the record books, never "the run keeps them". Asking again for the same slots is refused ("not this run's") and changes nothing. A wrapper that dies between the queue write and the ack ends the asker with it (the run's job is kill-on-close, `kitlib.proc.job.Job`), so no asker waits on that ack.
 - A record the asker cannot read now is never "gone": on Windows an open that lands while the wrapper's `os.replace` swaps the record is refused, not answered with no such file. `kitlib.lock.store.read_record` tells the two apart; `Offer.give` reads such a record again on its next poll, `Offer.held` answers None (never no slots), and `giveback.drainer` then asks nothing that time. A timed-out `Offer.give` withdraws its request (`Offer.withdraw`), trying a request it cannot read or remove again for `giveback.WITHDRAW_S`, and says so in its "timeout" answer when it could not.
 - The request file is not a `.json`, so it is never read as a run record; `Store.live_runs(prune=True)` removes an orphaned one.
-- The history line keeps `given_back`.
+- The history line keeps `given_back`. After a give-back the record's and the line's `cores` is the kept set, not what the run started on: `given_back.cpu` is every core given back (all its give-backs) and `given_back.at` the time of the last one. A reading of how many cores were busy over time counts `cores` plus `given_back.cpu` up to `given_back.at`.
 
 ## Run resources and landing priority
 
@@ -204,6 +204,17 @@ A run whose slots are free starts only when the machine's commit charge plus its
 - Known limit: ramp-up race. Two runs admitted one after the other both see the commit as it was before the first one has grown, so together they can pass the reserve. Only the reserve absorbs this.
 - Known limit: starvation. Since the plan has no memory forecast, smaller runs behind a large run waiting on memory may start in its place while their need fits. The large run can wait until nothing else is held, when it is exempt.
 - Tests: `tests/lock/test_mem_admit.py`, `tests/lock/test_history_mem.py`.
+
+## Why a run waited
+
+A run that waited in the queue records why, on its record when it takes its slots and so on its history line (`Store.HISTORY_KEYS`). It is a record of the wait only: nothing plans or admits by it.
+
+- `wait_by` {cause: seconds}: each look at the queue (`kitlib.lock.run.acquire`, every `queue_poll_s`) names one cause (`kitlib.lock.queue.wait_cause`), and the time until the next look counts to it (`kitlib.lock.queue.WaitTally`). `{}` for a run that took its slots at its first look.
+- `wait_on` {cause: [blocker, seconds]}: for a cause with a blocker, the one it waited on longest and for how long.
+- The causes, in the order a look tests them: `hold` (holds not its own park it; blocker: their ids, comma-joined); then, when the plan does not start it now, the plan's `why` (`kitlib.lock.queue.plan`, from its first planned time): `resource` (its slots were free and its resource held; blocker: the resource), `backfill` (a run planned ahead of it bars it; blocker: that run's id) or `slots` (too few free for its need; blocker: the pool short, `cpu` or `gpu`); then `bg` (planned now, a background run holds a slot it is planned on; blocker: that run's id) and `mem` (planned now, its memory need does not fit; Memory admission).
+- Not recorded: a run that left the queue without taking its slots (its wait ran out, `--no-wait`, stop) has no history line, and a gate's wait before it books (`kitlib/gate/gatecap.py`) is not a queue wait. A look that cannot read the queue names no cause: its time counts to the cause before it.
+- A line written before these keys has neither.
+- Tests: `tests/lock/test_queue.py` (`WaitCause`, `Tally`), `tests/lock/test_mem_admit.py` (`test_a_memory_wait_is_kept_as_its_cause`), `tests/lock/test_run.py` (Resources, `test_a_resource_wait_names_the_resource`).
 
 ## Runs confined to a thread set
 

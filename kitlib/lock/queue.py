@@ -279,8 +279,11 @@ def own_turn(e):
 
 
 def plan(L, q, now=None):
-    """({run id: {position, start (epoch s or None), cores, gpus, now, backfill}} for q's
-    waiting entries, {pool: slots background runs hold}).
+    """({run id: {position, start (epoch s or None), cores, gpus, now, backfill, why, by}} for
+    q's waiting entries, {pool: slots background runs hold}). why and by are None for an entry
+    planned now; else why says what kept it from starting now: "hold" (it is parked; by: its
+    blocked_by ids), "resource" (its slots were free; by: the resource), "backfill" (a run planned
+    ahead of it bars it; by: that run's id) or "slots" (too few free; by: the pool short).
 
     Order: own_turn entries, then entries the owner moved to the top (the latest move first),
     then priority "land" entries (ticket order), then a gpu entry whose gpu slots are free, then
@@ -331,11 +334,13 @@ def plan(L, q, now=None):
         free = sizes["gpu"] - len(hard_gpu | entry_slots(e, "avoid", "gpu"))
         return (3 if g and g <= free else 4, 0, e.get("ticket") or 0)
 
-    # starts: (planned start, guard) of the entries planned so far; guard as barrier_guard.
+    # starts: (planned start, guard, entry id) of the entries planned so far; guard as
+    # barrier_guard.
     out, starts = {}, []
     for pos, e in enumerate(sorted(waiting, key=order), 1):
         info = out[e["id"]] = {"position": pos, "start": None, "cores": [], "gpus": [],
-                               "now": False, "backfill": False}
+                               "now": False, "backfill": False, "why": None, "by": None}
+        cause = ("slots", None)     # what kept it from its first time, t0 (plan_cause)
         exp, own = entry_expect(e), own_turn(e)
         rsc, parent = entry_resource(e), e.get("parent")
         t0, key = now, "avoid"
@@ -346,7 +351,8 @@ def plan(L, q, now=None):
         avoid = {p: entry_slots(e, key, p) for p in POOLS}
         prefer = {p: entry_slots(e, "prefer", p) for p in POOLS}
         within = {p: entry_within(e, p) for p in POOLS}
-        times = {t0} | {iv[1] for iv in ivs if iv[1] > t0} | {s for s, _g in starts if s > t0}
+        times = ({t0} | {iv[1] for iv in ivs if iv[1] > t0}
+                 | {s for s, _g, _o in starts if s > t0})
         held_by_rsc = False         # an earlier time had its slots free and only its resource not
         by_rsc = False              # so had the time tried last
         # A resource whose holder is overrun ends at a guess that slides on every pass.
@@ -356,10 +362,13 @@ def plan(L, q, now=None):
         for t in sorted(times):
             prev_rsc, by_rsc = by_rsc, False
             barred = {p: set() for p in POOLS}
-            bars = [] if own else [g for s, g in starts if t < s < t + exp]
-            if any(g is None for g in bars):
+            bars = [] if own else [(g, o) for s, g, o in starts if t < s < t + exp]
+            full = [o for g, o in bars if g is None]
+            if full:
+                if t == t0:
+                    cause = ("backfill", full[0])
                 continue
-            for g in bars:
+            for g, _o in bars:
                 for p in POOLS:
                     barred[p] |= g[p]
             rsc_busy = rsc and any(r == rsc and o != parent and s0 < t + exp and s1 > t
@@ -371,18 +380,24 @@ def plan(L, q, now=None):
                         busy[p] |= r[p]
             pick = {}
             for p in POOLS:
-                free = [i for i in range(sizes[p]) if i not in busy[p] and i not in avoid[p]
-                        and i not in barred[p] and (within[p] is None or i in within[p])]
+                room = [i for i in range(sizes[p]) if i not in busy[p] and i not in avoid[p]
+                        and (within[p] is None or i in within[p])]
+                free = [i for i in room if i not in barred[p]]
                 if len(free) < entry_need(e, p):
+                    if t == t0:
+                        cause = ("slots", p) if len(room) < entry_need(e, p) else (
+                            "backfill", next(o for g, o in bars if g[p] & set(room)))
                     break
                 pick[p] = sorted(sorted(free, key=lambda i: (i not in prefer[p], i in soft[p], i))
                                  [:entry_need(e, p)])
             else:
                 if rsc_busy:
+                    if t == t0:
+                        cause = ("resource", rsc)
                     held_by_rsc = by_rsc = True
                     continue
                 info.update(start=t, cores=pick["cpu"], gpus=pick["gpu"], now=t <= now,
-                            backfill=not own and any(t < s for s, _g in starts))
+                            backfill=not own and any(t < s for s, _g, _o in starts))
                 # A start set by that sliding end reserves no slots: held at a time that keeps
                 # moving, they would sit idle (only runs shorter than the slide fit before it).
                 keep = {p: set() if prev_rsc and slid else set(pick[p]) for p in POOLS}
@@ -394,10 +409,52 @@ def plan(L, q, now=None):
         # naming its resource is still kept out by ivs. A parked entry stays a barrier.
         if info["start"] is not None:
             if not held_by_rsc or e.get("parked"):
-                starts.append((info["start"], barrier_guard(e, within)))
+                starts.append((info["start"], barrier_guard(e, within), e["id"]))
         elif e.get("parked"):
-            starts.append((t0, None))
+            starts.append((t0, None, e["id"]))
+        if e.get("parked"):
+            cause = ("hold", ",".join(e.get("blocked_by") or []) or None)
+        if not info["now"]:
+            info.update(why=cause[0], by=cause[1])
     return out, soft
+
+
+def wait_cause(info, park, in_way, fits):
+    """(cause, by) of one look at the queue by a waiting run (acquire): (None, None) when it takes
+    its slots, else "hold" (park: the ids of the holds that park it), "bg" (the background run
+    holding a slot it is planned on), "mem" (its memory need does not fit: fits False), or plan's
+    why and by for its entry (info)."""
+    if park:
+        return "hold", ",".join(park)
+    if not info["now"]:
+        return info["why"], info["by"]
+    bg = next((x["id"] for p in POOLS for x in in_way.get(p) or []), None)
+    if bg:
+        return "bg", bg
+    return ("mem", None) if not fits else (None, None)
+
+
+class WaitTally:
+    """A waiting run's seconds by cause: each note gives the time since the last note to the
+    last note's cause, and its blocker (by, when not None). fields() is the run's record fields:
+    wait_by {cause: s} and wait_on {cause: [the blocker it waited on longest, s]}."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock, self.last, self.at, self.by, self.on = clock, (None, None), None, {}, {}
+
+    def note(self, cause, by):
+        now = self.clock()
+        c, b = self.last
+        if c is not None and self.at is not None:
+            self.by[c] = self.by.get(c, 0.0) + now - self.at
+            if b is not None:
+                self.on.setdefault(c, {})[b] = self.on.get(c, {}).get(b, 0.0) + now - self.at
+        self.last, self.at = (cause, by), now
+
+    def fields(self):
+        top = {c: max(d.items(), key=lambda kv: kv[1]) for c, d in self.on.items()}
+        return {"wait_by": {c: round(s, 1) for c, s in self.by.items()},
+                "wait_on": {c: [b, round(s, 1)] for c, (b, s) in top.items()}}
 
 
 def mem_exempt(q, e):

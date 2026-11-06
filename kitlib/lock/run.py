@@ -473,6 +473,7 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
     mem_said = False
     told = said = seen = yielding = ypool = qbad = hbad = stale_at = None
     joined = back = reaped = False
+    tally = qm.WaitTally()      # its wait by cause, for its record and history line (wait_by)
     while True:
         now = utc_now()
         game.sync(store, L)
@@ -589,6 +590,7 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
                     e.pop("mem_wait", None)
                 if mem_said != (not fits):
                     mem_said, said = not fits, None     # its next wait line names the change
+                tally.note(*qm.wait_cause(info, ids, in_way, fits))
                 if ready:
                     got = {p: info[PICK[p]] for p in POOLS}
                     moved = e.get("moved")
@@ -703,7 +705,8 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
             with contextlib.suppress(OSError):
                 run.save(state="held", held_since=iso(), blocked_by=None, cores=got["cpu"],
                          gpus=got["gpu"], slots={p: got[p] for p in POOLS if got[p]},
-                         holding=[p for p in POOLS if got[p]], **({"moved": moved} if moved else {}))
+                         holding=[p for p in POOLS if got[p]], **tally.fields(),
+                         **({"moved": moved} if moved else {}))
             return got
         time.sleep(s.queue_poll_s)
 

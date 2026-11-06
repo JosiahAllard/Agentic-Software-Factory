@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import types
 import unittest
@@ -1035,6 +1036,31 @@ class Resources(StoreCase):
         self.assertEqual(self.store.read("ended/%s.json" % first.id)["resource"], LAND)
         second = self.book("second", resource=LAND, no_wait=True)
         second.release()
+
+    def test_a_resource_wait_names_the_resource(self):
+        """A run that waited for a resource alone records it: wait_by resource, and wait_on the
+        resource's name, on its record and its history line."""
+        self.confine(2)
+        first = self.book("first", resource=LAND, priority="land")
+        out = []
+        t = threading.Thread(target=lambda: out.append(
+            self.book("second", resource=LAND, priority="land", wait_s=30)), daemon=True)
+        t.start()
+        try:
+            end = time.monotonic() + 30
+            while len(self.entries()) < 2 and time.monotonic() < end:
+                time.sleep(0.05)
+            time.sleep(0.3)
+        finally:
+            first.release()
+        t.join(30)
+        [second] = out
+        rec = self.store.read("active/%s.json" % second.id)
+        second.release()
+        self.assertGreater(rec["wait_by"]["resource"], 0)
+        self.assertEqual(rec["wait_on"]["resource"][0], LAND)
+        [line] = [x for x in self.store.history_records() if x["id"] == second.id]
+        self.assertEqual(line["wait_on"], rec["wait_on"])
 
     def test_a_dead_holders_resource_is_freed_by_the_prune(self):
         self.confine(2)

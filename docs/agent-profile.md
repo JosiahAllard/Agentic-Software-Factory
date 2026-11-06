@@ -42,7 +42,7 @@ in its own landing tree and pushes only when green (docs/gate.md "Landing"). Suc
 land` line with `LANDED `. `CONFLICT <branch> with main <sha>: the author merges main` goes back to
 the branch's author; any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT
 RUN:`, `USAGE:`, `GATE FAILED:`, `RERUN VOID:`) is reported as is, with the doc's recovery steps, and not retried. Batches allowed: up to
-`"landing".batch_max` branches (3), each with its own reviewer, range and LAND verdict; never a
+`"landing".batch_max` branches (5 by default), each with its own reviewer, range and LAND verdict; never a
 branch changing a strict path (docs/gate.md "Batch").
 
 ## Review

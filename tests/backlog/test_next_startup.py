@@ -25,10 +25,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 TOOL = os.path.join(ROOT, 'tools', 'backlog.py')
 STORE = 'kit/backlog'
 BRANCH = 'kit/wk'
-# 13 before the change; 8 now: the git dirs of the worker worktree and of the PM data worktree,
-# the branch, the worktree list twice (the known offer.py repeat), the branch list and two
-# `rev-parse --verify` of the offer.
-MAX_GIT_CALLS = 8
+# 13 before the change; 5 now: the git dirs of the worker worktree and of the PM data worktree,
+# the branch, the one worktree list and the one branch list (`for-each-ref`).
+MAX_GIT_CALLS = 5
 
 
 def load_tool():
@@ -84,14 +83,25 @@ class NextStartup(unittest.TestCase):
             return ' '.join(c) + ' in ' + where
 
         asked = collections.Counter(question(c, cwd) for c, cwd in calls)
-        # KNOWN: offer.live_branches asks `worktree list --porcelain` again, beside the cached
-        # `-z` list; fixed in a follow-up once kit/next-narrow-dirty (offer.py) has landed.
-        # Then this allowance goes and the list is asked once.
-        allowed = {'worktree list': 2}
-        again = sorted(q for q, n in asked.items() if n > allowed.get(q, 1))
+        again = sorted(q for q, n in asked.items() if n > 1)
         self.assertEqual(again, [], 'asked more often than allowed:\n' + listing)
         self.assertEqual(sum(1 for c, _cwd in calls if c[:2] == ('worktree', 'list') and '-z' in c),
                          1, listing)
+
+    def test_next_reads_the_live_branches_through_the_context(self):
+        tool = load_tool()
+        seen = []
+        real = tool.pmod.Context.live_branches
+
+        def spy(ctx, snap):
+            seen.append(snap)
+            return real(ctx, snap)
+
+        with mock.patch.object(tool.pmod.Context, 'live_branches', spy), \
+                contextlib.redirect_stdout(io.StringIO()):
+            rc = tool.main(['-C', self.wt, '--no-fetch', 'next'])
+        self.assertEqual(rc, 0)
+        self.assertTrue(seen, 'next probed the branches without the Context memo')
 
     def test_a_failed_worktree_list_is_asked_again_a_good_one_is_kept(self):
         answers = [(None, 'git timed out'), ([], None), ([], None)]

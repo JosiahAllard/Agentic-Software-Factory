@@ -1047,8 +1047,8 @@ class ComputedCheckoutReads(Base):
                    ('bash', 'git -C "$p" ls-files "$f"'),
                    ('bash', 'git -C "$p" cat-file -p "$sha"'),
                    ('bash', 'git -C "$p" merge-base HEAD "$b"'),
-                   ('bash', 'git -C "$p" rev-list HEAD..$B'),
-                   ('bash', 'git -C "$p" rev-list --count "$B"..HEAD'),
+                   ('bash', 'git -C "$p" rev-list "HEAD..$B"'),
+                   ('bash', 'git -C "$p" rev-list --count --end-of-options "$B"..HEAD'),
                    ('bash', 'git -C "$p" ls-tree -r "$SHA"'),
                    # after a literal --end-of-options no word is an option, so any computed words read
                    ('bash', 'git -C "$p" show --end-of-options "$SHA":f'),
@@ -1076,6 +1076,9 @@ class ComputedCheckoutReads(Base):
                    ('bash', 'git -C "$p" log "$A" --end-of-options "$B"'),  # $A is before the end of options
                    ('bash', 'git -C "$p" log --output=f --end-of-options "$B"'),
                    ('bash', 'git -C "$p" log --output=f'),
+                   ('bash', 'git -C "$p" rev-list "$B"'),                   # rev-list takes --output too
+                   ('bash', 'git -C "$p" log --grep --end-of-options "$B"'),  # it is --grep's value
+                   ('bash', 'git -C "$p" diff -O --end-of-options "$B"'),
                    ('bash', 'git -C "$p" log --format="$(cat f)"'),
                    ('bash', 'git -C "$p" log --format="$w" --output=x.txt'),
                    ('powershell', 'git -C $p log $f'),                      # an array is many arguments

@@ -23,7 +23,7 @@ def setUpModule():
     pmstart.pm_data_settings = lambda: None
     global _orig_beat
     _orig_beat = pmstart.read_heartbeat
-    pmstart.read_heartbeat = lambda: None
+    pmstart.read_heartbeat = lambda load=None: None
 
 
 def tearDownModule():

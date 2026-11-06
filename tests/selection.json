@@ -13,6 +13,7 @@
   ],
   "paths": [
     ["hosts/**", ["host"]],
+    ["tests/host/fakehost/**", ["host"]],
     ["content/roles/**", ["content", "agents", "roster", "host"]],
     ["content/skills/**", ["content", "skills", "host"]],
     ["hosts/claude/adapter/**", ["content"]],
@@ -40,7 +41,7 @@
     ["tests/optional/**", ["knowledge"]],
     ["tests/**", ["tooldeps"]],
     ["reserve_ui.pyw", ["lockui"]],
-    ["tools/*.py", ["skills", "kitcmd"]],
+    ["tools/*.py", ["skills", "kitcmd", "tests.content.test_skill_commands"]],
     ["kitlib/hubsite/**", ["hubsite"]],
     ["kitlib/hubsite/web/**", ["hubsite"]],
     ["tests/hubsite/**", ["hubsite"]],
@@ -56,7 +57,7 @@
   ],
   "by_name": ["hosts/**", "githooks/**", "mcp/**", "installer/**", ".claude-plugin/**"],
   "prose": ["docs/**", "*.md", ".gitignore"],
-  "always": ["scrub", "platform", "ci", "tests.proc.test_spawn_sites"],
+  "always": ["scrub", "platform", "ci", "tests.proc.test_spawn_sites", "tests.bridge.test_port"],
   "serial": [],
   "smoke": [
     "tests.guard.test_rules",

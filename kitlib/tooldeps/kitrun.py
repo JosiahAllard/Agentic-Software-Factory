@@ -58,8 +58,9 @@ def plan(root, changed, cfg, say):
             say('  %s %s' % (' ' * width, more))
     modules = selftree.test_modules(root, packages)
     modules += [m for m in singles if m not in modules]
-    say('kit_tests: selected %d of %d test package(s), %d module(s), from %d changed path(s)'
-        % (len(packages), len(tree.tests), len(modules), len(changed)))
+    say('kit_tests: selected %d of %d test module(s) (%d of %d test package(s) whole), from %d '
+        'changed path(s)' % (len(modules), len(selftree.all_test_modules(root)), len(packages),
+                             len(tree.tests), len(changed)))
     return modules
 
 

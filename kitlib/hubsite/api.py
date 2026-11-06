@@ -3078,7 +3078,11 @@ def pages_publish(api, req):
     if why:
         raise _invalid(why, 'html')
     with PAGES_LOCK:
-        return _pages_write(api, req, b, doc_id, pin)
+        out = _pages_write(api, req, b, doc_id, pin)
+    for said in pagecheck.warnings(b['html']):      # the page is written; the publisher is told
+        out['warnings'].append(hubvalidate.Finding(
+            hubvalidate.WARN, 'page_html/%s' % doc_id, 'html', 'media-blocked', said)._asdict())
+    return out
 
 
 def _pages_write(api, req, b, doc_id, pin):

@@ -958,6 +958,13 @@ class PagesTest(ApiCase):
         self.assertEqual((got['id'], got['html'], got['version']), ('plan-1', PAGE, 1))
         self.assertEqual([d['id'] for d in self.ok('GET', '/pages', AGENT)['items']], ['plan-1'])
 
+    def test_a_page_with_data_media_publishes_with_no_warning(self):
+        status, obj = self.publish(html='<video src="data:video/mp4;base64,AA"></video>')
+        self.assertEqual(status, 200)
+        self.assertEqual(obj['warnings'], [])
+        self.assertEqual(self.store.get('page_html', 'plan-1')['html'][:6], '<video')
+        self.assertEqual(self.publish(doc_id='plan-2')[1]['warnings'], [])
+
     def test_the_bytes_are_utf8(self):
         html = '<p>é\U0001f600</p>'
         self.assertEqual(self.publish(html=html)[1]['bytes'], len(html.encode('utf-8')))

@@ -3,7 +3,6 @@
 Every case builds its own stand-in Dev Drive (`<dev-drive>`, the machine config's `dev_drive`),
 home folder, kit folder and kit release store in a temp folder outside any git checkout.
 """
-import _winapi
 import json
 import os
 import shutil
@@ -13,6 +12,7 @@ import unittest
 from kitlib.config import user as kuser
 from kitlib.delegations import place
 from tests.home import machine_config
+from tests.platforms import windows_only
 
 
 def _write(path, text=''):
@@ -172,7 +172,18 @@ class CheckoutTest(Base):
         self.assertEqual(self.check({'p': text}),
                          [place.WHY_HOLDS % (text, self.d('area', 'wt'))])
 
+    def test_over_the_scan_cap_is_refused(self):
+        for i in range(5):
+            _write(self.d('big', 'f%d' % i))
+        text = self.d('big')
+        self.assertEqual(self.check({'p': text}, scan_cap=4), [place.WHY_CAP % (text, 4)])
+        self.assertEqual(self.check({'p': text}, scan_cap=5), [])
+
+
+@windows_only('a directory junction is a Windows feature')
+class JunctionTest(Base):
     def test_a_link_below_is_refused(self):
+        import _winapi
         os.makedirs(self.d('area'))
         link = self.d('area', 'j')
         _winapi.CreateJunction(self.other, link)
@@ -180,12 +191,14 @@ class CheckoutTest(Base):
         self.assertEqual(self.check({'p': text}), [place.WHY_LINK % (text, link)])
 
     def test_a_path_through_a_link_off_the_dev_drive_is_refused(self):
+        import _winapi
         _winapi.CreateJunction(self.other, self.d('j'))
         text = self.d('j', 'x')
         self.assertEqual(self.check({'p': text}), [place.WHY_OFF % (
             '%s (resolves to %s)' % (text, os.path.join(self.other, 'x')), self.dev)])
 
     def test_a_path_through_a_link_into_a_checkout_is_refused(self):
+        import _winapi
         repo = os.path.join(self.other, 'repo')
         os.makedirs(os.path.join(repo, '.git'))
         os.makedirs(os.path.join(repo, 'src'))
@@ -193,13 +206,6 @@ class CheckoutTest(Base):
         _winapi.CreateJunction(os.path.join(repo, 'src'), self.d('j'))
         text = self.d('j', 'x')
         self.assertEqual(self.check({'p': text}, cfg=cfg), [place.WHY_INSIDE % (text, repo)])
-
-    def test_over_the_scan_cap_is_refused(self):
-        for i in range(5):
-            _write(self.d('big', 'f%d' % i))
-        text = self.d('big')
-        self.assertEqual(self.check({'p': text}, scan_cap=4), [place.WHY_CAP % (text, 4)])
-        self.assertEqual(self.check({'p': text}, scan_cap=5), [])
 
 
 class OwnerOnlyTest(Base):

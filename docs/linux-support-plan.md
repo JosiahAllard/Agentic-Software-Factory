@@ -37,6 +37,9 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
 - The peer messaging and the bridge: hosts/claude/adapter/peer.py (Claude Code's `\\.\pipe\`
   address), optional/bridge/win/, kitlib/machinesetup/procwatch.py, kitlib/proc/console.py and
   winwatch.py. Slice 15; the console and window ones have no Linux need.
+- The delegation runner, kitlib/delegations/place.py and run.py: drive paths, `.exe` and the
+  registry (winreg). Windows only by design; it does not refuse on Linux, and its tests that need
+  a junction or the real registry carry `windows_only`.
 - The 23 files outside tests/ that still read os.name or sys.platform themselves
   (tests/platform/test_no_os_checks.py ALLOWED, 23 entries). The list only shrinks.
 - The end-to-end landing tests skip on Linux ("the lock is Windows only"; in tests/gate/test_land*.py

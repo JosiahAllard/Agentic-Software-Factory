@@ -1,4 +1,4 @@
-"""Which of the kit's own test packages a branch's change can break: the kit's tree laid out as
+"""Which of the kit's own tests a branch's change can break directly: the kit's tree laid out as
 `kitlib/<pkg>/` (logic), `tools/<x>.py` (entry points) and `tests/<pkg>/` (unittest packages).
 `deps` maps a flat tools folder; this maps those packages. tools/kit_tests.py is the entry point,
 docs/test-tools.md ("kit_tests") the doc.
@@ -8,35 +8,50 @@ The graph is derived (`scan`), never hand-written:
     import X`, a relative import that climbs out of its package, or a non-docstring string that
     imports it in a child (`-c "from kitlib.X import ..."`, `-m kitlib.X`); a string that only
     names a package (a label, a message) is not a reference;
-  - a kitlib package runs a tool by a non-docstring string holding `<tool>.py`;
   - a tool reaches the kitlib packages the same way, and another tool by `import <tool>`;
-  - a test package reaches every kitlib package it imports and every `kitlib.X` / `kitlib/X` its
-    files' text names (comments too: a test only ever selects more), every `tests.<pkg>` it
-    imports, and every tool it imports or names as `<tool>.py`.
+  - a test module reaches, through its own file, its packages' __init__ files and the test files
+    it imports (absolute or relative, or names as `<file>.py` in its own test package; followed
+    transitively, since they are its fixture): every kitlib package they import and every
+    `kitlib.X` / `kitlib/X` their text names (comments too: a test only ever selects more), and
+    every tool they import, name as `<tool>.py` or load by bare name (_tool_loads:
+    `load_tool('gate')`, `os.path.join(ROOT, 'tools', 'gate')`). A test package reaches what
+    its files do;
+  - a test module lists the repo folders its own file and its non-test helpers pass to a
+    listing call (os.walk, os.listdir, glob, Path.iterdir ...; _walked), read from the strings
+    the call's path is built from (`os.path.join(ROOT, 'tools')`, a name assigned one). A
+    listing built from no repo-folder string (the repo root, a temporary folder) names none:
+    such a test goes in `always`.
 
-What a change reaches (`Tree.reach`) is closed transitively over: packages importing a reached
-package, tools importing a reached package or tool, and packages running a reached tool.
+A change selects its direct users only, never the transitive closure: a test that uses a package
+which uses the changed one is left to the landing's `--full` merged gate (docs/test-tools.md
+"kit_tests").
 
 `selection(changed, tree, cfg)` for each changed repo-relative path:
   - `full` (globs: the test helpers, the selector and its table) -> ALL;
-  - kitlib/<m>/...: ALL when m is in `shared_core` or is not a package of the tree; else what m
-    reaches: the reached packages' own tests/<p>, every test package that uses one of them, and
-    every test package that names a reached tool;
-  - tools/<x>.py: tests/<p> of each kitlib package x imports (the shared core left out), and
-    what x reaches, as above (a deleted x too: its importers and runners still name it);
-  - tests/<t>/...: t and every test package importing tests.<t>;
-  - `paths` [glob, [packages]]: those packages, on top of any rule above (a test package that
-    reads another folder, such as a scrub test); with no rule above, plus the test packages
+  - kitlib/<m>/...: ALL when m is in `shared_core` or is not a package of the tree; else the
+    whole tests/<m>, every test module that uses kitlib.m, and every test module that names a
+    tool importing kitlib.m;
+  - tools/<x>.py: every test module that imports, names or loads x, or names a tool importing x (a
+    deleted x too: its importers still name it); ALL when there is none;
+  - tests/<t>/<file>.py the scan read: the test modules using it (a test module uses itself),
+    the whole tests/<t> when none does; any other file under tests/<t> (data, a deleted file):
+    the whole tests/<t> and every test module naming tests.<t>;
+  - `paths` [glob, [packages]]: those whole packages, on top of any rule above (a test package
+    that reads another folder, such as a scrub test); with no rule above, plus the test modules
     naming the file;
-  - `by_name` globs: the test packages naming the file (its base name);
+  - any path in a folder a test module lists: that module too, on top of any rule here; it
+    never stands in for one (a tool no test uses still selects ALL), and a `prose` path it
+    picks is not a note;
+  - `by_name` globs: the test modules naming the file (its base name);
   - `prose` globs: the same, but a file no test names selects nothing (it is read only by name);
   - anything else -> ALL.
 After the paths, the `always` entries (test packages that read every tracked file, such as
 tests/scrub, and single "tests.<pkg>.<module>" names for a repo-wide scan inside a package that
 is otherwise not wanted) join any non-empty change that is not ALL, whatever the paths are. A
-module entry is returned by its dotted name beside the package names; `split_picked` parts them.
-A path that maps to no test package (but a `prose` one) is unmapped and selects ALL: unmapped
-never means "skip". Each selected package carries the reasons it was picked.
+whole test package is returned by its name, a single test module by its dotted name;
+`split_picked` parts them, and a module whose package is picked whole is dropped. A path that
+maps to no test (but a `prose` one) is unmapped and selects ALL: unmapped never means "skip".
+Each selected name carries the reasons it was picked.
 The table's `serial` list, [module, why] pairs, names the test modules that cannot run beside
 others; kitlib.tooldeps.selfrun runs them alone after its parallel phase. Its `long` list names
 the modules selfrun starts first and splits by class while it has no recorded time for them. Its
@@ -74,6 +89,11 @@ _TESTS_REF = re.compile(r'\btests\.([A-Za-z_]\w*)')
 # a string that only names a package (a label, a message) is not a reference.
 _CHILD_IMPORT = re.compile(r'\b(?:import|from)\s+kitlib\b|-m\s+kitlib\.')
 _TOOL_FILE = re.compile(r'(?<![\w.])([A-Za-z_]\w*)\.py\b')
+# The calls that list a folder: os.walk / listdir / scandir, glob.glob / iglob, Path.iterdir /
+# glob / rglob.
+_WALKS = {'walk', 'listdir', 'scandir', 'glob', 'iglob', 'iterdir', 'rglob'}
+# The calls a listed folder's path is built with.
+_PATH_CALLS = {'join', 'Path', 'PurePath', 'abspath', 'normpath', 'realpath', 'joinpath'}
 
 
 class ConfigError(ValueError):
@@ -185,9 +205,9 @@ def _py_files(folder):
                 yield os.path.join(d, n)
 
 
-def _docstring_ids(tree):
+def _docstring_ids(nodes):
     out = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             body = node.body
             if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
@@ -195,19 +215,17 @@ def _docstring_ids(tree):
     return out
 
 
-def tool_runs(text):
-    """The names a kitlib file runs by path: `<name>` for each non-docstring string holding
-    `<name>.py`. Every name is kept, not only tools that exist, so a deleted tool's runners
-    still name it. A file that does not parse falls back to its whole text."""
+def _parse(text):
     try:
-        tree = ast.parse(text)
+        return ast.parse(text)
     except (SyntaxError, ValueError):
-        return set(_TOOL_FILE.findall(text))
-    docs, out = _docstring_ids(tree), set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
-            out.update(_TOOL_FILE.findall(node.value))
-    return out
+        return None
+
+
+def _nodes(tree):
+    """Every node of `tree` (None: none), walked once for all the readers below: a walk costs more
+    than any one reader."""
+    return list(ast.walk(tree)) if tree is not None else []
 
 
 def code_refs(text, package=None):
@@ -215,12 +233,15 @@ def code_refs(text, package=None):
     relative imports out of kitlib/`package`, and `kitlib.X` in a non-docstring string that
     imports it in a child (_CHILD_IMPORT). A file
     that does not parse falls back to its whole text (it only selects more)."""
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+    tree = _parse(text)
+    return _refs(tree, _nodes(tree), text, package)
+
+
+def _refs(tree, nodes, text, package=None):
+    if tree is None:
         return set(_KITLIB_REF.findall(text)), set()
-    pkgs, tops, docs = set(), set(), _docstring_ids(tree)
-    for node in ast.walk(tree):
+    pkgs, tops, docs = set(), set(), _docstring_ids(nodes)
+    for node in nodes:
         if isinstance(node, ast.Import):
             for a in node.names:
                 parts = a.name.split('.')
@@ -247,71 +268,205 @@ def code_refs(text, package=None):
 
 class Tree(object):
     """The kit's tree at `root`: `kitlib` {package: kitlib packages it reaches}, `tools` {tool:
-    (kitlib packages, top-level names it imports)}, `tests` {test package: TestPackage}, `runs`
-    {kitlib package: tools it runs by path}."""
+    (kitlib packages, top-level names it imports)}, `tests` {test package: TestPackage},
+    `modules` {dotted test module: TestPackage of its file and the test files it uses}."""
 
-    def __init__(self, root, kitlib, tools, tests, runs=None):
+    def __init__(self, root, kitlib, tools, tests, modules=None):
         self.root = root
         self.kitlib = kitlib
         self.tools = tools
         self.tests = tests
-        self.runs = runs or {}
-
-    def reach(self, packages=(), tools=(), core=()):
-        """(kitlib packages, tools, core runners) a change to `packages` and `tools` can break,
-        transitively: importers of a package, tools importing a package or a tool, and packages
-        running a reached tool by path, with their importers. A `core` package that runs a
-        reached tool is returned in core runners and not closed over: its own tests cover what
-        it does with the tool, and its importers are the whole tree."""
-        pk, tl, cr = set(), set(tools), set()
-        todo = set(packages)
-        while True:
-            for p in todo - pk:
-                pk |= self.importers(p)
-            for x, (pkgs, _tops) in self.tools.items():
-                if pkgs & pk:
-                    tl.add(x)
-            for t in list(tl):
-                tl |= self.tool_importers(t)
-            runners = {k for k, ran in self.runs.items() if ran & tl}
-            cr |= runners & set(core)
-            todo = runners - set(core) - pk
-            if not todo:
-                return pk, tl, cr
-
-    def importers(self, package):
-        """`package` and every kitlib package that reaches it, transitively."""
-        out, todo = {package}, [package]
-        while todo:
-            m = todo.pop()
-            for p, refs in self.kitlib.items():
-                if m in refs and p not in out:
-                    out.add(p)
-                    todo.append(p)
-        return out
-
-    def tool_importers(self, tool):
-        """`tool` and every tool that imports it, transitively."""
-        out, todo = {tool}, [tool]
-        while todo:
-            t = todo.pop()
-            for x, (_pkgs, tools) in self.tools.items():
-                if t in tools and x not in out:
-                    out.add(x)
-                    todo.append(x)
-        return out
+        self.modules = modules or {}
+        self._named = {}          # {test module: the <name>.py files its text names}
 
     def naming(self, word):
-        """The test packages whose files' text holds `word`."""
-        return {t for t, tp in self.tests.items() if word in tp.text}
+        """The test modules whose files' text holds `word`."""
+        return {m for m, tm in self.modules.items() if word in tm.text}
+
+    def tool_users(self, tools):
+        """{test module: the first of `tools` it imports or names as `<tool>.py`}. A name counts
+        whole: `test_gate.py` or `land_gate.py` does not name `gate.py` (_TOOL_FILE)."""
+        out = {}
+        for m, tm in sorted(self.modules.items()):
+            named = self._named.get(m)
+            if named is None:
+                named = self._named[m] = set(_TOOL_FILE.findall(tm.text))
+            for tool in sorted(tools):
+                if tool in tm.tools or tool in named:
+                    out[m] = tool
+                    break
+        return out
 
 
 class TestPackage(object):
-    def __init__(self, kitlib, tests, tools, text):
+    """What a test package, or a test module with the test files it uses, refers to."""
+
+    def __init__(self, kitlib, tests, tools, text, files=(), walks=()):
         self.kitlib = kitlib      # kitlib packages it names
         self.tests = tests        # other test packages it imports (tests.<pkg>)
-        self.tools = tools        # tools it imports by module name
+        self.tools = tools        # tools it imports by module name or loads by bare name
         self.text = text          # every .py file's text, joined
+        self.files = set(files)   # a module's test files, dotted ("tests.<pkg>.__init__" too)
+        self.walks = set(walks)   # repo folders its files list ("tools", "content/roles")
+
+
+def _test_imports(nodes, name):
+    """The dotted names the test file `name` ("tests.<pkg>....<file>", an __init__ as
+    "....__init__") may import, from its `nodes` (_nodes): each import, relative ones resolved,
+    and each name an import-from takes (it may be a module)."""
+    out = set()
+    here = name.split('.')[:-1]
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            out.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                if node.level > len(here):
+                    continue
+                base = here[:len(here) - node.level + 1] + ([node.module] if node.module else [])
+                mod = '.'.join(base)
+            else:
+                mod = node.module or ''
+            out.add(mod)
+            out.update('%s.%s' % (mod, a.name) for a in node.names)
+    return out
+
+
+def _func_name(call):
+    f = call.func
+    return f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else ''
+
+
+def _tool_loads(nodes):
+    """The tools a test file (its `nodes`) loads by bare name: the first argument of a call whose
+    name holds `tool` or `load` (`load_tool('gate')`, `inproc.load_tool('backlog')`,
+    `tool('commit')`), and the name after a 'tools' argument (`os.path.join(ROOT, 'tools',
+    'gate')`). Every name is kept, not only tools that exist, as for an import."""
+    out = set()
+    for node in nodes:
+        if not isinstance(node, ast.Call):
+            continue
+        args = [a.value if isinstance(a, ast.Constant) and isinstance(a.value, str) else None
+                for a in node.args]
+        name = _func_name(node).lower()
+        if args and args[0] and ('tool' in name or 'load' in name):
+            out.add(args[0])
+        out.update(b for a, b in zip(args, args[1:]) if a == 'tools' and b)
+    out.discard('tools')
+    return {x for x in out if x.isidentifier()}
+
+
+def _assigned(nodes):
+    """{name: [value nodes]} for each `name = ...`, `x.name = ...` and `for name in ...` in the
+    file, whatever the scope."""
+    out = {}
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            pairs = [(t, node.value) for t in node.targets]
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            pairs = [(node.target, node.value)]
+        elif isinstance(node, (ast.For, ast.comprehension)):
+            pairs = [(node.target, node.iter)]
+        else:
+            continue
+        for target, value in pairs:
+            key = (target.id if isinstance(target, ast.Name) else
+                   target.attr if isinstance(target, ast.Attribute) else None)
+            if key:
+                out.setdefault(key, []).append(value)
+    return out
+
+
+def _strings(node, assigned, seen):
+    """The string constants the path `node` is built from, in source order: a name (or
+    `x.name`) is read through its assignments, once each; a call that builds a path (_PATH_CALLS,
+    a listing call) gives its arguments and a method's receiver; any other call gives none (its
+    arguments do not say what it returns)."""
+    if isinstance(node, ast.Constant):
+        return [node.value] if isinstance(node.value, str) else []
+    key = (node.id if isinstance(node, ast.Name) else
+           node.attr if isinstance(node, ast.Attribute) else None)
+    if key is not None:
+        if key in seen:
+            return []
+        seen.add(key)
+        return [s for v in assigned.get(key, ()) for s in _strings(v, assigned, seen)]
+    if isinstance(node, ast.Call):
+        if _func_name(node) not in _PATH_CALLS | _WALKS:
+            return []
+        parts = [node.func.value] if isinstance(node.func, ast.Attribute) else []
+        parts += list(node.args) + [k.value for k in node.keywords]
+        return [s for p in parts for s in _strings(p, assigned, seen)]
+    return [s for c in ast.iter_child_nodes(node) for s in _strings(c, assigned, seen)]
+
+
+def _walked(nodes, root, tops):
+    """The repo folders ("tools", "content/roles") a test file (its `nodes`) lists (_WALKS): from
+    each string the listing call is built from that is a top folder of `root` (`tops`), the
+    longest run of them that is still a folder there (`os.path.join(ROOT, 'tools', '*.py')` lists
+    tools). A listing built from no such string (a temporary folder, the repo root itself) names
+    none."""
+    out = set()
+    calls = [n for n in nodes if isinstance(n, ast.Call) and _func_name(n) in _WALKS]
+    assigned = _assigned(nodes) if calls else {}
+    for node in calls:
+        segs = [s for c in _strings(node, assigned, set()) for s in re.split(r'[\\/]', c) if s]
+        for i, seg in enumerate(segs):
+            if seg not in tops:
+                continue
+            j = i + 1
+            while (j < len(segs) and re.match(r'^[\w.-]+$', segs[j])
+                   and segs[j] not in ('.', '..')
+                   and os.path.isdir(os.path.join(root, *segs[i:j + 1]))):
+                j += 1
+            out.add('/'.join(segs[i:j]))
+    return out
+
+
+def _module_refs(files, modules):
+    """{test module: TestPackage} for each dotted name in `modules`, from `files` {dotted test
+    file: (text, kitlib packages, top-level and loaded tool names, dotted names it may import,
+    folders it lists)}: the module's file, its packages' __init__ files and the test files it
+    imports or names as `<file>.py` in its own test package, transitively. The folders come
+    from the module's own file and its helpers, not from another test module it imports."""
+    by_base = {}
+    for d in files:
+        parts = d.split('.')
+        by_base.setdefault((parts[1], parts[-1]), []).append(d)
+    links = {}
+    for d, (text, _p, _t, imports, _w) in files.items():
+        out = set()
+        parts = d.split('.')
+        for i in range(2, len(parts)):
+            out.add('.'.join(parts[:i]) + '.__init__')
+        for c in imports:
+            cp = c.split('.')
+            for i in range(2, len(cp) + 1):
+                out.add('.'.join(cp[:i]) + '.__init__')
+            out.add(c)
+        for base in _TOOL_FILE.findall(text):
+            out.update(by_base.get((parts[1], base), ()))
+        links[d] = {x for x in out if x in files and x != d}
+    refs = {}
+    for m in modules:
+        seen, todo = set(), [m]
+        while todo:
+            d = todo.pop()
+            if d not in seen and d in files:
+                seen.add(d)
+                todo.extend(links[d] - seen)
+        texts, pkgs, tops, walks = [], set(), set(), set()
+        for d in sorted(seen):
+            text, p, t, _i, w = files[d]
+            texts.append(text)
+            pkgs |= p
+            tops |= t
+            if d == m or not d.rsplit('.', 1)[-1].startswith('test'):
+                walks |= w      # another test module's listing runs in that module, not here
+        text = '\n'.join(texts)
+        refs[m] = TestPackage(pkgs | set(_KITLIB_REF.findall(text)),
+                              set(_TESTS_REF.findall(text)), tops, text, seen, walks)
+    return refs
 
 
 def scan(root):
@@ -323,21 +478,19 @@ def scan(root):
         pkgs, tops = code_refs(_read(os.path.join(tdir, name + '.py')))
         # every top-level name, not only tools that exist: a deleted tool's importers still name it
         tools[name] = (pkgs, tops - {name})
-    kitlib, runs = {}, {}
+    kitlib = {}
     kdir = os.path.join(root, 'kitlib')
     for name in sorted(os.listdir(kdir)) if os.path.isdir(kdir) else ():
         folder = os.path.join(kdir, name)
         if not os.path.isfile(os.path.join(folder, '__init__.py')):
             continue
-        refs, ran = set(), set()
+        refs = set()
         for f in _py_files(folder):
-            text = _read(f)
-            refs |= code_refs(text, package=name)[0]
-            ran |= tool_runs(text)
+            refs |= code_refs(_read(f), package=name)[0]
         kitlib[name] = refs - {name}
-        if ran:
-            runs[name] = ran
-    tests = {}
+    tests, files = {}, {}
+    top_dirs = {n for n in os.listdir(root) if n not in ('.git', '__pycache__')
+                and os.path.isdir(os.path.join(root, n))}
     sdir = os.path.join(root, 'tests')
     for name in sorted(os.listdir(sdir)) if os.path.isdir(sdir) else ():
         folder = os.path.join(sdir, name)
@@ -347,14 +500,21 @@ def scan(root):
         for f in _py_files(folder):
             text = _read(f)
             texts.append(text)
-            p, t = code_refs(text)
+            parsed = _parse(text)
+            nodes = _nodes(parsed)
+            p, t = _refs(parsed, nodes, text)
+            t |= _tool_loads(nodes)
             pkgs |= p
             tops |= t
+            dotted = os.path.relpath(f, root)[:-3].replace(os.sep, '.')
+            files[dotted] = (text, p, t, _test_imports(nodes, dotted),
+                             _walked(nodes, root, top_dirs))
         text = '\n'.join(texts)
         # imports (`from kitlib import X` too) and every `kitlib.X` / `kitlib/X` the text names
         tests[name] = TestPackage(pkgs | set(_KITLIB_REF.findall(text)),
                                   set(_TESTS_REF.findall(text)) - {name}, tops, text)
-    return Tree(root, kitlib, tools, tests, runs)
+    modules = [m for m in all_test_modules(root) if m.split('.')[1] in tests]
+    return Tree(root, kitlib, tools, tests, _module_refs(files, modules))
 
 
 class _Picks(object):
@@ -362,23 +522,27 @@ class _Picks(object):
         self.tree = tree
         self.why = {}
 
-    def add(self, pkg, reason):
-        if pkg in self.tree.tests:
-            self.why.setdefault(pkg, [])
-            if reason not in self.why[pkg]:
-                self.why[pkg].append(reason)
+    def add(self, name, reason):
+        """Pick a whole test package (its name) or one test module (its dotted name)."""
+        if name in self.tree.tests or name in self.tree.modules:
+            self.why.setdefault(name, [])
+            if reason not in self.why[name]:
+                self.why[name].append(reason)
             return True
         return False
 
-    def naming_tools(self, tools, path):
+    def tool_users(self, tools, why):
+        """Pick the test modules importing or naming one of `tools`; `why(tool)` the reason."""
         found = False
-        for tool in sorted(tools):
-            for t in sorted(self.tree.tests):
-                tp = self.tree.tests[t]
-                if tool in tp.tools or (tool + '.py') in tp.text:
-                    found |= self.add(t, 'names tools/%s.py, which %s reaches' % (tool, path)
-                                      if ('tools/%s.py' % tool) != path else 'names %s' % path)
+        for m, tool in sorted(self.tree.tool_users(tools).items()):
+            found |= self.add(m, why(tool))
         return found
+
+    def whole_packages_win(self):
+        """Drop a module whose test package is picked whole: the package runs it."""
+        for name in [n for n in self.why if '.' in n]:
+            if name.split('.')[1] in self.why:
+                del self.why[name]
 
 
 def _kitlib_change(path, pkg, tree, cfg, picks):
@@ -386,55 +550,51 @@ def _kitlib_change(path, pkg, tree, cfg, picks):
         return 'shared core: kitlib/%s changed (%s)' % (pkg, path)
     if pkg not in tree.kitlib:
         return '%s is not in a kitlib package of this tree' % path
-    found = _reached(path, pkg, tree.reach(packages={pkg}, core=cfg['shared_core']), tree, picks)
-    return None if found else 'nothing maps %s to a test package' % path
+    found = picks.add(pkg, 'own tests of changed kitlib/%s' % pkg)
+    for m, tm in sorted(tree.modules.items()):
+        if pkg in tm.kitlib:
+            found |= picks.add(m, 'uses kitlib/%s (%s)' % (pkg, path))
+    users = {x for x, (pkgs, _tops) in tree.tools.items() if pkg in pkgs}
+    found |= picks.tool_users(users, lambda tool: 'names tools/%s.py, which imports kitlib/%s '
+                              '(%s)' % (tool, pkg, path))
+    return None if found else 'nothing maps %s to a test' % path
 
 
-def _reached(path, pkg, reached, tree, picks):
-    """Pick the tests of every reached kitlib package, the test packages using one, those naming
-    a reached tool, and the own tests of a shared-core package running a reached tool."""
-    reach, tools, core = reached
-    found = False
-    for p in sorted(core):
-        found |= picks.add(p, 'kitlib/%s (shared core) runs tools/%s.py, which %s reaches' % (
-            p, sorted(tree.runs[p] & tools)[0], path))
-    for p in sorted(reach):
-        if p == pkg:
-            why = 'own tests of changed kitlib/%s' % p
-        elif tree.runs.get(p, set()) & tools:
-            why = 'kitlib/%s runs tools/%s.py, which %s reaches' % (
-                p, sorted(tree.runs[p] & tools)[0], path)
-        elif pkg is not None and p in tree.importers(pkg):
-            why = 'kitlib/%s imports kitlib/%s (%s)' % (p, pkg, path)
-        else:
-            why = 'kitlib/%s imports what %s reaches' % (p, path)
-        found |= picks.add(p, why)
-    for t, tp in sorted(tree.tests.items()):
-        hit = sorted(tp.kitlib & reach)
-        if hit:
-            found |= picks.add(t, 'uses kitlib/%s (%s)' % (hit[0], path))
-    found |= picks.naming_tools(tools, path)
-    return found
-
-
-def _tool_change(path, name, tree, cfg, picks):
-    found = False
-    # A tool's change cannot break the shared core it calls; that core's tests test the core.
-    for p in sorted(tree.tools.get(name, (set(), set()))[0] - set(cfg['shared_core'])):
-        found |= picks.add(p, 'tests of kitlib/%s, which %s imports' % (p, path))
-    # A deleted tool is not in the tree, but its importers and runners still name it.
-    found |= _reached(path, None, tree.reach(tools={name}, core=cfg['shared_core']), tree, picks)
-    return None if found else 'nothing maps %s to a test package' % path
+def _tool_change(path, name, tree, picks):
+    found = picks.tool_users({name}, lambda tool: 'names %s' % path)
+    # A deleted tool is not in the tree, but its importers still name it.
+    users = {x for x, (_pkgs, tops) in tree.tools.items() if name in tops}
+    found |= picks.tool_users(users, lambda tool: 'names tools/%s.py, which imports %s'
+                              % (tool, path))
+    return None if found else 'nothing maps %s to a test' % path
 
 
 def _tests_change(path, pkg, tree, picks):
     if pkg not in tree.tests:
         return '%s is not in a test package of this tree' % path
-    picks.add(pkg, 'changed in tests/%s (%s)' % (pkg, path))
-    for t, tp in sorted(tree.tests.items()):
-        if pkg in tp.tests:
-            picks.add(t, 'imports tests.%s (%s)' % (pkg, path))
+    dotted = path[:-3].replace('/', '.') if path.endswith('.py') else None
+    found = False
+    for m, tm in sorted(tree.modules.items()):
+        if dotted in tm.files:
+            found |= picks.add(m, 'changed (%s)' % path if m == dotted else
+                               'uses %s (%s)' % (dotted, path))
+    if not found:
+        # a file the scan did not read (data, a deleted file) or one no test module uses
+        picks.add(pkg, 'changed in tests/%s (%s)' % (pkg, path))
+        for m, tm in sorted(tree.modules.items()):
+            if pkg in tm.tests:
+                picks.add(m, 'names tests.%s (%s)' % (pkg, path))
     return None
+
+
+def _listers(path, tree, picks):
+    """Pick the test modules listing a folder `path` is in (a test over every tool, say)."""
+    found = False
+    for m, tm in sorted(tree.modules.items()):
+        hit = sorted(w for w in tm.walks if path.startswith(w + '/'))
+        if hit:
+            found |= picks.add(m, 'lists %s/ (%s)' % (hit[-1], path))
+    return found
 
 
 def _by_name(path, tree, picks):
@@ -446,8 +606,9 @@ def _by_name(path, tree, picks):
 
 
 def selection(changed, tree, cfg):
-    """(ALL, [why]) or (sorted test packages, {package: [reasons]}, notes) - see the docstring.
-    `notes` lists the prose paths no test names. Pure: reads only `tree` and `cfg`."""
+    """(ALL, [why]) or (sorted names, {name: [reasons]}, notes) - see the docstring; a name is a
+    whole test package or a dotted test module. `notes` lists the prose paths no test names.
+    Pure: reads only `tree` and `cfg`."""
     picks, notes = _Picks(tree), []
     for f in sorted({p.replace('\\', '/') for p in changed}):
         why = None
@@ -458,12 +619,14 @@ def selection(changed, tree, cfg):
         for mods in mapped:
             for m in mods:
                 found |= picks.add(m, 'reads %s (%s)' % (f, CONFIG_REL))
+        # so do the test modules listing a folder f is in; they never stand in for a rule below
+        listed = _listers(f, tree, picks)
         if _matches(f, cfg['full']):
             why = '%s changed (a test helper or the selection itself)' % f
         elif parts[0] == 'kitlib' and len(parts) > 2:
             why = _kitlib_change(f, parts[1], tree, cfg, picks)
         elif parts[0] == 'tools' and len(parts) == 2 and f.endswith('.py'):
-            why = _tool_change(f, parts[1][:-3], tree, cfg, picks)
+            why = _tool_change(f, parts[1][:-3], tree, picks)
         elif parts[0] == 'tests' and len(parts) > 2:
             why = _tests_change(f, parts[1], tree, picks)
         else:
@@ -473,7 +636,7 @@ def selection(changed, tree, cfg):
             elif _matches(f, cfg['by_name']):
                 why = None if _by_name(f, tree, picks) else 'no test package names %s' % f
             elif _matches(f, cfg['prose']):
-                if not _by_name(f, tree, picks):
+                if not _by_name(f, tree, picks) and not listed:
                     notes.append(f)
             else:
                 why = '%s is not mapped (%s)' % (f, CONFIG_REL)
@@ -484,12 +647,13 @@ def selection(changed, tree, cfg):
             why = 'reads every tracked file (always, %s)' % CONFIG_REL
             if not picks.add(name, why) and name.startswith('tests.'):
                 picks.why.setdefault(name, [why])
+    picks.whole_packages_win()
     return sorted(picks.why), picks.why, notes
 
 
 def split_picked(picked):
-    """(packages, modules) of a selection's names: a dotted "tests.<pkg>.<module>" name is a
-    module an `always` entry named, the rest are test packages."""
+    """(packages, modules) of a selection's names: a dotted "tests.<pkg>....<module>" name is a
+    single test module, the rest are whole test packages."""
     return ([p for p in picked if '.' not in p], [p for p in picked if '.' in p])
 
 

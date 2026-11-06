@@ -1229,6 +1229,8 @@ is the owner's alone: the Docs tab's Delete, with no CLI verb and no MCP tool. I
 the body; when the body's delete fails the card stays deleted and the body is an orphan, which
 `kitlib.hubvalidate` warns of and the next publish of that id writes over.
 
+`pagecheck.warnings` also warns, never refuses, of a `video`, `audio` or `source` whose `src` the page policy blocks (`MEDIA_SRC_ALLOWED`, kept equal to `DOC_CSP`'s `media-src`, `data:` today, so `data:` media plays and never warns): the publish succeeds and the reply's `warnings` carry a `media-blocked` finding naming the element and the workaround, an animated GIF or WebP in `<img>`.
+
 What a body may hold (`kitlib/hubsite/pagecheck.py`, whose docstring has the full list): at most 512 KiB
 of UTF-8 (`MAX_BYTES`); no `script`, `iframe`, `object`, `embed`, `form`, `link`, `base` or other element
 of `TAGS`; a `meta` only as exactly `<meta charset="utf-8">` or `<meta name content>` with a name of
@@ -1253,9 +1255,9 @@ hub server." on a 404.
 The body is agent-written html. The page draws it nowhere but in the reader's one frame, made in script
 with a `sandbox` attribute that grants nothing (no scripts, forms, same-origin, popups or navigation of
 the hub page) and given the body through `srcdoc` behind a meta policy, `default-src 'none'; style-src
-'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'` (`DOC_CSP` in
-`kitlib/hubsite/web/index.html`). The policy blocks what the body loads by itself: images other than
-`data:`, CSS files, fonts, scripts, frames and form posts. A diagram therefore shows only as an inline
+'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'` (`DOC_CSP` in
+`kitlib/hubsite/web/index.html`). The policy blocks what the body loads by itself: images and video or
+audio other than `data:`, CSS files, fonts, scripts, frames and form posts. A diagram therefore shows only as an inline
 `<svg>` or a `data:` image. Links are not blocked: a link clicked inside the reader moves the frame itself
 to that address, where the policy no longer applies (the sandbox still blocks scripts and forms there).
 The reader rewrites a bare `href="#x"` to `href="about:srcdoc#x"` (`docFragments`), so an in-page anchor scrolls and sets `:target` (a srcdoc frame's base URL is the hub page's, so the bare form left the frame); inferred from the HTML spec, the owner checks it in a real browser.

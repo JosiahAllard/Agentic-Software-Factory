@@ -29,7 +29,11 @@ whether batches are allowed.
 The diff size a coordinator may review itself, and standing review checks. End-goal design: the
 doc an architecture review compares a change with (skill specialty-review), by path; none named:
 ARCHITECTURE.md, else the README. The other design docs it reads, each by path. A stale or
-outdated design is deleted, not listed here.
+outdated design is deleted, not listed here. Optional: the size line, the non-test lines past
+which a class or file needs a split record (default about 1,500); where the log-token list lives,
+the tokens tests and run checks may match; where the data files live, the facts code reads
+instead of copying a doc table; the files exempt from the size line because their size follows a
+fixed surface (a public facade, a wire codec, a fake of an external client).
 
 ## Shared resources that must be serialised
 Locks, ports, devices, accounts and anything else two agents must not use at once, and how each

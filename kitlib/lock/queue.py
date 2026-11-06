@@ -440,9 +440,8 @@ def wait_cause(info, park, in_way):
         return "hold", ",".join(str(x) for x in park)
     if not info["now"]:
         return info.get("why") or "slots", info.get("by")
-    bg = next((x["id"] for p in POOLS for x in in_way.get(p) or []), None)
-    if bg:
-        return "bg", bg
+    if any(in_way.values()):        # any run in the way, whatever its id (even "")
+        return "bg", next(x.get("id") for p in POOLS for x in in_way.get(p) or [])
     return None, None
 
 

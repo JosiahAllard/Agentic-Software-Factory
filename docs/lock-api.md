@@ -216,7 +216,7 @@ A run that waited in the queue records why, on its record when it takes its slot
 - A run that took its slots and gives them back because a hold made since covers them (the take, then the give-back, in `acquire`) counts the wait from there as `hold`. Its blocker is that hold's id; if the holds could not be read at the give-back, there is no blocker. So `wait_by` adds up to the run's wait from its first look at the queue to its take (before its first look, nothing is counted).
 - Not recorded: a run that left the queue without taking its slots (its wait ran out, `--no-wait`, stop) has no history line, and a gate's wait before it books (`kitlib/gate/gatecap.py`) is not a queue wait. A look that cannot read the queue or the holds names no cause: its time counts to the cause before it.
 - A line written before these keys has neither.
-- Tests: `tests/lock/test_queue.py` (`WaitCause`, `Tally`), `tests/lock/test_mem_admit.py` (`test_a_memory_wait_is_kept_as_its_cause`), `tests/lock/test_run.py` (Resources, `test_a_resource_wait_names_the_resource`; `WaitRecord`, a background run's and an agent hold's wait).
+- Tests: `tests/lock/test_queue.py` (`WaitCause`, `Tally`), `tests/lock/test_mem_admit.py` (`test_a_memory_wait_is_kept_as_its_cause`), `tests/lock/test_run.py` (Resources, `test_a_resource_wait_names_the_resource`; `WaitRecord`, a background run's and an agent hold's wait, and a give-back).
 
 ## Runs confined to a thread set
 

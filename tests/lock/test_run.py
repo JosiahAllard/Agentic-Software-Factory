@@ -1276,6 +1276,29 @@ class WaitRecord(StoreCase):
         self.assertEqual((line.get("wait_by"), line.get("wait_on")),
                          (rec["wait_by"], rec["wait_on"]))
 
+    def test_a_give_back_to_a_new_hold_counts_as_hold(self):
+        """A hold made between the look and the take (the take's re-check, cover_plan without
+        hs, sees it once): the run gives its slots back, and that wait counts as hold."""
+        self.confine(1)
+        late = {"id": "h-late", "owner": "owner", "scope": "slots"}
+        real, seen = hl.cover_plan, []
+
+        def cover_plan(store, L, need, span_s, own=None, hs=None, within=None):
+            got = real(store, L, need, span_s, own=own, hs=hs, within=within)
+            if hs is None and not seen:         # the take's re-check, once
+                seen.append(1)
+                late["_slots"] = {"cpu": list(range(L["cpu_slots"])), "gpu": []}
+                got[0]["cpu"] = {i: late for i in range(L["cpu_slots"])}
+            return got
+        with mock.patch.object(hl, "cover_plan", cover_plan):
+            run = rm.book("engine-test", "kit", "t", cores=1, store=self.store, env=clean_env(),
+                          wait_s=WAIT_S)
+        rec = self.store.read("active/%s.json" % run.id)
+        run.release()
+        self.assertEqual(seen, [1])
+        self.assertIn("hold", rec["wait_by"], rec)
+        self.assertEqual(rec["wait_on"]["hold"][0], "h-late", rec)
+
 
 if __name__ == "__main__":
     unittest.main()

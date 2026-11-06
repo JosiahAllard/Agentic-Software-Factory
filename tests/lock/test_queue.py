@@ -536,6 +536,11 @@ class WaitCause(unittest.TestCase):
         self.assertEqual(qm.wait_cause(now, [], bg), ("bg", "r-bg"))
         self.assertEqual(qm.wait_cause(now, [], {"cpu": [], "gpu": []}), (None, None))
 
+    def test_a_run_in_the_way_with_an_empty_id_is_still_bg(self):
+        # queue.load takes any string id: a run in the way keeps the waiter out whatever it is.
+        now = {"now": True, "why": None, "by": None}
+        self.assertEqual(qm.wait_cause(now, [], {"cpu": [{"id": ""}], "gpu": []}), ("bg", ""))
+
 
 @windows_only("the lock is Windows only")
 class Tally(unittest.TestCase):

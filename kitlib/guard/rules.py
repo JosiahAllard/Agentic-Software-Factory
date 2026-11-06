@@ -5975,6 +5975,13 @@ def dyn_head(cmd, w):
     return ''.join(head)
 
 
+def respelt(cmd, w):
+    """True unless the source of the word `w` is exactly its text (a plain literal): a quoted, escaped,
+    locale-quoted or brace-expanded word may reach git as other than its text. No place: True."""
+    src = cmd.source or ''
+    return w.start is None or w.end is None or not 0 <= w.start <= w.end <= len(src) or src[w.start:w.end] != w.text
+
+
 def strict_dyn_read(gc):
     """True when every computed word of git read `gc` leaves it a read whatever it stands for
     (git_reads strict): a GIT_DYN_ANY_READS subcommand in bash or PowerShell, or a
@@ -5994,10 +6001,10 @@ def strict_dyn_read(gc):
     for w in gc.rest:
         before, prev = prev, w
         if not w.dyn:
-            # the word before is read as written, so one the shell changes (_computed, native_unsure)
-            # fails closed
+            # the word before is read as written, so one the shell changes (_computed, native_unsure,
+            # or any whose source differs from its text: $"--grep", {\--grep,}) fails closed
             if w.text == END_OF_OPTIONS and (before is None or not _computed(before)
-                                             and not native_unsure(cmd, before) and (
+                                             and not native_unsure(cmd, before) and not respelt(cmd, before) and (
                     not before.text.startswith('-') or before.text in NO_VALUE_OPTS
                     or NO_VALUE_NUM_RE.fullmatch(before.text))):
                 done = True

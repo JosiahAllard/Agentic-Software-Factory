@@ -22,15 +22,21 @@ class WriteTextTests(unittest.TestCase):
             self.assertEqual(f.read(), 'xé\ny\n'.encode('utf-8'))
         self.assertEqual(os.listdir(self.dir), ['a.json'])
 
-    def test_failed_replace_removes_temp_and_keeps_original(self):
-        with open(self.path, 'w') as f:
-            f.write('old')
-        with mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')):
-            with self.assertRaises(OSError):
-                atomic.write_text(self.path, 'new')
-        self.assertEqual(os.listdir(self.dir), ['a.json'])
-        with open(self.path) as f:
-            self.assertEqual(f.read(), 'old')
+    def test_failure_removes_temp_and_keeps_original(self):
+        writers = (lambda: atomic.write_text(self.path, 'new'),
+                   lambda: atomic.write_bytes(self.path, b'new'),
+                   lambda: atomic.write_text(self.path, 'new', fsync=True))
+        failing = (mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')),
+                   mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')),
+                   mock.patch('os.fsync', side_effect=OSError('disk')))
+        for write, fail in zip(writers, failing):
+            with open(self.path, 'w') as f:
+                f.write('old')
+            with fail, self.assertRaises(OSError):
+                write()
+            self.assertEqual(os.listdir(self.dir), ['a.json'])
+            with open(self.path) as f:
+                self.assertEqual(f.read(), 'old')
 
     def test_each_write_uses_its_own_temp_name(self):
         seen = []
@@ -52,34 +58,26 @@ class WriteTextTests(unittest.TestCase):
         with open(deep) as f:
             self.assertEqual(f.read(), 'x')
 
-
-class WriteBytesAndFsyncTests(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.dir, True)
-        self.path = os.path.join(self.dir, 'b.bin')
-
     def test_write_bytes_exact_and_replaces(self):
+        data = b'a' + bytes([13, 10]) + b'b' + bytes([0])
         with open(self.path, 'wb') as f:
             f.write(b'old')
-        atomic.write_bytes(self.path, b'a\r\nb\x00')
+        atomic.write_bytes(self.path, data)
         with open(self.path, 'rb') as f:
-            self.assertEqual(f.read(), b'a\r\nb\x00')
-        self.assertEqual(os.listdir(self.dir), ['b.bin'])
-
-    def test_write_bytes_failed_replace_removes_temp(self):
-        with mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')):
-            with self.assertRaises(OSError):
-                atomic.write_bytes(self.path, b'x')
-        self.assertEqual(os.listdir(self.dir), [])
+            self.assertEqual(f.read(), data)
+        self.assertEqual(os.listdir(self.dir), ['a.json'])
 
     def test_fsync_flushes_temp_before_replace(self):
         order = []
         real_replace = os.replace
-        with mock.patch('os.fsync', side_effect=lambda fd: order.append('fsync')),                 mock.patch('kitlib.fs.replace.replace',
-                           side_effect=lambda s, d: (order.append('replace'), real_replace(s, d))):
-            atomic.write_text(self.path, 'x', fsync=True)
-            atomic.write_bytes(self.path, b'y', fsync=True)
+
+        def replace(src, dst):
+            order.append('replace')
+            real_replace(src, dst)
+        with mock.patch('os.fsync', side_effect=lambda fd: order.append('fsync')):
+            with mock.patch('kitlib.fs.replace.replace', side_effect=replace):
+                atomic.write_text(self.path, 'x', fsync=True)
+                atomic.write_bytes(self.path, b'y', fsync=True)
         self.assertEqual(order, ['fsync', 'replace', 'fsync', 'replace'])
 
     def test_no_fsync_by_default(self):
@@ -89,16 +87,20 @@ class WriteBytesAndFsyncTests(unittest.TestCase):
         fs.assert_not_called()
 
     def test_cleanup_goes_through_fsreplace_remove(self):
-        with mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')),                 mock.patch('kitlib.fs.replace.remove') as rm:
-            with self.assertRaises(OSError):
-                atomic.write_text(self.path, 'x')
+        with mock.patch('kitlib.fs.replace.replace', side_effect=OSError('boom')):
+            with mock.patch('kitlib.fs.replace.remove') as rm:
+                with self.assertRaises(OSError):
+                    atomic.write_text(self.path, 'x')
         rm.assert_called_once()
         self.assertEqual(os.path.dirname(rm.call_args[0][0]), self.dir)
 
     def test_prefix_names_the_temp_file(self):
         seen = []
-        with mock.patch('kitlib.fs.replace.replace',
-                        side_effect=lambda s, d: (seen.append(os.path.basename(s)), os.replace(s, d))):
+
+        def replace(src, dst):
+            seen.append(os.path.basename(src))
+            os.replace(src, dst)
+        with mock.patch('kitlib.fs.replace.replace', side_effect=replace):
             atomic.write_text(self.path, 'x', prefix='.ledger-')
         self.assertTrue(seen[0].startswith('.ledger-'))
 

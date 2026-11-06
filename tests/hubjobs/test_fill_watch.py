@@ -1608,6 +1608,36 @@ class HoldFile(unittest.TestCase):
             with self.assertRaises(lsettings.LaunchError):
                 W.fill_hold(self.s, *(args + (1000.0 * 1e6,)))
 
+    def test_a_stale_reading_counts_at_its_last_value_until_its_reset(self):
+        """The owner's rule (Q-1964): a stale reading is not a wrong one; usage only falls at the
+        reset. make's stand-down reads every account's newest file, whatever its age."""
+        dirs = {}
+        for n in ('1', '2'):
+            d = os.path.join(self.tmp, 'acct' + n)
+            os.makedirs(d)
+            open(os.path.join(d, '.credentials.json'), 'w').close()
+            dirs[n] = [d]
+        s = lsettings.Settings({'state_dir': self.tmp, 'repos': {'game': self.tmp},
+                                'accounts': dirs}, home=self.tmp)
+        now = 2000000000.0                              # 2033-05-18
+        ahead = '2033-05-20T00:00:00+00:00'
+
+        def reading(n, pct, updated='2033-05-01T00:00:00+00:00', resets=ahead):   # 17 days stale
+            with open(os.path.join(dirs[n][0], 'usage-status.json'), 'w', encoding='utf-8') as f:
+                json.dump({'updated_at': updated, 'five_hour': None,
+                           'seven_day': {'used_percentage': pct, 'resets_at': resets}}, f)
+        with mock.patch.object(lsettings, 'load', lambda home=None: s), \
+                mock.patch.object(W, 'standdown', lambda top: None):
+            run = W.make(mock.Mock(home=self.tmp, push=None, handoffs=lambda: {})).run
+            run.now = lambda: now
+            reading('1', 97)
+            reading('2', 95)
+            self.assertEqual(run.standdown('game', dict(COORD)), 'usage all>=95%')
+            reading('2', 99, resets='2033-05-10T00:00:00+00:00')    # its reset passed: 0%
+            self.assertIsNone(run.standdown('game', dict(COORD)))
+            os.remove(os.path.join(dirs['2'][0], 'usage-status.json'))  # no reading: headroom
+            self.assertIsNone(run.standdown('game', dict(COORD)))
+
     def test_usage_reason(self):
         self.assertIsNone(W.usage_reason([]))
         self.assertEqual(W.usage_reason([('1', 95, None)]), 'usage all>=95%')

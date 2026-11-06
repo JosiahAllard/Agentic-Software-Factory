@@ -152,9 +152,11 @@ minutes later.
   (`accounts.week_rows`, the rule of docs/launcher.md "Usage") at or over `fill_watch.USAGE_LIMIT`,
   which is `accounts.HEADROOM_LIMIT` (95), the line launches refuse at and the usage crossover's
   target limit; no key sets it. One account under it keeps the watch going: the work can move
-  there (the PM's hand-off). An account whose week is unknown counts as headroom, as
-  `launch.py pick-account` counts it, and no signed-in account means no usage stand-down
-  (`usage_reason`; whether unknown should fail closed is the owner's open question).
+  there (the PM's hand-off). Each account counts at its newest reading, however stale (owner,
+  2026-11-06): usage never falls until the reset, whose time the reading holds, and a reset passed
+  counts 0%. Only an account with no reading (or no week in it) is unknown, and it counts as
+  headroom, as `launch.py pick-account` counts it (owner: fail open); no signed-in account means
+  no usage stand-down (`usage_reason`).
 
 ## Auto-pull
 

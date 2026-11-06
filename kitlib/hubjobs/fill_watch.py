@@ -82,9 +82,10 @@ launcher.state_dir, written by `launch.py fill-hold`): {"machine": hold, "repos"
 name: hold}}, a hold {reason, set_at, until?} (epoch seconds; no until: until cleared), gives
 `hold machine` or `hold repo` while it is on; a file that cannot be read or has another shape is
 `unread`. The reason is free text and goes no further than the file and the listing. Usage
-(make's): every signed-in account's week (accounts.week_rows) at or over USAGE_LIMIT% gives
-`usage all>=N%`; one account under it, or one whose week is unknown (as accounts.pick counts it),
-or no signed-in account, gives none.
+(make's): every signed-in account's week (accounts.week_rows: its newest reading, however stale,
+since usage only falls at the reset; a passed reset is 0%) at or over USAGE_LIMIT% gives
+`usage all>=N%`; one account under it, or one with no reading (headroom, as accounts.pick counts
+it: the owner's fail-open), or no signed-in account, gives none.
 
 Auto-pull (stage 3), for a key already told this episode, PULL_AFTER_S after `since` and once per
 episode: with a stand-down, nothing is pulled; else `pulled` (= since) is written to the state
@@ -497,8 +498,9 @@ def fill_hold(settings, repo, machine, reason, until, clear, now):
 
 def usage_reason(rows, limit=None):
     """`usage all>=N%` when every row (account, week pct or None, reset) is at or over `limit`%
-    (default USAGE_LIMIT), else None. No rows, or a row whose week is unknown, is headroom: the
-    owner's open question; failing closed on unknown is this one line."""
+    (default USAGE_LIMIT), else None. A row's age never makes it unknown (week_rows keeps a stale
+    reading's value). No rows, or a row with no reading, is headroom: the owner's fail-open;
+    failing closed on unknown would be this one line."""
     limit = USAGE_LIMIT if limit is None else limit
     if not rows or any(pct is None for _n, pct, _r in rows):
         return None

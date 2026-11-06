@@ -242,7 +242,7 @@ def _matches(path, rule):
         if rx is None:
             rx = _GLOBS[rule] = _glob_regex(rule)
         return bool(rx.match(path)), sum(c.isalnum() for c in rule)
-    if path.startswith(rule):
+    if path == rule or path.startswith(rule + '/'):
         return True, len(rule)
     return False, 0
 

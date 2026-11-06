@@ -433,12 +433,13 @@ def backlog_code(event, ctx, cmd, inv, role):
     if mod and _backlog_module(mod):
         how = 'runs %s' % mod
     else:
-        how, read = None, [t for t in (c_code(inv), stdin_code(inv)) if t is not None]
+        how, here = None, stdin_code(inv)
+        read = [t for t in (c_code(inv), here) if t is not None]
         for text in rules.inline_code(cmd, inv):
             m = CODE_RE.search(text)
             if m and text in read:              # -c or heredoc code, read as python: a path held as data passes
                 read.remove(text)               # once: the same text again is another argument
-                why = py_reach(text)
+                why = py_reach(text, writes=text == here)   # heredoc code: a file write stays refused
                 if why:
                     how = 'runs code that %s' % why
                     break
@@ -815,13 +816,13 @@ PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
 
 
-def py_reach(text):
+def py_reach(text, writes=False):
     """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the
     refusal's words ('names backlog.py', 'imports kitlib.backlog.store', 'names backlog.py and can
     run it (subprocess)'), or None. CODE_RE finds a name first: none, None. The text is then read as
     python's own syntax tree, so a name that is only in a string or a comment passes unless the
-    code can run something (PY_RUN_*), opens a file for writing (_file_write), or imports the tool
-    or the kit's library (PY_REACH_PARTS). It
+    code can run something (PY_RUN_*), imports the tool or the kit's library (PY_REACH_PARTS), or,
+    with `writes` (heredoc code, stdin_code), opens a file for writing (_file_write). It
     is read twice: whole, and from its second line on (python -x skips the first line); a reading
     python -x cannot parse runs nothing. Fails closed to the name, as CODE_RE alone judged it,
     when the text does not parse, may be cut at SCRIPT_CAP, or declares a coding other than UTF-8
@@ -849,17 +850,18 @@ def py_reach(text):
             if k == 0:
                 return named
             continue                            # python -x cannot run it either
-        why = _tree_reach(ast, tree)
+        why = _tree_reach(ast, tree, writes)
         if why:
             return why if why.startswith('imports ') else '%s and %s' % (named, why) \
                 if why.startswith('opens ') else '%s and can run it (%s)' % (named, why)
     return None
 
 
-def _tree_reach(ast, tree):
+def _tree_reach(ast, tree, writes=False):
     """py_reach's reading of one syntax tree: 'imports <module>' for an import that reaches the
     tool or the kit's library (PY_REACH_PARTS), else the first name that can run code or a process
-    (PY_RUN_*), else the first call that opens a file for writing (_file_write), else None."""
+    (PY_RUN_*), else, with `writes`, the first call that opens a file for writing (_file_write),
+    else None."""
     runner = kit_import = writer = None
     backlog_used = False                       # backlog as code (x.backlog) or named in a string (_names_backlog)
     for node in ast.walk(tree):
@@ -886,7 +888,7 @@ def _tree_reach(ast, tree):
             s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             backlog_used = backlog_used or _names_backlog(s)
-        elif isinstance(node, ast.Call) and writer is None:
+        elif writes and isinstance(node, ast.Call) and writer is None:
             writer = _file_write(ast, node)
         if found and runner is None:
             runner = sorted(found)[0]
@@ -895,17 +897,34 @@ def _tree_reach(ast, tree):
     return runner or writer
 
 
-# a file opened for writing (_file_write): an open mode holding w, a, x or +
-PY_MODE_RE = re.compile(r'^[rwaxbtU+]+$')
-PY_WRITE_MODE_RE = re.compile(r'[wax+]')
+# a file opened for writing (_file_write, heredoc code only): python's open mode, its letters each
+# once, exactly one of r w a x, not both b and t, writing when it holds w, a, x or +
 PY_WRITE_ATTRS = frozenset(('write_text', 'write_bytes'))
+PY_READ_FLAGS = frozenset(('O_RDONLY', 'O_BINARY', 'O_NOINHERIT', 'O_CLOEXEC'))   # os.open flags that write nothing
+
+
+def _write_mode(s):
+    """True when `s` is a valid python open mode that writes ('w', 'a+', 'rb+'); 'art', 'tab',
+    'r' and a file name are not."""
+    return (len(set(s)) == len(s) and set(s) <= set('rwaxbt+U') and sum(c in s for c in 'rwax') == 1
+            and not ('b' in s and 't' in s) and any(c in s for c in 'wax+'))
+
+
+def _read_flags(ast, v):
+    """True when os.open's flags `v` are plainly read-only: O_RDONLY, alone or or-ed with
+    PY_READ_FLAGS (os.O_RDONLY | os.O_BINARY)."""
+    if isinstance(v, ast.BinOp) and isinstance(v.op, ast.BitOr):
+        return _read_flags(ast, v.left) and _read_flags(ast, v.right)
+    name = v.attr if isinstance(v, ast.Attribute) else v.id if isinstance(v, ast.Name) else None
+    return name in PY_READ_FLAGS
 
 
 def _file_write(ast, node):
     """'opens a file for writing (<call>)' when the call `node` may write a file, else None:
-    write_text or write_bytes, os.open, or an open() in any spelling (open, io.open, codecs.open,
-    Path.open) given a mode of mode letters holding w, a, x or + (a positional string or mode=),
-    a mode= (or **) that is not a literal, or the builtin's second argument that is not a literal."""
+    write_text or write_bytes; os.open whose flags are not plainly read-only (_read_flags); or an
+    open() whose mode writes (_write_mode) or is not a literal. The mode is mode= (or ** that may
+    hold it), the builtin's second argument, or for an attribute .open (io.open, codecs.open,
+    Path(p).open) its first or second argument when that is a mode string."""
     f = node.func
     if isinstance(f, ast.Attribute) and f.attr in PY_WRITE_ATTRS:
         return 'opens a file for writing (%s)' % f.attr
@@ -913,14 +932,15 @@ def _file_write(ast, node):
     if not builtin and not (isinstance(f, ast.Attribute) and f.attr == 'open'):
         return None
     if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == 'os':
-        return 'opens a file for writing (os.open)'             # its flags are numbers: fail closed
+        flags = node.args[1:2] + [k.value for k in node.keywords if k.arg in ('flags', None)]
+        return None if flags and all(_read_flags(ast, v) for v in flags) else 'opens a file for writing (os.open)'
     kw = [k.value for k in node.keywords if k.arg in ('mode', None)]
 
     def literal(v):
         return isinstance(v, ast.Constant) and isinstance(v.value, str)
+    modes = kw + (node.args[1:2] if builtin else node.args[:2])
     if not all(literal(v) for v in kw) or (builtin and len(node.args) > 1 and not literal(node.args[1])) or \
-            any(literal(v) and PY_MODE_RE.match(v.value) and PY_WRITE_MODE_RE.search(v.value)
-                for v in list(node.args) + kw):
+            any(literal(v) and _write_mode(v.value) for v in modes):
         return 'opens a file for writing (open)'
     return None
 

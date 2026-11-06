@@ -806,7 +806,16 @@ class RawCode(Base):
                      "print(pathlib.Path('docs/guard.md').exists(), NOTE)\nEOF",
                      "python <<'EOF'\nprint(open('kitlib/backlog/roles.py').read()[:200])\nEOF",
                      "python - <<EOF\nprint('kitlib/backlog/roles.py')\nEOF",
-                     "python - <<< \"print('kitlib/backlog/roles.py')\""):
+                     "python - <<< \"print('kitlib/backlog/roles.py')\"",
+                     # only a write mode is a write (backlogrole._file_write): a file named 'art' or 'tab'
+                     "python - <<'EOF'\nfrom PIL import Image\nImage.open('art')\n"
+                     "print('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nopen('tab')\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nimport os\nos.open('kitlib/backlog/roles.py', os.O_RDONLY | os.O_BINARY)\nEOF",
+                     # the write check is heredoc code's: -c code that edits a doc keeps its reading
+                     "python -c \"import pathlib; p=pathlib.Path('docs/guard.md'); "
+                     "p.write_text(p.read_text().replace('tools/backlog.py next','tools/backlog.py show'))\"",
+                     "python -c \"open('kitlib/backlog/roles.py', 'w').write('')\""):
             with self.subTest(text):
                 self.allowed(self.cmd(text))
 
@@ -825,9 +834,7 @@ class RawCode(Base):
                      # the text python reads is not the text as written: CODE_RE alone
                      "python - <<EOF\nprint('$X kitlib/backlog/roles.py')\nEOF",
                      "python - <<EOF\nprint('kitlib/backlog/roles.py \\\\')\nEOF",
-                     "python - <<'EOF' <<'EOF2'\nprint('kitlib/backlog/roles.py')\nEOF\nimport kitlib.backlog\nEOF2",
-                     # -c code reads the same way
-                     "python -c \"open('kitlib/backlog/roles.py', 'w').write('')\""):
+                     "python - <<'EOF' <<'EOF2'\nprint('kitlib/backlog/roles.py')\nEOF\nimport kitlib.backlog\nEOF2"):
             with self.subTest(text):
                 self.refused(self.cmd(text), 'backlog-raw-write')
 

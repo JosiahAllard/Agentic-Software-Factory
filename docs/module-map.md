@@ -379,7 +379,7 @@ Known limits:
 
 ## The kit's own map
 
-The kit keeps its own map (record KIT-MODULE-MAP-OWN) so its package cycle cannot grow. The map file
+The kit keeps its own map so its package cycle cannot grow. The map file
 `docs/module-map.json` is owner-only (`.kit.json` `owner.paths`); the ceilings
 (`docs/module-ceilings.json`) and the page (`docs/module-architecture.md`, not
 `architecture.md`: that name collides with ARCHITECTURE.md on a case-blind file system) are
@@ -405,7 +405,10 @@ ordinary files.
   the page comes from `--page --write`.
 - `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the map
   and every ratchet to a ceiling. It skips while the map file is absent.
-- `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it.
+- `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it,
+  and `tool_tests.patterns` selects the test on any change under `kitlib`, `tools`, `hosts`, `boot`
+  or `optional`, since the scoped gate would otherwise miss a new import into a package the
+  changed file's tests do not reach.
 
 ## Running
 

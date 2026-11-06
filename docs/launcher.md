@@ -12,6 +12,7 @@ launch.py stop --name NAME [--successor NAME] [--pid N] [--dry-run]
 launch.py handoff (--session KEY | --all) [--account N|auto] [--recycle] [--stem NEW] [--state FILE] [--what-if] [--home-worktree] [--permission-mode MODE]
 launch.py pick-account [--limit 95] [--explain]
 launch.py usage
+launch.py fill-hold [(--repo NAME | --machine) (--reason TEXT [--until ISO] | --clear)]
 launch.py after-reboot [--test] [--dry-run] [--permission-mode MODE]
 launch.py pm-relaunch --name NEW [--wait SECONDS] [--permission-mode MODE]
 launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] [--what-if] [--permission-mode MODE]
@@ -264,6 +265,7 @@ In `launcher.state_dir`, machine state outside git; copy the examples to start:
 - `stop.log`, `after-reboot.log`: one timestamped line per action.
 - `coord-restart.json`: the hub's coordinator restart job's sightings and starts, and the boot it last ran `after-reboot` for ("Hub restart").
 - `usage-crossover.json`: the hub's usage crossover job's open crossings, starts, asks, targets, last pushes, readings, each account's week readings of the last 2 hours (`weeks`, the PM's burn rate), the PM's old process after a crossover (`pm_old`) and the crossings cleared this week; `usage-crossover.log`: one timestamped line per reading change and per changed decision ("Usage crossover").
+- `fill-hold.json`: the PM's holds on new work, `{"machine": hold, "repos": {name: hold}}`, a hold `{reason, set_at, until?}`, written by `launch.py fill-hold` and read by the hub's fill watch (docs/hub-fill.md "PM hold and usage").
 - `pipes.json`: `{name: {pid, session_id, pipe, proc_start, entrypoint, recorded_at}}`, written by `start` and trimmed by `stop` ("Pipe addresses").
 - `push-outbox.json`, `push-undelivered.jsonl`: the hub's push notifications, written by the hub server, never by the launcher (docs/action-hub.md "Push notifications").
 

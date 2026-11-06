@@ -252,7 +252,7 @@ def do_next(args, ctx, snap):
         say(warn)
     for line in b.review_lines():
         say(line)
-    holding, dead, why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+    holding, dead, why = ctx.in_flight_split(snap)
     if why:
         say('in flight: cannot read the branches (%s); every pull holds its scope' % why)
     for rec in dead:

@@ -84,7 +84,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   one message. Never a message that only acknowledges or informs; relay a kit landing only when
   that repository must act on it. A hold on new work also goes to the hub's fill watch, or it
   pulls past it: `python <kit>/tools/launch.py fill-hold --repo <name> --reason "<why>"
-  [--until <ISO time>]`, `--clear` when it ends (docs/hub-fill.md "PM hold and usage").
+  [--until <ISO time>]`, `--clear` when it ends (<kit>/docs/hub-fill.md "PM hold and usage").
 - Price a backlog record, and decide a coordinator's close of an owner- or PM-priced one, by
   skill `backlog-pricing`.
 - Watch the sessions with `python <kit>/tools/pm_watch.py` in the background, without `--stream`

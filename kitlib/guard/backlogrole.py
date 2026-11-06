@@ -48,9 +48,9 @@ ASK = ('Ask a session whose role may take it (your coordinator; a coordinator as
        'and say why. Every role may read the record:')
 # python code that reaches the backlog's library or runs its tool: an import of kitlib.backlog
 # in any spelling, a name of tools/backlog.py, or the kit command naming it (['kit', 'backlog', ...]).
-# Standard-input code and -c's other words are refused on it alone (backlog_code); a script file's
-# text and the -c code word (c_code) are then read as python (py_reach), so a name they only print,
-# hold in a comment or give as data passes.
+# Other standard-input code and -c's other words are refused on it alone (backlog_code); a script
+# file's text, the -c code word (c_code) and a heredoc or here-string python reads (stdin_code) are
+# then read as python (py_reach), so a name they only print, hold in a comment or give as data passes.
 CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n;]*\bbacklog\b|'
                      r'\btools\s*[./\\]\s*backlog\b|\bbacklog\.py\b|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog\b')
 # python code that names the hub's record writer or the store's answer filing: hubsite then
@@ -433,11 +433,11 @@ def backlog_code(event, ctx, cmd, inv, role):
     if mod and _backlog_module(mod):
         how = 'runs %s' % mod
     else:
-        how, code = None, c_code(inv)
+        how, read = None, [t for t in (c_code(inv), stdin_code(inv)) if t is not None]
         for text in rules.inline_code(cmd, inv):
             m = CODE_RE.search(text)
-            if m and code is not None and text == code:     # -c code, read as python: a path held as data passes
-                code = None                     # once: the same text again is another argument
+            if m and text in read:              # -c or heredoc code, read as python: a path held as data passes
+                read.remove(text)               # once: the same text again is another argument
                 why = py_reach(text)
                 if why:
                     how = 'runs code that %s' % why
@@ -482,6 +482,24 @@ def c_code(inv):
             continue
         return None
     return None
+
+
+def stdin_code(inv):
+    """The text of the code python reads from standard input (reads_stdin: `python -` or flags
+    alone) when the line's one heredoc or here-string gives it as the guard reads it, or None: a
+    `<` file or a second such redirect, a launch other than plain, a here-string the line
+    computes, or an unquoted heredoc body holding $, ` or \\ (the shell rewrites those: the
+    text python reads is not the text as written). backlog_code reads it with py_reach, as
+    c_code's; piped_script (_printed_name) too."""
+    if inv is None or inv.dyn or inv.via is not None or reads_stdin(inv) != 'py':
+        return None
+    given = [r for r in inv.cmd.redirects if r.op in ('<', '<<', '<<<') and r.fd == '0']
+    if len(given) != 1 or given[0].op == '<' or given[0].target is None:
+        return None
+    w = given[0].target
+    if w.dyn and (given[0].op == '<<<' or any(c in w.text for c in '$`\\')):
+        return None
+    return w.text
 
 
 # ---------------------------------------------------------------- a script file it runs
@@ -712,10 +730,10 @@ def _runs_piped_text(inv):
 
 
 def piped_script(event, ctx, cmd, inv, cwd, role):
-    """A subagent's python script or -c code (c_code) whose output may run as code, judged by
-    CODE_RE alone, not by py_reach's reading of its own code: piped, straight or through other
-    commands, into a runner (_runs_piped_text: `python gen.py | bash`, `... | tee log | python`),
-    or held in another command's word (`eval "$(python gen.py)"`, `bash <(python gen.py)`, a
+    """A subagent's python script, -c or heredoc code (c_code, stdin_code) whose output may run
+    as code, judged by CODE_RE alone, not by py_reach's reading of its own code: piped, straight
+    or through other commands, into a runner (_runs_piped_text: `python gen.py | bash`,
+    `... | tee log | python`), or held in another command's word (`eval "$(python gen.py)"`, `bash <(python gen.py)`, a
     nested shell's text: shell.Command.nested_in), whose program then reads what it prints, or run
     in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has no
     pipe_from). The kit's own (_kit_code) is not judged."""
@@ -740,8 +758,9 @@ def piped_script(event, ctx, cmd, inv, cwd, role):
 
 
 def _printed_name(ctx, role, cmd, chain, how):
-    """piped_script's refusal when `cmd` runs a python script file, or -c code (c_code, which
-    backlog_code reads with py_reach), whose text CODE_RE matches (not the kit's own); else None."""
+    """piped_script's refusal when `cmd` runs a python script file, or -c or heredoc code (c_code,
+    stdin_code, which backlog_code reads with py_reach), whose text CODE_RE matches (not the kit's
+    own); else None."""
     ci = cm.invocation(cmd)
     found = script_file_word(ci) if ci is not None and not ci.dyn else None
     if found and found[1] == 'py':
@@ -750,6 +769,8 @@ def _printed_name(ctx, role, cmd, chain, how):
     else:
         path, text = None, c_code(ci) if ci is not None and not ci.dyn else None
         what = 'its -c code'
+        if text is None:
+            text, what = stdin_code(ci), 'its standard-input code'
     m = CODE_RE.search(text) if isinstance(text, str) else None
     if not m or (path and _kit_code(ctx, path)):
         return None
@@ -795,11 +816,12 @@ PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgu
 
 
 def py_reach(text):
-    """How the python `text` a script file runs reaches the backlog, as the refusal's words
-    ('names backlog.py', 'imports kitlib.backlog.store', 'names backlog.py and can run it
-    (subprocess)'), or None. CODE_RE finds a name first: none, None. The text is then read as
+    """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the
+    refusal's words ('names backlog.py', 'imports kitlib.backlog.store', 'names backlog.py and can
+    run it (subprocess)'), or None. CODE_RE finds a name first: none, None. The text is then read as
     python's own syntax tree, so a name that is only in a string or a comment passes unless the
-    code can run something (PY_RUN_*) or imports the tool or the kit's library (PY_REACH_PARTS). It
+    code can run something (PY_RUN_*), opens a file for writing (_file_write), or imports the tool
+    or the kit's library (PY_REACH_PARTS). It
     is read twice: whole, and from its second line on (python -x skips the first line); a reading
     python -x cannot parse runs nothing. Fails closed to the name, as CODE_RE alone judged it,
     when the text does not parse, may be cut at SCRIPT_CAP, or declares a coding other than UTF-8
@@ -829,16 +851,17 @@ def py_reach(text):
             continue                            # python -x cannot run it either
         why = _tree_reach(ast, tree)
         if why:
-            return why if why.startswith('imports ') else '%s and can run it (%s)' % (named, why)
+            return why if why.startswith('imports ') else '%s and %s' % (named, why) \
+                if why.startswith('opens ') else '%s and can run it (%s)' % (named, why)
     return None
 
 
 def _tree_reach(ast, tree):
     """py_reach's reading of one syntax tree: 'imports <module>' for an import that reaches the
     tool or the kit's library (PY_REACH_PARTS), else the first name that can run code or a process
-    (PY_RUN_*), else None."""
-    runner = kit_import = None
-    backlog_used = False                        # backlog as code (x.backlog) or named in a string (_names_backlog)
+    (PY_RUN_*), else the first call that opens a file for writing (_file_write), else None."""
+    runner = kit_import = writer = None
+    backlog_used = False                       # backlog as code (x.backlog) or named in a string (_names_backlog)
     for node in ast.walk(tree):
         found = ()
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -863,11 +886,43 @@ def _tree_reach(ast, tree):
             s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             backlog_used = backlog_used or _names_backlog(s)
+        elif isinstance(node, ast.Call) and writer is None:
+            writer = _file_write(ast, node)
         if found and runner is None:
             runner = sorted(found)[0]
     if kit_import and backlog_used:
         return kit_import
-    return runner
+    return runner or writer
+
+
+# a file opened for writing (_file_write): an open mode holding w, a, x or +
+PY_MODE_RE = re.compile(r'^[rwaxbtU+]+$')
+PY_WRITE_MODE_RE = re.compile(r'[wax+]')
+PY_WRITE_ATTRS = frozenset(('write_text', 'write_bytes'))
+
+
+def _file_write(ast, node):
+    """'opens a file for writing (<call>)' when the call `node` may write a file, else None:
+    write_text or write_bytes, os.open, or an open() in any spelling (open, io.open, codecs.open,
+    Path.open) given a mode of mode letters holding w, a, x or + (a positional string or mode=),
+    a mode= (or **) that is not a literal, or the builtin's second argument that is not a literal."""
+    f = node.func
+    if isinstance(f, ast.Attribute) and f.attr in PY_WRITE_ATTRS:
+        return 'opens a file for writing (%s)' % f.attr
+    builtin = isinstance(f, ast.Name) and f.id == 'open'
+    if not builtin and not (isinstance(f, ast.Attribute) and f.attr == 'open'):
+        return None
+    if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == 'os':
+        return 'opens a file for writing (os.open)'             # its flags are numbers: fail closed
+    kw = [k.value for k in node.keywords if k.arg in ('mode', None)]
+
+    def literal(v):
+        return isinstance(v, ast.Constant) and isinstance(v.value, str)
+    if not all(literal(v) for v in kw) or (builtin and len(node.args) > 1 and not literal(node.args[1])) or \
+            any(literal(v) and PY_MODE_RE.match(v.value) and PY_WRITE_MODE_RE.search(v.value)
+                for v in list(node.args) + kw):
+        return 'opens a file for writing (open)'
+    return None
 
 
 def _names_backlog(s):

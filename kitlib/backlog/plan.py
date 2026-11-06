@@ -91,9 +91,10 @@ class Context(object):
     opener.open_store). `liveness` (None: no probe) is `liveness(branch) -> (why it is live, None)
     or (None, tip)`: whether the worktree on a pulled branch is dead, so a pull its holder left
     may be blocked or released by anybody (stop_pull; opener.open_store passes
-    kitlib.worktree.classify.branch_liveness, so this module imports nothing from worktree).
+    kitlib.worktree.classify.branch_liveness).
     `quiet` (None: quiet_hold on `root`) is `quiet(branch) -> (why it is not quiet, None) or
-    (None, seconds quiet)`, the probe of a quiet release (plan_release).
+    (None, seconds quiet)`, the probe of a quiet release (plan_release). This module imports
+    kitlib.worktree and kitlib.gate only lazily, inside quiet_hold, when a release asks it.
     `cap` (None: offer.DEFAULT_CAP; a callable: read on first use) is the most records `next` offers and `pull` takes in order
     (`.kit.json` backlog.cap, opener.repo_cap); `next --cap` overrides it for that call.
     `resources` (None: none; a callable: read on first use) is {name: capacity} (`.kit.json`
@@ -2157,7 +2158,8 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     """`(why it is not quiet, None)` or `(None, seconds quiet)`: whether the pull on `branch` may be
     released as quiet (plan_release; docs/backlog.md "Stopping a pull"). Quiet means: no process
     has its current directory in a worktree on `branch` (and, when some process could not be
-    read, every folder of it opens for delete: holders.held_folder), no machine lock record names
+    read, every folder of it opens for delete: holders.held_folder), no such tree is exempt
+    (remove.exemption) or locked with `git worktree lock`, no machine lock record names
     it (sweep.machine_lock_holder), the landing lock does not name `branch`, no verdict-queue
     entry for `branch` waits (kitlib.gate.verdicts: one that has not expired with `main`, the code
     main's commit, None: every entry waits), and the newest activity is QUIET_AFTER_S old or more.
@@ -2190,6 +2192,15 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
         return 'the landing lock names %s' % branch, None
     for entry in on:
         path = entry['path']
+        # classify.live_reason's own holds on a tree: a worktree_remove exemption ruling and
+        # `git worktree lock` (an entry that cannot say is taken as locked: fail closed).
+        ruling = remove.exemption(wctx.s, path)
+        if ruling:
+            return 'the tree %s is exempt (%s)' % (os.path.normpath(path), ruling), None
+        if entry.get('locked', '') is not None:
+            return ('the tree %s is locked with `git worktree lock`%s'
+                    % (os.path.normpath(path),
+                       ': ' + entry['locked'] if entry.get('locked') else '')), None
         holder = sweep.machine_lock_holder(held, path, branch)
         if holder:
             return 'machine lock: %s' % holder, None

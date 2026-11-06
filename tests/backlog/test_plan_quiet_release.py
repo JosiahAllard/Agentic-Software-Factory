@@ -13,7 +13,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal
 from kitlib.gate import verdicts
-from kitlib.worktree import classify, holders
+from kitlib.worktree import classify, holders, remove
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, messages, priced
 from tests.realgit import real_git
 
@@ -242,9 +242,28 @@ class QuietHoldProbe(QuietCase):
         self.assertIn('work.txt', why)
 
     def test_a_reflog_entry_is_activity(self):
-        self.repo.write('w.txt', 'x\n', root=self.tree)
-        self.repo.commit('later work', 'w.txt', cwd=self.tree)
-        self.assertIn('under the 4 h quiet bar', self.hold(now=time.time() + 3600)[0])
+        # The only fresh signal is the reflog: a commit dated 10 days back, put on a branch no
+        # tree is on (no file mtimes) now, so only its reflog entry is new.
+        old = '%d +0000' % (int(time.time()) - 10 * 86400)
+        with mock.patch.dict(os.environ, {'GIT_COMMITTER_DATE': old, 'GIT_AUTHOR_DATE': old}):
+            sha = self.repo.git('commit-tree', self.repo.git('rev-parse', 'HEAD^{tree}'),
+                                '-p', 'HEAD', '-m', 'old work')
+        self.repo.git('branch', 'kit/reflog-only', sha)
+        why, _ = self.hold(branch='kit/reflog-only', now=time.time() + 3600)
+        self.assertIn('active 1.0 h ago (newest: a reflog entry of kit/reflog-only)', why or '')
+        self.assertEqual(self.hold(branch='kit/reflog-only')[0], None)
+
+    def test_a_locked_tree_refuses(self):
+        self.repo.git('worktree', 'lock', '--reason', 'owner keeps it', self.tree)
+        self.addCleanup(self.repo.git, 'worktree', 'unlock', self.tree, check=False)
+        why, _ = self.hold()
+        self.assertIn('is locked with `git worktree lock`: owner keeps it', why)
+
+    def test_an_exempt_tree_refuses(self):
+        with mock.patch.object(remove, 'exemption', return_value='kept by ruling X') as ex:
+            why, _ = self.hold()
+        self.assertIn('is exempt (kept by ruling X)', why)
+        self.assertTrue(ex.called)
 
     def test_a_process_in_the_tree_refuses(self):
         procs = lambda: (([(4242, 'python.exe', os.path.join(self.tree, 'sub'))], 0, 1), None)

@@ -5840,10 +5840,18 @@ GIT_STRICT_READ_OPTS = {'branch': (GIT_LISTING_OPTS | {'--all', '--remotes', '-v
                         'tag': (GIT_LISTING_OPTS, re.compile(r'-(?=.)[il]*(?:n\d*)?$'))}
 # strict reads (strict_dyn_read): reads no option of which writes a file or runs a program the line
 # names, so a computed word (any number of words) leaves them reads; and reads with such an option
-# (log, show and diff: --output), where a computed word stays a read only when the text pins it to
+# (log, show, diff and rev-list: --output), where a computed word stays a read only when the text pins it to
 # one argument that is no option, or the value of one of GIT_DYN_VALUE_OPTS
-GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref'}
-GIT_DYN_PINNED_READS = {'log', 'show', 'diff'}
+GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref', 'ls-tree'}
+# rev-list takes the diff options too (--output opens a file for writing)
+GIT_DYN_PINNED_READS = {'log', 'show', 'diff', 'rev-list'}
+# a literal word after which git reads no option (log "$A" --end-of-options "$B"): the computed
+# words behind it are revisions or paths, so they cannot be --output; not when it is the value of
+# the option before it (--grep --end-of-options), unless that option is known to take no value
+END_OF_OPTIONS = '--end-of-options'
+NO_VALUE_OPTS = frozenset(('--oneline', '--stat', '--patch', '-p', '--name-only', '--name-status', '--numstat',
+                           '--shortstat', '--cached', '--staged', '--no-color', '--count', '--graph', '--all'))
+NO_VALUE_NUM_RE = re.compile(r'-\d+')
 GIT_DYN_VALUE_OPTS = ('--format=', '--pretty=')
 # characters a pinned word may carry outside quotes: none the shell expands, splits or joins on
 # (bash globs and braces, PowerShell's array comma and splat @), and no backslash or backtick
@@ -5967,12 +5975,20 @@ def dyn_head(cmd, w):
     return ''.join(head)
 
 
+def respelt(cmd, w):
+    """True unless the source of the word `w` is exactly its text (a plain literal): a quoted, escaped,
+    locale-quoted or brace-expanded word may reach git as other than its text. No place: True."""
+    src = cmd.source or ''
+    return w.start is None or w.end is None or not 0 <= w.start <= w.end <= len(src) or src[w.start:w.end] != w.text
+
+
 def strict_dyn_read(gc):
     """True when every computed word of git read `gc` leaves it a read whatever it stands for
     (git_reads strict): a GIT_DYN_ANY_READS subcommand in bash or PowerShell, or a
     GIT_DYN_PINNED_READS one whose every computed word is one argument (dyn_head) that starts with
     literal text that keeps it from being an option (HEAD~$n, origin/$b, ./$f) or with
-    --format= or --pretty=. Residual (inferred): PowerShell 5.1 splits an argument whose value
+    --format= or --pretty=; or any computed word after a literal --end-of-options that is not the
+    value of the option before it (END_OF_OPTIONS). Residual (inferred): PowerShell 5.1 splits an argument whose value
     holds a double quote (ps_native_unsure), which the text cannot show."""
     cmd = gc.inv.cmd if gc.inv is not None else None
     if cmd is None or cmd.shell not in DYN_SAFE_BARE:
@@ -5981,7 +5997,20 @@ def strict_dyn_read(gc):
         return True
     if gc.sub not in GIT_DYN_PINNED_READS:
         return False
-    for w in (w for w in gc.rest if w.dyn):
+    done, prev = False, None
+    for w in gc.rest:
+        before, prev = prev, w
+        if not w.dyn:
+            # the word before is read as written, so one the shell changes (_computed, native_unsure,
+            # or any whose source differs from its text: $"--grep", {\--grep,}) fails closed
+            if w.text == END_OF_OPTIONS and (before is None or not _computed(before)
+                                             and not native_unsure(cmd, before) and not respelt(cmd, before) and (
+                    not before.text.startswith('-') or before.text in NO_VALUE_OPTS
+                    or NO_VALUE_NUM_RE.fullmatch(before.text))):
+                done = True
+            continue
+        if done:
+            continue
         head = dyn_head(cmd, w)
         if not head or (head.startswith('-') and not head.startswith(GIT_DYN_VALUE_OPTS)):
             return False
@@ -6159,7 +6188,9 @@ def git_reads(gc, strict=False):
     SYMREF_READ_OPTS."""
     sub = gc.sub
     words = [w.text for w in gc.rest]
-    if strict and (any(ps_splat(gc, w) for w in gc.rest) or any(writes_output_file(t) for t in words)):
+    # a word bash changes (`\--output=f`) is also read as the shell hands it to git (Word.alt)
+    passed = words + [w.alt for w in gc.rest if w.alt is not None]
+    if strict and (any(ps_splat(gc, w) for w in gc.rest) or any(writes_output_file(t) for t in passed)):
         return False
     if strict and any(w.dyn for w in gc.rest) and not strict_dyn_read(gc):
         return False

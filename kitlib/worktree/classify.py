@@ -228,7 +228,7 @@ def evidence_name(path):
 
 def gate_state(main, head, cfg=None):
     """'green' (a gate-OK record from a --full gate that git agrees with: gate_ok.verify_full;
-    or a default-mode one when `cfg`, the main checkout's Config, sets "landing".gate_once:
+    or a default-mode one when `cfg`, the main checkout's Config, has "landing".gate_once on:
     docs/gate.md "Gate once at landing"), 'none', 'not full: <why>' (a record git agrees with,
     from a gate run without --full), or 'unknown: <why>'."""
     rec, why = gate_ok.verify_full(main, head)

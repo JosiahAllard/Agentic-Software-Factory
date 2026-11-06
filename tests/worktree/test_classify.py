@@ -153,6 +153,7 @@ class Classes(ClassifyCase):
         self.assertIn('detached', out)
 
     def test_a_record_from_a_gate_without_full_is_c_not_full(self):
+        self.configure({'landing': {'gate_once': False}})     # on by default: green then
         path = self.workstream('half')
         head = self.git('rev-parse', 'HEAD', cwd=path)
         gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],

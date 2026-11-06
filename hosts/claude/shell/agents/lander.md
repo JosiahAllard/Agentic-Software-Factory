@@ -135,7 +135,7 @@ preflight's leftover-worktree and stray-file lines (`--find lock`).
 ## Batches
 
 Only when the profile's **Landing** section says batches are allowed and the brief
-lists them: up to the repo's `"landing".batch_max` branches, each with its own
+lists them: up to the repo's `"landing".batch_max` branches (5 by default), each with its own
 reviewer, reviewed range and LAND verdict. The coordinator names together only
 branches whose landings run the same tests, or tests inside another's (an owner rule;
 <kit>/docs/gate.md "Batch"); land the batch as the brief names it. One call, in the brief's order, one
@@ -144,7 +144,7 @@ branches whose landings run the same tests, or tests inside another's (an owner 
 one `--reviewed-by` per branch in the same order; it ends with a `RESULT` line for each branch.
 The tool merges each with its own merge commit, gates the result once, and pushes
 once; a batch you name stays all or nothing: a conflict or a red gate undoes the whole
-batch and lands nothing. Where the repo's `.kit.json` sets `"landing".batch_max`, a landing
+batch and lands nothing. Unless the repo's `.kit.json` sets `"landing".batch_max` to 1, a landing
 may also fold submissions queued behind it into its batch; such a batch drops or gives
 back a folded submission without the rest, and a submission folded into another's batch
 prints `FOLDED: ...` and that batch's outcome. Verify

@@ -38,9 +38,9 @@ PROMPT = ('Start up now: the machine restarted and after-reboot launched you. Ru
 PM_PROMPT = ('The machine restarted and the hub resumed you through after-reboot; its coord-restart job brings the '
              'coordinators back one at a time, about 5 minutes apart. Re-arm the usage watch and any dead-man checks, '
              'find the coordinators with ListAgents as they come back, and send each a sync (main state, what was in '
-             'flight, anything from the owner). Then tell the owner briefly what came back and what did not, and that '
-             'this %s must be stopped before the Project Manager conversation is opened in the desktop app, so it '
-             'does not fork.' % S.PM_NAME)
+             'flight, anything from the owner). Then tell the owner briefly what came back and what did not. This %s '
+             'is the picked-up Project Manager conversation: the owner continues this %s and does not open the old '
+             'desktop copy.' % (S.PM_NAME, S.PM_NAME))
 
 
 def why(e):

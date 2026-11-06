@@ -1089,7 +1089,8 @@ class PmDataStore(unittest.TestCase):
         lines = out.splitlines()
         self.assertIn('WROTE %s -> %s' % (self.backend.describe(), added[:10]), lines)
         self.assertFalse([l for l in lines if l.startswith('ERROR')], out)
-        warn = [l for l in lines if l.startswith('WARNING: ')]
+        # only the stale-index warning: the glob scope also prints its own shape warning
+        warn = [l for l in lines if l.startswith('WARNING: ') and 'index' in l]
         self.assertEqual(len(warn), 1, out)
         self.assertGreater(lines.index(warn[0]), lines.index(
             'WROTE %s -> %s' % (self.backend.describe(), added[:10])))

@@ -29,7 +29,10 @@ KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 
 class LandCase(fixtures.GateRepoCase):
-    KIT = {}
+    # "landing".gate_once opted out: these cases pin the record check and merged gate of a base
+    # without it; the default (on) has its own cases (GateOnce*, test_land_fold_off.Default). A
+    # subclass that writes its own "landing" section writes the opt-out itself where it needs it.
+    KIT = {'landing': {'gate_once': False}}
     # lander() gives each tip the full-gate OK record a landing requires (fixtures.gate_full);
     # a test of that check itself sets it False and gates its tips (test_land_tip_gated)
     GATE_TIPS = True

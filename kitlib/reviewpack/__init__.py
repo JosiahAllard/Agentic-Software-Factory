@@ -272,10 +272,13 @@ def level(path, levels):
 
 # --- owner-only paths ---------------------------------------------------------------------------
 
-def owner_rules(root, base, branch):
+def owner_rules(root, base, branch, base_cfg=None):
     """The rules a landing is judged by: the branch's `owner` section merged with the base's, the
-    owner's identity from the base alone. ConfigError when either cannot be read."""
-    return ownermod.merge(load_at(root, branch).owner_rules(), load_at(root, base).owner_rules())
+    owner's identity from the base alone. ConfigError when either cannot be read. `base_cfg` is the
+    base's Config when the caller has loaded it already."""
+    if base_cfg is None:
+        base_cfg = load_at(root, base)
+    return ownermod.merge(load_at(root, branch).owner_rules(), base_cfg.owner_rules())
 
 
 def trailers_of(message, key=TRAILER):
@@ -544,7 +547,7 @@ def pack(path, branch, base=None, diff=None):
         return Outcome(USAGE, lines)
 
 
-def gate_line(top, branch, cfg=None, base=None):
+def gate_line(top, branch, cfg=None, base=None, mb=None):
     """The `gate` line: whether `branch`'s tip has the record its landing requires. A
     `gate.py --full` pass's gate-OK record of exactly that commit always lands it (gate_ok.verify_full;
     docs/gate.md "Landing"). Otherwise the base's config `cfg` and the base `base` decide, by the
@@ -553,7 +556,8 @@ def gate_line(top, branch, cfg=None, base=None):
     said only where the landing does: no record at all, or a record the diff check refuses. A strict
     path under a base without gate_once or shared_paths is the procedure's rule, not the record
     check's, so a scoped record is then said to land, with its --full final gate named. Printed only:
-    it never changes the exit status. The record's own steps are not re-checked."""
+    it never changes the exit status. The record's own steps are not re-checked. `mb` is the
+    merge-base of `base` and `branch` when the caller has it already."""
     tip, why = gitrefs.resolve(branch, top)
     if not tip:
         return 'gate     tip of %s cannot be read (%s); landing will refuse' % (branch, why)
@@ -565,7 +569,7 @@ def gate_line(top, branch, cfg=None, base=None):
     mode = gate_ok.mode_of(scoped) if scoped is not None else None
     if mode not in ('select', 'docs'):
         scoped, mode = None, None
-    kind, text = _final_gate(top, cfg, base, tip, mode)
+    kind, text = _final_gate(top, cfg, base, tip, mode, mb)
     if kind == 'unknown' and scoped is None:
         return '%s; landing will refuse' % head        # no record at all: it refuses whatever the rule
     if kind == 'record':
@@ -585,7 +589,7 @@ def gate_line(top, branch, cfg=None, base=None):
         return ('%s; landing will refuse until the scoped final gate (gate.py without --full) '
                 'passes on this tip' % head)
     if gate_once(cfg):
-        return ('gate     tip %s: scoped gate OK (the base sets "landing".gate_once), ended %s;'
+        return ('gate     tip %s: scoped gate OK (the base has "landing".gate_once on), ended %s;'
                 ' a gate config change still needs --full'
                 % (tip[:10], scoped.get('ended_utc')))
     return ('gate     tip %s: scoped gate OK (this branch needs no --full), ended %s, steps not '
@@ -593,22 +597,26 @@ def gate_line(top, branch, cfg=None, base=None):
 
 
 def gate_once(cfg):
-    """True when the Config `cfg` (None: no config) sets "landing".gate_once true."""
+    """True when the Config `cfg` (None: no config) has "landing".gate_once on, as written or by
+    default."""
     return cfg is not None and cfg.section('landing').get('gate_once') is True
 
 
-def _final_gate(top, cfg, base, tip, mode):
+def _final_gate(top, cfg, base, tip, mode, mb=None):
     """`(kind, text)` for a tip whose scoped record (`mode` "select", "docs" or None) is judged by
     the landing's rules on its diff against `base` under `cfg`: ('record', why) the diff check
     refuses a scoped record; ('default', None) only a docs record is refused, and a default-mode
     one is not; ('procedure', why) the record check takes it but the procedure ends the tip on
-    --full (a strict path); ('unknown', why) it cannot be told; (None, None) a scoped record lands."""
+    --full (a strict path); ('unknown', why) it cannot be told; (None, None) a scoped record lands.
+    `mb` is the merge-base of `base` and `tip` when the caller has it; else it is read here."""
     if cfg is None or not base:
         return 'unknown', 'no base config'
     try:
         from kitlib.gate import land, runner
         sha, why = gitrefs.resolve(base, top)
-        mb, why2 = merge_base(top, base, tip)
+        why2 = None
+        if not mb:
+            mb, why2 = merge_base(top, base, tip)
         if not sha or not mb:
             return 'unknown', why or why2 or 'no merge base'
         changed, why = runner.changed_between(top, mb, tip)
@@ -659,7 +667,7 @@ def _pack(lines, path, branch, base, diff):
     try:
         base_cfg = load_at(top, base)
         coauthor = base_cfg.section(SECTION)['coauthor']
-        rules = owner_rules(top, base, branch)
+        rules = owner_rules(top, base, branch, base_cfg)
     except ConfigError as e:
         raise Stop('%s: refused: kit configuration: %s' % (TOOL, e))
 
@@ -671,7 +679,7 @@ def _pack(lines, path, branch, base, diff):
                   '--').splitlines()
     lines.append('commits  %d (no merges)' % len(commits))
     lines.extend('           ' + c for c in commits[:40])
-    lines.append(gate_line(top, branch, base_cfg, base))
+    lines.append(gate_line(top, branch, base_cfg, base, mb))
 
     levels = risk_rules(top)
     groups = {}

@@ -71,6 +71,28 @@ def scope_components(member):
     return member_base(member).casefold().strip('/').split('/')
 
 
+def is_folder_scope(member):
+    """True when `member` is a `**` glob or a bare folder: a literal path whose last component has
+    no extension. Shaped from the text alone (no tree is read), so an extensionless file such as
+    `Makefile` reads as a folder. `none` and a single file (`a/b.py`) are not."""
+    if member == NONE:
+        return False
+    if '**' in member:
+        return True
+    return '.' not in member.rstrip('/').rsplit('/', 1)[-1]
+
+
+def broad_scope_warning(members):
+    """`['WARNING: ...']` naming each member of `members` that is a bare folder or holds a `**`
+    glob (is_folder_scope), else []. Pure: the caller prints it and still writes the record. A
+    member the grammar cannot read is the caller's refusal, not a warning."""
+    broad = [m for m in members if scope_member_error(m) is None and is_folder_scope(m)]
+    if not broad:
+        return []
+    return ['WARNING: scope %s collides with everything below it: narrow it to the files the '
+            'work will touch' % ', '.join('`%s`' % m for m in broad)]
+
+
 def shared_path_error(path):
     """None when `path` may be a `.kit.json` "backlog".shared_paths entry: one literal file, a
     repo-root-relative path with no glob and no wildcard character; else why not. Whether it names

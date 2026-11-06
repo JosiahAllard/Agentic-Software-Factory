@@ -158,7 +158,7 @@ class AddBroadScope(StoreCase):
     def test_a_dotted_path_in_the_body_does_not_fail_the_add(self):
         change = self.add('fix the warning', ['kitlib/backlog/**'],
                           body='See ./kitlib/backlog/a.py and ../docs/x.md.\n')
-        self.assertEqual(self.warnings(change), [])
+        self.assertNotIn('the text names', ' '.join(self.warnings(change)))   # shape warning only
         self.assertIsNotNone(self.get('NEW'))
 
     def test_a_literal_md_member_does_not_warn(self):
@@ -169,13 +169,14 @@ class AddBroadScope(StoreCase):
         change = self.add('fix kitlib/backlog/plan.py', ['kitlib/backlog/plan.py'])
         self.assertEqual(self.warnings(change), [])
 
-    def test_a_broad_nested_scope_naming_no_path_does_not_warn(self):
+    def test_a_broad_nested_scope_naming_no_path_gets_the_shape_warning_only(self):
         change = self.add('tidy the backlog', ['kitlib/backlog/**'])
-        self.assertEqual(self.warnings(change), [])
+        self.assertEqual(len(self.warnings(change)), 1, change.lines)
+        self.assertNotIn('the text names', self.warnings(change)[0])
 
-    def test_a_path_outside_the_broad_scope_does_not_warn(self):
+    def test_a_path_outside_the_broad_scope_is_not_suggested(self):
         change = self.add('fix docs/backlog.md', ['kitlib/backlog/**'])
-        self.assertEqual(self.warnings(change), [])
+        self.assertNotIn('docs/backlog.md', self.warnings(change)[0])
 
 
 # --- shared paths (`.kit.json` "backlog".shared_paths; docs/backlog.md "Shared paths") -----------

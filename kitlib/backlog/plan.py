@@ -612,7 +612,10 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     if ref:
         pairs.append(('ref', ref))
     pairs.append(('summary', summary))
-    lines = notes + broad_scope_warning(scopes, summary, body) + ['ADDED %s, found on %s' % (rid, where)]
+    named_broad = broad_scope_warning(scopes, summary, body)
+    seen = named_broad[0] if named_broad else ''
+    shape = smod.broad_scope_warning([m for m in scopes if '`%s`' % m not in seen])
+    lines = notes + named_broad + shape + ['ADDED %s, found on %s' % (rid, where)]
     lines += ['  %-11s %s' % (k + ':', v) for k, v in pairs]
     lines.append('Unprioritised: not in `next` until somebody prices it (`list --needs-priority`).')
     if review is not None:
@@ -1186,7 +1189,7 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
                        else 'it named the old price')
         pairs = [(k, v) for k, v in pairs if k != 'priority_ruling']
 
-    lines = notes + ['SET %s' % rid]
+    lines = notes + smod.broad_scope_warning(dict(changes).get('scope', [])) + ['SET %s' % rid]
     for key in sorted(set(keys) | set(unset) | ({'priority_ruling'} if dropped else set())):
         lines.append('  %-11s %s -> %s' % (key + ':', ' / '.join(rec.all(key)) or '(absent)',
                                            ' / '.join(rmod.values(pairs, key)) or '(absent)'))

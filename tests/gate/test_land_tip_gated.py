@@ -467,7 +467,8 @@ class ScopedCase(TipCase):
     runs every step that is not manual."""
     GATE = SCOPED_GATE
     OWNER = 'owner@example.invalid'
-    KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER}, landing={'shared_paths': SHARED})
+    KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER},
+               landing={'shared_paths': SHARED, 'gate_once': False})
 
     def gated(self, files, **kw):
         wt, tip = self.branch('feature', files)
@@ -531,7 +532,8 @@ class ScopedRecords(ScopedCase):
 
 
 class ScopedNoSetting(ScopedCase):
-    """With no "landing".shared_paths and no smoke_steps, as before: only a --full record lands."""
+    """With no "landing".shared_paths, no smoke_steps and gate_once off: only a --full record
+    lands."""
     KIT = dict(test_land.LandCase.KIT)
 
     def test_without_the_setting_a_scoped_record_is_refused(self):
@@ -573,7 +575,7 @@ class ScopedDocsOnly(ScopedCase):
     GATE = {'docs_only': {'globs': ['*.md'], 'steps': ['scrub']},
             'steps': [_step('unit'), _step('scrub', always=False, globs=['*.md'])]}
     # not content/skills/**: a strict path, which reuse.docs_only_change already bars
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': ['shared/*']})
+    KIT = dict(ScopedCase.KIT, landing={'shared_paths': ['shared/*'], 'gate_once': False})
 
     def test_a_docs_record_touching_a_shared_path_is_refused(self):
         wt, tip, rec = self.gated({'shared/x.md': 'words\n'})
@@ -679,7 +681,7 @@ class GateOnce(ScopedCase):
 
 class GateOnceNoShared(ScopedCase):
     """"landing".gate_once alone, with no shared_paths and no smoke_steps, lands a scoped record;
-    gate_once false is the same as unset (ScopedNoSetting)."""
+    gate_once false opts out (ScopedNoSetting, GateOnceOff), and unset is on (GateOnceUnset)."""
     KIT = dict(test_land.LandCase.KIT, owner={'email': ScopedCase.OWNER},
                landing={'gate_once': True})
 
@@ -688,6 +690,21 @@ class GateOnceNoShared(ScopedCase):
         self.assertEqual(gate_ok.mode_of(rec), 'select')
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, out.merge)[0]), 'full')
+
+
+class GateOnceUnset(ScopedCase):
+    """A .kit.json with no "landing" section: gate_once is on by default, so a scoped record
+    lands and the merged gate runs --full once."""
+    KIT = {'owner': {'email': ScopedCase.OWNER}}
+
+    def test_an_unset_gate_once_lands_a_scoped_record_and_gates_once(self):
+        _, tip, rec = self.gated({'a.py': 'x = 1\n'})
+        self.assertEqual(gate_ok.mode_of(rec), 'select')
+        said = []
+        out = self.lander(BRANCH, self.main, tip, say=said.append).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue([s for s in said if s.startswith(ONCE)], said)
         self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, out.merge)[0]), 'full')
 
 
@@ -753,9 +770,9 @@ class GateOnceRed(ScopedCase):
 
 
 class GateOnceRedOff(ScopedCase):
-    """The same base without gate_once: the merged gate runs cmd, which passes."""
+    """The same base with gate_once off: the merged gate runs cmd, which passes."""
     GATE = GateOnceRed.GATE
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED})
+    KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED, 'gate_once': False})
 
     def test_without_gate_once_the_merged_gate_runs_the_cmd(self):
         _, tip, _ = self.gated({'a.py': 'x = 1\n'})

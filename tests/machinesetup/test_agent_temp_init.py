@@ -88,11 +88,11 @@ class SweepDryRun(unittest.TestCase):
         self.assertEqual(kw['env']['PYTHONIOENCODING'], 'utf-8')
         self.assertNotIn('text', kw)
 
-    def test_creationflags_and_timeout_are_passed(self):
+    def test_timeout_is_passed(self):
         run, calls = self.fake()
         at().sweep_dry_run(self.KIT, 'py.exe', timeout=7, run=run)
         kw = calls[0][1]
-        self.assertEqual(kw['creationflags'], getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.assertNotIn('creationflags', kw)
         self.assertEqual(kw['timeout'], 7)
 
     def test_exit_0_and_3_return_the_non_blank_lines_of_stdout_and_stderr(self):

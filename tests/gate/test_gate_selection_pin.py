@@ -40,6 +40,13 @@ PINNED = {
         'full_cmd': SUITE + ['--full', '-C', '{root}'],
         'daily_cmd': SUITE + ['--full', '--both-tiers', '-C', '{root}'],
         'pass': ['kit_tests: OK'],
+    }, {
+        'name': 'module-map',
+        'always': True,
+        'globs': ['*'],
+        'warn': True,
+        'cmd': ['{python}', 'tools/module_map.py', '-C', '{root}', '--check', '--base', '{base}'],
+        'pass': ['module_map: OK'],
     }],
     'setup': None,
     'worktree_guard': None,
@@ -54,23 +61,28 @@ PINNED = {
 }
 
 # mode: (build keywords, {step: argv after {python}})
+MAP_CHECK = ['tools/module_map.py', '-C', ROOT, '--check', '--base', 'base']
 ARGV = {
-    'diff': ({}, {'kit-suite': ['tools/kit_tests.py', '--select', '--smoke', '-C', ROOT]}),
+    'diff': ({}, {'kit-suite': ['tools/kit_tests.py', '--select', '--smoke', '-C', ROOT],
+                  'module-map': MAP_CHECK}),
     'merged': ({'merged': True},
-               {'kit-suite': ['tools/kit_tests.py', '--select', '--smoke', '-C', ROOT]}),
-    'full': ({'full': True}, {'kit-suite': ['tools/kit_tests.py', '--full', '-C', ROOT]}),
+               {'kit-suite': ['tools/kit_tests.py', '--select', '--smoke', '-C', ROOT],
+                'module-map': MAP_CHECK}),
+    'full': ({'full': True}, {'kit-suite': ['tools/kit_tests.py', '--full', '-C', ROOT],
+                              'module-map': MAP_CHECK}),
     'daily': ({'full': True, 'daily': True},
-              {'kit-suite': ['tools/kit_tests.py', '--full', '--both-tiers', '-C', ROOT]}),
+              {'kit-suite': ['tools/kit_tests.py', '--full', '--both-tiers', '-C', ROOT],
+               'module-map': MAP_CHECK}),
 }
 
 # (what the run is, changed paths, full): {step: why}, in run order
 SELECTION = [
-    ('a code change', ['kitlib/x/y.py'], False, {'kit-suite': 'always'}),
+    ('a code change', ['kitlib/x/y.py'], False, {'kit-suite': 'always', 'module-map': 'always'}),
     ('a docs-only change', ['docs/a.md'], False, {'kit-suite': 'docs-only'}),
-    ('a .kit.json change', ['.kit.json'], False, {'kit-suite': 'always'}),
+    ('a .kit.json change', ['.kit.json'], False, {'kit-suite': 'always', 'module-map': 'always'}),
     ('a docs change outside docs/*.md', ['docs/sub/a.md', 'README.md'], False,
-     {'kit-suite': 'always'}),
-    ('a full run', [], True, {'kit-suite': 'full'}),
+     {'kit-suite': 'always', 'module-map': 'always'}),
+    ('a full run', [], True, {'kit-suite': 'full', 'module-map': 'full'}),
 ]
 
 

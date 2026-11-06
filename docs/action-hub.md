@@ -673,6 +673,30 @@ store's git push (the `push` setting).
 
 Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launcher/test_pipes.py.
 
+### Store upkeep
+
+Every kit git child runs with `maintenance.auto=false` and `gc.auto=0` (`kitlib.git.cmd`,
+`AUTO_MAINTENANCE_OFF`). Git for Windows runs the auto maintenance a commit or fetch starts in the
+foreground, so it ran under the call's 30 s timeout, and a gc killed there left
+`objects/maintenance.lock` behind. With that lock present git skips maintenance without a word,
+and loose objects pile up. So the hub packs the store itself. The `store-upkeep` job
+(`kitlib/hubjobs/store_upkeep.py`) runs every 24 h, first 15 min after the hub starts, on the git
+common dir of the PM data worktree only:
+
+1. It writes the commit graph with Bloom filters (`commit-graph write --reachable --changed-paths
+   --split`), with no timeout.
+2. It runs `gc` only when `count-objects -v` counts 6700 loose objects or more. That is git's own
+   `gc.auto` default, not measured for this store. The command is `-c gc.writeCommitGraph=false -c
+   gc.packRefs=false -c pack.threads=2 gc --quiet`, with no timeout. It runs inside a machine-lock
+   slot (kind `build`, 2 cores, slug `store-upkeep`) that holds that common dir's landing resource,
+   so no landing runs beside it. When the lock gives no slot within 10 min, or an owner or game
+   hold is in place, the gc waits for the next pass.
+
+The job deletes nothing itself. It reports two leftovers: a `.pack` with no `.idx` that is more
+than a day old, and a `maintenance.lock` more than 12 h old. Each pass names them in its health
+note and pushes `findings` with their count as the detail. A failed git step or another lock
+refusal is a job failure; the other step still runs.
+
 ## questions/Q-NNN
 | Field | Written by | Meaning |
 |---|---|---|

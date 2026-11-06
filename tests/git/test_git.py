@@ -76,6 +76,41 @@ class CmdTest(unittest.TestCase):
         self.assertEqual(seen[1]['PATH'], 'p')
         self.assertEqual(cmd.child_env({'GIT_DIR': 'x'})['GIT_DIR'], 'x')    # a caller's env is its own
 
+    @staticmethod
+    def _config(env):
+        """The GIT_CONFIG_COUNT entries of `env`, in order, as (key, value) pairs."""
+        return [(env['GIT_CONFIG_KEY_%d' % i], env['GIT_CONFIG_VALUE_%d' % i])
+                for i in range(int(env.get('GIT_CONFIG_COUNT') or 0))]
+
+    def test_every_git_child_runs_with_auto_gc_and_auto_maintenance_off(self):
+        # A porcelain commit or fetch ran git's auto maintenance in the foreground (Git for Windows
+        # cannot detach it); the call's timeout then killed it mid-gc, leaving its lock behind.
+        off = [('maintenance.auto', 'false'), ('gc.auto', '0')]
+        clean = {k: v for k, v in os.environ.items() if not k.upper().startswith('GIT_CONFIG_')}
+        seen = []
+
+        def fake(*a, **kw):
+            seen.append(kw['env'])
+            return 0, b'', b''
+        with mock.patch.dict(os.environ, clean, clear=True), \
+                mock.patch.object(cmd, '_run', side_effect=fake):
+            self.assertEqual(self._config(cmd.child_env()), off)
+            self.assertEqual(self._config(cmd.child_env({'PATH': 'p'})), off)
+            git.call(['commit', '-m', 'x'], '.')
+            git.call(['fetch'], '.', env={'PATH': 'p'})
+        self.assertEqual([self._config(env) for env in seen], [off, off])
+
+    def test_auto_maintenance_entries_go_after_the_callers_own(self):
+        mine = {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'core.x', 'GIT_CONFIG_VALUE_0': 'y',
+                'GIT_CONFIG_KEY_1': 'maintenance.auto', 'GIT_CONFIG_VALUE_1': 'true'}
+        env = cmd.child_env(mine)
+        # appended, so the later `false` wins over the caller's `true`; the caller's dict is untouched
+        self.assertEqual(self._config(env), [('core.x', 'y'), ('maintenance.auto', 'true'),
+                                             ('maintenance.auto', 'false'), ('gc.auto', '0')])
+        self.assertEqual(mine['GIT_CONFIG_COUNT'], '2')
+        again = cmd.child_env(env)                                  # already carried: nothing added twice
+        self.assertEqual(self._config(again), self._config(env))
+
 
 class RepoFixture(unittest.TestCase):
     """One repository with one linked worktree, shared by read-only tests."""

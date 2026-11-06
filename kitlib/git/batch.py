@@ -155,29 +155,15 @@ def ancestry(rev, cwd, timeout=None, env=None):
 # Every commit in a throwaway repository otherwise starts a `git maintenance run --auto` child.
 # Measured 2026-10-01 in the tests: 3,075 git processes, 555 of
 # them started by git itself; 209 with this.
-FIXTURE_CONFIG = (('maintenance.auto', 'false'), ('gc.auto', '0'))
+# cmd.call's children get these too (cmd.child_env); this covers the gits a test starts itself.
+FIXTURE_CONFIG = cmd.AUTO_MAINTENANCE_OFF
 
 
 def fixture_env(environ=None):
-    """The GIT_CONFIG_COUNT / GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n> entries (git 2.31+) adding
-    FIXTURE_CONFIG after any the environment already carries; `{}` when it carries all of them.
-    For tests: merge into the environment once, and every git a test starts inherits it."""
-    env = os.environ if environ is None else environ
-    try:
-        n = int(env.get('GIT_CONFIG_COUNT') or 0)
-    except ValueError:
-        n = 0
-    have = {(env.get('GIT_CONFIG_KEY_%d' % i), env.get('GIT_CONFIG_VALUE_%d' % i)) for i in range(n)}
-    out = {}
-    for key, value in FIXTURE_CONFIG:
-        if (key, value) in have:
-            continue
-        out['GIT_CONFIG_KEY_%d' % n] = key
-        out['GIT_CONFIG_VALUE_%d' % n] = value
-        n += 1
-    if out:
-        out['GIT_CONFIG_COUNT'] = str(n)
-    return out
+    """cmd.config_entries adding FIXTURE_CONFIG after any entries the environment already carries;
+    `{}` when it carries all of them. For tests: merge into the environment once, and every git a
+    test starts inherits it."""
+    return cmd.config_entries(os.environ if environ is None else environ, FIXTURE_CONFIG)
 
 
 def unquote_path(name):

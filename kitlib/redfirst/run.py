@@ -639,6 +639,9 @@ def refuse_tracked_results(top, base, sels, files):
 LOCK_CODES = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_REQUIRE, EXIT_RESERVED, EXIT_HOLD)
 # The kind a command runner books when it names no `lock`: an engine test builds and runs a game.
 COMMAND_LOCK = 'build'
+# The heavy list's kind for a filtered test run (kitlib.config.policy HEAVY_DEFAULTS), which
+# lock_kind books as COMMAND_LOCK.
+QUICK_TEST = 'quick-test'
 
 
 def lock_kind(sel, heavy):
@@ -656,9 +659,12 @@ def lock_kind(sel, heavy):
     entry = heavy_match(argv[0], argv[1:], heavy)
     if entry is None:
         return None, None
-    return entry['kind'], ('the heavy list takes `%s` as %s; a runner\'s `lock` in %s names '
-                           'another kind' % (' '.join([os.path.basename(argv[0])] + argv[1:2]),
-                                             entry['kind'], KEY))
+    # Its gradle and dotnet commands are always filtered (--tests, --filter), which the heavy list
+    # takes as quick-test; but a red-first run builds a throwaway tree at both base and head, not a
+    # short warm run, so it books build.
+    kind = COMMAND_LOCK if entry['kind'] == QUICK_TEST else entry['kind']
+    return kind, ('the heavy list takes `%s` as %s; a runner\'s `lock` in %s names '
+                  'another kind' % (' '.join([os.path.basename(argv[0])] + argv[1:2]), kind, KEY))
 
 
 def one_lock(sels, heavy):

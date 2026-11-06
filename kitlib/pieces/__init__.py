@@ -32,7 +32,7 @@ SECTION = 'pieces'
 KINDS = frozenset(('gradle', 'dotnet', 'spec', 'docker', 'asset', 'docs', 'builder', 'file', 'planned'))
 FIELDS = frozenset(('id', 'group', 'kind', 'dir', 'gradle', 'dotnet', 'wire', 'forces', 'outputs',
                     'artifact', 'optional', 'owner_only', 'transitional', 'was', 'deps', 'test_deps'))
-TOP = frozenset(('schema', 'about', 'root', 'dotnet', 'pieces', 'removed'))
+TOP = frozenset(('schema', 'about', 'root', 'dotnet', 'pieces', 'removed', 'groups'))
 
 
 class TableError(ValueError):
@@ -59,6 +59,10 @@ class Table(object):
         extra = set(data) - TOP
         if extra:
             raise TableError('unknown top-level key(s): %s' % ', '.join(sorted(extra)))
+        groups = data.get('groups')
+        if groups is not None and (not isinstance(groups, list) or len(set(map(str, groups))) != len(groups)
+                                   or not all(isinstance(g, str) and g for g in groups)):
+            raise TableError('groups must be a list of distinct non-empty strings')
         self.root = tuple(data.get('root', ()))
         self.removed = tuple(data.get('removed', ()))
         dn = data.get('dotnet') or {}
@@ -77,6 +81,8 @@ class Table(object):
             for need in ('group', 'kind', 'dir'):
                 if not p.get(need):
                     raise TableError('%s: no %s' % (pid, need))
+            if groups is not None and p['group'] not in groups:
+                raise TableError('%s: group %r is not in the table\'s groups' % (pid, p['group']))
             if p['kind'] not in KINDS:
                 raise TableError('%s: unknown kind %r' % (pid, p['kind']))
             for key in ('dir', 'was'):

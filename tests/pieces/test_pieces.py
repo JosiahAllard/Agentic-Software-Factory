@@ -58,6 +58,18 @@ class Parsing(unittest.TestCase):
         self.refuses({'schema': 1, 'pieces': [piece(kind='gradle', gradle='x')]}, 'gradle piece')
         self.refuses({'schema': 1, 'root': ['docs/'], 'pieces': []}, 'root path')
 
+    def test_groups_allow_list_refuses_a_group_outside_it(self):
+        data = {'schema': 1, 'groups': ['worker', 'shared'], 'pieces': [piece(group='wroker')]}
+        self.refuses(data, 'group')
+        self.refuses({'schema': 1, 'groups': 'worker', 'pieces': []}, 'groups')
+        self.refuses({'schema': 1, 'groups': ['a', 'a'], 'pieces': []}, 'groups')
+        t = pieces.load({'schema': 1, 'groups': ['worker'], 'pieces': [piece()]})
+        self.assertEqual(t.ids(), ['x'])
+
+    def test_no_groups_key_checks_nothing(self):
+        t = pieces.load({'schema': 1, 'pieces': [piece(group='anything')]})
+        self.assertEqual(t.ids(), ['x'])
+
     def test_bad_deps_are_refused(self):
         a, b = piece(id='a', dir='a'), piece(id='b', dir='b')
         self.refuses({'schema': 1, 'pieces': [dict(a, deps='b'), b]}, 'deps must be a list')

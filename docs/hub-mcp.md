@@ -32,7 +32,7 @@ Endpoints are below `/api/v1` (`kitlib.hubsite.api.BASE`).
 | `hub_pending` | `for` | `GET /pending` |
 | `hub_wait` | `since`, `timeout_s` (default 30, at most 55: `api.WAIT_MAX_S`), `pending`, `for` | `GET /wait` through `Client.wait` |
 | `hub_list` | `collection` (questions, todos, stories, to_pm or pages: the page cards, no body), `status`, `repo` | `GET /<collection>` |
-| `hub_inbox` | none | `GET /snapshot`, its inbox as `{ok, items}` (the api has no inbox list route) |
+| `hub_inbox` | none | `GET /snapshot?collections=inbox`, its inbox as `{ok, items}` (the api has no inbox list route) |
 | `hub_backlog` | `repo`, `state`, `fresh` | `GET /backlog` |
 | `hub_completed` | `repo`, `days` | `GET /completed` |
 | `hub_view` | `view` (notices, repos, usage or agents) | `GET /<view>` |

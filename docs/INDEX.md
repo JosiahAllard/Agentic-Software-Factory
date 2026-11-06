@@ -20,7 +20,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `.codex/agent-profile.md` | stub: the profile is docs/agent-profile.md | an agent names the host's profile path | kw: profile
 - `docs/ROSTER.md` | agent roster | choosing an agent | kw: roster, agents
 - `docs/allow-rules.md` | allow rules for landing: the permission lines allow_rules.py prints, what each lets through | letting an agent submit a landing without a prompt | kw: allow-rules, allow_rules, permissions
-- `docs/action-hub.md` | Action Hub | the PM action list | kw: action-hub, hub
+- `docs/action-hub.md` | Action Hub | the PM action list | kw: action-hub, hub, snapshot
 - `docs/hub-fill.md` | Hub fill watch: a live coordinator with a free slot and startable work is nudged; its saved state, the auto-pull, its stand-down and the PM fill event | coordinators under-filling their slots | kw: hub, fill, slots, nudge, auto-pull, stand-down, fill-watch
 - `docs/hub-mcp.md` | hub MCP server: the Action Hub's api as MCP tools, the owner's tools pinned | the hub from an agent | kw: hub-mcp, hub, mcp
 - `docs/hub-remote-access.md` | Hub remote access | reaching the hub from a phone | kw: hub, remote-access, tunnel, cloudflared

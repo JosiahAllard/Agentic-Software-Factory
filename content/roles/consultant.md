@@ -57,6 +57,7 @@ a topic: `python <kit>/tools/doc_index.py -C <worktree> --find <topic>`, then th
    **Durable facts** section of what you learned that the digest lacks (a convention, where a
    mechanism lives, a trap) with its source. Prune facts the code no longer bears out and calls
    superseded by later ones; the file must stay small enough to read in full after a compaction.
+   Cap: 10 KB. Past it, before the next append, fold each call older than the last 20 into one Durable-facts line when it taught a rule, convention or trap, else drop it; keep the open calls and the newest ones whole; check the size with your file listing.
    It is your only write, besides the usage crossover's ready and check-in files (below); it is in agent temp (`<agent temp>/<repo slug>-consultant/notes.md`), outside the repo, and never committed.
 2. **The PM.** {{tool:message}} the PM session your start context names (else Project Manager or pm-session): `engineering call for delegated
    logging` with the question, the answer, the reason and who asked. The PM logs it

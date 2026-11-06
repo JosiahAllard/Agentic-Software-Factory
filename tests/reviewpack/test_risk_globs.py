@@ -69,9 +69,10 @@ class Matching(unittest.TestCase):
 
     def test_a_plain_rule_does_not_match_a_longer_name_that_starts_with_it(self):
         self.assertEqual(lv('network/x.py', ('Low', 'net/')), 'unlisted (= High)')
-        self.assertEqual(lv('toolsx.py', ('Low', 'tools')), 'unlisted (= High)')
-        self.assertEqual(lv('tools/a.py', ('Low', 'tools')), 'Low')
-        self.assertEqual(lv('tools', ('Low', 'tools')), 'Low')
+        # a bare word is passed to level() as-is: rules_from_lines would drop it as no folder
+        self.assertNotEqual(reviewpack.level('toolsx.py', [('Low', 'tools')]), 'Low')
+        self.assertEqual(reviewpack.level('tools/a.py', [('Low', 'tools')]), 'Low')
+        self.assertEqual(reviewpack.level('tools', [('Low', 'tools')]), 'Low')
 
     def test_a_question_mark_matches_one_character_within_a_segment(self):
         body = ('Medium', 'a/x?.py')

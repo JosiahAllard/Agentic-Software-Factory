@@ -739,6 +739,67 @@ class RawCode(Base):
     def test_a_main_session_is_not_judged_here(self):
         self.allowed(self.cmd('python -c "from kitlib.backlog import store"', sub=False, env=COORDINATOR))
 
+    # a path under kitlib/backlog given to -c code as data (seen refused live: a worker profiling the
+    # test selector); backlogrole.py_reach reads the -c code as python
+    SELECTOR = ("python -c \"from kitlib.tooldeps import selftree, config; import time; cfg = config.load('.'); "
+                "tree = selftree.tree('.'); t = time.time(); "
+                "print(selftree.selection(['kitlib/backlog/store.py'], tree, cfg), time.time() - t)\"")
+
+    def test_a_backlog_path_given_to_c_code_as_data_runs(self):
+        for text in (self.SELECTOR, self.SELECTOR + ' 2>&1 | tail -20',
+                     'python -c "import os; print(os.path.getsize(\'kitlib/backlog/store.py\'))"',
+                     "python -c \"print(open('kitlib/backlog/store.py').read()[:200])\""):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    def test_c_code_that_loads_the_backlog_stays_refused(self):
+        for text in ('python -c "import kitlib.backlog.store"',
+                     'python -c "import runpy; runpy.run_path(\'kitlib/backlog/store.py\')"',
+                     "python -c \"import importlib; importlib.import_module('kitlib.backlog.store')\"",
+                     "python -c \"exec(open('kitlib/backlog/store.py').read())\"",
+                     "python -c \"__import__('kitlib.backlog.store')\"",
+                     'python -c "import kitlib.tooldeps; kitlib.backlog.store.save()"',
+                     "python -c \"from kitlib.tooldeps import selftree; import sys; sys.modules['kitlib.backlog.store']\"",
+                     "python -c \"import sys; sys.path.insert(0, 'kitlib/backlog'); import store\"",
+                     "python -c \"from sys import path; path.append('kitlib/backlog'); import store\"",
+                     "python -c \"import os; os.chdir('kitlib/backlog'); import store\"",
+                     'python -c "import sys; exec(open(sys.argv[1]).read())" kitlib/backlog/store.py',
+                     "python \"-cimport kitlib.backlog.store\"", "python -Ic \"import kitlib.backlog.store\"",
+                     'python -c "print(\'kitlib/backlog/store.py\')" | bash',
+                     'python -c "print(\'kitlib/backlog/store.py\')" | xargs python',
+                     'python $(python -c "print(\'kitlib/backlog/store.py\')")',
+                     '(python -c "print(\'kitlib/backlog/store.py\')") | bash',
+                     "python -c \"print('kitlib/backlog/store.py'\"",
+                     # a kitlib import beside a string naming the tool or the library, which a kitlib helper
+                     # may run or load (backlogrole._names_backlog)
+                     "python -c \"from kitlib.tooldeps import kitrun; kitrun.run(['python', 'tools/backlog.py', "
+                     "'close', 'X-1'], 'kitlib/backlog/store.py')\"",
+                     "python -c \"import kitlib.kitroot as k; print(k.tool('backlog'), 'kitlib/backlog/store.py')\"",
+                     "python -c \"import kitlib.tooldeps as t; t.load('kitlib.backlog.store')\""):
+            with self.subTest(text):
+                self.refused(self.cmd(text), 'backlog-raw-write')
+                self.allowed(self.cmd(text, sub=False, env=COORDINATOR))
+
+    def test_c_code_powershell_may_split_stays_on_the_name(self):
+        # Windows PowerShell 5.1 hands python a word holding a double quote split (rules.ps_native_unsure),
+        # so python may run other code than the guard reads: CODE_RE alone (backlogrole.c_code)
+        self.refused(self.cmd("python -c 'print(\"kitlib/backlog/store.py\")'", tool='PowerShell'),
+                     'backlog-raw-write')
+        self.refused(self.cmd("python -c 'import os; print(\"kitlib/backlog/store.py\")'", tool='PowerShell'),
+                     'backlog-raw-write')
+        self.allowed(self.cmd("python -c \"print('kitlib/backlog/store.py')\"", tool='PowerShell'))
+
+    def test_c_code_by_a_launch_other_than_plain_or_xargs_stays_on_the_name(self):
+        # a PowerShell process-start call re-splits its words (backlogrole.c_code: Invocation.via);
+        # its saps alias here keeps the cmdlet's name out of the text tests/proc/windowscan.py reads
+        self.refused(self.cmd("saps python -ArgumentList '-c',\"print('kitlib/backlog/store.py')\"",
+                              tool='PowerShell'), 'backlog-raw-write')
+        self.allowed(self.cmd("echo x | xargs python -c \"print('kitlib/backlog/store.py')\""))
+
+    def test_c_code_the_line_computes_stays_on_the_name(self):
+        # a computed word up to the code: python may run other code than the guard reads (backlogrole.c_code)
+        self.refused(self.cmd("python -c \"print('$Y kitlib/backlog/store.py')\""), 'backlog-raw-write')
+
 
 class HubWriterCode(Base):
     """Code that names the hub's record writer (kitlib.hubsite.recordwrite) or the store's
@@ -1183,6 +1244,20 @@ class Unread(Base):
                 d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
                 self.assertIn('whose code ', d.reason)
                 self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
+    def test_a_python_script_importing_kitlib_with_a_backlog_path_as_data(self):
+        # backlogrole._tree_reach: a kitlib import counts only beside a use of the backlog, so a
+        # kitlib/backlog path given as data passes; a script that writes the store stays refused
+        good = self.script('sel.py', "from kitlib.tooldeps import selftree, config\n"
+                                     "print(selftree.selection(['kitlib/backlog/store.py'], selftree.tree('.'), "
+                                     "config.load('.')))\n")
+        self.allowed(self.cmd('python "%s"' % good))
+        for k, body in enumerate((
+                "from kitlib.tooldeps import selftree\nfrom kitlib.backlog import store\n"
+                "store.save('kitlib/backlog/store.py')\n",
+                "import kitlib.tooldeps\nkitlib.backlog.store.save('kitlib/backlog/store.py')\n")):
+            with self.subTest(body):
+                self.refused(self.cmd('python "%s"' % self.script('w%d.py' % k, body)), 'backlog-raw-write')
 
     def test_a_python_script_past_the_read_cap_is_judged_by_the_name(self):
         # the guard reads SCRIPT_CAP (256 KB): the runner past it is never seen, so the name alone refuses

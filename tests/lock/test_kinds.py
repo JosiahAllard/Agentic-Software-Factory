@@ -174,6 +174,7 @@ class IntegerSizes(KindsTest):
         # A run of only the touched tests: one core, and a 5-minute guide that is its expected
         # time before it has history (kitlib.lock.run.book), so it can backfill a gap.
         table = kinds.load()
+        self.assertIn('quick-test', table)
         q = table['quick-test']
         self.assertEqual((q['cpu'], q['gpu'], q['share'], q['warn_min'], q['mem_mb']),
                          (1, 0, False, 5, 2048))

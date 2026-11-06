@@ -110,6 +110,7 @@ class HistoryExpect(StoreCase):
         from kitlib.lock import kinds as lockkinds
         with open(lockkinds.KINDS_FILE, encoding="utf-8") as f:
             real = json.load(f)
+        self.assertIn("quick-test", real["kinds"])
         with open(self.kinds_path, "w", encoding="utf-8") as f:
             json.dump(real, f)
         self.store = self.make_store()

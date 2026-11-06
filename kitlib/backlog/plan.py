@@ -128,6 +128,7 @@ class Context(object):
         self._resources = resources
         self._histories = (None, {})    # (the last store tip asked about, {rid: history})
         self._shared = shared
+        self._unmet_base = None         # the code main `unmet` resolved, once, on first need
 
     @property
     def shared_entries(self):
@@ -200,9 +201,21 @@ class Context(object):
         return history
 
     def unmet(self, snap):
+        """`unmet(rec)` -> `[(member, why)]` (offer.unmet_requires). The code main it checks a
+        `commit:` member against costs git spawns, so it is resolved at most once per Context and
+        only when a record names a `commit:` requirement (offer.unmet_requires reads it only
+        there)."""
         hist = self.history(snap)
-        base, _note = refs.default_base(self.root, self.code_remote, self.code_main)
-        return lambda rec: omod.unmet_requires(rec, snap, hist, self.root, base)
+
+        def unmet(rec):
+            base = None
+            if any(m.startswith('commit:') for m in rec.all('requires')):
+                if self._unmet_base is None:
+                    self._unmet_base = refs.default_base(self.root, self.code_remote,
+                                                         self.code_main)[0]
+                base = self._unmet_base
+            return omod.unmet_requires(rec, snap, hist, self.root, base)
+        return unmet
 
 
 # --- shared ---------------------------------------------------------------------------------------

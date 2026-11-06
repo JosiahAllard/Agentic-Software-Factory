@@ -48,12 +48,12 @@ def gather_stats(data):
             nonprint += data.count(b'\x7f')
             continue
         nonprint += data.count(bytes((b,)))
+    # CR and LF are neither printable nor not: git counts them before the printable test, and a
+    # trailing DOS EOF (\x1a) is an unprintable byte it then un-counts (gather_stats).
+    s.printable = len(data) - nonprint - cr - lf
     if data.endswith(b'\x1a'):
         nonprint -= 1
     s.nonprintable = nonprint
-    s.printable = len(data) - nonprint - s.nul + (1 if data.endswith(b'\x1a') else 0)
-    # CR and LF are neither: git counts them before the printable test.
-    s.printable -= cr + lf - s.crlf
     return s
 
 

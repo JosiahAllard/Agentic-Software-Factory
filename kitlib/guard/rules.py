@@ -5842,8 +5842,11 @@ GIT_STRICT_READ_OPTS = {'branch': (GIT_LISTING_OPTS | {'--all', '--remotes', '-v
 # names, so a computed word (any number of words) leaves them reads; and reads with such an option
 # (log, show and diff: --output), where a computed word stays a read only when the text pins it to
 # one argument that is no option, or the value of one of GIT_DYN_VALUE_OPTS
-GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref'}
+GIT_DYN_ANY_READS = {'rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref', 'rev-list', 'ls-tree'}
 GIT_DYN_PINNED_READS = {'log', 'show', 'diff'}
+# a literal word after which git reads no option (log "$A" --end-of-options "$B"): the computed
+# words behind it are revisions or paths, so they cannot be --output
+END_OF_OPTIONS = '--end-of-options'
 GIT_DYN_VALUE_OPTS = ('--format=', '--pretty=')
 # characters a pinned word may carry outside quotes: none the shell expands, splits or joins on
 # (bash globs and braces, PowerShell's array comma and splat @), and no backslash or backtick
@@ -5981,7 +5984,13 @@ def strict_dyn_read(gc):
         return True
     if gc.sub not in GIT_DYN_PINNED_READS:
         return False
-    for w in (w for w in gc.rest if w.dyn):
+    rest, done = gc.rest, False
+    for w in rest:
+        if not w.dyn:
+            done = done or w.text == END_OF_OPTIONS
+            continue
+        if done:
+            continue
         head = dyn_head(cmd, w)
         if not head or (head.startswith('-') and not head.startswith(GIT_DYN_VALUE_OPTS)):
             return False

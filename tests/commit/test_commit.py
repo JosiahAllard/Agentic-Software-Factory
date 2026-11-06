@@ -1030,10 +1030,135 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.addCleanup(p.stop)
 
     def test_a_failing_read_tree_refuses(self):
+        """read-tree runs only when the real index's copy cannot be read (here: ls-files on it
+        fails); a read-tree that fails then refuses."""
         head = self.head()
         self.fail_git('read-tree')
+        self.fail_git('ls-files')
         self.put('a.py', 'a = 1\n')
         self.assert_refused_unchanged(head, *self.commit('add a', 'a.py'))
+
+    def private(self, snap):
+        """The private index for `snap` on HEAD: {(path, stage): (mode, oid)} and its env."""
+        tmp = tempfile.mkdtemp(prefix='kit-test-private-')
+        self.addCleanup(shutil.rmtree, tmp, True)
+        env, why = C.private_index(self.wt, tmp, self.head(), snap)
+        self.assertIsNone(why)
+        r = cmd.call(['ls-files', '--stage', '-z'], self.wt, env=env)
+        self.assertEqual(r.rc, 0, r.err)
+        out = {}
+        for row in cmd.text(r.out).split('\0'):
+            meta, tab, path = row.partition('\t')
+            if tab:
+                mode, oid, stage = meta.split()
+                out[(path, stage)] = (mode, oid)
+        return out, env
+
+    def blob(self, rev_path):
+        return self.git('rev-parse', rev_path)
+
+    def at_head(self, **more):
+        """HEAD's entries as `private` gives them, with `more` ({path: (mode, oid)}) added."""
+        out = {}
+        for row in self.git('ls-tree', '-r', 'HEAD').splitlines():
+            meta, _tab, path = row.partition('\t')
+            mode, _kind, oid = meta.split()
+            out[(path, '0')] = (mode, oid)
+        out.update({(p, '0'): e for p, e in more.items()})
+        return out
+
+    def test_the_private_index_holds_head_for_every_path_it_was_not_given(self):
+        """Another writer's staged change, add and deletion stay out of the private index: each
+        such path is HEAD's entry (or absent), and only the snapshot's path is new."""
+        self.put('seed.txt', 'theirs\n')
+        self.put('other.py', 'other\n')
+        self.git('add', '--', 'seed.txt', 'other.py')
+        self.put('a.py', 'a = 1\n')
+        self.git('add', '--', 'a.py')
+        snap = C.index_snapshot(self.wt, {'a.py': 'A'})
+        got, _env = self.private(snap)
+        self.assertEqual(got, self.at_head(**{'a.py': snap['a.py']}))
+        self.assertEqual(got[('seed.txt', '0')][1], self.blob('HEAD:seed.txt'))
+
+    def test_the_private_index_holds_head_for_a_path_staged_as_deleted(self):
+        self.git('rm', '-q', '--cached', '--', 'seed.txt')
+        got, _env = self.private({})
+        self.assertEqual(got, self.at_head())
+        self.assertIn(('seed.txt', '0'), got)
+
+    def test_an_unmerged_real_index_gives_heads_entry_in_the_private_index(self):
+        base = self.blob('HEAD:seed.txt')
+        self.put('seed.txt', 'ours\n')
+        ours = self.git('hash-object', '-w', 'seed.txt')
+        self.put('seed.txt', 'theirs\n')
+        theirs = self.git('hash-object', '-w', 'seed.txt')
+        lines = ['0 %s\tseed.txt' % ('0' * len(base)),
+                 '100644 %s 1\tseed.txt' % base, '100644 %s 2\tseed.txt' % ours,
+                 '100644 %s 3\tseed.txt' % theirs]
+        r = cmd.call(['update-index', '--index-info'], self.wt,
+                     stdin=('\n'.join(lines) + '\n').encode('utf-8'))
+        self.assertEqual(r.rc, 0, r.err)
+        self.assertIn(' 3\tseed.txt', self.git('ls-files', '--stage'))
+        got, _env = self.private({})
+        self.assertEqual(got, self.at_head())
+        self.assertEqual(got[('seed.txt', '0')], ('100644', base))
+
+    def falls_back(self, *patches, extra_row=None, fail=None):
+        """With another writer's file staged, the private index is read-tree'd (HEAD exactly)
+        under `patches`; `extra_row` (bytes) is added to ls-files' answer on the copy, and `fail`
+        is a git verb that fails on it."""
+        self.put('other.py', 'other\n')
+        self.git('add', '--', 'other.py')
+        calls, injected = [], []
+        wrapped = cmd.call
+
+        def spy(args, cwd, *a, **kw):
+            private ='GIT_INDEX_FILE' in (kw.get('env') or {})
+            calls.append(args[0])
+            if private and args[0] == fail:
+                return cmd.Result(128, b'', 'fatal: injected %s' % fail)
+            r = wrapped(args, cwd, *a, **kw)
+            if private and extra_row and args[:2] == ['ls-files', '--stage'] and not injected:
+                injected.append(1)                      # _copied_index's read only
+                return cmd.Result(r.rc, r.out + extra_row, r.err)
+            return r
+        with mock.patch.object(C.cmd, 'call', spy):
+            for p in patches:
+                p.start()
+            try:
+                got, _env = self.private({})
+            finally:
+                for p in patches:
+                    p.stop()
+        self.assertIn('read-tree', calls)
+        self.assertEqual(got, self.at_head())
+
+    def test_a_torn_copy_of_the_real_index_falls_back_to_read_tree(self):
+        real = shutil.copy2
+
+        def torn(src, dst):
+            real(src, dst)
+            with open(dst, 'r+b') as fh:
+                fh.seek(-1, os.SEEK_END)
+                last = fh.read(1)
+                fh.seek(-1, os.SEEK_END)
+                fh.write(bytes([last[0] ^ 0xff]))
+            return dst
+        self.falls_back(mock.patch.object(C.shutil, 'copy2', torn))
+
+    def test_no_real_index_found_falls_back_to_read_tree(self):
+        self.falls_back(mock.patch.object(C.repo, 'git_path', lambda *a: (None, 'none')))
+
+    def test_a_failing_ls_tree_falls_back_to_read_tree(self):
+        self.falls_back(fail='ls-tree')
+
+    def test_a_path_the_copy_cannot_carry_falls_back_to_read_tree(self):
+        """Not UTF-8 (it would decode with U+FFFD and name another path), a newline, a leading
+        quote: none can be put back exactly with --index-info."""
+        oid = self.blob('HEAD:seed.txt').encode()
+        for name in (b'bad\xffname', b'bad\nname', b'"quoted'):
+            with self.subTest(name=name):
+                self.falls_back(extra_row=b'100644 ' + oid + b' 0\t' + name + b'\0')
 
     def test_a_failing_update_index_refuses(self):
         head = self.head()
@@ -1071,6 +1196,58 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
           'commit as well as the fake\'s')
 class AnotherWriterStagesDuringTheCallRealGit(AnotherWriterStagesDuringTheCall):
     pass
+
+
+@real_git('ls-files --debug prints an entry\'s stat data: the fake has no --debug')
+class ThePrivateIndexKeepsStatData(LinkedCase):
+    """A path the commit does not name keeps the real index's stat
+    data in the private index, so `git commit` does not hash every tracked work-tree file again
+    (a read-tree index records size 0 for every entry)."""
+
+    private = AnotherWriterStagesDuringTheCall.private
+
+    def size(self, env, path):
+        r = cmd.call(['ls-files', '--debug', '--', path], self.wt, env=env)
+        self.assertEqual(r.rc, 0, r.err)
+        for line in cmd.text(r.out).splitlines():
+            if line.strip().startswith('size:'):
+                return int(line.split()[1])
+        self.fail('no size line for %s: %r' % (path, r.out))
+
+    def test_an_unnamed_tracked_file_keeps_its_stat_size(self):
+        # An old mtime, refreshed into the real index: its entry is not racily clean (size kept).
+        old = os.path.getmtime(os.path.join(self.wt, 'seed.txt')) - 3 * 86400
+        os.utime(os.path.join(self.wt, 'seed.txt'), (old, old))
+        self.git('update-index', '-q', '--refresh')
+        self.assertNotEqual(self.size(None, 'seed.txt'), 0)
+        self.put('a.py', 'a = 1\n')
+        self.git('add', '--', 'a.py')
+        _got, env = self.private(C.index_snapshot(self.wt, {'a.py': 'A'}))
+        self.assertNotEqual(self.size(env, 'seed.txt'), 0)
+
+
+@real_git('git add -N (intent to add): the fake has no -N')
+class AnIntentToAddEntryInTheRealIndex(LinkedCase):
+    """An intent-to-add entry holds the empty blob and `ls-files --stage` does not show its flag:
+    for a file empty at HEAD it looks like HEAD's entry, yet `git commit` leaves it out of the
+    tree. The private index puts HEAD's entry back for it, so the commit keeps the file (another
+    writer may make the entry during the call, after commit.py's staged-files check)."""
+
+    private = AnotherWriterStagesDuringTheCall.private
+
+    def test_a_file_empty_at_head_stays_in_the_private_index_tree(self):
+        self.put('empty.txt', '')
+        self.git('add', '--', 'empty.txt')
+        self.git('commit', '-q', '-m', 'empty', '--', 'empty.txt')
+        self.git('rm', '-q', '--cached', '--', 'empty.txt')
+        self.git('add', '-N', '--', 'empty.txt')
+        self.put('a.py', 'a = 1\n')
+        self.git('add', '--', 'a.py')
+        _got, env = self.private(C.index_snapshot(self.wt, {'a.py': 'A'}))
+        r = cmd.call(['write-tree'], self.wt, env=env)
+        self.assertEqual(r.rc, 0, r.err)
+        tree = cmd.text(r.out).strip()
+        self.assertIn('empty.txt', self.git('ls-tree', '--name-only', tree).splitlines())
 
 
 @gitfixture.real_fixture('appends to the linked worktree\'s reflog (logs/HEAD), which only real '

@@ -935,6 +935,44 @@ class LivePointerTest(Base):
         shutil.rmtree(gone)
         self.assertIsNone(outside_reader(self.pointer))
 
+    def test_a_write_failure_leaves_no_temp_file(self):
+        with mock.patch('os.replace', side_effect=OSError('denied')):
+            with self.assertRaises(OSError):
+                P._write_json(self.pointer, {'a': 1})
+        self.assertFalse(os.path.exists(self.pointer + '.tmp'))
+
+    def test_a_right_pointer_takes_no_lock(self):
+        self.refresh([])
+        with mock.patch.object(P, 'RefreshLock') as lock:
+            self.refresh([])
+        lock.assert_not_called()
+
+    def test_a_refresh_that_lands_meanwhile_is_not_overwritten(self):
+        self.refresh([])
+        name = read_json(self.pointer)['folder']
+        os.remove(self.pointer)
+        # under the lock, marketplace.json names another folder: a newer export landed
+        with mock.patch.object(P, 'current_folder', return_value='f' * 12):
+            P._sync_locked(self.s, name, self.out, ME, never_alive)
+        self.assertFalse(os.path.exists(self.pointer))
+        P._sync_locked(self.s, name, self.out, ME, never_alive)
+        self.assertEqual(read_json(self.pointer)['folder'], name)
+
+    def test_a_busy_lock_writes_nothing(self):
+        self.refresh([])
+        name = read_json(self.pointer)['folder']
+        os.remove(self.pointer)
+        with mock.patch.object(P.RefreshLock, 'acquire', side_effect=P.Busy('a refresh is already running')):
+            P._sync_locked(self.s, name, self.out, ME, never_alive)
+        self.assertFalse(os.path.exists(self.pointer))
+
+    def test_under_the_tests_the_pointer_is_not_placed_at_the_real_machine(self):
+        # the home fence's marker is in the environment of every kit test: settings() with the real
+        # environment names no pointer, so no test can write the developer's plugin-live.json
+        self.assertTrue(os.environ.get('KIT_HOME_FENCE'))
+        self.assertIsNone(P.settings(None).live_pointer)
+        self.assertIsNone(P.settings({'export_dir': self.k.root}).live_pointer)
+
     def test_the_pointer_is_fixed_even_with_a_custom_export_dir(self):
         lad = os.path.join(os.path.abspath(os.sep), 'lad')
         mine = os.path.join(os.path.abspath(os.sep), 'srv', 'pm-export')
@@ -969,6 +1007,9 @@ class PrunePointerTest(Base):
         self.assertEqual(failed, [])
         self.assertEqual([os.path.basename(r) for r in removed], [names[2]])
         self.assertTrue(os.path.isdir(os.path.join(self.k.root, names[1])))
+        lines = []
+        P.prune(self.k.root, now=NOW, pointer=self.pointer, out=lines.append)
+        self.assertIn('prune: kept, the live pointer names it: ' + names[1], lines)
 
     def test_a_pointer_naming_nothing_markered_keeps_nothing_extra(self):
         names = self.names()

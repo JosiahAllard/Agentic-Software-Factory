@@ -198,7 +198,13 @@ def default_export_dir(environ=None):
 def live_pointer_path(environ=None):
     """The one fixed place of the live pointer: LIVE_POINTER beside the default export root, so a
     reader with no kitlib and no machine config finds it, whatever plugin.export_dir says.
-    RefreshError as default_export_dir's."""
+    RefreshError as default_export_dir's, and under the kit's tests (the home fence's marker in the
+    environment): a test that reaches settings() with the real environment never gets the real
+    machine's pointer path."""
+    from kitlib.config import user
+    if (os.environ if environ is None else environ).get(user.FENCE_ENV):
+        raise RefreshError('the live pointer is not placed under the kit\'s tests (%s is set)'
+                           % user.FENCE_ENV)
     default = default_export_dir(environ)
     if kitplatform.NAME == 'linux':
         return posixpath.join(posixpath.dirname(default), LIVE_POINTER)
@@ -539,10 +545,17 @@ def _write_json(path, data):
     or the new one, never half of one."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(data, fh, indent=2)
-        fh.write('\n')
-    os.replace(tmp, path)
+    try:
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+            json.dump(data, fh, indent=2)
+            fh.write('\n')
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)              # a failed write leaves no half file behind
+        except OSError:
+            pass
+        raise
 
 
 def marketplace_path(root):
@@ -573,27 +586,32 @@ def read_live_pointer(path):
     return data if isinstance(data, dict) else None
 
 
+def _pointer_body(s, name):
+    """What the live pointer should hold for export folder `name`, from that folder's marker; None
+    when there is no pointer setting or the folder has no marker (it is not named)."""
+    if not s.live_pointer:
+        return None
+    folder = os.path.join(s.export_dir, name)
+    marker = read_marker(folder)
+    if not marker:
+        return None
+    return {'schema': 1, 'root': s.export_dir, 'folder': name, 'path': folder,
+            'sha': marker.get('sha'), 'version': marker.get('version'),
+            'exported_at': marker.get('exported_at')}
+
+
 def sync_live_pointer(s, name, out=None):
     """Make the live pointer (s.live_pointer; None: nothing) name export folder `name` of s.export_dir,
     from that folder's marker (so a folder with none is not named). It is written only when missing
     or different, through a temp file and os.replace. A failed write is a WARNING line, never an
     error: the export stands without it."""
-    path = s.live_pointer
-    if not path:
-        return
-    folder = os.path.join(s.export_dir, name)
-    marker = read_marker(folder)
-    if not marker:
-        return
-    body = {'schema': 1, 'root': s.export_dir, 'folder': name, 'path': folder,
-            'sha': marker.get('sha'), 'version': marker.get('version'),
-            'exported_at': marker.get('exported_at')}
-    if read_live_pointer(path) == body:
+    body = _pointer_body(s, name)
+    if body is None or read_live_pointer(s.live_pointer) == body:
         return
     try:
-        _write_json(path, body)
+        _write_json(s.live_pointer, body)
     except OSError as e:
-        (out or (lambda line: None))('WARNING: live pointer %s not written: %s' % (path, e))
+        (out or (lambda line: None))('WARNING: live pointer %s not written: %s' % (s.live_pointer, e))
 
 
 def _pointed_folder(pointer, root):
@@ -921,13 +939,15 @@ def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None, poi
     spare = {n for _, n in found[:keep]}
     if current:
         spare.add(current)
-    pointed = _pointed_folder(pointer, root)
-    if pointed in {n for _, n in found}:
-        spare.add(pointed)
     for i, (when, n) in enumerate(found):
         replaced = found[i - 1][0] if i else None      # the exported_at of the next newer export
         if when is None or replaced is None or now - replaced < datetime.timedelta(days=young_days):
             spare.add(n)
+    pointed = _pointed_folder(pointer, root)
+    if pointed in {n for _, n in found}:
+        if pointed not in spare:
+            say('prune: kept, the live pointer names it: %s' % pointed)
+        spare.add(pointed)
     held = sorted(n for _, n in found if n in used and n not in spare)
     if held:
         say('prune: kept, a running process, scheduled task, pin lease or host plugin copy names it: %s'
@@ -1331,13 +1351,13 @@ def _copies(s, name, sha, copies, out, apply):
 
 
 def _sync_locked(s, name, out, own, alive):
-    """sync_live_pointer for an export that is already current, under the refresh lock so a
-    refresh that lands a newer export is not overwritten with this older name. Nothing to write,
-    or the lock busy (that refresh writes it): nothing happens. Never raises."""
-    if not s.live_pointer:
-        return
-    marker = read_marker(os.path.join(s.export_dir, name))
-    if not marker:
+    """sync_live_pointer for an export that is already current. The pointer is compared first and
+    the refresh lock taken only when it is missing or differs (a poll that finds it right makes no
+    lock file). Under the lock, marketplace.json is read again: when it no longer names `name`, a
+    refresh landed a newer export meanwhile, which writes its own pointer, so nothing is written.
+    The lock busy (that refresh writes it) is nothing either. Never raises."""
+    body = _pointer_body(s, name)
+    if body is None or read_live_pointer(s.live_pointer) == body:
         return
     lock = RefreshLock(s.export_dir, own=own, alive=alive)
     try:
@@ -1345,7 +1365,8 @@ def _sync_locked(s, name, out, own, alive):
     except (Busy, OSError):
         return
     try:
-        sync_live_pointer(s, name, out)
+        if current_folder(s.export_dir) == name:
+            sync_live_pointer(s, name, out)
     finally:
         lock.release()
 

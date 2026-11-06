@@ -125,6 +125,11 @@ class FreshBase(unittest.TestCase):
         cache = mock.patch.dict(os.environ, gitfixture.ps_cache_env(self.home))   # real powershell: no cache in the cwd
         cache.start()
         self.addCleanup(cache.stop)
+        # the plugin step's settings() places the live pointer from LOCALAPPDATA: a temp one, so it
+        # can never reach the developer's real %LOCALAPPDATA%\pm-kit\plugin-live.json
+        lad = mock.patch.dict(os.environ, {'LOCALAPPDATA': os.path.join(self.root, 'localappdata')})
+        lad.start()
+        self.addCleanup(lad.stop)
         self.machine_config({'plugin': {'export_dir': self.export}})
         self.s1 = os.path.join(self.c1, 'settings.json')
         self.s2 = os.path.join(self.c2, 'settings.json')

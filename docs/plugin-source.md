@@ -26,13 +26,22 @@ A script that runs outside any kit process (a PowerShell publish script, a sched
 - Where: `%LOCALAPPDATA%\pm-kit\plugin-live.json` on Windows; `<profile>/.local/share/pm-kit/plugin-live.json` on Linux, the profile folder from the password database (`$HOME` is the same folder unless it is overridden). One fixed place, never inside the export root, whatever `plugin.export_dir` says (`kitlib.pluginsource` `live_pointer_path`).
 - Format: one JSON object, UTF-8: `{schema: 1, root, folder, path, sha, version, exported_at}`. `path` is the live export folder (`root` plus `folder`); `sha`, `version` and `exported_at` are its marker's. Use `path`.
 - Writer: every export writes it (`sync_live_pointer`, after `marketplace.json`, before prune), through a temp file and `os.replace`, so a reader sees the old file or the new one. A current export whose pointer is missing or different gets it written at the next `plugin_refresh.py --apply` or `ensure_export`, under the refresh lock. An unchanged pointer is not rewritten. A write that fails is a `WARNING: live pointer ... not written` line and never fails the export.
-- Reader: read the pointer on every run and do not keep the path across days. Trust it only when `<path>\.pm-kit-export` exists. A missing, unreadable or stale pointer means no live kit is known: fail loudly, or read `plugins[0].source` of `<default root>\.claude-plugin\marketplace.json`.
+- Reader: read the pointer on every run and do not keep the path across days. Trust it only when `<path>\.pm-kit-export` exists. A missing, unreadable or stale pointer means "no live kit": the caller fails loudly. A reader never falls back to the machine lock's junction or to a `--kit <folder>` it was given, and never guesses a root (the default root's `marketplace.json` is absent when `plugin.export_dir` is overridden).
 - Prune keeps the folder the pointer names ("Prune"), and keeps any export replaced less than a day ago, so a run that began from the previous folder is not cut off.
 
 ```powershell
 $p = Get-Content "$env:LOCALAPPDATA\pm-kit\plugin-live.json" -Raw | ConvertFrom-Json
 if (-not (Test-Path (Join-Path $p.path '.pm-kit-export'))) { throw 'stale pm-kit pointer' }
 python (Join-Path $p.path 'tools\something.py')
+```
+
+```python
+import json, os
+base = os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), '.local', 'share')
+with open(os.path.join(base, 'pm-kit', 'plugin-live.json'), encoding='utf-8-sig') as fh:
+    live = json.load(fh)['path']
+if not os.path.isfile(os.path.join(live, '.pm-kit-export')):
+    raise SystemExit('stale pm-kit pointer: no live kit')
 ```
 
 ## Refresh

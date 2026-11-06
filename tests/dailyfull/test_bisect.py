@@ -118,6 +118,7 @@ class Culprit(BisectCase):
         self.assertEqual(rec.all('scope'), ['RED'])
         self.assertNotIn('note', found)
         # the step's log is neither kit_tests' nor unittest's: each probe ran the whole step
+        self.assertIn('mode', found)
         self.assertTrue(found['mode'].startswith(B.WHOLE), found['mode'])
 
     def test_a_second_red_run_files_nothing_new(self):
@@ -253,7 +254,7 @@ class TestsOnly(ProbeCase):
         culprit, r = self.red_history()
         found = r['bisect']
         self.assertEqual(found['culprit'], culprit, self.lines)
-        self.assertEqual(found['mode'], 'tests: 1 class(es)')
+        self.assertEqual(found.get('mode'), 'tests: 1 class(es)')
         self.assertEqual(self.whole_runs(), 2)          # the two daily runs, no probe
         self.assertEqual(self.probe_kinds(), ['test'] * len(found['probes']))
         self.assertEqual(self.daily_head(), r['sha'])
@@ -262,14 +263,14 @@ class TestsOnly(ProbeCase):
         self.push({'probe_test.py': self.module('False')})
         culprit, r = self.history({'probe_test.py': self.module('False', NEW_METHOD)})
         self.assertEqual(r['bisect']['culprit'], culprit, self.lines)
-        self.assertEqual(r['bisect']['mode'], 'tests: 1 class(es)')
+        self.assertEqual(r['bisect'].get('mode'), 'tests: 1 class(es)')
         self.assertEqual(self.whole_runs(), 2)
 
     def test_a_failing_class_the_culprit_adds_counts_green_before_it(self):
         self.push({'probe_test.py': self.module('False')})
         culprit, r = self.history({'probe_test.py': self.module('False', NEW_CLASS)})
         self.assertEqual(r['bisect']['culprit'], culprit, self.lines)
-        self.assertEqual(r['bisect']['mode'], 'tests: 1 class(es)')
+        self.assertEqual(r['bisect'].get('mode'), 'tests: 1 class(es)')
         self.assertEqual(self.whole_runs(), 2)
 
 
@@ -282,10 +283,10 @@ class TestsGreenAloneAtS(ProbeCase):
         culprit, r = self.red_history()
         found = r['bisect']
         self.assertEqual(found['culprit'], culprit, self.lines)
-        self.assertEqual(found['mode'], B.NARROWED_GREEN)
         kinds = self.probe_kinds()
         self.assertEqual(kinds[0], 'test')              # the failing tests alone at S
         self.assertEqual(kinds[1:], ['engine-test'] * len(found['probes']))
+        self.assertEqual(found.get('mode'), B.NARROWED_GREEN)
         self.assertEqual(self.whole_runs(), 2 + len(found['probes']))
 
 
@@ -303,8 +304,8 @@ class TestsFlakeAtS(ProbeCase):
         found = r['bisect']
         self.assertEqual(found['verdict'], B.FLAKE)
         self.assertEqual(len(found['probes']), 1)
-        self.assertEqual(found['mode'], B.NARROWED_GREEN)
         self.assertEqual(self.probe_kinds(), ['test', 'engine-test'])
+        self.assertEqual(found.get('mode'), B.NARROWED_GREEN)
         self.assertEqual(self.whole_runs(), 3)          # two daily runs and the probe at S
         self.assertNotIn('filed', found)
         self.assertEqual(self.daily_head(), r['sha'])

@@ -389,6 +389,22 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow, shared=()):
         return None
 
 
+def _waits_on(scopes, against, against_by, live_ids, shared=()):
+    """The live pulls (`live_ids`) that took an entry of `against` colliding with `scopes`, each
+    once in the order first hit, when every such entry was taken by one; else [] (a record
+    offered above, another session's or one waiting is in the way too, or a comparison is
+    undecidable)."""
+    hitters = []
+    try:
+        for m, by in zip(against, against_by):
+            if (any(smod.members_collide(c, m, shared) for c in scopes)
+                    and not any(by is h for h in hitters)):
+                hitters.append(by)
+    except smod.UndecidableScope:
+        return []
+    return hitters if hitters and all(id(h) in live_ids for h in hitters) else []
+
+
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
                folded=None, capacity=None, branch=None, narrow=None, session_live=None,
                shared=()):
@@ -396,7 +412,11 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
     passed over on a collision names the holder: a live pull by id and branch, another session's
-    record by id and session, a record already in this offer as `(offered above)`. Scopes are each record's current `scope:` lines, so a pulled record
+    record by id and session, a record already in this offer as `(offered above)`. A record of
+    `session` passed over only because its scope collides with live pulls (and with no unmet
+    `requires:`) still reserves its scope, its holder named `ID (waiting on P on B)`, so a lower
+    record overlapping it is not pulled ahead of it; one passed over on such a reserve, or on any
+    other reason, reserves nothing (no cascade). Scopes are each record's current `scope:` lines, so a pulled record
     narrowed with `set --scope` frees what it gave up. A seed (`next --with`) goes first and is
     not passed over for the rest of the offer, but one that collides with a live pull is passed
     over like any record: only `pull --reason`, by a role that may take the `pull-collision` row
@@ -496,6 +516,16 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), 'scope %s collides with %s '
                                          'already taken%s' % (hit[0][0], hit[0][1], ' by %s'
                                          % holder if holder else ''), who, hit[0]))
+                waits_on = _waits_on(scopes, against, against_by, live_ids, shared)
+                if waits_on and not (unmet is not None and unmet(rec)):
+                    # Held only by live pulls: it still reserves its scope (no cascade: one
+                    # passed over on this reserve hits a hitter that is no live pull).
+                    occupied.extend(scopes)
+                    occupied_by.extend(rec for _m in scopes)
+                    label = '%s (waiting on %s)' % (rid, ', '.join(
+                        '%s on %s' % (h.id, h.get('pulled_by') or '?') for h in waits_on))
+                    for m in scopes:
+                        holders.setdefault(m, (label, None))
             continue
         if split is not None:
             scopes = list(split.keep)

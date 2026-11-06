@@ -255,6 +255,61 @@ class CollisionHolder(unittest.TestCase):
                          'kitlib/backlog/offer.py already taken by HOLD (in flight on ?)')
 
 
+class CollisionReserve(unittest.TestCase):
+    """KIT-OFFER-COLLISION-RESERVE: a record passed over only on a live pull still reserves its
+    scope; nothing passed over on that reserve, or for another reason, reserves (no cascade)."""
+
+    def hold(self, scope='a/**'):
+        return priced('P', priority='3', state='pulled', pulled_at='2026-10-01',
+                      pulled_by='kit/p', scope=scope)
+
+    def test_a_record_waiting_on_a_live_pull_reserves_its_scope_and_nothing_cascades(self):
+        # H waits on P (a/x); L overlaps H (b/**) but not P; L2 overlaps only L (c/**).
+        s = snap(self.hold('a/x'), priced('H', priority='1', scope=['a/**', 'b/**']),
+                 priced('L', priority='2', scope=['b/y', 'c/**']),
+                 priced('L2', priority='3', scope='c/z'))
+        ids, passed = offer_ids(s, holding=[s.get('P')])
+        self.assertEqual(ids, ['L2'])
+        self.assertEqual(passed['H'], 'scope a/** collides with a/x already taken by P '
+                         '(in flight on kit/p)')
+        self.assertEqual(passed['L'], 'scope b/y collides with b/** already taken by H '
+                         '(waiting on P on kit/p)')
+        self.assertNotIn('L2', passed)
+
+    def test_the_waiting_holder_counts_in_no_blocker_line(self):
+        s = snap(self.hold('a/x'), priced('H', priority='1', scope=['a/**', 'b/**']),
+                 priced('L', priority='2', scope='b/y'))
+        (_offers, passed), _r, _ranks = omod.next_offer(s, [s.get('P')])
+        self.assertEqual(omod.blocker_summary(passed), ['blocks 1: kit/p (P)'])
+
+    def test_an_unmet_requires_reserves_nothing(self):
+        s = snap(self.hold('a/x'),
+                 priced('H', priority='1', scope=['a/**', 'b/**'], requires='item:Z'),
+                 priced('L', priority='2', scope='b/y'))
+        ids, passed = offer_ids(s, holding=[s.get('P')],
+                                unmet=lambda r: [('item:Z', 'open')] if r.id == 'H' else [])
+        self.assertEqual(ids, ['L'])
+        self.assertIn('already taken by P', passed['H'])
+
+    def test_a_batch_pass_or_a_hold_reserves_nothing(self):
+        s = snap(self.hold('a/x'),
+                 priced('H', priority='1', scope=['a/**', 'b/**'], batch='kit/other'),
+                 priced('B', priority='1', scope='b/**', state='blocked', blocked_on='owner',
+                        owner_ask='q?'),
+                 priced('L', priority='2', scope='b/y'))
+        ids, passed = offer_ids(s, holding=[s.get('P')], branch='kit/mine')
+        self.assertEqual(ids, ['L'])
+        self.assertIn('held for the batch', passed['H'])
+
+    def test_a_record_held_by_a_live_pull_and_one_offered_above_reserves_nothing(self):
+        s = snap(self.hold('a/x'), priced('TOP', priority='1', scope='b/x'),
+                 priced('H', priority='2', scope=['a/**', 'b/**']),
+                 priced('L', priority='3', scope='b/y'))
+        ids, passed = offer_ids(s, holding=[s.get('P')])
+        self.assertEqual(ids, ['TOP', 'L'])
+        self.assertIn('H', passed)
+
+
 class BlockerSummary(unittest.TestCase):
     """`blocker_summary` ranks the live pulls and other sessions' records by how many passed-over
     records they block."""

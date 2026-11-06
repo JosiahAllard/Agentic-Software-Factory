@@ -18,6 +18,7 @@ from kitlib import platform
 from kitlib.config import ConfigError
 from kitlib.config import user as kuser
 from kitlib.launcher.pythonw import base_pythonw
+from kitlib.proc import spawn
 from kitlib.worktree.task import CARRIER, NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
 
 from . import machineconfig
@@ -310,13 +311,12 @@ def sweep_dry_run(kit, python, timeout=DRY_RUN_TIMEOUT, run=None, home=None):
     so an entry name outside it cannot fail the run. RuntimeError when it refuses (exit 2: no
     config key, a bad config, an unsafe or unlistable folder), exits any way but 0 or 3 (3: the
     process list could not be read, so it would keep every claude/ folder), or takes over `timeout`
-    seconds. run: the tests' subprocess.run."""
-    run = run or subprocess.run
+    seconds. run: the tests' stand-in for kitlib.proc.spawn.run."""
+    run = run or spawn.run
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     try:
         r = run(sweep_dry_run_argv(kit, python, home), capture_output=True, encoding='utf-8',
-                errors='replace', env=env, timeout=timeout,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                errors='replace', env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise RuntimeError('the sweep dry run took over %s s' % timeout)
     said = [l for l in ((r.stdout or '') + (r.stderr or '')).splitlines() if l.strip()]

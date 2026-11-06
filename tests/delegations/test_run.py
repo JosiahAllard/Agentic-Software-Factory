@@ -25,6 +25,7 @@ from kitlib.hubsite import push as hubpush
 from kitlib.hubsite import serve as hubserve
 from kitlib.ledger import write as lwrite
 from tests import gitfixture
+from tests.platforms import windows_only
 
 NOW = datetime.datetime(2026, 10, 20, 12, 0, tzinfo=datetime.timezone.utc)
 WHEN = drun.LEDGER_WHEN
@@ -744,6 +745,7 @@ class RegistryEnv(unittest.TestCase):
         self.assertTrue(kuser.fenced())
         self.assertIsNone(drun.read_registry('HKLM', drun.MACHINE_ENV, 'Path'))
 
+    @windows_only('the Windows registry')
     def test_the_real_registry_read_tells_plain_from_expandable(self):
         # Read only, and only values every Windows has: the fence is lifted for this read alone.
         with mock.patch.object(kuser, 'fenced', return_value=False):

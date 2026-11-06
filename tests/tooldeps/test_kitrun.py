@@ -75,6 +75,27 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(passes[1][1], ['tests.b.test_n'])
         self.assertIn('both tiers green', out.getvalue())
 
+    def test_select_and_full_get_the_same_jobs_from_the_lock_mask(self):
+        # The scoped branch gate and --full size their pool the same way: by the cpu slots the
+        # lock run holds. What differs is the kind the caller books (docs/test-tools.md).
+        for argv in (('--select', '--changed', 'tests/b/test_n.py'), ('--full',)):
+            out, seen = io.StringIO(), []
+
+            def run_pass(args, top, cfg, jobs, fake, tier_out, hold, **kw):
+                seen.append(jobs)
+                return 0
+            with fixed_checkout(), \
+                    mock.patch.dict(os.environ, {kitrun.selfrun.CPUMASK_ENV: '0xff'}), \
+                    mock.patch.object(selftree, 'changed_paths', return_value=([], None)), \
+                    mock.patch.object(kitrun, 'default_base', return_value=('main', None)), \
+                    mock.patch.object(kitrun, 'plan', return_value=['tests.a.test_m']), \
+                    mock.patch.object(kitrun.tiers, 'changed_test_modules', return_value=[]), \
+                    mock.patch.object(kitrun, 'run_pass', side_effect=run_pass):
+                rc = kitrun.run(options(*argv), HERE, out)
+            self.assertEqual((rc, seen), (0, [8]), out.getvalue())
+            self.assertIn('kit_tests: jobs 8: the 8 logical processor(s) the lock run holds',
+                          out.getvalue())
+
     def test_a_git_that_cannot_list_the_change_refuses_with_usage(self):
         out = io.StringIO()
         with fixed_checkout(), \

@@ -14,7 +14,10 @@ kind needs: `gradle` (the project path, `:name`), `dotnet` (a change here is a .
 `wire` and `forces` (a change here is a protocol change and force-tests those Gradle modules),
 `outputs` (build products, relative to `dir`), `artifact`, `optional`, `owner_only`,
 `transitional`, `was` (the dir before a move; `repath` maps an old path through it) and `deps`
-(the pieces this one builds against, transitive through `dependents`).
+(the pieces this one builds against, transitive through `dependents`) and `test_deps` (the pieces
+only this one's tests build against, not in `deps`: followed one step by `test_consumers`, never
+further, and kept out of the cycle check, so a change to one selects the pieces naming it and not
+the pieces built on those).
 
 Pure: nothing here runs git. Errors are TableError (a malformed table, a missing one) and
 KeyError (an unknown piece id); ConfigError from kitlib.config passes through.
@@ -28,7 +31,7 @@ SECTION = 'pieces'
 
 KINDS = frozenset(('gradle', 'dotnet', 'spec', 'docker', 'asset', 'docs', 'builder', 'file', 'planned'))
 FIELDS = frozenset(('id', 'group', 'kind', 'dir', 'gradle', 'dotnet', 'wire', 'forces', 'outputs',
-                    'artifact', 'optional', 'owner_only', 'transitional', 'was', 'deps'))
+                    'artifact', 'optional', 'owner_only', 'transitional', 'was', 'deps', 'test_deps'))
 TOP = frozenset(('schema', 'about', 'root', 'dotnet', 'pieces', 'removed'))
 
 
@@ -92,6 +95,14 @@ class Table(object):
             for d in deps:
                 if d == p['id'] or d not in self._by_id:
                     raise TableError('%s: dep %r is itself or no piece in the table' % (p['id'], d))
+            test_deps = p.get('test_deps', [])
+            if not isinstance(test_deps, list) or len(set(test_deps)) != len(test_deps):
+                raise TableError('%s: test_deps must be a list of distinct piece ids' % p['id'])
+            for d in test_deps:
+                if d == p['id'] or d not in self._by_id or d in deps:
+                    raise TableError('%s: test dep %r is itself, no piece in the table or in deps too'
+                                     % (p['id'], d))
+        # deps only: a test edge back to a piece below is no cycle, as a build tool builds it.
         for p in self.pieces:
             if p['id'] in self.closure_deps(p['id'], strict=True):
                 raise TableError('%s: deps form a cycle through it' % p['id'])
@@ -127,6 +138,10 @@ class Table(object):
         """The pieces `pid` builds against directly (`deps`), in table order of the json."""
         return list(self.get(pid).get('deps', ()))
 
+    def test_deps(self, pid):
+        """The pieces only `pid`'s tests build against directly (`test_deps`), in table order."""
+        return list(self.get(pid).get('test_deps', ()))
+
     def closure_deps(self, pid, strict=False):
         """Every piece `pid` reaches through `deps`; with `strict`, `pid` only if a cycle."""
         seen, todo = set(), list(self.deps(pid))
@@ -149,6 +164,12 @@ class Table(object):
                     out.add(p['id'])
                     grew = True
         return out
+
+    def test_consumers(self, pids):
+        """The pieces whose `test_deps` name one of `pids`, as a set: one step, not followed
+        further (a piece's test code is built into nothing above it)."""
+        want = set(pids)
+        return {p['id'] for p in self.pieces if want & set(p.get('test_deps', ()))}
 
     def output(self, pid, key):
         return self.path(pid, self.get(pid)['outputs'][key])

@@ -35,7 +35,7 @@ python tools/trailers.py [-C DIR] [--base REV] [--merged]
 
 ## pieces
 
-`tools/pieces.py`, logic `kitlib/pieces`. The path-to-piece table: a tool names a piece by id, never by a path literal, so moving a folder is an edit to the table only. The table is `.kit.json` "pieces" (inline, or a repo-relative JSON path); it is repository data, opaque to the schema and checked by `kitlib.pieces.Table`. The field list is in the `kitlib/pieces` docstring; `KINDS` (gradle, dotnet, spec, docker, asset, docs, builder, file, planned) is the vocabulary of the one repository that has a table today.
+`tools/pieces.py`, logic `kitlib/pieces`. The path-to-piece table: a tool names a piece by id, never by a path literal, so moving a folder is an edit to the table only. The table is `.kit.json` "pieces" (inline, or a repo-relative JSON path); it is repository data, opaque to the schema and checked by `kitlib.pieces.Table`. The field list is in the `kitlib/pieces` docstring, `deps` (transitive, `dependents`) and `test_deps` (test-only edges, one step, `test_consumers`) among them; `KINDS` (gradle, dotnet, spec, docker, asset, docs, builder, file, planned) is the vocabulary of the one repository that has a table today.
 
 ```
 python tools/pieces.py [-C DIR] --list | --dir ID | --path ID REL | --piece-of PATH

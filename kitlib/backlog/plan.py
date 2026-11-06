@@ -118,6 +118,7 @@ class Context(object):
         self.offer_session = _STORE_SESSION
         self._cap = cap
         self._resources = resources
+        self._histories = (None, {})    # (the last store tip asked about, {rid: history})
         self._shared = shared
 
     @property
@@ -176,7 +177,19 @@ class Context(object):
         return name
 
     def history(self, snap):
-        return lambda rid: self.store.history(rid, snap)
+        """`history(rid)` of the store at `snap`, one git log per rid for this Context and snap:
+        offer's readers (closed_reader, ended_reader, unmet_requires) all ask through it."""
+        # Keyed on the store's tip (snap.tip), not the snapshot object: RefBackend.history reads
+        # HEAD and ignores snap, so an answer cached under an older tip must not outlive a write.
+        if self._histories[0] != ('tip', snap.tip):
+            self._histories = (('tip', snap.tip), {})
+        seen = self._histories[1]
+
+        def history(rid):
+            if rid not in seen:
+                seen[rid] = self.store.history(rid, snap)
+            return seen[rid]
+        return history
 
     def unmet(self, snap):
         hist = self.history(snap)
@@ -2014,7 +2027,7 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
     is the `pull-collision` row, as a pull is: refused unless `may_collide`, and the Change names
     the row (_collision_change). It takes no flag. A dead pull marked for review refuses, as `pull` of a marked record does,
     until `clear-review`. A failed git probe
-    holds the pull (fail closed). A `pulled_by` that landed on the main branch (a `Merge <branch>`
+    holds the pull (fail closed). A `pulled_by` that landed on the code main (a `Merge <branch>`
     merge on its first-parent line, committed on or after the `pulled_at` day; one brought in
     inside another branch does not count) is not dead but unclosed:
     that refuses, and a git that cannot say fails."""
@@ -2039,10 +2052,15 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
     if given:
         raise Usage('`%s` is a dead pull of this session (pulled_by %s has no branch): `pull %s` '
                     'takes it over as it stands, with no %s' % (rid, old, rid, ', '.join(given)))
-    merge = landing_merge(ctx.root, ctx.main_branch, old, since=rec.get('pulled_at'))
+    base, sha = _code_main(ctx)
+    if not sha:
+        raise Failure('the code main `%s` does not resolve here, so whether %s landed cannot be '
+                      'told: set `backlog.code_main` in .kit.json to the branch code lands on'
+                      % (base, old))
+    merge = landing_merge(ctx.root, ctx.code_main, old, since=rec.get('pulled_at'), rev=sha)
     if merge:
         raise Refusal('`%s` was pulled by %s, which has landed on %s (%s): close the record, do '
-                      'not take it over' % (rid, old, ctx.main_branch, merge))
+                      'not take it over' % (rid, old, ctx.code_main, merge))
     override = '%s, with `pull %s`' % (policy.row_text('pull-collision'), rid)
     if (hits or full) and not may_collide:
         raise Refusal('`%s` is a dead pull of this session, and its %s with a live pull: %s. '
@@ -2190,11 +2208,9 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
             break
     if not head or not _git_answer(refs.is_ancestor(full, head, ctx.root), what):
         return '%s no longer holds its stopped tip %s' % (branch, tip)
-    for ref in ('refs/heads/%s' % ctx.main_branch,
-                'refs/remotes/%s/%s' % (ctx.remote, ctx.main_branch)):
-        main = _git_answer(refs.ref_commit(ref, ctx.root), what)
-        if main and _git_answer(refs.is_ancestor(full, main, ctx.root), what):
-            return 'its stopped tip %s has landed on %s' % (tip, ref.split('/', 2)[2])
+    _base, main = _code_main(ctx)
+    if main and _git_answer(refs.is_ancestor(full, main, ctx.root), what):
+        return 'its stopped tip %s has landed on %s' % (tip, ctx.code_main)
     holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
     lead = '; a lead may re-pull it (the pull-collision row)'
     hits = live_hits(rec.all('scope'), holding, skip=rec.id, branch=branch,

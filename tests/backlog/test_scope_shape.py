@@ -136,6 +136,36 @@ class ScopeShapeCli(unittest.TestCase):
         self.assertIn('summary: a thing to do, reworded', shown)
         self.assertIn('scope: a/y', shown)
 
+    def test_add_warns_on_a_bare_folder_and_still_writes(self):
+        before = self.tip()
+        out = self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'kitlib/backlog',
+                      *ADD_FLAGS)
+        self.assertRegex(out, r'WARNING: scope `kitlib/backlog` collides with everything below')
+        self.assertIn('narrow it to the files', out)
+        self.assertNotEqual(self.tip(), before)
+        self.assertIn('scope: kitlib/backlog', self.ok('show', 'FOO'))
+
+    def test_add_warns_on_a_glob(self):
+        out = self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'kitlib/backlog/**',
+                      *ADD_FLAGS)
+        self.assertIn('WARNING: scope `kitlib/backlog/**` collides', out)
+        self.assertEqual(out.count('WARNING'), 1)
+
+    def test_add_of_a_single_file_scope_prints_no_warning(self):
+        out = self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'a/x.py', *ADD_FLAGS)
+        self.assertNotIn('WARNING', out)
+
+    def test_set_scope_warns_on_a_bare_folder_and_still_writes(self):
+        self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'a/x.py', *ADD_FLAGS)
+        out = self.ok('set', 'FOO', '--scope', 'a/dir')
+        self.assertIn('WARNING: scope `a/dir` collides with everything below', out)
+        self.assertIn('scope: a/dir', self.ok('show', 'FOO'))
+        self.assertNotIn('WARNING', self.ok('set', 'FOO', '--scope', 'a/y.py'))
+
+    def test_the_shape_test_alone(self):
+        self.assertEqual(smod.broad_scope_warning(['a/b.py', 'none']), [])
+        self.assertTrue(all(smod.is_folder_scope(m) for m in ('a', 'a/b', 'a/**', 'a/b*/**')))
+
 
 if __name__ == '__main__':
     unittest.main()

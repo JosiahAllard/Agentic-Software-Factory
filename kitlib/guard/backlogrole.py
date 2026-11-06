@@ -746,7 +746,7 @@ def _printed_name(ctx, role, cmd, chain, how):
     found = script_file_word(ci) if ci is not None and not ci.dyn else None
     if found and found[1] == 'py':
         path, text = _script_text(cmd, found[0].text)
-        what = rules.fwd(path)
+        what = rules.fwd(path) if path else found[0].text       # no path: a directory the guard cannot place
     else:
         path, text = None, c_code(ci) if ci is not None and not ci.dyn else None
         what = 'its -c code'

@@ -1288,6 +1288,15 @@ class Unread(Base):
             with self.subTest(text):
                 self.allowed(self.cmd(text))
 
+    def test_a_python_script_in_a_folder_the_guard_cannot_place_is_judged(self):
+        # a worker's `(cd "$R/old" && python tools/test_log_tokens.py ...)` crashed the guard
+        # (AttributeError: the unplaced script has no path to name); it reads nothing, as a missing script
+        self.script('gen.py', self.PRINTS)
+        for text in ('(cd "$R" && python gen.py)', '{ cd "$R"; python gen.py; }',
+                     'echo "$(cd "$R" && python gen.py)"'):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
     def test_the_kits_own_python_is_not_judged(self):
         code = 'from kitlib.backlog import policy\n'
         kit_tool = os.path.join(self.w.kit_dir, 'tools', 'audit.py')

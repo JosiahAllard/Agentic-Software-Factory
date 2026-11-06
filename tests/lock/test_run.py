@@ -13,12 +13,13 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import types
 import unittest
 from unittest import mock
 
-from .helpers import FAST, OWNER, REPO, StoreCase, clean_env, own_affinity
+from .helpers import FAST, OWNER, REPO, StoreCase, agent, clean_env, own_affinity
 from tests.platforms import windows_only
 
 if os.name == "nt":
@@ -26,6 +27,7 @@ if os.name == "nt":
     from kitlib.lock import holds as hl
     from kitlib.lock import kinds as lockkinds
     from kitlib.lock import layout as lay
+    from kitlib.lock import queue as qm
     from kitlib.lock import run as rm
     from kitlib.lock import store as store_mod
     from kitlib.lock.store import LockError, utc_now
@@ -1036,6 +1038,33 @@ class Resources(StoreCase):
         second = self.book("second", resource=LAND, no_wait=True)
         second.release()
 
+    def test_a_resource_wait_names_the_resource(self):
+        """A run that waited for a resource alone records it: wait_by resource, and wait_on the
+        resource's name, on its record and its history line."""
+        self.confine(2)
+        first = self.book("first", resource=LAND, priority="land")
+        out = []
+        t = threading.Thread(target=lambda: out.append(
+            self.book("second", resource=LAND, priority="land", wait_s=30)), daemon=True)
+        t.start()
+        try:
+            end = time.monotonic() + 30
+            while len(self.entries()) < 2 and time.monotonic() < end:
+                time.sleep(0.05)
+            time.sleep(0.3)
+        finally:
+            first.release()
+        t.join(30)
+        [second] = out
+        rec = self.store.read("active/%s.json" % second.id)
+        second.release()
+        on = (rec.get("wait_on") or {}).get("resource") or [None, 0]
+        self.assertEqual(on[0], LAND, rec)
+        self.assertGreater(on[1], 0)
+        self.assertGreater(rec["wait_by"]["resource"], 0)
+        [line] = [x for x in self.store.history_records() if x["id"] == second.id]
+        self.assertEqual(line.get("wait_on"), rec["wait_on"])
+
     def test_a_dead_holders_resource_is_freed_by_the_prune(self):
         self.confine(2)
         rid = "r-20261006T120000Z-d0d0d0"
@@ -1174,6 +1203,101 @@ class Resources(StoreCase):
             first.release()
         row = [r for r in api.snapshot(self.store)["runs"]]
         self.assertEqual(row, [])
+
+
+class WaitRecord(StoreCase):
+    """book -> acquire -> the held record and history line: a run that waited on a background
+    run, or behind an agent hold, records that cause in wait_by and its blocker in wait_on."""
+
+    def entries(self):
+        return (self.store.read("queue.json") or {}).get("entries", [])
+
+    def waited(self, cores, entries, free):
+        """Books a run of `cores` in a thread, waits until the queue has `entries` entries and a
+        little more, calls free(), and returns the run's held record and its history line."""
+        out = []
+
+        def go():
+            try:
+                out.append(rm.book("engine-test", "kit", "waiter", cores=cores, store=self.store,
+                                   env=clean_env(), wait_s=WAIT_S))
+            except BaseException as e:      # noqa: BLE001  the test reads it below
+                out.append(e)
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+        try:
+            end = time.monotonic() + 30
+            while len(self.entries()) < entries and time.monotonic() < end:
+                time.sleep(0.05)
+            time.sleep(0.3)
+        finally:
+            free()
+        t.join(30)
+        self.assertEqual(len(out), 1, "the waiting run did not take its slots")
+        self.assertNotIsInstance(out[0], BaseException, out)
+        rec = self.store.read("active/%s.json" % out[0].id)
+        out[0].release()
+        [line] = [x for x in self.store.history_records() if x["id"] == out[0].id]
+        return rec, line
+
+    def test_a_wait_on_a_background_run_is_bg_and_names_it(self):
+        ok = self.confine(1)
+        rid = "r-20261006T120000Z-b0b0b0"
+        m = self.store.run_mutex(rid)               # its wrapper is this process: it stays live
+        self.addCleanup(m.release)
+        self.store.write("queue.json", {"ticket": 1, "entries": [{
+            "id": rid, "ticket": 1, "state": "bg", "pid": os.getpid(),
+            "ctime": process.own_ctime(), "repo": "kit", "slug": "bg", "kind": "engine-test",
+            "need": {"cpu": 0, "gpu": 0}, "expect_s": 600, "cores": list(ok), "gpus": [],
+            "held_at": time.time()}]})
+        rec, line = self.waited(1, 2, lambda: qm.leave(self.store, rid))
+        on = (rec.get("wait_on") or {}).get("bg") or [None, 0]
+        self.assertEqual(on[0], rid, rec)
+        self.assertGreater(rec["wait_by"]["bg"], 0)
+        self.assertEqual((line.get("wait_by"), line.get("wait_on")),
+                         (rec["wait_by"], rec["wait_on"]))
+
+    def test_a_wait_behind_an_agent_hold_is_hold_and_names_it(self):
+        ok = self.confine(3)
+        if len(ok) > 3:     # three usable slots left: the agent hold's two leave a 2-slot run short
+            now = utc_now()
+            hl.create(self.store, self.layout(), {
+                "owner": "owner", "scope": "slots", "start": now,
+                "end": now + datetime.timedelta(hours=1),
+                "slots": {"cpu": ok[3:], "gpu": []}}, OWNER, None)
+        res = api.hold_create(agent("sess-A"), {"owner": "agent", "repo": "kit", "slug": "t",
+                                                "kind": "engine-test", "for_s": 600}, self.store)
+        self.assertTrue(res["ok"], res.get("error"))
+        hid = res["result"]["hold"]["id"]
+        rec, line = self.waited(2, 1, lambda: api.hold_end(agent("sess-A"), hid, self.store))
+        on = (rec.get("wait_on") or {}).get("hold") or [None, 0]
+        self.assertEqual(on[0], hid, rec)
+        self.assertGreater(rec["wait_by"]["hold"], 0)
+        self.assertEqual((line.get("wait_by"), line.get("wait_on")),
+                         (rec["wait_by"], rec["wait_on"]))
+
+    def test_a_give_back_to_a_new_hold_counts_as_hold(self):
+        """A hold made between the look and the take (the take's re-check, cover_plan without
+        hs, sees it once): the run gives its slots back, and that wait counts as hold."""
+        self.confine(1)
+        late = {"id": "h-late", "owner": "owner", "scope": "slots"}
+        real, seen = hl.cover_plan, []
+
+        def cover_plan(store, L, need, span_s, own=None, hs=None, within=None):
+            got = real(store, L, need, span_s, own=own, hs=hs, within=within)
+            if hs is None and not seen:         # the take's re-check, once
+                seen.append(1)
+                late["_slots"] = {"cpu": list(range(L["cpu_slots"])), "gpu": []}
+                got[0]["cpu"] = {i: late for i in range(L["cpu_slots"])}
+            return got
+        with mock.patch.object(hl, "cover_plan", cover_plan):
+            run = rm.book("engine-test", "kit", "t", cores=1, store=self.store, env=clean_env(),
+                          wait_s=WAIT_S)
+        rec = self.store.read("active/%s.json" % run.id)
+        run.release()
+        self.assertEqual(seen, [1])
+        self.assertIn("hold", rec["wait_by"], rec)
+        self.assertEqual(rec["wait_on"]["hold"][0], "h-late", rec)
 
 
 if __name__ == "__main__":

@@ -406,9 +406,9 @@ ordinary files.
 - `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the map
   and every ratchet to a ceiling. It skips while the map file is absent.
 - `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it,
-  and `tool_tests.patterns` selects the test on any change under `kitlib`, `tools`, `hosts`, `boot`
-  or `optional`, since the scoped gate would otherwise miss a new import into a package the
-  changed file's tests do not reach.
+  and `tests/selection.json` lists the test under `always`, so the scoped gate runs it on every
+  change; it would otherwise miss a new import into a package the changed file's tests do not
+  reach.
 
 ## Running
 

@@ -461,6 +461,18 @@ AUTOCRLF_UNMERGED_CR = [
     ('git', ['ls-files', '-s']),
 ]
 
+# convert.c gather_stats: CR and LF are never printable, and a trailing \x1a is un-counted as
+# nonprintable but is not printable either. Both files are binary to real git (kept with CRs);
+# the second has 125 printable bytes, one \x01 and the \x1a, so one printable too many per CRLF
+# pair and two for the \x1a would tip it to text.
+AUTOCRLF_BINARY_COUNTS = [
+    ('git', ['config', 'core.autocrlf', 'true']),
+    ('bytes', 'crlf.bin', b'\r\n' * 200 + b'\x01'),
+    ('bytes', 'eof.bin', b'a' * 125 + b'\x01\r\n\x1a'),
+    ('git', ['add', '--', 'crlf.bin', 'eof.bin']),
+    ('git', ['ls-files', '-s']),
+]
+
 # merge --abort is reset --merge: a file with a change git did not stage, on a path the merge
 # left alone (index == HEAD), keeps that change; the unmerged path goes back to HEAD.
 MERGE_ABORT_KEEPS_UNSTAGED = [
@@ -625,6 +637,9 @@ class FakeAgainstRealGit(unittest.TestCase):
 
     def test_a_binary_index_blob_with_a_cr_leaves_conversion_on(self):
         self.run_script(BRANCH_AND_LAND[:3] + AUTOCRLF_INDEX_CR)
+
+    def test_binary_detection_counts_crlf_and_a_trailing_dos_eof_as_git_does(self):
+        self.run_script(BRANCH_AND_LAND[:3] + AUTOCRLF_BINARY_COUNTS)
 
     def test_an_unmerged_path_reads_its_stage_2_blob_for_a_crlf(self):
         self.run_script(BRANCH_AND_LAND[:3] + AUTOCRLF_UNMERGED_CR)

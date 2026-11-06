@@ -796,6 +796,10 @@ class RawCode(Base):
                               tool='PowerShell'), 'backlog-raw-write')
         self.allowed(self.cmd("echo x | xargs python -c \"print('kitlib/backlog/store.py')\""))
 
+    def test_c_code_the_line_computes_stays_on_the_name(self):
+        # a computed word up to the code: python may run other code than the guard reads (backlogrole.c_code)
+        self.refused(self.cmd("python -c \"print('$Y kitlib/backlog/store.py')\""), 'backlog-raw-write')
+
 
 class HubWriterCode(Base):
     """Code that names the hub's record writer (kitlib.hubsite.recordwrite) or the store's
@@ -1240,6 +1244,20 @@ class Unread(Base):
                 d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
                 self.assertIn('whose code ', d.reason)
                 self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
+    def test_a_python_script_importing_kitlib_with_a_backlog_path_as_data(self):
+        # backlogrole._tree_reach: a kitlib import counts only beside a use of the backlog, so a
+        # kitlib/backlog path given as data passes; a script that writes the store stays refused
+        good = self.script('sel.py', "from kitlib.tooldeps import selftree, config\n"
+                                     "print(selftree.selection(['kitlib/backlog/store.py'], selftree.tree('.'), "
+                                     "config.load('.')))\n")
+        self.allowed(self.cmd('python "%s"' % good))
+        for k, body in enumerate((
+                "from kitlib.tooldeps import selftree\nfrom kitlib.backlog import store\n"
+                "store.save('kitlib/backlog/store.py')\n",
+                "import kitlib.tooldeps\nkitlib.backlog.store.save('kitlib/backlog/store.py')\n")):
+            with self.subTest(body):
+                self.refused(self.cmd('python "%s"' % self.script('w%d.py' % k, body)), 'backlog-raw-write')
 
     def test_a_python_script_past_the_read_cap_is_judged_by_the_name(self):
         # the guard reads SCRIPT_CAP (256 KB): the runner past it is never seen, so the name alone refuses

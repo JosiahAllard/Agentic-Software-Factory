@@ -67,7 +67,9 @@ deletes it:
 
 ## Audio
 What audio work exists and how it is judged, or "Not applicable." (which drops the defaults
-below). Which generator makes which sound. Each line is a default kept unless the owner deletes it:
+below). Which generator makes which sound.
+Generated audio: <generator>; models <list>; style and variety controls <list>; analysis and listen tools <list>.
+Each line is a default kept unless the owner deletes it:
 - Paid generation needs the owner's approval for that specific task. Never sign up for, spend on,
   or reach for a shelved source. Shelved sources: <list, or none>.
 - Never wire a new sound into the game, or replace an existing one, unless the brief says to:

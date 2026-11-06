@@ -1,6 +1,6 @@
 ---
 name: specialty-sound
-description: Use when your brief says to load it - designing or upgrading game sound effects (synthesis, free libraries, text-to-speech), measured since you cannot hear.
+description: Use when your brief says to load it - designing or upgrading game sound effects (synthesis, free libraries, text-to-speech) or generating songs and other clips, measured since you cannot hear.
 ---
 
 # Specialty: sound
@@ -19,6 +19,18 @@ Read `creative.md` (`../specialty-tech-art/creative.md` from this folder) and `m
 6. Take sources in the order `measuring.md` gives.
 7. Prepare and measure every clip, before and after, against the whole existing set (`measuring.md`); look at each spectrogram.
 8. Critique from the numbers and spectrograms (`creative.md`), deliver the page (each clip playable, before and after, spectrogram and numbers beside the ones it replaces), commit (skill builder).
+
+## Generated audio
+
+Songs and other clips from a generator. The profile's **Audio** section names the generator, its models, its style and variety controls and its analysis and listen tools; none named: stop and say so.
+1. Before the first submission, read the remaining credit or quota and set a take budget in clips (one submission can return several); budget spent: stop and report.
+2. Make takes differ on purpose, with the generator's own options: model, style prompt, variety or weirdness controls, negative style; one deliberate change per take, never the same settings resubmitted for more.
+3. Wait with the generator's own wait or status call, never a sleep loop; an incomplete clip is unchecked, and a tool's success is not a result: check the file's length and completeness.
+4. Check every take with the analysis or listen tools against the brief and for robustness: actual against requested length; the ending (a real ending or fade, not a cut mid-phrase); flat or repeated sections; a seamless loop point for anything that loops; after the repo's prepare step, the `measuring.md` numbers by name (clicks and jumps, clipping, DC, trailing silence, loudness against the brief).
+5. A listening model's verdict is evidence you cite, never a claim that you heard the clip.
+6. Drop failed takes and near-duplicates, judged by analysis numbers or spectrogram plus the listening verdict, never by file name or prompt.
+7. Log every session, failures included, with each take's exact settings so the owner's pick can be regenerated.
+8. The owner gets a short list (three by default) of distinct, checked takes, each saying what was varied and what the check found.
 
 ## Report
 

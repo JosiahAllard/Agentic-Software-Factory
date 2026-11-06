@@ -99,6 +99,7 @@ import time
 
 from kitlib import gate as G
 from kitlib import pluginsource
+from kitlib.fs import atomic
 from kitlib.gate import pin
 from kitlib.gate import result, verdicts
 from kitlib.git import repo
@@ -292,11 +293,7 @@ def wait_line(branches, tips, root, kit=None):
 
 
 def _write_json(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(json.dumps(data, sort_keys=True, indent=1) + '\n')
-    os.replace(tmp, path)
+    atomic.write_text(path, json.dumps(data, sort_keys=True, indent=1) + '\n', makedirs=True)
 
 
 def _refused(runs, why):

@@ -5,6 +5,7 @@ from unittest import mock
 
 from kitlib.git import cmd
 from kitlib.backlog import offer as omod
+from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
@@ -1065,6 +1066,14 @@ class LiveBranchesOnce(unittest.TestCase):
 
     def test_pull_reads_the_live_branches_once(self):
         self.assertEqual(self.probes('--as', 'kit/wk', 'pull', 'FOO'), (1, 0))
+
+    def test_a_set_that_widens_scope_and_adds_uses_reads_them_once(self):
+        # plan_set splits the in-flight pulls twice over the one snapshot (scope, then uses): the
+        # Context's memo is what makes the two one probe.
+        with mock.patch.object(opener, 'repo_resources', return_value={'gpu': 2}):
+            self.assertEqual(self.probes('--as', 'kit/holder', 'set', 'HOLD', '--scope',
+                                         'brain/**', '--scope', 'brain2/**', '--uses', 'gpu'),
+                             (1, 0))
 
 
 class NextCliRestore(unittest.TestCase):

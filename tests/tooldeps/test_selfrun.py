@@ -729,6 +729,22 @@ class RealUnits(TempHomeCase):
         self.assertIn('kit_tests: interpreters: 2 pool worker(s) ran 4 unit(s); 0 unit(s) in '
                       'their own process', out.getvalue())
 
+    def test_a_pooled_run_records_each_module_s_cpu_in_the_history(self):
+        from kitlib.tooldeps import testcost
+        mods, env = self.pid_units(2)
+        history = os.path.join(self.root, 'history.jsonl')
+        out = io.StringIO()
+        rc, _summary = selfrun.run(mods, self.root, 1, out=out, environ=env, timeout=120,
+                                   history_path=history)
+        self.assertEqual(rc, 0, out.getvalue())
+        (rec,) = testcost.load(history)
+        self.assertEqual(sorted(rec['modules']), mods)
+        for m in mods:
+            row = rec['modules'][m]
+            self.assertEqual((row['tests'], row['status']), (1, 'OK'))
+            self.assertIsInstance(row['cpu'], float, row)       # the worker job's accounting
+            self.assertGreaterEqual(row['cpu'], 0)
+
     def test_a_marked_module_runs_in_its_own_process(self):
         mods, env = self.pid_units(3)
         write(self.root, {'tests/p/test_0.py': PID_PROBE

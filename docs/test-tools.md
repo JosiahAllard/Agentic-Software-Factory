@@ -54,6 +54,18 @@ To gate a worktree from another directory, run that worktree's own gate.py with 
 - Exit codes: 0 passed, nothing selected or `--plan`; 1 a test failed; 2 USAGE, git could not list the change, or `--select` with a malformed table; 130 Ctrl+C. On 2 no test ran.
 - `--full` is the escape hatch: with a malformed table it prints a warning, treats `serial` as empty and runs every module. Only `--select` refuses.
 
+Scoped gate against `--full` (KIT-SELECT-GATE-MEASURE; shared machine, no quiet window; tip abfae1683; 2026-11-05/06). Five kit landings' diffs, each run `--select --smoke --changed <paths>` and `--full` under `machine_lock.py run --kind test --cores 2` (the gate books both with its one kind); the pairs alternate, scoped first in 1, 3, 5. Wall is the in-run time, queue time excluded; `--full` is 821 modules in one pass, the scoped runs add a real-git pass for the changed test modules (`--full` had none). All 10 runs passed.
+
+| Pair (landing) | Scoped modules (incl. smoke) | Scoped wall | Full wall | Ratio | Free slots before (scoped/full) |
+|---|---|---|---|---|---|
+| 1 offer-waits-reserve | 272 of 822 | 602 s | 1223 s | 0.49 | 0/0 |
+| 2 reviewpack-risk-prefix | 97 | 169 s | 1157 s | 0.15 | 1/0 |
+| 3 headerfollow-hook-git | 414 | 626 s | 1105 s | 0.57 | 0/0 |
+| 4 rawwrite-path-arg | 232 | 444 s | 1072 s | 0.41 | 0/0 |
+| 5 scope-broad-warn | 220 | 408 s | 1414 s | 0.29 | 0/0 |
+
+Mean 247 of 822 modules (30%); wall ratio mean 0.38, min 0.15, max 0.57, n=5. Load: the lock's 12 cpu slots were all held in every run but one (other sessions' tests, builds and land-test runs, and 2 to 6 slots of background training), with 0 to 11 runs queued; queue waits ran 7 to 62 min. Result: a scoped gate selects a clear minority and is faster than `--full` in every pair, so the record closes. The ratios are one machine's loaded numbers (`--full` spanned 1072 to 1414 s), not a quiet-machine timing.
+
 Parallel runs (kitlib/tooldeps/selfrun.py):
 
 - One unit is one test module, or one test class of a split module, run as `python -m unittest <unit>` would run it. A unit past its timeout is killed and reported TIMEOUT, and a unit that ran no test is a FAIL.

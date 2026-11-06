@@ -658,8 +658,9 @@ def _failure(exc):
 
 class SessionLiveness(object):
     """`live(session)` -> `(True|False, None)` or `(None, why it cannot be read)`, never a raise:
-    True when a running session's name starts with the stem sessions.json gives that key (any
-    account, any recycle: lookup.running_stem's test). `sessions()` and `names()` (default
+    True when a running session's name is of the stem sessions.json gives that key (any
+    account, any recycle: lookup.of_stem, which running_stem uses; a stem that only prefixes
+    another's name is not). `sessions()` and `names()` (default
     launcher_stems, running_names) are each read at most once, and the process list only for a
     key that has a stem. `idle` [(record id, session)]: the records next_offer let take no place
     because their session is not running."""
@@ -689,7 +690,8 @@ class SessionLiveness(object):
         if why is None:
             names, why = self._read('_names', self._names_reader)
             if why is None:
-                return any((n or '').startswith(stem) for n in names), None
+                from kitlib.launcher import lookup
+                return any(lookup.of_stem(n, stem) for n in names), None
         self.unread[session] = why
         return None, why
 

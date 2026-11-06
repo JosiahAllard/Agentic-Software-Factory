@@ -1,6 +1,6 @@
 """`next`: another session's unpulled record reserves its scope only while that session runs
 (KIT-OFFER-DEAD-SESSION). Liveness is omod.SessionLiveness: the launcher's sessions.json key ->
-its stem, live when a running session's name starts with that stem; unreadable reserves as
+its stem, live when a running session's name is of that stem (lookup.of_stem); unreadable reserves as
 before and says so. The offer cases run on snapshots built in memory with stubbed readers; the
 CLI case runs tools/backlog.py in process with the readers patched."""
 import unittest
@@ -59,6 +59,13 @@ class SessionLive(unittest.TestCase):
         self.assertEqual(omod.blocker_summary(list(passed.values())),
                          ['blocks 1: session alpha (HIGH)'])
         self.assertEqual(omod.idle_lines(live), [])
+
+    def test_a_name_that_only_prefixes_the_stem_is_not_the_session(self):
+        for name, running in (('demo', True), ('demo-a2', True), ('demo-a2-r1', True),
+                              ('demo-lane-a1', False), ('demo2', False)):
+            with self.subTest(name=name):
+                self.assertEqual(liveness({'k': 'demo'}, names=[name]).live('k'),
+                                 (running, None))
 
     def test_unreadable_liveness_reserves_and_says_so(self):
         for live, why in ((liveness(fail=OSError('no sessions.json')), 'no sessions.json'),

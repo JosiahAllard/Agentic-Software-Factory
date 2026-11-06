@@ -17,6 +17,7 @@ import sys
 
 from kitlib import agentname
 from kitlib import content as kcontent
+from kitlib.config import user as kuser
 from kitlib.launcher import accounts as A
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
@@ -122,7 +123,7 @@ CHECKIN_NOTE = (" Once you have done that first reading, write any text to the f
 
 def agent_temp(host):
     """The agents' temp folder: AGENT_TEMP, else TEMP, else the home folder."""
-    return host.env('AGENT_TEMP') or host.env('TEMP') or host.home
+    return kuser.agent_temp(host.env, host.home)
 
 
 def consultant_notes_path(host, repo):

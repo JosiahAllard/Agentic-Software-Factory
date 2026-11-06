@@ -80,7 +80,8 @@ class Full(LogError):
 
 def agent_temp(environ=None):
     env = os.environ if environ is None else environ
-    return env.get('AGENT_TEMP') or env.get('TEMP') or os.path.expanduser('~')
+    from kitlib.config import user as kuser
+    return kuser.agent_temp(env.get)
 
 
 def session_name(environ=None):

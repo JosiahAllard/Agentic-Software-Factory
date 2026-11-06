@@ -101,7 +101,7 @@ def capped(lines, cap=CAP):
 
 
 def agent_temp(env):
-    return env.get("AGENT_TEMP") or env.get("TEMP") or os.path.expanduser("~")
+    return kuser.agent_temp(env.get)
 
 
 def _tail(path, n=TAIL_LINES):
@@ -151,11 +151,7 @@ def store_root(repo):
     (or no PM data worktree names one), else the PM data worktree that does (the repo's own checkout
     reads an empty default store then)."""
     from kitlib.backlog import store
-    from kitlib.config import load as load_config
-    if load_config(repo).written("backlog", "store") is not None:
-        return repo
-    pm_root, named, _ = store.pm_data_live_store(repo)
-    return pm_root if pm_root and named is not None else repo
+    return store.live_store_root(repo)[0]
 
 
 def backlog_next(repo, session, run, kit=None, where=store_root):

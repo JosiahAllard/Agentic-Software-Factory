@@ -104,9 +104,11 @@ class Cli(unittest.TestCase):
         self.assertIn('passed over Y', mine)
         self.assertNotIn('passed over X', mine)
         self.assertIn('tools/wk', mine)
-        # Each `next` offers what `pull` takes plainly: Y as the main checkout read it.
-        out = self.ok('--as', 'tools/wk', 'pull', 'Y')
-        self.assertNotIn('preempt', out)
+        # Neither `next` offers Y, and `pull` agrees: a plain pull of Y is refused.
+        rc, out = self.run_tool('--as', 'tools/wk', 'pull', 'Y')
+        self.assertEqual(rc, 2, out)
+        self.assertTrue(out.startswith('REFUSED: '), out)
+        self.assertIn('already taken by X', out)
 
     def test_a_bad_scope_on_another_branchs_pull_fails_next_and_pull_alike(self):
         # `add` refuses `a/*.py`, so the live pull is seeded through the library.

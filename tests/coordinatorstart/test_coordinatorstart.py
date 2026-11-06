@@ -159,6 +159,13 @@ class FindEntryTest(unittest.TestCase):
         self.assertEqual(e["name"], "n1")
         self.assertIn("2 sessions entries", note)
 
+    def test_nested_stems_pick_the_entry_whose_stem_the_name_is_of(self):
+        nested = {"a": dict(ENTRY, name="n1", stem="kit-coord"), "b": dict(ENTRY, name="n2", stem="kit-coord-docs")}
+        pick = lambda name: coordinatorstart.find_entry(nested, ROOT + "/alpha", name, ROOT)[0]["name"]
+        self.assertEqual(pick("kit-coord-docs-a1"), "n2")
+        self.assertEqual(pick("kit-coord-docs-a1-r2"), "n2")
+        self.assertEqual(pick("kit-coord-a1"), "n1")
+
 
 class CapReviewTest(unittest.TestCase):
     CAPS = {"alpha": [{"cap": 6, "until": "2026-10-10"}, {"cap": 3}]}

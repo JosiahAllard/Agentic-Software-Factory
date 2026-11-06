@@ -4,6 +4,8 @@
   "roles": {"lander": {"edit_main_checkout": true, "why": "landers fetch and fast-forward main from their worktree"}},
   "repo": {"name": "Agentic-Project_Manager-Kit"},
   "guard": {"role_policy": true},
+  "owner": {"paths": ["AGENTS.md", "CLAUDE.md", ".claude/", ".codex/", "docs/agent-profile.md", ".github/workflows/", ".kit.json", "tools/gate.json", "kitlib/gate/strict_defaults.py", "kitlib/backlog/roles.py", "hosts/claude/managed-settings.json", "docs/module-map.json"]},
+  "modules": {"map": "docs/module-map.json", "ceilings": "docs/module-ceilings.json", "page": "docs/module-architecture.md"},
   "commit": {"merge_fold": true},
   "doc_index": {"enabled": false},
   "daily_full": {"enabled": true, "bisect": {"max_probes": 5}},
@@ -22,6 +24,14 @@
         "full_cmd": ["{python}", "tools/kit_tests.py", "--full", "-C", "{root}"],
         "daily_cmd": ["{python}", "tools/kit_tests.py", "--full", "--both-tiers", "-C", "{root}"],
         "pass": ["kit_tests: OK"]
+      },
+      {
+        "name": "module-map",
+        "always": true,
+        "globs": ["*"],
+        "warn": true,
+        "cmd": ["{python}", "tools/module_map.py", "-C", "{root}", "--check", "--base", "{base}"],
+        "pass": ["module_map: OK"]
       }
     ]
   },

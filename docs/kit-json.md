@@ -132,7 +132,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `modules.map` (repo path): the module map file: modules, messaging, allowed edges and ratchets (docs/module-map.md); --check refuses to run unless "owner".paths locks it; unset: no module map
 - `modules.ceilings` (repo path): the ratchet ceilings file, {ratchet id: ceiling} (docs/module-map.md "Ratchets"); unset: every ceiling is 0
 - `modules.page` (repo path): the architecture page generated from the map (docs/module-map.md "The architecture page"); --page --write writes it and --check fails when it does not match the map; unset: no page
-- `pieces`: a table the kit passes through unchecked (a file path or an object); its optional `groups` list closes the piece `group` vocabulary (docs/repo-checks.md "pieces")
+- `pieces`: a table the kit passes through unchecked (a file path or an object)
 - `preflight.engines` (list of string, default []): process-name prefixes listed as running engines
 - `preflight.report_hooks` (list of "module:function", default []): module:function report hooks
 - `preflight.traps` (string): where the traps are written down

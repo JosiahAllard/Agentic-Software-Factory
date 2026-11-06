@@ -63,6 +63,8 @@ class Parsing(unittest.TestCase):
         self.refuses(data, 'group')
         self.refuses({'schema': 1, 'groups': 'worker', 'pieces': []}, 'groups')
         self.refuses({'schema': 1, 'groups': ['a', 'a'], 'pieces': []}, 'groups')
+        self.refuses({'schema': 1, 'groups': [1], 'pieces': []}, 'groups')
+        self.refuses({'schema': 1, 'groups': [''], 'pieces': []}, 'groups')
         t = pieces.load({'schema': 1, 'groups': ['worker'], 'pieces': [piece()]})
         self.assertEqual(t.ids(), ['x'])
 

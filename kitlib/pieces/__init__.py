@@ -9,7 +9,8 @@ piece then skips that refinement.
 
 The json: `schema` 1; `root` (paths that are no piece and never move); `dotnet` (the solution
 file, the files beside it that count as .NET changes, and their `was` map); `removed` (folders a
-move deleted); and `pieces`, each with `id`, `group`, `kind` (one of KINDS), `dir` and, as the
+move deleted); `groups` (optional: the closed list of group names a piece may carry; a piece whose
+`group` is outside it is refused, and without the key no group is checked); and `pieces`, each with `id`, `group`, `kind` (one of KINDS), `dir` and, as the
 kind needs: `gradle` (the project path, `:name`), `dotnet` (a change here is a .NET change),
 `wire` and `forces` (a change here is a protocol change and force-tests those Gradle modules),
 `outputs` (build products, relative to `dir`), `artifact`, `optional`, `owner_only`,

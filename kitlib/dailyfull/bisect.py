@@ -50,6 +50,7 @@ NOT_STEPS = ('gate', 'windows')
 DEFAULT_PROBES = 5
 WHOLE = 'whole step: '
 NARROWED_GREEN = WHOLE + 'narrowed green at S'
+SETUPS = ('setUpClass', 'setUpModule')     # the fixtures whose error means no test ran
 
 
 def bisectable(result):
@@ -119,8 +120,8 @@ def present(top, cls):
 def judge(text, rc, ids, defined):
     """RED, GREEN or None (inconclusive) of one class run's log `text` (rc None: it did not start
     or ran past its timeout) for S's failing `ids`. RED: one of them shows FAIL or ERROR; or a
-    fixture (setUpClass, setUpModule and the like) of a class or module one of them is in does,
-    so its tests never ran; or the class could not be loaded and `defined()` (the commit defines
+    set-up fixture (setUpClass, setUpModule) of a class or module one of them is in does, so its
+    tests never ran (a tearDownClass or tearDownModule error, after they ran, does not count); or the class could not be loaded and `defined()` (the commit defines
     it). GREEN: the class could not be loaded and the commit does not define it, or the run
     reached its `Ran N` line (the ids passed, or the commit lacks them). None: anything else (no
     `Ran` line: a crash)."""
@@ -140,8 +141,8 @@ def judge(text, rc, ids, defined):
         if tid in want:
             return RED
         owner, method = tid.rsplit('.', 1)
-        if method in rerun.FIXTURES and any(w.startswith(owner + '.') for w in want):
-            return RED
+        if method in SETUPS and any(w.startswith(owner + '.') for w in want):
+            return RED              # a tear-down's error comes after its tests ran: not this
     if not_loaded:
         return RED if defined() else GREEN
     if any(rerun.RAN.match(line) for line in lines):

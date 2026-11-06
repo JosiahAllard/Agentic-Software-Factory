@@ -898,10 +898,13 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             control = 'green' if cpass else (
                 TIMED_OUT_CONTROL if crc is None and TIMED_OUT in (ctext or '') else
                 'absent' if ABSENT.search(ctext or '') else 'red')
-        say('%-5s %s%s at the tip; control at the base %s: %s%s' % (
-            'PASS' if passed else 'FAIL', c['cls'],
+        late = rc is None and TIMED_OUT in (text or '')
+        say('%-5s %s%s at the tip%s; control at the base %s: %s%s' % (
+            'PASS' if passed else 'TIMED OUT' if late else 'FAIL', c['cls'],
             ' (%s)' % ', '.join('%s=%s' % kv for kv in sorted(c['env'].items()))
-            if c['env'] else '', base[:10], control,
+            if c['env'] else '',
+            ' (still running after %s s, so it does not pass)' % timeout if late else '',
+            base[:10], control,
             ' (also red at base)' if control == 'red' else
             ' (still running after %s s; inconclusive)' % timeout
             if control == TIMED_OUT_CONTROL else ''))

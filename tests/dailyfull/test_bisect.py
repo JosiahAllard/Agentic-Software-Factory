@@ -457,6 +457,14 @@ class Judge(unittest.TestCase):
              'Ran 0 tests in 0.001s\nFAILED (errors=1)\n', 1, True, B.RED),
             ('another class setUpClass errors', 'ERROR: setUpClass (probe_test.Other)\n'
              'Ran 0 tests in 0.001s\nFAILED (errors=1)\n', 1, True, B.GREEN),
+            ('its class tearDownClass errors after its tests passed',
+             'test_red (probe_test.Target.test_red) ... ok\n'
+             'ERROR: tearDownClass (probe_test.Target)\n'
+             'Ran 1 test in 0.001s\nFAILED (errors=1)\n', 1, True, B.GREEN),
+            ('its module tearDownModule errors after its tests passed',
+             'test_red (probe_test.Target.test_red) ... ok\n'
+             'ERROR: tearDownModule (probe_test)\n'
+             'Ran 1 test in 0.001s\nFAILED (errors=1)\n', 1, True, B.GREEN),
             ('not loaded, class defined', self.LOAD_FAILED, 1, True, B.RED),
             ('not loaded, class absent', self.LOAD_FAILED, 1, False, B.GREEN),
             ('no Ran line', 'Traceback (most recent call last):\n', 1, False, None),

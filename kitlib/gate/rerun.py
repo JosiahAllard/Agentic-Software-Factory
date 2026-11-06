@@ -238,7 +238,7 @@ def branch_twice(root, tip, main, reds, reruns):
 
 # ---------------------------------------------------------------- parsing a step's log
 
-def _test_id(method, paren):
+def test_id(method, paren):
     """`(id, class)` of a FAIL/ERROR line's method and parenthesis: the 3.11+ form
     `test_x (pkg.mod.Class.test_x)`, the older `test_x (pkg.mod.Class)`, and a fixture
     `setUpClass (pkg.mod.Class)` (its class, or module, is rerun whole)."""
@@ -271,7 +271,7 @@ def _parse_block(lines, env, where):
         if paren.startswith('unittest.') or '_FailedTest' in paren:
             uncovered.append('%s: a test could not be loaded (%s)' % (where, paren))
             continue
-        tid, cls = _test_id(method, paren)
+        tid, cls = test_id(method, paren)
         seen.add(tid)
         failures.append({'id': tid, 'cls': cls, 'env': dict(env)})
     lines_n = sum(1 for line in lines if TEST_LINE.match(line))
@@ -380,7 +380,9 @@ def cover_step(res, cwd_rel):
     return entry
 
 
-def _cwd_rel(top, cwd):
+def cwd_rel(top, cwd):
+    """A step directory `cwd` relative to the tree `top` ('' for the top, '/'-separated), or None
+    when it is outside the tree."""
     rel = os.path.relpath(os.path.abspath(cwd or top), os.path.abspath(top))
     if rel == os.curdir:
         return ''
@@ -396,7 +398,7 @@ def record_red(top, cfg, head, base, started, results, chosen, log_dir):
         commit, tree, author = gate_ok._facts(top, head)
     except gate_ok.RecordError as e:
         raise RerunError(str(e))
-    cwds = {s.name: _cwd_rel(top, s.cwd) for s in chosen}
+    cwds = {s.name: cwd_rel(top, s.cwd) for s in chosen}
     rec = {'kind': RED, 'commit': commit, 'tree': tree, 'author': author, 'base': base,
            'config_rev': commit, 'full': True,
            'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
@@ -528,7 +530,7 @@ def judge_class(text, rc, ids):
         m = PROGRESS.match(line)
         if not m:
             continue
-        tid, _ = _test_id(m.group(1), m.group(2))
+        tid, _ = test_id(m.group(1), m.group(2))
         rest = m.group(3)
         if ' ... ' not in rest and i + 1 < len(lines) and ' ... ' in lines[i + 1]:
             rest = lines[i + 1]             # a docstring line carries the status
@@ -560,6 +562,18 @@ def _start(launcher, argv, cwd, env, log_path):
             log.write(('rerun: could not start %s: %s\n' % (argv, e)).encode('utf-8'))
             return None
         return launcher.wait(p)
+
+
+def run_class(launcher, top, c, log):
+    """`(rc, log text)` of `python -m unittest -v <class>` for one entry `c` of classes_of, run
+    in the tree `top` (its directory `c['cwd']`) with the launcher's child environment and the
+    mode's variables `c['env']`, its output in the file `log`. rc is None when it did not start."""
+    env = runner.child_env(launcher)
+    env.update(c['env'])
+    argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
+    rc = _start(launcher, argv, os.path.join(top, *c['cwd'].split('/')) if c['cwd'] else top,
+                env, log)
+    return rc, _read(log)
 
 
 def classes_of(red):
@@ -723,19 +737,13 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             for i, c in enumerate(classes):
                 if slot.stop_asked():
                     break
-                env = runner.child_env(slot.launcher)
-                env.update(c['env'])
-                argv = [sys.executable, '-m', 'unittest', '-v', c['cls']]
                 log = os.path.join(logs, 'class-%d.log' % (i + 1))
-                rc = _start(slot.launcher, argv, os.path.join(top, *c['cwd'].split('/')) if
-                            c['cwd'] else top, env, log)
-                passed, got = judge_class(_read(log), rc, c['ids'])
+                rc, text = run_class(slot.launcher, top, c, log)
+                passed, got = judge_class(text, rc, c['ids'])
                 control, clog = 'not run', None
                 if tw and not slot.stop_asked():
                     clog = os.path.join(logs, 'class-%d.base.log' % (i + 1))
-                    crc = _start(slot.launcher, argv, os.path.join(tw, *c['cwd'].split('/')) if
-                                 c['cwd'] else tw, env, clog)
-                    ctext = _read(clog)
+                    crc, ctext = run_class(slot.launcher, tw, c, clog)
                     cpass, _ = judge_class(ctext, crc, c['ids'])
                     control = 'green' if cpass else (
                         'absent' if ABSENT.search(ctext or '') else 'red')

@@ -117,6 +117,8 @@ class Culprit(BisectCase):
         self.assertIsNone(rec.get('priority_ruling'))
         self.assertEqual(rec.all('scope'), ['RED'])
         self.assertNotIn('note', found)
+        # the step's log is neither kit_tests' nor unittest's: each probe ran the whole step
+        self.assertTrue(found['mode'].startswith(B.WHOLE), found['mode'])
 
     def test_a_second_red_run_files_nothing_new(self):
         culprit, _r = self.red_history()
@@ -166,6 +168,188 @@ class Flake(BisectCase):
         self.assertEqual(len(r['bisect']['probes']), 1)
         self.assertNotIn('filed', r['bisect'])
         self.assertEqual(self.daily_head(), r['sha'])
+
+
+PROBE_MODULE = '''import os
+import unittest
+
+COUNT = %(count)r
+STATE = {}
+
+
+def bump():
+    p = COUNT + '.target'
+    n = int(open(p).read()) + 1 if os.path.exists(p) else 1
+    open(p, 'w').write(str(n))
+    return n
+
+
+class Other(unittest.TestCase):
+    def test_count(self):
+        STATE['other'] = True
+        with open(COUNT, 'a') as f:
+            f.write('x\\n')
+
+
+class Target(unittest.TestCase):
+    def test_red(self):
+        self.assertFalse(%(red)s)
+'''
+NEW_METHOD = '''
+    def test_new(self):
+        self.fail('new')
+'''
+NEW_CLASS = '''
+
+class Added(unittest.TestCase):
+    def test_new(self):
+        self.fail('new')
+'''
+
+
+class ProbeCase(BisectCase):
+    """The red step is a unittest run of probe_test (PROBE_MODULE, Target's red when RED is
+    true): `Other` counts every run of the whole step; a narrowed probe books the gate's own kind
+    (its default, "test"), a whole-step probe the daily run's ("engine-test")."""
+    GATE = {'steps': [{'name': 'unit', 'always': True,
+                       'cmd': ['{python}', '-m', 'unittest', '-v', 'probe_test']}]}
+    RED = 'os.path.exists("RED")'
+
+    def setUp(self):
+        BisectCase.setUp(self)
+        marker_dir = tempfile.mkdtemp(prefix='kit-probe-')
+        self.addCleanup(gitfixture.rmtree, marker_dir)
+        self.count = os.path.join(marker_dir, 'count').replace('\\', '/')
+        self.push({'probe_test.py': self.module(self.RED)})
+
+    def module(self, red, extra=''):
+        return PROBE_MODULE % {'count': self.count, 'red': red} + extra
+
+    def whole_runs(self):
+        with open(self.count, encoding='utf-8') as f:
+            return len(f.read().split())
+
+    def probe_kinds(self):
+        return [c['kind'] for c in self.book_calls][2:]     # after the green and the red run
+
+    def history(self, culprit_files):
+        """A green run, then a, b, the culprit's files, c, d, then a red run: (culprit, result)."""
+        self.run_daily('20261008-040000')
+        self.push({'a': 'x\n'})
+        self.push({'b': 'x\n'})
+        self.push(culprit_files)
+        culprit = self.repo.git('rev-parse', 'HEAD')
+        self.push({'c': 'x\n'})
+        self.push({'d': 'x\n'})
+        o = self.run_daily('20261009-040000')
+        self.lines = o.lines
+        return culprit, self.result('20261009-040000')
+
+
+class TestsOnly(ProbeCase):
+    """Each probe runs S's failing classes only: no probe runs the whole step."""
+
+    def test_probes_run_only_the_failing_class_and_find_the_culprit(self):
+        culprit, r = self.red_history()
+        found = r['bisect']
+        self.assertEqual(found['culprit'], culprit, self.lines)
+        self.assertEqual(found['mode'], 'tests: 1 class(es)')
+        self.assertEqual(self.whole_runs(), 2)          # the two daily runs, no probe
+        self.assertEqual(self.probe_kinds(), ['test'] * len(found['probes']))
+        self.assertEqual(self.daily_head(), r['sha'])
+
+    def test_a_failing_method_the_culprit_adds_counts_green_before_it(self):
+        self.push({'probe_test.py': self.module('False')})
+        culprit, r = self.history({'probe_test.py': self.module('False', NEW_METHOD)})
+        self.assertEqual(r['bisect']['culprit'], culprit, self.lines)
+        self.assertEqual(r['bisect']['mode'], 'tests: 1 class(es)')
+        self.assertEqual(self.whole_runs(), 2)
+
+    def test_a_failing_class_the_culprit_adds_counts_green_before_it(self):
+        self.push({'probe_test.py': self.module('False')})
+        culprit, r = self.history({'probe_test.py': self.module('False', NEW_CLASS)})
+        self.assertEqual(r['bisect']['culprit'], culprit, self.lines)
+        self.assertEqual(r['bisect']['mode'], 'tests: 1 class(es)')
+        self.assertEqual(self.whole_runs(), 2)
+
+
+class TestsGreenAloneAtS(ProbeCase):
+    """Target fails only after Other ran in the same process: alone it passes at S, so one
+    whole-step probe runs at S, which is red, and the rest of the search runs whole steps."""
+    RED = 'os.path.exists("RED") and STATE.get("other")'
+
+    def test_a_red_the_whole_step_reproduces_is_bisected_in_whole_steps(self):
+        culprit, r = self.red_history()
+        found = r['bisect']
+        self.assertEqual(found['culprit'], culprit, self.lines)
+        self.assertEqual(found['mode'], B.NARROWED_GREEN)
+        kinds = self.probe_kinds()
+        self.assertEqual(kinds[0], 'test')              # the failing tests alone at S
+        self.assertEqual(kinds[1:], ['engine-test'] * len(found['probes']))
+        self.assertEqual(self.whole_runs(), 2 + len(found['probes']))
+
+
+class TestsFlakeAtS(ProbeCase):
+    """Target fails on its second run only (the red daily run): green alone at S and green in
+    the whole-step probe at S, so the red is a flake."""
+    RED = 'bump() == 2'
+
+    def test_green_alone_and_green_whole_at_s_is_a_flake(self):
+        self.run_daily('20261008-040000')
+        self.push({'a': 'x\n'})
+        self.run_daily('20261009-040000')
+        r = self.result('20261009-040000')
+        self.assertEqual(r['verdict'], 'red')
+        found = r['bisect']
+        self.assertEqual(found['verdict'], B.FLAKE)
+        self.assertEqual(len(found['probes']), 1)
+        self.assertEqual(found['mode'], B.NARROWED_GREEN)
+        self.assertEqual(self.probe_kinds(), ['test', 'engine-test'])
+        self.assertEqual(self.whole_runs(), 3)          # two daily runs and the probe at S
+        self.assertNotIn('filed', found)
+        self.assertEqual(self.daily_head(), r['sha'])
+
+
+class Judge(unittest.TestCase):
+    """judge() of one class run's log for S's failing ids, and present()."""
+    ID = 'probe_test.Target.test_red'
+    LOAD_FAILED = ('ERROR: Target (unittest.loader._FailedTest.Target)\n'
+                   'AttributeError: module has no attribute Target\n'
+                   'Ran 1 test in 0.001s\nFAILED (errors=1)\n')
+
+    def judge(self, text, rc=0, defined=False):
+        return B.judge(text, rc, [self.ID], lambda: defined)
+
+    def test_each_outcome(self):
+        cases = [
+            ('the id fails', 'FAIL: test_red (probe_test.Target.test_red)\n'
+             'Ran 1 test in 0.1s\nFAILED (failures=1)\n', 1, False, B.RED),
+            ('the id errors (3.10 form)', 'ERROR: test_red (probe_test.Target)\n'
+             'Ran 1 test in 0.1s\nFAILED (errors=1)\n', 1, False, B.RED),
+            ('the id passes', 'test_red (probe_test.Target.test_red) ... ok\n'
+             'Ran 1 test in 0.1s\nOK\n', 0, False, B.GREEN),
+            ('another test fails', 'FAIL: test_x (probe_test.Target.test_x)\n'
+             'Ran 2 tests in 0.1s\nFAILED (failures=1)\n', 1, False, B.GREEN),
+            ('the method is absent', 'test_x (probe_test.Target.test_x) ... ok\n'
+             'Ran 1 test in 0.1s\nOK\n', 0, False, B.GREEN),
+            ('not loaded, class defined', self.LOAD_FAILED, 1, True, B.RED),
+            ('not loaded, class absent', self.LOAD_FAILED, 1, False, B.GREEN),
+            ('no Ran line', 'Traceback (most recent call last):\n', 1, False, None),
+            ('did not start', '', None, False, None),
+        ]
+        for what, text, rc, defined, want in cases:
+            with self.subTest(what):
+                self.assertEqual(self.judge(text, rc, defined), want)
+
+    def test_present_reads_the_tree(self):
+        top = tempfile.mkdtemp(prefix='kit-present-')
+        self.addCleanup(gitfixture.rmtree, top)
+        with open(os.path.join(top, 'probe_test.py'), 'w', encoding='utf-8') as f:
+            f.write('import unittest\n\n\nclass Target(unittest.TestCase):\n    pass\n')
+        self.assertTrue(B.present(top, 'probe_test.Target'))
+        self.assertTrue(B.present(top, 'probe_test'))
+        self.assertFalse(B.present(top, 'probe_test.Added'))
+        self.assertFalse(B.present(top, 'gone_test.Target'))
 
 
 if __name__ == '__main__':

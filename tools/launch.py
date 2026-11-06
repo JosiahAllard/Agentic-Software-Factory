@@ -11,6 +11,7 @@
                     [--home-worktree]
   launch.py pick-account [--limit 95] [--explain]
   launch.py usage
+  launch.py fill-hold [(--repo NAME | --machine) (--reason TEXT [--until ISO] | --clear)]
   launch.py after-reboot [--test] [--dry-run]
   launch.py pm-relaunch --name NEW [--wait SECONDS]
   launch.py pm-crossover --account N [--name NEW] [--state FILE] [--wait SECONDS] [--what-if]
@@ -29,6 +30,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
+from kitlib.hubjobs import fill_watch                               # noqa: E402
 from kitlib.launcher import accounts, autostart, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
@@ -172,6 +174,15 @@ def parser():
 
     sub.add_parser('usage', help="every account's usage")
 
+    w = sub.add_parser('fill-hold', help="hold a repository or the machine from the hub fill watch's "
+                       'nudge and auto-pull (docs/hub-fill.md); no flags: list the holds')
+    g = w.add_mutually_exclusive_group()
+    g.add_argument('--repo', help='a name in launcher.repos')
+    g.add_argument('--machine', action='store_true', help='every repository')
+    w.add_argument('--reason', help='set the hold, with this reason')
+    w.add_argument('--until', help='it ends at this ISO time (local without an offset); omitted: until cleared')
+    w.add_argument('--clear', action='store_true', help='end the hold')
+
     r = sub.add_parser('after-reboot', help='start every plain session, then resume the PM (the hub runs it after a boot)')
     r.add_argument('--test', action='store_true', help="start only an 'autostart-test' session")
     r.add_argument('--dry-run', action='store_true')
@@ -266,6 +277,11 @@ def run(a, settings, host):
         return (accounts.explain(rows) if a.explain else []) + [n]
     if a.cmd == 'usage':
         return usage.report(settings, host.now())
+    if a.cmd == 'fill-hold':
+        if (a.reason is not None or a.until is not None or a.clear) and not (a.repo or a.machine):
+            raise S.LaunchError('Give --repo NAME or --machine.')
+        return fill_watch.fill_hold(settings, a.repo, a.machine, a.reason, a.until, a.clear,
+                                    host.now().timestamp())
     if a.cmd == 'after-reboot':
         return reboot.run(settings, host, a.test, a.dry_run, say=lambda l: print(l, flush=True),
                           permission_mode=a.permission_mode)

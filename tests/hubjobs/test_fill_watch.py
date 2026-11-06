@@ -1471,5 +1471,148 @@ class Keys(unittest.TestCase):
         self.assertEqual((backlog['fill_queued_max'].default, backlog['fill_idle_max'].default),
                          (3, 2))
 
+
+class HoldAndUsage(unittest.TestCase):
+    """The quiet stand-downs through make's own stand-down read: a PM hold (fill-hold.json) or
+    every account at the usage limit sends no nudge and pulls nothing; once it ends, the same run
+    nudges and then pulls."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.s = lsettings.Settings({'state_dir': self.tmp, 'repos': {'game': self.tmp}},
+                                    home=self.tmp)
+        self.path = os.path.join(self.tmp, W.HOLD_FILE)
+        self.rows = []
+        for target, attr, value in ((W, 'standdown', lambda top: None),
+                                    (W.A, 'week_rows', lambda s, now: self.rows)):
+            p = mock.patch.object(target, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
+        with mock.patch.object(lsettings, 'load', lambda home=None: self.s):
+            self.job = W.make(mock.Mock(home=self.tmp, push=None, handoffs=lambda: {})).run
+        self.sent, self.pulls, self.clock = [], [], Clock()
+
+        def deliver(key, text):
+            self.sent.append(text)
+            return P.WRITTEN
+
+        def pull(key, entry, ids, free, stop):
+            self.pulls.append(list(ids))
+            return [(ids[0], W.fill_branch(key, ids[0]))], []
+        self.job.sessions = lambda: {'game': dict(COORD)}
+        self.job.live = lambda: {'game-coordinator-a1'}
+        self.job.read = lambda key, entry: (5, 3, ['EX-A', 'EX-B'])
+        self.job.deliver, self.job.pull, self.job.now = deliver, pull, self.clock
+        self.job.store, self.job.waits = W.MemoryState(), None
+
+    def run_at(self, t):
+        self.clock.t = t
+        return self.job(EventCtx())
+
+    def assert_quiet(self, *times):
+        for t in times:
+            out = self.run_at(t)
+            self.assertIsInstance(out, jobs.Skip)
+        self.assertEqual((self.sent, self.pulls), ([], []))
+
+    def assert_fills_from(self, t):
+        self.run_at(t)
+        self.assertEqual(len(self.sent), 1)             # the nudge
+        self.assertEqual(self.pulls, [])
+        self.run_at(t + W.PULL_AFTER_S)
+        self.assertEqual(self.pulls, [['EX-A', 'EX-B']])
+
+    def test_a_repo_hold_stops_the_nudge_and_the_pull_until_cleared(self):
+        W.set_hold(self.path, 'game', 'owner hold', None, 900.0)
+        self.assert_quiet(1000.0, 2200.0, 5000.0)
+        self.assertTrue(W.clear_hold(self.path, 'game'))
+        self.assert_fills_from(6000.0)
+
+    def test_a_machine_hold_ends_at_its_until(self):
+        W.set_hold(self.path, None, 'owner hold', 3000.0, 900.0)
+        self.assert_quiet(1000.0, 2200.0, 2999.0)
+        self.assert_fills_from(3000.0)
+
+    def test_another_repos_hold_does_not_hold_this_one(self):
+        W.set_hold(self.path, 'tools', 'owner hold', None, 900.0)
+        self.assert_fills_from(1000.0)
+
+    def test_a_hold_that_cannot_be_read_fails_closed(self):
+        for bad in ('not json', '{"machine": {"reason": 3}}', '{"other": {}}'):
+            with open(self.path, 'w', encoding='utf-8') as f:
+                f.write(bad)
+            self.job.store = W.MemoryState()
+            self.sent = []
+            self.run_at(1000.0)
+            self.run_at(1000.0 + W.PULL_AFTER_S)
+            self.assertEqual(self.pulls, [])
+            self.assertIn('auto-pull stood down: unread', self.sent[0])
+
+    def test_every_account_at_the_limit_stands_down(self):
+        self.rows = [('1', 97, None), ('2', W.USAGE_LIMIT, None)]
+        self.assert_quiet(1000.0, 2200.0)
+
+    def test_one_account_with_headroom_keeps_it_going(self):
+        self.rows = [('1', 97, None), ('2', 40, None)]
+        self.assert_fills_from(1000.0)
+
+    def test_an_unknown_week_counts_as_headroom(self):
+        self.rows = [('1', 97, None), ('2', None, None)]
+        self.assert_fills_from(1000.0)
+
+
+class HoldFile(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.s = lsettings.Settings({'state_dir': self.tmp, 'repos': {'game': self.tmp}},
+                                    home=self.tmp)
+        self.path = os.path.join(self.tmp, W.HOLD_FILE)
+
+    def test_no_file_is_no_hold(self):
+        self.assertEqual(W.read_hold(self.path), {})
+        self.assertIsNone(W.hold_reason({}, 'game', 1000.0))
+
+    def test_set_and_clear_round_trip(self):
+        W.set_hold(self.path, 'game', 'r', 2000.0, 1000.0)
+        W.set_hold(self.path, None, 'm', None, 1000.0)
+        data = W.read_hold(self.path)
+        self.assertEqual(data, {'repos': {'game': {'reason': 'r', 'set_at': 1000.0,
+                                                    'until': 2000.0}},
+                                'machine': {'reason': 'm', 'set_at': 1000.0}})
+        self.assertEqual(W.hold_reason(data, 'game', 1500.0), 'hold machine')
+        self.assertTrue(W.clear_hold(self.path, None))
+        self.assertFalse(W.clear_hold(self.path, None))
+        data = W.read_hold(self.path)
+        self.assertEqual(W.hold_reason(data, 'game', 1999.0), 'hold repo')
+        self.assertIsNone(W.hold_reason(data, 'game', 2000.0))
+        self.assertIsNone(W.hold_reason(data, 'tools', 1500.0))
+
+    def test_the_verb_sets_lists_and_clears(self):
+        lines = W.fill_hold(self.s, 'game', False, 'owner hold', '2999-01-01T11:00', False, 1000.0)
+        self.assertIn('Held game', lines[0])
+        listed = W.fill_hold(self.s, None, False, None, None, False, 1000.0)
+        self.assertEqual(len(listed), 1)
+        self.assertTrue(listed[0].startswith('game: owner hold (set '))
+        self.assertEqual(W.fill_hold(self.s, 'game', False, None, None, True, 1000.0),
+                         ['Cleared the hold on game.'])
+        self.assertEqual(W.fill_hold(self.s, None, False, None, None, False, 1000.0),
+                         ['No hold.'])
+
+    def test_the_verb_refuses_a_bad_repo_a_bad_or_past_until(self):
+        for args in (('nowhere', False, 'r', None, False), ('game', False, 'r', 'soon', False),
+                     ('game', False, 'r', '2000-01-01T00:00', False),
+                     ('game', False, None, '2999-01-01T00:00', False),
+                     ('game', False, 'r', None, True)):
+            with self.assertRaises(lsettings.LaunchError):
+                W.fill_hold(self.s, *(args + (1000.0 * 1e6,)))
+
+    def test_usage_reason(self):
+        self.assertIsNone(W.usage_reason([]))
+        self.assertEqual(W.usage_reason([('1', 95, None)]), 'usage all>=95%')
+        self.assertIsNone(W.usage_reason([('1', 94, None)]))
+        self.assertEqual(W.usage_reason([('1', 50, None)], limit=50), 'usage all>=50%')
+
 if __name__ == '__main__':
     unittest.main()

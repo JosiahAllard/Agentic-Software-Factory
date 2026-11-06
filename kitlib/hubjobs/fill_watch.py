@@ -25,6 +25,13 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
                                      `top`, or None; StandDownUnread when it cannot be read
   read_limits(top, cfg=None)         (backlog.fill_queued_max, backlog.fill_idle_max) of `top`
   read_survey(top, cfg)              (queued, idle) of `top`; StandDownUnread when unread
+  read_hold(path)                    the PM's holds (fill-hold.json), {} when none; StandDownUnread
+  hold_reason(data, repo, now)       `hold machine`, `hold repo` or None
+  set_hold(path, repo, reason, until, now), clear_hold(path, repo)
+                                     write or drop one hold (repo None: the machine's)
+  fill_hold(settings, repo, machine, reason, until, clear, now) -> lines
+                                     launch.py fill-hold: set, clear or list the holds
+  usage_reason(rows, limit=None)     `usage all>=N%` when every account is at the limit, or None
   nudge_text(key, free, ids, reason=None)
                                      the push
   FileState(path), MemoryState()     the told state's store: read() -> dict, write(dict)
@@ -69,6 +76,15 @@ With no repository stand-down, a coordinator whose newest hand-off record (the h
 `handoffs`) is not a check-in is stood down as `handoff <kind>`, unless its live session started
 after the record's `at` (live_names' start): a session started since is a new one, check-in or
 not. Records that cannot be read are `handoff unread`.
+Two stand-downs come first and are quiet (QUIET): no nudge, no pull, no PM event, and the key's
+told state is dropped, so the episode starts afresh once they end. A PM hold (fill-hold.json in
+launcher.state_dir, written by `launch.py fill-hold`): {"machine": hold, "repos": {launcher.repos
+name: hold}}, a hold {reason, set_at, until?} (epoch seconds; no until: until cleared), gives
+`hold machine` or `hold repo` while it is on; a file that cannot be read or has another shape is
+`unread`. The reason is free text and goes no further than the file and the listing. Usage
+(make's): every signed-in account's week (accounts.week_rows) at or over USAGE_LIMIT% gives
+`usage all>=N%`; one account under it, or one whose week is unknown (as accounts.pick counts it),
+or no signed-in account, gives none.
 
 Auto-pull (stage 3), for a key already told this episode, PULL_AFTER_S after `since` and once per
 episode: with a stand-down, nothing is pulled; else `pulled` (= since) is written to the state
@@ -119,12 +135,14 @@ An auto-pull is a success whose note names it; one that raises is a note. Nothin
 the PM here but the `fill` event.
 """
 import copy
+import datetime
 import numbers
 import subprocess
 import time
 
 from kitlib.hubjobs import coord_restart
 from kitlib.hubsite import jobs
+from kitlib.launcher import accounts as A
 
 NAME = 'fill-watch'
 EVERY_S = 300
@@ -149,6 +167,11 @@ PULL_DO_LINE = ('The hub fill watch pulled these records for you, each on its ow
                 'pulled, and the code says why. No reply is needed.')
 WAITS = '_waits'                # the told state's key of the waits notices (no sessions.json key)
 WAITS_PM_AFTER_S = 86400        # a pair still waiting this long after first sight tells the PM
+HOLD_FILE = 'fill-hold.json'    # the PM's holds on new work, in launcher.state_dir
+HOLD = 'hold'
+USAGE = 'usage'
+QUIET = (HOLD, USAGE)           # stand-downs that stop the nudge too
+USAGE_LIMIT = A.HEADROOM_LIMIT  # % of the week: every account at or over it stands down
 WAITS_DO_LINE = ('A notice only: each record named outranks the live pull its scope collides with '
                  'and becomes eligible once that pull lands (capacity or an unmet requires may '
                  'still hold it). Never stop or override the live pull for it. No reply is '
@@ -360,6 +383,130 @@ def standdown(top, survey=None):
     return None
 
 
+# --- the PM's hold and usage (quiet stand-downs) ----------------------------------------------
+
+def _is_hold(h):
+    return (isinstance(h, dict) and isinstance(h.get('reason'), str)
+            and _seconds(h.get('set_at')) and (h.get('until') is None or _seconds(h['until'])))
+
+
+def read_hold(path):
+    """The holds in `path` (module docstring), {} when there is no file; StandDownUnread when it
+    cannot be read or holds another shape (fails closed)."""
+    from kitlib.launcher import state
+    from kitlib.launcher.settings import LaunchError
+    try:
+        data = state.read_json(path)
+    except LaunchError as e:
+        raise StandDownUnread('the PM hold cannot be read (%s)' % e)
+    if data is None:
+        return {}
+    repos = data.get('repos', {})
+    if (set(data) - {'machine', 'repos'} or ('machine' in data and not _is_hold(data['machine']))
+            or not isinstance(repos, dict) or not all(_is_hold(h) for h in repos.values())):
+        raise StandDownUnread('the PM hold %s holds another shape' % path)
+    return data
+
+
+def _on(h, now):
+    return h is not None and (h.get('until') is None or now < h['until'])
+
+
+def hold_reason(data, repo, now):
+    """`hold machine` or `hold repo` while that hold is on at `now` (epoch seconds), else None."""
+    if _on(data.get('machine'), now):
+        return '%s machine' % HOLD
+    if _on(data.get('repos', {}).get(repo), now):
+        return '%s repo' % HOLD
+    return None
+
+
+def set_hold(path, repo, reason, until, now):
+    """Write the hold of `repo` (None: the machine's), replacing one already there."""
+    from kitlib.launcher import state
+    data = read_hold(path)
+    h = {'reason': reason, 'set_at': now}
+    if until is not None:
+        h['until'] = until
+    if repo is None:
+        data['machine'] = h
+    else:
+        data.setdefault('repos', {})[repo] = h
+    state.write_json(path, data)
+
+
+def clear_hold(path, repo):
+    """Drop the hold of `repo` (None: the machine's); True when there was one."""
+    from kitlib.launcher import state
+    data = read_hold(path)
+    if repo is None:
+        had = data.pop('machine', None) is not None
+    else:
+        had = data.get('repos', {}).pop(repo, None) is not None
+        if 'repos' in data and not data['repos']:
+            del data['repos']
+    if had:
+        state.write_json(path, data)
+    return had
+
+
+def _when(t):
+    return time.strftime('%Y-%m-%d %H:%M', time.localtime(t))
+
+
+def fill_hold(settings, repo, machine, reason, until, clear, now):
+    """launch.py fill-hold: set (`reason`, optional `until` an ISO time, local without an offset),
+    clear, or with neither list the holds; `repo` a launcher.repos name or `machine` True. Lines;
+    LaunchError when refused."""
+    from kitlib.launcher import state
+    from kitlib.launcher.settings import LaunchError
+    path = state.path(settings, HOLD_FILE)
+    if repo is not None and repo not in settings.repos:
+        raise LaunchError('%s is not a name in launcher.repos.' % repo)
+    where = 'the machine' if machine else repo
+    try:
+        if clear:
+            if reason is not None or until is not None:
+                raise LaunchError('--clear takes no --reason or --until.')
+            return ['Cleared the hold on %s.' % where if clear_hold(path, None if machine else repo)
+                    else 'No hold on %s.' % where]
+        if reason is not None:
+            end = None
+            if until is not None:
+                t = A.parse_time(until)
+                if t is None:
+                    raise LaunchError('--until %s is not an ISO time.' % until)
+                end = t.timestamp()
+                if end <= now:
+                    raise LaunchError('--until %s has passed.' % until)
+            set_hold(path, None if machine else repo, reason, end, now)
+            return ['Held %s from the fill watch%s.' % (where, ' until %s' % _when(end) if end
+                                                       else ' until cleared')]
+        if until is not None:
+            raise LaunchError('--until needs --reason.')
+        data = read_hold(path)
+    except StandDownUnread as e:
+        raise LaunchError(str(e))
+    rows = ([('machine', data['machine'])] if 'machine' in data else []) + sorted(
+        data.get('repos', {}).items())
+    return ['%s: %s (set %s, %s)%s' % (name, h['reason'], _when(h['set_at']),
+                                       'until %s' % _when(h['until']) if 'until' in h
+                                       else 'until cleared', '' if _on(h, now) else ' ended')
+            for name, h in rows] or ['No hold.']
+
+
+def usage_reason(rows, limit=None):
+    """`usage all>=N%` when every row (account, week pct or None, reset) is at or over `limit`%
+    (default USAGE_LIMIT), else None. No rows, or a row whose week is unknown, is headroom: the
+    owner's open question; failing closed on unknown is this one line."""
+    limit = USAGE_LIMIT if limit is None else limit
+    if not rows or any(pct is None for _n, pct, _r in rows):
+        return None
+    if all(pct >= limit for _n, pct, _r in rows):
+        return '%s all>=%d%%' % (USAGE, limit)
+    return None
+
+
 # --- the told state (stage 2) -----------------------------------------------------------------
 
 def _count(v):
@@ -521,6 +668,10 @@ class FillWatch(object):
                 continue
             seen.add(key)
             reason = self._reason(key, entry, reasons, notes)
+            if reason and reason.split()[0] in QUIET:   # no nudge, no pull; afresh once it ends
+                notes.append('%s: stood down (%s)' % (key, reason))
+                seen.discard(key)
+                continue
             now = self.now()
             had = told.get(key)
             if had is not None and in_flight != had['in_flight']:
@@ -854,8 +1005,13 @@ def make(sources):
         from kitlib.hubjobs import usage_crossover      # it imports coord_restart
         return usage_crossover.claims(s, time.time())
 
-    def stood_down(key, entry):
-        return standdown(s.repo_path(entry.get('repo')))
+    def stood_down(key, entry):         # the PM's hold, then usage, then the repository's
+        now = job.now()
+        held = hold_reason(read_hold(state.path(s, HOLD_FILE)), entry.get('repo'), now)
+        if held:
+            return held
+        used = usage_reason(A.week_rows(s, datetime.datetime.fromtimestamp(now, datetime.timezone.utc)))
+        return used or standdown(s.repo_path(entry.get('repo')))
 
     def handoffs():                     # sources.handoffs is read at each run: the hub sets it
         read = getattr(sources, 'handoffs', None)

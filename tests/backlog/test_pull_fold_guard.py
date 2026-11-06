@@ -114,6 +114,14 @@ class PullFold(_Branches):
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
         self.assertFalse(getattr(change, 'rows', None))
 
+    def test_one_pull_diffs_each_live_branch_once(self):
+        self.seed(priced('FOO', scope='kitlib/other/**'))
+        real = pmod._branch_changes
+        with mock.patch.object(pmod, '_branch_changes', side_effect=real) as spy:
+            self.verb('pull', 'FOO')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertEqual([c.args[1] for c in spy.call_args_list], [HOLDER])
+
     def test_a_branch_that_holds_no_pull_does_not_count(self):
         self.branch_with('kit/idle', 'kitlib/z/a.py')
         self.seed(priced('FOO', scope='kitlib/z/**'))

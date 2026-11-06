@@ -477,7 +477,7 @@ def batch_members(snap, branch):
     return [r.id for r in sorted(mine, key=omod.rank_key)]
 
 
-def current_offer(snap, ctx, branch=None, seeds=(), whys=None):
+def current_offer(snap, ctx, branch=None, seeds=(), whys=None, diffs=None):
     """`(offers, passed, holding, also, notes)` for a pull onto `branch`: the offer `next` prints
     as that branch (offer_for, narrowing as `next` does, so an offer's `split` is the one `next`
     shows, recomputed from git now; `whys` gets why a narrowing failed, `_narrower`), and `also`,
@@ -489,8 +489,10 @@ def current_offer(snap, ctx, branch=None, seeds=(), whys=None):
     so a record `next` offered as the branch still pulls plainly and nothing else is let in;
     `notes` then holds one NOTE naming why, for the pull to print.
     `seeds` (a topic session's batch, batch_members) go first in the branch's offer, as
-    `next --with` puts them, and the cap grows to hold them all."""
-    diffs = []
+    `next --with` puts them, and the cap grows to hold them all.
+    `diffs`, a list the caller keeps, is the diff cache the offers fill; `pull` hands it on to
+    `_pull_fold_hits` so each live branch is diffed once."""
+    diffs = [] if diffs is None else diffs
     cap = ctx.cap
     if seeds and cap is not None:
         cap = max(cap, len(seeds))
@@ -942,11 +944,15 @@ def _change_hits(scopes, changes, shared=()):
     return hits
 
 
-def _pull_fold_hits(ctx, scopes, holding, branch):
+def _pull_fold_hits(ctx, scopes, holding, branch, diffs=None):
     """The fold-in guard on `pull`: `(hits, notes)`, the overlaps of `scopes` with what the other
     live pulls' branches changed (`_live_changes`). Failure (or Usage) when git cannot answer for
-    one of them: on `pull`, "cannot tell" is never "no overlap"."""
-    changes, notes, unknown = _live_changes(ctx, holding, branch)
+    one of them: on `pull`, "cannot tell" is never "no overlap". A filled `diffs` (the cache
+    current_offer left) is read instead of diffing again."""
+    if diffs:
+        changes, notes, unknown = _live_reader(ctx, holding, branch, diffs)()
+    else:
+        changes, notes, unknown = _live_changes(ctx, holding, branch)
     for name in sorted(unknown):
         raise unknown[name]
     return _change_hits(scopes, changes, shared_of(ctx)), notes
@@ -1785,7 +1791,9 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     branch = ctx.current_branch()
     seeds = batch_members(snap, branch) if batch and held == branch else ()
     whys = {}
-    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds, whys)
+    diffs = []
+    offers, passed, holding, also, offer_notes = current_offer(snap, ctx, branch, seeds, whys,
+                                                               diffs)
     offered = rec in [o.rec for o in offers] or rec in also
     split = next((o.split for o in offers if o.rec is rec), None)
     scopes, others = rec.all('scope'), holding
@@ -1798,7 +1806,7 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     hits = live_hits(scopes, others, skip=rid, branch=branch, shared=shared)
     shares = live_shares(scopes, others, skip=rid, branch=branch, shared=shared)
     full = resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)
-    folds, notes = _pull_fold_hits(ctx, scopes, holding, branch)
+    folds, notes = _pull_fold_hits(ctx, scopes, holding, branch, diffs)
     # The fold refusal first: `next` passes a folding record over, so "not in the offer" would
     # hide the reason and the override that this one names.
     override = '%s, with `pull %s --reason "<why>"`' % (policy.row_text('pull-collision'), rid)

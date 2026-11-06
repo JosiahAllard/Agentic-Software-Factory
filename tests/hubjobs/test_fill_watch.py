@@ -1666,7 +1666,7 @@ class HoldFile(unittest.TestCase):
                 W.fill_hold(self.s, *(args + (1000.0 * 1e6,)))
 
     def test_a_stale_reading_counts_at_its_last_value_until_its_reset(self):
-        """The owner's rule (Q-1964): a stale reading is not a wrong one; usage only falls at the
+        """The owner's rule: a stale reading is not a wrong one; usage only falls at the
         reset. make's stand-down reads every account's newest file, whatever its age."""
         dirs = {}
         for n in ('1', '2'):

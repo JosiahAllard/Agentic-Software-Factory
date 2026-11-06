@@ -2186,9 +2186,38 @@ def todos_add(api, req):
         b['record'] = _bound(api, b['record'], 'to-do')
     b.update(status='open', added_at=api.clock())
     out = api.add('todos', b, req)
+    if not owner:
+        field = _asks_report(b)
+        if field:
+            out['warnings'].append({
+                'level': hubvalidate.WARN, 'rel': 'todos/%s' % out['id'], 'field': field,
+                'code': 'todo-asks-report', 'message': TODO_ASKS_REPORT})
     if 'record' in b:
         return _park_now(api, out['id'], out, _via(req))
     return out
+
+
+# An agent's to-do that asks the owner to send a result back: a done mark files nothing into any
+# record (the done note reaches only the push), so such a result is lost to the record
+# (KIT-HUB-TODO-RESULT-LOST). Matched on phrasings that ask for something back, not on any
+# mention of a report; on the live hub (2026-11-05) it matched 2 of 373 to-dos, T-388 and T-389.
+_ASKS_REPORT = re.compile(
+    r'\breport (?:back|in|which|what|whether)\b'
+    r'|\banswer box\b'
+    r'|^[ \t]*(?:[-*]|[0-9]+[.)])?[ \t]*report[ \t]*:', re.IGNORECASE | re.MULTILINE)
+TODO_ASKS_REPORT = ('the to-do asks the owner to report a result: a done mark files nothing into '
+                    'any record (a done note reaches only the push); ask for the result with a '
+                    'question bound to the record (hub_ask record, questions add --record) and '
+                    'keep the to-do for the steps')
+
+
+def _asks_report(b):
+    """The field ('title' or 'detail') of to-do `b` that asks the owner to report a result, or
+    None."""
+    for name in ('title', 'detail'):
+        if isinstance(b.get(name), str) and _ASKS_REPORT.search(b[name]):
+            return name
+    return None
 
 
 TODO_NOTE_MAX = 2000        # characters of the owner's note on marking a to-do done

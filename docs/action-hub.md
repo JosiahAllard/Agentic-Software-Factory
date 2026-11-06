@@ -1000,7 +1000,10 @@ those rules. A raw worktree, branch, tag or ref delete has no carve-out: its ref
 `refs/backlog` the coordinator deletes itself, in its own repository (docs/guard.md "Rules",
 `git-shared-ref`). An agent's new to-do may carry `record` (`todos add --record REPO:ID`), which parks
 the record until the to-do is done ("A question bound to a record"); the owner's own to-do and an edit
-take none (`invalid`, field `record`).
+take none (`invalid`, field `record`). An agent's to-do whose title or detail asks the owner to send a
+result back (`report back|in|which|what|whether`, `answer box`, a line starting `Report:`) is added with
+a `todo-asks-report` warning (`api._asks_report`): a done mark files nothing into any record, so a
+result a record needs is asked as a question bound to it.
 
 While a to-do is open its creator may change it (`POST /api/v1/todos/{id}/edit` with the agent's token:
 `hub.py todos edit`, the MCP tool `hub_todo_edit`) or withdraw it (`POST /api/v1/todos/{id}/delete`:
@@ -1014,8 +1017,10 @@ deletes an agent's to-do (never edits it) while it is open (`todos_edit`, `todos
 
 ### The owner's note on a done to-do
 `POST /todos/{id}/done` (the page's tick, `hub.py todos done T-1 --note N`) takes an optional `note`, plain
-text trimmed and stored as `done_note`: the owner's answer to a to-do that asks for a result (a hash, a
-path). It is at most `TODO_NOTE_MAX` (2000) characters with no control character other than tab and line
+text trimmed and stored as `done_note`: a remark on the done mark, which only the push carries. It is
+filed into no record, even a bound to-do's, so a result a record needs (which checks held, a hash) is
+asked as a question bound to that record ("Filing the answer"); an agent's to-do that asks for one gets
+the `todo-asks-report` warning ("todos/T-NNN"). It is at most `TODO_NOTE_MAX` (2000) characters with no control character other than tab and line
 breaks, and comes only with a done mark; otherwise `invalid`, field `note`. An empty note changes nothing,
 and a done mark with no note keeps its wire format (no `done_note`). Marking done again replaces the note
 (none given drops it); a reopen drops it. The page shows a note field on each open to-do, keeps its draft

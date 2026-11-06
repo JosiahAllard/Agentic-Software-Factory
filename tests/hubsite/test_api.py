@@ -419,6 +419,31 @@ class TodoTest(ApiCase):
         obj = self.refused('invalid', None, 'POST', '/todos', AGENT, {'title': 't'})
         self.assertIn('handstep-commands', obj['error']['message'])
 
+    def test_an_agent_todo_asking_for_a_report_warns_and_points_to_a_question(self):
+        """KIT-HUB-TODO-RESULT-LOST: T-388 and T-389 asked the owner to report a result, which a
+        done mark files into no record. The add warns (the to-do is still added)."""
+        for field, text in (('detail', 'Check in order.\nReport in the answer box which held.'),
+                            ('detail', '1. Open the page.\nReport: the real page texts.'),
+                            ('title', 'Report back the hash')):
+            with self.subTest(text=text):
+                body = {'title': 't', 'commands': ['dir'], field: text}
+                obj = self.ok('POST', '/todos', AGENT, body)
+                self.assertEqual(self.store.get('todos', obj['id'])['status'], 'open')
+                warns = [w for w in obj['warnings'] if w.get('code') == 'todo-asks-report']
+                self.assertEqual(len(warns), 1, obj['warnings'])
+                self.assertEqual((warns[0]['field'], warns[0]['rel']),
+                                 (field, 'todos/%s' % obj['id']))
+                self.assertIn('question bound to the record', warns[0]['message'])
+
+    def test_a_todo_that_asks_for_no_report_or_is_the_owners_does_not_warn(self):
+        for role, body in ((AGENT, {'title': 't', 'commands': ['dir'],
+                                    'detail': 'Why: the report page needs a restart.'}),
+                           (OWNER, {'title': 't', 'detail': 'Report in the answer box.'})):
+            with self.subTest(role=role):
+                obj = self.ok('POST', '/todos', role, body)
+                self.assertEqual([w for w in obj.get('warnings') or []
+                                  if w.get('code') == 'todo-asks-report'], [])
+
     def test_add_refuses_the_fields_the_api_sets(self):
         for role in (OWNER, AGENT):
             for name in ('status', 'done_at', 'pm_ack', 'added_at', 'id'):

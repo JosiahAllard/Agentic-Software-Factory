@@ -48,6 +48,17 @@ class _Branches(StoreCase):
         self.addCleanup(patch.stop)
 
 
+class PullOwnBranchOnly(_Branches):
+
+    def test_a_code_main_that_does_not_resolve_is_silent_when_only_the_own_branch_holds(self):
+        self.ctx = pmod.Context(self.store, self.repo.root, branch=self.ctx.branch, today=TODAY,
+                                code_main='trunk')
+        self.seed(held('MINE', BRANCH, 'docs/mine.md'), priced('FOO', scope='kitlib/other/**'))
+        change = self.verb('pull', 'FOO', reason='bundled with MINE')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertFalse([l for l in change.lines if 'does not resolve' in l], change.lines)
+
+
 class PullFold(_Branches):
 
     def setUp(self):
@@ -114,6 +125,14 @@ class PullFold(_Branches):
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
         self.assertFalse(getattr(change, 'rows', None))
 
+    def test_one_pull_diffs_each_live_branch_once(self):
+        self.seed(priced('FOO', scope='kitlib/other/**'))
+        real = pmod._branch_changes
+        with mock.patch.object(pmod, '_branch_changes', side_effect=real) as spy:
+            self.verb('pull', 'FOO')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertEqual([c.args[1] for c in spy.call_args_list], [HOLDER])
+
     def test_a_branch_that_holds_no_pull_does_not_count(self):
         self.branch_with('kit/idle', 'kitlib/z/a.py')
         self.seed(priced('FOO', scope='kitlib/z/**'))
@@ -171,6 +190,14 @@ class PullFold(_Branches):
         self.assertIn('NOTE: code main trunk does not resolve here; branch diffs not compared',
                       change.lines)
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
+
+    def test_an_orphan_own_branch_is_never_noted(self):
+        self.repo.git('branch', '-q', '-D', BRANCH)     # `existing` would not make it an orphan
+        self.branch_with(BRANCH, 'docs/mine.md', orphan=True)
+        self.seed(held('MINE', BRANCH, 'docs/mine.md'), priced('FOO', scope='kitlib/other/**'))
+        change = self.verb('pull', 'FOO', reason='bundled with MINE')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertFalse([l for l in change.lines if BRANCH in l and 'NOTE' in l], change.lines)
 
     def test_a_live_branch_with_no_merge_base_is_noted_and_skipped(self):
         # No history shared with the code main: the code main is not this branch's history (a

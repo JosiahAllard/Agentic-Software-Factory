@@ -87,6 +87,7 @@ from kitlib.fs.rmtree import plain_dir as _plain_dir, rmtree_force
 from kitlib.proc import spawn
 from kitlib.pytests import runner as unit_runner
 from kitlib.tooldeps import pool as worker_pool
+from kitlib.tooldeps import testcost
 
 # The variable kitlib.lock.run (CPUMASK_ENV) sets on the command a lock run starts: a hex mask of
 # the logical processors the run holds. Named here, not imported, so this module does not load the
@@ -436,7 +437,7 @@ def plan_units(modules, root, jobs, classes=None, times=None, hint=()):
 
 def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, environ=None,
         label='selected', counts=None, classes=None, times_path=None, hint=(), give_back=None,
-        hold=None, record_times=True, skip_fails=()):
+        hold=None, record_times=True, skip_fails=(), history_path=None):
     """Run `modules` (checkout `root`), up to `jobs` at once, then the `serial` ones ({module:
     why}) one at a time; write the log to `out`; return (exit status 0, 1 or INTERRUPTED, the
     summary line). `counts` {module: tests} skips the count_tests child (tests use it), and
@@ -449,7 +450,8 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     order and split the run, but this run's are not written back (kit_tests --both-tiers'
     real-git pass, so the file keeps the landing tier's times). `skip_fails` ([module, why] pairs,
     the selection table's list): a listed module whose unit skipped any test is FAILED, since a
-    skip voids the proof it exists for."""
+    skip voids the proof it exists for. `history_path`: append this run's per-module tests, seconds
+    and cpu to that file (kitlib.tooldeps.testcost) when `record_times` is on; None: not kept."""
     proof = dict(skip_fails)
     out = out or sys.stdout
     injected = run_unit
@@ -482,6 +484,7 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     workers = None if injected else worker_pool.WorkerPool(root, work, unit_env(base_env, work),
                                                            preload=unit_packages(modules))
     own = {}                # module -> why it runs in its own process
+    cpus = {}               # unit -> cpu seconds of its pool worker's job (not an own-process unit)
 
     def one(module):
         with counter_lock:
@@ -505,6 +508,9 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
             rmtree_force(folder, ignore_errors=True)
         unit_id, status, ran, secs, text = r
         starts = workers.starts(module) if workers is not None else None    # pooled units only
+        used = workers.cpu(module) if workers is not None else None
+        if used is not None:
+            cpus[module] = used
         skipped = skipped_of(text)
         why = proof.get(module_of(module))
         if skipped and why and status == 'OK':
@@ -591,6 +597,9 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     wall = time.time() - start
     if record_times:
         save_times(times_path, done, split)
+        if history_path and done:
+            testcost.record(history_path, testcost.module_rows(done, cpus, module_of), wall, jobs,
+                            label)
     return report(done, wall, jobs, len(alone), out, label,
                   not_run=(total[0] - len(done)) if interrupted else None, timeout=timeout)
 

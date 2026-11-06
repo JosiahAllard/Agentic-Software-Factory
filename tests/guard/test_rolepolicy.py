@@ -1079,6 +1079,10 @@ class ComputedCheckoutReads(Base):
                    ('bash', 'git -C "$p" rev-list "$B"'),                   # rev-list takes --output too
                    ('bash', 'git -C "$p" log --grep --end-of-options "$B"'),  # it is --grep's value
                    ('bash', 'git -C "$p" diff -O --end-of-options "$B"'),
+                   ('bash', 'git -C "$p" log \--grep --end-of-options "$B"'),   # bash passes --grep
+                   ('bash', 'git -C "$p" log --grep {,} --end-of-options "$B"'),  # bash drops the empty words
+                   ('powershell', "git -C $p log --grep '' --end-of-options $b"),  # PowerShell 5.1 drops ''
+                   ('bash', 'git -C "$p" log \--output=f'),                     # bash passes --output=f
                    ('bash', 'git -C "$p" log --format="$(cat f)"'),
                    ('bash', 'git -C "$p" log --format="$w" --output=x.txt'),
                    ('powershell', 'git -C $p log $f'),                      # an array is many arguments

@@ -99,5 +99,36 @@ class HandoffStateWiring(unittest.TestCase):
         self.assertNotIn('entry-state.md', text)
 
 
+class FillHoldArgs(unittest.TestCase):
+    """launch.py fill-hold: a set or a clear names --repo or --machine (not both); --machine
+    sets, lists and clears the machine's hold."""
+
+    def run_args(self, h, *argv):
+        return launch.run(launch.parser().parse_args(['fill-hold'] + list(argv)), h.settings,
+                          FakeHost(h.root))
+
+    def test_a_set_or_a_clear_needs_a_target(self):
+        h = Home(self)
+        for argv in (['--clear'], ['--reason', 'r'], ['--until', '2999-01-01T00:00']):
+            with self.assertRaises(launch.S.LaunchError) as e:
+                self.run_args(h, *argv)
+            self.assertIn('--repo NAME or --machine', str(e.exception))
+
+    def test_repo_and_machine_together_exit_2(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
+            launch.parser().parse_args(['fill-hold', '--repo', 'alpha', '--machine', '--clear'])
+        self.assertEqual(e.exception.code, 2)
+
+    def test_the_machine_hold_sets_lists_and_clears(self):
+        h = Home(self)
+        self.assertEqual(self.run_args(h), ['No hold.'])
+        self.assertIn('Held the machine', self.run_args(h, '--machine', '--reason', 'r')[0])
+        listed = self.run_args(h)
+        self.assertEqual(len(listed), 1)
+        self.assertTrue(listed[0].startswith('machine: r (set '))
+        self.assertEqual(self.run_args(h, '--machine', '--clear'), ['Cleared the hold on the machine.'])
+        self.assertEqual(self.run_args(h), ['No hold.'])
+
+
 if __name__ == '__main__':
     unittest.main()

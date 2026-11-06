@@ -48,6 +48,17 @@ class _Branches(StoreCase):
         self.addCleanup(patch.stop)
 
 
+class PullOwnBranchOnly(_Branches):
+
+    def test_a_code_main_that_does_not_resolve_is_silent_when_only_the_own_branch_holds(self):
+        self.ctx = pmod.Context(self.store, self.repo.root, branch=self.ctx.branch, today=TODAY,
+                                code_main='trunk')
+        self.seed(held('MINE', BRANCH, 'docs/mine.md'), priced('FOO', scope='kitlib/other/**'))
+        change = self.verb('pull', 'FOO', reason='bundled with MINE')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertFalse([l for l in change.lines if 'does not resolve' in l], change.lines)
+
+
 class PullFold(_Branches):
 
     def setUp(self):
@@ -179,6 +190,13 @@ class PullFold(_Branches):
         self.assertIn('NOTE: code main trunk does not resolve here; branch diffs not compared',
                       change.lines)
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
+
+    def test_an_orphan_own_branch_is_never_noted(self):
+        self.branch_with(BRANCH, 'docs/mine.md', orphan=True, existing=True)
+        self.seed(held('MINE', BRANCH, 'docs/mine.md'), priced('FOO', scope='kitlib/other/**'))
+        change = self.verb('pull', 'FOO', reason='bundled with MINE')
+        self.assertEqual(self.get('FOO').get('state'), 'pulled')
+        self.assertFalse([l for l in change.lines if BRANCH in l and 'NOTE' in l], change.lines)
 
     def test_a_live_branch_with_no_merge_base_is_noted_and_skipped(self):
         # No history shared with the code main: the code main is not this branch's history (a

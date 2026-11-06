@@ -948,8 +948,10 @@ def _pull_fold_hits(ctx, scopes, holding, branch, diffs=None):
     """The fold-in guard on `pull`: `(hits, notes)`, the overlaps of `scopes` with what the other
     live pulls' branches changed (`_live_changes`). Failure (or Usage) when git cannot answer for
     one of them: on `pull`, "cannot tell" is never "no overlap". A filled `diffs` (the cache
-    current_offer left) is read instead of diffing again."""
-    if diffs:
+    current_offer left) is read instead of diffing again, unless it carries a NOTE: the cache
+    was read with the caller's own branch in, so its notes may be about that branch, which this
+    guard never reports; that case diffs again, as before."""
+    if diffs and not diffs[0][1]:
         changes, notes, unknown = _live_reader(ctx, holding, branch, diffs)()
     else:
         changes, notes, unknown = _live_changes(ctx, holding, branch)

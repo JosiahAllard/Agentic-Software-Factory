@@ -11,6 +11,9 @@ installs from (docs/plugin-source.md).
                                    the marker naming the kit's main checkout
   export_checkout(folder)          that main checkout, while it still is one, or None
   write_marketplace(root, folder)  <root>/.claude-plugin/marketplace.json names that folder
+  live_pointer_path() / sync_live_pointer(s, folder) / read_live_pointer(path)
+                                   plugin-live.json beside the default export root: the live folder
+                                   for a reader with no kitlib (docs/plugin-source.md)
   read_in_use(root)                what running processes, scheduled tasks and pin leases name
   prune(root, in_use=)             old export folders removed by claim (never the named one, the 3
                                    newest, one in use, or one replaced less than 7 days ago, 1 when
@@ -60,6 +63,7 @@ MAIN = 'main'
 DEFAULT_REMOTE = 'origin'
 MARKER = '.pm-kit-export'            # in every export folder: this tool made it (prune reads it)
 STATE = 'state.json'
+LIVE_POINTER = 'plugin-live.json'    # beside the default export root: names the live export folder
 PIDFILE = 'refresh.pid'
 LOGFILE = 'refresh.log'
 PENDING = '.pending'                 # <root>/<label>.pending: a host copy step deferred (set_pending)
@@ -106,7 +110,8 @@ class StateError(Exception):
 
 # ---------------------------------------------------------------- settings
 
-Settings = collections.namedtuple('Settings', 'export_dir auto_refresh remote')
+Settings = collections.namedtuple('Settings', 'export_dir auto_refresh remote live_pointer',
+                                  defaults=(None,))      # live_pointer None: write no pointer
 
 
 def _norm(path):
@@ -190,6 +195,22 @@ def default_export_dir(environ=None):
     return os.path.join(base, 'pm-kit', 'plugin')
 
 
+def live_pointer_path(environ=None):
+    """The one fixed place of the live pointer: LIVE_POINTER beside the default export root, so a
+    reader with no kitlib and no machine config finds it, whatever plugin.export_dir says.
+    RefreshError as default_export_dir's, and under the kit's tests (the home fence's marker in the
+    environment): a test that reaches settings() with the real environment never gets the real
+    machine's pointer path."""
+    from kitlib.config import user
+    if (os.environ if environ is None else environ).get(user.FENCE_ENV):
+        raise RefreshError('the live pointer is not placed under the kit\'s tests (%s is set)'
+                           % user.FENCE_ENV)
+    default = default_export_dir(environ)
+    if kitplatform.NAME == 'linux':
+        return posixpath.join(posixpath.dirname(default), LIVE_POINTER)
+    return os.path.normpath(os.path.join(os.path.dirname(default), LIVE_POINTER))
+
+
 def settings(obj, environ=None, kit=None, sweep_dir=None):
     """The checked Settings of a `plugin` object (None: every default). The default export_dir is
     default_export_dir's; RefreshError when that is needed and cannot be told, and when the
@@ -202,8 +223,12 @@ def settings(obj, environ=None, kit=None, sweep_dir=None):
     errs = placement_errors(root, kit, sweep_dir)
     if errs:
         raise RefreshError('; '.join(errs))
+    try:
+        pointer = live_pointer_path(environ)
+    except RefreshError:
+        pointer = None                  # the fixed place cannot be told here: no pointer
     return Settings(os.path.normpath(root), obj.get('auto_refresh') is True,
-                    obj.get('remote') or DEFAULT_REMOTE)
+                    obj.get('remote') or DEFAULT_REMOTE, pointer)
 
 
 def load(home=None, environ=None, kit=None):
@@ -520,10 +545,17 @@ def _write_json(path, data):
     or the new one, never half of one."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(data, fh, indent=2)
-        fh.write('\n')
-    os.replace(tmp, path)
+    try:
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+            json.dump(data, fh, indent=2)
+            fh.write('\n')
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)              # a failed write leaves no half file behind
+        except OSError:
+            pass
+        raise
 
 
 def marketplace_path(root):
@@ -542,6 +574,54 @@ def write_marketplace(root, folder):
         'plugins': [{'name': NAME, 'source': './%s' % folder,
                      'description': 'The PM kit: agents, skills and the machine lock and hub MCP servers.'}],
     })
+
+
+def read_live_pointer(path):
+    """The live pointer at `path` as a dict, None when missing, unreadable or another shape."""
+    try:
+        with open(path, encoding='utf-8-sig') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _pointer_body(s, name):
+    """What the live pointer should hold for export folder `name`, from that folder's marker; None
+    when there is no pointer setting or the folder has no marker (it is not named)."""
+    if not s.live_pointer:
+        return None
+    folder = os.path.join(s.export_dir, name)
+    marker = read_marker(folder)
+    if not marker:
+        return None
+    return {'schema': 1, 'root': s.export_dir, 'folder': name, 'path': folder,
+            'sha': marker.get('sha'), 'version': marker.get('version'),
+            'exported_at': marker.get('exported_at')}
+
+
+def sync_live_pointer(s, name, out=None):
+    """Make the live pointer (s.live_pointer; None: nothing) name export folder `name` of s.export_dir,
+    from that folder's marker (so a folder with none is not named). It is written only when missing
+    or different, through a temp file and os.replace. A failed write is a WARNING line, never an
+    error: the export stands without it."""
+    body = _pointer_body(s, name)
+    if body is None or read_live_pointer(s.live_pointer) == body:
+        return
+    try:
+        _write_json(s.live_pointer, body)
+    except OSError as e:
+        (out or (lambda line: None))('WARNING: live pointer %s not written: %s' % (s.live_pointer, e))
+
+
+def _pointed_folder(pointer, root):
+    """The export folder name the live pointer names under `root`, else None (no pointer, another
+    root, a name that is not a plain <sha12>)."""
+    data = read_live_pointer(pointer) if pointer else None
+    if not data or _norm(str(data.get('root') or '')) != _norm(root):
+        return None
+    name = data.get('folder')
+    return name if isinstance(name, str) and _SHA12.match(name) else None
 
 
 def current_folder(root):
@@ -802,9 +882,10 @@ def _claim_remove(full):
     return None
 
 
-def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None):
+def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None, pointer=None):
     """Remove old export folders, each by claim (`_claim_remove`). Never removed: the folder
     marketplace.json names (the plugin loads from it, in place or by a copy at the next update),
+    the folder the live pointer file `pointer` names under `root` (when it holds the marker),
     the `keep` newest by their marker's exported_at, every export a running process, a scheduled
     task or a pin lease names (`in_use`, a reader returning InUse, as read_in_use does), and every
     export replaced less than `young_days` ago, or whose dates cannot be read (a session whose MCP
@@ -862,6 +943,11 @@ def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None):
         replaced = found[i - 1][0] if i else None      # the exported_at of the next newer export
         if when is None or replaced is None or now - replaced < datetime.timedelta(days=young_days):
             spare.add(n)
+    pointed = _pointed_folder(pointer, root)
+    if pointed in {n for _, n in found}:
+        if pointed not in spare:
+            say('prune: kept, the live pointer names it: %s' % pointed)
+        spare.add(pointed)
     held = sorted(n for _, n in found if n in used and n not in spare)
     if held:
         say('prune: kept, a running process, scheduled task, pin lease or host plugin copy names it: %s'
@@ -1199,6 +1285,8 @@ def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=N
     out('kit %s/%s: %s' % (s.remote, MAIN, sha[:12]))
     for f in refused:
         out('REFUSED %s: not migrated to the export yet: %s' % (f, migrate_cmd(f)))
+    if fresh and apply and not todo:
+        _sync_locked(s, name, out, own, alive)
     if fresh and not todo:
         if not refused:
             out('pm-kit plugin is current: %s is exported and every account folder named refreshed; '
@@ -1262,6 +1350,27 @@ def _copies(s, name, sha, copies, out, apply):
             out('%s: not refreshed: %s: %s' % (label, type(e).__name__, e))
 
 
+def _sync_locked(s, name, out, own, alive):
+    """sync_live_pointer for an export that is already current. The pointer is compared first and
+    the refresh lock taken only when it is missing or differs (a poll that finds it right makes no
+    lock file). Under the lock, marketplace.json is read again: when it no longer names `name`, a
+    refresh landed a newer export meanwhile, which writes its own pointer, so nothing is written.
+    The lock busy (that refresh writes it) is nothing either. Never raises."""
+    body = _pointer_body(s, name)
+    if body is None or read_live_pointer(s.live_pointer) == body:
+        return
+    lock = RefreshLock(s.export_dir, own=own, alive=alive)
+    try:
+        lock.acquire()
+    except (Busy, OSError):
+        return
+    try:
+        if current_folder(s.export_dir) == name:
+            sync_live_pointer(s, name, out)
+    finally:
+        lock.release()
+
+
 def _copies_locked(s, name, sha, copies, out, apply, own, alive):
     """_copies when the account folders had nothing to do: with apply, under the refresh lock
     (busy: a line per step, and the copies are left for the refresh holding it)."""
@@ -1291,13 +1400,14 @@ def _apply(kit, s, sha, state, fresh, todo, steps, migrate, folders, runner, out
         step = 'marketplace write'
         write_marketplace(root, name)
         out('marketplace %s names ./%s' % (marketplace_path(root), name))
+        sync_live_pointer(s, name, out)
         if not fresh:
             step = 'state write'
             state = {'sha': sha, 'version': version, 'folder': name, 'exported_at': _stamp(now),
                      'folders': _carry(state)}
             write_state(root, state)
         step = 'prune'
-        removed, failed = prune(root, now=now, in_use=in_use, out=out)
+        removed, failed = prune(root, now=now, in_use=in_use, out=out, pointer=s.live_pointer)
     except (RefreshError, OSError, ValueError) as e:
         out('REFUSED: the %s failed: %s' % (step, e))
         return 1
@@ -1376,6 +1486,7 @@ def ensure_export(kit, s, now=None, own=None, alive=None, in_use=None):
     name = folder_name(sha)
     have = read_marker(os.path.join(root, name))
     if have and have.get('sha') == sha and current_folder(root) == name:
+        _sync_locked(s, name, None, own, alive)
         return root, sha
     os.makedirs(root, exist_ok=True)
     lock = RefreshLock(root, own=own, alive=alive)
@@ -1384,10 +1495,11 @@ def ensure_export(kit, s, now=None, own=None, alive=None, in_use=None):
         state = read_state(root)        # StateError: refuse rather than drop the flags
         _folder, version = export(kit, sha, root, now)
         write_marketplace(root, name)
+        sync_live_pointer(s, name)
         if not state or state.get('sha') != sha:
             write_state(root, {'sha': sha, 'version': version, 'folder': name,
                                'exported_at': _stamp(now), 'folders': _carry(state)})
-        prune(root, now=now, in_use=in_use)
+        prune(root, now=now, in_use=in_use, pointer=s.live_pointer)
     finally:
         lock.release()
     return root, sha

@@ -396,6 +396,7 @@ FIELDS = collections.OrderedDict([
     ('state', (ONE, _state)),
     ('pulled_at', (AT_MOST_ONE, _date)),
     ('pulled_by', (AT_MOST_ONE, _free)),
+    ('pulled_session', (AT_MOST_ONE, _session)),  # the `--session` key that pulled it
     ('blocked_on', (ONE_PLUS, None)),            # the closed set, under its own check name
     ('until', (ANY, _until)),
     ('hold_ruling', (AT_MOST_ONE, _ruling)),
@@ -427,6 +428,9 @@ REQUIRED = frozenset(k for k, (c, _) in FIELDS.items() if c in (ONE, ONE_PLUS))
 PRIORITY_KEYS = ('priority', 'priority_by', 'priority_per', 'priority_ruling')
 PREEMPT_KEYS = ('preempt', 'preempt_by', 'preempt_at', 'displaced')
 PULL_KEYS = ('pulled_at', 'pulled_by')
+# Every key a pull writes, and so every key its end (release, block, park, landing) drops:
+# PULL_KEYS plus `pulled_session`, which a pull without `--session` leaves unset.
+PULL_CLEARS = PULL_KEYS + ('pulled_session',)
 PARK_KEYS = ('q', 'parked_at')
 
 
@@ -613,6 +617,9 @@ def _cross_field(rec):
                                 'owner - `blocked_on: owner`'))
     for key in PULL_KEYS:
         out.extend(_both_or_neither(rec, key, state == 'pulled', 'an item with `state: pulled`'))
+    if rec.has('pulled_session') and state != 'pulled':
+        add(Finding(SCHEMA, path, rec.line_of('pulled_session'), '`pulled_session` is set, and '
+                    'this is not an item with `state: pulled`'))
     out.extend(_both_or_neither(rec, 'files_at', rec.has('files'), 'a record with `files`'))
     for key in ('preempt_by', 'preempt_at'):
         out.extend(_both_or_neither(rec, key, rec.has('preempt'), 'a record with `preempt`'))

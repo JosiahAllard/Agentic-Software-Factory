@@ -4,13 +4,16 @@ A plan only decides. It reads the snapshot it is given, refuses (Usage, Refusal,
 Failure) or returns the records to write, and never touches a file, a ref or the screen. The
 store runs it again after a lost race, so a plan is a pure function of the snapshot and its
 arguments (plus the git probes it names: branch liveness, the `Context.liveness` probe of a
-pulled branch's worktree, `requires: commit:`, and the diff of the branch `add --found-on` names).
+pulled branch's worktree, the `Context.quiet` probe of a quiet release (quiet_hold),
+`requires: commit:`, and the diff of the branch `add --found-on` names).
 `next`'s narrowing (`_narrower`) reads three more, all read-only: the worktree list, the status
 of a live pull's worktree, and the tracked tree (`ls-tree`) of the code main.
 """
 import datetime
+import json
 import os
 import re
+import time
 
 from kitlib import kitroot
 from kitlib.git import cmd, refs
@@ -40,6 +43,7 @@ WRITTEN_BY = {
     'displaced': '`pull`, which computes it from the offer',
     'preempt': '`pull --reason`', 'preempt_by': '`pull --reason`', 'preempt_at': '`pull --reason`',
     'pulled_at': '`pull`', 'pulled_by': '`pull`',
+    'pulled_session': '`pull` (the caller\'s `--session`)',
     'q': '`set-status parked [--q Q-nnn]`', 'parked_at': '`set-status parked [--q Q-nnn]`',
     'review': '`add` from the Action Hub (the library\'s `review=`); a coordinator clears it with '
               '`clear-review ID --reason T`',
@@ -88,6 +92,8 @@ class Context(object):
     or (None, tip)`: whether the worktree on a pulled branch is dead, so a pull its holder left
     may be blocked or released by anybody (stop_pull; opener.open_store passes
     kitlib.worktree.classify.branch_liveness, so this module imports nothing from worktree).
+    `quiet` (None: quiet_hold on `root`) is `quiet(branch) -> (why it is not quiet, None) or
+    (None, seconds quiet)`, the probe of a quiet release (plan_release).
     `cap` (None: offer.DEFAULT_CAP; a callable: read on first use) is the most records `next` offers and `pull` takes in order
     (`.kit.json` backlog.cap, opener.repo_cap); `next --cap` overrides it for that call.
     `resources` (None: none; a callable: read on first use) is {name: capacity} (`.kit.json`
@@ -98,7 +104,7 @@ class Context(object):
 
     def __init__(self, store, root, remote='origin', main_branch='main', branch=None, today=None,
                  code_main=None, code_remote=None, liveness=None, cap=None, resources=None,
-                 shared=None):
+                 shared=None, quiet=None):
         self.store = store
         self.root = root
         self.remote = remote
@@ -108,6 +114,7 @@ class Context(object):
         self.branch = branch
         self.today = today
         self.liveness = liveness
+        self.quiet = quiet
         # omod.SessionLiveness for an offer (None: another session's record always reserves);
         # set by tools/backlog.py and the hub's jobs (coord_restart.read_offer,
         # fill_watch.pull_record), each with its own reads, so a test never reads the machine.
@@ -1342,7 +1349,7 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     if kept != rec.all('until'):
         changes.append(('until', kept))
     if stop is not None:
-        changes += [(k, []) for k in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
+        changes += [(k, []) for k in rmod.PULL_CLEARS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(rec.pairs(), changes)
     lines = ['BLOCKED %s on %s' % (rid, ', '.join(members))]
     if old:
@@ -1520,7 +1527,7 @@ def plan_set_status(snap, ctx, rid, status, q=None):
                        holder_form(rec, holder, 'set-status %s parked%s'
                                    % (rid, ' --q %s' % q if q else ''))))
         found = stop_pull(ctx, rid, holder, live, kept=False)[1]
-    pairs = [(k, v) for k, v in rec.pairs() if k not in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
+    pairs = [(k, v) for k, v in rec.pairs() if k not in rmod.PULL_CLEARS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(pairs, [('state', ['parked']), ('q', [q] if q else []),
                                        ('parked_at', [ctx.date()])])
     lines = ['PARKED %s %s' % (rid, 'on %s' % q if q else '(no question)')]
@@ -1825,7 +1832,8 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     if resume:
         lines.append(resume)
     today = ctx.date()
-    changes = [('state', ['pulled']), ('pulled_at', [today]), ('pulled_by', [branch])]
+    changes = [('state', ['pulled']), ('pulled_at', [today]), ('pulled_by', [branch]),
+               ('pulled_session', pull_session(ctx))]
     subject = 'backlog: pull %s onto %s' % (rid, branch)
     if offered and not folds:
         changes += [(k, []) for k in rmod.PREEMPT_KEYS]
@@ -2074,7 +2082,8 @@ def _plan_takeover(snap, ctx, rec, reason, may_collide, blocker):
         raise Refusal(_fold_message(rid, folds, override))
     branch = ctx.current_branch()
     today = ctx.date()
-    pairs = rmod.apply_changes(rec.pairs(), [('pulled_at', [today]), ('pulled_by', [branch])])
+    pairs = rmod.apply_changes(rec.pairs(), [('pulled_at', [today]), ('pulled_by', [branch]),
+                                             ('pulled_session', pull_session(ctx))])
     lines = notes + ['PULLED %s - took over a dead pull from %s (it has no branch)' % (rid, old),
                      '  pulled_at:  %s -> %s' % (rec.get('pulled_at'), today),
                      '  pulled_by:  %s -> %s' % (old, branch)]
@@ -2108,11 +2117,191 @@ def holder_form(rec, holder, verb):
             '%s--as %s %s)' % ('--session %s ' % session if session else '', holder, verb))
 
 
-def stop_pull(ctx, rid, holder, live, kept=True):
+def pull_session(ctx):
+    """The `pulled_session` value a pull writes: `[ctx.session]`, or `[]` (none, any old one
+    dropped) when no `--session` names the caller or its key is not a session name."""
+    key = ctx.session
+    return [key] if key and rmod.SESSION_RE.match(key) else []
+
+
+# A quiet release (plan_release): the holder's tree shows no activity for this long.
+QUIET_AFTER_S = 4 * 3600
+_REFLOG_STAMP_RE = re.compile(r'@\{(\d+)\}$')
+
+
+def quiet_key_why(ctx, rec):
+    """Why the caller's session may not release `rec`'s pull as quiet, or None when it may: the
+    caller's `--session` is the pull's `pulled_session`, or the two keys have one stem in the
+    launcher's sessions.json (omod.launcher_stems: a successor session). A sessions.json that
+    cannot be read allows the exact key only."""
+    pulled, mine = rec.get('pulled_session'), ctx.session
+    if not pulled:
+        return 'the pull records no `pulled_session`'
+    if not mine:
+        return 'no `--session` names the caller (the pull is %s\'s)' % pulled
+    if mine == pulled:
+        return None
+    try:
+        stems = omod.launcher_stems()
+    except Exception as exc:            # noqa: BLE001 - unread is "not the same stem", never a raise
+        return ('session %s is not %s, and sessions.json cannot be read to match their stems (%s)'
+                % (mine, pulled, ' '.join(str(exc).split()) or type(exc).__name__))
+    a, b = (stems or {}).get(mine), (stems or {}).get(pulled)
+    if isinstance(a, str) and a and a == b:
+        return None
+    return ('session %s is neither %s nor a successor of it (sessions.json stems: %s, %s)'
+            % (mine, pulled, a or 'none', b or 'none'))
+
+
+def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
+    """`(why it is not quiet, None)` or `(None, seconds quiet)`: whether the pull on `branch` may be
+    released as quiet (plan_release; docs/backlog.md "Stopping a pull"). Quiet means: no process
+    has its current directory in a worktree on `branch` (and, when some process could not be
+    read, every folder of it opens for delete: holders.held_folder), no machine lock record names
+    it (sweep.machine_lock_holder), the landing lock does not name `branch`, no verdict-queue
+    entry for `branch` waits (kitlib.gate.verdicts: one that has not expired with `main`, the code
+    main's commit, None: every entry waits), and the newest activity is QUIET_AFTER_S old or more.
+    Activity is the tip's committer date, the branch's reflog entry times and the mtimes in the
+    worktree's tree, its top-level `.git` left out: never the git dir's own files
+    (sweep.last_activity reads those, and a status rewrites them). A branch the main checkout is
+    on, no local branch, and anything that cannot be read are not quiet. `machine` and `procs`
+    (None: sweep.machine_lock_entries, classify.process_cwds) are the run-wide reads
+    classify.run_probes takes. Read-only; kitlib.worktree and kitlib.gate import lazily, as
+    opener.liveness does: kitlib.worktree imports this package's store."""
+    from kitlib.gate import verdicts
+    from kitlib.worktree import classify, holders, remove, sweep
+    wctx, refused = remove.open_ctx(root)
+    if refused:
+        return 'the worktrees cannot be read (%s)' % ' '.join(refused.lines), None
+    try:
+        listing = remove.worktree_listing(wctx.main)
+    except remove.GitReadError as e:
+        return 'the worktrees cannot be read (%s)' % e, None
+    entries = remove.worktree_entries(listing)
+    if entries and entries[0]['branch'] == branch:
+        return 'the main checkout is on %s' % branch, None
+    on = [e for e in classify.trees_besides_main(wctx.main, listing) if e['branch'] == branch]
+    probes, _ = classify.run_probes(wctx, machine or sweep.machine_lock_entries,
+                                    procs or classify.process_cwds)
+    run_wide, landing, held, cwds = probes
+    if run_wide:
+        return 'unreadable: %s' % run_wide, None
+    if branch in landing:
+        return 'the landing lock names %s' % branch, None
+    for entry in on:
+        path = entry['path']
+        holder = sweep.machine_lock_holder(held, path, branch)
+        if holder:
+            return 'machine lock: %s' % holder, None
+        target = (entry.get('canon') or holders.canon(path)).rstrip('\\/')
+        for pid, name, forms in cwds[0]:
+            if any(f == target or f.startswith(target + os.sep) for f in forms):
+                return ('process pid %d %s has its current directory in %s'
+                        % (pid, name, os.path.normpath(path))), None
+        if cwds[1] and holders.held_folder(path) is not None:
+            return ('%d process(es) could not be read, and not every folder of %s opens for '
+                    'delete: one may hold it' % (cwds[1], os.path.normpath(path))), None
+    if not on:
+        holder = sweep.machine_lock_holder(held, branch, branch)
+        if holder:
+            return 'machine lock: %s' % holder, None
+    why = _queued_verdict(verdicts, wctx.main, branch, main)
+    if why:
+        return why, None
+    newest, why = _quiet_activity(classify, remove, wctx.main, branch, on)
+    if newest is None:
+        return why, None
+    now = time.time() if now is None else now
+    quiet = now - newest[0]
+    if quiet < QUIET_AFTER_S:
+        return ('active %.1f h ago (newest: %s), under the %d h quiet bar'
+                % (max(quiet, 0) / 3600.0, newest[1], QUIET_AFTER_S // 3600)), None
+    return None, quiet
+
+
+def _queued_verdict(verdicts, main_tree, branch, main):
+    """Why a verdict-queue entry for `branch` holds the pull, or None: there is none, or it has
+    expired (landed or superseded). An entry that cannot be read holds it."""
+    common, why = gitrepo.common_dir(main_tree)
+    if common is None:
+        return 'the verdict queue cannot be placed (%s)' % why
+    try:
+        path = verdicts.entry_path(common, branch)
+    except verdicts.VerdictError as e:
+        return 'the verdict queue entry for %s cannot be named (%s)' % (branch, e)
+    try:
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        return 'the verdict queue entry for %s cannot be read (%s)' % (branch, e)
+    try:
+        entry = json.loads(text)
+    except ValueError as e:
+        return 'the verdict queue entry for %s is not JSON (%s)' % (branch, e)
+    bad = verdicts.check(entry)
+    if bad:
+        return 'the verdict queue entry for %s is malformed (%s)' % (branch, bad)
+    if verdicts.expired(common, entry, main):
+        return None
+    return 'a verdict for %s waits in the landing queue (%s at %s)' % (
+        branch, entry.get('state'), str(entry.get('tip'))[:10])
+
+
+def _quiet_activity(classify, remove, main_tree, branch, on):
+    """`((newest time, what), None)` or `(None, why)`: quiet_hold's activity reads."""
+    ref = 'refs/heads/%s' % branch
+    args = ('log', '-1', '--format=%ct', ref, '--')
+    rc, stamp, err = remove.git(main_tree, *args)
+    if rc != 0 or not stamp.isdigit():
+        return None, 'no local branch %s to read (%s)' % (branch, remove.failure(args, rc, err))
+    found = [(float(stamp), 'the commit date of %s' % branch)]
+    args = ('reflog', 'show', '--date=unix', '--format=%gd', ref, '--')
+    rc, out, err = remove.git(main_tree, *args)
+    if rc != 0:
+        return None, 'its reflog cannot be read (%s)' % remove.failure(args, rc, err)
+    for line in out.splitlines():
+        got = _REFLOG_STAMP_RE.search(line.strip())
+        if got:
+            found.append((float(got.group(1)), 'a reflog entry of %s' % branch))
+    for entry in on:
+        # The --classify walk with the top-level `.git` (a linked tree's file, or a git dir) left
+        # out: the git dir's mtimes are not work.
+        got, why = classify._newest(entry['path'], 'the tree', skip=('.git',))
+        if got is None:
+            return None, why
+        found.append(got)
+    return max(found, key=lambda pair: pair[0]), None
+
+
+def _main_commit(ctx):
+    """The code main's commit for quiet_hold's verdict check, None when git cannot read it (then
+    every queued verdict holds the pull)."""
+    try:
+        return _code_main(ctx)[1] or None
+    except Failure:
+        return None
+
+
+def _quiet_or_refuse(quiet, refusal):
+    """The ` (<note>)` stop_pull prints for a quiet release, or Refusal(refusal) when there is no
+    `quiet` probe or it says no."""
+    if quiet is None:
+        raise Refusal(refusal)
+    note, why = quiet()
+    if note is None:
+        raise Refusal('%s. Not a quiet release either: %s' % (refusal.rstrip('.'), why))
+    return ' (%s)' % note
+
+
+def stop_pull(ctx, rid, holder, live, kept=True, quiet=None):
     """Whether the caller may stop `rid`'s pull by `holder` (block or release it): its holder (the
     caller's branch) may; anybody may when the pull is dead (no local branch, remote-tracking
     branch or worktree by that name: offer.live_branches), or when `ctx.liveness` finds the
-    holder's worktree dead. Refusal(live(why)) otherwise, `why` None when there is no probe.
+    holder's worktree dead. Refusal(live(why)) otherwise, `why` None when there is no probe;
+    with `quiet` (release only: `quiet() -> (note, None) or (None, why not)`), a live pull it
+    allows is stopped too, and its note goes on the `was pulled_by` line.
     Returns `(stopped, lines)`: `stopped` is the body line `Stopped on branch B at <tip>, branch
     kept.` with its newline (its own line, so the `Blocked on` line after it still starts one:
     record.hold_citations), '' when there is no local branch B; `lines` say what was found.
@@ -2132,12 +2321,11 @@ def stop_pull(ctx, rid, holder, live, kept=True):
         if holder not in names:
             how = ' (dead)'
         elif ctx.liveness is None:
-            raise Refusal(live(None))
+            how = _quiet_or_refuse(quiet, live(None))
         else:
             why, _tip = ctx.liveness(holder)
-            if why is not None:
-                raise Refusal(live(why))
-            how = ' (its worktree is dead)'
+            how = (_quiet_or_refuse(quiet, live(why)) if why is not None else
+                   ' (its worktree is dead)')
     lines = ['  was pulled_by: %s%s' % (holder, how)]
     if not kept:
         return '', lines
@@ -2278,7 +2466,10 @@ def plan_release(snap, ctx, rid, reason, kept=True):
     exists a body line `Stopped on branch B at <tip>, branch kept.` and then `Released (date): T`
     say where the work was left; the branch is never touched. `kept` False (at_landing's release
     of a part landed: the landing's cleanup deletes the branch) writes neither line and reads no
-    branch."""
+    branch. A live pull of another branch is released too when it is quiet: the caller's
+    `--session` is its `pulled_session` or a successor's (quiet_key_why) and `ctx.quiet` (None:
+    quiet_hold) finds it quiet; `(holder quiet <h> h, released by <key>)` then follows the reason
+    in the `Released` line and the subject."""
     refuse_machine_paths('--reason', reason)
     bad = reason_error(reason, '--reason')
     if bad:
@@ -2295,10 +2486,24 @@ def plan_release(snap, ctx, rid, reason, kept=True):
                 'Its holder releases it: %s'
                 % (rid, holder, '; its tree is live: %s' % why if why else '',
                    holder_form(rec, holder, 'release %s --reason "<why>"' % rid)))
-    stopped, found = stop_pull(ctx, rid, holder, live, kept)
-    changes = [('state', ['open'])] + [(k, []) for k in rmod.PULL_KEYS + rmod.PREEMPT_KEYS]
+    notes = []
+
+    def quiet():
+        why = quiet_key_why(ctx, rec)
+        if why is None:
+            probe = ctx.quiet or (lambda b: quiet_hold(ctx.root, b, main=_main_commit(ctx)))
+            why, quiet_s = probe(holder)
+        if why is not None:
+            return None, why
+        notes.append('holder quiet %d h, released by %s' % (quiet_s // 3600, ctx.session))
+        return notes[-1], None
+    # A pull from before `pulled_session` (or from a caller with no --session) names no key a
+    # quiet release could be checked against: its refusal stays the plain one.
+    stopped, found = stop_pull(ctx, rid, holder, live, kept,
+                               quiet=quiet if rec.get('pulled_session') else None)
+    changes = [('state', ['open'])] + [(k, []) for k in rmod.PULL_CLEARS + rmod.PREEMPT_KEYS]
     pairs = rmod.apply_changes(rec.pairs(), changes)
-    text = ' '.join(reason.split())
+    text = ' '.join(reason.split()) + ''.join(' (%s)' % n for n in notes)
     body = rec.body
     if stopped:
         body = (body or '').rstrip('\n')

@@ -228,7 +228,7 @@ class Baselines(Tree):
         path = os.path.join(KIT, 'tests', 'linux-baseline.txt')
         self.assertEqual(ratchet.read_baseline(path), [])
         with open(path, encoding='utf-8') as f:
-            self.assertIn('broken run', f.read())
+            self.assertIn('no Linux failure is accepted', f.read())
 
 
 class Results(Tree):

@@ -108,6 +108,15 @@ class Publish(unittest.TestCase):
         self.assertTrue(notes[0].startswith('hub page NOT CHECKED: the page check refuses'), notes)
         self.assertEqual(hub.calls, [])
 
+    def test_a_page_with_data_media_is_sent_with_no_note(self):
+        hub = FakeHub()
+        doc = '<video src="data:video/mp4;base64,AA"></video>'
+        self.assertIsNone(pagecheck.check(doc))
+        line, notes = publish.publish(RES, doc, hub)
+        self.assertEqual(line, 'PUBLISHED maint-lint-demo v1')
+        self.assertEqual(len(hub.posts()), 1)
+        self.assertEqual(notes, [])
+
     def test_a_result_with_no_repo_is_never_sent(self):
         hub = FakeHub()
         line, notes = publish.publish(dict(RES, repo=''), html(), hub)

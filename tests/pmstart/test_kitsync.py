@@ -22,7 +22,7 @@ def setUpModule():
     fglock.read_live = lambda user32=None: 0
     global _orig_beat
     _orig_beat = pmstart.read_heartbeat
-    pmstart.read_heartbeat = lambda: None     # nor this machine's pm_watch heartbeat
+    pmstart.read_heartbeat = lambda load=None: None     # nor this machine's pm_watch heartbeat
     keep_off_launcher_repos()
 
 

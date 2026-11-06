@@ -158,6 +158,44 @@ class Deps(unittest.TestCase):
         self.assertEqual(self.T.dependents([]), set())
 
 
+class TestDeps(unittest.TestCase):
+    """`test_deps`: test-only edges, one step through `test_consumers`, never transitive."""
+
+    T = pieces.load({'schema': 1, 'pieces': [
+        piece(id='api', dir='api'),
+        piece(id='sup', dir='sup', deps=['api']),
+        piece(id='mod', dir='mod', test_deps=['sup']),
+        piece(id='top', dir='top', deps=['mod'])]})
+
+    def refuses(self, data, needle):
+        with self.assertRaises(pieces.TableError) as e:
+            pieces.load(data)
+        self.assertIn(needle, str(e.exception))
+
+    def test_a_table_with_test_deps_loads_and_lists_them(self):
+        self.assertEqual(self.T.test_deps('mod'), ['sup'])
+        self.assertEqual(self.T.test_deps('api'), [])
+
+    def test_a_change_reaches_the_pieces_naming_it_one_step_only(self):
+        self.assertEqual(self.T.test_consumers(['sup']), {'mod'})      # not 'top', built on mod
+        self.assertEqual(self.T.test_consumers(['mod']), set())
+        self.assertEqual(self.T.test_consumers([]), set())
+        self.assertEqual(self.T.dependents(['sup']), {'sup'})          # dependents ignore the test edge
+
+    def test_a_test_edge_back_down_the_build_edges_is_no_cycle(self):
+        t = pieces.load({'schema': 1, 'pieces': [
+            piece(id='api', dir='api', test_deps=['sup']), piece(id='sup', dir='sup', deps=['api'])]})
+        self.assertEqual(t.test_consumers(['sup']), {'api'})
+
+    def test_bad_test_deps_are_refused(self):
+        a, b = piece(id='a', dir='a'), piece(id='b', dir='b')
+        self.refuses({'schema': 1, 'pieces': [dict(a, test_deps='b'), b]}, 'test_deps must be a list')
+        self.refuses({'schema': 1, 'pieces': [dict(a, test_deps=['b', 'b']), b]}, 'distinct')
+        self.refuses({'schema': 1, 'pieces': [dict(a, test_deps=['a'])]}, 'test dep')
+        self.refuses({'schema': 1, 'pieces': [dict(a, test_deps=['zz'])]}, 'test dep')
+        self.refuses({'schema': 1, 'pieces': [dict(a, deps=['b'], test_deps=['b']), b]}, 'in deps too')
+
+
 class Repath(unittest.TestCase):
     """repath maps a path before the move to where it is after it (NEW only carries `was`)."""
 

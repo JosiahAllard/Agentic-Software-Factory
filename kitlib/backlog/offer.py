@@ -207,33 +207,28 @@ def rank_label(rec, ranks):
 # --- in flight ------------------------------------------------------------------------------------
 
 def live_branches(root, remote):
-    """`(names, None)`: every local branch, `<remote>/<name>` and worktree branch; `(None, why)`
-    when git fails (half an answer is no answer)."""
+    """`(names, None)`: every local branch and `<remote>/<name>`; `(None, why)` when git fails.
+    A worktree's branch is a local branch, so `worktree list` adds nothing (one spawn, not two)."""
     out, why = cmd.run_text(['for-each-ref', '--format=%(refname)', 'refs/heads',
                              'refs/remotes/%s' % remote], root, timeout=PROBE_TIMEOUT)
     if out is None:
-        return None, why
-    trees, why = cmd.run_text(['worktree', 'list', '--porcelain'], root, timeout=PROBE_TIMEOUT)
-    if trees is None:
         return None, why
     names = set()
     for ref in out.split('\n'):
         for prefix in ('refs/heads/', 'refs/remotes/%s/' % remote):
             if ref.startswith(prefix):
                 names.add(ref[len(prefix):])
-    for line in trees.split('\n'):
-        if line.startswith('branch refs/heads/'):
-            names.add(line[len('branch refs/heads/'):].strip())
     return names, None
 
 
-def in_flight_split(snap, root, remote):
+def in_flight_split(snap, root, remote, live=None):
     """`(holding, dead, why)` over the pulled records. A pull is dead only when git answered and
-    found no branch by its `pulled_by`; a failed probe holds every pull (fail closed)."""
+    found no branch by its `pulled_by`; a failed probe holds every pull (fail closed). `live`
+    (None: live_branches) is `live() -> (names, why)`, a caller's memo of it (plan.Context)."""
     pulled = [r for r in snap.records if classify(r)[0] == IN_FLIGHT]
     if not pulled:
         return [], [], None
-    names, why = live_branches(root, remote)
+    names, why = live() if live else live_branches(root, remote)
     if names is None:
         return pulled, [], why
     holding = [r for r in pulled if r.get('pulled_by') in names]

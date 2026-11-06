@@ -3,6 +3,7 @@
 import unittest
 from unittest import mock
 
+from kitlib.git import cmd
 from kitlib.backlog import offer as omod
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
@@ -1027,6 +1028,43 @@ class NextCliNarrows(unittest.TestCase):
             'counts: 1 offered | 1 pullable | 0 passed over | 0 releasable | 0 narrow '
             '| 1 narrows'), out)
         self.assertEqual(self.repo.git('ls-remote', 'origin', smod.STORE_REF), before)
+
+
+class LiveBranchesOnce(unittest.TestCase):
+    """KIT-OFFER-LIVE-BRANCHES-ONCE: one `next` and one `pull` read the live branch set once
+    (one `for-each-ref`, no `worktree list --porcelain`), however many callers ask for it."""
+
+    def setUp(self):
+        test_cli.Cli.setUp(self)
+        self.repo.worktree('holder')
+        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        store = smod.Store(backend, rmod.Rules())
+        backend.publish(store.load(), {
+            'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
+                                pulled_at=TODAY, pulled_by='kit/holder', scope='brain/**'),
+            'FOO': record_text(id='FOO', priority='3', priority_by='agent', scope='tools/x/**')},
+            'seed\n')
+
+    def probes(self, *args):
+        """The `(for-each-ref, worktree list --porcelain)` git calls of one backlog.py run."""
+        calls = []
+        real = cmd.call
+
+        def counting(argv, *a, **kw):
+            calls.append(tuple(argv))
+            return real(argv, *a, **kw)
+
+        with mock.patch.object(cmd, 'call', counting):
+            rc, out = test_cli.Cli.run_tool(self, *args)
+        self.assertEqual(rc, 0, out)
+        return (sum(1 for c in calls if c[:1] == ('for-each-ref',) and 'refs/heads' in c),
+                sum(1 for c in calls if c[:3] == ('worktree', 'list', '--porcelain')))
+
+    def test_next_reads_the_live_branches_once(self):
+        self.assertEqual(self.probes('next'), (1, 0))
+
+    def test_pull_reads_the_live_branches_once(self):
+        self.assertEqual(self.probes('--as', 'kit/wk', 'pull', 'FOO'), (1, 0))
 
 
 class NextCliRestore(unittest.TestCase):

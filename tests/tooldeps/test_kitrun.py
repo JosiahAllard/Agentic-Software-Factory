@@ -75,6 +75,23 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(passes[1][1], ['tests.b.test_n'])
         self.assertIn('both tiers green', out.getvalue())
 
+    def test_only_the_fake_pass_of_full_both_tiers_keeps_the_cost_history(self):
+        # The daily run's daily_cmd; the landing gate's --full, --select and the real-git pass
+        # would write partial or duplicate days.
+        for argv, want in ((('--full', '--both-tiers'), {'1': True, '0': False}),
+                           (('--full',), {'1': False}),
+                           (('--select', '--changed', 'x.py'), {'1': False}),
+                           (('--select', '--changed', 'x.py', '--both-tiers'), {'1': False,
+                                                                               '0': False})):
+            out, seen = io.StringIO(), {}
+
+            def run_pass(args, top, cfg, jobs, fake, tier_out, hold, **kw):
+                seen[fake] = kw.get('history', False)
+                return 0
+            with fixed_checkout(),                     mock.patch.object(selftree, 'changed_paths', return_value=([], None)),                     mock.patch.object(kitrun, 'default_base', return_value=('main', None)),                     mock.patch.object(kitrun, 'plan', return_value=['tests.a.test_m']),                     mock.patch.object(kitrun.selfrun, 'count_units', return_value=({}, {})),                     mock.patch.object(kitrun.tiers, 'real_git_modules', return_value=['tests.a.test_m']),                     mock.patch.object(kitrun.tiers, 'changed_test_modules', return_value=[]),                     mock.patch.object(kitrun, 'run_pass', side_effect=run_pass):
+                rc = kitrun.run(options(*(argv + ('--jobs', '1'))), HERE, out)
+            self.assertEqual((rc, seen), (0, want), (argv, out.getvalue()))
+
     def test_select_and_full_get_the_same_jobs_from_the_lock_mask(self):
         # The scoped branch gate and --full size their pool the same way: by the cpu slots the
         # lock run holds. What differs is the kind the caller books (docs/test-tools.md).

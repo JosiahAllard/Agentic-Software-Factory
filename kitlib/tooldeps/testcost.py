@@ -109,6 +109,11 @@ def report(records, since=None, top=30, by='cpu'):
     now, then = last['modules'], (cmp_['modules'] if cmp_ else {})
     lines = ['kit_tests cost: %d run(s) on record, %s .. %s' % (
         len(records), records[0]['date'], last['date'])]
+    if cmp_ is None:
+        lines.append('no growth line: %s' % (
+            '--since %s is on or after the latest run (%s), so the latest run is its own '
+            'baseline' % (since, last['date']) if since and len(records) > 1
+            else 'only one run is on record; growth needs a second'))
     lines.append('latest run %s: %d module(s), %d test(s), cpu %.0fs, wall %.0fs (unit seconds '
                  'summed), run wall %.0fs' % (last['date'], len(now), _total(now, 'tests'),
                                               _total(now, 'cpu'), _total(now, 'wall'),

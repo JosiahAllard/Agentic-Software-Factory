@@ -1,5 +1,6 @@
 """kitlib.tooldeps.testcost: the per-module cost history a daily full run keeps and the read-only
 report over it (docs/test-tools.md "kit_tests")."""
+import _thread
 import io
 import os
 import tempfile
@@ -81,6 +82,22 @@ class RunWrites(TempHomeCase):
         self.assertEqual(sorted(selfrun.load_times(times)), mods)       # scheduling data as before
 
 
+    def test_an_interrupted_run_writes_no_history(self):
+        # A Ctrl+C part-way would show the modules it never reached as gone and the rest as less.
+        mods = ['tests.a.test_1', 'tests.a.test_2', 'tests.a.test_3']
+        slow = fake_unit([], threading.Lock(), pause=0.5)
+
+        def run_unit(unit, audit, timeout, root=None, cmd=None, env=None):
+            if unit[0] == 'tests.a.test_1':
+                threading.Timer(0.05, _thread.interrupt_main).start()
+            return slow(unit, audit, timeout, root=root, cmd=cmd, env=env)
+        out = io.StringIO()
+        rc, _ = selfrun.run(mods, tempfile.gettempdir(), 1, out=out, run_unit=run_unit,
+                            counts={m: 3 for m in mods}, history_path=self.path)
+        self.assertEqual(rc, selfrun.INTERRUPTED, out.getvalue())
+        self.assertFalse(os.path.exists(self.path))
+
+
 class Report(unittest.TestCase):
     RECORDS = [rec('2026-10-23', **{'tests.a.test_x': (10, 100.0), 'tests.b.test_y': (5, 20.0),
                                     'tests.a.test_gone': (1, 1.0)}),
@@ -112,9 +129,16 @@ class Report(unittest.TestCase):
         self.assertIn('tests.a.test_x', top)
         self.assertNotIn('tests.c.test_new', top)
 
-    def test_one_run_on_record_has_no_growth_column(self):
+    def test_one_run_on_record_has_no_growth_column_and_says_why(self):
         text = '\n'.join(testcost.report(self.RECORDS[:1]))
         self.assertNotIn('growth since', text)
+        self.assertIn('no growth line: only one run is on record', text)
+
+    def test_a_date_on_or_after_the_latest_run_says_why_there_is_no_growth(self):
+        text = self.text(since='2026-11-06')
+        self.assertNotIn('growth since', text)
+        self.assertIn('no growth line: --since 2026-11-06 is on or after the latest run '
+                      '(2026-11-05)', text)
 
 
 class Cli(unittest.TestCase):

@@ -451,7 +451,8 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     real-git pass, so the file keeps the landing tier's times). `skip_fails` ([module, why] pairs,
     the selection table's list): a listed module whose unit skipped any test is FAILED, since a
     skip voids the proof it exists for. `history_path`: append this run's per-module tests, seconds
-    and cpu to that file (kitlib.tooldeps.testcost) when `record_times` is on; None: not kept."""
+    and cpu to that file (kitlib.tooldeps.testcost) when `record_times` is on and the run was not
+    interrupted; None: not kept."""
     proof = dict(skip_fails)
     out = out or sys.stdout
     injected = run_unit
@@ -597,7 +598,7 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     wall = time.time() - start
     if record_times:
         save_times(times_path, done, split)
-        if history_path and done:
+        if history_path and done and not interrupted:   # a cut-short run would show false drops
             testcost.record(history_path, testcost.module_rows(done, cpus, module_of), wall, jobs,
                             label)
     return report(done, wall, jobs, len(alone), out, label,

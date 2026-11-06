@@ -54,7 +54,7 @@ To gate a worktree from another directory, run that worktree's own gate.py with 
 - Exit codes: 0 passed, nothing selected or `--plan`; 1 a test failed; 2 USAGE, git could not list the change, or `--select` with a malformed table; 130 Ctrl+C. On 2 no test ran.
 - `--full` is the escape hatch: with a malformed table it prints a warning, treats `serial` as empty and runs every module. Only `--select` refuses.
 
-Scoped gate against `--full` (KIT-SELECT-GATE-MEASURE; shared machine, no quiet window; tip abfae1683; 2026-11-05/06). Five kit landings' diffs, each run `--select --smoke --changed <paths>` and `--full` under `machine_lock.py run --kind test --cores 2` (the gate books both with its one kind); the pairs alternate, scoped first in 1, 3, 5. Wall is the in-run time, queue time excluded; `--full` is 821 modules in one pass, the scoped runs add a real-git pass for the changed test modules (`--full` had none). All 10 runs passed.
+Scoped gate against `--full` (shared machine, no quiet window; measured on 2026-11-05/06 main). Five kit landings' diffs, each run `--select --smoke --changed <paths>` and `--full` under `machine_lock.py run --kind test --cores 2` (the gate books both with its one kind); the pairs alternate, scoped first in 1, 3, 5. Wall is the in-run time, queue time excluded; `--full` is 821 modules in one pass, the scoped runs add a real-git pass for the changed test modules (`--full` had none). All 10 runs passed.
 
 | Pair (landing) | Scoped modules (incl. smoke) | Scoped wall | Full wall | Ratio | Free slots before (scoped/full) |
 |---|---|---|---|---|---|

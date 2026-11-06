@@ -192,7 +192,8 @@ class PullFold(_Branches):
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
 
     def test_an_orphan_own_branch_is_never_noted(self):
-        self.branch_with(BRANCH, 'docs/mine.md', orphan=True, existing=True)
+        self.repo.git('branch', '-q', '-D', BRANCH)     # `existing` would not make it an orphan
+        self.branch_with(BRANCH, 'docs/mine.md', orphan=True)
         self.seed(held('MINE', BRANCH, 'docs/mine.md'), priced('FOO', scope='kitlib/other/**'))
         change = self.verb('pull', 'FOO', reason='bundled with MINE')
         self.assertEqual(self.get('FOO').get('state'), 'pulled')

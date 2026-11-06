@@ -1057,10 +1057,12 @@ class Resources(StoreCase):
         [second] = out
         rec = self.store.read("active/%s.json" % second.id)
         second.release()
+        on = (rec.get("wait_on") or {}).get("resource") or [None, 0]
+        self.assertEqual(on[0], LAND, rec)
+        self.assertGreater(on[1], 0)
         self.assertGreater(rec["wait_by"]["resource"], 0)
-        self.assertEqual(rec["wait_on"]["resource"][0], LAND)
         [line] = [x for x in self.store.history_records() if x["id"] == second.id]
-        self.assertEqual(line["wait_on"], rec["wait_on"])
+        self.assertEqual(line.get("wait_on"), rec["wait_on"])
 
     def test_a_dead_holders_resource_is_freed_by_the_prune(self):
         self.confine(2)

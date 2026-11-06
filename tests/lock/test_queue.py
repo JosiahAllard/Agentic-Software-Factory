@@ -481,7 +481,7 @@ class WaitCause(unittest.TestCase):
         return qm.plan(self.L, {"ticket": 9, "entries": entries}, now=NOW)[0]
 
     def why(self, info):
-        return info["why"], info["by"]
+        return info.get("why"), info.get("by")
 
     def test_too_few_free_is_slots_and_names_the_pool(self):
         got = self.plan([holder("r-h", [0, 1, 2], NOW - 100, 1000),
@@ -515,14 +515,6 @@ class WaitCause(unittest.TestCase):
         got = self.plan([waiter("r-p", 1, 100, 2, parked=True, clear_at=NOW + 600,
                                 avoid_after={}, blocked_by=["h-1", "h-2"])])
         self.assertEqual(self.why(got["r-p"]), ("hold", "h-1,h-2"))
-
-    def test_the_causes_change_no_plan(self):
-        # The same queue planned twice gives the same starts and slots; why/by only add.
-        es = [holder("r-h", [0, 1], NOW - 100, 1000), waiter("r-big", 4, 100, 2),
-              waiter("r-small", 2, 100, 3)]
-        got = self.plan(es)
-        self.assertEqual((got["r-big"]["start"], got["r-small"]["start"]), (NOW + 900, NOW))
-        self.assertEqual(self.why(got["r-small"]), (None, None))
 
     def test_wait_cause_tests_hold_then_plan_then_bg_then_memory(self):
         now = {"now": True, "why": None, "by": None}

@@ -165,13 +165,12 @@ class Admission(MemCase):
         [s] = out
         self.assertNotIsInstance(s, BaseException)
         rec = self.store.read("active/%s.json" % s.id)
-        self.assertGreater(rec["wait_by"]["mem"], 0)
-        self.assertEqual(set(rec["wait_by"]), {"mem"})
-        self.assertEqual(rec["wait_on"], {})
         s.release()
+        self.assertEqual(set(rec.get("wait_by") or {}), {"mem"}, rec)
+        self.assertGreater(rec["wait_by"]["mem"], 0)
+        self.assertEqual(rec.get("wait_on"), {})
         [line] = [x for x in self.store.history_records() if x["id"] == s.id]
-        self.assertEqual(line["wait_by"], rec["wait_by"])
-        self.assertIn("wait_on", line)
+        self.assertEqual((line.get("wait_by"), line.get("wait_on")), (rec["wait_by"], {}))
 
     def test_a_run_with_nothing_else_held_starts_whatever_the_memory(self):
         self.mem["commit_mb"] = 90000                       # past the limit itself

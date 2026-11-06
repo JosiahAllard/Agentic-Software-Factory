@@ -27,7 +27,12 @@ SCRIPT = 'machine_lock.py'
 HEAVY = (('godot --headless --path .', 'app-run'),
          ('blender -b scene.blend -a', 'render'),
          ('dotnet build', 'build'),
-         ('gradlew assemble', 'build'))
+         ('gradlew assemble', 'build'),
+         # a run filtered to named tests is a quick-test; an unfiltered test run stays a build
+         ('gradlew test --tests FooTest', 'quick-test'),
+         ('dotnet test --filter FooTests', 'quick-test'),
+         ('gradlew test', 'build'),
+         ('dotnet test', 'build'))
 
 
 def load_tool():

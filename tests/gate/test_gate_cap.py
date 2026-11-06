@@ -258,9 +258,9 @@ class CountedTogether(CapCase):
 
     def test_a_burst_of_gates_books_no_more_than_the_cap(self):
         """Four gates of one session start at once at a cap of 2: no more than 2 are ever in the
-        lock (booked and not yet run), none gives its slot back, and each books once. Red before
-        (KIT-GATECAP-BURST): every gate of the burst counted before any sibling's booking was
-        written, saw nothing in flight and booked, so all four entered the lock queue."""
+        lock (booked and not yet run), none gives its slot back, and each books once. Red before:
+        every gate of the burst counted before any sibling's booking was written, saw nothing in
+        flight and booked, so all four entered the lock queue."""
         cap, n = 2, 4
         own = own_affinity()
         if len([1 for ts in self.layout()['slots_cpu'] if set(ts) <= own]) < cap:

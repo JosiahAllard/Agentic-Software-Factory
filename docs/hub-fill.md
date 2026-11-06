@@ -130,14 +130,17 @@ none). A record whose `at`, or a session whose start, cannot be read stays pendi
 hub cannot read (or a hub that gives the job no read) stand it down as `handoff unread`.
 
 The stand-downs above never stop the nudge: the coordinator still hears of its free slot, with
-the reason. The two in "PM hold and usage" are the exception: they stop the nudge too.
+the reason. The two in "PM hold and usage" are the exception: they stop the nudge and the waits notices too.
 
 ### PM hold and usage
 
-Read before the repository's stand-down, in this order (make's `stood_down`). Each sends no
-nudge, pulls nothing and tells the PM nothing; the job's note names it, and the coordinator's
-told state is dropped, so when it ends the episode starts afresh: a nudge, then the auto-pull 20
-minutes later.
+Read in this order (make's `quiet`), once per repository per run, for every live coordinator the
+usage crossover is not moving, before its waits notices, its slots and the repository's
+stand-down. Each beats a repository stand-down and sends nothing: no nudge, no waits notice, no
+pull, no PM event (a stand-down's or the waits' 24-hour one). The job's note names it; the
+coordinator's told state is dropped, so when it ends the episode starts afresh: a nudge, then the
+auto-pull 20 minutes later. Its waits pairs are kept, so a pair already pushed is not pushed
+again.
 
 - A PM hold: `hold machine` or `hold repo`. The PM sets it with
   `python <kit>/tools/launch.py fill-hold --repo NAME --reason TEXT [--until ISO]` (`--machine` in
@@ -147,7 +150,10 @@ minutes later.
   local without an offset; the hold ends when it passes. With no `--until` it stays until
   cleared. It is kept in `fill-hold.json` in `launcher.state_dir` (docs/launcher.md "State
   files"); the reason stays there and in the listing, never in a push. A file that cannot be read
-  or holds another shape is `unread` (stood down, the nudge names it), as above.
+  or holds another shape is `unread` (fails closed: the nudge and the waits notices go on, the
+  nudge names `unread`, nothing is pulled). `fill-hold` then refuses to list, set or clear one
+  hold; `fill-hold --machine --clear` is the way out: it removes the file and every hold in it,
+  and the PM sets again the holds it still wants.
 - Usage: `usage all>=95%` while every signed-in account in `launcher.accounts` has its week
   (`accounts.week_rows`, the rule of docs/launcher.md "Usage") at or over `fill_watch.USAGE_LIMIT`,
   which is `accounts.HEADROOM_LIMIT` (95), the line launches refuse at and the usage crossover's
@@ -155,8 +161,8 @@ minutes later.
   there (the PM's hand-off). Each account counts at its newest reading, however stale (owner,
   2026-11-06): usage never falls until the reset, whose time the reading holds, and a reset passed
   counts 0%. Only an account with no reading (or no week in it) is unknown, and it counts as
-  headroom, as `launch.py pick-account` counts it (owner: fail open); no signed-in account means
-  no usage stand-down (`usage_reason`).
+  headroom, as `launch.py pick-account` counts it (owner: fail open); no signed-in account, or
+  readings that cannot be read at all, means no usage stand-down (`usage_reason`).
 
 ## Auto-pull
 

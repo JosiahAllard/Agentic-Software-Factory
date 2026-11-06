@@ -30,7 +30,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.hubjobs import fill_watch                               # noqa: E402
 from kitlib.launcher import accounts, autostart, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
@@ -280,6 +279,7 @@ def run(a, settings, host):
     if a.cmd == 'fill-hold':
         if (a.reason is not None or a.until is not None or a.clear) and not (a.repo or a.machine):
             raise S.LaunchError('Give --repo NAME or --machine.')
+        from kitlib.hubjobs import fill_watch     # only here: the hub's job module stays unloaded
         return fill_watch.fill_hold(settings, a.repo, a.machine, a.reason, a.until, a.clear,
                                     host.now().timestamp())
     if a.cmd == 'after-reboot':

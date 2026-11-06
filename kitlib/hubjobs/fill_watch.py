@@ -7,7 +7,7 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
   make(sources) -> jobs.Job | None   the job; None when launcher.repos names no repository or
                                      launcher.state_dir is not set
   FillWatch(sessions, live, read, deliver, claims=None, standdown=None, store=None, now=time.time,
-            pull=None, handoffs=None, waits=None)
+            pull=None, handoffs=None, waits=None, quiet=None)
                                      its run(ctx): one pass over the live coordinators
   read_slots(settings, key, entry, session_live=None)
                                      (cap, in_flight, offered ids in offer order) of one
@@ -76,16 +76,19 @@ With no repository stand-down, a coordinator whose newest hand-off record (the h
 `handoffs`) is not a check-in is stood down as `handoff <kind>`, unless its live session started
 after the record's `at` (live_names' start): a session started since is a new one, check-in or
 not. Records that cannot be read are `handoff unread`.
-Two stand-downs come first and are quiet (QUIET): no nudge, no pull, no PM event, and the key's
-told state is dropped, so the episode starts afresh once they end. A PM hold (fill-hold.json in
-launcher.state_dir, written by `launch.py fill-hold`): {"machine": hold, "repos": {launcher.repos
-name: hold}}, a hold {reason, set_at, until?} (epoch seconds; no until: until cleared), gives
-`hold machine` or `hold repo` while it is on; a file that cannot be read or has another shape is
-`unread`. The reason is free text and goes no further than the file and the listing. Usage
+Two stand-downs come first and are quiet (QUIET), read once per repository per run for every live
+coordinator not claimed, before its waits notices and slots: no nudge, no waits notice, no pull,
+no PM event; the key's told state is dropped, so the episode starts afresh once they end, and its
+waits pairs are kept as they were. A PM hold (fill-hold.json in launcher.state_dir, written by
+`launch.py fill-hold`): {"machine": hold, "repos": {launcher.repos name: hold}}, a hold {reason,
+set_at, until?} (epoch seconds; no until: until cleared), gives `hold machine` or `hold repo`
+while it is on; a file that cannot be read or has another shape is `unread` (the nudge and waits
+go on, the nudge naming it; nothing is pulled), and `fill-hold --machine --clear` removes it. The
+reason is free text and goes no further than the file and the listing. Usage
 (make's): every signed-in account's week (accounts.week_rows: its newest reading, however stale,
 since usage only falls at the reset; a passed reset is 0%) at or over USAGE_LIMIT% gives
 `usage all>=N%`; one account under it, or one with no reading (headroom, as accounts.pick counts
-it: the owner's fail-open), or no signed-in account, gives none.
+it: the owner's fail-open), or no signed-in account, or readings that cannot be read, gives none.
 
 Auto-pull (stage 3), for a key already told this episode, PULL_AFTER_S after `since` and once per
 episode: with a stand-down, nothing is pulled; else `pulled` (= since) is written to the state
@@ -138,6 +141,7 @@ the PM here but the `fill` event.
 import copy
 import datetime
 import numbers
+import os
 import subprocess
 import time
 
@@ -402,6 +406,8 @@ def read_hold(path):
         raise StandDownUnread('the PM hold cannot be read (%s)' % e)
     if data is None:
         return {}
+    if not isinstance(data, dict):
+        raise StandDownUnread('the PM hold %s holds another shape' % path)
     repos = data.get('repos', {})
     if (set(data) - {'machine', 'repos'} or ('machine' in data and not _is_hold(data['machine']))
             or not isinstance(repos, dict) or not all(_is_hold(h) for h in repos.values())):
@@ -487,7 +493,14 @@ def fill_hold(settings, repo, machine, reason, until, clear, now):
             raise LaunchError('--until needs --reason.')
         data = read_hold(path)
     except StandDownUnread as e:
-        raise LaunchError(str(e))
+        if clear and machine:           # the way out of an unreadable file: it goes, every hold
+            try:                        # with it (the watch then holds nothing)
+                os.remove(path)
+            except OSError as oe:
+                raise LaunchError('%s cannot be removed: %s' % (path, oe))
+            return ['Removed the unreadable %s, every hold with it (%s).' % (HOLD_FILE, e)]
+        raise LaunchError('%s. `launch.py fill-hold --machine --clear` removes the file and every '
+                          'hold in it.' % e)
     rows = ([('machine', data['machine'])] if 'machine' in data else []) + sorted(
         data.get('repos', {}).items())
     return ['%s: %s (set %s, %s)%s' % (name, h['reason'], _when(h['set_at']),
@@ -598,14 +611,16 @@ class FillWatch(object):
     epoch seconds, `pull(key, entry, ids, free, stop)` the auto-pull -> ([(id, branch)],
     [(id, code)]) (None: no auto-pull, the watch alone), `handoffs()` {session key: its newest
     hand-off record} (None: not read; a raise or a None answer is `handoff unread`),
-    `waits(key, entry)` read_waits' rows or BacklogUnread (None: no waits notices).
+    `waits(key, entry)` read_waits' rows or BacklogUnread (None: no waits notices), `quiet(key,
+    entry)` the quiet stand-down (QUIET) or None (default none; a raise is `unread`).
     `liveness` is the last run's session liveness (coord_restart.session_liveness), which
     make's read, waits and pull pass on."""
 
     def __init__(self, sessions, live, read, deliver, claims=None, standdown=None, store=None,
-                 now=time.time, pull=None, handoffs=None, waits=None):
+                 now=time.time, pull=None, handoffs=None, waits=None, quiet=None):
         self.sessions, self.live, self.read, self.deliver = sessions, live, read, deliver
         self.waits = waits
+        self.quiet = quiet or (lambda key, entry: None)
         self.claims = claims or (lambda: set())
         self.standdown = standdown or (lambda key, entry: None)
         self.store = store if store is not None else MemoryState()
@@ -640,6 +655,7 @@ class FillWatch(object):
         told = copy.deepcopy(loaded)
         told_ok = told_states()
         nudged, notes, seen, reasons, acted, waited = [], [], set(), {}, [], []
+        quiets = {}                     # this run's quiet stand-down per repository
         wseen = set()                   # the keys whose waits pairs stand (read, unread, kept)
         unvisited = set(sessions)
         for key in sorted(sessions):
@@ -656,6 +672,11 @@ class FillWatch(object):
                 seen.add(key)           # its state stands untouched while it is claimed
                 wseen.add(key)
                 continue
+            quiet = self._quiet(key, entry, quiets, reasons, notes)
+            if quiet:                   # no nudge, no waits, no pull, no PM event
+                notes.append('%s: stood down (%s)' % (key, quiet))
+                wseen.add(key)          # its waits pairs stand; its told state is dropped, so
+                continue                # the episode starts afresh once the stand-down ends
             if self.waits is not None:
                 wseen.add(key)
                 self._waits(ctx, key, entry, told, waited, notes, told_ok)
@@ -670,10 +691,6 @@ class FillWatch(object):
                 continue
             seen.add(key)
             reason = self._reason(key, entry, reasons, notes)
-            if reason and reason.split()[0] in QUIET:   # no nudge, no pull; afresh once it ends
-                notes.append('%s: stood down (%s)' % (key, reason))
-                seen.discard(key)
-                continue
             now = self.now()
             had = told.get(key)
             if had is not None and in_flight != had['in_flight']:
@@ -800,6 +817,20 @@ class FillWatch(object):
         if left > 0 and e.get('pm') != since:
             ctx.event('fill', '%s:%d:unfilled' % (push.field(key), left))
             e['pm'] = since
+
+    def _quiet(self, key, entry, quiets, reasons, notes):
+        """The quiet stand-down (QUIET) of `entry`'s repository, read once per run, or None. A read
+        that raises is noted and makes the repository's stand-down `unread` (fails closed: the
+        nudge names it and nothing is pulled), so it is not quiet."""
+        repo = entry.get('repo')
+        if repo not in quiets:
+            try:
+                quiets[repo] = self.quiet(key, entry)
+            except Exception as e:      # noqa: BLE001 - fails closed through `unread`
+                notes.append('%s: stand-down unread (%s: %s)' % (key, type(e).__name__, e))
+                quiets[repo] = None
+                reasons[repo] = UNREAD
+        return quiets[repo]
 
     def _reason(self, key, entry, reasons, notes):
         """The stand-down reason of `entry`'s repository, read once per run; `unread` (stood down)
@@ -1007,13 +1038,19 @@ def make(sources):
         from kitlib.hubjobs import usage_crossover      # it imports coord_restart
         return usage_crossover.claims(s, time.time())
 
-    def stood_down(key, entry):         # the PM's hold, then usage, then the repository's
+    def quiet(key, entry):              # the PM's hold, then usage
         now = job.now()
         held = hold_reason(read_hold(state.path(s, HOLD_FILE)), entry.get('repo'), now)
         if held:
             return held
-        used = usage_reason(A.week_rows(s, datetime.datetime.fromtimestamp(now, datetime.timezone.utc)))
-        return used or standdown(s.repo_path(entry.get('repo')))
+        try:
+            rows = A.week_rows(s, datetime.datetime.fromtimestamp(now, datetime.timezone.utc))
+        except Exception:               # noqa: BLE001 - unread readings are unknown: fails open
+            rows = None
+        return usage_reason(rows)
+
+    def stood_down(key, entry):
+        return standdown(s.repo_path(entry.get('repo')))
 
     def handoffs():                     # sources.handoffs is read at each run: the hub sets it
         read = getattr(sources, 'handoffs', None)
@@ -1027,5 +1064,6 @@ def make(sources):
                     pull=lambda key, entry, ids, free, stop: auto_pull(
                         s, key, entry, ids, free, job.liveness, stop),
                     handoffs=handoffs,
-                    waits=lambda key, entry: read_waits(s, key, entry, session_live=job.liveness))
+                    waits=lambda key, entry: read_waits(s, key, entry, session_live=job.liveness),
+                    quiet=quiet)
     return jobs.Job(NAME, EVERY_S, job, first_s=FIRST_S)

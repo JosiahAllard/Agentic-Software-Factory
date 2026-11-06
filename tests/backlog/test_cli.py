@@ -97,14 +97,18 @@ class Cli(unittest.TestCase):
         self.ok('--as', 'tools/wk', 'pull', 'HELD', '--reason', 'the branch starts with this one')
         plain = self.ok('next')                      # the main checkout: no branch bundles
         self.assertIn('passed over X', plain)
-        self.assertNotIn('passed over Y', plain)
+        # X waits only on the live pull HELD, so it still reserves docs/y.md: Y waits behind it.
+        self.assertIn('passed over Y (rank 3): scope docs/y.md collides with docs/y.md already '
+                      'taken by X (waiting on HELD on tools/wk)', plain)
         mine = self.ok('--as', 'tools/wk', 'next')   # as the branch: X bundles onto it
         self.assertIn('passed over Y', mine)
         self.assertNotIn('passed over X', mine)
         self.assertIn('tools/wk', mine)
-        # Each `next` offers what `pull` takes plainly: Y as the main checkout read it.
-        out = self.ok('--as', 'tools/wk', 'pull', 'Y')
-        self.assertNotIn('preempt', out)
+        # Neither `next` offers Y, and `pull` agrees: a plain pull of Y is refused.
+        rc, out = self.run_tool('--as', 'tools/wk', 'pull', 'Y')
+        self.assertEqual(rc, 2, out)
+        self.assertTrue(out.startswith('REFUSED: '), out)
+        self.assertIn('already taken by X', out)
 
     def test_a_bad_scope_on_another_branchs_pull_fails_next_and_pull_alike(self):
         # `add` refuses `a/*.py`, so the live pull is seeded through the library.

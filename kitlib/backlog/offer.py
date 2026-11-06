@@ -280,13 +280,16 @@ class Offer(object):
 
 
 class PassedOver(object):
-    def __init__(self, rec, rank, why, blocker=None, pair=None):
+    def __init__(self, rec, rank, why, blocker=None, pair=None, waits=()):
         # `blocker`: `(who, record id)` of the live pull or other session's record whose scope or
         # resource this one collides with; None for any other reason (`blocker_summary` counts
         # these). `pair`: `(this record's member, the taken member)` of a scope collision
-        # (`narrowings` reads it); None for any other reason.
+        # (`narrowings` reads it); None for any other reason. `waits`: the live pulls of a scope
+        # collision this record outranks (`outranks`; `why` carries a `waits_mark` for each, and
+        # the fill watch tells the coordinator).
         self.rec, self.rank, self.why, self.blocker = rec, rank, why, blocker
         self.pair = pair
+        self.waits = list(waits)
 
 
 # --- resources ------------------------------------------------------------------------------------
@@ -389,6 +392,38 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow, shared=()):
         return None
 
 
+def _hitters(scopes, against, against_by, shared=()):
+    """The records that took an entry of `against` colliding with `scopes`, each once in the
+    order first hit; [] when a comparison is undecidable."""
+    hitters = []
+    try:
+        for m, by in zip(against, against_by):
+            if (any(smod.members_collide(c, m, shared) for c in scopes)
+                    and not any(by is h for h in hitters)):
+                hitters.append(by)
+    except smod.UndecidableScope:
+        return []
+    return hitters
+
+
+def outranks(rec, other, ranks):
+    """True when `rec` ranks above the live pull `other` and is in a strictly higher priority
+    band or is a pre-emption: the pair `next` marks and the fill watch tells of. A tie within a
+    band is False."""
+    if not (is_ranked(rec) and is_ranked(other)) or rec.id not in ranks or other.id not in ranks:
+        return False
+    if ranks[rec.id] >= ranks[other.id]:
+        return False
+    return rec.has('preempt') or int(rec.get('priority')) < int(other.get('priority'))
+
+
+def waits_mark(rec, other):
+    """`next`'s mark on a record passed over on a live pull it outranks: `p<n> waits on p<m> pull
+    X on B (lands first)`. A notice only: the live pull is never stopped or overridden."""
+    return 'p%s waits on p%s pull %s on %s (lands first)' % (
+        rec.get('priority'), other.get('priority'), other.id, other.get('pulled_by') or '?')
+
+
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
                folded=None, capacity=None, branch=None, narrow=None, session_live=None,
                shared=()):
@@ -396,7 +431,11 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
     first. `cap` None offers every startable record (`next --all`), with the same pass-overs. `unmet(rec)` -> `[(member, why)]` gates `requires:`. Only records whose `session:`
     equals `session` are offered; another session's record takes its scope silently. A record
     passed over on a collision names the holder: a live pull by id and branch, another session's
-    record by id and session, a record already in this offer as `(offered above)`. Scopes are each record's current `scope:` lines, so a pulled record
+    record by id and session, a record already in this offer as `(offered above)`. A record of
+    `session` whose scope collides only with live pulls, and that would otherwise be offered (every
+    resource it uses declared and with room, no unmet `requires:`), still reserves its scope, its holder named `ID (waiting on P on B)`, so a lower
+    record overlapping it is not pulled ahead of it; one passed over on such a reserve, or on any
+    other reason, reserves nothing (no cascade). Scopes are each record's current `scope:` lines, so a pulled record
     narrowed with `set --scope` frees what it gave up. A seed (`next --with`) goes first and is
     not passed over for the rest of the offer, but one that collides with a live pull is passed
     over like any record: only `pull --reason`, by a role that may take the `pull-collision` row
@@ -440,6 +479,15 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
 
     def own(r):
         return r.get('session') == session
+
+    def startable(r):
+        """Whether `r`, its scope collision aside, passes the checks an offer of it would make:
+        every resource it uses declared and with room (as counted so far), and no unmet
+        `requires:`."""
+        room = live_takers if id(r) in seeded else takers
+        if any(n not in capacity or len(room[n]) >= capacity[n] for n in uses(r)):
+            return False
+        return not (unmet is not None and unmet(r))
 
     candidates = sorted((r for r in snap.readable if classify(r)[0] == PULLABLE), key=rank_key)
     mine_by_id = {r.id: r for r in candidates if own(r)}
@@ -493,9 +541,24 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
         if hit and split is None:
             if own(rec):
                 holder, who = holders.get(hit[0][1]) or (None, None)
+                hitters = _hitters(scopes, against, against_by, shared)
+                waits = [h for h in hitters if id(h) in live_ids and outranks(rec, h, ranks)]
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), 'scope %s collides with %s '
-                                         'already taken%s' % (hit[0][0], hit[0][1], ' by %s'
-                                         % holder if holder else ''), who, hit[0]))
+                                         'already taken%s%s' % (hit[0][0], hit[0][1], ' by %s'
+                                         % holder if holder else '', ''.join(
+                                             '; %s' % waits_mark(rec, h) for h in waits)),
+                                         who, hit[0], waits))
+                waits_on = hitters if all(id(h) in live_ids for h in hitters) else []
+                if waits_on and startable(rec):
+                    # Held only by live pulls and otherwise startable: it still reserves its
+                    # scope (no cascade: one passed over on this reserve hits a hitter that is
+                    # no live pull).
+                    occupied.extend(scopes)
+                    occupied_by.extend(rec for _m in scopes)
+                    label = '%s (waiting on %s)' % (rid, ', '.join(
+                        '%s on %s' % (h.id, h.get('pulled_by') or '?') for h in waits_on))
+                    for m in scopes:
+                        holders.setdefault(m, (label, None))
             continue
         if split is not None:
             scopes = list(split.keep)

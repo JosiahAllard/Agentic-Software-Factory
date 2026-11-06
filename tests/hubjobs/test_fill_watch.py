@@ -17,6 +17,7 @@ from kitlib.hubsite import jobs
 from kitlib.hubsite import push as P
 from kitlib.launcher import settings as lsettings
 from tests import gitfixture
+from tests.backlog import helpers as _bh
 
 def ctx():
     return jobs.Ctx(threading.Event(), lambda word, detail=None: None)
@@ -301,6 +302,48 @@ class Slots(unittest.TestCase):
             W.read_slots(self.settings, 'game', dict(COORD))
         with self.assertRaises(C.BacklogUnread):
             W.read_slots(self.settings, 'x', {'repo': 'nowhere'})
+
+    def test_read_waits_gives_each_passed_over_pair_once_from_one_store_read(self):
+        from kitlib.backlog import offer as omod
+        from kitlib.backlog import opener, plan
+
+        class R(object):
+            def __init__(s, rid, **f):
+                s.id, s.f = rid, f
+
+            def get(s, name):
+                return s.f.get(name)
+
+        low = R('EX-L', priority='3', pulled_by='game/ex-l')
+        high = R('EX-H', priority='1')
+        passed = [omod.PassedOver(high, 1, 'why', waits=[low]), omod.PassedOver(R('EX-Q'), 2, 'q')]
+
+        class Store(object):
+            def load(s):
+                self.loads.append(1)
+                return 'snap'
+
+        class Ctx(object):
+            def __init__(s, root, session):
+                s.root, s.remote, s.store, s.session = root, 'origin', Store(), session
+        asked, why = [], [None]
+
+        def offer_for(snap, ctx, cap=5, holding=None, narrow=False):
+            asked.append((cap, narrow))
+            return [], passed, holding, None
+        with mock.patch.object(opener, 'open_store', lambda root, fetch=True, session=None:
+                               Ctx(root, session)), \
+                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(omod, 'in_flight_split',
+                                  lambda snap, root, remote: ([low], [], why[0])):
+            rows = W.read_waits(self.settings, 'game', dict(COORD))
+            self.assertEqual(rows, [('EX-H', '1', 'EX-L', '3', 'game/ex-l')])   # once
+            self.assertEqual(len(self.loads), 1)
+            self.assertEqual(asked, [(None, True), (None, True)])   # `next --all`, narrowing
+            why[0] = 'git failed'           # every pull would hold its scope: unread
+            with self.assertRaises(C.BacklogUnread) as cm:
+                W.read_waits(self.settings, 'game', dict(COORD))
+            self.assertIn('git failed', str(cm.exception))
 
     def test_a_cap_that_cannot_be_read_is_unread(self):
         from kitlib.backlog import opener
@@ -1002,6 +1045,107 @@ class AutoPull(WatchFixture, unittest.TestCase):
         self.assertEqual((self.c.events, self.pulls), ([], []))
 
 
+class Waits(WatchFixture, unittest.TestCase):
+    """The waits notices: a record waiting on a lower live pull it outranks is one push
+    to the coordinator per pair, and one `fill` event to the PM 24 h after first sight."""
+
+    ROW = ('EX-H', '1', 'EX-L', '3', 'game/ex-l')
+
+    def setUp(self):
+        super(Waits, self).setUp()
+        self.slots = {'game': (3, 3, ['EX-A'])}     # no free slot: the notice runs anyway
+        self.rows = {'game': [self.ROW]}
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, W.STATE_FILE)
+        self.clock = Clock()
+        self.job = self.fresh()
+        self.c = EventCtx()
+
+    def waits(self, key, entry):
+        got = self.rows[key]
+        if isinstance(got, Exception):
+            raise got
+        return list(got)
+
+    def fresh(self):
+        """A new FillWatch over the same file: a hub restart."""
+        return W.FillWatch(lambda: self.sessions, lambda: self.live, self.job.read,
+                           self.job.deliver, store=W.FileState(self.path), now=self.clock,
+                           waits=self.waits)
+
+    def run_at(self, t):
+        self.clock.t = t
+        self.c = EventCtx()
+        return self.job(self.c)
+
+    def saved(self):
+        with open(self.path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_a_pair_first_seen_is_one_push_with_the_mark_and_no_stop(self):
+        out = self.run_at(1000.0)
+        self.assertEqual(len(self.sent), 1)
+        key, text = self.sent[0]
+        self.assertEqual(key, 'game')
+        self.assertIn('p1 EX-H waits on p3 pull EX-L on game/ex-l (lands first)', text)
+        self.assertIn('route:game', text)
+        self.assertIn('Never stop or override the live pull', text)
+        self.assertIn('waits game (EX-H>EX-L)', out)
+        self.run_at(2000.0)
+        self.job = self.fresh()             # a hub restart reads first sight from the file
+        self.run_at(3000.0)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.saved()[W.WAITS],
+                         {'game': {'EX-H>EX-L': {'since': 1000.0, 'told': True, 'pm': False}}})
+
+    def test_the_pm_hears_once_24_hours_after_first_sight(self):
+        self.assertEqual(W.WAITS_PM_AFTER_S, 86400)
+        self.run_at(1000.0)
+        self.run_at(1000.0 + 86399)
+        self.assertEqual(self.c.events, [])
+        self.job = self.fresh()
+        self.run_at(1000.0 + 86400)
+        self.assertEqual(self.c.events, [('fill', 'game:waits:EX-H:EX-L')])
+        self.run_at(1000.0 + 90000)
+        self.assertEqual(self.c.events, [])
+        self.assertEqual(len(self.sent), 1)
+
+    def test_a_pair_gone_is_dropped_and_its_return_is_a_new_first_sight(self):
+        self.run_at(1000.0)
+        self.rows['game'] = []
+        self.run_at(2000.0)
+        self.assertNotIn(W.WAITS, self.saved())
+        self.rows['game'] = [self.ROW]
+        self.run_at(3000.0)
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.saved()[W.WAITS]['game']['EX-H>EX-L']['since'], 3000.0)
+
+    def test_an_unread_store_keeps_the_pairs_and_a_dead_coordinator_drops_them(self):
+        self.run_at(1000.0)
+        self.rows['game'] = C.BacklogUnread('x')
+        self.run_at(2000.0)
+        self.assertIn('EX-H>EX-L', self.saved()[W.WAITS]['game'])
+        self.live = set()
+        self.run_at(3000.0)
+        self.assertNotIn(W.WAITS, self.saved())
+
+    def test_a_push_not_written_is_tried_again_next_run(self):
+        self.states = [P.NOT_WRITTEN]
+        self.run_at(1000.0)
+        self.assertFalse(self.saved()[W.WAITS]['game']['EX-H>EX-L']['told'])
+        self.run_at(2000.0)
+        self.assertEqual(len(self.sent), 2)
+        self.assertTrue(self.saved()[W.WAITS]['game']['EX-H>EX-L']['told'])
+
+    def test_a_bad_waits_state_raises_before_anything_is_sent(self):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            json.dump({W.WAITS: {'game': {'EX-H>EX-L': {'since': 1.0}}}}, f)
+        with self.assertRaises(lsettings.LaunchError):
+            self.run_at(1000.0)
+        self.assertEqual(self.sent, [])
+
+
 class PullText(unittest.TestCase):
     def test_ids_branches_and_codes_only(self):
         text = W.pull_text('game', [('EX-A', 'game/fill-ex-a')], [('EX-B', 'not-theirs')])
@@ -1287,6 +1431,35 @@ class PullOnAStore(unittest.TestCase):
         got = self.pull(['BAZ', 'FOO', 'BAR'], 1)
         self.assertEqual(got, ([('FOO', 'kit/fill-foo')], [('BAZ', 'refused')]))
         self.assertNotIn('kit/fill-bar', self.trees())
+
+
+class WaitsOnAStore(_bh.StoreCase):
+    """read_waits on a real store and branch: HOLD (p2) is pulled on kit/holder, whose tree
+    changed kitlib/x/a.py; FOO (p1, kitlib/**) overlaps it, but `next`'s narrowing clears it,
+    so it waits on nothing."""
+
+    def setUp(self):
+        super().setUp()
+        for p in ('kitlib/x/a.py', 'kitlib/y/d.py'):
+            self.repo.write(p, 'x\n')
+        self.repo.commit('code', 'kitlib')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt = self.repo.worktree('holder', 'kit/holder')
+        self.repo.write('kitlib/x/a.py', 'changed\n', root=wt)
+        self.repo.commit('work', 'kitlib/x/a.py', cwd=wt)
+        self.seed(_bh.priced('HOLD', state='pulled', pulled_at=_bh.TODAY,
+                             pulled_by='kit/holder', scope='kitlib/x/**'),
+                  _bh.priced('FOO', priority='1', scope='kitlib/**'))
+
+    def test_a_record_the_narrowing_clears_is_not_a_waits_pair(self):
+        from kitlib.backlog import opener, plan
+        _o, passed, _h, _w = plan.offer_for(self.store.load(), self.ctx)      # unnarrowed
+        self.assertEqual([(p.rec.id, [w.id for w in p.waits]) for p in passed],
+                         [('FOO', ['HOLD'])])
+        with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
+                mock.patch.object(opener, 'open_store',
+                                  lambda root, fetch=True, session=None: self.ctx):
+            self.assertEqual(W.read_waits(None, 'game', dict(COORD)), [])
 
 
 class Keys(unittest.TestCase):

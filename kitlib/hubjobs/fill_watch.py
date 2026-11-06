@@ -7,11 +7,15 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
   make(sources) -> jobs.Job | None   the job; None when launcher.repos names no repository or
                                      launcher.state_dir is not set
   FillWatch(sessions, live, read, deliver, claims=None, standdown=None, store=None, now=time.time,
-            pull=None, handoffs=None)
+            pull=None, handoffs=None, waits=None)
                                      its run(ctx): one pass over the live coordinators
   read_slots(settings, key, entry, session_live=None)
                                      (cap, in_flight, offered ids in offer order) of one
                                      coordinator; coord_restart.BacklogUnread when it cannot be read
+  read_waits(settings, key, entry, session_live=None)
+                                     [(id, priority, live pull id, its priority, its branch)] of one
+                                     coordinator: the waits notices' pairs; BacklogUnread as above
+  waits_text(key, rows)              the waits notices' push
   auto_pull(settings, key, entry, ids, free, liveness=None, stop=None, ...)
                                      ([(id, branch)], [(id, code)]): trees made and records pulled
   pull_record(root, rid, branch, sessions, liveness=None)
@@ -96,6 +100,17 @@ bad file cannot nudge every coordinator again or restart `since` (the auto-pull'
 A coordinator the usage crossover is moving (usage_crossover.claims, the hold coord-restart reads)
 is never nudged, and what was told it stays as it was: it was told to checkpoint and stand down.
 
+Waits notices, for every live coordinator not claimed, free slot or not: read_waits gives the
+pairs (H, L) where `next --all` passes H over on a live pull L that it outranks (offer.outranks:
+ranked above L and in a strictly higher priority band, or a pre-emption; a tie within a band is
+no pair). A pair first seen is one push to the coordinator (waits_text: `p<n> H waits on p<m>
+pull L on B (lands first)`, a notice only: the live pull is never stopped or overridden), told
+once written or uncertain, else tried again next run. A pair still there WAITS_PM_AFTER_S (24 h)
+after first sight is one `fill` event to the PM, detail `<key>:waits:<H>:<L>`. The state is
+fill-watch.json's `_waits`: {key: {"H>L": {since (first sight, epoch seconds: a record's
+pulled_at is a date only), told, pm}}}, absent when empty. A key read drops the pairs no longer
+there; a key with no live coordinator drops all; a claimed, unread or unreached key keeps them.
+
 Outcomes (kitlib.hubsite.jobs): a nudge is a success whose note names the keys; nothing to nudge
 is a Skip. A store or cap that cannot be read is a note. A sessions.json or crossover state that
 cannot be read (LaunchError), or a process listing that times out or fails (RuntimeError, OSError),
@@ -103,6 +118,7 @@ is a Skip with a note: never a failure, so the runner never pushes `failing` to 
 An auto-pull is a success whose note names it; one that raises is a note. Nothing else goes to
 the PM here but the `fill` event.
 """
+import copy
 import numbers
 import subprocess
 import time
@@ -131,6 +147,12 @@ _UNSET = object()
 PULL_DO_LINE = ('The hub fill watch pulled these records for you, each on its own new worktree '
                 'and branch: dispatch them (coordinator role, Slots). A skipped one was not '
                 'pulled, and the code says why. No reply is needed.')
+WAITS = '_waits'                # the told state's key of the waits notices (no sessions.json key)
+WAITS_PM_AFTER_S = 86400        # a pair still waiting this long after first sight tells the PM
+WAITS_DO_LINE = ('A notice only: each record named outranks the live pull its scope collides with '
+                 'and becomes eligible once that pull lands (capacity or an unmet requires may '
+                 'still hold it). Never stop or override the live pull for it. No reply is '
+                 'needed.')
 
 
 class StandDownUnread(Exception):
@@ -163,6 +185,56 @@ def pull_text(key, pulled, skipped):
     lines.extend('skipped %s %s' % (push.field(rid), push.field(code)) for rid, code in skipped)
     lines.append(PULL_DO_LINE)
     return '\n'.join(lines)
+
+
+def waits_text(key, rows):
+    """The push of the waits notices: `rows` [(id, priority, live pull id, its priority, its
+    branch)], ids, priorities and branches only (each cut to a header field)."""
+    from kitlib.hubsite import push
+    lines = ['[hub push] waits: %d record(s) wait on a lower live pull route:%s'
+             % (len(rows), push.field(key))]
+    lines.extend('p%s %s waits on p%s pull %s on %s (lands first)'
+                 % (push.field(hp), push.field(hid), push.field(lp), push.field(lid),
+                    '/'.join(push.field(p) for p in str(branch).split('/')))
+                 for hid, hp, lid, lp, branch in rows)
+    lines.append(WAITS_DO_LINE)
+    return '\n'.join(lines)
+
+
+def read_waits(settings, key, entry, session_live=None):
+    """[(id, priority, live pull id, its priority, its branch)]: the records of the coordinator of
+    sessions.json entry `key` that `next --all` passes over on a live pull they outrank
+    (offer.outranks, PassedOver.waits), each pair once, read as coord_restart.read_offer reads
+    the offer (no fetch, every session of wake_sessions) and with `next`'s narrowing. BacklogUnread
+    when it cannot be read, the live pulls' branches included."""
+    from kitlib.backlog import opener, plan
+    from kitlib.backlog import offer as omod
+    from kitlib.backlog.errors import Refusal
+    from kitlib.config import ConfigError
+    root = coord_restart.store_root(settings, (entry or {}).get('repo'))
+    rows, snap, holding = [], None, None
+    try:
+        for session in coord_restart.wake_sessions(key, entry):
+            ctx = opener.open_store(root, fetch=False, session=session)
+            ctx.session_live = session_live
+            if snap is None:            # one read of the store and its live pulls
+                snap = ctx.store.load()
+                holding, _dead, why = omod.in_flight_split(snap, ctx.root, ctx.remote)
+                if why:                 # every pull would hold its scope: no notice is sure
+                    raise coord_restart.BacklogUnread('the branches could not be read (%s)'
+                                                      % why)
+            # As `next --all` reads it: no cap, and a record a narrowing clears is offered.
+            _offers, passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding,
+                                                             narrow=True)
+            for p in passed:
+                for other in p.waits:
+                    row = (p.rec.id, p.rec.get('priority'), other.id, other.get('priority'),
+                           other.get('pulled_by') or '?')
+                    if row not in rows:
+                        rows.append(row)
+    except (Refusal, ConfigError, omod.PartitionError, OSError) as exc:
+        raise coord_restart.BacklogUnread('the store could not be read (%s)' % type(exc).__name__)
+    return rows
 
 
 def read_slots(settings, key, entry, session_live=None):
@@ -305,6 +377,9 @@ def check_state(data, where):
     if not isinstance(data, dict):
         raise LaunchError('%s must hold a JSON object' % where)
     for key, e in data.items():
+        if key == WAITS:
+            _check_waits(e, where)
+            continue
         told = e.get('told') if isinstance(e, dict) else None
         ok = (isinstance(e, dict) and set(e) - set(MARKS) == {'told', 'since', 'in_flight'}
               and isinstance(told, list) and len(told) == 3 and _count(told[0])
@@ -317,6 +392,19 @@ def check_state(data, where):
                               'seconds, "in_flight": count}, with "pulled" and "pm" (seconds) '
                               'optional: remove the file or fix the key' % (where, key))
     return data
+
+
+def _check_waits(e, where):
+    from kitlib.launcher.settings import LaunchError
+    ok = isinstance(e, dict) and all(
+        isinstance(pairs, dict) and all(
+            isinstance(p, dict) and set(p) == {'since', 'told', 'pm'} and _seconds(p['since'])
+            and isinstance(p['told'], bool) and isinstance(p['pm'], bool)
+            for p in pairs.values())
+        for pairs in e.values())
+    if not ok:
+        raise LaunchError('%s: key %r is not {key: {"ID>PULL": {"since": seconds, "told": bool, '
+                          '"pm": bool}}}: remove the file or fix the key' % (where, WAITS))
 
 
 class MemoryState(object):
@@ -360,13 +448,15 @@ class FillWatch(object):
     (default none; a raise is `unread`), `store` the told state (default MemoryState), `now()`
     epoch seconds, `pull(key, entry, ids, free, stop)` the auto-pull -> ([(id, branch)],
     [(id, code)]) (None: no auto-pull, the watch alone), `handoffs()` {session key: its newest
-    hand-off record} (None: not read; a raise or a None answer is `handoff unread`).
+    hand-off record} (None: not read; a raise or a None answer is `handoff unread`),
+    `waits(key, entry)` read_waits' rows or BacklogUnread (None: no waits notices).
     `liveness` is the last run's session liveness (coord_restart.session_liveness), which
-    make's read and pull pass on."""
+    make's read, waits and pull pass on."""
 
     def __init__(self, sessions, live, read, deliver, claims=None, standdown=None, store=None,
-                 now=time.time, pull=None, handoffs=None):
+                 now=time.time, pull=None, handoffs=None, waits=None):
         self.sessions, self.live, self.read, self.deliver = sessions, live, read, deliver
+        self.waits = waits
         self.claims = claims or (lambda: set())
         self.standdown = standdown or (lambda key, entry: None)
         self.store = store if store is not None else MemoryState()
@@ -398,14 +488,16 @@ class FillWatch(object):
         self._hands = _UNSET
         self._started = live if isinstance(live, dict) else {}   # a set of names: no starts
         loaded = self.store.read()      # a bad file raises here: nothing sent, nothing written
-        told = {k: dict(v) for k, v in loaded.items()}
+        told = copy.deepcopy(loaded)
         told_ok = told_states()
-        nudged, notes, seen, reasons, acted = [], [], set(), {}, []
+        nudged, notes, seen, reasons, acted, waited = [], [], set(), {}, [], []
+        wseen = set()                   # the keys whose waits pairs stand (read, unread, kept)
         unvisited = set(sessions)
         for key in sorted(sessions):
             entry = sessions[key]
             if ctx.stop.is_set():       # a hub stop: the keys not reached keep their state
                 seen |= unvisited
+                wseen |= unvisited
                 break
             unvisited.discard(key)
             if not is_coordinator(key, entry) or entry['name'] not in live:
@@ -413,7 +505,11 @@ class FillWatch(object):
             if key in claimed:          # the usage crossover is moving it: no nudge to dispatch
                 notes.append('%s: being moved by the usage crossover' % key)
                 seen.add(key)           # its state stands untouched while it is claimed
+                wseen.add(key)
                 continue
+            if self.waits is not None:
+                wseen.add(key)
+                self._waits(ctx, key, entry, told, waited, notes, told_ok)
             try:
                 cap, in_flight, ids = self.read(key, entry)
             except coord_restart.BacklogUnread as e:
@@ -438,13 +534,20 @@ class FillWatch(object):
             if self.pull is not None and told.get(key) is not None:
                 self._fill(ctx, key, entry, told, free, ids, reason, now, acted, notes)
         for key in list(told):
-            if key not in seen:
+            if key != WAITS and key not in seen:
                 del told[key]
+        pairs = told.get(WAITS, {})
+        for key in list(pairs):         # a key not seen (no live coordinator) drops its pairs
+            if (self.waits is not None and key not in wseen) or not pairs[key]:
+                del pairs[key]
+        if WAITS in told and not pairs:
+            del told[WAITS]
         if told != loaded:
             self.store.write(told)
         note = '; '.join((['nudged %s' % ', '.join(nudged)] if nudged else []) +
-                         (['auto-pull %s' % ', '.join(acted)] if acted else []) + notes)[:NOTE_MAX]
-        if not nudged and not acted:
+                         (['auto-pull %s' % ', '.join(acted)] if acted else []) +
+                         (['waits %s' % ', '.join(waited)] if waited else []) + notes)[:NOTE_MAX]
+        if not nudged and not acted and not waited:
             return jobs.Skip(note or 'no coordinator has a free slot and startable work')
         return note
 
@@ -467,6 +570,45 @@ class FillWatch(object):
                           % (key, free, len(ids), ', stood down: %s' % reason if reason else ''))
         else:
             notes.append('%s: nudge %s, tried again next run' % (key, sent or 'not sent'))
+
+    def _waits(self, ctx, key, entry, told, waited, notes, told_ok):
+        """The waits notices of `key` (module docstring): a pair first seen is one push, told
+        once written or uncertain; one still there WAITS_PM_AFTER_S after first sight is one
+        `fill` event to the PM. A read that raises BacklogUnread keeps the pairs as they were."""
+        from kitlib.hubsite import push
+        try:
+            rows = self.waits(key, entry)
+        except coord_restart.BacklogUnread as e:
+            notes.append('%s waits skipped: %s' % (key, e))
+            return
+        now = self.now()
+        had = told.get(WAITS, {}).get(key, {})
+        pairs, fresh = {}, []
+        for row in rows:
+            pid = '%s>%s' % (row[0], row[2])
+            if pid in pairs:
+                continue
+            pairs[pid] = dict(had.get(pid) or {'since': now, 'told': False, 'pm': False})
+            if not pairs[pid]['told']:
+                fresh.append((pid, row))
+        if fresh:
+            try:
+                sent = self.deliver(key, waits_text(key, [row for _pid, row in fresh]))
+            except Exception as e:      # noqa: BLE001 - a host fault: tried again next run
+                sent = 'not sent (%s)' % type(e).__name__
+            if sent in told_ok:
+                for pid, _row in fresh:
+                    pairs[pid]['told'] = True
+                waited.append('%s (%s)' % (key, ' '.join(pid for pid, _row in fresh)))
+            else:
+                notes.append('%s: waits %s, tried again next run' % (key, sent or 'not sent'))
+        for pid, p in sorted(pairs.items()):
+            if not p['pm'] and now - p['since'] >= WAITS_PM_AFTER_S:
+                h, l = pid.split('>', 1)
+                ctx.event('fill', '%s:waits:%s:%s' % (push.field(key), push.field(h),
+                                                       push.field(l)))
+                p['pm'] = True
+        told.setdefault(WAITS, {})[key] = pairs
 
     def _fill(self, ctx, key, entry, told, free, ids, reason, now, acted, notes):
         """Stages 3 and 5 for a key already nudged this episode (module docstring): PULL_AFTER_S
@@ -726,5 +868,6 @@ def make(sources):
                     store=FileState(state.path(s, STATE_FILE)),
                     pull=lambda key, entry, ids, free, stop: auto_pull(
                         s, key, entry, ids, free, job.liveness, stop),
-                    handoffs=handoffs)
+                    handoffs=handoffs,
+                    waits=lambda key, entry: read_waits(s, key, entry, session_live=job.liveness))
     return jobs.Job(NAME, EVERY_S, job, first_s=FIRST_S)

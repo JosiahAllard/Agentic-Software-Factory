@@ -93,5 +93,18 @@ class ConfigUnit(FoldCase):
         self.assertEqual(self.record('kit/one')['batch'], ['kit/one'])
 
 
+class StrictByDefault(FoldCase):
+    """With no "landing" key (folding and gate_once on by default) a strict branch still lands
+    alone: it is never folded, and a strict landing folds nothing."""
+    KIT = {}
+    test_a_strict_unit_is_left = Left.test_a_strict_unit_is_left
+    test_a_strict_landing_folds_nothing = Left.test_a_strict_landing_folds_nothing
+
+
+class ConfigUnitByDefault(ConfigUnit):
+    """ConfigUnit with no "landing" key: a gate-config branch still lands alone."""
+    KIT = {'hook': {'module': 'kit_hooks'}}
+
+
 if __name__ == '__main__':
     unittest.main()

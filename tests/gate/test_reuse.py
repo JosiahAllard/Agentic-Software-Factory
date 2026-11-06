@@ -40,7 +40,8 @@ STAMP = r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ'
 
 class ReuseCase(fixtures.GateRepoCase):
     GATE = {'steps': [UNIT, MERGED, PLAIN]}
-    KIT = {'landing': {}}
+    # gate_once off: its merged gate runs --full, which reuses nothing
+    KIT = {'landing': {'gate_once': False}}
     ASKING = ('unit', 'merged')
 
     def setUp(self):
@@ -349,7 +350,7 @@ class Writer(ReuseCase):
 
 
 class NeverReused(ReuseCase):
-    KIT = {'landing': {'reuse_never': ['docs/*']}}
+    KIT = {'landing': {'reuse_never': ['docs/*'], 'gate_once': False}}
 
     def test_a_reuse_never_path_reads_and_stores_nothing(self):
         wt, tip = self.branch('feature', dict(SRC, **{'docs/x.md': 'x\n'}))
@@ -398,7 +399,8 @@ class AllReused(ReuseCase):
 class NeverList(ReuseCase):
     """The config, a section file and the hook module are never reused across, whatever
     "landing".reuse_never says. Owner-only paths are narrowed so the branch may change them."""
-    KIT = {'landing': {}, 'owner': {'paths': ['CLAUDE.md']}, 'hook': {'module': 'gate_hook'}}
+    KIT = {'landing': {'gate_once': False}, 'owner': {'paths': ['CLAUDE.md']},
+           'hook': {'module': 'gate_hook'}}
 
     def setUp(self):
         ReuseCase.setUp(self)

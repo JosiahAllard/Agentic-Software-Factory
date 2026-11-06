@@ -194,10 +194,10 @@ class GateOnceStrict(ScopedCase):
 
 
 class NoGateOnceStrict(ScopedCase):
-    """A base without "landing".gate_once keeps its rule: under "landing".shared_paths a strict
+    """A base with "landing".gate_once off keeps its rule: under "landing".shared_paths a strict
     tip's scoped record is refused (its merged gate is the only whole run otherwise, and the
     landing still needs the branch's --full), and the FULL NEEDED line says so."""
-    KIT = dict(test_land.LandCase.KIT, landing={'shared_paths': ['api/*']})
+    KIT = dict(test_land.LandCase.KIT, landing={'shared_paths': ['api/*'], 'gate_once': False})
 
     def test_a_strict_branch_with_a_scoped_record_is_refused(self):
         _, tip = self.branch('feature', {STRICT: 'x = 1\n'})

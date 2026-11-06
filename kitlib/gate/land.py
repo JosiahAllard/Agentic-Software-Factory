@@ -95,7 +95,7 @@
                  --fresh or --full; a batch reuses per step like one branch; one branch also
                  from its tip's --full record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
                  (not --full) runs only the "gate".docs_only steps (docs/gate.md "Docs-only
-                 changes"). A base that sets "landing".gate_once makes any other merge --full
+                 changes"). A base with "landing".gate_once on makes any other merge --full
                  (Lander.once_escalate: each step's full_cmd, no reuse; docs/gate.md "Gate once
                  at landing"). Red, or a gate where nothing ran: NOT LANDED, the
                  merge dropped (it is only in the landing tree; the landing never moves main),
@@ -212,8 +212,8 @@ records); folded into one that still runs, it gives the turn back and books agai
 lands them or gives them back; else it marks the record turn_at, so no landing folds it from
 then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
 
-Folding (docs/gate.md "Folding queued submissions"), only in a repository whose .kit.json sets
-"landing".batch_max itself (the default folds nothing): a submitted landing whose locked checks
+Folding (docs/gate.md "Folding queued submissions"), on by default ("landing".batch_max, default
+5; a .kit.json that sets it to 1 folds nothing): a submitted landing whose locked checks
 passed, that changes no strict path and no gate config file, was not given back from a batch
 itself, and has room under that batch_max, folds the submissions queued behind it into its
 batch, oldest first (Lander.fold_queued): whole submissions run with the same flags, each checked
@@ -1069,7 +1069,7 @@ class Lander(object):
                   not --full (docs or select, smoke steps or not) is refused when the landing diff
                   changes a shared path or a strict path (shared_refusal, checked before the
                   docs route), beside the config check above;
-          once    when the base sets "landing".gate_once (docs/gate.md "Gate once at landing"),
+          once    when the base has "landing".gate_once on (docs/gate.md "Gate once at landing"),
                   a default-mode record lands whatever "gate".smoke_steps and "landing".shared_paths
                   say, a strict path included: only a gate config file refuses it, as the merged
                   gate runs --full (once_escalate; --full --fresh for a strict tip,
@@ -1154,10 +1154,11 @@ class Lander(object):
         return None
 
     def gate_once(self):
-        """True when the base's config sets "landing".gate_once true (docs/gate.md "Gate once at
-        landing"): select_refusal takes a default-mode record of any tip that changes no gate
-        config file, a strict tip included (strict_escalate makes its merged gate --full --fresh),
-        and once_escalate makes the merged gate --full."""
+        """True when "landing".gate_once is on in the base's config, as its .kit.json writes it or
+        else by default (false opts out; docs/gate.md "Gate once at landing"): select_refusal
+        takes a default-mode record of any tip that changes no gate config file, a strict tip
+        included (strict_escalate makes its merged gate --full --fresh), and once_escalate makes
+        the merged gate --full."""
         return self.cfg.section('landing').get('gate_once') is True
 
     def once_facts(self):
@@ -1435,7 +1436,7 @@ class Lander(object):
         return None
 
     def once_escalate(self):
-        """After the merge, before the merged gate: when the base sets "landing".gate_once
+        """After the merge, before the merged gate: when the base has "landing".gate_once on
         (docs/gate.md "Gate once at landing") and the merged gate is not --full already, it runs
         --full (each step's full_cmd) on the merged or batched tree, said once; a merge whose diff
         to the base is docs-only (reuse.docs_only_change) stays on the docs-only route. A diff git
@@ -1447,8 +1448,8 @@ class Lander(object):
                                                            changed):
             return
         self.full = self.escalated = True
-        self.say('GATE ONCE: the base %s sets "landing".gate_once: the merged gate runs --full on '
-                 'the merged tree' % self.expect_main[:10])
+        self.say('GATE ONCE: the base %s has "landing".gate_once on: the merged gate runs --full '
+                 'on the merged tree' % self.expect_main[:10])
 
     def strict_escalate(self):
         """A strict branch passed strict_check: its merged gate runs --full --fresh, whatever the
@@ -2616,24 +2617,21 @@ class Lander(object):
     # ---------------------------------------------------------------- folding
 
     def fold_max(self):
-        """The most branches a fold may grow this batch to: "landing".batch_max as the
-        repository's .kit.json writes it, or None when it does not set it (the default folds
-        nothing; it still caps a named batch, config_refusal)."""
-        if self.cfg.raw('landing').get('batch_max') is None:
-            return None
+        """The most branches a fold may grow this batch to: "landing".batch_max, the value the
+        repository's .kit.json writes or else the default (5), the same cap a named batch has
+        (config_refusal); 1 (the opt-out) folds nothing."""
         return self.cfg.section('landing')['batch_max']
 
     def can_fold(self):
         """True when this landing, its locked checks passed, may fold queued submissions into
         its batch: a submitted landing with its flags (an older kit's payload has none), that
         changes no strict path and no gate config file, was not given back dropped from a batch
-        itself, in a repository that sets "landing".batch_max, with room under it (fold_max)."""
+        itself, with room under "landing".batch_max (fold_max; 1 folds nothing)."""
         if not self.submitted or not isinstance(self.flags, dict) or self.was_dropped:
             return False
         if self.strict_hits or not self.anchor_run_id:
             return False
-        most = self.fold_max()
-        if most is None or len(self.branches) >= most:
+        if len(self.branches) >= self.fold_max():
             return False
         hits, why = self.config_paths()
         return why is None and not hits
@@ -2648,7 +2646,7 @@ class Lander(object):
         scope_check again, or every fold is given back (to land at its own turn) and the landing
         goes on alone."""
         sub = submitmod()
-        room = (self.fold_max() or 0) - len(self.branches)
+        room = self.fold_max() - len(self.branches)
         for unit in sub.foldable(self.root, self.anchor_run_id):
             if room <= 0:
                 break

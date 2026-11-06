@@ -1,9 +1,10 @@
-"""kitlib.fs.atomic: write a whole text file in one step.
+"""kitlib.fs.atomic: write a whole file in one step.
 
-write_text puts the text in a uniquely named temp file in the target's own folder, then replaces
-the target with it (kitlib.fs.replace, which waits out a reader holding the target open on
-Windows). Two writers of one path never share a temp file; a reader sees the old file or the
-new one, never half. The temp file is removed when the write or the replace fails. No fsync.
+write_text and write_bytes put the content in a uniquely named temp file in the target's own folder,
+then replace the target with it (kitlib.fs.replace, which waits out a reader holding the target open
+on Windows). Two writers of one path never share a temp file; a reader sees the old file or the new
+one, never half. The temp file is removed (kitlib.fs.replace.remove) when the write or the replace
+fails. fsync=True flushes the temp file to disk before the replace; the default does not.
 """
 import os
 import tempfile
@@ -11,18 +12,32 @@ import tempfile
 from kitlib.fs import replace as fsreplace
 
 
-def write_text(path, text, *, encoding='utf-8', newline='\n', makedirs=False):
-    """Write `text` to `path` through a temp file beside it, then replace `path` with it.
-    makedirs=True makes the folder first."""
+def _write(path, mode, data, fsync, makedirs, prefix, **open_kw):
     folder = os.path.dirname(path) or '.'
     if makedirs:
         os.makedirs(folder, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=folder, prefix='.%s.' % os.path.basename(path), suffix='.tmp')
+    if prefix is None:
+        prefix = '.%s.' % os.path.basename(path)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=prefix, suffix='.tmp')
     try:
-        with os.fdopen(fd, 'w', encoding=encoding, newline=newline) as f:
-            f.write(text)
+        with os.fdopen(fd, mode, **open_kw) as f:
+            f.write(data)
+            if fsync:
+                f.flush()
+                os.fsync(f.fileno())
         fsreplace.replace(tmp, path)
     except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+        fsreplace.remove(tmp)
         raise
+
+
+def write_text(path, text, *, encoding='utf-8', newline='\n', makedirs=False, fsync=False, prefix=None):
+    """Write `text` to `path` through a temp file beside it, then replace `path` with it.
+    makedirs=True makes the folder first; `prefix` names the temp file's start (default
+    '.<file name>.')."""
+    _write(path, 'w', text, fsync, makedirs, prefix, encoding=encoding, newline=newline)
+
+
+def write_bytes(path, data, *, makedirs=False, fsync=False, prefix=None):
+    """write_text for bytes: written as given, no encoding or newline translation."""
+    _write(path, 'wb', data, fsync, makedirs, prefix)

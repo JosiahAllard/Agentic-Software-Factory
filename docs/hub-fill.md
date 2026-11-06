@@ -56,7 +56,8 @@ the hub's delivery object to its sessions.json key:
     checkpointing or standing down. No reply is needed.
 
 The second line is there only while a stand-down holds ("Stand-down"). The `unless` clause defers
-to holds the hub cannot see (a PM hold on new work, a checkpoint the hub was not told of).
+to holds the hub cannot see (a PM hold given only in a message, a checkpoint the hub was not told
+of). A hold set with `launch.py fill-hold` sends no nudge at all ("PM hold and usage").
 
 At most 5 ids are shown, then `+N more`. It carries record ids, counts and the kit's own
 stand-down codes, never free text. Nothing goes to the PM.
@@ -128,7 +129,40 @@ over, whether or not it wrote a check-in (a `launch.py start` or a `coord-restar
 none). A record whose `at`, or a session whose start, cannot be read stays pending. Records the
 hub cannot read (or a hub that gives the job no read) stand it down as `handoff unread`.
 
-A stand-down never stops the nudge: the coordinator still hears of its free slot, with the reason.
+The stand-downs above never stop the nudge: the coordinator still hears of its free slot, with
+the reason. The two in "PM hold and usage" are the exception: they stop the nudge and the waits notices too.
+
+### PM hold and usage
+
+Read in this order (make's `quiet`), once per repository per run, for every live coordinator the
+usage crossover is not moving, before its waits notices, its slots and the repository's
+stand-down. Each beats a repository stand-down and sends nothing: no nudge, no waits notice, no
+pull, no PM event (a stand-down's or the waits' 24-hour one). The job's note names it; the
+coordinator's told state is dropped, so when it ends the episode starts afresh: a nudge, then the
+auto-pull 20 minutes later. Its waits pairs are kept, so a pair already pushed is not pushed
+again.
+
+- A PM hold: `hold machine` or `hold repo`. The PM sets it with
+  `python <kit>/tools/launch.py fill-hold --repo NAME --reason TEXT [--until ISO]` (`--machine` in
+  place of `--repo` for every repository; NAME is a `launcher.repos` name and covers every
+  coordinator of that repository), ends it with `fill-hold --repo NAME --clear` (or
+  `--machine --clear`), and lists the holds with `fill-hold` alone. `--until` is an ISO time,
+  local without an offset; the hold ends when it passes. With no `--until` it stays until
+  cleared. It is kept in `fill-hold.json` in `launcher.state_dir` (docs/launcher.md "State
+  files"); the reason stays there and in the listing, never in a push. A file that cannot be read
+  or holds another shape is `unread` (fails closed: the nudge and the waits notices go on, the
+  nudge names `unread`, nothing is pulled). `fill-hold` then refuses to list, set or clear one
+  hold; `fill-hold --machine --clear` is the way out: it removes the file and every hold in it,
+  and the PM sets again the holds it still wants.
+- Usage: `usage all>=95%` while every signed-in account in `launcher.accounts` has its week
+  (`accounts.week_rows`, the rule of docs/launcher.md "Usage") at or over `fill_watch.USAGE_LIMIT`,
+  which is `accounts.HEADROOM_LIMIT` (95), the line launches refuse at and the usage crossover's
+  target limit; no key sets it. One account under it keeps the watch going: the work can move
+  there (the PM's hand-off). Each account counts at its newest reading, however stale (owner,
+  2026-11-06): usage never falls until the reset, whose time the reading holds, and a reset passed
+  counts 0%. Only an account with no reading (or no week in it) is unknown, and it counts as
+  headroom, as `launch.py pick-account` counts it (owner: fail open); no signed-in account, or
+  readings that cannot be read at all, means no usage stand-down (`usage_reason`).
 
 ## Auto-pull
 
@@ -185,9 +219,8 @@ One hub job push to the PM (`JOB_EACH['fill']`), once per episode per coordinato
     slot is busy.
   - reviewers, test runners and other agents with no pulled record of their own are not seen.
     While they run, the watch can count a slot free that the coordinator is using.
-- A PM hold on new work has no machine-readable form, so the hub cannot see it. The nudge's
-  `unless` clause leaves it to the coordinator. The auto-pull pulls past such a hold: until
-  there is one, the owner sets `backlog.fill_queued_max` 0 to stop it.
+- A PM hold given only in a message is invisible to the hub: the auto-pull pulls past it. Only a
+  hold set with `launch.py fill-hold` stands the watch down ("PM hold and usage").
 - The auto-pull runs only the checks named in "Auto-pull": the store's own refusals and the
   hub's `held`. It writes no coordinator log note.
 - The auto-pull's branch area is the sessions.json key in lower case, not a configured prefix

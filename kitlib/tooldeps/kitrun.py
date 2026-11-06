@@ -19,7 +19,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.lock import giveback
 from kitlib.proc import spawn
 from kitlib.pytests import runner as unit_runner
-from kitlib.tooldeps import selfrun, selftree, tiers
+from kitlib.tooldeps import selfrun, selftree, testcost, tiers
 from kitlib.tooldeps.childenv import child_env
 
 USAGE = 2
@@ -83,11 +83,12 @@ def units_env(fake):
 
 
 def run_pass(args, top, cfg, jobs, fake, out, hold, give_back=None, record_times=True,
-             counted=None):
+             counted=None, history=False):
     """One run of `args` (FULL or test modules) with the units' KIT_FAKE_GIT set to `fake`
     (units_env), writing to `out`; its exit status. `give_back`: the pool's (drainer, or
     tiers.keep_for_next of it), None for none. `counted`: selfrun.count_units' answer for `args`,
-    already asked (the pool then asks no count child)."""
+    already asked (the pool then asks no count child). `history`: the run also appends its
+    per-module cost to the history file (testcost), which only the daily full run asks for."""
     def say(line):
         out.write(line + '\n')
         out.flush()
@@ -111,8 +112,23 @@ def run_pass(args, top, cfg, jobs, fake, out, hold, give_back=None, record_times
                                times_path=times, hint=cfg.get('long', ()), environ=env,
                                give_back=give_back, hold=hold, record_times=record_times,
                                skip_fails=cfg.get('skip_fails', ()), counts=counts,
-                               classes=classes)
+                               classes=classes,
+                               history_path=testcost.history_path(common) if history else None)
     return rc
+
+
+def cost_report(a, top, out):
+    """Write the per-module cost report (testcost.report) from the history file in `top`'s git
+    common dir; the exit status (0, or 2 when there is no git common dir). Runs nothing."""
+    common, why = gitrepo.common_dir(top)
+    if not common:
+        out.write('kit_tests: refused: %s\n' % why)
+        return USAGE
+    for line in testcost.report(testcost.load(testcost.history_path(common)), a.since, a.top,
+                                a.sort):
+        out.write(line + '\n')
+    out.flush()
+    return 0
 
 
 def run(a, top, out):
@@ -272,7 +288,7 @@ def run(a, top, out):
                 return 0
             if fake == '1':
                 return run_pass(use, top, cfg, jobs, fake, tier_out, hold, give_back=first_give,
-                                counted=counted)
+                                counted=counted, history=a.full and a.both_tiers)
             # Counted before the fake pass, so the units it plans are the ones the fake pass kept
             # threads for.
             return run_pass(use, top, cfg, jobs, fake, tier_out, None, give_back=give,

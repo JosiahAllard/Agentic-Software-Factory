@@ -800,6 +800,44 @@ class RawCode(Base):
         # a computed word up to the code: python may run other code than the guard reads (backlogrole.c_code)
         self.refused(self.cmd("python -c \"print('$Y kitlib/backlog/store.py')\""), 'backlog-raw-write')
 
+    def test_a_backlog_path_held_as_data_in_standard_input_code_runs(self):
+        # seen refused live: a heredoc naming the role map only inside a string (backlogrole.stdin_code)
+        for text in ("python - <<'EOF'\nimport pathlib\nNOTE = 'the map is kitlib/backlog/roles.py'\n"
+                     "print(pathlib.Path('docs/guard.md').exists(), NOTE)\nEOF",
+                     "python <<'EOF'\nprint(open('kitlib/backlog/roles.py').read()[:200])\nEOF",
+                     "python - <<EOF\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<< \"print('kitlib/backlog/roles.py')\"",
+                     # only a write mode is a write (backlogrole._file_write): a file named 'art' or 'tab'
+                     "python - <<'EOF'\nfrom PIL import Image\nImage.open('art')\n"
+                     "print('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nopen('tab')\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nimport os\nos.open('kitlib/backlog/roles.py', os.O_RDONLY | os.O_BINARY)\nEOF",
+                     # the write check is heredoc code's: -c code that edits a doc keeps its reading
+                     "python -c \"import pathlib; p=pathlib.Path('docs/guard.md'); "
+                     "p.write_text(p.read_text().replace('tools/backlog.py next','tools/backlog.py show'))\"",
+                     "python -c \"open('kitlib/backlog/roles.py', 'w').write('')\""):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    def test_standard_input_code_that_loads_or_writes_the_backlog_stays_refused(self):
+        for text in ("python - <<'EOF'\nimport kitlib.backlog.roles as r\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nimport sys\nsys.path.insert(0, 'Z:/repo/wt')\n"
+                     "from kitlib.backlog import roles\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nimport sys\nsys.path.insert(0, 'kitlib/backlog')\nimport roles\nEOF",
+                     "python - <<'EOF'\nopen('kitlib/backlog/roles.py', 'w').write('')\nEOF",
+                     "python - <<'EOF'\np = 'kitlib/backlog/roles.py'\nwith open(p, mode='a') as f:\n"
+                     "    f.write('x')\nEOF",
+                     "python - <<'EOF'\nimport pathlib\npathlib.Path('kitlib/backlog/roles.py').write_text('')\nEOF",
+                     "python - <<'EOF'\nimport os\nos.open('kitlib/backlog/roles.py', os.O_WRONLY)\nEOF",
+                     # what it prints runs as code (backlogrole._printed_name)
+                     "python - <<'EOF' | bash\nprint('python tools/backlog.py close X-1')\nEOF",
+                     # the text python reads is not the text as written: CODE_RE alone
+                     "python - <<EOF\nprint('$X kitlib/backlog/roles.py')\nEOF",
+                     "python - <<EOF\nprint('kitlib/backlog/roles.py \\\\')\nEOF",
+                     "python - <<'EOF' <<'EOF2'\nprint('kitlib/backlog/roles.py')\nEOF\nimport kitlib.backlog\nEOF2"):
+            with self.subTest(text):
+                self.refused(self.cmd(text), 'backlog-raw-write')
+
 
 class HubWriterCode(Base):
     """Code that names the hub's record writer (kitlib.hubsite.recordwrite) or the store's
@@ -1287,6 +1325,20 @@ class Unread(Base):
                      'python gen.py | python summarize.py', 'python gen.py > out.txt'):
             with self.subTest(text):
                 self.allowed(self.cmd(text))
+
+    def test_a_python_script_in_a_folder_the_guard_cannot_place_is_judged(self):
+        # a worker's `(cd "$R/old" && python tools/test_log_tokens.py ...)` crashed the guard
+        # (AttributeError: the unplaced script has no path to name), which the hook answers as a
+        # guard-error deny; it reads nothing, as a missing script
+        self.script('gen.py', self.PRINTS)
+        for text in ('(cd "$R" && python gen.py)', '{ cd "$R"; python gen.py; }',
+                     'echo "$(cd "$R" && python gen.py)"'):
+            with self.subTest(text):
+                try:
+                    d = self.cmd(text)
+                except Exception as e:          # noqa: BLE001 - a raise is the guard-error deny
+                    self.fail('the guard raised %s: %s' % (type(e).__name__, e))
+                self.allowed(d)
 
     def test_the_kits_own_python_is_not_judged(self):
         code = 'from kitlib.backlog import policy\n'

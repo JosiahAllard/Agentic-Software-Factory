@@ -2,6 +2,7 @@
 turn counts only the session's gate runs that have started, never those still queued in the
 lock; and gates waiting at the cap book in the order they began waiting, one per freed slot.
 No real lock, no real sleep: each waiting gate's sleep is a handshake with the test."""
+import contextlib
 import os
 import queue
 import shutil
@@ -12,6 +13,7 @@ import unittest
 from unittest import mock
 
 from kitlib.gate import budget, gatecap
+from kitlib.proc import process
 
 REPO = 'Some-Repo'
 HOST = [912345, 77]
@@ -20,25 +22,34 @@ STEP_S = 10         # the longest a handshake with a waiting gate's thread may t
 
 
 class FakeStore:
-    """live_runs from a list the test edits; the waiter files in a temp folder."""
+    """live_runs from a list the test edits; the waiter and turn files in a temp folder; the
+    store mutex a lock of this process."""
 
     def __init__(self, root):
         self.root = root
         self.runs = []
         self.settings = types.SimpleNamespace(queue_poll_s=1.0)
         self.n = 0
+        self.mutex = threading.RLock()
 
     def path(self, *parts):
         return os.path.join(self.root, *parts)
+
+    @contextlib.contextmanager
+    def lock(self, _name):
+        with self.mutex:
+            yield
 
     def live_runs(self):
         return [dict(r) for r in self.runs]
 
     def add(self, state='held'):
+        """A gate run booked by this process, as the gates the tests run here book."""
         self.n += 1
         rid = 'r-20261105T000000Z-%06x' % self.n
         self.runs.append({'id': rid, 'state': state, 'gate': True, 'repo': REPO,
-                          'ancestors': [HOST], 'pid': 1, 'ctime': 1})
+                          'ancestors': [HOST], 'pid': os.getpid(),
+                          'ctime': process.own_ctime()})
         return rid
 
     def drop(self, rid):
@@ -59,10 +70,18 @@ class FakeSlot:
         self.ended = {'how': how}
 
 
+def no_turn(case):
+    """This thread starts with no turn and ends with none (removed before its store folder is):
+    a turn left by an earlier test would make gave_way write into that test's removed folder."""
+    gatecap._TURN.mine = None
+    case.addCleanup(gatecap._leave)
+
+
 class Case(unittest.TestCase):
     def setUp(self):
         root = tempfile.mkdtemp(prefix='gatecap-fifo-')
         self.addCleanup(shutil.rmtree, root, True)
+        no_turn(self)
         self.store = FakeStore(root)
 
 
@@ -94,6 +113,54 @@ class AtItsTurn(Case):
         for rid in held:
             self.assertIn(rid, lines[0])
         self.assertEqual(len(naps), 1)
+
+
+class TurnsCount(Case):
+    """count: a gate's turn and its run are one gate in flight, never two."""
+
+    def total(self):
+        runs, turns = gatecap.count(self.store, AGENT, REPO)
+        return len(runs) + turns
+
+    def test_a_free_turn_and_its_process_queued_run_count_once(self):
+        """The turn names no run yet (or never will: a targeted rerun). Red with the netting
+        (`- loose[p]`) dropped: 2."""
+        gatecap.wait_turn(self.store, REPO, self.fail, cap=2, who=AGENT, sleep=self.fail)
+        self.assertEqual(self.total(), 1)               # the turn alone
+        self.store.add(state='waiting')                 # its booking, queued in the lock
+        self.assertEqual(self.total(), 1)
+
+    def test_a_named_turn_and_its_run_count_once(self):
+        gatecap.wait_turn(self.store, REPO, self.fail, cap=2, who=AGENT, sleep=self.fail)
+        slot = FakeSlot(self.store.add())
+        self.assertFalse(gatecap.gave_way(self.store, REPO, slot, self.fail, cap=2, who=AGENT,
+                                          sleep=self.fail))     # it runs; its turn names it
+        self.assertEqual(self.total(), 1)
+        self.store.add(state='waiting')     # a run no turn names, and no free turn to stand for:
+        self.assertEqual(self.total(), 2)   # a second gate
+
+
+class UnguardedCount(Case):
+    def test_a_mutex_not_had_in_time_is_said_once_and_the_gate_still_counts(self):
+        held = [self.store.add(), self.store.add()]
+        lines, naps = [], []
+
+        @contextlib.contextmanager
+        def timed_out(_name):
+            raise OSError('the gatecap mutex was not free within 10 s')
+            yield               # unreachable: it makes this a generator
+
+        def sleep(s):           # two polls at the cap, then one run ends
+            naps.append(s)
+            if len(naps) == 2:
+                self.store.drop(held[0])
+        with mock.patch.object(self.store, 'lock', timed_out):
+            gatecap.wait_turn(self.store, REPO, lines.append, cap=2, who=AGENT, sleep=sleep)
+        unguarded = [t for t in lines if 'without the store mutex' in t]
+        self.assertEqual(len(unguarded), 1, lines)      # once, not per poll
+        self.assertIn('not free within 10 s', unguarded[0])
+        self.assertEqual(len(naps), 2)
+        self.assertEqual(len(os.listdir(self.store.path(gatecap.TURNS))), 1)  # its turn, taken
 
 
 class Waiter:
@@ -183,6 +250,7 @@ class InTheOrderTheyWaited(Case):
         for other_run in (False, True):
             with self.subTest(other_session_run=other_run):
                 self.store.runs[:] = []
+                shutil.rmtree(self.store.path(gatecap.TURNS), True)  # the last subtest's gates end
                 self.store.add(state='waiting')
                 a = self.start('a', cap=1)
                 self.store.runs[:] = []                 # the session's run ends

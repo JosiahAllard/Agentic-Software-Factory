@@ -582,7 +582,7 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
@@ -614,6 +614,8 @@ store's git push (the `push` setting).
   Twenty minutes into an episode with no stand-down the hub pulls up to the free count itself, each record
   on its own new worktree under Session `hub-fill`, and tells the coordinator what it pulled; a stand-down,
   or slots the pull left free, push `fill` to the PM once per episode, detail `<key>:<free>:<why>`.
+  A PM hold (`launch.py fill-hold`) or the usage stand-down (every account at its week limit) sends nothing:
+  no nudge, no waits notice, no pull, no PM event (docs/hub-fill.md "PM hold and usage").
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
   pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its
@@ -672,6 +674,38 @@ store's git push (the `push` setting).
     (docs/pm-watch.md "Hub session-watch job").
 
 Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launcher/test_pipes.py.
+
+### Store upkeep
+
+Kit git calls through `kitlib.git.cmd` run with `maintenance.auto=false` and `gc.auto=0`
+(`AUTO_MAINTENANCE_OFF`). Git for Windows runs the auto maintenance a commit or fetch starts in the
+foreground, so it ran under the call's 30 s timeout, and a gc killed there left
+`objects/maintenance.lock` behind. With that lock present git skips maintenance without a word,
+and loose objects pile up. So the hub packs the store itself. The `store-upkeep` job
+(`kitlib/hubjobs/store_upkeep.py`) runs every 24 h, first 15 min after the hub starts, on the git
+common dir of the PM data worktree only:
+
+1. It writes the commit graph with Bloom filters (`commit-graph write --reachable --changed-paths
+   --split`), with no timeout.
+2. It runs `gc` only when `count-objects -v` counts 6700 loose objects or more. That is git's own
+   `gc.auto` default, not measured for this store. The command is `-c gc.writeCommitGraph=false -c
+   gc.packRefs=false -c pack.threads=2 gc --quiet`, with no timeout. It runs in the job of a
+   machine-lock slot (kind `build`, 2 cores, slug `store-upkeep`) that holds that common dir's
+   landing resource, so no landing runs beside it: the gc ends with the slot, also when the hub
+   ends. When the lock gives no slot within 10 min, or an owner or game hold is in place, the gc
+   waits for the next pass.
+
+The job deletes nothing itself. A `.pack` with no `.idx` that is more than a day old is a finding:
+each pass names it in its health note and pushes `findings` with their count as the detail.
+
+A `maintenance.lock` more than 12 h old is the sign the fault came back. When no git process that
+could hold it is alive (a git whose command line names `maintenance` or `gc`, or one whose command
+line cannot be read and which is still listed a moment later), each pass names it in its note and
+pushes `[hub push] job store-upkeep stale-lock detail:<hours>h` to the PM, every day while the lock
+stays. It is never removed by the hub: moving it aside is a planned window's work. With such a git
+alive the pass only names it in its note. When the processes cannot be listed, it still pushes.
+
+A failed git step or another lock refusal is a job failure; the other step still runs.
 
 ## questions/Q-NNN
 | Field | Written by | Meaning |

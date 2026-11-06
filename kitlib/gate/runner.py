@@ -562,10 +562,12 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     The lock run records the tree it tests (tested_tree; book's `tree`, Slot.note_tree for a held
     slot): a branch's HEAD tree, a landing's merge tree, the daily full run's commit's tree.
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
-    in the store it books in) and, once it holds, gives its slot back and books again while the
-    session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and
-    the daily full run leave it False and never wait. A capped gate whose tip is already in the
-    main branch (merged_tip) is REFUSED before it books, and again once its booking holds, before
+    in the store it books in), which counts the session's gates and takes this gate's turn in one
+    step, so a burst books no more than the cap; once the booking holds, gatecap.gave_way names
+    the run in its turn and, as a backstop for a gate the count missed, gives the slot back and
+    books again while the session's other gates are at the cap; a landing and the daily full run
+    leave it False and never wait. A capped gate whose tip is already in the main branch
+    (merged_tip) is REFUSED before it books, and again once its booking holds, before
     any step (released `not started`); before it books it also stops the session's own queued
     gates of the branch at an older tip (gatecap.replace_stale; docs/gate.md "The gate queue").
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
@@ -641,8 +643,9 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
                     return None, merged_refusal(
                         budget_branch, merged, base,
                         'the queued gate (run %s) was dropped at its turn; nothing ran' % slot.id)
-            # Counted and booked in two steps: at the cap now, it gives the slot back and books
-            # again (gatecap.gave_way), unless a stop came while it gave the run back.
+            # Its turn now names this run (gatecap.gave_way). A backstop for a gate the count
+            # missed: with the session's other gates at the cap, it gives the slot back and books
+            # again, unless a stop came while it gave the run back.
             if capped and gatecap.gave_way(store, name, slot, say):
                 if gatecap.stopped(slot):
                     return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir,

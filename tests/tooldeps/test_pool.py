@@ -198,6 +198,26 @@ class Pool(unittest.TestCase):
         self.assertEqual(self.pool.starts(), {'tests.p.test_three': 3 + 2, 'tests.p.test_pid': 0})
         self.assertEqual(self.pool.starts('tests.p.test_three'), 5)
 
+    def test_each_unit_s_cpu_counts_its_children_and_not_a_sleeping_unit(self):
+        # A child that spins counts in the unit that started it; a unit that only sleeps uses
+        # about none, and the next unit is not charged for the previous one's cpu.
+        spin = "import time; t = time.process_time()\nwhile time.process_time() - t < 0.6: pass"
+        write(self.root, {
+            'tests/p/test_spin.py': unit_body(
+                "        subprocess.run([sys.executable, '-c', %r], check=True)\n" % spin,
+                imports='import subprocess'),
+            'tests/p/test_nap.py': unit_body("        time.sleep(0.3)\n")})
+        for name in ('tests.p.test_spin', 'tests.p.test_nap'):
+            _u, status, _ran, _s, text = self.unit(name)
+            self.assertEqual(status, 'OK', text)
+        self.assertEqual(self.pool.stats(), (1, {}))             # one worker ran both
+        used = self.pool.cpu()
+        self.assertEqual(sorted(used), ['tests.p.test_nap', 'tests.p.test_spin'])
+        self.assertGreaterEqual(used['tests.p.test_spin'], 0.5)
+        self.assertLess(used['tests.p.test_nap'], 0.5)
+        self.assertEqual(self.pool.cpu('tests.p.test_spin'), used['tests.p.test_spin'])
+        self.assertIsNone(self.pool.cpu('tests.p.nothing'))
+
     def cache_units(self, between=None):
         """Run two units that import tests.p.helper in one worker, `between()` after the first;
         what each read from the worker's code cache."""

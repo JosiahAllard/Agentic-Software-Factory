@@ -123,8 +123,8 @@ snapshot's and GET health's `watcher` (Api.watcher_seen).
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill` and the usage
-crossover's words, is owed once per detail instead, beside the rest, and its text says what to
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`
+and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
 do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
@@ -259,7 +259,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                     'slots>:<why>: `unfilled` (the auto-pull filled none or not all of them) or '
                     'a stand-down code (off, queued, idle, unread, handoff; docs/hub-fill.md). '
                     'Check on that coordinator: if it is not dispatching, ask it why, or clear '
-                    'what stands the auto-pull down. Once per episode; no reply is needed.'}
+                    'what stands the auto-pull down. Once per episode; no reply is needed.',
+            'stale-lock': 'The hub store-upkeep job found objects/maintenance.lock in the git '
+                          'common dir of the PM data worktree older than 12 h, with no git '
+                          'maintenance or gc process alive: git skips its own maintenance while '
+                          'that file is there. Detail is its age (<hours>h); hub health '
+                          'jobs.store-upkeep names the path. The hub never removes it: plan a '
+                          'window to move it aside. Pushed again each daily pass while it stays.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

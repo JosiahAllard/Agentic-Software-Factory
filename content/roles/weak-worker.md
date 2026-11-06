@@ -37,7 +37,10 @@ true; `{{agent:worker}}` takes it from there, the intended path, not a failure:
   untouched - report what you noticed there instead.
 - Match surrounding code: naming, comment density, idioms.
 - Doc lines (a finding, a trim, a new capability): `<kit>/content/skills/specialty-docs/doc-writing.md`, "Findings and doc edits".
-- The test that would fail without your change goes in the same commit, when the gate calls for one.
+- Reuse what exists (a helper, test, fixture) and build only for the observed failure; a new
+  module, class or public name is a design choice: escalate. The test that would fail without your
+  change goes in the same commit, when the gate calls for one: a case in an existing test before a
+  new one, never a re-check of what another layer already reports.
 - Commit by explicit path, touched tests green: `python <kit>/tools/commit.py -C <worktree> -m "<subject>"
   --model "<model name>" <path> ...`, which adds the trailer for your host and model. Subject says what and why. Unsure
   of your model, say so; never amend to change a trailer.

@@ -54,6 +54,21 @@ HEAVY_DEFAULTS = (
      'why': 'ARCHITECTURE.md Kinds: Godot runs are heavy'},
     {'program': 'blender*', 'kind': 'render', 'when_args': ['-b', '--background'], 'unless_args': [],
      'why': 'machine_lock classify.py render: a background Blender run'},
+    # A test run filtered to named tests (`dotnet test --filter`, gradle `--tests`) is a short run of
+    # the touched tests: quick-test, one core (kitlib/lock/kinds.json), ahead of the build rows so the
+    # first match takes it.
+    {'program': 'dotnet', 'kind': 'quick-test', 'when_args': ['--filter'], 'also_args': [['test']],
+     'unless_args': [], 'why': 'a .NET test run filtered to named tests'},
+    {'program': 'dotnet.exe', 'kind': 'quick-test', 'when_args': ['--filter'], 'also_args': [['test']],
+     'unless_args': [], 'why': 'a .NET test run filtered to named tests'},
+    {'program': 'gradle', 'kind': 'quick-test', 'when_args': ['--tests'], 'unless_args': GRADLE_INFO,
+     'why': 'a Gradle test run filtered to named tests'},
+    {'program': 'gradle.*', 'kind': 'quick-test', 'when_args': ['--tests'], 'unless_args': GRADLE_INFO,
+     'why': 'a Gradle test run filtered to named tests'},
+    {'program': 'gradlew', 'kind': 'quick-test', 'when_args': ['--tests'], 'unless_args': GRADLE_INFO,
+     'why': 'a Gradle test run filtered to named tests'},
+    {'program': 'gradlew.*', 'kind': 'quick-test', 'when_args': ['--tests'], 'unless_args': GRADLE_INFO,
+     'why': 'a Gradle test run filtered to named tests'},
     # A .NET command that compiles, and any Gradle run but its information flags (dotnet --info and
     # gradle --version are not heavy).
     {'program': 'dotnet', 'kind': 'build', 'when_args': DOTNET_BUILDS, 'unless_args': [],

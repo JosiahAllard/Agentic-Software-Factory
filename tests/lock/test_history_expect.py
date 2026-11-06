@@ -102,6 +102,25 @@ class HistoryExpect(StoreCase):
             else:
                 self.assertEqual((rec["expect_s"], rec["expect_from"]), (want, "history"))
 
+    @windows_only("the lock runs on Windows")
+    def test_a_quick_test_with_no_history_expects_its_short_guide(self):
+        # The kit's own table: a quick-test run (only the touched tests) with no --expect and no
+        # history expects 300 s on one core, not a build's guide, so it can backfill a gap.
+        import json
+        from kitlib.lock import kinds as lockkinds
+        with open(lockkinds.KINDS_FILE, encoding="utf-8") as f:
+            real = json.load(f)
+        self.assertIn("quick-test", real["kinds"])
+        with open(self.kinds_path, "w", encoding="utf-8") as f:
+            json.dump(real, f)
+        self.store = self.make_store()
+        self.many(3000, kind="build")
+        with rm.book("quick-test", "kit", "t", no_wait=True, store=self.store,
+                     env=clean_env()) as slot:
+            rec = self.store.read("active/%s.json" % slot.id)
+        self.assertEqual((rec["expect_s"], rec["expect_from"], rec["need"]["cpu"]),
+                         (300, "guide", 1))
+
 
 if __name__ == "__main__":
     unittest.main()

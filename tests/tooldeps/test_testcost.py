@@ -81,7 +81,6 @@ class RunWrites(TempHomeCase):
         self.assertEqual(got[0]['modules']['tests.a.test_m']['tests'], 3)
         self.assertEqual(sorted(selfrun.load_times(times)), mods)       # scheduling data as before
 
-
     def test_an_interrupted_run_writes_no_history(self):
         # A Ctrl+C part-way would show the modules it never reached as gone and the rest as less.
         mods = ['tests.a.test_1', 'tests.a.test_2', 'tests.a.test_3']

@@ -90,8 +90,14 @@ class Orchestration(unittest.TestCase):
             def run_pass(args, top, cfg, jobs, fake, tier_out, hold, **kw):
                 seen[fake] = kw.get('history', False)
                 return 0
-            with fixed_checkout(),                     mock.patch.object(selftree, 'changed_paths', return_value=([], None)),                     mock.patch.object(kitrun, 'default_base', return_value=('main', None)),                     mock.patch.object(kitrun, 'plan', return_value=['tests.a.test_m']),                     mock.patch.object(kitrun.tiers, 'real_git_modules',
-                                      return_value=['tests.a.test_m']),                     mock.patch.object(kitrun.tiers, 'changed_test_modules', return_value=again),                     mock.patch.object(kitrun, 'run_pass', side_effect=run_pass):
+            with fixed_checkout(), \
+                    mock.patch.object(selftree, 'changed_paths', return_value=([], None)), \
+                    mock.patch.object(kitrun, 'default_base', return_value=('main', None)), \
+                    mock.patch.object(kitrun, 'plan', return_value=['tests.a.test_m']), \
+                    mock.patch.object(kitrun.tiers, 'real_git_modules',
+                                      return_value=['tests.a.test_m']), \
+                    mock.patch.object(kitrun.tiers, 'changed_test_modules', return_value=again), \
+                    mock.patch.object(kitrun, 'run_pass', side_effect=run_pass):
                 rc = kitrun.run(options(*(argv + ('--jobs', '1'))), HERE, out)
             self.assertEqual((rc, seen), (0, want), (argv, again, out.getvalue()))
 

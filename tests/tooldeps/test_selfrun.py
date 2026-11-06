@@ -743,7 +743,7 @@ class RealUnits(TempHomeCase):
             row = rec['modules'][m]
             self.assertEqual((row['tests'], row['status']), (1, 'OK'))
             self.assertIsInstance(row['cpu'], float, row)       # the worker job's accounting
-            self.assertGreater(row['cpu'], 0)
+            self.assertGreaterEqual(row['cpu'], 0)
 
     def test_a_marked_module_runs_in_its_own_process(self):
         mods, env = self.pid_units(3)

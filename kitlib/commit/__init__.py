@@ -81,6 +81,7 @@ Codes: OK 0 committed, REFUSED 1 refused or git failed, USAGE 2 a usage error, t
 refusal or a refused .kit.json.
 """
 import collections
+import hashlib
 import os
 import posixpath
 import re
@@ -812,17 +813,25 @@ def private_index(root, tmp, head, snap):
     """`(env, None)` for a `git commit` that records exactly `snap` (index_snapshot): a private
     index (private_index_file) holding `head`'s tree (empty for '', an unborn branch) with each
     snapshot entry set, a deletion (None) removed; or `(None, why)`. Every other entry of the real
-    index, staged by anyone, is left out of the commit and left as it is. read-tree records no
-    stat information, so `git commit` may read tracked work-tree files again to compare them; the
-    cost grows with the work tree, and was accepted over `read-tree -m`, which refuses an
-    unmerged real index."""
+    index, staged by anyone, is left out of the commit and left as it is.
+
+    The private index starts as a copy of the real index (_copied_index), with every other path
+    that differs from `head` (staged, unmerged, or absent) put back to `head`'s entry, so the
+    entries `git commit` refreshes keep their stat data. A read-tree index has none, and `git
+    commit` then hashes every tracked work-tree file, past cmd.GIT_TIMEOUT in a large tree
+    (KIT-COMMIT-PRECOMMIT-TIMEOUT). When the copy cannot be used, and on an unborn branch, the
+    private index is read-tree'd (`read-tree -m` would refuse an unmerged real index)."""
     env = dict(cmd.scrubbed_env(), GIT_INDEX_FILE=private_index_file(tmp))
-    r = cmd.call(['read-tree', head] if head else ['read-tree', '--empty'], root, env=env)
-    if r.rc != 0:
-        return None, 'git read-tree into a private index failed: %s' % (r.err or 'exit %s' % r.rc)
     zero = '0' * (len(head) or 40)
-    lines = ['0 %s\t%s' % (zero, p) if e is None else '%s %s\t%s' % (e[0], e[1], p)
-             for p, e in sorted(snap.items())]
+    back = _copied_index(root, env, head, snap) if head else None
+    if back is None:
+        r = cmd.call(['read-tree', head] if head else ['read-tree', '--empty'], root, env=env)
+        if r.rc != 0:
+            return None, 'git read-tree into a private index failed: %s' % (
+                r.err or 'exit %s' % r.rc)
+        back = []
+    lines = back + ['0 %s\t%s' % (zero, p) if e is None else '%s %s\t%s' % (e[0], e[1], p)
+                    for p, e in sorted(snap.items())]
     if lines:
         r = cmd.call(['update-index', '--index-info'], root, env=env,
                      stdin=('\n'.join(lines) + '\n').encode('utf-8'))
@@ -830,6 +839,74 @@ def private_index(root, tmp, head, snap):
             return None, 'git update-index on the private index failed: %s' % (
                 r.err or 'exit %s' % r.rc)
     return env, None
+
+
+def _copied_index(root, env, head, snap):
+    """The real index copied to env's GIT_INDEX_FILE, and the --index-info lines that put every
+    path outside `snap` back to `head`'s entry there: removed first (every stage), then `head`'s
+    mode and blob. None, with the copy removed, when the copy cannot be used: no real index, a
+    copy whose trailing checksum does not match (torn), git cannot read it or `head`, or a path
+    --index-info cannot carry."""
+    dest = env['GIT_INDEX_FILE']
+    real, _why = repo.git_path(root, 'index')
+    try:
+        if not real:
+            return None
+        shutil.copyfile(real, dest)
+        if _torn(dest, len(head)):
+            raise OSError('torn copy')
+    except OSError:
+        _remove(dest)
+        return None
+    r = cmd.call(['ls-files', '--stage', '-z'], root, env=env)
+    t = cmd.call(['ls-tree', '-r', '-z', '--full-tree', head], root, env=env) if r.rc == 0 else r
+    if r.rc != 0 or t.rc != 0:
+        _remove(dest)
+        return None
+    ours = {}
+    for row in cmd.text(r.out).split('\0'):
+        meta, tab, path = row.partition('\t')
+        f = meta.split()
+        if tab and len(f) == 3:
+            ours.setdefault(path, set()).add((f[0], f[1], f[2]))
+    theirs = {}
+    for row in cmd.text(t.out).split('\0'):
+        meta, tab, path = row.partition('\t')
+        f = meta.split()
+        if tab and len(f) == 3:
+            theirs[path] = (f[0], f[2])
+    drop, put = [], []
+    for path in sorted((set(ours) | set(theirs)) - set(snap)):
+        want = theirs.get(path)
+        if want is not None and ours.get(path) == {(want[0], want[1], '0')}:
+            continue
+        if '\n' in path or path.startswith('"'):
+            _remove(dest)
+            return None
+        if path in ours:
+            drop.append('0 %s\t%s' % ('0' * len(head), path))
+        if want is not None:
+            put.append('%s %s\t%s' % (want[0], want[1], path))
+    return drop + put
+
+
+def _torn(path, oid_len):
+    """True when the index file at `path` does not end in the checksum of what precedes it
+    (an all-zero trailer, index.skipHash, is not checked)."""
+    algo, size = ('sha256', 32) if oid_len == 64 else ('sha1', 20)
+    with open(path, 'rb') as fh:
+        data = fh.read()
+    if len(data) < 12 + size or data[:4] != b'DIRC':
+        return True
+    body, tail = data[:-size], data[-size:]
+    return tail != bytes(size) and hashlib.new(algo, body).digest() != tail
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 MERGE_STATE = ('MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE')

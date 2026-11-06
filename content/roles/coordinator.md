@@ -91,8 +91,8 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
   pre-emption. When `next` offers one, keep an item that removes code or text in flight. Never wait
   on the owner for work.
 - **Follow-ups.** File a follow-up record for a finding on a branch, a review or a worker's
-  out-of-scope report note only for work beyond the limit in skill builder, step 10, in another
-  pulled item's files, or needing the owner, and worth doing. What a record needs: skill builder, step 10; a reviewer's hypothetical stays in the
+  out-of-scope report note only if it does not fold onto its branch (skill builder, step 10)
+  and is worth doing. What a record needs: skill builder, step 10; a reviewer's hypothetical stays in the
   review report; no record for a nitpick or an overengineered fix; a finding on an already-landed
   branch is a note unless it cites an observed failure; a guard or landing-tool record cites an honest
   mistake an agent actually made, never a probe, a reviewer's evasion form or a forging case. Say

@@ -1058,7 +1058,7 @@ class LiveBranchesOnce(unittest.TestCase):
             rc, out = test_cli.Cli.run_tool(self, *args)
         self.assertEqual(rc, 0, out)
         return (sum(1 for c in calls if c[:1] == ('for-each-ref',) and 'refs/heads' in c),
-                sum(1 for c in calls if c[:3] == ('worktree', 'list', '--porcelain')))
+                sum(1 for c in calls if c == ('worktree', 'list', '--porcelain')))
 
     def test_next_reads_the_live_branches_once(self):
         self.assertEqual(self.probes('next'), (1, 0))

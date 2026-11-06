@@ -253,14 +253,21 @@ copies the plugin into its cache (observed; docs/plugin-source.md
 the skills and agents write every kit path as `<kit>/<path>` (tests/skills and
 tests/content/test_skill_commands.py check it); the kit header hook tells each session and
 subagent the folder `<kit>` stands for (docs/content.md "Kit header"). `${CLAUDE_PLUGIN_ROOT}` is
-substituted in a plugin skill's text (owner's machine tests, Claude Code 2.1.302, and again 2026-11-05
-on Windows with 2.1.318: a probe plugin's skill showed its own folder path for it); agent text was
-not tested, so no kit agent or skill uses it, and the kit's skills carry no such text. On the same
-machine `installed_plugins.json` names `pm-kit@pm-kit` and `claude plugin list` shows it enabled at
-scope `managed`, read from a plugin folder. Unverified: that the Desktop app (Code tab) picks the
-plugin up, lists its skills under `/` as `pm-kit:<skill>` and names the right `<kit>` folder in the
-header (no result filed), and how `CLAUDE_CODE_PLUGIN_DIRS` behaves against a per-config-dir
-install (no result filed).
+substituted in a plugin skill's text with the plugin's own root folder, in forward slashes (verified
+on the owner's machine: a probe plugin run with `claude --plugin-dir <probe> -p` printed its root);
+agent text was not tested, so no kit agent or skill uses it, and the kit's skills carry no such
+text. On the same machine `installed_plugins.json` names `pm-kit@pm-kit`.
+
+Verified on the owner's machine:
+- The Claude Desktop app picks up the managed plugin: its `pm-kit:` skills are listed and the
+  session header names the `<kit>` plugin folder.
+- With `CLAUDE_CONFIG_DIR` set to a non-default account folder, `claude plugin list` shows
+  `pm-kit@pm-kit`, scope `managed`, enabled.
+- With `CLAUDE_CODE_PLUGIN_DIRS` also set, the list is the same plus a "Session-only plugins" line
+  saying the `--plugin-dir` copy of pm-kit is ignored because the plugin is locked by managed
+  settings. A plugin-dir copy cannot override the managed install.
+
+The kit loads itself through neither `--plugin-dir` nor `CLAUDE_CODE_PLUGIN_DIRS`.
 
 The plugin root is the whole kit (export), and `.claude-plugin/plugin.json` stays at its root: the
 hooks and the MCP servers run kitlib and tools beside them. plugin.json, marketplace.json and the

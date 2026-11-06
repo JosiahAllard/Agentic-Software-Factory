@@ -1,0 +1,3758 @@
+{
+ "modules": {
+  "agentstart": {
+   "paths": [
+    "kitlib/agentstart"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "agentview": {
+   "paths": [
+    "kitlib/agentview"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "allowrules": {
+   "paths": [
+    "kitlib/allowrules"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "attribution": {
+   "paths": [
+    "kitlib/attribution"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "autotasks": {
+   "paths": [
+    "kitlib/autotasks"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "backlog": {
+   "paths": [
+    "kitlib/backlog"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "blendermcp": {
+   "paths": [
+    "kitlib/blendermcp"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "ci": {
+   "paths": [
+    "kitlib/ci"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "commit": {
+   "paths": [
+    "kitlib/commit"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "config": {
+   "paths": [
+    "kitlib/config"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "content": {
+   "paths": [
+    "kitlib/content"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "coordinatorstart": {
+   "paths": [
+    "kitlib/coordinatorstart"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "coordstate": {
+   "paths": [
+    "kitlib/coordstate"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "dailyfull": {
+   "paths": [
+    "kitlib/dailyfull"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "delegations": {
+   "paths": [
+    "kitlib/delegations"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "docs": {
+   "paths": [
+    "kitlib/docs"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "forbidden": {
+   "paths": [
+    "kitlib/forbidden"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "fs": {
+   "paths": [
+    "kitlib/fs"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "gate": {
+   "paths": [
+    "kitlib/gate"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "git": {
+   "paths": [
+    "kitlib/git"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "githooks": {
+   "paths": [
+    "kitlib/githooks"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "guard": {
+   "paths": [
+    "kitlib/guard"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "host": {
+   "paths": [
+    "kitlib/host"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "hostrpc": {
+   "paths": [
+    "kitlib/hostrpc"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hoststart": {
+   "paths": [
+    "kitlib/hoststart"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubapprove": {
+   "paths": [
+    "kitlib/hubapprove"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubbacklog": {
+   "paths": [
+    "kitlib/hubbacklog"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubjobs": {
+   "paths": [
+    "kitlib/hubjobs"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubmcp": {
+   "paths": [
+    "kitlib/hubmcp"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubsite": {
+   "paths": [
+    "kitlib/hubsite"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "hubvalidate": {
+   "paths": [
+    "kitlib/hubvalidate"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "kitcmd": {
+   "paths": [
+    "kitlib/kitcmd"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "kitrelease": {
+   "paths": [
+    "kitlib/kitrelease"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "landed": {
+   "paths": [
+    "kitlib/landed"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "launcher": {
+   "paths": [
+    "kitlib/launcher"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "ledger": {
+   "paths": [
+    "kitlib/ledger"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "loadnode": {
+   "paths": [
+    "kitlib/loadnode"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "lock": {
+   "paths": [
+    "kitlib/lock"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "lockmcp": {
+   "paths": [
+    "kitlib/lockmcp"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "lockui": {
+   "paths": [
+    "kitlib/lockui"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "machinepaths": {
+   "paths": [
+    "kitlib/machinepaths"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "machinesetup": {
+   "paths": [
+    "kitlib/machinesetup"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "maintlint": {
+   "paths": [
+    "kitlib/maintlint"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "mcpwire": {
+   "paths": [
+    "kitlib/mcpwire"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "modulemap": {
+   "paths": [
+    "kitlib/modulemap"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "packageexport": {
+   "paths": [
+    "kitlib/packageexport"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "pending": {
+   "paths": [
+    "kitlib/pending"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "pieces": {
+   "paths": [
+    "kitlib/pieces"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "platform": {
+   "paths": [
+    "kitlib/platform"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "pluginsource": {
+   "paths": [
+    "kitlib/pluginsource"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "pmdata": {
+   "paths": [
+    "kitlib/pmdata"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "pmstart": {
+   "paths": [
+    "kitlib/pmstart"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "pmwatch": {
+   "paths": [
+    "kitlib/pmwatch"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "preflight": {
+   "paths": [
+    "kitlib/preflight"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "proc": {
+   "paths": [
+    "kitlib/proc"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "pytests": {
+   "paths": [
+    "kitlib/pytests"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "records": {
+   "paths": [
+    "kitlib/records"
+   ],
+   "why": "foundation layer (ARCHITECTURE.md Layers)"
+  },
+  "redfirst": {
+   "paths": [
+    "kitlib/redfirst"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "reviewpack": {
+   "paths": [
+    "kitlib/reviewpack"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "roster": {
+   "paths": [
+    "kitlib/roster"
+   ],
+   "why": "policy layer (ARCHITECTURE.md Layers)"
+  },
+  "scrub": {
+   "paths": [
+    "kitlib/scrub"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "stackskill": {
+   "paths": [
+    "kitlib/stackskill"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "strayrestore": {
+   "paths": [
+    "kitlib/strayrestore"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "stubs": {
+   "paths": [
+    "kitlib/stubs"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "syncbase": {
+   "paths": [
+    "kitlib/syncbase"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "testlist": {
+   "paths": [
+    "kitlib/testlist"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "tooldeps": {
+   "paths": [
+    "kitlib/tooldeps"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "trailerscheck": {
+   "paths": [
+    "kitlib/trailerscheck"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "verdict": {
+   "paths": [
+    "kitlib/verdict"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "worktree": {
+   "paths": [
+    "kitlib/worktree"
+   ],
+   "why": "feature layer (ARCHITECTURE.md Layers)"
+  },
+  "kitlib-root": {
+   "paths": [
+    "kitlib"
+   ],
+   "why": "the loose kitlib/*.py files"
+  },
+  "boot": {
+   "paths": [
+    "boot"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "hosts": {
+   "paths": [
+    "hosts"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "tools": {
+   "paths": [
+    "tools"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "mcp": {
+   "paths": [
+    "mcp"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "githooks-dir": {
+   "paths": [
+    "githooks"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-agenttemp": {
+   "paths": [
+    "optional/agenttemp"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-bridge": {
+   "paths": [
+    "optional/bridge"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-comfy": {
+   "paths": [
+    "optional/comfy"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-loadnode": {
+   "paths": [
+    "optional/loadnode"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-procwatch": {
+   "paths": [
+    "optional/procwatch"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  },
+  "opt-usage": {
+   "paths": [
+    "optional/usage"
+   ],
+   "why": "outer layer (ARCHITECTURE.md Layers)"
+  }
+ },
+ "edges": [
+  {
+   "from": "agentstart",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentstart",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentstart",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentstart",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "guard",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "agentview",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "allowrules",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "allowrules",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "allowrules",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "attribution",
+   "to": "host",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "autotasks",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "docs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "ledger",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "machinepaths",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "pmdata",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "backlog",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "blendermcp",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "blendermcp",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "blendermcp",
+   "to": "mcpwire",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "blendermcp",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "blendermcp",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "boot",
+   "to": "host",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "attribution",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "docs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "guard",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "machinepaths",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "commit",
+   "to": "verdict",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "config",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "content",
+   "to": "git",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "content",
+   "to": "host",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "content",
+   "to": "proc",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "content",
+   "to": "roster",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordinatorstart",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordstate",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordstate",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordstate",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordstate",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "coordstate",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "dailyfull",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "hubsite",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "hubjobs",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "landed",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "ledger",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "delegations",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "docs",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "docs",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "docs",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "docs",
+   "to": "verdict",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "forbidden",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "forbidden",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "fs",
+   "to": "git",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "fs",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "fs",
+   "to": "proc",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "config",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "content",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "fs",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "git",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "host",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "lock",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "platform",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "proc",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "gate",
+   "to": "records",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "git",
+   "to": "config",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "git",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "git",
+   "to": "proc",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "githooks",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "githooks",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "githooks",
+   "to": "ledger",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "githooks-dir",
+   "to": "githooks",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "config",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "content",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "fs",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "gate",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "git",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "host",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "lock",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "guard",
+   "to": "platform",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "host",
+   "to": "config",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "host",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "host",
+   "to": "platform",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "host",
+   "to": "proc",
+   "kind": "build",
+   "why": "policy layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "agentstart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "attribution",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "backlog",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "blendermcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "config",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "content",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "coordinatorstart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "gate",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "git",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "guard",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "host",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "hostrpc",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "hoststart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "hubmcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "hubsite",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "launcher",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "lock",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "lockmcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "machinesetup",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "platform",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "proc",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "records",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hosts",
+   "to": "worktree",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hoststart",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hoststart",
+   "to": "coordinatorstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hoststart",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hoststart",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubapprove",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubapprove",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubapprove",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubbacklog",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubbacklog",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubbacklog",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "coordstate",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "hubsite",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "machinepaths",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "pmdata",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "pmwatch",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubmcp",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubmcp",
+   "to": "hubapprove",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubmcp",
+   "to": "mcpwire",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "autotasks",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "commit",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "hubbacklog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "hubvalidate",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "lockui",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "machinesetup",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "pmdata",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "pmwatch",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubsite",
+   "to": "roster",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitcmd",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitcmd",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitcmd",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitlib-root",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitlib-root",
+   "to": "proc",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "kitrelease",
+   "to": "packageexport",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "landed",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "landed",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "landed",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "landed",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "launcher",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "ledger",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "ledger",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "ledger",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "ledger",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "loadnode",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lock",
+   "to": "config",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lock",
+   "to": "git",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lock",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lock",
+   "to": "proc",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lockmcp",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lockmcp",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lockmcp",
+   "to": "mcpwire",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "lockui",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinepaths",
+   "to": "config",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinepaths",
+   "to": "git",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "allowrules",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "stackskill",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "stubs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "machinesetup",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "dailyfull",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "hubsite",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "ledger",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "modulemap",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "maintlint",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "mcp",
+   "to": "blendermcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "mcp",
+   "to": "hubmcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "mcp",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "mcp",
+   "to": "lockmcp",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "modulemap",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-agenttemp",
+   "to": "config",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-agenttemp",
+   "to": "machinesetup",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-agenttemp",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-bridge",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-bridge",
+   "to": "proc",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-comfy",
+   "to": "config",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-comfy",
+   "to": "fs",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-comfy",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-comfy",
+   "to": "platform",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-comfy",
+   "to": "proc",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-loadnode",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-loadnode",
+   "to": "loadnode",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-loadnode",
+   "to": "lock",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-procwatch",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "opt-usage",
+   "to": "config",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "packageexport",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pending",
+   "to": "fs",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pieces",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pluginsource",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmdata",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmdata",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmdata",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "allowrules",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "autotasks",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "ledger",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "pmdata",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "stubs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmstart",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "machinesetup",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "pmstart",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pmwatch",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "backlog",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "docs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "verdict",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "preflight",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "proc",
+   "to": "config",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "proc",
+   "to": "platform",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "pytests",
+   "to": "tooldeps",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "records",
+   "to": "fs",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "records",
+   "to": "git",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "records",
+   "to": "proc",
+   "kind": "build",
+   "why": "foundation layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "content",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "guard",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "tooldeps",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "redfirst",
+   "to": "worktree",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "attribution",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "docs",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "gate",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "guard",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "preflight",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "reviewpack",
+   "to": "verdict",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "roster",
+   "to": "host",
+   "kind": "build",
+   "why": "policy layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "scrub",
+   "to": "forbidden",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "stackskill",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "strayrestore",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "strayrestore",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "strayrestore",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "strayrestore",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "stubs",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "stubs",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "stubs",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "stubs",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "attribution",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "commit",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "syncbase",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "testlist",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "testlist",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tooldeps",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "agentview",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "allowrules",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "autotasks",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "backlog",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "ci",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "commit",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "config",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "content",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "coordstate",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "dailyfull",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "delegations",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "docs",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "forbidden",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "fs",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "gate",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "git",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "host",
+   "kind": "build",
+   "why": "outer layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "hosts",
+   "kind": "build",
+   "why": "outer layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "hubapprove",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "hubsite",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "hubvalidate",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "kitcmd",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "kitrelease",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "landed",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "launcher",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "ledger",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "loadnode",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "lock",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "machinepaths",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "machinesetup",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "maintlint",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "modulemap",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pending",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pieces",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "platform",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pluginsource",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pmdata",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pmwatch",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "preflight",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "proc",
+   "kind": "build",
+   "why": "outer layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "pytests",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "redfirst",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "reviewpack",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "stackskill",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "strayrestore",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "stubs",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "syncbase",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "testlist",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "tooldeps",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "trailerscheck",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "tools",
+   "to": "worktree",
+   "kind": "build",
+   "why": "outer layer uses feature layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "trailerscheck",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "trailerscheck",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "config",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "fs",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "git",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "host",
+   "kind": "build",
+   "why": "feature layer uses policy layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "launcher",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "platform",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "proc",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "worktree",
+   "to": "records",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  }
+ ],
+ "ratchets": [
+  {
+   "id": "agentstart-build-preflight",
+   "from": "agentstart",
+   "to": "preflight",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "autotasks-build-hubsite",
+   "from": "autotasks",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "backlog-build-hubsite",
+   "from": "backlog",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "backlog-build-pmstart",
+   "from": "backlog",
+   "to": "pmstart",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "ci-build-tooldeps",
+   "from": "ci",
+   "to": "tooldeps",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "commit-build-hubsite",
+   "from": "commit",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "config-build-content",
+   "from": "config",
+   "to": "content",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "config-build-git",
+   "from": "config",
+   "to": "git",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "config-build-host",
+   "from": "config",
+   "to": "host",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "config-build-pmdata",
+   "from": "config",
+   "to": "pmdata",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-backlog",
+   "from": "gate",
+   "to": "backlog",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-guard",
+   "from": "gate",
+   "to": "guard",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-hubsite",
+   "from": "gate",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-loadnode",
+   "from": "gate",
+   "to": "loadnode",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-pluginsource",
+   "from": "gate",
+   "to": "pluginsource",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-redfirst",
+   "from": "gate",
+   "to": "redfirst",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-worktree",
+   "from": "gate",
+   "to": "worktree",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "git-build-backlog",
+   "from": "git",
+   "to": "backlog",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "git-build-host",
+   "from": "git",
+   "to": "host",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "git-build-kitlib-root",
+   "from": "git",
+   "to": "kitlib-root",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "git-build-worktree",
+   "from": "git",
+   "to": "worktree",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-backlog",
+   "from": "guard",
+   "to": "backlog",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-commit",
+   "from": "guard",
+   "to": "commit",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-delegations",
+   "from": "guard",
+   "to": "delegations",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-hubmcp",
+   "from": "guard",
+   "to": "hubmcp",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-hubsite",
+   "from": "guard",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-ledger",
+   "from": "guard",
+   "to": "ledger",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-lockmcp",
+   "from": "guard",
+   "to": "lockmcp",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-pluginsource",
+   "from": "guard",
+   "to": "pluginsource",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-pmdata",
+   "from": "guard",
+   "to": "pmdata",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "guard-build-worktree",
+   "from": "guard",
+   "to": "worktree",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "host-build-guard",
+   "from": "host",
+   "to": "guard",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "host-build-pluginsource",
+   "from": "host",
+   "to": "pluginsource",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "hubapprove-build-hubsite",
+   "from": "hubapprove",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "hubmcp-build-hubsite",
+   "from": "hubmcp",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "hubsite-build-hubjobs",
+   "from": "hubsite",
+   "to": "hubjobs",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "hubsite-build-maintlint",
+   "from": "hubsite",
+   "to": "maintlint",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "kitlib-root-build-host",
+   "from": "kitlib-root",
+   "to": "host",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "kitlib-root-build-lockmcp",
+   "from": "kitlib-root",
+   "to": "lockmcp",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "launcher-build-hubsite",
+   "from": "launcher",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "launcher-build-ledger",
+   "from": "launcher",
+   "to": "ledger",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "launcher-build-pmstart",
+   "from": "launcher",
+   "to": "pmstart",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "ledger-build-commit",
+   "from": "ledger",
+   "to": "commit",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "lock-build-host",
+   "from": "lock",
+   "to": "host",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pending-build-ledger",
+   "from": "pending",
+   "to": "ledger",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "platform-build-proc",
+   "from": "platform",
+   "to": "proc",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pluginsource-build-machinesetup",
+   "from": "pluginsource",
+   "to": "machinesetup",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pluginsource-build-pmstart",
+   "from": "pluginsource",
+   "to": "pmstart",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pmstart-build-hubsite",
+   "from": "pmstart",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pmstart-build-machinesetup",
+   "from": "pmstart",
+   "to": "machinesetup",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pmstart-build-pmwatch",
+   "from": "pmstart",
+   "to": "pmwatch",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pmwatch-build-hubsite",
+   "from": "pmwatch",
+   "to": "hubsite",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "records-build-gate",
+   "from": "records",
+   "to": "gate",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "stubs-build-machinesetup",
+   "from": "stubs",
+   "to": "machinesetup",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "tooldeps-build-pytests",
+   "from": "tooldeps",
+   "to": "pytests",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "trailerscheck-build-reviewpack",
+   "from": "trailerscheck",
+   "to": "reviewpack",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "worktree-build-backlog",
+   "from": "worktree",
+   "to": "backlog",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "worktree-build-commit",
+   "from": "worktree",
+   "to": "commit",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "worktree-build-pieces",
+   "from": "worktree",
+   "to": "pieces",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "pytests-tree-root",
+   "from": "pytests",
+   "to": "(root)",
+   "kinds": [
+    "tree"
+   ],
+   "goal": 0
+  }
+ ]
+}

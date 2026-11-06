@@ -123,8 +123,8 @@ snapshot's and GET health's `watcher` (Api.watcher_seen).
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill` and the usage
-crossover's words, is owed once per detail instead, beside the rest, and its text says what to
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`
+and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
 do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart

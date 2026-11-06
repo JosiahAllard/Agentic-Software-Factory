@@ -7,7 +7,7 @@ worktree shares with the kit's checkouts (docs/action-hub.md "Store upkeep").
   lock_age(common, now)              seconds since objects/maintenance.lock changed, or None
   lock_holders(snapshot, command_line)   [pid] of live git processes that may hold that lock
 
-Every kit git child runs with auto gc and auto maintenance off (kitlib.git.cmd), so nothing packs
+Kit git calls through kitlib.git.cmd run with auto gc and auto maintenance off, so nothing packs
 the store by itself any more; this job does, on the common dir of the PM data worktree only. One
 pass, in order:
 
@@ -39,19 +39,23 @@ to do is still a success (the commit graph is rewritten each time). A git step t
 lock refusal other than busy or hold, is a failure that names it; the other step still runs. A
 stop asked between the steps ends the pass as a skip.
 
-The git children run through kitlib.git.cmd.call, outside the slot's job: the lock counts the
-slot's cpu slots, and pack.threads keeps gc to that count, but its threads are not pinned to them.
-If the hub ends while gc runs, gc runs on (the child's job is not kill-on-close) and the slot ends
-with the hub.
+The gc runs in the slot's own job (Slot.start, with kitlib.git.cmd.child_env; Slot.wait watches
+it): on the slot's cores, ended by a stop of the run, and ended with the slot when the hub ends,
+so it never runs on after the landing resource is free. A gc ended that way can leave a temporary
+or .idx-less pack, which a later pass's scan names. The other git children run through
+kitlib.git.cmd.call.
 """
 import glob
 import os
+import subprocess
+import tempfile
 import time
 
 from kitlib import config as kconfig
 from kitlib import pmdata
-from kitlib.gate import land
-from kitlib.git import cmd
+from kitlib.config.types import ConfigError
+from kitlib.gate import land, runner
+from kitlib.git import cache, cmd
 from kitlib.git import repo as gitrepo
 from kitlib.hubsite import jobs
 from kitlib.lock import run as lockrun
@@ -93,6 +97,30 @@ def make(sources):
 def _run(args, cwd, timeout=cmd.GIT_TIMEOUT):
     """One git child: kitlib.git.cmd.call (the tests' seam)."""
     return cmd.call(args, cwd, timeout=timeout)
+
+
+def _slot_run(slot, args, cwd):
+    """cmd.Result of `git <args>` started in the booked slot's job (Slot.start, with
+    cmd.child_env over the slot's environment) and watched by Slot.wait, untimed: it ends with the
+    slot, and a stop of the run ends it (rc None). Its stdout is dropped; err is its stderr."""
+    env = cmd.child_env(cmd.scrubbed_env(slot.env), args)
+    cache.child(cmd.subcommand(args))
+    try:
+        with tempfile.TemporaryFile() as err:
+            try:
+                p = slot.start(['git'] + list(args), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=err)
+            except (OSError, LockError) as e:       # JobError is an OSError
+                return cmd.Result(None, b'', 'could not run git in %s: %s' % (cwd, e))
+            code, how = slot.wait(p)
+            err.seek(0)
+            text = err.read().decode('utf-8', 'replace').strip()
+    finally:
+        cache.child(cmd.subcommand(args))
+    if how == 'cancelled':
+        return cmd.Result(None, b'', 'the machine lock stopped run %s; git %s was ended'
+                          % (slot.id, cmd.subcommand(args)))
+    return cmd.Result(code, b'', text)
 
 
 def scan(common, now):
@@ -249,7 +277,7 @@ class StoreUpkeep(object):
                               % (e.code, e.message))
             return
         with slot:
-            r = _run(GC, self.root, timeout=None)
+            r = _slot_run(slot, GC, self.root)
         if r.rc == 0:
             notes.append('gc packed %d loose objects' % count)
         else:
@@ -257,11 +285,17 @@ class StoreUpkeep(object):
 
 
 def _repo_name(common):
-    """The lock record's repo name: the main checkout's folder name for a `.git` common dir."""
-    common = os.path.normpath(common)
-    if os.path.basename(common).lower() == '.git':
-        common = os.path.dirname(common)
-    return os.path.basename(common) or 'repo'
+    """The lock record's repo name, the one landings book under (kitlib.gate.runner.repo_name of
+    the main checkout: `.kit.json` repo.name, else its folder name). The main checkout is the
+    folder of a `.git` common dir; an unreadable config gives the folder name."""
+    top = os.path.normpath(common)
+    if os.path.basename(top).lower() == '.git':
+        top = os.path.dirname(top)
+    try:
+        cfg = kconfig.load(top)
+    except ConfigError:
+        return os.path.basename(top) or 'repo'
+    return runner.repo_name(cfg, top) or 'repo'
 
 
 def _finding_notes(findings):

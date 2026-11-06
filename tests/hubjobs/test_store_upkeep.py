@@ -47,7 +47,9 @@ class UpkeepCase(unittest.TestCase):
         self.book_error = None
         self.stop = threading.Event()
         self.events = []
+        self.slot_runs = []         # (slot, args) of each git child started in a slot's job
         for p in (mock.patch.object(su, '_run', side_effect=self.fake_run),
+                  mock.patch.object(su, '_slot_run', side_effect=self.fake_slot_run),
                   mock.patch.object(su.gitrepo, 'common_dir',
                                     side_effect=lambda root: (self.common, None))):
             p.start()
@@ -72,6 +74,10 @@ class UpkeepCase(unittest.TestCase):
         if sub == 'commit-graph':
             self.stop_after_graph()
         return cmd.Result(0, b'', '')
+
+    def fake_slot_run(self, slot, args, cwd):
+        self.slot_runs.append((slot, list(args)))
+        return self.fake_run(args, cwd, None)
 
     def stop_after_graph(self):
         pass
@@ -123,6 +129,20 @@ class Steps(UpkeepCase):
         self.assertEqual((kw['cores'], kw['wait_s']), (su.CORES, su.WAIT_S))
         self.assertNotIn('priority', kw)            # a landing plans ahead of it, not it of one
         self.assertIn('gc packed 6700 loose objects', out)
+        (slot, args), = self.slot_runs              # gc, and only gc, runs in the slot's job
+        self.assertIsInstance(slot, FakeSlot)
+        self.assertEqual(args, su.GC)
+
+    def test_the_lock_books_under_the_name_landings_use(self):
+        top = os.path.dirname(self.common)
+        cfg = mock.Mock(repo={'name': 'Kit-Name'})
+        with mock.patch.object(su.kconfig, 'load', return_value=cfg) as load:
+            self.run_job()
+        load.assert_called_with(top)
+        self.assertEqual(self.booked[-1][1], 'Kit-Name')
+        self.assertEqual(su._repo_name(self.common + os.sep), 'repo')   # no .kit.json: the folder
+        with mock.patch.object(su.kconfig, 'load', side_effect=su.ConfigError('bad')):
+            self.assertEqual(su._repo_name(self.common), 'repo')
 
     def test_a_busy_lock_or_a_hold_skips_the_gc_to_the_next_pass(self):
         for code in (EXIT_TIMEOUT, EXIT_RESERVED):
@@ -252,6 +272,52 @@ class StaleLock(UpkeepCase):
         listings = [[(20, 1, 'git.exe'), (21, 1, 'git.exe')], [(21, 1, 'git.exe')]]
         got = su.lock_holders(snapshot=lambda: listings.pop(0), command_line=lambda pid: None)
         self.assertEqual(got, [21])
+
+
+class LaunchSlot(object):
+    """A booked slot's start and wait (kitlib.lock.run.Slot), recording what was started."""
+    id = 'r-test'
+
+    def __init__(self, how='done', code=0, start_error=None):
+        self.env = {'MACHINE_LOCK_RUN': 'r-test', 'GIT_DIR': 'Z:/elsewhere', 'PATH': 'p'}
+        self.how, self.code, self.start_error = how, code, start_error
+        self.started = []
+
+    def start(self, argv, **kw):
+        if self.start_error:
+            raise self.start_error
+        self.started.append((argv, kw))
+        kw['stderr'].write(b'warning: one\n')
+        return 'proc'
+
+    def wait(self, p):
+        assert p == 'proc'
+        return self.code, self.how
+
+
+class SlotRun(unittest.TestCase):
+    def test_gc_starts_in_the_slots_job_with_the_git_child_environment(self):
+        slot = LaunchSlot()
+        r = su._slot_run(slot, su.GC, 'Z:/pm')
+        self.assertEqual(r, cmd.Result(0, b'', 'warning: one'))
+        (argv, kw), = slot.started
+        self.assertEqual(argv, ['git'] + su.GC)
+        self.assertEqual(kw['cwd'], 'Z:/pm')
+        env = kw['env']
+        self.assertEqual(env['MACHINE_LOCK_RUN'], 'r-test')     # a lock call inside it nests
+        self.assertNotIn('GIT_DIR', env)                        # scrubbed like every git child
+        pairs = {env['GIT_CONFIG_KEY_%d' % i]: env['GIT_CONFIG_VALUE_%d' % i]
+                 for i in range(int(env['GIT_CONFIG_COUNT']))}
+        self.assertEqual((pairs['maintenance.auto'], pairs['gc.auto']), ('false', '0'))
+
+    def test_a_stopped_run_or_a_start_that_fails_gives_no_exit_code(self):
+        r = su._slot_run(LaunchSlot(how='cancelled', code=1), su.GC, 'Z:/pm')
+        self.assertIsNone(r.rc)
+        self.assertIn('the machine lock stopped run r-test', r.err)
+        r = su._slot_run(LaunchSlot(start_error=OSError('no git')), su.GC, 'Z:/pm')
+        self.assertEqual((r.rc, r.err), (None, 'could not run git in Z:/pm: no git'))
+        r = su._slot_run(LaunchSlot(code=128), su.GC, 'Z:/pm')
+        self.assertEqual(r.rc, 128)
 
 
 class Make(unittest.TestCase):

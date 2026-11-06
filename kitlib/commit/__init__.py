@@ -841,18 +841,26 @@ def private_index(root, tmp, head, snap):
     return env, None
 
 
+EMPTY_BLOB_SHA1 = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+EMPTY_BLOB_SHA256 = '473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813'
+
+
 def _copied_index(root, env, head, snap):
     """The real index copied to env's GIT_INDEX_FILE, and the --index-info lines that put every
     path outside `snap` back to `head`'s entry there: removed first (every stage), then `head`'s
     mode and blob. None, with the copy removed, when the copy cannot be used: no real index, a
     copy whose trailing checksum does not match (torn), git cannot read it or `head`, or a path
-    --index-info cannot carry."""
+    this cannot carry exactly (not UTF-8, so it decodes with U+FFFD; a newline; a leading quote).
+    An entry holding the empty blob is always put back: `ls-files --stage` does not show an
+    intent-to-add entry's flag, and one would match a file empty at `head`, then be left out of
+    the commit's tree. The copy keeps the real index's mtime (copy2), which git's racy-clean
+    check compares entries against."""
     dest = env['GIT_INDEX_FILE']
     real, _why = repo.git_path(root, 'index')
     try:
         if not real:
             return None
-        shutil.copyfile(real, dest)
+        shutil.copy2(real, dest)
         if _torn(dest, len(head)):
             raise OSError('torn copy')
     except OSError:
@@ -863,26 +871,27 @@ def _copied_index(root, env, head, snap):
     if r.rc != 0 or t.rc != 0:
         _remove(dest)
         return None
-    ours = {}
-    for row in cmd.text(r.out).split('\0'):
-        meta, tab, path = row.partition('\t')
-        f = meta.split()
-        if tab and len(f) == 3:
-            ours.setdefault(path, set()).add((f[0], f[1], f[2]))
-    theirs = {}
-    for row in cmd.text(t.out).split('\0'):
-        meta, tab, path = row.partition('\t')
-        f = meta.split()
-        if tab and len(f) == 3:
-            theirs[path] = (f[0], f[2])
+    ours, theirs = {}, {}
+    for out, into in ((r.out, ours), (t.out, theirs)):
+        for row in cmd.text(out).split('\0'):
+            meta, tab, path = row.partition('\t')
+            f = meta.split()
+            if not (tab and len(f) == 3):
+                continue
+            if '�' in path or '\n' in path or path.startswith('"'):
+                _remove(dest)
+                return None
+            if into is ours:
+                ours.setdefault(path, set()).add((f[0], f[1], f[2]))
+            else:
+                theirs[path] = (f[0], f[2])
+    empty = EMPTY_BLOB_SHA256 if len(head) == 64 else EMPTY_BLOB_SHA1
     drop, put = [], []
     for path in sorted((set(ours) | set(theirs)) - set(snap)):
         want = theirs.get(path)
-        if want is not None and ours.get(path) == {(want[0], want[1], '0')}:
+        if (want is not None and want[1] != empty
+                and ours.get(path) == {(want[0], want[1], '0')}):
             continue
-        if '\n' in path or path.startswith('"'):
-            _remove(dest)
-            return None
         if path in ours:
             drop.append('0 %s\t%s' % ('0' * len(head), path))
         if want is not None:

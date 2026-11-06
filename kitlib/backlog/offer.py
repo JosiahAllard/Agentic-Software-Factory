@@ -280,13 +280,16 @@ class Offer(object):
 
 
 class PassedOver(object):
-    def __init__(self, rec, rank, why, blocker=None, pair=None):
+    def __init__(self, rec, rank, why, blocker=None, pair=None, waits=()):
         # `blocker`: `(who, record id)` of the live pull or other session's record whose scope or
         # resource this one collides with; None for any other reason (`blocker_summary` counts
         # these). `pair`: `(this record's member, the taken member)` of a scope collision
-        # (`narrowings` reads it); None for any other reason.
+        # (`narrowings` reads it); None for any other reason. `waits`: the live pulls of a scope
+        # collision this record outranks (`outranks`; `why` carries a `waits_mark` for each, and
+        # the fill watch tells the coordinator).
         self.rec, self.rank, self.why, self.blocker = rec, rank, why, blocker
         self.pair = pair
+        self.waits = list(waits)
 
 
 # --- resources ------------------------------------------------------------------------------------
@@ -389,11 +392,9 @@ def _narrowed(rec, scopes, against, against_by, live_ids, narrow, shared=()):
         return None
 
 
-def _waits_on(scopes, against, against_by, live_ids, shared=()):
-    """The live pulls (`live_ids`) that took an entry of `against` colliding with `scopes`, each
-    once in the order first hit, when every such entry was taken by one; else [] (a record
-    offered above, another session's or one waiting is in the way too, or a comparison is
-    undecidable)."""
+def _hitters(scopes, against, against_by, shared=()):
+    """The records that took an entry of `against` colliding with `scopes`, each once in the
+    order first hit; [] when a comparison is undecidable."""
     hitters = []
     try:
         for m, by in zip(against, against_by):
@@ -402,7 +403,25 @@ def _waits_on(scopes, against, against_by, live_ids, shared=()):
                 hitters.append(by)
     except smod.UndecidableScope:
         return []
-    return hitters if hitters and all(id(h) in live_ids for h in hitters) else []
+    return hitters
+
+
+def outranks(rec, other, ranks):
+    """True when `rec` ranks above the live pull `other` and is in a strictly higher priority
+    band or is a pre-emption: the pair `next` marks and the fill watch tells of. A tie within a
+    band is False."""
+    if not (is_ranked(rec) and is_ranked(other)) or rec.id not in ranks or other.id not in ranks:
+        return False
+    if ranks[rec.id] >= ranks[other.id]:
+        return False
+    return rec.has('preempt') or int(rec.get('priority')) < int(other.get('priority'))
+
+
+def waits_mark(rec, other):
+    """`next`'s mark on a record passed over on a live pull it outranks: `p<n> waits on p<m> pull
+    X on B (lands first)`. A notice only: the live pull is never stopped or overridden."""
+    return 'p%s waits on p%s pull %s on %s (lands first)' % (
+        rec.get('priority'), other.get('priority'), other.id, other.get('pulled_by') or '?')
 
 
 def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=None,
@@ -513,10 +532,14 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
         if hit and split is None:
             if own(rec):
                 holder, who = holders.get(hit[0][1]) or (None, None)
+                hitters = _hitters(scopes, against, against_by, shared)
+                waits = [h for h in hitters if id(h) in live_ids and outranks(rec, h, ranks)]
                 passed.append(PassedOver(rec, ranks.get(rid, '-'), 'scope %s collides with %s '
-                                         'already taken%s' % (hit[0][0], hit[0][1], ' by %s'
-                                         % holder if holder else ''), who, hit[0]))
-                waits_on = _waits_on(scopes, against, against_by, live_ids, shared)
+                                         'already taken%s%s' % (hit[0][0], hit[0][1], ' by %s'
+                                         % holder if holder else '', ''.join(
+                                             '; %s' % waits_mark(rec, h) for h in waits)),
+                                         who, hit[0], waits))
+                waits_on = hitters if all(id(h) in live_ids for h in hitters) else []
                 if waits_on and not (unmet is not None and unmet(rec)):
                     # Held only by live pulls: it still reserves its scope (no cascade: one
                     # passed over on this reserve hits a hitter that is no live pull).

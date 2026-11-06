@@ -57,15 +57,19 @@ _HEX = frozenset('0123456789abcdef')
 
 def head_branch(git_dir):
     """The branch named by `git_dir`'s HEAD file: (name, None), ('', None) for a detached HEAD,
-    or None when the file cannot be read or holds neither (the caller asks git)."""
+    or None when the file cannot be read or holds neither (the caller asks git). A reftable
+    repository (a reftable folder in the common dir) is None too: its HEAD file is a stub naming
+    `refs/heads/.invalid`, a name git refuses as a branch, and the real HEAD is in the table."""
     try:
         with open(os.path.join(git_dir, 'HEAD'), encoding='utf-8') as f:
             text = f.read().strip()
-    except (OSError, UnicodeDecodeError):
+        if os.path.isdir(os.path.join(_common(git_dir), 'reftable')):
+            return None
+    except (OSError, UnicodeDecodeError, _Fallback):
         return None
     if text.startswith('ref: refs/heads/'):
         name = text[len('ref: refs/heads/'):]
-        return (name, None) if name else None
+        return (name, None) if name and name != '.invalid' else None
     if len(text) in (40, 64) and all(c in _HEX for c in text):
         return '', None
     return None

@@ -65,6 +65,18 @@ class HeadBranchTest(unittest.TestCase):
         os.remove(os.path.join(self.git_dir, 'HEAD'))
         self.assertIsNone(place.head_branch(self.git_dir))
 
+    def test_a_reftable_stub_is_left_to_git(self):
+        self.assertIsNone(self.head('ref: refs/heads/.invalid\n'))   # git refuses the name
+        self.assertEqual(self.head('ref: refs/heads/main\n'), ('main', None))
+        os.makedirs(os.path.join(self.git_dir, 'reftable'))
+        self.assertIsNone(self.head('ref: refs/heads/main\n'))       # the real HEAD is in the table
+        # a linked worktree's reftable is in the common dir its commondir file names
+        linked = tempfile.mkdtemp(prefix='kit-head-linked-')
+        self.addCleanup(gitfixture.rmtree, linked)
+        write(os.path.join(linked, 'commondir'), self.git_dir + '\n')
+        write(os.path.join(linked, 'HEAD'), 'ref: refs/heads/main\n')
+        self.assertIsNone(place.head_branch(linked))
+
 
 class LocationTest(_Case):
     def test_a_good_pointer_is_checked_with_no_git_child(self):
@@ -235,8 +247,9 @@ class FsLocationTest(_Case):
     """place.fs_location with its default fallback: git answers what the files cannot."""
 
     def test_a_head_the_file_cannot_tell_is_asked_of_git(self):
-        # a HEAD file head_branch leaves to git (`ref:refs/heads/main` with no space, a reftable
-        # stub): git's branch decides, as kitlib.guard.context reads it
+        # a HEAD file head_branch answers None for (`ref:refs/heads/main` with no space; a
+        # reftable stub, test_a_reftable_stub_is_asked_of_git below): git's branch decides, as
+        # kitlib.guard.context reads it
         from kitlib.git import refs
         with mock.patch.object(place, 'head_branch', return_value=None), \
                 mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch:
@@ -253,6 +266,18 @@ class FsLocationTest(_Case):
             loc = place.fs_location(self.home)
         self.assertEqual(loc.state, kuser.BAD)
         self.assertIn("branch 'other'", loc.error)
+
+    def test_a_reftable_stub_is_asked_of_git(self):
+        # a reftable repository's HEAD file reads `ref: refs/heads/.invalid`: the branch is git's,
+        # never '.invalid' (git stubbed: the fake git has no reftable store)
+        from kitlib.git import refs
+        git_dir = os.path.join(self.pm, '.git')
+        write(os.path.join(git_dir, 'HEAD'), 'ref: refs/heads/.invalid\n')
+        os.makedirs(os.path.join(git_dir, 'reftable'))
+        with mock.patch.object(refs, 'current_branch', return_value=('main', None)) as branch:
+            loc = place.fs_location(self.home)
+        self.assertEqual(loc.state, kuser.OK, loc.error)
+        branch.assert_called_once()
 
     def test_a_head_the_file_names_starts_no_git(self):
         with self.no_git():

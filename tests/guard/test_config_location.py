@@ -231,5 +231,34 @@ class RefusalLogLocationTest(_Case):
         self.assertIn('HEAD file cannot tell', loc.error)
 
 
+class FsLocationTest(_Case):
+    """place.fs_location with its default fallback: git answers what the files cannot."""
+
+    def test_a_head_the_file_cannot_tell_is_asked_of_git(self):
+        # a HEAD file head_branch leaves to git (`ref:refs/heads/main` with no space, a reftable
+        # stub): git's branch decides, as kitlib.guard.context reads it
+        from kitlib.git import refs
+        with mock.patch.object(place, 'head_branch', return_value=None), \
+                mock.patch.object(refs, 'current_branch', wraps=refs.current_branch) as branch:
+            loc = place.fs_location(self.home)
+        self.assertEqual((loc.state, loc.pm_data['path']), (kuser.OK, os.path.normpath(self.pm)))
+        branch.assert_called_once()
+        self.assertEqual(os.path.normcase(os.path.normpath(branch.call_args[0][0])),
+                         os.path.normcase(os.path.normpath(self.pm)))
+
+    def test_git_s_branch_is_the_one_checked(self):
+        from kitlib.git import refs
+        with mock.patch.object(place, 'head_branch', return_value=None), \
+                mock.patch.object(refs, 'current_branch', return_value=('other', None)):
+            loc = place.fs_location(self.home)
+        self.assertEqual(loc.state, kuser.BAD)
+        self.assertIn("branch 'other'", loc.error)
+
+    def test_a_head_the_file_names_starts_no_git(self):
+        with self.no_git():
+            loc = place.fs_location(self.home)
+        self.assertEqual(loc.state, kuser.OK)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -89,21 +89,30 @@ def classify(path, fallback=None, environ=None, owned=None):
 
 def fs_location(home, fallback=None):
     """kitlib.config.user.locate(home) with the PM-repo pointer checked through `classify` (this
-    module's reading, `fallback` where it hands a layout to git: default repo.classify, so git runs
-    only for those layouts) and the work tree's HEAD file. With a fallback that answers None (no
-    git child at all) a pointer the filesystem cannot check reads as BAD."""
+    module's reading, `fallback` where it hands a layout to git) and the work tree's HEAD file
+    (head_branch). With the default fallback, git: repo.classify for the layouts this module hands
+    on, and refs.current_branch when the HEAD file does not say (as kitlib.guard.context reads
+    it), so git runs only for those. A caller's own fallback keeps the branch to the HEAD file: one
+    that answers None (no git child at all, kitlib.guard.refusal_log) makes a pointer the
+    filesystem cannot check read as BAD."""
     from kitlib.config import pointer, user
+    from kitlib.git import refs
+    places = {}
 
     def check(path):
-        found = classify(path, fallback=fallback)
-        if found is None:
-            return repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
-        return found
+        if path not in places:
+            found = classify(path, fallback=fallback)
+            if found is None:
+                found = repo.Place(repo.UNKNOWN, None, 'the filesystem cannot tell', None, None)
+            places[path] = found
+        return places[path]
 
     def branch(path):
         found = check(path)
         answer = head_branch(found.git_dir) if found.git_dir else None
-        return answer if answer is not None else (None, 'its HEAD file cannot tell')
+        if answer is not None:
+            return answer
+        return refs.current_branch(path) if fallback is None else (None, 'its HEAD file cannot tell')
     return user.locate(home, ptr=pointer.read(classify=check, branch=branch))
 
 

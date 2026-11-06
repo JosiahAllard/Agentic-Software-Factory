@@ -128,10 +128,12 @@ class Follow(unittest.TestCase):
 
     def test_the_machine_config_comes_from_the_hook_environments_home_only(self):
         self.assertIn('error', headerfollow._Ctx('C:/kit', {}).user())
-        with mock.patch('kitlib.config.user.user_config', return_value={'plugin': None}) as cfg:
-            self.assertEqual(headerfollow._Ctx('C:/kit', {'USERPROFILE': self.root}).user(), {'plugin': None})
-        self.assertEqual(cfg.call_args[0], (self.root,))
-        self.assertIn('location', cfg.call_args[1])
+        where = object()                              # the filesystem reading's Location
+        with mock.patch('kitlib.guard.place.fs_location', return_value=where) as fs:
+            with mock.patch('kitlib.config.user.user_config', return_value={'plugin': None}) as cfg:
+                self.assertEqual(headerfollow._Ctx('C:/kit', {'USERPROFILE': self.root}).user(), {'plugin': None})
+        fs.assert_called_once_with(self.root)
+        cfg.assert_called_once_with(self.root, location=where)
 
 
 class SubagentStart(unittest.TestCase):

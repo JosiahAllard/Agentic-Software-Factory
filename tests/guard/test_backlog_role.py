@@ -1290,12 +1290,17 @@ class Unread(Base):
 
     def test_a_python_script_in_a_folder_the_guard_cannot_place_is_judged(self):
         # a worker's `(cd "$R/old" && python tools/test_log_tokens.py ...)` crashed the guard
-        # (AttributeError: the unplaced script has no path to name); it reads nothing, as a missing script
+        # (AttributeError: the unplaced script has no path to name), which the hook answers as a
+        # guard-error deny; it reads nothing, as a missing script
         self.script('gen.py', self.PRINTS)
         for text in ('(cd "$R" && python gen.py)', '{ cd "$R"; python gen.py; }',
                      'echo "$(cd "$R" && python gen.py)"'):
             with self.subTest(text):
-                self.allowed(self.cmd(text))
+                try:
+                    d = self.cmd(text)
+                except Exception as e:          # noqa: BLE001 - a raise is the guard-error deny
+                    self.fail('the guard raised %s: %s' % (type(e).__name__, e))
+                self.allowed(d)
 
     def test_the_kits_own_python_is_not_judged(self):
         code = 'from kitlib.backlog import policy\n'

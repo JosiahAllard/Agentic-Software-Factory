@@ -11,6 +11,8 @@
   apilock  the api's machine-lock routes: the lock reads and owner writes, each a handler
   apifindings the api's finding routes: the maintenance lint's findings and the owner's marks
   apiskills the api's skill-edit routes: the owner's edits of a kit skill, draft to committed
+  apipages the api's page routes: publish, place, read and delete an HTML page and its card
+  apilog   the api's log routes: the inbox, the landing feed and the hand-off records
   apisched the api's schedule routes: the owner's schedules for the kit's automatic tasks
   lockdoor the api's door to the machine lock, in-process: revision, view, stats, owner writes
   pagecheck what a published page's HTML may hold: one check, refused whole, never stripped

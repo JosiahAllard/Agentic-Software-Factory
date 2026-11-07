@@ -11,7 +11,7 @@ import urllib.parse
 from unittest import mock
 
 from kitlib.gate import result
-from kitlib.hubsite import api, auth, client, landings, schema, serve
+from kitlib.hubsite import api, apilog, auth, client, landings, schema, serve
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import Store
 
@@ -212,7 +212,7 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual(self.call('GET', '/pending', AGENT)[1]['items'], [])
 
     def test_ids_sort_by_number_and_the_snapshot_and_list_carry_the_newest_feed_max(self):
-        with mock.patch.object(api, 'FEED_MAX', 3):
+        with mock.patch.object(api, 'FEED_MAX', 3), mock.patch.object(apilog, 'FEED_MAX', 3):
             for i in range(11):
                 self.assertEqual(landings.post([event(branch='kit/b%d' % i)],
                                                client=self.hub.client), [])

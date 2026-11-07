@@ -226,6 +226,37 @@ def _put_pinned(api, coll, doc_id, fields, pin):
     return api.written(r)
 
 
+def _agent_from(text):
+    """The `from` of a to-do an agent adds: text trimmed, AGENT_FROM when that leaves nothing.
+    Only printable ASCII with single spaces inside is a name (so no character a reader cannot
+    see or tell from another), and no spelling of OWNER_FROM is an agent's."""
+    name = text.strip()
+    if not name:
+        return AGENT_FROM
+    if not _NAME.fullmatch(name):
+        raise _invalid('from is a name in printable ASCII with single spaces inside, not %s'
+                       % ascii(name), 'from')
+    if name.replace(' ', '').casefold() == OWNER_FROM:
+        raise _invalid('from: %s marks a to-do the owner wrote; an agent cannot use it'
+                       % OWNER_FROM, 'from')
+    return name
+
+
+def _session_from(api, who, what):
+    """who, a `from` that names a session: AGENT_FROM or a launcher session key, read now
+    (Api.read_session_keys); else `invalid`, field from, naming the known keys, never the file.
+    `what` names the document in the refusal (`a question`)."""
+    if who != AGENT_FROM:
+        keys, why = api.read_session_keys()
+        if who not in keys:
+            unread = ('; the launcher\'s session keys could not be read (%s), so only %s is '
+                      'known' % (why, AGENT_FROM)) if why else ''
+            raise _invalid('from %s is not a session the hub knows: %s comes from a '
+                           'launcher session key (known: %s)%s'
+                           % (ascii(who), what, ', '.join(sorted(keys)), unread), 'from')
+    return who
+
+
 # A record route's path segments, checked before the view is asked: what a repository name or a
 # record id may be (kitlib.hubsite.backlog checks each again, more narrowly). The refusal is a
 # fixed phrase: it never repeats the segment.

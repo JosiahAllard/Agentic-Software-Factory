@@ -15,7 +15,7 @@ from unittest import mock
 
 from kitlib import hubvalidate
 from kitlib.backlog import store as smod
-from kitlib.hubsite import api, approvals, derived, push, recordwrite, schema, serve, todosteps
+from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve, todosteps
 from kitlib.hubsite import backlog as hbacklog
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
@@ -1129,7 +1129,7 @@ class PagesTest(ApiCase):
             return r
         answers = []
         self.store.get, self.store.put = get, put
-        with mock.patch.object(api, 'PAGES_LOCK', Watched()):
+        with mock.patch.object(apipages, 'PAGES_LOCK', Watched()):
             a = self.publish(html='<p>A</p>', title='A', if_version=1)
             b_thread[0].join(10)
         self.store.get, self.store.put = real_get, real_put

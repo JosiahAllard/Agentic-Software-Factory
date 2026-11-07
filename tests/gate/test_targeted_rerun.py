@@ -283,8 +283,10 @@ class RerunCase(test_land.LandCase):
         self.set_state(state)
         return self.branch('feature', {'flaky_mod.py': FLAKY, 'MARK': 'here\n'})
 
-    def red(self, wt):
-        out = runner.branch_gate(wt, full=True, book_kw=self.book_kw,
+    def red(self, wt, again=False):
+        """A red `--full` gate; `again` repeats one of the same tree (docs/gate.md "An unchanged
+        red tree")."""
+        out = runner.branch_gate(wt, full=True, book_kw=self.book_kw, again=again,
                                  log_dir=os.path.join(self.tmp, 'own'))
         self.assertEqual(out.code, G.FAILED, out.lines)
         return out
@@ -550,7 +552,7 @@ class Real(RerunCase):
     def test_two_red_runs_of_one_test_are_real_and_never_land(self):
         wt, tip = self.work('red')
         self.red(wt)
-        self.red(wt)
+        self.red(wt, again=True)
         out = self.rerun(wt)
         self.assertEqual(out.code, G.FAILED, out.lines)
         self.assertTrue(out.lines[0].startswith('RERUN REAL: %s failed on this tip' % ID),

@@ -1069,8 +1069,14 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     results = _with_reused(results, chosen, reused)
     _keep(plan, results, logs, say)
     ok, line = verdict(results, empty)
+    ended = []      # _unclean read once: the mark, the red run and the gate-OK record share it
+
+    def unclean():
+        if not ended:
+            ended.append(_unclean(top, head, entries))
+        return ended[0]
     if key is not None and not nothing_ran(results):
-        _mark(top, key, head, branch, entries, results, logs, say)
+        _mark(top, key, head, branch, results, logs, unclean(), say)
     lines = [line, 'logs: %s' % logs]
     facts = dict(verdict=line, results=results, record=None, no_record=None, head=head, base=mb,
                  log_dir=logs, changed=changed, windows=watched.get('windows'), full_hint=hint)
@@ -1078,27 +1084,18 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         facts['no_record'] = 'the gate failed'
         if whole:
             facts['rerun_record'] = _red_record(top, cfg, head, mb, started, results, chosen,
-                                                logs, entries, say)
+                                                logs, unclean(), say)
         return G.Outcome(G.FAILED, lines, **facts)
     refused = None if empty else nothing_ran(results)
     if refused:
         facts['no_record'] = 'no gate step ran'
         return G.Outcome(G.REFUSED, [refused, 'logs: %s' % logs], **facts)
-    after, _ = gitstatus.status(top)
-    head_now, _ = refs.head(top)
-    no = None
     if only:
         no = '--only gates part of the tree'
     elif partial:
         no = partial
-    elif entries:
-        no = 'the work tree had uncommitted changes when the gate started'
-    elif after != []:
-        no = 'the work tree changed while the gate ran'
-    elif head_now != head:
-        no = 'HEAD moved while the gate ran (%s -> %s)' % (head[:10], (head_now or '?')[:10])
     else:
-        no = stash.appeared(top)      # empty when the gate started (above); clean and at HEAD now
+        no = unclean()
     if no:
         facts['no_record'] = no
         lines.append('no gate-OK record: %s' % no)
@@ -1132,7 +1129,8 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
 def _unclean(top, head, entries):
     """Why a gate that started with git status `entries` names no one commit's tree now: the
     tree had uncommitted changes at the start, changed while the gate ran, HEAD moved, or a
-    stash entry appeared; '' or None when none of these."""
+    stash entry appeared (the stash was empty when the gate started: stash.refusal); '' or None
+    when none of these. Read once per gate (_gate_checkout `unclean`): it reads the stash."""
     if entries:
         return 'the work tree had uncommitted changes when the gate started'
     after, _ = gitstatus.status(top)
@@ -1140,7 +1138,7 @@ def _unclean(top, head, entries):
         return 'the work tree changed while the gate ran'
     head_now, _ = refs.head(top)
     if head_now != head:
-        return 'HEAD moved while the gate ran'
+        return 'HEAD moved while the gate ran (%s -> %s)' % (head[:10], (head_now or '?')[:10])
     return stash.appeared(top)
 
 
@@ -1180,12 +1178,12 @@ def _unchanged(top, key, tree, steps, branch, head, flags, say):
                 rerun_way, top, ' ' + flags if flags else '')]
 
 
-def _mark(top, key, head, branch, entries, results, logs, say):
+def _mark(top, key, head, branch, results, logs, unclean, say):
     """The red-tree mark of a branch gate that ran (rerun.mark), on the gate-OK record's own
-    terms (_unclean): a gate of no one commit's tree writes none. Nothing here changes the
-    gate's verdict; a mark that cannot be written is one WARNING."""
+    terms (`unclean`, _unclean's answer): a gate of no one commit's tree writes none. Nothing
+    here changes the gate's verdict; a mark that cannot be written is one WARNING."""
     from kitlib.gate import rerun   # rerun imports this module
-    if _unclean(top, head, entries):
+    if unclean:
         return
     tree, _ = refs.tree_of('HEAD', top)
     if not tree:
@@ -1198,12 +1196,12 @@ def _mark(top, key, head, branch, entries, results, logs, say):
         say('WARNING: no red-tree mark: %s' % e)
 
 
-def _red_record(top, cfg, head, mb, started, results, chosen, logs, entries, say):
+def _red_record(top, cfg, head, mb, started, results, chosen, logs, no, say):
     """The red run of a failed `--full` gate (kitlib.gate.rerun.record_red), written on the gate-OK
-    record's own terms: the tree clean when the gate started and when it ended, HEAD unmoved and
-    the stash empty. Its path, or None (said). Nothing here changes the gate's verdict."""
+    record's own terms (`no`, _unclean's answer): the tree clean when the gate started and when it
+    ended, HEAD unmoved and the stash empty. Its path, or None (said). Nothing here changes the
+    gate's verdict."""
     from kitlib.gate import rerun   # rerun imports this module
-    no = _unclean(top, head, entries)
     if no:
         say('no red-run record for a targeted rerun: %s' % no)
         return None

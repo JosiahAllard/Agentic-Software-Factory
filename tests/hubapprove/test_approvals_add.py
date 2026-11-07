@@ -1,4 +1,4 @@
-"""kitlib.hubapprove and `tools/hub.py approvals add` (docs/action-hub.md "approvals/A-NNN"): a
+"""kitlib.hubapprove and `tools/hub.py approvals add` (docs/hub-approvals.md "approvals/A-NNN"): a
 request built from a throwaway checkout, posted to a real kitlib.hubsite.api over a stand-in
 transport, decided by the owner, and then accepted by the consumer's own checks
 (kitlib.commit.approval). What is refused here is refused before any call."""

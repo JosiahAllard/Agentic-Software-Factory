@@ -1876,7 +1876,7 @@ class SecondFixTest(ApiCase):
 
 class OwnTodoTest(ApiCase):
     """The owner's own to-dos: urgent, edit, delete. A to-do an agent gave is not theirs to edit,
-    only to delete while it is open (docs/action-hub.md, todos: "the owner can set it on their
+    only to delete while it is open (docs/hub-records.md, todos: "the owner can set it on their
     own items")."""
 
     def mine(self, **kw):
@@ -2534,7 +2534,7 @@ class BindViews(object):
 
 class QuestionRecordTest(ApiCase):
     """A question bound to a backlog record: `record` {repo, id}, checked against the configured
-    repositories when it is asked and when it is edited (docs/action-hub.md "questions/Q-NNN")."""
+    repositories when it is asked and when it is edited (docs/hub-questions.md "questions/Q-NNN")."""
 
     def setUp(self):
         ApiCase.setUp(self)
@@ -2666,7 +2666,7 @@ class QuestionRecordTest(ApiCase):
 
 
 class QuestionClassTest(ApiCase):
-    """A question bound to no record declares its class (docs/action-hub.md "A question's
+    """A question bound to no record declares its class (docs/hub-questions.md "A question's
     class"): rule, machine, cross-repo or go."""
 
     def setUp(self):
@@ -2780,7 +2780,7 @@ class SweepViews(BindViews):
 
 class QuestionBindTest(ApiCase):
     """questions bind: the PM pairs each parked or owner-blocked record with the open question it
-    cites (docs/action-hub.md "Binding the open questions")."""
+    cites (docs/hub-questions.md "Binding the open questions")."""
 
     def setUp(self):
         ApiCase.setUp(self)
@@ -3523,7 +3523,7 @@ class PushedRouteTest(RouteCase):
 
 
 class ScheduleTest(ApiCase):
-    """POST schedules (the owner's) and GET schedules (anybody's): docs/action-hub.md
+    """POST schedules (the owner's) and GET schedules (anybody's): docs/hub-records.md
     "schedules/<task>-<repo>"."""
 
     def setUp(self):
@@ -4463,7 +4463,7 @@ class FileViews(BindViews):
 class FilingTest(ApiCase):
     """An answer to a question bound to a record is filed into the record (record_answer) and
     the question marked `filed`; a failure leaves it `answered`, with `filing`, for the PM; a
-    crash anywhere is mended by POST questions/file (docs/action-hub.md "A question bound to a
+    crash anywhere is mended by POST questions/file (docs/hub-questions.md "A question bound to a
     record")."""
 
     def setUp(self):
@@ -4654,7 +4654,7 @@ class FilingTest(ApiCase):
         self.assertEqual(self.doc(qid), first, 'nothing written: the first `at` is kept')
         self.assertEqual(self.store.revision, revision)
         # the version the asker read still holds, but an answer that may still file is not
-        # logged before it does (docs/action-hub.md "Filing the answer")
+        # logged before it does (docs/hub-questions.md "Filing the answer")
         self.refused('invalid', 'filing', 'POST', '/questions/%s/log' % qid, AGENT,
                      {'if_version': first['version']})
         self.assertEqual(self.doc(qid), first)
@@ -4930,7 +4930,7 @@ class StateViews(FileViews):
 
 class FiledAsTest(ApiCase):
     """A filed question's `filed_as`: what the answer did to its record, from the record's
-    state read before and after the filing (docs/action-hub.md "Push notifications")."""
+    state read before and after the filing (docs/hub-push.md "Push notifications")."""
 
     def setUp(self):
         ApiCase.setUp(self)
@@ -4987,7 +4987,7 @@ class FiledAsTest(ApiCase):
 class StandingRuleTest(ApiCase):
     """The owner's standing-rule box: `standing` true with an answer to a question bound to a
     record, or alone on one answered already (the promote): `standing` {at, via}, so the PM
-    logs it (docs/action-hub.md "A standing rule")."""
+    logs it (docs/hub-questions.md "A standing rule")."""
 
     def setUp(self):
         ApiCase.setUp(self)

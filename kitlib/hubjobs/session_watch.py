@@ -1,6 +1,6 @@
 """kitlib.hubjobs.session_watch: the hub server's session watch job. It runs pm_watch's checks
 (kitlib.pmwatch Watcher, docs/pm-watch.md) on the code the hub loaded and pushes their events to
-the PM as job pushes (docs/action-hub.md "Timed jobs").
+the PM as job pushes (docs/hub-push.md "Timed jobs").
 
   make(sources) -> jobs.Job      the job, or None when the default host has no watcher readers
   SessionWatch(host, ...)        its run(ctx): one Watcher poll, and the push of its events

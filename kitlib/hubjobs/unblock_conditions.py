@@ -1,5 +1,5 @@
 """kitlib.hubjobs.unblock_conditions: the hub server's check of the backlog's hold end conditions
-(docs/action-hub.md "Timed jobs", docs/backlog.md "block --until").
+(docs/hub-push.md "Timed jobs", docs/backlog.md "block --until").
 
   make(sources) -> jobs.Job | None   the job; None when launcher.repos names no repository
   UnblockJob(roots, readers, ...)    its run(ctx): one pass

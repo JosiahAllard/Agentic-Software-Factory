@@ -1,4 +1,4 @@
-"""Skill edits (docs/action-hub.md "skill_edits/E-NNN"): the owner's new text for one kit skill's
+"""Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"): the owner's new text for one kit skill's
 source, which an agent commits. Who may write one, the text's caps, superseded on a source that
 moved on, the done route's own read of the branch, the E- id, its pending item and its push, and
 the hub's read of the kit checkout (kitlib.hubsite.serve)."""

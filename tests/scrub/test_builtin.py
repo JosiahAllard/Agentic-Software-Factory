@@ -28,7 +28,9 @@ ID_SHAPE_FOLDERS = (
     ('tests/hubvalidate/*', 'tests of the hub id validator, which checks the id shape'),
     ('tests/guard/test_rules_hub*.py', "tests of the guard's hub rules, which match the id shape"),
     ('tools/hub.py', "the hub CLI's help and examples show question ids"),
-    ('docs/action-hub.md', "the hub's doc: question ids are its data"),
+    ('docs/hub-pm.md', "the hub's doc: question ids are its data"),
+    ('docs/hub-questions.md', "the hub's doc: question ids are its data"),
+    ('docs/hub-skill-pages.md', "the hub's doc: question ids are its data"),
 ) + tuple((folder + '*', why) for folder, why in FIXTURE_FOLDERS)
 
 ALLOWED = tuple(('%s' % glob, 'record-id', '', why) for glob, why in ID_SHAPE_FOLDERS) + (

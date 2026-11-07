@@ -92,7 +92,7 @@ _APPROVAL_RECORD = dict(_RECORD, description=_WAITS_SAYS % (
 _RECORD_EDIT = dict(_RECORD, type=["object", "null"],
                     description=_RECORD_SAYS + " null unbinds the question (with class, unless "
                                                "it has one).")
-_CLASS_SAYS = ("What kind of question it is, for one bound to no record (docs/action-hub.md "
+_CLASS_SAYS = ("What kind of question it is, for one bound to no record (docs/hub-questions.md "
                "\"A question's class\"): rule (a standing rule, or a delegation run line), "
                "machine, cross-repo, or go (a one-off landing or archive go). A question needs "
                "record or class, never both: refused (invalid, field class) otherwise.")

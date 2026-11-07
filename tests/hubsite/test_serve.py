@@ -1359,7 +1359,7 @@ class ReasonCase(ServeCase):
         hub.close()
 
     def test_the_built_hub_files_an_answer_off_the_request_thread(self):
-        # without it the owner's answer waits for the record's fetch and push (docs/action-hub.md
+        # without it the owner's answer waits for the record's fetch and push (docs/hub-questions.md
         # "Filing the answer", KIT-HUB-COMPLETE-FREEZE)
         hub = self.build()
         later = hub.api.file_later

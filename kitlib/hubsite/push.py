@@ -1,5 +1,5 @@
 """Push notifications: the hub tells the session that asked, and the PM, when the owner acts
-(docs/action-hub.md "Push notifications"). Not the store's git push (settings `push`).
+(docs/hub-push.md "Push notifications"). Not the store's git push (settings `push`).
 
 One PushWorker thread per hub (serve.build, when Sources.push and Sources.push_dir are set). It
 watches the store's events and sends a short fixed text through the host's delivery object; the
@@ -49,7 +49,7 @@ Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_
 An answer that is a standing rule (`standing`) also goes to the PM, who logs it, whatever its
 filed_as; a `standing` change of an answer already pushed adds the PM to the push still owed.
 
-Done by the hub (docs/action-hub.md "Done by the hub"): a filed answer auto_done_ok passes (a
+Done by the hub (docs/hub-questions.md "Done by the hub"): a filed answer auto_done_ok passes (a
 known filed_as, no standing rule, no option or answer that is a delegation run line) is marked
 done by this worker once its asker has it, never in the filing's own write: status `done`,
 done_by `hub`, done_why `filed into <repo>:<id>`, done_at, via `hub-push`. The entry keeps the

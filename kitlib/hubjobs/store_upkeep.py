@@ -1,5 +1,5 @@
 """kitlib.hubjobs.store_upkeep: the hub server's daily upkeep of the git object store the PM data
-worktree shares with the kit's checkouts (docs/action-hub.md "Store upkeep").
+worktree shares with the kit's checkouts (docs/hub-push.md "Store upkeep").
 
   make(sources) -> jobs.Job | None   the job; None when this machine has no PM data worktree
   StoreUpkeep(root, book=None, clock=None, holders=None)   its run(ctx): one pass

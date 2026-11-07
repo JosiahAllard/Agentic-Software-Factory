@@ -1,7 +1,7 @@
 """An approval the owner decided and that is not consumed is pending: for the PM and for the
 coordinator of its repository (by its `repo`), and the push tells both, once at the decision and
 once more 4 h before it expires while it is still approved (30 days after the decision for a
-file approval, 24 h for an op one; docs/action-hub.md "Who handles a pending item" and "Push
+file approval, 24 h for an op one; docs/hub-pm.md "Who handles a pending item" and docs/hub-push.md "Push
 notifications")."""
 import datetime
 import json

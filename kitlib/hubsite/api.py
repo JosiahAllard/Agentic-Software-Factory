@@ -140,7 +140,7 @@ the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or n
 skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
 else null (_lint_runs); no view, or one that fails, is an empty list.
 
-Landings (docs/action-hub.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
+Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
 landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
 record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
@@ -152,7 +152,7 @@ lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX);
 carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
 changes or deletes one.
 
-Hand-offs (docs/action-hub.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
+Hand-offs (docs/hub-approvals.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
 checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
 kind, state_path}, all required. from is a session key checked as a question's is (a launcher
 session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
@@ -163,7 +163,7 @@ GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the
 path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
 deletes one, and GET snapshot leaves them out.
 
-Skill edits (docs/action-hub.md "skill_edits/E-NNN"). The owner writes a new text for one kit
+Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"). The owner writes a new text for one kit
 skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
 repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
 listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
@@ -1073,7 +1073,7 @@ def _holders(api, repo, rid):
 def _bound(api, value, what='question'):
     """The `record` a question (or `what`: an agent's to-do, a file approval) is bound to, {repo,
     id}, after the configured repository's
-    backlog was read now through the `record` view (docs/action-hub.md "questions/Q-NNN"): repo
+    backlog was read now through the `record` view (docs/hub-questions.md "questions/Q-NNN"): repo
     is the configured name, whatever its case was as given. Refused, field record: `invalid` for
     another shape, a name that can be no repository or record id, and a completed record;
     `not_found` for a repository that is not configured and a record its backlog does not have;
@@ -1120,7 +1120,7 @@ def _bound(api, value, what='question'):
     return {'repo': name, 'id': rid}
 
 
-# The class a question bound to no record declares (docs/action-hub.md "A question's class"):
+# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
 # a standing rule (a delegation run line too), the machine, work across repositories, or a
 # one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
 QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
@@ -1190,7 +1190,7 @@ def questions_add(api, req):
 
 def questions_answer(api, req):
     """The owner's answer: `choice`, an optional `note`, and `standing` true when the answer is
-    to be a standing rule (a question bound to a record only: the PM logs it, docs/action-hub.md
+    to be a standing rule (a question bound to a record only: the PM logs it, docs/hub-questions.md
     "A standing rule"); a re-answer with no `standing` drops the mark. `standing` true with no
     `choice` is the promote of an answer already given (_promote). A question the hub marked
     done (_hub_done) takes a new answer too: it is reopened, its done fields cleared."""
@@ -1248,7 +1248,7 @@ def questions_answer(api, req):
         if api.file_later is not None:
             # the record write fetches and pushes (seconds, a minute when the remote is slow):
             # the answer returns now, stored, and its filing marks the question later, which
-            # the page reads through its wait and snapshot (docs/action-hub.md "Filing the answer")
+            # the page reads through its wait and snapshot (docs/hub-questions.md "Filing the answer")
             via = _via(req)
             api.file_later(doc_id, lambda: file_answer(api, doc_id, via))
             return out
@@ -1305,7 +1305,7 @@ def _filed_as(before, after):
     filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
     hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
-    could not be read (the push then treats it as before this field: docs/action-hub.md "Push
+    could not be read (the push then treats it as before this field: docs/hub-push.md "Push
     notifications")."""
     if before == 'pulled':
         return 'pulled'
@@ -1320,7 +1320,7 @@ def _filed_as(before, after):
 
 def file_answer(api, doc_id, via='api', full=False):
     """File the stored answer of question doc_id into the record it is bound to, through the
-    `record_answer` view, then mark the question (docs/action-hub.md "A question bound to a
+    `record_answer` view, then mark the question (docs/hub-questions.md "A question bound to a
     record"): status `filed` with `filed_at`, or, when the view refused, status `answered` kept
     with `filing` {at, code, message} (message a fixed phrase of FILING_SAYS), so the PM still
     sees it pending. Both marks are pinned to the version read first: a question that moved
@@ -1857,7 +1857,7 @@ FINAL_FILING = ('not_found', 'invalid', 'no_store')
 
 def _unfiled(d, doc_id, b, verb):
     """The changes `unfiled` adds to log or done (`verb`) of question d, which an answer bound to
-    a record and not filed must carry (docs/action-hub.md "Filing the answer"): refused
+    a record and not filed must carry (docs/hub-questions.md "Filing the answer"): refused
     `invalid`, field `filing`, while its filing may still succeed (a code not in FINAL_FILING, or
     none yet: file it first); field `unfiled` for a final code with no or a blank `unfiled`, and
     for `unfiled` on any question whose filing did not fail. Else {unfiled_why} or {}."""
@@ -1954,7 +1954,7 @@ def _promote(api, req, doc_id, b):
     answer already given to a question bound to a record a standing rule (the filed card's
     promote button), the answer kept as it is and not filed again: `standing` {at, via}, so the
     question is pending for the PM, who logs it into the ledger, as well as for its asker
-    (docs/action-hub.md "A standing rule"). One the hub marked done (_hub_done) is put back to
+    (docs/hub-questions.md "A standing rule"). One the hub marked done (_hub_done) is put back to
     `filed`, its done fields cleared, so it is pending for the PM. Refused (`invalid`) for a
     question that is not answered, filed or marked done by the hub, one bound to no record (the
     PM logs every such answer already) and one already standing."""
@@ -2770,7 +2770,7 @@ def record_new(api, req):
     return _record_view(api, 'record_template', _segment(req, 'repo'))
 
 
-# ---- the owner's record writes (docs/action-hub.md "The record page")
+# ---- the owner's record writes (docs/hub-views.md "The record page")
 def _strings(b, name):
     """b[name] as a list of strings: absent is [], one string is a list of one."""
     v = b.get(name)

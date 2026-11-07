@@ -1,6 +1,6 @@
 """POST /approvals/{id}/supersede and `hub.py approvals supersede`: the PM, or the coordinator of the
 approval's repository, marks a decided approval nobody consumed superseded, by another approval or
-by a commit on main, so it leaves pending and cannot be used (docs/action-hub.md
+by a commit on main, so it leaves pending and cannot be used (docs/hub-approvals.md
 "approvals/A-NNN"). Beside tests/hubsite/test_approvals_withdraw.py."""
 import datetime
 import unittest

@@ -85,7 +85,7 @@ Known limit: with the store itself unreadable both at commit and at landing, no 
 
 ## Owner approval
 
-`--owner-approval hub:A-<n>` commits a change to owner-only paths that an agent asked for and the owner approved on the Action Hub (docs/action-hub.md "approvals/A-NNN"), without the owner authoring it. The steps are `kitlib/commit/approval.py`; `kitlib/commit/__init__.py` runs them (`_approval_first`, `_approval_before_write`, `_stage`, `_put_back`, `_consume`).
+`--owner-approval hub:A-<n>` commits a change to owner-only paths that an agent asked for and the owner approved on the Action Hub (docs/hub-approvals.md "approvals/A-NNN"), without the owner authoring it. The steps are `kitlib/commit/approval.py`; `kitlib/commit/__init__.py` runs them (`_approval_first`, `_approval_before_write`, `_stage`, `_put_back`, `_consume`).
 
 Usage errors (exit 2, `approval.usage_error`): a value that is not `hub:A-<n>`; `--owner-approval` with `--owner-authored` or `--owner-approved`; `--consume` without `--owner-approval`, or with paths, `-m`, `-b` or `--body-file`.
 

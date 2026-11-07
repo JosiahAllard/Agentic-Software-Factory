@@ -26,8 +26,8 @@ wait. The lines:
 `hub: server up on port <n>, <k> pending for the PM` (`<k>` is 0 when the answer's `items` is not a
 list); a `hub: WARN this hub server is running older code than the hub code now on disk. Owner step:
 restart the Action Hub: python "<hub.py>" restart ...` line when the server's health `code` says
-so (docs/action-hub.md "Stale code"; none from a hub that gives no `code`); when `<k>` is above 0, a line to process the items (`hub.py pending --for pm`); then the push line
-(`kitlib.pmstart` `push_line`), from the health answer's `push` and `watcher` (docs/action-hub.md
+so (docs/hub-serving.md "Stale code"; none from a hub that gives no `code`); when `<k>` is above 0, a line to process the items (`hub.py pending --for pm`); then the push line
+(`kitlib.pmstart` `push_line`), from the health answer's `push` and `watcher` (docs/hub-push.md
 "Push notifications"). No session runs a background `hub.py wait`: each reads `hub.py pending`
 once at start, and the hub pushes every answer and done to-do to the session that owns it. The
 push line is `hub: push up (last delivery to the PM: <last>, <n> undelivered); watcher <state>
@@ -76,12 +76,12 @@ configured command is printed as written, never changed. The last check, always 
 When the hub is up and its pending ask answered, the hub lines end, before the push line, with at
 most one line counting the owner's answers the hub filed into their records since the last PM
 start that are still `filed`, waiting for their askers, or that the hub marked done once their
-askers had them (`done_by` `hub`; `kitlib.pmstart` `filed_digest`; docs/action-hub.md "Filing
+askers had them (`done_by` `hub`; `kitlib.pmstart` `filed_digest`; docs/hub-questions.md "Filing
 the answer"). An answer its asker has logged or marked done itself since is not counted, and one
 answered again counts only once it is filed again, by that filing's time.
 A filed answer that changed nothing for the PM to do (`filed_as` `held`, or `pulled` with a
 worker on the record) is pushed to its asker, or the record's coordinator, not to the PM
-(docs/action-hub.md "Push notifications"), so this line is where the PM sees the ones still unread. It is information,
+(docs/hub-push.md "Push notifications"), so this line is where the PM sees the ones still unread. It is information,
 not a step.
 - The stamp: `pm-start-last.json`, `{"at": <ISO time with its offset>}`, in the folder of the
   pm_watch state file (the `pm_watch` config's `state_file`, else

@@ -1,5 +1,5 @@
 """kitlib.hubjobs.usage_crossover: the hub moves a session to another account as its account nears
-the weekly limit (docs/launcher.md "Usage crossover", docs/action-hub.md "Timed jobs").
+the weekly limit (docs/launcher.md "Usage crossover", docs/hub-push.md "Timed jobs").
 
   make(sources) -> jobs.Job | None   the job; None when launcher.state_dir is not set or the host
                                      has no watcher readers

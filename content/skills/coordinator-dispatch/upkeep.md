@@ -2,21 +2,7 @@
 
 Read from skill `coordinator-dispatch`, "Upkeep".
 
-- **Prune daily.** Start each day with `python <kit>/tools/doc_index.py -C <repo> --stale`: confirm (touch it),
-  rewrite or delete each line, in ONE docs-writer commit. A new `.md`, shard or section adds its
-  index line in the same commit, or the doc-budget check refuses the branch.
-- Durable facts -> the repo's docs, landed like any docs change, never in the host's config
-  folder; session state -> your state note (`<agent temp>/<repo slug>-coordinator/state-<session>.md`). Worktrees are created and removed as the
-  profile says.
-- **Stale worktrees.** A B or C tree in `--classify` whose work is stale (superseded, ruled out, its
-  record closed): mark it, `python <kit>/tools/worktree_remove.py -C <repo> <branch> --mark-stale
-  "<why>"` (only a clean, unlanded, unclaimed tree; `--classify` offers the line for those and
-  notes why the others take none). The nightly sweep then abandons it under `archive/<slug>` once it is idle 24 h, unless
-  it changes first; `<branch> --unmark-stale` clears the mark. A branch with no worktree is
-  abandoned by hand, `<branch> --branch --abandon "<why>"`, on the PM's word.
-- **Grow the tool set.** Weekly, run the repetition report on the repo
-  (`<kit>/optional/usage/repetition_report.py`): repeated shell shapes, or a scratch script
-  written twice, that no kit or repo tool already serves (`doc_index.py --tools`) become lines in
-  the tool-requests file the coordinator profile's **Plan and instructions** section names; build
-  the top one as ordinary work (`tools/` is High risk). A repeat an existing tool serves is a
-  pointer in the brief template or profile, never a second tool.
+- **Prune daily.** `python <kit>/tools/doc_index.py -C <repo> --stale`: confirm (touch), rewrite or delete each line, in ONE docs-writer commit; a new `.md`, shard or section adds its index line in the same commit, or the doc-budget check refuses the branch. Then `python <kit>/tools/worktree_remove.py -C <main checkout> --classify --apply`, and take up its B and C trees as at session start: the nightly sweep never removes an empty tree.
+- **Stale worktrees.** A B or C tree whose work is stale (superseded, ruled out, its record closed): `python <kit>/tools/worktree_remove.py -C <repo> <branch> --mark-stale "<why>"` (a clean, unlanded, unclaimed tree; `--classify` offers the line). The nightly sweep abandons it under `archive/<slug>` once idle 24 h; `--unmark-stale` clears the mark. A branch with no worktree is abandoned by hand, `<branch> --branch --abandon "<why>"`, on the PM's word.
+- **Durable facts** go to the repo's docs, landed like any docs change, never the host's config folder; session state to your state note.
+- **Grow the tool set, weekly.** Run `<kit>/optional/usage/repetition_report.py` on the repo: a repeated shell shape or a scratch script written twice that no kit or repo tool serves (`doc_index.py --tools`) becomes a line in the tool-requests file the coordinator profile's **Plan and instructions** section names; build the top one as ordinary work (`tools/` is High risk). A repeat an existing tool serves is a pointer in the brief template or profile, never a second tool.

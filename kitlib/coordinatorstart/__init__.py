@@ -48,8 +48,8 @@ ENG_LINE = ("ENG rulings: an engineering question (API shape, class versus recor
             "classifier, credentials, hooks that guard owner files); Money and accounts (purchases, cloud credit, "
             "game accounts, bans); Priority and pre-empts (one owner entry per change); Go-live and live-client "
             "runs, and removals of owner files; anything the owner flagged for review (eng_review).")
-# When a coordinator prices a record (hosts/claude/shell/agents/coordinator.md, On start step 6 and Slots,
-# Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
+# When a coordinator prices a record (content/skills/session-handoff/SKILL.md "Coordinator start" step 8,
+# and the coordinator role, Slots, Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
 # Emitted only when coordinator_start.pricing_pass is true.
 PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, follow-up records excepted: run "
                 "`python <kit>/tools/backlog.py -C <repo> list --needs-priority`. A follow-up record (filed from a finding on a "

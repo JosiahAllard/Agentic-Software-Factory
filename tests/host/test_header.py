@@ -43,7 +43,15 @@ class HeaderText(unittest.TestCase):
                 self.assertIn('docs/kit-json.md "Machine config keys"', text)
         text = header.text('C:/k', user={'dev_drive': ROOT})
         self.assertNotIn('dev_drive', text)
-        self.assertTrue(text.endswith('never a folder to look for.'), text)
+        self.assertTrue(text.endswith(header.RULES[-1]), text)
+
+    def test_it_carries_the_kit_rules_for_every_agent_once(self):
+        # the rules' one home: roles and skills cite them (docs/content.md "Kit header")
+        text = header.text('C:/k', user={'dev_drive': ROOT})
+        self.assertIn('\n'.join(header.RULES), text)
+        for rule in ('personal details', 'drive root', 'One write per shell call', 'start time matches',
+                     '`REFUSED:` on substance is final', 'never a report file'):
+            self.assertEqual(text.count(rule), 1, rule)
 
     def test_the_warning_and_the_guard_agree_on_whether_the_bound_is_on(self):
         # the header asks the guard's own question (kitlib.guard.jail.dev_root_of), so it warns

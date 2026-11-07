@@ -30,7 +30,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/branch-overlap.md` | branch overlap: unmerged branches touching a file set | checking a sweep's exclusions | kw: branch_overlap, overlap
 - `docs/commit.md` | commit.py and machine_paths.py | committing | kw: commit, machine_paths
 - `docs/content.md` | content/ and render_content: roles and skills written once, rendered per host with the plugin manifests (kit.json's version) and the kit header | editing an agent or a skill | kw: content, render_content, roles, render, kit.json, manifest, header
-- `docs/coord-state.md` | coord_state.py: a coordinator's opt-in event log and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
+- `docs/coord-state.md` | coord_state.py: a coordinator's event log, on by default, and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
 - `docs/daily-full.md` | daily_full | the nightly full run | kw: daily-full, nightly
 - `docs/delegations.md` | the owner's delegation list: location, schema 1, the hard exclusions E1 to E5, running one, known limits | reading or changing what the PM may run for the owner, or running it | kw: delegations, owner-delegations, exclusions, delegated, runner
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale

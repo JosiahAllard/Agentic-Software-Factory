@@ -4,8 +4,8 @@ whose top has already exited - because every process the launcher starts is in t
 (kitlib.proc.job) and the slot's kill path (Slot.end_tree) ends the job. These trees hold no
 build daemon, so end_tree ends the whole job (TerminateJobObject); a job with a shared daemon in
 it has that daemon's tree spared and the rest ended process by process, which
-tests/lock/test_release_daemons.py covers (docs/gate.md "Build daemons"). This is why the gate has
-no `kill_retry` step key (docs/gate.md "Not ported").
+tests/lock/test_release_daemons.py covers (docs/gate-run.md "Build daemons"). This is why the gate has
+no `kill_retry` step key (docs/gate-rerun-checkout.md "Not ported").
 
 Real processes, nothing mocked: a three-level python tree on a scratch store
 (helpers.StoreCase). Each descendant is checked by a handle the test opens while it is alive and

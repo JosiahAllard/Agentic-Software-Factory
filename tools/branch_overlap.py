@@ -39,7 +39,7 @@ def parser():
                    help='the set is the files BRANCH changed since its merge base with the base')
     p.add_argument('--base', metavar='REV',
                    help='default: refs/remotes/<remote>/<main branch> from .kit.json when it '
-                        'resolves, else <main branch> (docs/gate.md "Default base")')
+                        'resolves, else <main branch> (docs/gate-run.md "Default base")')
     return p
 
 

@@ -21,7 +21,7 @@ GATE = {'steps': [{'name': 'unit', 'always': True, 'cmd': RED_AWARE, 'pass': '^o
 
 def gate_full(root, *tips):
     """Each of `tips` given the gate-OK record a passing `gate.py --full` writes (a record whose
-    `full` is true): a landing takes only such a tip (docs/gate.md "Landing"). A tip that is not
+    `full` is true): a landing takes only such a tip (docs/gate-landing.md "Landing"). A tip that is not
     a commit of the repository is skipped (the landing refuses it for that); a record already
     there is kept and only marked full. The record file names this wrote that were not there
     before."""
@@ -49,7 +49,7 @@ REVIEW = {'verdict': 'LAND', 'risk': 'Low', 'reviewer': 'pm-kit:reviewer',
 def queue_review(root, branches, tips):
     """A LAND verdict (REVIEW, by a reviewer who is not the author) queued for each branch of
     `branches` at its tip of `tips` (one each, or lists, as a batch's --expect-tip): every landing
-    needs one (docs/gate.md "Landing" step 4). Only for a branch with no entry at all and whose head
+    needs one (docs/gate-landing.md "Landing" step 4). Only for a branch with no entry at all and whose head
     is that tip: an entry a test wrote is never replaced, and a tip that is not the branch's head
     (a landing the test means to refuse earlier) gets none. The branches queued."""
     from kitlib.gate import verdicts

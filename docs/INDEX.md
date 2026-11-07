@@ -45,7 +45,12 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale
 - `docs/engineering-rulings.md` | engineering rulings | before a design choice | kw: rulings, engineering
 - `docs/flaky-tests.md` | flaky tests: the time fence (kitlib.clock; agentstart's budget), the reviewer rules for a time budget | a test fails under load, adding a time budget | kw: flaky, flake, time-fence, clock, budget
-- `docs/gate.md` | gate.py | running the gate | kw: gate, test, stash
+- `docs/gate.md` | gate.py: the index of its pages | running the gate | kw: gate, test, stash
+- `docs/gate-run.md` | gate.py: commands, exit codes, steps, auto-detected gate, daemons, console windows | running or configuring the gate | kw: gate, steps, exit codes, commands, daemons, docs-only
+- `docs/gate-records.md` | gate.py: Gate-OK and Result records, gate budget, session cap, gate queue | a gate record, budget or queue | kw: gate, records, budget, queue, result, unchanged red
+- `docs/gate-rerun-checkout.md` | gate.py: stopping a gate, targeted rerun, the caller's checkout, stash guard, limits | stopping, rerunning or running a gate from another checkout | kw: gate, rerun, stash, caller checkout, go-live
+- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
+- `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
 - `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
 - `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
 - `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
@@ -166,4 +171,4 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
 - `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node
 - `tools/stack_skill.py` | copy a stack's skills into a repository (`docs/install.md`) | kw: stack_skill, stack
-- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate.md` "The landing queue") | kw: verdict, queue
+- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate-landing.md` "The landing queue") | kw: verdict, queue

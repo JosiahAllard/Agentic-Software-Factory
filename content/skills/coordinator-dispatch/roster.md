@@ -61,7 +61,7 @@ coordinator profile lists the roles it actually has; use only those. Roles are n
 
   A light reviewer's "blocking" claim you dispute is settled by a fresh strong-tier review of the
   tip, not by your own reading: `verdict.py add` refuses a LAND over the reviewer's final
-  `Verdict: SEND BACK` (`<kit>/docs/gate.md` "Strict paths"). Haiku overstated severity twice in the
+  `Verdict: SEND BACK` (`<kit>/docs/gate-landing-policy.md` "Strict paths"). Haiku overstated severity twice in the
   reviewer A/B (`<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
 - **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier, whoever
   built the area (it judges a look, not a diff).

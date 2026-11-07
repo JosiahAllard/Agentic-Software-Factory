@@ -49,7 +49,7 @@ Exit codes: 0 done, 1 refused or failed (or the sweep deferred, or `--classify` 
 
 preflight's `leftovers` line (kitlib/preflight/leftovers.py; docs/preflight.md) is `merged_worktrees` with `skip` set to the worktree it runs in.
 
-A landing's branch cleanup and `land.py --sweep-landed` (kitlib/gate/cleanup.py; docs/gate.md "Branch cleanup") remove a landed branch's worktree with this module's `_remove` and delete a branch with no worktree with its `delete_branch`.
+A landing's branch cleanup and `land.py --sweep-landed` (kitlib/gate/cleanup.py; docs/gate-landing-policy.md "Branch cleanup") remove a landed branch's worktree with this module's `_remove` and delete a branch with no worktree with its `delete_branch`.
 
 Each verb returns `Outcome(code, lines)` and prints nothing; the tools print the lines. Settings come from `.kit.json`: `repo.main_branch`, `repo.remote`, `repo.worktrees_dir`, `repo.worktrees_by_host` (every host's folder, `hostdirs.folders`), `repo.name`, `backlog.store`, and the `worktree_remove` section (docs/kit-json.md).
 

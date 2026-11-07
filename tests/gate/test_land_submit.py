@@ -274,7 +274,7 @@ class TheLine(SubmitCase):
 
 
 class OldFolder(SubmitCase):
-    """The result folder is out of the git common dir (docs/gate.md "Result record"): an older
+    """The result folder is out of the git common dir (docs/gate-records.md "Result record"): an older
     kit's land record in the old folder (<git common dir>/kit-gate-result) still stops a
     submission, and the submission never writes it (only result.finish_dead writes there, to
     finish a dead old-folder record in place); what a landing trusts (the records a submission
@@ -371,7 +371,7 @@ class OldFolder(SubmitCase):
 
 class ReviewLines(SubmitCase):
     """A REVIEW line, before the SUBMITTED line, for each branch with a verdict queued at the tip
-    submitted (docs/gate.md "Submitting a landing"): the submission shows the review on record."""
+    submitted (docs/gate-landing.md "Submitting a landing"): the submission shows the review on record."""
 
     def test_a_verdict_queued_at_the_tip_is_said_before_the_submitted_line(self):
         _, tip = self.branch('feature', {'a.py': 'a\n'})
@@ -414,7 +414,7 @@ class ReviewLines(SubmitCase):
 
 class NamedReview(SubmitCase):
     """A submission names the review each branch lands on, --reviewed-by <reviewer id> before
-    --submit (submit.named_review; docs/gate.md "Submitting a landing"), so the review shows on
+    --submit (submit.named_review; docs/gate-landing.md "Submitting a landing"), so the review shows on
     the command line the host's permission check reads. Missing or miscounted: USAGE with an
     Instead: line, the command in the land permission rule's form with the queued ids; a wrong id,
     or no usable verdict at the tip: REFUSED, no Instead: line. Nothing written either way."""

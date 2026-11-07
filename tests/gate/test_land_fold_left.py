@@ -1,4 +1,4 @@
-"""Folding queued submissions (docs/gate.md "Folding queued submissions"): the submissions a
+"""Folding queued submissions (docs/gate-landing.md "Folding queued submissions"): the submissions a
 landing leaves out of its fold, and the landings that fold nothing. Fixtures:
 tests/gate/test_land_fold.py."""
 import os

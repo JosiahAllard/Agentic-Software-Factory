@@ -63,7 +63,7 @@ A landing is the latest `land_submit` of its branch: a new submission replaces t
 | landed | neither yet | in flight |
 | landed | no output named, or it cannot be read | to report, saying the feed cannot be told |
 
-The result record says nothing of the hub feed. `Lander.post_landing` says its `WARNING: the landing of <branch> was not posted to the hub feed (<why>); the landing stands` (docs/gate.md "Landing feed") in the landing's own output, the `<stem>.<run_id>.land.log` of docs/gate.md "Submitting a landing", after the last `result record:` line and before the `LANDED` line, which is what `outcome_block` returns. A successful post says nothing, so "on the hub feed" is read from a `LANDED` line with no WARNING. In the moments between the final record and the post, the output has neither.
+The result record says nothing of the hub feed. `Lander.post_landing` says its `WARNING: the landing of <branch> was not posted to the hub feed (<why>); the landing stands` (docs/gate-landing.md "Landing feed") in the landing's own output, the `<stem>.<run_id>.land.log` of docs/gate-landing.md "Submitting a landing", after the last `result record:` line and before the `LANDED` line, which is what `outcome_block` returns. A successful post says nothing, so "on the hub feed" is read from a `LANDED` line with no WARNING. In the moments between the final record and the post, the output has neither.
 
 A `reported` mark counts only on a final record at the tip. A landing in flight stays in flight, so a failed landing cannot fall into the trimmed Reported section on a mark made before it failed.
 

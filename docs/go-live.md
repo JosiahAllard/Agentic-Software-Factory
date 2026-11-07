@@ -22,8 +22,8 @@ Keys in the machine config are in docs/kit-json.md "Machine config keys" (`scrub
 - `"eng_filing": true` under `coordinator_start` (the coordinator ENG standing line).
 - `eng_review` under `pm_start` (the owner's flags; the PM-start line appears only once non-empty).
 - `"pricing_pass": true` under `coordinator_start` (`PRICING_LINE` in `kitlib/coordinatorstart/__init__.py`: at start it tells the coordinator to price the other unpriced open records 2-5 and leave follow-up records unpriced until promoted).
-- `"gate_cap": {"<repo>": n}` under `coordinator_start` (docs/gate.md "The session gate cap": at most n gate runs of one repo in flight per agent session; unset, 0 or null: no cap).
-- `machine_lock.daemons` `"stop"` or `"leave"` (otherwise a Gradle or Kotlin daemon is stopped only after a gate run that ends "done", and only when it serves nothing outside that run's job; MSBuild nodes and the compiler server are always left: docs/gate.md "Build daemons").
+- `"gate_cap": {"<repo>": n}` under `coordinator_start` (docs/gate-records.md "The session gate cap": at most n gate runs of one repo in flight per agent session; unset, 0 or null: no cap).
+- `machine_lock.daemons` `"stop"` or `"leave"` (otherwise a Gradle or Kotlin daemon is stopped only after a gate run that ends "done", and only when it serves nothing outside that run's job; MSBuild nodes and the compiler server are always left: docs/gate-run.md "Build daemons").
 - `guard_mcp_tools` (with `guard_mcp_prefix`).
 
 ## Fix before or at go-live
@@ -81,11 +81,11 @@ Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, 
 ## Universal gate (tools/gate.py, kitlib/gate)
 
 - Switch a repo only after its .kit.json lists every check as a gate step (Python tests included).
-- push_block goes on in a repo only after it has landed once through the kit's landing (`land.py`; `gate.py land` is its one-branch form, docs/gate.md "Landing").
+- push_block goes on in a repo only after it has landed once through the kit's landing (`land.py`; `gate.py land` is its one-branch form, docs/gate-landing.md "Landing").
 - Retire the repo's own gate and land wrappers when it switches (gate.py/land.py, a lander command).
-- Hook modules load from the landing's base, the main it merges onto (docs/gate.md "Landing", step 6), one file each; sibling imports are unsupported.
+- Hook modules load from the landing's base, the main it merges onto (docs/gate-landing.md "Landing", step 6), one file each; sibling imports are unsupported.
 - landing.log_dir inside a checkout must be git-ignored, or every landing is NOT LANDED.
-- Batch landing exists (`land.py A B`, docs/gate.md "Batch"); a repo opts steps into gate reuse with `reuse` (docs/gate.md "Gate reuse").
+- Batch landing exists (`land.py A B`, docs/gate-landing.md "Batch"); a repo opts steps into gate reuse with `reuse` (docs/gate-landing-policy.md "Gate reuse").
 - guard.py and pre-push read records with runner.verify_record: a record without config_rev does not count, so a commit gated before config_rev existed is gated again before push_block goes on.
 
 ## Skills, templates, optional tools, knowledge (owner-run)
@@ -100,10 +100,10 @@ Per Claude account, once reviewed:
 
 ## Landing tool (tools/land.py)
 
-One landing tool for every repo; landings into a repo take turns, each one machine-lock entry with the resource `landing:<git common dir>` and priority `land` (docs/gate.md "The landing queue"). Per repo, after its gate is switched (Universal gate above):
+One landing tool for every repo; landings into a repo take turns, each one machine-lock entry with the resource `landing:<git common dir>` and priority `land` (docs/gate-landing.md "The landing queue"). Per repo, after its gate is switched (Universal gate above):
 
-1. `.kit.json`: set `repo.main_branch` and `repo.remote` when they are not `main` and `origin`. Set `landing.batch_max` only to change the default cap of 5 branches the repo lands together (folding is on by default: a submitted landing folds the submissions queued behind it into its batch, docs/gate.md "Folding queued submissions"); set it to 1 to land each submission alone. Set `landing.wait_s` when six hours is wrong (docs/kit-json.md).
+1. `.kit.json`: set `repo.main_branch` and `repo.remote` when they are not `main` and `origin`. Set `landing.batch_max` only to change the default cap of 5 branches the repo lands together (folding is on by default: a submitted landing folds the submissions queued behind it into its batch, docs/gate-landing.md "Folding queued submissions"); set it to 1 to land each submission alone. Set `landing.wait_s` when six hours is wrong (docs/kit-json.md).
 2. The landing lock is always `kit-landing.lock` in the git common dir (kitlib.records.landing `LOCK_NAME`); no key names another (`landing.lock_file` is retired and ignored, docs/kit-json.md). A repo whose own lander keeps a lock file of its own retires that lander before land.py lands there, with no landing running, queued or stuck: the two locks do not exclude each other.
-3. Point every landing caller (lander agents, coordinators, auto-landers, landing scripts) at `python <kit>/tools/land.py BRANCH... --expect-tip SHA... [--wait S] -C <repo>` (hosts/claude/shell/agents/lander.md), or with `--reviewed-by <reviewer id>` per branch then `--submit` (the reviewer id of each verdict queued at its tip, before `--submit`) to return at once and wait on the printed `wait-result` command (docs/gate.md "Submitting a landing"). `--expect-main` is optional (docs/gate.md "Landing", step 4). A script that merged several branches and gated once becomes one batch call. The repo's own land wrapper is retired with the gate wrappers.
+3. Point every landing caller (lander agents, coordinators, auto-landers, landing scripts) at `python <kit>/tools/land.py BRANCH... --expect-tip SHA... [--wait S] -C <repo>` (hosts/claude/shell/agents/lander.md), or with `--reviewed-by <reviewer id>` per branch then `--submit` (the reviewer id of each verdict queued at its tip, before `--submit`) to return at once and wait on the printed `wait-result` command (docs/gate-landing.md "Submitting a landing"). `--expect-main` is optional (docs/gate-landing.md "Landing", step 4). A script that merged several branches and gated once becomes one batch call. The repo's own land wrapper is retired with the gate wrappers.
 4. Check from the main checkout: `python <kit>/tools/land.py --queue` prints `landing lock: free` and `landing queue: empty`. Land one doc-only branch through land.py, then read its result record (`gate.py wait-result BRANCH --tip SHA --kind land -C <repo>`).
 5. `gate.py land` stays as the one-branch form with `--wait` 0; move its callers to land.py.

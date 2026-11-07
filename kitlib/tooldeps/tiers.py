@@ -1,6 +1,6 @@
 """kit_tests' two passes: the tests on the fake git, then a pass on real git (docs/test-tools.md
 "Fake git"). --both-tiers runs them (the daily full run, through a gate step's `daily_cmd`,
-docs/gate.md "Steps"), and so does a --select or --full run whose change adds or changes a test
+docs/gate-run.md "Steps"), and so does a --select or --full run whose change adds or changes a test
 module (changed_test_modules): its real-git pass runs those modules.
 
 `run_tiers(run_one, out, label)` calls `run_one(fake, tier_out, last)` once per tier in TIERS order:

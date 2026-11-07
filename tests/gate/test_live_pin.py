@@ -1,4 +1,4 @@
-"""kitlib.gate.pin (docs/gate.md "Pinned tools"): tools/land.py and tools/gate.py, started from
+"""kitlib.gate.pin (docs/gate-landing.md "Pinned tools"): tools/land.py and tools/gate.py, started from
 the kit's main checkout, run from an export of its remote-tracking main, so a landing that merges
 into that checkout cannot load a mixed generation of the kit's own modules. A tool started from an
 export (the plugin's) pins through the main checkout its marker names. A linked worktree, an export

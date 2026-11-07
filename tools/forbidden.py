@@ -40,7 +40,7 @@ def build_parser():
     p = Parser(prog='forbidden.py', description='Refuse a forbidden token (docs/repo-checks.md).')
     p.add_argument('-C', dest='root', default='.', help='the checkout to check (default .)')
     p.add_argument('--base', default=None, help='default: .kit.json "repo".main_branch, else main, else master, as '
-                   '<remote>/<that> when it resolves (docs/gate.md "Default base")')
+                   '<remote>/<that> when it resolves (docs/gate-run.md "Default base")')
     p.add_argument('--worktree', action='store_true', help='compare the working tree, untracked files included')
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--all', dest='sweep_all', action='store_true', help='every tracked path')

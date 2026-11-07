@@ -1,4 +1,4 @@
-"""A branch gate's claim on its output file (docs/gate.md "Whose run a log is").
+"""A branch gate's claim on its output file (docs/gate-records.md "Whose run a log is").
 
 Two gate calls whose stdout is the same file (two shells' `gate.py ... > gate-full.log` in one
 shared scratch folder) each write at their own file position: the later call's shell truncates

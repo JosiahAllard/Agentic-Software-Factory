@@ -202,7 +202,7 @@ def remote_tip(remote, name, cwd):
 
 def default_base(cwd, remote, main):
     """The one default-base rule every kit tool measures against when the caller passes no base
-    (docs/gate.md "Default base"): `(rev, note)`.
+    (docs/gate-run.md "Default base"): `(rev, note)`.
 
     `rev` is `refs/remotes/<remote>/<main>` (as last fetched) when it resolves, else the plain
     `<main>` (the local branch, which may not exist either: the caller's own resolve then says so).

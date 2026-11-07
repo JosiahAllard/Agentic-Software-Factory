@@ -1,4 +1,4 @@
-"""tools/kit_tests.py --select's base (docs/test-tools.md "kit_tests", docs/gate.md "Default
+"""tools/kit_tests.py --select's base (docs/test-tools.md "kit_tests", docs/gate-run.md "Default
 base"): origin/main when it resolves, a line when the local main differs, and an explicit --base
 kept. The change list is mocked; the refs are a throwaway repository's (tests/gitfixture.py).
 Also the git tier (KIT_FAKE_GIT) and the home fence's marker (KIT_HOME_FENCE) the units are given,

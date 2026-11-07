@@ -9,7 +9,7 @@ its own job object (docs/test-tools.md).
 
 A name is a test module of the checkout's tools folder, or `module.Class` / `module.Class.test`.
 --select: the changed paths (`git diff --name-only --no-renames -z <merge-base B HEAD>` plus
-untracked files, B = --base, default docs/gate.md "Default base": <remote>/<main branch> when it
+untracked files, B = --base, default docs/gate-run.md "Default base": <remote>/<main branch> when it
 resolves, else the main branch, a line saying when the local one differs; or the --changed
 list) go through kitlib.tooldeps' selection (its `always_run` included); prints `pytests: <why>` and
 `pytests: <names>`, then runs them (--plan: stops there). When git cannot say what changed it

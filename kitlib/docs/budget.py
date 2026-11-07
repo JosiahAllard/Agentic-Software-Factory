@@ -3,7 +3,7 @@
 
 `run(root, out, base=None, head='HEAD', worktree=False, report=False)` returns the exit status
 and hands every line to `out`:
-  (default)          `head` (HEAD) against `base` (default: docs/gate.md "Default base")
+  (default)          `head` (HEAD) against `base` (default: docs/gate-run.md "Default base")
   head=<branch>      a branch against the base
   worktree=True      the files ON DISK, uncommitted and new ones included
   report=True        every .md with its size and budget; its first line says which tree
@@ -18,7 +18,7 @@ A file fails its budget when its size on the branch (or on disk) is over it and 
 base: a file already over may shrink or hold, never grow. A file the branch did not change since
 the merge base never fails it. The budgets applied are the head's (on disk under `worktree`).
 Nothing projects the merge: the caps are checked on the real merge, by the landing gate of a repo
-whose gate runs this check as a `cmd` step (docs/gate.md "Not ported").
+whose gate runs this check as a `cmd` step (docs/gate-rerun-checkout.md "Not ported").
 
 A configuration that does not read (a key written twice, an unknown key, a bad type) refuses on
 disk (exit 2); at the head it fails the branch (exit 1) unless the base carries the same fault,

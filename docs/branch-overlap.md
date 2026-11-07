@@ -36,7 +36,7 @@ Exit 0 `no overlap`; 1 `OVERLAP`; 2 usage or `CANNOT ANSWER`; 130 Ctrl+C. `CANNO
 - **Refs:** every ref under `refs/heads/` and `refs/remotes/`, except a symbolic one (`origin/HEAD`).
   - A ref whose tip is an ancestor of the base is merged and skipped.
   - Refs carrying one branch name (`kit/x`, `origin/kit/x`) are one branch: counted once and reported in one block.
-- **The base:** `--base`, else the kit default base (docs/gate.md "Default base", `kitlib.git.refs.default_base`). That is `refs/remotes/<remote>/<main_branch>` from `.kit.json` "repo" when it resolves, else the local main branch.
+- **The base:** `--base`, else the kit default base (docs/gate-run.md "Default base", `kitlib.git.refs.default_base`). That is `refs/remotes/<remote>/<main_branch>` from `.kit.json` "repo" when it resolves, else the local main branch.
   - When the local main differs from the remote's, the note line says how.
   - The base's own branch is left out: the local `main` when the base is `origin/main`. When it holds commits the base lacks, a note says so, and those commits are not checked.
 - **A branch's changes:** `git diff --name-only --no-renames <merge base> <tip>`, so a rename counts as its old and its new path.

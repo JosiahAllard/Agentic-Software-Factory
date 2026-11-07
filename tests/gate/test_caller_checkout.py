@@ -1,4 +1,4 @@
-"""The caller's checkout (docs/gate.md, The caller's checkout): a gate.py run on another checkout
+"""The caller's checkout (docs/gate-rerun-checkout.md, The caller's checkout): a gate.py run on another checkout
 of its own repository with no -C or a relative one (the kit's own repository, where every checkout
 has a real gate.py) is refused, and a relative --log-dir that would be made outside the gated
 checkout is USAGE (OwnCopy, LogDir, RunByPath).

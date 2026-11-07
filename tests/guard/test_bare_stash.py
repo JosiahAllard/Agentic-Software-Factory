@@ -45,7 +45,7 @@ class Sessions(unittest.TestCase):
     def test_the_reason_names_the_shared_stack_and_the_gate(self):
         d = self.stash({}, sub=True, cmd='git stash pop')
         self.assertIn('`git stash pop` adds to or takes from the stash stack every worktree', d.reason)
-        self.assertIn('docs/gate.md "The stash guard"', d.reason)
+        self.assertIn('docs/gate-rerun-checkout.md "The stash guard"', d.reason)
         wt = W.fwd(self.w.wt)
         # the WIP commit is commit.py's, which stages the paths it names (a new file too) and adds the trailer
         self.assertIn('a WIP commit on your branch with the kit tool, which stages each path you name, a new file '

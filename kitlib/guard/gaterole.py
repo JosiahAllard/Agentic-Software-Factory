@@ -1,7 +1,7 @@
 """Who may lift a branch's gate-run budget (docs/guard.md "Gate allow").
 
   gate-allow   a run of tools/gate.py allow (kitlib/gate/budget.py `allow`: it raises the gate
-               runs a branch may make; docs/gate.md "The branch gate budget") by any session but
+               runs a branch may make; docs/gate-records.md "The branch gate budget") by any session but
                the owner's own or a main session marked coordinator or pm (MARKS). Every subagent is refused, whatever role its payload names, and so is any
                other marked main session (deep-worker, consultant, plain).
 
@@ -26,7 +26,7 @@ VERB = 'allow'
 # the main sessions that may allow more runs: the coordinator and the PM
 MARKS = ('coordinator', 'pm')
 WHY = ('`gate.py allow` raises the gate runs a branch may make past the branch gate budget, and only '
-       'its coordinator (or the PM) runs it (docs/gate.md "The branch gate budget").')
+       'its coordinator (or the PM) runs it (docs/gate-records.md "The branch gate budget").')
 INSTEAD = ('stop and send your coordinator what each gate run found and why another is needed; '
            'it runs gate.py allow')
 

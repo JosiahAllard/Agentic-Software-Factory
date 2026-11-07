@@ -1,4 +1,4 @@
-"""kitlib.gate.carry (docs/gate.md "Carrying a verdict forward"): a reviewed tip's verdict holds
+"""kitlib.gate.carry (docs/gate-landing-policy.md "Carrying a verdict forward"): a reviewed tip's verdict holds
 for a later tip only when every commit after the review is a conflict-free merge of main, made as
 git makes it, and the branch's own diff against main is the one reviewed (-U3, so main's edits
 within three lines of a branch hunk count). Anything else, or git giving no answer, refuses. On

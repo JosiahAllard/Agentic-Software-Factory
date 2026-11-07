@@ -1,5 +1,5 @@
 """tools/review_pack.py's `gate` line (docs/review-pack.md): whether the branch tip has a full-gate
-OK record for exactly that commit, the record a landing requires (docs/gate.md "Landing"). It is
+OK record for exactly that commit, the record a landing requires (docs/gate-landing.md "Landing"). It is
 printed only: the exit status is what the rest of the pack makes it."""
 from kitlib import reviewpack
 from kitlib.records import gate_ok
@@ -67,9 +67,9 @@ class GateLine(GateLineCase):
 
 
 class GateOnceLine(GateLineCase):
-    """A base with "landing".gate_once on takes a default-mode record (docs/gate.md "Gate once
+    """A base with "landing".gate_once on takes a default-mode record (docs/gate-run.md "Gate once
     at landing"): the line says so instead of "landing will refuse", a strict branch's included
-    (its merged gate runs --full --fresh; docs/gate.md "The final gate")."""
+    (its merged gate runs --full --fresh; docs/gate-run.md "The final gate")."""
     CONFIG = {'owner': {'email': EMAIL}, 'landing': {'gate_once': True}}
 
     def strict_feature(self):

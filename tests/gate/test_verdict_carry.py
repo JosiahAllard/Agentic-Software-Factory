@@ -1,4 +1,4 @@
-"""kitlib.gate.verdicts.carry and `tools/verdict.py carry` (docs/gate.md "Carrying a verdict
+"""kitlib.gate.verdicts.carry and `tools/verdict.py carry` (docs/gate-landing-policy.md "Carrying a verdict
 forward"): a queued verdict moves to the branch's head only when the head
 carries it (kitlib.gate.carry, tested in test_carry.py), recording `carried`; anything else writes
 nothing. The entry's `carried` record is checked like every other key. On the scratch repository

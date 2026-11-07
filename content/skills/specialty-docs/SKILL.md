@@ -30,7 +30,7 @@ Two jobs, one procedure; the brief names which. **Records**: you transcribe and 
 2. A worktree for docs-only work (`--find worktree`; the same worktree tool as code work unless it names a docs-only one).
 3. Run the profile's doc checks (the touched checks), not `gate.py`, before review - except in a coordinator-announced measurement window, when you commit without them and report "checks skipped: measurement window".
 4. Commit by explicit path: `python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`.
-5. No gate runs before your report: stop and report the hash and the doc checks you ran. Landing needs the final gate on the reviewed tip, which runs after the verdict when the coordinator asks (`python <kit>/tools/gate.py -C <worktree>`; the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). The coordinator lands it.
+5. No gate runs before your report: stop and report the hash and the doc checks you ran. Landing needs the final gate on the reviewed tip, which runs after the verdict when the coordinator asks (`python <kit>/tools/gate.py -C <worktree>`; the final gate `<kit>/docs/gate-run.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). The coordinator lands it.
 6. The shell: the docs-writer role's Hard rules.
 7. Stale designs: a design the brief names stale or outdated is deleted entirely, with no archive, banner or superseded copy, and a current doc loses its stale passages; the commit message says what went. One you find stale yourself is reported, not deleted.
 

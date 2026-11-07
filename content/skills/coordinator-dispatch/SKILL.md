@@ -36,7 +36,7 @@ Roles are named bare here; your host's instructions say how a role name becomes 
 ## The brief
 
 - Holds: role; the owner's decisions where they matter, as a paraphrase, no ruling id; verified facts; **exact files and sections
-  to read**; scope + files *not* theirs + their owners; shared resources assigned; tests: the touched tests only (skill builder, step 7), no gate before the report; after your verdict ask the author for the one final gate on the reviewed tip (the gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell));
+  to read**; scope + files *not* theirs + their owners; shared resources assigned; tests: the touched tests only (skill builder, step 7), no gate before the report; after your verdict ask the author for the one final gate on the reviewed tip (the gate `<kit>/docs/gate-run.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell));
   report wanted; no land, merge or push; for code work the entry files and symbols you know
   (path:Symbol), the existing code, tool or test the change extends, and the end-goal design
   section for the area - a brief with no paths costs the worker about 35 calls. The brief states

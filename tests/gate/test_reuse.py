@@ -1,4 +1,4 @@
-"""kitlib.gate.reuse: the per-step gate cache (docs/gate.md "Gate reuse"). A step that asks for
+"""kitlib.gate.reuse: the per-step gate cache (docs/gate-landing-policy.md "Gate reuse"). A step that asks for
 reuse and declares its inputs is not run again, in a branch-gate rerun or a landing, when a pass of
 the same key (its inputs, argv, cwd, gate config and kit files) is stored; every doubt runs it. A
 scratch repository with a bare remote, the scratch lock store; the gate-OK record's kit identity
@@ -239,7 +239,7 @@ class Strict(ReuseCase):
         self.assertEqual(self.entries(), [])
         tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
         # a strict branch lands only with a strong non-author verdict, and its merged gate is
-        # escalated to --full --fresh (docs/gate.md "Strict paths"): --fresh is the why there
+        # escalated to --full --fresh (docs/gate-landing-policy.md "Strict paths"): --fresh is the why there
         common, _ = land.repo.common_dir(self.repo.root)
         verdicts.add(common, {'branch': BRANCH, 'tip': tip, 'verdict': 'LAND', 'risk': 'High',
                               'reviewer': 'pm-kit:reviewer', 'reviewer_model': 'opus',
@@ -382,7 +382,7 @@ class AllReused(ReuseCase):
     GATE = {'setup': OK_CMD, 'steps': [UNIT]}
 
     def test_nothing_to_run_books_only_the_landing_turn_and_runs_no_setup(self):
-        # the landing books its one turn before the merge (docs/gate.md "The landing queue"); the
+        # the landing books its one turn before the merge (docs/gate-landing.md "The landing queue"); the
         # merged gate, with every step reused, books nothing more
         _, tip = self.gated_branch()
         del self.book_calls[:]

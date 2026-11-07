@@ -1,4 +1,4 @@
-"""gate.py stop: one gate run ended by its machine-lock run id (docs/gate.md "Stopping a gate").
+"""gate.py stop: one gate run ended by its machine-lock run id (docs/gate-rerun-checkout.md "Stopping a gate").
 
 The run id is the one the gate's held line prints (`run r-...`) and `machine_lock.py status`
 shows: the lock's id for the run, the only name a gate run has that no other run shares. The

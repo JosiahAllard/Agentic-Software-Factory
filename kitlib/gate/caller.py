@@ -1,4 +1,4 @@
-"""The caller's checkout (docs/gate.md, The caller's checkout).
+"""The caller's checkout (docs/gate-rerun-checkout.md, The caller's checkout).
 
 In a repository that holds the kit itself, every checkout has a real tools/gate.py, so
 `python <worktree>/tools/gate.py` run from the main checkout (no -C) gates the main checkout with

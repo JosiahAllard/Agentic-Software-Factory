@@ -4,24 +4,24 @@
           [--log-dir D]
       gate the checkout under the machine lock; on a pass of a clean tree, the gate-OK record.
       Refused (4) before it books when it would only repeat a failed gate of the same clean
-      tree, gate config and kit, unless --again (kitlib.gate.rerun.unchanged_red; docs/gate.md
+      tree, gate config and kit, unless --again (kitlib.gate.rerun.unchanged_red; docs/gate-records.md
       "An unchanged red tree").
       With no -C or a relative one, refused (4) when this gate.py is in another checkout of the
       gated tree's repository; a relative --log-dir outside the gated checkout is USAGE (2)
       (kitlib.gate.caller). From another directory:
-      python <worktree>/tools/gate.py -C <worktree> (docs/gate.md "The caller's checkout").
+      python <worktree>/tools/gate.py -C <worktree> (docs/gate-rerun-checkout.md "The caller's checkout").
       Refused (4), with --plan and as `land` too, while the repository's stash stack holds an
-      entry, whichever checkout made it (kitlib.gate.stash; docs/gate.md "The stash guard").
+      entry, whichever checkout made it (kitlib.gate.stash; docs/gate-rerun-checkout.md "The stash guard").
       Refused (4) before its header when its stdout is a file another gate run is writing
-      (kitlib.gate.outfile; docs/gate.md "Whose run a log is")
+      (kitlib.gate.outfile; docs/gate-records.md "Whose run a log is")
   gate.py land BRANCH --expect-tip SHA [--expect-main SHA] [-C DIR] [--summary TEXT]
                       [--full] [--fresh] [--wait SECONDS] [--log-dir D] [--keep-branch]
                       [--reviewed-by REVIEWER_ID --submit]
       land BRANCH from the main checkout, as tools/land.py does: merge onto <remote>/<main> as it
       is at the landing's turn, gate the merged tree, push, verify, then delete the landed branch
-      (remote and local) and remove its worktree, never forced, unless --keep-branch (docs/gate.md
+      (remote and local) and remove its worktree, never forced, unless --keep-branch (docs/gate-landing-policy.md
       "Branch cleanup"); --fresh or --full runs every step of the merged gate: nothing is read
-      from or stored in the gate cache (docs/gate.md "Gate reuse"). --submit: started detached;
+      from or stored in the gate cache (docs/gate-landing-policy.md "Gate reuse"). --submit: started detached;
       prints a REVIEW line for each branch whose queued verdict is at the tip submitted, then the
       one SUBMITTED line with its wait-result command, and exits 0; it needs --reviewed-by,
       before --submit: the reviewer id of the verdict queued at the tip (as tools/land.py)
@@ -29,7 +29,7 @@
       after a red --full run of a clean tree: rerun only its failing test classes, each paired
       with a control at the merge base, and the steps it never reached, under the machine lock;
       0 FLAKE (the tip lands on that record), 1 REAL (or VOID), 4 nothing to rerun (kitlib.gate.
-      rerun; docs/gate.md "Targeted rerun")
+      rerun; docs/gate-rerun-checkout.md "Targeted rerun")
   gate.py --measure --out PATH [--days N]
       write a proposed kinds table from the lock's run history (never the live table;
       kitlib.gate.measure.write_proposal); any other flag, -C, --slug and --log-dir too, is USAGE
@@ -44,7 +44,7 @@
       end gate run RUN (the r-... id on its held line and in machine_lock.py status): only its
       own process tree and lock; 0 stopped or already gone, 1 could not end it, 4 refused: not a
       gate run, another session's, or a landing's (a load node's land gate shows as none on the
-      node: kitlib.gate.stop; docs/gate.md "Stopping a gate"). The gate it stops exits 16 with a
+      node: kitlib.gate.stop; docs/gate-rerun-checkout.md "Stopping a gate"). The gate it stops exits 16 with a
       `stopped` result record
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate, prints and exits.
@@ -120,11 +120,11 @@ def gate_parser():
     sel.add_argument('--rerun', action='store_true',
                      help='rerun only the failing test classes of the red --full run, each '
                      'paired with a control at the merge base, under the machine lock (one per '
-                     'red run; counts toward the gate budget; docs/gate.md "Targeted rerun")')
+                     'red run; counts toward the gate budget; docs/gate-rerun-checkout.md "Targeted rerun")')
     p.add_argument('--plan', action='store_true', help='print what would run; run nothing')
     p.add_argument('--again', action='store_true',
                    help='run a gate that would only repeat a failed gate of this same tree '
-                   '(docs/gate.md "An unchanged red tree")')
+                   '(docs/gate-records.md "An unchanged red tree")')
     p.add_argument('--slug', help='the machine-lock slug (default: the branch)')
     p.add_argument('--log-dir', help='where this run\'s logs go')
     p.add_argument('--measure', action='store_true', help='write a proposed kinds table')
@@ -239,7 +239,7 @@ def do_wait(argv):
 def allow_parser():
     p = Parser(prog='gate.py allow',
                description='Allow BRANCH more gate runs than the branch gate budget gives '
-                           '(docs/gate.md "The branch gate budget"). Its coordinator runs it.')
+                           '(docs/gate-records.md "The branch gate budget"). Its coordinator runs it.')
     p.add_argument('branch')
     p.add_argument('--runs', required=True, type=int, metavar='N',
                    help='the new total of gate runs, a whole number above %d' % budget.RUNS)
@@ -266,7 +266,7 @@ def do_allow(argv):
 def stop_parser():
     p = Parser(prog='gate.py stop',
                description='End one gate run: only its own process tree and lock, never a '
-                           'landing (docs/gate.md "Stopping a gate").')
+                           'landing (docs/gate-rerun-checkout.md "Stopping a gate").')
     p.add_argument('run', metavar='RUN',
                    help='the lock run id: the r-... on the gate\'s held line and in '
                         'machine_lock.py status')

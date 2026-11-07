@@ -104,10 +104,10 @@ file, bind you and every agent you spawn, and win any disagreement - say so to t
 - **Keep the slots full.** After every agent report, landing or owner answer, before anything
   else: count agents in flight against your cap and fill free slots, first from your items
   that can start, then from `next`, engine-free work beside lock-bound work. In flight = {{tool:list-agents}} `running`; an agent stopped on
-  its own background gate is waiting, not in flight, and wakes when the gate exits (<kit>/docs/gate.md
+  its own background gate is waiting, not in flight, and wakes when the gate exits (<kit>/docs/gate-records.md
   "Waiting on a gate: who arms what"). A landing you submitted is not an agent: its one
   `land.py ... --wait-result --submit` background call is yours to keep running (skill `land-branch`). A gate whose
-  process is gone with no report -> fresh agent re-gates the branch (the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). Nothing
+  process is gone with no report -> fresh agent re-gates the branch (the final gate `<kit>/docs/gate-run.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell)). Nothing
   re-wakes you later.
 - Each item goes to an end, as the owner ruled: landed (or submitted to land), blocked on its
   record with the reason and its branch kept (`backlog.py block`; an item waiting on a live slot

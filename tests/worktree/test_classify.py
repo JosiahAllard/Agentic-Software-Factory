@@ -165,7 +165,7 @@ class Classes(ClassifyCase):
                           % head), row)
 
     def test_a_scoped_record_is_green_when_the_base_sets_gate_once(self):
-        """"landing".gate_once (docs/gate.md "Gate once at landing"): a landing takes a
+        """"landing".gate_once (docs/gate-run.md "Gate once at landing"): a landing takes a
         default-mode record, so the tree is as finished as with a --full one."""
         self.configure({'landing': {'gate_once': True}})
         path = self.workstream('scoped')

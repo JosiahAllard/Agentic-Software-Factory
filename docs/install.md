@@ -100,7 +100,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    kit works out its settings (docs/kit-json.md "With no file"): the main branch from
    `origin/HEAD`, the repository's name from its remote or folder, the owner from the machine
    config, the safe protections on (no force push and no deletion of main). The gate detects the
-   stack and runs its usual test and lint steps, labelled `source: auto` (docs/gate.md
+   stack and runs its usual test and lint steps, labelled `source: auto` (docs/gate-run.md
    "Auto-detected gate"). The doc index and the repo profile are opt-in (docs/doc-tools.md,
    docs/agent-profile.md).
 4. **Overrides, when the defaults are not enough:** a `.kit.json` with only the keys that differ

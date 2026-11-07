@@ -343,7 +343,7 @@ class QueueTime(LandCase):
 
 class GateOnceLedger(LandCase):
     """A base that sets "landing".gate_once: the land record and its land ledger line say so,
-    and say whether once_escalate made the merged gate --full (docs/gate.md "Result record")."""
+    and say whether once_escalate made the merged gate --full (docs/gate-records.md "Result record")."""
     KIT = dict(LandCase.KIT, landing={'gate_once': True})
 
     def ledger(self):

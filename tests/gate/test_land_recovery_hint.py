@@ -48,7 +48,7 @@ class OnTopHint(LandCase):
         self.assert_worktree_hint(what, os.path.join(S.kit_live(), 'tools', 'gate.py'))
 
     def test_in_the_kit_the_worktree_runs_its_own_gate_py(self):
-        # The kit lands itself: the worktree is gated by its own gate.py (docs/gate.md "The
+        # The kit lands itself: the worktree is gated by its own gate.py (docs/gate-rerun-checkout.md "The
         # caller's checkout"), as full_gate_command names it.
         what = self.on_top_step(kit=True)
         self.assert_worktree_hint(what, os.path.join('<worktree>', 'tools', 'gate.py'))

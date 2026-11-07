@@ -138,6 +138,11 @@ def _pos(args):
     return [w for w in args if not w.text.startswith('-')]
 
 
+def computed_word(w):
+    """True for a Word whose text is not what git gets: computed, an alias's, or one bash changes."""
+    return bool(w.dyn or w.alt is not None or w.synth)
+
+
 def inline_alias(gc):
     """`gc` as git runs it when its subcommand names an alias the line itself defines (-c
     alias.<name>=<value>): the value's words are the subcommand and its first arguments, so the

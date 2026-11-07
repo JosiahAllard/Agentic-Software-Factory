@@ -2,7 +2,6 @@
 forms in the main checkout, git that writes a checkout outside the session's own (git_jail), where a
 git line runs, and the text of a git line a refusal quotes."""
 import os
-import re
 from kitlib import config as kconfig
 from kitlib.git import repo
 
@@ -10,7 +9,7 @@ from . import commands as cm
 from . import jail
 from . import paths
 from . import shell as sh
-from .rules_base import SHELLS, UNPLACED, agent_session, bare, fwd, own_worktree, quote, refuse, subagent
+from .rules_base import SHELLS, UNPLACED, agent_session, bare, fwd, own_worktree, quote, refuse, spelt, subagent
 from .rules_gitcore import git_call_judged
 from .rules_edit import (JAIL_ASK, KIT_JSON, dev_drive_bound, in_dropped, jail_refusal, jail_view, jail_why,
                          new_worktree, pm_data_unknown)
@@ -262,19 +261,6 @@ def git_in_worktree(ctx, cmd, gc, main_top, cwd, agent=False):
     if no_wt:
         return no_wt, instead
     return 'Work in a worktree and run git %s there; the lander brings it to main:' % gc.sub, instead
-
-
-SAFE_WORD_RE = re.compile(r'^[\w@%+=:,./-]+$')
-
-
-def spelt(text):
-    """`text` as one shell word: bare when it needs no quoting, else single-quoted (double-quoted,
-    with bash's escapes, when it holds a single quote)."""
-    if SAFE_WORD_RE.match(text):
-        return text
-    if "'" not in text:
-        return "'%s'" % text
-    return '"%s"' % re.sub(r'(["\\$`])', r'\\\1', text)
 
 
 def git_rest_text(cmd, gc):

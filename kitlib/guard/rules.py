@@ -105,11 +105,11 @@ from . import modes
 from . import shell as sh
 from .rules_base import (AGENT_MARKS, ALLOW, ASK, Asked, CITE_MAX, DENY, ELIDED, LEDGER_GLOB_CHARS, PSCmdlet,
                          PS_ALIASES, PS_CMDLETS, PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES,
-                         PS_NAMED_DYN_RE, SHELLS, TAG, UNPLACED, WIN_OPT_RE, _COMMAND, _FILTERS, _PATHS, advice_kit,
-                         agent_session, bare, cited, fwd, here, is_owner_session, kept_word, kit_tool, literal_word,
-                         lock_tool, own_worktree, owner_host, ps_args, ps_bound, ps_native_unsure, ps_param_word,
-                         ps_params, quote, refuse, reworded, same_dir, shell_word, split_commas, subagent, tag,
-                         tag_role, tail_word, unowned_chat)
+                         PS_NAMED_DYN_RE, SAFE_WORD_RE, SHELLS, TAG, UNPLACED, WIN_OPT_RE, _COMMAND, _FILTERS, _PATHS,
+                         advice_kit, agent_session, bare, cited, fwd, here, is_owner_session, kept_word, kit_tool,
+                         literal_word, lock_tool, own_worktree, owner_host, ps_args, ps_bound, ps_native_unsure,
+                         ps_param_word, ps_params, quote, refuse, reworded, same_dir, shell_word, spelt, split_commas,
+                         subagent, tag, tag_role, tail_word, unowned_chat)
 from .rules_owner import (COMPUTED_TAIL_RE, HUB_NAMES_LIMIT, HUB_OWNER_WHY, HUB_SCRIPT, HUB_SECRETS_WHY, HubPlaces,
                           HubShell, LOCK_SCRIPT, LOCK_VALUE_OPTS, NODE_EVAL, NODE_VALUE_OPTS, OPENERS, OWNER_LOCK_WHY,
                           OWNER_SETUP_WHY, PY_FLAG_RE, PY_RUN_RE, SETUP_APPLY, SETUP_SCRIPTS, UI_NAME_RE, _tool_run,
@@ -133,13 +133,14 @@ from .rules_gitcore import (ALIAS_BLANKS, ALIAS_DEPTH, CONFIG_LONGS, CONFIG_LONG
                             GIT_LONGS, GIT_LONG_VALUES, GIT_SHORT_VALUES, HOOKS_ENV, HOOKS_KEY, HOOKS_WHY, IDENTITY_ENV,
                             IDENTITY_KEYS, _canon_long, _config_files, _config_long, _config_scope_all, _is_kit_hooks,
                             _names_email, _one_letter, _opts, _owner_identity_use, _pos, _under_temp, _without,
-                            clean_dry_run, clone_configs, config_args, env_assignments, git_call_judged,
+                            clean_dry_run, clone_configs, computed_word, config_args, env_assignments, git_call_judged,
                             git_config_call, git_hooks_path, git_prefix_configs, hooks_config_write, inline_alias,
                             kit_githooks, owner_identity, repo_config_file, restore_index_only, split_alias,
                             stash_reads)
 from .rules_push import (DataBranch, Judged, LAND_HOW, _branch_of, _guarded_mains, _no_verify_word,
-                         _push_names_branches, _unknown_dir_counts, data_copy, git_push, git_push_pm_data,
-                         git_push_pmdata, home_config, kit_judged, landing_command, pmdata_recorded)
+                         _push_names_branches, _unknown_dir_counts, call_subexpr_pmdata, data_copy, git_push,
+                         git_push_pm_data, git_push_pmdata, git_send_pack_pmdata, home_config, hookless_refusal,
+                         hookless_sub, kit_judged, landing_command, pmdata_possible, pmdata_recorded)
 from .rules_push import pmdata      # kitlib.pmdata, read here and as rules.pmdata (fallback)
 from .rules_edit import (BLIND_BRANCH_INSTEAD, DEV_DRIVE, DOS_WILDCARDS, GATE_RESULT, JAIL_ASK, KIT_JSON, LONG_PREFIX,
                          MACHINE_CONFIG, MACHINE_CONFIG_WHY, MAIN_CWD_HINT, OUTPUT_WRITERS, PLACE_RULES, PM_DATA_WHY,
@@ -184,9 +185,9 @@ from .rules_gitread import (APPLY_CHECK_OPTS, APPLY_READ_ONLY, APPLY_REPORTS, AP
                             GIT_LISTING_OPTS, GIT_LIST_FLAGS, GIT_READS, GIT_READ_VERBS, GIT_REF_WRITE_FLAGS,
                             GIT_STRICT_READ_OPTS, HISTORY_SUBS, NO_VALUE_NUM_RE, NO_VALUE_OPTS, SYMREF_READ_OPTS,
                             apply_checks, archive_filter_set, archive_long, archive_opened, archive_outputs,
-                            archive_words, cmd_native_unsure, computed_word, config_reads, dyn_head, git_reads,
-                            git_targets, native_unsure, ps_splat, respelt, strict_dyn_read, strict_read_opts,
-                            writes_main, writes_output_file)
+                            archive_words, cmd_native_unsure, config_reads, dyn_head, git_reads, git_targets,
+                            native_unsure, ps_splat, respelt, strict_dyn_read, strict_read_opts, writes_main,
+                            writes_output_file)
 from .rules_gitcommit import (COMMIT_HOLDS, COMMIT_KEPT_LONG, COMMIT_LONG_FLAGS, COMMIT_LONG_VALUES,
                               COMMIT_SHORT_ATTACHED, COMMIT_SHORT_FLAGS, COMMIT_SHORT_VALUES, COMMIT_STEPS,
                               COMMIT_STOPS, COMMIT_UNDOES, COMMIT_VERBS, INTERPRETER_COMMITS, INTERPRETER_GIT_RE,
@@ -194,9 +195,8 @@ from .rules_gitcommit import (COMMIT_HOLDS, COMMIT_KEPT_LONG, COMMIT_LONG_FLAGS,
                               commit_alternative, commit_scan, git_plain_commit, git_stash_shared, interpreter_git,
                               stash_alternative, stash_shared, typed_hash)
 from .rules_gitjail import (LANDER, LANDER_ARGS, LANDER_NOT_ALONE, LANDER_NO_CONFIG, LANDER_NO_ROLE, LANDER_VERBS,
-                            LANDER_WRAPPED, SAFE_WORD_RE, git_elsewhere, git_in_worktree, git_jail, git_jail_unknown,
-                            git_rest_text, git_retarget, git_unplaced, lander_alone, lander_check, lander_forms,
-                            lander_refusal, spelt)
+                            LANDER_WRAPPED, git_elsewhere, git_in_worktree, git_jail, git_jail_unknown, git_rest_text,
+                            git_retarget, git_unplaced, lander_alone, lander_check, lander_forms, lander_refusal)
 from .rules_gitref import (BRANCH_FLAGS, BRANCH_VALUES, CHECKOUT_FLAGS, CHECKOUT_VALUES, FALSE_WORDS, FETCH_FLAGS,
                            FETCH_VALUES, HISTORY_TOOLS, NOTES_READ_VERBS, NOT_STRAY, PER_WORKTREE_REFS,
                            PRUNE_TAGS_KEY_RE, PSEUDOREF_RE, PULL_FLAGS, PULL_VALUES, REBASE_FLAGS, REBASE_VALUES,
@@ -206,13 +206,12 @@ from .rules_gitref import (BRANCH_FLAGS, BRANCH_VALUES, CHECKOUT_FLAGS, CHECKOUT
                            WORKTREE_ADD_FLAGS, _branch_seen, _checked_out, _deref_unsure, _first_computed, _form_scan,
                            _form_words, _head_ref, _in_temp, _inline_on, _judge_refs, _last_of, _long_hit, _long_value,
                            _own_branch, _push_self, _read_ref, _ref_ok, _repo_common, _scratch_repo, _shared_scene,
-                           _stray_delete, _tracking_ref, _update_ref_unread, branch_refs, call_subexpr_pmdata,
-                           checkout_refs, cleanup_session, fetch_dst_ref, fetch_refs, git_branch_delete,
-                           git_send_pack_pmdata, git_shared_push, git_shared_ref, git_shared_ref_forms,
-                           git_worktree_remove, history_tool_refs, hookless_refusal, hookless_sub, main_names,
-                           notes_refs, per_worktree_ref, pmdata_possible, pull_refs, rebase_refs, ref_delete_hint,
-                           ref_name_ok, remote_refs, replace_refs, scratch_ref, shared_ref_held, stale_mark_word,
-                           stray_ref, symbolic_ref_refs, tag_refs, worktree_add_refs)
+                           _stray_delete, _tracking_ref, _update_ref_unread, branch_refs, checkout_refs,
+                           cleanup_session, fetch_dst_ref, fetch_refs, git_branch_delete, git_shared_push,
+                           git_shared_ref, git_shared_ref_forms, git_worktree_remove, history_tool_refs, main_names,
+                           notes_refs, per_worktree_ref, pull_refs, rebase_refs, ref_delete_hint, ref_name_ok,
+                           remote_refs, replace_refs, scratch_ref, shared_ref_held, stale_mark_word, stray_ref,
+                           symbolic_ref_refs, tag_refs, worktree_add_refs)
 
 
 # ---------------------------------------------------------------- entry

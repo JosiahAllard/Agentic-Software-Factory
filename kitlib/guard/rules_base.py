@@ -87,6 +87,19 @@ def quote(path):
     return '"%s"' % fwd(path)
 
 
+SAFE_WORD_RE = re.compile(r'^[\w@%+=:,./-]+$')
+
+
+def spelt(text):
+    """`text` as one shell word: bare when it needs no quoting, else single-quoted (double-quoted,
+    with bash's escapes, when it holds a single quote)."""
+    if SAFE_WORD_RE.match(text):
+        return text
+    if "'" not in text:
+        return "'%s'" % text
+    return '"%s"' % re.sub(r'(["\\$`])', r'\\\1', text)
+
+
 def shell_word(text):
     """`text` as one word bash and PowerShell both read as written: bare when it holds only
     characters neither shell treats specially (no `,`, which PowerShell reads as an array, and no

@@ -6,7 +6,8 @@ import re
 from . import commands as cm
 from . import shell as sh
 from .rules_base import ps_native_unsure, tail_word
-from .rules_gitcore import CONFIG_LONG_VALUES, CONFIG_READ_OPTS, CONFIG_STRICT_READ_OPTS, _config_long, stash_reads
+from .rules_gitcore import (CONFIG_LONG_VALUES, CONFIG_READ_OPTS, CONFIG_STRICT_READ_OPTS, _config_long, computed_word,
+                            stash_reads)
 
 
 HISTORY_SUBS = ('commit', 'merge', 'rebase', 'cherry-pick', 'revert', 'am', 'pull', 'apply', 'rm', 'mv',
@@ -501,8 +502,3 @@ def git_targets(gc):
     if gc.sub == 'worktree':
         return pos[:1]
     return pos[1:2]
-
-
-def computed_word(w):
-    """True for a Word whose text is not what git gets: computed, an alias's, or one bash changes."""
-    return bool(w.dyn or w.alt is not None or w.synth)

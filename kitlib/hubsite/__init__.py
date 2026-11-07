@@ -19,6 +19,7 @@
   apipages the api's page routes: publish, place, read and delete an HTML page and its card
   apilog   the api's log routes: the inbox, the landing feed and the hand-off records
   apisched the api's schedule routes: the owner's schedules for the kit's automatic tasks
+  apiread  the api's read routes: backlog, records, pending, wait, snapshot and health
   lockdoor the api's door to the machine lock, in-process: revision, view, stats, owner writes
   pagecheck what a published page's HTML may hold: one check, refused whole, never stripped
   skilledits the checks of an owner's skill edit: its text, its blob, the branch it names

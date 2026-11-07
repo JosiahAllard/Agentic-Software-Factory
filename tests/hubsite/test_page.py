@@ -1949,9 +1949,9 @@ class DomTest(unittest.TestCase):
         self.assertEqual((got["chip"], got["hot"]), ("98% wk · acct 1 · stale", True))      # the peak says it is stale
         self.assertIn("stale", got["rows"][0])
         self.assertIn("no usage file", got["rows"][1])
-        self.assertEqual(got["one"], ["?", "98% (stale)"])
+        self.assertEqual(got["one"], ["98% (stale)"])        # no five_hour reading: no Five-hour meter
         self.assertIn("stale", got["oneFoot"])
-        self.assertEqual(got["two"], ["?", "?"])
+        self.assertEqual(got["two"], ["?"])
         self.assertEqual(got["twoFoot"], "No usage file: no session on this account has written one")
 
     def test_each_usage_meter_shows_its_next_reset_or_unknown(self):
@@ -1966,7 +1966,7 @@ class DomTest(unittest.TestCase):
         """, snapshot(views={"usage": {"available": True, "as_of": NOW, "accounts": accounts}}), hash="#usage")
         self.assertTrue(got["one"][0].startswith("resets ") and " · in " in got["one"][0], got["one"])
         self.assertEqual(got["one"][1], "reset unknown")          # a reset already past is not shown as the next one
-        self.assertEqual(got["two"], ["reset unknown", "reset unknown"])
+        self.assertEqual(got["two"], ["reset unknown"])
 
     def test_the_reset_countdown_follows_the_clock_between_redraws(self):
         accounts = {"1": {"five": 40, "week": 71, "age": 0, "five_reset": "2099-01-01T10:00:00+00:00", "week_reset": "2099-01-01T10:00:00+00:00"}}

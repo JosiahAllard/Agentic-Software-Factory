@@ -10,6 +10,7 @@
   apibase  what the api's handlers share: role and status constants, Route, Request, the request readers
   apilock  the api's machine-lock routes: the lock reads and owner writes, each a handler
   apifindings the api's finding routes: the maintenance lint's findings and the owner's marks
+  apiskills the api's skill-edit routes: the owner's edits of a kit skill, draft to committed
   apisched the api's schedule routes: the owner's schedules for the kit's automatic tasks
   lockdoor the api's door to the machine lock, in-process: revision, view, stats, owner writes
   pagecheck what a published page's HTML may hold: one check, refused whole, never stripped

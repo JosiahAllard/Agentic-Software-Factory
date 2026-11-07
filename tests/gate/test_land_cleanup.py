@@ -2,7 +2,7 @@
 worktree (kitlib.worktree.remove, never forced) and its local branch (`git branch -d`). What main
 does not contain, a worktree with work in it and a worktree in use are kept and named, and the
 landing stands. Also the one-time sweep (`land.py --sweep-landed`) and the flags of both entry
-points (docs/gate-landing.md "Landing", "Branch cleanup").
+points (docs/gate-landing.md "Landing"; docs/gate-landing-policy.md "Branch cleanup").
 
 Every repository, worktree and branch here is the test's own, in a temp folder with a bare remote."""
 import importlib

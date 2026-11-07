@@ -1,6 +1,6 @@
 """More rows for tests/guard/test_rules.py: shell keywords, lines the guard cannot read, git
 option spellings, shell writes, Start-Process, nested shells, root-search spellings and the false
-denies that must stay allowed (docs/guard-rules.md "Rules", "Fallback"). Same shape as ROWS there.
+denies that must stay allowed (docs/guard-rules.md "Rules"; docs/guard-fallback.md "Fallback"). Same shape as ROWS there.
 
 Backslashes are built from BS so no editor or shell on this machine can rewrite them."""
 from . import world as W

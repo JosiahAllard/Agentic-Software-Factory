@@ -72,7 +72,7 @@ The Action Hub (`kitlib/hubsite`) keeps its tokens in a folder named `hub` besid
 - **hub-browser:** an MCP call to a server whose name holds `chrome`, `browser`, `playwright`, `puppeteer` or `computer-use` whose input (`Action.params`, every string up to 8 levels deep) holds `host:port` with a loopback host on a hub port (`hub.hub_origins`): 8790 and 8791 and the configured `hub.port` and `hub.tunnel_port`. Loopback is `localhost`, `*.localhost`, 127/8, `0.0.0.0`, `[::1]`, IPv4-mapped IPv6, and IPv4 in a browser's other spellings (`127.1`, `2130706433`, `0x7f.0.0.1`, percent-encoded). `Action.params` is the tool's input, which the Claude and Codex adapters pass (`hosts/*/adapter/events.py`); it takes no part in an Action's equality or hash (`kitlib/host/__init__.py`).
 
 - **Limits:** not caught:
-  - Read and Grep in an account whose PreToolUse matcher is older than the one in "Go-live", step 1: Claude Code does not send them to the guard (the settings are the owner's to change);
+  - Read and Grep in an account whose PreToolUse matcher is older than the one in docs/guard-hooks.md "Go-live", step 1: Claude Code does not send them to the guard (the settings are the owner's to change);
   - Glob, which is not hooked (a names search reads no token's text): it can list the token folder's names, never their text;
   - a link or junction below a search's start that leads into the token folder: only the start and the folder are resolved, not what the search walks through;
   - Grep's other ways to pick files (`type`) are not read: a Grep from a parent with a `type` and no `glob` is denied (over-reach), not judged by its type;

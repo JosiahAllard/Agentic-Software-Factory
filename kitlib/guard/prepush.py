@@ -10,7 +10,7 @@ nothing else. A record that cannot be read, or a recorded root this clone lacks,
 
 Next, secrets_refusal judges every line too, for every remote: a commit the push sends that adds or
 changes a file in a top .pm-kit/hub/ folder or .pm-kit/local.json (case ignored) is refused, even
-when a later commit deletes it (docs/guard-hooks.md "Pre-push", "Owner machine setup").
+when a later commit deletes it (docs/guard-hooks.md "Pre-push"; docs/guard-owner.md "Owner machine setup").
 
 Then, for a push that updates the remote's main branch, whoever pushes (the owner, an agent, a
 lander):

@@ -1,7 +1,11 @@
 """gate.py: the universal gate, a landing, and the kinds-table proposal (docs/gate.md).
 
-  gate.py [-C DIR] [--base REV] [--full | --only STEP ...] [--plan] [--slug S] [--log-dir D]
+  gate.py [-C DIR] [--base REV] [--full | --only STEP ...] [--plan | --again] [--slug S]
+          [--log-dir D]
       gate the checkout under the machine lock; on a pass of a clean tree, the gate-OK record.
+      Refused (4) before it books when it would only repeat a failed gate of the same clean
+      tree, gate config and kit, unless --again (kitlib.gate.rerun.unchanged_red; docs/gate.md
+      "An unchanged red tree").
       With no -C or a relative one, refused (4) when this gate.py is in another checkout of the
       gated tree's repository; a relative --log-dir outside the gated checkout is USAGE (2)
       (kitlib.gate.caller). From another directory:
@@ -118,6 +122,9 @@ def gate_parser():
                      'paired with a control at the merge base, under the machine lock (one per '
                      'red run; counts toward the gate budget; docs/gate.md "Targeted rerun")')
     p.add_argument('--plan', action='store_true', help='print what would run; run nothing')
+    p.add_argument('--again', action='store_true',
+                   help='run a gate that would only repeat a failed gate of this same tree '
+                   '(docs/gate.md "An unchanged red tree")')
     p.add_argument('--slug', help='the machine-lock slug (default: the branch)')
     p.add_argument('--log-dir', help='where this run\'s logs go')
     p.add_argument('--measure', action='store_true', help='write a proposed kinds table')
@@ -317,15 +324,18 @@ def main(argv):
         a = gate_parser().parse_args(argv)
         if a.measure:
             if (a.only or a.full or a.rerun or a.plan or a.base or a.root is not None
-                    or a.slug or a.log_dir):
+                    or a.slug or a.log_dir or a.again):
                 print('USAGE: --measure takes only --out and --days', file=sys.stderr)
                 return G.USAGE
             return do_measure(a)
         if a.out:
             print('USAGE: --out goes with --measure', file=sys.stderr)
             return G.USAGE
-        if a.rerun and (a.plan or a.base):
+        if a.rerun and (a.plan or a.base or a.again):
             print('USAGE: --rerun takes only -C, --slug and --log-dir', file=sys.stderr)
+            return G.USAGE
+        if a.again and a.plan:
+            print('USAGE: --again runs a gate; --plan runs nothing', file=sys.stderr)
             return G.USAGE
         root = os.path.abspath(a.root or '.')
         # No -C or a relative one: this gate.py on another checkout of its own repository. An
@@ -350,7 +360,7 @@ def main(argv):
                                     say=say, book_kw=book_kw))
             return emit(guarded(runner.branch_gate, root, base=a.base, full=a.full,
                                 only=a.only, plan=a.plan, slug=a.slug, log_dir=a.log_dir,
-                                say=say, book_kw=book_kw))
+                                say=say, book_kw=book_kw, again=a.again))
         finally:
             if held is not None:
                 held.release()

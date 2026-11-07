@@ -38,6 +38,11 @@ Records: `<dev_drive>/pm-kit/kit-gate-rerun/<repo key>/<commit>/`, one file per 
 once (red-<ns>-<token>.json, rerun-<ns>-<token>.json), each carrying the sha256 of its own
 canonical JSON. A commit's history is every file there; it is never rewritten. A branch's
 history is the history of the tip and of every commit `git rev-list <tip> ^<merge base>` names.
+
+Red-tree marks (mark, unchanged_red; docs/gate.md "An unchanged red tree"): every branch gate of
+a clean tree writes `<dev_drive>/pm-kit/kit-gate-red/<repo key>/<tree>.<mode>.json`, its
+verdict, the gate config's hash, the kit and the steps that failed; a later gate of the same
+tree that would only repeat a failed one is refused before it books.
 """
 import contextlib
 import hashlib
@@ -76,6 +81,8 @@ FIXTURES = ('setUpClass', 'tearDownClass', 'setUpModule', 'tearDownModule')
 TIMED_OUT = 'rerun: TIMEOUT'         # the line run_class ends a class log with past its timeout
 TIMED_OUT_CONTROL = 'timed out'     # a control past its timeout: neither red nor green at base
 FILE_NAME = re.compile(r'^(red|rerun)-(\d+)-([0-9a-f]{8})\.json$')
+MARK_DIR = 'kit-gate-red'           # the red-tree marks (mark): the latest gate of a tree per mode
+MODES = ('full', 'select', 'docs')  # a branch gate's gate_mode (runner._gate_checkout)
 
 SECTION = re.compile(r'^==== (\S+) \((\d+) tests?, [\d.]+s, (.+?)\) ====\s*$')
 TIER = re.compile(r'^kit_tests: .*: tier .+ \(KIT_FAKE_GIT=([01])\)\s*$')
@@ -94,6 +101,10 @@ ABSENT = re.compile(r'ModuleNotFoundError|ImportError|AttributeError: module .* 
 
 class RerunError(Exception):
     """A rerun record could not be found, read or written."""
+
+
+class NoMarkFolder(RerunError):
+    """The machine has no red-tree folder (no dev_drive): no mark is read or written."""
 
 
 # ---------------------------------------------------------------- the records
@@ -424,6 +435,93 @@ def uncovered_of(red):
         and not s.get('uncovered')] + [
         '%s: status %r' % (s.get('name'), s.get('status')) for s in red.get('steps') or []
         if s.get('status') not in PASSING + ('FAIL', 'NOT RUN')]
+
+
+# ---------------------------------------------------------------- the red-tree marks
+
+def mark_path(root, tree, mode):
+    """`<dev_drive>/pm-kit/kit-gate-red/<repo key>/<tree>.<mode>.json`: the latest branch gate of
+    `tree` in `mode` (MODES). A folder of its own: rerun.load refuses any other file in a
+    commit's folder (fail closed). RerunError when there is no folder to name."""
+    if not refs.is_sha(tree or '') or mode not in MODES:
+        raise RerunError('no mark for tree %r in mode %r' % (tree, mode))
+    common, why = repo.common_dir(root)
+    if not common:
+        raise RerunError('no git common dir for %s: %s' % (root, why))
+    try:
+        base = result.kit_folder(MARK_DIR, 'red-tree folder')
+    except result.ResultError as e:
+        raise NoMarkFolder(str(e))
+    return os.path.join(base, result.repo_key(common), '%s.%s.json' % (tree, mode))
+
+
+def mark_key(cfg, mode, only, base):
+    """What a mark must match beyond its tree: the gate config's hash, the kit (runner.
+    kit_identity), the mode, the --only steps and the --base given (None: the default)."""
+    return {'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
+            'kit': runner.kit_identity(), 'mode': mode,
+            'only': sorted(only) if only else None, 'base': base}
+
+
+def mark(top, key, tree, commit, branch, results, log_dir):
+    """Write the mark of a branch gate of the clean `tree` (the runner has checked the tree was
+    clean at start and end, HEAD unmoved and the stash empty): `fail` when a step FAILed, else
+    `pass`, which supersedes a `fail` of the same tree and mode. Its path; RerunError."""
+    failed = [r['name'] for r in results if r.get('status') == 'FAIL']
+    rec = dict(key, schema=SCHEMA, tree=tree, commit=commit, branch=branch,
+               verdict='fail' if failed else 'pass', failed=failed, ended=gate_ok.utc(),
+               log_dir=log_dir)
+    path = mark_path(top, tree, key['mode'])
+    tmp = os.path.join(os.path.dirname(path), '.%s.tmp' % secrets.token_hex(6))
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(json.dumps(rec, sort_keys=True, indent=1) + '\n')
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    except OSError as e:
+        raise RerunError('cannot write %s: %s' % (path, e))
+    return path
+
+
+def _red_mark(top, tree, mode):
+    """The `fail` mark of `tree` in `mode`, or None (none, or a pass). RerunError when one is
+    there and cannot be read."""
+    path = mark_path(top, tree, mode)
+    try:
+        with open(path, encoding='utf-8') as f:
+            rec = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise RerunError('%s cannot be read: %s' % (path, e))
+    if not isinstance(rec, dict) or rec.get('schema') != SCHEMA or rec.get('tree') != tree:
+        raise RerunError('%s is not a schema %d mark of tree %s' % (path, SCHEMA, tree[:10]))
+    return rec if rec.get('verdict') == 'fail' else None
+
+
+def unchanged_red(top, key, tree, steps):
+    """The `fail` mark that makes a branch gate of `tree` with `key` (mark_key) running `steps`
+    (names) a repeat, or None. A repeat: the same tree, gate config and kit, and the latest gate
+    of that tree in the same mode, --only steps and --base failed; or, for a select or docs gate,
+    the latest --full of that tree failed in a step it would run. A --full after a red select or
+    docs gate is no repeat (the way on, and its red run gets a targeted rerun). RerunError when
+    a mark cannot be read."""
+    if not refs.is_sha(tree or ''):
+        return None
+    same = ('gate_config', 'kit')
+    rec = _red_mark(top, tree, key['mode'])
+    if rec and all(rec.get(k) == key[k] for k in same + ('only', 'base')):
+        return rec
+    if key['mode'] != 'full':
+        rec = _red_mark(top, tree, 'full')
+        if rec and all(rec.get(k) == key[k] for k in same) and \
+                set(rec.get('failed') or []) & set(steps):
+            return rec
+    return None
 
 
 # ---------------------------------------------------------------- the landing's checks

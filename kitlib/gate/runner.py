@@ -84,6 +84,8 @@ CANCELLED_WAITING = 'was cancelled by stop while it waited'     # kitlib.lock.ru
 # gate as a `windows` result. The one switch.
 WINDOWS_FAIL = False
 RESULT = {'PASS': 'pass', 'WARN': 'warn', 'SKIP': 'skip', 'REUSED': 'reused'}
+# A branch gate that would only repeat a failed gate of its tree (_unchanged): its no_record.
+UNCHANGED_NO_RECORD = 'the tree failed this gate unchanged'
 
 
 def _quiet(_line):
@@ -566,7 +568,8 @@ def load_checks(cfg, steps, root=None, rev=None):
 
 
 def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book_kw, merged=False,
-          checks_rev=None, gate=None, slot=None, seen=None, capped=False, budget_branch=None):
+          checks_rev=None, gate=None, slot=None, seen=None, capped=False, budget_branch=None,
+          unchanged=None):
     """Runs `chosen` in a slot of `kind`: `(results, None)`, or `(None, Outcome)` when the hook
     module or the booking refuses. The hook module's checks come from the work tree, or from
     commit `checks_rev` when given (a landing: --expect-main). `chosen` is never empty. The slot
@@ -597,6 +600,9 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     first, before the cap is waited for or anything is booked: `(None, REFUSED Outcome)` when it
     is spent. None: not asked (a detached HEAD). The run is booked with it as book's `branch`,
     which its history line keeps, so the budget counts the run by its branch, not its slug.
+    `unchanged`: with `capped`, unchanged(tree) gives the REFUSED lines of a gate that would only
+    repeat a failed gate of the same tree (_unchanged), or None; asked after merged_tip before it
+    books, and again at its turn (released `not started`), as merged_tip is.
     A stop of the booked run (kitlib.gate.stop, machine_lock.py stop), whether it comes while the
     run waits, in a step (Slot.wait ends that step's tree) or after the last one, gives
     `(None, stopped_outcome)`: no other step starts and the run is released `cancelled`. A held
@@ -631,6 +637,9 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
         merged = merged_tip(cfg, root, budget_branch, tree)
         if merged:
             return None, merged_refusal(budget_branch, merged, base, 'nothing queued')
+        repeat = unchanged(tree) if unchanged is not None else None
+        if repeat:
+            return None, unchanged_outcome(repeat, 'nothing queued')
         store = (book_kw or {}).get('store') or Store()
         over = budget.refusal(root, store, name, budget_branch, say)
         if over:
@@ -656,6 +665,13 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
                     return None, merged_refusal(
                         budget_branch, merged, base,
                         'the queued gate (run %s) was dropped at its turn; nothing ran' % slot.id)
+                # A gate of the same tree that ran ahead of it while it queued, and failed.
+                repeat = unchanged(tested_tree(root)) if unchanged is not None else None
+                if repeat:
+                    slot.release(1, budget.NOT_STARTED)
+                    return None, unchanged_outcome(
+                        repeat, 'the queued gate (run %s) was dropped at its turn; nothing ran'
+                        % slot.id)
             # Its turn now names this run (gatecap.gave_way). A backstop for a gate the count
             # missed: with the session's other gates at the cap, it gives the slot back and books
             # again, unless a stop came while it gave the run back.
@@ -703,6 +719,13 @@ def merged_tip(cfg, root, branch, tree):
     except Exception:               # noqa: BLE001 - a check that cannot answer never drops a gate
         return None
     return (head, ref) if yes is True else None
+
+
+def unchanged_outcome(lines, then):
+    """The REFUSED outcome of a gate _unchanged found a repeat: its REFUSED line ends with
+    `then` (what was done), its Instead line follows. No gate-OK record."""
+    return G.Outcome(G.REFUSED, ['%s; %s' % (lines[0], then)] + list(lines[1:]), record=None,
+                     no_record=UNCHANGED_NO_RECORD)
 
 
 def merged_refusal(branch, merged, base, then):
@@ -786,7 +809,7 @@ def book_refusal(e, log_dir=None, base=None):
 # ---------------------------------------------------------------- the branch gate
 
 def branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, log_dir=None,
-                say=None, book_kw=None):
+                say=None, book_kw=None, again=False):
     """_branch_gate() between the two result records of the branch at HEAD (kitlib.gate.result):
     `running` before it, the outcome's after it, or `error` when an exception, SystemExit or
     Ctrl+C escapes it (raised again, unchanged); the `error` record names the run's log folder
@@ -805,7 +828,7 @@ def branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, l
     known = {}                      # _gate_checkout: 'log_dir', once the run's folder is made
     try:
         out = _branch_gate(root, base=base, full=full, only=only, plan=plan, slug=slug,
-                           log_dir=log_dir, say=say, book_kw=book_kw, known=known)
+                           log_dir=log_dir, say=say, book_kw=book_kw, known=known, again=again)
     except BaseException as e:
         if run is not None:
             try:
@@ -874,7 +897,7 @@ def _result_run(root):
 
 
 def _branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, log_dir=None,
-                 say=None, book_kw=None, known=None):
+                 say=None, book_kw=None, known=None, again=False):
     """Gate the checkout `root` is in against `base` (default `<remote>/<main>`, else `<main>`; the
     merge base with HEAD is what is compared). Outcome codes: OK, FAILED, USAGE (an --only name
     no step has, a --base that does not resolve), REFUSED, or a machine lock code. Facts:
@@ -884,7 +907,9 @@ def _branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, 
     config is read). The last line, once the config is read, is the source line (detect.label).
     An auto-detected gate that found no stack runs nothing and passes, its verdict line saying
     so (NO_CHECKS). `known`, a dict: its 'log_dir' is set as soon as the run's log folder is
-    made, so a caller still has it when an exception ends the run."""
+    made, so a caller still has it when an exception ends the run. A gate that would only repeat
+    a failed gate of its clean tree is REFUSED before it books (_unchanged; docs/gate.md "An
+    unchanged red tree"), unless `again` (gate.py --again)."""
     say = say or _quiet
     top, why = repo.toplevel(root)
     if not top:
@@ -895,7 +920,7 @@ def _branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, 
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
     seen = [detect.effective(cfg, top)]
     out = _gate_checkout(top, cfg, seen, base=base, full=full, only=only, plan=plan, slug=slug,
-                         log_dir=log_dir, say=say, book_kw=book_kw, known=known)
+                         log_dir=log_dir, say=say, book_kw=book_kw, known=known, again=again)
     out.facts['source'] = seen[0].source
     if out.facts.get('full_hint'):
         out.lines.append(out.facts['full_hint'])
@@ -915,7 +940,7 @@ def zero_count_warnings(gate):
 
 
 def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False, slug=None,
-                   log_dir=None, say=None, book_kw=None, known=None):
+                   log_dir=None, say=None, book_kw=None, known=None, again=False):
     """_branch_gate() once the config is read. seen[0]: the gate it runs (detect.effective),
     first from the checkout alone; an auto-detected one is detected again once the merge base is
     known, with the steps the merge base owes, and set back in seen[0]."""
@@ -1015,25 +1040,37 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     results, watched = [], {}
     # a whole --full run: its gate_mode is full, and a red one gets a rerun record (_red_record)
     whole = full and not only and not partial and not empty
+    # Its gate_mode, on the lock run and its history line: --only and a partial --base count as
+    # select, with --full or of a docs-only change too. The red-tree marks key on it too.
+    mode = 'full' if whole else 'docs' if docs and not partial else 'select'
+    key = None          # the red-tree mark's key (rerun.mark_key), once it is asked for
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
         # run book through gated() without them, and a fully reused gate never gets here. Its
         # lock run's note names its tip and options (gatecap.queue_note): the gate queue's key.
-        # Its gate_mode, on the lock run and its history line: --only and a partial --base count
-        # as select, with --full or of a docs-only change too.
-        mode = 'full' if whole else 'docs' if docs and not partial else 'select'
         noted = dict({'note': gatecap.queue_note(head, full, only, asked_base), 'gate_mode': mode},
                      **(book_kw or {}))
+        key = None if empty else _mark_key(cfg, mode, only, asked_base, say)
+        unchanged = None
+        if key is not None and not again:
+            flags = ' '.join((['--full'] if full else []) +
+                             (['--only'] + list(only) if only else []) +
+                             (['--base', asked_base] if asked_base else []))
+
+            def unchanged(tree):
+                return _unchanged(top, key, tree, [s.name for s in run], branch, head, flags, say)
         results, refused = gated(cfg, top, mb, changed, run, gate['kind'], name,
                                  slug or slug_of(branch or head[:10]), logs, say, noted,
                                  gate=gate, seen=watched, capped=True,
-                                 budget_branch=branch or None)
+                                 budget_branch=branch or None, unchanged=unchanged)
         if refused is not None:
             return refused
     results = _with_reused(results, chosen, reused)
     _keep(plan, results, logs, say)
     ok, line = verdict(results, empty)
+    if key is not None and not nothing_ran(results):
+        _mark(top, key, head, branch, entries, results, logs, say)
     lines = [line, 'logs: %s' % logs]
     facts = dict(verdict=line, results=results, record=None, no_record=None, head=head, base=mb,
                  log_dir=logs, changed=changed, windows=watched.get('windows'), full_hint=hint)
@@ -1092,21 +1129,81 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     return G.Outcome(G.OK, lines, **facts)
 
 
+def _unclean(top, head, entries):
+    """Why a gate that started with git status `entries` names no one commit's tree now: the
+    tree had uncommitted changes at the start, changed while the gate ran, HEAD moved, or a
+    stash entry appeared; '' or None when none of these."""
+    if entries:
+        return 'the work tree had uncommitted changes when the gate started'
+    after, _ = gitstatus.status(top)
+    if after != []:
+        return 'the work tree changed while the gate ran'
+    head_now, _ = refs.head(top)
+    if head_now != head:
+        return 'HEAD moved while the gate ran'
+    return stash.appeared(top)
+
+
+def _mark_key(cfg, mode, only, base, say):
+    """rerun.mark_key, or None (said as a WARNING) when it cannot be made: no mark is read or
+    written, and the gate runs."""
+    from kitlib.gate import rerun   # rerun imports this module
+    try:
+        return rerun.mark_key(cfg, mode, only, base)
+    except Exception as e:          # noqa: BLE001 - a mark never stops or fails the gate
+        say('WARNING: no red-tree mark: %s: %s' % (type(e).__name__, e))
+        return None
+
+
+def _unchanged(top, key, tree, steps, branch, head, flags, say):
+    """The REFUSED and Instead lines of a branch gate of `tree` that would only repeat a failed
+    gate of it (rerun.unchanged_red), or None: none, an unclean tree (`tree` None), or a mark
+    that cannot be read (said as a WARNING; the gate runs)."""
+    from kitlib.gate import rerun   # rerun imports this module
+    try:
+        rec = rerun.unchanged_red(top, key, tree, steps)
+    except rerun.NoMarkFolder:
+        return None
+    except rerun.RerunError as e:
+        say('WARNING: the red-tree mark is not read, so the gate runs: %s' % e)
+        return None
+    if rec is None:
+        return None
+    rerun_way = ('; or, for this red --full, a targeted rerun: gate.py -C %s --rerun' % top
+                 if rec.get('mode') == 'full' else '')
+    return ['REFUSED: the tree of %s at %s (tree %s) failed its last %s gate with this gate '
+            'config and kit at %s (%s; logs: %s)' % (
+                branch or '(detached)', head[:10], tree[:10], rec.get('mode'), rec.get('ended'),
+                ', '.join(rec.get('failed') or []) or 'failed', rec.get('log_dir')),
+            'Instead: fix it and commit%s; or, to repeat it on purpose (docs/gate.md "An '
+            'unchanged red tree"): gate.py -C %s%s --again' % (
+                rerun_way, top, ' ' + flags if flags else '')]
+
+
+def _mark(top, key, head, branch, entries, results, logs, say):
+    """The red-tree mark of a branch gate that ran (rerun.mark), on the gate-OK record's own
+    terms (_unclean): a gate of no one commit's tree writes none. Nothing here changes the
+    gate's verdict; a mark that cannot be written is one WARNING."""
+    from kitlib.gate import rerun   # rerun imports this module
+    if _unclean(top, head, entries):
+        return
+    tree, _ = refs.tree_of('HEAD', top)
+    if not tree:
+        return
+    try:
+        rerun.mark(top, key, tree, head, branch or None, results, logs)
+    except rerun.NoMarkFolder:
+        return
+    except rerun.RerunError as e:
+        say('WARNING: no red-tree mark: %s' % e)
+
+
 def _red_record(top, cfg, head, mb, started, results, chosen, logs, entries, say):
     """The red run of a failed `--full` gate (kitlib.gate.rerun.record_red), written on the gate-OK
     record's own terms: the tree clean when the gate started and when it ended, HEAD unmoved and
     the stash empty. Its path, or None (said). Nothing here changes the gate's verdict."""
     from kitlib.gate import rerun   # rerun imports this module
-    after, _ = gitstatus.status(top)
-    head_now, _ = refs.head(top)
-    if entries:
-        no = 'the work tree had uncommitted changes when the gate started'
-    elif after != []:
-        no = 'the work tree changed while the gate ran'
-    elif head_now != head:
-        no = 'HEAD moved while the gate ran'
-    else:
-        no = stash.appeared(top)
+    no = _unclean(top, head, entries)
     if no:
         say('no red-run record for a targeted rerun: %s' % no)
         return None

@@ -54,6 +54,17 @@ class Entry(UsageCase):
             self.assertIn('USAGE: --measure takes only --out and --days', err)
             self.assertFalse(os.path.exists(out), extra)
 
+    def test_again_with_plan_rerun_or_measure_is_usage(self):
+        """--again runs a branch gate past an unchanged red tree: with --plan (runs nothing),
+        --rerun or --measure it is USAGE, never silently ignored."""
+        for args, said in ((['--again', '--plan'], 'USAGE: --again runs a gate'),
+                           (['--again', '--rerun'], 'USAGE: --rerun takes only'),
+                           (['--measure', '--out', 'x.json', '--again'],
+                            'USAGE: --measure takes only')):
+            rc, out, err = gate_py(*args)
+            self.assertEqual(rc, 2, (args, out, err))
+            self.assertIn(said, err, args)
+
     def test_land_needs_both_hashes(self):
         self.assert_usage('land')
         self.assert_usage('land', 'kit/x', '--expect-main', SHA)

@@ -201,6 +201,31 @@ def _timeout(req):
     return timeout
 
 
+def _one_of(b, name, allowed):
+    v = _text(b, name)
+    if v not in allowed:
+        raise _invalid('%s is one of %s, not %r' % (name, ', '.join(allowed), v), name)
+    return v
+
+
+def _put_pinned(api, coll, doc_id, fields, pin):
+    """Put fields as coll/doc_id, pinned: writing over a document takes its version as `pin`
+    (None, or another, is `conflict`), and a pin for a document not there is `conflict` too."""
+    have = api.store.get(coll, doc_id)
+    if have is not None and pin is None:
+        raise HubError('conflict', '%s/%s is at version %d: give it as if_version to set it '
+                       'again' % (coll, doc_id, _version(have)), 'if_version')
+    if have is not None and pin != _version(have):
+        raise HubError('conflict', '%s/%s is at version %d, not %d'
+                       % (coll, doc_id, _version(have), pin), 'if_version')
+    if have is None and pin:
+        raise HubError('conflict', 'there is no %s/%s at version %d: it is not there'
+                       % (coll, doc_id, pin), 'if_version')
+    # pinned to the version read (0: not there yet), so a second writer with the same pin loses
+    r = api.store.put(coll, doc_id, fields, if_version=_version(have) if have is not None else 0)
+    return api.written(r)
+
+
 @dataclasses.dataclass(frozen=True)
 class ApiConfig(object):
     """The hooks an Api reads from this machine, each a function (or None, which keeps the

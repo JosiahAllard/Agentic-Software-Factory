@@ -1,6 +1,6 @@
 """The reviewer tier rule (kitlib.gate.verdicts.tier_why): a branch that is High risk or strict
 lands only on a strong-tier review, whoever built it. tools/verdict.py add refuses a lighter
-High-risk or strict review at queue time; kitlib.gate.land refuses it at landing, a verdict queued before
+High-risk review at queue time; kitlib.gate.land refuses it at landing, a verdict queued before
 the rule included (no grandfathering: review it again on a strong-tier model); both use the one
 pure test. A Low or Medium branch off the strict paths lands on any reviewer model."""
 import json
@@ -66,9 +66,8 @@ class TierWhy(unittest.TestCase):
 
 
 class QueueTime(GateRepoCase):
-    """tools/verdict.py add: a High-risk verdict, or one on a strict branch, on a review below the
-    strong tier is REFUSED, exit 2, nothing queued; the same review of a Medium branch off the
-    strict paths is queued."""
+    """tools/verdict.py add: a High-risk verdict on a review below the strong tier is REFUSED,
+    exit 2, nothing queued; the same review of a Medium branch is queued."""
     # test_verdict_cli's harness, borrowed without its tests
     setUp = test_verdict_cli.VerdictCli.setUp
     run_tool = test_verdict_cli.VerdictCli.run_tool
@@ -84,15 +83,6 @@ class QueueTime(GateRepoCase):
         self.assertIn(HIGH_REFUSAL + '; nothing was queued', lines[0])
         self.assertEqual(lines[-1], V.TIER_INSTEAD)
         self.assertNotIn('QUEUED', out)
-        self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
-
-    def test_a_strict_low_risk_haiku_review_is_refused_at_add(self):
-        _, tip = self.branch('s', {test_land_strict.STRICT: 'x = 1\n'})
-        code, out, err = self.run_tool(*self.add_args(tip, **{
-            '--branch': 'kit/s', '--reviewer-model': 'haiku'}))
-        self.assertEqual(code, 2, (out, err))
-        self.assertIn('a branch that changes a strict path lands only on a strong-tier review',
-                      out.splitlines()[0])
         self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
 
     def test_a_high_risk_review_on_the_strong_tier_is_queued(self):

@@ -26,11 +26,10 @@
       verdicts.reviewer_verdict_why); an
       id with no transcript prints `NOTE: the reviewer's verdict is not checked: ...`. Before
       QUEUED, each verdict read prints `reviewer <id> said <verdict> at <tip>`.
-      A verdict that is High risk, or on a branch that changes a strict path (land.strict_scan,
-      against main as last fetched; not read: not checked here), whose --reviewer-model is not a
-      strong-tier model (hosts.json "tiers", or a full model id naming one) prints `REFUSED: ...`
-      and an `Instead:` line naming a fresh strong-tier review, whoever built the branch (exit 2,
-      nothing written; verdicts.tier_why, the rule land.py checks again at landing); when
+      A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
+      or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
+      strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
+      the rule land.py checks again at landing, where a strict branch needs one too); when
       hosts.json "tiers" cannot be read it is NOT DONE (exit 1, nothing written).
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
@@ -69,7 +68,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _host                                                        # noqa: E402
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib.coordstate.render import main_as_fetched                # noqa: E402,F401
-from kitlib.gate import land, verdicts                              # noqa: E402
+from kitlib.gate import verdicts                                    # noqa: E402
 from kitlib.git import refs, repo                                  # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
@@ -183,15 +182,6 @@ def carry(a, common_dir):
     return DONE
 
 
-def strict(a):
-    """Whether a.branch changes a strict path (land.strict_scan); False when that cannot be read
-    (the landing checks it again) or a.risk is High (the tier rule applies anyway)."""
-    if a.risk == 'High':
-        return False
-    hits, _, _, _, _ = land.strict_scan(os.path.abspath(a.root), [a.branch])
-    return bool(hits and hits.get(a.branch))
-
-
 def run(a, common_dir):
     if a.cmd == 'carry':
         return carry(a, common_dir)
@@ -210,8 +200,7 @@ def run(a, common_dir):
         seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
         said = verdicts.seen_verdicts(entry, verdict_reader()) if well else {}
         _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,
-                                 main_why=main_why, seen=seen, said=said,
-                                 strict=well and strict(a))
+                                 main_why=main_why, seen=seen, said=said)
         for rid in sorted(r for r, models in seen.items() if not models):
             print('NOTE: --reviewer-model %s is not checked: no transcript found for the reviewer '
                   'id %s' % (stored['reviewer_model'], rid), flush=True)

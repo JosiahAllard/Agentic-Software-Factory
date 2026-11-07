@@ -70,7 +70,7 @@ class SelfReviewWhy(unittest.TestCase):
 
 
 class TwoReviewers(unittest.TestCase):
-    """Two reviewers of one tip: one verdict names
+    """A review plus a separate architecture check (skill branch-review, step 3): one verdict names
     both ids and the one model they both ran on; reviewers on two models, or a SEND BACK from
     either, refuse it, and the refusal names only the reviewer to redo."""
     TIERS = ({'opus'}, {'haiku', 'sonnet'}, None)

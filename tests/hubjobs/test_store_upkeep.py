@@ -217,6 +217,71 @@ class Findings(UpkeepCase):
         self.assertIn('3 d old', su.scan(self.common, NOW)[0])
 
 
+class PushOnChange(UpkeepCase):
+    """An event is pushed at the pass's end, and only when it changed or a day passed; the last
+    pushes survive a hub restart (a new StoreUpkeep over the same common dir)."""
+
+    def setUp(self):
+        super(PushOnChange, self).setUp()
+        self.loose = 10
+        self.place('objects/pack/pack-a.pack', su.PACK_AGE_S + 60)
+
+    def restarted(self, later_s):
+        self.job = su.StoreUpkeep(self.root, book=self.fake_book, clock=lambda: NOW + later_s)
+
+    def test_an_unchanged_count_after_a_restart_sends_no_push(self):
+        self.run_job()
+        self.assertEqual(self.events, [('findings', '1')])
+        self.restarted(900)
+        out = self.run_job()
+        self.assertEqual(self.events, [('findings', '1')])
+        self.assertIn('finding: pack-a.pack', out)      # the note still names it
+
+    def test_a_changed_count_pushes_and_the_same_one_again_after_a_day(self):
+        self.run_job()
+        self.place('objects/pack/pack-b.pack', su.PACK_AGE_S + 60)
+        self.restarted(900)
+        self.run_job()
+        self.restarted(900 + su.REPUSH_S)
+        self.run_job()
+        self.assertEqual(self.events, [('findings', '1'), ('findings', '2'), ('findings', '2')])
+
+    def test_a_count_that_went_away_pushes_again_when_it_comes_back(self):
+        self.run_job()
+        os.remove(os.path.join(self.pack, 'pack-a.pack'))
+        self.restarted(900)
+        self.run_job()
+        self.place('objects/pack/pack-a.pack', su.PACK_AGE_S + 60)
+        self.restarted(1800)
+        self.run_job()
+        self.assertEqual(self.events, [('findings', '1')] * 2)
+
+    def test_an_unreadable_state_counts_as_empty(self):
+        with open(os.path.join(self.common, su.STATE_FILE), 'w') as f:
+            f.write('{not json')
+        self.run_job()
+        self.assertEqual(self.events, [('findings', '1')])
+
+    def test_the_push_comes_after_the_git_steps(self):
+        self.job.clock = lambda: NOW
+        ctx = jobs.Ctx(self.stop, lambda word, detail=None: self.log.append('event ' + word))
+        self.job(ctx)
+        self.assertEqual(self.log[-1], 'event findings')
+        self.assertIn('commit-graph', self.log[:-1])
+
+    def test_a_pass_through_the_runner_records_its_run_and_note(self):
+        pushed = []
+        runner = jobs.Jobs([jobs.Job(su.NAME, su.EVERY_S, self.job)],
+                           notify=lambda name, word, detail=None: pushed.append((name, word, detail)))
+        runner.run_now(su.NAME)
+        runner.run_now(su.NAME)
+        st = runner.status()[su.NAME]
+        self.assertEqual(st['runs'], 2)
+        self.assertIn('commit graph written', st['note'])
+        self.assertIn('finding: pack-a.pack', st['note'])
+        self.assertEqual(pushed, [(su.NAME, 'findings', '1')])
+
+
 class StaleLock(UpkeepCase):
     """The recurrence check: a planted objects/maintenance.lock older than LOCK_AGE_S."""
 
@@ -231,11 +296,14 @@ class StaleLock(UpkeepCase):
         from kitlib.hubsite import push
         self.assertIn('maintenance.lock', push.JOB_EACH['stale-lock'])
 
-    def test_it_is_pushed_again_every_pass_while_it_stays(self):
+    def test_it_is_pushed_again_only_when_its_age_changes_or_a_day_passes(self):
         self.place('objects/maintenance.lock', 13 * 3600)
         self.run_job()
         self.run_job()
-        self.assertEqual(self.events, [('stale-lock', '13h')] * 2)
+        self.assertEqual(self.events, [('stale-lock', '13h')])
+        self.job.clock = lambda: NOW + su.REPUSH_S
+        self.run_job()
+        self.assertEqual(self.events, [('stale-lock', '13h'), ('stale-lock', '37h')])
 
     def test_a_lock_a_live_git_may_hold_is_a_note_not_a_push(self):
         lock = self.place('objects/maintenance.lock', 13 * 3600)

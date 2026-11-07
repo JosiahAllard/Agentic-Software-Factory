@@ -1,6 +1,6 @@
 """The kit's own module map holds over this checkout (docs/module-map.md "The kit's own map").
 
-Skipped while the owner's map file is absent: docs/module-map.json is owner-only.
+Skipped while the map file docs/module-map.json is absent.
 """
 import os
 import unittest
@@ -14,7 +14,7 @@ CEILINGS = os.path.join(KIT_ROOT, 'docs', 'module-ceilings.json')
 PAGE = os.path.join(KIT_ROOT, 'docs', 'module-architecture.md')
 
 
-@unittest.skipUnless(os.path.isfile(MAP), 'docs/module-map.json (owner-only) is not in this checkout')
+@unittest.skipUnless(os.path.isfile(MAP), 'docs/module-map.json is not in this checkout')
 class KitMapTest(unittest.TestCase):
     def setUp(self):
         self.mm = load_map(MAP)

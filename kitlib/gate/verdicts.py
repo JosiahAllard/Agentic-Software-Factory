@@ -34,8 +34,8 @@ An entry (every key always present):
   verdict         LAND | LAND WITH FOLLOW-UP
   risk            Low | Medium | High
   reviewer        the reviewer's agent type
-  reviewer_model  the model the reviewer ran on, one for every id reviewer_id lists (a second,
-                  architecture reviewer runs on the same model: skill branch-review);
+  reviewer_model  the model the reviewer ran on, one for every id reviewer_id lists (several
+                  reviewers of one verdict run on the same model);
                   tools/verdict.py add checks it against each reviewer's transcript where the
                   host has a reader (model_mismatch_why)
   reviewer_id     the reviewer's agent or session id, or several (`a,b`); tools/verdict.py add
@@ -228,7 +228,7 @@ def reviewer_types(text):
 
 
 SELF_REVIEW_INSTEAD = ('Instead: dispatch a fresh analyst to review the branch (skill branch-review, '
-                       'step 3), then queue its verdict with --reviewer pm-kit:analyst '
+                       '"Code review" step 3), then queue its verdict with --reviewer pm-kit:analyst '
                        '--reviewer-id <its agent id>')
 COORDINATOR_RE = re.compile(r'(?<![a-z0-9])coordinator(?![a-z0-9])')
 
@@ -250,7 +250,7 @@ def self_reader(entry):
 def self_review_why(entry):
     """Why add() refuses `entry` as a self-review, or None. Refused: a Medium or High-risk
     verdict whose reviewer is the coordinator queueing it (self_reader). A Low one is not: a
-    coordinator may read a small Low branch itself (skill branch-review, step 3), up to
+    coordinator may read a small Low branch itself (skill branch-review, "Code review" step 3), up to
     "landing".self_review_max_lines when that is set (self_review_size_why). `entry` is well
     formed (check). Pure."""
     if entry['risk'] not in ('Medium', 'High'):
@@ -259,7 +259,7 @@ def self_review_why(entry):
     if not who:
         return None
     return ('a %s-risk verdict needs a reviewer other than the coordinator queueing it, and %s '
-            '(skill branch-review, step 3); nothing was queued\n%s'
+            '(skill branch-review, "Code review" step 3); nothing was queued\n%s'
             % (entry['risk'], who, SELF_REVIEW_INSTEAD))
 
 
@@ -464,8 +464,8 @@ TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hos
 
 def tier_why(entry, strict, tiers):
     """Why `entry`'s reviewer is too light for its branch, or None: the one tier rule add() (at
-    queue time, `strict` False: strict comes from the diff, so the landing checks it) and
-    kitlib.gate.land (Lander.review_refusal, at landing) share. A branch that is High risk or
+    queue time, `strict` as tools/verdict.py reads it, False when unread: the landing checks again)
+    and kitlib.gate.land (Lander.review_refusal, at landing) share. A branch that is High risk or
     `strict` (changes a strict path) lands only on a review whose reviewer_model names a
     strong-tier model (land.strong_alias), whoever built it; a Low or Medium one off the strict
     paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives
@@ -685,7 +685,7 @@ def head_of(common_dir, branch):
 
 
 def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
-        seen=None, said=None):
+        seen=None, said=None, strict=False):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
     whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
@@ -694,9 +694,9 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
     (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
-    says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why). A High-risk
-    verdict whose reviewer_model is not a strong-tier model is
-    LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
+    says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why). A verdict
+    that is High risk or `strict` (its branch changes a strict path: tools/verdict.py reads it by
+    land.strict_scan) whose reviewer_model is not a strong-tier model is LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
     (a configuration fault: nothing queued). Nothing seen or said is stored. `now`: a datetime for
     queued_utc."""
     why = check(entry, stored=False)
@@ -719,7 +719,7 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
             raise VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
                                'nothing was queued' % got[2])
         return got
-    why = tier_why(entry, False, tiers)
+    why = tier_why(entry, strict, tiers)
     if why:
         raise LightReview('%s; nothing was queued\n%s' % (why, TIER_INSTEAD))
     branch, tip = entry['branch'], entry['tip']

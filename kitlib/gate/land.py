@@ -3362,31 +3362,41 @@ def full_needed(root, cfg, base, changed, docs):
     return None, None
 
 
-def check_strict(root, branches):
-    """Read-only, the dry strict check a coordinator runs before it picks a reviewer (docs/gate.md
-    "Strict paths"): for each of `branches`, its local tip against `<remote>/<main>` as last
-    fetched (runner.default_base; no fetch), decided by Lander.strict_paths, the matcher
-    strict_check refuses by. An OK Outcome, one line per branch: `STRICT <branch>: <paths>: ...`
-    or `NOT STRICT <branch>: ...`. Takes no lock, needs no verdict and writes nothing. REFUSED
-    when the config, the base, a branch or the strict paths cannot be read."""
+def strict_scan(root, branches):
+    """`(hits, tips, ref, base, None)`: for each of `branches`, its local tip against
+    `<remote>/<main>` as last fetched (runner.default_base; no fetch), the strict paths it changes,
+    decided by Lander.strict_paths (the matcher strict_check refuses by): `hits` maps each branch
+    with any to its paths. `(None, None, None, None, why)` when the config, the base, a branch or
+    the strict paths cannot be read. Reads only: check_strict and tools/verdict.py add use it."""
     try:
         cfg = kconfig.load(root)
     except ConfigError as e:
-        return G.Outcome(G.REFUSED, ['REFUSED: the config of %s: %s' % (root, e)])
+        return None, None, None, None, 'the config of %s: %s' % (root, e)
     ref, why = runner.default_base(cfg, root)
     base = refs.resolve(ref, root)[0] if ref else None
     if not base:
-        return G.Outcome(G.REFUSED, ['REFUSED: no base to check against: %s' % (
-            why or '%s does not resolve' % ref)])
+        return None, None, None, None, 'no base to check against: %s' % (
+            why or '%s does not resolve' % ref)
     tips = []
     for b in branches:
         tip = None if refs.bad_rev(b) else refs.resolve('refs/heads/%s' % b, root)[0]
         if not tip:
-            return G.Outcome(G.REFUSED, ['REFUSED: no branch %s in this repository' % b])
+            return None, None, None, None, 'no branch %s in this repository' % b
         tips.append(tip)
     lander = Lander(root, list(branches), None, tips)
     lander.cfg, lander.expect_main = cfg, base
     hits, why = lander.strict_paths()
+    if why:
+        return None, None, None, None, why
+    return hits, tips, ref, base, None
+
+
+def check_strict(root, branches):
+    """Read-only, the dry strict check a coordinator runs before it picks a reviewer (docs/gate.md
+    "Strict paths"), by strict_scan: an OK Outcome, one line per branch: `STRICT <branch>:
+    <paths>: ...` or `NOT STRICT <branch>: ...`. Takes no lock, needs no verdict and writes
+    nothing. REFUSED when the config, the base, a branch or the strict paths cannot be read."""
+    hits, tips, ref, base, why = strict_scan(root, branches)
     if why:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     lines = []

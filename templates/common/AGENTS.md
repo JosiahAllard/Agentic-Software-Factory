@@ -56,10 +56,11 @@ on `main` and is never worked in; only the lander writes to it.
    never `git add -A` or `commit -a`, never stage, revert or delete a file you did not change. The
    subject says what changed and why. `--model` names the model you are actually running on,
    never the example's or the previous commit's; the tool writes the `Co-Authored-By` trailer.
-4. Done = `python <kit>/tools/gate.py -C <worktree>` green, the docs it touches updated on the same branch.
+4. Done = reviewed, then the one gate (`python <kit>/tools/gate.py -C <worktree>`) green on the
+   reviewed tip when the coordinator asks, the docs it touches updated on the same branch.
 5. Ready = report it and leave the branch alone. You do not merge, push or delete branches.
 6. Main moved: merge the exact hash the coordinator sent with `python <kit>/tools/sync_base.py -C <worktree> <hash> --model "<model name>"`
-   (skill branch-sync; never local `main`, never a rebase), rerun the gate, report ready again.
+   (skill branch-sync; never local `main`, never a rebase), re-run the touched tests, report ready again.
 7. Never force-push, `reset --hard`, `clean`, rewrite `main`, amend another's commit, or rewrite
    a commit to change its trailer.
 
@@ -75,7 +76,6 @@ the `gate.py wait-result` command it prints. It merges onto the main it finds at
 No `cd` prefix, `Tee-Object`, pipe or chaining: the bare form is what the allow rule matches.
 Success: the `RESULT pass` line carrying `LANDED`, `git rev-parse main origin/main` match
 **and** the branch tip is an ancestor of `origin/main` (`git merge-base --is-ancestor <tip> origin/main`).
-A classifier refusal or permission denial ends that action: report it verbatim. A kit-guard (hook) refusal: fix the form its Instead: line gives, then retry.
 
 ## Owner decisions
 
@@ -121,13 +121,9 @@ A classifier refusal or permission denial ends that action: report it verbatim. 
 
 ## Always
 
-- A classifier refusal or permission denial ends that action: report it verbatim, never route it
-  around through another tool, agent or session, and hand the owner the exact command. A kit-guard
-  (hook) refusal: fix the form its Instead: line gives, then retry. A refusal printed by a repo tool and caused
-  by your own mistake (`USAGE:`, `NOT FOUND:`, `ERROR:`) may be fixed and retried ONCE.
-  Any other repo-tool refusal (`REFUSED:`, a landing refusal) is reported verbatim, never routed around.
-- Never put the owner's personal details (email address, name, account names) in anything sent off this machine.
-- Never chain a write (commit, merge, reset, backlog.py write, landing command) with other commands in one shell call.
+- The kit header's rules bind every agent here (refusals, personal details, one write per shell call,
+  processes). A repo tool's own-mistake refusal (`USAGE:`, `NOT FOUND:`, `ERROR:`) may be fixed and
+  retried once.
 - Secrets never enter the repo, a URL or a transcript. Deleting data is the owner's action:
   report the exact path and hash.
 - Citations name `path` plus `Type.member`, heading or quoted title, and you have read it. Never
@@ -135,9 +131,8 @@ A classifier refusal or permission denial ends that action: report it verbatim. 
   pins go stale within hours; `:line` only in transient output (reports, test output).
 - Docs land with the code they describe, on the same branch. An over-budget `.md` may not grow
   (`python <kit>/tools/doc_budget.py -C <worktree>`).
-- Heavy runs take the machine lock (skill machine-lock-run); never kill a process you did not
-  start (report its PID and command line). Detail: agent-profile, "Shared resources that must be
-  serialised".
+- Heavy runs take the machine lock (skill machine-lock-run). Detail: agent-profile, "Shared
+  resources that must be serialised".
 - Scratch files go to the session scratchpad, never the repo. All text files are LF
   (`.bat`/`.cmd` excepted).
 - Shell: Windows PowerShell 5.1 (no `&&`) or Git Bash; pass absolute paths (`Set-Location` does

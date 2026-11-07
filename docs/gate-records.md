@@ -86,7 +86,7 @@ Your own gate: run it in the foreground with `timeout` 600000 when it fits; othe
 
 ### The branch gate budget
 
-`kitlib/gate/budget.py`, asked by `runner.gated` just before the session gate cap, for a branch gate only (`capped=True`, with `budget_branch` the checked-out branch). Skill builder, step 7, tells the worker the rule: after 5 gate runs on one branch, stop before the 6th, report to the coordinator and ask.
+`kitlib/gate/budget.py`, asked by `runner.gated` just before the session gate cap, for a branch gate only (`capped=True`, with `budget_branch` the checked-out branch). Skill builder, "Tests", tells the worker the rule: after 5 gate runs on one branch, stop before the 6th, report to the coordinator and ask.
 
 - A run counted: a history line of the machine lock with `gate` true, a priority other than `land`, the gated repository (case aside) and the branch, that ended at or after the branch was made (the first entry of its reflog, so a branch made again under an old name starts at 0). A fully reused gate books nothing and counts nothing. A landing, the daily full run and redfirst never ask. History lines written before they kept `gate` never count.
 - Only a run that started counts: a booking that never got its slots (Ctrl+C or `gate.py stop` while it queued, a hold refusal) writes no history line (`Store.history_append`), and one that got them and started nothing (`how` `not started`: a gate that gave its slots back to the session gate cap, or a booking that failed once held) is not counted.

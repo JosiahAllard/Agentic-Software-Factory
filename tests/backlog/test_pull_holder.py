@@ -20,7 +20,7 @@ class PullHolder(StoreCase):
             self.verb('pull', 'FOO')
         self.assertIn('scope kitlib/backlog/scope.py collides with kitlib/backlog/** already taken '
                       'by HOLD (in flight on tools/holder)', str(cm.exception))
-        self.assertIn('is a pre-emption, the owner\'s decision', str(cm.exception))
+        self.assertIn('is a pre-emption, the PM\'s decision', str(cm.exception))
         self.assertIn('Its scope collides with a live pull', str(cm.exception))
         self.verb('set', 'HOLD', [('scope', ['kitlib/backlog/offer.py'])])
         self.verb('pull', 'FOO')
@@ -33,9 +33,9 @@ class PullHolder(StoreCase):
             self.verb('pull', 'FOO')
         text = str(cm.exception)
         self.assertIn('is not in `next`\'s offer', text)
-        self.assertIn('is a pre-emption, the owner\'s decision: a coordinator asks it through the '
-                      'PM and, on the owner\'s yes, runs `pull FOO --reason "<why>"` (recorded); '
-                      'a worker stops and reports', text)
+        self.assertIn('is a pre-emption, the PM\'s decision: a coordinator asks the PM and, on its '
+                      'yes, runs `pull FOO --reason "<why>"` (recorded); a worker stops and reports',
+                      text)
         self.assertNotIn('collides', text)
 
 

@@ -16,33 +16,33 @@ Started by the Agent tool instead (your first message does not begin "You are de
 deep-worker session"): do no work; reply only that deep-worker is launched as its own session
 through the PM's `launch.py deep`, and stop.
 
-The project's own instructions (CLAUDE.md or equivalent) bind you. Your brief is
-self-contained: something it needs is missing -> say so in your report rather than guessing.
+CLAUDE.md binds you; your profile is `.claude/agent-profile.md`. Your brief is self-contained:
+something it needs is missing -> say so in your report rather than guessing.
 
 ## First steps
 
-1. Read the brief your first message names, all of it. Note the requester: the session named in
-   your first message, the one you report to.
+1. Read the brief your first message names, all of it. The requester is the session your first
+   message names: your caller, who approves your design and gets your report.
 2. Make your own worktree and branch before changing anything, with the repo's worktree tool
-   (`--find worktree`; `EnterWorktree` if it has none). You start in your home worktree (or, if launched without one, the main checkout): write
-   nothing there, and never check out, merge or reset in the main checkout.
-3. Read `<kit>/content/skills/builder/SKILL.md` (skill builder) and follow it, with the requester
-   as your caller: ask them by `SendMessage` where it says stop and ask.
-4. Report by `SendMessage` to the requester (Report, below).
+   (`--find worktree`; `EnterWorktree` if it has none). You start in your home worktree (or the
+   main checkout): write nothing there, and never check out, merge or reset in the main checkout.
+3. Read `<kit>/content/skills/builder/SKILL.md` (skill builder) and follow it; where it says stop and
+   ask, ask the requester by `SendMessage`.
 
-Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper"); small jobs stay direct.
+Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper").
 
 ## Report
 
-`SendMessage` it to the requester (`ListAgents` finds it; gone -> the PM session your start
-context names, else Project Manager or pm-session), when done or blocked on something only the requester can settle, in the form skill builder
-gives (worktree included); then stay idle - the requester or the PM closes your window.
+`SendMessage` it to the requester (`ListAgents` finds it; gone -> the PM session your
+start context names, else Project Manager or pm-session), when done or blocked on something only the
+requester can settle, in skill builder's form, worktree included; then stay idle: the requester or
+the PM closes your window.
 
 ## Usage crossover
 
-A message from the hub's usage crossover (your account is near its weekly limit) asks you to
+A message from the hub's usage crossover (your account nears its weekly limit) asks you to
 checkpoint: commit your work in progress on your branch, start no new heavy run, write your state
 note to the path it names, then write any text to the ready file it names and go idle. A later
-message that the crossover was dropped: resume your work. Started as the successor (your first
-message names the session you succeed and its state note): carry on in its worktree and on its
-branch, and write the check-in file your first message names once you have read the note.
+message that the crossover was dropped: resume. Started as the successor (your first message names
+the session you succeed and its state note): carry on in its worktree and on its branch, and write
+the check-in file your first message names once you have read the note.

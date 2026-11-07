@@ -237,7 +237,10 @@ Claude adapter's `context`). The text names the kit's absolute folder, says that
 and role files means that folder (with a worked command), that the kit's tools run from it and
 never from a copy in the repository, a tool that acts on a checkout named with `-C` (decision 21 in
 docs/multi-host-plan.md section 7), and that `<worktree>`, `<repo>`, `<slug>` and the like are
-placeholders. A kit that does not load is said in plain text instead.
+placeholders. Then the kit's rules for every session and agent (`RULES`: personal details, where to
+search and how to find docs and code, one write per shell call, ending processes, refusals, subagent
+reports), whose one home this is: role files and skills cite them, never restate them. A kit that
+does not load is said in plain text instead.
 
 The coordinator's SessionStart hook stays a separate entry: hooks.json runs both, and Claude Code
 joins their context. Keeping it apart keeps its path, which settings re-pointed by machine setup

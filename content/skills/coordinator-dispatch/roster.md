@@ -1,85 +1,38 @@
 # Agent roster
 
-Read from skill `coordinator-dispatch`, "Which role, which tier". A repo's own
-coordinator profile lists the roles it actually has; use only those. Roles are named bare; a tier
-(light, standard, strong, deep) is turned into a model by the host: the tier table per host is in
-`<kit>/docs/ROSTER.md`. "Raise to strong" below means: dispatch with the strong tier's model.
+Read from skill `coordinator-dispatch`, "Which role, which tier". Use only the roles the repo's coordinator profile lists. A tier (light, standard, strong, deep) becomes a model per host (`<kit>/docs/ROSTER.md`); "raise to strong" means dispatch with the strong tier's model.
 
-## Roles and what each is for
+## The coding ladder
 
-- weak-worker: small, well-defined, low-risk changes the brief sizes by listing them: named files, named edits, a few files (doc lines, small additive changes with their test).
-- worker: routine coding, low and medium risk; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation).
-- strong-worker: the default for High-risk build and fix work on standard paths (API changes, live fixes, ordinary tool features, generated-data wiring).
-- senior-worker: concurrency, networking, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes.
-- deep-worker: its own launched session for the hardest issues; never a subagent dispatch.
-- analyst: the read type - review of one branch against its brief (skill `specialty-review`; never the author) and research (skill `specialty-research`). Builds and edits nothing.
-- lander: optional wrapper that submits one reviewed branch (or a batch) for landing, waits for the result and reports. Never edits code.
-- docs-writer: the docs type - settled facts into docs and specs extended from the owner's answers (skill `specialty-docs`). Docs only.
-- test-runner: runs test tiers in a given worktree; reports PASS/FAIL plus failing lines.
-- helper: light, read+edit only; dispatched by builders for bulk menial reads and mechanical bulk writes (a mechanical rename across 10 or more files included: the helper edits each listed file, any script stays with the builder; weak-worker still never does renames), never by a coordinator for a story.
-- Specialty skills, loaded by the role the brief names: `specialty-review`, `specialty-research`, `specialty-art-critique` (analyst); `specialty-docs` (docs-writer); `specialty-tech-art`, `specialty-3d-assets`, `specialty-rigging`, `specialty-sound` (a worker type, see `creative.md` beside the skill).
-- consultant: a long-lived launched session per repository that answers engineering questions.
+| Role | Tier/effort | Takes |
+|---|---|---|
+| weak-worker | light/high | Low risk, small and well defined, sized by what the brief lists (named files and edits): doc lines, small additive changes with their test. Never moves, renames, merges or designs. |
+| worker | standard/medium | Low and Medium risk: additive content, UI, pure logic with tests, behaviour-preserving moves and renames (the brief names **Moves and renames**; its equivalence check is not optional); a small known-cause fix even on a High path (its review stays strong); plan-only and sync/prep work (merge main into a branch, rebase, conflict-free sync) whatever the branch's risk. |
+| strong-worker | strong/medium | High-risk build and fix work on standard paths: API changes, live fixes, ordinary tool features, generated-data wiring. |
+| senior-worker | strong/high | Builds and designs in concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock tools, build-cache correctness, codegen; known-area crash fixes. Never plan-only. |
+| deep-worker | deep/xhigh, own session | A race, crash root cause or subtle concurrency senior-worker failed at or plainly will (never a build or a plan). |
 
-## Choosing
+Not installed: weak-worker -> the worker; strong-worker -> the worker raised to strong. Never the host's general-purpose agent for code. An escalation reassigns upward with the findings: not a failure.
 
-- Cheap tier: landings, records, doc ticks, moves, routine coding. Strong: concurrency,
-  networking, migration, security, crash and measurement work, design, specs that read code, any
-  change nobody here can observe. Never the lightest where a failure must be judged (the analyst on a review, by its rule below, excepted).
-- Plan-only and sync/prep work (merge main into a branch, rebase, conflict-free sync,
-  preparation) goes to the worker (standard tier), whatever the branch's risk.
-- The worker = default coding, low/medium risk (`--find risk`): additive content, UI, pure logic
-  with tests, known-cause fixes, behaviour-preserving moves and renames (brief names **Moves and
-  renames**; its equivalence check is not optional). Coding ladder by need:
-  weak-worker (light/high: Low, small and well-defined, sized by what the brief lists) -> worker
-  (standard/medium: Low, Medium, or a small known-cause fix at High, its review still strong)
-  -> strong-worker (strong/medium: High-risk build and fix work - API changes, live fixes,
-  ordinary tool features, generated-data wiring; never plan-only or sync/prep) -> senior-worker (strong/high: concurrency, networking, simulation or ordering,
-  migrations, CI config, landing/gate/lock tools, build-cache correctness, codegen design; builds
-  and designs of those kinds, never plan-only) -> deep-worker (deep/xhigh, own session: root cause or concurrency work
-  senior-worker failed at or plainly cannot do). weak-worker not installed -> the worker.
-  strong-worker not installed -> the worker raised to strong. Never the host's general-purpose
-  agent for code. An escalation = reassign upward with its findings, not a failure. A
-  weak-worker's branch is reviewed like a worker's: the analyst by the rule below.
-- Tier and effort per role are pinned in each role's front matter (`<kit>/docs/ROSTER.md` is rendered from it).
-  A kit role is dispatched with no model of its own choosing. Override only upward for risk, and
-  say so in status; never the lander (light as pinned, whatever is being landed), and the analyst
-  only by the reviewer rule, the research rule and the art-critic rule below. Never a model above the strong tier's for any dispatch, reviews
-  included, unless the owner asks on that task: the deep-worker session is the step up.
-- The host's built-in agents (a general-purpose agent, an explorer, a planner), where it has
-  them, pin nothing -> dispatch each on the standard tier, never strong. Work that needs the
-  strong tier is coding or design work: it goes to a role on the ladder above. A built-in
-  explorer's or planner's answer that reads thin is asked once more raised to strong; say so in
-  status.
-- **Reviewer model** (this is the rule's one home). A review goes to the analyst, pinned to the
-  light tier at high effort; its model follows the tier of the role that built the branch.
-  High risk or strict -> strong whoever built it (land.py refuses a lighter review of either,
-  verdict.py add of a High-risk one; `land.py <branch> --check-strict` says which branch is
-  strict before you pick); this comes before the rows. The first row that fits:
-  1. Built by strong-worker, senior-worker or deep-worker -> raise to strong.
-  2. Built by worker or weak-worker -> no override: light as pinned.
-  3. Otherwise -> raise to strong.
+## Other roles
 
-  A light reviewer's "blocking" claim you dispute is settled by a fresh strong-tier review of the
-  tip, not by your own reading: `verdict.py add` refuses a LAND over the reviewer's final
-  `Verdict: SEND BACK` (`<kit>/docs/gate-landing-policy.md` "Strict paths"). Haiku overstated severity twice in the
-  reviewer A/B (`<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
-- **Art critic**: the analyst with skill `specialty-art-critique` is always strong tier, whoever
-  built the area (it judges a look, not a diff).
-- Effort is not settable per dispatch: pick the role for it. High risk -> strong-worker, or
-  senior-worker for the kinds the ladder names, except a small known-cause fix (the worker).
-  Only when senior-worker has been defeated, or plainly will be, on a race or crash root-cause or subtle concurrency (never a build or a
-  plan): request a deep-worker session; say in status when and why.
-- The deep-worker is never a subagent dispatch: it is its own session - own window, deep tier,
-  long auto-compact window - for the most difficult issues only. You request it; the PM launches
-  it. Write a self-contained brief file, then message the PM: the brief path, your session name
-  as requester, and a slug. The PM runs `python <kit>/tools/launch.py deep --plan` first. The
-  session reports to you by message; review its branch like any other, then tell the PM to stop
-  it (`python <kit>/tools/launch.py stop --name deep-<slug>`).
-- The repo has a running consultant session (`consultant-<repo>` in the host's session list):
-  message engineering questions there before the PM; owner matters still go to the PM, which logs
-  the consultant's calls as delegated.
-- Research (the analyst with skill `specialty-research`) = ideas, modes, mechanics, prior art;
-  read-only. Raise a research dispatch to the standard tier. Output = concepts for the owner to
-  pick; the chosen one -> the docs-writer with skill `specialty-docs` before any builder sees it.
-- Pass/fail checks whose log nobody needs -> the cheapest role the profile lists; none
-  listed -> the worker.
+- analyst: the read type: design and branch review (skill `specialty-review`), research (`specialty-research`), art critique (`specialty-art-critique`). Builds and edits nothing.
+- docs-writer: settled facts into docs, and specs extended from the owner's answers (skill `specialty-docs`). Docs only.
+- lander: optional; submits one reviewed branch (or a batch), waits, reports.
+- test-runner: runs test tiers in a worktree; PASS/FAIL plus failing lines. A pass/fail check whose log nobody needs: the cheapest role the profile lists (none: the worker).
+- helper: dispatched by builders only, for bulk menial reads and mechanical bulk writes.
+- consultant: a long-lived session per repository (`consultant-<repo>` in your session list): engineering questions go there before the PM; owner matters still go to the PM, which logs its calls as delegated.
+- Creative specialty skills (`specialty-tech-art`, `specialty-3d-assets`, `specialty-rigging`, `specialty-sound`): a worker type, `creative.md` beside the dispatch skill.
+
+## Tier rules
+
+- Tier and effort are pinned in each role's front matter. Override only upward, for risk, and say so in status; never the lander; the analyst only by the three rules below. Never a model above the strong tier's unless the owner asks on that task: the deep-worker session is the step up. Effort is not settable per dispatch: pick the role.
+- The strong tier also takes security and measurement work, specs that read code (the docs-writer raised) and any change nobody here can observe. Never the lightest tier where a failure must be judged, except the analyst on a review by its rule.
+- A host's built-in agents (general-purpose, explorer, planner) pin nothing: dispatch them on the standard tier, never strong; a thin answer is asked once more raised to strong, said in status. Work needing the strong tier is coding or design: a ladder role.
+- **Reviewer model** (this rule's one home), for a design review and a code review alike: the analyst, pinned to the light tier at high effort. High risk or strict (`land.py <branch> --check-strict`) -> raise to strong whoever built it (`land.py` refuses a lighter review of either, `verdict.py add` of a High-risk one); this comes before the rows. The first row that fits: 1. Built by strong-worker, senior-worker or deep-worker -> raise to strong. 2. Built by worker or weak-worker -> no override: light as pinned. 3. Otherwise -> raise to strong. A light reviewer's blocking claim you dispute is settled by a fresh strong-tier review of the tip, never by your own reading (`verdict.py add` refuses a LAND over its `Verdict: SEND BACK`; light models overstated severity in `<kit>/docs/model-ab.md`, "Reviewer A/B on planted bugs").
+- **Art critic**: the analyst with `specialty-art-critique` is always strong tier.
+- **Research**: the analyst with `specialty-research`, raised to standard. Its output is concepts for the owner to pick; the chosen one goes to the docs-writer (`specialty-docs`) before any builder sees it.
+
+## Deep-worker requests
+
+Never a subagent dispatch. Write a self-contained brief file, then message the PM: the brief path, your session name as requester, and a slug; say in status when and why. The PM runs `python <kit>/tools/launch.py deep --plan` first. The session approves its design with you and reports to you by message; review its branch like any other, then tell the PM to stop it (`python <kit>/tools/launch.py stop --name deep-<slug>`).

@@ -49,7 +49,11 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   GIT_AUTHOR_IDENT`) is "owner".email (unset, an agent_emails address or any other: refused).
   --owner-approved is required only when an owner-only path is in the commit, and
   every value given must be a blanket entry or a path committed in this call. An --owner-authored
-  commit carries `Owner-Authored: yes` in place of Co-Authored-By.
+  commit carries `Owner-Authored: yes` in place of Co-Authored-By. With "commit".merge_fold,
+  during a merge in progress (one MERGE_HEAD), a named owner-only path needs neither when its
+  staged copy is a resolution that only deletes and both sides' commits to it are the owner's or
+  approved (merge_deletion_paths, then staged_deletions after staging; docs/commit.md "A merge
+  that only deletes").
 - Or an agent commits the change the owner approved on the hub: --owner-approval hub:A-<n>
   (kitlib.commit.approval; docs/commit.md "Owner approval"). The paths named must be exactly the
   approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
@@ -567,6 +571,32 @@ def _unapproved_paths(root, rules, tip, exclude, which):
     if bad is None:
         return None, 'the authors of the %s commits could not be checked: %s' % (which, why)
     return {p for v in bad for p in v.paths}, None
+
+
+def merge_deletion_paths(root, rules, paths, heads, landed=()):
+    """`(paths, why)`: those of the owner-only `paths`, named during a merge in progress (one
+    MERGE_HEAD), that the merge may commit with no approval once staged as a resolution that only
+    deletes (staged_deletions): no commit on either side that changes it, other than those
+    reachable from `landed`, lacks the owner as author or an approval the hub verifies
+    (non_owner_paths, and the same check of HEAD's side, as in clean_owner_merge). `(set(), why)`
+    when git cannot tell (docs/commit.md "A merge that only deletes")."""
+    if len(heads) != 1 or not paths:
+        return set(), None
+    theirs, why = non_owner_paths(root, rules, heads[0], landed)
+    if theirs is None:
+        return set(), why
+    ours, why = _unapproved_paths(root, rules, 'HEAD', [heads[0]] + list(landed), 'this branch\'s')
+    if ours is None:
+        return set(), why
+    return set(paths) - theirs - ours, None
+
+
+def staged_deletions(root, head, merge_head, snap, paths):
+    """`(paths, None)`: those of `paths` whose staged entry in `snap` (index_snapshot) the merge
+    of `head` and `merge_head` may hold as a resolution that only deletes
+    (kitlib.guard.ownercommits.deletion_merge); `(None, why)` when git cannot tell."""
+    from kitlib.guard import ownercommits     # here: kitlib.guard reaches back into this module
+    return ownercommits.deletion_merge(root, head, merge_head, {p: snap.get(p) for p in paths})
 
 
 def merge_owner_refusal(root, rules, landed=(), fold=True):
@@ -1258,6 +1288,22 @@ def _approval_before_write(root, hub, paths, status_before):
     return hub._replace(head=head, plan=plan)
 
 
+def _owner_only_refusal(root, rules, locked, status_before, heads, landed, why=None):
+    """The refusal text for the owner-only `locked` paths named with no owner authorship or
+    approval; `why`: why git could not judge a merge's resolution that only deletes."""
+    # The hint only for a path the merge would carry unnamed, as it is staged now.
+    carried = sorted(merge_owned(root, rules, set(locked) & set(status_before), heads,
+                                 landed)[0])
+    return ('refused: %s is owner-only, and only a commit the owner authors (their own git '
+            'identity, --owner-authored) can carry its approval. Propose the change to the '
+            'owner.%s%s Or ask the owner on the hub and commit with --owner-approval hub:A-<n>.'
+            % (', '.join(locked), (' (A merge in progress carries the merged branch\'s own copy '
+                                   'of %s without it being named: leave it out of your list.)'
+                                   % ', '.join(carried)) if carried else '',
+               (' (Whether the merge only deletes lines could not be told: %s.)' % why)
+               if why else ''))
+
+
 def _stage(req, root, paths, rendered, named, merged, status_before, msg_warnings, body, trailers,
            lines, hub):
     """`(head, snap, status_after, others, message)`: the named paths staged and checked, for
@@ -1442,18 +1488,14 @@ def _commit(req, lines):
         hub = _approval_before_write(root, hub, paths, status_before)
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
-    if locked and not req.owner_authored and not hub:
-        # The hint only for a path the merge would carry unnamed, as it is staged now.
-        carried = sorted(merge_owned(root, rules, set(locked) & set(status_before), heads,
-                                     landed)[0])
-        raise _Stop(REFUSED, 'refused: %s is owner-only, and only a commit the owner authors (their '
-                    'own git identity, --owner-authored) can carry its approval. Propose the '
-                    'change to the owner.%s Or ask the owner on the hub and commit with '
-                    '--owner-approval hub:A-<n>.' % (', '.join(locked), (
-                        ' (A merge in progress carries the merged branch\'s own copy of %s '
-                        'without it being named: leave it out of your list.)'
-                        % ', '.join(carried)) if carried else ''))
-    for p in ([] if hub else unapproved_locked(rules, locked, approved)):
+    # Judged again on the staged copies, after _stage (docs/commit.md "A merge that only deletes").
+    deleting = (merge_deletion_paths(root, rules, set(locked) & set(paths), heads, landed)[0]
+                if locked and not req.owner_authored and not hub else set())
+    unexempt = [p for p in locked if p not in deleting]
+    if unexempt and not req.owner_authored and not hub:
+        raise _Stop(REFUSED, _owner_only_refusal(root, rules, unexempt, status_before, heads,
+                                                 landed))
+    for p in ([] if hub else unapproved_locked(rules, unexempt, approved)):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
     if req.owner_authored:
         err = owner_identity_error(rules, author_email(root))
@@ -1472,6 +1514,12 @@ def _commit(req, lines):
         head, snap, status_after, others, msg = _stage(
             req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
             trailers, lines, hub)
+        if deleting:
+            held, why = staged_deletions(root, head, heads[0], snap, deleting)
+            if held != deleting:
+                raise _Stop(REFUSED, *unstage_added(root, sorted(named), status_before, [
+                    _owner_only_refusal(root, rules, sorted(deleting - (held or set())),
+                                        status_before, heads, landed, why)]))
         try:
             rc, out, err, new, notes, trees = commit_only(root, head, snap, msg,
                                                           allow_empty=req.allow_empty)

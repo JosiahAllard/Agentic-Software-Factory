@@ -489,6 +489,114 @@ class MergesOnRealGit(MergeCase):
                          [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
 
 
+def drop(text, *numbers):
+    """`text` without its lines `numbers` (1-based)."""
+    rows = text.splitlines(keepends=True)
+    return ''.join(r for i, r in enumerate(rows, 1) if i not in numbers)
+
+
+class KeepsOnlyDeletions(unittest.TestCase):
+    """The rule of docs/commit.md "A merge that only deletes", on contents alone: (ours, theirs,
+    result, bases) and whether the merge may hold the result."""
+
+    T = b'1\n2\n3\n4\n5\n'
+
+    def test_the_table(self):
+        T = self.T
+        crlf = T.replace(b'\n', b'\r\n')
+        table = [
+            ('both sides\' deletions', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n5\n', [T]), True),
+            ('the same deletion on both', (b'1\n2\n4\n5\n', b'1\n2\n4\n5\n', b'1\n2\n4\n5\n', [T]),
+             True),
+            ('deletions in CRLF', (crlf.replace(b'3\r\n', b''), crlf.replace(b'4\r\n', b''),
+                                   b'1\r\n2\r\n5\r\n', [crlf]), True),
+            ('a duplicate one side deleted once', (b'a\nb\n', b'a\na\n', b'a\n', [b'a\na\nb\n']),
+             True),
+            ('a line one side deleted, kept', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n3\n5\n',
+                                               [T]), False),
+            ('a new line', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n5\nnew\n', [T]), False),
+            ('a line moved', (T, T, b'2\n1\n3\n4\n5\n', [T]), False),
+            ('a line both kept, dropped', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n5\n', [T]),
+             False),
+            ('both copies of a duplicate dropped', (b'a\nb\n', b'a\na\n', b'', [b'a\na\nb\n']),
+             False),
+            ('one side\'s addition dropped', (T + b'6\n', b'1\n2\n3\n5\n', b'1\n2\n3\n5\n', [T]),
+             False),
+            ('line endings changed', (T, T, crlf, [T]), False),
+            ('the last newline dropped', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n5', [T]),
+             False),
+            ('a NUL byte', (b'1\n\0\n4\n', b'1\n\0\n3\n', b'1\n\0\n', [b'1\n\0\n3\n4\n']), False),
+            ('no merge base', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n5\n', []), False),
+            ('a base the difference adds to', (b'1\n2\n4\n5\n', b'1\n2\n3\n5\n', b'1\n2\n5\n',
+                                               [T, b'1\n2\n4\n5\n']), False),
+        ]
+        for name, args, want in table:
+            with self.subTest(name):
+                self.assertIs(oc.keeps_only_deletions(*args), want)
+
+
+class DeletionMerges(OwnerCommitsCase):
+    """main holds the owner's CLAUDE.md of twelve lines; the owner deletes line 4 on the branch
+    and line 5 on main (adjacent: the merge conflicts); an agent resolves the merge by hand."""
+
+    def setUp(self):
+        OwnerCommitsCase.setUp(self)
+        self.commit_as(OWNER, 'owner adds CLAUDE.md', {'CLAUDE.md': LINES})
+        self.base = self.repo.git('rev-parse', 'HEAD')
+        self.wt = self.repo.worktree('x')
+        self.branch = self.commit_as(OWNER, 'owner deletes line 4', {'CLAUDE.md': drop(LINES, 4)},
+                                     cwd=self.wt)
+        self.tip = self.commit_as(OWNER, 'owner deletes line 5', {'CLAUDE.md': drop(LINES, 5)})
+
+    def resolve(self, text):
+        """Merge main into the branch, set CLAUDE.md to `text`, commit as the agent; the merge."""
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit',
+                      'main', cwd=self.wt, check=False)
+        self.assertIn('CLAUDE.md', self.repo.git('diff', '--name-only', '--diff-filter=U',
+                                                 cwd=self.wt))
+        self.repo.write('CLAUDE.md', text, root=self.wt)
+        self.repo.git('add', 'CLAUDE.md', cwd=self.wt)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '--no-edit', cwd=self.wt)
+        return self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
+
+    def plumb(self, text, *parents):
+        """A merge commit made by hand, as the agent: CLAUDE.md = `text` on the branch's tree."""
+        self.repo.write('CLAUDE.md', text, root=self.wt)
+        self.repo.git('add', 'CLAUDE.md', cwd=self.wt)
+        tree = self.repo.git('write-tree', cwd=self.wt)
+        args = [a for p in parents for a in ('-p', p)]
+        return self.repo.git('-c', 'user.email=%s' % AGENT, 'commit-tree', tree, *args, '-m',
+                             'by hand', cwd=self.wt)
+
+    def test_a_resolution_that_only_deletes_is_not_the_merges_change(self):
+        merge = self.resolve(drop(LINES, 4, 5))
+        self.assertEqual(self.bad(merge, exclude=[self.tip]), [])
+
+    def test_a_line_main_deleted_kept_by_the_merge_is_judged(self):
+        merge = self.resolve(drop(LINES, 4))
+        self.assertEqual(self.bad(merge, exclude=[self.tip]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_new_line_in_the_merge_is_judged(self):
+        merge = self.resolve(drop(LINES, 4, 5) + 'the agent\'s\n')
+        self.assertEqual(self.bad(merge, exclude=[self.tip]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_hand_written_parent_is_judged_by_its_author(self):
+        # The agent's own copy of main's change, on the base: a parent main does not reach.
+        tree = self.repo.git('rev-parse', '%s^{tree}' % self.tip)
+        forged = self.repo.git('-c', 'user.email=%s' % AGENT, 'commit-tree', tree, '-p', self.base,
+                               '-m', 'forged', cwd=self.wt)
+        merge = self.plumb(drop(LINES, 4, 5), self.branch, forged)
+        self.assertEqual(self.bad(merge, exclude=[self.tip]),
+                         [oc.Violation(forged, AGENT, ['CLAUDE.md'])])
+
+    def test_an_octopus_merge_is_judged(self):
+        merge = self.plumb(drop(LINES, 4, 5), self.branch, self.tip, self.base)
+        self.assertEqual(self.bad(merge, exclude=[self.tip]),
+                         [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+
 class StandInHub(object):
     """The approvals seam of violations(): it answers as the hub server's verify route would
     (approvals.check on the documents it holds, under KEY, for REPO unless told another), and

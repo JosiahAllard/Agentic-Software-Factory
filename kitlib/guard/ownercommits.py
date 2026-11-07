@@ -24,7 +24,10 @@ What a commit changes:
                        exactly as (mode and blob, or absent) every `exclude` commit does is not
                        counted: the merge holds main's current copy (a main sync), never an older
                        one, and the branch's own commits that changed the path are still judged
-                       one by one; main moving the path again after the sync counts it again
+                       one by one; main moving the path again after the sync counts it again;
+                       violations() does not judge an owner-only path the merge holds as a
+                       resolution that only deletes (merge_deletions; docs/commit.md "A merge
+                       that only deletes")
   more parents         the union of its diffs against each parent (strict)
 
 The author email is git's `%ae` (never mailmapped), read with replace refs off (pushes do not carry
@@ -292,11 +295,9 @@ def changed(root, sha, parents, env=None, targets=()):
     return sorted(paths), None
 
 
-def blobs_at(root, sha, paths, env=None):
-    """`({path: blob id at `sha`}, None)` for `paths`, in one `git ls-tree`, or `(None, why)`. A
-    path `sha` has no entry for maps to None (a deletion); one whose entry is not a regular file
-    (mode 100644 or 100755: a symbolic link 120000, a gitlink 160000) maps to a text starting
-    with NOT_A_FILE, which equals no blob id and no deletion (irregular() names them)."""
+def tree_entries(root, sha, paths, env=None):
+    """`({path: (mode, object id) or None}, None)` for `paths` at the commit `sha`, in one
+    `git ls-tree`, or `(None, why)`. A path `sha` has no entry for maps to None."""
     out, why = _git(root, ['ls-tree', '-r', '-z', '--full-tree', sha, '--'] + list(paths), env)
     if out is None:
         return None, why
@@ -305,9 +306,117 @@ def blobs_at(root, sha, paths, env=None):
         meta, tab, name = row.partition('\t')
         cols = meta.split()
         if tab and name in found and len(cols) == 3:
-            regular = cols[0] in REGULAR_MODES and cols[1] == 'blob'
-            found[name] = cols[2] if regular else '%s (mode %s)' % (NOT_A_FILE, cols[0])
+            found[name] = (cols[0], cols[2])
     return found, None
+
+
+def blobs_at(root, sha, paths, env=None):
+    """`({path: blob id at `sha`}, None)` for `paths`, in one `git ls-tree`, or `(None, why)`. A
+    path `sha` has no entry for maps to None (a deletion); one whose entry is not a regular file
+    (mode 100644 or 100755: a symbolic link 120000, a gitlink 160000) maps to a text starting
+    with NOT_A_FILE, which equals no blob id and no deletion (irregular() names them)."""
+    found, why = tree_entries(root, sha, paths, env)
+    if found is None:
+        return None, why
+    for name, entry in found.items():
+        if entry is not None:
+            mode, oid = entry
+            found[name] = oid if mode in REGULAR_MODES else '%s (mode %s)' % (NOT_A_FILE, mode)
+    return found, None
+
+
+def _lines(data):
+    """The lines of `data` (bytes), each ending after its b'\\n' (a CRLF line keeps its b'\\r'),
+    the last without one when `data` does not end in b'\\n'."""
+    parts = data.split(b'\n')
+    return [p + b'\n' for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def _subsequence(short, long):
+    """True when the list `short` is `long` with items left out, in order."""
+    rest = iter(long)
+    return all(any(x == y for y in rest) for x in short)
+
+
+def keeps_only_deletions(ours, theirs, result, bases):
+    """True when a merge of `ours` and `theirs` (file contents, bytes) may hold `result` as its
+    own resolution of an owner-only file (docs/commit.md "A merge that only deletes"): there is a
+    merge base (`bases`, the file at each, bytes); no content holds a NUL byte (binary); `result`,
+    as lines compared byte for byte, is `ours` and `theirs` each with lines left out, in order (it
+    adds and moves none); it holds every line exactly as often as the parent holding it fewer
+    times (it drops none both keep); and wherever the parents hold a line a different number of
+    times, no parent holds it more often than any base (the difference is one side's deletion,
+    never an addition the merge would drop)."""
+    texts = [ours, theirs, result] + list(bases)
+    if not bases or any(b'\0' in t for t in texts):
+        return False
+    one, two, res = _lines(ours), _lines(theirs), _lines(result)
+    if not (_subsequence(res, one) and _subsequence(res, two)):
+        return False
+    c1, c2, cr = (collections.Counter(x) for x in (one, two, res))
+    if any(cr[line] != min(c1[line], c2[line]) for line in set(c1) | set(c2)):
+        return False
+    for base in bases:
+        cb = collections.Counter(_lines(base))
+        if any(c1[line] != c2[line] and max(c1[line], c2[line]) > cb[line]
+               for line in set(c1) | set(c2)):
+            return False
+    return True
+
+
+def read_blob(root, oid, env=None):
+    """`(the bytes of the blob `oid`, None)`, or `(None, why)`."""
+    r = cmd.call(NOREPLACE + ['cat-file', 'blob', oid], root, env=env)
+    if r.rc != 0:
+        return None, 'git cat-file failed for %s: %s' % (oid[:10], r.err or 'exit %s' % r.rc)
+    return r.out, None
+
+
+def deletion_merge(root, one, two, held, env=None):
+    """`(paths, None)`: those of `held` ({path: (mode, blob id) the merge holds, or None}) that a
+    merge of the commits `one` and `two` may hold as its own resolution: a regular file of one
+    mode at `one`, at `two`, in the merge and at every merge base (`git merge-base --all`; an
+    add, a delete, a rename or a mode change is none), whose content passes
+    keeps_only_deletions. `(None, why)` when git cannot tell."""
+    paths = sorted(p for p, entry in held.items() if entry is not None)
+    if not paths:
+        return set(), None
+    r = cmd.call(NOREPLACE + ['merge-base', '--all', one, two], root, env=env)
+    if r.rc not in (0, 1):
+        return None, 'git merge-base failed for %s and %s: %s' % (
+            one[:10], two[:10], r.err or 'exit %s' % r.rc)
+    bases = cmd.text(r.out).split()
+    at = []
+    for rev in [one, two] + bases:
+        found, why = tree_entries(root, rev, paths, env)
+        if found is None:
+            return None, why
+        at.append(found)
+    fit = set()
+    for p in paths:
+        entries = [found[p] for found in at] + [held[p]]
+        if (not bases or None in entries or len({e[0] for e in entries}) != 1
+                or entries[0][0] not in REGULAR_MODES):
+            continue
+        texts = []
+        for entry in entries:
+            blob, why = read_blob(root, entry[1], env)
+            if blob is None:
+                return None, why
+            texts.append(blob)
+        if keeps_only_deletions(texts[0], texts[1], texts[-1], texts[2:-1]):
+            fit.add(p)
+    return fit, None
+
+
+def merge_deletions(root, sha, parents, paths, env=None):
+    """`(paths, None)`: those of `paths` that the two-parent merge `sha` holds as a resolution
+    that only deletes (deletion_merge, on its committed copies); `(None, why)` when git cannot
+    tell."""
+    found, why = tree_entries(root, sha, paths, env)
+    if found is None:
+        return None, why
+    return deletion_merge(root, parents[0], parents[1], found, env)
 
 
 def irregular(blobs):
@@ -373,6 +482,11 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]
+        if locked and len(parents) == 2:
+            kept, why = merge_deletions(root, sha, parents, locked, env)
+            if kept is None:
+                return None, why
+            locked = [p for p in locked if p not in kept]
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)

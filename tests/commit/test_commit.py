@@ -2287,6 +2287,56 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([], None))
 
 
+@real_git('merge-tree and merge-base --all over a three-way merge: the fake has none of them')
+class AMergeThatOnlyDeletes(JoinCase):
+    """Each side deletes a line of the owner-only file in an approved commit, lines 3 and 4: the
+    merge conflicts on it, and the agent resolves it by hand (docs/commit.md "A merge that only
+    deletes")."""
+
+    def start(self):
+        tip, main = self.merge(SEVEN.replace('line 3\n', ''), SEVEN.replace('line 4\n', ''))
+        self.assertIn(self.F, self.git('diff', '--name-only', '--diff-filter=U'))
+        return tip, main
+
+    def assert_owner_refusal(self, out, code, head):
+        self.assertEqual(code, 1, out)
+        self.assertIn('refused: %s is owner-only' % self.F, out)
+        self.assertEqual(self.head(), head)
+
+    def test_a_resolution_that_only_deletes_commits_with_no_approval(self):
+        self.approve('A-001', 'A-002')
+        tip, main = self.start()
+        both = SEVEN.replace('line 3\n', '').replace('line 4\n', '')
+        self.put(self.F, both)
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', both)
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
+    def test_a_resolution_that_keeps_a_line_main_deleted_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.start()
+        self.put(self.F, SEVEN.replace('line 4\n', ''))
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assert_owner_refusal(out, code, tip)
+
+    def test_a_resolution_that_adds_a_line_is_refused(self):
+        self.approve('A-001', 'A-002')
+        tip, _ = self.start()
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', 'the agent\'s\n'))
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assert_owner_refusal(out, code, tip)
+
+    def test_an_unapproved_side_is_refused(self):
+        self.approve('A-002')
+        tip, _ = self.start()
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assert_owner_refusal(out, code, tip)
+
+
 @gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
                          'attribute')
 @real_git('check-attr and a merge driver: the fake has neither')

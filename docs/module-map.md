@@ -380,7 +380,7 @@ Known limits:
 ## The kit's own map
 
 The kit keeps its own map so its package cycle cannot grow. The map file
-`docs/module-map.json`; the ceilings (`docs/module-ceilings.json`) and the page
+(`docs/module-map.json`), the ceilings (`docs/module-ceilings.json`) and the page
 (`docs/module-architecture.md`, not `architecture.md`: that name collides with ARCHITECTURE.md on
 a case-blind file system) are ordinary files.
 

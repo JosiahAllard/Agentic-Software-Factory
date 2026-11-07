@@ -13,12 +13,15 @@ Who sets the marker: tests/__init__.py for a direct `python -m unittest` run, an
 `child_env` for its units (a pool worker replaces its environment for each unit). Production never
 sets it, so a real run gets `seconds`. The marker is read at each call. Not fenced: a child whose
 environment a test built without the marker, and a child that is not the kit's Python code.
-CEILING is past kitlib.tooldeps.selfrun.UNIT_TIMEOUT, so a real hang still ends, as a unit TIMEOUT.
+CEILING is past UNIT_TIMEOUT, so a real hang still ends, as a unit TIMEOUT.
 """
 import os
 
 FENCE_ENV = 'KIT_TIME_FENCE'
 CEILING = 600.0
+# kit_tests' per-unit limit in seconds: a unit still running past it is ended as a TIMEOUT.
+# kitlib.tooldeps.selfrun re-exports it; kitlib.gate.rerun reads it here (gate may not import tooldeps).
+UNIT_TIMEOUT = 300
 
 
 def fenced(environ=None):

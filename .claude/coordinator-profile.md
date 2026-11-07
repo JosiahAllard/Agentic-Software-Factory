@@ -4,7 +4,7 @@
 - Reference docs: find them by topic with `tools/doc_index.py --find <topic>` (docs/doc-tools.md).
 
 ## Risk map, for review depth
-docs/agent-profile.md, Risk map: its High paths get a fresh reviewer and a stronger worker; a branch changing a strict path lands alone (docs/gate.md "Strict paths").
+docs/agent-profile.md, Risk map: its High paths get a fresh strong-tier reviewer and, except for a small fix with a known cause, a stronger worker; a branch changing a strict path lands alone (docs/gate.md "Strict paths").
 
 ## Agent types used here
 The kit's roster: docs/ROSTER.md. The coordinator uses only the types listed there.

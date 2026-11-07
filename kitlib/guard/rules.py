@@ -93,18 +93,14 @@ unreadable, is a warning by default).
 "Agent session" and "the owner's own" are the session mark's (docs/guard.md "Session mark").
 """
 import contextvars
-import fnmatch
 import json
 import ntpath
 import os
 import posixpath
 import re
 
-from kitlib import agentname
 from kitlib import config as kconfig
-from kitlib.config import user as kuser
 from kitlib import kitroot
-from kitlib import pmdata
 from kitlib.git import defaults as gitdefaults
 from kitlib.git import repo
 from kitlib import lockmcp as lockmcp_names
@@ -112,7 +108,6 @@ from kitlib.host import Decision
 
 from . import commands as cm
 from . import context
-from . import generated
 from . import hub as hubg
 from . import jail
 from . import modes
@@ -120,11 +115,11 @@ from . import paths
 from . import shell as sh
 from .rules_base import (AGENT_MARKS, ALLOW, ASK, CITE_MAX, DENY, ELIDED, LEDGER_GLOB_CHARS, NULL_TARGETS, PSCmdlet,
                          PS_ALIASES, PS_CMDLETS, PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES,
-                         PS_NAMED_DYN_RE, SHELLS, TAG, WIN_OPT_RE, _COMMAND, _FILTERS, _PATHS, _split_commas,
-                         advice_kit, agent_session, bare, cited, fwd, here, is_owner_session, kept_word, kit_tool,
-                         literal_word, lock_tool, owner_host, ps_args, ps_bound, ps_native_unsure, ps_param_word,
-                         ps_params, quote, refuse, reworded, same_dir, shell_word, subagent, tag, tag_role, tail_word,
-                         unowned_chat)
+                         PS_NAMED_DYN_RE, SHELLS, TAG, UNPLACED, WIN_OPT_RE, _COMMAND, _FILTERS, _PATHS,
+                         _split_commas, advice_kit, agent_session, bare, cited, fwd, here, is_owner_session,
+                         kept_word, kit_tool, literal_word, lock_tool, own_worktree, owner_host, ps_args, ps_bound,
+                         ps_native_unsure, ps_param_word, ps_params, quote, refuse, reworded, same_dir, shell_word,
+                         subagent, tag, tag_role, tail_word, unowned_chat)
 from .rules_owner import (COMPUTED_TAIL_RE, HUB_NAMES_LIMIT, HUB_OWNER_WHY, HUB_SCRIPT, HUB_SECRETS_WHY, HubPlaces,
                           HubShell, LOCK_SCRIPT, LOCK_VALUE_OPTS, NODE_EVAL, NODE_VALUE_OPTS, OPENERS, OWNER_LOCK_WHY,
                           OWNER_SETUP_WHY, PY_FLAG_RE, PY_RUN_RE, SETUP_APPLY, SETUP_SCRIPTS, UI_NAME_RE, _tool_run,
@@ -153,9 +148,10 @@ from .rules_gitcore import (ALIAS_BLANKS, ALIAS_DEPTH, CONFIG_LONGS, CONFIG_LONG
                             git_config_call, git_hooks_path, git_prefix_configs, hooks_config_write, inline_alias,
                             kit_githooks, owner_identity, repo_config_file, restore_index_only, split_alias,
                             stash_reads)
-from .rules_pmdata import (DataBranch, Judged, LAND_HOW, UNPLACED, _branch_of, _guarded_mains, _no_verify_word,
-                           _push_names_branches, _unknown_dir_counts, data_copy, git_push, git_push_pm_data,
-                           git_push_pmdata, home_config, kit_judged, landing_command, own_worktree, pmdata_recorded)
+from .rules_push import (DataBranch, Judged, LAND_HOW, _branch_of, _guarded_mains, _no_verify_word,
+                         _push_names_branches, _unknown_dir_counts, data_copy, git_push, git_push_pm_data,
+                         git_push_pmdata, home_config, kit_judged, landing_command, pmdata_recorded)
+from .rules_push import pmdata      # kitlib.pmdata, read here and as rules.pmdata (fallback)
 from .rules_edit import (BLIND_BRANCH_INSTEAD, DEV_DRIVE, DOS_WILDCARDS, GATE_RESULT, JAIL_ASK, KIT_JSON, LONG_PREFIX,
                          MACHINE_CONFIG, MACHINE_CONFIG_WHY, MAIN_CWD_HINT, OUTPUT_WRITERS, PLACE_RULES, PM_DATA_WHY,
                          PROVIDER_ITEM_WHY, REDIRECT_HINT, STANDING_WHY, UNPLACED_BRANCH_INSTEAD, UNPLACED_BRANCH_WHY,

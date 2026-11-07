@@ -1,12 +1,15 @@
 """The helpers every family of the guard's rules shares (kitlib.guard.rules, which re-exports each name
 here): the verdicts, refuse and the tag a refusal ends with, the quoting an alternative's command uses,
-the kit folder and tools an alternative names, and the PowerShell cmdlet tables several families read."""
+the kit folder and tools an alternative names, the PowerShell cmdlet tables several families read, the
+session helpers (is_owner_session, owner_host, unowned_chat, agent_session), own_worktree and the
+unplaced rule's name (UNPLACED)."""
 import contextvars
 import os
 import re
 
 from kitlib import agentname
 from kitlib import kitroot
+from kitlib.git import repo
 from kitlib.host import Decision
 
 from . import commands as cm
@@ -441,3 +444,22 @@ def agent_session(event, ctx):
 
 # every session kind the kit launcher marks but `plain` and other agents' names
 AGENT_MARKS = ('coordinator', 'deep-worker', 'consultant', 'pm')
+
+
+def own_worktree(ctx, cwd, main_top=None):
+    """The top of the linked worktree the call runs in (of `main_top`, when given), or None."""
+    here_ = ctx.place(cwd) if cwd else None
+    if here_ is None or here_.kind != repo.LINKED or not here_.top:
+        return None
+    if main_top is not None:
+        mine = ctx.main_top(cwd)
+        if not mine or paths.norm(mine) != paths.norm(main_top):
+            return None
+    return here_.top
+
+
+# A write the guard cannot place: a computed or unread target, code given on the line (python -c,
+# node -e), a git or .NET call whose directory or path the text does not tell, a place git cannot
+# tell. Its default mode is warn (kitlib.guard.modes): only a write that resolves literally into a
+# main checkout or outside an agent session's folders is denied (docs/guard.md "Rule modes").
+UNPLACED = 'unplaced'

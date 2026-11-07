@@ -1,7 +1,7 @@
 """The guard's rules on the owner's own powers (kitlib.guard.rules, which re-exports each name here):
-the lock MCP's owner tools, the owner's tools a shell command runs, the Action Hub's secrets, owner
-verbs and MCP tools, and the session checks every owner-only rule reads (is_owner_session,
-agent_session)."""
+the lock MCP's owner tools, the owner's tools a shell command runs, and the Action Hub's secrets,
+owner verbs and MCP tools. The session checks they read (is_owner_session, unowned_chat) live in
+rules_base."""
 import json
 import ntpath
 import os

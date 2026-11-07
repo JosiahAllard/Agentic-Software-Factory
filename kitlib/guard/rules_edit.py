@@ -17,13 +17,12 @@ from . import jail
 from . import modes
 from . import paths
 from . import shell as sh
-from .rules_base import (ASK, LEDGER_GLOB_CHARS, agent_session, bare, fwd, is_owner_session, kit_tool, lock_tool,
-                         owner_host, quote, refuse, subagent, tag)
+from .rules_base import (ASK, LEDGER_GLOB_CHARS, UNPLACED, agent_session, bare, fwd, is_owner_session, kit_tool,
+                         lock_tool, own_worktree, owner_host, quote, refuse, subagent, tag)
 from .rules_owner import hub_real, hub_secret_edit, hub_session
 from .rules_run import is_root
 from .rules_gitcore import (GIT_LONG_VALUES, _canon_long, _opts, clean_dry_run, git_call_judged, restore_index_only,
                             stash_reads)
-from .rules_pmdata import UNPLACED, own_worktree
 
 
 def delegations_edit(event, ctx, target, role, what, stand_in=False):

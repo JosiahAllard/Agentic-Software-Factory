@@ -1,4 +1,4 @@
-"""The guard's push rules and the PM data checks they share (kitlib.guard.rules, which re-exports each
+"""The guard's git push rule and the PM data checks it shares (kitlib.guard.rules, which re-exports each
 name here): git push from the PM data worktree, --no-verify and a changed HOME where a PM data record
 exists, a push the guard cannot tell holds no PM data, and the main branch's gate-OK check."""
 import os
@@ -6,8 +6,7 @@ from kitlib import pmdata
 from kitlib.git import repo
 
 from . import commands as cm
-from . import paths
-from .rules_base import agent_session, fwd, is_owner_session, kit_tool, quote, refuse
+from .rules_base import UNPLACED, agent_session, fwd, is_owner_session, kit_tool, own_worktree, quote, refuse
 from .rules_gitcore import _canon_long, _opts
 
 
@@ -73,25 +72,6 @@ def git_push_pm_data(event, ctx, gc, role):
     cfg = ctx.config(gc.dir)
     cfg = DataBranch(cfg, ctx.pm_data_branch(gc.dir)) if cfg is not None else None
     return git_push(event, Judged(ctx, ctx.main_top(gc.dir), cfg, ctx.config_error(gc.dir)), gc, role)
-
-
-def own_worktree(ctx, cwd, main_top=None):
-    """The top of the linked worktree the call runs in (of `main_top`, when given), or None."""
-    here_ = ctx.place(cwd) if cwd else None
-    if here_ is None or here_.kind != repo.LINKED or not here_.top:
-        return None
-    if main_top is not None:
-        mine = ctx.main_top(cwd)
-        if not mine or paths.norm(mine) != paths.norm(main_top):
-            return None
-    return here_.top
-
-
-# A write the guard cannot place: a computed or unread target, code given on the line (python -c,
-# node -e), a git or .NET call whose directory or path the text does not tell, a place git cannot
-# tell. Its default mode is warn (kitlib.guard.modes): only a write that resolves literally into a
-# main checkout or outside an agent session's folders is denied (docs/guard.md "Rule modes").
-UNPLACED = 'unplaced'
 
 
 def _branch_of(ref):

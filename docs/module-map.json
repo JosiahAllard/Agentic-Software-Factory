@@ -3365,15 +3365,6 @@
    "goal": 0
   },
   {
-   "id": "gate-build-tooldeps",
-   "from": "gate",
-   "to": "tooldeps",
-   "kinds": [
-    "build"
-   ],
-   "goal": 0
-  },
-  {
    "id": "gate-build-worktree",
    "from": "gate",
    "to": "worktree",

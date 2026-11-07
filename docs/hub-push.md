@@ -243,13 +243,18 @@ common dir of the PM data worktree only:
    waits for the next pass.
 
 The job deletes nothing itself. A `.pack` with no `.idx` that is more than a day old is a finding:
-each pass names it in its health note and pushes `findings` with their count as the detail.
+each pass names it in its health note. The pass pushes `findings` with their count as the detail
+only when the count differs from the one last pushed, or when that push is a day old (`REPUSH_S`).
+The last pushed state is kept in `store-upkeep-pushed.json` in the git common dir, so a hub restart
+does not push it again, and an event the pass no longer finds is forgotten, so it pushes again when
+it returns. The pushes are made at the end of the pass, after the commit-graph and gc steps, also
+when a step failed or the pass was stopped.
 
 A `maintenance.lock` more than 12 h old is the sign the fault came back. When no git process that
 could hold it is alive (a git whose command line names `maintenance` or `gc`, or one whose command
 line cannot be read and which is still listed a moment later), each pass names it in its note and
-pushes `[hub push] job store-upkeep stale-lock detail:<hours>h` to the PM, every day while the lock
-stays. It is never removed by the hub: moving it aside is a planned window's work. With such a git
+pushes `[hub push] job store-upkeep stale-lock detail:<hours>h` to the PM, once and then a day later
+while the lock stays (the age changes every hour and is no change; the same state file holds it). It is never removed by the hub: moving it aside is a planned window's work. With such a git
 alive the pass only names it in its note. When the processes cannot be listed, it still pushes.
 
 A failed git step or another lock refusal is a job failure; the other step still runs.

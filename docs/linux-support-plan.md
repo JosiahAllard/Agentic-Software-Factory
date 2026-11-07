@@ -235,7 +235,7 @@ On Linux a path is absolute when it starts with `/`; there are no drives, no MSY
 `\` separators; `/` and `$HOME` are roots; comparison folds case only where the filesystem does
 (the placer asks once per mount, read from /proc/self/mountinfo, and folds when in doubt, which
 refuses more). The user pointer file is the user's to write, so an agent could write it too: the
-guard holds it (docs/guard.md "Write jail", tests/guard/test_linux_pointer.py).
+guard holds it (docs/guard-jail-roles.md "Write jail", tests/guard/test_linux_pointer.py).
 
 Already failing closed and to stay so: guard/context.py `_placed` (no drive, no ledger key),
 `_default_lock_held`.

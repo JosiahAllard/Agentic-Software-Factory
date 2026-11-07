@@ -1,4 +1,4 @@
-"""The guard's place reads on a real scratch checkout (docs/guard.md "State"): a main checkout
+"""The guard's place reads on a real scratch checkout (docs/guard-core.md "State"): a main checkout
 with a linked worktree nested inside it under .claude/worktrees. A folder of the main checkout is
 MAIN, the worktree and its folders are LINKED, and the edit rule follows."""
 import json

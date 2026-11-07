@@ -22,7 +22,7 @@ docs/multi-host-plan.md section 7): a RosterEntry (name, mode, tier, group, run)
 The launcher's KIT_AGENTS and the backlog policy's groups (kitlib.backlog.roles) are read from it.
 
 `names_of(name)` is a role's name with its old or new one (ALIASES). `role_modes(kit)` is {role: mode} from the role files under the kit root `kit`, for the guard's
-role policy (docs/guard.md "Role policy"); `role_mode(name, kit)` one role's, an old name
+role policy (docs/guard-jail-roles.md "Role policy"); `role_mode(name, kit)` one role's, an old name
 (ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names. These and
 roster share one read of the role files per kit root, cached, so the guard's hook path parses
 them once. None raises: no `content/roles` folder gives {}, and a role file that cannot be read

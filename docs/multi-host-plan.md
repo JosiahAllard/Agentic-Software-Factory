@@ -300,7 +300,7 @@ behaviour unchanged.
 - Standard library only; Windows and Linux (macOS is out). No argparse or printing in kitlib.
 - Tool paths and exit codes. A merged flag keeps the old one as an alias for one release.
 - Guard semantics for Claude: every existing guard test passes through the adapter. Two
-  changes are deliberate: the role policy (docs/guard.md "Role policy"), which runs only where a
+  changes are deliberate: the role policy (docs/guard-jail-roles.md "Role policy"), which runs only where a
   repository's `.kit.json` sets `guard.role_policy` (opt in; off, every call is judged as before),
   and the owner paths' tightening of decision 16 (`AGENTS.md`, `docs/agent-profile.md` and `.codex/`
   added to the default `owner.paths`, a superset of before).

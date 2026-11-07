@@ -1,4 +1,4 @@
-"""Bare and plugin-prefixed agent names get the same decisions (docs/guard.md "Agent names").
+"""Bare and plugin-prefixed agent names get the same decisions (docs/guard-fallback.md "Agent names").
 
 The rule table, role policy and session tests (SENTINEL_MODULES) run again with the prefix knob
 on: each subagent's agent_type is qualified (kitlib.agentname.qualified, through world.AGENT_TYPE)

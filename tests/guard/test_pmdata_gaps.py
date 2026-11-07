@@ -1,5 +1,5 @@
 """The routes past the pre-push leak stage that the remote-rewrite and pm-data-bypass guards
-name (docs/guard.md "Rules", docs/pm-data-branch.md "Pre-push guard"). Each is denied only when the
+name (docs/guard-rules.md "Rules", docs/pm-data-branch.md "Pre-push guard"). Each is denied only when the
 repository has a PM data record, and never in the owner's
 own session:
 

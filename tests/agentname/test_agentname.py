@@ -1,4 +1,4 @@
-"""kitlib.agentname (docs/guard.md "Agent names"): an agent bundled in the kit plugin is named
+"""kitlib.agentname (docs/guard-fallback.md "Agent names"): an agent bundled in the kit plugin is named
 `<plugin>:<name>`; the agent type loses exactly one case-sensitive prefix, a session mark loses
 every prefix case ignored, and nothing else is stripped."""
 import unittest

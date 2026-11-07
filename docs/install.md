@@ -75,7 +75,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    never stored unconfirmed) and makes the agents' temp folder. It writes nothing into any
    repository but that machine config and the `-PmSettings` file, when you name one. Run it
    yourself: the guard refuses `-Apply` to agent sessions, since it stores the owner's email
-   (docs/guard.md "Owner machine setup"). A machine set up with the old home-folder layout follows
+   (docs/guard-owner.md "Owner machine setup"). A machine set up with the old home-folder layout follows
    "Existing installs" below as well.
 
    The settings every account shares (the guard's hook, the status line, the plugin's marketplace)
@@ -278,7 +278,7 @@ entries, each run as `pythonw` on Windows (`/bin/sh` + `python3` on Linux) with 
 `startup|resume|clear|compact`) and on SubagentStart, and the coordinator SessionStart hook
 (`boot/hook.py claude SessionStart coordinator`, matcher `startup|resume|compact`). The guard
 (`boot/hook.py claude PreToolUse`) stays in each account's settings (or the managed settings file)
-and is never in the plugin (docs/guard.md "Go-live"); the PM checklist (`boot/hook.py claude
+and is never in the plugin (docs/guard-hooks.md "Go-live"); the PM checklist (`boot/hook.py claude
 SessionStart pm`) stays in the PM repo's settings. An account whose settings still run the
 coordinator hook runs it twice with the plugin: remove the settings entry (`tools/machine_setup.py`
 notes it, docs/machine-setup.md "Settings").

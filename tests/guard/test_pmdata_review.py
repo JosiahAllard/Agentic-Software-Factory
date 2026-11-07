@@ -1,4 +1,4 @@
-"""Second-review fixes to the PM data routes (docs/guard.md "Rules" and "Fallback"):
+"""Second-review fixes to the PM data routes (docs/guard-rules.md "Rules" and "Fallback"):
 
   - `& (<expr>)` is refused as unplaced for an agent session in any repository (a warning by
     default): a computed program skips the rules that need a literal one (heavy,

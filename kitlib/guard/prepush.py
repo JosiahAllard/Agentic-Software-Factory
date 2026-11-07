@@ -1,16 +1,16 @@
-"""The git pre-push check (ARCHITECTURE.md "Guard rules"; docs/guard.md "Pre-push").
+"""The git pre-push check (ARCHITECTURE.md "Guard rules"; docs/guard-hooks.md "Pre-push").
 
 check(root, lines, remote=<name or URL>, url=<URL>) -> (ok, message). `lines` are what git writes
 to a pre-push hook's stdin, one `<local ref> <local sha> <remote ref> <remote sha>` per ref pushed.
 
-First, when the repository's git common dir holds kit-pm-data.json (kitlib.pmdata; docs/guard.md
+First, when the repository's git common dir holds kit-pm-data.json (kitlib.pmdata; docs/guard-hooks.md
 "Pre-push", "PM data branch"), leak_refusal judges every line whatever its remote ref: the data
 branch, its history and its objects go only to the recorded private remote, and that remote gets
 nothing else. A record that cannot be read, or a recorded root this clone lacks, refuses every push.
 
 Next, secrets_refusal judges every line too, for every remote: a commit the push sends that adds or
 changes a file in a top .pm-kit/hub/ folder or .pm-kit/local.json (case ignored) is refused, even
-when a later commit deletes it (docs/guard.md "Pre-push", "Owner machine setup").
+when a later commit deletes it (docs/guard-hooks.md "Pre-push", "Owner machine setup").
 
 Then, for a push that updates the remote's main branch, whoever pushes (the owner, an agent, a
 lander):
@@ -275,8 +275,8 @@ def _remote_has(root, remote_sha, name, remotes):
 
 # ---------------------------------------------------------------- machine secrets
 
-SECRET_FILE = '.pm-kit/local.json'      # a checkout's machine settings (docs/guard.md "Owner machine setup")
-SECRET_FOLDER = '.pm-kit/hub/'          # the hub's token folder there (docs/guard.md "Hub secrets")
+SECRET_FILE = '.pm-kit/local.json'      # a checkout's machine settings (docs/guard-owner.md "Owner machine setup")
+SECRET_FOLDER = '.pm-kit/hub/'          # the hub's token folder there (docs/guard-owner.md "Hub secrets")
 
 
 def is_secret_path(path):
@@ -326,7 +326,7 @@ def secrets_refusal(root, lines, name):
             elif row.strip() and is_secret_path(row):
                 return ('pre-push: refused, %s sends %s, added or changed in commit %s: a checkout\'s '
                         '.pm-kit/hub/ folder (the Action Hub\'s tokens) and .pm-kit/local.json (this '
-                        'machine\'s settings) never leave this machine (docs/guard.md "Pre-push"). '
+                        'machine\'s settings) never leave this machine (docs/guard-hooks.md "Pre-push"). '
                         'Take the file out of those commits, then push again.'
                         % (what, row.strip(), commit[:12]))
     return None

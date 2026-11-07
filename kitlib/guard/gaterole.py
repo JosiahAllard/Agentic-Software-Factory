@@ -1,4 +1,4 @@
-"""Who may lift a branch's gate-run budget (docs/guard.md "Gate allow").
+"""Who may lift a branch's gate-run budget (docs/guard-jail-roles.md "Gate allow").
 
   gate-allow   a run of tools/gate.py allow (kitlib/gate/budget.py `allow`: it raises the gate
                runs a branch may make; docs/gate-records.md "The branch gate budget") by any session but

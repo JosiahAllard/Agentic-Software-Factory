@@ -75,7 +75,7 @@ plain Notepad, a hand edit described in prose, coordinator work). The owner's ow
 those rules. A raw worktree, branch, tag or ref delete has no carve-out: its refusal names
 `worktree_remove.py <slug> --abandon "<why>"`, which the coordinator runs on a ruling (docs/worktree-remove.md
 "Tools"); a ref delete's also says a ref outside `refs/heads`, `refs/tags`, `refs/stash` and
-`refs/backlog` the coordinator deletes itself, in its own repository (docs/guard.md "Rules",
+`refs/backlog` the coordinator deletes itself, in its own repository (docs/guard-rules.md "Rules",
 `git-shared-ref`). An agent's new to-do may carry `record` (`todos add --record REPO:ID`), which parks
 the record until the to-do is done (docs/hub-questions.md "A question bound to a record"); the owner's own to-do and an edit
 take none (`invalid`, field `record`). An agent's to-do whose title or detail asks the owner to send a

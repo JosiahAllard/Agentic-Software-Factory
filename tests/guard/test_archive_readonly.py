@@ -1,5 +1,5 @@
 """git archive reads the repository it runs in; only its -o/--output file and the folder a tar
-fed by it extracts into are written (docs/guard.md "Write jail", the git bullet, and "Shell writes").
+fed by it extracts into are written (docs/guard-jail-roles.md "Write jail", the git bullet, and "Shell writes").
 
 The repro from the PM's session: `git -C <kit> archive <sha> | tar -x -C <scratch>` was refused as
 a write to the kit checkout. These rows pin both sides: the archive passes, the tar side is judged
@@ -454,7 +454,7 @@ class ArchiveHoles(ArchiveWorld):
         text = 'tar -x -C %s -C ../../repo' % self.scratch
         self.refused_by(self.pm(bash(text, deep)), 'write-jail', 'tar')
         # -C <base> also writes <base>, the folder that holds the fixture home and so the owner's
-        # delegation list: that rule refuses it first (docs/guard.md "Owner delegation list")
+        # delegation list: that rule refuses it first (docs/guard-owner.md "Owner delegation list")
         text = 'tar -x -C %s -C repo' % W.fwd(self.w.base)
         self.refused_by(self.pm(bash(text, self.w.plain)), 'owner-delegations', 'tar')
         self.assertIsNone(self.pm(bash('tar -x -C %s -C sub' % self.scratch, self.w.plain)))

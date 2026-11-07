@@ -93,7 +93,7 @@ def _with_pmdata(repo):
 
 
 class PmDataCase(PrePushCase):
-    """The leak stage (docs/guard.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
+    """The leak stage (docs/guard-hooks.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
     git common dir, the data branch, its history and its objects reach only the recorded private
     remote, and that remote gets nothing else. origin is the public remote."""
 

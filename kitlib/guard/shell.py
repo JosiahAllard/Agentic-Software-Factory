@@ -1,4 +1,4 @@
-"""Bash, PowerShell and cmd command lines read as commands, not matched as text (docs/guard.md
+"""Bash, PowerShell and cmd command lines read as commands, not matched as text (docs/guard-core.md
 "Parsing").
 
 parse(text, shell, cwd) -> Parsed. Each Command has its words (a quoted word is one word; a
@@ -41,7 +41,7 @@ def ps_dashed(text):
 
 
 # What cmd.exe reads in a batch file's arguments when it runs the line again (a .cmd or .bat run
-# through cmd /c: `python x.py %*` substitutes the caller's words as text, docs/guard.md "Batch
+# through cmd /c: `python x.py %*` substitutes the caller's words as text, docs/guard-jail-roles.md "Batch
 # files and cmd.exe"): % expands (phase 1); ^ escapes and " toggles quoting, which un-hides the
 # operators & | < > after it (phase 2); ( ) open and close a block; ! expands under delayed
 # expansion (off under cmd /c unless the Command Processor DelayedExpansion registry value turns
@@ -103,7 +103,7 @@ def _brace_group(s, i):
     it written out (`{a,b{c,d}}`: a, bc, bd); alternatives None when it gives more than
     BRACE_LIMIT words. None when s[i] starts no group bash expands as read here: no comma at its
     own level, or a space, quote, expansion, backslash or operator before its `}` (left literal:
-    docs/guard.md "Known limits")."""
+    docs/guard-fallback.md "Known limits")."""
     alts, cur, over, comma, j = [], [''], False, False, i + 1
     while j < len(s):
         c = s[j]
@@ -1115,7 +1115,7 @@ def ps_filesystem_relative(p):
     """The relative path a PowerShell `FileSystem::<rel>` (or
     `Microsoft.PowerShell.Core\\FileSystem::<rel>`, either after a leading separator) spells, read
     from the location as the guard reads a .NET method's relative path; else None. PowerShell
-    itself reads it from the process's directory, which a cd does not move (docs/guard.md "Known
+    itself reads it from the process's directory, which a cd does not move (docs/guard-fallback.md "Known
     limits"). A drive-relative C:x, ~, another provider or a long drive in <rel> is no such path."""
     m = _ps_provider(p)
     if not m or m.group(2).lower() != 'filesystem':

@@ -52,7 +52,13 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
 - `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
 - `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
-- `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
+- `docs/guard.md` | shell guard and git hooks: the index of its pages | a command is refused | kw: guard, hooks, refusal, hub secrets
+- `docs/guard-core.md` | shell guard: output, refusal log, rule modes, hosts, parsing, state | reading a guard refusal or how the guard parses a line | kw: guard, refusal log, modes, hosts, parsing
+- `docs/guard-rules.md` | shell guard: the rules and kit paths in advice | a rule refuses a command | kw: guard, rules, refusal, instead
+- `docs/guard-jail-roles.md` | shell guard: write jail, generated files, role policy, backlog roles, gate allow, batch files | a write is jailed or a role is refused | kw: guard, write jail, git jail, role policy, backlog roles
+- `docs/guard-fallback.md` | shell guard: the fallback and its known limits, lock MCP, session mark, agent names | the guard cannot read a line | kw: guard, fallback, known limits, session mark
+- `docs/guard-owner.md` | shell guard: owner lock tools, machine setup, delegation list, hub secrets | an owner-only tool or a hub secret is refused | kw: guard, owner, hub secrets, delegation
+- `docs/guard-hooks.md` | shell guard: pre-push, owner-only commits, self-test, go-live | a push or commit is refused | kw: guard, pre-push, owner-only, go-live
 - `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
 - `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin

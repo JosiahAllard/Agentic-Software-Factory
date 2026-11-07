@@ -21,7 +21,7 @@ Owner-only rows read OK (approved), MISSING or UNMATCHED (both block), or REVERT
 edit the branch itself takes back, printed so a reviewer sees the round-trip but not counted as a
 problem, because the path is byte-identical to the merge base. The rules are the base's `owner`
 section merged with the branch's (kitlib.config.owner.merge): a branch cannot unlock a path, and
-the owner's email comes from the base alone. As the landing guard judges (docs/guard.md "Owner-only
+the owner's email comes from the base alone. As the landing guard judges (docs/guard-hooks.md "Owner-only
 commits"), a commit whose AUTHOR email is the owner's (read by ownercommits.commits, judged by
 rules.is_owner) is ok, with or without a trailer; its row shows an Owner-Approved trailer that
 covers the path. On anyone else's commit an Owner-Approved trailer approves nothing;

@@ -14,12 +14,12 @@ A role file, `content/roles/<name>.md`, is front matter between two `---` lines,
   compact: 170000                    optional: the role's auto-compact window in tokens (COMPACT
                                      bounds), a ceiling under the session's own; a host without a
                                      per-agent window renders nothing
-  mode: write                        optional: the role policy it is held to (MODES; docs/guard.md
+  mode: write                        optional: the role policy it is held to (MODES; docs/guard-jail-roles.md
                                      "Role policy"), where a repository turns that policy on.
                                      Read by the guard, never rendered into a host's file
   writes: [docs/notes.local.md]      optional: repo-relative paths or globs (posix, no `..`) the
                                      role may write though its mode makes the checkout read-only
-                                     (docs/guard.md "Role policy"). Never rendered either
+                                     (docs/guard-jail-roles.md "Role policy"). Never rendered either
   group: docs                        optional: the role's group (GROUPS) where its mode alone does
                                      not give it (MODE_GROUP); only with a mode the group allows
                                      (GROUP_MODES). Read by the backlog policy, never rendered

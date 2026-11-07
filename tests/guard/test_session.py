@@ -1,4 +1,4 @@
-"""The session mark (kitlib.sessionmark, docs/guard.md "Session mark") and the rules that read it:
+"""The session mark (kitlib.sessionmark, docs/guard-fallback.md "Session mark") and the rules that read it:
 who counts as the owner for the retired owner-only lock tool names, which sessions are agent
 sessions for kill-by-name and lock-state, the owner-identity rule, and that the lock MCP server
 installs no owner check."""
@@ -56,7 +56,7 @@ class Mark(unittest.TestCase):
         self.assertEqual(role(None, COORDINATOR), 'coordinator')
 
     def test_the_plugin_prefix_is_read_off_before_the_reserved_check(self):
-        # docs/guard.md "Agent names": a mark with the kit plugin's prefix is the bare mark
+        # docs/guard-fallback.md "Agent names": a mark with the kit plugin's prefix is the bare mark
         for value, out in ((P + 'coordinator', 'coordinator'), (P.upper() + 'Deep-Worker', 'Deep-Worker'),
                            (' %s pm ' % P, 'pm'), (P + 'owner', 'marked-owner'), (P + P + 'OWNER', 'marked-OWNER'),
                            (P + 'subagent', 'marked-subagent'), ('other:owner', 'other:owner')):
@@ -159,11 +159,11 @@ class AgentSessions(unittest.TestCase):
                 self.assertIsNone(check({}))
 
     def test_the_retired_old_coordinator_mark_is_not_held(self):
-        # the old mark was a one-release fallback; no launcher sets it now (docs/guard.md "Session mark")
+        # the old mark was a one-release fallback; no launcher sets it now (docs/guard-fallback.md "Session mark")
         self.assertIsNone(self.kill({context.ROLE_ENV: 'conductor'}))
 
     def test_a_plugin_prefixed_mark_is_held_as_the_bare_mark(self):
-        # docs/guard.md "Agent names": without the strip these sessions would pass as unheld marks
+        # docs/guard-fallback.md "Agent names": without the strip these sessions would pass as unheld marks
         for check in (self.kill, self.edit_state):
             for mark in (P + 'deep-worker', P + 'coordinator', P.upper() + 'PM', P + 'consultant'):
                 with self.subTest(check.__name__, mark=mark):

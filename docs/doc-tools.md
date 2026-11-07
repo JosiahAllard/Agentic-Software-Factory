@@ -21,7 +21,7 @@ python tools/doc_budget.py [-C DIR] [--base REF] [--head REF] [--worktree] [--re
 
 The budgets applied are the head's `.kit.json` (the file on disk with `--worktree`), with note keys (`_...`, `comment`) dropped. A configuration that does not read at the head fails the branch; one the base already carries is a WARNING.
 
-Not checked here: owner-only paths (`tools/commit.py` and `kitlib/guard/ownercommits.py`, docs/guard.md "Owner-only commits") and the doc index listing (`tools/doc_index.py`, below).
+Not checked here: owner-only paths (`tools/commit.py` and `kitlib/guard/ownercommits.py`, docs/guard-hooks.md "Owner-only commits") and the doc index listing (`tools/doc_index.py`, below).
 
 Exit codes. The last line is the verdict that `kitlib.verdict.judge` reads:
 

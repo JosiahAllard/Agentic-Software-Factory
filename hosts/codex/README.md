@@ -13,7 +13,7 @@ rendered agent file says so in its header comment.
 | Registry entry | `hosts.json` `codex` | Windows and Linux; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
 | Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | no call passes before boot (`fast_path: none`: a Codex chat is never the owner, so even a tool `hosts.json` `hook.guarded_tools` leaves out goes to the guard); every PreToolUse goes through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
 | Hook policy | `adapter/policy.py` | a marked session: unknown tools, other MCP servers' tools, `apply_patch` through the shell, calls the guard cannot fully judge (no named shell, cmd.exe, a TTY, fed input) and a read, test or lander role's edits in its own checkout refused |
-| Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard.md "Generated files"); review templates, not installed |
+| Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard-jail-roles.md "Generated files"); review templates, not installed |
 | Manifests | `shell/plugin.json`, `shell/mcp.json`; the hooks plugin's `shell/hooks-plugin/hooks/hooks.json` | `plugin.json` and `mcp.json` rendered from `kit.json`; the plugin export places `shell/plugin.json` at `.codex-plugin/plugin.json`, stamped, and its paths (`./content/skills/`, `mcp.json`) are from the export folder's root (docs/plugin-source.md "Codex"); it names no hooks. The hooks plugin is written by hand and pinned, held equal to the renderer's `hooks()` (tests/pluginsource/test_codex_hooks.py) |
 | Lock MCP | `shell/mcp/lock_server.py` | the lock's read tools, server `machine-lock`; the lock server has no write tools on any host (docs/lock-mcp.md "No write tools"), and `adapter/lock.py` lists and answers nothing else |
 | Hub MCP | `shell/mcp/hub_server.py` | the hub's tools (docs/hub-mcp.md), server `hub`; a marked session is refused them by `adapter/policy.py` |
@@ -34,7 +34,7 @@ session as an agent of its mark's role (`kitlib.host.hookmain`, agent `unidentif
 main-checkout rule and the write jail apply to it as to a subagent on any host, and the role policy
 by its mode. A Codex PM or coordinator therefore cannot edit the main checkout or land from it:
 stricter than the default host, where a launched lead's main session may. An **unmarked** chat, the one no launcher started,
-skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
+skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard-fallback.md
 "Session mark"):
 
 - It is an agent session (`rules_base.agent_session`): the rules only agents are held to (kit-json,

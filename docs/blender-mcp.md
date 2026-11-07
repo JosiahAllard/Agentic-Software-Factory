@@ -118,7 +118,7 @@ Claude asks before each MCP tool call unless the tool is allowed. These are the 
 
 - **`blender_exec` is a shell.** It runs arbitrary Python inside a Blender, in the agent's worktree, as the user who runs the session. The Python can read, write or delete any file that user can, and start any program.
 - **The guard sees the call, not the Python.** No kit guard rule judges what the Python does: not the write jail, the git rules or the lock rules. For an edit role, allowing `blender_exec` gives that role a shell.
-- **One role rule.** Rule `role-blender` (docs/guard.md "Role policy") refuses `blender_exec` and `blender_render` to every role that edits nothing (`read`, `test`, `lander`) wherever the repository turns the role policy on. `blender_render` is refused because its `path` can write a PNG anywhere.
+- **One role rule.** Rule `role-blender` (docs/guard-jail-roles.md "Role policy") refuses `blender_exec` and `blender_render` to every role that edits nothing (`read`, `test`, `lander`) wherever the repository turns the role policy on. `blender_render` is refused because its `path` can write a PNG anywhere.
 
 ## Testing
 

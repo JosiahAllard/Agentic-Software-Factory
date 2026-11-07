@@ -238,7 +238,7 @@ class RolesTest(TreeCase):
         self.assertEqual(policy.role_name(ev({'agent_id': 'a', 'agent_type': 'worker'}), table), 'subagent')
 
     def test_the_plugin_prefixed_agent_type_names_the_same_role(self):
-        # docs/guard.md "Agent names": the kit plugin bundles its agents as <plugin>:<name>
+        # docs/guard-fallback.md "Agent names": the kit plugin bundles its agents as <plugin>:<name>
         # (kitlib.agentname.PREFIX; tests/agentname pins it to this value)
         p = lockmcp.PLUGIN_NAME + ':'
         table = policy.roles(self.load({'roles': {'lander': {'edit_main_checkout': True, 'why': 'merges'}}}))

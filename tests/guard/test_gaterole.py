@@ -1,4 +1,4 @@
-"""Who may lift a branch's gate-run budget (docs/guard.md "Gate allow"): `gate.py allow` is the
+"""Who may lift a branch's gate-run budget (docs/guard-jail-roles.md "Gate allow"): `gate.py allow` is the
 owner's and the coordinator's (or the PM's), so every subagent and every other marked main session
 is refused it (gate-allow), in every spelling the guard reads a kit tool run in."""
 import os

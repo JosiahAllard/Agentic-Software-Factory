@@ -1,4 +1,4 @@
-"""Owner-only paths by commit author (docs/guard.md "Owner-only commits").
+"""Owner-only paths by commit author (docs/guard-hooks.md "Owner-only commits").
 
 violations(root, rules, tip, exclude) judges the net change first: an owner-only path
 (rules.is_locked) counts only when landing `tip` on an `exclude` commit (the target main) would

@@ -1,4 +1,4 @@
-"""What a parsed command runs (docs/guard.md "Parsing").
+"""What a parsed command runs (docs/guard-core.md "Parsing").
 
 invocation(cmd) finds the program a command runs past the words that only start it: variable
 assignments (FOO=1 prog), env, command, exec, nohup, nice, time, timeout, xargs, PowerShell's call
@@ -467,7 +467,7 @@ def is_batch(prog):
     return b.endswith(BATCH_SUFFIXES) or b == KIT
 
 
-# Where cmd ends a command name inside its own text (OBSERVED, docs/guard.md "Batch files and
+# Where cmd ends a command name inside its own text (OBSERVED, docs/guard-jail-roles.md "Batch files and
 # cmd.exe"): at its delimiters , ; = and at ( and /, so `kit,status`, `kit(x` and `kit/x` run
 # kit, the rest of the word its first argument. @ and + end none. A / is in a path too, so the
 # word is read both cut at the first of these and cut at the first but a /.
@@ -490,7 +490,7 @@ def _cmd_names(cmd, word, text, args):
 
 def batch_run(cmd, inv):
     """(program text, its argument Words) when `inv` runs a batch file, which CreateProcess hands
-    to cmd.exe (docs/guard.md "Batch files and cmd.exe"): a program is_batch names, cmd's `call` of
+    to cmd.exe (docs/guard-jail-roles.md "Batch files and cmd.exe"): a program is_batch names, cmd's `call` of
     one, and the kit command named without an extension (`kit`, any path), which machine setup
     puts on the PATH as kit.cmd. In cmd's own text the program word is read cut where cmd ends a
     command name too (_cmd_names: `kit,status`, `call;kit`). It is read from the text alone, no
@@ -521,7 +521,7 @@ def bash_start(cmd, inv):
     """(program Word or None, every Word after start) when `inv` is Git Bash's start: /usr/bin/start
     is a script that runs `"$COMSPEC" //c start` with all its words, escaping only &, so cmd.exe
     reads every word before the program does, whatever the program, and a batch file it starts
-    reads them again (OBSERVED, docs/guard.md "Batch files and cmd.exe"). The program is the first
+    reads them again (OBSERVED, docs/guard-jail-roles.md "Batch files and cmd.exe"). The program is the first
     word after start's options (/b, //wait, /d dir) and a title (an empty word, or one with a blank,
     which Git Bash quotes and start takes as the title). None otherwise."""
     if cmd.shell != sh.BASH or inv is None or inv.dyn or inv.name != 'start' or inv.via == 'start-process':
@@ -632,7 +632,7 @@ def python_script(inv):
 
 # The kit command (tools/kit.py, and the `kit` program on the PATH: kit, kit.cmd, kit.exe and a
 # path to one all have the base name KIT) runs the kit tool its first word names, so `kit X ...`
-# is read as `python <kit>/tools/X.py ...` (docs/guard.md "The kit command")
+# is read as `python <kit>/tools/X.py ...` (docs/guard-owner.md "The kit command")
 KIT = 'kit'
 KIT_SCRIPT = 'kit.py'
 KIT_NAME_SPLIT_RE = re.compile(r'[\s"]+')

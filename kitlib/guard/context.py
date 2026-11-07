@@ -1,4 +1,4 @@
-"""What the guard reads of real state (docs/guard.md "State"; every rule is a read-only
+"""What the guard reads of real state (docs/guard-core.md "State"; every rule is a read-only
 check). Ctx gathers it behind one object so tests hand the rules a fake machine: every reader is
 a constructor argument, and the defaults read this machine.
 
@@ -125,7 +125,7 @@ def default_session_role(action, environ):
     """'subagent' when the Action names a subagent (Action.agent); else the launcher's mark (a PM,
     coordinator or deep-worker session it started; kitlib.sessionmark.mark), from Action.role when
     the host handed it over, else from `environ`; else 'owner': a session nothing marks is the
-    owner's own (docs/guard.md "Session mark")."""
+    owner's own (docs/guard-fallback.md "Session mark")."""
     if getattr(action, 'agent', None):
         return SUBAGENT
     role = getattr(action, 'role', None)

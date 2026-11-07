@@ -1,6 +1,6 @@
 """cmd-reparse: a batch file (.cmd, .bat, and the bare kit command, which machine setup puts on
 the PATH as kit.cmd) runs in cmd.exe, which reads its command line again before the program
-does, so an argument holding one of cmd's characters is refused (docs/guard.md "Batch files and
+does, so an argument holding one of cmd's characters is refused (docs/guard-jail-roles.md "Batch files and
 cmd.exe"). The same arguments through python and tools/kit.py are not this rule's."""
 import unittest
 

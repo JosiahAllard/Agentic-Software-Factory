@@ -1,4 +1,4 @@
-"""The Linux user pointer file under the write jail (docs/guard.md "Write jail", "No root on a
+"""The Linux user pointer file under the write jail (docs/guard-jail-roles.md "Write jail", "No root on a
 machine config folder"): <profile>/.config/pm-kit/pointer names the PM repository the kit reads its
 machine config from (kitlib.platform.linux.paths.read_pointer), and the user can write it, so an
 agent session could repoint the kit. No write root may be on, hold or lie in it (jail.touches_config,

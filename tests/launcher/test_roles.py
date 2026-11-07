@@ -24,7 +24,7 @@ class RoleFor(unittest.TestCase):
         self.assertEqual(window.role_for('analyst'), 'analyst')
 
     def test_the_plugin_prefixed_agent_gets_the_bare_agents_mark(self):
-        # docs/guard.md "Agent names": the mark never carries the prefix
+        # docs/guard-fallback.md "Agent names": the mark never carries the prefix
         self.assertEqual(window.role_for(P + 'deep-worker'), 'deep-worker')
         self.assertEqual(window.role_for(P + 'consultant'), 'consultant')
         self.assertEqual(window.role_for(P + 'analyst'), 'analyst')

@@ -1,4 +1,4 @@
-"""kitlib.guard.shell: the Bash and PowerShell tokeniser the rules read (docs/guard.md "Parsing").
+"""kitlib.guard.shell: the Bash and PowerShell tokeniser the rules read (docs/guard-core.md "Parsing").
 Quoted text is not a command or a redirect; cd chains move the working directory; pipes,
 redirects, here-docs, here-strings and command substitutions are seen; an unclosed quote marks
 the parse unclean so the fallback patterns run."""
@@ -75,7 +75,7 @@ class Tokeniser(unittest.TestCase):
 
 class BraceExpansion(unittest.TestCase):
     """bash writes out every unquoted {a,b} group of a word, in its own order, nested groups too
-    (docs/guard.md "Arguments the shell rewrites"); past BRACE_LIMIT words the word is computed,
+    (docs/guard-core.md "Arguments the shell rewrites"); past BRACE_LIMIT words the word is computed,
     the parse unclean and the word kept as brace_over, which rule brace-limit refuses."""
 
     def words(self, word):

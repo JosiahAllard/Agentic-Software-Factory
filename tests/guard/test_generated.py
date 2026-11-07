@@ -1,4 +1,4 @@
-"""The generated-file rule (docs/guard.md "Generated files"): in a kit checkout, no session edits a
+"""The generated-file rule (docs/guard-jail-roles.md "Generated files"): in a kit checkout, no session edits a
 file tools/render_content.py writes; the refusal names the source to edit and the render command.
 The renderer itself runs as a process and is never refused. kitlib.guard.generated maps a rendered
 path to its source."""

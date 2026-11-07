@@ -1,4 +1,4 @@
-"""A Codex chat is never the owner, for tools/backlog.py too (an owner answer; docs/guard.md
+"""A Codex chat is never the owner, for tools/backlog.py too (an owner answer; docs/guard-fallback.md
 "Session mark"). The tool's role comes from its session mark, and an unmarked process was the
 owner; now an unmarked process with a Codex host above it (kitlib.host.registry.unowned_caller,
 read from the process tree as the machine lock's caller reads it) is unlisted, and so is one whose

@@ -1,0 +1,89 @@
+# Shell guard: git hooks and go-live
+
+Part of docs/guard.md (the index); the sections below are moved there unchanged.
+
+## Pre-push
+
+`githooks/pre-push` calls `kitlib.guard.prepush.main` with git's two arguments (the remote's name, or the URL for a push by URL, and the URL). Whoever pushes, the PM data stage below judges every ref line first, then the machine config secrets stage judges every ref line; the checks after them are on a ref whose remote ref is `refs/heads/<main>`.
+
+**PM data branch** (`prepush.leak_refusal`; docs/pm-data-branch.md "Pre-push guard"). It runs only when the git common dir of the work tree pushed from holds `kit-pm-data.json` (`kitlib.pmdata.read`: data branch, private remote, root commit); with no file nothing changes. Each ref line is judged, whatever its remote ref, and the first refusal ends the push (`--all`, `--mirror` and `--tags` included).
+- **Fail closed:** a record that cannot be read or is malformed, a git common dir git cannot name, the recorded root commit missing from this clone (`cat-file -e`), or remotes that cannot be read refuse every push, the record's path or the cause named.
+- **Which remote is private** (`prepush._remote_urls`, `_private`): the URL git hands the hook (its second argument, after `insteadOf` and `pushInsteadOf`) decides, not the remote's name. The push goes to the private remote only when that URL is one of the recorded remote's push URLs as git computes them (`git remote get-url --push --all <remote>`: `pushurl`, else `url`, rewritten) and no other remote has it among its URLs (push and fetch URLs as git rewrites them, and the raw `url` and `pushurl` values). Every remote URL is read with `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` dropped from git's environment, so `git -c remote.<private>.pushurl=<public URL> push <private>` is judged as public. URLs are compared by `prepush._norm_url`: a trailing `/`, then `.git`, dropped; a remote URL (`https://`, `ssh://`, scp-like `user@host:path`) has its scheme and host case folded and keeps its path's case, so two repositories whose paths differ only in case stay two; a local path (drive, UNC, `file://`) has backslashes as slashes and is case folded whole. Everything else is public: a URL the private remote does not push to, a URL another remote also has. A remote whose URLs `get-url` cannot give for any reason but "No such remote" (then its raw config values count) refuses every push, as do remotes `git config` cannot read.
+- **Public remote, by name:** the local or remote ref is `refs/heads/<data branch>`: refused, naming the one push that is allowed (`git push <private> refs/heads/<branch>:refs/heads/<branch>`).
+- **Public remote, by history:** the pushed sha holds the recorded root (`refs.is_ancestor`), or git cannot tell: refused. This catches the data branch merged into any branch, and a tag (light or annotated) on a data commit.
+- **Public remote, by objects:** otherwise, the objects the push may send (`rev-list --objects <local sha> --not <remote sha, when this clone has it> --remotes=<name>`) are compared with every object reachable from the root, the local data branch and `<private>/<data branch>`, less the empty tree and blob. Any shared object refuses the push, one path named. This catches a cherry-picked data commit. A file whose content is identical to a data file matches too and is refused (fail closed; the message says so); a copy changed by even one byte is not caught. The `--remotes=<name>` subtraction trusts this clone's remote-tracking refs; it is left out (nothing subtracted) when another remote's name starts with `<name>/`, whose tracking refs the pattern would also match, or the name holds a pattern character.
+- **Public remote, deletions:** a deleting line sends nothing and is not judged here, so deleting a leaked `refs/heads/<data branch>` from a public remote is allowed (the main-branch rules still refuse deleting main).
+- **Private remote:** it receives only `refs/heads/<data branch>`, with the root in its history. Any other ref (main, another branch, a tag), a sha without the root, and any deletion there are refused.
+- **The rules after this stage** run as before for each line. For a push to the private remote their base config is the replaced remote commit's, so the data branch's own committed `.kit.json` (its `main_branch` and `push_block`) when that remote already has it; for a first push, the default branch's.
+- **Not caught:** `--no-verify` skips the hook; the guard rule `git-push-pmdata` denies it outside the owner's own session ("Rules").
+
+**Machine config secrets** (`prepush.secrets_refusal`; "Owner machine setup"). In every repository, for every remote and every ref line: a commit the push sends that adds or changes `.pm-kit/local.json` or a file under `.pm-kit/hub/` at the checkout's top (`prepush.is_secret_path`, case ignored) refuses the push, naming the file and the commit; a file a later commit deletes still counts, since the earlier commit carries it. The commits are read with `git log -m --no-renames --name-only --diff-filter=ACMRT <local sha> --not <what the remote has> --`.
+- **What the remote has** (`prepush._remote_has`): the remote sha the line replaces, when this clone has it, and the tips of the remote's tracking refs (`refs/remotes/<name>/`, read by `for-each-ref`, up to `MAX_TRACKING_ARGS`; past that `--remotes=<name>`), left out as the PM data stage leaves them out (`prepush._tracking_counts`). A commit the remote already tracks is not judged again.
+- **Sends nothing:** a deleting line, and a local sha this clone lacks (git hands the hook only shas it has).
+- **Fail closed:** remotes `git config` cannot read, or a log or `for-each-ref` that fails, refuse the push.
+- **Not caught:** a `.pm-kit` deeper than the checkout's top; a secret already on a tracking ref of the remote (the subtraction trusts this clone's tracking refs); `--no-verify`.
+
+- **Fast-forward only, in every repo:** a push that is not a fast-forward of the remote's main is refused, and so is deleting main. A remote main sha this clone lacks cannot be an ancestor of the pushed commit, so that push is refused too ("cannot tell"; fetch first). Git hands the hook such a ref only on a forced push (`--force`, `+`, `--force-with-lease`). A branch other than main may still be rewritten.
+- **Gate-OK record:** the pushed sha must have one, read as in "State" (`prepush.verify_record`): with a `dev_drive` a `.git` copy alone does not count. Only when `repo.push_block` is set; checked after the fast-forward rule.
+- **Owner-only paths:** after the gate-OK check, and also only under `repo.push_block`, a push to main is refused when a commit it adds fails "Owner-only commits" below, record or not. A branch gate records its own tip, so without this a gated agent branch could go straight to main. "Adds" means not in the remote main it replaces when this clone has it, else not in `<remote>/<main>` as last fetched, else the whole history. Other remote-tracking refs are never subtracted: a pushed agent branch would hide its own commits.
+- **Order:** the PM data stage for every line (tests/guard/test_prepush_pmdata_private.py `PmDataPrivateTest.test_leak_stage_runs_before_main_rules`), then the machine config secrets stage for every line, then per line delete or fast-forward, then gate-OK, then owner-only paths; the first that refuses is the one reported (`test_the_rules_refuse_in_order`).
+- **Base config:** `push_block` and the main branch's name are read from the remote main commit being replaced when this clone has it, else from the default branch's committed `.kit.json` (the first of `<remote>/HEAD`, `<remote>/main`, `<remote>/master`, local `main`, local `master`). The working tree is never the base, and a pushed commit cannot turn the block off.
+- **Broken config:** a `.kit.json` that does not load refuses the push.
+- **Tests:** tests/guard/test_prepush.py pushes to a bare scratch remote with `core.hooksPath` set to the kit's githooks; tests/guard/test_prepush_pmdata.py and test_prepush_pmdata_private.py add a second bare remote as the private one, `PrivateTest` covers `_private` and `_norm_url`; tests/guard/test_machine_config.py `PrePushSecrets` covers the machine config secrets stage, on real git.
+
+## Owner-only commits
+
+`kitlib/guard/ownercommits.py` `violations()` judges the net change, then the commits. For each owner-only path (`kitlib/config/owner.py` `is_locked`) that the net change touches, it names every commit that changes the path and whose author email (`%ae`, never mailmapped, replace refs off) is not `"owner".email` (`is_owner`). `gate land` (docs/gate-landing.md "Landing", step 4) and pre-push run it, so a plain `git commit` to an owner-only path does not reach main past either.
+
+- **Net change:** a path counts only when landing the tip on the target main would change it: the target differs for it from the clean merge of the target and the tip (`git merge-tree --write-tree`; the tip itself for a fast-forward), or that merge conflicts on it (`net_change`). The target is the landing's base for `gate land` and `land.py` (`<remote>/<main>` as fetched at its turn; docs/gate-landing.md "Landing", step 4), the remote main being replaced for pre-push. So an agent change a later commit undoes, a rename away and back, and an owner change the branch brought in by merging main do not count. With no target (pre-push with no remote main known), every changed path counts.
+- **Rules:** the base's merged with the pushed or landed commit's (`owner.merge`): paths are the union, exceptions the intersection, the owner email the base's only. An unset owner email, or one also in `agent_emails`, refuses every owner-only change.
+- **What a commit changes:** a commit with one parent or none, its diff. A two-parent merge, what differs from the clean merge of its parents (`git merge-tree --write-tree`) plus every path that merge conflicts on: a merge that only joins histories changes nothing, and an edit or conflict resolution inside a merge is judged by the merge's author. With a target, when a parent of a two-parent merge is already on a target, a path the merge holds exactly as (mode and blob, or absent) every target does is not counted, never an older copy main once held, and the branch's own commits that changed it are still judged (`changed`). More parents: the union of the diffs against each. Renames count as a delete and an add.
+- **Trailers** play no part here but one (an owner approval, below): the author email decides. `tools/commit.py` writes the `Owner-Approved` trailer and refuses an owner-only path without `--owner-authored` (docs/commit.md).
+- **An owner approval** is the one exception (`HubApprovals`; docs/commit.md "Owner approval"): a non-owner commit that carries exactly one `Owner-Approval: hub:A-<n>`, has one parent, changes only the approval's files, and makes the approved change on its parent, and that the hub verifies as consumed (by any commit) and not expired. The change is judged as a delta (`kitlib.hubsite.approvals.delta_error`): at the approval's base each approved path is its base blob; at the commit each is what the approved change gives on the parent (`delta_result`: the approved blob when the parent holds the base or the approved blob, else a clean byte-level `git merge-file -p` of the parent, the base and the approved content; a conflict refuses), a regular file in the parent's mode. Then `Verifier.verify` asks the hub for the signed base and the approved blobs. So an approved branch rebuilt on a moved main still lands, on any line of history, while a commit that undoes the owner's later line or adds to the change does not. The approval is spent once a commit main reaches (`refs/remotes/<remote>/<main>` as last fetched) carries its trailer (`approvals.spent`): any other commit that carries it then is refused, before the hub is asked. An approval, used or not, holds until it is spent or 30 days after the decision (`approvals.APPROVAL_LIFE_S`).
+- **Git failure:** refuses (the landing or the push).
+- **Tests:** tests/guard/test_ownercommits.py, tests/gate/test_land_owner.py, tests/guard/test_prepush_owner.py `OwnerTest`.
+
+Known limits:
+
+- **The author email is what the committer says** (`git commit --author`, `GIT_AUTHOR_EMAIL`). The guard's `owner-identity` rule denies a session other than the owner's setting the owner's email on the command line; an identity in the environment the session started with is not seen. Signed commits would close it; not built.
+- **Only main is checked at push**, and only under `repo.push_block`, like the gate-OK check. A push to another branch, or a merge made on the server (a pull request merged in the web UI), is not seen.
+- **One net change per push:** a push to main that carries the owner's unpushed main commits together with a branch is judged as a whole. When an owner commit in it changes a path, an agent commit that touched that path and was undone counts too, and the push is refused (fail closed). Pushing the owner's commits first avoids it.
+
+## Self-test
+
+`hosts.claude.adapter.guard_selftest.agent_id_check(projects_dir, since)` scans subagent transcripts (`<project>/<session>/subagents/agent-*.jsonl`) for guard tags.
+
+- **What counts:** only tags in tool results marked `is_error` (INFERRED to be where a hook deny lands).
+- **Results:**
+  - `role=main` in a subagent transcript is an alarm: `agent_id` has disappeared;
+  - only subagent roles pass;
+  - no tags is inconclusive.
+- **Not live:** it is not wired to a session-start hook.
+
+## Refusal patterns pre-empted
+
+The guard denies these with the command to use before the auto-mode classifier sees them (the PM repository's docs/refusals.md):
+
+- **P16:** a gate wrapped as `cd <wt> && python tools/gate.py 2>&1 | tail`. Rule: `wrapped-gate`, whose alternative is `python "<kit>/tools/gate.py" -C "<wt>"` run bare in the background.
+- **A repo's wrapped lander command** (same family as P16). Rule: `wrapped-gate`.
+- **git_guard's main-checkout patterns:** the git rules and the fallback cover them.
+- **Root searches:** rule `root-search`.
+
+## Go-live (after the joint review)
+
+1. Settings: the one PreToolUse entry that `python <kit>/boot/hook.py claude --settings-entry` prints, in exec form:
+   - Once for every account: `machine_setup.py --managed-settings --apply` (elevated) writes the entry into Claude Code's machine-wide managed settings file from the template `hosts/claude/managed-settings.json`, and machine setup (default or `-OldKit`) then appends none to an account's `settings.json` (docs/machine-setup.md "Managed settings"). Without that file, the entry goes into each account's own settings as below.
+   - `command` is the `pythonw.exe` beside the python that ran it and `args` is `[<kit>/boot/hook.py, "claude", "PreToolUse"]`. There is no shell and no console: one process per call, against four for a shell-form `python` command (bash, its conhost, a second bash, python; measured).
+   - Do not write a bare `pythonw`: on a Windows install with the Store alias enabled, PATH finds the WindowsApps alias, one process more.
+   - The matcher is `Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|mcp__.*` (`hosts/claude/adapter/host.py` `MATCHER`): the tools a rule can refuse. The rest start no process. Read and Grep are in it for hub-secrets ("Hub secrets"), so each starts the guard too, and fails closed with it: a kit that will not boot or import blocks them as it blocks Bash ("Unguarded tools"). Glob left it (a names search reads no token's text). An account whose entry holds an older matcher keeps it until the owner changes the line to this one; a Glob it still sends is `other` and passes.
+   - The guard stays in each account's settings and never goes into the plugin. The plugin's only hook is the coordinator SessionStart hook (`hosts/claude/shell/hooks/hooks.json`, docs/install.md "Plugin install (local marketplace)"); it writes a bare `pythonw` on Windows (`/bin/sh` running `python3` in `hooks.linux.json`, docs/content.md "Manifests"), since a plugin file cannot name the machine's interpreter, so on Windows it may cost the alias process above once per session start.
+2. Every repo: `git config core.hooksPath <kit>/githooks` (the fast-forward rule is for every repo; the gate-OK check needs `push_block`). This also installs `pre-commit`, inert unless the repo's `.kit.json` sets `ledger.pre_commit_check` (docs/ledger.md "Pre-commit check").
+3. Every repo whose landers edit a main checkout, or fetch and fast-forward one from a worktree ("Write jail"): `.kit.json` `roles.lander.edit_main_checkout: true`.
+4. The launcher sets `PM_KIT_ROLE` for every session it starts (`tools/launch.py` does: `pm`, `coordinator`, `deep-worker`, `consultant`, `plain`), with or before step 1: until then every main session on Claude counts as the owner's own ("Session mark"); a Codex chat never does.
+5. The machine config holds `ledger_path`.
+6. Write jail ("Write jail"): every repo whose agents write a folder outside git lists it in `.kit.json` `guard.data_roots`, an owner change. Agents that must work in a worktree start there (or enter it) rather than in another checkout, since their roots follow the session's working directory.
+7. The PM's folders: the owner lists in the machine config's `guard_mark_roots`, under `pm`, each folder the jailed PM writes outside its checkout and temp ("Write jail", mark roots), before the launcher's `pm` mark goes live (step 4).
+
+Checks after step 1, first one first:
+
+1. A known-denied command is denied: a Bash root search, the call tests/guard/test_entry.py `GoLive` sends, comes back denied with `rule=root-search`.

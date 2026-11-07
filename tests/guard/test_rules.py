@@ -1,4 +1,4 @@
-"""kitlib.guard.decide over PreToolUse-shaped payloads (docs/guard.md "Rules"): main session and
+"""kitlib.guard.decide over PreToolUse-shaped payloads (docs/guard-rules.md "Rules"): main session and
 subagent, Bash and PowerShell, allow and deny, and the exact alternative each deny names.
 
 Each row: (name, payload builder, expected kind or None for allow, rule, the text after
@@ -232,7 +232,7 @@ ROWS = [
 ] + SHELL_ROWS + REVIEW_ROWS + EXTRA_ROWS
 
 # An alternative is a command to run as written: no closing full stop, no leading prose word
-# (docs/guard.md "Rules"). The prose goes in its own sentence before "Instead:".
+# (docs/guard-rules.md "Rules"). The prose goes in its own sentence before "Instead:".
 PROSE_WORDS = ('run', 'work', 'make', 'read', 'write', 'commit', 'merge', 'name', 'nothing', 'fix', 'ask', 'the',
                'as', 'from', 'reproduce', 'approve', 'stage', 'search', 'use')
 
@@ -643,7 +643,7 @@ class LockMcp(unittest.TestCase):
                 self.assertEqual(d.verdict, 'deny')
                 self.assertIn('This session is coordinator.', d.reason)
                 self.assertIn('Instead: python "%s/tools/machine_lock.py" status ' % W.fwd(self.w.kit_dir), d.reason)
-                # a session nothing marks is the owner's own (docs/guard.md "Session mark")
+                # a session nothing marks is the owner's own (docs/guard-fallback.md "Session mark")
                 self.assertIsNone(decide(self.ev(name), self.w.ctx(environ={})))
 
     def test_read_tools_stay_open(self):
@@ -820,7 +820,7 @@ class OwnerLockTools(unittest.TestCase):
                         status, rules.tag('owner-tool', 'subagent' if sub else 'main'))), d.reason)
 
     def test_the_owner_session_may(self):
-        # a main session nothing marks is the owner's own (docs/guard.md "Session mark")
+        # a main session nothing marks is the owner's own (docs/guard-fallback.md "Session mark")
         for shell, text in self.BLOCKED:
             with self.subTest(text):
                 d = self.run_one(shell, text, False, environ={})
@@ -832,7 +832,7 @@ class OwnerLockTools(unittest.TestCase):
                 d = self.run_one(shell, text, True)
                 self.assertIsNone(d, d and d.reason)
 
-    # docs/guard.md "Fallback": a line the parser cannot read that names the lock CLI is refused
+    # docs/guard-fallback.md "Fallback": a line the parser cannot read that names the lock CLI is refused
     # whole, its read verbs included, in every session but the owner's own
     UNCLEAN = [
         ('bash', 'eval "$c"; python tools/machine_lock.py status'),
@@ -1260,7 +1260,7 @@ class RolesFromConfig(unittest.TestCase):
                          'git-restore')
 
     def test_the_plugin_prefixed_lander_is_the_lander(self):
-        # docs/guard.md "Agent names": <plugin>:lander holds the lander role, no other spelling does
+        # docs/guard-fallback.md "Agent names": <plugin>:lander holds the lander role, no other spelling does
         p = lockmcp_names.PLUGIN_NAME + ':'           # kitlib.agentname.PREFIX
         w = W.World(kit={'repo': {'name': 'demo'}, 'roles': {'lander': {'edit_main_checkout': True, 'why': 'test'}}})
         self.addCleanup(w.cleanup)
@@ -1297,7 +1297,7 @@ class MainCwdHint(unittest.TestCase):
 
 
 # python's code on the line, or read from standard input, counts as a write of the directory python
-# runs in, whatever the code is: the guard does not read it (docs/guard.md "Shell writes")
+# runs in, whatever the code is: the guard does not read it (docs/guard-jail-roles.md "Shell writes")
 PY_UNREAD = 'counted as written: the guard does not read what the code python is given writes'
 
 

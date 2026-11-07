@@ -76,7 +76,7 @@ KIND_ENTRY = Obj({
 
 ROLE = Obj({
     'edit_main_checkout': Field(Bool(), None, 'may edit files in a main checkout; unset: the base role (main: true, any other: false)'),
-    'mode': Field(Enum(*MODES), None, 'the role policy this role is held to, over its role file\'s `mode` (docs/guard.md "Role policy"); unset: the role file\'s, else none'),
+    'mode': Field(Enum(*MODES), None, 'the role policy this role is held to, over its role file\'s `mode` (docs/guard-jail-roles.md "Role policy"); unset: the role file\'s, else none'),
     'why': Field(Str(), None, 'the ruling that grants it'),
 }, what='{edit_main_checkout, mode, why}')
 
@@ -141,7 +141,7 @@ class _DataRootPath(Str):
         Str.check(self, v, where, errs)
 
 
-# A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard.md "Write jail").
+# A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard-jail-roles.md "Write jail").
 DATA_ROOT = Obj({
     'path': Field(_DataRootPath(), None, 'the folder, absolute'),
     'mode': Field(Enum('add-only', 'read-only', 'open'), None, 'add-only: new files only, never overwrite, move or delete; read-only: no write; open: any write'),
@@ -263,8 +263,8 @@ SECTIONS = {
         'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate-run.md "Docs-only changes"); unset: no change is docs-only'),
     },
     'guard': {
-        'data_roots': Field(ListOf(DATA_ROOT), [], 'folders besides their checkout and temp that agent sessions may write, each with its mode; read from the main checkout only (docs/guard.md "Write jail")'),
-        'role_policy': Field(Bool(), False, 'hold roles to their role policy mode (docs/guard.md "Role policy"); off: no role is held, whatever its mode; read from the main checkout only'),
+        'data_roots': Field(ListOf(DATA_ROOT), [], 'folders besides their checkout and temp that agent sessions may write, each with its mode; read from the main checkout only (docs/guard-jail-roles.md "Write jail")'),
+        'role_policy': Field(Bool(), False, 'hold roles to their role policy mode (docs/guard-jail-roles.md "Role policy"); off: no role is held, whatever its mode; read from the main checkout only'),
     },
     'landing': {
         'log_dir': Field(RelPath(), None, 'where gate logs live'),

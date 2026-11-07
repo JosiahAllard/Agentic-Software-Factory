@@ -278,7 +278,7 @@ The machine config (docs/kit-json.md "Machine config keys"), key `pm_start`; wit
 
 Only in settings the PM session loads; the hook does not check which session runs it. It is not
 in the plugin, which every session loads. Exec form, with `<pythonw>` the interpreter that
-`boot/hook.py claude --settings-entry` prints (docs/guard.md "Go-live"), starts no shell. `pythonw` has no
+`boot/hook.py claude --settings-entry` prints (docs/guard-hooks.md "Go-live"), starts no shell. `pythonw` has no
 console, so each program the checklist starts is started with a console that has no window: git
 (`kitlib.git.cmd`) and the PowerShell that lists processes (`kitlib/pmstart` `list_processes`) through `kitlib.proc.spawn`, `schtasks` with `CREATE_NO_WINDOW`
 in `kitlib.machinesetup.agenttemp.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM

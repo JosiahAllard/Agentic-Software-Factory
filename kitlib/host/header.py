@@ -11,7 +11,7 @@ repository holds no copies of the kit's tools (decision 21 in docs/multi-host-pl
 every call is `python <kit>/tools/<x>.py -C <checkout>`.
 """
 
-# Said at every start while the guard's outer bound on agent writes (docs/guard.md "Write jail",
+# Said at every start while the guard's outer bound on agent writes (docs/guard-jail-roles.md "Write jail",
 # "Outer bound") is off for want of a usable dev_drive: unset, relative, not an existing folder, or
 # a machine config that does not read.
 NO_DEV_DRIVE = ('Warning: the machine config sets no usable dev_drive (the Dev Drive\'s root folder: unset, '

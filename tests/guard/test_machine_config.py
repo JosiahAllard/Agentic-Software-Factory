@@ -1,4 +1,4 @@
-"""The machine config folder the PM repository carries (rules.machine_config, docs/guard.md "Owner
+"""The machine config folder the PM repository carries (rules.machine_config, docs/guard-owner.md "Owner
 machine setup"): every session but the owner's own is refused a write of a file in
 <pointer>/.pm-kit or in a .pm-kit folder at the top of a checkout; the hub's token folder there
 is hub-secrets' and the owner's delegation list keeps its own rule; the write jail drops a root
@@ -291,7 +291,7 @@ class PrePushSecrets(pc.PrePushCase):
         ok, msg = self.check(sha)
         self.assertFalse(ok)
         self.assertIn('sends %s, added or changed in commit %s' % (rel, sha[:12]), msg)
-        self.assertIn('docs/guard.md "Pre-push"', msg)
+        self.assertIn('docs/guard-hooks.md "Pre-push"', msg)
 
     def test_a_hub_token_is_refused(self):
         # T13

@@ -4,13 +4,14 @@ tree of HEAD when the work tree is clean, and none when it is not (uncommitted f
 commit's tree); a landing's is its merge commit's tree. The daily full run gates its worktree at
 the day's commit the same way, so its run has that commit's tree. The history line also keeps
 `gate` and `priority`, which the branch gate budget reads (kitlib.gate.budget): a branch gate's has
-gate and no priority, a landing's has priority "land". A landing's also has gate_mode "merged",
-noted on the slot it holds."""
+gate and no priority, a landing's has priority "land". A landing's also has its gate_mode
+("merged", "full" or "docs"), noted on the slot it holds."""
 import os
 
 from kitlib import gate as G
 from kitlib.gate import runner
 from tests.gate import test_land
+from tests.gate.test_land_tip_gated import SELECT_GATE
 
 BRANCH = test_land.BRANCH
 
@@ -57,10 +58,25 @@ class GateTree(test_land.LandCase):
         self.assertEqual(got[0], (True, None))
         self.assertIn((True, 'land'), got[1:])
 
-    def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
-        _wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        out = self.lander(BRANCH, self.main, tip).run()
+
+class LandingGateMode(test_land.LandCase):
+    """The slot a landing holds notes its merged gate's gate_mode (Slot.note_tree): "merged";
+    "full" for a strict (--full) landing; "docs" for a docs-only change under the base's
+    "gate".docs_only."""
+    GATE = SELECT_GATE
+
+    def landed_modes(self, files, **kw):
+        _wt, tip = self.branch('feature', files)
+        out = self.lander(BRANCH, self.main, tip, **kw).run()
         self.assertEqual(out.code, G.OK, out.lines)
-        got = [d.get('gate_mode') for d in self.store.history_records()
-               if d.get('priority') == 'land']
-        self.assertEqual(got, ['merged'])
+        return [d.get('gate_mode') for d in self.store.history_records()
+                if d.get('priority') == 'land']
+
+    def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
+        self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}), ['merged'])
+
+    def test_a_strict_landing_notes_full(self):
+        self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}, full=True), ['full'])
+
+    def test_a_docs_only_landing_notes_docs(self):
+        self.assertEqual(self.landed_modes({'docs/guide.md': 'words\n'}), ['docs'])

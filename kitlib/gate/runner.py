@@ -1013,14 +1013,16 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     reused = _say_plan(plan, chosen, logs, say)
     run = _to_run(chosen, reused)
     results, watched = [], {}
+    # a whole --full run: its gate_mode is full, and a red one gets a rerun record (_red_record)
+    whole = full and not only and not partial and not empty
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
         # run book through gated() without them, and a fully reused gate never gets here. Its
         # lock run's note names its tip and options (gatecap.queue_note): the gate queue's key.
         # Its gate_mode, on the lock run and its history line: --only and a partial --base count
-        # as select.
-        mode = 'docs' if docs else 'full' if full and not only else 'select'
+        # as select, with --full or of a docs-only change too.
+        mode = 'full' if whole else 'docs' if docs and not partial else 'select'
         noted = dict({'note': gatecap.queue_note(head, full, only, asked_base), 'gate_mode': mode},
                      **(book_kw or {}))
         results, refused = gated(cfg, top, mb, changed, run, gate['kind'], name,
@@ -1037,7 +1039,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
                  log_dir=logs, changed=changed, windows=watched.get('windows'), full_hint=hint)
     if not ok:
         facts['no_record'] = 'the gate failed'
-        if full and not only and not partial and not empty:
+        if whole:
             facts['rerun_record'] = _red_record(top, cfg, head, mb, started, results, chosen,
                                                 logs, entries, say)
         return G.Outcome(G.FAILED, lines, **facts)

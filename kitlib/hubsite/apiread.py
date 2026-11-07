@@ -36,7 +36,7 @@ def skill_get(api, req):
 
 
 def skill_source_get(api, req):
-    """The skill's whole SKILL.md and its blob, what the owner edits ("Skill edits")."""
+    """The skill's whole SKILL.md and its blob, what the owner edits ("Skill edits" in apiskills)."""
     return _skill_source(api, _segment(req, 'name'))
 
 
@@ -200,7 +200,7 @@ def _wait_for(api, since, timeout, mine, routes=False):
 
 
 # never copied for GET snapshot: a page body is read on its own (GET pages/{id}, "Pages"), the
-# hand-offs with GET handoffs, newest per session ("Hand-offs")
+# hand-offs with GET handoffs, newest per session ("Hand-offs" in apilog)
 SNAPSHOT_SKIP = ('page_html', 'handoffs')
 
 
@@ -230,7 +230,7 @@ def snapshot(api, req):
         revision, docs = api.store.revision, {}
     else:
         revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
-    if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings")
+    if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings" in apilog)
         feed = docs['landings']
         docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-apilog.FEED_MAX:]}
     if not req.full:                # the paths as GET to_pm and GET finding_marks cut them

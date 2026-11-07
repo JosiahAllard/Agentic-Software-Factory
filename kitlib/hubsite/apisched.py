@@ -1,7 +1,32 @@
-"""kitlib.hubsite.apisched: the api's schedule routes ("Schedules" in the api module docstring):
+"""kitlib.hubsite.apisched: the api's schedule routes ("Schedules" below):
 the owner's schedules for the kit's automatic tasks, the defaults of Api's schedule_repos,
 tick_seen and tick_state hooks, and the two handlers of ROUTES. kitlib.hubsite.api re-exports every
-name here."""
+name here.
+
+Schedules. POST schedules (OWNER) sets when one of the kit's automatic tasks runs for one repo:
+{task, repo, cadence, at, days?, if_version?} into `schedules/<task>-<repo>`. task is one of
+SCHEDULE_TASKS; cadence one of CADENCES (`off` keeps the document and runs nothing); at is HH:MM,
+24-hour; days, a list from DAYS, is required for `weekly` and refused for the others, and is
+stored once each in DAYS order. repo must be a repository the hub knows (its repos/ documents'
+names and aliases, and the store's known_repos), case ignored, and is stored as that repo's name.
+A task that runs for one repository (kitlib.autotasks.tick.TASKS per_repo), on any cadence but
+`off`, also needs exactly one checkout of it in the machine config's launcher.repos, as the tick
+finds it (tick.find_repo over Api's schedule_repos, default launcher_checkouts: tick.launcher_repos);
+none, or two, is `invalid`, field repo, and so is a launcher config that cannot be read.
+A refusal is `invalid` naming the field, with nothing written. Writing over a schedule takes its
+`if_version`; without it, or with another, it is `conflict`, as for a page, and that refusal's
+error names the schedule's `id` (so a new one for a task and repo that has one can open it,
+the repo matched as above). The answer carries
+`first_run`: the first slot strictly after set_at by kitlib.autotasks.due's rule, naive local
+time to the minute (None when off). GET schedules (ANY) lists them, with `tick`: {last, running,
+every_s}, last when the tick was last seen (Api's tick_seen, default tick_last_seen: the time of
+its state file) and running false when that is None or more than TICK_STALE_S before the clock.
+Each listed schedule also carries `last_outcome` (the tick's record for it: started, skipped, seen
+or failed; None for none), `last_run` (that record's `at` when it is `started`, else None) and
+`next_due` (the first slot after the clock by due's rule, naive local time to the minute; None when
+off), read from Api's tick_state, default tick_run_state; none is stored.
+Nothing here runs a task: a tick outside the hub reads the list.
+"""
 import datetime
 import os
 import re

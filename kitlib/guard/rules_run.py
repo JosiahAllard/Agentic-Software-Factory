@@ -153,7 +153,7 @@ def split_wild(text):
     return text, None
 
 
-def _find_paths(args):
+def find_paths(args):
     k, out = 0, []
     while k < len(args) and args[k].text in ('-H', '-L', '-P') or (k < len(args) and args[k].text.startswith('-O')):
         k += 1
@@ -179,7 +179,7 @@ def search_paths(cmd, inv):
             return None
         return (bound.get('path') or bound.get('literalpath') or []), True
     if cmd.shell != sh.PS and name == 'find':
-        return _find_paths(args)
+        return find_paths(args)
     if cmd.shell == sh.CMD and name == 'dir' or (cmd.shell != sh.PS and name == 'dir' and
                                                  any(w.text.lower() == '/s' for w in args)):
         if not any(w.text.lower().startswith('/s') for w in args):

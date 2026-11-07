@@ -5,8 +5,8 @@ import re
 
 from . import commands as cm
 from . import shell as sh
-from .rules_base import (PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES, _split_commas, agent_session, fwd,
-                         literal_word, ps_param_word, refuse)
+from .rules_base import (PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES, agent_session, fwd, literal_word,
+                         ps_param_word, refuse, split_commas)
 
 
 # a .NET file call that writes (OpenRead and OpenText only read)
@@ -34,7 +34,7 @@ def ps_export_targets(cmd, words):
         t = ps_param_word(cmd, w)
         k += 1
         if t is None:
-            out.extend(_split_commas(w))
+            out.extend(split_commas(w))
             continue
         body, colon, val = t[1:].partition(':')
         body = body.lower()
@@ -77,7 +77,7 @@ class NetWrite(object):
 NET_QUOTES = '‘’‚‛“”„'     # PowerShell reads these as quotes too
 
 
-def _net_string_end(src, k):
+def net_string_end(src, k):
     """The offset just past the PowerShell string that starts at src[k] (' or ")."""
     q, n = src[k], len(src)
     k += 1
@@ -119,7 +119,7 @@ def _net_args(src, k):
         while k < n:
             c = src[k]
             if c in '\'"':
-                k = _net_string_end(src, k)
+                k = net_string_end(src, k)
                 continue
             if c == '`':
                 k += 2
@@ -195,7 +195,7 @@ def _net_list(src, k):
         while k < n:
             c = src[k]
             if c in '\'"':
-                k = _net_string_end(src, k)
+                k = net_string_end(src, k)
                 continue
             if c == '`':
                 k += 2

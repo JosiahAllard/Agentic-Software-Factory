@@ -8,7 +8,7 @@
                                    are pagecheck.warnings, each `hub page warning: ...`
 
 A scheduled run has no hub session key and needs none: a page is an agent's write, and `from` is a
-name (docs/action-hub.md "pages/<id> and page_html/<id>"). Over a page already there it sends that
+name (docs/hub-skill-pages.md "pages/<id> and page_html/<id>"). Over a page already there it sends that
 card's version as if_version. The page is judged by kitlib.hubsite.pagecheck before it is sent,
 so a body the server would refuse is never sent. A hub that is not running, cannot be reached or
 refuses is a NOT CHECKED note, never an error. Nothing here prints or exits.

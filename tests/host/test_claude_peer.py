@@ -1,5 +1,5 @@
 """Claude Code's hub push delivery (hosts.claude.adapter.peer): the packet, who a recipient is,
-the key check, and one real write to a pipe this test owns (docs/action-hub.md "Push
+the key check, and one real write to a pipe this test owns (docs/hub-push.md "Push
 notifications"). No live session is ever touched: every registry, key and pipe here is the
 test's own."""
 import hashlib

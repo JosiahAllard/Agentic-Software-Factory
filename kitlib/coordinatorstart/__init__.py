@@ -158,7 +158,7 @@ def hub_key(sessions, entry):
     """[the `hub key: <key>` line]: the sessions.json key of `entry` (find_entry's pick, the same
     object), the key this coordinator posts hub questions --from; its pending list is printed at
     start; it runs no background wait, as the hub pushes its answers and done to-dos
-    (docs/action-hub.md "For the PM"). LookupError when no key holds it."""
+    (docs/hub-pm.md "For the PM"). LookupError when no key holds it."""
     for k, v in sessions.items():
         if v is entry and not str(k).startswith("_"):
             return ["hub key: %s (hub.py questions add --from %s --record REPO:ID|--class C; its "

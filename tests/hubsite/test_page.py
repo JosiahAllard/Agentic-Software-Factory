@@ -2412,7 +2412,7 @@ class QuestionKeysTest(unittest.TestCase):
 
 @unittest.skipUnless(NODE, "node is needed to run the page's logic")
 class RecordPageTest(unittest.TestCase):
-    """The record page (docs/action-hub.md "The record page"): a row's id opens it, each section is edited
+    """The record page (docs/hub-views.md "The record page"): a row's id opens it, each section is edited
     at the version read, delete takes the typed id, and New story opens a blank record."""
 
     # Built, so this file holds no ruling id or flag for tests/scrub to flag.

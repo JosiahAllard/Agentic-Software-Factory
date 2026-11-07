@@ -1,6 +1,6 @@
 """kitlib.hubsite.push: the hub tells the session that asked, and the PM, when the owner answers
 a question or marks a to-do done, and keeps telling them until they pick it up
-(docs/action-hub.md "Push notifications"). A fake delivery object stands in for the host's.
+(docs/hub-push.md "Push notifications"). A fake delivery object stands in for the host's.
 """
 import json
 import os
@@ -953,7 +953,7 @@ class ResolvingPush(FakePush):
 
 class FiledPushCase(PushCase):
     """A question bound to a record, answered and filed through the Api: who hears it depends on
-    what the filing did to the record (docs/action-hub.md "Push notifications", "Filed answers")."""
+    what the filing did to the record (docs/hub-push.md "Push notifications", "Filed answers")."""
 
     def bind(self, before, after=None, live=None):
         self.views = RecordViews(before, after)
@@ -1326,7 +1326,7 @@ class StandingPushTest(FiledPushCase):
 
 class AutoDoneTest(FiledPushCase):
     """A filed answer is marked done by the hub once its asker has it, pinned to the version the
-    push fired at (kitlib.hubsite.push "Done by the hub", docs/action-hub.md "Filing the
+    push fired at (kitlib.hubsite.push "Done by the hub", docs/hub-questions.md "Filing the
     answer")."""
 
     def q(self, qid):

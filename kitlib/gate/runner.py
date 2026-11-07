@@ -31,7 +31,7 @@ its key is in the gate cache
 reused therefore writes a gate-OK record for a commit on which no step ran; its record says
 `reused` for each step. A `--full` gate that FAILED on those same terms (no --only, the default
 base, a clean tree at start and end, HEAD unmoved, the stash empty) writes a red run instead
-(kitlib.gate.rerun.record_red), which `gate.py --rerun` reruns (docs/gate.md "Targeted rerun").
+(kitlib.gate.rerun.record_red), which `gate.py --rerun` reruns (docs/gate-rerun-checkout.md "Targeted rerun").
 """
 import datetime
 import os
@@ -75,7 +75,7 @@ NO_STEP_FULL = ('REFUSED: no gate step selected: every step in the "gate".steps 
 NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the gate steps with a '
              '"gate" section in .kit.json or tools/gate.json)')
 # full_hint: a plain gate's line when its tip must end on --full, or when that cannot be told
-FULL_NEEDED = ('FULL NEEDED: %s; so this tip\'s final gate is gate.py -C %s --full (docs/gate.md '
+FULL_NEEDED = ('FULL NEEDED: %s; so this tip\'s final gate is gate.py -C %s --full (docs/gate-run.md '
                '"The final gate")')
 FULL_UNKNOWN = 'NOTE: cannot tell whether this tip needs a final --full gate: %s'
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv may take
@@ -115,7 +115,7 @@ HASH_IF_SET = ('smoke_steps', 'docs_only')
 # "gate" keys the schema no longer has (a config that sets one fails to load), with the default
 # every config hashed them as while they were keys. Only the hash keeps them, never section() or
 # the steps: dropping one would change every repo's hash, so every gate-OK record written on the
-# other side of that kit change would fail verify_record (docs/gate.md "Gate-OK record").
+# other side of that kit change would fail verify_record (docs/gate-records.md "Gate-OK record").
 HASH_REMOVED = {'python_tests': 'discover', 'python_tests_floor': None, 'trailers': None}
 # A renamed kind hashes under the name it had when records were first written (kitlib/lock/
 # kinds.json "aliases"), so "gate".kind under either name, and the default, hash as before the
@@ -284,7 +284,7 @@ def default_base(cfg, root):
 
 def full_hint(top, base, changed, docs):
     """The line a plain branch gate (no --full, --only or other --base) adds when the checkout
-    `top`'s change `changed` must end on --full (docs/gate.md "The final gate"; kitlib.gate.land
+    `top`'s change `changed` must end on --full (docs/gate-run.md "The final gate"; kitlib.gate.land
     full_needed, read from the config at the base commit `base`, as a landing reads it): FULL_NEEDED,
     or FULL_UNKNOWN when that cannot be told; None when the change needs no --full. `docs`: the
     gate runs only the docs-only steps. Never raises: the hint never fails the gate."""
@@ -595,7 +595,7 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     leave it False and never wait. A capped gate whose tip is already in the main branch
     (merged_tip) is REFUSED before it books, and again once its booking holds, before
     any step (released `not started`); before it books it also stops the session's own queued
-    gates of the branch at an older tip (gatecap.replace_stale; docs/gate.md "The gate queue").
+    gates of the branch at an older tip (gatecap.replace_stale; docs/gate-records.md "The gate queue").
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
     first, before the cap is waited for or anything is booked: `(None, REFUSED Outcome)` when it
     is spent. None: not asked (a detached HEAD). The run is booked with it as book's `branch`,
@@ -912,7 +912,7 @@ def _branch_gate(root, base=None, full=False, only=None, plan=False, slug=None, 
     An auto-detected gate that found no stack runs nothing and passes, its verdict line saying
     so (NO_CHECKS). `known`, a dict: its 'log_dir' is set as soon as the run's log folder is
     made, so a caller still has it when an exception ends the run. A gate that would only repeat
-    a failed gate of its clean tree is REFUSED before it books (_unchanged; docs/gate.md "An
+    a failed gate of its clean tree is REFUSED before it books (_unchanged; docs/gate-records.md "An
     unchanged red tree"), unless `again` (gate.py --again)."""
     say = say or _quiet
     top, why = repo.toplevel(root)
@@ -993,7 +993,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     from kitlib.gate import reuse   # reuse imports this module
     docs = not (full or only or empty) and reuse.docs_only_change(cfg, gate, changed)
     if docs:
-        say('a docs-only change: only the "docs_only" steps run (docs/gate.md "Docs-only changes")')
+        say('a docs-only change: only the "docs_only" steps run (docs/gate-run.md "Docs-only changes")')
     hint = None if (full or only or partial) else full_hint(top, base_sha, changed, docs)
     try:
         all_steps = S.build(gate, top, mb, cfg.tools_dir, full=full)
@@ -1189,7 +1189,7 @@ def _unchanged(top, key, tree, steps, branch, head, flags, say):
             'config and kit at %s (%s; logs: %s)' % (
                 branch or '(detached)', head[:10], tree[:10], rec.get('mode'), rec.get('ended'),
                 ', '.join(rec.get('failed') or []) or 'failed', rec.get('log_dir')),
-            'Instead: fix it and commit%s; or, to repeat it on purpose (docs/gate.md "An '
+            'Instead: fix it and commit%s; or, to repeat it on purpose (docs/gate-records.md "An '
             'unchanged red tree"): gate.py -C %s%s --again' % (
                 rerun_way, top, ' ' + flags if flags else '')]
 
@@ -1232,7 +1232,7 @@ def _red_record(top, cfg, head, mb, started, results, chosen, logs, no, say):
         say('WARNING: no red-run record for a targeted rerun: %s' % e)
         return None
     say('red-run record: %s; a targeted rerun of the failing tests: gate.py --rerun '
-        '(docs/gate.md "Targeted rerun")' % path)
+        '(docs/gate-rerun-checkout.md "Targeted rerun")' % path)
     return path
 
 
@@ -1319,7 +1319,7 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     `docs` True and not `full`: when base..HEAD is a docs-only change under `cfg` (the base's;
     kitlib.gate.reuse.docs_only_change: its "gate".docs_only, never a config, hook or strict path)
     only the docs_only steps (and setup) run, and facts['docs'] is True (the landing records the
-    merge with mode "docs"; docs/gate.md "Docs-only changes").
+    merge with mode "docs"; docs/gate-run.md "Docs-only changes").
 
     `reuse(chosen) -> (reuse.Plan)` (kitlib.gate.reuse.planner): the steps it names are not run
     and count as REUSED; its lines, then the lines of its keep (the results it stores in the gate
@@ -1336,7 +1336,7 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     name = repo_name(cfg, root)
     logs = new_log_dir(cfg, root, name, 'land-' + slug, log_dir)
     if docs:
-        say('a docs-only merge: only the "docs_only" steps run (docs/gate.md "Docs-only changes")')
+        say('a docs-only merge: only the "docs_only" steps run (docs/gate-run.md "Docs-only changes")')
     say('merged-tree gate at %s against %s: %s' % (
         head[:10], base[:10], ', '.join(s.name for s in chosen) or 'no step'))
     plan = reuse(chosen) if reuse is not None and not empty else None

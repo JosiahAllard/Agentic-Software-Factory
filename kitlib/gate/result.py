@@ -1,5 +1,5 @@
 """The result record: how a branch gate or a landing is going or ended, for a session waiting on it
-(docs/gate.md "Result record").
+(docs/gate-records.md "Result record").
 
 `<dev_drive>/pm-kit/kit-gate-result/<repo key>/<stem>.<kind>.json`, stem = file_stem(branch):
 `dev_drive` is the machine config's Dev Drive root (kitlib.config.user.dev_drive), and the repo
@@ -21,7 +21,7 @@ A Run writes the file twice: a `running` record when the work starts (it replace
 record of that branch and kind, at that tip or another), then the final record with the same
 run_id and started_at. Each write is a temp file in the same folder, then os.replace, so a reader
 sees one whole record or the other. Who writes when (kitlib.gate.runner.branch_gate,
-kitlib.gate.land.Lander.run) is in docs/gate.md "Result record".
+kitlib.gate.land.Lander.run) is in docs/gate-records.md "Result record".
 
 A record has several writers (a landing's own run, its submitter's claim, a waiter's finish_dead),
 so every write takes the record's lock first: an OS lock (kitlib.fs.treelock.TreeLock) on
@@ -74,7 +74,7 @@ The record (SCHEMA 1), every key always present:
                   (Lander.once_escalate); null where gate_once is
   turn_at         a submitted landing's records: when its own process was given its landing
                   turn (kitlib.gate.submit turn), or null: still queued. No other landing folds a
-                  submission whose turn came (docs/gate.md "Folding queued submissions")
+                  submission whose turn came (docs/gate-landing.md "Folding queued submissions")
   folded_into     the run_id of the landing that folded this submission into its batch and
                   lands it (its pid and ctime are then that landing's, its log that landing's
                   output), or null
@@ -146,7 +146,7 @@ LEDGER_FIELDS = ('branch', 'tip', 'run_id', 'started_at', 'finished_at', 'verdic
 # and the hub takes no other field): batch_size, how many branches the landing merged and gated
 # together (the length of the record's `batch`; null when it has none), and folded_into, the
 # run_id of the landing that folded it into its batch (null for that landing's own branches), so a
-# counter of gate runs dedupes on `folded_into or run_id` (docs/gate.md "Land ledger")
+# counter of gate runs dedupes on `folded_into or run_id` (docs/gate-records.md "Land ledger")
 LEDGER_BATCH = ('batch_size', 'folded_into')
 VERDICTS = {G.OK: 'pass', G.FAILED: 'fail', G.USAGE: 'usage', G.STUCK: 'stuck',
             G.REFUSED: 'refused', G.BUSY: 'busy', G.LANDED_UNGATED: 'landed-ungated',
@@ -398,7 +398,7 @@ def append_ledger(root, record):
 def _summary(outcome):
     keys = ('LANDED ', 'NOT LANDED', 'CONFLICT ', 'STUCK:', 'REFUSED:', 'BUSY:', 'USAGE:',
             'NOT RUN:', 'STOPPED:')
-    for line in outcome.lines:      # a landing's verdict line (docs/gate.md "Exit codes")
+    for line in outcome.lines:      # a landing's verdict line (docs/gate-run.md "Exit codes")
         if line.startswith(keys):
             return line
     return outcome.lines[0] if outcome.lines else ''

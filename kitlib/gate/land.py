@@ -1,4 +1,4 @@
-"""One branch landed on main (docs/gate.md "Landing").
+"""One branch landed on main (docs/gate-landing.md "Landing").
 
 `land()` runs in the repository's MAIN checkout, on its main branch:
 
@@ -48,10 +48,10 @@
                  config file changes, or the change is docs-only under the base's
                  "gate".docs_only and its steps all passed, or the base sets
                  "landing".shared_paths and the change touches none of them, no strict path and
-                 no gate config file; docs/gate.md "Shared paths", or the base sets
+                 no gate config file; docs/gate-run.md "Shared paths", or the base sets
                  "landing".gate_once and the change touches no gate config file, a strict path
                  included, and the merged gate then runs --full unless the merge is docs-only;
-                 docs/gate.md "Gate once at landing"), or by none when the tip's
+                 docs/gate-run.md "Gate once at landing"), or by none when the tip's
                  latest red --full run has a FLAKE targeted rerun (kitlib.gate.rerun.verify_flake);
                  a tip a test failed on, that failed twice on its branch, never lands
                  (rerun.twice_refusal);
@@ -59,7 +59,7 @@
                  --full` command that gates it, and, when the kit lands itself and the tip does
                  not contain the base, says to merge <remote>/<main> into the branch first (its
                  own gate.py may predate the record's `full` key). Then the
-                 strict check (Lander.strict_check; docs/gate.md "Strict paths"): a branch that changes a path in STRICT_DEFAULTS as
+                 strict check (Lander.strict_check; docs/gate-landing-policy.md "Strict paths"): a branch that changes a path in STRICT_DEFAULTS as
                  the base holds it lands alone, with a verdict queued for its tip
                  (kitlib.gate.verdicts) by a strong-tier reviewer who is not its author (a
                  verdict carried to the tip, tools/verdict.py carry, counts only when
@@ -94,9 +94,9 @@
                  of exactly this tree may count without running (kitlib.gate.reuse; never with
                  --fresh or --full; a batch reuses per step like one branch; one branch also
                  from its tip's --full record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
-                 (not --full) runs only the "gate".docs_only steps (docs/gate.md "Docs-only
+                 (not --full) runs only the "gate".docs_only steps (docs/gate-run.md "Docs-only
                  changes"). A base with "landing".gate_once on makes any other merge --full
-                 (Lander.once_escalate: each step's full_cmd, no reuse; docs/gate.md "Gate once
+                 (Lander.once_escalate: each step's full_cmd, no reuse; docs/gate-run.md "Gate once
                  at landing"). Red, or a gate where nothing ran: NOT LANDED, the
                  merge dropped (it is only in the landing tree; the landing never moves main),
                  the lock released: FAILED / REFUSED.
@@ -143,7 +143,7 @@
                  pull made in the main checkout records main; a live holder outside the batch is
                  a WARNING: tell its builder). A close that fails, or an exception or Ctrl+C here,
                  is a WARNING naming the command to finish it; the landing stands
-  12 cleanup     then each landed branch goes (kitlib.gate.cleanup; docs/gate.md "Branch
+  12 cleanup     then each landed branch goes (kitlib.gate.cleanup; docs/gate-landing-policy.md "Branch
                  cleanup"): its remote branch, its worktree (kitlib.worktree.remove, never
                  forced) and its local branch (`git branch -d`). What main does not contain, a
                  worktree with work in it or in use, and anything git refuses are kept and named;
@@ -166,7 +166,7 @@ whatever raised it. After the push is verified (phase pushed) the landing is LAN
 it: a lock release that fails, or an exception or Ctrl+C there, is LANDED with a WARNING (exit 0).
 The slot of step 3 is released whenever the landing ends (Lander.run): with the lock file, or at
 the end; STUCK included (the stuck lock file keeps the next landing out). Exit 9
-(LANDED_UNGATED) is retired: no landing produces it (docs/gate.md "Exit codes").
+(LANDED_UNGATED) is retired: no landing produces it (docs/gate-run.md "Exit codes").
 
 A landing's verdict is its exit code and its LANDED / NOT LANDED / CONFLICT / STUCK line; a `GATE
 OK` line appears only in a landing that LANDED (a green merged gate that is not landed is
@@ -212,7 +212,7 @@ records); folded into one that still runs, it gives the turn back and books agai
 lands them or gives them back; else it marks the record turn_at, so no landing folds it from
 then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
 
-Folding (docs/gate.md "Folding queued submissions"), on by default ("landing".batch_max, default
+Folding (docs/gate-landing.md "Folding queued submissions"), on by default ("landing".batch_max, default
 5; a .kit.json that sets it to 1 folds nothing): a submitted landing whose locked checks
 passed, that changes no strict path and no gate config file, was not given back from a batch
 itself, and has room under that batch_max, folds the submissions queued behind it into its
@@ -299,7 +299,7 @@ SCOPE_REFUSES = False
 SCOPE_ALWAYS = ('tests/**', 'docs/INDEX.md')
 SCOPE_SHOWN = 10        # outside paths a scope-check line names; more are counted
 NARROWED_RULES = rmod.Rules('mixed')    # reads every store's `narrowed:` ids (_scope_restore)
-# The strict paths (Lander.strict_check; docs/gate.md "Strict paths"): the globs of this file's
+# The strict paths (Lander.strict_check; docs/gate-landing-policy.md "Strict paths"): the globs of this file's
 # STRICT_DEFAULTS, owner-authored, read from the base with `git show` and parsed, never imported
 # from the branch; a base without the file (a repository that is not the kit) has the running
 # kit's list. A branch changing a matching path lands only alone, with a queued verdict at its tip
@@ -992,7 +992,7 @@ class Lander(object):
     # ---------------------------------------------------------------- the tips' full gate
 
     def tip_gate_check(self):
-        """A locked check (docs/gate.md "Landing"): every branch tip has a gate-OK record for
+        """A locked check (docs/gate-landing.md "Landing"): every branch tip has a gate-OK record for
         exactly that commit that git still agrees with (gate_ok.verify), and the record lands it
         (tip_refusal): a `gate.py --full` pass's (gate_ok.full_of), or a default-mode or docs-only
         pass's that the base config takes (select_refusal). A record from before records said
@@ -1064,12 +1064,12 @@ class Lander(object):
                   every one of them passed in the record, and the landing diff changes none of the
                   gate's config files (reuse.config_hits: `.kit.json`, a section file, the hook
                   module); and
-          shared  when the base sets "landing".shared_paths (docs/gate.md "Shared paths"), a
+          shared  when the base sets "landing".shared_paths (docs/gate-run.md "Shared paths"), a
                   default-mode record lands without "gate".smoke_steps, and any record that is
                   not --full (docs or select, smoke steps or not) is refused when the landing diff
                   changes a shared path or a strict path (shared_refusal, checked before the
                   docs route), beside the config check above;
-          once    when the base has "landing".gate_once on (docs/gate.md "Gate once at landing"),
+          once    when the base has "landing".gate_once on (docs/gate-run.md "Gate once at landing"),
                   a default-mode record lands whatever "gate".smoke_steps and "landing".shared_paths
                   say, a strict path included: only a gate config file refuses it, as the merged
                   gate runs --full (once_escalate; --full --fresh for a strict tip,
@@ -1125,7 +1125,7 @@ class Lander(object):
         shared = self.cfg.section('landing').get('shared_paths')
         once = self.gate_once()
         # gate_once: no strict check, as every merged gate of a strict tip runs --full (--fresh,
-        # strict_escalate); the gate config check below still refuses (docs/gate.md "Gate once
+        # strict_escalate); the gate config check below still refuses (docs/gate-run.md "Gate once
         # at landing")
         if not once and shared is not None:
             why = self.shared_refusal(shared, changed)
@@ -1155,7 +1155,7 @@ class Lander(object):
 
     def gate_once(self):
         """True when "landing".gate_once is on in the base's config, as its .kit.json writes it or
-        else by default (false opts out; docs/gate.md "Gate once at landing"): select_refusal
+        else by default (false opts out; docs/gate-run.md "Gate once at landing"): select_refusal
         takes a default-mode record of any tip that changes no gate config file, a strict tip
         included (strict_escalate makes its merged gate --full --fresh), and once_escalate makes
         the merged gate --full."""
@@ -1254,7 +1254,7 @@ class Lander(object):
         """The command that gates `branch`'s worktree --full: `python "<gate.py>" -C "<worktree>"
         --full`. The gate.py is the worktree's own when the repository being landed is the kit
         (its main checkout has the kit's layout, oncommit.is_kit: the branch is gated by its own
-        gate code; docs/gate.md "The caller's checkout"), whether the running kit is a checkout or
+        gate code; docs/gate-rerun-checkout.md "The caller's checkout"), whether the running kit is a checkout or
         a plugin export; any other repository's is the running kit's. `<worktree>` stands in when
         no worktree has the branch out."""
         wts, _ = repo.worktrees(self.root)
@@ -1304,7 +1304,7 @@ class Lander(object):
         return hits, None
 
     def strict_check(self):
-        """A locked check (docs/gate.md "Strict paths"): the paths each branch changes (merge base
+        """A locked check (docs/gate-landing-policy.md "Strict paths"): the paths each branch changes (merge base
         with the base to its tip) against strict_globs(). A branch with a hit lands only alone,
         with a verdict queued for its tip (kitlib.gate.verdicts) whose reviewer ran on a
         strong-tier model (strong_alias), whoever built it, and is not its author (is_author); then
@@ -1352,7 +1352,7 @@ class Lander(object):
         return hits, None
 
     def config_check(self):
-        """A locked check (docs/gate.md "Strict paths"), after strict_check: in a batch, a branch
+        """A locked check (docs/gate-landing-policy.md "Strict paths"), after strict_check: in a batch, a branch
         that changes a gate config file (config_paths) is refused, as a strict branch is: it lands
         alone, never in a batch. A batch whose paths cannot be read refuses. None, or why not
         (REFUSED, nothing merged)."""
@@ -1368,7 +1368,7 @@ class Lander(object):
         return None
 
     def verdict_check(self):
-        """A locked check (docs/gate.md "Landing" step 4), after strict_check: every branch that
+        """A locked check (docs/gate-landing.md "Landing" step 4), after strict_check: every branch that
         changes no strict path lands too only with a verdict queued for its tip by a reviewer who
         is not its author (review_refusal; the tier rule only for a High-risk one), each branch of
         a batch on its own entry. None, or why not for the first branch, in batch order, that
@@ -1416,7 +1416,7 @@ class Lander(object):
         facts = None
         if verdicts.CARRIED in entry:
             # Never the stored facts: the carry is checked again here, against the base this
-            # landing merges onto (docs/gate.md "Carrying a verdict forward").
+            # landing merges onto (docs/gate-landing-policy.md "Carrying a verdict forward").
             reviewed = entry[verdicts.CARRIED]['from']
             facts, why = carry.check(self.root, reviewed, t, self.expect_main,
                                      git=lambda args: self.git(*args))
@@ -1437,7 +1437,7 @@ class Lander(object):
 
     def once_escalate(self):
         """After the merge, before the merged gate: when the base has "landing".gate_once on
-        (docs/gate.md "Gate once at landing") and the merged gate is not --full already, it runs
+        (docs/gate-run.md "Gate once at landing") and the merged gate is not --full already, it runs
         --full (each step's full_cmd) on the merged or batched tree, said once; a merge whose diff
         to the base is docs-only (reuse.docs_only_change) stays on the docs-only route. A diff git
         cannot list escalates too."""
@@ -1475,7 +1475,7 @@ class Lander(object):
         and the batch's earlier tips, so a stacked branch is checked on its own paths. A miss, a
         store it cannot read while some path is outside what it could read, or a check that
         stops: with SCOPE_REFUSES the refusal; else a WARNING kept for after the LANDED line, and
-        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate.md
+        None. A miss of a branch holding a narrowed record (a `narrowed:` line; docs/gate-landing.md
         "Landing", step 4) is refused whatever SCOPE_REFUSES says; a store it cannot read, or a check
         that stops, cannot tell, so that stays a WARNING. A branch holding no record while a store
         with records was read: a NOTE kept for before the LANDED line."""
@@ -2637,7 +2637,7 @@ class Lander(object):
         return why is None and not hits
 
     def fold_queued(self):
-        """Fold the submissions queued behind this landing into its batch (docs/gate.md "Folding
+        """Fold the submissions queued behind this landing into its batch (docs/gate-landing.md "Folding
         queued submissions"): oldest first (submit.foldable), each whole and while it fits under
         "landing".batch_max, run with the same flags (submit.same_flags), its branches none of
         this batch's, and passing pair_checks with the landing's own branches; then taken
@@ -3332,7 +3332,7 @@ def land(root, branch, expect_main, expect_tip, **kw):
 
 
 def full_needed(root, cfg, base, changed, docs):
-    """Whether a branch whose landing diff is `changed` must end on `gate.py --full` (docs/gate.md
+    """Whether a branch whose landing diff is `changed` must end on `gate.py --full` (docs/gate-run.md
     "The final gate"), for the plain branch gate's FULL NEEDED line: `(reason, None)` when it must,
     `(None, None)` when its default-mode record (`docs` True: its docs-only one) would land, or
     `(None, why)` when that cannot be told. `cfg` is the base's config and `base` the base commit,
@@ -3356,14 +3356,14 @@ def full_needed(root, cfg, base, changed, docs):
     hits = [p for p in reuse.changed_list(changed) if S._match(p, globs)]
     if hits:
         more = len(hits) - STRICT_SHOWN
-        return ('the tip changes strict path %s%s, and a strict branch ends on --full (docs/gate.md '
+        return ('the tip changes strict path %s%s, and a strict branch ends on --full (docs/gate-landing-policy.md '
                 '"Strict paths")' % (', '.join(hits[:STRICT_SHOWN]),
                                      ' and %d more' % more if more > 0 else ''), None)
     return None, None
 
 
 def check_strict(root, branches):
-    """Read-only, the dry strict check a coordinator runs before it picks a reviewer (docs/gate.md
+    """Read-only, the dry strict check a coordinator runs before it picks a reviewer (docs/gate-landing-policy.md
     "Strict paths"): for each of `branches`, its local tip against `<remote>/<main>` as last
     fetched (runner.default_base; no fetch), decided by Lander.strict_paths, the matcher
     strict_check refuses by. An OK Outcome, one line per branch: `STRICT <branch>: <paths>: ...`

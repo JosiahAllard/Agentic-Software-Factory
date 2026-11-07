@@ -1,4 +1,4 @@
-"""The session gate cap (docs/gate.md "The session gate cap"): before a branch gate books its
+"""The session gate cap (docs/gate-records.md "The session gate cap"): before a branch gate books its
 machine-lock run, it waits while its agent session already has the configured number of gate runs
 of the same repository in flight (booked, waiting or held).
 
@@ -30,7 +30,7 @@ a kit without turns).
 The cap is the machine config's "coordinator_start".gate_cap {repo name: int}. Unset, 0 or null: no cap. A value the cap cannot use, or a machine
 config that cannot be read, is said once as a WARNING and nothing is capped.
 
-The gate queue (docs/gate.md "The gate queue"): a branch gate books with the note queue_note
+The gate queue (docs/gate-records.md "The gate queue"): a branch gate books with the note queue_note
 (its tip and options), so a second gate of the same branch, tip, options and tree that would only
 wait behind it is found (queued_twin), and a session's own queued gate of the branch at an older
 tip is stopped before it starts (replace_stale). A held run is never touched.

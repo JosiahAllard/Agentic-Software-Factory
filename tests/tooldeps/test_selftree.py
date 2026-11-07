@@ -676,6 +676,13 @@ class GitAndCli(TempHomeCase):
         self.assertIn('(no test)  docs/other.md: prose no test names', out)
         self.assertIn('kit_tests: OK, nothing selected (1 changed path(s))', out)
 
+    def test_a_path_nothing_reads_says_so_not_prose(self):
+        rc, out = self.run_cli('--select', '--changed', 'weird/file.txt', '--plan')
+        self.assertEqual(rc, 0)
+        self.assertIn('(no test)  nothing reads weird/file.txt: always-run set only', out)
+        self.assertNotIn('prose', out)
+        self.assertIn('kit_tests: OK, nothing selected (1 changed path(s))', out)
+
     def test_nothing_selected_plan_prints_the_same_ok_line(self):
         rc, out = self.run_cli('--select', '--changed', 'docs/other.md', '--plan')
         self.assertEqual(rc, 0)

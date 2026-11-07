@@ -42,7 +42,10 @@ def plan(root, changed, cfg, say):
     tree = selftree.scan(root)
     picked, why, notes = selftree.selection(changed, tree, cfg)
     for f in notes:
-        say('  (no test)  %s: prose no test names' % f)
+        if selftree._matches(f, cfg['prose']):
+            say('  (no test)  %s: prose no test names' % f)
+        else:
+            say('  (no test)  nothing reads %s: always-run set only' % f)
     if picked == selftree.ALL:
         say('kit_tests: %s' % why[0])
         return FULL

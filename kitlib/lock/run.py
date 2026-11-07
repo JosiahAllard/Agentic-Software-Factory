@@ -1096,15 +1096,18 @@ class Slot:
             cores_text(self.job.effective) if self.own["cpu"] else
             "the cores of run %s" % self.parent["id"], "; " + self.job.note if self.job.note else "")
 
-    def note_tree(self, tree):
+    def note_tree(self, tree, gate_mode=None):
         """Records `tree`, the git tree hash this held run now tests (book's `tree`; a landing's
-        merge, run in the slot the landing holds), on its record and so its history line. A
-        nested slot has no record of its own and records nothing; nor does an empty tree. A
-        failed write is ignored: the record is a note, never what holds the slots."""
-        if self.nested or not tree:
+        merge, run in the slot the landing holds), and `gate_mode`, the mode of the gate it runs
+        (book's `gate_mode`), on its record and so its history line. A nested slot has no record
+        of its own and records nothing; nor is an empty tree or mode recorded. A failed write is
+        ignored: the record is a note, never what holds the slots."""
+        fields = dict(({"tree": tree} if tree else {}),
+                      **({"gate_mode": gate_mode} if gate_mode else {}))
+        if self.nested or not fields:
             return
         with contextlib.suppress(OSError):
-            self.run.save(tree=tree)
+            self.run.save(**fields)
 
     def start(self, cmd, give_back=False, **kw):
         """Popen(cmd) in the run's job; OSError when it cannot start, AliasStubError (one) when
@@ -1547,7 +1550,7 @@ def mem_need(store, repo, kind, mode, mem_mb, entry, records=None):
 def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, no_wait=False,
          expect_s=None, note=None, on_release_cmd=None, cmd=None, store=None, kinds_table=None,
          env=None, rid=None, detached=False, log=None, gate=False, resource=None, priority=None,
-         within=None, tree=None, branch=None, checkout=None, mem_mb=None):
+         within=None, tree=None, branch=None, checkout=None, mem_mb=None, gate_mode=None):
     """Waits for a run of kind `kind` for repo/slug to hold its slots and returns its Slot.
     Raises LockError (the CLI's exit code) when it does not. cores: fewer cpu slots than the
     kind's size, 1..that size, never more; the kind's size is its whole number of cores
@@ -1572,7 +1575,9 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     and kept in its history line, so a gate's run is matched to the exact tree it tested;
     Slot.note_tree records it on a run already held. branch: the git branch the run is for (a
     branch gate's, which kitlib.gate.budget counts its runs by), recorded as `branch` and kept in
-    its history line. checkout: the folder the run is booked from (the CLI's current directory):
+    its history line. gate_mode: the gate's mode (kitlib.gate: select, full, docs, merged,
+    rerun, daily or bisect), recorded as `gate_mode` and kept in its history line; Slot.note_tree
+    records it on a run already held. checkout: the folder the run is booked from (the CLI's current directory):
     a kind that is neither a kit kind nor a kit alias is looked up in the "kinds" section of its
     repository's main checkout `.kit.json` (kitlib.lock.kinds.with_repo); None: kit kinds only.
     mem_mb: the memory the run needs, in MB (the CLI's --mem); the record keeps need_mem_mb and
@@ -1679,6 +1684,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
                        **({"gate": True} if gate else {}),
                        **({"tree": tree} if tree else {}),
                        **({"branch": branch} if branch else {}),
+                       **({"gate_mode": gate_mode} if gate_mode else {}),
                        **({"resource": resource} if resource else {}),
                        **({"priority": priority} if priority else {}),
                        **({"within": wtext, "within_slots": {"cpu": wslots}} if wtext else {}))

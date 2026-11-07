@@ -422,6 +422,7 @@ class Flake(RerunCase):
         self.assertEqual(len(calls), 1, calls)
         self.assertIs(calls[0]['gate'], True)
         self.assertEqual(calls[0]['branch'], BRANCH)
+        self.assertEqual(calls[0]['gate_mode'], 'rerun')
         reds, reruns = self.loaded(tip)
         self.assertEqual([r['verdict'] for r in reruns], ['FLAKE'])
         self.assertEqual(reruns[0]['red'], reds[0]['hash'])

@@ -411,6 +411,15 @@ class DocsOnlyAndSmoke(fixtures.GateRepoCase):
         out = self.gate(wt, only=['suite'])
         self.assertEqual([r['name'] for r in out.results], ['suite'])
 
+    def test_the_lock_history_line_keeps_the_gate_mode(self):
+        """Each gate's lock run, and so its history line, names its gate_mode; --only is select."""
+        docs, _ = self.branch('docs', {'docs/a.md': 'words\n'})
+        code, _ = self.branch('code', {'a.py': 'x = 1\n'})
+        for wt, kw in ((docs, {}), (code, {}), (code, {'full': True}), (code, {'only': ['suite']})):
+            self.assertEqual(self.gate(wt, **kw).code, G.OK)
+        got = [d.get('gate_mode') for d in self.store.history_records()]
+        self.assertEqual(got, ['docs', 'select', 'full', 'select'])
+
     def test_a_docs_path_under_a_strict_path_is_not_docs_only(self):
         wt, _ = self.branch('strict', {'docs/a.md': 'words\n'})
         with mock.patch('kitlib.gate.reuse.STRICT_DEFAULTS', ('docs/*',)):

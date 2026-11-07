@@ -4,7 +4,8 @@ tree of HEAD when the work tree is clean, and none when it is not (uncommitted f
 commit's tree); a landing's is its merge commit's tree. The daily full run gates its worktree at
 the day's commit the same way, so its run has that commit's tree. The history line also keeps
 `gate` and `priority`, which the branch gate budget reads (kitlib.gate.budget): a branch gate's has
-gate and no priority, a landing's has priority "land"."""
+gate and no priority, a landing's has priority "land". A landing's also has gate_mode "merged",
+noted on the slot it holds."""
 import os
 
 from kitlib import gate as G
@@ -55,3 +56,11 @@ class GateTree(test_land.LandCase):
         got = [(d.get('gate'), d.get('priority')) for d in self.store.history_records()]
         self.assertEqual(got[0], (True, None))
         self.assertIn((True, 'land'), got[1:])
+
+    def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
+        _wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        got = [d.get('gate_mode') for d in self.store.history_records()
+               if d.get('priority') == 'land']
+        self.assertEqual(got, ['merged'])

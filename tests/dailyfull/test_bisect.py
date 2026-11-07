@@ -296,6 +296,9 @@ class TestsGreenAloneAtS(ProbeCase):
         kinds = self.probe_kinds()
         self.assertEqual(kinds[0], 'test')              # the failing tests alone at S
         self.assertEqual(kinds[1:], ['engine-test'] * len(found['probes']))
+        # the two daily runs, then every probe (the narrowed one and the whole steps): gate_mode
+        self.assertEqual([c.get('gate_mode') for c in self.book_calls],
+                         ['daily'] * 2 + ['bisect'] * len(kinds))
         self.assertEqual(found.get('mode'), B.NARROWED_GREEN)
         self.assertEqual(self.whole_runs(), 2 + len(found['probes']))
 

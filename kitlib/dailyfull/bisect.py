@@ -157,7 +157,8 @@ class Prober(object):
 
     def __init__(self, wt, red, kind, name, slug, log_dir, say, book_kw, git, plan, steps=None):
         self.wt, self.red, self.kind, self.name, self.slug = wt, list(red), kind, name, slug
-        self.log_dir, self.say, self.book_kw, self.git, self.plan = log_dir, say, book_kw, git, plan
+        self.log_dir, self.say, self.git, self.plan = log_dir, say, git, plan
+        self.book_kw = dict(book_kw or {}, gate_mode='bisect')     # every probe's gate_mode
         self.count = 0
         self.covers, self.mode = targets(self.red, steps)
 

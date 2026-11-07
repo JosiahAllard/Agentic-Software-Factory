@@ -583,6 +583,7 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     given, gets `windows`: the windows as dicts, None when nothing was watched.
     The lock run records the tree it tests (tested_tree; book's `tree`, Slot.note_tree for a held
     slot): a branch's HEAD tree, a landing's merge tree, the daily full run's commit's tree.
+    It records the gate's mode too, `book_kw`'s gate_mode (book's; Slot.note_tree for a held slot).
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
     in the store it books in), which counts the session's gates and takes this gate's turn in one
     step, so a burst books no more than the cap; once the booking holds, gatecap.gave_way names
@@ -608,7 +609,7 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     tree = tested_tree(root)
     if slot is not None:
         say('the gate runs in the slot the landing holds (run %s)' % slot.id)
-        slot.note_tree(tree)
+        slot.note_tree(tree, (book_kw or {}).get('gate_mode'))
         try:
             results = run_steps(slot.launcher, chosen, gate or cfg.section('gate'), ctx, log_dir,
                                 say, checks)
@@ -1017,7 +1018,11 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
         # run book through gated() without them, and a fully reused gate never gets here. Its
         # lock run's note names its tip and options (gatecap.queue_note): the gate queue's key.
-        noted = dict({'note': gatecap.queue_note(head, full, only, asked_base)}, **(book_kw or {}))
+        # Its gate_mode, on the lock run and its history line: --only and a partial --base count
+        # as select.
+        mode = 'docs' if docs else 'full' if full and not only else 'select'
+        noted = dict({'note': gatecap.queue_note(head, full, only, asked_base), 'gate_mode': mode},
+                     **(book_kw or {}))
         results, refused = gated(cfg, top, mb, changed, run, gate['kind'], name,
                                  slug or slug_of(branch or head[:10]), logs, say, noted,
                                  gate=gate, seen=watched, capped=True,
@@ -1221,8 +1226,11 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     run = _to_run(chosen, reused)
     results, watched = [], {}
     if run:
+        # Its gate_mode: every non-manual step with cmd is "merged"; full_cmd is "full".
+        mode = 'docs' if docs else 'full' if full else 'merged'
         results, refused = gated(cfg, tree, base, changed, run, gate['kind'], name, slug_of(slug),
-                                 logs, say, book_kw, merged=True, checks_rev=base, gate=gate,
+                                 logs, say, dict(book_kw or {}, gate_mode=mode), merged=True,
+                                 checks_rev=base, gate=gate,
                                  slot=slot, seen=watched)
         if refused is not None:
             return refused

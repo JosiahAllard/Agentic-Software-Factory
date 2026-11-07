@@ -851,7 +851,8 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     mine = {'branch': branch} if branch else {}
     out, refused = run_classes(
         gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
-        dict(book_kw or {}, **mine), red['tree'], top, classes, gate, ctx, logs, base, say,
+        dict(book_kw or {}, gate_mode='rerun', **mine), red['tree'], top, classes, gate, ctx,
+        logs, base, say,
         after=steps, checks=checks, timeout=timeout, scope=control_tree, each=each,
         code=lambda o: 0 if flaky(o) else 1)
     if refused is not None:

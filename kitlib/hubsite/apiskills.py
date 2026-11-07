@@ -29,7 +29,7 @@ that is not base_blob (the worker's check against main) makes the edit supersede
 GET skill_edits (ANY, status) lists the edits, GET skill_edits/{id} (ANY) gives {item, source}:
 source is {text, blob} at a superseded or failed edit's source_blob when kit_text reads it, else
 null. A
-submitted edit is a pending item of kind `skill_edit` ("Routes").
+submitted edit is a pending item of kind `skill_edit` ("Routes" in api).
 """
 from . import skilledits
 from .apibase import (

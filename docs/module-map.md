@@ -397,7 +397,7 @@ a case-blind file system) are ordinary files.
   as much as a top-level one.
 - `ratchets` hold every import that points up the layers or back against the order inside a
   layer (an order picked to leave the fewest back imports): one ratchet per package pair, goal 0,
-  ceiling the count of 2026-11-06. Today that is 61 pairs and 150 crossings (including
+  ceiling the count of 2026-11-06. Today that is 61 pairs and 151 crossings (including
   `pytests -> (root)` tree, 3). Breaking an edge lowers its ceiling; a new upward or cyclic
   import is refused, and a raise needs the owner ("Raises").
 - Regenerate with `module_map.py --baseline --map FILE` (a draft map) and read the counts back;

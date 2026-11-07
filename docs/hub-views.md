@@ -91,7 +91,7 @@ A question's context and its options' labels and descriptions show a named docum
 which links to the hub at `#doc=<id>` (the page opens that document's reader once the lists are read). The links are
 made as elements from the parsed URL or the encoded id, never from markup; everything else is a text node. A repo
 file path is a link to the repository's own host, `<web>/blob/<branch>/<path>` (the repos entry's `web` and `branch`,
-above), when the question's repo has them and the path has a `/`, one of the known extensions (`md`, `py`, `json`,
+docs/hub-records.md "repos/<name>"), when the question's repo has them and the path has a `/`, one of the known extensions (`md`, `py`, `json`,
 `html`, `css`, `js`, `txt`, `yml`, `yaml`, `toml`, `ps1`, `sh`), no empty, `.` or `..` part, and a first part that is a
 name in `top`; otherwise it stays text. The link text is the path as written. The hub serves no file by path. Known
 limits: the link is to the main branch, so a file that is not on it (a new file on an unlanded branch) is a 404 there,

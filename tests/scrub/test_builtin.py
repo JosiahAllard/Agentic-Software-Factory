@@ -30,7 +30,7 @@ ID_SHAPE_FOLDERS = (
     ('tools/hub.py', "the hub CLI's help and examples show question ids"),
     ('docs/hub-pm.md', "the hub's doc: question ids are its data"),
     ('docs/hub-push.md', "the hub's doc: question ids are its data"),
-    ('docs/hub-questions.md',"the hub's doc: question ids are its data"),
+    ('docs/hub-questions.md', "the hub's doc: question ids are its data"),
     ('docs/hub-skill-pages.md', "the hub's doc: question ids are its data"),
 ) + tuple((folder + '*', why) for folder, why in FIXTURE_FOLDERS)
 

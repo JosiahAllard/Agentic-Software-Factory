@@ -117,14 +117,14 @@ HAZARD_EXEMPT = {
     ('kitlib/guard/commands.py', '_sp_shell_text', 'Start-Process'): (2, GUARD_READS),
     ('kitlib/guard/rules.py', '<module>', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules.py', 'python_unread', 'Start-Process'): (1, GUARD_READS),
-    ('kitlib/guard/rules.py', 'plain_run', 'Start-Process'): (1, GUARD_READS),
-    ('kitlib/guard/rules.py', 'kit_script', 'Start-Process'): (1, GUARD_READS),
-    ('kitlib/guard/rules.py', '_tool_run', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/guard/rules_run.py', 'plain_run', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/guard/rules_run.py', 'kit_script', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/guard/rules_owner.py', '_tool_run', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/commands.py', 'run_dir', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/commands.py', 'bash_start', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules.py', 'shell_writes', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules.py', 'write_place', 'Start-Process'): (1, GUARD_READS),
-    ('kitlib/guard/rules.py', 'bare_wrapper', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/guard/rules_run.py', 'bare_wrapper', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/loadnode/box.py', 'serve', 'os.execvp'): (
         1, 'a load node\'s forced command (optional/loadnode/loadnode.py serve, run by sshd on a '
            'Linux node, never on Windows) replaces itself with receive-pack for a push, so the '

@@ -22,17 +22,22 @@ pass, in order:
      WAIT_S, or an owner or game hold, skips the gc to the next pass.
 
 It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S is a finding:
-named in the pass's note and pushed as the job event `findings` with their count. git's own gc may
+named in the pass's note and pushed as the job event `findings` with their count (see Pushes). git's own gc may
 still prune what it prunes.
 
 The recurrence check: an objects/maintenance.lock older than LOCK_AGE_S while no git process that
 could hold it is alive (lock_holders: a git whose command line names maintenance or gc, or whose
 command line cannot be read and which is still listed a moment later) is a stale lock. git then skips its maintenance silently for good,
 so every pass that sees one names it in the note and pushes the job event STALE_EVENT, detail
-its age in hours (`13h`), to the PM: ctx.event, which the hub's push worker sends as
+its age in hours (`13h`), to the PM (see Pushes): ctx.event, which the hub's push worker sends as
 `[hub push] job store-upkeep stale-lock detail:13h` (kitlib.hubsite.push PushWorker.job_event,
 text in push.JOB_EACH). A lock with such a git alive is named in the note and not pushed; a
 process listing that fails is pushed, the note saying the holders could not be listed.
+
+Pushes: made at the end of the pass, after the git steps, so the run and its note are recorded
+with them. An event is pushed only when its key (the count for findings; the lock being there for
+STALE_EVENT) differs from the one last pushed or that push is REPUSH_S (a day) old. The last ones are kept in STATE_FILE of the common dir, so a hub
+restart does not push them again.
 
 Outcomes (kitlib.hubsite.jobs): the note says what each step did; a pass that only found nothing
 to do is still a success (the commit graph is rewritten each time). A git step that fails, or a
@@ -46,6 +51,7 @@ or .idx-less pack, which a later pass's scan names. The other git children run t
 kitlib.git.cmd.call.
 """
 import glob
+import json
 import os
 import subprocess
 import tempfile
@@ -53,6 +59,7 @@ import time
 
 from kitlib import config as kconfig
 from kitlib import pmdata
+from kitlib.fs import replace as fsreplace
 from kitlib.config.types import ConfigError
 from kitlib.gate import land, runner
 from kitlib.git import cache, cmd
@@ -77,6 +84,8 @@ GC = ['-c', 'gc.writeCommitGraph=false', '-c', 'gc.packRefs=false',
       '-c', 'pack.threads=%d' % CORES, 'gc', '--quiet']
 NOT_NOW = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_RESERVED)
 STALE_EVENT = 'stale-lock'
+STATE_FILE = 'store-upkeep-pushed.json'     # in the common dir: {event: {detail, key, at}}
+REPUSH_S = 86400                    # an unchanged event is pushed again after this
 HOLDER_WORDS = frozenset(('maintenance', 'gc'))     # the git subcommands that take maintenance.lock
 
 
@@ -215,25 +224,29 @@ class StoreUpkeep(object):
             raise UpkeepFailed('the git common dir of %s: %s' % (self.root, why))
         now = self.clock()
         findings = scan(common, now)
+        pushes = {}                 # event -> (detail, key), handed to the PM at the pass's end
         if findings:
-            ctx.event('findings', str(len(findings)))
+            pushes['findings'] = (str(len(findings)),) * 2
         notes, errors = [], []
-        self._stale_lock(ctx, common, now, findings, notes)
-        r = _run(GRAPH, self.root, timeout=None)
-        if r.rc == 0:
-            notes.append('commit graph written')
-        else:
-            errors.append(_failed('commit-graph write', r))
-        if ctx.stop.is_set():
-            return jobs.Skip('; '.join(notes + errors + ['stopped before the gc']
-                                       + _finding_notes(findings)))
-        self._gc(common, notes, errors)
+        self._stale_lock(pushes, common, now, findings, notes)
+        try:                        # a step that raises still lets the pushes go out
+            r = _run(GRAPH, self.root, timeout=None)
+            if r.rc == 0:
+                notes.append('commit graph written')
+            else:
+                errors.append(_failed('commit-graph write', r))
+            if ctx.stop.is_set():
+                return jobs.Skip('; '.join(notes + errors + ['stopped before the gc']
+                                           + _finding_notes(findings)))
+            self._gc(common, notes, errors)
+        finally:
+            self._push(ctx, common, now, pushes)
         text = '; '.join(notes + errors + _finding_notes(findings))
         if errors:
             raise UpkeepFailed(text)
         return text
 
-    def _stale_lock(self, ctx, common, now, findings, notes):
+    def _stale_lock(self, pushes, common, now, findings, notes):
         """The recurrence check (module doc): a maintenance.lock older than LOCK_AGE_S with no git
         alive that may hold it is a finding and pushes STALE_EVENT; one with such a git alive is
         a note."""
@@ -252,7 +265,45 @@ class StoreUpkeep(object):
             return
         findings.append('stale %s, %s old, no git maintenance or gc alive%s: git skips its '
                         'maintenance while it is there' % (path, _span(age), unlisted))
-        ctx.event(STALE_EVENT, '%dh' % int(age // 3600))
+        pushes[STALE_EVENT] = ('%dh' % int(age // 3600), 'present')    # its age is no change
+
+    def _push(self, ctx, common, now, pushes):
+        """Hand the PM each of `pushes` ({event: (detail, key)}) only when its key differs from the
+        last one pushed or that push is REPUSH_S old (the key is the count for findings, and
+        'present' for the stale lock, whose detail, its age, changes every hour); the last pushes are kept in STATE_FILE of
+        the common dir (so a hub restart does not repeat them), written after ctx.event returns.
+        An event not in `pushes` is forgotten, so it pushes again when it comes back. A state
+        file that cannot be read counts as empty; one that cannot be written is ignored (the
+        worst case is one repeated push)."""
+        path = os.path.join(common, STATE_FILE)
+        try:
+            with open(path, encoding='utf-8') as f:
+                last = json.load(f)
+            if not isinstance(last, dict):
+                last = {}
+        except (OSError, ValueError):
+            last = {}
+        kept = {}
+        for event, (detail, key) in sorted(pushes.items()):
+            old = last.get(event)
+            if (isinstance(old, dict) and old.get('key') == key
+                    and isinstance(old.get('at'), (int, float)) and 0 <= now - old['at'] < REPUSH_S):
+                kept[event] = old
+                continue
+            ctx.event(event, detail)
+            kept[event] = {'detail': detail, 'key': key, 'at': now}
+        if kept == last:
+            return
+        tmp = '%s.%d.tmp' % (path, os.getpid())
+        try:
+            with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+                json.dump(kept, f)
+            fsreplace.replace(tmp, path)
+        except OSError:
+            try:
+                fsreplace.remove(tmp)
+            except OSError:
+                pass
 
     def _gc(self, common, notes, errors):
         r = _run(['count-objects', '-v'], self.root)

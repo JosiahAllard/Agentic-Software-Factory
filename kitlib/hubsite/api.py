@@ -4,9 +4,7 @@ hub site design, section 2 "HTTP API" and section 9).
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
              AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
-  Api(store, views=None, clock=None, session_keys=None, now=None, approval_key=None,
-      checkout=None, lock=None, repo_name=None, schedule_repos=None, tick_seen=None,
-      kit_key=None, kit_blob=None)
+  Api(store, views=None, clock=None, now=None, lock=None, config=None, **hooks)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
              via names the transport (web, desktop-mcp, cli, tunnel, ...); every write records
@@ -413,6 +411,7 @@ store's folder to the owner only.
 import collections
 import contextlib
 import contextvars
+import dataclasses
 import datetime
 import json
 import math
@@ -434,7 +433,7 @@ from .apibase import (  # noqa: F401 - re-exported: callers and tests read these
     BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
     NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
-    AGENT_FROM, AGENT_STORY_STATUSES, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
     _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via)
 
@@ -507,30 +506,31 @@ def launcher_keys():
     module loads), read now (inside sessions_once(), read once there). A launcher whose settings
     or that file cannot be read raises: the caller says so (Api.read_session_keys), never an
     empty set that reads as "no sessions"."""
+    return {k for k, _ in _launcher_entries()}
+
+
+def _launcher_entries():
+    """[(key, entry)] of sessions.json, read now (inside sessions_once(), read once there and
+    shared by launcher_keys and launcher_coordinators)."""
     memo = _ONCE.get()
     if memo is None:
-        return _read_launcher_keys()
-    if 'keys' not in memo:
+        return list(lstate.entries(lstate.read_sessions(lsettings.load())))
+    if 'entries' not in memo:
         try:
-            memo['keys'] = (frozenset(_read_launcher_keys()), None)
+            memo['entries'] = (list(lstate.entries(lstate.read_sessions(lsettings.load()))), None)
         except Exception as e:      # noqa: BLE001 - kept, and raised to each caller in the scope
-            memo['keys'] = (None, e)
-    keys, err = memo['keys']
+            memo['entries'] = (None, e)
+    got, err = memo['entries']
     if err is not None:
         raise err
-    return set(keys)
-
-
-def _read_launcher_keys():
-    return {k for k, _ in lstate.entries(lstate.read_sessions(lsettings.load()))}
+    return list(got)
 
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
     (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
-    return {k: e.get('repo') for k, e in lstate.entries(lstate.read_sessions(lsettings.load()))
-            if e.get('agent')}
+    return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 
 
 def _for(d, for_key):
@@ -586,28 +586,32 @@ class Api(object):
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
     the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
     `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
-    each supersede (default: launcher_coordinators; coordinator_keys)."""
+    each supersede (default: launcher_coordinators; coordinator_keys).
+    The hooks (session_keys, approval_key, checkout, repo_name, schedule_repos, tick_seen,
+    tick_state, kit_key, kit_blob, kit_text, coordinators) are the fields of an ApiConfig, given
+    as `config` or as keywords; a keyword overrides the config's field."""
 
-    def __init__(self, store, views=None, clock=None, session_keys=None, now=None,
-                 approval_key=None, checkout=None, lock=None, repo_name=None,
-                 schedule_repos=None, tick_seen=None, tick_state=None, kit_key=None,
-                 kit_blob=None, kit_text=None, coordinators=None):
+    def __init__(self, store, views=None, clock=None, now=None, lock=None, config=None, **hooks):
+        # the hooks are an ApiConfig's fields; given as keywords they override `config`'s, and a
+        # name that is not one is a TypeError, as for any unknown keyword
+        config = ApiConfig(**hooks) if config is None else dataclasses.replace(config, **hooks)
         self.store = store
-        self.coordinators = coordinators or launcher_coordinators
-        self.kit_text = kit_text or (lambda blob: None)
-        self.kit_key = kit_key or (lambda: '')
-        self.kit_blob = kit_blob or (lambda branch, path: None)
-        self.tick_state = tick_state or tick_run_state
-        self.schedule_repos = schedule_repos or launcher_checkouts
-        self.tick_seen = tick_seen or tick_last_seen
+        self.config = config
+        self.coordinators = config.coordinators or launcher_coordinators
+        self.kit_text = config.kit_text or (lambda blob: None)
+        self.kit_key = config.kit_key or (lambda: '')
+        self.kit_blob = config.kit_blob or (lambda branch, path: None)
+        self.tick_state = config.tick_state or tick_run_state
+        self.schedule_repos = config.schedule_repos or launcher_checkouts
+        self.tick_seen = config.tick_seen or tick_last_seen
         self.views = views
         self.lock = lock
         self.lock_poll_s = LOCK_POLL_S
         self.clock = clock or store.clock
-        self.approval_key = approval_key or (lambda: None)
-        self.checkout = checkout or (lambda repo: None)
-        self.repo_name = repo_name or (lambda repo: None)
-        self._session_keys = session_keys or launcher_keys
+        self.approval_key = config.approval_key or (lambda: None)
+        self.checkout = config.checkout or (lambda repo: None)
+        self.repo_name = config.repo_name or (lambda repo: None)
+        self._session_keys = config.session_keys or launcher_keys
         self._seen = {'waited': None, 'pulled': None}
         self._waits = {}            # one key per agent wait that is blocked right now
         self.push_status = None     # PushWorker.status, set by the worker ("Push status")
@@ -790,13 +794,24 @@ class Api(object):
             return {AGENT_FROM}, _reason(e)
 
     def kit_session_key(self):
-        """kit_key(): the kit coordinator's session key, '' when it fails or gives no string
-        ("Skill edits")."""
+        """The kit coordinator's session key ("Skill edits"): kit_key() gives the kit repository's
+        configured name, and the key is, by coordinator_keys' rule, a coordinator session of
+        sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
+        none. '' when kit_key fails or gives no string. Whether that session exists is for the
+        caller (the route checks session_keys, the push resolves it live). The first of
+        kit_session_keys()."""
+        return (self.kit_session_keys() or [''])[0]
+
+    def kit_session_keys(self):
+        """Every key kit_session_key may be, a session's key before the name, [] for none: the
+        push tries each for a live session."""
         try:
-            key = self.kit_key()
+            name = self.kit_key()
         except Exception:           # noqa: BLE001 - no kit coordinator known: the PM hears it
-            key = ''
-        return key if isinstance(key, str) else ''
+            name = ''
+        if not isinstance(name, str) or not name:
+            return []
+        return self._keys_named(name)[1:] + [name]
 
     def repo_key(self, repo):
         """The session key of the coordinator of the repository whose remote is the repo_id
@@ -815,7 +830,11 @@ class Api(object):
         sessions.json (coordinators()) whose `repo` is that repository's configured name, matched
         without case, so a coordinator keyed otherwise (the kit's `kit`) is one. [] when the
         repository has no name; only repo_key's when sessions.json cannot be read."""
-        name = self.repo_key(repo)
+        return self._keys_named(self.repo_key(repo))
+
+    def _keys_named(self, name):
+        """coordinator_keys' rule for a configured repository name: [name, then the coordinator
+        sessions whose `repo` is it], [] for no name."""
         if not name:
             return []
         out = [name]

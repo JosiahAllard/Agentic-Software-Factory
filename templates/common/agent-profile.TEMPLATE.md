@@ -42,7 +42,7 @@ is taken and released. Never pre-empt a holder.
   repository are deleted by the owner only.
 
 ## Risk map
-High-risk paths (a change there gets a stronger worker and a fresh reviewer) and low-risk ones.
+High-risk paths (a change there gets a stronger worker, except a small known-cause fix, and a fresh reviewer) and low-risk ones.
 
 ## Moves and renames
 How to move or rename without changing behaviour.

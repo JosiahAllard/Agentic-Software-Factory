@@ -18,9 +18,8 @@ import collections
 import contextlib
 import os
 import re
-import tempfile
 
-from kitlib.fs import replace as fsreplace
+from kitlib.fs import atomic
 from kitlib.fs import writelock
 from kitlib.ledger.errors import Refused, Usage
 
@@ -47,16 +46,7 @@ def read_raw(path):
 
 
 def write_atomic(path, text):
-    folder = os.path.dirname(os.path.abspath(path))
-    fd, tmp = tempfile.mkstemp(dir=folder, prefix='.pending-')
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as f:
-            f.write(text)
-        fsreplace.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+    atomic.write_text(path, text, newline='')
 
 
 @contextlib.contextmanager

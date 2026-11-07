@@ -6,8 +6,8 @@
   the pending-steps file).
 - replace: os.replace retried while Windows refuses it because a reader or a scanner has the
   target open.
-- atomic: write_text, a whole text file written through a unique temp file beside it, then replace,
-  the temp file removed on error.
+- atomic: write_text and write_bytes, a whole file written through a unique temp file beside it
+  (optionally fsynced), then replace, the temp file removed on error.
 - rmtree: rmtree_force, shutil.rmtree that also removes read-only files (git's objects), and
   plain_dir, whether a path is a folder itself (not a link or junction) before a sweep removes it.
 

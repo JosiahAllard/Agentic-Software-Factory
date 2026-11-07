@@ -292,9 +292,11 @@ def _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git):
     if not conf or probes < 1 or not red:
         return []
     prober = B.Prober(s['worktree'], red, s['kind'], runner.repo_name(cfg, main), SLUG, log_dir,
-                      say, kw, git, plan)
+                      say, kw, git, plan, steps=result['steps'])
     found = B.bisect(result, [r for r in earlier if r.get('dir') != log_dir], prober,
                      s['worktree'], git, probes)
+    if found['probes']:
+        found['mode'] = prober.mode
     lines = ['daily: bisect: %s (%d probe(s))' % (found['verdict'], len(found['probes']))]
     if found.get('back'):
         lines.append('daily: bisect: %s' % found['back'])

@@ -983,8 +983,9 @@ def _running(job, targets):
 class Launcher:
     """What slot() yields: starts commands in the run's job. start(cmd, **popen_kw) ->
     Popen (env defaults to the run's: MACHINE_LOCK_RUN, the cpuset, the gpus); run(cmd, **kw) ->
-    its exit code, waited for with the run's use sampled and a stop honoured; wait(p) -> exit
-    code; pids(); usage() -> the run's use so far; kill() ends every process in the job but a
+    its exit code, waited for with the run's use sampled and a stop honoured; wait(p, timeout)
+    -> exit code, None when p ran past timeout seconds and its tree was ended (Slot.wait);
+    pids(); usage() -> the run's use so far; kill() ends every process in the job but a
     build daemon Slot.end_tree spares (one another job's client uses or may use), with its tree.
     id, cores (cpu slots), gpus (gpu slots), mask (the global thread mask, or None) and env read
     the run."""
@@ -1001,8 +1002,8 @@ class Launcher:
     def start(self, cmd, **kw):
         return self._slot.start(cmd, **kw)
 
-    def wait(self, p):
-        return self._slot.wait(p)[0]
+    def wait(self, p, timeout=None):
+        return self._slot.wait(p, timeout)[0]
 
     def run(self, cmd, **kw):
         return self.wait(self.start(cmd, **kw))
@@ -1200,11 +1201,15 @@ class Slot:
     def stop_asked(self):
         return self.run is not None and self.run.stop_asked()
 
-    def wait(self, p):
+    def wait(self, p, timeout=None):
         """(exit code, how) of child p: its use sampled every settings.child_poll_s into the
         record; a stop ends the job's tree ("cancelled", 1; end_tree); past the kind's warn_min a
-        warning, never a kill. A stop then names each process descended from p that is outside
-        the job and still alive (escaped, escape_lines): it is not ended."""
+        warning, never a kill. `timeout` (seconds from this call; None: none): a child still
+        running past it has the job's tree ended the same way, (None, "timeout"); self.code is
+        then 1. A stop and the timeout are both seen on this thread, between two polls, a stop
+        first, so the tree is ended once whichever comes. Either then names each process
+        descended from p that is outside the job and still alive (escaped, escape_lines): it is
+        not ended."""
         t0, warned = time.monotonic(), False
         while True:
             try:
@@ -1217,17 +1222,19 @@ class Slot:
                     self.run.save(**self.usage.fields())
             if self.offer is not None:
                 self.serve_give_back()
-            if self.stop_asked():
-                # Read again for queue_read_s: a stop file being written (or swapped in) can
-                # refuse its first read, and its why is the only way to tell the lock's stop.
-                req, _there = read_record(self.store.path("active", self.id + ".stop"),
-                                          self.store.settings.queue_read_s)
-                if isinstance(req, dict) and req.get("by") == stale.BY and req.get("why"):
-                    self.store.say("run %s was ended by the lock: %s; its process tree is ended"
-                                   % (self.id, req["why"]))
-                else:
-                    self.store.say("run %s was cancelled by stop; its process tree is ended"
-                                   % self.id)
+            stop = self.stop_asked()
+            if stop or (timeout is not None and time.monotonic() - t0 >= timeout):
+                if stop:
+                    # Read again for queue_read_s: a stop file being written (or swapped in) can
+                    # refuse its first read, and its why is the only way to tell the lock's stop.
+                    req, _there = read_record(self.store.path("active", self.id + ".stop"),
+                                              self.store.settings.queue_read_s)
+                    if isinstance(req, dict) and req.get("by") == stale.BY and req.get("why"):
+                        self.store.say("run %s was ended by the lock: %s; its process tree is "
+                                       "ended" % (self.id, req["why"]))
+                    else:
+                        self.store.say("run %s was cancelled by stop; its process tree is ended"
+                                       % self.id)
                 found = escaped(p.pid, self.job.contains)   # read while their parents live
                 self.end_tree()
                 try:                        # the command itself may be a daemon it spared
@@ -1236,7 +1243,7 @@ class Slot:
                     pass
                 for line in escape_lines(self.id, found):
                     self.store.say(line)
-                code, how = 1, "cancelled"
+                code, how = (1, "cancelled") if stop else (None, "timeout")
                 break
             if not warned and time.monotonic() - t0 > self.warn_s:
                 self.store.say("WARNING: run %s (%s) has held its lock past %d min, the guide for "
@@ -1244,7 +1251,7 @@ class Slot:
                                % (self.id, self.run.rec["kind"] if self.run else "nested",
                                   self.warn_s // 60))
                 warned = True
-        self.code, self.how = code, how
+        self.code, self.how = 1 if code is None else code, how
         if self.offer is not None:
             remove(self.offer)
             self.offer = None

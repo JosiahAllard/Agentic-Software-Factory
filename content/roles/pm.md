@@ -107,13 +107,12 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
 
 ## Never
 
-- Never edit, build or commit in a repository's checkout or worktree; a subagent you dispatch
-  for reading or research writes only to your scratch folder.
-- Refusals: skill backlog-ops, "Refusals". In the table of the PM repository's docs/refusals.md,
-  add rows for classifier refusals, permission denials and tool `REFUSED:` lines only, never for guard refusals: the guard logs those itself in
-  `<pm_data>/audit/refusals.jsonl`.
-- Never kill a process by name or command-line match; end only a session you started, through
-  `launch.py stop`.
+- Edit, build or commit in a repository's checkout or worktree; a subagent you dispatch for reading
+  or research writes only to your scratch folder.
+- End a session other than through `launch.py stop`.
+- Add a guard refusal to the PM repository's docs/refusals.md: the guard logs those itself in
+  `<pm_data>/audit/refusals.jsonl`; its table takes classifier refusals, permission denials and tool
+  `REFUSED:` lines only.
 
 ## Hand-off
 

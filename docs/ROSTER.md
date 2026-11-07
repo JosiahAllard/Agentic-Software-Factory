@@ -21,7 +21,7 @@ render also rewrites that role's agent file on every host. `python tools/render_
 `python tools/agent_roster.py`, which checks this file alone) lists any disagreement. `-` = no
 effort key. Never `fable` unless the owner asks; override a dispatch only upward, and never the
 lander's. The per-dispatch rules have one home, content/skills/coordinator-dispatch/roster.md,
-"Choosing", written in tiers for every host: which reviews are raised to the strong tier (from the
+"Tier rules", written in tiers for every host: which reviews are raised to the strong tier (from the
 review pack's printed risk groups and the strict landing paths), and the host's built-in agent
 types (on Claude `general-purpose`, `Explore`, `Plan`), which this table cannot pin, on the
 standard tier (Claude: `model: sonnet`).
@@ -29,9 +29,9 @@ standard tier (Claude: `model: sonnet`).
 <!-- rendered: roles -->
 | role | tier | effort | use for |
 |---|---|---|---|
-| analyst | light | high | The read type - branch review (skill specialty-review), research (skill specialty-research) and art critique (skill specialty-art-critique); builds and edits nothing. Raised per dispatch only by the "Reviewer model" rule (strong tier), the research rule (standard tier) and the art-critic rule (strong tier) in the dispatch skill's roster file. |
+| analyst | light | high | The read type - design and branch review (skill specialty-review), research (skill specialty-research) and art critique (skill specialty-art-critique); builds and edits nothing. Raised per dispatch only by the "Reviewer model" rule (strong tier), the research rule (standard tier) and the art-critic rule (strong tier) in the dispatch skill's roster file. |
 | consultant | deep | high | Own long-lived launched session per repository (never dispatched; 1M via launcher). Answers engineering questions from coordinators and workers; never edits, lands or dispatches builds; idle until asked. |
-| coordinator | strong | medium | Main session, never a subagent. Splits work, dispatches agents, reviews branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code. |
+| coordinator | strong | medium | Main session, never a subagent. Splits work, dispatches agents, reviews designs and branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code. |
 | deep-worker | deep | xhigh | Own launched session (never dispatched; 1M via launcher). Root cause or concurrency work senior-worker failed at or plainly cannot do; never builds or plans. |
 | docs-writer | standard | medium | The docs type - records and specs (skill specialty-docs). Docs only. |
 | helper | light | medium | Bulk menial reads and mechanical bulk writes, dispatched by a builder into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story. |

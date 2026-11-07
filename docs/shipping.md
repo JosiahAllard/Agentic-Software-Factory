@@ -72,7 +72,7 @@ than the baseline fails, a file with no baseline fails on its first hit, and few
   `installer/new-repo.ps1`) writes into a repository that asks for it (docs/install.md
   "Committed setup (--repo)").
   `templates/common/agent-profile.TEMPLATE.md` and `templates/common/coordinator-profile.TEMPLATE.md`
-  are what the coordinator drafts a repository's two profiles from (hosts/claude/shell/agents/coordinator.md, "On start");
+  are what the coordinator drafts a repository's two profiles from (hosts/claude/shell/agents/coordinator.md, "The owner");
   their headings are the ones the agents read, and `tests/templates` checks them.
 - `templates/stacks/{dotnet,godot,java,python}`: `stack.json` (build and test commands,
   gitignore, gitattributes; `new-repo.ps1 -Stack` applies the two lists), `tools/gate.json` (a `"gate"` section of `.kit.json`; point to it

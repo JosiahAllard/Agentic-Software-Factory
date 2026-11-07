@@ -7,7 +7,7 @@ Engineering questions go from coordinators and workers to the repository's consu
 - Realism and game feel: what a player or bot may see or do, timings, detection risk.
 - Security: permissions, settings, the classifier, credentials, hooks that guard owner files.
 - Money and accounts: purchases, cloud credit, which game accounts are used, bans.
-- Priority and pre-empts: one owner entry per change.
+- Priority 1: one owner entry per change. A pre-emption is the PM's decision, reported to the owner afterwards.
 - Go-live and live-client runs, and removals of owner files.
 - Anything the owner has flagged for review (see below).
 

@@ -770,7 +770,7 @@ ul.hist .sch-line{display:block}
       el("h2", {text: a.role || "(no description)"}), kv("Model", a.model || "inherit"), kv("Effort", a.effort || "default"));
   }
 
-  // Landings: the event tools/land.py posts for each branch it landed (docs/action-hub.md "landings/L-NNN"), as one
+  // Landings: the event tools/land.py posts for each branch it landed (docs/hub-approvals.md "landings/L-NNN"), as one
   // card per repository and one line per landing, newest first, the latest LANDINGS_SHOWN (api.FEED_MAX). A line opens
   // in place to its gate summary, tip and new main, and the event as it was posted. The filters (state.lf) are the
   // page's own and start fresh each time the section is shown.
@@ -892,7 +892,7 @@ ul.hist .sch-line{display:block}
       if (now) { now.textContent = res.text != null ? res.text : "Not read: " + res.err + "."; now.classList.toggle("gone", res.text == null); }
     });
   }
-  // Skill edits (docs/action-hub.md "skill_edits/E-NNN"): the owner's new text for a skill's source, which an agent
+  // Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"): the owner's new text for a skill's source, which an agent
   // commits; the page writes only the edit, never a file. An open editor is state.skEdit's {id, version, text, status,
   // node}, keyed by the skill: id is null for a new edit, text null until the source is read, and the card is built once
   // so a redraw never loses what is typed.
@@ -1773,7 +1773,7 @@ ul.hist .sch-line{display:block}
     return el("article", {class: "q" + (live ? "" : " logged") + (st.urgent && live ? " urgent" : ""), id: "story-" + st.id}, ...parts);
   }
 
-  // ---- The record page: one backlog record, each section edited through the store (docs/action-hub.md "The record page").
+  // ---- The record page: one backlog record, each section edited through the store (docs/hub-views.md "The record page").
   // state.rec is {repo, id} (id null: a blank record); recView is the page drawn for it, kept across redraws.
   const HOLD = ["blocked_on", "owner_ask", "hold_ruling", "q"];
   let recView = null;
@@ -2297,7 +2297,7 @@ ul.hist .sch-line{display:block}
   }
 
   // ---- Findings: the maintenance lint's last findings (docs/maint-lint.md), each with what can be done about it
-  // (docs/action-hub.md "finding_marks/<fingerprint>"). They are not in the snapshot: GET /findings (the unmarked ones,
+  // (docs/hub-records.md "finding_marks/<fingerprint>"). They are not in the snapshot: GET /findings (the unmarked ones,
   // with each repo's last run) and GET /finding_marks (the marked ones, which stay listed with their mark) are read each
   // time the section is shown and after each mark. A target or fix is shown as the server gives it: the server cuts its
   // paths for every caller but the local owner, and the page never puts a path together itself.
@@ -2629,7 +2629,7 @@ ul.hist .sch-line{display:block}
     pickDetail(at);
   }
 
-  // ---- Schedule: the machine lock as the owner reads it (docs/action-hub.md "Schedule"). It draws from the one lock
+  // ---- Schedule: the machine lock as the owner reads it (docs/hub-using.md "Using the hub"). It draws from the one lock
   // view `mach` holds (the watcher above keeps it current) and changes the lock only through the owner routes /lock/...,
   // whose answer carries the lock's view after the change. Now: what runs, what waits, today's holds, and a History of
   // finished runs with the run stats. Week: the half-hour grid, where two clicks pick a window to reserve. Holds: every
@@ -3095,7 +3095,7 @@ ul.hist .sch-line{display:block}
     state.sch.tab = t.dataset.sc; state.sch.confirm = null; state.sel = null; render();
   });
 
-  // ---- A pending approval (docs/action-hub.md "approvals/A-NNN"): the change an agent asks to make, as the diff the
+  // ---- A pending approval (docs/hub-approvals.md "approvals/A-NNN"): the change an agent asks to make, as the diff the
   // server stored, or for kind "op" the one run of a delegated operation it asks for: the operation, what it does and the
   // exact line it runs, `run D-nnn` and then one NAME=VALUE a line, with no base commit and no diff (docs/delegations.md
   // "Hub approvals"); its `what` is the agent's note, which no signature covers, and is labelled so; and the owner's Approve

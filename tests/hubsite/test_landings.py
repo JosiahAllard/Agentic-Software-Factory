@@ -1,4 +1,4 @@
-"""kitlib.hubsite.landings and the api's landings routes (docs/action-hub.md "landings/L-NNN"):
+"""kitlib.hubsite.landings and the api's landings routes (docs/hub-approvals.md "landings/L-NNN"):
 an event is the land ledger line's fields and the extras, posted best-effort; the hub keeps it, a
 post it does not take is one WARNING and never an exception."""
 import json

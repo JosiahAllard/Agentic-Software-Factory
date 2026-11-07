@@ -22,7 +22,7 @@ when it refuses the run for another reason. Ctrl+C and other `BaseException`s ar
 The run comes from the auto-tasks tick (`tools/auto_tasks.py`): its task `maint-lint`
 (`kitlib/autotasks/tick.py` `TASKS`) runs `tools/maint_lint.py -C <main checkout>` when the
 owner's hub schedule for task `maint-lint` is due (cadence `weekly`, its days and time;
-docs/action-hub.md "schedules/<task>-<repo>").
+docs/hub-records.md "schedules/<task>-<repo>").
 
 A plain run holds the machine lock's `maint-lint` kind (`kitlib/lock/kinds.json`: 1 cpu slot, no
 gpu) for the whole run (`kitlib/maintlint/slot.py`, through `kitlib.lock.run.book`). It waits at
@@ -235,7 +235,7 @@ be opened, no `pm_data`, no ledger configured, a hub that cannot be asked, or a 
 After it writes both files, and outside the lock slot, a plain run publishes the page on the
 Action Hub (`kitlib/maintlint/publish.py`) as page `maint-lint-<repo>`, one per repository and
 written over by each run, with `from` `maint-lint` and the agent token; a scheduled run has no hub
-session key and needs none (docs/action-hub.md "pages/<id> and page_html/<id>"). Over a page
+session key and needs none (docs/hub-skill-pages.md "pages/<id> and page_html/<id>"). Over a page
 already there it sends that card's version as `if_version`. The page is judged by
 `kitlib.hubsite.pagecheck.check` before it is sent. It prints `PUBLISHED maint-lint-<repo> v<n>`;
 a page that was not sent (the page check refuses it, the hub is not running or cannot be reached,

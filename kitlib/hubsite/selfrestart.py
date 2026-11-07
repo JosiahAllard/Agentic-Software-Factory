@@ -1,5 +1,5 @@
 """A running hub server that restarts itself through its scheduled task once newer hub code has
-landed (docs/action-hub.md "Stale code"). serve.Hub._watch_code takes serve.code_stamp at most
+landed (docs/hub-serving.md "Stale code"). serve.Hub._watch_code takes serve.code_stamp at most
 every serve.CODE_LOOK_S and hands each stamp to its Watcher's look(); the Watcher says when the
 stale warning (codestale) shows, and starts the restart.
 

@@ -19,7 +19,7 @@ ALLOWED = frozenset({
     'kitlib/gate/detect.py',
     'kitlib/guard/context.py',
     'kitlib/guard/place.py',
-    'kitlib/guard/rules.py',
+    'kitlib/guard/rules_run.py',
     'kitlib/host/hookmain.py',
     'kitlib/launcher/host.py',
     'kitlib/ledger/safepath.py',

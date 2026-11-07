@@ -369,10 +369,10 @@ The PC's browser can be made strong from the Access login (the owner's choice):
 The routes of role `approver` are POST `/api/v1/approvals/{id}/decide`
 (`kitlib.hubsite.api.ROUTES`), the owner's Approve or Deny of a pending approval, which the server
 signs with the approval key on an approve; and, by the owner's decision, the machine lock's hold
-writes and its division (docs/action-hub.md "Machine lock routes"). The page's Approvals card
+writes and its division (docs/hub-views.md "Machine lock routes"). The page's Approvals card
 (`kitlib/hubsite/web/index.html`, `approvalCard`) enables its Approve and Deny only when GET
 `/api/v1/snapshot` says `strong: true`, which it says only to the strong owner; a refusal is shown
-in the server's words (docs/action-hub.md "approvals/A-NNN").
+in the server's words (docs/hub-approvals.md "approvals/A-NNN").
 
 The machine lock's other writes (end a run, move one to the top, game mode, the games list) are of
 role `lock-write` (`kitlib.hubsite.api.LOCK_WRITE`): the owner on the PC's listener, and through

@@ -119,7 +119,7 @@ Exit codes: 0 the command ran and exited 0, or the request was added; 1 refused,
 
 ## Hub approvals
 
-The owner can approve one run of an operation on the hub, as a card that shows the operation, what it does and its exact run line (docs/action-hub.md "approvals/A-NNN", the op kind). Logic: `kitlib/delegations/run.py` (`request`, `approval_scope`, `approval_order`, `consume_approval`, `_claim`), `kitlib/delegations/place.py` and `kitlib/hubsite/approvals.py`; tests `tests/delegations/test_run.py` (`HubApproval`, `Request`), `tests/delegations/test_place.py` and `tests/hubsite/test_approvals_op.py`.
+The owner can approve one run of an operation on the hub, as a card that shows the operation, what it does and its exact run line (docs/hub-approvals.md "approvals/A-NNN", the op kind). Logic: `kitlib/delegations/run.py` (`request`, `approval_scope`, `approval_order`, `consume_approval`, `_claim`), `kitlib/delegations/place.py` and `kitlib/hubsite/approvals.py`; tests `tests/delegations/test_run.py` (`HubApproval`, `Request`), `tests/delegations/test_place.py` and `tests/hubsite/test_approvals_op.py`.
 
 An agent asks with `delegated.py request D-nnn [--arg NAME=VALUE]... --title T [--reason R]`. It checks the arguments, the program and the scope below as `run` does, then posts the request with the run line and prints its id. Nothing is asked when a check fails.
 

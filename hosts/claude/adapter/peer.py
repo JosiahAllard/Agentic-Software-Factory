@@ -1,4 +1,4 @@
-"""Claude Code's delivery of hub push notifications (docs/action-hub.md "Push notifications").
+"""Claude Code's delivery of hub push notifications (docs/hub-push.md "Push notifications").
 
 kitlib.hubsite.push decides what to send and when; this module sends it. Every live Claude Code
 session publishes a registry record, <config folder>/sessions/<pid>.json (kitlib.launcher.pipes),

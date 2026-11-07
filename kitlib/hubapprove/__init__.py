@@ -1,5 +1,5 @@
 """An agent's request for the owner's approval of a change, built from a git checkout
-(docs/action-hub.md "approvals/A-NNN"): what `tools/hub.py approvals add` and the hub MCP tool
+(docs/hub-approvals.md "approvals/A-NNN"): what `tools/hub.py approvals add` and the hub MCP tool
 hub_approval_request post.
 
 build() reads each proposed file from a content file of its own, byte for byte (UTF-8, no

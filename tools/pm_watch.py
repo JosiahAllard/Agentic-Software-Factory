@@ -13,7 +13,7 @@ Events:
   RESET account N               the weekly window reset (re-place coordinators, favour the sooner reset)
   BGFAIL run <id> <reason>      a machine_lock background run ended failed (alerts/<id>.json)
   LOCKNOTICE <id> <title>       a new lock-window notice (--notice-dir); the hub server lists it
-                                (docs/action-hub.md "Lock-window notices")
+                                (docs/hub-records.md "Lock-window notices")
   IDLE <name> <N>m since <iso>  a session in sessions.json (named, not autostart=false) has its own
                                 main and subagent transcripts all older than --idle-minutes, found by
                                 the custom-title record; once per quiet spell

@@ -600,7 +600,7 @@ class ServePriorityCase(CliCase):
 
 class PushCase(CliCase):
     """serve hands the server the host's push delivery and the launcher's state folder
-    (docs/action-hub.md "Push notifications"); a host stands in, so nothing is ever sent."""
+    (docs/hub-push.md "Push notifications"); a host stands in, so nothing is ever sent."""
 
     def host(self, adapter):
         fake = mock.Mock()

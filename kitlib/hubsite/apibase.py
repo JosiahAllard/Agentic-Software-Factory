@@ -1,8 +1,9 @@
 """kitlib.hubsite.apibase: what the api's handlers share: the role and status constants, Route and
-Request, the error body, and the readers of a request's body and query (the api module docstring
+Request, the error body, the readers of a request's body and query, and ApiConfig (the api module docstring
 has the rules; kitlib.hubsite.api re-exports every name here, so a caller keeps importing it
 from there)."""
 import collections
+import dataclasses
 import datetime
 import re
 
@@ -178,3 +179,20 @@ def _when(text, field):
 
 def _via(req):
     return req.via or 'api'
+
+
+@dataclasses.dataclass(frozen=True)
+class ApiConfig(object):
+    """The hooks an Api reads from this machine, each a function (or None, which keeps the
+    Api's own default; the Api class docstring says what each one gives and its default)."""
+    session_keys: object = None
+    approval_key: object = None
+    checkout: object = None
+    repo_name: object = None
+    schedule_repos: object = None
+    tick_seen: object = None
+    tick_state: object = None
+    kit_key: object = None
+    kit_blob: object = None
+    kit_text: object = None
+    coordinators: object = None

@@ -24,7 +24,9 @@ ID = 'flaky_mod.Case.test_flaky'
 # test_flaky fails when the file FLAKY_STATE names says `red`, or says `once` (it then says
 # `done`, so the next run passes), or when the tree it runs in has no MARK (the base, in the
 # test that commits flaky_mod.py on main). FLAKY_STATE saying `import` breaks the module's import.
+# test_flaky hangs in the tree the file FLAKY_HANG names says: `tip` (MARK) or `base` (no MARK).
 FLAKY = '''import os
+import time
 import unittest
 
 
@@ -36,12 +38,23 @@ def state():
         return ''
 
 
+def hangs():
+    try:
+        with open(os.environ['FLAKY_HANG'], encoding='utf-8') as f:
+            where = f.read().strip()
+    except (KeyError, OSError):
+        return False
+    return where == ('tip' if os.path.exists('MARK') else 'base')
+
+
 if state() == 'import':
     raise ImportError('flaky_mod is told not to import')
 
 
 class Case(unittest.TestCase):
     def test_flaky(self):
+        if hangs():
+            time.sleep(120)
         now = state()
         if now == 'once':
             with open(os.environ['FLAKY_STATE'], 'w', encoding='utf-8') as f:
@@ -286,6 +299,13 @@ class RerunCase(test_land.LandCase):
     def loaded(self, tip):
         return rerun.load(self.repo.root, tip)
 
+    def hang(self, where):
+        """From now on test_flaky hangs at the `tip` or at the `base`."""
+        path = os.path.join(self.tmp, 'hang')
+        self.env['FLAKY_HANG'] = path
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(where)
+
 
 class RedRun(RerunCase):
     def test_a_red_full_run_records_its_failing_ids_and_the_steps_it_never_reached(self):
@@ -359,10 +379,10 @@ class Stopped(RerunCase):
         self.red(wt)
         real, real_steps, started, ran = rerun._start, runner.run_steps, [], []
 
-        def start(launcher, argv, cwd, env, log):
+        def start(launcher, argv, cwd, env, log, timeout=None):
             started.append(log)
             self.ask_stop()
-            return real(launcher, argv, cwd, env, log)
+            return real(launcher, argv, cwd, env, log, timeout)
 
         def run_steps(*args, **kw):
             ran.extend(real_steps(*args, **kw))
@@ -434,6 +454,25 @@ class Flake(RerunCase):
         self.assertTrue(any('(also red at base)' in s for s in out.said), out.said)
         self.assertEqual(self.loaded(tip)[1][0]['classes'][0]['control'], 'red')
 
+    def test_a_control_past_the_time_limit_is_timed_out_not_red(self):
+        self.repo.write('flaky_mod.py', FLAKY)          # on main, with no MARK: it hangs there
+        self.main = self.repo.commit('flaky on main', 'flaky_mod.py')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt, tip = self.work('once')
+        self.red(wt)
+        self.hang('base')
+        with mock.patch.object(rerun, 'class_timeout', lambda *args: 30):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+        said = [s for s in out.said if 'control at the base' in s]
+        self.assertEqual(len(said), 1, out.said)
+        self.assertIn(': timed out (still running after 30 s; inconclusive)', said[0])
+        self.assertNotIn('also red at base', '\n'.join(out.lines + out.said))
+        cls = self.loaded(tip)[1][0]['classes'][0]
+        self.assertEqual((cls['tip'], cls['control']), ('pass', rerun.TIMED_OUT_CONTROL))
+        with open(cls['control_log'], encoding='utf-8') as f:
+            self.assertIn(rerun.TIMED_OUT, f.read())
+
     def test_a_tampered_record_refuses_the_landing(self):
         wt, tip = self.work('once')
         self.red(wt)
@@ -489,6 +528,23 @@ class Real(RerunCase):
         self.assertNotIn('add FLAKE', '\n'.join(out.lines))
         self.assertEqual([r['verdict'] for r in self.loaded(tip)[1]], ['REAL'])
         self.assert_never_lands(tip)
+
+    def test_a_tip_class_past_the_time_limit_is_said_timed_out_and_is_real(self):
+        wt, tip = self.work('once')
+        self.red(wt)
+        self.hang('tip')
+        with mock.patch.object(rerun, 'class_timeout', lambda *args: 5):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.FAILED, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN REAL'), out.lines)
+        said = [s for s in out.said if 'at the tip' in s]
+        self.assertEqual(len(said), 1, out.said)
+        self.assertTrue(said[0].startswith('TIMED OUT flaky_mod.Case at the tip (still running '
+                                           'after 5 s, so it does not pass);'), said)
+        cls = self.loaded(tip)[1][0]['classes'][0]
+        self.assertEqual(cls['tip'], 'fail')
+        with open(cls['log'], encoding='utf-8') as f:
+            self.assertIn(rerun.TIMED_OUT, f.read())
 
     def test_two_red_runs_of_one_test_are_real_and_never_land(self):
         wt, tip = self.work('red')

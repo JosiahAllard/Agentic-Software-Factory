@@ -125,6 +125,24 @@ class ModuleTest(unittest.TestCase):
                              ('POST', BASE + '/questions/a/b/answer')):
             self.assertIsNone(api.match(method, path), (method, path))
 
+    def test_api_config_and_keywords_set_the_same_hooks(self):
+        store = mock.Mock()
+        mine = lambda repo: 'root'      # noqa: E731
+        other = lambda repo: 'other'    # noqa: E731
+        by_config = api.Api(store, clock=str, config=api.ApiConfig(checkout=mine))
+        by_keyword = api.Api(store, clock=str, checkout=mine)
+        self.assertIs(by_config.checkout, mine)
+        self.assertIs(by_keyword.checkout, mine)
+        # a keyword overrides the config's field; the other fields keep their defaults
+        both = api.Api(store, clock=str, config=api.ApiConfig(checkout=mine), checkout=other)
+        self.assertIs(both.checkout, other)
+        self.assertIsNone(both.repo_name('r'))
+        self.assertIs(both.schedule_repos, api.launcher_checkouts)
+        with self.assertRaises(TypeError):
+            api.Api(store, clock=str, no_such_hook=1)
+        with self.assertRaises(TypeError):
+            api.Api(store, clock=str, config=api.ApiConfig(), no_such_hook=1)
+
     def test_no_relay_route_yet(self):
         for route in api.ROUTES:
             self.assertNotIn('relay', route.pattern)

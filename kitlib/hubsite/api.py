@@ -4,9 +4,7 @@ hub site design, section 2 "HTTP API" and section 9).
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
              AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
-  Api(store, views=None, clock=None, session_keys=None, now=None, approval_key=None,
-      checkout=None, lock=None, repo_name=None, schedule_repos=None, tick_seen=None,
-      kit_key=None, kit_blob=None)
+  Api(store, views=None, clock=None, now=None, lock=None, config=None, **hooks)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
              via names the transport (web, desktop-mcp, cli, tunnel, ...); every write records
@@ -413,6 +411,7 @@ store's folder to the owner only.
 import collections
 import contextlib
 import contextvars
+import dataclasses
 import datetime
 import json
 import math
@@ -434,7 +433,7 @@ from .apibase import (  # noqa: F401 - re-exported: callers and tests read these
     BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
     NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
-    AGENT_FROM, AGENT_STORY_STATUSES, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
     _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via)
 
@@ -587,28 +586,32 @@ class Api(object):
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
     the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
     `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
-    each supersede (default: launcher_coordinators; coordinator_keys)."""
+    each supersede (default: launcher_coordinators; coordinator_keys).
+    The hooks (session_keys, approval_key, checkout, repo_name, schedule_repos, tick_seen,
+    tick_state, kit_key, kit_blob, kit_text, coordinators) are the fields of an ApiConfig, given
+    as `config` or as keywords; a keyword overrides the config's field."""
 
-    def __init__(self, store, views=None, clock=None, session_keys=None, now=None,
-                 approval_key=None, checkout=None, lock=None, repo_name=None,
-                 schedule_repos=None, tick_seen=None, tick_state=None, kit_key=None,
-                 kit_blob=None, kit_text=None, coordinators=None):
+    def __init__(self, store, views=None, clock=None, now=None, lock=None, config=None, **hooks):
+        # the hooks are an ApiConfig's fields; given as keywords they override `config`'s, and a
+        # name that is not one is a TypeError, as for any unknown keyword
+        config = ApiConfig(**hooks) if config is None else dataclasses.replace(config, **hooks)
         self.store = store
-        self.coordinators = coordinators or launcher_coordinators
-        self.kit_text = kit_text or (lambda blob: None)
-        self.kit_key = kit_key or (lambda: '')
-        self.kit_blob = kit_blob or (lambda branch, path: None)
-        self.tick_state = tick_state or tick_run_state
-        self.schedule_repos = schedule_repos or launcher_checkouts
-        self.tick_seen = tick_seen or tick_last_seen
+        self.config = config
+        self.coordinators = config.coordinators or launcher_coordinators
+        self.kit_text = config.kit_text or (lambda blob: None)
+        self.kit_key = config.kit_key or (lambda: '')
+        self.kit_blob = config.kit_blob or (lambda branch, path: None)
+        self.tick_state = config.tick_state or tick_run_state
+        self.schedule_repos = config.schedule_repos or launcher_checkouts
+        self.tick_seen = config.tick_seen or tick_last_seen
         self.views = views
         self.lock = lock
         self.lock_poll_s = LOCK_POLL_S
         self.clock = clock or store.clock
-        self.approval_key = approval_key or (lambda: None)
-        self.checkout = checkout or (lambda repo: None)
-        self.repo_name = repo_name or (lambda repo: None)
-        self._session_keys = session_keys or launcher_keys
+        self.approval_key = config.approval_key or (lambda: None)
+        self.checkout = config.checkout or (lambda repo: None)
+        self.repo_name = config.repo_name or (lambda repo: None)
+        self._session_keys = config.session_keys or launcher_keys
         self._seen = {'waited': None, 'pulled': None}
         self._waits = {}            # one key per agent wait that is blocked right now
         self.push_status = None     # PushWorker.status, set by the worker ("Push status")

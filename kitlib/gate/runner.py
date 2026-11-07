@@ -543,6 +543,28 @@ def plan_lines(chosen, why, all_steps, base_text, changed):
     return lines
 
 
+def load_checks(cfg, steps, root=None, rev=None):
+    """`(checks, options, None)`: the hook module's checks when a step of `steps` has a check,
+    else `({}, {}, None)`; loaded from the work tree (policy.load_gate_checks), or from commit
+    `rev` of the repository at `root` when given (hookrev.load_gate_checks_at; a landing's
+    --expect-main). `(None, None, why)` when the module cannot be loaded: a ConfigError, or a
+    SystemExit from the repo's module-level code. The one load-failure predicate of gated, the
+    targeted rerun (kitlib.gate.rerun) and the daily full run's bisect probe."""
+    if not any(s.check for s in steps):
+        return {}, {}, None
+    try:
+        if rev:
+            checks, options = hookrev.load_gate_checks_at(cfg, root, rev)
+        else:
+            checks, options = policy.load_gate_checks(cfg)
+    except ConfigError as e:
+        return None, None, str(e)
+    except SystemExit as e:         # the repo's module-level code; nothing has run yet
+        return None, None, ('the hook module exited while it was loaded (SystemExit, code %r); '
+                            'nothing ran' % (e.code,))
+    return checks, options, None
+
+
 def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book_kw, merged=False,
           checks_rev=None, gate=None, slot=None, seen=None, capped=False, budget_branch=None):
     """Runs `chosen` in a slot of `kind`: `(results, None)`, or `(None, Outcome)` when the hook
@@ -578,20 +600,10 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     run waits, in a step (Slot.wait ends that step's tree) or after the last one, gives
     `(None, stopped_outcome)`: no other step starts and the run is released `cancelled`. A held
     `slot` is the landing's, which keeps its own way of ending."""
-    checks, options = {}, {}
-    if any(s.check for s in chosen):
-        try:
-            if checks_rev:
-                checks, options = hookrev.load_gate_checks_at(cfg, root, checks_rev)
-            else:
-                checks, options = policy.load_gate_checks(cfg)
-        except ConfigError as e:
-            return None, G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
-        except SystemExit as e:     # the repo's module-level code; nothing has run yet
-            return None, G.Outcome(G.REFUSED, [
-                'REFUSED: the hook module exited while it was loaded (SystemExit, code %r); '
-                'nothing ran' % (e.code,)])
-    ctx = {'root': root, 'base': base, 'merged': merged, 'changed': list(changed),
+    checks, options, why = load_checks(cfg, chosen, root, checks_rev)
+    if checks is None:
+        return None, G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+    ctx ={'root': root, 'base': base, 'merged': merged, 'changed': list(changed),
            'options': options}
     tree = tested_tree(root)
     if slot is not None:

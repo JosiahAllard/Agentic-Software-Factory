@@ -123,6 +123,10 @@ A kit tool's output may be piped or redirected like any program's (`backlog.py l
 - Rule order: wrapped-gate stays before heavy.
 - Tests: `tests/guard/test_kit_tool_forms.py`.
 
+## Size ceilings
+
+Each `kitlib/guard` module has a line ceiling, and the guard has a total, in `CEILINGS` and `TOTAL_CEILING` of `tests/guard/test_size_ceiling.py`; the test fails on growth past one, a module with no entry, or a ceiling more than 5% above its count. Raising one is a deliberate edit.
+
 ## Refusal log
 
 Every deny the guard's hook answers adds one JSON line to `<pm_data>/audit/refusals.jsonl` (`kitlib/guard/refusal_log.py`), so the owner can count which rules refuse which roles without asking an agent to keep a log. docs/guard.md "Refusal log" is the reference for what the code does: who writes it (`kitlib.host.hookmain.run` for every host; on Codex also the broker in `hosts/codex/adapter/runtime.py` `evaluate_bound`), the fields, what a line never holds (the reason, command, path, working directory or Instead text), the lock, the best-effort rule and the limits.

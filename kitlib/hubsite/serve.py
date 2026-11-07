@@ -1301,11 +1301,11 @@ def build(settings, sources, log=None):
             _follow_rounds(views_b, views)
         remote_ids = _RemoteIds()
         repo_name = _repo_name(views_b, _api.launcher_keys, remote_ids)
-        api = _api.Api(store, views,
-                       approval_key=functools.partial(auth.read_approval_key, sources.tokens),
-                       checkout=_checkout(views_b), lock=sources.lock, repo_name=repo_name,
-                       kit_key=_kit_key(repo_name, remote_ids), kit_blob=_kit_blob(),
-                       kit_text=_kit_text())
+        config = _api.ApiConfig(
+            approval_key=functools.partial(auth.read_approval_key, sources.tokens),
+            checkout=_checkout(views_b), repo_name=repo_name,
+            kit_key=_kit_key(repo_name, remote_ids), kit_blob=_kit_blob(), kit_text=_kit_text())
+        api = _api.Api(store, views, lock=sources.lock, config=config)
         api.file_later = functools.partial(_file_later, log)    # the answer returns at once
         api.park_later = functools.partial(_park_later, log)    # the question returns at once
         api.record_lock = threading.RLock()     # those threads and the requests write records

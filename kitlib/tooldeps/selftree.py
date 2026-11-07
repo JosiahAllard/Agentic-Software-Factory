@@ -23,7 +23,8 @@ The graph is derived (`scan`), never hand-written:
     such a test goes in `always`;
   - module by module (CodeFile, TestPackage.mods): the dotted modules each code file (kitlib,
     tools, hosts, boot) and each test module imports - absolute, relative, the names an
-    import-from takes, a child's `-c` / `-m` string - each with its parents (importing
+    import-from takes, a literal `importlib.import_module('kitlib.a.b')` / `__import__` (a
+    computed name is not followed), a child's `-c` / `-m` string - each with its parents (importing
     kitlib.a.b runs kitlib.a's __init__ too). A test module also counts every `kitlib.a.b` /
     `kitlib/a/b.py` its text names, and the imports of the top-level tests/*.py helpers it
     uses (not their text).
@@ -43,6 +44,9 @@ closure: a test that uses a package which uses the changed one is left to a late
     importers and the tests naming the path), and no further. A package or module that is gone
     resolves the same way: its importers still name it. Any other file under kitlib/<p>/: the
     whole tests/<p> and the file's readers below;
+  - kitlib/<x>.py, a module directly in kitlib/ (its __init__ is `full`): the whole tests/<x>
+    when there is one, every test module reading kitlib.x, then the same one hop over the code
+    files importing it;
   - tools/<x>.py: every test module that imports, names or loads x, or names a tool importing x (a
     deleted x too: its importers still name it); when there is none, the readers of the code
     files naming x.py;
@@ -78,7 +82,7 @@ import os
 import re
 
 from kitlib.git import cmd as gitcmd
-from kitlib.tooldeps.deps import ALL, glob_regex
+from kitlib.tooldeps.deps import ALL, _dynamic_call, glob_regex
 
 CONFIG_REL = 'tests/selection.json'
 DEFAULTS = {
@@ -300,13 +304,18 @@ def _expand(names):
 def _imports(tree, nodes, text, dotted):
     """The dotted modules the file `dotted` ("kitlib.a.b", an __init__ as "kitlib.a.__init__")
     imports, with their parents (_expand): its imports, relative ones resolved (_test_imports),
-    and the kitlib modules a non-docstring string imports in a child (_CHILD_IMPORT). A file
-    that does not parse falls back to the kitlib modules its text names (it only selects more)."""
+    the module an import_module / __import__ call names as a literal (deps._dynamic_call; a
+    computed name is not followed), and the kitlib modules a non-docstring string imports in a
+    child (_CHILD_IMPORT). A file that does not parse falls back to the kitlib modules its text
+    names (it only selects more)."""
     if tree is None:
         return _expand(_kitlib_names(text))
     names, docs = _test_imports(nodes, dotted), _docstring_ids(nodes)
     for node in nodes:
-        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+        literal = _dynamic_call(node)
+        if literal:
+            names.add(literal)
+        elif (isinstance(node, ast.Constant) and isinstance(node.value, str)
                 and id(node) not in docs and _CHILD_IMPORT.search(node.value)):
             names |= _kitlib_names(node.value)
     return _expand(names)
@@ -689,18 +698,31 @@ def _carriers(module, pkg, tree):
     return out
 
 
+def _carried(path, carriers, inside, tree, picks):
+    """Pick the readers of `carriers` and, one hop, of each code file not `inside` (a rel
+    predicate) importing one: the selection of a changed kitlib module `path`."""
+    found = _readers(tree, carriers, lambda name: 'uses %s (%s)' % (name, path), picks)
+    for rel, cf in sorted(tree.code.items()):
+        hit = cf.imports & carriers
+        if hit and not inside(rel):
+            found |= _code_readers(tree, cf, ', which imports %s (%s)' % (min(hit), path), picks)
+    return found
+
+
 def _kitlib_change(path, pkg, tree, picks):
     found = picks.add(pkg, 'own tests of changed kitlib/%s' % pkg)
     if not path.endswith('.py'):
         return _named_file(path, tree, picks) or found
-    carriers = _carriers(_module_of(path), pkg, tree)
-    found |= _readers(tree, carriers, lambda name: 'uses %s (%s)' % (name, path), picks)
-    # one hop: the readers of a code file outside the package that imports a carrier
-    for rel, cf in sorted(tree.code.items()):
-        hit = cf.imports & carriers
-        if hit and not rel.startswith('kitlib/%s/' % pkg):
-            found |= _code_readers(tree, cf, ', which imports %s (%s)' % (min(hit), path), picks)
-    return found
+    return _carried(path, _carriers(_module_of(path), pkg, tree),
+                    lambda rel: rel.startswith('kitlib/%s/' % pkg), tree, picks) | found
+
+
+def _kitlib_module_change(path, tree, picks):
+    """A module directly in kitlib/ (kitlib/clock.py): the tests/<x> of its name whole, its
+    readers and one hop; nothing else carries it (kitlib/__init__.py is `full`)."""
+    name = path[len('kitlib/'):-3]
+    found = picks.add(name, 'own tests of changed %s' % path)
+    return _carried(path, {_module_of(path)}, lambda rel: rel == path, tree, picks) | found
 
 
 def _tool_change(path, name, tree, picks):
@@ -792,6 +814,8 @@ def selection(changed, tree, cfg):
         found |= _listers(f, tree, picks)
         if parts[0] == 'kitlib' and len(parts) > 2:
             found |= _kitlib_change(f, parts[1], tree, picks)
+        elif parts[0] == 'kitlib' and len(parts) == 2 and f.endswith('.py'):
+            found |= _kitlib_module_change(f, tree, picks)
         elif parts[0] == 'tools' and len(parts) == 2 and f.endswith('.py'):
             found |= _tool_change(f, parts[1][:-3], tree, picks)
         elif parts[0] == 'tests' and len(parts) > 2:

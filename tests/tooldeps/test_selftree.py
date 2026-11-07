@@ -323,6 +323,20 @@ READER_FILES = {
     'tests/readers/test_pathtext.py': PASSING + '# runs kitlib/p2/other.py\n',
     'tests/readers/test_usesruns.py': 'import kitlib.runs  # noqa: F401\n' + PASSING,
     'tests/readers/test_useshelp.py': 'from tests import fixhelp  # noqa: F401\n' + PASSING,
+    # a module directly in kitlib/, its own test package, and a kitlib package importing it
+    'kitlib/single.py': 'X = 1\n',
+    'kitlib/usesingle/__init__.py': 'from kitlib import single  # noqa: F401\n',
+    'tests/single/__init__.py': '',
+    'tests/single/test_single.py': PASSING,
+    'tests/readers/test_usessingle.py': 'from kitlib import single  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesusesingle.py': 'import kitlib.usesingle  # noqa: F401\n' + PASSING,
+    # a kitlib package importing p2.lazy by a literal import_module, and p2.<n> by a computed one
+    'kitlib/p2/lazy.py': 'L = 1\n',
+    'kitlib/dyn/__init__.py': ("import importlib\n\n\ndef load():\n"
+                               "    return importlib.import_module('kitlib.p2.lazy')\n\n\n"
+                               "def computed(n):\n"
+                               "    return importlib.import_module('kitlib.p2.' + n)\n"),
+    'tests/readers/test_usesdyn.py': 'import kitlib.dyn  # noqa: F401\n' + PASSING,
 }
 
 
@@ -424,6 +438,30 @@ class Readers(unittest.TestCase):
         picked, why, _ = self.select(path)
         self.assertEqual(picked, ['tests.readers.test_useshelp'])
         self.assertEqual(why['tests.readers.test_useshelp'], ['uses kitlib.p2.side (%s)' % path])
+
+    def test_a_module_directly_in_kitlib_selects_its_readers_and_one_hop(self):
+        # (i) kitlib/single.py: its own tests/single, its importers, and the readers of
+        # kitlib/usesingle, which imports it
+        path = 'kitlib/single.py'
+        picked, why, notes = self.select(path)
+        self.assertEqual(picked, ['single', 'tests.readers.test_usessingle',
+                                  'tests.readers.test_usesusesingle'])
+        self.assertEqual(why['single'], ['own tests of changed %s' % path])
+        self.assertEqual(why['tests.readers.test_usessingle'], ['uses kitlib.single (%s)' % path])
+        self.assertEqual(why['tests.readers.test_usesusesingle'],
+                         ['uses kitlib.usesingle, which imports kitlib.single (%s)' % path])
+        self.assertEqual(notes, [])
+
+    def test_a_literal_import_module_is_an_import_and_a_computed_one_is_not(self):
+        # (j) kitlib/dyn imports kitlib.p2.lazy by importlib.import_module('kitlib.p2.lazy')
+        path = 'kitlib/p2/lazy.py'
+        picked, why, notes = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_usesdyn'])
+        self.assertEqual(why['tests.readers.test_usesdyn'],
+                         ['uses kitlib.dyn, which imports kitlib.p2.lazy (%s)' % path])
+        self.assertEqual(notes, [])
+        # its import_module('kitlib.p2.' + n) names no module
+        self.assertNotIn('tests.readers.test_usesdyn', self.select('kitlib/p2/side.py')[0])
 
 
 _ROOT_LINE = 'import os\nROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))\n'
@@ -806,6 +844,17 @@ class KitTree(unittest.TestCase):
             picked = self.select(path)
             self.assertIsNot(picked, ALL, path)
             self.assertIn('skills', picked, path)
+        # a module there selects its readers: tests/agentname whole, and a test importing it
+        picked = self.select('kitlib/agentname.py')
+        self.assertIsNot(picked, ALL)
+        self.assertIn('agentname', picked)
+        self.assertIn('tests.guard.test_backlog_role', picked)
+
+    def test_a_literal_import_module_reaches_its_importers_readers(self):
+        # kitlib/lock/detach.py loads kitlib.platform.linux.detach by import_module
+        picked = self.select('kitlib/platform/linux/detach.py')
+        self.assertIsNot(picked, ALL)
+        self.assertTrue('lock' in picked or 'tests.lock.test_detach' in picked, picked)
 
     def test_a_doc_only_change_selects_the_whole_tree_scrubs(self):
         # tests/scrub reads every file `git ls-files` lists: a docs edit with a ruling id in it

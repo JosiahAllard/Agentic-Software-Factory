@@ -25,16 +25,21 @@ untracked generated file may be deleted first; a merge git refuses is reported. 
 worktree (a linked worktree of the repository), write nothing there: your task worktree is where you work.
 
 ## Build and test
-The gate is ONE command, `python <kit>/tools/gate.py -C <worktree>`, run once after review on the
-reviewed tip when the coordinator asks; `--full` only when it prints `FULL NEEDED`
-(`<kit>/docs/gate.md` "The final gate"). It reads the repository's `"gate"` section in `.kit.json`
-when there is one, else detects the stack (Python, Node, Rust, Go, .NET) and runs its usual test and
-lint steps, its verdict line then saying "auto-detected" (`<kit>/docs/gate.md` "Auto-detected gate"):
-read that line, since an auto-detected gate may run the wrong checks, or none. While building, run
-only the unit tests that exercise the change, with the detected test runner or the one the README
-names. Red-first: commit the new test, then `python <kit>/tools/redfirst.py -C <worktree> --tests FILE[::FILTER]`
-runs it at the base in a throwaway worktree and must say RED (`<kit>/docs/redfirst.md`). Docs gate:
-the same gate, unless the README names a separate one.
+The gate is ONE command: `python <kit>/tools/gate.py -C <worktree>`. The one gate runs after review, on the
+reviewed tip, when the coordinator asks: `--full` (every step) for a branch that changes a strict path (`STRICT_DEFAULTS`
+in `<kit>/kitlib/gate/strict_defaults.py`: it lands alone after a strong-tier review by someone other
+than its author, and its merged gate runs `--full --fresh`), except where the base has `"landing".gate_once` on (the default; `.kit.json` false opts out):
+that merged gate is then its one full run, and it ends like any other branch. Any other branch runs the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell); the optimized
+default gate is the no-flag run (diff selection and the smoke steps, plus reuse for a step whose config asks
+for it). `--only <step>` is for interim runs. The gate reads the repository's `"gate"` section
+in `.kit.json` when there is one, else detects the stack from the files (Python, Node, Rust, Go,
+.NET) and runs its usual test and lint steps; its verdict line then says "auto-detected"
+(`<kit>/docs/gate.md` "Auto-detected gate"). Read that line: an auto-detected gate may run the wrong
+checks, and one that found no stack ran none. A faster command for one area: the one the README
+names, else the detected test runner on that area only. Red-first: commit the new test, then
+`python <kit>/tools/redfirst.py -C <worktree> --tests FILE[::FILTER]` runs it at the base in a
+throwaway worktree and must say RED (`<kit>/docs/redfirst.md`); say so in the report. Docs gate: the
+same gate, unless the README names a separate one.
 
 ### Known flakes
 None recorded. Only a flake on this list gets one rerun; any other failing run is real.
@@ -61,8 +66,8 @@ is reported as it is, with the doc's recovery steps, and not retried. No batches
 
 ## Review
 No size set: the brief's risk decides who reviews (skill branch-review). End-goal design:
-ARCHITECTURE.md, else the README; a builder reads it before its design, and a design review checks
-against it. None found: the design review reports a NOTE; it never reviews against nothing.
+ARCHITECTURE.md, else the README. None of those found: an architecture review reports a NOTE; it
+never reviews against nothing.
 
 ## Shared resources that must be serialised
 The machine lock (skill machine-lock-run): the gate takes it itself; other heavy work runs inside

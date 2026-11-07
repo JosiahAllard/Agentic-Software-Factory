@@ -9,7 +9,7 @@ Each landing is one entry in the machine-lock queue, ahead of ordinary runs; it 
 
 ## 1. Queue the verdict
 
-- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session>` (`<kit>/docs/gate.md` "Strict paths"). It refuses your own review of a Medium or High branch, a light model on a High or strict one, and a LAND over the reviewer's `Verdict: SEND BACK`.
+- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session>` (`<kit>/docs/gate.md` "Strict paths"). It refuses your own review of a Medium or High branch, a light model on a High one, and a LAND over the reviewer's `Verdict: SEND BACK`.
 - After a main sync of a reviewed branch: `python <kit>/tools/verdict.py carry -C <main checkout> --branch <branch>`. `CARRIED` moves the verdict to the new tip (conflict-free main merges only); `NOT CARRIED` means review and queue the new tip.
 - The tip lands only with its one gate green on that exact tip: the gate the author ran when you asked (`gate.py -C <worktree>`, `--full` when it printed `FULL NEEDED`). `land.py` refuses any other record and says what it needs (`<kit>/docs/gate.md` "The final gate"); never bounce a scoped gate it accepts.
 

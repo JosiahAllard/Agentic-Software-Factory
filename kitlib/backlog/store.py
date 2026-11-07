@@ -33,6 +33,7 @@ from kitlib.git import batch, cmd, refs
 from kitlib.git import repo as gitrepo
 
 from . import record as rmod
+from . import removed_cache
 from .errors import Busy, Dirty, Failure, IndexStale, Overtaken, Refusal, Uncommitted, Usage
 
 STORE_REF = 'refs/backlog/main'
@@ -532,6 +533,11 @@ def last_removal(root, rev, rel, rid):
 
 
 def removed_records(root, rev, rel):
+    """`scan_removed`, served from the tip-keyed cache (removed_cache.py)."""
+    return removed_cache.cached_removed(root, rev, rel, scan_removed, Removal)
+
+
+def scan_removed(root, rev, rel):
     """`[(stem, Removal, text)]`, newest removal first, one per record id: every `<rel>/<id>.md` a
     commit reachable from `rev` deleted, with the text it had in that commit's first parent. One
     `git log` names every deleted path and one `cat-file --batch` reads them all, however many

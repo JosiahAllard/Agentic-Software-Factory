@@ -463,3 +463,17 @@ def own_worktree(ctx, cwd, main_top=None):
 # tell. Its default mode is warn (kitlib.guard.modes): only a write that resolves literally into a
 # main checkout or outside an agent session's folders is denied (docs/guard.md "Rule modes").
 UNPLACED = 'unplaced'
+
+
+class Asked(object):
+    """The first ask among a run of decisions, held back so that a refusal judged after it wins:
+    firm(d) gives `d` unless it is an ask (kept in `first`, the earliest), when it gives None."""
+
+    def __init__(self):
+        self.first = None
+
+    def firm(self, d):
+        if d is not None and d.verdict == ASK:
+            self.first = self.first or d
+            return None
+        return d

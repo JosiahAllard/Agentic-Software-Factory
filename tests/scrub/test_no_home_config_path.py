@@ -48,8 +48,8 @@ ALLOWED = {
                                                    'config folder',
     ('kitlib/guard/jail.py', 'home_config_dirs'): 'no write root may be on a leftover home config '
                                                   'folder',
-    ('kitlib/guard/rules.py', 'hub_secret_folders'): 'guards the leftover home token folder the '
-                                                     'move leaves as its source',
+    ('kitlib/guard/rules_owner.py', 'hub_secret_folders'): 'guards the leftover home token folder '
+                                                           'the move leaves as its source',
     ('kitlib/autotasks/tick.py', 'home_state_dir'): 'the retired auto-tasks state, refused with '
                                                     'its move command, never read',
 }

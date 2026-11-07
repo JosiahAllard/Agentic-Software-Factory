@@ -5,6 +5,7 @@ from there)."""
 import collections
 import dataclasses
 import datetime
+import math
 import re
 
 from . import pagecheck
@@ -179,6 +180,25 @@ def _when(text, field):
 
 def _via(req):
     return req.via or 'api'
+
+
+def _reason(e):
+    """Why a view gave nothing, short and with no path in it: a HubError's code, else the
+    exception's class name."""
+    return e.code if isinstance(e, HubError) else type(e).__name__
+
+
+def _timeout(req):
+    """A wait's `timeout` query: seconds, WAIT_MAX_S when not given; not capped here."""
+    raw = _q(req, 'timeout')
+    try:
+        timeout = float(raw) if raw else float(WAIT_MAX_S)
+    except ValueError:
+        timeout = float('nan')
+    if not math.isfinite(timeout) or timeout < 0:
+        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (WAIT_MAX_S, raw),
+                       'timeout')
+    return timeout
 
 
 @dataclasses.dataclass(frozen=True)

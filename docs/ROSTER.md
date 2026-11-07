@@ -42,7 +42,7 @@ standard tier (Claude: `model: sonnet`).
 | test-runner | light | - | Runs test tiers in a given worktree and reports only PASS/FAIL plus failing lines. |
 | topic | strong | high | Own launched plain session the owner drives (never dispatched). Builds the records batched for its branch, in its own worktree; pulls each, runs the touched tests, reports to the PM; never lands. |
 | weak-worker | light | high | Small, well-defined, low-risk changes the brief sizes by listing them (named files, named edits, a few files): doc lines, small additive changes with their test. Escalates to worker when the task is bigger or less clear than briefed. |
-| worker | standard | medium | Default coder for routine low and medium risk work: additive content, UI, pure logic with tests, small fixes with a known cause, behaviour-neutral moves and renames; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation). |
+| worker | standard | medium | Default coder for routine low and medium risk work: additive content, UI, pure logic with tests, small fixes with a known cause (also on a High-risk path, reviewed on the strong tier), behaviour-neutral moves and renames; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation). |
 <!-- end rendered -->
 
 ## Tier to model, per host

@@ -67,9 +67,9 @@ Missing any: say what you need, do nothing.
    pushes, verifies with `ls-remote`, and undoes the merge on red. The call prints a `REVIEW` line for
    each branch whose queued verdict is at the tip submitted and the one `SUBMITTED ... wait: ...`
    line (no `SUBMITTED` line: report the output), then waits for the landing and ends with its
-   outcome lines and the `RESULT` and JSON lines (<kit>/docs/gate.md "Submitting a landing",
+   outcome lines and the `RESULT` and JSON lines (<kit>/docs/gate-landing.md "Submitting a landing",
    "Waiting in the same call"). Wait for the task notification, never a polling loop (the
-   classifier denies it); no Monitor either (<kit>/docs/gate.md "Waiting on a gate: who arms
+   classifier denies it); no Monitor either (<kit>/docs/gate-records.md "Waiting on a gate: who arms
    what"). Killed or stopped before its `RESULT` (the landing goes on): start the
    `gate.py wait-result ... --kind land -C <main checkout>` command the `SUBMITTED` line names,
    as it is, with `run_in_background`. `python <kit>/tools/land.py -C <main checkout> --queue`
@@ -138,7 +138,7 @@ Only when the profile's **Landing** section says batches are allowed and the bri
 lists them: up to the repo's `"landing".batch_max` branches (5 by default), each with its own
 reviewer, reviewed range and LAND verdict. The coordinator names together only
 branches whose landings run the same tests, or tests inside another's (an owner rule;
-<kit>/docs/gate.md "Batch"); land the batch as the brief names it. One call, in the brief's order, one
+<kit>/docs/gate-landing.md "Batch"); land the batch as the brief names it. One call, in the brief's order, one
 `--expect-tip` per branch in the same order:
 `python <kit>/tools/land.py -C <main checkout> <a> <b> --expect-tip <tip-a> --expect-tip <tip-b> --reviewed-by <reviewer-a> --reviewed-by <reviewer-b> --wait-result --submit`,
 one `--reviewed-by` per branch in the same order; it ends with a `RESULT` line for each branch.

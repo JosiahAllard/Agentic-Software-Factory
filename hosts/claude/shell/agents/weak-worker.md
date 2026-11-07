@@ -45,7 +45,7 @@ true; `pm-kit:worker` takes it from there, the intended path, not a failure:
 - Base moved: merge the exact commit the coordinator named, never the local main, never rebase;
   follow skill branch-sync step 9 (re-run the touched tests; the one gate when the coordinator asks). Any conflict, or any merge the coordinator did not name: stop and report.
 - Run your brief's tests (the gate only when the coordinator asks, after review) to a log and read the log; never pipe it through grep, head or tail.
-  Waiting on it: <kit>/docs/gate.md "Waiting on a gate: who arms what" (your own gate: no Monitor).
+  Waiting on it: <kit>/docs/gate-records.md "Waiting on a gate: who arms what" (your own gate: no Monitor).
   Wait for your own gate run to finish before you report. If you cannot wait, report GATE PENDING
   first, with the log path, never a result you have not read.
 - Tests you write bind port 0, never a fixed port.

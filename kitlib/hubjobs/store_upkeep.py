@@ -84,7 +84,7 @@ GC = ['-c', 'gc.writeCommitGraph=false', '-c', 'gc.packRefs=false',
       '-c', 'pack.threads=%d' % CORES, 'gc', '--quiet']
 NOT_NOW = (EXIT_BUSY, EXIT_TIMEOUT, EXIT_RESERVED)
 STALE_EVENT = 'stale-lock'
-STATE_FILE = 'store-upkeep-pushed.json'     # in the common dir: {event: {detail, at}}
+STATE_FILE = 'store-upkeep-pushed.json'     # in the common dir: {event: {detail, key, at}}
 REPUSH_S = 86400                    # an unchanged event is pushed again after this
 HOLDER_WORDS = frozenset(('maintenance', 'gc'))     # the git subcommands that take maintenance.lock
 
@@ -229,18 +229,19 @@ class StoreUpkeep(object):
             pushes['findings'] = (str(len(findings)),) * 2
         notes, errors = [], []
         self._stale_lock(pushes, common, now, findings, notes)
-        r = _run(GRAPH, self.root, timeout=None)
-        if r.rc == 0:
-            notes.append('commit graph written')
-        else:
-            errors.append(_failed('commit-graph write', r))
-        if ctx.stop.is_set():
+        try:                        # a step that raises still lets the pushes go out
+            r = _run(GRAPH, self.root, timeout=None)
+            if r.rc == 0:
+                notes.append('commit graph written')
+            else:
+                errors.append(_failed('commit-graph write', r))
+            if ctx.stop.is_set():
+                return jobs.Skip('; '.join(notes + errors + ['stopped before the gc']
+                                           + _finding_notes(findings)))
+            self._gc(common, notes, errors)
+        finally:
             self._push(ctx, common, now, pushes)
-            return jobs.Skip('; '.join(notes + errors + ['stopped before the gc']
-                                       + _finding_notes(findings)))
-        self._gc(common, notes, errors)
         text = '; '.join(notes + errors + _finding_notes(findings))
-        self._push(ctx, common, now, pushes)
         if errors:
             raise UpkeepFailed(text)
         return text
@@ -299,7 +300,10 @@ class StoreUpkeep(object):
                 json.dump(kept, f)
             fsreplace.replace(tmp, path)
         except OSError:
-            fsreplace.remove(tmp)
+            try:
+                fsreplace.remove(tmp)
+            except OSError:
+                pass
 
     def _gc(self, common, notes, errors):
         r = _run(['count-objects', '-v'], self.root)

@@ -256,11 +256,28 @@ class PushOnChange(UpkeepCase):
         self.run_job()
         self.assertEqual(self.events, [('findings', '1')] * 2)
 
-    def test_an_unreadable_state_counts_as_empty(self):
-        with open(os.path.join(self.common, su.STATE_FILE), 'w') as f:
-            f.write('{not json')
-        self.run_job()
+    def test_a_state_that_is_unreadable_or_not_current_counts_as_empty_and_pushes_once(self):
+        for text in ('{not json', '[]',
+                     '{"findings": {"detail": "1", "at": %r}}' % NOW):     # no key (old entry)
+            with self.subTest(state=text):
+                del self.events[:]
+                with open(os.path.join(self.common, su.STATE_FILE), 'w') as f:
+                    f.write(text)
+                self.run_job()
+                self.assertEqual(self.events, [('findings', '1')])
+
+    def test_a_state_write_that_fails_does_not_fail_the_pass(self):
+        with mock.patch.object(su.fsreplace, 'replace', side_effect=PermissionError('busy')),                 mock.patch.object(su.fsreplace, 'remove', side_effect=PermissionError('busy')):
+            out = self.run_job()
         self.assertEqual(self.events, [('findings', '1')])
+        self.assertIn('commit graph written', out)
+
+    def test_a_git_step_that_raises_still_sends_the_pushes(self):
+        self.place('objects/maintenance.lock', 13 * 3600)
+        self.stop_after_graph = lambda: (_ for _ in ()).throw(RuntimeError('git blew up'))
+        with self.assertRaises(RuntimeError):
+            self.run_job()
+        self.assertEqual(self.events, [('findings', '1'), ('stale-lock', '13h')])
 
     def test_the_push_comes_after_the_git_steps(self):
         self.job.clock = lambda: NOW

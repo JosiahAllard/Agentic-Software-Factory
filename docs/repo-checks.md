@@ -35,7 +35,7 @@ python tools/trailers.py [-C DIR] [--base REV] [--merged]
 
 ## pieces
 
-`tools/pieces.py`, logic `kitlib/pieces`. The path-to-piece table: a tool names a piece by id, never by a path literal, so moving a folder is an edit to the table only. The table is `.kit.json` "pieces" (inline, or a repo-relative JSON path); it is repository data, opaque to the schema and checked by `kitlib.pieces.Table`. The field list is in the `kitlib/pieces` docstring, `deps` (transitive, `dependents`) and `test_deps` (test-only edges, one step, `test_consumers`) among them; `KINDS` (gradle, dotnet, spec, docker, asset, docs, builder, file, planned) is the vocabulary of the one repository that has a table today.
+`tools/pieces.py`, logic `kitlib/pieces`. The path-to-piece table: a tool names a piece by id, never by a path literal, so moving a folder is an edit to the table only. The table is `.kit.json` "pieces" (inline, or a repo-relative JSON path); it is repository data, opaque to the schema and checked by `kitlib.pieces.Table`. The field list is in the `kitlib/pieces` docstring, `deps` (transitive, `dependents`) and `test_deps` (test-only edges, one step, `test_consumers`) among them; `KINDS` (gradle, dotnet, spec, docker, asset, docs, builder, file, planned) is the vocabulary of the one repository that has a table today. An optional top-level `groups` (a list of distinct non-empty strings) closes the group vocabulary: a piece whose `group` is not in it is refused, so a misspelt group cannot form a group of its own. Without the key, any non-empty group is accepted.
 
 ```
 python tools/pieces.py [-C DIR] --list | --dir ID | --path ID REL | --piece-of PATH

@@ -120,7 +120,7 @@ PENDING_HISTORY = {
     ('provenance', 'tests/testutil.py'): 2,
     ('provenance', 'tests/tooldeps/piecetable.py'): 1,
     ('provenance', 'tools/machine_setup.py'): 1,
-    ('record-id', 'docs/guard.md'): 1,
+    ('record-id', 'docs/guard-owner.md'): 1,
     ('record-id', 'tests/delegations/test_cli.py'): 1,
     ('record-id', 'tests/delegations/test_run.py'): 13,
     ('record-id', 'tests/guard/test_backlog_role.py'): 1,

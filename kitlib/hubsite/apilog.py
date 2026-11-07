@@ -1,5 +1,29 @@
 """kitlib.hubsite.apilog: the api's log routes: the inbox ("Inbox"), the landing feed ("Landings")
-and the hand-off records ("Hand-offs"). kitlib.hubsite.api re-exports every name here."""
+and the hand-off records ("Hand-offs"). kitlib.hubsite.api re-exports every name here.
+
+Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
+landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
+fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
+record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
+main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
+whose repo is the event's (repo_name of its remote) is marked spent (that sha) and spent_at,
+once: display only, for a later page (none reads it yet); its status stays, any other is
+skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
+lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX); GET snapshot
+carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
+changes or deletes one.
+
+Hand-offs (docs/hub-approvals.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
+checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
+kind, state_path}, all required. from is a session key checked as a question's is (a launcher
+session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
+of the reply; checkin: a successor that has checked in, kitlib.launcher.handoff); state_path is
+the absolute path of the state note, on one line. The hub sets `at`.
+GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the highest id per
+`from`), sorted by key, or with `from=<key>` that key's alone; over the tunnel only, the state
+path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
+deletes one, and GET snapshot leaves them out.
+"""
 import ntpath
 import os
 import re

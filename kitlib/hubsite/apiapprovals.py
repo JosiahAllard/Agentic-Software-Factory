@@ -1,6 +1,35 @@
 """kitlib.hubsite.apiapprovals: the api's approval routes: add, decide, consume, withdraw, supersede
 and verify (kitlib.hubsite.approvals holds the rules). kitlib.hubsite.api re-exports every name
-here."""
+here.
+
+Approvals (kitlib.hubsite.approvals holds the rules; these routes only carry them). POST approvals
+(AGENT) adds a pending request: the base of each file is read with git from this machine's
+checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
+that is not the file at head is `invalid`, field files), and the unified diff lines the page
+shows are stored in the document as `diff`. POST approvals/{id}/decide (APPROVER) writes the
+owner's decision, signed with Api's approval_key; POST approvals/{id}/consume (AGENT) marks an
+approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
+and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
+expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
+requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
+does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
+waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
+decided`), and the withdrawal drops that line (unpark_item); an op request takes none. POST
+approvals/{id}/supersede (AGENT) marks a decided approval nobody consumed superseded
+(approvals.supersede_fields): the body gives `from` (`pm`, or a coordinator session of the
+approval's repo, Api.coordinator_keys: a claim, as for questions done), `by` (the approval that replaces it,
+which must exist, or a commit this machine's checkout of the repo has on main as last fetched,
+approvals.on_main) and `if_version`; it leaves pending and is never consumed. GET approvals/{id}/verify
+(AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
+{ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
+An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
+is added with kind, op, repo, line, title and optional reason and what, and no checkout is read;
+any other kind is `invalid`, field kind. It is consumed with args_sha256 in place of commit, and
+verified with the query kind=op, op, repo and args (the line's sha256), which answers its version
+too, the pin of the consume that follows.
+GET snapshot carries `strong`: true only on the strong owner's call (Request.strong), so the page
+shows Approve and Deny as usable; the decide route checks the role itself all the same.
+"""
 import json
 
 from . import schema

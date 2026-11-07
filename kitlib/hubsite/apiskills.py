@@ -1,12 +1,42 @@
-"""kitlib.hubsite.apiskills: the api's skill-edit routes ("Skill edits" in the api module
-docstring): the owner's edits of a kit skill, from draft to committed. kitlib.hubsite.api
-re-exports every name here."""
+"""kitlib.hubsite.apiskills: the api's skill-edit routes ("Skill edits"
+below): the owner's edits of a kit skill, from draft to committed. kitlib.hubsite.api
+re-exports every name here.
+
+Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"). The owner writes a new text for one kit
+skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
+repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
+listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
+of that text. Only the owner writes an edit, as only the owner writes a story (POST stories,
+stories/{id}/withdraw, to_pm and finding_marks are OWNER routes too): POST skill_edits {skill,
+text, submit?}, POST skill_edits/{id}/edit {text?, submit?, if_version} and POST
+skill_edits/{id}/withdraw {if_version?} are OWNER, so an agent's key is refused `forbidden`, field
+role, before the body is read, and nothing is written. An edit is draft, or submitted with
+`submit`; base_blob is the blob of the source the hub served when it was written, so it can lag
+the kit's main. The text is checked by kitlib.hubsite.skilledits.why_not: at most MAX_BYTES of
+UTF-8, no NUL, and front matter whose `name:` is the source's (an edit never renames a skill).
+Only a draft, superseded or failed edit changes; a superseded or failed one is put on the source
+at its source_blob when kit_text reads that blob (the text GET skill_edits/{id} shows the owner),
+else on the served source as it is now; its base_blob is that blob. Submitting when base_blob is
+neither the served source's blob nor the blob on main (kit_blob) makes it superseded, with
+source_blob the blob on main (the served blob when kit_blob reads none), for the owner to re-apply.
+POST skill_edits/{id}/done {branch, blob, if_version} and POST skill_edits/{id}/fail {why,
+current_blob?, if_version} are AGENT, and only for a submitted edit: done refuses a blob that is
+not git_blob of the edit's text as UTF-8, and it reads the blob of the source on `branch` in
+the kit checkout itself (the Api's kit_blob) and refuses one it cannot read or that is not that
+blob (field branch), so an agent cannot mark committed a text it never wrote; with no kit_blob it
+reads nothing, so done is refused. fail with a current_blob
+that is not base_blob (the worker's check against main) makes the edit superseded, else failed.
+GET skill_edits (ANY, status) lists the edits, GET skill_edits/{id} (ANY) gives {item, source}:
+source is {text, blob} at a superseded or failed edit's source_blob when kit_text reads it, else
+null. A
+submitted edit is a pending item of kind `skill_edit` ("Routes").
+"""
 from . import skilledits
 from .apibase import (
     SEGMENT_SAYS, _SEGMENT, _fields, _flag, _invalid, _pin, _record_view, _text)
 from .store import HubError
 
-# ---- skill edits (module docstring "Skill edits")
+# ---- skill edits (module docstring above)
 SKILL_EDIT_CHANGE = ('draft', 'superseded', 'failed')     # the owner may change the text
 SKILL_EDIT_WITHDRAW = ('draft', 'submitted', 'superseded', 'failed')
 

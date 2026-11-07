@@ -4,7 +4,7 @@
 
 - **Transport:** JSON-RPC 2.0, one message per line on stdin and stdout, on the standard library, in the shape of the lock MCP server (docs/lock-mcp.md). It answers `initialize` (protocol 2025-06-18, 2025-03-26 or 2024-11-05), `ping`, `tools/list` and `tools/call`.
 - **Plugin:** `.claude-plugin/plugin.json` names it `hub` (`kitlib.hubmcp.SERVER_NAME`), rendered from `hosts/claude/adapter/content.py` `MCP_SERVERS`. A client shows its tools as `mcp__plugin_pm-kit_hub__<tool>`. Codex's plugin carries it as server `hub` (`hosts/codex/shell/mcp/hub_server.py`); `hosts/codex/adapter/policy.py` refuses its tools to a marked Codex session.
-- **Port:** `hub.port` (docs/action-hub.md "Serving it"), read from the machine's hub settings at each call, so a hub started later or on another port is found. A setting that cannot be read is the `config` tool error.
+- **Port:** `hub.port` (docs/hub-serving.md "Serving it"), read from the machine's hub settings at each call, so a hub started later or on another port is found. A setting that cannot be read is the `config` tool error.
 - **Tokens:** the token files of `kitlib.hubsite.auth.folder()`. Every tool carries the agent's token, reads included (`server.AgentClient`; unlike the CLI's `Client.token`, it never falls back to the owner's for an `ANY` route). With no usable agent token a tool answers `no_agent_token`, and no tool ever opens the owner's token file.
 - **Source:** every write names itself `mcp` (`kitlib.hubsite.serve.VIA_MCP`, the `X-Hub-Via` header), so the hub records `via: mcp` on what it writes; `tools/hub.py` writes `cli`.
 - **Session mark:** `mcp/hub_server.py` reads the session's mark once at start (`kitlib.sessionmark.mark`, docs/guard.md "Session mark").
@@ -13,7 +13,7 @@
 
 - A tool returns the hub's JSON object as text, and the same object as `structuredContent`.
 - A failure is a tool result with `isError: true` and `{"ok": false, "error": {code, message, field}}`; the server keeps answering.
-  - A refusal from the hub (`kitlib.hubsite.client.Refused`) keeps the hub's code, message and field, plus `status`, the HTTP status (docs/action-hub.md "For the PM").
+  - A refusal from the hub (`kitlib.hubsite.client.Refused`) keeps the hub's code, message and field, plus `status`, the HTTP status (docs/hub-pm.md "For the PM").
   - `not_running`: nothing listens on the port (`serve.NotRunning`); `tools/hub.py serve` starts it.
   - `no_agent_token`: the agent's token file is absent or unusable (`server.NoAgentToken`); nothing is sent.
   - `client`: what answered is not the hub (`serve.ServeError`).
@@ -42,8 +42,8 @@ Endpoints are below `/api/v1` (`kitlib.hubsite.api.BASE`).
 `hub_pending` and `hub_wait` take an optional `for`, a session key, sent as the `for` query of the
 hub's api as given (blank sends none). With it they list or wait for that key's pending items only:
 a session reads its own items once at start with `hub_pending` `for: <its launcher key>` and runs no
-background wait, since the hub pushes its answers and done to-dos (docs/action-hub.md "Push
-notifications"); `hub_wait` stays for a caller that wants it. `for: pm` is the PM's items and every answered question (docs/action-hub.md "Who handles a
+background wait, since the hub pushes its answers and done to-dos (docs/hub-push.md "Push
+notifications"); `hub_wait` stays for a caller that wants it. `for: pm` is the PM's items and every answered question (docs/hub-pm.md "Who handles a
 pending item"). A session key's `for` that returns one of that key's items hands it over, as the
 CLI's does; `for: pm` hands nothing over (`api.Api.handed`). The
 hub refuses `for` on a wait without `pending` (`invalid`, field `for`). Without `for` they see
@@ -74,14 +74,14 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_handoff_ready` | `kind` (`handoff`, `restart`, `stop`, `checkin`), `state_path`, `from` | `POST /handoffs` |
 
 `hub_handoff_ready` records a session's hand-off beside its ready reply to the PM (skill
-session-handoff), as `tools/hub.py handoffs add` does (docs/action-hub.md "handoffs/C-NNN"): `kind`
+session-handoff), as `tools/hub.py handoffs add` does (docs/hub-approvals.md "handoffs/C-NNN"): `kind`
 is the reply's word, or `checkin` from a successor that has read its note and taken over,
 `state_path` its state note path and `from` the session's own launcher key (`pm` for the PM), which
 the hub checks as a question's `from`. The hub stamps the time; `GET /handoffs` reads each session's
 newest record.
 
 `hub_approval_request` asks the owner to approve a change, as `tools/hub.py approvals add` does
-(docs/action-hub.md "approvals/A-NNN"): `kitlib.hubapprove.build` makes the body from the git
+(docs/hub-approvals.md "approvals/A-NNN"): `kitlib.hubapprove.build` makes the body from the git
 checkout `checkout`, each file's base its blob at `head` (default: the checkout's HEAD; none for a
 new file) and its content the exact UTF-8 bytes of its `content_file`, and `repo` defaults to the
 checkout's origin. It only adds a request (no destructive hint): it never decides or consumes one,
@@ -103,7 +103,7 @@ relative path, a file that cannot be read or is not UTF-8 is `invalid`, field `h
 the file is opened or any call is made; a body `kitlib.hubsite.pagecheck.check` refuses is
 `invalid`, field `html`, also before any call (`Server._t_hub_page_publish`). A page with a `video`, `audio` or `source` the page policy blocks still publishes; the hub's reply carries a `media-blocked` entry in `warnings` (`pagecheck.warnings`). Publishing over a page needs
 its card's version as `if_version`. What a body may hold, and why Mermaid must be drawn as svg
-first, is docs/action-hub.md "pages/<id> and page_html/<id>". `kind` and `folder` are text the
+first, is docs/hub-skill-pages.md "pages/<id> and page_html/<id>". `kind` and `folder` are text the
 card stores, for the Docs tab to file the page by; `hub_page_place` sets a card's `kind`, `folder`
 and `repo` later, pinned by its version (`hub_list` collection `pages` lists the cards with
 theirs; a stale pin is `conflict`), and never writes the body (`kitlib.hubsite.api.pages_place`).
@@ -124,7 +124,7 @@ The `record` of `hub_ask` and `hub_question_edit` is `{repo, id}`, both required
 record the question is about (the kit's own records are bound under the PM repository's folder name, `<pm-folder>:<ID>`); `null` on `hub_question_edit`
 unbinds it. A `record` that is no object is refused before any call (`invalid`, field `record`);
 the hub then reads the record and refuses what it cannot bind, failing closed when it cannot read
-it (docs/action-hub.md "A question bound to a record").
+it (docs/hub-questions.md "A question bound to a record").
 
 The `record` of `hub_todo_add` and `hub_approval_request` is `{repo, id}` too, checked the same way:
 the backlog record that waits on the to-do or the request. The hub parks it on the owner, writing
@@ -139,11 +139,11 @@ line. A request that expires undecided keeps the record parked, and the PM gets 
 Every question has a `record` or a `class` (`rule`, `machine`, `cross-repo` or `go`), never
 both: `hub_ask` without either is refused (`invalid`, field `class`), as is a `class` on a bound
 question; binding one with `hub_question_edit` (or `questions bind`) drops its class, and
-unbinding it needs a class in the same edit (docs/action-hub.md "A question's class").
+unbinding it needs a class in the same edit (docs/hub-questions.md "A question's class").
 
 The four edit and withdraw tools change only an open item the caller added: `from` must be the
 item's own (`pm` for one with none), checked as a claim because all agents share one token
-(docs/action-hub.md "questions/Q-NNN"). `hub_todo_edit` takes no `steps` and judges the changed
+(docs/hub-questions.md "questions/Q-NNN"). `hub_todo_edit` takes no `steps` and judges the changed
 text as `hub_todo_add` does before it calls the hub (`kitlib/hubmcp/server.py` `Server._t_hub_todo_edit`).
 
 ## To-do steps
@@ -173,7 +173,7 @@ The edit command is one Windows PowerShell 5.1 `& { ... }` block (`todosteps` mo
 
 The rules match words, so they can refuse a to-do that only mentions one of these in a command; `git merge` and a plain push are not refused. The hub's `POST /todos` and `POST /todos/<id>/edit` apply them to every agent's to-do (`api.todo_steps`, from `todos_add` and `todos_edit`; the owner's own text is not judged), and refuses a lone surrogate in any `commands` entry for either role, as `invalid` field `commands`. The hub's `POST /todos` takes an optional `os` (`windows` by default, or `linux`; not kept; any other value is `invalid` field `os`), the OS its per-OS `run` forms are rendered for. `hub_todo_add` takes the same `os` and posts it as given. `edit` and `open` steps stay PowerShell. `hub_todo_add` runs the same check before it calls the hub, so a refused to-do never reaches it, and posts `steps` as given for the hub to render (`kitlib.hubmcp.server` `_t_hub_todo_add`); `hub_todo_edit` checks its changed text the same way (`_t_hub_todo_edit`).
 
-The hub server loads this code when it starts, and the MCP server when its client starts it, so after a change to it lands restart both together (`hub.py restart`, docs/action-hub.md "Serving it"): a new MCP server with an older hub is refused with "this route takes no 'steps' field", and an older MCP server with a newer hub posts already-rendered commands, which the hub's check can refuse when an edit's text holds a word the rules match.
+The hub server loads this code when it starts, and the MCP server when its client starts it, so after a change to it lands restart both together (`hub.py restart`, docs/hub-serving.md "Serving it"): a new MCP server with an older hub is refused with "this route takes no 'steps' field", and an older MCP server with a newer hub posts already-rendered commands, which the hub's check can refuse when an edit's text holds a word the rules match.
 
 ## The owner's tools (pinned, not shipped)
 

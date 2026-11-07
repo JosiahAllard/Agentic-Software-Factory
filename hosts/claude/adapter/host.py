@@ -45,7 +45,7 @@ kitlib.host.hookmain.dispatch.
   command_host(), launcher(), plugin_installer()   None: not behind the contract yet
   content()            hosts.claude.adapter.content (the content renderer)
   push(settings)       the hub's push-notification delivery (hosts.claude.adapter.peer.HubPush:
-                       a session's peer pipe; docs/action-hub.md "Push notifications"). Optional:
+                       a session's peer pipe; docs/hub-push.md "Push notifications"). Optional:
                        tools/hub.py asks for it with getattr, so a host without it has none
   agent_models()       the subagent model reader (hosts.claude.adapter.agent_models.models) that
                        tools/verdict.py add checks --reviewer-model with. Optional: verdict.py

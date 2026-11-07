@@ -1,4 +1,4 @@
-"""kitlib.hubsite.pagecheck: what a published page's HTML may hold (docs/action-hub.md
+"""kitlib.hubsite.pagecheck: what a published page's HTML may hold (docs/hub-skill-pages.md
 "pages/<id> and page_html/<id>").
 
   MAX_BYTES     the largest body, in bytes of UTF-8

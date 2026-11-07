@@ -1,5 +1,5 @@
 """kitlib.hubsite.skilledits: the checks of a skill edit, the owner's new text for one kit skill's
-source (content/skills/<name>/SKILL.md), which an agent commits (docs/action-hub.md "Skill edits").
+source (content/skills/<name>/SKILL.md), which an agent commits (docs/hub-skill-pages.md "skill_edits/E-NNN").
 
   MAX_BYTES                  the most UTF-8 bytes an edit's text may hold
   git_blob(data)             the git blob id of bytes `data`: what `git hash-object` gives

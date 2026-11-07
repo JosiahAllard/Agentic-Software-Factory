@@ -1,4 +1,4 @@
-"""The api's handoffs routes (docs/action-hub.md "handoffs/C-NNN"): a session records that it
+"""The api's handoffs routes (docs/hub-approvals.md "handoffs/C-NNN"): a session records that it
 checkpointed and stands down, beside its ready reply to the PM; the hub stamps the time, keeps
 every record and reads back the newest of each session."""
 import json

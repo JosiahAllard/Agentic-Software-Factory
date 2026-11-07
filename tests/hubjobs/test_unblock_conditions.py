@@ -1,6 +1,6 @@
 """kitlib.hubjobs.unblock_conditions: the hub job that clears a hold whose `until` condition is met,
 run end to end against a ref store on a temporary repository with a bare remote, a temporary hub
-store folder and a flag file under a variable (docs/action-hub.md "Timed jobs")."""
+store folder and a flag file under a variable (docs/hub-push.md "Timed jobs")."""
 import datetime
 import json
 import os

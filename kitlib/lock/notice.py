@@ -10,7 +10,7 @@ shared, and any run inside an owner whole hold (an exclusive window). A nested r
 write two start notices and two end notices.
 
 Each notice is <dir>/<run id>-start.json or -end.json, an Action Hub inbox doc
-(docs/action-hub.md "Lock-window notices"): {id: "L-<run id>-start|end", title, text, at, repo, from,
+(docs/hub-records.md "Lock-window notices"): {id: "L-<run id>-start|end", title, text, at, repo, from,
 kind: "lock-window", run, phase}. The hub server lists them (kitlib.hubsite.derived.notices) and the
 PM watcher prints LOCKNOTICE for each new one (both through kitlib.pmwatch, which reads the folder
 without importing the lock).

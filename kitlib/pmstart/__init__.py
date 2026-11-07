@@ -208,7 +208,7 @@ def _count(value):
 def push_line(health):
     """[the push and watcher line] of the hub site, from GET health's `push` ({"state", "last",
     "undelivered"}, null with no push worker) and `watcher` ({"state", "age"}, null with no worker;
-    docs/action-hub.md "Push notifications"). Sessions run no background hub wait: the hub pushes
+    docs/hub-push.md "Push notifications"). Sessions run no background hub wait: the hub pushes
     each answer and done to-do, so push down or off is a WARN that nothing reaches the PM by
     itself. Every value is allow-listed (`?` otherwise)."""
     push, w = health.get("push"), health.get("watcher")
@@ -270,7 +270,7 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
         return ["hub: server did not answer as the hub does (health not ok)"]
     try:
         # the PM's items only: one routed to a reachable creator is that session's to ack, and a PM
-        # ack would hide it from the creator's wait (docs/action-hub.md "Who handles a pending item")
+        # ack would hide it from the creator's wait (docs/hub-pm.md "Who handles a pending item")
         items = hub.get("/pending", query={"for": "pm"}, timeout=HUB_SITE_TIMEOUT_S).get("items")
         items = items if isinstance(items, list) else []
     except Exception as e:

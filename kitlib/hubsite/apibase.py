@@ -226,6 +226,26 @@ def _put_pinned(api, coll, doc_id, fields, pin):
     return api.written(r)
 
 
+# A record route's path segments, checked before the view is asked: what a repository name or a
+# record id may be (kitlib.hubsite.backlog checks each again, more narrowly). The refusal is a
+# fixed phrase: it never repeats the segment.
+_SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z')
+SEGMENT_SAYS = {'repo': 'not a repository name', 'id': 'not a record id', 'name': 'not a skill name'}
+
+
+def _record_view(api, name, *args):
+    """The record view `name` called with args: its HubError (not_found, invalid, unavailable,
+    each with a fixed phrase) is the answer; anything else it raises is `unavailable` with the
+    short reason. Unlike `shown`, a not_found stays a 404."""
+    fn = api._view(name)
+    try:
+        return fn(*args)
+    except HubError:
+        raise
+    except Exception as e:      # noqa: BLE001 - a view is another module's code
+        raise HubError('unavailable', 'the %s view failed: %s' % (name, _reason(e)), 'views')
+
+
 @dataclasses.dataclass(frozen=True)
 class ApiConfig(object):
     """The hooks an Api reads from this machine, each a function (or None, which keeps the

@@ -14,11 +14,11 @@ from .rules_base import (Asked, NULL_TARGETS, PS_ALIASES, PS_CMDLETS, UNPLACED, 
                          literal_word, ps_args, refuse)
 from .rules_run import _find_paths, kit_tool_dir
 from .rules_edit import OUTPUT_WRITERS, edit_target, jail_roots, ledger_unread, outer_shell, unplaced, whole_line
-from .rules_net import (BASH_WRITERS, CMD_WRITERS, COPIERS, EVALS, NET_PROCESS_DIR, NET_UNPLACED, PIPE_UNPLACED,
-                        _net_string_end, net_mentioned, net_placed, net_process_dir, net_relative, net_retarget,
-                        net_stand_in, net_writes, pipe_stand_in, pipe_stand_in_word, ps_export_targets)
-from .rules_tools import (EDITORS, PY_PS_WHY, PY_UNREAD_WHY, Under, _awk, _copier, _curl, _editor, _evals, _patch,
-                          _perl, _python, _rsync, _ruby, _sed, _tar, _unzip, _wget, python_unread)
+from .rules_net import (NET_PROCESS_DIR, NET_UNPLACED, PIPE_UNPLACED, _net_string_end, net_mentioned, net_placed,
+                        net_process_dir, net_relative, net_retarget, net_stand_in, net_writes, pipe_stand_in,
+                        pipe_stand_in_word, ps_export_targets)
+from .rules_tools import (EDITORS, EVALS, PY_PS_WHY, PY_UNREAD_WHY, Under, _awk, _copier, _curl, _editor, _evals,
+                          _patch, _perl, _python, _rsync, _ruby, _sed, _tar, _unzip, _wget, python_unread)
 
 
 # The coarse rule for a PowerShell writer (ps_unread). Parameters whose value is no path: their one
@@ -283,6 +283,11 @@ def write_targets(cmd, inv):
     return out
 
 
+BASH_WRITERS = {'tee', 'touch', 'mkdir', 'rm', 'rmdir', 'cp', 'mv', 'truncate', 'install', 'ln',
+                'unlink', 'shred', 'dos2unix', 'unix2dos', 'mac2unix', 'unix2mac', 'sponge'}
+CMD_WRITERS = {'copy', 'xcopy', 'robocopy', 'move', 'del', 'erase', 'md', 'mkdir', 'rd', 'rmdir',
+               'ren', 'rename', 'type'}
+COPIERS = {'robocopy', 'xcopy'}                 # Windows programs every shell runs
 GLOB_CHARS = set('*?[]{}+:')                   # ':' a drive-qualified name (D:x is relative to D:'s folder)
 
 # GNU coreutils cp, mv, ln and install: the long options each takes (getopt_long reads a unique

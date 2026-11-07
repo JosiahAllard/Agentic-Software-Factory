@@ -8,7 +8,6 @@ import re
 from . import paths
 from . import shell as sh
 from .rules_base import WIN_OPT_RE, here, ps_native_unsure, tail_word
-from .rules_net import EVALS
 
 
 def _cluster_values(args, value_shorts, value_longs, k):
@@ -573,6 +572,7 @@ def _evals(name, args, cmd_word):
     return []
 
 
+EVALS = {'node': ('-e', '--eval', '-p', '--print'), 'ruby': ('-e',)}
 # python's short options that take a value: the rest of the word, or the next word (-c CODE,
 # -cCODE, -Ic CODE); its long option that takes one
 PY_SHORT_VALUE = 'cmWX'

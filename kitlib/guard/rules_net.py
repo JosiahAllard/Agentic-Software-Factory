@@ -9,12 +9,6 @@ from .rules_base import (PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES
                          literal_word, ps_param_word, refuse)
 
 
-BASH_WRITERS = {'tee', 'touch', 'mkdir', 'rm', 'rmdir', 'cp', 'mv', 'truncate', 'install', 'ln',
-                'unlink', 'shred', 'dos2unix', 'unix2dos', 'mac2unix', 'unix2mac', 'sponge'}
-CMD_WRITERS = {'copy', 'xcopy', 'robocopy', 'move', 'del', 'erase', 'md', 'mkdir', 'rd', 'rmdir',
-               'ren', 'rename', 'type'}
-COPIERS = {'robocopy', 'xcopy'}                 # Windows programs every shell runs
-EVALS = {'node': ('-e', '--eval', '-p', '--print'), 'ruby': ('-e',)}
 # a .NET file call that writes (OpenRead and OpenText only read)
 IO_FILE_RE = re.compile(r'(?i)\[(?:System\.)?IO\.(?:File|Directory)\]::'
                         r'(?:Write|Append|Create|Copy|Move|Delete|Replace|Open(?!Read\b|Text\b))')

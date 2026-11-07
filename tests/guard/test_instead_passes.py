@@ -42,7 +42,7 @@ KNOWN_FAILS = {
         'HEAD is the main checkout\'s branch only there: the Instead stays in the main checkout, which '
         'the write jail refuses a subagent',
     'git alias whose shell value is a try block running a heavy program':
-        'GAP (kitlib/guard/rules.py alias_heavy_run):the value `try { godot --headless } catch '
+        'GAP (kitlib/guard/rules.py alias_heavy_run): the value `try { godot --headless } catch '
         '{ }` is not one clean command, so the lock-wrapped run is not offered and the plain try block is '
         'printed, which the heavy rule refuses again; the bare `godot --headless` value and the same alias '
         'wrapped in a try around the whole git call both get the machine_lock line',

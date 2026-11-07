@@ -7,6 +7,7 @@
   access   the Cloudflare Access token check for the tunnel listener: verify, KeyCache
   approvals the approvals a request waits on: asked, decided, verified
   api      the site's JSON API: routes, roles, and the writes behind them
+  apiask   the api's question routes: list, ask, edit, withdraw and bind to a record
   apibase  what the api's handlers share: role and status constants, Route, Request, the request readers
   apilock  the api's machine-lock routes: the lock reads and owner writes, each a handler
   apifindings the api's finding routes: the maintenance lint's findings and the owner's marks

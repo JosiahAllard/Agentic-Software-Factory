@@ -58,6 +58,7 @@ from kitlib import gate as G
 from kitlib import kitroot
 import kitlib.config as kconfig
 from kitlib.config.types import ConfigError
+from kitlib.fs import atomic
 from kitlib.gate import budget
 from kitlib.gate import detect
 from kitlib.gate import gatecap
@@ -97,6 +98,9 @@ OK_LINE = re.compile(r'^OK(?: \(.*\))?$')
 PROGRESS = re.compile(r'^(\w+) \(([\w.]+)\)(.*)$')
 COVERED_REASON = re.compile(r'^(exit \S+|missing pass pattern .*)$')
 ABSENT = re.compile(r'ModuleNotFoundError|ImportError|AttributeError: module .* has no attribute')
+# A FAIL reason of the machine's (runner.run_steps): the step did not start, or a requires_strict
+# tool is missing. A mark leaves such a step out (machine_failure).
+MACHINE_REASON = re.compile(r'^(did not start \(see its log\)|requires .+, which (is|are) missing)$')
 
 
 class RerunError(Exception):
@@ -463,25 +467,51 @@ def mark_key(cfg, mode, only, base):
             'only': sorted(only) if only else None, 'base': base}
 
 
+def _not_ok_units(text):
+    """The status of each kit_tests unit the report `text` names as not OK (a section header's,
+    a `failed:` list entry's); [] for any other log or none."""
+    got = []
+    for line in (text or '').splitlines():
+        s = SECTION.match(line)
+        if s:
+            if s.group(3) != 'OK':
+                got.append(s.group(3))
+            continue
+        f = FAILED_LIST.match(line)
+        if f:
+            got += [status for _, status in ENTRY.findall(f.group(1)) if status != 'OK']
+    return got
+
+
+def machine_failure(res):
+    """Why the FAIL step result `res` (runner.run_steps) is the machine's, not the tree's, or
+    None: every reason is that it did not start or that a tool it requires is missing; or its log
+    is a kit_tests report whose every unit that is not OK timed out (load on a shared machine)."""
+    reasons = res.get('reasons') or []
+    if reasons and all(MACHINE_REASON.match(r) for r in reasons):
+        return '; '.join(reasons)
+    units = _not_ok_units(_read(res.get('log')))
+    if units and all(u == 'TIMEOUT' for u in units):
+        return 'every unit that failed timed out'
+    return None
+
+
 def mark(top, key, tree, commit, branch, results, log_dir):
     """Write the mark of a branch gate of the clean `tree` (the runner has checked the tree was
     clean at start and end, HEAD unmoved and the stash empty): `fail` when a step FAILed, else
-    `pass`, which supersedes a `fail` of the same tree and mode. Its path; RerunError."""
-    failed = [r['name'] for r in results if r.get('status') == 'FAIL']
+    `pass`, which supersedes a `fail` of the same tree and mode. A FAIL the machine caused
+    (machine_failure) says nothing about the tree: it is not in `failed`, and when every FAIL is
+    one no mark is written (None; a mark already there stays). Its path; RerunError."""
+    fails = [r for r in results if r.get('status') == 'FAIL']
+    failed = [r['name'] for r in fails if not machine_failure(r)]
+    if fails and not failed:
+        return None
     rec = dict(key, schema=SCHEMA, tree=tree, commit=commit, branch=branch,
                verdict='fail' if failed else 'pass', failed=failed, ended=gate_ok.utc(),
                log_dir=log_dir)
     path = mark_path(top, tree, key['mode'])
-    tmp = os.path.join(os.path.dirname(path), '.%s.tmp' % secrets.token_hex(6))
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        try:
-            with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-                f.write(json.dumps(rec, sort_keys=True, indent=1) + '\n')
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
+        atomic.write_text(path, json.dumps(rec, sort_keys=True, indent=1) + '\n', makedirs=True)
     except OSError as e:
         raise RerunError('cannot write %s: %s' % (path, e))
     return path

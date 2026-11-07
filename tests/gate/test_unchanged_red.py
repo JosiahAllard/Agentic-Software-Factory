@@ -9,6 +9,7 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import budget, gatecap, rerun, runner
+from kitlib.lock import run as lockrun
 from tests.gate import fixtures, test_targeted_rerun
 
 BRANCH = 'kit/feature'
@@ -62,6 +63,12 @@ class Case(fixtures.GateRepoCase):
         self.assertIn('REFUSED: the tree of %s at %s' % (BRANCH, self.tip[:10]), out.lines[0])
         self.assertTrue(out.lines[0].endswith('; nothing queued'), out.lines[0])
         self.assertTrue(out.lines[1].startswith('Instead: fix it and commit'), out.lines[1])
+        # It comes after the branch's `running` result record: its `refused` record replaces the
+        # red one, and its summary, the REFUSED line, names the red gate's log folder.
+        with open(out.facts['result_record'], encoding='utf-8') as f:
+            rec = json.load(f)
+        self.assertEqual((rec['verdict'], rec['summary']), ('refused', out.lines[0]))
+        self.assertIn('; logs: ', rec['summary'])
 
 
 class Marks(Case):
@@ -189,6 +196,102 @@ class AtItsTurn(Case):
         self.assertIn('was dropped at its turn; nothing ran', out.lines[0])
         hows = [d.get('how') for d in self.store.history_records()]
         self.assertEqual(hows, [budget.NOT_STARTED])
+
+    def test_the_mark_is_written_before_the_slot_is_released(self):
+        """Nothing planted: a gate queued behind a red one of the same tree takes its turn once
+        that one's slot is released, so the mark must be there by then."""
+        real = lockrun.Slot.release
+        at_release = []
+
+        def release(slot, code=None, how=None):
+            if how == 'done':
+                at_release.append(self.mark_of('select'))
+            return real(slot, code, how)
+        with mock.patch.object(lockrun.Slot, 'release', release):
+            out = self.gate()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertEqual(len(at_release), 1, at_release)
+        self.assertIsNotNone(at_release[0], 'no mark when the slot was released')
+        self.assertEqual(at_release[0]['verdict'], 'fail')
+
+
+# A kit_tests report (kitlib.pytests.runner) whose units are as UNCHANGED_KT says, exit 1.
+KT = ['{python}', '-c', 'import os, sys; units = os.environ["UNCHANGED_KT"].split(","); '
+      '[print("==== tests.u.test_%d (3 tests, 600s, %s) ====" % (i, s)) '
+      ' for i, s in enumerate(units)]; '
+      'bad = ["tests.u.test_%d (%s)" % (i, s) for i, s in enumerate(units) if s != "OK"]; '
+      'print("kit_tests: FAILED %d of 5 units; failed: %s" % (len(bad), ", ".join(bad))); '
+      'sys.exit(1)']
+
+
+class MachineFailures(Case):
+    """A FAIL the machine caused says nothing about the tree: no fail mark, and the next gate of
+    the same tree runs (rerun.machine_failure)."""
+    GATE = {'steps': [      # the machine's steps `continue`: `unit` runs after a FAIL of one
+        {'name': 'gone', 'always': True, 'cmd': ['kit-no-such-program-0f3c'], 'pass': '^ok$',
+         'continue': True},
+        {'name': 'tool', 'always': True, 'cmd': OK, 'pass': '^ok$', 'continue': True,
+         'requires': ['kit-no-such-tool-0f3c'], 'requires_strict': True},
+        {'name': 'kt', 'always': True, 'cmd': KT, 'continue': True},
+        {'name': 'unit', 'always': True, 'cmd': STATE, 'pass': '^ok$'}]}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.red(False)
+        self.env['UNCHANGED_KT'] = 'TIMEOUT'
+
+    def assert_unmarked_and_runs_again(self, only):
+        out = self.gate(only=only)
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        failed = [r for r in out.facts['results'] if r['status'] == 'FAIL']
+        self.assertEqual([r['name'] for r in failed], only, failed)
+        self.assertIsNone(self.mark_of('select'))
+        self.assertTrue(all(rerun.machine_failure(r) for r in failed), failed)
+        self.assertTrue(any(s.startswith("no red-tree mark: every FAIL is the machine's")
+                            for s in out.said), out.said)
+        self.assertEqual(self.gate(only=only).code, G.FAILED)       # not refused: it ran
+        self.assertEqual(len(self.book_calls), 2)
+
+    def test_a_step_that_did_not_start(self):
+        self.assert_unmarked_and_runs_again(['gone'])
+
+    def test_a_required_tool_missing(self):
+        self.assert_unmarked_and_runs_again(['tool'])
+
+    def test_kit_tests_units_that_all_timed_out(self):
+        self.env['UNCHANGED_KT'] = 'OK,TIMEOUT,TIMEOUT'
+        self.assert_unmarked_and_runs_again(['kt'])
+
+    def test_a_unit_that_failed_beside_one_that_timed_out_marks_the_tree(self):
+        self.env['UNCHANGED_KT'] = 'TIMEOUT,FAILED'
+        self.gate(only=['kt'])
+        self.assertEqual(self.mark_of('select')['failed'], ['kt'])
+        self.assert_refused(self.gate(only=['kt']), 1)
+
+    def test_a_real_fail_beside_a_machine_one_marks_only_the_real_one(self):
+        self.red(True)
+        out = self.gate(only=['unit', 'gone'])
+        self.assertEqual([r['name'] for r in out.facts['results'] if r['status'] == 'FAIL'],
+                         ['gone', 'unit'], out.facts['results'])
+        rec = self.mark_of('select')
+        self.assertEqual((rec['verdict'], rec['failed']), ('fail', ['unit']))
+
+    def test_a_machine_fail_leaves_an_earlier_mark_as_it_was(self):
+        self.red(True)
+        self.gate(only=['unit'])
+        before = self.mark_of('select')
+        self.red(False)
+        with mock.patch.object(runner, '_run_cmd', return_value=None):  # nothing starts
+            self.gate(only=['unit'], again=True)
+        self.assertEqual(self.mark_of('select'), before)
+
+    def test_mixed_reasons_are_the_tree_s(self):
+        self.assertIsNone(rerun.machine_failure(
+            {'name': 'x', 'status': 'FAIL', 'log': None,
+             'reasons': ['did not start (see its log)', 'exit 1']}))
+        self.assertTrue(rerun.machine_failure(
+            {'name': 'x', 'status': 'FAIL', 'log': None,
+             'reasons': ['requires a, b, which are missing']}))
 
 
 class TargetedRerun(test_targeted_rerun.RerunCase):

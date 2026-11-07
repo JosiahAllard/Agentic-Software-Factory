@@ -15,6 +15,7 @@
  "gate-build-loadnode": 2,
  "gate-build-pluginsource": 9,
  "gate-build-redfirst": 2,
+ "gate-build-tooldeps": 1,
  "gate-build-worktree": 4,
  "git-build-backlog": 1,
  "git-build-host": 1,

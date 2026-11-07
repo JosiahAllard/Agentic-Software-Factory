@@ -9,8 +9,10 @@ background run does not use it (the PM start check warns on it). Every pass but 
 Events:
   BRANCH <repo> <ref> <hash>    a watched remote branch got a new tip (--branch, repeatable)
   USAGE account N seven_day B%  weekly usage crossed a band in 95/98/99
-  USAGE account N five_hour B% five-hour usage crossed a band in 95/98/99
-  RESET account N               the weekly window reset (re-place coordinators, favour the sooner reset)
+  USAGE account N five_hour B% five-hour usage crossed a band in 95/98/99 (only when the host gives
+                                a five_hour reading; it may be null)
+  RESET account N               the weekly window reset (re-place coordinators, favour the sooner reset);
+                                a drop of 20 points must hold across two readings
   BGFAIL run <id> <reason>      a machine_lock background run ended failed (alerts/<id>.json)
   LOCKNOTICE <id> <title>       a new lock-window notice (--notice-dir); the hub server lists it
                                 (docs/hub-records.md "Lock-window notices")

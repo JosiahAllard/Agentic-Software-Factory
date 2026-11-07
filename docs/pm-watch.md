@@ -12,6 +12,10 @@ A running session can lose its Remote Control link (a network outage) and go on 
 
 Known limit: the CLI rewrites the record when the session's status changes, so a null is fresh, but an id can be stale. A quiet session that has written nothing since its link dropped still shows the old id, so it is reported late, when it next writes its record, or not at all while it stays quiet. A busy session, and the PM, are reported within one pass of their next write. Inferred, not observed: a session whose Remote Control the owner turned off from inside it (`/remote-control`) most likely also reads null and is reported as `link lost`; the field does not say why the link is down. Code: `kitlib.pmwatch` `rc_events`, `rc_check`; the reader `hosts/claude/adapter/claude_host.py` `rc_records`. Tests: tests/pmwatch/test_rc.py.
 
+## Weekly RESET
+
+`RESET account <n>` needs a weekly drop of 20 or more points to hold for two readings in a row: the first low reading is held for one poll (`kitlib.pmwatch` `merge_usage` keeps the old week and records `drop`), so one stray low reading between two high ones raises nothing. The five-hour figure is read only when the host gives one (it may be null).
+
 ## Usage-limit stall
 
 A session that reaches its account's weekly limit stops with its process still running: it looks like an idle one. `LIMIT <name> account <n> stalled at the weekly limit until <iso> (pid <p>)` tells the two apart, once per stall. A session is stalled when all three hold:

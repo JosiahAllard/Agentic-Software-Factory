@@ -298,7 +298,9 @@ class Usage(unittest.TestCase):
         self.assertEqual(lines[1], 'account 2: five_hour=reset  seven_day=0%% (resets %s)  [updated 30 min ago]' % nxt)
         got = pmwatch.parse_usage('\n'.join(lines))
         self.assertEqual((got['1']['five'], got['1']['week']), (0, 0))
-        self.assertEqual(pmwatch.usage_events({'1': {'five': 40, 'week': 95}}, got),
+        prev = {'1': {'five': 40, 'week': 95}}
+        self.assertEqual(pmwatch.usage_events(prev, got), [])        # one low reading is held, not a RESET
+        self.assertEqual(pmwatch.usage_events(pmwatch.merge_usage(prev, got), got),
                          ['RESET account 1 (weekly 95% -> 0%)'])
 
     def test_the_computed_line_parses_in_pm_watch_and_the_hub_page(self):

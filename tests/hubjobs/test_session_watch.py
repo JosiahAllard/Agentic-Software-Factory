@@ -249,10 +249,10 @@ class Failures(Base):
             return {}
         j = SW.SessionWatch(self.host, config=lambda: self.cfg, notice_dir=lambda: None,
                             usage=usage, rc=False, clock=lambda: self.now)
-        with self.assertRaises(RuntimeError):
-            j(self.ctx())
+        j(self.ctx())                       # Watcher.start leaves the usage baseline unset: no raise
         self.now += 60
         self.assertEqual(j(self.ctx()), 'no events yet')
+        self.assertGreaterEqual(len(calls), 2)
 
     def test_no_sessions_file_is_a_skip(self):
         self.cfg = {}

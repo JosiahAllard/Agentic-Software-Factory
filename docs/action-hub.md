@@ -1225,7 +1225,8 @@ The routes ("Skill edits" in the `kitlib/hubsite/api.py` docstring):
   rev-parse` (a read; `kitlib.hubsite.serve._kit_blob`) and refuses a branch it cannot read or whose
   blob differs (field `branch`), so an agent cannot mark committed a text it never wrote.
 - Pending and push: a submitted edit is a pending item of kind `skill_edit` with no `from`: it is for the
-  kit's coordinator (the configured name of the kit checkout's origin remote, `Api.kit_session_key`)
+  kit's coordinator (`Api.kit_session_key`: the sessions.json key of the agent session on the kit
+  repository, else the repository's configured name when none matches)
   while that session can be reached, else the PM's. Its push (`submitted`) goes to that key and the PM;
   done, fail or withdraw acknowledges it.
 

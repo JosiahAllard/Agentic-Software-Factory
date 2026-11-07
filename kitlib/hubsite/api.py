@@ -507,30 +507,31 @@ def launcher_keys():
     module loads), read now (inside sessions_once(), read once there). A launcher whose settings
     or that file cannot be read raises: the caller says so (Api.read_session_keys), never an
     empty set that reads as "no sessions"."""
+    return {k for k, _ in _launcher_entries()}
+
+
+def _launcher_entries():
+    """[(key, entry)] of sessions.json, read now (inside sessions_once(), read once there and
+    shared by launcher_keys and launcher_coordinators)."""
     memo = _ONCE.get()
     if memo is None:
-        return _read_launcher_keys()
-    if 'keys' not in memo:
+        return list(lstate.entries(lstate.read_sessions(lsettings.load())))
+    if 'entries' not in memo:
         try:
-            memo['keys'] = (frozenset(_read_launcher_keys()), None)
+            memo['entries'] = (list(lstate.entries(lstate.read_sessions(lsettings.load()))), None)
         except Exception as e:      # noqa: BLE001 - kept, and raised to each caller in the scope
-            memo['keys'] = (None, e)
-    keys, err = memo['keys']
+            memo['entries'] = (None, e)
+    got, err = memo['entries']
     if err is not None:
         raise err
-    return set(keys)
-
-
-def _read_launcher_keys():
-    return {k for k, _ in lstate.entries(lstate.read_sessions(lsettings.load()))}
+    return list(got)
 
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
     (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
-    return {k: e.get('repo') for k, e in lstate.entries(lstate.read_sessions(lsettings.load()))
-            if e.get('agent')}
+    return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 
 
 def _for(d, for_key):
@@ -790,13 +791,24 @@ class Api(object):
             return {AGENT_FROM}, _reason(e)
 
     def kit_session_key(self):
-        """kit_key(): the kit coordinator's session key, '' when it fails or gives no string
-        ("Skill edits")."""
+        """The kit coordinator's session key ("Skill edits"): kit_key() gives the kit repository's
+        configured name, and the key is, by coordinator_keys' rule, a coordinator session of
+        sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
+        none. '' when kit_key fails or gives no string. Whether that session exists is for the
+        caller (the route checks session_keys, the push resolves it live). The first of
+        kit_session_keys()."""
+        return (self.kit_session_keys() or [''])[0]
+
+    def kit_session_keys(self):
+        """Every key kit_session_key may be, a session's key before the name, [] for none: the
+        push tries each for a live session."""
         try:
-            key = self.kit_key()
+            name = self.kit_key()
         except Exception:           # noqa: BLE001 - no kit coordinator known: the PM hears it
-            key = ''
-        return key if isinstance(key, str) else ''
+            name = ''
+        if not isinstance(name, str) or not name:
+            return []
+        return self._keys_named(name)[1:] + [name]
 
     def repo_key(self, repo):
         """The session key of the coordinator of the repository whose remote is the repo_id
@@ -815,7 +827,11 @@ class Api(object):
         sessions.json (coordinators()) whose `repo` is that repository's configured name, matched
         without case, so a coordinator keyed otherwise (the kit's `kit`) is one. [] when the
         repository has no name; only repo_key's when sessions.json cannot be read."""
-        name = self.repo_key(repo)
+        return self._keys_named(self.repo_key(repo))
+
+    def _keys_named(self, name):
+        """coordinator_keys' rule for a configured repository name: [name, then the coordinator
+        sessions whose `repo` is it], [] for no name."""
         if not name:
             return []
         out = [name]

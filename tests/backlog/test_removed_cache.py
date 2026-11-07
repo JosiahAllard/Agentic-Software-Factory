@@ -48,17 +48,34 @@ class RemovedCache(unittest.TestCase):
             self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')), want)
             scan.assert_not_called()
 
+    def scans(self):
+        """The revs `scan_removed` is asked for by one `removed_records` call, and its rows."""
+        with mock.patch.object(smod, 'scan_removed', wraps=smod.scan_removed) as scan:
+            got = smod.removed_records(self.root, 'HEAD', 'backlog')
+        return [c.args[1] for c in scan.call_args_list], _rows(got)
+
     def test_a_tip_with_no_new_deletion_keeps_the_list_and_one_with_a_deletion_rescans(self):
         smod.removed_records(self.root, 'HEAD', 'backlog')
+        old = self.repo.head()
         self.repo.write('backlog/D.md', 'id: D\n')
-        self.repo.commit('add D', 'backlog/D.md')
-        self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')),
-                         _rows(self.uncached()))
+        new = self.repo.commit('add D', 'backlog/D.md')
+        revs, rows = self.scans()                # incremental: only the range is logged
+        self.assertEqual(revs, ['%s..%s' % (old, new)])
+        self.assertEqual(rows, _rows(self.uncached()))
         self.repo.git('rm', '-q', 'backlog/C.md')
         self.repo.git('commit', '-q', '-m', 'deletes C')
-        got = smod.removed_records(self.root, 'HEAD', 'backlog')
-        self.assertEqual(_rows(got), _rows(self.uncached()))
-        self.assertIn('C', [s for s, _r, _t in got])
+        revs, rows = self.scans()                # the range deleted C: range, then the full read
+        self.assertEqual(revs[1:], ['HEAD'])
+        self.assertEqual(rows, _rows(self.uncached()))
+        self.assertIn('C', [r[0] for r in rows])
+
+    def test_a_tip_that_is_not_a_descendant_is_read_in_full(self):
+        smod.removed_records(self.root, 'HEAD', 'backlog')
+        self.repo.git('reset', '-q', '--hard', 'HEAD~1')       # the cached tip is not an ancestor
+        revs, rows = self.scans()
+        self.assertEqual(revs, ['HEAD'])
+        self.assertEqual(rows, _rows(self.uncached()))
+        self.assertEqual([r[0] for r in rows], ['B'])
 
     def test_a_corrupt_cache_falls_back_and_a_failed_write_does_not_fail_the_read(self):
         smod.removed_records(self.root, 'HEAD', 'backlog')

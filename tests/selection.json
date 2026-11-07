@@ -16,6 +16,7 @@
   ],
   "paths": [
     ["hosts/**", ["host"]],
+    ["hosts.json", ["host"]],
     ["tests/host/fakehost/**", ["host"]],
     ["content/roles/**", ["content", "agents", "roster", "host"]],
     ["content/skills/**", ["content", "skills", "host"]],
@@ -58,7 +59,7 @@
     ["hosts/*/shell/agents/*", ["launcher"]],
     ["content/skills/*/SKILL.md", ["docs"]]
   ],
-  "prose": ["docs/**", "*.md", ".gitignore"],
+  "prose": ["docs/**", "*.md", ".gitignore", ".claude/**"],
   "always": ["scrub", "platform", "ci", "tests.proc.test_spawn_sites", "tests.bridge.test_port", "tests.modulemap.test_kit_map"],
   "serial": [],
   "smoke": [

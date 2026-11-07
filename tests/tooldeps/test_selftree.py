@@ -287,7 +287,7 @@ class FixtureTree(unittest.TestCase):
         self.assertEqual(selftree.code_refs('def f(:\n kitlib.leaf\n')[0], {'leaf'})
 
 
-# KIT-SELECT-UNMAPPED: paths once unmapped or once shared core select the tests that read them
+# Paths once unmapped or once shared core select the tests that read them
 # (FILES plus these).
 READER_FILES = {
     # a data file a test names, and one only a kitlib module names
@@ -766,7 +766,7 @@ class KitTree(unittest.TestCase):
             self.assertIsNot(self.select(path), ALL, path)
 
     def test_paths_once_unmapped_select_their_readers(self):
-        # KIT-SELECT-UNMAPPED: each of these ran the full suite
+        # each of these once ran the full suite
         picked = self.select('kitlib/gate/strict_defaults.py')
         self.assertIsNot(picked, ALL)
         self.assertIn('gate', picked)

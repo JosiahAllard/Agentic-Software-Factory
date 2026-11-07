@@ -9,7 +9,7 @@ Each landing is one entry in the machine-lock queue, ahead of ordinary runs; it 
 
 ## 1. Queue the verdict
 
-- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session>` (`<kit>/docs/gate.md` "Strict paths"). It refuses your own review of a Medium or High branch, a light model on a High one, and a LAND over the reviewer's `Verdict: SEND BACK`.
+- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session>` (`<kit>/docs/gate.md` "Strict paths"). It refuses your own review of a Medium or High branch, a reviewer model below the strong tier on a High one (land.py refuses that on a strict branch too, at landing), and a LAND over the reviewer's `Verdict: SEND BACK`.
 - After a main sync of a reviewed branch: `python <kit>/tools/verdict.py carry -C <main checkout> --branch <branch>`. `CARRIED` moves the verdict to the new tip (conflict-free main merges only); `NOT CARRIED` means review and queue the new tip.
 - The tip lands only with its one gate green on that exact tip: the gate the author ran when you asked (`gate.py -C <worktree>`, `--full` when it printed `FULL NEEDED`). `land.py` refuses any other record and says what it needs (`<kit>/docs/gate.md` "The final gate"); never bounce a scoped gate it accepts.
 
@@ -49,7 +49,7 @@ Verify whatever the verdict, read-only and on its own: `git ls-remote origin <ma
 
 ## Lander
 
-A lander (optional) does sections 2-4 for one branch or the batch its brief names, with these additions:
+A lander (optional) submits, waits and reports for one branch or the batch its brief names: sections 2 and 3, the verify included. Section 4 (records, notices, cleanup) stays the coordinator's: the lander reports a record still open and each `kept` line. Not landed: report; the coordinator re-queues. With these additions:
 - Inputs, all required (missing one: say what you need, do nothing): the branch; the reviewed tip, full sha; a verdict clearly saying to land (LAND, LAND WITH FOLLOW-UP: note where the follow-up is recorded; GO); any extra gate and its resources.
 - Work from the main checkout on the main branch, its `git status` clean, never inside the worktree being removed.
 - Size-check each doc both sides touched: the merged file's line count equals main's plus the branch's net lines for that file (`git diff --numstat <merge-base> <branch> -- <path>`), plus or minus 1; else stop and report.
@@ -60,6 +60,7 @@ A lander (optional) does sections 2-4 for one branch or the batch its brief name
 
 ## Never
 
-Edit code, scenes, tests or CI; resolve a conflict; decide a branch is ready; force-push or push anything but main through the landing command; `git add -A`, `git commit -a` or staging what you did not change; close or amend a record by hand; `reset --hard`; `branch -D` or `--force`; `git worktree remove` or `git branch -d` from a worktree; land without a verdict or a tip that moved after review (unless `verdict.py carry` recorded it); jump the queue, override or break a lock; remove a worktree or untracked file the brief did not name; add a flag, module or cleanup step the brief did not name; truncate native output through `head` (in bash without pipefail it hides a failure).
+- Force-push or push anything but main through the landing command; `git add -A`, `git commit -a` or staging what you did not change; close or amend a record by hand; `reset --hard`; `branch -D` or `--force`; `git worktree remove` or `git branch -d` from a worktree; land without a verdict or a tip that moved after review (unless `verdict.py carry` recorded it); jump the queue, override or break a lock; truncate native output through `head` (in bash without pipefail it hides a failure).
+- A lander also never: edits code, scenes, tests or CI; resolves a conflict; decides a branch is ready; removes a worktree or untracked file the brief did not name; adds a flag, module or cleanup step the brief did not name.
 
 Details: `<kit>/docs/gate.md` ("Commands", "Exit codes", "Landing", "Branch cleanup"); `<kit>/docs/worktree-remove.md`.

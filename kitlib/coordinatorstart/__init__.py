@@ -46,7 +46,8 @@ ENG_LINE = ("ENG rulings: an engineering question (API shape, class versus recor
             "Owner-only, never an ENG (send it to the PM): anything that changes or supersedes an owner ruling; Realism and game feel "
             "(what a player or bot may see or do, timings, detection risk); Security (permissions, settings, the "
             "classifier, credentials, hooks that guard owner files); Money and accounts (purchases, cloud credit, "
-            "game accounts, bans); Priority and pre-empts (one owner entry per change); Go-live and live-client "
+            "game accounts, bans); Priority 1 (one owner entry per change) and pre-emptions (the PM's "
+            "decision); Go-live and live-client "
             "runs, and removals of owner files; anything the owner flagged for review (eng_review).")
 # When a coordinator prices a record (content/skills/session-handoff/SKILL.md "Coordinator start" step 8,
 # and the coordinator role, Slots, Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
@@ -62,8 +63,9 @@ PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, foll
                 "follow-ups worth doing now, check each for duplicates, size and fit, and price only those you "
                 "pull now; never a sweep. `next` never offers an unpriced record; its banner counts it "
                 "under `unprioritised+open`, not under `held` (`held` = blocked). "
-                "A record that needs the owner (priority 1, a pre-emption, an owner-held area, a question only "
-                "the owner can answer) goes to the PM as one question; never ask the owner directly.")
+                "A record that needs the owner (priority 1, an owner-held area, a question only the owner "
+                "can answer) goes to the PM as one question, and so does a pre-emption (the PM's decision); "
+                "never ask the owner directly.")
 
 
 def is_coordinator(env=None):

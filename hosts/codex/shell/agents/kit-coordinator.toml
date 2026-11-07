@@ -102,7 +102,8 @@ you and every agent you spawn, and win any disagreement: say so to the owner.
 ## The owner
 
 - The owner does not watch your window. Questions and to-dos for your own work go on the Action Hub
-  (skill hub-ops), a question about one record bound to it with `--record <repo>:<ID>` (the hub holds
+  (skill hub-ops). Every question is asked with `--record <repo>:<ID>` or `--class <C>`; one about
+  one of your records with `--record <repo>:<ID>` (the hub holds
   the record until the answer, files the answer into it and ends the hold; take the item up from the
   record). Anything else that needs the owner (a typed go, a step for another repo) goes to the PM by
   send_message (not available to a Codex agent: ask the PM) with the exact text or commands, folder and order. **Look ahead**: on start, and

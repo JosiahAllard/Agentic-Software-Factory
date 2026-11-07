@@ -36,10 +36,10 @@ Your caller is the coordinator (a deep-worker: the requester; a topic session: t
 
 - **One test per behaviour.** Never add a test where one already covers the behaviour: extend it (a case in its table) or rely on it. Test what your change owns, once, at the cheapest layer that sees it; never re-check what another layer already reports (an API's own error log, a check script's own verdict).
 - **Thin.** Check a state or a return value. Assert log text only for a token a reader consumes, named as a constant (the profile's log-token list where it has one). A test double needed in two files goes in the repo's shared test-support. Test data is made for its test, never a copy held equal to a source file. Tests bind port 0.
-- **Delete stale tests**: one that tests removed behaviour or duplicates another goes, and the commit says what covers it now. Never delete or loosen a test to get green.
+- **Delete stale tests**: one that tests removed behaviour or duplicates another goes, and the commit says what covers it now.
 - **Red first.** Show the new case fails at the base: `python <kit>/tools/redfirst.py -C <worktree> --tests FILE[::FILTER]` (`<kit>/docs/redfirst.md`); never revert tracked files to get red. Name the observable that would be absent without your change.
-- **While building**, run only the unit tests that exercise your change: the test files you added or changed and the changed module's own tests, run directly (for the kit, `python -m unittest tests.<pkg>.<module>`; `python <kit>/tools/kit_tests.py -C <worktree> --select --plan` lists what the change reaches). They are never a gate. A filtered `gradlew test --tests` or `dotnet test --filter` books `--kind quick-test --expect <estimate>` (skill machine-lock-run step 4).
-- **The gate** runs once, after review, on the reviewed tip, when your caller asks: `python <kit>/tools/gate.py -C <worktree>`, which selects by the diff; `--full` only when that run prints `FULL NEEDED` (`<kit>/docs/gate.md` "The final gate"). Run it to a log and read the log. Waiting: `<kit>/docs/gate.md` "Waiting on a gate: who arms what" (your own gate: no Monitor). At most 5 gate runs per branch, then ask. A red `--full`: one `python <kit>/tools/gate.py -C <worktree> --rerun`; FLAKE lands the tip (report the `backlog.py add` line it prints), REAL is real. Base moved: skill branch-sync.
+- **While building**, run only the touched tests: the tests the repo's selector picks for the diff, without smoke (for the kit, `python <kit>/tools/kit_tests.py -C <worktree> --select`); with no selector, the test files the change edits. They run outside the lock queue and are never a gate. A filtered run (`gradlew test --tests`, `dotnet test --filter`) the guard sends to the lock books `--kind quick-test --expect <estimate>` (skill machine-lock-run step 4); a selection the tool reports as `full suite: ...` takes the machine lock (skill machine-lock-run).
+- **The gate** runs once, after review, on the reviewed tip, when your caller asks: `python <kit>/tools/gate.py -C <worktree>`, which selects by the diff; `--full` only when that run prints `FULL NEEDED` (`<kit>/docs/gate.md` "The final gate"). Run it to a log and read the log. Waiting: `<kit>/docs/gate.md` "Waiting on a gate: who arms what" (your own gate: no Monitor). At most 5 gate runs per branch, then ask. A red `--full`: one `python <kit>/tools/gate.py -C <worktree> --rerun` (it counts toward the 5); FLAKE lands the tip (report the `backlog.py add` line it prints); REAL, or a test that failed twice, is real: the tip never lands; fix it. Base moved: skill branch-sync.
 
 ## Commit
 
@@ -63,7 +63,7 @@ Only where `<kit>/docs/ROSTER.md` maps the light tier to a cheaper model than yo
 ## Never
 
 - Land, merge to the main branch, push, force-push or rewrite its history; `reset --hard` or `git clean`.
-- Rerun a failing run other than its one targeted rerun.
+- Weaken a test or a check to get green, or rerun a failing run other than by its one targeted rerun; any other failing run is real.
 - Review your own work as if independent, or keep going on a theory the evidence contradicts.
 - Write the owner's clear-session marker.
 

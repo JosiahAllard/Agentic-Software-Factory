@@ -256,7 +256,7 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
     if not chosen:
         return error(G.REFUSED, 'the gate at %s has no non-manual step' % sha[:10], sha)
     say('daily: %s at %s, %d step(s), logs in %s' % (s['ref'], sha[:10], len(chosen), log_dir))
-    kw = dict(book_kw or {})
+    kw = dict(book_kw or {}, gate_mode='daily')     # its lock run's and history line's gate_mode
     kw.setdefault('wait_s', s['max_wait'])
     ran, refused = runner.gated(tested, s['worktree'], sha, [], chosen, s['kind'],
                                 runner.repo_name(cfg, main), SLUG, log_dir, say, kw)

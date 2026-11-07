@@ -129,6 +129,7 @@ class Green(Case):
         self.assertEqual(o.code, G.OK, o.lines)
         self.assertEqual(self.result()['verdict'], 'green')
         self.assertIn('daily: GREEN at', o.lines[0])
+        self.assertEqual([d.get('gate_mode') for d in self.store.history_records()], ['daily'])
 
     def test_a_default_results_folder_that_cannot_be_made_falls_back_with_a_note(self):
         """runner.make_log_dir: the shared temp's gate log base, as the gate's own logs."""

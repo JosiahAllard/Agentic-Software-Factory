@@ -2,7 +2,8 @@
 books a gate) on its record, and its history line keeps it (Store.HISTORY_KEYS), so a gate's run
 is matched to the exact tree it tested. Slot.note_tree records it on a run already held (a
 landing's slot, which runs the merged gate). A run that names no tree has none in its record and
-`tree` null in its history line."""
+`tree` null in its history line. The gate's mode (book's `gate_mode`, Slot.note_tree's) is kept
+the same way."""
 import os
 import unittest
 
@@ -52,6 +53,35 @@ class GateTree(StoreCase):
             slot.note_tree(None)                    # nothing to note: the tree stays
             self.assertEqual(self.store.read("active/%s.json" % rid)["tree"], TREE)
         self.assertEqual(self.history(rid)["tree"], TREE)
+
+    def test_a_booked_gate_mode_is_on_the_record_and_kept_in_the_history_line(self):
+        self.confine(1)
+        with self.book(gate_mode="full") as slot:
+            rid = slot.id
+            self.assertEqual(self.store.read("active/%s.json" % rid)["gate_mode"], "full")
+        self.assertEqual(self.store.read("ended/%s.json" % rid)["gate_mode"], "full")
+        self.assertEqual(self.history(rid)["gate_mode"], "full")
+
+    def test_a_run_with_no_gate_mode_has_a_null_one_in_its_history_line(self):
+        self.confine(1)
+        with self.book() as slot:
+            rid = slot.id
+            self.assertNotIn("gate_mode", self.store.read("active/%s.json" % rid))
+        hist = self.history(rid)
+        self.assertIn("gate_mode", hist)
+        self.assertIsNone(hist["gate_mode"])
+
+    def test_note_tree_records_the_gate_mode_of_a_held_run(self):
+        self.confine(1)
+        with self.book(tree=OTHER) as slot:
+            rid = slot.id
+            slot.note_tree(TREE, "docs")
+            rec = self.store.read("active/%s.json" % rid)
+            self.assertEqual((rec["tree"], rec["gate_mode"]), (TREE, "docs"))
+            slot.note_tree(None)                    # nothing to note: both stay
+            rec = self.store.read("active/%s.json" % rid)
+            self.assertEqual((rec["tree"], rec["gate_mode"]), (TREE, "docs"))
+        self.assertEqual(self.history(rid)["gate_mode"], "docs")
 
 
 if __name__ == "__main__":

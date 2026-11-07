@@ -286,8 +286,8 @@ class _Slot(object):
     def stop_daemons(self):
         pass
 
-    def note_tree(self, tree):
-        pass                    # no lock record to note the tested tree on
+    def note_tree(self, tree, gate_mode=None):
+        pass                    # no lock record to note the tested tree or gate mode on
 
     def end_tree(self):
         pass

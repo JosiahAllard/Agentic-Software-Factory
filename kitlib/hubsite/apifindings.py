@@ -1,6 +1,30 @@
-"""kitlib.hubsite.apifindings: the api's finding routes ("Findings" in the api module docstring):
+"""kitlib.hubsite.apifindings: the api's finding routes ("Findings" below):
 the maintenance lint's findings, the owner's marks on them, and the cutting of absolute paths
-from what a remote caller sees. kitlib.hubsite.api re-exports every name here."""
+from what a remote caller sees. kitlib.hubsite.api re-exports every name here.
+
+Findings. GET findings (ANY) lists the maintenance lint's last findings (the `findings` view),
+filtered by `repo` (case ignored), less every one the owner has marked: a finding_marks/
+<fingerprint> document. POST finding_marks (OWNER) marks one, {fingerprint, status, note?,
+if_version?}: status is one of hubvalidate.STATUSES['finding_marks'], the fingerprint must be one
+the lint shows (`not_found` otherwise), and the mark keeps the finding's repo, check, target and
+text as they were. Writing over a mark takes its `if_version`, as for a schedule. POST
+finding_marks/{id}/delete (OWNER, if_version optional) takes a mark back; GET finding_marks (ANY)
+lists them, less any whose repo's last lint run no longer lists its finding (hidden, still stored;
+the snapshot's finding_marks likewise). POST to_pm with kind `act` passes a finding on to the PM: `finding` (its
+fingerprint, required, and refused for any other kind) prefills repo, refs (the fingerprint and
+the finding's target first) and, when none is given, text; the page marks the finding itself.
+POST to_pm/{id}/edit refuses to make an act note another kind or another note an act note.
+A finding's target and fix can name a path on this machine (a worktree's folder, a kit tool):
+only the local owner (Request.full: the owner, its error answers in its own words, not through
+the tunnel) sees them whole. Any other caller's findings, marks and act-note text have each
+absolute path cut to `.../<its last part>`, and no act note's refs carry one; GET to_pm and GET
+snapshot cut an act note's text and refs and a mark's target the same way (_unpath_act, _seen),
+and GET pending, GET wait and GET snapshot an act note's pending title (_unpath_pending).
+GET findings also answers `runs`: [{repo, started, ledger, skipped}], each repo's last run from
+the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or null, skipped the
+skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
+else null (_lint_runs); no view, or one that fails, is an empty list.
+"""
 import re
 
 from kitlib import hubvalidate

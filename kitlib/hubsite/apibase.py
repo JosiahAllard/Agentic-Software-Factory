@@ -1,7 +1,39 @@
 """kitlib.hubsite.apibase: what the api's handlers share: the role and status constants, Route and
-Request, the error body, the readers of a request's body and query, and ApiConfig (the api module docstring
-has the rules; kitlib.hubsite.api re-exports every name here, so a caller keeps importing it
-from there)."""
+Request, the error body, the readers of a request's body and query, and ApiConfig (the rules
+are "Fields" and "Creators" below; kitlib.hubsite.api re-exports every name here, so a caller
+keeps importing it from there).
+
+Fields. A write route names the body fields it takes; any other field is refused (`invalid`, the
+field named), so a body cannot carry a field another role owns (an agent posting a question
+cannot post its answer). status, the time stamps and a to-do's `from: you` are set here from the
+route and the role, never taken from the body. A write to an existing document is pinned to the
+version this module read (or the caller's `if_version`), so a check made on one version is never
+applied to another: the loser gets `conflict`. The `from` an agent gives a to-do is a name in
+printable ASCII (0x21 to 0x7E, single spaces inside it, the ends trimmed); anything else is
+`invalid`, and so is any spelling of `you`. A question's `from` is the session its answer goes
+back to: a key of the launcher's sessions.json, read on each add (Api's session_keys), or `pm`,
+which is also what an absent one is; any other is `invalid`, and the refusal names the known
+keys, never the file; when sessions.json or the launcher's settings cannot be read, only `pm` is
+known and the refusal says the read failed, with the exception's class name. A new to-do's `steps` are made into its commands and detail here and are
+not kept (todo_steps); an agent's to-do is judged by the owner's to-do rules (kitlib.hubsite.
+todosteps.check) for every client. An agent's new to-do may give `record` {repo, id} (checked as
+a question's, _bound): the record waits on the owner until the to-do is done (park_item,
+`until: owner todo:T-n done`), and its withdrawal or the owner's deletion drops that line
+(unpark_item). The owner's to-do and every to-do edit take no record. On the edit routes a null `repo` (and a to-do's
+null `detail`) clears the field exactly as "" does; any other null field is read as absent.
+
+Creators. An agent edits (POST questions/{id}/edit, todos/{id}/edit) or withdraws (POST
+questions/{id}/delete, todos/{id}/delete) only an open item it added: the body gives the item's
+own `from` (`pm` matches an item with none) and the `if_version` it read, both required, and an
+owner's to-do (`from: you`) is never an agent's. A wrong `from` is `forbidden`, an item no longer
+open is `conflict`, field status, and neither changes it. POST questions/{id}/done takes an
+optional `from` (default `pm`) and is `forbidden`, field from, unless it is the question's own
+`from` or `pm`. Every agent shares one token, so the `from` is a claim: the check stops a mistake, not an agent that gives another's name. An agent's
+to-do edit is judged by the owner's to-do rules (todo_steps), the changed fields only; it takes
+no `steps`. The owner edits only a to-do of their own (any status) and deletes one of their own
+at any status, or any open question or open to-do; the owner never edits an agent's item. A
+withdrawal deletes the document: there is no withdrawn status.
+"""
 import collections
 import dataclasses
 import datetime
@@ -59,7 +91,7 @@ _FALSE = ('', '0', 'false', 'no', 'off')
 _ID_SPLIT = re.compile(r'([0-9]+)')
 _NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
 _SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
-# A hub item's id or a ruling's anywhere in a page id ("Pages"): hubvalidate._REF's pattern, plus
+# A hub item's id or a ruling's anywhere in a page id ("Pages" in apipages): hubvalidate._REF's pattern, plus
 # A, E and R and the per-repo ledger id H-<repo>-nnnn, searched, so neither `plan-Q-1` nor `Q-1.v2` holds a ref a reader would follow.
 _REF_SHAPED = re.compile(r'(?<![A-Za-z0-9])(?:[QMTPSARE]-\d+|H-[a-z0-9][a-z0-9-]*-\d+)(?![A-Za-z0-9])', re.I)
 PAGE_HTML_MAX = pagecheck.MAX_BYTES

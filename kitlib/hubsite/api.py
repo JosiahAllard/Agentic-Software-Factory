@@ -3,7 +3,8 @@ hub site design, section 2 "HTTP API" and section 9).
 
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
-             AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
+             AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock" in
+             kitlib.hubsite.apilock).
   Api(store, views=None, clock=None, now=None, lock=None, config=None, **hooks)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
@@ -26,200 +27,13 @@ that request, kitlib.hubsite.httpd passes it on). Every other caller is refused 
 field `role`, with NOT_STRONG: the owner token, a browser session paired from it and an agent are
 never strong. strong is a call argument, never a field of the body or the query, and it opens no
 other route: on OWNER, AGENT and ANY routes the role alone decides. A handler reads it as
-Request.strong. POST approvals/{id}/decide is an APPROVER route ("Approvals"), and so are the
+Request.strong. POST approvals/{id}/decide is an APPROVER route ("Approvals" in kitlib.hubsite.apiapprovals), and so are the
 lock's reservation and division writes. LOCK_WRITE is a route role too: OWNER, and strong as
-well when the call came over the tunnel ("Machine lock").
+well when the call came over the tunnel ("Machine lock" in kitlib.hubsite.apilock).
 
-Approvals (kitlib.hubsite.approvals holds the rules; these routes only carry them). POST approvals
-(AGENT) adds a pending request: the base of each file is read with git from this machine's
-checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
-that is not the file at head is `invalid`, field files), and the unified diff lines the page
-shows are stored in the document as `diff`. POST approvals/{id}/decide (APPROVER) writes the
-owner's decision, signed with Api's approval_key; POST approvals/{id}/consume (AGENT) marks an
-approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
-and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
-expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
-requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
-does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
-waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
-decided`), and the withdrawal drops that line (unpark_item); an op request takes none. POST
-approvals/{id}/supersede (AGENT) marks a decided approval nobody consumed superseded
-(approvals.supersede_fields): the body gives `from` (`pm`, or a coordinator session of the
-approval's repo, Api.coordinator_keys: a claim, as for questions done), `by` (the approval that replaces it,
-which must exist, or a commit this machine's checkout of the repo has on main as last fetched,
-approvals.on_main) and `if_version`; it leaves pending and is never consumed. GET approvals/{id}/verify
-(AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
-{ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
-An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
-is added with kind, op, repo, line, title and optional reason and what, and no checkout is read;
-any other kind is `invalid`, field kind. It is consumed with args_sha256 in place of commit, and
-verified with the query kind=op, op, repo and args (the line's sha256), which answers its version
-too, the pin of the consume that follows.
-GET snapshot carries `strong`: true only on the strong owner's call (Request.strong), so the page
-shows Approve and Deny as usable; the decide route checks the role itself all the same.
-
-Pages. POST pages (AGENT) publishes a page: the card `pages/<id>` and its body `page_html/<id>`.
-The body is {id, title, html, repo?, from?, summary?, refs?, kind?, folder?, if_version?}. The
-id is the caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>`
-with no letter or digit either side, anywhere, so a ref that names a page is never read as an
-item);
-html is judged by kitlib.hubsite.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
-outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
-nothing written. Publishing over a page takes the card's `if_version`; without it, or with
-another, it is `conflict`. store.PAGES_LOCK is held from the reads to the last write of a publish or a
-delete (a page is two documents), so a second publisher reads only after the first has written
-both, and with the same pin
-it is `conflict` with nothing written. The body is put first and the card second, each pinned to
-the version read (0: not there yet), so a card never names a missing body; a card write that
-fails after its body leaves an orphan body, which kitlib.hubvalidate warns of and the next
-publish overwrites. The card carries title, repo, summary, refs, kind, folder (each text, kind
-and folder optional), from (an agent's name, as a to-do's), `at` and `bytes`. POST
-pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folder?, repo?,
-if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
-stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
-kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
-GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out
-(and `handoffs`): the Docs tab reads a body when it is opened. GET snapshot?collections=a,b
-answers {revision, collections} with those collections alone, cut as the whole snapshot cuts
-them, and no views, pending or status; a name that is not one of its collections is `invalid`,
-field collections (Client.inbox reads it so; an older hub ignores the query and answers whole).
-GET snapshot?bare=1 answers the whole snapshot with `collections` {}: the revision, views,
-pending and status, which can move with no store write. The page reads it after a wait that
-timed out (no write ended it) and keeps the documents it holds when the revision is the one it
-drew; bare with collections is `invalid`, field bare. POST pages/{id}/delete (OWNER, if_version
-optional) deletes the card, then the body; a
-body delete that fails leaves the card deleted and the body an orphan, as above. One process
-lock is enough: Store.open lets one process write a store (`_store.lock`).
-
-Schedules. POST schedules (OWNER) sets when one of the kit's automatic tasks runs for one repo:
-{task, repo, cadence, at, days?, if_version?} into `schedules/<task>-<repo>`. task is one of
-SCHEDULE_TASKS; cadence one of CADENCES (`off` keeps the document and runs nothing); at is HH:MM,
-24-hour; days, a list from DAYS, is required for `weekly` and refused for the others, and is
-stored once each in DAYS order. repo must be a repository the hub knows (its repos/ documents'
-names and aliases, and the store's known_repos), case ignored, and is stored as that repo's name.
-A task that runs for one repository (kitlib.autotasks.tick.TASKS per_repo), on any cadence but
-`off`, also needs exactly one checkout of it in the machine config's launcher.repos, as the tick
-finds it (tick.find_repo over Api's schedule_repos, default launcher_checkouts: tick.launcher_repos);
-none, or two, is `invalid`, field repo, and so is a launcher config that cannot be read.
-A refusal is `invalid` naming the field, with nothing written. Writing over a schedule takes its
-`if_version`; without it, or with another, it is `conflict`, as for a page, and that refusal's
-error names the schedule's `id` (so a new one for a task and repo that has one can open it,
-the repo matched as above). The answer carries
-`first_run`: the first slot strictly after set_at by kitlib.autotasks.due's rule, naive local
-time to the minute (None when off). GET schedules (ANY) lists them, with `tick`: {last, running,
-every_s}, last when the tick was last seen (Api's tick_seen, default tick_last_seen: the time of
-its state file) and running false when that is None or more than TICK_STALE_S before the clock.
-Each listed schedule also carries `last_outcome` (the tick's record for it: started, skipped, seen
-or failed; None for none), `last_run` (that record's `at` when it is `started`, else None) and
-`next_due` (the first slot after the clock by due's rule, naive local time to the minute; None when
-off), read from Api's tick_state, default tick_run_state; none is stored.
-Nothing here runs a task: a tick outside the hub reads the list.
-
-Findings. GET findings (ANY) lists the maintenance lint's last findings (the `findings` view),
-filtered by `repo` (case ignored), less every one the owner has marked: a finding_marks/
-<fingerprint> document. POST finding_marks (OWNER) marks one, {fingerprint, status, note?,
-if_version?}: status is one of hubvalidate.STATUSES['finding_marks'], the fingerprint must be one
-the lint shows (`not_found` otherwise), and the mark keeps the finding's repo, check, target and
-text as they were. Writing over a mark takes its `if_version`, as for a schedule. POST
-finding_marks/{id}/delete (OWNER, if_version optional) takes a mark back; GET finding_marks (ANY)
-lists them, less any whose repo's last lint run no longer lists its finding (hidden, still stored;
-the snapshot's finding_marks likewise). POST to_pm with kind `act` passes a finding on to the PM: `finding` (its
-fingerprint, required, and refused for any other kind) prefills repo, refs (the fingerprint and
-the finding's target first) and, when none is given, text; the page marks the finding itself.
-POST to_pm/{id}/edit refuses to make an act note another kind or another note an act note.
-A finding's target and fix can name a path on this machine (a worktree's folder, a kit tool):
-only the local owner (Request.full: the owner, its error answers in its own words, not through
-the tunnel) sees them whole. Any other caller's findings, marks and act-note text have each
-absolute path cut to `.../<its last part>`, and no act note's refs carry one; GET to_pm and GET
-snapshot cut an act note's text and refs and a mark's target the same way (_unpath_act, _seen),
-and GET pending, GET wait and GET snapshot an act note's pending title (_unpath_pending).
-GET findings also answers `runs`: [{repo, started, ledger, skipped}], each repo's last run from
-the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or null, skipped the
-skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
-else null (_lint_runs); no view, or one that fails, is an empty list.
-
-Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
-landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
-fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
-record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
-main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
-whose repo is the event's (repo_name of its remote) is marked spent (that sha) and spent_at,
-once: display only, for a later page (none reads it yet); its status stays, any other is
-skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
-lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX); GET snapshot
-carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
-changes or deletes one.
-
-Hand-offs (docs/hub-approvals.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
-checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
-kind, state_path}, all required. from is a session key checked as a question's is (a launcher
-session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
-of the reply; checkin: a successor that has checked in, kitlib.launcher.handoff); state_path is
-the absolute path of the state note, on one line. The hub sets `at`.
-GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the highest id per
-`from`), sorted by key, or with `from=<key>` that key's alone; over the tunnel only, the state
-path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
-deletes one, and GET snapshot leaves them out.
-
-Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"). The owner writes a new text for one kit
-skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
-repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
-listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
-of that text. Only the owner writes an edit, as only the owner writes a story (POST stories,
-stories/{id}/withdraw, to_pm and finding_marks are OWNER routes too): POST skill_edits {skill,
-text, submit?}, POST skill_edits/{id}/edit {text?, submit?, if_version} and POST
-skill_edits/{id}/withdraw {if_version?} are OWNER, so an agent's key is refused `forbidden`, field
-role, before the body is read, and nothing is written. An edit is draft, or submitted with
-`submit`; base_blob is the blob of the source the hub served when it was written, so it can lag
-the kit's main. The text is checked by kitlib.hubsite.skilledits.why_not: at most MAX_BYTES of
-UTF-8, no NUL, and front matter whose `name:` is the source's (an edit never renames a skill).
-Only a draft, superseded or failed edit changes; a superseded or failed one is put on the source
-at its source_blob when kit_text reads that blob (the text GET skill_edits/{id} shows the owner),
-else on the served source as it is now; its base_blob is that blob. Submitting when base_blob is
-neither the served source's blob nor the blob on main (kit_blob) makes it superseded, with
-source_blob the blob on main (the served blob when kit_blob reads none), for the owner to re-apply.
-POST skill_edits/{id}/done {branch, blob, if_version} and POST skill_edits/{id}/fail {why,
-current_blob?, if_version} are AGENT, and only for a submitted edit: done refuses a blob that is
-not git_blob of the edit's text as UTF-8, and it reads the blob of the source on `branch` in
-the kit checkout itself (the Api's kit_blob) and refuses one it cannot read or that is not that
-blob (field branch), so an agent cannot mark committed a text it never wrote; with no kit_blob it
-reads nothing, so done is refused. fail with a current_blob
-that is not base_blob (the worker's check against main) makes the edit superseded, else failed.
-GET skill_edits (ANY, status) lists the edits, GET skill_edits/{id} (ANY) gives {item, source}:
-source is {text, blob} at a superseded or failed edit's source_blob when kit_text reads it, else
-null. A
-submitted edit is a pending item of kind `skill_edit` ("Routes").
-
-Fields. A write route names the body fields it takes; any other field is refused (`invalid`, the
-field named), so a body cannot carry a field another role owns (an agent posting a question
-cannot post its answer). status, the time stamps and a to-do's `from: you` are set here from the
-route and the role, never taken from the body. A write to an existing document is pinned to the
-version this module read (or the caller's `if_version`), so a check made on one version is never
-applied to another: the loser gets `conflict`. The `from` an agent gives a to-do is a name in
-printable ASCII (0x21 to 0x7E, single spaces inside it, the ends trimmed); anything else is
-`invalid`, and so is any spelling of `you`. A question's `from` is the session its answer goes
-back to: a key of the launcher's sessions.json, read on each add (Api's session_keys), or `pm`,
-which is also what an absent one is; any other is `invalid`, and the refusal names the known
-keys, never the file; when sessions.json or the launcher's settings cannot be read, only `pm` is
-known and the refusal says the read failed, with the exception's class name. A new to-do's `steps` are made into its commands and detail here and are
-not kept (todo_steps); an agent's to-do is judged by the owner's to-do rules (kitlib.hubsite.
-todosteps.check) for every client. An agent's new to-do may give `record` {repo, id} (checked as
-a question's, _bound): the record waits on the owner until the to-do is done (park_item,
-`until: owner todo:T-n done`), and its withdrawal or the owner's deletion drops that line
-(unpark_item). The owner's to-do and every to-do edit take no record. On the edit routes a null `repo` (and a to-do's
-null `detail`) clears the field exactly as "" does; any other null field is read as absent.
-
-Creators. An agent edits (POST questions/{id}/edit, todos/{id}/edit) or withdraws (POST
-questions/{id}/delete, todos/{id}/delete) only an open item it added: the body gives the item's
-own `from` (`pm` matches an item with none) and the `if_version` it read, both required, and an
-owner's to-do (`from: you`) is never an agent's. A wrong `from` is `forbidden`, an item no longer
-open is `conflict`, field status, and neither changes it. POST questions/{id}/done takes an
-optional `from` (default `pm`) and is `forbidden`, field from, unless it is the question's own
-`from` or `pm`. Every agent shares one token, so the `from` is a claim: the check stops a mistake, not an agent that gives another's name. An agent's
-to-do edit is judged by the owner's to-do rules (todo_steps), the changed fields only; it takes
-no `steps`. The owner edits only a to-do of their own (any status) and deletes one of their own
-at any status, or any open question or open to-do; the owner never edits an agent's item. A
-withdrawal deletes the document: there is no withdrawn status.
+Moved to the module that holds each route group: Approvals (apiapprovals), Pages (apipages),
+Schedules (apisched), Findings (apifindings), Landings and Hand-offs (apilog), Skill edits
+(apiskills), Machine lock (apilock), Fields and Creators (apibase).
 
 Results. status is 200 with the route's object, or the status of STATUS[code] with
 {"ok": false, "error": {"code", "message", "field"}}; both carry `revision`. The codes are the
@@ -284,54 +98,6 @@ choose who hears it. `standing` {at, via} marks an answer the owner made a stand
 answer's `standing` true, or later `standing` alone: _promote): the PM logs it.
 POST questions/{id}/log and POST to_pm/{id}/reply take no ruling id (questions_log): a question
 is marked logged with none. Documents an older hub logged keep their `ruling`; nothing reads it.
-
-Machine lock. By the owner's decision the hub reads and changes the machine lock in-process,
-through `lock`: a door object (kitlib.hubsite.lockdoor.LockDoor on the machine's server; this
-module never imports it) with
-  revision()                     the lock store's revision
-  view(remote=False)             {lock_revision, view, writer}: kitlib.lockui.model to_json's view,
-                                 and 'owner' or 'agent': who the lock takes this hub for
-  stats(days, since, until)      kitlib.lock.api stats
-  reserve, hold, edit, end_hold, end_run, move_to_top, game_mode, games, division
-                                 the writes (lockdoor's docstring), each one lock api call, each
-                                 taking remote; a refusal is a HubError
-Every lock route is closed to an agent (`forbidden`, field role), on every listener: an agent
-reads the lock through its own MCP server and changes it with the lock's tools. The reads (GET
-lock/view, lock/stats, lock/wait) are OWNER's. The writes, by the owner's decision: on this
-machine the owner's login is enough, over the tunnel every lock write needs the strong owner. A
-write the decision does not name (a reservation: any hold write; the division) is the strong
-owner's on every listener, APPROVER; the others (end a run, move one to the top, game mode, the
-games list) are LOCK_WRITE: OWNER with strong, or OWNER on a listener that is not the tunnel
-(via is not TUNNEL_VIA), refused with NOT_LOCK_WRITER. A future relay that reaches the local
-listener for a remote browser must close that local owner path for its callers.
-  POST lock/holds            APPROVER  {kind: reserve, scope: whole|half, start, end (ISO with
-                                       offset), note} or {kind: hold, scope, start, end, note,
-                                       cpu, gpu} (the Hold dialog's text, read in the PC's zone)
-  POST lock/holds/{id}/edit  APPROVER  {start, end, note}: the Edit dialog's text; no note keeps it
-  POST lock/holds/{id}/end   APPROVER  {}
-  POST lock/division         APPROVER  {fields: {key: text}} or {defaults: true}
-  POST lock/runs/{id}/end    LOCK_WRITE {confirm}: confirm repeats the run id
-  POST lock/runs/{id}/top    LOCK_WRITE {}
-  POST lock/game_mode        LOCK_WRITE {enabled}
-  POST lock/games            LOCK_WRITE {text}: the Games dialog's text
-A write answers {ok, result} plus the view after it (as GET lock/view; view null when the lock
-cannot be read then). The page makes owner holds only; there is no `owner` field. A busy lock is
-`conflict` (409). The view answers of the lock routes carry `writes`: {lock, strong, why}, what
-this caller may change (lock: the LOCK_WRITE routes, strong: the APPROVER ones too) and, when
-one is false, why (WRITES_WHY); a hub the lock takes for an agent may change nothing.
-GET lock/view gives the view; `remote` is true only for the tunnel listener's calls (via
-TUNNEL_VIA), whose warnings and refusals that can name a file are fixed phrases
-(model.REMOTE_SAYS, lockdoor.REMOTE_SAYS); every listener gets the same allow-listed keys. The view
-carries `queue_items` (the line behind the runs, with each one's position and why it waits) and its
-finished runs carry `slug`; the action hub page's Schedule view (web/index.html) draws them. GET
-lock/stats takes days (1 to 366), since and until (ISO times with their offset). GET lock/wait
-takes since (a lock revision; default the one now) and timeout (seconds, at most WAIT_MAX_S) and
-answers the view plus `changed` once the lock's revision differs from since, or at the timeout
-with changed false. The lock store has no wake of its own, so the wait looks at its revision
-every LOCK_POLL_S, sleeping in Store.wait so that a close of the hub store ends it at once
-(`store`). It is a wait for the listener (WAIT_HANDLERS): it takes one of the listener's wait
-slots. With no door every route is `unavailable`, field lock; a door that raises anything but a
-HubError is `unavailable` with only the exception's class name (_reason), never its text.
 
 Nothing here opens a socket, starts a thread, prints, parses arguments or exits. GET wait (and GET
 lock/wait) blocks in Store.wait for at most WAIT_MAX_S; how many may wait at once is the listener's
@@ -588,19 +354,19 @@ class Api(object):
     iterable, called afresh on each use (default: launcher_keys); `now` gives monotonic seconds
     for the routes (default: time.monotonic). `approval_key()` gives the approval key or None,
     read on each decide and verify; `checkout(repo_id)` gives the root of this machine's checkout
-    of that repository or None ("Approvals"); both default to None, which no approval passes.
+    of that repository or None ("Approvals" in apiapprovals); both default to None, which no approval passes.
     `repo_name(repo_id)` gives the name of this machine's configured repository with that remote,
     or None (default), which routes a decided approval to the PM alone ("Routes").
-    `lock` is the machine lock's door or None ("Machine lock"). `schedule_repos()` gives the
+    `lock` is the machine lock's door or None ("Machine lock" in apilock). `schedule_repos()` gives the
     machine config's launcher.repos as [(label, main checkout, name)] (default:
     launcher_checkouts), `tick_seen()` the ISO time the automatic tasks' tick was last seen or
     None (default: tick_last_seen), `tick_state()` the tick's records by schedule key (default:
-    tick_run_state); all are read on each use ("Schedules"). `kit_key()` gives the session key
+    tick_run_state); all are read on each use ("Schedules" in apisched). `kit_key()` gives the session key
     of the kit repository's coordinator, '' when none is known (default), so a submitted skill
     edit is the PM's; `kit_blob(branch, path)` gives the blob id of `path` on `branch` in this
     machine's kit checkout, or None when git cannot read it; with none given (default) every
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
-    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
+    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits" in apiskills).
     `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
     each supersede (default: launcher_coordinators; coordinator_keys).
     The hooks (session_keys, approval_key, checkout, repo_name, schedule_repos, tick_seen,
@@ -810,7 +576,7 @@ class Api(object):
             return {AGENT_FROM}, _reason(e)
 
     def kit_session_key(self):
-        """The kit coordinator's session key ("Skill edits"): kit_key() gives the kit repository's
+        """The kit coordinator's session key ("Skill edits" in apiskills): kit_key() gives the kit repository's
         configured name, and the key is, by coordinator_keys' rule, a coordinator session of
         sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
         none. '' when kit_key fails or gives no string. Whether that session exists is for the

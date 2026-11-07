@@ -24,7 +24,7 @@ text file), not of the file's bytes, so a copy checked out with CRLF has its blo
 refreshed, a main checkout behind its remote), so the worker's own check against main is the one that
 counts, and the page says so beside the editor.
 
-The routes ("Skill edits" in the `kitlib/hubsite/api.py` docstring):
+The routes ("Skill edits" in the `kitlib/hubsite/apiskills.py` docstring):
 
 | Route | Who | What |
 |---|---|---|
@@ -87,7 +87,7 @@ refuses `pages`); the publisher names one, and an id that holds a hub item's or 
 or a skill edit's id (`A-2`, `E-4`), is refused (`_REF_SHAPED`), so a ref that names a page is never
 read as an item.
 
-The routes ("Pages" in the `kitlib/hubsite/api.py` docstring):
+The routes ("Pages" in the `kitlib/hubsite/apipages.py` docstring):
 
 | Route | Who | What |
 |---|---|---|
@@ -101,7 +101,7 @@ An agent publishes with `hub.py pages publish ID --title T --html-file F` or the
 [--out F]` or `hub_page`. Both run `kitlib.hubsite.pagecheck.check` on the file before sending, so a body
 the server would refuse is never sent. Publishing over an existing page needs the card's version as
 `if_version` (`--if-version`); without it the write is `conflict`. One lock in the hub process
-(`PAGES_LOCK` in `kitlib/hubsite/store.py`, which `api.py` takes) is held from a publish's reads to its
+(`PAGES_LOCK` in `kitlib/hubsite/store.py`, which `apipages.py` takes) is held from a publish's reads to its
 last write, and over a delete, so of two publishers with the same pin the second is `conflict` with
 nothing written. The body is put first and the card second, so a card never names a missing body. Deleting
 is the owner's alone: the Docs tab's Delete, with no CLI verb and no MCP tool. It deletes the card, then

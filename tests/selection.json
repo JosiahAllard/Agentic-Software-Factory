@@ -1,18 +1,22 @@
 {
-  "comment": "tools/kit_tests.py --select: which kit test packages a change runs (kitlib/tooldeps/selftree.py, docs/test-tools.md). A change to this file runs the full suite.",
-  "shared_core": ["git", "config", "proc", "lock"],
+  "comment": "tools/kit_tests.py --select: which kit tests a change runs (kitlib/tooldeps/selftree.py, docs/test-tools.md). A path selects the tests that read it; full lists only the table, the gate config and the code every test runs inside. A change to this file runs the full suite.",
   "full": [
-    "tests/*.py",
     "tests/selection.json",
-    "kitlib/*",
-    "kitlib/tooldeps/**",
-    "tools/tool_deps.py",
-    "tools/kit_tests.py",
-    "kitlib/gate/**",
-    "tools/gate.py"
+    ".kit.json",
+    "tests/__init__.py",
+    "kitlib/__init__.py",
+    "kitlib/git/cmd.py",
+    "kitlib/git/fake/**",
+    "kitlib/tooldeps/pool_worker.py",
+    "kitlib/tooldeps/pool.py",
+    "kitlib/tooldeps/selfrun.py",
+    "kitlib/tooldeps/childenv.py",
+    "kitlib/tooldeps/selftree.py",
+    "tools/kit_tests.py"
   ],
   "paths": [
     ["hosts/**", ["host"]],
+    ["hosts.json", ["host"]],
     ["tests/host/fakehost/**", ["host"]],
     ["content/roles/**", ["content", "agents", "roster", "host"]],
     ["content/skills/**", ["content", "skills", "host"]],
@@ -49,14 +53,13 @@
     ["kitlib/hubjobs/**", ["hubjobs", "hubsite"]],
     ["tests/hubjobs/**", ["hubjobs", "hubsite"]],
     ["kitlib/**", ["skills"]],
-    ["kitlib/**", ["host"]],
+    ["kitlib/**", ["tests.host.test_conformance_claude", "tests.host.test_conformance_codex", "tests.host.test_conformance_fake"]],
     ["docs/*.md", ["content"]],
     ["content/roles/*", ["launcher"]],
     ["hosts/*/shell/agents/*", ["launcher"]],
     ["content/skills/*/SKILL.md", ["docs"]]
   ],
-  "by_name": ["hosts/**", "githooks/**", "mcp/**", "installer/**", ".claude-plugin/**"],
-  "prose": ["docs/**", "*.md", ".gitignore"],
+  "prose": ["docs/**", "*.md", ".gitignore", ".claude/**"],
   "always": ["scrub", "platform", "ci", "tests.proc.test_spawn_sites", "tests.bridge.test_port", "tests.modulemap.test_kit_map"],
   "serial": [],
   "smoke": [

@@ -108,11 +108,16 @@ class KitTable(unittest.TestCase):
         self.assertIsNot(picked, ALL)
         self.assertIn('docs', picked)
 
-    def test_a_kitlib_leaf_runs_the_host_tests(self):
-        # tests/host test_layering and test_leaks walk all of kitlib/
+    def test_a_kitlib_leaf_runs_the_conformance_suite_and_the_kitlib_listers(self):
+        # the kitlib/** row names the HostConformance subclasses (tests/host/conformance.py
+        # readers); test_layering and test_leaks walk all of kitlib/
         picked = self.select('kitlib/redfirst/__init__.py')
         self.assertIsNot(picked, ALL)
-        self.assertIn('host', picked)
+        for name in ('tests.host.test_conformance_claude', 'tests.host.test_conformance_codex',
+                     'tests.host.test_conformance_fake', 'tests.host.test_layering',
+                     'tests.host.test_leaks'):
+            self.assertIn(name, picked)
+        self.assertNotIn('host', picked)        # not the whole package
 
 
 class Cli(unittest.TestCase):

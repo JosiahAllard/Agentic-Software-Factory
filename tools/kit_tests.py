@@ -21,8 +21,8 @@ tree and untracked files included (or takes the --changed list), maps the paths 
 kitlib.tooldeps.selftree and the table tests/selection.json to the change's direct users (the
 test modules that import, name or load what changed, or list a folder it is in; never the
 transitive closure), prints each selected test package or single module with the reasons it was
-picked, and runs those test modules. A shared-core, test-helper, selector or unmapped change, or
-a tool no test uses, runs the full suite instead, and says why. --full runs `python -m unittest
+picked, and runs those test modules. Only a change to a `full` path of the table runs the full
+suite, and says why; a path nothing reads runs `always` only. --full runs `python -m unittest
 discover -s tests -t .`'s modules; the landing's merged gate ("landing".gate_once), the daily
 full run and go-live use it, and catch what a direct-users selection leaves out. --plan prints
 and runs nothing.

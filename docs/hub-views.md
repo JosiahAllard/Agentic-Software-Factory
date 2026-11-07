@@ -2,7 +2,7 @@
 
 ## Machine lock routes
 The hub server reads and changes the machine lock in-process through `kitlib.lock.api` (the owner's
-decision), for the schedule page. `kitlib/hubsite/api.py` docstring "Machine lock" is the source; the
+decision), for the schedule page. `kitlib/hubsite/apilock.py` docstring "Machine lock" is the source; the
 server's door to the lock is `kitlib/hubsite/lockdoor.py`, made by `serve.machine_sources` and first
 opening the lock on its first call.
 - Three reads, all the owner's: `GET /api/v1/lock/view`, `GET /api/v1/lock/stats` and `GET
@@ -99,7 +99,7 @@ and a private repository asks the viewer to sign in on the host; the hub cannot 
 request to the host.
 
 ## The record page
-One backlog record, read live and never part of the snapshot (`kitlib/hubsite/api.py` `record`,
+One backlog record, read live and never part of the snapshot (`kitlib/hubsite/apiread.py` `record`,
 `record_new` and the record writes block; `kitlib/hubsite/serve.py` `SiteViews`). `{repo}` only picks a
 configured repository (`Views._named` in `kitlib/hubsite/backlog.py`); its folder never comes from the
 caller.

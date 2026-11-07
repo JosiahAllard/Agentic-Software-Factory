@@ -25,10 +25,8 @@ PASSING = 'import unittest\n\n\nclass T(unittest.TestCase):\n    def test_ok(sel
 
 TABLE = {
     'comment': 'fixture table',
-    'shared_core': ['git'],
-    'full': ['tests/*.py', 'tests/selection.json'],
+    'full': ['tests/selection.json', 'tests/__init__.py'],
     'paths': [['data/**', ['leaf']]],
-    'by_name': ['hooks/**'],
     'prose': ['docs/**', '*.md'],
 }
 
@@ -104,44 +102,60 @@ class FixtureTree(unittest.TestCase):
 
     def test_a_change_selects_its_direct_users_not_the_transitive_closure(self):
         picked, why, notes = self.select('kitlib/leaf/x.py')
-        # Direct users: leaf's own tests whole; test_lone names kitlib.leaf; test_child names
-        # tools/leaftool.py, which imports it; test_user imports the tests.shared helper that
-        # names it. Not selected: mid and top (kitlib/mid imports leaf, kitlib/top imports mid),
-        # child as a package (kitlib/child runs leaf in a child), cli (it names wrapper.py, which
-        # imports leaftool), fromimp (it uses mid), and test_shared (it does not use the helper).
-        self.assertEqual(picked, ['leaf', 'tests.child.test_child', 'tests.lone.test_lone',
-                                  'tests.user.test_user'])
+        # kitlib.leaf.x: leaf's own tests whole, and test_child, which names tools/leaftool.py,
+        # which imports kitlib.leaf.x. test_lone and test_user name only the package kitlib.leaf,
+        # whose __init__ does not import x.
+        self.assertEqual(picked, ['leaf', 'tests.child.test_child'])
         self.assertEqual(why['leaf'], ['own tests of changed kitlib/leaf'])
-        self.assertEqual(why['tests.lone.test_lone'], ['uses kitlib/leaf (kitlib/leaf/x.py)'])
-        self.assertEqual(why['tests.user.test_user'], ['uses kitlib/leaf (kitlib/leaf/x.py)'])
         self.assertEqual(why['tests.child.test_child'],
-                         ['names tools/leaftool.py, which imports kitlib/leaf (kitlib/leaf/x.py)'])
+                         ['names tools/leaftool.py, which imports kitlib.leaf.x (kitlib/leaf/x.py)'])
+        self.assertEqual(notes, [])
+        # kitlib.leaf itself: its readers - test_lone names it, test_user imports the
+        # tests.shared helper that names it - and one hop: test_fromimp uses kitlib/mid, which
+        # imports it, and test_child names leaftool. Not selected: top (kitlib/top imports mid:
+        # a second hop), child as a package (kitlib/child runs leaf in a child, but no test
+        # reads kitlib/child), cli (it names wrapper.py, which imports leaftool: a second hop),
+        # and test_shared (it does not use the helper).
+        path = 'kitlib/leaf/__init__.py'
+        picked, why, notes = self.select(path)
+        self.assertEqual(picked, ['leaf', 'tests.child.test_child', 'tests.fromimp.test_fromimp',
+                                  'tests.lone.test_lone', 'tests.user.test_user'])
+        self.assertEqual(why['tests.lone.test_lone'], ['uses kitlib.leaf (%s)' % path])
+        self.assertEqual(why['tests.user.test_user'], ['uses kitlib.leaf (%s)' % path])
+        self.assertEqual(why['tests.fromimp.test_fromimp'],
+                         ['uses kitlib.mid, which imports kitlib.leaf (%s)' % path])
+        self.assertEqual(why['tests.child.test_child'],
+                         ['names tools/leaftool.py, which imports kitlib.leaf (%s)' % path])
         self.assertEqual(notes, [])
 
     def test_a_change_with_no_importers_selects_only_its_own_tests(self):
         self.assertEqual(self.select('kitlib/top/a.py')[0], ['top'])
 
-    def test_shared_core_change_selects_everything(self):
+    def test_a_git_change_selects_its_readers_not_everything(self):
+        # no package is a shared core: kitlib/git/cmd.py is read by tests/git alone here
         picked, why, _ = self.select('kitlib/git/cmd.py')
-        self.assertIs(picked, ALL)
-        self.assertEqual(why, ['full suite: shared core: kitlib/git changed (kitlib/git/cmd.py)'])
+        self.assertEqual(picked, ['git'])
+        self.assertEqual(why, {'git': ['own tests of changed kitlib/git']})
 
-    def test_shared_core_wins_over_a_leaf_in_the_same_change(self):
-        self.assertIs(self.select('kitlib/top/a.py', 'kitlib/git/cmd.py')[0], ALL)
+    def test_a_git_change_and_a_leaf_select_both(self):
+        self.assertEqual(self.select('kitlib/top/a.py', 'kitlib/git/cmd.py')[0], ['git', 'top'])
 
-    def test_unmapped_file_selects_everything(self):
-        picked, why, _ = self.select('weird/file.txt')
-        self.assertIs(picked, ALL)
-        self.assertIn('not mapped', why[0])
+    def test_a_path_no_test_reads_selects_nothing_and_is_a_note(self):
+        picked, why, notes = self.select('weird/file.txt')
+        self.assertEqual((picked, why, notes), ([], {}, ['weird/file.txt']))
 
-    def test_kitlib_folder_that_is_not_a_package_selects_everything(self):
-        self.assertIs(self.select('kitlib/nope/a.py')[0], ALL)
+    def test_kitlib_folder_that_is_not_a_package_selects_its_readers(self):
+        # no test package of its name and nothing imports kitlib.nope.a: a note, not everything
+        self.assertEqual(self.select('kitlib/nope/a.py')[0::2], ([], ['kitlib/nope/a.py']))
 
-    def test_test_helper_and_the_table_select_everything(self):
-        for path in ('tests/testutil.py', 'tests/selection.json'):
+    def test_the_table_and_the_test_runner_select_everything_a_helper_does_not(self):
+        for path in ('tests/selection.json', 'tests/__init__.py'):
             picked, why, _ = self.select(path)
             self.assertIs(picked, ALL, path)
-            self.assertIn('test helper or the selection itself', why[0])
+            self.assertEqual(why, ['full suite: %s changed (the selection, the gate config or '
+                                   'code every test runs inside)' % path])
+        # tests/testutil.py: no test module imports or names it
+        self.assertEqual(self.select('tests/testutil.py')[0::2], ([], ['tests/testutil.py']))
 
     def test_tool_change_selects_the_tests_naming_it_or_a_tool_importing_it(self):
         picked, why, _ = self.select('tools/leaftool.py')
@@ -155,14 +169,16 @@ class FixtureTree(unittest.TestCase):
     def test_test_module_from_kitlib_import_counts(self):
         self.assertIn('mid', self.tree.tests['fromimp'].kitlib)
         self.assertIn('mid', self.tree.modules['tests.fromimp.test_fromimp'].kitlib)
-        self.assertIn('tests.fromimp.test_fromimp', self.select('kitlib/mid/a.py')[0])
+        self.assertIn('kitlib.mid', self.tree.modules['tests.fromimp.test_fromimp'].mods)
+        self.assertIn('tests.fromimp.test_fromimp', self.select('kitlib/mid/__init__.py')[0])
+        # it imports the package, not kitlib.mid.a
+        self.assertNotIn('tests.fromimp.test_fromimp', self.select('kitlib/mid/a.py')[0])
 
-    def test_a_tool_only_run_by_path_selects_everything(self):
-        # kitlib/runner (and kitlib/git) run tools/solo.py by path, but no test names it: the
-        # runners' tests are not direct users, and a tool no test uses runs everything
-        picked, why, _ = self.select('tools/solo.py')
-        self.assertIs(picked, ALL)
-        self.assertEqual(why, ['full suite: nothing maps tools/solo.py to a test'])
+    def test_a_tool_only_run_by_path_selects_the_readers_of_its_runners(self):
+        # kitlib/runner (and kitlib/git) run tools/solo.py by path and no test names it; no test
+        # reads the runners either, so it runs `always` only and is a note
+        picked, why, notes = self.select('tools/solo.py')
+        self.assertEqual((picked, why, notes), ([], {}, ['tools/solo.py']))
 
     def test_a_module_s_test_files_are_its_fixture_followed_transitively(self):
         user = self.tree.modules['tests.user.test_user']
@@ -176,11 +192,12 @@ class FixtureTree(unittest.TestCase):
                          {'tests.p.q.w', 'tests.p.q.w.a', 'tests.p.q', 'tests.p.q.b', 'tests.p.x',
                           'tests.p.x.c'})
 
-    def test_tool_no_test_reaches_selects_everything(self):
+    def test_tool_no_test_reaches_is_a_note(self):
         with open(os.path.join(self.root, 'tools', 'orphan.py'), 'w') as fh:
             fh.write('import kitlib.git\n')
         tree = selftree.scan(self.root)
-        self.assertIs(selftree.selection(['tools/orphan.py'], tree, self.cfg)[0], ALL)
+        self.assertEqual(selftree.selection(['tools/orphan.py'], tree, self.cfg),
+                         ([], {}, ['tools/orphan.py']))
 
     def test_a_test_file_change_selects_the_test_modules_using_it(self):
         picked, why, _ = self.select('tests/shared/helpers.py')
@@ -216,7 +233,8 @@ class FixtureTree(unittest.TestCase):
         self.assertEqual(why['lone'], ['reads every tracked file (always, tests/selection.json)'])
         self.assertEqual(notes, ['docs/other.md'])
         self.assertEqual(sel('kitlib/top/a.py')[0], ['lone', 'top'])
-        self.assertIs(sel('weird/file.txt')[0], ALL)           # everything stays everything
+        self.assertEqual(sel('weird/file.txt')[0::2], (['lone'], ['weird/file.txt']))  # no reader
+        self.assertIs(sel('tests/selection.json')[0], ALL)     # everything stays everything
         self.assertEqual(sel()[0], [])                         # no change, nothing to scan
 
     def test_always_must_be_a_list_of_strings(self):
@@ -243,8 +261,8 @@ class FixtureTree(unittest.TestCase):
             with self.assertRaises(selftree.ConfigError, msg=bad):
                 selftree.config(self.root, dict(TABLE, always=[bad]))
 
-    def test_by_name_file_no_test_names_selects_everything(self):
-        self.assertIs(self.select('hooks/pre.py')[0], ALL)
+    def test_a_file_outside_the_code_folders_no_test_names_is_a_note(self):
+        self.assertEqual(self.select('hooks/pre.py'), ([], {}, ['hooks/pre.py']))
 
     def test_paths_table_adds_packages(self):
         picked, why, _ = self.select('data/x.json')
@@ -267,6 +285,183 @@ class FixtureTree(unittest.TestCase):
         self.assertEqual(selftree.code_refs("X = '-m kitlib.leaf.run'\n")[0], {'leaf'})
         self.assertEqual(selftree.code_refs('from kitlib import a, b\n')[0], {'a', 'b'})
         self.assertEqual(selftree.code_refs('def f(:\n kitlib.leaf\n')[0], {'leaf'})
+
+
+# Paths once unmapped or once shared core select the tests that read them
+# (FILES plus these).
+READER_FILES = {
+    # a data file a test names, and one only a kitlib module names
+    'conf/settings.ini': '',
+    'conf/defaults.cfg': '',
+    'conf/nobody.txt': '',
+    'kitlib/cfgread/__init__.py': "NAME = 'defaults.cfg'\n",
+    # module by module: mid imports leaf, other stands alone; p3's __init__ imports its leaf
+    'kitlib/p2/__init__.py': '',
+    'kitlib/p2/leaf.py': 'Y = 1\n',
+    'kitlib/p2/other.py': 'Z = 1\n',
+    'kitlib/p2/side.py': 'S = 1\n',
+    'kitlib/p2/mid.py': 'from .leaf import Y  # noqa: F401\n',
+    'kitlib/p3/__init__.py': 'from .leaf import Z  # noqa: F401\n',
+    'kitlib/p3/leaf.py': 'Z = 1\n',
+    # one hop and no second: hop1 imports p2.leaf, hop2 imports hop1
+    'kitlib/hop1/__init__.py': 'import kitlib.p2.leaf  # noqa: F401\n',
+    'kitlib/hop2/__init__.py': 'import kitlib.hop1  # noqa: F401\n',
+    # a kitlib module that runs p2.other in a child
+    'kitlib/runs/__init__.py': "CMD = 'python -m kitlib.p2.other'\n",
+    # a top-level test helper importing p2.side
+    'tests/fixhelp.py': 'import kitlib.p2.side  # noqa: F401\n',
+    'tests/readers/__init__.py': '',
+    'tests/readers/test_reads.py': PASSING + '# loads conf/settings.ini\n',
+    'tests/readers/test_usescfg.py': 'import kitlib.cfgread  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesleaf.py': 'from kitlib.p2 import leaf  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesother.py': 'from kitlib.p2 import other  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesmid.py': 'from kitlib.p2 import mid  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesp3.py': 'import kitlib.p3  # noqa: F401\n' + PASSING,
+    'tests/readers/test_useshop1.py': 'import kitlib.hop1  # noqa: F401\n' + PASSING,
+    'tests/readers/test_useshop2.py': 'import kitlib.hop2  # noqa: F401\n' + PASSING,
+    'tests/readers/test_childarg.py': "ARGS = ['-m', 'kitlib.p2.other']\n" + PASSING,
+    'tests/readers/test_pathtext.py': PASSING + '# runs kitlib/p2/other.py\n',
+    'tests/readers/test_usesruns.py': 'import kitlib.runs  # noqa: F401\n' + PASSING,
+    'tests/readers/test_useshelp.py': 'from tests import fixhelp  # noqa: F401\n' + PASSING,
+    # a module directly in kitlib/, its own test package, and a kitlib package importing it
+    'kitlib/single.py': 'X = 1\n',
+    'kitlib/usesingle/__init__.py': 'from kitlib import single  # noqa: F401\n',
+    'tests/single/__init__.py': '',
+    'tests/single/test_single.py': PASSING,
+    'tests/readers/test_usessingle.py': 'from kitlib import single  # noqa: F401\n' + PASSING,
+    'tests/readers/test_usesusesingle.py': 'import kitlib.usesingle  # noqa: F401\n' + PASSING,
+    # a kitlib package importing p2.lazy by a literal import_module, and p2.<n> by a computed one
+    'kitlib/p2/lazy.py': 'L = 1\n',
+    'kitlib/dyn/__init__.py': ("import importlib\n\n\ndef load():\n"
+                               "    return importlib.import_module('kitlib.p2.lazy')\n\n\n"
+                               "def computed(n):\n"
+                               "    return importlib.import_module('kitlib.p2.' + n)\n"),
+    'tests/readers/test_usesdyn.py': 'import kitlib.dyn  # noqa: F401\n' + PASSING,
+}
+
+
+class Readers(unittest.TestCase):
+    """A changed path selects the tests that read it, module by module, with one hop."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='kit-selftree-')
+        self.addCleanup(rmtree, self.root)
+        write_tree(self.root)
+        for rel, text in READER_FILES.items():
+            full = os.path.join(self.root, *rel.split('/'))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, 'w', encoding='utf-8', newline='\n') as fh:
+                fh.write(text)
+        self.tree = selftree.scan(self.root)
+        self.cfg = selftree.config(self.root)
+
+    def select(self, *paths):
+        return selftree.selection(list(paths), self.tree, self.cfg)
+
+    def test_a_file_a_test_names_selects_that_test(self):
+        # (a) once unmapped: the full suite
+        picked, why, notes = self.select('conf/settings.ini')
+        self.assertEqual(picked, ['tests.readers.test_reads'])
+        self.assertEqual(why['tests.readers.test_reads'], ['names settings.ini'])
+        self.assertEqual(notes, [])
+
+    def test_a_file_a_kitlib_module_names_selects_that_modules_readers(self):
+        # (b) kitlib/cfgread names defaults.cfg; test_usescfg imports kitlib.cfgread
+        picked, why, notes = self.select('conf/defaults.cfg')
+        self.assertEqual(picked, ['tests.readers.test_usescfg'])
+        self.assertEqual(why['tests.readers.test_usescfg'],
+                         ['uses kitlib.cfgread, which names conf/defaults.cfg'])
+        self.assertEqual(notes, [])
+
+    def test_a_file_nothing_reads_runs_always_only_and_is_a_note(self):
+        # (c) never ALL
+        cfg = selftree.config(self.root, dict(TABLE, always=['lone']))
+        picked, _why, notes = selftree.selection(['conf/nobody.txt'], self.tree, cfg)
+        self.assertEqual((picked, notes), (['lone'], ['conf/nobody.txt']))
+
+    def test_a_module_change_selects_its_readers_not_its_packages(self):
+        # (d) test_usesother imports kitlib.p2.other, which neither leaf nor mid is
+        path = 'kitlib/p2/leaf.py'
+        picked, why, notes = self.select(path)
+        self.assertIn('tests.readers.test_usesleaf', picked)
+        self.assertNotIn('tests.readers.test_usesother', picked)
+        self.assertEqual(why['tests.readers.test_usesleaf'], ['uses kitlib.p2.leaf (%s)' % path])
+        self.assertEqual(notes, [])
+        picked = self.select('kitlib/p2/other.py')[0]
+        self.assertIn('tests.readers.test_usesother', picked)
+        for name in ('test_usesleaf', 'test_usesmid', 'test_useshop1'):
+            self.assertNotIn('tests.readers.' + name, picked)
+
+    def test_a_module_importing_the_change_in_its_package_carries_it(self):
+        # (e) kitlib/p2/mid.py imports .leaf: importing mid runs leaf
+        path = 'kitlib/p2/leaf.py'
+        picked, why, _ = self.select(path)
+        self.assertIn('tests.readers.test_usesmid', picked)
+        self.assertEqual(why['tests.readers.test_usesmid'], ['uses kitlib.p2.mid (%s)' % path])
+        # kitlib/p3's __init__ imports its leaf: importing the package runs it
+        path = 'kitlib/p3/leaf.py'
+        picked, why, _ = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_usesp3'])
+        self.assertEqual(why['tests.readers.test_usesp3'], ['uses kitlib.p3 (%s)' % path])
+
+    def test_one_hop_outside_the_package_and_no_second(self):
+        # (f) kitlib/hop1 imports kitlib.p2.leaf; kitlib/hop2 imports hop1
+        path = 'kitlib/p2/leaf.py'
+        picked, why, _ = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_useshop1', 'tests.readers.test_usesleaf',
+                                  'tests.readers.test_usesmid'])
+        self.assertEqual(why['tests.readers.test_useshop1'],
+                         ['uses kitlib.hop1, which imports kitlib.p2.leaf (%s)' % path])
+        self.assertNotIn('tests.readers.test_useshop2', picked)
+
+    def test_child_strings_and_path_text_read_a_module(self):
+        # (g) a test running `-m kitlib.p2.other`, one naming kitlib/p2/other.py, and the
+        # readers of kitlib/runs, which runs it in a child
+        path = 'kitlib/p2/other.py'
+        picked, why, _ = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_childarg', 'tests.readers.test_pathtext',
+                                  'tests.readers.test_usesother', 'tests.readers.test_usesruns'])
+        self.assertEqual(why['tests.readers.test_childarg'], ['uses kitlib.p2.other (%s)' % path])
+        self.assertEqual(why['tests.readers.test_pathtext'], ['uses kitlib.p2.other (%s)' % path])
+        self.assertEqual(why['tests.readers.test_usesruns'],
+                         ['uses kitlib.runs, which imports kitlib.p2.other (%s)' % path])
+
+    def test_a_top_level_test_helper_selects_its_users_and_carries_its_imports(self):
+        # (h) once a test helper: the full suite
+        picked, why, notes = self.select('tests/fixhelp.py')
+        self.assertEqual(picked, ['tests.readers.test_useshelp'])
+        self.assertEqual(why['tests.readers.test_useshelp'],
+                         ['uses tests.fixhelp (tests/fixhelp.py)'])
+        self.assertEqual(notes, [])
+        # its import of kitlib.p2.side is its users' import
+        path = 'kitlib/p2/side.py'
+        picked, why, _ = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_useshelp'])
+        self.assertEqual(why['tests.readers.test_useshelp'], ['uses kitlib.p2.side (%s)' % path])
+
+    def test_a_module_directly_in_kitlib_selects_its_readers_and_one_hop(self):
+        # (i) kitlib/single.py: its own tests/single, its importers, and the readers of
+        # kitlib/usesingle, which imports it
+        path = 'kitlib/single.py'
+        picked, why, notes = self.select(path)
+        self.assertEqual(picked, ['single', 'tests.readers.test_usessingle',
+                                  'tests.readers.test_usesusesingle'])
+        self.assertEqual(why['single'], ['own tests of changed %s' % path])
+        self.assertEqual(why['tests.readers.test_usessingle'], ['uses kitlib.single (%s)' % path])
+        self.assertEqual(why['tests.readers.test_usesusesingle'],
+                         ['uses kitlib.usesingle, which imports kitlib.single (%s)' % path])
+        self.assertEqual(notes, [])
+
+    def test_a_literal_import_module_is_an_import_and_a_computed_one_is_not(self):
+        # (j) kitlib/dyn imports kitlib.p2.lazy by importlib.import_module('kitlib.p2.lazy')
+        path = 'kitlib/p2/lazy.py'
+        picked, why, notes = self.select(path)
+        self.assertEqual(picked, ['tests.readers.test_usesdyn'])
+        self.assertEqual(why['tests.readers.test_usesdyn'],
+                         ['uses kitlib.dyn, which imports kitlib.p2.lazy (%s)' % path])
+        self.assertEqual(notes, [])
+        # its import_module('kitlib.p2.' + n) names no module
+        self.assertNotIn('tests.readers.test_usesdyn', self.select('kitlib/p2/side.py')[0])
 
 
 _ROOT_LINE = 'import os\nROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))\n'
@@ -357,17 +552,20 @@ class LoadsAndListings(unittest.TestCase):
         self.assertEqual(mods['tests.walker.test_imports_walker'].walks, set())
         self.assertEqual(mods['tests.walker.test_temp'].walks, set())   # names no repo folder
 
-    def test_a_lister_never_stands_in_for_a_test_using_the_tool(self):
-        # test_every_tool lists tools/, but no test uses tools/lonely.py: everything runs
-        picked, why, _ = self.select('tools/lonely.py')
-        self.assertIs(picked, ALL)
-        self.assertEqual(why, ['full suite: nothing maps tools/lonely.py to a test'])
+    def test_a_lister_reads_a_tool_no_test_uses(self):
+        # test_every_tool lists tools/: it reads tools/lonely.py, so the path is not a note
+        picked, why, notes = self.select('tools/lonely.py')
+        self.assertEqual(picked, ['tests.walker.test_every_tool'])
+        self.assertEqual(why['tests.walker.test_every_tool'], ['lists tools/ (tools/lonely.py)'])
+        self.assertEqual(notes, [])
 
 
 class Config(unittest.TestCase):
     def test_defaults_without_a_table(self):
         cfg = selftree.config('unused', {})
-        self.assertEqual(cfg['shared_core'], ['git', 'config', 'proc', 'lock'])
+        self.assertNotIn('shared_core', cfg)        # no package runs everything by name
+        self.assertNotIn('by_name', cfg)            # the reader rule covers any path
+        self.assertEqual(cfg['full'], [])
         self.assertEqual(cfg['serial'], [])
         self.assertEqual(cfg['long'], [])
 
@@ -377,7 +575,8 @@ class Config(unittest.TestCase):
 
     def test_bad_tables_are_refused(self):
         for data in ([], {'nope': []}, {'full': 'tests/*.py'}, {'paths': [['a/**', 'leaf']]},
-                     {'shared_core': ['']}, {'serial': ['tests.a.test_a']},
+                     {'prose': ['']}, {'shared_core': ['git']}, {'by_name': ['hooks/**']},
+                     {'serial': ['tests.a.test_a']},
                      {'serial': [['tests.a.test_a']]}, {'serial': [['tests.a.test_a', ' ']]},
                      {'serial': [['a.test_a', 'why']]}, {'long': 'tests.a.test_a'},
                      {'long': ['a.test_a']}, {'long': [['tests.a.test_a']]}):
@@ -459,22 +658,22 @@ class GitAndCli(TempHomeCase):
         self.assertIn('names tools/wrapper.py, which imports tools/leaftool.py',
                       why['tests.cli.test_cli'])
 
-    def test_deleted_tool_no_test_names_selects_everything(self):
+    def test_deleted_tool_no_test_names_is_a_note(self):
         self.repo.git('rm', '-q', 'tools/solo.py')
         self.repo.git('commit', '-q', '-m', 'delete')
         paths, _ = selftree.changed_paths('main', self.repo.root)
         self.assertEqual(paths, ['tools/solo.py'])
         tree, cfg = selftree.scan(self.repo.root), selftree.config(self.repo.root)
-        # kitlib/runner still names tools/solo.py, but no test does
-        self.assertIs(selftree.selection(paths, tree, cfg)[0], ALL)
+        # kitlib/runner still names tools/solo.py, but no test reads kitlib/runner
+        self.assertEqual(selftree.selection(paths, tree, cfg), ([], {}, ['tools/solo.py']))
 
-    def test_deleted_kitlib_package_selects_everything(self):
+    def test_deleted_kitlib_package_selects_its_own_tests(self):
         self.repo.git('rm', '-q', '-r', 'kitlib/lone')
         self.repo.git('commit', '-q', '-m', 'delete')
         paths, _ = selftree.changed_paths('main', self.repo.root)
         self.assertEqual(paths, ['kitlib/lone/__init__.py'])
         tree, cfg = selftree.scan(self.repo.root), selftree.config(self.repo.root)
-        self.assertIs(selftree.selection(paths, tree, cfg)[0], ALL)
+        self.assertEqual(selftree.selection(paths, tree, cfg)[0], ['lone'])
 
     def test_changed_paths_refuse_an_unknown_base(self):
         paths, why = selftree.changed_paths('no-such-branch', self.repo.root)
@@ -482,7 +681,7 @@ class GitAndCli(TempHomeCase):
         self.assertIn('merge-base', why)
 
     def test_plan_prints_each_package_and_its_reason(self):
-        self.repo.write('kitlib/mid/x.py', 'X = 1\n')
+        self.repo.write('kitlib/mid/__init__.py', 'from kitlib import leaf\nB = 2\n')
         rc, out = self.run_cli('--select', '--plan')
         self.assertEqual(rc, 0)
         self.assertIn('kit_tests: --select against the merge-base with main: 1 changed path(s)', out)
@@ -494,9 +693,9 @@ class GitAndCli(TempHomeCase):
                       'whole), from 1 changed path(s)' % FIXTURE_TEST_PACKAGES, out)
 
     def test_plan_names_the_full_suite_and_why(self):
-        rc, out = self.run_cli('--select', '--changed', 'kitlib/git/a.py', '--plan')
+        rc, out = self.run_cli('--select', '--changed', 'tests/selection.json', '--plan')
         self.assertEqual(rc, 0)
-        self.assertIn('kit_tests: full suite: shared core: kitlib/git changed', out)
+        self.assertIn('kit_tests: full suite: tests/selection.json changed', out)
 
     def test_selected_run_runs_only_the_selection(self):
         rc, out = self.run_cli('--select', '--changed', 'kitlib/top/a.py')
@@ -513,6 +712,13 @@ class GitAndCli(TempHomeCase):
         rc, out = self.run_cli('--select', '--changed', 'docs/other.md')
         self.assertEqual(rc, 0)
         self.assertIn('(no test)  docs/other.md: prose no test names', out)
+        self.assertIn('kit_tests: OK, nothing selected (1 changed path(s))', out)
+
+    def test_a_path_nothing_reads_says_so_not_prose(self):
+        rc, out = self.run_cli('--select', '--changed', 'weird/file.txt', '--plan')
+        self.assertEqual(rc, 0)
+        self.assertIn('(no test)  nothing reads weird/file.txt: always-run set only', out)
+        self.assertNotIn('prose', out)
         self.assertIn('kit_tests: OK, nothing selected (1 changed path(s))', out)
 
     def test_nothing_selected_plan_prints_the_same_ok_line(self):
@@ -592,14 +798,32 @@ class KitTree(unittest.TestCase):
     def select(self, *paths):
         return selftree.selection(list(paths), self.tree, self.cfg)[0]
 
-    def test_shared_core_and_selector_run_everything(self):
-        for path in ('kitlib/git/cmd.py', 'kitlib/config/load.py', 'kitlib/proc/shield.py',
-                     'kitlib/lock/api.py', 'kitlib/tooldeps/selftree.py', 'tools/kit_tests.py',
-                     'tests/testutil.py', 'tests/gitfixture.py', 'tests/selection.json'):
+    def test_only_the_full_list_runs_everything(self):
+        # the table, the gate config and the code every test runs inside
+        for path in ('tests/selection.json', '.kit.json', 'tests/__init__.py',
+                     'kitlib/__init__.py', 'kitlib/git/cmd.py', 'kitlib/git/fake/x.py',
+                     'kitlib/tooldeps/pool.py', 'kitlib/tooldeps/selftree.py',
+                     'tools/kit_tests.py'):
             self.assertIs(self.select(path), ALL, path)
+        # once shared core or test helpers: now their readers
+        for path in ('kitlib/config/load.py', 'kitlib/proc/shield.py', 'kitlib/lock/api.py',
+                     'tests/testutil.py', 'tests/gitfixture.py'):
+            self.assertIsNot(self.select(path), ALL, path)
 
-    def test_unmapped_runs_everything(self):
-        self.assertIs(self.select('weird/file.txt'), ALL)
+    def test_paths_once_unmapped_select_their_readers(self):
+        # each of these once ran the full suite
+        picked = self.select('kitlib/gate/strict_defaults.py')
+        self.assertIsNot(picked, ALL)
+        self.assertIn('gate', picked)
+        picked = self.select('content/default-profile.md')
+        self.assertIsNot(picked, ALL)
+        self.assertIn('tests.content.test_default_profile', picked)
+        self.assertIsNot(self.select('.claude/coordinator-profile.md'), ALL)
+
+    def test_a_path_no_test_reads_runs_always_only(self):
+        # built, so no test text (this one included) holds the base name
+        path = 'weird/nothing-reads-' + 'this.bin'
+        self.assertEqual(set(self.select(path)), set(self.cfg['always']))
 
     def test_a_leaf_is_selected_without_the_full_suite(self):
         picked = self.select('kitlib/stubs/__init__.py')
@@ -614,10 +838,23 @@ class KitTree(unittest.TestCase):
             picked = self.select(path)
             self.assertTrue(picked is ALL or 'skills' in picked, path)
 
-    def test_a_file_directly_in_kitlib_selects_everything(self):
-        # the skills mapping on kitlib/** must not turn an unrouted kitlib/ file into a skip
+    def test_a_file_directly_in_kitlib_selects_its_rows_not_everything(self):
+        # kitlib/** maps to skills, and the listers of kitlib/ read it
         for path in ('kitlib/data.json', 'kitlib/new.py'):
-            self.assertIs(self.select(path), ALL, path)
+            picked = self.select(path)
+            self.assertIsNot(picked, ALL, path)
+            self.assertIn('skills', picked, path)
+        # a module there selects its readers: tests/agentname whole, and a test importing it
+        picked = self.select('kitlib/agentname.py')
+        self.assertIsNot(picked, ALL)
+        self.assertIn('agentname', picked)
+        self.assertIn('tests.guard.test_backlog_role', picked)
+
+    def test_a_literal_import_module_reaches_its_importers_readers(self):
+        # kitlib/lock/detach.py loads kitlib.platform.linux.detach by import_module
+        picked = self.select('kitlib/platform/linux/detach.py')
+        self.assertIsNot(picked, ALL)
+        self.assertTrue('lock' in picked or 'tests.lock.test_detach' in picked, picked)
 
     def test_a_doc_only_change_selects_the_whole_tree_scrubs(self):
         # tests/scrub reads every file `git ls-files` lists: a docs edit with a ruling id in it

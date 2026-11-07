@@ -20,38 +20,54 @@ The graph is derived (`scan`), never hand-written:
     listing call (os.walk, os.listdir, glob, Path.iterdir ...; _walked), read from the strings
     the call's path is built from (`os.path.join(ROOT, 'tools')`, a name assigned one). A
     listing built from no repo-folder string (the repo root, a temporary folder) names none:
-    such a test goes in `always`.
+    such a test goes in `always`;
+  - module by module (CodeFile, TestPackage.mods): the dotted modules each code file (kitlib,
+    tools, hosts, boot) and each test module imports - absolute, relative, the names an
+    import-from takes, a literal `importlib.import_module('kitlib.a.b')` / `__import__` (a
+    computed name is not followed), a child's `-c` / `-m` string - each with its parents (importing
+    kitlib.a.b runs kitlib.a's __init__ too). A test module also counts every `kitlib.a.b` /
+    `kitlib/a/b.py` its text names, and the imports of the top-level tests/*.py helpers it
+    uses (not their text).
 
-A change selects its direct users only, never the transitive closure: a test that uses a package
-which uses the changed one is left to the landing's `--full` merged gate (docs/test-tools.md
-"kit_tests").
+The one rule: a changed path selects the tests that read it, directly, never the transitive
+closure: a test that uses a package which uses the changed one is left to a later full run
+(docs/test-tools.md "kit_tests").
 
 `selection(changed, tree, cfg)` for each changed repo-relative path:
-  - `full` (globs: the test helpers, the selector and its table) -> ALL;
-  - kitlib/<m>/...: ALL when m is in `shared_core` or is not a package of the tree; else the
-    whole tests/<m>, every test module that uses kitlib.m, and every test module that names a
-    tool importing kitlib.m;
+  - `full` (globs: the selection table, the gate config and the code every test runs inside)
+    -> ALL;
+  - kitlib/<p>/<m>.py: the whole tests/<p>, and every test module reading a carrier of
+    kitlib.p.m - m itself, and each file of package p importing a carrier (a package's __init__
+    is kitlib.p: importing it is importing the package) - then one hop: for each code file
+    outside p importing a carrier, the test modules reading that file (a kitlib module: its
+    importers and namers; a tool: the tests importing, naming or loading it; hosts/boot: their
+    importers and the tests naming the path), and no further. A package or module that is gone
+    resolves the same way: its importers still name it. Any other file under kitlib/<p>/: the
+    whole tests/<p> and the file's readers below;
+  - kitlib/<x>.py, a module directly in kitlib/ (its __init__ is `full`): the whole tests/<x>
+    when there is one, every test module reading kitlib.x, then the same one hop over the code
+    files importing it;
   - tools/<x>.py: every test module that imports, names or loads x, or names a tool importing x (a
-    deleted x too: its importers still name it); ALL when there is none;
+    deleted x too: its importers still name it); when there is none, the readers of the code
+    files naming x.py;
   - tests/<t>/<file>.py the scan read: the test modules using it (a test module uses itself),
     the whole tests/<t> when none does; any other file under tests/<t> (data, a deleted file):
-    the whole tests/<t> and every test module naming tests.<t>;
-  - `paths` [glob, [packages]]: those whole packages, on top of any rule above (a test package
-    that reads another folder, such as a scrub test); with no rule above, plus the test modules
-    naming the file;
-  - any path in a folder a test module lists: that module too, on top of any rule here; it
-    never stands in for one (a tool no test uses still selects ALL), and a `prose` path it
-    picks is not a note;
-  - `by_name` globs: the test modules naming the file (its base name);
-  - `prose` globs: the same, but a file no test names selects nothing (it is read only by name);
-  - anything else -> ALL.
-After the paths, the `always` entries (test packages that read every tracked file, such as
-tests/scrub, and single "tests.<pkg>.<module>" names for a repo-wide scan inside a package that
-is otherwise not wanted) join any non-empty change that is not ALL, whatever the paths are. A
-whole test package is returned by its name, a single test module by its dotted name;
-`split_picked` parts them, and a module whose package is picked whole is dropped. A path that
-maps to no test (but a `prose` one) is unmapped and selects ALL: unmapped never means "skip".
-Each selected name carries the reasons it was picked.
+    the whole tests/<t> and every test module naming tests.<t>; a top-level tests/<x>.py
+    helper: the test modules using it, and its readers below;
+  - `paths` [glob, [test package or module, ...]]: those, on top of any rule here (a test that
+    reads a folder through a computed name, such as a scrub test); with no rule above, plus the
+    test modules naming the file (its base name): the row names its readers;
+  - any path in a folder a test module lists: that module too, on top of any rule here;
+  - `prose` globs: the test modules naming the file;
+  - any other path: its readers - the test modules naming its base name, and the test modules
+    reading each code file that names it (as above, no further hop).
+A path no test reads selects nothing of its own and is returned in `notes`: it runs `always`
+only, never ALL. After the paths, the `always` entries (test packages that read every tracked
+file, such as tests/scrub, and single "tests.<pkg>.<module>" names for a repo-wide scan inside a
+package that is otherwise not wanted) join any non-empty change that is not ALL, whatever the
+paths are. A whole test package is returned by its name, a single test module by its dotted
+name; `split_picked` parts them, and a module whose package is picked whole is dropped. Each
+selected name carries the reasons it was picked.
 The table's `serial` list, [module, why] pairs, names the test modules that cannot run beside
 others; kitlib.tooldeps.selfrun runs them alone after its parallel phase. Its `long` list names
 the modules selfrun starts first and splits by class while it has no recorded time for them. Its
@@ -66,14 +82,12 @@ import os
 import re
 
 from kitlib.git import cmd as gitcmd
-from kitlib.tooldeps.deps import ALL, glob_regex
+from kitlib.tooldeps.deps import ALL, _dynamic_call, glob_regex
 
 CONFIG_REL = 'tests/selection.json'
 DEFAULTS = {
-    'shared_core': ['git', 'config', 'proc', 'lock'],
     'full': [],
     'paths': [],
-    'by_name': [],
     'prose': [],
     'always': [],
     'serial': [],
@@ -84,6 +98,10 @@ DEFAULTS = {
 # The one test package kit_tests --scrub runs (the checks every tracked file must pass).
 SCRUB = 'scrub'
 _KITLIB_REF = re.compile(r'\bkitlib[./\\]+([A-Za-z_]\w*)')
+# A dotted kitlib module a text names: `kitlib.a.b`, `kitlib/a/b.py` (its parents count too).
+_KITLIB_MOD = re.compile(r'\bkitlib((?:[./\\]+[A-Za-z_]\w*)+)')
+# The folders whose .py files the module-level scan reads as code (besides tests/).
+CODE_TOPS = ('kitlib', 'tools', 'hosts', 'boot')
 _TESTS_REF = re.compile(r'\btests\.([A-Za-z_]\w*)')
 # A string that runs kitlib code in a child (`-c "from kitlib.X import ..."`, `-m kitlib.X`);
 # a string that only names a package (a label, a message) is not a reference.
@@ -119,7 +137,7 @@ def config(root, data=None):
         raise ConfigError('%s: unknown key(s) %s' % (CONFIG_REL, ', '.join(unknown)))
     out = dict(DEFAULTS)
     out.update({k: v for k, v in data.items() if k in DEFAULTS})
-    for k in ('shared_core', 'full', 'by_name', 'prose', 'always'):
+    for k in ('full', 'prose', 'always'):
         v = out[k]
         if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
             raise ConfigError('%s: %s must be a list of non-empty strings' % (CONFIG_REL, k))
@@ -132,7 +150,8 @@ def config(root, data=None):
         ok = (isinstance(e, list) and len(e) == 2 and isinstance(e[0], str) and e[0]
               and isinstance(e[1], list) and all(isinstance(x, str) and x for x in e[1]))
         if not ok:
-            raise ConfigError('%s: paths[%d] must be [glob, [test package, ...]]' % (CONFIG_REL, i))
+            raise ConfigError('%s: paths[%d] must be [glob, [test package or module, ...]]'
+                              % (CONFIG_REL, i))
         pairs.append((e[0], list(e[1])))
     out['paths'] = pairs
     serial = []
@@ -266,17 +285,81 @@ def _refs(tree, nodes, text, package=None):
     return pkgs, tops
 
 
+def _kitlib_names(text):
+    """The dotted kitlib modules `text` names (`kitlib.a.b`, `kitlib/a/b.py`; a trailing `.py`
+    stays as a part, harmless once _expand adds the parents)."""
+    return {'kitlib.' + re.sub(r'[./\\]+', '.', g).strip('.') for g in _KITLIB_MOD.findall(text)}
+
+
+def _expand(names):
+    """`names` with every dotted parent: importing a.b.c runs a and a.b first."""
+    out = set()
+    for n in names:
+        parts = [p for p in n.split('.') if p]
+        for i in range(1, len(parts) + 1):
+            out.add('.'.join(parts[:i]))
+    return out
+
+
+def _imports(tree, nodes, text, dotted):
+    """The dotted modules the file `dotted` ("kitlib.a.b", an __init__ as "kitlib.a.__init__")
+    imports, with their parents (_expand): its imports, relative ones resolved (_test_imports),
+    the module an import_module / __import__ call names as a literal (deps._dynamic_call; a
+    computed name is not followed), and the kitlib modules a non-docstring string imports in a
+    child (_CHILD_IMPORT). A file that does not parse falls back to the kitlib modules its text
+    names (it only selects more)."""
+    if tree is None:
+        return _expand(_kitlib_names(text))
+    names, docs = _test_imports(nodes, dotted), _docstring_ids(nodes)
+    for node in nodes:
+        literal = _dynamic_call(node)
+        if literal:
+            names.add(literal)
+        elif (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docs and _CHILD_IMPORT.search(node.value)):
+            names |= _kitlib_names(node.value)
+    return _expand(names)
+
+
+def _module_of(rel):
+    """The dotted module of the repo-relative .py path `rel` (a package's __init__: the
+    package)."""
+    parts = rel[:-3].split('/')
+    if parts[-1] == '__init__':
+        parts = parts[:-1]
+    return '.'.join(parts)
+
+
+def _names_file(text, base):
+    """Whether `text` names the file `base` as a whole name: `solo.py` is not in `my_solo.py`."""
+    if base not in text:
+        return False
+    return re.search(r'(?<![\w-])%s(?![\w-])' % re.escape(base), text) is not None
+
+
+class CodeFile(object):
+    """One code file of the module-level scan (kitlib, tools, hosts, boot)."""
+
+    def __init__(self, rel, module, imports, text):
+        self.rel = rel            # repo-relative path
+        self.module = module      # dotted module (a package's __init__: the package; a tool: its name)
+        self.imports = imports    # dotted modules it imports, with their parents (_imports)
+        self.text = text
+
+
 class Tree(object):
     """The kit's tree at `root`: `kitlib` {package: kitlib packages it reaches}, `tools` {tool:
     (kitlib packages, top-level names it imports)}, `tests` {test package: TestPackage},
-    `modules` {dotted test module: TestPackage of its file and the test files it uses}."""
+    `modules` {dotted test module: TestPackage of its file and the test files it uses}, `code`
+    {repo-relative path: CodeFile} for every .py file under CODE_TOPS."""
 
-    def __init__(self, root, kitlib, tools, tests, modules=None):
+    def __init__(self, root, kitlib, tools, tests, modules=None, code=None):
         self.root = root
         self.kitlib = kitlib
         self.tools = tools
         self.tests = tests
         self.modules = modules or {}
+        self.code = code or {}
         self._named = {}          # {test module: the <name>.py files its text names}
 
     def naming(self, word):
@@ -301,13 +384,14 @@ class Tree(object):
 class TestPackage(object):
     """What a test package, or a test module with the test files it uses, refers to."""
 
-    def __init__(self, kitlib, tests, tools, text, files=(), walks=()):
+    def __init__(self, kitlib, tests, tools, text, files=(), walks=(), mods=()):
         self.kitlib = kitlib      # kitlib packages it names
         self.tests = tests        # other test packages it imports (tests.<pkg>)
         self.tools = tools        # tools it imports by module name or loads by bare name
         self.text = text          # every .py file's text, joined
         self.files = set(files)   # a module's test files, dotted ("tests.<pkg>.__init__" too)
         self.walks = set(walks)   # repo folders its files list ("tools", "content/roles")
+        self.mods = set(mods)     # dotted modules it imports or names, with parents (a module)
 
 
 def _test_imports(nodes, name):
@@ -426,15 +510,18 @@ def _walked(nodes, root, tops):
 def _module_refs(files, modules):
     """{test module: TestPackage} for each dotted name in `modules`, from `files` {dotted test
     file: (text, kitlib packages, top-level and loaded tool names, dotted names it may import,
-    folders it lists)}: the module's file, its packages' __init__ files and the test files it
-    imports or names as `<file>.py` in its own test package, transitively. The folders come
-    from the module's own file and its helpers, not from another test module it imports."""
+    folders it lists, dotted modules it imports with their parents)}: the module's file, its
+    packages' __init__ files and the test files it imports or names as `<file>.py` in its own
+    test package, transitively. The folders come from the module's own file and its helpers,
+    not from another test module it imports. A top-level tests/<x>.py helper ("tests.<x>")
+    gives its imports only: its text (names, tools, folders) is shared by too many modules to
+    say what any one of them reads."""
     by_base = {}
     for d in files:
         parts = d.split('.')
         by_base.setdefault((parts[1], parts[-1]), []).append(d)
     links = {}
-    for d, (text, _p, _t, imports, _w) in files.items():
+    for d, (text, _p, _t, imports, _w, _m) in files.items():
         out = set()
         parts = d.split('.')
         for i in range(2, len(parts)):
@@ -455,27 +542,42 @@ def _module_refs(files, modules):
             if d not in seen and d in files:
                 seen.add(d)
                 todo.extend(links[d] - seen)
-        texts, pkgs, tops, walks = [], set(), set(), set()
+        texts, pkgs, tops, walks, mods = [], set(), set(), set(), set()
         for d in sorted(seen):
-            text, p, t, _i, w = files[d]
-            texts.append(text)
+            text, p, t, _i, w, mo = files[d]
             pkgs |= p
+            mods |= mo
+            if d.count('.') == 1:
+                continue        # a top-level helper: its imports only
+            texts.append(text)
             tops |= t
             if d == m or not d.rsplit('.', 1)[-1].startswith('test'):
                 walks |= w      # another test module's listing runs in that module, not here
         text = '\n'.join(texts)
         refs[m] = TestPackage(pkgs | set(_KITLIB_REF.findall(text)),
-                              set(_TESTS_REF.findall(text)), tops, text, seen, walks)
+                              set(_TESTS_REF.findall(text)), tops, text, seen, walks,
+                              mods | _expand(_kitlib_names(text)))
     return refs
 
 
 def scan(root):
     """The Tree of the checkout at `root`."""
-    tools = {}
+    tools, code = {}, {}
+
+    def read_code(path, package=None):
+        rel = os.path.relpath(path, root).replace(os.sep, '/')
+        text = _read(path)
+        parsed = _parse(text)
+        nodes = _nodes(parsed)
+        name = rel[:-3].replace('/', '.')
+        module = name.split('.', 1)[1] if rel.startswith('tools/') else _module_of(rel)
+        code[rel] = CodeFile(rel, module, _imports(parsed, nodes, text, name), text)
+        return _refs(parsed, nodes, text, package)
+
     tdir = os.path.join(root, 'tools')
     names = {f[:-3] for f in os.listdir(tdir) if f.endswith('.py')} if os.path.isdir(tdir) else set()
     for name in sorted(names):
-        pkgs, tops = code_refs(_read(os.path.join(tdir, name + '.py')))
+        pkgs, tops = read_code(os.path.join(tdir, name + '.py'))
         # every top-level name, not only tools that exist: a deleted tool's importers still name it
         tools[name] = (pkgs, tops - {name})
     kitlib = {}
@@ -486,35 +588,47 @@ def scan(root):
             continue
         refs = set()
         for f in _py_files(folder):
-            refs |= code_refs(_read(f), package=name)[0]
+            refs |= read_code(f, package=name)[0]
         kitlib[name] = refs - {name}
+    for top in CODE_TOPS:
+        if top not in ('kitlib', 'tools'):
+            for f in _py_files(os.path.join(root, top)):
+                read_code(f)
     tests, files = {}, {}
     top_dirs = {n for n in os.listdir(root) if n not in ('.git', '__pycache__')
                 and os.path.isdir(os.path.join(root, n))}
+
+    def read_test(f):
+        text = _read(f)
+        parsed = _parse(text)
+        nodes = _nodes(parsed)
+        p, t = _refs(parsed, nodes, text)
+        t |= _tool_loads(nodes)
+        dotted = os.path.relpath(f, root)[:-3].replace(os.sep, '.')
+        files[dotted] = (text, p, t, _test_imports(nodes, dotted),
+                         _walked(nodes, root, top_dirs), _imports(parsed, nodes, text, dotted))
+        return text, p, t
+
     sdir = os.path.join(root, 'tests')
     for name in sorted(os.listdir(sdir)) if os.path.isdir(sdir) else ():
         folder = os.path.join(sdir, name)
+        if name.endswith('.py') and name != '__init__.py' and os.path.isfile(folder):
+            read_test(folder)       # a top-level helper (tests/gitfixture.py): its users follow it
+            continue
         if not os.path.isfile(os.path.join(folder, '__init__.py')):
             continue
         texts, pkgs, tops = [], set(), set()
         for f in _py_files(folder):
-            text = _read(f)
+            text, p, t = read_test(f)
             texts.append(text)
-            parsed = _parse(text)
-            nodes = _nodes(parsed)
-            p, t = _refs(parsed, nodes, text)
-            t |= _tool_loads(nodes)
             pkgs |= p
             tops |= t
-            dotted = os.path.relpath(f, root)[:-3].replace(os.sep, '.')
-            files[dotted] = (text, p, t, _test_imports(nodes, dotted),
-                             _walked(nodes, root, top_dirs))
         text = '\n'.join(texts)
         # imports (`from kitlib import X` too) and every `kitlib.X` / `kitlib/X` the text names
         tests[name] = TestPackage(pkgs | set(_KITLIB_REF.findall(text)),
                                   set(_TESTS_REF.findall(text)) - {name}, tops, text)
     modules = [m for m in all_test_modules(root) if m.split('.')[1] in tests]
-    return Tree(root, kitlib, tools, tests, _module_refs(files, modules))
+    return Tree(root, kitlib, tools, tests, _module_refs(files, modules), code)
 
 
 class _Picks(object):
@@ -545,19 +659,70 @@ class _Picks(object):
                 del self.why[name]
 
 
-def _kitlib_change(path, pkg, tree, cfg, picks):
-    if pkg in cfg['shared_core']:
-        return 'shared core: kitlib/%s changed (%s)' % (pkg, path)
-    if pkg not in tree.kitlib:
-        return '%s is not in a kitlib package of this tree' % path
-    found = picks.add(pkg, 'own tests of changed kitlib/%s' % pkg)
+def _readers(tree, names, why, picks):
+    """Pick the test modules importing or naming one of the dotted modules `names`; `why(name)`
+    the reason, from the first name a module reads."""
+    found = False
     for m, tm in sorted(tree.modules.items()):
-        if pkg in tm.kitlib:
-            found |= picks.add(m, 'uses kitlib/%s (%s)' % (pkg, path))
-    users = {x for x, (pkgs, _tops) in tree.tools.items() if pkg in pkgs}
-    found |= picks.tool_users(users, lambda tool: 'names tools/%s.py, which imports kitlib/%s '
-                              '(%s)' % (tool, pkg, path))
-    return None if found else 'nothing maps %s to a test' % path
+        hit = tm.mods & names
+        if hit:
+            found |= picks.add(m, why(min(hit)))
+    return found
+
+
+def _code_readers(tree, cf, tail, picks):
+    """Pick the test modules reading the code file `cf`: a tool's importers, namers and loaders
+    (Tree.tool_users); a module's importers and namers, and for hosts/ and boot/ the test
+    modules naming its path. `tail` ends each reason (", which imports ...")."""
+    if cf.rel.startswith('tools/'):
+        return picks.tool_users({cf.module}, lambda tool: 'names %s%s' % (cf.rel, tail))
+    found = _readers(tree, {cf.module}, lambda name: 'uses %s%s' % (name, tail), picks)
+    if not cf.rel.startswith('kitlib/'):
+        for m, tm in sorted(tree.modules.items()):
+            if cf.rel in tm.text:
+                found |= picks.add(m, 'names %s%s' % (cf.rel, tail))
+    return found
+
+
+def _carriers(module, pkg, tree):
+    """`module` and every file of kitlib/`pkg` importing it or another carrier: importing any of
+    them runs the changed code."""
+    files = [cf for rel, cf in tree.code.items() if rel.startswith('kitlib/%s/' % pkg)]
+    out, grew = {module}, True
+    while grew:
+        grew = False
+        for cf in files:
+            if cf.module not in out and cf.imports & out:
+                out.add(cf.module)
+                grew = True
+    return out
+
+
+def _carried(path, carriers, inside, tree, picks):
+    """Pick the readers of `carriers` and, one hop, of each code file not `inside` (a rel
+    predicate) importing one: the selection of a changed kitlib module `path`."""
+    found = _readers(tree, carriers, lambda name: 'uses %s (%s)' % (name, path), picks)
+    for rel, cf in sorted(tree.code.items()):
+        hit = cf.imports & carriers
+        if hit and not inside(rel):
+            found |= _code_readers(tree, cf, ', which imports %s (%s)' % (min(hit), path), picks)
+    return found
+
+
+def _kitlib_change(path, pkg, tree, picks):
+    found = picks.add(pkg, 'own tests of changed kitlib/%s' % pkg)
+    if not path.endswith('.py'):
+        return _named_file(path, tree, picks) or found
+    return _carried(path, _carriers(_module_of(path), pkg, tree),
+                    lambda rel: rel.startswith('kitlib/%s/' % pkg), tree, picks) | found
+
+
+def _kitlib_module_change(path, tree, picks):
+    """A module directly in kitlib/ (kitlib/clock.py): the tests/<x> of its name whole, its
+    readers and one hop; nothing else carries it (kitlib/__init__.py is `full`)."""
+    name = path[len('kitlib/'):-3]
+    found = picks.add(name, 'own tests of changed %s' % path)
+    return _carried(path, {_module_of(path)}, lambda rel: rel == path, tree, picks) | found
 
 
 def _tool_change(path, name, tree, picks):
@@ -566,25 +731,48 @@ def _tool_change(path, name, tree, picks):
     users = {x for x, (_pkgs, tops) in tree.tools.items() if name in tops}
     found |= picks.tool_users(users, lambda tool: 'names tools/%s.py, which imports %s'
                               % (tool, path))
-    return None if found else 'nothing maps %s to a test' % path
+    # no test reaches it: the tests of the code that runs it by name
+    return found or _named_by_code(path, tree, picks)
 
 
-def _tests_change(path, pkg, tree, picks):
-    if pkg not in tree.tests:
-        return '%s is not in a test package of this tree' % path
+def _test_users(path, tree, picks):
+    """Pick the test modules whose files hold the test file `path`: True when one does."""
     dotted = path[:-3].replace('/', '.') if path.endswith('.py') else None
     found = False
     for m, tm in sorted(tree.modules.items()):
         if dotted in tm.files:
             found |= picks.add(m, 'changed (%s)' % path if m == dotted else
                                'uses %s (%s)' % (dotted, path))
-    if not found:
+    return found
+
+
+def _tests_change(path, pkg, tree, picks):
+    if pkg not in tree.tests:
+        return _test_users(path, tree, picks) | _named_file(path, tree, picks)
+    if not _test_users(path, tree, picks):
         # a file the scan did not read (data, a deleted file) or one no test module uses
         picks.add(pkg, 'changed in tests/%s (%s)' % (pkg, path))
         for m, tm in sorted(tree.modules.items()):
             if pkg in tm.tests:
                 picks.add(m, 'names tests.%s (%s)' % (pkg, path))
-    return None
+    return True
+
+
+def _named_by_code(path, tree, picks):
+    """Pick the readers of each code file (but `path` itself) naming `path`'s base name; no
+    further hop."""
+    base = path.rsplit('/', 1)[-1]
+    found = False
+    for rel, cf in sorted(tree.code.items()):
+        if rel != path and _names_file(cf.text, base):
+            found |= _code_readers(tree, cf, ', which names %s' % path, picks)
+    return found
+
+
+def _named_file(path, tree, picks):
+    """The reader rule for a path no other rule owns: the test modules naming its base name and
+    the readers of the code files naming it."""
+    return _by_name(path, tree, picks) | _named_by_code(path, tree, picks)
 
 
 def _listers(path, tree, picks):
@@ -607,41 +795,40 @@ def _by_name(path, tree, picks):
 
 def selection(changed, tree, cfg):
     """(ALL, [why]) or (sorted names, {name: [reasons]}, notes) - see the docstring; a name is a
-    whole test package or a dotted test module. `notes` lists the prose paths no test names.
-    Pure: reads only `tree` and `cfg`."""
+    whole test package or a dotted test module. `notes` lists the paths no test reads (they run
+    `always` only). Pure: reads only `tree` and `cfg`."""
     picks, notes = _Picks(tree), []
     for f in sorted({p.replace('\\', '/') for p in changed}):
-        why = None
         parts = f.split('/')
-        # `paths` adds to every rule below: a test package that reads another folder.
-        mapped = [mods for g, mods in cfg['paths'] if glob_regex(g).match(f)]
-        found = False
-        for mods in mapped:
-            for m in mods:
-                found |= picks.add(m, 'reads %s (%s)' % (f, CONFIG_REL))
-        # so do the test modules listing a folder f is in; they never stand in for a rule below
-        listed = _listers(f, tree, picks)
         if _matches(f, cfg['full']):
-            why = '%s changed (a test helper or the selection itself)' % f
-        elif parts[0] == 'kitlib' and len(parts) > 2:
-            why = _kitlib_change(f, parts[1], tree, cfg, picks)
+            return ALL, ['full suite: %s changed (the selection, the gate config or code every '
+                         'test runs inside)' % f], notes
+        # `paths` adds to every rule below: a test that reads a folder through a computed name
+        found = mapped = False
+        for g, mods in cfg['paths']:
+            if glob_regex(g).match(f):
+                mapped = True
+                for m in mods:
+                    found |= picks.add(m, 'reads %s (%s)' % (f, CONFIG_REL))
+        # so do the test modules listing a folder f is in
+        found |= _listers(f, tree, picks)
+        if parts[0] == 'kitlib' and len(parts) > 2:
+            found |= _kitlib_change(f, parts[1], tree, picks)
+        elif parts[0] == 'kitlib' and len(parts) == 2 and f.endswith('.py'):
+            found |= _kitlib_module_change(f, tree, picks)
         elif parts[0] == 'tools' and len(parts) == 2 and f.endswith('.py'):
-            why = _tool_change(f, parts[1][:-3], tree, picks)
+            found |= _tool_change(f, parts[1][:-3], tree, picks)
         elif parts[0] == 'tests' and len(parts) > 2:
-            why = _tests_change(f, parts[1], tree, picks)
+            found |= _tests_change(f, parts[1], tree, picks)
+        elif parts[0] == 'tests' and len(parts) == 2 and f.endswith('.py'):
+            found |= _test_users(f, tree, picks) | _named_file(f, tree, picks)
+        elif mapped or _matches(f, cfg['prose']):
+            # a row names its readers; prose is read by name only
+            found |= _by_name(f, tree, picks)
         else:
-            if mapped:
-                found |= _by_name(f, tree, picks)
-                why = None if found else 'its %s packages do not exist (%s)' % (CONFIG_REL, f)
-            elif _matches(f, cfg['by_name']):
-                why = None if _by_name(f, tree, picks) else 'no test package names %s' % f
-            elif _matches(f, cfg['prose']):
-                if not _by_name(f, tree, picks) and not listed:
-                    notes.append(f)
-            else:
-                why = '%s is not mapped (%s)' % (f, CONFIG_REL)
-        if why is not None:
-            return ALL, ['full suite: ' + why], notes
+            found |= _named_file(f, tree, picks)
+        if not found:
+            notes.append(f)
     if changed:
         for name in cfg['always']:
             why = 'reads every tracked file (always, %s)' % CONFIG_REL

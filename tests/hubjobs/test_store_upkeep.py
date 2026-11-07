@@ -296,14 +296,24 @@ class StaleLock(UpkeepCase):
         from kitlib.hubsite import push
         self.assertIn('maintenance.lock', push.JOB_EACH['stale-lock'])
 
-    def test_it_is_pushed_again_only_when_its_age_changes_or_a_day_passes(self):
+    def test_it_is_pushed_once_while_it_stays_and_again_after_a_day_with_the_current_age(self):
         self.place('objects/maintenance.lock', 13 * 3600)
         self.run_job()
+        self.job.clock = lambda: NOW + 3600         # an hour on: 14 h old, not a new push
         self.run_job()
         self.assertEqual(self.events, [('stale-lock', '13h')])
         self.job.clock = lambda: NOW + su.REPUSH_S
         self.run_job()
         self.assertEqual(self.events, [('stale-lock', '13h'), ('stale-lock', '37h')])
+
+    def test_it_is_pushed_again_when_it_goes_and_comes_back(self):
+        lock = self.place('objects/maintenance.lock', 13 * 3600)
+        self.run_job()
+        os.remove(lock)
+        self.run_job()
+        self.place('objects/maintenance.lock', 13 * 3600)
+        self.run_job()
+        self.assertEqual(self.events, [('stale-lock', '13h')] * 2)
 
     def test_a_lock_a_live_git_may_hold_is_a_note_not_a_push(self):
         lock = self.place('objects/maintenance.lock', 13 * 3600)

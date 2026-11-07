@@ -35,8 +35,8 @@ text in push.JOB_EACH). A lock with such a git alive is named in the note and no
 process listing that fails is pushed, the note saying the holders could not be listed.
 
 Pushes: made at the end of the pass, after the git steps, so the run and its note are recorded
-with them. An event is pushed only when its detail differs from the one last pushed or that push
-is REPUSH_S (a day) old. The last ones are kept in STATE_FILE of the common dir, so a hub
+with them. An event is pushed only when its key (the count for findings; the lock being there for
+STALE_EVENT) differs from the one last pushed or that push is REPUSH_S (a day) old. The last ones are kept in STATE_FILE of the common dir, so a hub
 restart does not push them again.
 
 Outcomes (kitlib.hubsite.jobs): the note says what each step did; a pass that only found nothing
@@ -224,9 +224,9 @@ class StoreUpkeep(object):
             raise UpkeepFailed('the git common dir of %s: %s' % (self.root, why))
         now = self.clock()
         findings = scan(common, now)
-        pushes = {}                 # event -> detail, handed to the PM at the pass's end
+        pushes = {}                 # event -> (detail, key), handed to the PM at the pass's end
         if findings:
-            pushes['findings'] = str(len(findings))
+            pushes['findings'] = (str(len(findings)),) * 2
         notes, errors = [], []
         self._stale_lock(pushes, common, now, findings, notes)
         r = _run(GRAPH, self.root, timeout=None)
@@ -264,11 +264,12 @@ class StoreUpkeep(object):
             return
         findings.append('stale %s, %s old, no git maintenance or gc alive%s: git skips its '
                         'maintenance while it is there' % (path, _span(age), unlisted))
-        pushes[STALE_EVENT] = '%dh' % int(age // 3600)
+        pushes[STALE_EVENT] = ('%dh' % int(age // 3600), 'present')    # its age is no change
 
     def _push(self, ctx, common, now, pushes):
-        """Hand the PM each of `pushes` ({event: detail}) only when its detail differs from the
-        last one pushed or that push is REPUSH_S old; the last pushes are kept in STATE_FILE of
+        """Hand the PM each of `pushes` ({event: (detail, key)}) only when its key differs from the
+        last one pushed or that push is REPUSH_S old (the key is the count for findings, and
+        'present' for the stale lock, whose detail, its age, changes every hour); the last pushes are kept in STATE_FILE of
         the common dir (so a hub restart does not repeat them), written after ctx.event returns.
         An event not in `pushes` is forgotten, so it pushes again when it comes back. A state
         file that cannot be read counts as empty; one that cannot be written is ignored (the
@@ -282,14 +283,14 @@ class StoreUpkeep(object):
         except (OSError, ValueError):
             last = {}
         kept = {}
-        for event, detail in sorted(pushes.items()):
+        for event, (detail, key) in sorted(pushes.items()):
             old = last.get(event)
-            if (isinstance(old, dict) and old.get('detail') == detail
+            if (isinstance(old, dict) and old.get('key') == key
                     and isinstance(old.get('at'), (int, float)) and 0 <= now - old['at'] < REPUSH_S):
                 kept[event] = old
                 continue
             ctx.event(event, detail)
-            kept[event] = {'detail': detail, 'at': now}
+            kept[event] = {'detail': detail, 'key': key, 'at': now}
         if kept == last:
             return
         tmp = '%s.%d.tmp' % (path, os.getpid())

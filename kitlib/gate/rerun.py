@@ -734,9 +734,9 @@ def class_timeout(top, cfg):
     `.kit.json` "tool_tests".unit_timeout (pytests'; its schema default when unset). `cfg`: the
     loaded configuration of `top`."""
     from kitlib.content.oncommit import is_kit
-    from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
+    from kitlib import clock
     if is_kit(top):
-        return UNIT_TIMEOUT
+        return clock.UNIT_TIMEOUT
     return cfg.section('tool_tests')['unit_timeout']
 
 

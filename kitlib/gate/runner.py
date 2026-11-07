@@ -604,7 +604,7 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     repeat a failed gate of the same tree (_unchanged), or None; asked after merged_tip before it
     books, and again at its turn (released `not started`), as merged_tip is.
     `ran`: ran(results) once the booked steps ran and no stop came, before the slot is released,
-    so a gate queued behind this one finds what ran writes (the red-tree mark) at its turn.
+    so a gate queued behind this one finds what ran writes (a red run's red-tree mark) at its turn.
     A stop of the booked run (kitlib.gate.stop, machine_lock.py stop), whether it comes while the
     run waits, in a step (Slot.wait ends that step's tree) or after the last one, gives
     `(None, stopped_outcome)`: no other step starts and the run is released `cancelled`. A held
@@ -1055,11 +1055,16 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
             ended.append(_unclean(top, head, entries))
         return ended[0]
 
+    marked = []
+
     def ran(got):
-        # The mark, written before the slot is released (gated's `ran`): a gate of the same tree
-        # queued behind this one finds it at its turn.
+        # A red run's fail mark, written before the slot is released (gated's `ran`): a gate of
+        # the same tree queued behind this one finds it at its turn. A pass is marked after the
+        # release, as its gate-OK record reads _unclean: a child the release ends that writes to
+        # the work tree before then still counts as the tree changing while the gate ran.
         got = _with_reused(got, chosen, reused)
-        if key is not None and not nothing_ran(got):
+        if key is not None and not nothing_ran(got) and not verdict(got, empty)[0]:
+            marked.append(True)
             _mark(top, key, head, branch, got, logs, unclean(), say)
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
@@ -1086,6 +1091,8 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     results = _with_reused(results, chosen, reused)
     _keep(plan, results, logs, say)
     ok, line = verdict(results, empty)
+    if key is not None and not marked and not nothing_ran(results):
+        _mark(top, key, head, branch, results, logs, unclean(), say)
     lines = [line, 'logs: %s' % logs]
     facts = dict(verdict=line, results=results, record=None, no_record=None, head=head, base=mb,
                  log_dir=logs, changed=changed, windows=watched.get('windows'), full_hint=hint)

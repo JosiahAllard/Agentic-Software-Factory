@@ -214,6 +214,38 @@ class AtItsTurn(Case):
         self.assertIsNotNone(at_release[0], 'no mark when the slot was released')
         self.assertEqual(at_release[0]['verdict'], 'fail')
 
+    def unclean_reads(self):
+        """Run a gate; for each runner._unclean read, whether the slot was released by then."""
+        real_release, real_unclean = lockrun.Slot.release, runner._unclean
+        released, reads = [], []
+
+        def release(slot, code=None, how=None):
+            released.append(how)
+            return real_release(slot, code, how)
+
+        def unclean(*args):
+            reads.append(bool(released))
+            return real_unclean(*args)
+        with mock.patch.object(lockrun.Slot, 'release', release), \
+                mock.patch.object(runner, '_unclean', unclean):
+            out = self.gate()
+        return out, reads
+
+    def test_a_pass_reads_the_tree_after_the_release_and_a_red_run_before(self):
+        """A pass's gate-OK record and mark read _unclean after the release, so a child the
+        release ends that writes to the tree still counts; a red run (no gate-OK record) reads
+        once, before it, for its fail mark. One read per gate either way."""
+        out, reads = self.unclean_reads()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertEqual(reads, [False])
+        self.red(False)
+        self.repo.write('a.py', 'x = 2\n', root=self.wt)    # a new tree: no mark, no reuse
+        self.repo.commit('green', 'a.py', cwd=self.wt)
+        out, reads = self.unclean_reads()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(reads, [True])
+        self.assertEqual(self.mark_of('select')['verdict'], 'pass')
+
 
 # A kit_tests report (kitlib.pytests.runner) whose units are as UNCHANGED_KT says, exit 1.
 KT = ['{python}', '-c', 'import os, sys; units = os.environ["UNCHANGED_KT"].split(","); '

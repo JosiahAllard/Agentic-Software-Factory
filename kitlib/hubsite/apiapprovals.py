@@ -6,10 +6,11 @@ import json
 from . import schema
 from .apibase import AGENT_FROM, _fields, _invalid, _pin, _q, _text, _version, _via, _when
 from .apipark import _park_now, _unpark_now
-from .apitodos import _bound, _creator, _no_record, _withdrawn
+from .apirecord import _bound, _creator, _no_record, _withdrawn
 from .store import HubError
 
-# approvals: imported here, not at the top, as kitlib.hubsite.approvals imports this module
+
+# approvals: imported here, not at the top, as kitlib.hubsite.approvals imports kitlib.hubsite.api
 def _approval(make, *args):
     from . import approvals as ap
     try:

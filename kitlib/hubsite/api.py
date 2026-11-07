@@ -453,9 +453,11 @@ from .apisched import (  # noqa: F401 - re-exported: callers and tests read thes
     TICK_STALE_S, tick_every_s, _aware, _tick_status, tick_run_state, _next_due, schedules_list,
     _first_run, _one_checkout, schedules_set)
 from .apitodos import (  # noqa: F401 - re-exported: callers and tests read these off api
-    RECORD_SHAPE, _holders, _bound, todos_list, todo_steps, _no_record, todos_add, _ASKS_REPORT,
+    todos_list, todo_steps, todos_add, _ASKS_REPORT,
     TODO_ASKS_REPORT, _asks_report, TODO_NOTE_MAX, _NOTE_CONTROL, _todo_note, todos_done, todos_ack,
-    _own, _creator, _still_open, _withdrawn, todos_edit, todos_delete)
+    _own, todos_edit, todos_delete)
+from .apirecord import (  # noqa: F401 - re-exported: callers and tests read these off api
+    RECORD_SHAPE, _holders, _bound, _no_record, _creator, _still_open, _withdrawn)
 from .apiposts import (  # noqa: F401 - re-exported: callers and tests read these off api
     to_pm_list, _unpath_act, to_pm_add, _queued, to_pm_edit, to_pm_delete, _refusal, to_pm_send,
     to_pm_reply)

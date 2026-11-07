@@ -11,7 +11,8 @@
   apilock  the api's machine-lock routes: the lock reads and owner writes, each a handler
   apifindings the api's finding routes: the maintenance lint's findings and the owner's marks
   apiskills the api's skill-edit routes: the owner's edits of a kit skill, draft to committed
-  apitodos the api's to-do routes, and the checks a bound ask shares: its record, an agent's claim
+  apirecord the checks a bound ask shares: the record it is bound to, an agent's claim
+  apitodos the api's to-do routes: add, steps, done, edit and withdraw
   apiposts the api's routes for the owner's notes to the PM
   apiapprovals the api's approval routes: add, decide, consume, withdraw, supersede, verify
   apipark  the api's parking of a record on a bound ask, and the sweep of lines whose ask is gone

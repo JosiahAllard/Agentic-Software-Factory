@@ -23,7 +23,6 @@ DENY, ASK, ALLOW = 'deny', 'ask', 'allow'
 # kitlib.host.Action.shell -> the parser's dialect
 SHELLS = {'bash': sh.BASH, 'powershell': sh.PS}
 TAG = '[kit guard: rule=%s role=%s]'
-NULL_TARGETS = {'/dev/null', '$null', 'nul', 'nul:', '&1', '&2'}
 
 
 def tag(rule, role):
@@ -86,6 +85,19 @@ def fwd(path):
 
 def quote(path):
     return '"%s"' % fwd(path)
+
+
+SAFE_WORD_RE = re.compile(r'^[\w@%+=:,./-]+$')
+
+
+def spelt(text):
+    """`text` as one shell word: bare when it needs no quoting, else single-quoted (double-quoted,
+    with bash's escapes, when it holds a single quote)."""
+    if SAFE_WORD_RE.match(text):
+        return text
+    if "'" not in text:
+        return "'%s'" % text
+    return '"%s"' % re.sub(r'(["\\$`])', r'\\\1', text)
 
 
 def shell_word(text):
@@ -336,7 +348,7 @@ def ps_params(cmd, words, spec):
             for c in cands:
                 named.setdefault(c, []).extend(vals)
             continue
-        pos.extend(_split_commas(w))
+        pos.extend(split_commas(w))
         k += 1
     return named, pos
 
@@ -363,7 +375,7 @@ def ps_args(cmd, words, cmdlet):
     return ps_bound(spec, named, pos)
 
 
-def _split_commas(w):
+def split_commas(w):
     if w.dyn or ',' not in w.text:
         return [w]
     return [sh.Word(p, False, w.start, w.end) for p in w.text.split(',') if p]

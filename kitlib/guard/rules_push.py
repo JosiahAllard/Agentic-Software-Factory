@@ -1,13 +1,14 @@
 """The guard's git push rule and the PM data checks it shares (kitlib.guard.rules, which re-exports each
 name here): git push from the PM data worktree, --no-verify and a changed HOME where a PM data record
-exists, a push the guard cannot tell holds no PM data, and the main branch's gate-OK check."""
+exists, a push the guard cannot tell holds no PM data, the main branch's gate-OK check, and the git
+that talks to a remote with no pre-push hook (send-pack and its kin, and `& (...)`, a computed program)."""
 import os
 from kitlib import pmdata
 from kitlib.git import repo
 
 from . import commands as cm
 from .rules_base import UNPLACED, agent_session, fwd, is_owner_session, kit_tool, own_worktree, quote, refuse
-from .rules_gitcore import _canon_long, _opts
+from .rules_gitcore import _canon_long, _opts, git_call_judged
 
 
 class Judged(object):
@@ -337,3 +338,72 @@ def landing_command(ctx, gc, cfg, remote, branch):
         kit_tool(ctx, 'land'), quote(main_top) if main_top else '"<main checkout>"',
         branch if branch and branch != cfg.main_branch else '<branch>',
         tip if branch and branch != cfg.main_branch and tip else '<branch tip sha>')
+
+
+def pmdata_possible(ctx, path):
+    """pmdata_recorded, except that a directory the text cannot tell (None) counts only when the
+    machine config names pm_data (or cannot be read): with none named, an unknown directory is
+    no ground to deny a command that is not a push."""
+    return pmdata_recorded(ctx, path) if path else ctx.pm_data_named()
+
+
+def call_subexpr_pmdata(event, ctx, cmd, inv, cwd, role):
+    """PowerShell's call operator on a ( ) subexpression (`& (Get-Command git) push`,
+    commands.call_subexpr), in every session but the owner's own: the program is what the ( )
+    computes, so the rules that need a literal program (heavy, the write jail, the git rules)
+    cannot read it. In a repository with a PM data record it is denied as git-push-pmdata (it may
+    be git push --no-verify); elsewhere an agent session (agent_session) is refused as unplaced
+    (it may be git writing a checkout the jail cannot place; warn by default). Only the owner and
+    a session the jail does not hold (`plain`) read the line as any other."""
+    if not cm.call_subexpr(inv) or is_owner_session(event, ctx):
+        return None
+    instead = ('& <program> %s' % ' '.join(w.text for w in inv.args)).rstrip()
+    where = cmd.cwd
+    if pmdata_possible(ctx, where):
+        return refuse('git-push-pmdata', role, '`& %s` runs the program a PowerShell subexpression computes, and this '
+                      'repository has %s (or the guard cannot tell): it may be git push --no-verify, which skips the '
+                      'pre-push hook that keeps PM data off public remotes. Name the program literally:'
+                      % (inv.path, pmdata.FILE_NAME), instead)
+    if not agent_session(event, ctx):
+        return None
+    return refuse(UNPLACED, role, '`& %s` runs the program a PowerShell subexpression computes, which the guard cannot '
+                  'name: it may be git writing a checkout the write jail cannot place, or a heavy program run '
+                  'without the machine lock. Name the program literally:' % inv.path, instead)
+
+
+def hookless_sub(sub):
+    """True for a git subcommand that talks to a remote without running the pre-push hook:
+    send-pack, http-push, and a remote helper run by hand (remote-https, remote-ext, remote-fd,
+    any remote-<transport>)."""
+    return sub in ('send-pack', 'http-push') or (sub.startswith('remote-') and len(sub) > len('remote-'))
+
+
+def git_send_pack_pmdata(event, ctx, inv, role):
+    """`git send-pack`, `git http-push` or a `git remote-<helper>`, or their dashed programs
+    (git-send-pack, git-http-push, git-remote-https, ...), in a repository with a PM data record
+    (or where the text cannot place it), in every session but the owner's own: each talks to a
+    remote without running the pre-push hook (rule git-push-pmdata). In a repository without a
+    record, data_copy judges it."""
+    if inv is None or inv.dyn:
+        return None
+    if inv.name.startswith('git-') and hookless_sub(inv.name[len('git-'):]):
+        sub, where, args = inv.name[len('git-'):], cm.run_dir(inv), [w.text for w in inv.args]
+    else:
+        gc = git_call_judged(inv)
+        if gc is None or not hookless_sub(gc.sub):
+            return None
+        sub, where, args = gc.sub, (None if gc.unknown else gc.dir), gc.argv
+    return hookless_refusal(event, ctx, sub, where, args, role)
+
+
+def hookless_refusal(event, ctx, sub, where, args, role):
+    """git_send_pack_pmdata's judgement of `git <sub> <args>` run in `where`."""
+    if is_owner_session(event, ctx):
+        return None
+    text = ('git %s %s' % (sub, ' '.join(args))).rstrip()
+    if not pmdata_recorded(ctx, where):
+        return data_copy(event, ctx, where, role, '`%s`' % text)
+    return refuse('git-push-pmdata', role, '`%s` talks to a remote without running the pre-push hook, which '
+                  'keeps PM data off public remotes in this repository (it has %s, or the guard cannot tell). '
+                  'Push with git push, which runs the hook:' % (text, pmdata.FILE_NAME),
+                  'git -C %s push <remote> <branch>' % (quote(where) if where else '"<checkout>"'))

@@ -50,7 +50,7 @@ def unix_opts(args, value_shorts='', value_longs=()):
     return opts, pos
 
 
-def _sed(args):
+def sed_writes(args):
     in_place = False
     for w in args:
         t = w.text
@@ -67,7 +67,7 @@ def _sed(args):
     return pos if script else pos[1:]
 
 
-def _perl(args, cmd_word=None):
+def perl_writes(args, cmd_word=None):
     in_place, script, pos = False, False, []
     k = 0
     while k < len(args):
@@ -137,7 +137,7 @@ def _awk_long(name):
     return AWK_LONGS.get(hits[0]) or AWK_OPTIONAL_LONGS.get(hits[0]) or ''
 
 
-def _awk(args, cmd_word):
+def awk_writes(args, cmd_word):
     """What awk/gawk writes: every file operand under the inplace library (`-i inplace` in any
     spelling, `-f inplace`, `-l inplace`, `@include "inplace"` in the program text; counted even
     with -v inplace::enable=0), and the file -d, -o or -p names (else the directory it runs in,
@@ -222,10 +222,10 @@ def _awk(args, cmd_word):
     return dumps + files
 
 
-def _ruby(args, cmd_word):
+def ruby_writes(args, cmd_word):
     """ruby -i[ext]: the files it edits, as perl -i (after the script unless -e gives the code),
-    placed under each -C or -x folder in turn; without -i, code on the line (_evals)."""
-    code = _evals('ruby', args, cmd_word)
+    placed under each -C or -x folder in turn; without -i, code on the line (eval_writes)."""
+    code = eval_writes('ruby', args, cmd_word)
     in_place, script, pos, dirs = False, False, [], []
     k = 0
     while k < len(args):
@@ -275,11 +275,10 @@ def _ruby(args, cmd_word):
 # vi, vim, nvim, ex and ed: a scripted run writes the files it is given, so every file operand
 # counts, an operand-only read too; the options whose value is the next word (a short one last in
 # its word, as `-sc <cmd>`) are passed over, bar -w/-W's script output file, which is written
-EDITORS = {'vi', 'vim', 'nvim', 'ex', 'ed'}
 EDITOR_VALUE_SHORTS = 'cuUiTtwW'
 
 
-def _editor(name, args):
+def editor_writes(name, args):
     out, k = [], 0
     while k < len(args):
         w = args[k]
@@ -304,7 +303,7 @@ def _editor(name, args):
     return [w for w in out if w.dyn or w.text != '-']
 
 
-def _curl(args, cmd_word):
+def curl_writes(args, cmd_word):
     out = []
     opts, _pos = unix_opts(args, 'oDcHduXAebTFxmrwKEQYyzCtP',
                            ('--output', '--dump-header', '--cookie-jar', '--header', '--data', '--user',
@@ -349,7 +348,7 @@ def _under(folder, w):
     return Under(folder, w)
 
 
-def _wget(args, cmd_word):
+def wget_writes(args, cmd_word):
     out, prefix = [], None
     opts, pos = unix_opts(args, 'OoaPiBetTwQUlA',
                           ('--output-document', '--output-file', '--append-output', '--directory-prefix',
@@ -372,7 +371,7 @@ def _wget(args, cmd_word):
     return out
 
 
-def _patch(args, cmd_word):
+def patch_writes(args, cmd_word):
     opts, _pos = unix_opts(args, 'odipFzBYVDrg',
                            ('--output', '--directory', '--input', '--strip', '--fuzz', '--prefix', '--suffix',
                             '--basename-prefix', '--version-control', '--reject-file', '--get'))
@@ -388,7 +387,7 @@ def _patch(args, cmd_word):
     return [here(cmd_word)]
 
 
-def _rsync(args):
+def rsync_writes(args):
     opts, pos = unix_opts(args, 'eTfB', ('--rsh', '--temp-dir', '--filter', '--exclude', '--include',
                                         '--exclude-from', '--include-from', '--files-from', '--block-size',
                                         '--partial-dir', '--backup-dir', '--suffix', '--chmod', '--log-file'))
@@ -519,7 +518,7 @@ def _tar_stdout(t):
     return False
 
 
-def _tar(args, cmd_word):
+def tar_writes(args, cmd_word):
     """[Word]: the folders tar -x writes: each folder a -C/--directory names, relative to the one
     before it (_TarDirs), with none the working directory, and the working directory too once a -C
     was read that may not be one (_tar_word, _tar_old: fail closed). None with -O/--to-stdout
@@ -546,7 +545,7 @@ def _tar(args, cmd_word):
     return dirs.seen + ([here(cmd_word)] if dirs.unsure else [])
 
 
-def _unzip(args, cmd_word):
+def unzip_writes(args, cmd_word):
     for k, w in enumerate(args):
         t = w.text
         if t == '-d' and k + 1 < len(args):
@@ -556,13 +555,13 @@ def _unzip(args, cmd_word):
     return [here(cmd_word)]
 
 
-def _copier(args):
+def copier_writes(args):
     """robocopy src dst [files] [/opts]; xcopy src [dst] [/opts]: the destination Word."""
     pos = [w for w in args if not WIN_OPT_RE.match(w.text)]
     return pos[1:2]
 
 
-def _evals(name, args, cmd_word):
+def eval_writes(name, args, cmd_word):
     """node -e, ruby -e: code given on the line writes where it likes, as python -c does."""
     for w in args:
         if w.text in EVALS[name] or w.text.partition('=')[0] in EVALS[name]:
@@ -618,7 +617,7 @@ def py_program(name, args):
     return 'none', None
 
 
-def _python(cmd, name, args, cmd_word, via=None):
+def python_writes(cmd, name, args, cmd_word, via=None):
     return [here(cmd_word)] if python_unread(cmd, name, args, via) else []
 
 

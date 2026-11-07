@@ -37,9 +37,9 @@ stricter than the default host, where a launched lead's main session may. An **u
 skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
 "Session mark"):
 
-- It is an agent session (`rules.agent_session`): the rules only agents are held to (kit-json, the
-  write jail, kill by name, lock state) refuse it as they refuse a subagent.
-- It is never the owner (an owner answer; `rules.is_owner_session` is false for every Codex
+- It is an agent session (`rules_base.agent_session`): the rules only agents are held to (kit-json,
+  the write jail, kill by name, lock state) refuse it as they refuse a subagent.
+- It is never the owner (an owner answer; `rules_base.is_owner_session` is false for every Codex
   chat): every owner-only check refuses it. Those are machine config writes (`.pm-kit`), a commit
   under the owner's identity, the owner's tools and delegation list, the hub's secrets and owner
   verbs, the backlog's raw writes, the lock MCP's owner tool names and `gate.py allow`. Owner

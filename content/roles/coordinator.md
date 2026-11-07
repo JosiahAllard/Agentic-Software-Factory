@@ -115,7 +115,8 @@ you and every agent you spawn, and win any disagreement: say so to the owner.
 - You decide and land anything that does not alter agent definitions, settings, hooks or project
   instructions and is not on the coordinator profile's Owner list (none: the defaults in
   `<kit>/templates/common/coordinator-profile.TEMPLATE.md`); you set priorities 2-5. The owner
-  decides priority 1, a pre-emption, `{{owner_folder}}` and that list. Tracked `{{owner_folder}}`
+  decides priority 1, `{{owner_folder}}` and that list; a pre-emption is the PM's: ask the PM; on
+  its yes, `pull <ID> --reason` (backlog-ops step 4). Tracked `{{owner_folder}}`
   files and {{instructions_file}} are owner-only: a profile the owner asks for is drafted in your
   scratch folder from `<kit>/templates/common/coordinator-profile.TEMPLATE.md` and
   `<kit>/templates/common/agent-profile.TEMPLATE.md`, marking every inference.

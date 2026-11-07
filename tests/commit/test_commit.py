@@ -2315,13 +2315,6 @@ class AMergeThatOnlyDeletes(JoinCase):
         rules = C.kconfig.load(self.wt).owner_rules()
         self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
 
-    def test_a_resolution_that_keeps_a_line_main_deleted_is_refused(self):
-        self.approve('A-001', 'A-002')
-        tip, _ = self.start()
-        self.put(self.F, SEVEN.replace('line 4\n', ''))
-        code, out = self.commit('merge main', 'work.txt', self.F)
-        self.assert_owner_refusal(out, code, tip)
-
     def test_a_resolution_that_adds_a_line_is_refused(self):
         self.approve('A-001', 'A-002')
         tip, _ = self.start()

@@ -52,8 +52,8 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   commit carries `Owner-Authored: yes` in place of Co-Authored-By. With "commit".merge_fold,
   during a merge in progress (one MERGE_HEAD), a named owner-only path needs neither when its
   staged copy is a resolution that only deletes and both sides' commits to it are the owner's or
-  approved (merge_deletion_paths, then staged_deletions after staging; docs/commit.md "A merge
-  that only deletes").
+  approved (merge_deletion_paths, then kitlib.commit.mergedeletes after staging; docs/commit.md
+  "A merge that only deletes").
 - Or an agent commits the change the owner approved on the hub: --owner-approval hub:A-<n>
   (kitlib.commit.approval; docs/commit.md "Owner approval"). The paths named must be exactly the
   approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
@@ -103,7 +103,7 @@ from kitlib.content import oncommit
 from kitlib.git import checkout, cmd, refs, repo
 from kitlib.proc import spawn
 
-from kitlib.commit import approval
+from kitlib.commit import approval, mergedeletes
 
 OK, REFUSED, USAGE = 0, 1, 2
 TOOL = 'commit.py'
@@ -576,7 +576,7 @@ def _unapproved_paths(root, rules, tip, exclude, which):
 def merge_deletion_paths(root, rules, paths, heads, landed=()):
     """`(paths, why)`: those of the owner-only `paths`, named during a merge in progress (one
     MERGE_HEAD), that the merge may commit with no approval once staged as a resolution that only
-    deletes (staged_deletions): no commit on either side that changes it, other than those
+    deletes (mergedeletes.deletion_merge): no commit on either side that changes it, other than those
     reachable from `landed`, lacks the owner as author or an approval the hub verifies
     (non_owner_paths, and the same check of HEAD's side, as in clean_owner_merge). `(set(), why)`
     when git cannot tell (docs/commit.md "A merge that only deletes")."""
@@ -589,14 +589,6 @@ def merge_deletion_paths(root, rules, paths, heads, landed=()):
     if ours is None:
         return set(), why
     return set(paths) - theirs - ours, None
-
-
-def staged_deletions(root, head, merge_head, snap, paths):
-    """`(paths, None)`: those of `paths` whose staged entry in `snap` (index_snapshot) the merge
-    of `head` and `merge_head` may hold as a resolution that only deletes
-    (kitlib.guard.ownercommits.deletion_merge); `(None, why)` when git cannot tell."""
-    from kitlib.guard import ownercommits     # here: kitlib.guard reaches back into this module
-    return ownercommits.deletion_merge(root, head, merge_head, {p: snap.get(p) for p in paths})
 
 
 def merge_owner_refusal(root, rules, landed=(), fold=True):
@@ -1515,7 +1507,8 @@ def _commit(req, lines):
             req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
             trailers, lines, hub)
         if deleting:
-            held, why = staged_deletions(root, head, heads[0], snap, deleting)
+            held, why = mergedeletes.deletion_merge(root, head, heads[0],
+                                                    {p: snap.get(p) for p in deleting})
             if held != deleting:
                 raise _Stop(REFUSED, *unstage_added(root, sorted(named), status_before, [
                     _owner_only_refusal(root, rules, sorted(deleting - (held or set())),

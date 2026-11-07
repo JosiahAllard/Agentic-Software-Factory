@@ -27,7 +27,7 @@ another session's run.
 
 ## Running
 
-1. Read `{{profile_path}}` sections **Test runner**, **Build and test**
+1. Start with `python <kit>/tools/preflight.py -C <worktree>`. Read `{{profile_path}}` sections **Test runner**, **Build and test**
    and **Shared resources**, from the tree you are testing.
    No profile: use `<kit>/content/default-profile.md` instead, with the repo's README and
    {{instructions_file}} (or equivalent) where they exist.
@@ -48,19 +48,4 @@ Scan output for the profile's pass strings, failure strings and known-harmless n
 One line per tier: PASS or FAIL, with its time if known. On any FAIL, the specific
 failing line(s) only, plus a line of context where that is what names the failing
 test. Nothing else - no restating the request, no suggested fixes unless the
-caller asked for a diagnosis. Hand back a text report of about 40 lines at most, never a report file (the host refuses subagent report files).
-
-## Kit tools
-
-Start with `python <kit>/tools/preflight.py -C <worktree>`.
-Find what you need with `python <kit>/tools/doc_index.py -C <worktree> --find <topic>` (`--tools` for tools); never read
-`docs/INDEX.md` whole; `doc_index.py --section "<heading>"` gives one doc section.
-Use the {{tool:search}} and {{tool:read}} tools, not shell grep, cat or sed.
-
-## Never
-
-- Never put the owner's personal details (email address, name, account names) in anything sent off this machine: no User-Agent, header, URL, query string or form field. Web fetches use a neutral User-Agent.
-- Never kill a process by name or command-line match (`Stop-Process -Name`, `taskkill /IM`,
-  `CommandLine -match ... | Stop-Process`): other sessions' gates match too. Kill only a pid you
-  started, while it still has the start time you saw.
-- Search from a filesystem or drive root (`find /`, or a recursive listing of a drive root): use {{tool:find}}/{{tool:search}} or a path scoped to the repo, worktree or a known folder, with a timeout.
+caller asked for a diagnosis.

@@ -12,9 +12,8 @@ from kitlib.git import repo
 from . import commands as cm
 from . import paths
 from . import shell as sh
-from .rules_base import (PS_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES, WIN_OPT_RE, advice_kit, bare,
-                         literal_word, lock_tool, ps_args, ps_native_unsure, quote, refuse, same_dir, tail_word)
-from .rules_owner import agent_session
+from .rules_base import (PS_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES, WIN_OPT_RE, advice_kit, agent_session,
+                         bare, literal_word, lock_tool, ps_args, ps_native_unsure, quote, refuse, same_dir, tail_word)
 
 # ---------------------------------------------------------------- wrapped gates (P16)
 

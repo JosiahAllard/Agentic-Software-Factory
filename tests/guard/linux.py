@@ -19,12 +19,14 @@ import kitlib.platform
 from kitlib.git import repo
 from kitlib.platform.linux import paths as linux_paths
 from kitlib.guard import (backlogrole, context, delegfile, fallback, generated, hub, jail, paths,
-                          place, prepush, refusal_log, rolepolicy, rules, shell)
+                          place, prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit,
+                          rules_gitcore, rules_owner, rules_push, rules_run, shell)
 
 from .world import FakeGit, SHA_GATED
 
 GUARD_MODULES = (backlogrole, context, delegfile, fallback, generated, hub, jail, paths, place,
-                 prepush, refusal_log, rolepolicy, rules, shell)
+                 prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit, rules_gitcore,
+                 rules_owner, rules_push, rules_run, shell)
 
 EXT4 = [('/', 'ext4')]
 

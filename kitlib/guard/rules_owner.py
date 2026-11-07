@@ -1,22 +1,21 @@
 """The guard's rules on the owner's own powers (kitlib.guard.rules, which re-exports each name here):
-the lock MCP's owner tools, the owner's tools a shell command runs, the Action Hub's secrets, owner
-verbs and MCP tools, and the session checks every owner-only rule reads (is_owner_session,
-agent_session)."""
+the lock MCP's owner tools, the owner's tools a shell command runs, and the Action Hub's secrets,
+owner verbs and MCP tools. The session checks they read (is_owner_session, unowned_chat) live in
+rules_base."""
 import json
 import ntpath
 import os
 import re
 
-from kitlib import agentname
 from kitlib.config import user as kuser
 from kitlib import lockmcp as lockmcp_names
 
 from . import commands as cm
-from . import context
 from . import hub as hubg
 from . import jail
 from . import shell as sh
-from .rules_base import LEDGER_GLOB_CHARS, bare, fwd, kit_tool, lock_tool, quote, refuse, subagent
+from .rules_base import (LEDGER_GLOB_CHARS, bare, fwd, is_owner_session, kit_tool, lock_tool, quote, refuse,
+                         subagent, unowned_chat)
 
 # ---------------------------------------------------------------- lock MCP
 
@@ -73,49 +72,6 @@ def lock_mcp(event, ctx, tool, role):
     status = 'python %s status' % lock_tool(ctx)
     return refuse('lock-mcp', role, what + ' This session is %s. Ask the owner (through the PM) to make the change; '
                   'the read tools (lock_snapshot, lock_run, lock_hold) stay open. To see the lock state:' % who, status)
-
-
-def is_owner_session(event, ctx):
-    """True for the owner's own main session: no subagent and no launcher mark (docs/guard.md
-    "Session mark"), on a host whose hooks tell a subagent apart (owner_host). Every owner-only
-    check reads it. A Codex chat is never the owner, the unmarked main chat too (an owner
-    answer): owner actions are done from the owner's chat on the default host, or by hand."""
-    return not subagent(event) and ctx.session_role(event) == context.OWNER and owner_host(ctx)
-
-
-def owner_host(ctx):
-    """True when the session's host can run the owner's session: its hosts.json entry says its
-    hooks carry subagent identity (capabilities subagent_identity_in_hooks). False on Codex, and on
-    a host no hosts.json entry has the profile of (fail closed); agent_session reads the same."""
-    caps = ctx.host_capabilities()
-    return caps is not None and caps.subagent_identity_in_hooks
-
-
-def unowned_chat(event, ctx):
-    """True for an unmarked main session on a host that never runs the owner's (owner_host)."""
-    return not subagent(event) and ctx.session_role(event) == context.OWNER and not owner_host(ctx)
-
-
-def agent_session(event, ctx):
-    """True for a subagent, or a session whose mark is one of guard_agent_marks (default
-    AGENT_MARKS: coordinator, deep-worker, consultant and pm), case
-    ignored; a guard_agent_marks value replaces the default list. The rules only agents are held to (kill by name, lock state,
-    kit-json, the write jail, git-stash-shared) use it. The mark is compared without the kit plugin's prefix
-    (kitlib.agentname.bare_mark), so a role_resolver that does not strip it fails closed too.
-    On a host whose hooks carry no subagent identity (hosts.json capabilities
-    subagent_identity_in_hooks false: Codex) every session is an agent session, the unmarked
-    main chat too, and so is one on a host no hosts.json entry has the profile of (fail closed)."""
-    if subagent(event):
-        return True
-    marks = ctx.user().get('guard_agent_marks') or AGENT_MARKS
-    who = agentname.bare_mark(str(ctx.session_role(event) or ''))
-    if who.lower() in {str(m).lower() for m in marks}:
-        return True
-    return not owner_host(ctx)
-
-
-# every session kind the kit launcher marks but `plain` and other agents' names
-AGENT_MARKS = ('coordinator', 'deep-worker', 'consultant', 'pm')
 
 
 # ---------------------------------------------------------------- owner tools

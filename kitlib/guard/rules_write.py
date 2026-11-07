@@ -10,15 +10,16 @@ from . import commands as cm
 from . import jail
 from . import paths
 from . import shell as sh
-from .rules_base import (Asked, NULL_TARGETS, PS_ALIASES, PS_CMDLETS, UNPLACED, agent_session, bare, fwd, here,
-                         literal_word, ps_args, refuse)
-from .rules_run import _find_paths, kit_tool_dir
+from .rules_base import (Asked, PS_ALIASES, PS_CMDLETS, UNPLACED, agent_session, bare, fwd, here, literal_word, ps_args,
+                         refuse)
+from .rules_run import find_paths, kit_tool_dir
 from .rules_edit import OUTPUT_WRITERS, edit_target, jail_roots, ledger_unread, outer_shell, unplaced, whole_line
-from .rules_net import (NET_PROCESS_DIR, NET_UNPLACED, PIPE_UNPLACED, _net_string_end, net_mentioned, net_placed,
-                        net_process_dir, net_relative, net_retarget, net_stand_in, net_writes, pipe_stand_in,
+from .rules_net import (NET_PROCESS_DIR, NET_UNPLACED, PIPE_UNPLACED, net_mentioned, net_placed, net_process_dir,
+                        net_relative, net_retarget, net_stand_in, net_string_end, net_writes, pipe_stand_in,
                         pipe_stand_in_word, ps_export_targets)
-from .rules_tools import (EDITORS, EVALS, PY_PS_WHY, PY_UNREAD_WHY, Under, _awk, _copier, _curl, _editor, _evals,
-                          _patch, _perl, _python, _rsync, _ruby, _sed, _tar, _unzip, _wget, python_unread)
+from .rules_tools import (EVALS, PY_PS_WHY, PY_UNREAD_WHY, Under, awk_writes, copier_writes, curl_writes, editor_writes,
+                          eval_writes, patch_writes, perl_writes, python_unread, python_writes, rsync_writes,
+                          ruby_writes, sed_writes, tar_writes, unzip_writes, wget_writes)
 
 
 # The coarse rule for a PowerShell writer (ps_unread). Parameters whose value is no path: their one
@@ -55,7 +56,7 @@ def _ps_group_end(src, k):
         if c in "'\"":
             if src[k - 1:k] == '@':
                 return None
-            k = _net_string_end(src, k)
+            k = net_string_end(src, k)
             continue
         if c in '#“”„‘’‚‛':
             return None
@@ -201,10 +202,10 @@ def write_targets(cmd, inv):
         # xargs appends the names it reads: a stand-in name in the directory it runs in
         args = list(args) + [here(word)]
     if name in COPIERS:
-        return out + _copier(args) + (ps_unread(cmd, args) if cmd.shell == sh.PS else [])
+        return out + copier_writes(args) + (ps_unread(cmd, args) if cmd.shell == sh.PS else [])
     if cmd.shell != sh.PS and name == 'find':
         if any(w.text == '-delete' for w in args):
-            return out + (_find_paths(args)[0] or [here(word)])
+            return out + (find_paths(args)[0] or [here(word)])
         return out
     if cmd.shell == sh.PS and not inv.path.lower().endswith('.exe'):
         cmdlet = PS_ALIASES.get(name, name)
@@ -246,35 +247,35 @@ def write_targets(cmd, inv):
     if grouped and any(x.start == x.end == cmd.end and x.dyn for x in out):
         grouped = []                            # the cmdlet branch's stand-in already
     if name == 'curl':
-        return out + _curl(args, word) + grouped
+        return out + curl_writes(args, word) + grouped
     if name == 'wget':
-        return out + _wget(args, word) + grouped
+        return out + wget_writes(args, word) + grouped
     if cm.PYTHON_RE.match(name):
-        return out + _python(cmd, name, args, word, inv.via)
+        return out + python_writes(cmd, name, args, word, inv.via)
     if name == 'ruby' and cmd.shell != sh.PS:
-        return out + _ruby(args, word)
+        return out + ruby_writes(args, word)
     if name in EVALS:
-        return out + _evals(name, args, word)
+        return out + eval_writes(name, args, word)
     if name == 'tar':                           # Windows' own tar.exe runs from PowerShell too
-        return out + _tar(args, word) + grouped
+        return out + tar_writes(args, word) + grouped
     if cmd.shell == sh.PS:
         return out
     if name == 'sed':
-        return out + _sed(args)
+        return out + sed_writes(args)
     if name == 'perl':
-        return out + _perl(args, word)
+        return out + perl_writes(args, word)
     if name in ('awk', 'gawk'):
-        return out + _awk(args, word)
+        return out + awk_writes(args, word)
     if name in EDITORS:
-        return out + _editor(name, args)
+        return out + editor_writes(name, args)
     if name == 'unzip':
-        return out + _unzip(args, word)
+        return out + unzip_writes(args, word)
     if name == 'dd':
         return out + [sh.Word(w.text[3:], w.dyn, w.start, w.end) for w in args if w.text.startswith('of=')]
     if name == 'patch':
-        return out + _patch(args, word)
+        return out + patch_writes(args, word)
     if name == 'rsync':
-        return out + _rsync(args)
+        return out + rsync_writes(args)
     if name in BASH_WRITERS:
         if name in COPY_LONGS:
             return out + copy_writes(name, args, word)
@@ -288,6 +289,8 @@ BASH_WRITERS = {'tee', 'touch', 'mkdir', 'rm', 'rmdir', 'cp', 'mv', 'truncate', 
 CMD_WRITERS = {'copy', 'xcopy', 'robocopy', 'move', 'del', 'erase', 'md', 'mkdir', 'rd', 'rmdir',
                'ren', 'rename', 'type'}
 COPIERS = {'robocopy', 'xcopy'}                 # Windows programs every shell runs
+EDITORS = {'vi', 'vim', 'nvim', 'ex', 'ed'}
+NULL_TARGETS = {'/dev/null', '$null', 'nul', 'nul:', '&1', '&2'}
 GLOB_CHARS = set('*?[]{}+:')                   # ':' a drive-qualified name (D:x is relative to D:'s folder)
 
 # GNU coreutils cp, mv, ln and install: the long options each takes (getopt_long reads a unique
@@ -578,7 +581,7 @@ BASH_TMP_RE = re.compile(r'^/tmp(?:/|$)')        # Git Bash mounts /tmp on a tem
 
 
 def py_unread(cmd, inv, w):
-    """Why python's stand-in write `w` (_python's here()) is one (python_unread), or None for any
+    """Why python's stand-in write `w` (python_writes' here()) is one (python_unread), or None for any
     other write: the reason a refusal gives, not a file it names. The verdict is unchanged."""
     if inv is None or not cm.PYTHON_RE.match(inv.name or '') or w.text != '.' or \
             cmd.source[w.start:w.end] == '.':
@@ -739,7 +742,7 @@ def find_exec_writes(event, ctx, cmd, cwd, role):
     every start path's refusal (Asked)."""
     asked = Asked()
     for f, inv in find_runs(cmd):
-        for w in _find_paths(inv.args)[0] or [here(inv.word)]:
+        for w in find_paths(inv.args)[0] or [here(inv.word)]:
             if not w.dyn and BASH_DEVICE_RE.match(w.text):
                 continue
             target, why = write_place(ctx, f, w)

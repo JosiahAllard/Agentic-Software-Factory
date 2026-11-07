@@ -90,7 +90,9 @@ class Search(StoreCase):
                 mock.patch.object(self.backend, '_fetch', side_effect=AssertionError('fetched')):
             lines, omitted = findmod.search(snap, self.store, 'bulk', cap=100)
         self.assertEqual((len(lines), omitted), (40, 0))
-        self.assertEqual((log.call_count, cat.call_count), (1, 1))
+        # the tip and git-dir lookups of the removed-records cache are no store history read
+        logs = [c for c in log.call_args_list if 'log' in c.args[0]]
+        self.assertEqual((len(logs), cat.call_count), (1, 1))
 
 
 class Cli(StoreCase):

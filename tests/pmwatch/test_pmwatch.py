@@ -32,10 +32,26 @@ class UsageEvents(unittest.TestCase):
     def test_no_90_band(self):
         self.assertEqual(W.usage_events({"1": {"five": 89, "week": 0}}, {"1": {"five": 90, "week": 0}}), [])
 
-    def test_reset_is_a_drop_of_20_or_more(self):
-        self.assertEqual(W.usage_events({"1": {"five": 0, "week": 80}}, {"1": {"five": 0, "week": 0}}),
-                         ["RESET account 1 (weekly 80% -> 0%)"])
-        self.assertEqual(W.usage_events({"1": {"five": 0, "week": 30}}, {"1": {"five": 0, "week": 15}}), [])
+    def feed(self, weeks):
+        """The events of each reading in turn, stored the way the Watcher stores them."""
+        state, out = {"1": {"five": None, "week": weeks[0]}}, []
+        for wk in weeks[1:]:
+            cur = {"1": {"five": None, "week": wk}}
+            out.append(W.usage_events(state, cur))
+            state = W.merge_usage(state, cur)
+        return out
+
+    def test_reset_is_a_drop_of_20_or_more_that_holds_for_two_readings(self):
+        self.assertEqual(self.feed([80, 0, 0]), [[], ["RESET account 1 (weekly 80% -> 0%)"]])
+        self.assertEqual(self.feed([30, 15, 15]), [[], []])
+
+    def test_a_single_low_reading_between_high_ones_is_no_reset(self):
+        self.assertEqual(self.feed([78, 54, 78, 54, 78]), [[], [], [], []])
+        self.assertEqual(self.feed([78, 54, 78, 54, 54]), [[], [], [], ["RESET account 1 (weekly 78% -> 54%)"]])
+
+    def test_usage_line_without_a_five_hour_figure_parses(self):
+        got = W.parse_usage("account 1: seven_day=51% (resets Tue 00:00)  [updated 3 min ago]")
+        self.assertEqual(got, {"1": {"five": None, "week": 51, "age": 3, "stale": False, "missing": False}})
 
     def test_new_account_is_baseline_only(self):
         self.assertEqual(W.usage_events({}, {"3": {"five": 99, "week": 99}}), [])
@@ -335,6 +351,17 @@ class WatcherRun(unittest.TestCase):
         self.assertTrue(ev[2].startswith("IDLE n7 66m since "), ev[2])
         self.assertEqual(ev[3], "BGFAIL run r-5 failed")
         self.assertEqual(w.s["branches"]["repo main"], "abcd1234")
+
+    def test_start_offline_leaves_the_baselines_unset_for_the_next_good_poll(self):
+        def down(*a):
+            raise RuntimeError("offline")
+        w = self.watcher({}, usage_reader=down, tip=down)
+        w.start(1000.0 + 3600)                      # no traceback
+        self.assertEqual(w.s["branches"], {})
+        self.assertNotIn("usage", w.s)
+        w.tip, w.usage_reader = (lambda r, ref: "abcd1234"), (lambda: dict(self.use))
+        self.assertEqual(w.poll(1000.0 + 3600), [])  # the first good poll is the baseline: no BRANCH event
+        self.assertEqual((w.s["branches"], w.s["usage"]), ({"repo main": "abcd1234"}, self.use))
 
     def test_watcher_reads_stop_log_beside_sessions_file(self):
         with open(os.path.join(self.tmp.name, "stop.log"), "w", encoding="utf-8") as f:

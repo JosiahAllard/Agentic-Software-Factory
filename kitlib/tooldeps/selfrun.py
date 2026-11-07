@@ -82,6 +82,7 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
+from kitlib import clock
 from kitlib.config import user as kuser
 from kitlib.fs.rmtree import plain_dir as _plain_dir, rmtree_force
 from kitlib.proc import spawn
@@ -96,7 +97,7 @@ CPUMASK_ENV = 'MACHINE_LOCK_CPUMASK'
 # The variable kitlib.lock.giveback (GIVE_ENV) offers a give back with; units never inherit it.
 GIVE_ENV = 'MACHINE_LOCK_GIVE_BACK'
 FALLBACK_JOBS = 2
-UNIT_TIMEOUT = 300
+UNIT_TIMEOUT = clock.UNIT_TIMEOUT
 # A unit that took this share of its timeout or more is named in a WARNING line and in the summary,
 # green or not (report): half, since the units that timed out under load on 2026-11-01 had passed
 # in 215-219 s (a 1.4x stretch reached 300 s); at half, a unit is named while load would still

@@ -7,13 +7,20 @@
   access   the Cloudflare Access token check for the tunnel listener: verify, KeyCache
   approvals the approvals a request waits on: asked, decided, verified
   api      the site's JSON API: routes, roles, and the writes behind them
+  apiask   the api's question routes: list, ask, edit, withdraw and bind to a record
   apibase  what the api's handlers share: role and status constants, Route, Request, the request readers
   apilock  the api's machine-lock routes: the lock reads and owner writes, each a handler
   apifindings the api's finding routes: the maintenance lint's findings and the owner's marks
   apiskills the api's skill-edit routes: the owner's edits of a kit skill, draft to committed
+  apirecord the checks a bound ask shares: the record it is bound to, an agent's claim
+  apitodos the api's to-do routes: add, steps, done, edit and withdraw
+  apiposts the api's routes for the owner's notes to the PM
+  apiapprovals the api's approval routes: add, decide, consume, withdraw, supersede, verify
+  apipark  the api's parking of a record on a bound ask, and the sweep of lines whose ask is gone
   apipages the api's page routes: publish, place, read and delete an HTML page and its card
   apilog   the api's log routes: the inbox, the landing feed and the hand-off records
   apisched the api's schedule routes: the owner's schedules for the kit's automatic tasks
+  apiread  the api's read routes: backlog, records, pending, wait, snapshot and health, and the owner's record writes
   lockdoor the api's door to the machine lock, in-process: revision, view, stats, owner writes
   pagecheck what a published page's HTML may hold: one check, refused whole, never stripped
   skilledits the checks of an owner's skill edit: its text, its blob, the branch it names

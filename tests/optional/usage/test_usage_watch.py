@@ -86,11 +86,11 @@ class ReadAndOnce(unittest.TestCase):
         self.assertEqual(r["updated"], dt.datetime(2026, 10, 4, 12, 0, 0, 123456, tzinfo=UTC))
         self.assertIn("seven_day over 80", W.line(r))
 
-    def test_no_window_open_reads_as_zero(self):
+    def test_no_window_open_reads_as_unknown_and_is_left_out_of_the_line(self):
         status(self.path, 0, 10, "2026-10-04T12:00:00.0000000+00:00", five_reset=None)
         r = W.read(self.path)
-        self.assertEqual((r["five"], r["five_reset"]), (0, None))
-        self.assertIn("resets none open", W.line(r))
+        self.assertEqual((r["five"], r["five_reset"]), (None, None))      # the host gave no five_hour
+        self.assertNotIn("five_hour", W.line(r))
 
     def test_unreadable_is_none(self):
         self.assertIsNone(W.read(self.path))

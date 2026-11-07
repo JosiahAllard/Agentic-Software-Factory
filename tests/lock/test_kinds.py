@@ -170,6 +170,16 @@ class IntegerSizes(KindsTest):
         kinds.check_cap(table, 6)
         kinds.check_cap({'maint-lint': table['maint-lint']}, 1)
 
+    def test_the_quick_test_kind_is_one_cpu_slot_with_a_short_guide(self):
+        # A run of only the touched tests: one core, and a 5-minute guide that is its expected
+        # time before it has history (kitlib.lock.run.book), so it can backfill a gap.
+        table = kinds.load()
+        self.assertIn('quick-test', table)
+        q = table['quick-test']
+        self.assertEqual((q['cpu'], q['gpu'], q['share'], q['warn_min'], q['mem_mb']),
+                         (1, 0, False, 5, 2048))
+        kinds.check_cap({'quick-test': q}, 1)
+
     def test_a_landing_of_test_books_four_cores_and_a_branch_gate_stays_medium(self):
         # The owner's call: a landing's merged gate books land-test
         # (kitlib.gate.land.Lander.land_kind), 4 cores; a branch gate's test stays medium.

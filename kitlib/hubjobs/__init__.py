@@ -1,5 +1,5 @@
 """kitlib.hubjobs: the hub server's timed jobs, one module each, found by discovery
-(docs/action-hub.md "Timed jobs"). The runner is kitlib.hubsite.jobs; this package only holds
+(docs/hub-push.md "Timed jobs"). The runner is kitlib.hubsite.jobs; this package only holds
 the jobs.
 
   makers(package=None)    [maker], one per module of `package` (default this one) whose name

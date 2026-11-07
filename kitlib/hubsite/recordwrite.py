@@ -1,5 +1,5 @@
 """kitlib.hubsite.recordwrite: the Action Hub's writes to a repository's backlog store, the owner's
-add, edit, delete and unblock from the record page (docs/action-hub.md "The record page").
+add, edit, delete and unblock from the record page (docs/hub-views.md "The record page").
 
   add(root, rid, summary, scopes, effort=None, ref=None)        -> {"lines"}
   edit(root, rid, version, changes, unset=(), body=None)        -> {"lines"}
@@ -28,7 +28,7 @@ plan_add, plan_set, plan_delete, plan_unblock, plan_answer), so every store chec
 "lines" is what the store said about the write, its notes included.
 
 answer files the owner's answer to hub question `qid` (answered at `at`) into the record the
-question is bound to (docs/action-hub.md "A question bound to a record"): the hub calls it after
+question is bound to (docs/hub-questions.md "A question bound to a record"): the hub calls it after
 the answer is stored, and again on a retry, so the same `qid` and `at` changes nothing and an
 older `at` never overwrites a newer answer (plan_answer). `waiting` is the hub's other questions
 on the record still open. It runs with the role check made (role_checked): the hub files only the

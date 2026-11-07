@@ -86,10 +86,10 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
 
 8. **Start the Action Hub.** `python <kit>/tools/hub.py setup` makes the token files, then the
    owner starts `python <kit>/tools/hub.py serve` in a window of its own and runs
-   `python <kit>/tools/hub.py open` (docs/action-hub.md "Serving it"). The store is `hub/` in the
+   `python <kit>/tools/hub.py open` (docs/hub-serving.md "Serving it"). The store is `hub/` in the
    PM data worktree; with no `pm_data` yet, set `hub.store` to an absolute folder in the machine
    config. The PM reads `python <kit>/tools/hub.py pending --for pm` once at each start and runs
-   no background hub wait: the hub pushes each answer and done to-do (docs/action-hub.md "Push
+   no background hub wait: the hub pushes each answer and done to-do (docs/hub-push.md "Push
    notifications").
    Success: the page opens signed in, and the next session start says
    `hub: server up on port 8790, 0 pending for the PM`.
@@ -118,7 +118,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
 
 12. **Check the repositories on the hub.** The hub server reads the known repositories live (from
     the sessions file, so step 11 comes first, plus `pm_start.repos`) and each one's backlog
-    (docs/action-hub.md "repos/<name>", "Views read live").
+    (docs/hub-records.md "repos/<name>", docs/hub-views.md "Views read live").
     A repository that is not a sibling of the PM repository needs `pm_start.repo_paths`, else its
     backlog does not show.
     Success: each repository shows in the hub's backlog menu.

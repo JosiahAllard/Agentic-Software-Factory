@@ -1,5 +1,5 @@
 """kitlib.hubjobs.usage_crossover: the hub moves a session to another account as its account nears
-the weekly limit (docs/launcher.md "Usage crossover", docs/action-hub.md "Timed jobs").
+the weekly limit (docs/launcher.md "Usage crossover", docs/hub-push.md "Timed jobs").
 
   make(sources) -> jobs.Job | None   the job; None when launcher.state_dir is not set or the host
                                      has no watcher readers
@@ -174,6 +174,7 @@ import sys
 import time
 
 from kitlib import pmstart, pmwatch
+from kitlib.config import user as kuser
 from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import session_watch
 from kitlib.hubsite import jobs
@@ -1178,7 +1179,7 @@ class CrossoverJob(object):
         self.child = child or C.run_child
         self.clock = clock or time.time
         self.kit = kit or pmstart.KIT_ROOT
-        self.temp = temp or os.environ.get('AGENT_TEMP') or os.environ.get('TEMP') or os.path.expanduser('~')
+        self.temp = temp or kuser.agent_temp()
         self._noted = {}                # key: the decision note last logged
 
     def __call__(self, ctx):

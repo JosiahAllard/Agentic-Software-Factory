@@ -268,6 +268,7 @@ None: no module is open to every other.
 | hubjobs | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | hubjobs | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubjobs | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -575,6 +576,7 @@ Crossings counted, not refused; each count is driven down to its goal.
 | gate-build-loadnode | gate | loadnode | build | 0 | - |
 | gate-build-pluginsource | gate | pluginsource | build | 0 | - |
 | gate-build-redfirst | gate | redfirst | build | 0 | - |
+| gate-build-tooldeps | gate | tooldeps | build | 0 | - |
 | gate-build-worktree | gate | worktree | build | 0 | - |
 | git-build-backlog | git | backlog | build | 0 | - |
 | git-build-host | git | host | build | 0 | - |

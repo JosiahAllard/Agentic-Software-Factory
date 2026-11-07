@@ -9,7 +9,8 @@ piece then skips that refinement.
 
 The json: `schema` 1; `root` (paths that are no piece and never move); `dotnet` (the solution
 file, the files beside it that count as .NET changes, and their `was` map); `removed` (folders a
-move deleted); and `pieces`, each with `id`, `group`, `kind` (one of KINDS), `dir` and, as the
+move deleted); `groups` (optional: the closed list of group names a piece may carry; a piece whose
+`group` is outside it is refused, and without the key no group is checked); and `pieces`, each with `id`, `group`, `kind` (one of KINDS), `dir` and, as the
 kind needs: `gradle` (the project path, `:name`), `dotnet` (a change here is a .NET change),
 `wire` and `forces` (a change here is a protocol change and force-tests those Gradle modules),
 `outputs` (build products, relative to `dir`), `artifact`, `optional`, `owner_only`,
@@ -32,7 +33,7 @@ SECTION = 'pieces'
 KINDS = frozenset(('gradle', 'dotnet', 'spec', 'docker', 'asset', 'docs', 'builder', 'file', 'planned'))
 FIELDS = frozenset(('id', 'group', 'kind', 'dir', 'gradle', 'dotnet', 'wire', 'forces', 'outputs',
                     'artifact', 'optional', 'owner_only', 'transitional', 'was', 'deps', 'test_deps'))
-TOP = frozenset(('schema', 'about', 'root', 'dotnet', 'pieces', 'removed'))
+TOP = frozenset(('schema', 'about', 'root', 'dotnet', 'pieces', 'removed', 'groups'))
 
 
 class TableError(ValueError):
@@ -59,6 +60,10 @@ class Table(object):
         extra = set(data) - TOP
         if extra:
             raise TableError('unknown top-level key(s): %s' % ', '.join(sorted(extra)))
+        groups = data.get('groups')
+        if groups is not None and (not isinstance(groups, list) or len(set(map(str, groups))) != len(groups)
+                                   or not all(isinstance(g, str) and g for g in groups)):
+            raise TableError('groups must be a list of distinct non-empty strings')
         self.root = tuple(data.get('root', ()))
         self.removed = tuple(data.get('removed', ()))
         dn = data.get('dotnet') or {}
@@ -77,6 +82,8 @@ class Table(object):
             for need in ('group', 'kind', 'dir'):
                 if not p.get(need):
                     raise TableError('%s: no %s' % (pid, need))
+            if groups is not None and p['group'] not in groups:
+                raise TableError('%s: group %r is not in the table\'s groups' % (pid, p['group']))
             if p['kind'] not in KINDS:
                 raise TableError('%s: unknown kind %r' % (pid, p['kind']))
             for key in ('dir', 'was'):

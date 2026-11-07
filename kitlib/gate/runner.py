@@ -543,6 +543,28 @@ def plan_lines(chosen, why, all_steps, base_text, changed):
     return lines
 
 
+def load_checks(cfg, steps, root=None, rev=None):
+    """`(checks, options, None)`: the hook module's checks when a step of `steps` has a check,
+    else `({}, {}, None)`; loaded from the work tree (policy.load_gate_checks), or from commit
+    `rev` of the repository at `root` when given (hookrev.load_gate_checks_at; a landing's
+    --expect-main). `(None, None, why)` when the module cannot be loaded: a ConfigError, or a
+    SystemExit from the repo's module-level code. The one load-failure predicate of gated, the
+    targeted rerun (kitlib.gate.rerun) and the daily full run's bisect probe."""
+    if not any(s.check for s in steps):
+        return {}, {}, None
+    try:
+        if rev:
+            checks, options = hookrev.load_gate_checks_at(cfg, root, rev)
+        else:
+            checks, options = policy.load_gate_checks(cfg)
+    except ConfigError as e:
+        return None, None, str(e)
+    except SystemExit as e:         # the repo's module-level code; nothing has run yet
+        return None, None, ('the hook module exited while it was loaded (SystemExit, code %r); '
+                            'nothing ran' % (e.code,))
+    return checks, options, None
+
+
 def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book_kw, merged=False,
           checks_rev=None, gate=None, slot=None, seen=None, capped=False, budget_branch=None):
     """Runs `chosen` in a slot of `kind`: `(results, None)`, or `(None, Outcome)` when the hook
@@ -562,10 +584,12 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     The lock run records the tree it tests (tested_tree; book's `tree`, Slot.note_tree for a held
     slot): a branch's HEAD tree, a landing's merge tree, the daily full run's commit's tree.
     `capped`: a branch gate's booking first waits for the session gate cap (kitlib.gate.gatecap,
-    in the store it books in) and, once it holds, gives its slot back and books again while the
-    session is at the cap (gatecap.gave_way: counting and booking are two steps); a landing and
-    the daily full run leave it False and never wait. A capped gate whose tip is already in the
-    main branch (merged_tip) is REFUSED before it books, and again once its booking holds, before
+    in the store it books in), which counts the session's gates and takes this gate's turn in one
+    step, so a burst books no more than the cap; once the booking holds, gatecap.gave_way names
+    the run in its turn and, as a backstop for a gate the count missed, gives the slot back and
+    books again while the session's other gates are at the cap; a landing and the daily full run
+    leave it False and never wait. A capped gate whose tip is already in the main branch
+    (merged_tip) is REFUSED before it books, and again once its booking holds, before
     any step (released `not started`); before it books it also stops the session's own queued
     gates of the branch at an older tip (gatecap.replace_stale; docs/gate.md "The gate queue").
     `budget_branch`: with `capped`, the branch whose gate budget (kitlib.gate.budget) is asked
@@ -576,20 +600,10 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     run waits, in a step (Slot.wait ends that step's tree) or after the last one, gives
     `(None, stopped_outcome)`: no other step starts and the run is released `cancelled`. A held
     `slot` is the landing's, which keeps its own way of ending."""
-    checks, options = {}, {}
-    if any(s.check for s in chosen):
-        try:
-            if checks_rev:
-                checks, options = hookrev.load_gate_checks_at(cfg, root, checks_rev)
-            else:
-                checks, options = policy.load_gate_checks(cfg)
-        except ConfigError as e:
-            return None, G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
-        except SystemExit as e:     # the repo's module-level code; nothing has run yet
-            return None, G.Outcome(G.REFUSED, [
-                'REFUSED: the hook module exited while it was loaded (SystemExit, code %r); '
-                'nothing ran' % (e.code,)])
-    ctx = {'root': root, 'base': base, 'merged': merged, 'changed': list(changed),
+    checks, options, why = load_checks(cfg, chosen, root, checks_rev)
+    if checks is None:
+        return None, G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+    ctx ={'root': root, 'base': base, 'merged': merged, 'changed': list(changed),
            'options': options}
     tree = tested_tree(root)
     if slot is not None:
@@ -641,8 +655,9 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
                     return None, merged_refusal(
                         budget_branch, merged, base,
                         'the queued gate (run %s) was dropped at its turn; nothing ran' % slot.id)
-            # Counted and booked in two steps: at the cap now, it gives the slot back and books
-            # again (gatecap.gave_way), unless a stop came while it gave the run back.
+            # Its turn now names this run (gatecap.gave_way). A backstop for a gate the count
+            # missed: with the session's other gates at the cap, it gives the slot back and books
+            # again, unless a stop came while it gave the run back.
             if capped and gatecap.gave_way(store, name, slot, say):
                 if gatecap.stopped(slot):
                     return None, stopped_outcome('gate run %s was stopped' % slot.id, log_dir,

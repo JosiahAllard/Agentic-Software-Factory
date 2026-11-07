@@ -1,4 +1,4 @@
-"""Skill edits (docs/action-hub.md "skill_edits/E-NNN"): the owner's new text for one kit skill's
+"""Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"): the owner's new text for one kit skill's
 source, which an agent commits. Who may write one, the text's caps, superseded on a source that
 moved on, the done route's own read of the branch, the E- id, its pending item and its push, and
 the hub's read of the kit checkout (kitlib.hubsite.serve)."""
@@ -50,7 +50,7 @@ class EditsCase(unittest.TestCase):
         self.texts = {}             # blob -> its text in the kit checkout (kit_text)
         self.api = api.Api(self.store, views=self.views, clock=CLOCK,
                            kit_key=lambda: 'kit', kit_blob=self.kit_blob,
-                           kit_text=self.texts.get)
+                           kit_text=self.texts.get, coordinators=dict)
 
     def kit_blob(self, branch, path):
         self.reads.append((branch, path))
@@ -353,7 +353,8 @@ class PushTest(unittest.TestCase):
         self.branches = {}
         self.api = api.Api(self.store, views=Views(), clock=ticks,
                            session_keys=lambda: {'kit', 'zeta'}, kit_key=lambda: 'kit',
-                           kit_blob=lambda branch, path: self.branches.get(branch))
+                           kit_blob=lambda branch, path: self.branches.get(branch),
+                           coordinators=dict)
         self.push = FakePush()
         self.t = 1000000.0
         self.worker = push.PushWorker(self.store, self.api, self.push, folder,
@@ -364,6 +365,24 @@ class PushTest(unittest.TestCase):
         status, obj = self.api.call(method, BASE + path, role, body)
         self.assertEqual((status, obj.get('error')), (200, None), obj)
         return obj
+
+    def test_the_kit_coordinator_is_its_session_key_when_that_differs_from_the_repo_name(self):
+        self.api.kit_key = lambda: 'Kit-Repo'
+        self.api._session_keys = lambda: {'kit', 'agents', 'zeta'}
+        self.api.coordinators = lambda: {'kit': 'kit-repo'}   # `agents` shares the repo, no agent
+        self.assertEqual(self.api.kit_session_key(), 'kit')
+        self.api.coordinators = lambda: {}
+        self.assertEqual(self.api.kit_session_key(), 'Kit-Repo')
+
+    def test_a_submitted_edit_is_routed_and_pushed_to_the_coordinators_session_key(self):
+        self.api.kit_key = lambda: 'Kit-Repo'
+        self.api.coordinators = lambda: {'kit': 'kit-repo'}
+        eid = self.ok('POST', '/skill_edits', OWNER, {'skill': 'builder', 'text': NEW})['id']
+        self.ok('POST', '/skill_edits/%s/edit' % eid, OWNER, {'submit': True, 'if_version': 1})
+        items = self.api.pending('kit')
+        self.assertEqual([(d['kind'], d['from']) for d in items], [('skill_edit', 'kit')])
+        self.worker.poll()
+        self.assertEqual(sorted(r for r, _ in self.push.calls), ['kit', 'pm'])
 
     def test_a_submitted_edit_pushes_to_the_kit_coordinator_and_done_acknowledges_it(self):
         eid = self.ok('POST', '/skill_edits', OWNER, {'skill': 'builder', 'text': NEW})['id']

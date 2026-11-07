@@ -7,6 +7,12 @@
   and the guard and the writer must judge the same one.
 - The child's environment sets LC_ALL=C and LANGUAGE=C (`LOCALE_ENV`), the caller's `env` too, so
   git's messages stay English: callers match stderr text (load._git_show, repo.classify).
+- The child's environment appends maintenance.auto=false and gc.auto=0 (`AUTO_MAINTENANCE_OFF`)
+  as GIT_CONFIG_COUNT entries after any already set, the caller's `env` too. Git for Windows runs
+  the auto maintenance a commit, merge or fetch starts in the foreground, under this call's
+  timeout; a gc killed there leaves objects/maintenance.lock behind, git then skips maintenance
+  silently for good and loose objects pile up. The kit packs the store itself
+  (kitlib.hubjobs.store_upkeep).
 - Every call has a timeout (`GIT_TIMEOUT` seconds unless the caller passes another, or None for
   none). A hung git (a lock file held elsewhere) becomes a failed call, never a hang.
 - Every git child starts in its own job object (kitlib.proc.job, no breakaway), and a timeout ends
@@ -50,6 +56,8 @@ NETWORK_ENV = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never',
                'GIT_HTTP_LOW_SPEED_LIMIT': '1000', 'GIT_HTTP_LOW_SPEED_TIME': '60'}
 # git's global options that take a separate value: skipped to find the subcommand.
 _VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env')
+# Config entries every git child gets: no auto gc, no auto maintenance (see the module docstring).
+AUTO_MAINTENANCE_OFF = (('maintenance.auto', 'false'), ('gc.auto', '0'))
 GIT_TIMEOUT = 30          # seconds
 KILL_GRACE = 5            # seconds a killed tree's pipes get to end before the call gives up on them
 _DEFAULT = object()
@@ -88,11 +96,34 @@ def network_env(args, env):
     return out
 
 
+def config_entries(env, pairs):
+    """The GIT_CONFIG_COUNT / GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n> entries (git 2.31+) adding
+    `pairs` after any `env` already carries; `{}` when it carries all of them. Appended, so a later
+    entry wins over the caller's own value for the same key."""
+    try:
+        n = int(env.get('GIT_CONFIG_COUNT') or 0)
+    except ValueError:
+        n = 0
+    have = {(env.get('GIT_CONFIG_KEY_%d' % i), env.get('GIT_CONFIG_VALUE_%d' % i)) for i in range(n)}
+    out = {}
+    for key, value in pairs:
+        if (key, value) in have:
+            continue
+        out['GIT_CONFIG_KEY_%d' % n] = key
+        out['GIT_CONFIG_VALUE_%d' % n] = value
+        n += 1
+    if out:
+        out['GIT_CONFIG_COUNT'] = str(n)
+    return out
+
+
 def child_env(env=None, args=()):
-    """The environment a git child gets: `env` (None: scrubbed_env()) with LOCALE_ENV set, and
-    NETWORK_ENV too when `args` is a network read."""
+    """The environment a git child gets: `env` (None: scrubbed_env()) with LOCALE_ENV set,
+    AUTO_MAINTENANCE_OFF appended to its config entries, and NETWORK_ENV too when `args` is a
+    network read."""
     out = network_env(args, scrubbed_env() if env is None else env)
     out.update(LOCALE_ENV)
+    out.update(config_entries(out, AUTO_MAINTENANCE_OFF))
     return out
 
 

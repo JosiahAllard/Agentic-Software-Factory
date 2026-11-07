@@ -12,11 +12,37 @@ The export root is the machine config's `plugin.export_dir`, by default `%LOCALA
 - `<sha12>/.<host>-plugin/plugin.json`: each `hosts/<host>/shell/plugin.json` placed again at the path that host reads, stamped the same way (`kitlib.pluginsource` `host_manifests`), unless the commit already holds that path; the original stays where it is. Today that is Codex's `.codex-plugin/plugin.json`, whose paths name the export folder's own `content/skills/` and `hosts/codex/shell/mcp.json`; it names no hooks, which are the second plugin `pm-kit-hooks` ("Codex hooks plugin").
 - `.claude-plugin/marketplace.json`: the marketplace `pm-kit`, whose one plugin `pm-kit` is `./<sha12>` (`write_marketplace`). It is rewritten through a temp file and `os.replace`, with no BOM. The names never change, so agent names (`pm-kit:<agent>`) and allow entries stay the same.
 - `.agents/plugins/marketplace.json`: Codex's marketplace file, the same `pm-kit` marketplace naming `./<sha12>`, written by the Codex plugin-copy step, not by `kitlib.pluginsource` ("Codex").
+- `plugin-live.json`, **not in the root**: the live pointer, at `%LOCALAPPDATA%\pm-kit\plugin-live.json` (Linux `<profile>/.local/share/pm-kit/plugin-live.json`), beside the default export root. It stays at that fixed place even when `plugin.export_dir` is overridden, so a reader finds it without the machine config ("For processes outside the kit").
 - `state.json`: `{sha, version, folder, exported_at, folders: {<account folder>: {rc, at, step, migrated}}}`, where each folder entry is the result of its last refresh or migrate. `migrated` is true once a migrate of that folder succeeded; a new export keeps each folder's `migrated: true` (`kitlib.pluginsource` `_carry`).
 - `refresh.pid`: held while a refresh runs (`RefreshLock`). It is created exclusively and holds `{pid, ctime}`. A file whose process is gone, or whose pid now belongs to a process with another start time, is taken over. An empty or unreadable file is one a starting refresh has made but not yet written: it counts as live until its modified time is more than 10 seconds old (`LOCK_GRACE_S`), and is taken over after. A second refresh is refused with "a refresh is already running".
 - `refresh.log`: the output of a refresh that `pm_watch` started (`spawn_refresh`).
 - `pins/`: the exports `tools/land.py` and `tools/gate.py` run from when started from the kit's main checkout or from an export whose marker names it, `pins/<sha12>` (marker `made_by` `kitlib.gate.pin`), with their own `pins/refresh.pid` and `pins/leases/` (docs/gate.md "Pinned tools"). The plugin's marketplace never names them.
 - `headers/`: one file per session or subagent, `<session_id>-<agent id or main>`, holding the export folder its kit header named (`kitlib.host.headerfollow` `note`). At a later tool event, `headerfollow` `line` compares the record with the folder the guard's alternatives name (`kitlib.guard.rules` `advice_kit`). When they differ, it returns one line naming the current kit folder and rewrites the record, but only when the recorded folder is gone (its marker is missing: prune removed or claimed it) or the record is at least an hour old (`EVERY_S`, 3600 s, read from the record's modified time: when the session was last named a folder, by its start header or this line). So a session hears the line at most once an hour however many refreshes land, and at once when its folder is gone. A subagent's start header names the current export outright (`start_kit`; `dispatch` passes it on), and its record says so, so the hour never hides it. A compact, clear or resume SessionStart does the same (`hookmain` `FOLLOW_SOURCES`): it runs on the plugin root the session began on, and re-noting that folder would reset the hour and re-inject the old header; a startup SessionStart keeps its own folder. The hour always runs out before prune may take a folder this line named, since prune keeps every export replaced less than a day ago ("Prune"). A SessionStart drops records older than 7 days (`MAX_AGE_DAYS`). Prune never touches the folder, since it is not a `<sha12>` export. `kitlib.host.hookmain` calls it: `dispatch` notes the folder at the header part of a start event, and `run` adds the line to the answer of the next tool event, whatever its verdict, through the adapter's optional `tool_context` (the Claude adapter has it: an `additionalContext` beside the verdict, so a deny's or an ask's reason keeps its format). An adapter without `tool_context` (Codex today) gets no line, and its record is not read, so the record is never spent where the agent cannot see it. `line` is called first with `write=False`, and the record is rewritten only after the answer is written. The line never changes a verdict: any exception in `note`, `line` or `tool_context` means no line.
+
+## For processes outside the kit
+
+A script that runs outside any kit process (a PowerShell publish script, a scheduled task, a tool run by hand) finds the live export folder from the live pointer, without importing kitlib or reading the machine config. Do not pass a pinned folder and do not follow the machine lock's junction: prune removes old folders, and the junction can name another kit version.
+
+- Where: `%LOCALAPPDATA%\pm-kit\plugin-live.json` on Windows; `<profile>/.local/share/pm-kit/plugin-live.json` on Linux, the profile folder from the password database (`$HOME` is the same folder unless it is overridden). One fixed place, never inside the export root, whatever `plugin.export_dir` says (`kitlib.pluginsource` `live_pointer_path`).
+- Format: one JSON object, UTF-8: `{schema: 1, root, folder, path, sha, version, exported_at}`. `path` is the live export folder (`root` plus `folder`); `sha`, `version` and `exported_at` are its marker's. Use `path`.
+- Writer: every export writes it (`sync_live_pointer`, after `marketplace.json`, before prune), through a temp file and `os.replace`, so a reader sees the old file or the new one. A current export whose pointer is missing or different gets it written at the next `plugin_refresh.py --apply` or `ensure_export`, under the refresh lock. An unchanged pointer is not rewritten. A write that fails is a `WARNING: live pointer ... not written` line and never fails the export.
+- Reader: read the pointer on every run and do not keep the path across days. Trust it only when `<path>\.pm-kit-export` exists. A missing, unreadable or stale pointer means "no live kit": the caller fails loudly. A reader never falls back to the machine lock's junction or to a `--kit <folder>` it was given, and never guesses a root (the default root's `marketplace.json` is absent when `plugin.export_dir` is overridden).
+- Prune keeps the folder the pointer names ("Prune"), and keeps any export replaced less than a day ago, so a run that began from the previous folder is not cut off.
+
+```powershell
+$p = Get-Content "$env:LOCALAPPDATA\pm-kit\plugin-live.json" -Raw | ConvertFrom-Json
+if (-not (Test-Path (Join-Path $p.path '.pm-kit-export'))) { throw 'stale pm-kit pointer' }
+python (Join-Path $p.path 'tools\something.py')
+```
+
+```python
+import json, os
+base = os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), '.local', 'share')
+with open(os.path.join(base, 'pm-kit', 'plugin-live.json'), encoding='utf-8-sig') as fh:
+    live = json.load(fh)['path']
+if not os.path.isfile(os.path.join(live, '.pm-kit-export')):
+    raise SystemExit('stale pm-kit pointer: no live kit')
+```
 
 ## Refresh
 
@@ -53,6 +79,7 @@ Known limit: a non-elevated `Win32_Process` read returns a null `CommandLine` fo
 Never removed (`kitlib.pluginsource` `prune`, `KEEP`):
 
 - the folder `marketplace.json` names;
+- the folder the live pointer names under this root, when it holds the marker (`prune`'s `pointer`; a pointer naming no marked folder keeps nothing);
 - the 3 newest export folders by their marker's `exported_at`;
 - every export folder a running process, a scheduled task, a pin lease or a host plugin copy names ("Host plugin copies");
 - every export folder replaced less than 1 day ago (`IN_USE_YOUNG_DAYS`), which covers every export made or current in the last 24 hours: a session whose MCP server has exited still runs hooks from its folder, and no process names it then. When any of the three reads failed, or no reader is given (`ensure_export`'s callers, `kitlib.gate` tests), this is 7 days (`YOUNG_DAYS`): what cannot be read counts as possibly in use. A folder is dated by when it was replaced, the `exported_at` of the next newer export, not by its own: one that was current for weeks and then replaced by three quick landings is kept. A folder whose own or replacing export's `exported_at` cannot be read is kept, and an unreadable date counts as the newest;

@@ -27,9 +27,8 @@ import contextlib
 import datetime
 import os
 import re
-import tempfile
 
-from kitlib.fs import replace as fsreplace
+from kitlib.fs import atomic
 from kitlib.fs import writelock
 from kitlib.git import repo as gitrepo     # noqa: F401  (tests patch write.gitrepo.classify)
 
@@ -102,17 +101,7 @@ def read_text(path):
 
 def write_atomic(path, text):
     refuse_unsafe(path)
-    folder = os.path.dirname(path)
-    os.makedirs(folder, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=folder, prefix='.ledger-')
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(text)
-        fsreplace.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-        raise
+    atomic.write_text(path, text, makedirs=True, prefix='.ledger-')
 
 
 def _valid_or_refuse(text, repos, what, repo=None, others=()):

@@ -4,9 +4,7 @@ hub site design, section 2 "HTTP API" and section 9).
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
              AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
-  Api(store, views=None, clock=None, session_keys=None, now=None, approval_key=None,
-      checkout=None, lock=None, repo_name=None, schedule_repos=None, tick_seen=None,
-      kit_key=None, kit_blob=None)
+  Api(store, views=None, clock=None, now=None, lock=None, config=None, **hooks)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
              via names the transport (web, desktop-mcp, cli, tunnel, ...); every write records
@@ -140,7 +138,7 @@ the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or n
 skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
 else null (_lint_runs); no view, or one that fails, is an empty list.
 
-Landings (docs/action-hub.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
+Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
 landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
 record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
@@ -152,7 +150,7 @@ lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX);
 carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
 changes or deletes one.
 
-Hand-offs (docs/action-hub.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
+Hand-offs (docs/hub-approvals.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
 checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
 kind, state_path}, all required. from is a session key checked as a question's is (a launcher
 session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
@@ -163,7 +161,7 @@ GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the
 path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
 deletes one, and GET snapshot leaves them out.
 
-Skill edits (docs/action-hub.md "skill_edits/E-NNN"). The owner writes a new text for one kit
+Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"). The owner writes a new text for one kit
 skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
 repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
 listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
@@ -413,6 +411,7 @@ store's folder to the owner only.
 import collections
 import contextlib
 import contextvars
+import dataclasses
 import datetime
 import json
 import math
@@ -430,77 +429,13 @@ from . import schema
 from . import skilledits
 from . import todosteps
 from .store import PAGES_LOCK, HubError
-
-BASE = '/api/v1'
-API_VERSION = 'v1'
-OWNER, AGENT, ANY = 'owner', 'agent', 'any'
-APPROVER = 'approver'               # a route for the strong owner alone ("Roles")
-LOCK_WRITE = 'lock-write'           # a lock write: the owner here, the strong owner remotely
-ROLES = (OWNER, AGENT, ANY, APPROVER, LOCK_WRITE)   # what a route may ask for
-CALLERS = (OWNER, AGENT)            # what a caller may be
-# why a route of role APPROVER refused a caller who is not the strong owner
-NOT_STRONG = ('%s %s needs the owner logged in through Cloudflare Access: the owner token, a '
-              'browser paired from it and an agent are not enough')
-# why a route of role LOCK_WRITE refused a caller
-NOT_LOCK_WRITER = ('%s %s is the owner\'s; over the tunnel it needs the owner logged in through '
-                   'Cloudflare Access')
-# why the page may not write the lock (GET lock/view's `writes`)
-WRITES_WHY = {
-    'agent': 'the machine lock takes this hub for an agent (it was started under an agent '
-             'session): restart the hub from your own console or its scheduled task',
-    'tunnel': 'over the tunnel a lock change needs the owner logged in through Cloudflare Access',
-    'strong': 'reservations and the division need the strong owner login (a browser paired as '
-              'the strong owner, or Cloudflare Access)'}
-STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
-          'unavailable': 503, 'internal': 500}
-WAIT_MAX_S = 55
-FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
-LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
-LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
-LOCK_DAYS_MAX = 366                 # GET lock/stats `days`
-TUNNEL_VIA = 'tunnel'               # the tunnel listener's via (kitlib.hubsite.httpd): a remote view
-ACK_WINDOW_S = 30 * 60              # a creator's time to handle an item handed to it ("Routes")
-REACH_GRACE_S = WAIT_MAX_S + 30     # a key is reachable this long after its last wait ("Routes")
-ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
-VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
-OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
-AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
-AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')
-DAYS_MAX = 3650
-# what a caller who is not the owner is told in place of the store's own message, by code
-AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
-
-Route = collections.namedtuple('Route', 'method pattern role handler')
-# full: the local owner, told the store's own words (agent_words False) and not through the tunnel
-Request = collections.namedtuple('Request', 'role params body query via strong full')
-
-_TRUE = ('1', 'true', 'yes', 'on')
-_FALSE = ('', '0', 'false', 'no', 'off')
-_ID_SPLIT = re.compile(r'([0-9]+)')
-_NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
-_SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
-# A hub item's id or a ruling's anywhere in a page id ("Pages"): hubvalidate._REF's pattern, plus
-# A, E and R and the per-repo ledger id H-<repo>-nnnn, searched, so neither `plan-Q-1` nor `Q-1.v2` holds a ref a reader would follow.
-_REF_SHAPED = re.compile(r'(?<![A-Za-z0-9])(?:[QMTPSARE]-\d+|H-[a-z0-9][a-z0-9-]*-\d+)(?![A-Za-z0-9])', re.I)
-PAGE_HTML_MAX = pagecheck.MAX_BYTES
-
-
-def error_body(code, message, field=''):
-    return {'ok': False, 'error': {'code': code, 'message': message, 'field': field or ''}}
-
-
-def _invalid(message, field=''):
-    return HubError('invalid', message, field)
-
-
-def _natural(doc_id):
-    # split on a group: text at the even places, ASCII digits at the odd ones
-    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
-
-
-def _version(doc):
-    v = doc.get('version', 0)
-    return v if isinstance(v, int) and not isinstance(v, bool) else 0
+from .apibase import (  # noqa: F401 - re-exported: callers and tests read these off api
+    BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
+    NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
+    LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
+    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
+    _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via)
 
 
 def _segments(path):
@@ -538,106 +473,6 @@ def sample_path(route, value='X-1'):
     return re.sub(r'\{[^/}]*\}', value, route.pattern)
 
 
-# ------------------------------------------------------------------ reading a request
-def _fields(req, allowed, required=(), flags=(), blank=()):
-    """The body's fields: an object holding only `allowed` names, a null one read as absent
-    (refused for a name in `flags`: null is neither true nor false; read as "" for a name in
-    `blank`), every `required` one present."""
-    body = req.body
-    if body is None:
-        body = {}
-    if not isinstance(body, dict):
-        raise _invalid('the request body is a JSON object', 'body')
-    for name in sorted(body, key=str):
-        if name not in allowed:
-            raise _invalid('this route takes no %r field (it takes: %s)'
-                           % (name, ', '.join(allowed) or 'none'), str(name))
-    for name in flags:
-        if name in body and not isinstance(body[name], bool):
-            raise _invalid('%s must be true or false, not %s'
-                           % (name, 'null' if body[name] is None else type(body[name]).__name__),
-                           name)
-    out = {k: ('' if v is None else v) for k, v in body.items() if v is not None or k in blank}
-    for name in required:
-        v = out.get(name)
-        if v is None or (isinstance(v, str) and not v.strip()):
-            raise _invalid('%s is required' % name, name)
-    return out
-
-
-def _typed(b, name, types, what):
-    v = b.get(name)
-    if v is None:
-        return None
-    if (isinstance(v, bool) and bool not in types) or not isinstance(v, types):
-        raise _invalid('%s must be %s, not %s' % (name, what, type(v).__name__), name)
-    return v
-
-
-def _text(b, name):
-    return _typed(b, name, (str,), 'a string')
-
-
-def _flag(b, name, default):
-    v = _typed(b, name, (bool,), 'true or false')
-    return default if v is None else v
-
-
-def _pin(b, required=False):
-    v = _typed(b, 'if_version', (int,), 'a whole number')
-    if v is None and required:
-        raise _invalid('if_version is required: the version of the document you read',
-                       'if_version')
-    if v is not None and v < 0:
-        raise _invalid('if_version must be a whole number, not %r' % (v,), 'if_version')
-    return v
-
-
-def _q(req, name):
-    v = (req.query or {}).get(name)
-    if isinstance(v, (list, tuple)):
-        v = v[0] if v else None
-    if v is None:
-        return ''
-    if isinstance(v, bool):
-        return '1' if v else '0'
-    return str(v).strip()
-
-
-def _q_flag(req, name):
-    v = _q(req, name).lower()
-    if v in _TRUE:
-        return True
-    if v in _FALSE:
-        return False
-    raise _invalid('%s is 1 or 0, not %r' % (name, v), name)
-
-
-def _q_int(req, name, low, high):
-    v = _q(req, name)
-    if not v:
-        return None
-    if not re.match(r'^\d{1,12}$', v) or not low <= int(v) <= high:
-        raise _invalid('%s is a whole number from %d to %d, not %r' % (name, low, high, v), name)
-    return int(v)
-
-
-def _when(text, field):
-    try:
-        t = datetime.datetime.fromisoformat(text)
-    except (TypeError, ValueError):
-        t = None
-    if t is None or t.tzinfo is None:
-        if field:
-            raise _invalid('%s is an ISO time with its offset, not %r' % (field, text), field)
-        return None
-    return t
-
-
-def _via(req):
-    return req.via or 'api'
-
-
 def _reason(e):
     """Why a view gave nothing, short and with no path in it: a HubError's code, else the
     exception's class name."""
@@ -671,30 +506,31 @@ def launcher_keys():
     module loads), read now (inside sessions_once(), read once there). A launcher whose settings
     or that file cannot be read raises: the caller says so (Api.read_session_keys), never an
     empty set that reads as "no sessions"."""
+    return {k for k, _ in _launcher_entries()}
+
+
+def _launcher_entries():
+    """[(key, entry)] of sessions.json, read now (inside sessions_once(), read once there and
+    shared by launcher_keys and launcher_coordinators)."""
     memo = _ONCE.get()
     if memo is None:
-        return _read_launcher_keys()
-    if 'keys' not in memo:
+        return list(lstate.entries(lstate.read_sessions(lsettings.load())))
+    if 'entries' not in memo:
         try:
-            memo['keys'] = (frozenset(_read_launcher_keys()), None)
+            memo['entries'] = (list(lstate.entries(lstate.read_sessions(lsettings.load()))), None)
         except Exception as e:      # noqa: BLE001 - kept, and raised to each caller in the scope
-            memo['keys'] = (None, e)
-    keys, err = memo['keys']
+            memo['entries'] = (None, e)
+    got, err = memo['entries']
     if err is not None:
         raise err
-    return set(keys)
-
-
-def _read_launcher_keys():
-    return {k for k, _ in lstate.entries(lstate.read_sessions(lsettings.load()))}
+    return list(got)
 
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
     (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
-    return {k: e.get('repo') for k, e in lstate.entries(lstate.read_sessions(lsettings.load()))
-            if e.get('agent')}
+    return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 
 
 def _for(d, for_key):
@@ -750,28 +586,32 @@ class Api(object):
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
     the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
     `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
-    each supersede (default: launcher_coordinators; coordinator_keys)."""
+    each supersede (default: launcher_coordinators; coordinator_keys).
+    The hooks (session_keys, approval_key, checkout, repo_name, schedule_repos, tick_seen,
+    tick_state, kit_key, kit_blob, kit_text, coordinators) are the fields of an ApiConfig, given
+    as `config` or as keywords; a keyword overrides the config's field."""
 
-    def __init__(self, store, views=None, clock=None, session_keys=None, now=None,
-                 approval_key=None, checkout=None, lock=None, repo_name=None,
-                 schedule_repos=None, tick_seen=None, tick_state=None, kit_key=None,
-                 kit_blob=None, kit_text=None, coordinators=None):
+    def __init__(self, store, views=None, clock=None, now=None, lock=None, config=None, **hooks):
+        # the hooks are an ApiConfig's fields; given as keywords they override `config`'s, and a
+        # name that is not one is a TypeError, as for any unknown keyword
+        config = ApiConfig(**hooks) if config is None else dataclasses.replace(config, **hooks)
         self.store = store
-        self.coordinators = coordinators or launcher_coordinators
-        self.kit_text = kit_text or (lambda blob: None)
-        self.kit_key = kit_key or (lambda: '')
-        self.kit_blob = kit_blob or (lambda branch, path: None)
-        self.tick_state = tick_state or tick_run_state
-        self.schedule_repos = schedule_repos or launcher_checkouts
-        self.tick_seen = tick_seen or tick_last_seen
+        self.config = config
+        self.coordinators = config.coordinators or launcher_coordinators
+        self.kit_text = config.kit_text or (lambda blob: None)
+        self.kit_key = config.kit_key or (lambda: '')
+        self.kit_blob = config.kit_blob or (lambda branch, path: None)
+        self.tick_state = config.tick_state or tick_run_state
+        self.schedule_repos = config.schedule_repos or launcher_checkouts
+        self.tick_seen = config.tick_seen or tick_last_seen
         self.views = views
         self.lock = lock
         self.lock_poll_s = LOCK_POLL_S
         self.clock = clock or store.clock
-        self.approval_key = approval_key or (lambda: None)
-        self.checkout = checkout or (lambda repo: None)
-        self.repo_name = repo_name or (lambda repo: None)
-        self._session_keys = session_keys or launcher_keys
+        self.approval_key = config.approval_key or (lambda: None)
+        self.checkout = config.checkout or (lambda repo: None)
+        self.repo_name = config.repo_name or (lambda repo: None)
+        self._session_keys = config.session_keys or launcher_keys
         self._seen = {'waited': None, 'pulled': None}
         self._waits = {}            # one key per agent wait that is blocked right now
         self.push_status = None     # PushWorker.status, set by the worker ("Push status")
@@ -954,13 +794,24 @@ class Api(object):
             return {AGENT_FROM}, _reason(e)
 
     def kit_session_key(self):
-        """kit_key(): the kit coordinator's session key, '' when it fails or gives no string
-        ("Skill edits")."""
+        """The kit coordinator's session key ("Skill edits"): kit_key() gives the kit repository's
+        configured name, and the key is, by coordinator_keys' rule, a coordinator session of
+        sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
+        none. '' when kit_key fails or gives no string. Whether that session exists is for the
+        caller (the route checks session_keys, the push resolves it live). The first of
+        kit_session_keys()."""
+        return (self.kit_session_keys() or [''])[0]
+
+    def kit_session_keys(self):
+        """Every key kit_session_key may be, a session's key before the name, [] for none: the
+        push tries each for a live session."""
         try:
-            key = self.kit_key()
+            name = self.kit_key()
         except Exception:           # noqa: BLE001 - no kit coordinator known: the PM hears it
-            key = ''
-        return key if isinstance(key, str) else ''
+            name = ''
+        if not isinstance(name, str) or not name:
+            return []
+        return self._keys_named(name)[1:] + [name]
 
     def repo_key(self, repo):
         """The session key of the coordinator of the repository whose remote is the repo_id
@@ -979,7 +830,11 @@ class Api(object):
         sessions.json (coordinators()) whose `repo` is that repository's configured name, matched
         without case, so a coordinator keyed otherwise (the kit's `kit`) is one. [] when the
         repository has no name; only repo_key's when sessions.json cannot be read."""
-        name = self.repo_key(repo)
+        return self._keys_named(self.repo_key(repo))
+
+    def _keys_named(self, name):
+        """coordinator_keys' rule for a configured repository name: [name, then the coordinator
+        sessions whose `repo` is it], [] for no name."""
         if not name:
             return []
         out = [name]
@@ -1221,7 +1076,7 @@ def _holders(api, repo, rid):
 def _bound(api, value, what='question'):
     """The `record` a question (or `what`: an agent's to-do, a file approval) is bound to, {repo,
     id}, after the configured repository's
-    backlog was read now through the `record` view (docs/action-hub.md "questions/Q-NNN"): repo
+    backlog was read now through the `record` view (docs/hub-questions.md "questions/Q-NNN"): repo
     is the configured name, whatever its case was as given. Refused, field record: `invalid` for
     another shape, a name that can be no repository or record id, and a completed record;
     `not_found` for a repository that is not configured and a record its backlog does not have;
@@ -1268,7 +1123,7 @@ def _bound(api, value, what='question'):
     return {'repo': name, 'id': rid}
 
 
-# The class a question bound to no record declares (docs/action-hub.md "A question's class"):
+# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
 # a standing rule (a delegation run line too), the machine, work across repositories, or a
 # one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
 QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
@@ -1338,7 +1193,7 @@ def questions_add(api, req):
 
 def questions_answer(api, req):
     """The owner's answer: `choice`, an optional `note`, and `standing` true when the answer is
-    to be a standing rule (a question bound to a record only: the PM logs it, docs/action-hub.md
+    to be a standing rule (a question bound to a record only: the PM logs it, docs/hub-questions.md
     "A standing rule"); a re-answer with no `standing` drops the mark. `standing` true with no
     `choice` is the promote of an answer already given (_promote). A question the hub marked
     done (_hub_done) takes a new answer too: it is reopened, its done fields cleared."""
@@ -1396,7 +1251,7 @@ def questions_answer(api, req):
         if api.file_later is not None:
             # the record write fetches and pushes (seconds, a minute when the remote is slow):
             # the answer returns now, stored, and its filing marks the question later, which
-            # the page reads through its wait and snapshot (docs/action-hub.md "Filing the answer")
+            # the page reads through its wait and snapshot (docs/hub-questions.md "Filing the answer")
             via = _via(req)
             api.file_later(doc_id, lambda: file_answer(api, doc_id, via))
             return out
@@ -1453,7 +1308,7 @@ def _filed_as(before, after):
     filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
     hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
-    could not be read (the push then treats it as before this field: docs/action-hub.md "Push
+    could not be read (the push then treats it as before this field: docs/hub-push.md "Push
     notifications")."""
     if before == 'pulled':
         return 'pulled'
@@ -1468,7 +1323,7 @@ def _filed_as(before, after):
 
 def file_answer(api, doc_id, via='api', full=False):
     """File the stored answer of question doc_id into the record it is bound to, through the
-    `record_answer` view, then mark the question (docs/action-hub.md "A question bound to a
+    `record_answer` view, then mark the question (docs/hub-questions.md "A question bound to a
     record"): status `filed` with `filed_at`, or, when the view refused, status `answered` kept
     with `filing` {at, code, message} (message a fixed phrase of FILING_SAYS), so the PM still
     sees it pending. Both marks are pinned to the version read first: a question that moved
@@ -2005,7 +1860,7 @@ FINAL_FILING = ('not_found', 'invalid', 'no_store')
 
 def _unfiled(d, doc_id, b, verb):
     """The changes `unfiled` adds to log or done (`verb`) of question d, which an answer bound to
-    a record and not filed must carry (docs/action-hub.md "Filing the answer"): refused
+    a record and not filed must carry (docs/hub-questions.md "Filing the answer"): refused
     `invalid`, field `filing`, while its filing may still succeed (a code not in FINAL_FILING, or
     none yet: file it first); field `unfiled` for a final code with no or a blank `unfiled`, and
     for `unfiled` on any question whose filing did not fail. Else {unfiled_why} or {}."""
@@ -2102,7 +1957,7 @@ def _promote(api, req, doc_id, b):
     answer already given to a question bound to a record a standing rule (the filed card's
     promote button), the answer kept as it is and not filed again: `standing` {at, via}, so the
     question is pending for the PM, who logs it into the ledger, as well as for its asker
-    (docs/action-hub.md "A standing rule"). One the hub marked done (_hub_done) is put back to
+    (docs/hub-questions.md "A standing rule"). One the hub marked done (_hub_done) is put back to
     `filed`, its done fields cleared, so it is pending for the PM. Refused (`invalid`) for a
     question that is not answered, filed or marked done by the hub, one bound to no record (the
     PM logs every such answer already) and one already standing."""
@@ -2918,7 +2773,7 @@ def record_new(api, req):
     return _record_view(api, 'record_template', _segment(req, 'repo'))
 
 
-# ---- the owner's record writes (docs/action-hub.md "The record page")
+# ---- the owner's record writes (docs/hub-views.md "The record page")
 def _strings(b, name):
     """b[name] as a list of strings: absent is [], one string is a list of one."""
     v = b.get(name)

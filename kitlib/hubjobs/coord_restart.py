@@ -441,15 +441,13 @@ def store_root(settings, repo):
         cfg = kconfig.load(root)
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its .kit.json cannot be read (%s)' % type(exc).__name__)
-    if cfg.written('backlog', 'store') is not None:
-        return root
     try:                                # its expected failures come back as `why`; anything else
-        pm_root, named, why = bstore.pm_data_live_store(root)   # is a bug and fails the run
+        path, why = bstore.live_store_root(root, cfg)           # is a bug and fails the run
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its PM data worktree cannot be found (%s)' % type(exc).__name__)
     if why:
         raise BacklogUnread('its PM data worktree cannot be found or read')
-    return pm_root if pm_root is not None and named is not None else root
+    return path
 
 
 def session_liveness(sessions, live):

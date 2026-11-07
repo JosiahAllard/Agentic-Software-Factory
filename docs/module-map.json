@@ -1510,6 +1510,12 @@
   },
   {
    "from": "hubjobs",
+   "to": "lock",
+   "kind": "build",
+   "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
+  },
+  {
+   "from": "hubjobs",
    "to": "machinepaths",
    "kind": "build",
    "why": "feature layer uses foundation layer: allowed as of 2026-11-06"
@@ -3353,6 +3359,15 @@
    "id": "gate-build-redfirst",
    "from": "gate",
    "to": "redfirst",
+   "kinds": [
+    "build"
+   ],
+   "goal": 0
+  },
+  {
+   "id": "gate-build-tooldeps",
+   "from": "gate",
+   "to": "tooldeps",
    "kinds": [
     "build"
    ],

@@ -1,5 +1,5 @@
 """Push notifications: the hub tells the session that asked, and the PM, when the owner acts
-(docs/action-hub.md "Push notifications"). Not the store's git push (settings `push`).
+(docs/hub-push.md "Push notifications"). Not the store's git push (settings `push`).
 
 One PushWorker thread per hub (serve.build, when Sources.push and Sources.push_dir are set). It
 watches the store's events and sends a short fixed text through the host's delivery object; the
@@ -49,7 +49,7 @@ Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_
 An answer that is a standing rule (`standing`) also goes to the PM, who logs it, whatever its
 filed_as; a `standing` change of an answer already pushed adds the PM to the push still owed.
 
-Done by the hub (docs/action-hub.md "Done by the hub"): a filed answer auto_done_ok passes (a
+Done by the hub (docs/hub-questions.md "Done by the hub"): a filed answer auto_done_ok passes (a
 known filed_as, no standing rule, no option or answer that is a delegation run line) is marked
 done by this worker once its asker has it, never in the filing's own write: status `done`,
 done_by `hub`, done_why `filed into <repo>:<id>`, done_at, via `hub-push`. The entry keeps the
@@ -123,8 +123,8 @@ snapshot's and GET health's `watcher` (Api.watcher_seen).
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill` and the usage
-crossover's words, is owed once per detail instead, beside the rest, and its text says what to
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`
+and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
 do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
@@ -179,7 +179,7 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM
+from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
@@ -259,7 +259,13 @@ JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition
                     'slots>:<why>: `unfilled` (the auto-pull filled none or not all of them) or '
                     'a stand-down code (off, queued, idle, unread, handoff; docs/hub-fill.md). '
                     'Check on that coordinator: if it is not dispatching, ask it why, or clear '
-                    'what stands the auto-pull down. Once per episode; no reply is needed.'}
+                    'what stands the auto-pull down. Once per episode; no reply is needed.',
+            'stale-lock': 'The hub store-upkeep job found objects/maintenance.lock in the git '
+                          'common dir of the PM data worktree older than 12 h, with no git '
+                          'maintenance or gc process alive: git skips its own maintenance while '
+                          'that file is there. Detail is its age (<hours>h); hub health '
+                          'jobs.store-upkeep names the path. The hub never removes it: plan a '
+                          'window to move it aside. Pushed again each daily pass while it stays.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}
@@ -958,7 +964,7 @@ class PushWorker(object):
             flags['record'] = '%s:%s' % (record.get('repo') or '', record.get('id') or '')
             flags['record_repo'] = record.get('repo') or ''
             if flags['record_repo'] and flags['record_repo'].lower() == self._pm_folder().lower():
-                flags['record_repo'] = self._kit_key() or flags['record_repo']    # the kit's
+                flags['record_repo'] = self._kit_name() or flags['record_repo']    # the kit's
         if not recipients:
             if flags.get('has_it'):
                 self._hub_done(dict(flags, id=doc_id, fingerprint=fp))
@@ -1027,14 +1033,16 @@ class PushWorker(object):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
         keys = []
-        rrepo = record.get('repo')
-        if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
-            rrepo = self._kit_key()     # the kit's records are bound under the PM folder's name
-            rkey = rrepo
-        else:
-            rkey = self._repo_key(rrepo)
-        for k in (asker, rkey, rrepo,
-                  self._repo_key(doc.get('repo')), doc.get('repo')):
+        with sessions_once():           # sessions.json is read once for the whole walk
+            rrepo = record.get('repo')
+            if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
+                # the kit's records are bound under the PM folder's name
+                rkeys, rrepo = self._kit_keys(), self._kit_key()
+            else:
+                rkeys = self._repo_keys(rrepo)
+            cands = ([asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo'))
+                     + [doc.get('repo')])
+        for k in cands:
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
         for k in keys:
@@ -1069,6 +1077,44 @@ class PushWorker(object):
             self.log('push: repo_key failed: %s' % type(e).__name__)
             got = ''
         return got if isinstance(got, str) else ''
+
+    def _repo_keys(self, repo):
+        """Every session key that may be the coordinator of an approval's repository
+        (Api.coordinator_keys: its name and the coordinator sessions of that repository), the
+        one _repo_key gives when the Api has no such list."""
+        fn = getattr(self.api, 'coordinator_keys', None)
+        try:
+            got = fn(repo) if fn is not None else None
+        except Exception as e:          # noqa: BLE001 - a host fault: the name alone
+            self.log('push: coordinator_keys failed: %s' % type(e).__name__)
+            got = None
+        if not isinstance(got, list):
+            return [self._repo_key(repo)]
+        return [k for k in got if isinstance(k, str)]
+
+    def _kit_name(self):
+        """The kit repository's configured name (Api.kit_key), '' when none: what the PM's text
+        names, where _kit_key is the coordinator's session key."""
+        fn = getattr(self.api, 'kit_key', None)
+        try:
+            got = fn() if fn is not None else ''
+        except Exception as e:          # noqa: BLE001 - a host fault: the PM folder's name stands
+            self.log('push: kit_key failed: %s' % type(e).__name__)
+            got = ''
+        return got if isinstance(got, str) else ''
+
+    def _kit_keys(self):
+        """Every key the kit coordinator may have (Api.kit_session_keys), [_kit_key()] when the
+        Api has no such list."""
+        fn = getattr(self.api, 'kit_session_keys', None)
+        try:
+            got = fn() if fn is not None else None
+        except Exception as e:          # noqa: BLE001 - a host fault: the one key
+            self.log('push: kit_session_keys failed: %s' % type(e).__name__)
+            got = None
+        if not isinstance(got, list):
+            return [self._kit_key()]
+        return [k for k in got if isinstance(k, str)]
 
     def _pm_folder(self):
         """The PM repository's folder name, '' when unknown. Read once per worker; a failing

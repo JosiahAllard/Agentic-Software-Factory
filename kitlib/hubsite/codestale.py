@@ -1,5 +1,5 @@
 """The one place that says a running hub server needs a restart because hub code newer than it
-has landed (docs/action-hub.md "Stale code"). The server knows its own start stamp
+has landed (docs/hub-serving.md "Stale code"). The server knows its own start stamp
 (serve.Hub._watch_code), so it alone decides `stale`; GET health and GET snapshot carry
 `code` = state(stale), and the PM checklist, the pm_watch HUB event and the page's banner
 read that object through notice(). Nothing here restarts anything. A server run by its

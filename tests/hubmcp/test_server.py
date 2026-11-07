@@ -1035,7 +1035,7 @@ class LiveKeys(httpfix.ListenerCase):
 
 @windows_only("the kit is Windows only")
 class HandoffReady(Case):
-    """hub_handoff_ready posts a session's hand-off record (docs/action-hub.md
+    """hub_handoff_ready posts a session's hand-off record (docs/hub-approvals.md
     "handoffs/C-NNN"): kind, state_path and from, as given; a kind the hub never takes is
     refused here."""
 

@@ -118,7 +118,7 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
 - `push(settings)` (optional): the Action Hub's push-notification delivery, an object with
   `deliver(recipient, text)` and `is_pm(recipient)` (`kitlib/hubsite/push.py` docstring), over the
   launcher's settings. `deliver` must end within `push.STOP_S`, the hub's close join. `tools/hub.py serve` asks for it with `getattr`; without it the hub serves
-  with no push notifications (docs/action-hub.md "Push notifications"; Claude:
+  with no push notifications (docs/hub-push.md "Push notifications"; Claude:
   `hosts/claude/adapter/peer.py` `HubPush`).
 - `agent_models()` (optional): the subagent model reader `tools/verdict.py add` checks
   `--reviewer-model` with, a function from a reviewer id to the sorted models that subagent's

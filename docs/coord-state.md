@@ -1,6 +1,6 @@
 # coord_state.py
 
-A coordinator's event log and the state note rendered from it: `tools/coord_state.py` (entry) over `kitlib/coordstate` (`log.py`, the log; `render.py`, the note). It is opt-in per session and is a trial: with no `coord_state.py start`, nothing here runs and a coordinator's state note is the hand-written one the role describes (content/roles/coordinator.md).
+A coordinator's event log and the state note rendered from it: `tools/coord_state.py` (entry) over `kitlib/coordstate` (`log.py`, the log; `render.py`, the note). A coordinator runs `coord_state.py start` at session start (content/roles/coordinator.md); with no `start`, after `stop`, or when `start` says `NOT DONE`, nothing here runs and its state note is the hand-written one the role describes. The trial's audit found state-note calls at 21% of a coordinator's tool calls with the log on, against 24-28% with it off.
 
 What it solves: a coordinator's note is written by hand, so what a tool already knows (a landing submitted, a landing that ended, a feed post that failed) is lost when the note was not updated before a compaction. With the log on, tools record those facts and `show` renders them. The coordinator writes only what no tool can see, its judgments.
 

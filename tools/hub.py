@@ -21,7 +21,7 @@
       so nothing in it is committed or pushed, here or at the close, and no push notification
       is sent. An empty PATH is a usage error, never the configured store. A store another
       server holds is refused.
-      Push notifications (docs/action-hub.md "Push notifications") run when the host adapter
+      Push notifications (docs/hub-push.md "Push notifications") run when the host adapter
       has push() and launcher.state_dir is set; otherwise a start-up note says why they are off.
       With hub.access set in the machine config the server also listens on hub.tunnel_port
       (default 8791, loopback too) for a tunnel program, which this tool never runs: every
@@ -179,7 +179,7 @@ the server alone decides what a role may do.
                                                      hub's page check (kitlib.hubsite.pagecheck)
                                                      passes, checked here before it is sent;
                                                      over a page already published, --if-version
-                                                     is its version (docs/action-hub.md
+                                                     is its version (docs/hub-skill-pages.md
                                                      "pages/<id> and page_html/<id>")
   hub.py pages show ID [--out F]                    the page's HTML, or with --out F written to F
                                                      as UTF-8 and `WROTE F` printed
@@ -220,14 +220,14 @@ the server alone decides what a role may do.
                                                      the owner's decision and is never consumed
   hub.py handoffs [--from KEY]                      `C-1 restart from=KEY at=TIME PATH`: each
                                                      session's newest hand-off record, or KEY's
-                                                     (docs/action-hub.md "handoffs/C-NNN")
+                                                     (docs/hub-approvals.md "handoffs/C-NNN")
   hub.py handoffs add --kind K --state PATH --from KEY       `RECORDED C-1`: beside the ready
                                                      reply (skill session-handoff), K handoff,
                                                      restart or stop, PATH the state note
   hub.py skill-edit [--status S]                    `E-1 v2 submitted skill NAME` for each of the
                                                      owner's edits of a kit skill (the owner
                                                      writes them on the hub page only;
-                                                     docs/action-hub.md "skill_edits/E-NNN")
+                                                     docs/hub-skill-pages.md "skill_edits/E-NNN")
   hub.py skill-edit show E-1 [--out F]              its status, skill and base blob; --out F
                                                      writes the owner's text to F byte for byte
   hub.py skill-edit done E-1 --branch B [--checkout DIR] --if-version V    `COMMITTED E-1`
@@ -489,14 +489,14 @@ def _bind_lines(got):
 
 
 def _question_class(x, what):
-    """--class on questions add and edit (docs/action-hub.md "A question's class")."""
+    """--class on questions add and edit (docs/hub-questions.md "A question's class")."""
     x.add_argument('--class', dest='question_class', choices=api.QUESTION_CLASSES,
                    help=what + ': rule (a standing rule or a delegation run line), machine, '
                         'cross-repo or go (a one-off landing or archive go)')
 
 
 def _unfiled(x):
-    """--unfiled on questions log and done (docs/action-hub.md "Filing the answer")."""
+    """--unfiled on questions log and done (docs/hub-questions.md "Filing the answer")."""
     x.add_argument('--unfiled', metavar='WHY',
                    help='why an answer whose filing into its record failed for good (not '
                         'found, invalid, no store) is handled without it')
@@ -879,7 +879,7 @@ def _log(level, text):
 
 
 def _push_delivery():
-    """(delivery, folder) for push notifications (docs/action-hub.md "Push notifications"): the
+    """(delivery, folder) for push notifications (docs/hub-push.md "Push notifications"): the
     host adapter's push() and the launcher's state folder, or (None, None) with one note line
     saying why there are none. A scratch store (`serve --store`) never asks."""
     from kitlib.launcher import settings as launcher_settings
@@ -1299,7 +1299,7 @@ def _item(d, state=None, version=False):
 
 def _done_note(d):
     """` (done by the hub: <why>)` after a question the hub marked done once its asker had the
-    filed answer (done_by, docs/action-hub.md "Done by the hub"), ` (done: <why>)` after one its
+    filed answer (done_by, docs/hub-questions.md "Done by the hub"), ` (done: <why>)` after one its
     asker or the PM marked done; nothing for any other document. The why on one line."""
     by, why = d.get('done_by'), d.get('done_why')
     why = ' '.join(why.split()) if isinstance(why, str) else ''
@@ -1698,7 +1698,7 @@ def _approvals(a, stop):
 
 def _routed(p):
     """`to=<route> from=<from>` of pending item p: the session key that is to handle it now and
-    the key it is for (docs/action-hub.md "Who handles a pending item"); `-` for one not given."""
+    the key it is for (docs/hub-pm.md "Who handles a pending item"); `-` for one not given."""
     return 'to=%s from=%s' % (p.get('route') or '-', p.get('from') or '-')
 
 

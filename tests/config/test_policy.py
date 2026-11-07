@@ -65,6 +65,19 @@ class HeavyTest(TreeCase):
             self.assertIsNone(policy.heavy_match(prog, args, entries), (prog, args))
         self.assertIsNone(policy.heavy_match('gradle-wrapper.jar', [], entries))
 
+    def test_a_test_run_filtered_to_named_tests_is_a_quick_test(self):
+        entries = policy.heavy_programs()
+        for prog, args in (('./gradlew', ['test', '--tests', 'FooTest']),
+                           ('gradlew.bat', [':app:test', '--tests=*.FooTest', '--offline']),
+                           ('gradle', ['test', '--tests', 'a.B']),
+                           ('dotnet', ['test', 'T.csproj', '--filter', 'FullyQualifiedName~Foo']),
+                           ('C:/sdk/dotnet.exe', ['test', '--filter=Foo'])):
+            self.assertEqual(policy.heavy_match(prog, args, entries)['kind'], 'quick-test', (prog, args))
+        for prog, args in (('./gradlew', ['test']), ('dotnet', ['test', 'T.csproj']),
+                           ('dotnet', ['build', '--filter', 'x'])):
+            self.assertEqual(policy.heavy_match(prog, args, entries)['kind'], 'build', (prog, args))
+        self.assertIsNone(policy.heavy_match('gradlew', ['--tests', 'X', '--help'], entries))
+
     def test_an_unlisted_program_is_not_heavy(self):
         self.assertIsNone(policy.heavy_match('python.exe', ['-m', 'unittest'], policy.heavy_programs()))
 
@@ -76,8 +89,7 @@ class HeavyTest(TreeCase):
              'why': 'builds the world graph', '_note': 'dropped'}]}})
         entries = policy.heavy_programs(cfg)
         self.assertEqual([e['program'] for e in entries],
-                         ['godot', 'godot.*', 'godot_*', 'blender*', 'dotnet', 'dotnet.exe', 'gradle', 'gradle.*',
-                          'gradlew', 'gradlew.*', 'test.bat', 'graphbuild.bat'])
+                         WINDOWS_DEFAULTS + ['test.bat', 'graphbuild.bat'])
         self.assertNotIn('_note', entries[-1])
         self.assertEqual(policy.heavy_match('.\\TEST.BAT', ['fast'], entries)['kind'], 'engine-test')
         self.assertEqual(policy.heavy_match('graphbuild.bat', [], entries)['kind'], 'graph-build')
@@ -98,8 +110,8 @@ class HeavyTest(TreeCase):
         self.assertEqual(policy.heavy_match('ab', [], entries)['kind'], 'two')
 
 
-WINDOWS_DEFAULTS = ['godot', 'godot.*', 'godot_*', 'blender*', 'dotnet', 'dotnet.exe', 'gradle',
-                    'gradle.*', 'gradlew', 'gradlew.*']
+WINDOWS_DEFAULTS = ['godot', 'godot.*', 'godot_*', 'blender*'] + 2 * [
+    'dotnet', 'dotnet.exe', 'gradle', 'gradle.*', 'gradlew', 'gradlew.*']   # quick-test rows, then build
 
 
 class LinuxHeavyTest(unittest.TestCase):

@@ -380,10 +380,9 @@ Known limits:
 ## The kit's own map
 
 The kit keeps its own map so its package cycle cannot grow. The map file
-`docs/module-map.json` is owner-only (`.kit.json` `owner.paths`); the ceilings
-(`docs/module-ceilings.json`) and the page (`docs/module-architecture.md`, not
-`architecture.md`: that name collides with ARCHITECTURE.md on a case-blind file system) are
-ordinary files.
+(`docs/module-map.json`), the ceilings (`docs/module-ceilings.json`) and the page
+(`docs/module-architecture.md`, not `architecture.md`: that name collides with ARCHITECTURE.md on
+a case-blind file system) are ordinary files.
 
 - Modules: each `kitlib/<pkg>` (nested folders such as `git/fake` stay in their parent), the
   loose `kitlib/*.py` files (`kitlib-root`), `boot`, `hosts`, `tools`, `mcp`, the top-level
@@ -398,15 +397,15 @@ ordinary files.
   as much as a top-level one.
 - `ratchets` hold every import that points up the layers or back against the order inside a
   layer (an order picked to leave the fewest back imports): one ratchet per package pair, goal 0,
-  ceiling the count of 2026-11-06. Today that is 60 pairs and 149 crossings (including
+  ceiling the count of 2026-11-06. Today that is 61 pairs and 151 crossings (including
   `pytests -> (root)` tree, 3). Breaking an edge lowers its ceiling; a new upward or cyclic
   import is refused, and a raise needs the owner ("Raises").
 - Regenerate with `module_map.py --baseline --map FILE` (a draft map) and read the counts back;
-  the page comes from `--page --write`.
+  the page comes from `module_map.py --page --map docs/module-map.json --ceilings
+  docs/module-ceilings.json`, its output copied into `docs/module-architecture.md`.
 - `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the map
   and every ratchet to a ceiling. It skips while the map file is absent.
-- `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it,
-  and `tests/selection.json` lists the test under `always`, so the scoped gate runs it on every
+- `tests/selection.json` lists the test under `always`, so the scoped gate runs it on every
   change; it would otherwise miss a new import into a package the changed file's tests do not
   reach.
 

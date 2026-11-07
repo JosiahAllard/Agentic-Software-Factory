@@ -1,5 +1,5 @@
 """kitlib.hubsite.landings: the landing feed's events, built by tools/land.py after a landing and
-posted to the hub on this machine (docs/action-hub.md "landings/L-NNN").
+posted to the hub on this machine (docs/hub-approvals.md "landings/L-NNN").
 
   EXTRA_FIELDS        the fields an event has beyond the land ledger line's (result.LEDGER_FIELDS)
   POST_TIMEOUT_S      seconds the post waits for the hub's answer

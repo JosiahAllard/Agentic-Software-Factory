@@ -20,7 +20,16 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `.codex/agent-profile.md` | stub: the profile is docs/agent-profile.md | an agent names the host's profile path | kw: profile
 - `docs/ROSTER.md` | agent roster | choosing an agent | kw: roster, agents
 - `docs/allow-rules.md` | allow rules for landing: the permission lines allow_rules.py prints, what each lets through | letting an agent submit a landing without a prompt | kw: allow-rules, allow_rules, permissions
-- `docs/action-hub.md` | Action Hub | the PM action list | kw: action-hub, hub, snapshot
+- `docs/action-hub.md` | Action Hub: the index of its topic docs, with every section title against the file that holds it | finding a hub section | kw: action-hub, hub, snapshot
+- `docs/hub-using.md` | Action Hub, the owner's page: its tabs and sections | reading what the hub page shows | kw: hub-using, hub, page, tabs, sections
+- `docs/hub-serving.md` | Action Hub, serving it: settings, health, restart, stale code, the store folder | running or restarting the hub server | kw: hub-serving, hub, serve, health, restart, stale-code, store
+- `docs/hub-pm.md` | Action Hub, for the PM: the hub.py verbs and who handles a pending item | the PM working the hub | kw: hub-pm, hub, pending, verbs, pm
+- `docs/hub-push.md` | Action Hub push notifications: who hears what, the timed jobs, store upkeep | a push, a timed job or the store's upkeep | kw: hub-push, hub, push, notifications, timed-jobs, store-upkeep
+- `docs/hub-questions.md` | Action Hub questions: fields, class, binding to a record, filing the answer, done by the hub, standing rules | asking or answering a question | kw: hub-questions, hub, questions, filing, binding, standing-rule
+- `docs/hub-records.md` | Action Hub inbox, PM notes, to-dos, stories, repos, schedules and finding marks | a hub record other than a question | kw: hub-records, hub, inbox, to_pm, todos, stories, repos, schedules, finding_marks
+- `docs/hub-skill-pages.md` | Action Hub skill edits and published pages | editing a skill on the hub or publishing a page | kw: hub-skill-pages, hub, skill_edits, pages, page_html
+- `docs/hub-approvals.md` | Action Hub approvals, landing events and hand-offs | an owner approval, a landing event or a hand-off | kw: hub-approvals, hub, approvals, landings, handoffs
+- `docs/hub-views.md` | Action Hub machine lock routes, live views and the record page | the hub's lock routes, views or record page | kw: hub-views, hub, lock-routes, views, record-page
 - `docs/hub-fill.md` | Hub fill watch: a live coordinator with a free slot and startable work is nudged; its saved state, the auto-pull, its stand-down and the PM fill event | coordinators under-filling their slots | kw: hub, fill, slots, nudge, auto-pull, stand-down, fill-watch
 - `docs/hub-mcp.md` | hub MCP server: the Action Hub's api as MCP tools, the owner's tools pinned | the hub from an agent | kw: hub-mcp, hub, mcp
 - `docs/hub-remote-access.md` | Hub remote access | reaching the hub from a phone | kw: hub, remote-access, tunnel, cloudflared
@@ -30,7 +39,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/branch-overlap.md` | branch overlap: unmerged branches touching a file set | checking a sweep's exclusions | kw: branch_overlap, overlap
 - `docs/commit.md` | commit.py and machine_paths.py | committing | kw: commit, machine_paths
 - `docs/content.md` | content/ and render_content: roles and skills written once, rendered per host with the plugin manifests (kit.json's version) and the kit header | editing an agent or a skill | kw: content, render_content, roles, render, kit.json, manifest, header
-- `docs/coord-state.md` | coord_state.py: a coordinator's opt-in event log and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
+- `docs/coord-state.md` | coord_state.py: a coordinator's event log, on by default, and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
 - `docs/daily-full.md` | daily_full | the nightly full run | kw: daily-full, nightly
 - `docs/delegations.md` | the owner's delegation list: location, schema 1, the hard exclusions E1 to E5, running one, known limits | reading or changing what the PM may run for the owner, or running it | kw: delegations, owner-delegations, exclusions, delegated, runner
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale

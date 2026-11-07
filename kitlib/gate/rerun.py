@@ -1,4 +1,4 @@
-"""The targeted rerun of a red `gate.py --full` (docs/gate-rerun-checkout.md "Targeted rerun").
+"""The targeted rerun of a red `gate.py --full` (docs/gate.md "Targeted rerun").
 
 A red `gate.py --full` of a clean tree writes a red run (record_red, called by
 kitlib.gate.runner): the commit, its tree and author, the gate config's hash, each step's
@@ -39,7 +39,7 @@ once (red-<ns>-<token>.json, rerun-<ns>-<token>.json), each carrying the sha256 
 canonical JSON. A commit's history is every file there; it is never rewritten. A branch's
 history is the history of the tip and of every commit `git rev-list <tip> ^<merge base>` names.
 
-Red-tree marks (mark, unchanged_red; docs/gate-records.md "An unchanged red tree"): every branch gate of
+Red-tree marks (mark, unchanged_red; docs/gate.md "An unchanged red tree"): every branch gate of
 a clean tree writes `<dev_drive>/pm-kit/kit-gate-red/<repo key>/<tree>.<mode>.json`, its
 verdict, the gate config's hash, the kit and the steps that failed; a later gate of the same
 tree that would only repeat a failed one is refused before it books.

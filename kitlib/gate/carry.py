@@ -1,4 +1,4 @@
-"""Carrying a verdict forward (docs/gate-landing-policy.md "Carrying a verdict forward"): a branch reviewed at one tip and then synced with main needs no fresh review, when the sync is all
+"""Carrying a verdict forward (docs/gate.md "Carrying a verdict forward"): a branch reviewed at one tip and then synced with main needs no fresh review, when the sync is all
 that changed. check() decides that mechanically, read-only; kitlib.gate.verdicts.carry records it
 and the landing checks it again under its lock.
 

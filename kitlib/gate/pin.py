@@ -1,5 +1,5 @@
 """Pinned tools: tools/land.py and tools/gate.py, started from the kit's main checkout, re-run
-themselves from an export of pushed main (docs/gate-landing.md "Landing", "Pinned tools").
+themselves from an export of pushed main (docs/gate.md "Landing", "Pinned tools").
 
 A landing merges into the main checkout it runs from, so a tool running there would import new
 modules (loaded lazily, after the merge) against old ones already loaded: a mixed generation. An

@@ -535,6 +535,11 @@ class VerifierTest(unittest.TestCase):
         self.assertEqual(client.calls[0][3], {'repo': URL, 'head': HEAD, 'files': '{}',
                                               'commit': COMMIT})
 
+    def test_the_approval_is_read_from_the_approvals_collection_only(self):
+        client = FakeClient({'ok': True, 'collections': {'approvals': {'A-1': {'head': HEAD}}}})
+        self.assertEqual(ap.Verifier(client).approved_doc('A-1'), ({'head': HEAD}, None))
+        self.assertEqual(client.calls, [('GET', '/snapshot', ap.ANY, {'collections': 'approvals'})])
+
     def test_an_empty_commit_is_refused_without_asking_the_server(self):
         client = FakeClient({'ok': True, 'valid': True, 'why': ''})
         self.assertEqual(ap.Verifier(client).verify('A-1', URL, HEAD, {}, commit=''),

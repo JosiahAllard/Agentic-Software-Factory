@@ -167,7 +167,7 @@ import urllib.parse
 from kitlib import hubvalidate
 from kitlib.git import batch, cmd
 
-from .api import AGENT
+from .api import AGENT, ANY
 
 
 def _part(doc_id):
@@ -1027,7 +1027,7 @@ class Verifier(object):
         it holds none of that id, WHY_BAD for one that is not an object. Not trusted as it stands:
         verify() checks what is read from it against the signature."""
         try:
-            got = self.client.get('/snapshot')
+            got = self.client.get('/snapshot', ANY, {'collections': 'approvals'})
         except Exception as e:      # noqa: BLE001 - fail closed: no answer is no approval
             return None, WHY_SERVER % type(e).__name__
         colls = got.get('collections') if isinstance(got, dict) else None

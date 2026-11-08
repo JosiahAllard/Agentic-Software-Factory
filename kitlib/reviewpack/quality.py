@@ -47,7 +47,7 @@ def non_test_lines(data):
 
 def changed_paths(read, mb, branch):
     """[(status letter, path)] of every file changed between `mb` and `branch`, one read."""
-    rows = (r.partition('	') for r in read('diff', '--name-status', '--no-renames', mb, branch,
+    rows = (r.partition('\t') for r in read('diff', '--name-status', '--no-renames', mb, branch,
                                             '--').splitlines())
     return [(status[:1], path) for status, _, path in rows if path]
 

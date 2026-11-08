@@ -125,7 +125,7 @@ The map is an owner path, so only the owner writes a raise entry. Two rules:
 - A ratchet the base's map does not have is new: adding it was already the owner's edit, so its
   ceiling is not compared with the base, and a note says so.
 
-With no `--base`, the base is the main branch (docs/gate.md "Default base"); when that does not
+With no `--base`, the base is the main branch (docs/gate-run.md "Default base"); when that does not
 resolve, nothing is compared and a note says so. With no map at the base (the first rollout),
 nothing is compared and a note says so. A `--base` git cannot read is exit 2.
 
@@ -211,7 +211,7 @@ aside) with `PAGE STALE  <page> does not exist|does not match the map: run modul
 ## The scope report
 
 `--scope [--base REV]` prints what a change touches (`kitlib/modulemap/scope.py`). The change is
-the merge base of REV (default: the main branch, docs/gate.md "Default base") and HEAD against
+the merge base of REV (default: the main branch, docs/gate-run.md "Default base") and HEAD against
 the work tree, plus untracked files git does not ignore. It prints a header
 `module_map scope: base REV (merge base), N changed path(s) in M module(s)`, one `  path -> module` line
 per changed path, then one `widen: M <- C  why` line per module M the change widens to:
@@ -344,7 +344,7 @@ The run books the machine lock as the `daily_full` kind, waiting up to its `max_
 (docs/daily-full.md). Run as a step of the daily full run, it nests in that run's slot and takes
 nothing more. To run it daily, add a gate step whose ordinary command is the plan (cheap, and
 it checks that the map is owner-locked and its tests are well formed) and whose `daily_cmd` is
-the run (docs/gate.md "Steps"):
+the run (docs/gate-run.md "Steps"):
 
 ```json
 {"name": "module-isolation",

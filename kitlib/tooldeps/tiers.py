@@ -1,6 +1,6 @@
 """kit_tests' two passes: the tests on the fake git, then a pass on real git (docs/test-tools.md
 "Fake git"). --both-tiers runs them (the daily full run, through a gate step's `daily_cmd`,
-docs/gate.md "Steps"), and so does a --select or --full run whose change adds or changes a test
+docs/gate-run.md "Steps"), and so does a --select or --full run whose change adds or changes a test
 module (changed_test_modules): its real-git pass runs those modules.
 
 `run_tiers(run_one, out, label)` calls `run_one(fake, tier_out, last)` once per tier in TIERS order:
@@ -24,10 +24,12 @@ what runs the two passes (default `--both-tiers`).
 
 The real-git pass runs only some modules, not the whole selection: under --both-tiers
 REAL_GIT_MODULES and the added or changed test modules (real_git_modules), otherwise only the
-added or changed ones.
+added or changed ones. A test module whose change touches only comments and docstrings is not
+"changed" for that pass (code_changed): the fake pass still runs it.
 
 Nothing here starts a process or reads the environment.
 """
+import ast
 import threading
 
 PREFIX = 'kit_tests: '
@@ -94,6 +96,36 @@ def changed_test_modules(changed, modules):
         if path.endswith('.py'):
             wanted.add(path[:-len('.py')].replace('/', '.'))
     return [m for m in modules if m in wanted]
+
+
+# The nodes whose first statement, a string expression, is a docstring (ast.get_docstring's).
+_DOC_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _code_dump(src):
+    """ast.dump of the source `src` (bytes or text) with every docstring dropped: comments are not
+    in the tree, and line numbers are not in the dump. Raises what ast.parse raises."""
+    tree = ast.parse(src)
+    for node in list(ast.walk(tree)):
+        if isinstance(node, _DOC_OWNERS) and node.body:
+            first = node.body[0]
+            if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                node.body = node.body[1:]
+    return ast.dump(tree)
+
+
+def code_changed(base_src, tip_src):
+    """False only when the base and tip sources of a module (bytes or text) both parse and differ
+    in nothing but comments and docstrings; then the real-git pass leaves the module to the fake
+    pass. Fail safe: a missing side (None: the module is added, or could not be read) or a side
+    that does not parse is a change."""
+    if base_src is None or tip_src is None:
+        return True
+    try:
+        return _code_dump(base_src) != _code_dump(tip_src)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return True
 
 
 def unit_bound(modules, classes):

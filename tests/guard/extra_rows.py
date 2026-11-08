@@ -3,7 +3,7 @@ nested bash -c wait), Windows paths in python heredocs (which pass: heredoc-winp
 docs/guard-v2.md B8), core.hooksPath changes (git config, -c,
 clone -c, GIT_CONFIG_*), ending processes by name, the .NET and Gradle heavy defaults, and a
 python's code, which counts as written where it runs
-(docs/guard.md "Rules"). Same shape as ROWS there; the expected alternative is str.format text, so
+(docs/guard-rules.md "Rules"). Same shape as ROWS there; the expected alternative is str.format text, so
 a PowerShell brace is doubled.
 
 Backslashes are built from BS so no editor or shell on this machine can rewrite them."""
@@ -264,7 +264,7 @@ ROWS = [
 
     # ---------------------------------------------------------------- python's code counts as written where it runs
     # python -c, or a program read from standard input, writes the directory python runs in, whatever
-    # the code is: the guard does not read it (docs/guard.md "Shell writes")
+    # the code is: the guard does not read it (docs/guard-jail-roles.md "Shell writes")
     ('main-checkout: python -I -c that only reads json, subagent', lambda w: bash(
         'python -I -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d))" x.json', w.main, sub=True),
      'deny', 'unplaced', None),

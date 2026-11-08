@@ -1,5 +1,5 @@
 """The auto-detected gate: with no "gate" section in `.kit.json` (inline or `tools/gate.json`),
-the gate's steps come from the checkout's own files (docs/gate.md "Auto-detected gate";
+the gate's steps come from the checkout's own files (docs/gate-run.md "Auto-detected gate";
 docs/multi-host-plan.md decision 24).
 
 `effective(cfg, root)` is the one call the gate makes: the configured section when there is one

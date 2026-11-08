@@ -1,4 +1,4 @@
-"""A submitted landing (docs/gate.md "Submitting a landing"): `land.py --submit` and `gate.py land
+"""A submitted landing (docs/gate-landing.md "Submitting a landing"): `land.py --submit` and `gate.py land
 --submit` start the same landing as a detached, windowless process and return at once.
 
   submit    check the arguments (USAGE); with `reviewed_by` (both tools pass it), check that each
@@ -64,7 +64,7 @@ sees it gone. Files, in the result folder (kitlib.gate.result.result_dir:
 output, the records' `log` until a merged gate names its own); each submission deletes the old
 ones (prune). Nothing here prints or exits.
 
-Folding (docs/gate.md "Folding queued submissions"; the protocol at `turn` below): the payload
+Folding (docs/gate-landing.md "Folding queued submissions"; the protocol at `turn` below): the payload
 also keeps the landing's flags (flags_of). A submitted landing at its turn folds the submissions
 queued behind it into its batch (foldable, take: their records then name its run in folded_into
 and its pid), and gives back what it does not land (give_back). A folded landing's process, at
@@ -434,7 +434,7 @@ def named_review(root, branches, tips, given, again=None):
     `reviewer_id` lists, or that whole value, case aside (reviewer_ids). Else an Outcome, with
     nothing read beyond the queue and nothing written: REFUSED for the first branch, in order,
     whose entry is missing, cannot be used, is marked failed or is at another tip (the landing
-    would refuse it too: docs/gate.md "Strict paths"), then USAGE when `given` is not one id per
+    would refuse it too: docs/gate-landing-policy.md "Strict paths"), then USAGE when `given` is not one id per
     branch, its `Instead:` line `again(ids)` with the first id each entry lists, then REFUSED for
     the first id that is not its branch's reviewer, with no `Instead:` line (the review named is
     not the one on record: the caller finds out which is meant). This shows the review on the
@@ -898,7 +898,7 @@ def redirect_output(path):
 
 
 # ---------------------------------------------------------------- folding
-# docs/gate.md "Folding queued submissions": a submitted landing at its turn folds the submissions
+# docs/gate-landing.md "Folding queued submissions": a submitted landing at its turn folds the submissions
 # queued behind it into its batch (kitlib.gate.land Lander.fold_queued). Every record a fold
 # takes, gives back or marks is judged again under that record's lock (result.write's `when`), and
 # the batch's first record decides: a landing takes a submission only while that record has no

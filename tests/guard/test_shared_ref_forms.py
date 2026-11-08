@@ -1,4 +1,4 @@
-"""git-shared-ref beyond update-ref (docs/guard.md "Rules"): a push into the repository itself,
+"""git-shared-ref beyond update-ref (docs/guard-rules.md "Rules"): a push into the repository itself,
 a fetch or pull refspec's destination, symbolic-ref, replace, a notes write, a forced or moved
 branch or tag, checkout -B, a checkout past another worktree's lock, worktree add -B or -f, a forced
 tag fetch, rebase --update-refs, a remote's removal, rename or head, fast-import and filter-branch
@@ -365,7 +365,7 @@ class BranchForce(FormsBase):
 
 class BranchMove(FormsBase):
     """A rename deletes the old name and writes the new one: refused even for the session's own
-    branch, which the coordinator lands by its name (docs/guard.md "Rules")."""
+    branch, which the coordinator lands by its name (docs/guard-rules.md "Rules")."""
 
     def test_a_move_deletes_a_shared_name(self):
         self.each_refused(['git branch -m main x', 'git branch -M x main', 'git branch -m kit/sib x',

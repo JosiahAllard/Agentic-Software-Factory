@@ -45,9 +45,20 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale
 - `docs/engineering-rulings.md` | engineering rulings | before a design choice | kw: rulings, engineering
 - `docs/flaky-tests.md` | flaky tests: the time fence (kitlib.clock; agentstart's budget), the reviewer rules for a time budget | a test fails under load, adding a time budget | kw: flaky, flake, time-fence, clock, budget
-- `docs/gate.md` | gate.py | running the gate | kw: gate, test, stash
+- `docs/gate.md` | gate.py: the index of its pages | running the gate | kw: gate, test, stash
+- `docs/gate-run.md` | gate.py: commands, exit codes, steps, auto-detected gate, daemons, console windows | running or configuring the gate | kw: gate, steps, exit codes, commands, daemons, docs-only
+- `docs/gate-records.md` | gate.py: Gate-OK and Result records, gate budget, session cap, gate queue | a gate record, budget or queue | kw: gate, records, budget, queue, result, unchanged red
+- `docs/gate-rerun-checkout.md` | gate.py: stopping a gate, targeted rerun, the caller's checkout, stash guard, limits | stopping, rerunning or running a gate from another checkout | kw: gate, rerun, stash, caller checkout, go-live
+- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
+- `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
 - `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
-- `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
+- `docs/guard.md` | shell guard and git hooks: the index of its pages | a command is refused | kw: guard, hooks, refusal, hub secrets
+- `docs/guard-core.md` | shell guard: output, refusal log, rule modes, hosts, parsing, state | reading a guard refusal or how the guard parses a line | kw: guard, refusal log, modes, hosts, parsing
+- `docs/guard-rules.md` | shell guard: the rules and kit paths in advice | a rule refuses a command | kw: guard, rules, refusal, instead
+- `docs/guard-jail-roles.md` | shell guard: write jail, generated files, role policy, backlog roles, gate allow, batch files | a write is jailed or a role is refused | kw: guard, write jail, git jail, role policy, backlog roles
+- `docs/guard-fallback.md` | shell guard: the fallback and its known limits, lock MCP, session mark, agent names | the guard cannot read a line | kw: guard, fallback, known limits, session mark
+- `docs/guard-owner.md` | shell guard: owner lock tools, machine setup, delegation list, hub secrets | an owner-only tool or a hub secret is refused | kw: guard, owner, hub secrets, delegation
+- `docs/guard-hooks.md` | shell guard: pre-push, owner-only commits, self-test, go-live | a push or commit is refused | kw: guard, pre-push, owner-only, go-live
 - `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
 - `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin
@@ -166,4 +177,4 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
 - `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node
 - `tools/stack_skill.py` | copy a stack's skills into a repository (`docs/install.md`) | kw: stack_skill, stack
-- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate.md` "The landing queue") | kw: verdict, queue
+- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate-landing.md` "The landing queue") | kw: verdict, queue

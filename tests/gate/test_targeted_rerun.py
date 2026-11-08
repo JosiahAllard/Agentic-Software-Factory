@@ -1,4 +1,4 @@
-"""kitlib.gate.rerun: the targeted rerun of a red `gate.py --full` (docs/gate.md "Targeted
+"""kitlib.gate.rerun: the targeted rerun of a red `gate.py --full` (docs/gate-rerun-checkout.md "Targeted
 rerun"). A red --full run of a clean tree writes a red run; `gate.py --rerun` reruns its failing
 test classes at the tip (each paired with a control at the base, which is information only) and
 the steps it never reached, under one gate slot of the branch, and says FLAKE or REAL. A landing
@@ -284,7 +284,7 @@ class RerunCase(test_land.LandCase):
         return self.branch('feature', {'flaky_mod.py': FLAKY, 'MARK': 'here\n'})
 
     def red(self, wt, again=False):
-        """A red `--full` gate; `again` repeats one of the same tree (docs/gate.md "An unchanged
+        """A red `--full` gate; `again` repeats one of the same tree (docs/gate-records.md "An unchanged
         red tree")."""
         out = runner.branch_gate(wt, full=True, book_kw=self.book_kw, again=again,
                                  log_dir=os.path.join(self.tmp, 'own'))

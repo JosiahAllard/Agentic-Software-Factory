@@ -9,10 +9,10 @@
   measure  a proposed kinds table from the lock's run history (never written in place)
 
 tools/gate.py parses, prints and exits; everything else is here. Nothing here prints: progress
-goes to a `say` callable the caller passes. docs/gate.md holds the exit codes and messages.
+goes to a `say` callable the caller passes. docs/gate-run.md holds the exit codes and messages.
 """
 
-# Exit codes (docs/gate.md "Exit codes"). The machine lock's refusal codes pass through unchanged
+# Exit codes (docs/gate-run.md "Exit codes"). The machine lock's refusal codes pass through unchanged
 # (kitlib.lock.store: 6 busy, 8 timeout, 10 require-lock, 11 reserved, 12 hold).
 OK = 0          # the gate passed / the branch landed / measure wrote its proposal
 FAILED = 1      # the gate failed / the landing did not land (red gate, merge conflict, push

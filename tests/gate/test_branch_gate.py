@@ -378,7 +378,7 @@ class FullCmd(fixtures.GateRepoCase):
 class DocsOnlyAndSmoke(fixtures.GateRepoCase):
     """A docs-only change (the branch's "gate".docs_only) runs only the docs_only steps and writes
     a gate-OK record of mode `docs`; any other change runs what it selects plus the smoke steps
-    and writes mode `select`; --full writes `full` (docs/gate.md "Docs-only changes")."""
+    and writes mode `select`; --full writes `full` (docs/gate-run.md "Docs-only changes")."""
     GATE = {'smoke_steps': ['boot'],
             'docs_only': {'globs': ['docs/*.md'], 'steps': ['scrub']},
             'steps': [{'name': 'suite', 'always': True, 'cmd': mode_step('suite'), 'pass': '^mode '},

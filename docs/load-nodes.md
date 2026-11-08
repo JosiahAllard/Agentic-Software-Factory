@@ -149,11 +149,11 @@ node.py gate [--node auto|NAME] [--note TEXT] [--reattach S] [-C DIR]
 ```
 
 The checkout's HEAD is gated `--full` on a node, and the gate-OK record it writes there is taken
-into main's record folder (docs/gate.md "Gate-OK record"), so the branch lands as if gated here.
+into main's record folder (docs/gate-records.md "Gate-OK record"), so the branch lands as if gated here.
 
 1. Main reads what its own gate would: the repository name (`.kit.json` "repo" "name", else the
    checkout's folder name: `kitlib.gate.runner.repo_name`), the gate's lock kind, and the default
-   base (docs/gate.md "Default base") as a commit.
+   base (docs/gate-run.md "Default base") as a commit.
 2. Main pushes HEAD to `refs/node/<job>` and the base to `refs/node/<job>-base`, then asks the
    node's `gate` verb. Main sends no command.
 3. The node gives the job its own bare repository, `jobs/<job>/repo.git` (the mirror's objects
@@ -202,7 +202,7 @@ Known limits:
 
 ## A landing's merged gate on a node
 
-A landing (docs/gate.md "Landing") may run its merged gate on a load node that opted its
+A landing (docs/gate-landing.md "Landing") may run its merged gate on a load node that opted its
 repository in; main still merges, writes the gate-OK record and pushes. The node checks the job and
 runs the gate; main checks the record it sends back against main's own reading of the same merge,
 step by step.
@@ -253,7 +253,7 @@ A kit checkout is never gated on a node, by a landing or by `node.py gate`.
 
 ### The mirror of main
 
-Each node keeps a current mirror of main. After every landing that LANDED (docs/gate.md
+Each node keeps a current mirror of main. After every landing that LANDED (docs/gate-landing.md
 "Landing", step 11), once the landing lock file and its machine-lock slot are released, main
 pushes the merge to `refs/pmkit/main/<main>` on the mirror of each node whose `repos` name the
 repository (`kitlib.loadnode.mirror.refresh`, called by `Lander.refresh_mirrors`), wherever the
@@ -328,7 +328,7 @@ forced command serves the push with no job, and the mirror refuses deletes and n
   landing gates on main.
 - The plan and the 1-slot booking use the config read before the landing's turn. A base whose
   config names another `"gate".kind` is asked of the nodes again at that kind's size, and main's
-  gate books that kind again (docs/gate.md "Landing", step 4), but a node's gate keeps the 1-slot
+  gate books that kind again (docs/gate-landing.md "Landing", step 4), but a node's gate keeps the 1-slot
   run booked at the old kind.
 - A 1-slot landing run's held time goes into the `land` mode of the kind's expected times
   (`history_expect`), beside the full runs.

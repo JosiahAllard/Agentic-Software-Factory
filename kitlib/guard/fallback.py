@@ -1,4 +1,4 @@
-"""A command line the parser cannot read cleanly (docs/guard.md "Fallback").
+"""A command line the parser cannot read cleanly (docs/guard-fallback.md "Fallback").
 
 kitlib.guard.shell marks a parse unclean when the text holds something it does not model (an
 unclosed quote, an encoded command, a program named by a variable, a word the shell rewrites).
@@ -86,7 +86,7 @@ XARGS_BARE_GIT = r'\bxargs\b[^|;&\n]*\bgit(?:\.exe)?[ \t]*(?=[|;&\n]|$)'
 # is only a reason to read the part again; the re-read rules decide.
 REST = r'[^|;&\n]*'                                   # the rest of the command
 # the kit command before the name of the tool it runs (kit, tools/kit.py, -m tools.kit, and kit
-# with each suffix commands.base_name takes off a program: kit.cmd, kit.com; docs/guard.md "The
+# with each suffix commands.base_name takes off a program: kit.cmd, kit.com; docs/guard-owner.md "The
 # kit command"), the name maybe quoted, after quotes or empty words (commands.kit_tool skips them)
 KIT_WORD = (r'(?:(?<![\w.-])kit(?:\.py|%s)?|\btools\.kit)["\']*(?:\s+["\']+)*\s+["\']*'
             % '|'.join(re.escape(s) for s in cm.EXE_SUFFIXES))
@@ -179,7 +179,7 @@ ANYWHERE = (
     ('root-search', r'(?i)\bdir\s+(?:/\w+\s+)*["\']?[A-Za-z]:\\?["\']?\s*(?:/\w+\s+)*/s\b'),
     ('root-search', r'(?i)\bdir\b[^|;&]*/s\b[^|;&]*\s["\']?[A-Za-z]:\\?["\']?(?=\s|$)'),
 )
-# the owner's tools by name (docs/guard.md "Fallback"): a line the guard cannot read that names one
+# the owner's tools by name (docs/guard-fallback.md "Fallback"): a line the guard cannot read that names one
 # is refused whole under that tool's rule, in every session but the owner's own, read verbs included
 # python's -m, alone or ending a cluster of its no-value flags (-Im) as rules.PY_FLAG_RE reads it, the
 # module joined or not, and maybe quoted

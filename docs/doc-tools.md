@@ -14,14 +14,14 @@ Each entry point takes `-C DIR` (default `.`), a plain path resolved with `kitli
 python tools/doc_budget.py [-C DIR] [--base REF] [--head REF] [--worktree] [--report]
 ```
 
-`kitlib.docs.budget.run` measures `--head` (default `HEAD`, as committed) or, with `--worktree`, the working tree with uncommitted and untracked files, against `--base` (default: gate.md "Default base"). In one pass it runs every check and prints every failure:
+`kitlib.docs.budget.run` measures `--head` (default `HEAD`, as committed) or, with `--worktree`, the working tree with uncommitted and untracked files, against `--base` (default: gate-run.md "Default base"). In one pass it runs every check and prints every failure:
 
-- **Budgets** (`over budget`). Each `.md` with a cap (`budget_for`: a literal `budgets` key, then a glob key, then `uncapped_dirs`, then `default`) fails when it is over its cap on the branch and bigger than on the base (`budget_verdict`). A file the branch did not change since the merge base never fails, and a file over its cap that the run did not fail is a WARNING. Nothing projects the merge: a repo whose gate runs this check as a `cmd` step (docs/gate.md "Not ported") checks the real merged tree when it lands.
+- **Budgets** (`over budget`). Each `.md` with a cap (`budget_for`: a literal `budgets` key, then a glob key, then `uncapped_dirs`, then `default`) fails when it is over its cap on the branch and bigger than on the base (`budget_verdict`). A file the branch did not change since the merge base never fails, and a file over its cap that the run did not fail is a WARNING. Nothing projects the merge: a repo whose gate runs this check as a `cmd` step (docs/gate-rerun-checkout.md "Not ported") checks the real merged tree when it lands.
 - **Retired paths** (`retired path`, `retired_paths`) and **stale keys** (`stale budget key`: a `budgets` literal or `state_docs` entry naming no file).
 
 The budgets applied are the head's `.kit.json` (the file on disk with `--worktree`), with note keys (`_...`, `comment`) dropped. A configuration that does not read at the head fails the branch; one the base already carries is a WARNING.
 
-Not checked here: owner-only paths (`tools/commit.py` and `kitlib/guard/ownercommits.py`, docs/guard.md "Owner-only commits") and the doc index listing (`tools/doc_index.py`, below).
+Not checked here: owner-only paths (`tools/commit.py` and `kitlib/guard/ownercommits.py`, docs/guard-hooks.md "Owner-only commits") and the doc index listing (`tools/doc_index.py`, below).
 
 Exit codes. The last line is the verdict that `kitlib.verdict.judge` reads:
 

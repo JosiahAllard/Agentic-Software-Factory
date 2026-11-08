@@ -1,5 +1,5 @@
 """kitlib.config.schema: "landing".shared_paths, the globs whose change makes a landing need a
---full record of a tip (docs/gate.md "Shared paths"): unset by default, a non-empty list of
+--full record of a tip (docs/gate-run.md "Shared paths"): unset by default, a non-empty list of
 whole-path globs (none ending in "/") when set, and left out of the gate config a gate-OK record hashes."""
 import unittest
 

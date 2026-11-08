@@ -48,7 +48,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
 
 6. **Turn on the guard** (hand step): the PreToolUse entry that
    `python <kit>/boot/hook.py claude --settings-entry` prints goes in the account's settings
-   (docs/guard.md "Go-live (after the joint review)").
+   (docs/guard-hooks.md "Go-live (after the joint review)").
    Success: a Bash search from a drive root is denied with `rule=root-search`.
 
    On a machine with no older kit clone, steps 3, 5a, 6 and 7's hook are one owner command instead,

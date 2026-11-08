@@ -1,4 +1,4 @@
-"""The backlog roles in the guard (docs/guard.md "Backlog roles"; docs/backlog.md "Roles").
+"""The backlog roles in the guard (docs/guard-jail-roles.md "Backlog roles"; docs/backlog.md "Roles").
 
   backlog-role       a subagent's run of tools/backlog.py, judged by kitlib.backlog.roles for the
                      role its hook payload names (Action.agent_role), from the command's words

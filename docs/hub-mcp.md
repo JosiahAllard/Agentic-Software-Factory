@@ -7,7 +7,7 @@
 - **Port:** `hub.port` (docs/hub-serving.md "Serving it"), read from the machine's hub settings at each call, so a hub started later or on another port is found. A setting that cannot be read is the `config` tool error.
 - **Tokens:** the token files of `kitlib.hubsite.auth.folder()`. Every tool carries the agent's token, reads included (`server.AgentClient`; unlike the CLI's `Client.token`, it never falls back to the owner's for an `ANY` route). With no usable agent token a tool answers `no_agent_token`, and no tool ever opens the owner's token file.
 - **Source:** every write names itself `mcp` (`kitlib.hubsite.serve.VIA_MCP`, the `X-Hub-Via` header), so the hub records `via: mcp` on what it writes; `tools/hub.py` writes `cli`.
-- **Session mark:** `mcp/hub_server.py` reads the session's mark once at start (`kitlib.sessionmark.mark`, docs/guard.md "Session mark").
+- **Session mark:** `mcp/hub_server.py` reads the session's mark once at start (`kitlib.sessionmark.mark`, docs/guard-fallback.md "Session mark").
 
 ## Results
 
@@ -169,7 +169,7 @@ The edit command is one Windows PowerShell 5.1 `& { ... }` block (`todosteps` mo
 
 - a command runs plain Notepad (Notepad++ is not matched): give an `open` step;
 - the text asks the owner to open a file and change it by hand ("open X and apply the edits", "make the following changes"): give `edit` steps;
-- a command is coordinator work, judged per segment between `&&`, `||`, `;`, `|` and newlines: `git worktree add`/`remove`/`move`/`prune`, `gate.py`, `land.py`, `new_worktree.py`, `worktree_remove.py`, `sync_base.py`, a branch or tag delete, `update-ref -d` or `--stdin`, and a push that deletes, forces, mirrors or prunes. A worktree, branch, tag or ref delete's refusal names `worktree_remove.py <slug> --abandon "<why>"`; a ref delete's also says the coordinator deletes a ref outside `refs/heads`, `refs/tags`, `refs/stash` and `refs/backlog` itself, in its own repository (docs/guard.md "Rules", `git-shared-ref`).
+- a command is coordinator work, judged per segment between `&&`, `||`, `;`, `|` and newlines: `git worktree add`/`remove`/`move`/`prune`, `gate.py`, `land.py`, `new_worktree.py`, `worktree_remove.py`, `sync_base.py`, a branch or tag delete, `update-ref -d` or `--stdin`, and a push that deletes, forces, mirrors or prunes. A worktree, branch, tag or ref delete's refusal names `worktree_remove.py <slug> --abandon "<why>"`; a ref delete's also says the coordinator deletes a ref outside `refs/heads`, `refs/tags`, `refs/stash` and `refs/backlog` itself, in its own repository (docs/guard-rules.md "Rules", `git-shared-ref`).
 
 The rules match words, so they can refuse a to-do that only mentions one of these in a command; `git merge` and a plain push are not refused. The hub's `POST /todos` and `POST /todos/<id>/edit` apply them to every agent's to-do (`api.todo_steps`, from `todos_add` and `todos_edit`; the owner's own text is not judged), and refuses a lone surrogate in any `commands` entry for either role, as `invalid` field `commands`. The hub's `POST /todos` takes an optional `os` (`windows` by default, or `linux`; not kept; any other value is `invalid` field `os`), the OS its per-OS `run` forms are rendered for. `hub_todo_add` takes the same `os` and posts it as given. `edit` and `open` steps stay PowerShell. `hub_todo_add` runs the same check before it calls the hub, so a refused to-do never reaches it, and posts `steps` as given for the hub to render (`kitlib.hubmcp.server` `_t_hub_todo_add`); `hub_todo_edit` checks its changed text the same way (`_t_hub_todo_edit`).
 
@@ -187,4 +187,4 @@ The hub server loads this code when it starts, and the MCP server when its clien
 | `hub_to_pm_send` | `POST /to_pm/send` |
 
 - None ships yet. `tools/list` leaves them out, and `tools/call` refuses them without reading the owner's token: `forbidden` in a session a launcher marked, `not_available` (`server.GUARD_WAIT`: the guard already denies them and the tools are not shipped yet) otherwise.
-- The guard already denies them, by these names, to every session but the owner's own: its `hub-mcp` rule (`kitlib/guard/rules_owner.py` `hub_mcp`) reads `kitlib/guard/hub.py` `OWNER_MCP_TOOLS`, which is this `OWNER_ONLY` imported (docs/guard.md "Hub secrets").
+- The guard already denies them, by these names, to every session but the owner's own: its `hub-mcp` rule (`kitlib/guard/rules_owner.py` `hub_mcp`) reads `kitlib/guard/hub.py` `OWNER_MCP_TOOLS`, which is this `OWNER_ONLY` imported (docs/guard-owner.md "Hub secrets").

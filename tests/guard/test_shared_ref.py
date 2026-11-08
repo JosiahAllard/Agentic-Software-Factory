@@ -1,4 +1,4 @@
-"""Shared refs (docs/guard.md "Rules", git-shared-ref): every worktree of a repository shares its
+"""Shared refs (docs/guard-rules.md "Rules", git-shared-ref): every worktree of a repository shares its
 refs, so `git update-ref` run from any checkout can move or delete main, another session's branch,
 a tag or the backlog store. An agent session (a subagent, the lander included, or a jailed mark
 but pm) writes only refs/tmp/<name>, the per-worktree refs (refs/bisect/, refs/worktree/,

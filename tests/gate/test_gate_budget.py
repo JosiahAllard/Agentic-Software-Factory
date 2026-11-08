@@ -1,4 +1,4 @@
-"""kitlib.gate.budget: the branch gate budget (docs/gate.md "The branch gate budget"). A branch
+"""kitlib.gate.budget: the branch gate budget (docs/gate-records.md "The branch gate budget"). A branch
 gets budget.RUNS gate runs; before booking one more, its branch gate is REFUSED until `gate.py
 allow` gives it more. A run counted is a machine-lock history line of the scratch store: written
 here by Store.history_append, or by a real branch gate run (`--full`, so nothing is reused)."""

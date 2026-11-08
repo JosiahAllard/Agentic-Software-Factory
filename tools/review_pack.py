@@ -7,7 +7,7 @@ Prints base and merge-base, whether the branch contains the base tip, commits, w
 has the full-gate OK record a landing requires (the `gate` line; printed only, never the exit
 status), files changed by risk level, owner-only paths and their Owner-Approved trailers, the commits with no Co-Authored-By
 trailer (.kit.json "review_pack".coauthor), and the doc-budget verdict. --diff PATH prints that
-file's diff against the merge-base. --base defaults to docs/gate.md "Default base".
+file's diff against the merge-base. --base defaults to docs/gate-run.md "Default base".
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.reviewpack, prints and exits.
 Exit codes: 0 nothing to stop a landing, 1 an owner-only trailer problem, a commit the trailers
@@ -38,7 +38,7 @@ def build_parser():
     p.add_argument('-C', dest='root', default='.', metavar='DIR',
                    help='a checkout of the repository (default: here)')
     p.add_argument('branch', help='the branch to review')
-    p.add_argument('--base', help='the base branch (default: docs/gate.md "Default base")')
+    p.add_argument('--base', help='the base branch (default: docs/gate-run.md "Default base")')
     p.add_argument('--diff', metavar='PATH', help='print only this file\'s merge-base diff')
     return p
 

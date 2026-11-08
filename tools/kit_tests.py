@@ -16,7 +16,7 @@ branch changed (docs/test-tools.md "kit_tests").
   docs/test-tools.md "The pid shield")
 
 --select diffs the checkout against its merge-base with B (default: origin/main when it resolves,
-else main - docs/gate.md "Default base" - and a line says when the local main differs), work
+else main - docs/gate-run.md "Default base" - and a line says when the local main differs), work
 tree and untracked files included (or takes the --changed list), maps the paths through
 kitlib.tooldeps.selftree and the table tests/selection.json to the change's direct users (the
 test modules that import, name or load what changed, or list a folder it is in; never the

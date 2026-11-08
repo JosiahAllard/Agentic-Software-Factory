@@ -14,7 +14,7 @@ kitlib.host.hookmain.dispatch.
                        allow with a reason (a warn-mode rule's warning, kitlib.guard.modes) is
                        {"hookSpecificOutput": {"hookEventName", "additionalContext"}}, with no
                        permissionDecision, while WARN_CONTEXT is on; off, it renders as nothing.
-                       Always exit 0: the verdict is in the JSON (docs/guard.md "Output").
+                       Always exit 0: the verdict is in the JSON (docs/guard-core.md "Output").
   context(event_name, text)    (stdout, 0): text a session or subagent start hook adds to the
                        agent's context, {"hookSpecificOutput": {"hookEventName",
                        "additionalContext"}} and a newline; nothing for no text. Only the
@@ -74,7 +74,7 @@ CONTEXT_EVENTS = ('SessionStart', 'SubagentStart')
 PARTS = ('coordinator', 'pm')
 LINUX_MANAGED_SETTINGS = '/etc/claude-code/managed-settings.json'      # managed_settings_path on Linux
 # A warned allow's reason as PreToolUse additionalContext (render). False: a warned allow renders
-# as nothing, as any allow did before rule modes (docs/guard.md "Rule modes").
+# as nothing, as any allow did before rule modes (docs/guard-core.md "Rule modes").
 WARN_CONTEXT = True
 
 

@@ -1,4 +1,4 @@
-"""The branch gate budget (docs/gate.md "The branch gate budget"): a branch gets RUNS gate runs;
+"""The branch gate budget (docs/gate-records.md "The branch gate budget"): a branch gets RUNS gate runs;
 before booking one more, a branch gate is REFUSED until the branch's coordinator allows more
 (`gate.py allow`).
 
@@ -43,7 +43,7 @@ from kitlib.lock import store as lockstore
 
 RUNS = 5
 DIR_NAME = 'kit-gate-budget'
-DOC = 'docs/gate.md "The branch gate budget"'
+DOC = 'docs/gate-records.md "The branch gate budget"'
 NOT_STARTED = lockrun.NOT_STARTED   # a run that got its slots and started nothing
 
 

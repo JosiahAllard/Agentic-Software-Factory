@@ -1,7 +1,7 @@
 """kitlib.gate.land: the merge is made and gated in the landing tree (Lander.tree, a detached
 linked worktree the kit owns), never in the main checkout. What the owner does in the main checkout
 while the merged gate runs - a commit, a push, an edit, a stray file - reaches neither the gated tree
-nor the pushed commit (docs/gate.md "Landing"). Each test acts on the main checkout from inside the
+nor the pushed commit (docs/gate-landing.md "Landing"). Each test acts on the main checkout from inside the
 merged gate (merged_gate=, then the real kitlib.gate.runner.merged_gate)."""
 import inspect
 import os

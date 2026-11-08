@@ -32,7 +32,7 @@ from kitlib import agentname, platform, sessionmark
 
 ROLE_ENV = sessionmark.ENV
 NAME_ENV = 'PM_KIT_SESSION_NAME'
-# The session kinds and the mark each sets (docs/guard.md "Session mark").
+# The session kinds and the mark each sets (docs/guard-fallback.md "Session mark").
 COORDINATOR = 'coordinator'
 DEEP_WORKER = 'deep-worker'
 CONSULTANT = 'consultant'

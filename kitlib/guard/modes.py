@@ -1,4 +1,4 @@
-"""Rule modes (docs/guard.md "Rule modes"): what a guard rule's refusal does, by the rule's name.
+"""Rule modes (docs/guard-core.md "Rule modes"): what a guard rule's refusal does, by the rule's name.
 
   deny   the refusal stands (its verdict, deny or ask, is the rule's)
   warn   the call goes ahead, and the refusal's reason is handed to the agent as a warning
@@ -32,7 +32,7 @@ CONFIG_KEY = 'guard_rules'
 # forcing or deleting main, core.hooksPath, owner identity, the owner's delegation list
 # (owner-delegations), kill-by-name, the backlog roles, raw
 # writes and audit log, file-tool edits of a main checkout and the write jail's outer bound
-# (dev-drive: no agent write off the Dev Drive) stay deny (docs/guard.md "Rule modes").
+# (dev-drive: no agent write off the Dev Drive) stay deny (docs/guard-core.md "Rule modes").
 DEFAULTS = {
     'unplaced': WARN,           # a write the guard cannot place (kitlib.guard.rules.UNPLACED)
     # dropped as blocks: the owner can turn each back on

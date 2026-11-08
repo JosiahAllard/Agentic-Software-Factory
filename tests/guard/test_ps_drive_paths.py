@@ -451,7 +451,7 @@ class DynamicTargets(Base):
                 self.assertEqual([c.argv for c in p.commands if c.split], [])
 
     def test_a_script_block_to_any_writer_fails_closed(self):
-        # rules.ps_unread, as docs/guard.md "Rules" names it: a delay-bind script block, a
+        # rules.ps_unread, as docs/guard-rules.md "Rules" names it: a delay-bind script block, a
         # { } to a parameter that is no target, an Export-* cmdlet, tar from PowerShell; and a
         # ( ) touching a group's ), last on the line
         for text in ("Get-ChildItem *.txt | Rename-Item -NewName {{ $_.Name + '.bak' }}",

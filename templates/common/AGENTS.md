@@ -36,7 +36,7 @@ python -m unittest discover -s tests   # the kit's and the repo tools' own tests
 - **The gate is ONE command: `python <kit>/tools/gate.py -C <worktree>`.** It picks steps from the files changed
   (the `"gate"` section of `.kit.json`), books the machine lock itself, keeps full logs in the folder
   it names, and prints the verdict: exit 0 passed, 1 a step failed, 2 usage (other codes:
-  `<kit>/docs/gate.md` "Exit codes"); read a failure from the log it names. Never assemble a gate yourself or
+  `<kit>/docs/gate-run.md` "Exit codes"); read a failure from the log it names. Never assemble a gate yourself or
   pipe one through grep, tail, head or `Select-Object` (a pipe can turn a failure into exit 0 and
   hides the diagnosing lines).
 - Green proves the build works, not that your change ran: name the observable that would be

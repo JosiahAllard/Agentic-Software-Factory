@@ -2,7 +2,7 @@
 section reader finds (kitlib/docs/index.py `print_section`, which `doc_index.py --section` runs).
 
 A title written as a bold paragraph instead of a heading reads the same to a person but is a miss
-to the reader: docs/gate.md "Waiting on a gate: who arms what" was one, cited by seven roles, and a
+to the reader: docs/gate-records.md "Waiting on a gate: who arms what" was one, cited by seven roles, and a
 worker that looked it up got "no heading contains"."""
 import os
 import re
@@ -31,7 +31,7 @@ def citations(root=KIT_ROOT):
 
 class DocCitations(unittest.TestCase):
     def test_content_cites_doc_sections(self):
-        self.assertIn(('docs/gate.md', 'Waiting on a gate: who arms what'), citations())
+        self.assertIn(('docs/gate-records.md', 'Waiting on a gate: who arms what'), citations())
 
     def test_the_section_reader_finds_every_cited_section(self):
         misses = []

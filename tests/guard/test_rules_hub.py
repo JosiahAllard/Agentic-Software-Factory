@@ -1,4 +1,4 @@
-"""The hub rules (docs/guard.md "Hub secrets"): hub-secrets, hub-owner-verb, hub-mcp and
+"""The hub rules (docs/guard-owner.md "Hub secrets"): hub-secrets, hub-owner-verb, hub-mcp and
 hub-browser. Each holds every session but the owner's own: a subagent, a launcher-marked
 session (coordinator, pm, plain). The owner's unmarked session is never held. Agents still run
 the agent verbs of tools/hub.py and its validate, serve and status, which read agent.token
@@ -227,7 +227,7 @@ class SecretShell(Hub):
                 self.denied(make, rule)
 
     def test_an_unclean_line_naming_the_hub_tool_is_refused(self):
-        # docs/guard.md "Fallback": any hub tool call on a line the parser cannot read, read
+        # docs/guard-fallback.md "Fallback": any hub tool call on a line the parser cannot read, read
         # verbs included, is refused as hub-owner-verb; the owner's own session is not held
         hub = self.hub
         rows = (
@@ -366,7 +366,7 @@ class HomeAndWildcards(Hub):
             (ps, 'chdir; gc .pm-kit\\h*\\o*'),
             (ps, 'gc ${ENV:HomeDrive}$Env:HOMEPATH\\.pm-kit\\h*\\o*'),
         ))
-        # a home folder the line computes is not read (docs/guard.md "Hub secrets", Limits):
+        # a home folder the line computes is not read (docs/guard-owner.md "Hub secrets", Limits):
         # these pass, and a change here means updating that list
         self.rows_allowed((
             (bash, 'H=$HOME; cd $H/.pm-kit && cat hub/x'),
@@ -583,7 +583,7 @@ class BareWordsInTheDataFolder(Hub):
         ), deny=False)
 
     def test_code_given_on_the_line_is_refused_as_a_write_not_as_the_store(self):
-        # python -c writes the directory it runs in (docs/guard.md "Shell writes"), and the data
+        # python -c writes the directory it runs in (docs/guard-jail-roles.md "Shell writes"), and the data
         # folder is a main checkout: a subagent is refused that write, never by the store's rule,
         # and the sessions that may edit a main checkout pass
         make = lambda sub: bash('python -Ic pass --session hub', self.w.data, sub)
@@ -900,7 +900,7 @@ class OwnerVerbs(Hub):
 class ParsedRuns(Hub):
     """hub-owner-verb on the runs the parser reads, however the line spells them. Text that only
     names the hub tool, and a name built at run time, are not read: the rule catches mistakes,
-    not an adversary (docs/guard.md "Hub secrets", Limits)."""
+    not an adversary (docs/guard-owner.md "Hub secrets", Limits)."""
 
     def rows(self, rows, deny):
         for shell, line in rows:

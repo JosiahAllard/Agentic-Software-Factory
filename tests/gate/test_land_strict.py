@@ -1,4 +1,4 @@
-"""kitlib.gate.land and strict paths (docs/gate.md "Strict paths"): a branch that changes a path
+"""kitlib.gate.land and strict paths (docs/gate-landing-policy.md "Strict paths"): a branch that changes a path
 matching the list in kitlib/gate/strict_defaults.py, read from the base and never from the branch,
 lands only alone, with a queued verdict (kitlib.gate.verdicts) at its tip from a strong-tier
 reviewer who is not its author, whoever built it; its merged gate then runs --full --fresh

@@ -1,4 +1,4 @@
-"""hub-secrets for the read tools (docs/guard.md "Hub secrets"): Read and Grep of the hub's token
+"""hub-secrets for the read tools (docs/guard-owner.md "Hub secrets"): Read and Grep of the hub's token
 folder are refused in every session but the owner's own, and so is a Grep from a parent of it whose
 file filter can reach it; the hub store stays readable. Glob is not hooked (it reads no token's text): a names
 search of the folder passes."""

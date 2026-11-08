@@ -1,4 +1,4 @@
-"""kitlib.gate.land and the verdict every landing needs (docs/gate.md "Landing" step 4): a branch
+"""kitlib.gate.land and the verdict every landing needs (docs/gate-landing.md "Landing" step 4): a branch
 that changes no strict path lands too only with a verdict queued at its tip (kitlib.gate.verdicts)
 from a reviewer who is not its author; any reviewer model counts below High risk (the tier rule
 is the strict paths' and High risk's, test_review_tier), a carried verdict is checked again against the base, and each branch of a batch

@@ -93,7 +93,7 @@ def measure_rev(cfg, base, b, ob, explicit=None):
     """The rev the behind/ahead and contains-base rows measure against: `base` itself when the
     caller named it or when it equals its `<remote>/<base>` (or that is not there), else
     `refs/remotes/<remote>/<base>`: the shared default-base rule (kitlib.git.refs.default_base,
-    docs/gate.md "Default base"), so a stale local main does not count the remote's newer commits
+    docs/gate-run.md "Default base"), so a stale local main does not count the remote's newer commits
     as a branch's work."""
     if explicit or not ob or b == ob:
         return base

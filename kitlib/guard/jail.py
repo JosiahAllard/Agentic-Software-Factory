@@ -1,4 +1,4 @@
-"""The write jail's roots and verdicts (docs/guard.md "Write jail"). rules.write_jail and
+"""The write jail's roots and verdicts (docs/guard-jail-roles.md "Write jail"). rules.write_jail and
 rules.git_jail turn a verdict into a deny; this module only reads paths and the config.
 
 An agent session writes only inside its roots:

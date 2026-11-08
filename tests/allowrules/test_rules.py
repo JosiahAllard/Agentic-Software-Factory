@@ -98,7 +98,7 @@ class AllowedTest(unittest.TestCase):
             self.assertIsNone(decide(submit(tail=tail)))
 
     def test_wait_result_before_submit_allowed_and_land_takes_it(self):
-        """land.py --wait-result --submit (docs/gate.md "Submitting a landing") matches the
+        """land.py --wait-result --submit (docs/gate-landing.md "Submitting a landing") matches the
         allow line as it is, and land.py parses it."""
         for script in SPELLINGS:
             with self.subTest(script=script):

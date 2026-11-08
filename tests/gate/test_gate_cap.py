@@ -1,4 +1,4 @@
-"""kitlib.gate.gatecap: the session gate cap (docs/gate.md "The session gate cap"). A branch gate
+"""kitlib.gate.gatecap: the session gate cap (docs/gate-records.md "The session gate cap"). A branch gate
 waits while its agent session has the cap's number of gate runs of the repository in flight; a
 landing, the daily full run and the owner never wait. Every in-flight run here is a scratch-store
 record (StoreCase.live_record) whose ancestors hold a made-up agent host."""

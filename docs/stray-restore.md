@@ -66,7 +66,7 @@ To recover a discarded file, run `git cat-file blob <bytes_blob> > <path>` in Gi
 
 ## Who runs it
 
-The owner (an unmarked session not run under a Codex chat), the PM, a coordinator or the lander. The tool reads the session mark (`kitlib/sessionmark.py`, `docs/guard.md` "Session mark") and refuses any other mark.
+The owner (an unmarked session not run under a Codex chat), the PM, a coordinator or the lander. The tool reads the session mark (`kitlib/sessionmark.py`, `docs/guard-fallback.md` "Session mark") and refuses any other mark.
 
 A subagent shares its parent's mark, so a worker that a coordinator dispatches passes this check. Only the guard could tell such a worker apart. That is accepted on purpose: a restore loses nothing by design, because every discarded byte is kept in a branch tip.
 

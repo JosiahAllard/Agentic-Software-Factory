@@ -1,4 +1,4 @@
-"""The backlog's audit log in the guard (docs/guard.md "Backlog roles"; docs/backlog.md "Audit
+"""The backlog's audit log in the guard (docs/guard-jail-roles.md "Backlog roles"; docs/backlog.md "Audit
 log"): `<pm_data>/audit/` holds the lines tools/backlog.py appends after its writes, and only that
 tool writes there, so every session but the owner's is refused a file tool edit or a shell write
 in it (pm-data-audit), a kept deny."""

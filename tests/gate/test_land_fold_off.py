@@ -1,9 +1,9 @@
-"""Folding queued submissions (docs/gate.md "Folding queued submissions"): folding and
+"""Folding queued submissions (docs/gate-landing.md "Folding queued submissions"): folding and
 "landing".gate_once are on by default (an owner ruling), so a repository whose .kit.json sets no
 landing key folds up to the default batch_max (5) and runs its merged gate --full once;
 "batch_max": 1 and "gate_once": false opt out, landing each submission alone on its own merged
 gate as before the default changed; and an exception or Ctrl+C before the merge gives every
-folded submission back to land at its own turn (docs/gate.md "Dropped units"). Fixtures:
+folded submission back to land at its own turn (docs/gate-landing.md "Dropped units"). Fixtures:
 tests/gate/test_land_fold.py."""
 import unittest
 from unittest import mock

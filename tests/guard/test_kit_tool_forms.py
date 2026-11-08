@@ -4,7 +4,7 @@ and roles run `python <kit>/tools/<x>.py -C <worktree>`). The guard knows a kit 
 file name, never by a path relative to the checkout: each row's stub form
 (`python tools/<x>.py ...`) and its kit forms (the kit's absolute path, quoted and not, with -C
 when the tool takes one; the kit command's `python <kit>/tools/kit.py <x>`, `kit <x>` and
-`kit.cmd <x>`, docs/guard.md "The kit command") get the same verdict and rule, from the shared rules and
+`kit.cmd <x>`, docs/guard-owner.md "The kit command") get the same verdict and rule, from the shared rules and
 from the role policy. The alternatives the guard prints name the kit's tool, never a
 repository's tools folder."""
 import os
@@ -131,7 +131,7 @@ class SharedRules(unittest.TestCase):
 
 
 # (name, tool, -C?, the arguments after the tool and its -C, the verdict): a kit tool's output may be
-# piped like any program's, except a run that holds the machine or waits on it (docs/guard.md
+# piped like any program's, except a run that holds the machine or waits on it (docs/guard-rules.md
 # "Rules", wrapped-gate)
 PIPED = [
     ('gate help piped', 'gate', True, '--help | head', ('allow', None)),

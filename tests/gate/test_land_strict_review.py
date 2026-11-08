@@ -1,4 +1,4 @@
-"""kitlib.gate.land and strict paths (docs/gate.md "Strict paths"), split from test_land_strict so
+"""kitlib.gate.land and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
 each module's real-git run stays well under the test pool's unit timeout: the reviewer's tier by
 the author's type, the commit, records and landing entry points as strict paths, a branch that
 changes the gate's config landing alone, and a strict tip's scoped record with and without
@@ -142,7 +142,7 @@ class ScopedCase(StrictCase):
 
 
 class GateOnceStrict(ScopedCase):
-    """A base that sets "landing".gate_once (docs/gate.md "Gate once at landing"): the landing's
+    """A base that sets "landing".gate_once (docs/gate-run.md "Gate once at landing"): the landing's
     merged gate is a branch's one --full run, so a strict tip lands on a scoped record, alone,
     under --full --fresh, and the plain gate's FULL NEEDED line no longer asks it for --full; a
     gate config change still needs a --full record, strict or not."""

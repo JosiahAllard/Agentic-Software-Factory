@@ -1,4 +1,4 @@
-"""Every Instead the guard prints passes the guard for the same role (docs/guard.md "Rules": an alternative is a command to run as written). Each refusal's Instead is
+"""Every Instead the guard prints passes the guard for the same role (docs/guard-rules.md "Rules": an alternative is a command to run as written). Each refusal's Instead is
 run again with the refused call's payload (its session, agent and folder; a file tool's call as a
 Bash one) and context, and must be allowed. An Instead with a placeholder (`<worktree>`,
 `<subject>`) is a form to fill, not a command: the test_rules rows skip it; the table below fills

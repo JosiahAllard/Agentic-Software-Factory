@@ -1,4 +1,4 @@
-"""The backlog roles in the guard (docs/guard.md "Backlog roles"; docs/backlog.md "Roles"): a
+"""The backlog roles in the guard (docs/guard-jail-roles.md "Backlog roles"; docs/backlog.md "Roles"): a
 subagent's backlog.py run is judged by kitlib.backlog.roles for the role its hook payload names
 (backlog-role), and code that imports kitlib.backlog, a write of the backlog's refs and an edit of
 a folder store's record files are raw writes no agent session makes (backlog-raw-write). A main
@@ -610,7 +610,7 @@ class RealStore(unittest.TestCase):
         self.assertTrue(self.decide(self.other))
 
     def test_naming_another_branchs_worktree_acts_as_that_branch(self):
-        """The residual docs/guard.md "Known limits" states: only the -C folder's branch is compared,
+        """The residual docs/guard-fallback.md "Known limits" states: only the -C folder's branch is compared,
         so from kit/wk's worktree, -C kit/oth's worktree passes on kit/oth's pull."""
         self.repo.write('kit/backlog/BAR.md',
                         priced('BAR', state='pulled', pulled_at=TODAY, pulled_by='kit/oth', scope='tools/y/**')['BAR'],
@@ -1155,7 +1155,7 @@ class FolderStore(Base):
 
 
 class Unread(Base):
-    """A subagent's run the line does not show plainly (docs/guard.md "Fallback", "Backlog roles"):
+    """A subagent's run the line does not show plainly (docs/guard-fallback.md "Fallback", "Backlog roles"):
     a part of an unreadable line that names tools/backlog.py is read again and judged, a part that
     still does not read is refused; a computed script word ending in /backlog.py is the tool; a
     script file it runs is read one level deep. A main session and a mention are never refused."""

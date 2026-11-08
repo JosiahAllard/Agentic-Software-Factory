@@ -1,6 +1,6 @@
 """Claude Code's adapter (hosts/claude/adapter): its payloads parsed into kitlib.host.Action and the
 Decision rendered back, the guard's path normaliser, and the layer rule that keeps Claude's payload
-field names out of kitlib.guard (docs/guard.md "Hosts")."""
+field names out of kitlib.guard (docs/guard-core.md "Hosts")."""
 import json
 import os
 import re
@@ -118,7 +118,7 @@ class Paths(unittest.TestCase):
             self.assertEqual(paths.norm(p, real=True), os.path.normcase(os.path.realpath(p)))
 
     def test_the_guard_folds_paths_only_through_norm(self):
-        # docs/guard.md "Hosts": the later OS work changes one function. (place.py's realpath
+        # docs/guard-core.md "Hosts": the later OS work changes one function. (place.py's realpath
         # resolves links to see whether there are any; it folds nothing, and keeps its own error.)
         found = []
         for name in sorted(os.listdir(os.path.join(KIT, 'kitlib', 'guard'))):

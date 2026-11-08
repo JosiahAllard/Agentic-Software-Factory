@@ -1,4 +1,4 @@
-"""The session mark: what kind of session a process runs in (docs/guard.md "Session mark").
+"""The session mark: what kind of session a process runs in (docs/guard-fallback.md "Session mark").
 
 The launcher that starts an agent session (a PM, a coordinator, a deep worker) sets PM_KIT_ROLE to
 its kind; a subagent is marked by the hook payload's agent_id instead. A session nothing marks is

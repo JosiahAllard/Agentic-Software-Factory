@@ -59,7 +59,7 @@ and, only in an entry carry() moved (a re-add drops it):
                   range ends at), and tip carries it over `merges` (main merges, oldest first, the
                   last the tip) as kitlib.gate.carry checked against `main` at `utc`; `diff` is the
                   sha256 of the branch's normalized patch. A record of the check, never proof: a
-                  landing checks it again (docs/gate.md "Carrying a verdict forward").
+                  landing checks it again (docs/gate-landing-policy.md "Carrying a verdict forward").
 
 Errors (all VerdictError): BadEntry for a malformed entry or branch name given, nothing read or
 written; SelfReview (a BadEntry) when add() is given a Medium or High-risk verdict the coordinator queueing
@@ -425,7 +425,7 @@ def reviewer_verdict_why(entry, said):
     seen_verdicts(). Every verdict queued lands (VERDICTS), so a reviewer whose final `Verdict:`
     line is SEND BACK refuses it: the Instead: line asks for a fresh review of the tip, never the
     coordinator's own reading over it. A reviewer whose transcript was found but whose final
-    report has no `Verdict:` line refuses it too (docs/gate.md "Strict paths"): the Instead:
+    report has no `Verdict:` line refuses it too (docs/gate-landing-policy.md "Strict paths"): the Instead:
     line asks to resume that reviewer for its line. So does one whose transcript was found but
     cannot be read (UNREAD): fail closed, the Instead: line asks to retry or re-ask the reviewer.
     An id with no transcript is not checked. `entry` is well formed (check). Pure."""
@@ -741,7 +741,7 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
 
 def carry(common_dir, root, branch, base, now=None, checker=None):
     """Move `branch`'s queued verdict to the branch's head when the head carries it
-    (docs/gate.md "Carrying a verdict forward"): `(path, stored entry)`, with tip the head
+    (docs/gate-landing-policy.md "Carrying a verdict forward"): `(path, stored entry)`, with tip the head
     and `carried` the facts kitlib.gate.carry.check gave for the commit first reviewed (the
     entry's carried.from, else its tip), the head and `base` (main as fetched, a full hash).
     `root`: a path in the repository, where git runs. None when nothing is queued for `branch`.

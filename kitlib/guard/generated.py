@@ -1,5 +1,5 @@
 """The files of a kit checkout that tools/render_content.py writes, and what each is rendered from
-(the guard's generated-file rule; docs/guard.md "Generated files"; decision 19 in
+(the guard's generated-file rule; docs/guard-jail-roles.md "Generated files"; decision 19 in
 docs/multi-host-plan.md section 7).
 
   source(top, rel)   for `rel` (a path relative to the checkout `top`, either separator) that the

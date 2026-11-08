@@ -34,7 +34,7 @@
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one
-      reviewed (docs/gate.md "Carrying a verdict forward"), checked against main as last fetched
+      reviewed (docs/gate-landing-policy.md "Carrying a verdict forward"), checked against main as last fetched
       (`<remote>/<main_branch>`). Prints `CARRIED <branch> <head> from reviewed <sha>: ...`, or
       `NOT CARRIED: <why>` (exit 1, nothing written; review and queue the head instead).
   verdict.py list [-C DIR]

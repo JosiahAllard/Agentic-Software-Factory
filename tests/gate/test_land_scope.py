@@ -1,4 +1,4 @@
-"""kitlib.gate.land's scope check (docs/gate.md "Landing", step 4): every path a branch changes
+"""kitlib.gate.land's scope check (docs/gate-landing.md "Landing", step 4): every path a branch changes
 must fall in the scope of a record it holds - pulled by it, or named by a `Closes:` trailer of its
 own commits - besides tests/**, docs/INDEX.md and a folder store's own folder. With
 land.SCOPE_REFUSES a miss is REFUSED before any merge; without it the landing goes ahead with a
@@ -390,7 +390,7 @@ class Warns(ScopeCase):
             out = self.land(tip)
         self.assert_warned(out, 'the scope check of kit/feature stopped (RuntimeError: boom)')
 
-    # A branch holding a narrowed record (a `narrowed:` line; docs/gate.md "Landing", step 4) is
+    # A branch holding a narrowed record (a `narrowed:` line; docs/gate-landing.md "Landing", step 4) is
     # refused on a miss even while SCOPE_REFUSES is False: the backstop for a plain git commit.
 
     def test_a_narrowed_record_s_miss_is_refused_naming_its_original_member(self):

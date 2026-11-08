@@ -1,5 +1,5 @@
 """Where a path is, read from the filesystem: kitlib.git.repo.classify's answer without starting
-git (docs/guard.md "State"). The guard asks for a place on most calls, and each git child costs
+git (docs/guard-core.md "State"). The guard asks for a place on most calls, and each git child costs
 a process launch and the owner wants fewer launches per tool call, so the common layouts are
 read here and everything else is handed to repo.classify unchanged.
 

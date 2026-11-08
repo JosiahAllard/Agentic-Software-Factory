@@ -1,4 +1,4 @@
-"""kitlib.gate.gatecap against a fake store (docs/gate.md "The session gate cap"): a gate at its
+"""kitlib.gate.gatecap against a fake store (docs/gate-records.md "The session gate cap"): a gate at its
 turn counts only the session's gate runs that have started, never those still queued in the
 lock; and gates waiting at the cap book in the order they began waiting, one per freed slot.
 No real lock, no real sleep: each waiting gate's sleep is a handshake with the test."""

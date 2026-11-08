@@ -8,7 +8,7 @@ The cycle, in the order a PM and a worker run it:
      applies it) stores the owner's email in the machine config, and writes nothing into the
      clone; the machine config's other key the cycle reads is dev_drive, which the owner sets by
      hand (docs/kit-json.md "Machine config keys"): the gate's and the landing's result records go
-     under it (docs/gate.md "Result record"), never into the clone;
+     under it (docs/gate-records.md "Result record"), never into the clone;
   2. the PM makes the worker's worktree (kitlib.worktree.new.create, tools/new_worktree.py),
      which runs the first-use repo prep (kitlib.git.prep: info/exclude, core.hooksPath);
   3. the worker commits in the worktree (kitlib.commit.commit, tools/commit.py);

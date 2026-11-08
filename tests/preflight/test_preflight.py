@@ -226,7 +226,7 @@ class TheBase(Fixture):
                       'names before landing' % self.head, out)
 
     def test_a_stale_local_base_is_not_measured_against(self):
-        """docs/gate.md "Default base": local master behind origin/master - the branch is
+        """docs/gate-run.md "Default base": local master behind origin/master - the branch is
         counted against origin/master, and the line says so."""
         wt = self.repo.worktree('y', 'x/y')
         self.repo.write('b.txt', 'b\n')

@@ -1,5 +1,5 @@
 """kitlib.gate.land: a landing's merged gate runs every step that is not manual, as the author's
-`gate.py --full` selects them, whatever paths the merge changes (docs/gate.md "Landing"): a step
+`gate.py --full` selects them, whatever paths the merge changes (docs/gate-landing.md "Landing"): a step
 gated on globs the branch did not touch (an asset import a fresh landing tree needs before the
 engine tests) still runs. Each runs its cmd; only a strict landing runs its full_cmd."""
 import unittest

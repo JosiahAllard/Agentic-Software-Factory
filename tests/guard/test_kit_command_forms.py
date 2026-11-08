@@ -1,5 +1,5 @@
 """The kit command (tools/kit.py, and `kit` on the PATH) runs a kit tool by name, so the guard reads
-`kit X ...` and `python <kit>/tools/kit.py X ...` as `python <kit>/tools/X.py ...` (docs/guard.md
+`kit X ...` and `python <kit>/tools/kit.py X ...` as `python <kit>/tools/X.py ...` (docs/guard-owner.md
 "The kit command"): every rule that knows a kit tool by its file name judges them the same. The other
 rules' rows (owner-tool, wrapped-gate, role-lock) are test_kit_tool_forms.py's, whose forms include
 both kit spellings."""
@@ -126,7 +126,7 @@ class Hub(unittest.TestCase):
 
 
 class Unreadable(unittest.TestCase):
-    """docs/guard.md "Fallback": a line the parser cannot read that names an owner's tool is
+    """docs/guard-fallback.md "Fallback": a line the parser cannot read that names an owner's tool is
     refused under that tool's rule, the kit command's spelling of the name included."""
 
     def setUp(self):

@@ -1,4 +1,4 @@
-"""The stash guard (docs/gate.md "The stash guard"): no gate and no landing while the repository's
+"""The stash guard (docs/gate-rerun-checkout.md "The stash guard"): no gate and no landing while the repository's
 stash stack holds an entry.
 
 A repository has one stash stack: the ref refs/stash and its log live in the git common dir, so

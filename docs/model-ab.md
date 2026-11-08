@@ -217,3 +217,62 @@ The 20 cases are fixed, so each run repeats the same questions. The figures trea
 **No third run has been made.** None is started without the project manager's yes.
 
 Reading, still UNDECIDED: the addendum recommends keeping the coordinator on opus, because sonnet saves about half of a small replay cost, the sonnet miss rate is about 13 in 100 answers on the strict key and about 9 in 100 on the corrected key (computed), and opus low showed no price edge. The owner decides the coordinator's model.
+
+## Branch quality scorecard (plan and baseline)
+
+Question: do two instruction changes improve the branches agents land? (1) A reviewer's report must carry a full Checks line. (2) A brief keeps the checks the record names. The first evidence was a hand spot check of five branches, so nothing yet shows whether either change moves anything. This section is the plan to measure it; the owner's open question on the reviewer tier (whether structural changes need a strong reviewer) is decided once a baseline exists.
+
+**What is measured.** The quality signals of `review_pack` (review-pack.md "Quality signals"), taken per landed branch by `optional/usage/quality_scorecard.py`, which calls `kitlib.reviewpack.quality.section()` on the merge's two parents: a new file over 1500 non-test lines, a file that grew over 50% and past 500 lines, a deleted test with no "covered by" in its commit message, and the branch's net non-test lines (median and 90th percentile). A signal is a flag for a reader, not a defect. The signals see size and deleted tests only; they do not read the Checks line, so they measure the effect on branch quality, not the compliance.
+
+**Cohorts.**
+- Spot: the five hand-checked Retribution branches, named in a `--branches` file (`name[:mergesha]`). A branch with no merge is measured as unlanded, its tip against its merge-base with the base. All five were built before the two changes.
+- Window: every landing (first-parent merge on the base, sync merges "Merge X into Y" skipped) in a 14-day window, per repo: this kit on `main`, Retribution on its integration branch.
+- Rerun window: the 14 days that start once both changes have landed, per repo.
+
+**Commands.** Baseline and rerun use the same call; `--out` keeps the records (untracked, not in a repository).
+
+    python optional/usage/quality_scorecard.py <repo> --base <ref> --since <date> --until <date> --out base.json
+    python optional/usage/quality_scorecard.py <repo> --base <ref> --branches spot.txt --out spot.json
+    python optional/usage/quality_scorecard.py --compare base.json rerun.json
+
+`--compare` prints one table per signal (count of branches with the signal out of those measured; median and p90 net lines; branches NOT CHECKED), one row per repo and cohort, with the difference between the two files. A branch whose git read fails or times out is counted NOT CHECKED, never as a pass. Cost: about four git reads per branch, no machine lock; a window of several hundred landings takes minutes.
+
+**Reading it.** One sample per branch and no control, so a difference is a lead, not proof; the windows differ in what was built, so look at the counts next to the number of branches. Rerun only when both changes have been live for the full window.
+
+**Baseline (2026-11-08).** Windows 2026-10-25 to 2026-11-08; the kit on its main branch, Retribution on its integration branch. The spot cohort is five Retribution branches, three landed and two measured unlanded. The kit's repo label is its folder name. Counts are branches with the signal out of branches measured. Every branch was read; none was NOT CHECKED.
+
+    new file over 1500 lines
+      cohort                                    baseline
+      Retribution 14 days                      2 of 1060
+      Retribution spot (5)                        0 of 5
+      kit 14 days                               1 of 536
+
+    grew over 50% past 500 lines
+      cohort                                    baseline
+      Retribution 14 days                     11 of 1060
+      Retribution spot (5)                        0 of 5
+      kit 14 days                               2 of 536
+
+    deleted test, no "covered by"
+      cohort                                    baseline
+      Retribution 14 days                    140 of 1060
+      Retribution spot (5)                        4 of 5
+      kit 14 days                              71 of 536
+
+    median net lines
+      cohort                                    baseline
+      Retribution 14 days                             44
+      Retribution spot (5)                            84
+      kit 14 days                                     18
+
+    p90 net lines
+      cohort                                    baseline
+      Retribution 14 days                            417
+      Retribution spot (5)                           266
+      kit 14 days                                    262
+
+    NOT CHECKED
+      cohort                                    baseline
+      Retribution 14 days                      0 of 1060
+      Retribution spot (5)                        0 of 5
+      kit 14 days                               0 of 536

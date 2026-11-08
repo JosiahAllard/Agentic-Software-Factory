@@ -20,11 +20,11 @@ There is no separate architecture review after the build: the code review checks
 1. Gather the brief, the approved design, the exact diff range, the author's touched-test results and log paths; `python <kit>/tools/review_pack.py -C <worktree> <branch>`.
 2. Scope, yourself: `git diff --stat <merge-base>..<branch>` against the brief. A file outside it is a finding before you read a line, unless the report names it as a fold-in (skill builder, design rule 7).
 3. Who reviews: small (the profile's **Review** section; the kit's `.kit.json` `landing.self_review_max_lines`) and low risk: read every hunk yourself (docs and additive content: skim). Otherwise a fresh analyst with skill `specialty-review`, code review, never the author, its tier by the "Reviewer model" rule, after `python <kit>/tools/land.py -C <main checkout> <branch> --check-strict` (read-only: `STRICT` means a strong-tier reviewer and a lone landing). `verdict.py add` refuses a Medium or High-risk verdict you reviewed yourself, and your own read of a diff over that size.
-4. What to look for: specialty-review "Code review", steps 4-6: defects, thin and clean tests, copies and over-building.
+4. What to look for: specialty-review "Code review", steps 4-7: each Done-when item MET or UNMET, defects, thin and clean tests, copies and over-building.
 5. Only a flake on the repo's known-flake list (`--find flakes`) gets one rerun; any other failing run is real.
 6. Findings go to the author by continuing that agent: numbered, file and symbol, each BLOCKING, FIX-HERE or NOTE. It fixes them and re-runs the touched tests; you re-review the fix only. After your verdict the author runs the one gate on the reviewed tip; any change after review, gate fixes included, is reviewed before landing.
 7. A finding that folds (skill builder, design rule 7) is fixed on this branch, never filed. File a follow-up only for work that does not fold and is worth doing (the record bar: skill backlog-ops step 2); `backlog.py add` refuses one whose scope overlaps the branch.
-8. Verdict: LAND; LAND WITH FOLLOW-UP (the follow-up recorded); SEND BACK. Queue it with the branch, its full tip and the reviewed range (skill land-branch).
+8. Verdict: LAND; LAND WITH FOLLOW-UP (the follow-up recorded and named with `--follow-up <ID>`; required when the reviewer reports a Done-when item UNMET); SEND BACK. Queue it with the branch, its full tip and the reviewed range (skill land-branch); a branch adding a new non-test source file or class also names its design review with `--design-reviewer-id`.
 
 ## Prevent, once
 

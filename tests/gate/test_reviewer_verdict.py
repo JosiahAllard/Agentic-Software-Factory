@@ -5,10 +5,12 @@ on the scratch repository of tests/gate/fixtures.py GateRepoCase and transcripts
 temp home: no real config folder is read."""
 import json
 import os
+import re
 import unittest
 from unittest import mock
 
 from hosts.claude.adapter import agent_models as AM
+from kitlib.backlog import record as RECORD
 from kitlib.gate import verdicts as V
 from tests.gate.fixtures import GateRepoCase
 from tests.gate import test_verdict_cli as VC
@@ -36,8 +38,13 @@ def tool_turn():
         {'type': 'tool_use', 'id': 'toolu_2', 'name': 'Read', 'input': {'file_path': 'x'}}]}}
 
 
-def report(verdict):
-    return 'Findings, most severe first:\n1. none blocking\n\nVerdict: %s' % verdict
+CHECKS = 'Checks: ' + ', '.join('%s PASS' % c for c in V.CODE_CHECKS)
+DESIGN = 'Checks: ' + ', '.join('%s PASS' % c for c in V.DESIGN_CHECKS) + '\nDesign: APPROVE'
+
+
+def report(verdict, extra=''):
+    return ('Findings, most severe first:\n1. none blocking\n%s\n%s\nVerdict: %s'
+            % (extra, CHECKS, verdict))
 
 
 class ReviewerVerdict(GateRepoCase):
@@ -93,8 +100,9 @@ class ReviewerVerdict(GateRepoCase):
                           'QUEUED kit/a %s' % self.tip])
 
     def test_a_markdown_line_in_a_text_report_is_read(self):
-        self.plant(RID, text_turn('Review.\n\n**Verdict:** land with follow-up\n'))
-        code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP'})
+        self.plant(RID, text_turn('Review.\n\n%s\n**Verdict:** land with follow-up\n' % CHECKS))
+        with self.backlog({'EX-9': 'open'}):
+            code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP', '--follow-up': 'EX-9'})
         self.assertEqual(code, 0, (out, err))
         self.assertIn('reviewer %s said LAND WITH FOLLOW-UP at %s\n' % (RID, self.tip), out)
 
@@ -107,7 +115,8 @@ class ReviewerVerdict(GateRepoCase):
 
     def test_only_the_final_turn_counts(self):
         # an earlier turn's line is not the final verdict ...
-        self.plant(RID, handback_turn(report('SEND BACK')), text_turn('Re-read: fixed.\nVerdict: LAND'))
+        self.plant(RID, handback_turn(report('SEND BACK')),
+                   text_turn('Re-read: fixed.\n%s\nVerdict: LAND' % CHECKS))
         self.assertEqual(self.add()[0], 0)
         # ... and a resumed reviewer appends its new final turn to the same transcript (inference)
         self.plant(RID, handback_turn(report('LAND')), tool_turn(), handback_turn('Still open.'))
@@ -142,7 +151,7 @@ class ReviewerVerdict(GateRepoCase):
         A folder where the transcript file should be makes open() raise an OSError."""
         d = os.path.join(self.home, '.claude', 'projects', 'Q--repo', 'sess-1', 'subagents')
         os.makedirs(os.path.join(d, 'agent-%s.jsonl' % RID))
-        self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread'))
+        self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread', None))
         out = self.assert_refused()
         self.assertIn('a transcript of the reviewer %s was found but cannot be read' % RID, out)
         self.assertIn('\nInstead: run verdict.py add again once the transcript can be read, or resume '
@@ -153,7 +162,7 @@ class ReviewerVerdict(GateRepoCase):
     def test_a_transcript_whose_time_cannot_be_read_is_refused(self):
         self.plant(RID, handback_turn(report('LAND')))
         with mock.patch.object(AM.os.path, 'getmtime', side_effect=OSError('denied')):
-            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread'))
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'unread', None))
 
     def test_the_newest_transcript_wins(self):
         """Two config folders (two accounts) both hold a transcript of the id: the one last
@@ -173,10 +182,10 @@ class ReviewerVerdict(GateRepoCase):
         for old, new in ((first, second), (second, first)):
             write(old, 'LAND', 1700000000)
             write(new, 'SEND BACK', 1700000600)
-            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'SEND BACK'), new)
+            self.assertEqual(AM.verdict(RID, home=self.home)[:2], (True, 'SEND BACK'), new)
             write(old, 'SEND BACK', 1700000000)
             write(new, 'LAND', 1700000600)
-            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'LAND'), new)
+            self.assertEqual(AM.verdict(RID, home=self.home), (True, 'LAND', report('LAND')), new)
 
     def test_a_self_review_or_a_session_name_is_not_looked_up(self):
         self.plant('a' + '0' * 16, handback_turn(report('SEND BACK')))
@@ -185,6 +194,131 @@ class ReviewerVerdict(GateRepoCase):
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip))
         code, out, _ = self.add(**{'--reviewer-id': 'demo-coordinator-b7-r1'})
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip))
+
+    def backlog(self, states):
+        """verdict.py's backlog store read, as `states` ({id: state}; an id missing: no record)."""
+        return mock.patch.object(self.tool, 'follow_up_states',
+                                 side_effect=lambda root, ids: {
+                                     i: (states.get(i), states.get(i) in RECORD.STATES)
+                                     for i in ids})
+
+    def test_a_report_with_no_full_checks_line_is_refused(self):
+        self.plant(RID, handback_turn('Findings: none.\nVerdict: LAND'))
+        out = self.assert_refused()
+        self.assertIn('the reviewer %s gave no Checks: line (its final report)' % RID, out)
+        self.assertIn('\nInstead: resume the reviewer %s (SendMessage to its id) and ask for its '
+                      'Checks: line' % RID, out)
+        self.plant(RID, handback_turn(report('LAND').replace(', copies PASS', '')))
+        self.assertIn("the reviewer %s's Checks: line lacks copies" % RID, self.assert_refused())
+
+    def test_a_plain_land_over_an_unmet_done_when_is_refused(self):
+        unmet = 'Done-when: EX-1 (c) UNMET - no test names it'
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP', unmet)))
+        out = self.assert_refused(**{'--verdict': 'LAND'})
+        self.assertIn('--verdict LAND, but the reviewer %s reports %s' % (RID, unmet), out)
+        self.assertIn('\nInstead: queue it with --verdict "LAND WITH FOLLOW-UP" --follow-up <ID>', out)
+        with self.backlog({'EX-9': 'pulled'}):
+            code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP', '--follow-up': 'EX-9'})
+        self.assertEqual(code, 0, (out, err))
+
+    def test_land_with_follow_up_needs_an_open_follow_up(self):
+        """A closed record is no record in the store: it is refused like an id never filed."""
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP')))
+        lwfu = {'--verdict': 'LAND WITH FOLLOW-UP'}
+        with self.backlog({'EX-9': 'open'}):
+            self.assertIn('names no --follow-up', self.assert_refused(**lwfu))
+            out = self.assert_refused(**dict(lwfu, **{'--follow-up': 'EX-CLOSED'}))
+            self.assertIn('--follow-up EX-CLOSED is no open record in the store', out)
+            self.assertIn('--follow-up EX-1 is a record this branch carries',
+                          self.assert_refused(**dict(lwfu, **{'--follow-up': 'EX-1'})))
+            self.assertIn('--follow-up goes with', self.assert_refused(**{'--follow-up': 'EX-9'}))
+
+    def test_the_follow_up_state_is_read_from_the_store(self):
+        class Rec(object):
+            readable = True
+
+            def __init__(self, state):
+                self.state = state
+
+            def get(self, key):
+                return self.state if key == 'state' else None
+        snap = {'EX-%d' % i: Rec(s) for i, s in enumerate(RECORD.STATES)}
+        snap['EX-C'] = Rec('closed')        # a closed or retired record kept is not open either
+        ctx = mock.Mock()
+        ctx.store.load.return_value.get.side_effect = snap.get
+        want = {'EX-%d' % i: (s, True) for i, s in enumerate(RECORD.STATES)}
+        want.update({'EX-C': ('closed', False), 'EX-GONE': (None, False)})
+        with mock.patch('kitlib.backlog.opener.open_store', return_value=ctx) as op:
+            self.assertEqual(self.tool.follow_up_states('/r', sorted(want)), want)
+        op.assert_called_once_with('/r', fetch=False)
+        self.assertEqual(self.tool.follow_up_states('/r', []), {})
+
+    def new_class_branch(self):
+        wt, tip = self.branch('b', {'pkg/mod.py': 'class Fresh:\n    pass\n',
+                                    'tests/test_mod.py': 'class TestFresh:\n    pass\n'})
+        return tip, {'--branch': 'kit/b', '--tip': tip,
+                     '--range': '%s..%s' % (self.main[:10], tip[:10])}
+
+    def test_a_new_source_needs_an_approved_design_review(self):
+        tip, over = self.new_class_branch()
+        self.plant(RID, handback_turn(report('LAND')))
+        out = self.assert_refused(**over)
+        self.assertIn('the diff adds pkg/mod.py, pkg/mod.py:Fresh, and no --design-reviewer-id', out)
+        self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
+        over['--design-reviewer-id'] = RID2
+        self.plant(RID2, handback_turn(DESIGN.replace('APPROVE', 'REVISE')))
+        self.assertIn('the design reviewer %s said REVISE' % RID2, self.assert_refused(**over))
+        self.plant(RID2, handback_turn(DESIGN))
+        code, out, err = self.add(**over)
+        self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/b %s' % tip), err)
+
+    def test_a_design_review_with_no_transcript_or_reader_queues_with_a_note(self):
+        tip, over = self.new_class_branch()
+        over['--design-reviewer-id'] = RID2
+        code, out, err = self.add(**over)
+        self.assertEqual(code, 0, (out, err))
+        self.assertIn('NOTE: the design review is not checked: no transcript found for the design '
+                      'reviewer id %s' % RID2, out)
+        with mock.patch.dict(os.environ, {'PM_KIT_HOST': 'codex'}):
+            code, out, err = self.add(**over)
+            self.assertEqual(code, 0, (out, err))
+            self.assertIn('NOTE: the design review is not checked: this host has no transcript '
+                          'reader', out)
+            del over['--design-reviewer-id']
+            self.assertIn('no --design-reviewer-id', self.assert_refused(**over))
+
+    def test_new_sources_leaves_out_tests_renames_and_moved_classes(self):
+        body = 'class Fresh:\n' + ''.join('    x%d = %d\n' % (i, i) for i in range(12))
+        wt, t1 = self.branch('c', {'pkg/mod.py': body, 'notes.txt': 'x\n'})
+        self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (self.main, t1)),
+                         ['pkg/mod.py', 'pkg/mod.py:Fresh'])
+        os.makedirs(os.path.join(wt, 'lib'))
+        self.repo.git('mv', 'pkg/mod.py', 'lib/mod.py', cwd=wt)
+        self.repo.write('lib/mod.py', body + '\n\nclass Second:\n    pass\n', root=wt)
+        t2 = self.repo.commit('move', 'lib/mod.py', cwd=wt)
+        self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (t1, t2)),
+                         ['lib/mod.py:Second'])
+        with self.assertRaises(V.VerdictError):
+            self.tool.new_sources(self.repo.root, 'nosuch..%s' % t2)
+
+
+class SkillIds(unittest.TestCase):
+    """The ids skill specialty-review gives are the ones verdict.py add checks."""
+
+    def test_the_skill_lists_both_constants_in_order(self):
+        from kitlib.gate import steps
+        path = os.path.join(os.path.dirname(steps.KIT_TOOLS), 'content', 'skills',
+                            'specialty-review', 'SKILL.md')
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+        design, code = text.split('## Code review', 1)
+        ids = lambda part: re.findall(r'^\d+\. \*\*[^*]+\*\* \(`([a-z-]+)`\)', part, re.M)
+        self.assertEqual(tuple(ids(design)), V.DESIGN_CHECKS)
+        listed = ids(code) + list(re.findall(r'as `(\w+)`, `(\w+)`, `(\w+)` and `(\w+)`', code)[0])
+        self.assertEqual(sorted(listed), sorted(V.CODE_CHECKS))
+        for part, want in ((design, V.DESIGN_CHECKS), (text.split('## Report', 1)[1], V.CODE_CHECKS)):
+            line = re.search(r'`(Checks: [^`]+)`', part).group(1)     # the line template
+            self.assertEqual(tuple(V.checks_of(line)), want)
 
 
 class ReadVerdict(unittest.TestCase):

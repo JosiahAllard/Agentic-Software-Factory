@@ -127,11 +127,13 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   for it with `getattr`; without it no reviewer model is checked (Codex; docs/gate-landing-policy.md "Strict
   paths"; Claude: `hosts/claude/adapter/agent_models.py` `models`).
 - `agent_verdict()` (optional): the reviewer verdict reader `tools/verdict.py add` refuses a
-  `LAND` over a reviewer's `SEND BACK` with, a function from a reviewer id to `(found, verdict)`:
-  `found` whether a transcript of that subagent was found (`add` queues with a NOTE when not),
-  `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND BACK`)
-  or `None` (refused), or `'unread'` when a transcript was found and cannot be read (refused:
-  fail closed); `None` for an id that is not a subagent's. Asked for with `getattr` the
+  `LAND` over a reviewer's `SEND BACK` with, a function from a reviewer id to `(found, verdict,
+  report)`: `found` whether a transcript of that subagent was found (`add` queues with a NOTE when
+  not), `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND
+  BACK`) or `None` (refused), or `'unread'` when a transcript was found and cannot be read
+  (refused: fail closed), `report` that final report's text (`None` when none was read), whose
+  `Checks:`, `Done-when:` and `Design:` lines `add` checks too; `None` for an id that is not a
+  subagent's. Asked for with `getattr` the
   same way; without it no reviewer verdict is checked (Codex; docs/gate-landing-policy.md "Strict paths";
   Claude: `hosts/claude/adapter/agent_models.py` `verdict`).
 - The renderer's optional `vendored(root)`: `{path: bytes}` of kit files the host's plugin ships a

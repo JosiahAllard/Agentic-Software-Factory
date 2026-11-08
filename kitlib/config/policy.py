@@ -43,7 +43,11 @@ from . import schema
 from .types import ConfigError, check, is_note
 
 DOTNET_BUILDS = ['build', 'test', 'publish', 'run', 'pack', 'msbuild', 'vstest']
-GRADLE_INFO = ['--version', '-v', '--help', '-h', '-?', '--stop', '--status']
+# The module map's default test_sources (docs/module-map.md), also what review_pack calls a test.
+DEFAULT_TEST_SOURCES = ['*/src/test/*', '*Tests/*', '*.Tests/*', 'tests/*', '*/tests/*',
+                        '*/test/*', 'test/*', '*/test_*.py', 'test_*.py', '*_test.py', '*Test.java',
+                        '*Tests.java', '*Test.kt', '*Tests.cs', '*.test.js', '*.test.ts']
+GRADLE_INFO =['--version', '-v', '--help', '-h', '-?', '--stop', '--status']
 
 HEAVY_DEFAULTS = (
     {'program': 'godot', 'kind': 'app-run', 'when_args': [], 'unless_args': [],

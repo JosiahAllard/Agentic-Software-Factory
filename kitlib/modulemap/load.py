@@ -14,6 +14,7 @@ import fnmatch
 import posixpath
 import re
 
+from kitlib.config.policy import DEFAULT_TEST_SOURCES   # noqa: F401 - the name stays importable here
 from kitlib.config.types import (ConfigError, Enum, Field, Int, ListOf, MapOf, Obj, RelPath, Str,
                                  is_note, parse_json)
 
@@ -23,9 +24,6 @@ KINDS = ('build', 'source', 'data', 'tree')
 EDGE_KINDS = ('build', 'data', 'tree')
 DETECTORS = ('csproj', 'paths', 'gradle', 'python', 'java-imports', 'csharp-using')
 JAVA_IMPORTS = 'java-imports'      # the detector a ratchet drives itself (its files and imports)
-DEFAULT_TEST_SOURCES = ['*/src/test/*', '*Tests/*', '*.Tests/*', 'tests/*', '*/tests/*',
-                        '*/test/*', 'test/*', '*/test_*.py', 'test_*.py', '*_test.py', '*Test.java',
-                        '*Tests.java', '*Test.kt', '*Tests.cs', '*.test.js', '*.test.ts']
 
 TEST_TIMEOUT = 1800         # seconds a module's isolation test may run, by default
 MAX_TEST_TIMEOUT = 14400    # and at most

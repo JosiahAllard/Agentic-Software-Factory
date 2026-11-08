@@ -30,6 +30,8 @@ What a commit changes:
 The author email is git's `%ae` (never mailmapped), read with replace refs off (pushes do not carry
 them, so the commits judged are the ones that leave). Renames are not followed: a rename is a
 delete and an add, and both paths count. Any git failure is `(None, why)`: the caller refuses.
+A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-parent commit
+whose change to it only deletes lines (deletes_only); each commit is judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -57,6 +59,7 @@ import collections
 import re
 
 from kitlib.git import cmd, refs
+from kitlib.git.refs import REGULAR_MODES, deletes_only     # named here too: callers use oc.<name>
 
 Violation = collections.namedtuple('Violation', 'sha author paths why', defaults=('',))
 NOREPLACE = ['--no-replace-objects']
@@ -68,7 +71,6 @@ TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses i
 APPROVAL_RE = re.compile(r'hub:(A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,}))\Z')
 EXAMPLE = 'hub:A-001'
 _SEP = '\x01'                       # between the trailer values of one commit in commits()
-REGULAR_MODES = ('100644', '100755')    # the tree modes of a regular file
 NOT_A_FILE = 'is not a regular file'    # blobs_at's text for any other entry
 
 
@@ -162,12 +164,6 @@ def _paths(out):
     return [p for p in out.split('\0') if p]
 
 
-def _parse_merge_tree(raw):
-    """`(tree, conflicted paths)` from `git merge-tree --write-tree --name-only --no-messages -z`."""
-    from kitlib.commit import parse_merge_tree
-    return parse_merge_tree(raw)
-
-
 def commits(root, tip, exclude=(), env=None):
     """`([(sha, [parents], author email, [Owner-Approval values])], None)` reachable from `tip`
     and from no `exclude` revision, or `(None, why)`."""
@@ -221,6 +217,7 @@ def plain_changes(root, shas, env=None):
 def _against_merge(root, rev, one, two, env=None):
     """`(set of paths, None)`: what differs between `rev` and the clean merge of `one` and `two`
     (`git merge-tree --write-tree`), plus every path that merge conflicts on; or `(None, why)`."""
+    from kitlib.commit import parse_merge_tree as _parse_merge_tree
     r = cmd.call(NOREPLACE + ['merge-tree', '--write-tree', '--name-only', '--no-messages',
                               '--allow-unrelated-histories', '-z', one, two], root, env=env)
     tree, conflicted = _parse_merge_tree(cmd.text(r.out)) if r.rc in (0, 1) else ('', set())
@@ -373,6 +370,11 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]
+        for p in [p for p in locked if len(parents) == 1 and rules.is_shrink_only(p)]:
+            shrinks, why = deletes_only(root, p, parents + [sha], env)  # merges, roots never shrink
+            if shrinks is None:
+                return None, why
+            locked = [q for q in locked if q != p or not shrinks]
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)
@@ -387,11 +389,9 @@ def describe(rules, bad, limit=5):
     """One line naming the offending commits (at most `limit`), their authors and paths, why an
     owner approval a commit carries did not count, and why no author counts as the owner when
     that is the case."""
-    parts = ['%s by %s changes %s%s' % (v.sha[:10], v.author or '(no email)',
-                                        ', '.join(v.paths[:5]) + (' ...' if len(v.paths) > 5
-                                                                  else ''),
-                                        ' (%s)' % v.why if v.why else '')
-             for v in bad[:limit]]
+    parts = ['%s by %s changes %s%s%s' % (v.sha[:10], v.author or '(no email)',
+                                          ', '.join(v.paths[:5]), ' ...' if len(v.paths) > 5 else '',
+                                          ' (%s)' % v.why if v.why else '') for v in bad[:limit]]
     more = ' (and %d more)' % (len(bad) - limit) if len(bad) > limit else ''
     line = ('owner-only paths changed by a commit not authored by the owner: %s%s'
             % ('; '.join(parts), more))

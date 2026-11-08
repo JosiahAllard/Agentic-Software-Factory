@@ -346,6 +346,24 @@ def _q(path, quote, z):
     return _u.cquote(path, quote)
 
 
+def raw(changes, repo, quote, z):
+    """--raw (diff.c diff_flush_raw): `:<old mode> <new mode> <old oid> <new oid> <status>` and
+    the path, or both paths of a rename; oids abbreviated, a side with none as zeros."""
+    from .plumbing import abbrev
+    zero = abbrev(repo, '0' * 40)
+    out = []
+    for c in changes:
+        st = 'R%03d' % (c.score * 100 // MAX_SCORE) if c.status == 'R' else c.status
+        oids = [abbrev(repo, o) if o else zero for o in (c.a_oid, c.b_oid)]
+        meta = ':%06o %06o %s %s %s' % (c.a_mode, c.b_mode, oids[0], oids[1], st)
+        names = [c.a_path, c.b_path] if c.status == 'R' else [c.path]
+        if z:
+            out.append(meta + '\0' + ''.join(n + '\0' for n in names))
+        else:
+            out.append(meta + '\t' + '\t'.join(_u.cquote(n, quote) for n in names) + '\n')
+    return ''.join(out)
+
+
 def name_only(changes, quote, z):
     term = '\0' if z else '\n'
     return ''.join(_q(c.path, quote, z) + term for c in changes)
@@ -556,17 +574,18 @@ def split_args(ctx, pos, dd):
 
 # -- git diff -------------------------------------------------------------------------------
 
+# no-textconv: the fake runs no textconv driver, so the switch changes nothing.
 _DIFF = _u.Spec('diff', flags='cached staged name-only name-status numstat shortstat z no-renames '
-                'no-color no-ext-diff quiet exit-code patch|p no-prefix find-renames|M R raw '
-                'ignore-submodules ita-invisible-in-index',
+                'no-color no-ext-diff no-textconv quiet exit-code patch|p no-prefix '
+                'find-renames|M R raw ignore-submodules ita-invisible-in-index',
                 values='diff-filter src-prefix dst-prefix color',
                 optional='U|unified')
 
 
 def _opts_format(opts):
     fmts = [k for k in ('name-only', 'name-status', 'numstat', 'shortstat', 'raw') if opts.get(k)]
-    if opts.get('raw'):
-        raise Unsupported('diff --raw')
+    if opts.get('raw') and set(fmts) - {'raw', 'numstat'}:
+        raise Unsupported('diff --raw with --%s' % ' --'.join(sorted(set(fmts) - {'raw'})))
     if opts.get('R'):
         raise Unsupported('diff -R')
     color = opts.get('color')
@@ -578,6 +597,11 @@ def _opts_format(opts):
 def emit(ctx, repo, changes, opts, reader, fmts):
     quote = _u.quotepath(repo)
     z = bool(opts.get('z'))
+    if 'raw' in fmts:
+        ctx.write(raw(changes, repo, quote, z))
+        if 'numstat' in fmts:
+            ctx.write(numstat(changes, reader, quote, z))
+        return
     if 'name-only' in fmts:
         ctx.write(name_only(changes, quote, z))
         return

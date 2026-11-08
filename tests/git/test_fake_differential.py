@@ -543,6 +543,23 @@ CHECKOUT_PATHSPECS = [
     ('git', ['status', '--porcelain=v1']),
 ]
 
+# --raw with --numstat, as kitlib.guard.ownercommits.deletes_only reads a commit's change and the
+# work tree's: a shrink, an add and a delete; then a work-tree shrink against HEAD.
+_RAW = ['diff', '--raw', '--numstat', '-z', '--no-renames', '--no-textconv', '--no-ext-diff']
+DIFF_RAW = [
+    ('write', 'a.txt', 'x\ny\nz\n'),
+    ('git', ['commit', '-q', '-a', '-m', 'three']),
+    ('write', 'a.txt', 'x\nz\n'),
+    ('write', 'n.txt', 'n\n'),
+    ('git', ['add', '--', 'a.txt', 'n.txt']),
+    ('git', ['rm', '-q', 'README.md']),
+    ('git', ['commit', '-q', '-m', 'shrink']),
+    ('git', _RAW + ['HEAD~1', 'HEAD']),
+    ('git', ['diff', '--raw', 'HEAD~1', 'HEAD', '--', 'a.txt']),
+    ('write', 'a.txt', 'x\n'),
+    ('git', _RAW + ['HEAD', '--', 'a.txt']),
+]
+
 # Real git reads both repositories after a script.
 END_STATE = [
     ['for-each-ref', '--format=%(refname) %(objectname)'],
@@ -649,6 +666,9 @@ class FakeAgainstRealGit(unittest.TestCase):
 
     def test_checkout_pathspecs_literal_and_from_a_tree(self):
         self.run_script(BRANCH_AND_LAND[:3] + CHECKOUT_PATHSPECS)
+
+    def test_diff_raw_with_numstat(self):
+        self.run_script(BRANCH_AND_LAND[:3] + DIFF_RAW)
 
     def test_merge_abort_refuses_an_untracked_file_in_the_way_before_any_write(self):
         # Fake only (real git is not probed here): the merge deletes d.txt and conflicts on

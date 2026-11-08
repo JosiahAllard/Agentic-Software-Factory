@@ -50,6 +50,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `owner.agent_emails` (list of email, default []): author emails known to be agents', never the owner's
 - `owner.paths` (list of string, default ["AGENTS.md", "CLAUDE.md", ".claude/", ".codex/", "docs/agent-profile.md", ".github/workflows/", ".kit.json", "tools/gate.json", "kitlib/gate/strict_defaults.py", "kitlib/backlog/roles.py", "hosts/claude/managed-settings.json"]): owner-only paths; an entry ending / locks a directory; replaces the default
 - `owner.paths_except` (list of string, default [".claude/worktrees/", ".codex/worktrees/"]): what under a locked directory is not locked
+- `owner.shrink_only` (list of string, default []): owner-only files (exact paths) any commit may change by deleting lines only; any other change stays the owner's (docs/guard-hooks.md "Owner-only commits")
 - `owner.trailer` (a trailer key, default "Owner-Approved"): the trailer key approving an owner-only change
 - `hook.module` (a module name): the one repo hook module, <tools_dir>/<module>.py
 - `hook.options` (map key -> any JSON value, default {}): passed to the hook unread

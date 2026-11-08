@@ -137,6 +137,92 @@ class Commits(OwnerCommitsCase):
         self.assertNotIn('not configured', line)
 
 
+GRANTS = '.claude/layering-grants.txt'
+
+
+class ShrinkOnly(OwnerCommitsCase):
+    """A `"owner".shrink_only` path: an agent commit that only deletes lines of it is no
+    violation; any other change to it is, judged commit by commit (ownercommits.deletes_only)."""
+
+    def setUp(self):
+        super().setUp()
+        self.rules = owner.Rules(owner_email=OWNER, shrink_only=[GRANTS, '.claude/new.txt'])
+        self.main = self.commit_as(OWNER, 'owner adds the grants', {GRANTS: LINES})
+
+    def agent(self, git_args=(), files=None, message='agent'):
+        """An agent commit of `files` (written and added), then `git_args` (a git command, or a
+        callable)."""
+        for rel, text in (files or {}).items():
+            self.repo.write(rel, text)
+        self.repo.git('add', '-A')
+        if callable(git_args):
+            git_args()
+        elif git_args:
+            self.repo.git(*git_args)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '-m', message)
+        return self.repo.git('rev-parse', 'HEAD')
+
+    def make_executable(self, path):
+        blob = self.repo.git('rev-parse', ':%s' % path)
+        r = oc.cmd.call(['update-index', '--index-info'], self.repo.root,
+                        stdin=('100755 %s\t%s\n' % (blob, path)).encode('utf-8'))
+        self.assertEqual(r.rc, 0, r.err)
+
+    def test_a_delete_only_commit_passes(self):
+        sha = self.agent(files={GRANTS: LINES.replace('line 3\n', '').replace('line 9\n', '')})
+        self.assertEqual(self.bad(sha), [])
+        self.assertEqual(oc.deletes_only(self.repo.root, GRANTS, [self.main, sha]), (True, None))
+
+    def test_every_other_change_is_refused(self):
+        dropped = LINES.replace('line 3\n', '')
+        cases = {   # name: (the owner's commit first, or None; the git step after; files added)
+            'add only': (None, (), {GRANTS: LINES + 'grant\n'}),
+            'a changed line': (None, (), {GRANTS: edit(LINES, 3, 'grant')}),
+            'delete and add in one commit': (None, (), {GRANTS: dropped + 'grant\n'}),
+            'a new file': (None, (), {'.claude/new.txt': 'grant\n'}),
+            'a whole-file delete': (None, ('rm', '-q', GRANTS), None),
+            'a rename': (None, ('mv', GRANTS, '.claude/new.txt'), None),
+            'a mode change': (None, lambda: self.make_executable(GRANTS), {GRANTS: dropped}),
+            'a binary file': ({GRANTS: 'a\0b\0c\n'}, (), {GRANTS: 'a\0b\n'}),
+            'a path not on the list': ({'.claude/settings.json': 'x\ny\n'}, (),
+                                       {'.claude/settings.json': 'x\n'}),
+        }
+        base = self.main
+        for name, (first, git_args, files) in cases.items():
+            with self.subTest(name):
+                self.repo.git('reset', '-q', '--hard', base)
+                self.main = self.commit_as(OWNER, 'owner', first) if first else base
+                sha = self.agent(git_args, files)
+                found = self.bad(sha)
+                self.assertEqual([v.sha for v in found], [sha])
+                self.assertTrue(found[0].paths)
+
+    def test_a_delete_then_an_add_in_one_push_refuses_the_add(self):
+        one = self.agent(files={GRANTS: LINES.replace('line 3\n', '')})
+        two = self.agent(files={GRANTS: LINES.replace('line 3\n', '') + 'grant\n'})
+        self.assertEqual(self.bad(two), [oc.Violation(two, AGENT, [GRANTS])])
+        self.assertEqual(self.bad(one), [])
+
+    def test_a_merge_that_only_deletes_lines_still_counts(self):
+        here = self.repo.git('rev-parse', '--abbrev-ref', 'HEAD')
+        self.repo.git('checkout', '-q', '-b', 'side')
+        self.commit_as(OWNER, 'side work', {'a.py': 'a\n'})
+        self.repo.git('checkout', '-q', here)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit', 'side')
+        sha = self.agent(files={GRANTS: LINES.replace('line 3\n', '')}, message='merge')
+        self.assertEqual(len(self.repo.git('rev-list', '--parents', '-n', '1', sha).split()), 3)
+        self.assertEqual(self.bad(sha), [oc.Violation(sha, AGENT, [GRANTS])])
+
+    def test_a_git_failure_is_none_and_refuses(self):
+        sha = self.agent(files={GRANTS: LINES.replace('line 3\n', '')})
+        got, why = oc.deletes_only(self.repo.root, GRANTS, ['1' * 40, sha])
+        self.assertIsNone(got)
+        self.assertIn('git diff failed', why)
+        with mock.patch.object(oc, 'deletes_only', return_value=(None, 'git diff failed: boom')):
+            self.assertEqual(oc.violations(self.repo.root, self.rules, sha, [self.main]),
+                             (None, 'git diff failed: boom'))
+
+
 class NetChange(OwnerCommitsCase):
     """An owner-only path counts only when landing the tip on the target main would change it;
     when it would, every commit in the range that touches it must be the owner's."""

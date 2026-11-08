@@ -27,7 +27,8 @@ rules.is_owner) is ok, with or without a trailer; its row shows an Owner-Approve
 covers the path. On anyone else's commit an Owner-Approved trailer approves nothing;
 `Owner-Approval: hub:A-<n>` (the hub form) on a non-merge commit reads ok by its form only, and
 landing verifies it; with "owner".email unset no commit is the owner's and every owner-only change
-blocks.
+blocks. A `"owner".shrink_only` path a one-parent commit only deletes lines of reads ok, by the
+landing's own predicate (ownercommits.deletes_only).
 
 `.kit.json` "review_pack" as the BASE holds it (a branch cannot switch its own check off):
 "coauthor" (default false) lists the branch's commits with no Co-Authored-By trailer, each with
@@ -308,12 +309,15 @@ def owner_approval_rows(commits, rules):
     (`Owner-Approval: hub:A-<n>`, the 5th field, read as ownercommits reads it;
     the 6th says the commit is a merge, which cannot carry one)
     covers every locked path of a commit when it is the one valid value; the hub verifies it at land
-    time (kitlib.guard.ownercommits), which this read-only pack cannot, so the row says so."""
+    time (kitlib.guard.ownercommits), which this read-only pack cannot, so the row says so.
+    A path in the 7th field (owner_only_section: a `"owner".shrink_only` path this one-parent
+    commit only deletes lines of, ownercommits.deletes_only) is ok on anyone's commit."""
     rows = []
     key = rules.trailer
     for sha, paths, values, not_owner, *rest in commits:
         hub = rest[0] if rest else []
         merge = len(rest) > 1 and rest[1]
+        shrunk = rest[2] if len(rest) > 2 else ()
         hub_ok = not merge and len(hub) == 1 and bool(ownercommits.APPROVAL_RE.match(hub[0]))
         for path in paths:
             if not rules.is_locked(path):
@@ -322,6 +326,9 @@ def owner_approval_rows(commits, rules):
             if not not_owner:
                 rows.append((sha, 'ok', path, '%s %s' % (key, got) if got else
                              'authored by the owner (the landing judges by author email)'))
+            elif path in shrunk and not merge:
+                rows.append((sha, 'ok', path, 'deletes lines only ("owner".shrink_only, as the '
+                             'landing judges it)'))
             elif not got and hub_ok:
                 rows.append((sha, 'ok', path, '%s %s (the hub verifies it at land time, not this pack)'
                              % (ownercommits.TRAILER, hub[0])))
@@ -415,7 +422,12 @@ def owner_only_section(root, base, branch, mb, rules):
         not_owner = None if rules.is_owner(author) else (
             'whose author cannot be verified: %s' % identity if identity
             else 'authored by %s, not the owner' % (author or '?'))
-        (merges if merge else simple).append((sha[:7], paths, values, not_owner, hub, merge))
+        # As violations() judges it: a one-parent commit only, against its parent; a root commit's
+        # `sha^` fails, and a failed read shrinks nothing.
+        shrunk = {p for p in paths if not merge and not_owner and rules.is_shrink_only(p)
+                  and ownercommits.deletes_only(root, p, [sha + '^', sha])[0]}
+        (merges if merge else simple).append((sha[:7], paths, values, not_owner, hub, merge,
+                                              shrunk))
     changed = [p for p in git(root, 'diff', '--name-only', '--no-renames', mb, branch,
                               '--').splitlines() if rules.is_locked(p)]
     net = {norm(p) for p in changed}

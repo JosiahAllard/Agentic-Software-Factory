@@ -34,9 +34,10 @@ Missing one: say so and stop (research: ask for the constraints).
   read-only tools (`preflight.py`, `review_pack.py`, `doc_index.py`, `codemap.py`). Its one write is a
   long working note in your scratch folder. A page for the owner is one HTML file there; your caller
   publishes it.
-- A code review ends with one `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP` or `SEND BACK`), which
-  `verdict.py add` reads from your transcript; a design review with `Design: APPROVE` or `Design:
-  REVISE`; an art critique with `Verdict: PASS` or `Verdict: ITERATE`.
+- A code review ends with its `Done-when:` lines, one `Checks:` line and one `Verdict:` line
+  (`LAND`, `LAND WITH FOLLOW-UP` or `SEND BACK`), which `verdict.py add` reads from your transcript;
+  a design review with its `Checks:` line and `Design: APPROVE` or `Design: REVISE` (skill
+  specialty-review "Report"); an art critique with `Verdict: PASS` or `Verdict: ITERATE`.
 - Mark every inference: "the code does X" and "I expect Y" are different sentences. Never invent a
   finding or a question for the owner: an empty list is a valid report.
 - Edit, create or delete nothing in the repository; stage, commit, build, run tests or the

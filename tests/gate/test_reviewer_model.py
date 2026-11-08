@@ -23,7 +23,8 @@ def records(*models):
     out = [{'type': 'user', 'agentId': RID, 'message': {'role': 'user', 'content': 'review it'}}]
     for m in models:
         out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m, 'content': [
-            {'type': 'text', 'text': 'ok\nVerdict: LAND'}]}})
+            {'type': 'text', 'text': 'ok\nChecks: %s\nVerdict: LAND'
+             % ', '.join('%s PASS' % c for c in V.CODE_CHECKS)}]}})
     return out
 
 

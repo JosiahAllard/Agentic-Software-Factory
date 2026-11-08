@@ -40,7 +40,7 @@ class VerdictCli(GateRepoCase):
 
     def add_args(self, tip=None, **over):
         tip = tip or self.tip
-        a = {'--branch': 'kit/a', '--tip': tip, '--verdict': 'LAND WITH FOLLOW-UP', '--risk': 'Low',
+        a = {'--branch': 'kit/a', '--tip': tip, '--verdict': 'LAND', '--risk': 'Low',
              '--reviewer': 'reviewer', '--reviewer-model': 'opus', '--reviewer-id': 'agent-r1',
              '--author': 'Kit Test / worker', '--range': '%s..%s' % (self.main[:10], tip[:10]),
              '--session': 'coord-1'}
@@ -63,7 +63,7 @@ class VerdictCli(GateRepoCase):
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
         code, out, _ = self.run_tool('list')
         self.assertEqual(code, 0)
-        self.assertRegex(out.strip(), r'^QUEUED kit/a %s Low LAND_WITH_FOLLOW-UP \S+Z '
+        self.assertRegex(out.strip(), r'^QUEUED kit/a %s Low LAND \S+Z '
                                       r'reviewer=reviewer/opus reviewer_id=agent-r1 '
                                       r'records=EX-1,EX-2$' % self.tip)
         code, out, _ = self.run_tool('drop', 'kit/a', '--tip', self.tip)

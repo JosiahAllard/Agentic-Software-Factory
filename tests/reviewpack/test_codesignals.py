@@ -1,10 +1,12 @@
 """review_pack's static-state and caller signals (kitlib/reviewpack/codesignals.py,
 quality.state_lines and quality.caller_lines)."""
 import unittest
+from unittest import mock
 
+from kitlib import reviewpack
 from kitlib.reviewpack import codesignals, quality
 from tests.realgit import real_git
-from tests.reviewpack.repo import PackCase
+from tests.reviewpack.repo import PackCase, failing_call
 
 # w4-interact's shape: a class split in two, its statics moving with it and one new mutable one.
 BIG_BASE = ('final class Interact {\n'
@@ -41,9 +43,16 @@ class StaticState(unittest.TestCase):
     def test_new_global_rebinds_by_function(self):
         base = {'w.py': 'n = 0\ndef tick():\n    global n\n    n += 1\n'}
         tip = {'w.py': 'n = 0\ndef tick():\n    global n\n    n += 1\n',
-               'w2.py': 'def reset():\n    global n, m\n    n = 0\n'}
+               'w2.py': 'def reset():\n    global n, m\n    n = 0\n'
+                        'def outer():\n    def inner():\n        global k\n'}   # once, for inner
         self.assertEqual(quality.state_lines(base, tip), [
-            '  SIGNAL new global rebind: w2.py:2 n', '  SIGNAL new global rebind: w2.py:2 m'])
+            '  SIGNAL new global rebind: w2.py:2 n', '  SIGNAL new global rebind: w2.py:2 m',
+            '  SIGNAL new global rebind: w2.py:6 k'])
+
+    def test_rows_past_40_end_in_a_more_line(self):
+        tip = {'S.java': ''.join('static int f%d;\n' % i for i in range(41))}
+        lines = quality.state_lines({}, tip)
+        self.assertEqual((len(lines), lines[-1]), (41, '  ... 1 more static fields'))
 
 
 class Callers(unittest.TestCase):
@@ -52,13 +61,14 @@ class Callers(unittest.TestCase):
                 '    public int hop(int w) {\n'
                 '    @Override\n    public String toString() {\n'
                 '    public static void main(String[] a) {\n'
-                '    void quiet() {\n')
+                '    void quiet() {\n'
+                '    public int hop(String s) {\n')     # an overload: still one row for hop
         syms = codesignals.public_symbols('src/Worlds.java', java)
         syms += codesignals.public_symbols('w.py', 'def load():\n    pass\n'
                                                    'class Box:\n    def open(self): pass\n'
                                                    '    def _hide(self): pass\n'
                                                    'def _private(): pass\n')
-        self.assertEqual([f.key for f in syms], ['Worlds', 'hop', 'load', 'Box', 'open'])
+        self.assertEqual([f.key for f in syms], ['Worlds', 'hop', 'hop', 'load', 'Box', 'open'])
         hits = [('src/Worlds.java', 1, 'public final class Worlds {'),        # its declaration
                 ('src/Worlds.java', 2, '    public int hop(int w) {'),
                 ('src/Map.java', 9, 'new Worlds().hop(1); hopper();'),         # one caller each
@@ -71,6 +81,19 @@ class Callers(unittest.TestCase):
                                ('hop', 'one', ('src/Map.java', 9)),
                                ('load', 'tests', 1),
                                ('open', 'one', ('a.py', 1))])
+
+
+class CallerReadFails(PackCase):
+    def test_a_failed_grep_prints_not_checked_callers(self):
+        self.git('checkout', '-q', '-b', 'feature')
+        self.write('w.py', 'def load():\n    pass\n')
+        self.commit_all('public def')
+        # the fake has no `git grep` (Unsupported is a BaseException), so the failure is injected
+        self.enter(mock.patch.object(reviewpack.gitcmd, 'call', failing_call(('grep',))))
+        code, out = self.run_pack('feature', '--base', 'main')
+        self.assertEqual(code, 0, out)
+        self.assertIn('quality  NOT CHECKED (callers): `git grep` exit 128: '
+                      'fatal: injected read failure', out)
 
 
 @real_git('git grep')

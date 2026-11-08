@@ -206,6 +206,12 @@ def not_checked(what, e):
     return 'quality  NOT CHECKED (%s): %s' % (what, (str(e).splitlines() or [type(e).__name__])[0])
 
 
+def capped(lines, what):
+    """The first ROWS of `lines`, and a `... N more <what>` line for the rest."""
+    more = ['  ... %d more %s' % (len(lines) - ROWS, what)] if len(lines) > ROWS else []
+    return lines[:ROWS] + more
+
+
 def cycle_lines(read, base, tip, mb, branch):
     """A SIGNAL line per import cycle among the changed code files `tip` ({path: text}) holding
     an import `base` (their merge-base texts) lacks (kitlib/reviewpack/codegraph.py). The tree
@@ -215,11 +221,11 @@ def cycle_lines(read, base, tip, mb, branch):
              for rev in (mb, branch)]
     out = []
     for comp in codegraph.new_cycles(codegraph.edges(base, trees[0]),
-                                     codegraph.edges(tip, trees[1]))[:ROWS]:
+                                     codegraph.edges(tip, trees[1])):
         kind = 'namespace' if comp[0].lower().endswith('.cs') else 'import'
         out.append('  SIGNAL %s cycle among changed files (%d): %s'
                    % (kind, len(comp), ', '.join(comp)))
-    return out
+    return capped(out, 'cycles')
 
 
 def code_lines(read, root, changed, got, mb, branch):
@@ -255,10 +261,10 @@ def state_lines(base, tip):
                                    _lang(tip, ('.java', '.cs')))
     rebinds = codesignals.new_found(codesignals.global_rebinds, _lang(base, ('.py',)),
                                     _lang(tip, ('.py',)))
-    return ['  SIGNAL new static non-final field: %s:%d %s' % (f.path, f.line, f.text)
-            for f in fields[:ROWS]] + \
-           ['  SIGNAL new global rebind: %s:%d %s' % (f.path, f.line, f.text)
-            for f in rebinds[:ROWS]]
+    return capped(['  SIGNAL new static non-final field: %s:%d %s' % (f.path, f.line, f.text)
+                   for f in fields], 'static fields') + \
+        capped(['  SIGNAL new global rebind: %s:%d %s' % (f.path, f.line, f.text)
+                for f in rebinds], 'global rebinds')
 
 
 def caller_lines(root, branch, base, tip):
@@ -269,14 +275,14 @@ def caller_lines(root, branch, base, tip):
         return []
     hits = codesignals.grep_hits(root, branch, sorted({f.key for f in symbols}))
     out = []
-    for f, kind, what in codesignals.callers(symbols, hits, is_test)[:ROWS]:
+    for f, kind, what in codesignals.callers(symbols, hits, is_test):
         if kind == 'one':
             out.append('  SIGNAL new public symbol with one caller: %s:%d %s (caller %s:%d)'
                        % (f.path, f.line, f.key, what[0], what[1]))
         else:
             out.append('  SIGNAL new public symbol called only from tests: %s:%d %s '
                        '(%d test callers)' % (f.path, f.line, f.key, what))
-    return out
+    return capped(out, 'public symbols')
 
 
 def section(read, root, mb, branch):
@@ -301,8 +307,5 @@ def section(read, root, mb, branch):
         gone = deleted_tests(log)
     except Exception as e:      # noqa: BLE001
         return out + [not_checked('deleted tests', e)]
-    out += ['  SIGNAL deleted test, no "%s" in its commit message: %s' % (COVERED, g)
-            for g in gone[:ROWS]]
-    if len(gone) > ROWS:
-        out.append('  ... %d more deleted tests' % (len(gone) - ROWS))
-    return out
+    return out + capped(['  SIGNAL deleted test, no "%s" in its commit message: %s' % (COVERED, g)
+                         for g in gone], 'deleted tests')

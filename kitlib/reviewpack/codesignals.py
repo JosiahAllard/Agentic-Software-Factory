@@ -55,13 +55,19 @@ def global_rebinds(path, text):
         node = ast.parse(text, filename=path)
     except (SyntaxError, ValueError):
         return []
+    fns = (ast.FunctionDef, ast.AsyncFunctionDef)
     out = []
     for fn in ast.walk(node):
-        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for g in ast.walk(fn):
-                if isinstance(g, ast.Global):
-                    out.extend(Found((fn.name, name), path, g.lineno, name) for name in g.names)
-    return out
+        if not isinstance(fn, fns):
+            continue
+        todo = list(fn.body)        # this function's own statements, not a nested function's
+        while todo:
+            g = todo.pop()
+            if isinstance(g, ast.Global):
+                out.extend(Found((fn.name, name), path, g.lineno, name) for name in g.names)
+            elif not isinstance(g, fns):
+                todo.extend(ast.iter_child_nodes(g))
+    return sorted(out, key=lambda f: f.line)
 
 
 def public_symbols(path, text):
@@ -119,9 +125,10 @@ def grep_hits(root, branch, names):
 
 
 def callers(symbols, hits, is_test):
-    """[(Found, 'one', (path, line)) or (Found, 'tests', count)] for each of `symbols` named on
-    exactly one non-test line of `hits` (grep_hits()), or on test lines only (`is_test(path)`).
-    A symbol's own declaration line is not a caller."""
+    """[(Found, 'one', (path, line)) or (Found, 'tests', count)] for each name of `symbols` (its
+    first declaration, so overloads give one row) named on exactly one non-test line of `hits`
+    (grep_hits()), or on test lines only (`is_test(path)`). A symbol's own declaration line is not
+    a caller."""
     if not symbols:
         return []
     word = re.compile(r'(?<![\w$])(%s)(?![\w$])'
@@ -133,8 +140,11 @@ def callers(symbols, hits, is_test):
         for name in set(word.findall(text)):
             if (path, num, name) not in own:
                 seen[name][bool(is_test(path))].append((path, num))
-    out = []
+    out, done = [], set()
     for f in symbols:
+        if f.key in done:
+            continue
+        done.add(f.key)
         plain, tests = seen.get(f.key, ([], []))
         if len(plain) == 1:
             out.append((f, 'one', plain[0]))

@@ -570,7 +570,10 @@ DOC_BASE = '"""Doc: docs/gate.md."""\nimport os\n\n\ndef test_x():\n    return o
 
 class CommentOnlyAgainstTheBase(unittest.TestCase):
     """kitrun.comment_only on a throwaway repository: the work-tree source of each changed test
-    module against its source at the merge-base with the base (one cat-file batch)."""
+    module against its source at the merge-base with the base (one cat-file batch). The merge-base
+    is pinned: the branch commits a doc-only and a code edit (against HEAD both would look
+    unchanged), and main moves past the fork point with a code edit to the doc-only module and the
+    branch's code edit (against main the answer would flip)."""
 
     def setUp(self):
         self.repo = gitfixture.TempRepo()
@@ -578,10 +581,21 @@ class CommentOnlyAgainstTheBase(unittest.TestCase):
         names = ('test_doc', 'test_code', 'test_both', 'test_broken', 'test_gone')
         for n in names:
             self.repo.write('tests/x/%s.py' % n, DOC_BASE)
-        self.repo.commit('base', *['tests/x/%s.py' % n for n in names])
-        self.repo.write('tests/x/test_doc.py',
-                        DOC_BASE.replace('gate.md', 'gate-run.md').replace('# why', '# why not'))
-        self.repo.write('tests/x/test_code.py', DOC_BASE.replace('os.sep', 'os.pathsep'))
+        self.repo.commit('fork point', *['tests/x/%s.py' % n for n in names])
+        doc_only = DOC_BASE.replace('gate.md', 'gate-run.md').replace('# why', '# why not')
+        code = DOC_BASE.replace('os.sep', 'os.pathsep')
+        self.repo.git('checkout', '-q', '-b', 'topic')
+        self.repo.write('tests/x/test_doc.py', doc_only)
+        self.repo.write('tests/x/test_code.py', code)
+        self.repo.commit('topic: a doc-only and a code edit',
+                         'tests/x/test_doc.py', 'tests/x/test_code.py')
+        self.repo.git('checkout', '-q', 'main')
+        self.repo.write('tests/x/test_doc.py', DOC_BASE.replace('os.sep', 'os.curdir'))
+        self.repo.write('tests/x/test_code.py', code)
+        self.repo.commit('main moves past the fork point',
+                         'tests/x/test_doc.py', 'tests/x/test_code.py')
+        self.repo.git('checkout', '-q', 'topic')
+        # and the work tree's own changes on top of the branch
         self.repo.write('tests/x/test_both.py',
                         DOC_BASE.replace('gate.md', 'gate-run.md').replace('os.sep', 'os.pathsep'))
         self.repo.write('tests/x/test_broken.py', DOC_BASE + 'def (:\n')

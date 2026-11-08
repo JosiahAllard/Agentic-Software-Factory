@@ -32,7 +32,7 @@ Roles are named bare; your host's instructions say how a role name becomes its d
 | Owner | the owner's decisions that bind it, as a paraphrase, no ruling id |
 | Limits | no land, merge or push |
 
-- A brief names its extra checks and the steps it overrides; it never restates or shortens a skill's checklist. A no-tests brief keeps "a deleted test names what covers it".
+- A brief names its extra checks and the steps it overrides; it never restates or shortens a skill's checklist. A no-tests brief keeps skill builder's "Delete stale tests" rule: the commit says what covers it now.
 - Where the repo has a brief template (`--find brief`), follow it.
 - A review (analyst) brief names `python <kit>/tools/review_pack.py -C <repo> <branch>` as its first call, and gives the approved design.
 - A docs-writer brief gives facts as keyword lines, `ID | status | area | keywords | ref`, at most 300 characters each (evidence and deletion rules: `specialty-docs` `doc-writing.md`, "Findings and doc edits").

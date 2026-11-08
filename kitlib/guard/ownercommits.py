@@ -30,6 +30,8 @@ What a commit changes:
 The author email is git's `%ae` (never mailmapped), read with replace refs off (pushes do not carry
 them, so the commits judged are the ones that leave). Renames are not followed: a rename is a
 delete and an add, and both paths count. Any git failure is `(None, why)`: the caller refuses.
+A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-parent commit
+whose change to it only deletes lines (deletes_only); each commit is judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -310,6 +312,32 @@ def blobs_at(root, sha, paths, env=None):
     return found, None
 
 
+def deletes_only(root, path, revs, env=None):
+    """`(True, None)` when the change `git diff <revs> -- <path>` makes (`[parent, sha]`: a
+    commit's; `['HEAD']`: the work tree's, as commit.py stages it) only deletes lines of `path`:
+    the file is changed in place (status M, no rename: a rename, a copy, an add and a whole-file
+    delete are A or D), a regular file of one mode throughout, text (numstat is not `-`), with
+    0 lines added and at least 1 deleted. `(False, None)` for any other change or none, and when
+    `path`, read as a pathspec, names any other file; `(None, why)` when git cannot tell. The one
+    predicate of `"owner".shrink_only`."""
+    out, why = _git(root, ['diff', '--raw', '--numstat', '-z', '--no-renames', '--no-textconv',
+                           '--no-ext-diff'] + list(revs) + ['--', path], env)
+    if out is None:
+        return None, why
+    raw, stat, tokens = [], [], iter(_paths(out))
+    for token in tokens:
+        if token.startswith(':'):
+            raw.append((token[1:].split(), next(tokens, None)))
+        else:
+            stat.append(token.split('\t', 2))
+    if len(raw) != 1 or len(stat) != 1:
+        return False, None
+    (meta, name), (added, deleted, sname) = raw[0], (stat[0] + ['', '', ''])[:3]
+    ok = (name == path == sname and len(meta) == 5 and meta[4] == 'M' and meta[0] == meta[1]
+          and meta[0] in REGULAR_MODES and added == '0' and deleted.isdigit() and int(deleted) > 0)
+    return ok, None
+
+
 def irregular(blobs):
     """Why a path of `blobs` (blobs_at) is in the commit but not as a regular file, or None."""
     odd = sorted('%s %s' % (p, b[len(NOT_A_FILE) + 1:]) for p, b in blobs.items()
@@ -373,6 +401,16 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]
+        if len(parents) == 1:           # a merge or a root commit never shrinks a path
+            kept = []
+            for p in locked:
+                shrinks, why = (deletes_only(root, p, [parents[0], sha], env)
+                                if rules.is_shrink_only(p) else (False, None))
+                if shrinks is None:
+                    return None, why
+                if not shrinks:
+                    kept.append(p)
+            locked = kept
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)

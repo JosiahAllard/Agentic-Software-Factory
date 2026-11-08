@@ -44,6 +44,7 @@ What it refuses (`kitlib/commit/__init__.py`, `_commit`):
   - `--owner-approved` is required only when an owner-only path is in the commit.
   - Every `--owner-approved` value must be a blanket entry or a committed path. It is written in its canonical spelling under `"owner".trailer`.
   - Or an agent commits the exact change the owner approved on the hub, with `--owner-approval hub:A-<n>` ("Owner approval" below).
+  - Or the path is in `"owner".shrink_only` and its work-tree change to HEAD only deletes lines (`shrunk_paths`, with the predicate `gate land` and pre-push use: docs/guard.md "Owner-only commits"). Any other change to it, or one in a merge in progress, stays refused; a git failure refuses.
 - **The main checkout** (`kitlib.git.checkout.main_refusal`), unless `--lander-main-checkout` is given. That flag is a usage error anywhere else.
 
 The message is the subject, then the body, then the trailers:
@@ -138,7 +139,7 @@ Elsewhere the trailer is shown and claims nothing. The review pack's co-author s
 
 docs/kit-json.md lists every key with its default.
 - `commit.merge_fold` and `commit.coauthor_families` are read by commit.py, and also by sync_base.py (`merge_fold`) and the ledger's commits (`coauthor_families`).
-- `owner.*` (paths, paths_except, email, agent_emails, trailer) is read by commit.py. It comes from the working tree's `.kit.json`.
+- `owner.*` (paths, paths_except, email, agent_emails, trailer, shrink_only) is read by commit.py. It comes from the working tree's `.kit.json`.
 - `checkout_guard.rule_pointer` is the refusal's pointer to where the rule is written down.
 - `repo.main_branch` is named in the `--lander-main-checkout` usage error.
 - `machine_paths.*` (allow, fixtures, known_binary, scan, fallback_vars) is read by both tools. commit.py reads it through `scan_staged`.

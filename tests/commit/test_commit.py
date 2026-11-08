@@ -1542,6 +1542,18 @@ class TheOwnersIdentity(LinkedCase):
                             owner_approved=['CLAUDE.md'])
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
 
+    def test_a_shrink_only_path_commits_when_it_only_loses_lines(self):
+        self.configure(owner={'email': OWNER, 'agent_emails': [AGENT], 'shrink_only': ['CLAUDE.md']})
+        self.put('CLAUDE.md', 'a\nb\nc\n')
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner', '--', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\nd\n')
+        self.assert_refused('only a commit the owner authors', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\n')
+        code, out = self.commit('drop b', 'CLAUDE.md')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('show', 'HEAD:CLAUDE.md'), 'a\nc')
+
     def test_dot_spellings_of_an_owner_only_path_are_still_owner_only(self):
         self.put('CLAUDE.md', 'x\n')
         self.assert_refused('only a commit the owner authors', './CLAUDE.md')

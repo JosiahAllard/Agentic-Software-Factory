@@ -182,6 +182,7 @@ SECTIONS = {
         'agent_emails': Field(ListOf(Email()), [], 'author emails known to be agents\', never the owner\'s'),
         'paths': Field(Strs, OWNER_PATHS, 'owner-only paths; an entry ending / locks a directory; replaces the default'),
         'paths_except': Field(Strs, OWNER_PATHS_EXCEPT, 'what under a locked directory is not locked'),
+        'shrink_only': Field(Strs, [], 'owner-only files (exact paths) any commit may change by deleting lines only; any other change stays the owner\'s (docs/guard.md "Owner-only commits")'),
         'trailer': Field(Str(pattern=r'[A-Za-z][A-Za-z-]*', what='a trailer key'), 'Owner-Approved', 'the trailer key approving an owner-only change'),
     },
     'hook': {

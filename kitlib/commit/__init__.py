@@ -184,6 +184,14 @@ def locked_paths(rules, paths):
     return [p for p in paths if rules.is_locked(p)]
 
 
+def shrunk_paths(root, rules, paths):
+    """The `"owner".shrink_only` paths among `paths` whose work-tree change to HEAD (what this
+    call stages) only deletes lines (kitlib.guard.ownercommits.deletes_only, the one predicate
+    gate land and pre-push judge the commit by); a git failure shrinks nothing."""
+    from kitlib.guard.ownercommits import deletes_only     # here: as in _unapproved_paths
+    return {p for p in paths if rules.is_shrink_only(p) and deletes_only(root, p, ['HEAD'])[0]}
+
+
 def unapproved_locked(rules, locked, owner_approved):
     """The locked paths no --owner-approved value covers (the exact path, or its blanket)."""
     return [p for p in locked if not rules.approved_by(p, owner_approved)]
@@ -1442,6 +1450,9 @@ def _commit(req, lines):
         hub = _approval_before_write(root, hub, paths, status_before)
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
+    if locked and not req.owner_authored and not hub and not merge_heads(root):  # a merge: never
+        shrunk = shrunk_paths(root, rules, locked)
+        locked = [p for p in locked if p not in shrunk]
     if locked and not req.owner_authored and not hub:
         # The hint only for a path the merge would carry unnamed, as it is staged now.
         carried = sorted(merge_owned(root, rules, set(locked) & set(status_before), heads,

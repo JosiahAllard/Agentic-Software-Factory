@@ -59,6 +59,7 @@ import collections
 import re
 
 from kitlib.git import cmd, refs
+from kitlib.git.refs import REGULAR_MODES, deletes_only     # named here too: callers use oc.<name>
 
 Violation = collections.namedtuple('Violation', 'sha author paths why', defaults=('',))
 NOREPLACE = ['--no-replace-objects']
@@ -70,7 +71,6 @@ TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses i
 APPROVAL_RE = re.compile(r'hub:(A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,}))\Z')
 EXAMPLE = 'hub:A-001'
 _SEP = '\x01'                       # between the trailer values of one commit in commits()
-REGULAR_MODES = ('100644', '100755')    # the tree modes of a regular file
 NOT_A_FILE = 'is not a regular file'    # blobs_at's text for any other entry
 
 
@@ -164,12 +164,6 @@ def _paths(out):
     return [p for p in out.split('\0') if p]
 
 
-def _parse_merge_tree(raw):
-    """`(tree, conflicted paths)` from `git merge-tree --write-tree --name-only --no-messages -z`."""
-    from kitlib.commit import parse_merge_tree
-    return parse_merge_tree(raw)
-
-
 def commits(root, tip, exclude=(), env=None):
     """`([(sha, [parents], author email, [Owner-Approval values])], None)` reachable from `tip`
     and from no `exclude` revision, or `(None, why)`."""
@@ -223,6 +217,7 @@ def plain_changes(root, shas, env=None):
 def _against_merge(root, rev, one, two, env=None):
     """`(set of paths, None)`: what differs between `rev` and the clean merge of `one` and `two`
     (`git merge-tree --write-tree`), plus every path that merge conflicts on; or `(None, why)`."""
+    from kitlib.commit import parse_merge_tree as _parse_merge_tree
     r = cmd.call(NOREPLACE + ['merge-tree', '--write-tree', '--name-only', '--no-messages',
                               '--allow-unrelated-histories', '-z', one, two], root, env=env)
     tree, conflicted = _parse_merge_tree(cmd.text(r.out)) if r.rc in (0, 1) else ('', set())
@@ -312,32 +307,6 @@ def blobs_at(root, sha, paths, env=None):
     return found, None
 
 
-def deletes_only(root, path, revs, env=None):
-    """`(True, None)` when the change `git diff <revs> -- <path>` makes (`[parent, sha]`: a
-    commit's; `['HEAD']`: the work tree's, as commit.py stages it) only deletes lines of `path`:
-    the file is changed in place (status M, no rename: a rename, a copy, an add and a whole-file
-    delete are A or D), a regular file of one mode throughout, text (numstat is not `-`), with
-    0 lines added and at least 1 deleted. `(False, None)` for any other change or none, and when
-    `path`, read as a pathspec, names any other file; `(None, why)` when git cannot tell. The one
-    predicate of `"owner".shrink_only`."""
-    out, why = _git(root, ['diff', '--raw', '--numstat', '-z', '--no-renames', '--no-textconv',
-                           '--no-ext-diff'] + list(revs) + ['--', path], env)
-    if out is None:
-        return None, why
-    raw, stat, tokens = [], [], iter(_paths(out))
-    for token in tokens:
-        if token.startswith(':'):
-            raw.append((token[1:].split(), next(tokens, None)))
-        else:
-            stat.append(token.split('\t', 2))
-    if len(raw) != 1 or len(stat) != 1:
-        return False, None
-    (meta, name), (added, deleted, sname) = raw[0], (stat[0] + ['', '', ''])[:3]
-    ok = (name == path == sname and len(meta) == 5 and meta[4] == 'M' and meta[0] == meta[1]
-          and meta[0] in REGULAR_MODES and added == '0' and deleted.isdigit() and int(deleted) > 0)
-    return ok, None
-
-
 def irregular(blobs):
     """Why a path of `blobs` (blobs_at) is in the commit but not as a regular file, or None."""
     odd = sorted('%s %s' % (p, b[len(NOT_A_FILE) + 1:]) for p, b in blobs.items()
@@ -401,16 +370,11 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
         if paths is None:
             return None, why
         locked = [p for p in paths if rules.is_locked(p) and (net is None or p in net)]
-        if len(parents) == 1:           # a merge or a root commit never shrinks a path
-            kept = []
-            for p in locked:
-                shrinks, why = (deletes_only(root, p, [parents[0], sha], env)
-                                if rules.is_shrink_only(p) else (False, None))
-                if shrinks is None:
-                    return None, why
-                if not shrinks:
-                    kept.append(p)
-            locked = kept
+        for p in [p for p in locked if len(parents) == 1 and rules.is_shrink_only(p)]:
+            shrinks, why = deletes_only(root, p, parents + [sha], env)  # merges, roots never shrink
+            if shrinks is None:
+                return None, why
+            locked = [q for q in locked if q != p or not shrinks]
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)
@@ -425,11 +389,9 @@ def describe(rules, bad, limit=5):
     """One line naming the offending commits (at most `limit`), their authors and paths, why an
     owner approval a commit carries did not count, and why no author counts as the owner when
     that is the case."""
-    parts = ['%s by %s changes %s%s' % (v.sha[:10], v.author or '(no email)',
-                                        ', '.join(v.paths[:5]) + (' ...' if len(v.paths) > 5
-                                                                  else ''),
-                                        ' (%s)' % v.why if v.why else '')
-             for v in bad[:limit]]
+    parts = ['%s by %s changes %s%s%s' % (v.sha[:10], v.author or '(no email)',
+                                          ', '.join(v.paths[:5]), ' ...' if len(v.paths) > 5 else '',
+                                          ' (%s)' % v.why if v.why else '') for v in bad[:limit]]
     more = ' (and %d more)' % (len(bad) - limit) if len(bad) > limit else ''
     line = ('owner-only paths changed by a commit not authored by the owner: %s%s'
             % ('; '.join(parts), more))

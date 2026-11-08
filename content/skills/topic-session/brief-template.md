@@ -15,6 +15,7 @@ Read each record first: `python <kit>/tools/backlog.py -C <worktree> show <ID>`.
 - Work only in your worktree, `<worktree>`. Never edit, check out or commit in the main checkout `<repo>`: landers work there.
 - Pull each record before you work on it: `python <kit>/tools/backlog.py -C <worktree> --session <key> pull <ID>` (drop `--session <key>` when the records carry no `session:`). Only the records listed above are yours: each has `batch: <branch>`, and any other record's write is refused. A pull refused for another reason (a live pull on another branch, a scope that folds into another branch's work, a resource, `requires:`): stop that record and tell the PM the refusal.
 - You create no records: `add` is refused for this session. Found something new: tell the owner, who files it or asks a coordinator to. Never build it here unless the owner says so and it is batched for your branch.
+- A split or a new class is never small: report its design (parts, one job each, dependency direction, net size) and have it reviewed before you build it. Checks you add never replace a skill's.
 - Stay inside <the files or folders of the topic>. Anything outside them: ask the owner first.
 - <What is off limits now: paused runs, shared ports, the machine's heavy work.> Heavy runs book the machine lock, as the kit's tools do (the gate books it itself).
 

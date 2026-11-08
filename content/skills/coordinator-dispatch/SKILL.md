@@ -23,7 +23,7 @@ Roles are named bare; your host's instructions say how a role name becomes its d
 |---|---|
 | Role | the role and, where raised, why (roster.md) |
 | Record | the ID, the observed failure, and what is true when done; never machinery the record does not need (an option, a new tool, a seam) |
-| Design | the design-doc section for the area, and "design first: report your design and wait for approval" (skill builder, step 3); or, for a small change, the approved design itself: home, contract, files |
+| Design | the design-doc section for the area, and "design first: report your design and wait for approval" (skill builder, step 3); or, for a small change, the approved design itself: home, contract, files. A split or a new class is never small and never set by the docs: its design (parts, one job each, dependency direction, net size) is reported and reviewed |
 | Read | exact files and sections (ranges in a large file), the entry symbols you know (`path:Symbol`), and the existing code, tool or test the change extends; doc topics to look up, never a pasted rule. A brief with no paths costs the builder about 35 calls |
 | Scope | the files that are theirs; the files that are not, and whose they are |
 | Risk | the level and why: the risk-map path, or the reason it is higher (unlisted is no reason) |
@@ -32,6 +32,7 @@ Roles are named bare; your host's instructions say how a role name becomes its d
 | Owner | the owner's decisions that bind it, as a paraphrase, no ruling id |
 | Limits | no land, merge or push |
 
+- A brief names its extra checks and the steps it overrides; it never restates or shortens a skill's checklist. A no-tests brief keeps "a deleted test names what covers it".
 - Where the repo has a brief template (`--find brief`), follow it.
 - A review (analyst) brief names `python <kit>/tools/review_pack.py -C <repo> <branch>` as its first call, and gives the approved design.
 - A docs-writer brief gives facts as keyword lines, `ID | status | area | keywords | ref`, at most 300 characters each (evidence and deletion rules: `specialty-docs` `doc-writing.md`, "Findings and doc edits").

@@ -222,57 +222,57 @@ Reading, still UNDECIDED: the addendum recommends keeping the coordinator on opu
 
 Question: do two instruction changes improve the branches agents land? (1) A reviewer's report must carry a full Checks line. (2) A brief keeps the checks the record names. The first evidence was a hand spot check of five branches, so nothing yet shows whether either change moves anything. This section is the plan to measure it; the owner's open question on the reviewer tier (whether structural changes need a strong reviewer) is decided once a baseline exists.
 
-**What is measured.** The quality signals of `review_pack` (review-pack.md "Quality signals"), taken per landed branch by `optional/usage/quality_scorecard.py`, which calls `kitlib.reviewpack.quality.section()` on the merge's two parents: a new file over 1500 non-test lines, a file that grew over 50% and past 500 lines, a deleted test with no "covered by" in its commit message, and the branch's net non-test lines (median and 90th percentile). A signal is a flag for a reader, not a defect. The signals see size and deleted tests only; they do not read the Checks line, so they measure the effect on branch quality, not the compliance.
+**What is measured.** The quality signals of `review_pack` (review-pack.md "Quality signals"), taken per landed branch by `optional/usage/quality_scorecard.py`, which calls `kitlib.reviewpack.quality.section()` on the merge's two parents: a new file over 1500 non-test lines, a file that grew over 50% and past 500 lines, a deleted test with no "covered by" in its commit message, and the branch's net non-test lines (median and 90th percentile). A signal is a flag for a reader, not a defect. The signals are blunt: git is asked for no renames, so a renamed or split file counts as a new file and a renamed test counts as a deleted one, and those are in the shares below. The signals see size and deleted tests only; they do not read the Checks line, so they measure the effect on branch quality, not the compliance.
 
 **Cohorts.**
 - Spot: the five hand-checked Retribution branches, named in a `--branches` file (`name[:mergesha]`). A branch with no merge is measured as unlanded, its tip against its merge-base with the base. All five were built before the two changes.
-- Window: every landing (first-parent merge on the base, sync merges "Merge X into Y" skipped) in a 14-day window, per repo: this kit on `main`, Retribution on its integration branch.
+- Window: every landing (first-parent merge on the base) in a 14-day window, per repo: this kit on `main`, Retribution on its integration branch. Sync merges are skipped: a subject "Merge X into Y" (the `into` before any parenthesis), "Merge <sha> ..." and "Merge master|main ...", which bring a batch or the base into a branch. The cohort label is the fixed word `window`, so two windows share a row; each record keeps its own date.
 - Rerun window: the 14 days that start once both changes have landed, per repo.
 
-**Commands.** Baseline and rerun use the same call; `--out` keeps the records (untracked, not in a repository).
+**Commands.** Baseline and rerun use the same calls; `--out` adds to a file (replacing the same repo and cohort), untracked and outside any repository. Dates are full timestamps: a bare date means that date at the current time of day.
 
-    python optional/usage/quality_scorecard.py <repo> --base <ref> --since <date> --until <date> --out base.json
-    python optional/usage/quality_scorecard.py <repo> --base <ref> --branches spot.txt --out spot.json
+    python optional/usage/quality_scorecard.py <repo> --base <ref> --since 2026-10-25T00:00:00 --until 2026-11-08T23:59:59 --out base.json
+    python optional/usage/quality_scorecard.py <repo> --base <ref> --branches spot.txt --out base.json
     python optional/usage/quality_scorecard.py --compare base.json rerun.json
 
-`--compare` prints one table per signal (count of branches with the signal out of those measured; median and p90 net lines; branches NOT CHECKED), one row per repo and cohort, with the difference between the two files. A branch whose git read fails or times out is counted NOT CHECKED, never as a pass. Cost: about four git reads per branch, no machine lock; a window of several hundred landings takes minutes.
+`--compare` prints one table per signal: the share of branches with the signal (count of those measured), the median and p90 net lines, and the branches NOT CHECKED, one row per repo and cohort. Given two files it adds a delta in percentage points (lines for a net); counts are not compared, because the branch counts differ. A branch whose git read fails or times out, or whose section the script does not recognise, is counted NOT CHECKED, never as a pass. Cost: about five git reads per branch, no machine lock; a window of several hundred landings takes minutes.
 
-**Reading it.** One sample per branch and no control, so a difference is a lead, not proof; the windows differ in what was built, so look at the counts next to the number of branches. Rerun only when both changes have been live for the full window.
+**Reading it.** One sample per branch and no control, so a difference is a lead, not proof; the windows differ in what was built, so look at the share next to the number of branches. Rerun only when both changes have been live for the full window.
 
-**Baseline (2026-11-08).** Windows 2026-10-25 to 2026-11-08; the kit on its main branch, Retribution on its integration branch. The spot cohort is five Retribution branches, three landed and two measured unlanded. The kit's repo label is its folder name. Counts are branches with the signal out of branches measured. Every branch was read; none was NOT CHECKED.
+**Baseline (2026-11-08).** Windows 2026-10-25 to 2026-11-08; the kit on its main branch, Retribution on its integration branch. The spot cohort is five Retribution branches, three landed and two measured unlanded. Each cell is the branches with the signal out of the branches measured, with the share. Every branch was read; none was NOT CHECKED. This is the tool's own output (`--compare` on the baseline file), for the windows 2026-10-25T00:00:00 to 2026-11-08T23:59:59.
 
     new file over 1500 lines
-      cohort                                    baseline
-      Retribution 14 days                      2 of 1060
-      Retribution spot (5)                        0 of 5
-      kit 14 days                               1 of 536
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window               1 of 589 (0.2%)
+      Retribution spot                                   0 of 5 (0.0%)
+      Retribution window                              2 of 1096 (0.2%)
 
     grew over 50% past 500 lines
-      cohort                                    baseline
-      Retribution 14 days                     11 of 1060
-      Retribution spot (5)                        0 of 5
-      kit 14 days                               2 of 536
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window               2 of 589 (0.3%)
+      Retribution spot                                   0 of 5 (0.0%)
+      Retribution window                             11 of 1096 (1.0%)
 
     deleted test, no "covered by"
-      cohort                                    baseline
-      Retribution 14 days                    140 of 1060
-      Retribution spot (5)                        4 of 5
-      kit 14 days                              71 of 536
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window             76 of 589 (12.9%)
+      Retribution spot                                  4 of 5 (80.0%)
+      Retribution window                           143 of 1096 (13.0%)
 
     median net lines
-      cohort                                    baseline
-      Retribution 14 days                             44
-      Retribution spot (5)                            84
-      kit 14 days                                     18
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window                            18
+      Retribution spot                                              84
+      Retribution window                                            45
 
     p90 net lines
-      cohort                                    baseline
-      Retribution 14 days                            417
-      Retribution spot (5)                           266
-      kit 14 days                                    262
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window                           245
+      Retribution spot                                              266
+      Retribution window                                            428
 
     NOT CHECKED
-      cohort                                    baseline
-      Retribution 14 days                      0 of 1060
-      Retribution spot (5)                        0 of 5
-      kit 14 days                               0 of 536
+      cohort                                             baseline.json
+      Agentic-Project_Manager-Kit window               0 of 589 (0.0%)
+      Retribution spot                                   0 of 5 (0.0%)
+      Retribution window                              0 of 1096 (0.0%)

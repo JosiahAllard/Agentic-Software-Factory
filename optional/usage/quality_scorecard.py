@@ -2,10 +2,13 @@
 
 usage: python <kit>/optional/usage/quality_scorecard.py <repo> [--base REF]
            (--since DATE [--until DATE] | --branches FILE | --merge SHA ...) [--out FILE.json]
-       python <kit>/optional/usage/quality_scorecard.py --compare A.json B.json
+       python <kit>/optional/usage/quality_scorecard.py --compare A.json [B.json]
 
+--out adds to FILE, replacing earlier records of the same repo and cohort, so one file holds a whole
+baseline. --compare prints the tables of one file, or of two side by side with a delta.
 A landed branch is a first-parent merge on --base (default HEAD); its tip is the merge's second
-parent, so a deleted branch still counts. "Merge X into Y" sync merges are skipped. --branches reads
+parent, so a deleted branch still counts. Sync merges (SYNC) are skipped. Dates take a full
+timestamp (2026-10-25T00:00:00); a bare date means that date at the current time of day. --branches reads
 `name[:mergesha]` lines: a name alone is measured as unlanded, tip against its merge-base with --base.
 Each branch is measured by kitlib.reviewpack.quality.section(), the lines review_pack prints. A git
 call that fails or times out gives a NOT CHECKED row, never a pass. docs/model-ab.md "Branch quality
@@ -17,16 +20,19 @@ import json
 import os
 import re
 import statistics
-import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+from kitlib.git import cmd as gitcmd  # noqa: E402
 from kitlib.reviewpack import quality  # noqa: E402
 
 TIMEOUT = 120
-SYNC = re.compile(r' into \S|^Merge [0-9a-f]{7,40}\b')
+# A sync merge: "Merge X into Y" (`into` before any parenthesis, so a landing whose note says "into"
+# stays one), "Merge <sha> ..." (a batch or the base merged in) and "Merge master|main ...".
+SYNC = re.compile(r'^Merge [^(]*\binto \S|^Merge (?:[0-9a-f]{7,40}|master|main)\b')
+KNOWN = ('size', '    ', '  SIGNAL', '  ... ', 'quality  NOT CHECKED')
 _SIZE = re.compile(r'size\s+(\d+) non-test file\(s\) \| lines (\d+) -> (\d+) \| net ([+-]\d+)')
 _NEW = re.compile(r'SIGNAL new file over \d+ non-test lines: (\S+)')
 _GREW = re.compile(r'SIGNAL grew over .*?: (\S+) \d+ -> \d+')
@@ -37,11 +43,16 @@ SIGNALS = (('new file over %d lines' % quality.NEW_FILE_LINE, 'new'),
 
 
 def git(repo, *args):
-    p = subprocess.run(['git', '-C', repo] + list(args), capture_output=True, text=True,
-                       encoding='utf-8', errors='replace', timeout=TIMEOUT)
-    if p.returncode:
-        raise RuntimeError((p.stderr.strip().splitlines() or ['git ' + args[0] + ' failed'])[0])
-    return p.stdout.strip()
+    r = gitcmd.call(list(args), repo, timeout=TIMEOUT)
+    if r.rc != 0:               # a failed git, or None: could not start or timed out
+        raise RuntimeError((r.err.splitlines() or ['git %s failed' % args[0]])[0])
+    return r.out.decode('utf-8', 'replace').strip()
+
+
+def repo_name(repo):
+    """The repository's folder name, never a worktree's."""
+    common = os.path.abspath(os.path.join(repo, git(repo, 'rev-parse', '--git-common-dir')))
+    return os.path.basename(os.path.dirname(common) if os.path.basename(common) == '.git' else common)
 
 
 def landings(repo, base, since, until=None):
@@ -62,6 +73,10 @@ def parse(lines):
     """The record fields a section()'s lines give."""
     rec = {'size': None, 'new': [], 'grew': [], 'deleted_tests': [], 'not_checked': []}
     for l in lines:
+        if not l.startswith(KNOWN) or (l.startswith('  SIGNAL') and not any(
+                rx.search(l) for rx in (_NEW, _GREW, _GONE))):
+            rec['not_checked'].append('unrecognised: ' + l.strip())      # never a silent pass
+            continue
         m = _SIZE.search(l)
         if m:
             rec['size'] = dict(zip(('files', 'before', 'after', 'net'), map(int, m.groups())))
@@ -76,9 +91,10 @@ def parse(lines):
 
 def measure(repo, base, name, cohort, merge=None, date=''):
     """One branch's record. A landed branch gives `merge`; otherwise `name` is a ref."""
-    rec = {'repo': os.path.basename(os.path.abspath(repo)), 'cohort': cohort, 'branch': name,
-           'merge': merge or '', 'date': date, 'landed': bool(merge)}
+    rec = {'repo': '', 'cohort': cohort, 'branch': name, 'merge': merge or '', 'date': date,
+           'landed': bool(merge)}
     try:
+        rec['repo'] = repo_name(repo)
         if merge:
             parent, tip = git(repo, 'rev-parse', merge + '^1', merge + '^2').split()
         else:
@@ -102,42 +118,49 @@ def collect(repo, base, since, until, branches, merges):
     if merges:
         return [measure(repo, base, branch_name(git(repo, 'log', '-1', '--format=%s', m)), 'merge',
                         git(repo, 'rev-parse', m), git(repo, 'log', '-1', '--format=%cs', m)) for m in merges]
-    return [measure(repo, base, branch_name(s), since + ('..' + until if until else ''), m, d)
+    return [measure(repo, base, branch_name(s), 'window', m, d)
             for m, d, s in landings(repo, base, since, until)]
 
 
-def cell(recs, key):
-    return sum(1 for r in recs if r[key])
+def value(recs, key):
+    """(number, text) of one signal over `recs`: a share of branches in percent, or net lines."""
+    nets = sorted(r['size']['net'] for r in recs if r['size'])
+    if key in ('net', 'p90'):
+        if not nets:
+            return None, '-'
+        v = statistics.median(nets) if key == 'net' else nets[int(.9 * (len(nets) - 1))]
+        return v, '%d' % v
+    n = sum(1 for r in recs if r[key])
+    return (100.0 * n / len(recs) if recs else None), '%d of %d (%.1f%%)' % (n, len(recs), 100.0 * n / max(len(recs), 1))
 
 
 def table(sets):
-    """Text tables, one per signal, over {label: records}; `sets` has one label, or two to compare."""
+    """Text tables, one per signal, over {label: records}. Two labels add a delta column: percentage
+    points for a share, lines for a net (counts are not compared, the branch counts differ)."""
     cohorts = sorted({(r['repo'], r['cohort']) for rs in sets.values() for r in rs})
-    labels = list(sets)
-    head = ['  %-34s' % 'cohort'] + ['%16s' % l for l in labels]
-    if len(labels) == 2:
-        head.append('%8s' % 'delta')
+    head = '  %-38s' % 'cohort' + ''.join('%26s' % l[:25] for l in sets) + ('%10s' % 'delta' if len(sets) == 2 else '')
     out = []
     for title, key in SIGNALS + (('median net lines', 'net'), ('p90 net lines', 'p90'),
                                  ('NOT CHECKED', 'not_checked')):
-        out += ['', title, ''.join(head)]
+        out += ['', title, head]
         for repo, cohort in cohorts:
-            vals = []
-            for rs in sets.values():
-                rs = [r for r in rs if (r['repo'], r['cohort']) == (repo, cohort)]
-                nets = sorted(r['size']['net'] for r in rs if r['size'])
-                if key in ('net', 'p90'):
-                    v = ('%d' % (statistics.median(nets) if key == 'net' else nets[int(.9 * (len(nets) - 1))])
-                         if nets else '-')
-                else:
-                    v = '%d of %d' % (cell(rs, key), len(rs))
-                vals.append(v)
-            row = '  %-34s' % ('%s %s' % (repo, cohort))[:34] + ''.join('%16s' % v for v in vals)
+            vals = [value([r for r in rs if (r['repo'], r['cohort']) == (repo, cohort)], key)
+                    for rs in sets.values()]
+            row = '  %-38s' % ('%s %s' % (repo, cohort)) +''.join('%26s' % t for _, t in vals)
             if len(vals) == 2:
-                a, b = (re.match(r'-?\d+', v) for v in vals)
-                row += '%8s' % ('%+d' % (int(b.group()) - int(a.group())) if a and b else '-')
+                (a, _), (b, _) = vals
+                row += '%10s' % ('%+.0f' % (b - a) if a is not None and b is not None else '-')
             out.append(row)
     return '\n'.join(out)
+
+
+def save(path, recs):
+    """Write `recs` to `path`, replacing earlier records of the same repo and cohort there, so one
+    file can hold several repos and cohorts."""
+    old = json.load(open(path, encoding='utf-8')) if os.path.exists(path) else []
+    mine = {(r['repo'], r['cohort']) for r in recs}
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump([r for r in old if (r['repo'], r['cohort']) not in mine] + recs, f, indent=1)
 
 
 def main(argv=None):
@@ -149,7 +172,7 @@ def main(argv=None):
     ap.add_argument('--branches')
     ap.add_argument('--merge', action='append')
     ap.add_argument('--out')
-    ap.add_argument('--compare', nargs=2, metavar=('A', 'B'))
+    ap.add_argument('--compare', nargs='+', metavar='FILE')
     a = ap.parse_args(argv)
     if a.compare:
         sets = collections.OrderedDict((os.path.basename(p), json.load(open(p, encoding='utf-8')))
@@ -157,8 +180,7 @@ def main(argv=None):
     elif a.repo and (a.since or a.branches or a.merge):
         recs = collect(a.repo, a.base, a.since, a.until, a.branches, a.merge)
         if a.out:
-            with open(a.out, 'w', encoding='utf-8') as f:
-                json.dump(recs, f, indent=1)
+            save(a.out, recs)
         sets = {'now': recs}
     else:
         ap.error('give <repo> with --since, --branches or --merge, or --compare A B')

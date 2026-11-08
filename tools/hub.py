@@ -1671,7 +1671,7 @@ def _approvals(a, stop):
             raise serve.ServeError(e.message)
         got = hubapprove.request(_hub(a), body)
         return _wrote(a, got, 'REQUESTED %s' % got.get('id'))
-    docs = (_hub(a).get('/snapshot').get('collections') or {}).get('approvals') or {}
+    docs = (_hub(a).get('/snapshot', client.ANY, {'collections': 'approvals'}).get('collections') or {}).get('approvals') or {}
     now = datetime.datetime.now(datetime.timezone.utc)
     items = [dict(docs[k], id=k, status=approvals.status_at(docs[k], now) or 'malformed')
              if isinstance(docs[k], dict) else {'id': k, 'status': 'malformed'}

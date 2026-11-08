@@ -22,6 +22,7 @@ if os.name == 'nt':
     import _winapi
 
 from kitlib import commit as C
+from kitlib.commit import approval as commit_approval
 from kitlib.config import owner as ownermod
 from kitlib.guard import ownercommits as oc
 from kitlib.hubsite import api as hubapi
@@ -92,6 +93,20 @@ class Down(object):
         raise serve.NotRunning(1)
 
     post = get
+
+
+class SnapshotQueryTest(unittest.TestCase):
+
+    def test_fetch_asks_for_the_approvals_collection_only(self):
+        asked = []
+
+        class Recorder(object):
+            def get(self, path, role=hubclient.ANY, query=None):
+                asked.append((path, query))
+                return {'ok': True, 'collections': {'approvals': {}}}
+
+        self.assertEqual(commit_approval.fetch(Recorder(), 'A-1'), (None, 'the hub has no approval A-1'))
+        self.assertEqual(asked, [('/snapshot', {'collections': 'approvals'})])
 
 
 class ApprovalCase(tc.LinkedCase):

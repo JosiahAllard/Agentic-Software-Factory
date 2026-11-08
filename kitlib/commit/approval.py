@@ -133,7 +133,7 @@ def hub_client(given):
 def fetch(client, did):
     """(the document of the approval `did`, None) from the hub's snapshot, or (None, why)."""
     try:
-        got = client.get('/snapshot')
+        got = client.get('/snapshot', query={'collections': 'approvals'})
     except Exception as e:          # noqa: BLE001 - no answer is no approval
         return None, 'the hub could not be asked for hub:%s (%s)' % (did, _err(e))
     colls = got.get('collections') if isinstance(got, dict) else None

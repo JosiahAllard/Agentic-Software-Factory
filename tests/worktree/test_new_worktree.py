@@ -282,8 +282,8 @@ class FakeHub(object):
     def __init__(self, approvals=None, error=None):
         self.approvals, self.error, self.asked = approvals or {}, error, []
 
-    def get(self, route):
-        self.asked.append(route)
+    def get(self, route, role=None, query=None):
+        self.asked.append((route, query))
         if self.error is not None:
             raise self.error
         return {'collections': {'approvals': self.approvals}}
@@ -354,7 +354,7 @@ class BaseCommit(WorktreeCase):
         self.assert_at(got, 'fix/approved', self.old)
         self.assertIn('approval  hub:A-007 is for base %s; this branch starts there'
                       % self.old[:12], got.lines)
-        self.assertEqual(hub.asked, ['/snapshot'])
+        self.assertEqual(hub.asked, [('/snapshot', {'collections': 'approvals'})])
 
     def test_a_consumed_approval_is_refused(self):
         hub = self.approval(commit=self.tip)

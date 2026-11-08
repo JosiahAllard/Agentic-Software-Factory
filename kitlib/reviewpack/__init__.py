@@ -73,7 +73,7 @@ from kitlib import verdict
 from kitlib.docs import callers as doc_callers
 from kitlib.proc import spawn
 
-from . import trailers
+from . import quality, trailers
 
 TOOL = 'review_pack'
 OK, FAILED, USAGE = 0, 1, 2
@@ -708,6 +708,8 @@ def _pack(lines, path, branch, base, diff):
             lines.extend('    +%-5s -%-5s %s' % (add, rem, name) for name, add, rem in rows[:60])
             if len(rows) > 60:
                 lines.append('    ... %d more' % (len(rows) - 60))
+
+    lines.extend(quality.section(lambda *a: git(top, *a), top, mb, branch))
 
     changed, rows = owner_only_section(top, base, branch, mb, rules)
     bad = [row for row in rows if row[1] not in PASSING]

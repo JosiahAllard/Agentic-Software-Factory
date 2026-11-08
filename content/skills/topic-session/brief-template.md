@@ -7,6 +7,7 @@ You are a plain session the owner drives directly, like a normal session. Do wha
 Build these records on one branch, `<branch>`:
 - `<ID>`: <one line: what it is, and anything the owner already decided about it>
 - `<ID>`: <...>
+- A split or a new class is never small and never set by the docs: report its design (parts, one job each, dependency direction, net size) and have it reviewed before you build it. Checks you add never replace a skill's.
 
 Read each record first: `python <kit>/tools/backlog.py -C <worktree> show <ID>`. <The design or page the owner approved, if any, to verify against.>
 

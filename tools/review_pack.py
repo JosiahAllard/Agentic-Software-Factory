@@ -6,7 +6,8 @@
 Prints base and merge-base, whether the branch contains the base tip, commits, whether the tip
 has the full-gate OK record a landing requires (the `gate` line; printed only, never the exit
 status), files changed by risk level, owner-only paths and their Owner-Approved trailers, the commits with no Co-Authored-By
-trailer (.kit.json "review_pack".coauthor), and the doc-budget verdict. --diff PATH prints that
+trailer (.kit.json "review_pack".coauthor), the doc-budget verdict, and size and deleted-test
+signals (printed only). --diff PATH prints that
 file's diff against the merge-base. --base defaults to docs/gate-run.md "Default base".
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.reviewpack, prints and exits.

@@ -3,7 +3,8 @@ and after per changed file and the branch's net, a new file over the size line, 
 past 500 lines, and a deleted test file or method whose commit message says no "covered by".
 
 Printed only: a signal never refuses and never changes the exit status. `read` is the pack's
-`git(root, *args)` (stdout text, raising on failure), so this module never imports kitlib.reviewpack.
+`git(root, *args)` (stdout text, raising on failure), so this module never imports
+kitlib.reviewpack.
 """
 import collections
 import fnmatch
@@ -11,6 +12,7 @@ import posixpath
 import re
 
 from kitlib.git import batch
+from kitlib.modulemap.load import DEFAULT_TEST_SOURCES
 
 NEW_FILE_LINE = 1500        # a new non-test file past this many non-test lines is flagged
 GROWTH_PCT = 50             # growth past this percentage ...
@@ -19,9 +21,8 @@ ROWS = 40                   # per-file rows printed, largest change first
 COVERED = 'covered by'
 MARK = '\x00'
 
-_TEST_DIRS = ('test', 'tests')
-_TEST_NAMES = ('test_*.py', '*_test.py', '*Test.java', '*Tests.java', '*Test.cs', '*Tests.cs',
-               '*.test.*', '*.spec.*')
+# The modulemap's default test paths, plus the file names it lacks.
+TEST_SOURCES = DEFAULT_TEST_SOURCES + ['*.spec.*', '*.test.*', '*Test.cs']
 _PY = re.compile(r'^\s*(?:async\s+)?def\s+(test\w*)\s*\(')
 _JS = re.compile(r'\b(?:it|test)\(\s*([\'"`])(.+?)\1')
 _METHOD = re.compile(r'\b(?:void|Task)\s+(\w+)\s*\(')
@@ -31,10 +32,10 @@ Sizes = collections.namedtuple('Sizes', 'before after')
 
 
 def is_test(path):
-    """A test path: a `test`/`tests` directory on it, or a test-shaped file name."""
-    parts = path.split('/')
-    return (any(p in _TEST_DIRS for p in parts[:-1])
-            or any(fnmatch.fnmatchcase(parts[-1], n) for n in _TEST_NAMES))
+    """A test path: TEST_SOURCES matched on the lowercased path, as the module map's
+    is_test_source() does."""
+    low = path.lower()
+    return any(fnmatch.fnmatchcase(low, g.lower()) for g in TEST_SOURCES)
 
 
 def non_test_lines(data):
@@ -44,16 +45,19 @@ def non_test_lines(data):
     return sum(1 for l in data.decode('utf-8', 'replace').splitlines() if l.strip())
 
 
-def file_sizes(read, root, mb, branch):
-    """{path: Sizes(before, after)} for every changed non-test text file; a side the file does not
-    have is None. One name-status read and one `cat-file --batch`."""
-    paths = []
-    for row in read('diff', '--name-status', '--no-renames', mb, branch, '--').splitlines():
-        status, _, path = row.partition('\t')
-        if path and not is_test(path):
-            paths.append((status[:1], path))
-    specs = [('%s:%s' % (mb, p)) for s, p in paths if s != 'A'] \
-        + [('%s:%s' % (branch, p)) for s, p in paths if s != 'D']
+def changed_paths(read, mb, branch):
+    """[(status letter, path)] of every file changed between `mb` and `branch`, one read."""
+    rows = (r.partition('	') for r in read('diff', '--name-status', '--no-renames', mb, branch,
+                                            '--').splitlines())
+    return [(status[:1], path) for status, _, path in rows if path]
+
+
+def file_sizes(changed, root, mb, branch):
+    """{path: Sizes(before, after)} for every changed non-test text file in `changed`
+    (changed_paths()); a side the file does not have is None. One `cat-file --batch`."""
+    paths = [(s, p) for s, p in changed if not is_test(p)]
+    specs = [('%s:%s' % (mb, p)) for s, p in paths if s != 'A']
+    specs += [('%s:%s' % (branch, p)) for s, p in paths if s != 'D']
     got, why = batch.cat_file(specs, root)
     if got is None:
         raise RuntimeError(why)
@@ -153,7 +157,8 @@ def _commit_changes(chunk):
 
 def deleted_tests(log):
     """Deleted test files and removed test methods whose own commit's message has no "covered by",
-    as 'path' or 'path::name', in order, from the range's `git log -p` text `log` (section()). A method also added anywhere on the branch moved, and is not a deletion."""
+    as 'path' or 'path::name', in order, from the range's `git log -p` text `log` (section()). A
+    method also added anywhere on the branch moved, and is not a deletion."""
     added, gone = set(), []
     for chunk in log.split(MARK)[1:]:
         message, files = _commit_changes(chunk)
@@ -177,18 +182,32 @@ def deleted_tests(log):
     return list(dict.fromkeys(out))
 
 
+def not_checked(what, e):
+    return 'quality  NOT CHECKED (%s): %s' % (what, (str(e).splitlines() or [type(e).__name__])[0])
+
+
 def section(read, root, mb, branch):
-    """The pack's quality lines (empty when there is nothing to say). A failed read gives one
-    NOT CHECKED line, never an error: the signals do not change the exit status."""
+    """The pack's quality lines (empty when there is nothing to say). A failed read gives a
+    NOT CHECKED line for what it fed, never an error: the signals do not change the exit status."""
+    out = []
     try:
-        sizes = file_sizes(read, root, mb, branch)
-        log = read('log', '-p', '--no-renames',
-                   '--format=%x00%H%x01%B%x01', '%s..%s' % (mb, branch), '--')
-        gone = deleted_tests(log)
+        changed = changed_paths(read, mb, branch)
+        sizes = file_sizes(changed, root, mb, branch)
+        out = size_lines(sizes) + size_flags(sizes)
     except Exception as e:      # noqa: BLE001 - printed only, as the gate line is
-        return ['quality  NOT CHECKED: %s' % str(e).splitlines()[0] if str(e) else
-                'quality  NOT CHECKED: %s' % type(e).__name__]
-    out = size_lines(sizes) + size_flags(sizes)
+        return [not_checked('sizes', e)]
+    # Added test files too: a test moved into one is not a deletion.
+    tests = [p for s, p in changed if is_test(p)]
+    if not any(s != 'A' for s, p in changed if is_test(p)):
+        return out
+    try:
+        log = read('log', '-p', '--no-renames', '--format=%x00%H%x01%B%x01',
+                   '%s..%s' % (mb, branch), '--', *tests)
+        gone = deleted_tests(log)
+    except Exception as e:      # noqa: BLE001
+        return out + [not_checked('deleted tests', e)]
     out += ['  SIGNAL deleted test, no "%s" in its commit message: %s' % (COVERED, g)
             for g in gone[:ROWS]]
+    if len(gone) > ROWS:
+        out.append('  ... %d more deleted tests' % (len(gone) - ROWS))
     return out

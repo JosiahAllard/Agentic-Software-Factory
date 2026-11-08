@@ -77,7 +77,7 @@ A `gate.steps` entry that runs the check, as a warning until the map settles:
 - `raises`: the owner's allowed ceiling raises, each `ratchet` (an id the map has, at most one
   entry per ratchet), `ceiling`, `why` and optional `approval` (the A-NNN). See "Raises".
 - `test_sources`: `fnmatch` globs (here `*` crosses `/`) naming the files the paths detector
-  reads; unset: the usual test folders and file names (`kitlib/modulemap/load.py`
+  reads; unset: the usual test folders and file names (`kitlib/config/policy.py`
   `DEFAULT_TEST_SOURCES`).
 - `root_markers`: file names that mean "the repository root" beyond the built-in ones.
 - `namespaces`: C# namespace prefix to module name, for the csharp-using detector; unset: each

@@ -12,7 +12,7 @@ import posixpath
 import re
 
 from kitlib.git import batch
-from kitlib.modulemap.load import DEFAULT_TEST_SOURCES
+from kitlib.config.policy import DEFAULT_TEST_SOURCES
 
 NEW_FILE_LINE = 1500        # a new non-test file past this many non-test lines is flagged
 GROWTH_PCT = 50             # growth past this percentage ...

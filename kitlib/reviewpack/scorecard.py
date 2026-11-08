@@ -1,32 +1,21 @@
-"""Quality scorecard: review_pack's quality signals over landed branches. Read-only on the repo.
+"""Quality scorecard: review_pack's quality signals over landed branches (tools/quality_scorecard.py
+is its entry point; docs/model-ab.md "Branch quality scorecard" has the plan). Read-only on the repo.
 
-usage: python <kit>/optional/usage/quality_scorecard.py <repo> [--base REF]
-           (--since DATE [--until DATE] | --branches FILE | --merge SHA ...) [--out FILE.json]
-       python <kit>/optional/usage/quality_scorecard.py --compare A.json [B.json]
-
---out adds to FILE, replacing earlier records of the same repo and cohort, so one file holds a whole
-baseline. --compare prints the tables of one file, or of two side by side with a delta.
-A landed branch is a first-parent merge on --base (default HEAD); its tip is the merge's second
-parent, so a deleted branch still counts. Sync merges (SYNC) are skipped. Dates take a full
-timestamp (2026-10-25T00:00:00); a bare date means that date at the current time of day. --branches reads
-`name[:mergesha]` lines: a name alone is measured as unlanded, tip against its merge-base with --base.
-Each branch is measured by kitlib.reviewpack.quality.section(), the lines review_pack prints. A git
-call that fails or times out gives a NOT CHECKED row, never a pass. docs/model-ab.md "Branch quality
-scorecard" has the plan.
+A landed branch is a first-parent merge on a base ref; its tip is the merge's second parent, so a
+deleted branch still counts. Sync merges (SYNC) are skipped. A `--branches` line `name[:mergesha]`
+without a merge is measured as unlanded, its tip against its merge-base with the base. Each branch
+is measured by quality.section(), the lines review_pack prints. A git call that fails or times
+out, and a line the parser does not know, give a NOT CHECKED row, never a pass. save() adds records
+to a JSON file, replacing earlier ones of the same repo and cohort; table() renders one or two files'
+records as text.
 """
-import argparse
-import collections
 import json
 import os
 import re
 import statistics
-import sys
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-from kitlib.git import cmd as gitcmd  # noqa: E402
-from kitlib.reviewpack import quality  # noqa: E402
+from kitlib.git import cmd as gitcmd
+from . import quality
 
 TIMEOUT = 120
 # A sync merge: "Merge X into Y" (`into` before any parenthesis, so a landing whose note says "into"
@@ -163,30 +152,10 @@ def save(path, recs):
         json.dump([r for r in old if (r['repo'], r['cohort']) not in mine] + recs, f, indent=1)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('repo', nargs='?')
-    ap.add_argument('--base', default='HEAD')
-    ap.add_argument('--since')
-    ap.add_argument('--until')
-    ap.add_argument('--branches')
-    ap.add_argument('--merge', action='append')
-    ap.add_argument('--out')
-    ap.add_argument('--compare', nargs='+', metavar='FILE')
-    a = ap.parse_args(argv)
-    if a.compare:
-        sets = collections.OrderedDict((os.path.basename(p), json.load(open(p, encoding='utf-8')))
-                                       for p in a.compare)
-    elif a.repo and (a.since or a.branches or a.merge):
-        recs = collect(a.repo, a.base, a.since, a.until, a.branches, a.merge)
-        if a.out:
-            save(a.out, recs)
-        sets = {'now': recs}
-    else:
-        ap.error('give <repo> with --since, --branches or --merge, or --compare A B')
-    print(table(sets))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())
+def load(paths):
+    """{file name: records} for the saved files `paths`, in order, for table()."""
+    out = {}
+    for p in paths:
+        with open(p, encoding='utf-8') as f:
+            out[os.path.basename(p)] = json.load(f)
+    return out

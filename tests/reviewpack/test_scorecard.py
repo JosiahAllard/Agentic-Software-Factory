@@ -1,21 +1,13 @@
-"""Tests for quality_scorecard.py: the pure parts, and one made-up landing in a throwaway repository.
-
-    python -m unittest test_quality_scorecard -v
-"""
+"""Tests for kitlib/reviewpack/scorecard.py: the pure parts, and one made-up landing in a throwaway
+repository."""
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
-for p in (ROOT, os.path.join(ROOT, 'optional', 'usage')):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-import quality_scorecard as Q  # noqa: E402
-from tests.realgit import real_git  # noqa: E402
+from kitlib.reviewpack import scorecard as Q
+from tests.realgit import real_git
 
 LINES = ['size     1 non-test file(s) | lines 10 -> 1600 | net +1590',
          '  SIGNAL new file over 1500 non-test lines: a.py (1600)',

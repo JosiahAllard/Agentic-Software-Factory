@@ -89,7 +89,6 @@ died first. A wall-clock jump of more than LOCK_STALE_S can make a held lock loo
 """
 import contextlib
 import datetime
-import fnmatch
 import json
 import os
 import re
@@ -99,6 +98,7 @@ import urllib.parse
 
 from kitlib.fs import replace as fsreplace
 from kitlib.gate import carry as carrymod
+from kitlib.git import batch as gitbatch
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
 
@@ -487,7 +487,7 @@ CHECKS_HEAD = report_head('checks')
 DONE_HEAD = report_head('done-when')
 DESIGN_HEAD = report_head('design')
 CHECK_RE = re.compile(r'^([a-z][\w-]*)\s*[:=]?\s*(pass|fail|n/a)$', re.IGNORECASE)
-UNMET_RE = re.compile(r'(?<![\w-])unmet(?![\w-])', re.IGNORECASE)
+STATUS_RE = re.compile(r'(?<![\w-])(met|unmet)(?![\w-])', re.IGNORECASE)
 DESIGN_RE = re.compile(DESIGN_HEAD.pattern + r'[*_`\s]*(approve|revise)(?![\w-])', re.IGNORECASE)
 
 
@@ -516,9 +516,16 @@ def checks_of(text):
 
 
 def unmet_lines(text):
-    """The `Done-when:` lines of `text` that say UNMET, stripped. Pure."""
-    return [line.strip() for line in (text or '').splitlines()
-            if DONE_HEAD.match(line) and UNMET_RE.search(line)]
+    """The `Done-when:` lines of `text` whose status, the first MET or UNMET word after the item
+    (`Done-when: <ID> (<x>) UNMET - <evidence>`), is UNMET, stripped: the evidence may name the
+    word (`MET - was UNMET`) without counting. Pure."""
+    out = []
+    for line in (text or '').splitlines():
+        head = DONE_HEAD.match(line)
+        m = STATUS_RE.search(line, head.end()) if head else None
+        if m and m.group(1).upper() == 'UNMET':
+            out.append(line.strip())
+    return out
 
 
 def design_of(text):
@@ -554,7 +561,8 @@ def checks_why(entry, said):
     if not parts:
         return None
     return ('--verdict %s, but %s; nothing was queued\nInstead: resume the reviewer %s (SendMessage '
-            'to its id) and ask for its Checks: line giving each of %s as PASS, FAIL or N/A (skill '
+            'to its id) and ask it to give its full final lines again: each Done-when: line, the '
+            'Checks: line giving each of %s as PASS, FAIL or N/A, and the Verdict: line (skill '
             'specialty-review "Report"), then queue again'
             % (entry['verdict'], '; '.join(parts), ', '.join(ids), ', '.join(CODE_CHECKS)))
 
@@ -659,27 +667,33 @@ def design_why(entry, new, design_id, design_said):
     return '%s, but %s; nothing was queued\n%s' % (head, '; '.join(parts), DESIGN_INSTEAD)
 
 
-PY_CLASS_RE = re.compile(r'^(\s*)class\s+([A-Za-z_]\w*)')
-
-
 def _git_diff(cwd, args, base, tip):
-    out, why = gitcmd.run_text(['-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff']
+    out, why = gitcmd.run_text(['-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff',
+                                '--src-prefix=a/', '--dst-prefix=b/']
                                + args + ['%s...%s' % (base, tip), '--'], cwd)
     if out is None:
         raise VerdictError('git diff %s...%s: %s' % (base, tip, (why or '').strip()))
     return out
 
 
-def new_sources(cwd, rng, exts, tests, types):
+def _patch_path(row, side):
+    """The path of a patch's `--- a/<path>` or `+++ b/<path>` line (`side` 'a/' or 'b/'), git's
+    C-quoting undone and the tab git ends a path holding a space with dropped; None for /dev/null
+    or any other shape."""
+    name = gitbatch.unquote_path(row[4:].rstrip('\t'))
+    return name[2:] if name.startswith(side) else None
+
+
+def new_sources(cwd, rng, exts, is_test, types):
     """The new non-test source files and classes the range `rng` (`<base>..<tip>`) adds, sorted:
     `<path>` for a file the diff adds (status A of `git diff --name-status --find-renames
     <base>...<tip>`; a rename is not one) ending in one of `exts`, `<path>:<Name>` for a type an
     added line of such a file declares (`git diff --no-renames`) whose name no removed line of the
-    diff declares (a moved class is not new). A path matching one of the globs `tests` is left
-    out. `types`: `(suffix, regex)` pairs, the first whose suffix the path ends in (None: any)
-    gives the regex whose group 2 is the type's name. The caller passes kitlib.docs.codemap's
-    extensions and patterns and kitlib.modulemap.load.DEFAULT_TEST_SOURCES. Git runs in `cwd`.
-    VerdictError when git gives no answer."""
+    diff declares (a moved class is not new). A path `is_test(path)` is true of is left out (the
+    caller passes the repo module map's ModuleMap.is_test_source). `types`: `(suffix, regex)`
+    pairs, the first whose suffix the path ends in (None: any) gives the regex whose group 2 is the
+    type's name (kitlib.docs.codemap's). The prefixes are given, so diff.noprefix and the like
+    change nothing. Git runs in `cwd`. VerdictError when git gives no answer."""
     base, _, tip = rng.partition('..')
     for rev in (base, tip):
         why = refs.bad_rev(rev)
@@ -687,11 +701,7 @@ def new_sources(cwd, rng, exts, tests, types):
             raise VerdictError('the range %s: %s' % (rng, why))
 
     def source(p):
-        low = (p or '').lower()
-        if not p or not p.endswith(tuple(exts)) or any(
-                fnmatch.fnmatchcase(low, g.lower()) for g in tests):
-            return None
-        return p
+        return p if p and p.endswith(tuple(exts)) and not is_test(p) else None
 
     def type_name(path, line):
         for suffix, rx in types:
@@ -715,9 +725,9 @@ def new_sources(cwd, rng, exts, tests, types):
             old = new = None
             hunk = False
         elif not hunk and row.startswith('--- '):
-            old = source(row[6:] if row.startswith('--- a/') else None)
+            old = source(_patch_path(row, 'a/'))
         elif not hunk and row.startswith('+++ '):
-            new = source(row[6:] if row.startswith('+++ b/') else None)
+            new = source(_patch_path(row, 'b/'))
         elif row.startswith('@@'):
             hunk = True
         elif hunk and row.startswith('+') and new:

@@ -206,8 +206,10 @@ class ReviewerVerdict(GateRepoCase):
         self.plant(RID, handback_turn('Findings: none.\nVerdict: LAND'))
         out = self.assert_refused()
         self.assertIn('the reviewer %s gave no Checks: line (its final report)' % RID, out)
-        self.assertIn('\nInstead: resume the reviewer %s (SendMessage to its id) and ask for its '
-                      'Checks: line' % RID, out)
+        self.assertIn('\nInstead: resume the reviewer %s (SendMessage to its id) and ask it to give '
+                      'its full final lines again: each Done-when: line, the Checks: line' % RID,
+                      out)
+        self.assertIn('and the Verdict: line', out)
         self.plant(RID, handback_turn(report('LAND').replace(', copies PASS', '')))
         self.assertIn("the reviewer %s's Checks: line lacks copies" % RID, self.assert_refused())
 
@@ -222,35 +224,24 @@ class ReviewerVerdict(GateRepoCase):
         self.assertEqual(code, 0, (out, err))
 
     def test_land_with_follow_up_needs_an_open_follow_up(self):
-        """A closed record is no record in the store: it is refused like an id never filed."""
+        """The CLI wiring; verdicts.follow_up_why's cases are test_verdicts'."""
         self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP')))
-        lwfu = {'--verdict': 'LAND WITH FOLLOW-UP'}
         with self.backlog({'EX-9': 'open'}):
-            self.assertIn('names no --follow-up', self.assert_refused(**lwfu))
-            out = self.assert_refused(**dict(lwfu, **{'--follow-up': 'EX-CLOSED'}))
-            self.assertIn('--follow-up EX-CLOSED is no open record in the store', out)
-            self.assertIn('--follow-up EX-1 is a record this branch carries',
-                          self.assert_refused(**dict(lwfu, **{'--follow-up': 'EX-1'})))
-            self.assertIn('--follow-up goes with', self.assert_refused(**{'--follow-up': 'EX-9'}))
+            out = self.assert_refused(**{'--verdict': 'LAND WITH FOLLOW-UP',
+                                         '--follow-up': 'EX-CLOSED'})
+        self.assertIn('--follow-up EX-CLOSED is no open record in the store', out)
 
-    def test_the_follow_up_state_is_read_from_the_store(self):
-        class Rec(object):
-            readable = True
-
-            def __init__(self, state):
-                self.state = state
-
-            def get(self, key):
-                return self.state if key == 'state' else None
-        snap = {'EX-%d' % i: Rec(s) for i, s in enumerate(RECORD.STATES)}
-        snap['EX-C'] = Rec('closed')        # a closed or retired record kept is not open either
-        ctx = mock.Mock()
-        ctx.store.load.return_value.get.side_effect = snap.get
-        want = {'EX-%d' % i: (s, True) for i, s in enumerate(RECORD.STATES)}
-        want.update({'EX-C': ('closed', False), 'EX-GONE': (None, False)})
-        with mock.patch('kitlib.backlog.opener.open_store', return_value=ctx) as op:
-            self.assertEqual(self.tool.follow_up_states('/r', sorted(want)), want)
-        op.assert_called_once_with('/r', fetch=False)
+    def test_a_store_that_cannot_be_read_is_not_done(self):
+        """opener.follow_up_states's `why` is NOT DONE (exit 1), not a refusal."""
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP')))
+        with mock.patch('kitlib.backlog.opener.follow_up_states',
+                        return_value=(None, 'the PM data worktree cannot be read')) as got:
+            code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP', '--follow-up': 'EX-9'})
+        self.assertEqual(code, 1, (out, err))
+        self.assertIn('NOT DONE', out + err)
+        self.assertIn('the backlog store cannot be read for --follow-up: the PM data worktree '
+                      'cannot be read', out + err)
+        self.assertEqual(got.call_args[0][1], ['EX-9'])
         self.assertEqual(self.tool.follow_up_states('/r', []), {})
 
     def new_class_branch(self):
@@ -298,6 +289,13 @@ class ReviewerVerdict(GateRepoCase):
         t2 = self.repo.commit('move', 'lib/mod.py', cwd=wt)
         self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (t1, t2)),
                          ['lib/mod.py:Second'])
+        # diff.noprefix changes nothing (the prefixes are given), and a path holding a space,
+        # which git ends with a tab on its ---/+++ lines, is read whole
+        self.repo.git('config', 'diff.noprefix', 'true')
+        self.repo.write('lib/my mod.py', 'class Spaced:\n    pass\n', root=wt)
+        t3 = self.repo.commit('spaced', 'lib/my mod.py', cwd=wt)
+        self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (t2, t3)),
+                         ['lib/my mod.py', 'lib/my mod.py:Spaced'])
         with self.assertRaises(V.VerdictError):
             self.tool.new_sources(self.repo.root, 'nosuch..%s' % t2)
 

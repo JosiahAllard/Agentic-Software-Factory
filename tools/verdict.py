@@ -174,37 +174,36 @@ def verdict_reader(environ=None):
 
 
 def follow_up_states(root, ids):
-    """`{id: (state, open)}` for each --follow-up id (verdicts.follow_up_why): the record's `state:`
-    in the backlog store the checkout `root` opens, as last fetched
-    (kitlib.backlog.opener.open_store, no fetch), None when the store holds no record of that id (a
-    closed or retired one), `unreadable` for a record that cannot be parsed; `open` True when the
-    state is one of kitlib.backlog.record.STATES. VerdictError when the store cannot be opened."""
+    """`{id: (state, open)}` for each --follow-up id (verdicts.follow_up_why), read from the live
+    store (kitlib.backlog.opener.follow_up_states). VerdictError (NOT DONE) when it cannot be
+    read."""
     if not ids:
         return {}
-    from kitlib.backlog import errors as berrors
     from kitlib.backlog import opener
-    from kitlib.backlog import record as rmod
-    try:
-        snap = opener.open_store(root, fetch=False).store.load()
-    except (berrors.Failure, berrors.Refusal, berrors.Usage, kconfig.ConfigError, OSError) as e:
+    got, why = opener.follow_up_states(root, [i.strip() for i in ids])
+    if why:
         raise verdicts.VerdictError('the backlog store cannot be read for --follow-up: %s; nothing '
-                                    'was queued' % e)
-    out = {}
-    for rid in ids:
-        rec = snap.get(rid.strip())
-        state = None if rec is None else rec.get('state') if rec.readable else 'unreadable'
-        out[rid.strip()] = (state, state in rmod.STATES)
-    return out
+                                    'was queued' % why)
+    return got
+
+
+def test_source(root):
+    """The repo module map's ModuleMap.is_test_source (.kit.json "modules".map), or the default
+    map's (DEFAULT_TEST_SOURCES) when none is named or it cannot be read."""
+    from kitlib.modulemap import MapError, ModuleMap, load_map
+    from kitlib.modulemap.check import map_paths
+    try:
+        return load_map(map_paths(root, kconfig.load(root), require_owner=False)[0]).is_test_source
+    except (MapError, kconfig.ConfigError, OSError):
+        return ModuleMap({'modules': {}}).is_test_source
 
 
 def new_sources(root, rng):
     """verdicts.new_sources for the range `rng` in `root`, with kitlib.docs.codemap's source
-    extensions and type patterns and kitlib.modulemap.load.DEFAULT_TEST_SOURCES."""
+    extensions and type patterns and the repo's test sources (test_source)."""
     from kitlib.docs import codemap
-    from kitlib.modulemap.load import DEFAULT_TEST_SOURCES
-    return verdicts.new_sources(root, rng, codemap.EXTS, DEFAULT_TEST_SOURCES,
-                                (('.gd', codemap.GD_TYPE), ('.py', verdicts.PY_CLASS_RE),
-                                 (None, codemap.TYPE)))
+    return verdicts.new_sources(root, rng, codemap.EXTS, test_source(root),
+                                (('.gd', codemap.GD_TYPE), (None, codemap.TYPE)))
 
 
 def carry(a, common_dir):

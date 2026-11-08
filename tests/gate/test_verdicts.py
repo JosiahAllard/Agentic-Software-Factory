@@ -129,8 +129,12 @@ class ReportLines(unittest.TestCase):
 
     def test_unmet_and_design_lines(self):
         text = ('Done-when: X-1 (a) MET - test_a\nDone-when: X-1 (b) UNMET - no test\n'
-                'Done-when: X-1 (c) met, not unmetered\n')
-        self.assertEqual(V.unmet_lines(text), ['Done-when: X-1 (b) UNMET - no test'])
+                'Done-when: X-1 (c) met, not unmetered\n'
+                'Done-when: X-1 (d) MET - was UNMET until the fix\n'
+                'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count\n')
+        self.assertEqual(V.unmet_lines(text), [
+            'Done-when: X-1 (b) UNMET - no test',
+            'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count'])
         for text, want in (('Design: APPROVE', 'APPROVE'), ('**Design:** revise', 'REVISE'),
                            ('Design: APPROVE\nDesign: maybe', None), ('', None)):
             self.assertEqual(V.design_of(text), want, text)

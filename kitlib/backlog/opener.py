@@ -8,6 +8,7 @@ docs/backlog.md).
                        `liveness` probe the worktree classifier's (liveness), its `cap` repo_cap's;
                        from a linked worktree naming no store, the PM data worktree's live store
                        (store.worktree_live_store)
+  follow_up_states(root, ids) -> ({id: (state, open)}, why) from the live store (no fetch)
   repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
   repo_resources(top) -> the main checkout's `.kit.json` backlog.resources, {name: capacity}
   repo_shared_paths(top) -> the main checkout's `.kit.json` backlog.shared_paths, [(path, why)]
@@ -72,6 +73,27 @@ def open_store(root, fetch=True, session=None, branch=None):
                        resources=lambda: repo_resources(top, worktrees=listing),
                        shared=lambda: repo_shared_paths(top, worktrees=listing))
     return ctx
+
+
+def follow_up_states(root, ids):
+    """`({id: (state, open)}, None)` for each of `ids` in the live store of `root`'s records
+    (store.live_store_root: from a main checkout naming no store, its PM data worktree's), as last
+    fetched: `state` the record's `state:`, None when the store holds none of that id (a closed or
+    retired one), `unreadable` when it cannot be parsed; `open` True when the state is one of
+    record.STATES. `(None, why)` when the live store cannot be found or opened."""
+    try:
+        path, why = smod.live_store_root(root)
+        if why:
+            return None, why
+        snap = open_store(path, fetch=False).store.load()
+    except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
+        return None, str(e)
+    out = {}
+    for rid in ids:
+        rec = snap.get(rid)
+        state = None if rec is None else rec.get('state') if rec.readable else 'unreadable'
+        out[rid] = (state, state in rmod.STATES)
+    return out, None
 
 
 def repo_cap(top, *, worktrees=None):

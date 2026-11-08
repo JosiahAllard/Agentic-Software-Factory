@@ -184,12 +184,24 @@ def locked_paths(rules, paths):
     return [p for p in paths if rules.is_locked(p)]
 
 
-def shrunk_paths(root, rules, paths):
-    """The `"owner".shrink_only` paths among `paths` whose work-tree change to HEAD (what this
-    call stages) only deletes lines (kitlib.guard.ownercommits.deletes_only, the one predicate
-    gate land and pre-push judge the commit by); a git failure shrinks nothing."""
+def shrunk_paths(root, rules, paths, revs=('HEAD',)):
+    """The `"owner".shrink_only` paths among `paths` whose change `git diff <revs>` shows only
+    deletes lines (kitlib.guard.ownercommits.deletes_only, the one predicate gate land and
+    pre-push judge the commit by): `HEAD`, the work tree's, before staging; `--cached <head>`, the
+    staged copy _stage commits. A git failure shrinks nothing."""
     from kitlib.guard.ownercommits import deletes_only     # here: as in _unapproved_paths
-    return {p for p in paths if rules.is_shrink_only(p) and deletes_only(root, p, ['HEAD'])[0]}
+    return {p for p in paths if rules.is_shrink_only(p) and deletes_only(root, p, list(revs))[0]}
+
+
+def owner_only_refusal(locked, carried=()):
+    """The refusal of an owner-only path committed without the owner (`carried`: the paths a merge
+    in progress would carry unnamed, named in a hint)."""
+    return ('refused: %s is owner-only, and only a commit the owner authors (their own git '
+            'identity, --owner-authored) can carry its approval. Propose the change to the owner.%s '
+            'Or ask the owner on the hub and commit with --owner-approval hub:A-<n>.' % (
+                ', '.join(locked), (' (A merge in progress carries the merged branch\'s own copy '
+                                    'of %s without it being named: leave it out of your list.)'
+                                    % ', '.join(carried)) if carried else ''))
 
 
 def unapproved_locked(rules, locked, owner_approved):
@@ -1267,9 +1279,10 @@ def _approval_before_write(root, hub, paths, status_before):
 
 
 def _stage(req, root, paths, rendered, named, merged, status_before, msg_warnings, body, trailers,
-           lines, hub):
+           lines, hub, shrink=(None, ())):
     """`(head, snap, status_after, others, message)`: the named paths staged and checked, for
-    commit_only; raises _Stop on a refusal."""
+    commit_only; raises _Stop on a refusal. `shrink`: (rules, the owner-only paths exempt as
+    work-tree shrinks), each judged again here on its staged copy against `head`."""
     # A listed path is always added again. The one skip: a listed path staged as a deletion and
     # absent from the work tree (`git add` would fail "pathspec did not match"); its deletion is
     # committed because it was named. Nothing unnamed is ever added.
@@ -1297,6 +1310,12 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     why = hub and approval.staged_error(hub.doc, head, status_after, snap, hub.head, hub.plan)
     if why:
         raise _Stop(REFUSED, 'refused: %s. Nothing was committed.' % why)
+    rules, shrunk = shrink
+    grown = sorted(set(shrunk) - (shrunk_paths(root, rules, shrunk, ['--cached', head])
+                                  if shrunk and head else set()))
+    if grown:           # the staged copy, the one committed, is what counts
+        raise _Stop(REFUSED, *unstage_added(root, sorted(named), status_before,
+                                            [owner_only_refusal(grown)]))
     refusal, warnings = staged_machine_path_error(root, status_after, status_before)
     # The message check printed the same machine-config WARNING already: once is enough.
     if refusal:
@@ -1450,6 +1469,7 @@ def _commit(req, lines):
         hub = _approval_before_write(root, hub, paths, status_before)
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
+    shrunk = set()      # judged again on the staged copy, in _stage
     if locked and not req.owner_authored and not hub and not merge_heads(root):  # a merge: never
         shrunk = shrunk_paths(root, rules, locked)
         locked = [p for p in locked if p not in shrunk]
@@ -1457,13 +1477,7 @@ def _commit(req, lines):
         # The hint only for a path the merge would carry unnamed, as it is staged now.
         carried = sorted(merge_owned(root, rules, set(locked) & set(status_before), heads,
                                      landed)[0])
-        raise _Stop(REFUSED, 'refused: %s is owner-only, and only a commit the owner authors (their '
-                    'own git identity, --owner-authored) can carry its approval. Propose the '
-                    'change to the owner.%s Or ask the owner on the hub and commit with '
-                    '--owner-approval hub:A-<n>.' % (', '.join(locked), (
-                        ' (A merge in progress carries the merged branch\'s own copy of %s '
-                        'without it being named: leave it out of your list.)'
-                        % ', '.join(carried)) if carried else ''))
+        raise _Stop(REFUSED, owner_only_refusal(locked, carried))
     for p in ([] if hub else unapproved_locked(rules, locked, approved)):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
     if req.owner_authored:
@@ -1482,7 +1496,7 @@ def _commit(req, lines):
     try:
         head, snap, status_after, others, msg = _stage(
             req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
-            trailers, lines, hub)
+            trailers, lines, hub, (rules, shrunk))
         try:
             rc, out, err, new, notes, trees = commit_only(root, head, snap, msg,
                                                           allow_empty=req.allow_empty)

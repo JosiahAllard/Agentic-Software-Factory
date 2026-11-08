@@ -44,7 +44,7 @@ What it refuses (`kitlib/commit/__init__.py`, `_commit`):
   - `--owner-approved` is required only when an owner-only path is in the commit.
   - Every `--owner-approved` value must be a blanket entry or a committed path. It is written in its canonical spelling under `"owner".trailer`.
   - Or an agent commits the exact change the owner approved on the hub, with `--owner-approval hub:A-<n>` ("Owner approval" below).
-  - Or the path is in `"owner".shrink_only` and its work-tree change to HEAD only deletes lines (`shrunk_paths`, with the predicate `gate land` and pre-push use: docs/guard.md "Owner-only commits"). Any other change to it, or one in a merge in progress, stays refused; a git failure refuses.
+  - Or the path is in `"owner".shrink_only` and its change to HEAD only deletes lines, in the work tree and again in the staged copy after staging (`shrunk_paths`, with the predicate `gate land` and pre-push use: docs/guard.md "Owner-only commits"). Any other change to it, or one in a merge in progress, stays refused; a git failure refuses.
 - **The main checkout** (`kitlib.git.checkout.main_refusal`), unless `--lander-main-checkout` is given. That flag is a usage error anywhere else.
 
 The message is the subject, then the body, then the trailers:

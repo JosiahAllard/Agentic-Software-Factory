@@ -1554,6 +1554,27 @@ class TheOwnersIdentity(LinkedCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.git('show', 'HEAD:CLAUDE.md'), 'a\nc')
 
+    def test_a_shrink_only_path_is_judged_again_as_staged(self):
+        """The work tree grows after its shrink was judged and before `git add`: the staged copy,
+        the one committed, is judged again and refused, and nothing this call staged stays."""
+        from kitlib.guard import ownercommits
+        real = ownercommits.deletes_only
+
+        def then_grow(root, path, revs, env=None):
+            got = real(root, path, revs, env)
+            if revs == ['HEAD']:
+                self.put('CLAUDE.md', 'a\nc\nd\n')
+            return got
+        self.configure(owner={'email': OWNER, 'agent_emails': [AGENT], 'shrink_only': ['CLAUDE.md']})
+        self.put('CLAUDE.md', 'a\nb\nc\n')
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner', '--', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\n')
+        with mock.patch.object(ownercommits, 'deletes_only', then_grow):
+            self.assert_refused('refused: CLAUDE.md is owner-only, and only a commit the owner '
+                                'authors', 'CLAUDE.md')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+
     def test_dot_spellings_of_an_owner_only_path_are_still_owner_only(self):
         self.put('CLAUDE.md', 'x\n')
         self.assert_refused('only a commit the owner authors', './CLAUDE.md')

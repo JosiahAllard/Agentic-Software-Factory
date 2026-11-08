@@ -203,6 +203,26 @@ class HubOwnerApproval(PackCase):
         self.assertIn('not one hub:A-<n>', row[3])
 
 
+class ShrinkOnlyPath(PackCase):
+    """A `"owner".shrink_only` path (the base's list, as landing reads it) an agent commit only
+    deletes lines of reads ok, by ownercommits.deletes_only; an added line still blocks."""
+
+    CONFIG = {'owner': {'email': EMAIL, 'shrink_only': ['CLAUDE.md']}}
+
+    def test_a_delete_reads_ok_and_a_later_add_is_missing(self):
+        self.write('CLAUDE.md', 'a\nb\nc\n')
+        self.commit_all('the owner')
+        self.git('checkout', '-q', '-b', 'feature')
+        self.write('CLAUDE.md', 'a\nc\n')
+        self.commit_all('drop b', author=AGENT)
+        [row] = self.owner_only()[1]
+        self.assertEqual((row[1], row[2]), ('ok', 'CLAUDE.md'), row)
+        self.assertIn('shrink_only', row[3])
+        self.write('CLAUDE.md', 'a\nc\nd\n')
+        self.commit_all('add d', author=AGENT)
+        self.assertEqual(sorted(r[1] for r in self.owner_only()[1]), ['MISSING', 'ok'])
+
+
 class RangeCommits(PackCase):
     def test_range_commits_splits_author_message_and_names(self):
         self.git('checkout', '-q', '-b', 'feature')

@@ -203,6 +203,25 @@ class ShrinkOnly(OwnerCommitsCase):
         self.assertEqual(self.bad(two), [oc.Violation(two, AGENT, [GRANTS])])
         self.assertEqual(self.bad(one), [])
 
+    def test_a_merge_that_only_deletes_lines_still_counts(self):
+        here = self.repo.git('rev-parse', '--abbrev-ref', 'HEAD')
+        self.repo.git('checkout', '-q', '-b', 'side')
+        self.commit_as(OWNER, 'side work', {'a.py': 'a\n'})
+        self.repo.git('checkout', '-q', here)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit', 'side')
+        sha = self.agent(files={GRANTS: LINES.replace('line 3\n', '')}, message='merge')
+        self.assertEqual(len(self.repo.git('rev-list', '--parents', '-n', '1', sha).split()), 3)
+        self.assertEqual(self.bad(sha), [oc.Violation(sha, AGENT, [GRANTS])])
+
+    def test_a_git_failure_is_none_and_refuses(self):
+        sha = self.agent(files={GRANTS: LINES.replace('line 3\n', '')})
+        got, why = oc.deletes_only(self.repo.root, GRANTS, ['1' * 40, sha])
+        self.assertIsNone(got)
+        self.assertIn('git diff failed', why)
+        with mock.patch.object(oc, 'deletes_only', return_value=(None, 'git diff failed: boom')):
+            self.assertEqual(oc.violations(self.repo.root, self.rules, sha, [self.main]),
+                             (None, 'git diff failed: boom'))
+
 
 class NetChange(OwnerCommitsCase):
     """An owner-only path counts only when landing the tip on the target main would change it;

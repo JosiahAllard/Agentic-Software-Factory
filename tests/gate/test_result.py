@@ -1,6 +1,6 @@
 """kitlib.gate.result: the result records every branch gate and landing writes (running, then
 final), and wait-result, the wait a second session arms on them (its one write: a running
-record whose process died, finished error) (docs/gate.md "Result
+record whose process died, finished error) (docs/gate-records.md "Result
 record")."""
 import contextlib
 import json
@@ -448,7 +448,7 @@ class Records(unittest.TestCase):
 class Folder(unittest.TestCase):
     """The result folder is <dev_drive>/pm-kit/kit-gate-result/<repo key>, outside every checkout
     and one per repository; the old <git common dir>/kit-gate-result is read, never written; with
-    no dev_drive there is no result folder (docs/gate.md "Result record")."""
+    no dev_drive there is no result folder (docs/gate-records.md "Result record")."""
 
     def setUp(self):
         self.repo = gitfixture.TempRepo()

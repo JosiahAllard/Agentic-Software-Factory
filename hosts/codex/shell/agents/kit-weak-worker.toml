@@ -37,7 +37,7 @@ it, the intended path) when:
 - Base moved: merge the exact commit the coordinator named (skill branch-sync), never the local main,
   never rebase; any conflict: stop and report.
 - Run the brief's tests to a log and read it; the gate only when the coordinator asks, after review
-  (`<kit>/docs/gate.md` \"Waiting on a gate: who arms what\"; your own gate: no Monitor). Report a
+  (`<kit>/docs/gate-records.md` \"Waiting on a gate: who arms what\"; your own gate: no Monitor). Report a
   result only once you have read it: else GATE PENDING with the log path.
 - Tests you write bind port 0.
 

@@ -1,4 +1,4 @@
-"""kitlib.gate.reuse: the same-tree path (docs/gate.md "Gate reuse"), split from test_reuse so each
+"""kitlib.gate.reuse: the same-tree path (docs/gate-landing-policy.md "Gate reuse"), split from test_reuse so each
 module's run stays well under the test pool's unit timeout: a landing whose merge holds the very
 tree its tip passed gate.py --full on. Fixtures: test_reuse.ReuseCase."""
 import datetime
@@ -25,7 +25,7 @@ NOT_USED = 'SAME TREE %s: the --full record of ' + BRANCH + ' at %s is not used:
 
 class SameTree(ReuseCase):
     """A landing whose merge holds the very tree its tip passed gate.py --full on takes the steps
-    the cache does not serve from the tip's gate-OK record (docs/gate.md "Gate reuse", "The same
+    the cache does not serve from the tip's gate-OK record (docs/gate-landing-policy.md "Gate reuse", "The same
     tree"): only a one-branch, non-strict landing, and only the record of the same base, gate
     config and kit, within "landing".reuse_max_age_h."""
     GATE = {'steps': [UNIT, BASEY, WHOLE, MERGED, PLAIN]}

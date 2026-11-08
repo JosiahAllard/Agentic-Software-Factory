@@ -1,4 +1,4 @@
-"""Folding queued submissions (docs/gate.md "Folding queued submissions"): a folded batch
+"""Folding queued submissions (docs/gate-landing.md "Folding queued submissions"): a folded batch
 drops a unit that does not merge, a red merged gate gives every unit back, and a folded
 landing woken while the anchor gives it back lands at its own turn. Fixtures:
 tests/gate/test_land_fold.py."""

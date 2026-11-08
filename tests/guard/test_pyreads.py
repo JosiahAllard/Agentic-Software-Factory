@@ -1,6 +1,6 @@
 """rules.py_program: how python reads its program. Code on the line (-c) and a program read from
 standard input count as a write of the directory python runs in, whatever the code is; the guard
-does not read it (docs/guard.md "Shell writes"). rules.ps_native_unsure: the PowerShell words
+does not read it (docs/guard-jail-roles.md "Shell writes"). rules.ps_native_unsure: the PowerShell words
 that make any python run such a write."""
 import unittest
 

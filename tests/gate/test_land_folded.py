@@ -1,4 +1,4 @@
-"""Folding queued submissions (docs/gate.md "Folding queued submissions"): the landing of a
+"""Folding queued submissions (docs/gate-landing.md "Folding queued submissions"): the landing of a
 folded submission, and its --wait-result. Fixtures: tests/gate/test_land_fold.py."""
 import os
 import unittest

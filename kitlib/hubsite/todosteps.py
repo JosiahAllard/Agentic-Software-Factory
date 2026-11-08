@@ -84,7 +84,7 @@ _ABANDON_ROUTE = ('; unlanded work leaves by worktree_remove.py <slug> --abandon
                   '<branch> --branch --abandon "<why>"), which keeps its commits under an '
                   'archive/ tag and which the coordinator runs on the owner\'s or the PM\'s ruling')
 # a ref outside refs/heads, refs/tags, refs/stash and refs/backlog holds no branch: the coordinator deletes it from its own
-# session (docs/guard.md "Rules", git-shared-ref)
+# session (docs/guard-rules.md "Rules", git-shared-ref)
 _STRAY_REF_ROUTE = ('; a ref outside refs/heads, refs/tags, refs/stash and refs/backlog the '
                     'coordinator deletes itself, in its own repository (git update-ref -d <ref>)')
 _COORDINATOR_RES = (

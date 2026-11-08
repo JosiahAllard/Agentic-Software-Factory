@@ -1,4 +1,4 @@
-"""land.py: land a branch, or a batch, on the main branch: the one landing tool (docs/gate.md
+"""land.py: land a branch, or a batch, on the main branch: the one landing tool (docs/gate-landing.md
 "Landing").
 
   land.py BRANCH [BRANCH ...] --expect-tip SHA [--expect-tip SHA ...] [--expect-main SHA]
@@ -13,20 +13,20 @@
       (CONFLICT) or a refused push nothing is pushed and the merge is dropped.
       Landed: each branch's remote branch, worktree and local branch go, never forced (what main
       does not contain, or work, or a holder, keeps it); --keep-branch keeps all three. --fresh
-      runs every step of the merged gate (no gate reuse, docs/gate.md "Gate reuse").
+      runs every step of the merged gate (no gate reuse, docs/gate-landing-policy.md "Gate reuse").
       Every branch lands only with a verdict queued for its tip (tools/verdict.py add, or carried
       to it over main merges by tools/verdict.py carry and checked again here) by a reviewer who
-      is not its author (docs/gate.md "Landing" step 4), strong-tier for a High-risk verdict
+      is not its author (docs/gate-landing.md "Landing" step 4), strong-tier for a High-risk verdict
       (kitlib/gate/verdicts.py tier_why). A branch that changes a strict path
       (kitlib/gate/strict_defaults.py, read from main) lands alone, its reviewer strong-tier, and
-      its merged gate runs --full --fresh whatever was passed (docs/gate.md "Strict paths").
+      its merged gate runs --full --fresh whatever was passed (docs/gate-landing-policy.md "Strict paths").
       --submit: the same landing, started detached and windowless; prints a REVIEW line for each
       branch with a verdict queued at its tip, then the last line, SUBMITTED ... wait: <the
       gate.py wait-result command that waits for its result record>, and exits 0. It needs one
       --reviewed-by per branch, before --submit, in --expect-tip's order: the reviewer id of its
       verdict queued at its tip. Missing or miscounted: USAGE (2) with an `Instead:` line, the
       command with the queued ids; an id that is not the reviewer, or no verdict queued at the
-      tip: REFUSED (4); nothing written (docs/gate.md "Submitting a landing").
+      tip: REFUSED (4); nothing written (docs/gate-landing.md "Submitting a landing").
       --wait-result (before --submit): once SUBMITTED is printed, wait for the landing to end
       and print its outcome lines, then each branch's RESULT line and record as gate.py
       wait-result prints them; the exit code is the last record's (kitlib.gate.submit.follow).
@@ -38,7 +38,7 @@
       reviewer must be strong-tier, and it lands alone) or `NOT STRICT <branch>: ...`, by the
       matcher a landing refuses by, against <remote>/<main> as last fetched; no lock, no verdict
   land.py --sweep-landed [--apply] [-C DIR]
-      the same cleanup for every branch main already contains (docs/gate.md "Branch cleanup");
+      the same cleanup for every branch main already contains (docs/gate-landing-policy.md "Branch cleanup");
       a dry run names what would go, --apply cleans up
 
 --wait: seconds to wait for the turn and the lock (default "landing".wait_s of .kit.json; 0: BUSY

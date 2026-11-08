@@ -294,7 +294,7 @@ class CheckTest(pc.PrePushCase):
         self.assertEqual(self.check(branch), (True, None))                     # not main
 
     def test_the_rules_refuse_in_order(self):
-        """Delete or non-fast-forward, then gate-OK, then owner-only paths (docs/guard.md
+        """Delete or non-fast-forward, then gate-OK, then owner-only paths (docs/guard-hooks.md
         "Pre-push"): a push that breaks all three is refused for the first, then the next."""
         self.base({'repo': {'push_block': True}, 'owner': {'email': gitfixture.EMAIL}})
         base = self.repo.git('rev-parse', 'main')

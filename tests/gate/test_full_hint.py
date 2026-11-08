@@ -1,4 +1,4 @@
-"""A plain branch gate says when its tip must end on --full (docs/gate.md "The final gate";
+"""A plain branch gate says when its tip must end on --full (docs/gate-run.md "The final gate";
 runner.full_hint, land.full_needed): a FULL NEEDED line with the reason the landing's tip check
 (Lander.diff_refusal, select_refusal's own checks of the landing diff) would refuse its record
 for, or a changed strict path; nothing extra when the record lands. --full and --only add no line,
@@ -29,7 +29,7 @@ class HintCase(tg.ScopedCase):
         self.assertEqual(len(found), 1, out.lines)
         for s in says:
             self.assertIn(s, found[0])
-        self.assertIn('--full (docs/gate.md "The final gate")', found[0])
+        self.assertIn('--full (docs/gate-run.md "The final gate")', found[0])
         self.assertEqual(out.facts['full_hint'], found[0])
         # just before the source line (detect.label), which stays last
         self.assertEqual(out.lines.index(found[0]), len(out.lines) - 2, out.lines)

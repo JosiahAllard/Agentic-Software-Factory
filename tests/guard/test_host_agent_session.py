@@ -1,4 +1,4 @@
-"""Who the guard counts as an agent session on each host (rules.agent_session; docs/guard.md
+"""Who the guard counts as an agent session on each host (rules.agent_session; docs/guard-fallback.md
 "Session mark"). Codex's hooks carry no subagent identity (hosts.json capabilities), so on Codex
 every chat is an agent session, the owner's unmarked main chat too: the rules only agents are held
 to (kit-json among them) refuse it there. On Claude an unmarked main chat is still the owner's.

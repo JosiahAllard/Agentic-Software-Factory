@@ -424,7 +424,7 @@ class InlineAliasJudged(unittest.TestCase):
 class HubKept(World):
     """Item 5 keeps the owner-only hub tools: with the kit's default modes, a parsed run of the hub
     tool's owner verb is denied to any session but the owner's, and so is a line the parser cannot
-    read whose text names the hub tool, read verbs included (docs/guard.md "Fallback")."""
+    read whose text names the hub tool, read verbs included (docs/guard-fallback.md "Fallback")."""
 
     def setUp(self):
         super().setUp()

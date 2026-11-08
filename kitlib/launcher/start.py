@@ -56,7 +56,7 @@ HOME_NOTE = (' Your start folder %s is a home worktree of the main checkout %s, 
              'it: do not write there; your branch work goes in your own worktree, and the main checkout, by '
              'absolute path, is read-only to you.')
 # the roles --home-worktree may start in a home: a session in a linked worktree may write only that
-# worktree and temp (docs/guard.md "Write jail"). A consultant's notes file is in agent temp
+# worktree and temp (docs/guard-jail-roles.md "Write jail"). A consultant's notes file is in agent temp
 # (consultant_notes_path); a coordinator's state note is in agent temp too (COORDINATOR_FOLDER), so the
 # note is not a reason to refuse one; only these two roles are given a home (docs/launcher.md "The home worktree")
 HOME_ROLES = (window.DEEP_WORKER, window.CONSULTANT)

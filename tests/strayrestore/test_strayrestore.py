@@ -417,7 +417,7 @@ class Roles(unittest.TestCase):
             self.assertFalse(sr.allowed(mark), mark)
 
     def test_an_unmarked_codex_process_is_not_the_owner(self):
-        """A Codex chat is never the owner (docs/guard.md "Session mark"): unmarked under a Codex
+        """A Codex chat is never the owner (docs/guard-fallback.md "Session mark"): unmarked under a Codex
         host, or with a process tree that cannot be read (fail closed), it may not run it; the
         owner's own shell and the default host's chat may. A mark is judged as before."""
         codex = lambda: ['python.exe', 'pwsh.exe', 'codex.exe']        # noqa: E731

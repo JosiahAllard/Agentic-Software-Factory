@@ -34,7 +34,7 @@ DRIVE = re.compile(r'(?<![A-Za-z0-9_?%$])[A-Za-z]:(?:\\|/)')
 EXCLUDED = ('tests/',)
 # (file glob, text the line contains, why it may name a drive)
 DRIVE_ALLOWED = (
-    ('docs/guard.md', '| `root-search` |', 'the root-search rule names the searches it denies'),
+    ('docs/guard-rules.md', '| `root-search` |', 'the root-search rule names the searches it denies'),
     ('kitlib/guard/commands.py', 'C:\\\\x\\\\Godot_v4.exe', 'a docstring example of a program path'),
     ('kitlib/guard/shell.py', 'unquoted Windows path (C:\\\\tmp', 'a docstring on bash quoting'),
     ('kitlib/guard/shell.py', "# C:\\ before a space", 'a comment on a drive root'),

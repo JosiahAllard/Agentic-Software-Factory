@@ -1,4 +1,4 @@
-"""Role policy: what a role may do on any host, over the shared rules (docs/guard.md "Role policy";
+"""Role policy: what a role may do on any host, over the shared rules (docs/guard-jail-roles.md "Role policy";
 ARCHITECTURE.md "Roles"). Lifted from the Codex branch's guard_adapter and kit_adapter, with no host
 in it.
 
@@ -98,7 +98,7 @@ RULES = (
 )
 # The lock verbs a mode runs: verb -> None (any argument) or the sub-verbs it may take ('' none).
 # Only verbs tools/machine_lock.py has (its parser: run, background, status, stop, top, hold,
-# division, game); AGENT_LOCK is docs/guard.md "Lock CLI owner writes" "Still open" among them: an
+# division, game); AGENT_LOCK is docs/guard-owner.md "Lock CLI owner writes" "Still open" among them: an
 # agent's rights. `status` also gives the run history (--days).
 AGENT_LOCK = {'status': None, 'run': None, 'background': None, 'stop': None,
               'hold': ('agent', 'list', 'end', 'edit'), 'division': ('',), 'game': ('', 'show')}

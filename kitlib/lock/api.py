@@ -18,7 +18,7 @@ check is the one hook (set_owner_check). On the machine's store the writes read 
 the calling process's tree (who()); `actor` gives only a name for the records.
 
 Library calls, outside that contract (a store in, plain values out, no actor; the caller decides
-who may ask): stop_asked, stop_waiting (kitlib.gate.gatecap, docs/gate.md "The gate queue").
+who may ask): stop_asked, stop_waiting (kitlib.gate.gatecap, docs/gate-records.md "The gate queue").
 """
 import datetime
 import os

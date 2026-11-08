@@ -215,7 +215,7 @@ def _git_lines(root, args, what):
 def default_base(root, cfg=None):
     """`(rev, note)`: the main branch's name (`.kit.json` "repo".main_branch when written, else
     main if that branch exists, else master) measured by the shared rule kitlib.git.refs.
-    default_base (docs/gate.md "Default base"): its `<remote>/` tracking ref when that resolves.
+    default_base (docs/gate-run.md "Default base"): its `<remote>/` tracking ref when that resolves.
     `note` says when the local branch differs from the one measured against."""
     cfg = cfg if cfg is not None else load_config(root)
     if 'main_branch' in cfg.raw('repo'):

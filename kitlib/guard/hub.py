@@ -1,4 +1,4 @@
-"""What the guard's hub rules know of the Action Hub (docs/guard.md "Hub secrets"): pure helpers
+"""What the guard's hub rules know of the Action Hub (docs/guard-owner.md "Hub secrets"): pure helpers
 for kitlib.guard.rules' hub-secrets, hub-owner-verb, hub-mcp and hub-browser.
 
   secret_folder(config_path)   the hub's token folder beside the machine config file

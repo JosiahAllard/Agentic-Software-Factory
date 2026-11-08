@@ -1,4 +1,4 @@
-"""Claude Code's hook payloads read as kitlib.host.Action (docs/guard.md "Output"; plan 2.2).
+"""Claude Code's hook payloads read as kitlib.host.Action (docs/guard-core.md "Output"; plan 2.2).
 
 Every read of a Claude Code hook payload's field names is here, and nowhere in kitlib:
 
@@ -16,7 +16,7 @@ Every read of a Claude Code hook payload's field names is here, and nowhere in k
       `cwd` is passed as sent (None when absent: the guard then uses its own folder). `agent_id`
       is the subagent identity (absent or empty: the main session); `agent_type` becomes
       agent_role with exactly one leading kit plugin prefix dropped (kitlib.agentname.bare,
-      docs/guard.md "Agent names"), and is read only for a subagent. PM_KIT_ROLE is not in the
+      docs/guard-fallback.md "Agent names"), and is read only for a subagent. PM_KIT_ROLE is not in the
       payload: the guard reads it from its own environment, which Claude Code hands the hook.
   agent(payload)  the agent_id alone, for a deny when parse itself failed (kitlib.host.hookmain)
 

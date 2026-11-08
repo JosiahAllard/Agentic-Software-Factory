@@ -403,7 +403,7 @@ def process_names(path=None):
 def unowned_images(path=None):
     """{lower-case image: attribution name} of the running platform's agent processes of every
     host whose hooks carry no subagent identity (capabilities.subagent_identity_in_hooks false):
-    a chat of such a host is never the owner (docs/guard.md "Session mark"), so a tool it runs
+    a chat of such a host is never the owner (docs/guard-fallback.md "Session mark"), so a tool it runs
     never acts as the owner. RegistryError as load()."""
     from kitlib import platform
     out = {}

@@ -1,4 +1,4 @@
-"""kitlib.gate.land and strict paths (docs/gate.md "Strict paths"), split from test_land_strict so
+"""kitlib.gate.land and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
 each module's real-git run stays well under the test pool's unit timeout: a verdict carried over
 main merges, the strict list read from the base, and the dry check (`land.py --check-strict`).
 Fixtures: test_land_strict.StrictCase."""
@@ -20,7 +20,7 @@ FULL_GATE = test_land_strict.LandsAloneFullFresh.GATE     # only --full selects 
 
 
 class CarriedVerdict(StrictCase):
-    """A verdict carried over main merges (tools/verdict.py carry; docs/gate.md "Carrying a
+    """A verdict carried over main merges (tools/verdict.py carry; docs/gate-landing-policy.md "Carrying a
     verdict forward") lets the merge land, and only when kitlib.gate.carry passes it again here
     against the base, never on the facts stored."""
     GATE = FULL_GATE

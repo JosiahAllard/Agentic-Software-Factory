@@ -1,5 +1,5 @@
 """kitlib.gate.land: a branch tip lands only with a full-gate OK record for exactly that commit
-(docs/gate.md "Landing", the locked checks): a record a `gate.py --full` pass wrote (`full` true).
+(docs/gate-landing.md "Landing", the locked checks): a record a `gate.py --full` pass wrote (`full` true).
 A default-mode or --only run, a record from before records said whether the gate was --full, a
 record for another commit and one git no longer agrees with are each REFUSED before any merge.
 The refusal says what gates the tip whole (merge the base first, in the kit, when the tip's record
@@ -461,7 +461,7 @@ STRICT_FILE = 'kitlib/gate/x.py'        # a strict path (strict_defaults.STRICT_
 
 
 class ScopedCase(TipCase):
-    """A base that sets "landing".shared_paths (docs/gate.md "Shared paths"): a default-mode
+    """A base that sets "landing".shared_paths (docs/gate-run.md "Shared paths"): a default-mode
     (scoped) record lands a tip that changes no shared path and no strict path, with no
     "gate".smoke_steps; a tip that changes one needs a --full record. The merged gate still
     runs every step that is not manual."""
@@ -611,7 +611,7 @@ ONCE = 'GATE ONCE: '
 
 
 class GateOnce(ScopedCase):
-    """A base that sets "landing".gate_once (docs/gate.md "Gate once at landing"): a default-mode
+    """A base that sets "landing".gate_once (docs/gate-run.md "Gate once at landing"): a default-mode
     record lands a tip that changes no gate config file, shared and strict paths included, and the
     merged gate runs --full (each step's full_cmd) once on the merged tree (--full --fresh for a
     strict tip)."""

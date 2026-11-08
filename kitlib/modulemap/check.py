@@ -214,7 +214,7 @@ def _rel(root, path):
 
 
 def base_of(root, cfg, rev, map_path, ceilings_path):
-    """`(ratchet.Base or None, notes)` for `rev`; with no `rev`, the default base (docs/gate.md
+    """`(ratchet.Base or None, notes)` for `rev`; with no `rev`, the default base (docs/gate-run.md
     "Default base"), and none (a note) when that does not resolve. MapError when a given `rev`
     or the git reads fail."""
     notes = []
@@ -268,7 +268,7 @@ def write_page(root, cfg, mm, map_path):
 
 
 def scope_base(root, cfg, rev):
-    """`(rev, notes)`: `rev`, or the default base (docs/gate.md "Default base"). MapError when no
+    """`(rev, notes)`: `rev`, or the default base (docs/gate-run.md "Default base"). MapError when no
     base is given and the default does not resolve."""
     if rev:
         return rev, []

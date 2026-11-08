@@ -1,4 +1,4 @@
-"""kitlib.gate.land and owner-only paths (docs/gate.md "Landing", step 4): a branch with a commit
+"""kitlib.gate.land and owner-only paths (docs/gate-landing.md "Landing", step 4): a branch with a commit
 that changes an owner-only path and is not authored by the owner ("owner".email, read from
 --expect-main's config) is REFUSED before any merge, whatever its trailers say; the owner's own
 commit lands, and so does an agent commit with an owner approval the hub verifies for it."""

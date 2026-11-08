@@ -1,5 +1,5 @@
 """tools/land.py on a console that cannot encode every character (cp1252), and the log a
-landing's `error` result record names (docs/gate.md "Result record"). The follow-up of the gate's
+landing's `error` result record names (docs/gate-records.md "Result record"). The follow-up of the gate's
 own fix (tests/gate/test_output_encoding.py): land.py run directly printed through a strict cp1252
 stream, and Lander.run wrote its `error` record with no log while its final record names one."""
 import io

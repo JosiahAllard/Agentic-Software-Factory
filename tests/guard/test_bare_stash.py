@@ -1,4 +1,4 @@
-"""git-stash-shared (docs/guard.md "Rules"): an agent session's stash in a linked worktree that adds
+"""git-stash-shared (docs/guard-rules.md "Rules"): an agent session's stash in a linked worktree that adds
 an untagged entry or takes one it does not name. The sessions it holds follow agent_session, as
 kill-by-name does; a main checkout's stash stays git-stash's. The command rows are in
 tests/guard/shell_rows.py."""

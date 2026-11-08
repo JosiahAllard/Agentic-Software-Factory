@@ -198,7 +198,7 @@ class ManifestTest(unittest.TestCase):
                 content.load_kit(root)
 
     def test_every_role_names_its_policy_mode(self):
-        """The owner's table (docs/guard.md "Role policy"): leads control, builders write, the
+        """The owner's table (docs/guard-jail-roles.md "Role policy"): leads control, builders write, the
         read-only roles read, the test-runner tests, the lander lands. role_modes reads the same."""
         want = {'pm': 'controller', 'coordinator': 'controller',
                 'weak-worker': 'write', 'worker': 'write', 'senior-worker': 'write', 'strong-worker': 'write', 'deep-worker': 'write',

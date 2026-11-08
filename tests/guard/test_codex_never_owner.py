@@ -1,4 +1,4 @@
-"""A Codex chat is never the owner (an owner answer; docs/guard.md "Session mark"): owner
+"""A Codex chat is never the owner (an owner answer; docs/guard-fallback.md "Session mark"): owner
 actions are done only from a Claude chat or by hand. rules.is_owner_session is false for every
 Codex chat, the unmarked main chat too, so each owner-only check refuses one; the owner's unmarked
 Claude chat still passes. Codex's hooks carry no subagent identity (hosts.json capabilities

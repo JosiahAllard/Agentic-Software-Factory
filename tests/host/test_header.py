@@ -33,7 +33,7 @@ class HeaderText(unittest.TestCase):
         self.assertNotRegex(header.text('/k'), r'(?i)claude|codex|plugin_root')
 
     def test_it_warns_naming_the_key_while_the_machine_config_sets_no_dev_drive(self):
-        # docs/guard.md "Write jail", "Outer bound": dev_drive unset leaves the bound off, said at every start
+        # docs/guard-jail-roles.md "Write jail", "Outer bound": dev_drive unset leaves the bound off, said at every start
         # relative, or not an existing folder (the Dev Drive unmounted, a wrong letter): the bound is off too
         missing = os.path.join(ROOT, 'no-such-dev-drive-folder')
         for user in ({'dev_drive': None}, {'dev_drive': '  '}, {}, None, {'dev_drive': 'dev'}, {'dev_drive': missing}):

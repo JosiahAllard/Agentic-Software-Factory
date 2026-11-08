@@ -10,7 +10,7 @@ from tests.guard.prepush_case import SECRET
 
 @real_git('git push runs the real pre-push hook (core.hooksPath); rev-list --no-object-names')
 class PmDataPrivateTest(pc.PmDataCase):
-    """The leak stage (docs/guard.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
+    """The leak stage (docs/guard-hooks.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
     git common dir, the data branch, its history and its objects reach only the recorded private
     remote, and that remote gets nothing else. origin is the public remote. Pushes to the private remote, and the stage order."""
 

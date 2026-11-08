@@ -1,4 +1,4 @@
-"""An unchanged red tree (docs/gate.md "An unchanged red tree"): every branch gate of a clean tree
+"""An unchanged red tree (docs/gate-records.md "An unchanged red tree"): every branch gate of a clean tree
 writes a red-tree mark (kitlib.gate.rerun.mark); a later branch gate of the same tree, gate config
 and kit that would only repeat a failed one is REFUSED before it books, and again at its turn,
 unless --again. A pass of the same tree and mode supersedes the mark."""

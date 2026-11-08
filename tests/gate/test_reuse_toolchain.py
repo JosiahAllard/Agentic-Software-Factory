@@ -1,4 +1,4 @@
-"""kitlib.gate.reuse: a step's toolchain (docs/gate.md "Gate reuse", "The toolchain"). A step that
+"""kitlib.gate.reuse: a step's toolchain (docs/gate-landing-policy.md "Gate reuse", "The toolchain"). A step that
 declares `toolchain` probe argvs has their output in its key on every path (the cache, the same
 tree, the input tree): an unchanged toolchain is reused as before, a changed one runs the step, and
 a probe that fails gives the step no key. A step that declares none is keyed exactly as before and

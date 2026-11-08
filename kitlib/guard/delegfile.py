@@ -1,4 +1,4 @@
-"""Who may change the owner's delegation list (docs/guard.md "Owner delegation list").
+"""Who may change the owner's delegation list (docs/guard-owner.md "Owner delegation list").
 
   owner-delegations  a write, move or delete of the owner's delegation list by any session but
                      the owner's own (rules.is_owner_session): every subagent and every marked
@@ -36,10 +36,10 @@ What counts as a change (the guard catches honest mistakes, not evasion):
                  (read-tree -u), sparse-checkout and bisect that change it, and a `worktree
                  remove` or `move` of that work tree from any place. merge, pull, rebase,
                  cherry-pick, revert, am and apply are left to the owner-only commit check
-                 (docs/guard.md "Owner-only commits").
+                 (docs/guard-hooks.md "Owner-only commits").
 
 Two shell forms the edit rules cannot place are judged here for the machine config folder too
-(rules.machine_config, docs/guard.md "Owner machine setup"), each after the list's own check: a
+(rules.machine_config, docs/guard-owner.md "Owner machine setup"), each after the list's own check: a
 wildcard write target whose literal folder is or lies in a machine config folder
 (rules.machine_config_folder: <pointer>/.pm-kit, or a .pm-kit folder at a checkout's top), or
 whose wildcard parts match on disk a path that is or lies in one (glob_config_below), and

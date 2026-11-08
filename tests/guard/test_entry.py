@@ -117,7 +117,7 @@ class Entry(unittest.TestCase):
 
 
 class GoLive(unittest.TestCase):
-    """The guard started exactly as the settings entry tells Claude Code to start it (docs/guard.md
+    """The guard started exactly as the settings entry tells Claude Code to start it (docs/guard-hooks.md
     "Go-live"): the entry's command (pythonw.exe) with its args, no shell, the event JSON piped on
     stdin. A known-denied command must come back denied."""
     setUp, event = Entry.setUp, Entry.event

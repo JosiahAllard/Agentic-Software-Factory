@@ -23,7 +23,7 @@ machine lock itself. Selected tests: `python tools/kit_tests.py --select` (what 
 Red-first through `tools/redfirst.py` (docs/redfirst.md), never an in-place mutant.
 
 ### Known flakes
-None recorded. A red `gate.py --full` gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
+None recorded. A red `gate.py --full` gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate-rerun-checkout.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
 
 ## Test runner
 Pass line `kit_tests: OK`; anything else is a failure. Report the summary line and the failing
@@ -33,17 +33,17 @@ module lines only.
 Landing is standing owner-approved work and needs no further go: the coordinator queues a verdict for
 every landing, then submits it. Before a landing, per branch, from the main checkout:
 `python tools/verdict.py add -C <repo> --branch <branch> --tip <sha> --verdict LAND ...`
-(docs/gate.md "Strict paths"), then `python tools/land.py <branch> --expect-tip <sha> --reviewed-by <reviewer id> --submit` (the verdict's reviewer_id), then
+(docs/gate-landing-policy.md "Strict paths"), then `python tools/land.py <branch> --expect-tip <sha> --reviewed-by <reviewer id> --submit` (the verdict's reviewer_id), then
 the `gate.py wait-result ... --kind land` command it prints, kept running in the background. A lander
 role may do the submit, wait and report for the coordinator. No agent merges or pushes, and no
 expected-main hash is given: a detached process books its turn in the machine lock (the landing
 queue), so submitted landings merge in ticket order, each onto the main it finds; it gates the merge
-in its own landing tree and pushes only when green (docs/gate.md "Landing"). Success: a `RESULT pass
+in its own landing tree and pushes only when green (docs/gate-landing.md "Landing"). Success: a `RESULT pass
 land` line with `LANDED `. `CONFLICT <branch> with main <sha>: the author merges main` goes back to
 the branch's author; any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT
 RUN:`, `USAGE:`, `GATE FAILED:`, `RERUN VOID:`) is reported as is, with the doc's recovery steps, and not retried. Batches allowed: up to
 `"landing".batch_max` branches (5 by default), each with its own reviewer, range and LAND verdict; never a
-branch changing a strict path (docs/gate.md "Batch").
+branch changing a strict path (docs/gate-landing.md "Batch").
 
 ## Review
 A coordinator reviews a branch itself when it is small and low risk: read every hunk; skim

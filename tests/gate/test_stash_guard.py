@@ -1,4 +1,4 @@
-"""The stash guard (kitlib.gate.stash; docs/gate.md "The stash guard"): the branch gate and a
+"""The stash guard (kitlib.gate.stash; docs/gate-rerun-checkout.md "The stash guard"): the branch gate and a
 landing refuse while the repository's stash stack holds an entry, whichever checkout made it, and
 an entry that appears while a gate runs costs the branch gate its gate-OK record and undoes a
 landing's merge.

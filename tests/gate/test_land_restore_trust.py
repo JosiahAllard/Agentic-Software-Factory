@@ -1,4 +1,4 @@
-"""kitlib.gate.submit.restore trusts only the payload a submission wrote (docs/gate.md "Submitting
+"""kitlib.gate.submit.restore trusts only the payload a submission wrote (docs/gate-landing.md "Submitting
 a landing"): `land.py --submitted <payload>` and `gate.py land --submitted <payload>` run a landing
 only from the payload file submit() named for those branches and that run_id, read with the token
 submit() gave the detached landing in its environment, naming the landing's own branches, tips,

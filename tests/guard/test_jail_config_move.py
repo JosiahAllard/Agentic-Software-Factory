@@ -1,4 +1,4 @@
-"""Mark roots and the home config folders (docs/guard.md "Write jail"; docs/kit-json.md "Moving the
+"""Mark roots and the home config folders (docs/guard-jail-roles.md "Write jail"; docs/kit-json.md "Moving the
 machine config folder"): no mark root may be on, over or in the home config folder, though the
 machine config is read from the PM repository (kitlib.config.user.locate's OK). A file in it is
 the move's source (kitlib.config.move) and turns a machine without a pointer UNMOVED, so a session

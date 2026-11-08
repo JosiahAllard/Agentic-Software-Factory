@@ -1,4 +1,4 @@
-"""Agent names with and without the kit plugin's prefix (docs/guard.md "Agent names").
+"""Agent names with and without the kit plugin's prefix (docs/guard-fallback.md "Agent names").
 
 A host names an agent a plugin bundles by its hosts.json profile agent_name_format (Claude Code:
 `<plugin>:<name>`); the kit's plugin is kitlib.lockmcp.PLUGIN_NAME, so a kit agent can reach the

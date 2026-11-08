@@ -1,4 +1,4 @@
-"""A gate log prints only its own run's header (docs/gate.md "Whose run a log is";
+"""A gate log prints only its own run's header (docs/gate-records.md "Whose run a log is";
 kitlib.gate.outfile, tools/gate.py main).
 
 Seen twice: two workers of one session ran `gate.py --full >

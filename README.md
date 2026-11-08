@@ -15,7 +15,7 @@ Live since 2026-10-15, with landings in three repositories, and covered by tests
 - **Quality lives in the pipeline.** A branch needs a passing gate record and an independent
   reviewer's verdict. The landing then merges it onto current main in a separate tree and gates
   the merged result; only a green merge is pushed. On red, the merge is dropped and main is
-  untouched. A daily full run covers the rest (`tools/land.py`, `tools/gate.py`, docs/gate.md
+  untouched. A daily full run covers the rest (`tools/land.py`, `tools/gate.py`, docs/gate-landing.md
   "Landing", `tools/daily_full.py`).
 - **Guardrails stop risky actions and say what to do instead.** The hook guard refuses a
   destructive git command in a main checkout, a search from a drive root or a heavy run outside
@@ -24,7 +24,7 @@ Live since 2026-10-15, with landings in three repositories, and covered by tests
   main (`githooks/`).
 - **Shared machine resources are scheduled.** Heavy runs queue for CPU and GPU slots in the
   machine lock, and landings queue behind each other in it (`tools/machine_lock.py`,
-  docs/lock-api.md, docs/gate.md "The landing queue").
+  docs/lock-api.md, docs/gate-landing.md "The landing queue").
 - Also in use: worktree cleanup (`tools/worktree_remove.py`).
 
 Not done: some Linux items (the kit runs on Windows and Linux; docs/linux-support-plan.md lists what is open),

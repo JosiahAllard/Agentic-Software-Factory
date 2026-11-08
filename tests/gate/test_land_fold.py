@@ -1,4 +1,4 @@
-"""kitlib.gate.land and kitlib.gate.submit: folding queued submissions (docs/gate.md "Folding
+"""kitlib.gate.land and kitlib.gate.submit: folding queued submissions (docs/gate-landing.md "Folding
 queued submissions"). A submitted landing at its turn folds the submissions queued behind it into
 its batch, under "landing".batch_max; a folded submission's own landing ends saying FOLDED and
 writes nothing; a folded batch drops a unit that does not merge, and a red merged gate gives

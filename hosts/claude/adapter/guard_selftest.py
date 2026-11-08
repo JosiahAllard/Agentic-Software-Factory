@@ -1,4 +1,4 @@
-"""Session-start self-test: is Claude Code still sending agent_id? (docs/guard.md
+"""Session-start self-test: is Claude Code still sending agent_id? (docs/guard-hooks.md
 "Self-test").
 
 The main-checkout rule tells a subagent from the main session by the PreToolUse event's agent_id

@@ -1,4 +1,4 @@
-"""The ledger rule over the rulebooks and the standing digest (docs/guard.md "Rules": `ledger`):
+"""The ledger rule over the rulebooks and the standing digest (docs/guard-rules.md "Rules": `ledger`):
 the `rules` folder and the `.md` files directly in it, and STANDING.md, in `ledger_dir` or beside
 `ledger_path` (kitlib.ledger.files.of_config), are written by ledger.py alone, by any role; other
 files in those folders stay open, and a broken machine config still refuses every subagent write.

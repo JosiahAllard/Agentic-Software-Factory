@@ -6,7 +6,7 @@ tools/review_pack.py; docs/review-pack.md).
 
 The pack: base and merge-base, whether the branch contains the base tip, commits, whether the tip
 has the gate-OK record its landing needs (the `gate` line, gate_line: printed only, the exit status
-unchanged; a --full one, or a scoped one where docs/gate.md "The final gate" allows it), files changed
+unchanged; a --full one, or a scoped one where docs/gate-run.md "The final gate" allows it), files changed
 with +/- grouped by the risk level in docs/ops/risk-map.md (unlisted = High), owner-only paths
 touched and whether an Owner-Approved trailer covers them, the branch's commits with no
 Co-Authored-By trailer (when configured, below), and the doc-budget verdict. `diff` set: only the
@@ -21,7 +21,7 @@ Owner-only rows read OK (approved), MISSING or UNMATCHED (both block), or REVERT
 edit the branch itself takes back, printed so a reviewer sees the round-trip but not counted as a
 problem, because the path is byte-identical to the merge base. The rules are the base's `owner`
 section merged with the branch's (kitlib.config.owner.merge): a branch cannot unlock a path, and
-the owner's email comes from the base alone. As the landing guard judges (docs/guard.md "Owner-only
+the owner's email comes from the base alone. As the landing guard judges (docs/guard-hooks.md "Owner-only
 commits"), a commit whose AUTHOR email is the owner's (read by ownercommits.commits, judged by
 rules.is_owner) is ok, with or without a trailer; its row shows an Owner-Approved trailer that
 covers the path. On anyone else's commit an Owner-Approved trailer approves nothing;
@@ -550,9 +550,9 @@ def pack(path, branch, base=None, diff=None):
 def gate_line(top, branch, cfg=None, base=None, mb=None):
     """The `gate` line: whether `branch`'s tip has the record its landing requires. A
     `gate.py --full` pass's gate-OK record of exactly that commit always lands it (gate_ok.verify_full;
-    docs/gate.md "Landing"). Otherwise the base's config `cfg` and the base `base` decide, by the
+    docs/gate-landing.md "Landing"). Otherwise the base's config `cfg` and the base `base` decide, by the
     landing's own rules (kitlib.gate.land: Lander.diff_refusal for what a scoped record cannot land,
-    full_needed for the procedure's --full; docs/gate.md "The final gate"). "landing will refuse" is
+    full_needed for the procedure's --full; docs/gate-run.md "The final gate"). "landing will refuse" is
     said only where the landing does: no record at all, or a record the diff check refuses. A strict
     path under a base without gate_once or shared_paths is the procedure's rule, not the record
     check's, so a scoped record is then said to land, with its --full final gate named. Printed only:

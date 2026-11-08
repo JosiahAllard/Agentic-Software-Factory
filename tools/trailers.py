@@ -36,7 +36,7 @@ def build_parser():
                description='Fail a commit with no agent Co-Authored-By trailer (docs/repo-checks.md).')
     p.add_argument('-C', dest='root', default='.', help='the checkout to check (default .)')
     p.add_argument('--base', default=None,
-                   help='default: <remote>/<main>, else <main> (docs/gate.md "Default base")')
+                   help='default: <remote>/<main>, else <main> (docs/gate-run.md "Default base")')
     p.add_argument('--merged', action='store_true',
                    help="a landing's merged-tree gate: the lander's own merges on main are exempt")
     return p

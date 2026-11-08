@@ -1,4 +1,4 @@
-"""kitlib.gate.submit.follow (land.py --wait-result --submit, docs/gate.md "Submitting a
+"""kitlib.gate.submit.follow (land.py --wait-result --submit, docs/gate-landing.md "Submitting a
 landing"): after the SUBMITTED line, the landing followed to its end in the same call, the
 landing's own outcome lines from its output, then each branch's RESULT line and record exactly
 as gate.py wait-result prints them, the exit code the last record's. On the scratch repository of

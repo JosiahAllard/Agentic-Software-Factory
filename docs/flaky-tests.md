@@ -22,7 +22,7 @@ The case that prompted it: the agent-start block (`kitlib.agentstart`, default `
 
 - A budget whose expiry is a normal output (a degrade) goes through `clock.budget` with `budget=None` as its default. A ceiling that only ends a hang does not.
 - A test of the over-budget path passes an explicit budget and blocks the work on an Event (as `tests/agentstart/test_agentstart.py` `test_the_budget_cuts_what_is_left` does), or pops the marker.
-- A load flake is a test defect, fixed by a seam or a marked tier, never by listing it under "Known flakes" (docs/agent-profile.md). A red `gate.py --full` gets the targeted rerun (docs/gate.md "Targeted rerun").
+- A load flake is a test defect, fixed by a seam or a marked tier, never by listing it under "Known flakes" (docs/agent-profile.md). A red `gate.py --full` gets the targeted rerun (docs/gate-rerun-checkout.md "Targeted rerun").
 - A sleep or an elapsed-time assert that flakes gets nothing on its first failure (the builder rule: a one-off flake waits for a second); a lint that counts them against a falling baseline is the follow-up if one does.
 
 ## Load-sensitive tests

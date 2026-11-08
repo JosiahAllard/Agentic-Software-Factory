@@ -1,4 +1,4 @@
-"""kitlib.gate.land's restore clause for a narrowed record (Lander._scope_restore; docs/gate.md
+"""kitlib.gate.land's restore clause for a narrowed record (Lander._scope_restore; docs/gate-landing.md
 "Landing", step 4). A record narrowed against several live pulls (one `narrowed:` line each) gets
 no restore command while one of them still holds its part: given back then, its original member
 would cover that pull's live paths again. `next`'s RESTORE line gives each part back once the

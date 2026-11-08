@@ -1,6 +1,6 @@
 """Start-Process -WorkingDirectory as the directory git and python start in (commands.run_dir),
 the wrapped-gate alternative run bare, the kit folder advice names (rules.advice_kit), and the
-reason a python whose code the guard does not read is refused with (docs/guard.md "Rules",
+reason a python whose code the guard does not read is refused with (docs/guard-rules.md "Rules",
 "Parsing" and "Kit paths in advice")."""
 import json
 import os

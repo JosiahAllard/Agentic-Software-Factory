@@ -1,4 +1,4 @@
-"""The lock command lines the guard advises (docs/guard.md "Rules": heavy, lock-mcp, owner-tool,
+"""The lock command lines the guard advises (docs/guard-rules.md "Rules": heavy, lock-mcp, owner-tool,
 lock-state) are ones the kit's lock tool takes: the words after the script name go to the argument
 parser of tools/machine_lock.py itself, and the script they name is the kit's own, not a link in
 the home folder. The tool is loaded from its file, as tests/lock/test_cli.py does: this is a test
@@ -178,7 +178,7 @@ class AdvisedLockLine(unittest.TestCase):
         self.assertTrue(line.startswith('python "%s/tools/%s" run' % (W.fwd(kit), SCRIPT)), line)
 
     def test_a_kit_path_with_a_quote_and_a_dollar_is_the_known_limit(self):
-        # docs/guard.md "Rules", the `heavy` row: no one quoted word is literal in both shells; it stays
+        # docs/guard-rules.md "Rules", the `heavy` row: no one quoted word is literal in both shells; it stays
         # double-quoted, as before. Asserted so that a change to it is a deliberate one.
         kit = os.path.join(self.w.base, "o'$x", 'kit')
         line = self.heavy_line(ctx=self.w.ctx(kit=kit))

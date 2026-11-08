@@ -1,4 +1,4 @@
-"""The gate queue (docs/gate.md "The gate queue"): a branch gate whose tip is already in main
+"""The gate queue (docs/gate-records.md "The gate queue"): a branch gate whose tip is already in main
 runs nothing, a second gate of a queued branch, tip and options is refused naming the queued run,
 and a gate at a new tip stops the session's own queued gate of the branch at the older tip. A
 held run is never dropped or replaced. Each queued run here is a scratch-store record

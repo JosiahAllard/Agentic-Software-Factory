@@ -125,7 +125,7 @@ decision and decided_at (canonical): editing any of them, the expiry included, v
 out, as blob binds it. The status is not covered: only `approved` and `consumed` can verify, and
 both need a signed approval.
 
-The delta rule (docs/guard.md "Owner-only commits"; kitlib.guard.ownercommits HubApprovals): an
+The delta rule (docs/guard-hooks.md "Owner-only commits"; kitlib.guard.ownercommits HubApprovals): an
 approval is a change, not a commit. A commit C with one parent P makes it when C changes no path
 the approval does not hold and each approved path p is at C what the change gives on P,
 delta_result(base_blob, P:p, blob, content): a new file needs no file at P or the approved one; a

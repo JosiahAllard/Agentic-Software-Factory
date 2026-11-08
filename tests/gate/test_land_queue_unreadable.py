@@ -1,6 +1,6 @@
 """kitlib.gate.land.queue (land.py --queue) with a lock file that is not a record: shown as held by
 nobody named (phase ?), with the read error, and the queue still listed - the state in which
-docs/gate.md "The landing queue" says to check --queue before a lock is cleared by hand."""
+docs/gate-landing.md "The landing queue" says to check --queue before a lock is cleared by hand."""
 import unittest
 from unittest import mock
 

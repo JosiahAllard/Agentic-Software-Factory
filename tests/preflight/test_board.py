@@ -101,7 +101,7 @@ class TheRows(BoardFixture):
         self.assertEqual(self.column(out, 'has base tip'), 'NO', out)
 
     def test_a_stale_local_base_is_not_measured_against(self):
-        """docs/gate.md "Default base": local master behind origin/master - rows are counted
+        """docs/gate-run.md "Default base": local master behind origin/master - rows are counted
         against origin/master."""
         self.repo.write('m.txt', 'm\n')
         self.repo.commit('m', 'm.txt')

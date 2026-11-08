@@ -266,7 +266,7 @@ class NetChangeGitFailures(OwnerCommitsCase):
 
 
 class PushWithOwnerMainCommits(OwnerCommitsCase):
-    """docs/guard.md "Owner-only commits", Known limits, "One net change per push"."""
+    """docs/guard-hooks.md "Owner-only commits", Known limits, "One net change per push"."""
 
     def test_known_over_refusal_an_undone_agent_edit_counts_when_an_owner_commit_shares_the_push(self):
         # Pins a documented limit: if the over-refusal is ever fixed, update this test; it is not a regression.

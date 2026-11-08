@@ -1,4 +1,4 @@
-"""tools/kit_tests.py --smoke and --scrub (docs/test-tools.md "kit_tests", docs/gate.md "Smoke
+"""tools/kit_tests.py --smoke and --scrub (docs/test-tools.md "kit_tests", docs/gate-run.md "Smoke
 steps"): --select --smoke adds tests/selection.json's "smoke" modules unless every changed path
 is prose, and refuses a smoke entry naming no test module; --scrub runs tests/scrub only, in one
 pass. Also the kit table's smoke set and the `paths` entries for tests that read another folder."""

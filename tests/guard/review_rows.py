@@ -1,4 +1,4 @@
-"""Rows for tests/guard/test_rules.py from the third review round (docs/guard.md "Parsing",
+"""Rows for tests/guard/test_rules.py from the third review round (docs/guard-core.md "Parsing",
 "Rules", "Fallback"): find -exec/-delete and xargs writers, Invoke-Expression and process
 substitution, git words as the shell passes them, cmd //c and for loops, env/time/stdbuf wrappers,
 worktree remove from a worktree, more main-checkout writers, more root spellings, and the false

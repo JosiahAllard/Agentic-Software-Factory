@@ -8,7 +8,7 @@ that fails that check.
 
 The client starts it with the session's environment, so it reads the session mark once, at start
 (kitlib.sessionmark): the owner's tools, once they ship, are refused in a session a launcher marked
-(docs/guard.md "Session mark").
+(docs/guard-fallback.md "Session mark").
 """
 import os
 import sys

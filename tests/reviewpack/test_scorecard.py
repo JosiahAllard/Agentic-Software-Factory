@@ -44,7 +44,8 @@ class Pure(unittest.TestCase):
                 ('  SIGNAL new public symbol called only from tests: src/W.java:4 peek (1 test callers)',
                  'test_only_callers', 'src/W.java:4 peek')):
             out = Q.parse([line])
-            self.assertEqual((out[key], out['not_checked']), ([want], []), line)
+            self.assertEqual(out['not_checked'], [], line)
+            self.assertEqual(out[key], [want], line)
 
     def test_an_unrecognised_line_or_signal_is_not_checked(self):
         for l in ('something new', '  SIGNAL a signal kind from later'):

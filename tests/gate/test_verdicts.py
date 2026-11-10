@@ -89,7 +89,7 @@ class TwoReviewers(unittest.TestCase):
         self.assertIsNone(self.mismatch({'agent-r1': ['claude-opus-5-5'],
                                          'agent-arch': ['claude-opus-5-5']}))
         self.assertIsNone(V.tier_why(self.entry, True, lambda: self.TIERS))
-        said = {'agent-r1': (True, 'LAND'), 'agent-arch': (True, 'LAND WITH FOLLOW-UP')}
+        said = {'agent-r1': (True, 'LAND', ''), 'agent-arch': (True, 'LAND WITH FOLLOW-UP', '')}
         self.assertIsNone(V.reviewer_verdict_why(self.entry, V.seen_verdicts(self.entry, said.get)))
 
     def test_the_architecture_reviewer_on_another_model_is_named_alone(self):
@@ -100,10 +100,111 @@ class TwoReviewers(unittest.TestCase):
                       '(one --reviewer-model covers every --reviewer-id)', why)
 
     def test_a_send_back_from_the_architecture_reviewer_refuses_it(self):
-        said = {'agent-r1': (True, 'LAND'), 'agent-arch': (True, 'SEND BACK')}
+        said = {'agent-r1': (True, 'LAND', ''), 'agent-arch': (True, 'SEND BACK', '')}
         why = V.reviewer_verdict_why(self.entry, V.seen_verdicts(self.entry, said.get))
         self.assertIn('the reviewer agent-arch said SEND BACK', why or '')
         self.assertNotIn('agent-r1 said', why)
+
+
+ALL_CODE = 'Checks: ' + ', '.join('%s PASS' % c for c in V.CODE_CHECKS)
+ALL_DESIGN = 'Checks: ' + ', '.join('%s PASS' % c for c in V.DESIGN_CHECKS)
+
+
+class ReportLines(unittest.TestCase):
+    """The `Checks:`, `Done-when:` and `Design:` lines of a reviewer's final report, and the
+    refusals add() makes from them, the follow-ups and a new source's design review."""
+
+    def test_checks_of_reads_the_last_checks_line(self):
+        cases = [
+            ('Checks: scope PASS, tests FAIL; home N/A', {'scope': 'PASS', 'tests': 'FAIL',
+                                                         'home': 'N/A'}),
+            ('**Checks:** `scope pass`, done-when: fail', {'scope': 'PASS', 'done-when': 'FAIL'}),
+            ('Checks: scope PASS\nChecks: tests PASS', {'tests': 'PASS'}),
+            ('Checks: scope maybe, tests PASS', {'tests': 'PASS'}),   # a bad state is no id
+            ('The checks: scope PASS', None),                          # not at the line start
+            ('', None),
+        ]
+        for text, want in cases:
+            self.assertEqual(V.checks_of(text), want, text)
+
+    def test_unmet_and_design_lines(self):
+        text = ('Done-when: X-1 (a) MET - test_a\nDone-when: X-1 (b) UNMET - no test\n'
+                'Done-when: X-1 (c) met, not unmetered\n'
+                'Done-when: X-1 (d) MET - was UNMET until the fix\n'
+                'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count\n')
+        self.assertEqual(V.unmet_lines(text), [
+            'Done-when: X-1 (b) UNMET - no test',
+            'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count'])
+        for text, want in (('Design: APPROVE', 'APPROVE'), ('**Design:** revise', 'REVISE'),
+                           ('Design: APPROVE\nDesign: maybe', None), ('', None)):
+            self.assertEqual(V.design_of(text), want, text)
+
+    def test_checks_why_needs_every_code_id(self):
+        e = given('kit/a', 'a' * 40)
+        self.assertIsNone(V.checks_why(e, {'r1': (True, 'LAND', ALL_CODE)}))
+        self.assertIsNone(V.checks_why(e, {'r1': (False, None, None), 'r2': (True, 'unread', None)}))
+        why = V.checks_why(e, {'r1': (True, 'LAND', 'Verdict: LAND')})
+        self.assertIn('the reviewer r1 gave no Checks: line (its final report)', why)
+        why = V.checks_why(e, {'r1': (True, 'LAND', ALL_CODE.replace(', layering PASS', ''))})
+        self.assertIn("the reviewer r1's Checks: line lacks layering", why)
+        self.assertIn('\nInstead: resume the reviewer r1', why)
+
+    def test_done_when_why_refuses_a_plain_land_over_unmet(self):
+        unmet = ALL_CODE + '\nDone-when: X-1 (b) UNMET - no test'
+        failed = ALL_CODE.replace('done-when PASS', 'done-when FAIL')
+        for report in (unmet, failed):
+            why = V.done_when_why(given('kit/a', 'a' * 40, verdict='LAND'),
+                                  {'r1': (True, 'LAND', report)})
+            self.assertIn('--verdict LAND, but the reviewer r1', why or '')
+            self.assertIn('\nInstead: queue it with --verdict "LAND WITH FOLLOW-UP" --follow-up <ID>',
+                          why)
+            self.assertIsNone(V.done_when_why(given('kit/a', 'a' * 40,
+                                                    verdict='LAND WITH FOLLOW-UP'),
+                                              {'r1': (True, 'LAND', report)}))
+
+    def test_follow_up_why_needs_an_open_record(self):
+        fu = given('kit/a', 'a' * 40, verdict='LAND WITH FOLLOW-UP', records=['EX-1'])
+        self.assertIsNone(V.follow_up_why(fu, {'EX-9': ('parked', True)}))
+        cases = [
+            ({}, 'names no --follow-up'),
+            ({'EX-9': (None, False)},
+             '--follow-up EX-9 is no open record in the store (none of that id)'),
+            ({'EX-9': ('closed', False)},
+             '--follow-up EX-9 is no open record in the store (state: closed)'),
+            ({'EX-1': ('open', True)}, '--follow-up EX-1 is a record this branch carries'),
+        ]
+        for follow_ups, want in cases:
+            why = V.follow_up_why(fu, follow_ups) or ''
+            self.assertIn(want, why, follow_ups)
+            self.assertIn('\nInstead: file the follow-up (backlog.py add)', why)
+        land = given('kit/a', 'a' * 40, verdict='LAND')
+        self.assertIsNone(V.follow_up_why(land, {}))
+        self.assertIn('--follow-up goes with --verdict "LAND WITH FOLLOW-UP"',
+                      V.follow_up_why(land, {'EX-9': ('open', True)}) or '')
+
+    def test_design_why_needs_an_approved_design_review(self):
+        e = given('kit/a', 'a' * 40)
+        new = ['pkg/mod.py', 'pkg/old.py:Foo']
+        approve = ALL_DESIGN + '\nDesign: APPROVE'
+        self.assertIsNone(V.design_why(e, [], None, None))
+        self.assertIsNone(V.design_why(e, new, 'd1', {'d1': (True, None, approve)}))
+        self.assertIsNone(V.design_why(e, new, 'd1', None))            # no reader: not checked
+        self.assertIsNone(V.design_why(e, new, 'd1', {'d1': (False, None, None)}))
+        cases = [
+            (None, None, 'no --design-reviewer-id names its design review'),
+            (e['session'], None, 'is the session queueing it'),
+            ('d1', {}, 'the design reviewer d1 is no agent id'),
+            ('d1', {'d1': (True, 'unread', None)}, 'cannot be read'),
+            ('d1', {'d1': (True, None, ALL_DESIGN + '\nDesign: REVISE')}, 'd1 said REVISE'),
+            ('d1', {'d1': (True, None, ALL_DESIGN)}, 'd1 gave no Design: line'),
+            ('d1', {'d1': (True, None, approve.replace(', layering PASS', ''))},
+             "d1's Checks: line lacks layering"),
+        ]
+        for did, said, want in cases:
+            why = V.design_why(e, new, did, said) or ''
+            self.assertIn('the diff adds pkg/mod.py, pkg/old.py:Foo', why, did)
+            self.assertIn(want, why, did)
+            self.assertTrue(why.endswith(V.DESIGN_INSTEAD), why)
 
 
 class FakeClock(object):

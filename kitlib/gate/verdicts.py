@@ -70,7 +70,9 @@ add() is given the models the reviewer's transcript shows (seen_models, the host
 is not the reviewer_model stated (model_mismatch_why), nothing written; ReviewerSaid (a BadEntry)
 when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
 final report says SEND BACK or has no `Verdict:` line, or a transcript found cannot be read
-(reviewer_verdict_why), nothing written;
+(reviewer_verdict_why), or the report's `Checks:` and `Done-when:` lines, the follow-ups or the
+design review named for a new source file or class fail (checks_why, done_when_why,
+follow_up_why, design_why), nothing written;
 LightReview (a BadEntry)
 when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
 nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
@@ -96,12 +98,20 @@ import urllib.parse
 
 from kitlib.fs import replace as fsreplace
 from kitlib.gate import carry as carrymod
+from kitlib.git import batch as gitbatch
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
 
 DIR_NAME = 'kit-verdicts'
 SUFFIX = '.json'
 VERDICTS = ('LAND', 'LAND WITH FOLLOW-UP')
+# The check ids a reviewer's `Checks:` line gives (skill specialty-review "Report"), each PASS,
+# FAIL or N/A: a code review lists every CODE_CHECKS id (home, reuse, size and layering N/A when an
+# approved design came), a design review every DESIGN_CHECKS id, its checks 1-7 in order.
+CODE_CHECKS = ('scope', 'done-when', 'defects', 'tests', 'copies', 'home', 'reuse', 'size',
+               'layering')
+DESIGN_CHECKS = ('home', 'reuse', 'cause', 'scope', 'size', 'contract', 'layering')
+CHECK_STATES = ('PASS', 'FAIL', 'N/A')
 RISKS = ('Low', 'Medium', 'High')
 QUEUED, FAILED = 'queued', 'failed'
 STATES = (QUEUED, FAILED)
@@ -152,8 +162,10 @@ class ModelMismatch(BadEntry):
 
 class ReviewerSaid(BadEntry):
     """The reviewer's final report says SEND BACK, has no `Verdict:` line, or its transcript was
-    found and cannot be read (reviewer_verdict_why): its text ends with an Instead: line. Nothing
-    was read or written."""
+    found and cannot be read (reviewer_verdict_why); it has no full `Checks:` line (checks_why) or
+    reports a Done-when item UNMET under a plain LAND (done_when_why); the follow-ups are wrong
+    (follow_up_why); or a new source file or class has no approved design review (design_why).
+    Its text ends with an Instead: line. Nothing was read or written."""
 
 
 class LightReview(BadEntry):
@@ -401,23 +413,29 @@ SEND_BACK = 'SEND BACK'
 UNREAD = 'unread'           # a reviewer verdict reader's verdict: a transcript found cannot be read
 
 
-def seen_verdicts(entry, reader):
-    """`{id: (found, verdict)}`: for each id `entry`'s reviewer_id lists that `reader` takes as an
-    agent id, what its transcript says. `reader` is a host's reviewer verdict reader (on Claude
-    hosts.claude.adapter.agent_models.verdict): id -> `(found, verdict)`, `found` whether a
-    transcript was found, `verdict` its final report's `Verdict:` line (LAND, LAND WITH FOLLOW-UP,
-    SEND BACK) or None, or UNREAD when a transcript found cannot be read; None for an id that is
-    not an agent id, which is left out. {} when there
-    is no reader (a host with none, Codex) or the reviewer is the coordinator queueing it
-    (self_reader), as seen_models. `entry` is well formed (check)."""
-    if reader is None or self_reader(entry):
-        return {}
+def seen_reports(ids, reader):
+    """`{id: (found, verdict, report)}`: for each id the text `ids` lists (split as reviewer_id is)
+    that `reader` takes as an agent id, what its transcript says. `reader` is a host's reviewer
+    verdict reader (on Claude hosts.claude.adapter.agent_models.verdict): id -> `(found, verdict,
+    report)`, `found` whether a transcript was found, `verdict` its final report's `Verdict:` line
+    (LAND, LAND WITH FOLLOW-UP, SEND BACK) or None, or UNREAD when a transcript found cannot be
+    read, `report` that final report's text (None when none was read); None for an id that is not
+    an agent id, which is left out."""
     out = {}
-    for rid in _reviewer_ids(entry['reviewer_id']):
+    for rid in _reviewer_ids(ids):
         got = reader(rid)
         if got is not None:
-            out[rid] = (bool(got[0]), got[1])
+            out[rid] = (bool(got[0]), got[1], got[2])
     return out
+
+
+def seen_verdicts(entry, reader):
+    """seen_reports() for `entry`'s reviewer_id. {} when there is no reader (a host with none,
+    Codex) or the reviewer is the coordinator queueing it (self_reader), as seen_models. `entry`
+    is well formed (check)."""
+    if reader is None or self_reader(entry):
+        return {}
+    return seen_reports(entry['reviewer_id'], reader)
 
 
 def reviewer_verdict_why(entry, said):
@@ -429,9 +447,9 @@ def reviewer_verdict_why(entry, said):
     line asks to resume that reviewer for its line. So does one whose transcript was found but
     cannot be read (UNREAD): fail closed, the Instead: line asks to retry or re-ask the reviewer.
     An id with no transcript is not checked. `entry` is well formed (check). Pure."""
-    back = [rid for rid, (found, v) in sorted(said.items()) if found and v == SEND_BACK]
-    mute = [rid for rid, (found, v) in sorted(said.items()) if found and v is None]
-    unread = [rid for rid, (found, v) in sorted(said.items()) if found and v == UNREAD]
+    back = [rid for rid, (found, v, _) in sorted(said.items()) if found and v == SEND_BACK]
+    mute = [rid for rid, (found, v, _) in sorted(said.items()) if found and v is None]
+    unread = [rid for rid, (found, v, _) in sorted(said.items()) if found and v == UNREAD]
     if not back and not mute and not unread:
         return None
     parts = (['the reviewer %s said SEND BACK (its final Verdict: line)' % rid for rid in back]
@@ -455,7 +473,272 @@ def said_lines(entry, said):
     """`reviewer <id> said <verdict> at <tip>`, one per id of `said` (seen_verdicts) whose final
     report has a `Verdict:` line, sorted by id. Pure."""
     return ['reviewer %s said %s at %s' % (rid, v, entry['tip'])
-            for rid, (found, v) in sorted(said.items()) if found and v and v != UNREAD]
+            for rid, (found, v, _) in sorted(said.items()) if found and v and v != UNREAD]
+
+
+def report_head(word):
+    """The pattern of a report line headed `<word>:` at the line start, markdown decoration
+    allowed (`**Verdict:** LAND`, a list dash, backticks), case aside: the one rule for the
+    `Verdict:`, `Checks:`, `Done-when:` and `Design:` lines of a reviewer's final report."""
+    return re.compile(r'^[\s>*_#`-]*' + re.escape(word) + r'[*_`]*\s*:', re.IGNORECASE)
+
+
+CHECKS_HEAD = report_head('checks')
+DONE_HEAD = report_head('done-when')
+DESIGN_HEAD = report_head('design')
+CHECK_RE = re.compile(r'^([a-z][\w-]*)\s*[:=]?\s*(pass|fail|n/a)$', re.IGNORECASE)
+STATUS_RE = re.compile(r'(?<![\w-])(met|unmet)(?![\w-])', re.IGNORECASE)
+DESIGN_RE = re.compile(DESIGN_HEAD.pattern + r'[*_`\s]*(approve|revise)(?![\w-])', re.IGNORECASE)
+
+
+def _last_line(head, text):
+    """The last line of `text` that `head` matches, or None. Pure."""
+    found = None
+    for line in (text or '').splitlines():
+        if head.match(line):
+            found = line
+    return found
+
+
+def checks_of(text):
+    """`{id: PASS | FAIL | N/A}` from the last `Checks:` line of `text`: its parts split on `,` or
+    `;`, each `<id> <state>` (decoration aside); a part that is not one is left out, so its id
+    counts as missing. None when `text` has no `Checks:` line. Pure."""
+    line = _last_line(CHECKS_HEAD, text)
+    if line is None:
+        return None
+    out = {}
+    for part in re.split(r'[,;]', line[CHECKS_HEAD.match(line).end():]):
+        m = CHECK_RE.match(part.strip(' \t*_`.'))
+        if m:
+            out[m.group(1).casefold()] = m.group(2).upper()
+    return out
+
+
+def unmet_lines(text):
+    """The `Done-when:` lines of `text` whose status, the first MET or UNMET word after the item
+    (`Done-when: <ID> (<x>) UNMET - <evidence>`), is UNMET, stripped: the evidence may name the
+    word (`MET - was UNMET`) without counting. Pure."""
+    out = []
+    for line in (text or '').splitlines():
+        head = DONE_HEAD.match(line)
+        m = STATUS_RE.search(line, head.end()) if head else None
+        if m and m.group(1).upper() == 'UNMET':
+            out.append(line.strip())
+    return out
+
+
+def design_of(text):
+    """APPROVE or REVISE from the last `Design:` line of `text`; None when there is none or it
+    names neither. Pure."""
+    line = _last_line(DESIGN_HEAD, text)
+    m = DESIGN_RE.match(line) if line is not None else None
+    return m.group(1).upper() if m else None
+
+
+def _lacking(checks, ids):
+    return [c for c in ids if c not in (checks or {})]
+
+
+def checks_why(entry, said):
+    """Why add() refuses `entry` because a reviewer's final report has no `Checks:` line, or one
+    that lacks a CODE_CHECKS id, or None. `said` is seen_verdicts(); an id with no transcript, or
+    one whose transcript cannot be read (reviewer_verdict_why refuses it first), is not checked.
+    Pure."""
+    parts, ids = [], []
+    for rid, (found, v, report) in sorted(said.items()):
+        if not found or v == UNREAD:
+            continue
+        checks = checks_of(report)
+        if checks is None:
+            parts.append('the reviewer %s gave no Checks: line (its final report)' % rid)
+        elif _lacking(checks, CODE_CHECKS):
+            parts.append('the reviewer %s\'s Checks: line lacks %s'
+                         % (rid, ', '.join(_lacking(checks, CODE_CHECKS))))
+        else:
+            continue
+        ids.append(rid)
+    if not parts:
+        return None
+    return ('--verdict %s, but %s; nothing was queued\nInstead: resume the reviewer %s (SendMessage '
+            'to its id) and ask it to give its full final lines again: each Done-when: line, the '
+            'Checks: line giving each of %s as PASS, FAIL or N/A, and the Verdict: line (skill '
+            'specialty-review "Report"), then queue again'
+            % (entry['verdict'], '; '.join(parts), ', '.join(ids), ', '.join(CODE_CHECKS)))
+
+
+def done_when_why(entry, said):
+    """Why add() refuses a plain LAND whose reviewer reports a Done-when item UNMET (a
+    `Done-when:` line saying UNMET, or `done-when FAIL` on its Checks: line), or None. `said` is
+    seen_verdicts(). Pure."""
+    if entry['verdict'] != 'LAND':
+        return None
+    parts = []
+    for rid, (found, v, report) in sorted(said.items()):
+        if not found or v == UNREAD:
+            continue
+        lines = unmet_lines(report)
+        if lines:
+            parts.append('the reviewer %s reports %s' % (rid, ' | '.join(l[:120] for l in lines)))
+        elif (checks_of(report) or {}).get('done-when') == 'FAIL':
+            parts.append('the reviewer %s gives done-when FAIL' % rid)
+    if not parts:
+        return None
+    return ('--verdict LAND, but %s; nothing was queued\nInstead: queue it with --verdict "LAND WITH '
+            'FOLLOW-UP" --follow-up <ID>, <ID> an open record for the unmet part (backlog.py add; '
+            'skill branch-review, step 7)' % '; '.join(parts))
+
+
+FOLLOW_UP_INSTEAD = ('Instead: file the follow-up (backlog.py add) and queue again with --follow-up '
+                     '<its ID>')
+
+
+def follow_up_why(entry, follow_ups):
+    """Why add() refuses `entry`'s follow-ups, or None. `follow_ups`: `{id: (state, open)}` for
+    each --follow-up given, `state` the record's `state:` in the store, or None when the store holds
+    no record of that id (a closed or retired record has none), and `open` True when that state is
+    one of kitlib.backlog.record.STATES (open, blocked, parked, pulled; the caller reads the store).
+    Refused: LAND WITH FOLLOW-UP naming none; a plain LAND naming one; an id with no open record, or
+    one of the records the branch carries (its landing closes them). Pure."""
+    if entry['verdict'] == 'LAND':
+        if not follow_ups:
+            return None
+        return ('--follow-up goes with --verdict "LAND WITH FOLLOW-UP", not LAND; nothing was '
+                'queued\nInstead: drop --follow-up, or queue it with --verdict "LAND WITH FOLLOW-UP"')
+    if not follow_ups:
+        return ('--verdict LAND WITH FOLLOW-UP names no --follow-up; nothing was queued\n%s'
+                % FOLLOW_UP_INSTEAD)
+    parts = []
+    for rid, (state, is_open) in sorted(follow_ups.items()):
+        if rid in entry['records']:
+            parts.append('--follow-up %s is a record this branch carries, which its landing closes'
+                         % rid)
+        elif not is_open:
+            parts.append('--follow-up %s is no open record in the store (%s)'
+                         % (rid, 'none of that id' if state is None else 'state: %s' % state))
+    if not parts:
+        return None
+    return '%s; nothing was queued\n%s' % ('; '.join(parts), FOLLOW_UP_INSTEAD)
+
+
+DESIGN_INSTEAD = ('Instead: run the design review: dispatch a fresh analyst with skill '
+                  'specialty-review, design review (skill branch-review, A.2), and queue again with '
+                  '--design-reviewer-id <its agent id>')
+
+
+def design_why(entry, new, design_id, design_said):
+    """Why add() refuses `entry` because the diff adds a new non-test source file or class (`new`,
+    new_sources()) and no approved design review is named, or None. `design_id`: the
+    --design-reviewer-id given, or None. `design_said`: seen_reports() for it, or None when the
+    host has no reader (not checked). Refused: no design_id; one that is the session queueing it;
+    with a reader, an id that is not an agent id, a transcript found that cannot be read, or a
+    final report whose last `Design:` line is not APPROVE or whose Checks: line lacks a
+    DESIGN_CHECKS id. An id with no transcript is not checked. Pure."""
+    if not new:
+        return None
+    shown = ', '.join(new[:5]) + (' and %d more' % (len(new) - 5) if len(new) > 5 else '')
+    head = 'the diff adds %s' % shown
+    if not design_id or not design_id.strip():
+        return '%s, and no --design-reviewer-id names its design review; nothing was queued\n%s' % (
+            head, DESIGN_INSTEAD)
+    ids = _reviewer_ids(design_id)
+    session = entry['session'].strip().casefold()
+    parts = ['the design reviewer %s is the session queueing it' % i
+             for i in ids if i.casefold() == session]
+    if design_said is not None:
+        parts += ['the design reviewer %s is no agent id' % i
+                  for i in ids if i not in design_said and i.casefold() != session]
+        for rid, (found, v, report) in sorted(design_said.items()):
+            if not found:
+                continue
+            if v == UNREAD:
+                parts.append('a transcript of the design reviewer %s cannot be read' % rid)
+                continue
+            said = design_of(report)
+            if said != 'APPROVE':
+                parts.append('the design reviewer %s %s' % (
+                    rid, 'said REVISE' if said else 'gave no Design: line'))
+            lacking = _lacking(checks_of(report), DESIGN_CHECKS)
+            if lacking:
+                parts.append('the design reviewer %s\'s Checks: line lacks %s'
+                             % (rid, ', '.join(lacking)))
+    if not parts:
+        return None
+    return '%s, but %s; nothing was queued\n%s' % (head, '; '.join(parts), DESIGN_INSTEAD)
+
+
+def _git_diff(cwd, args, base, tip):
+    out, why = gitcmd.run_text(['-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff',
+                                '--src-prefix=a/', '--dst-prefix=b/']
+                               + args + ['%s...%s' % (base, tip), '--'], cwd)
+    if out is None:
+        raise VerdictError('git diff %s...%s: %s' % (base, tip, (why or '').strip()))
+    return out
+
+
+def _patch_path(row, side):
+    """The path of a patch's `--- a/<path>` or `+++ b/<path>` line (`side` 'a/' or 'b/'), git's
+    C-quoting undone and the tab git ends a path holding a space with dropped; None for /dev/null
+    or any other shape."""
+    name = gitbatch.unquote_path(row[4:].rstrip('\t'))
+    return name[2:] if name.startswith(side) else None
+
+
+def new_sources(cwd, rng, exts, is_test, types):
+    """The new non-test source files and classes the range `rng` (`<base>..<tip>`) adds, sorted:
+    `<path>` for a file the diff adds (status A of `git diff --name-status --find-renames
+    <base>...<tip>`; a rename is not one) ending in one of `exts`, `<path>:<Name>` for a type an
+    added line of such a file declares (`git diff --no-renames`) whose name no removed line of the
+    diff declares (a moved class is not new). A path `is_test(path)` is true of is left out (the
+    caller passes the repo module map's ModuleMap.is_test_source). `types`: `(suffix, regex)`
+    pairs, the first whose suffix the path ends in (None: any) gives the regex whose group 2 is the
+    type's name (kitlib.docs.codemap's). The prefixes are given, so diff.noprefix and the like
+    change nothing. Git runs in `cwd`. VerdictError when git gives no answer."""
+    base, _, tip = rng.partition('..')
+    for rev in (base, tip):
+        why = refs.bad_rev(rev)
+        if why:
+            raise VerdictError('the range %s: %s' % (rng, why))
+
+    def source(p):
+        return p if p and p.endswith(tuple(exts)) and not is_test(p) else None
+
+    def type_name(path, line):
+        for suffix, rx in types:
+            if suffix is None or path.endswith(suffix):
+                m = rx.match(line)
+                return m.group(2) if m else None
+        return None
+    fields = _git_diff(cwd, ['--name-status', '-z', '--find-renames'], base, tip).split('\0')
+    files, i = set(), 0
+    while i < len(fields) and fields[i]:
+        status = fields[i]
+        width = 3 if status[:1] in 'RC' else 2
+        if status == 'A' and source(fields[i + 1]):
+            files.add(fields[i + 1])
+        i += width
+    added, removed = set(), set()
+    old = new = None
+    hunk = False
+    for row in _git_diff(cwd, ['--unified=0', '--no-renames'], base, tip).splitlines():
+        if row.startswith('diff --git '):
+            old = new = None
+            hunk = False
+        elif not hunk and row.startswith('--- '):
+            old = source(_patch_path(row, 'a/'))
+        elif not hunk and row.startswith('+++ '):
+            new = source(_patch_path(row, 'b/'))
+        elif row.startswith('@@'):
+            hunk = True
+        elif hunk and row.startswith('+') and new:
+            name = type_name(new, row[1:])
+            if name:
+                added.add((new, name))
+        elif hunk and row.startswith('-') and old:
+            name = type_name(old, row[1:])
+            if name:
+                removed.add(name)
+    return sorted(files | set('%s:%s' % (p, n) for p, n in added if n not in removed))
 
 
 TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hosts.json "tiers") '
@@ -685,7 +968,7 @@ def head_of(common_dir, branch):
 
 
 def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
-        seen=None, said=None):
+        seen=None, said=None, follow_ups=None, new=None, design_id=None, design_said=None):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
     whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
@@ -694,7 +977,12 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
     (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
-    says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why). A High-risk
+    says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why); so is one
+    with no `Checks:` line or one lacking a CODE_CHECKS id (checks_why), and a plain LAND over a
+    Done-when item it reports UNMET (done_when_why). `follow_ups`: `{id: state}` of each
+    --follow-up (follow_up_why), None not checked. `new`: new_sources() of the range, None not
+    checked; when it lists any, `design_id` and `design_said` (seen_reports() of it, None with no
+    reader) must name an approved design review (design_why). Each refusal is ReviewerSaid. A High-risk
     verdict whose reviewer_model is not a strong-tier model is
     LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
     (a configuration fault: nothing queued). Nothing seen or said is stored. `now`: a datetime for
@@ -708,9 +996,12 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     why = model_mismatch_why(entry, seen) if seen else None
     if why:
         raise ModelMismatch(why)
-    why = reviewer_verdict_why(entry, said) if said else None
-    if why:
-        raise ReviewerSaid(why)
+    for why in ((reviewer_verdict_why(entry, said) or checks_why(entry, said)
+                 or done_when_why(entry, said)) if said else None,
+                follow_up_why(entry, follow_ups) if follow_ups is not None else None,
+                design_why(entry, new, design_id, design_said) if new is not None else None):
+        if why:
+            raise ReviewerSaid(why)
     from kitlib.gate import land          # land imports this module: a late import
 
     def tiers():

@@ -67,6 +67,13 @@ def global_rebinds(path, text):
     return sorted(out, key=lambda f: f.line)
 
 
+def type_match(line):
+    """codemap.TYPE's match of a Java or C# type declared on `line`, or None. TYPE's Kotlin
+    keyword `object` is a type name in Java and C# (`public object Value;`), never a declaration."""
+    m = codemap.TYPE.match(line)
+    return m if m and m.group(1) != 'object' else None
+
+
 def public_symbols(path, text):
     """[Found] of the public types and methods `text` declares, keyed by name."""
     if _ext(path) == '.py':
@@ -81,15 +88,14 @@ def public_symbols(path, text):
         return [Found(n.name, path, n.lineno, n.name) for n in tops if not n.name.startswith('_')]
     out, prev = [], ''
     for n, raw in enumerate(text.splitlines(), 1):
-        m = codemap.TYPE.match(raw)
-        name, at = (m.group(2), m.start(1)) if m else (None, 0)
-        m = m or codemap.MEMBER.match(raw)
-        if m and name is None:
-            name, at = m.group(1), m.start(1)
-        head = raw[:at].split()     # the modifiers and, for a method, its return type
+        line = raw.expandtabs(4)        # MEMBER wants 2-8 spaces of indent; a tab is one level
+        m, g = type_match(line), 2
+        if m is None:
+            m, g = codemap.MEMBER.match(line), 1
+        head = line[:m.start(1)].split() if m else []   # modifiers (and a method's return type)
         if m and 'public' in head and 'override' not in head and prev != '@Override' \
-                and name != 'main':
-            out.append(Found(name, path, n, name))
+                and m.group(g) != 'main':
+            out.append(Found(m.group(g), path, n, m.group(g)))
         if raw.strip():
             prev = raw.strip()
     return out

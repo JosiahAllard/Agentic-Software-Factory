@@ -39,9 +39,11 @@ class Cycles(unittest.TestCase):
 
     def test_a_type_named_in_a_comment_is_not_declared(self):
         cs = {'src/Keys.cs': 'namespace R.Keys;\nusing R.Session;\n// class Foo was here\n'
-                             'class Keys { string s = "class Bar"; }\n',
+                             'class Keys { string s = "class Bar"; }\n'
+                             'class Holder {\n    public object Baz;\n}\n',
               'src/Session.cs': 'namespace R.Session;\nusing static R.Keys.Foo;\n'
-                                'using static R.Keys.Bar;\nclass Session {}\n'}
+                                'using static R.Keys.Bar;\nusing static R.Keys.Baz;\n'
+                                'class Session {}\n'}
         self.assertEqual(self.cycles(cs), [])
 
     def test_a_cycle_already_at_the_merge_base_is_not_new(self):

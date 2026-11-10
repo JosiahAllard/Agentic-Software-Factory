@@ -15,8 +15,8 @@ import ast
 import posixpath
 import re
 
-from kitlib.docs import codemap
 from kitlib.modulemap.detectors import csharp_using, java_imports, python
+from . import codesignals
 from kitlib.modulemap.detectors.paths import Tree
 
 _PACKAGE = re.compile(r'^[ \t]*package[ \t]+([\w.]+)[ \t]*;', re.M)
@@ -68,7 +68,7 @@ def _csharp(texts):
         declared = _NAMESPACE.findall(t) or ['']
         for ns in declared:
             spaces.setdefault(ns, []).append(p)
-            for m in filter(None, map(codemap.TYPE.match, t.splitlines())):
+            for m in filter(None, map(codesignals.type_match, t.splitlines())):
                 types[ns + '.' + m.group(2) if ns else m.group(2)] = p
     for p, t in clean.items():
         for m in csharp_using.USING.finditer(t):

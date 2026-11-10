@@ -83,6 +83,22 @@ class Callers(unittest.TestCase):
                                ('open', 'one', ('a.py', 1))])
 
 
+class PublicSymbols(unittest.TestCase):
+    def test_declared_public_symbols_by_line(self):
+        for path, text, want in (
+                ('S.cs', 'class S {\n    public object Value;\n}\n', []),
+                ('S.cs', 'class S {\n    public object Value { get; set; }\n}\n', []),
+                ('S.cs', 'class S {\n    public object Value() { return null; }\n}\n', ['Value'])):
+            self.assertEqual([f.key for f in codesignals.public_symbols(path, text)], want, text)
+
+    def test_a_tab_indented_method_with_one_caller_is_found(self):
+        syms = codesignals.public_symbols('T.java', 'class T {\n\tpublic int hop(int w) {\n}\n')
+        hits = [('T.java', 2, '\tpublic int hop(int w) {'), ('M.java', 5, 'new T().hop(1);')]
+        self.assertEqual([(f.key, kind, what) for f, kind, what in
+                          codesignals.callers(syms, hits, quality.is_test)],
+                         [('hop', 'one', ('M.java', 5))])
+
+
 class CallerReadFails(PackCase):
     def test_a_failed_grep_prints_not_checked_callers(self):
         self.git('checkout', '-q', '-b', 'feature')

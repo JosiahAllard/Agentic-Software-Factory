@@ -26,9 +26,22 @@ _SIZE = re.compile(r'size\s+(\d+) non-test file\(s\) \| lines (\d+) -> (\d+) \| 
 _NEW = re.compile(r'SIGNAL new file over \d+ non-test lines: (\S+)')
 _GREW = re.compile(r'SIGNAL grew over .*?: (\S+) \d+ -> \d+')
 _GONE = re.compile(r'SIGNAL deleted test, .*?: (\S+)')
-SIGNALS = (('new file over %d lines' % quality.NEW_FILE_LINE, 'new'),
-           ('grew over %d%% past %d lines' % (quality.GROWTH_PCT, quality.GROWTH_FLOOR), 'grew'),
-           ('deleted test, no "covered by"', 'deleted_tests'))
+_CYCLE = re.compile(r'SIGNAL import cycle among changed files \(\d+\): (.+)$')
+_NS_CYCLE = re.compile(r'SIGNAL namespace cycle among changed files \(\d+\): (.+)$')
+_STATIC = re.compile(r'SIGNAL new static non-final field: (\S+:\d+)')
+_REBIND = re.compile(r'SIGNAL new global rebind: (\S+:\d+ \S+)')
+_ONE_CALLER = re.compile(r'SIGNAL new public symbol with one caller: (\S+:\d+ \S+)')
+_TEST_CALLERS = re.compile(r'SIGNAL new public symbol called only from tests: (\S+:\d+ \S+)')
+# (table title, record key, the SIGNAL line it counts), one per kind quality.section() prints.
+SIGNALS = (('new file over %d lines' % quality.NEW_FILE_LINE, 'new', _NEW),
+           ('grew over %d%% past %d lines' % (quality.GROWTH_PCT, quality.GROWTH_FLOOR), 'grew', _GREW),
+           ('deleted test, no "covered by"', 'deleted_tests', _GONE),
+           ('import cycle among changed files', 'import_cycles', _CYCLE),
+           ('namespace cycle among changed files', 'namespace_cycles', _NS_CYCLE),
+           ('new static non-final field', 'static_fields', _STATIC),
+           ('new global rebind', 'global_rebinds', _REBIND),
+           ('public symbol with one caller', 'one_caller', _ONE_CALLER),
+           ('public symbol called only from tests', 'test_only_callers', _TEST_CALLERS))
 
 
 def git(repo, *args):
@@ -60,16 +73,16 @@ def branch_name(subject):
 
 def parse(lines):
     """The record fields a section()'s lines give."""
-    rec = {'size': None, 'new': [], 'grew': [], 'deleted_tests': [], 'not_checked': []}
+    rec = dict({key: [] for _, key, _ in SIGNALS}, size=None, not_checked=[])
     for l in lines:
         if not l.startswith(KNOWN) or (l.startswith('  SIGNAL') and not any(
-                rx.search(l) for rx in (_NEW, _GREW, _GONE))):
+                rx.search(l) for _, _, rx in SIGNALS)):
             rec['not_checked'].append('unrecognised: ' + l.strip())      # never a silent pass
             continue
         m = _SIZE.search(l)
         if m:
             rec['size'] = dict(zip(('files', 'before', 'after', 'net'), map(int, m.groups())))
-        for key, rx in (('new', _NEW), ('grew', _GREW), ('deleted_tests', _GONE)):
+        for _, key, rx in SIGNALS:
             m = rx.search(l)
             if m:
                 rec[key].append(m.group(1))
@@ -119,7 +132,9 @@ def value(recs, key):
             return None, '-'
         v = statistics.median(nets) if key == 'net' else nets[int(.9 * (len(nets) - 1))]
         return v, '%d' % v
-    n = sum(1 for r in recs if r[key])
+    if not any(key in r for r in recs):
+        return None, '-'        # records saved before the tool counted this signal
+    n = sum(1 for r in recs if r.get(key))
     return (100.0 * n / len(recs) if recs else None), '%d of %d (%.1f%%)' % (n, len(recs), 100.0 * n / max(len(recs), 1))
 
 
@@ -129,8 +144,8 @@ def table(sets):
     cohorts = sorted({(r['repo'], r['cohort']) for rs in sets.values() for r in rs})
     head = '  %-38s' % 'cohort' + ''.join('%26s' % l[:25] for l in sets) + ('%10s' % 'delta' if len(sets) == 2 else '')
     out = []
-    for title, key in SIGNALS + (('median net lines', 'net'), ('p90 net lines', 'p90'),
-                                 ('NOT CHECKED', 'not_checked')):
+    for title, key in [s[:2] for s in SIGNALS] + [('median net lines', 'net'), ('p90 net lines', 'p90'),
+                                               ('NOT CHECKED', 'not_checked')]:
         out += ['', title, head]
         for repo, cohort in cohorts:
             vals = [value([r for r in rs if (r['repo'], r['cohort']) == (repo, cohort)], key)

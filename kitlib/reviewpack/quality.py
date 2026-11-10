@@ -1,19 +1,22 @@
 """Quality signals for review_pack (docs/review-pack.md "Quality signals"): non-test lines before
 and after per changed file and the branch's net, a new file over the size line, growth over 50%
-past 500 lines, and a deleted test file or method whose commit message says no "covered by".
+past 500 lines, a deleted test file or method whose commit message says no "covered by", and
+the code signals of codegraph.py (import cycles) and codesignals.py (static state, callers).
 
 Printed only: a signal never refuses and never changes the exit status. `read` is the pack's
-`git(root, *args)` (stdout text, raising on failure), so this module never imports
-kitlib.reviewpack.
+`git(root, *args)` (stdout text, raising on failure), so this module never imports the pack
+(kitlib/reviewpack/__init__.py).
 """
 import collections
 import fnmatch
 import posixpath
 import re
 
-from kitlib.git import batch
 from kitlib.config.policy import DEFAULT_TEST_SOURCES
+from kitlib.git import batch
+from . import codegraph, codesignals
 
+CODE_EXT = ('.java', '.cs', '.py')
 NEW_FILE_LINE = 1500        # a new non-test file past this many non-test lines is flagged
 GROWTH_PCT = 50             # growth past this percentage ...
 GROWTH_FLOOR = 500          # ... that takes the file past this many lines is flagged
@@ -52,15 +55,32 @@ def changed_paths(read, mb, branch):
     return [(status[:1], path) for status, _, path in rows if path]
 
 
-def file_sizes(changed, root, mb, branch):
-    """{path: Sizes(before, after)} for every changed non-test text file in `changed`
-    (changed_paths()); a side the file does not have is None. One `cat-file --batch`."""
+def blobs(changed, root, mb, branch):
+    """{'<rev>:<path>': (type, bytes) or None} of both sides of every changed non-test file in
+    `changed` (changed_paths()). One `cat-file --batch`, which every signal here reads."""
     paths = [(s, p) for s, p in changed if not is_test(p)]
     specs = [('%s:%s' % (mb, p)) for s, p in paths if s != 'A']
     specs += [('%s:%s' % (branch, p)) for s, p in paths if s != 'D']
     got, why = batch.cat_file(specs, root)
     if got is None:
         raise RuntimeError(why)
+    return got
+
+
+def texts(got, rev, paths):
+    """{path: text} of the text blobs of `paths` at `rev` in `got` (blobs())."""
+    out = {}
+    for p in paths:
+        hit = got.get('%s:%s' % (rev, p))
+        if hit and hit[0] == 'blob' and b'\0' not in hit[1]:
+            out[p] = hit[1].decode('utf-8', 'replace')
+    return out
+
+
+def file_sizes(changed, got, mb, branch):
+    """{path: Sizes(before, after)} for every changed non-test text file in `changed`
+    (changed_paths()), from `got` (blobs()); a side the file does not have is None."""
+    paths = [(s, p) for s, p in changed if not is_test(p)]
 
     def lines(rev, path):
         hit = got.get('%s:%s' % (rev, path))
@@ -186,16 +206,97 @@ def not_checked(what, e):
     return 'quality  NOT CHECKED (%s): %s' % (what, (str(e).splitlines() or [type(e).__name__])[0])
 
 
+def capped(lines, what):
+    """The first ROWS of `lines`, and a `... N more <what>` line for the rest."""
+    more = ['  ... %d more %s' % (len(lines) - ROWS, what)] if len(lines) > ROWS else []
+    return lines[:ROWS] + more
+
+
+def cycle_lines(read, base, tip, mb, branch):
+    """A SIGNAL line per import cycle among the changed code files `tip` ({path: text}) holding
+    an import `base` (their merge-base texts) lacks (kitlib/reviewpack/codegraph.py). The tree
+    listings, which resolve Python imports, are read only when a changed file is Python."""
+    py = any(p.lower().endswith('.py') for p in tip)
+    trees = [read('ls-tree', '-r', '--name-only', rev).splitlines() if py else []
+             for rev in (mb, branch)]
+    out = []
+    for comp in codegraph.new_cycles(codegraph.edges(base, trees[0]),
+                                     codegraph.edges(tip, trees[1])):
+        kind = 'namespace' if comp[0].lower().endswith('.cs') else 'import'
+        out.append('  SIGNAL %s cycle among changed files (%d): %s'
+                   % (kind, len(comp), ', '.join(comp)))
+    return capped(out, 'cycles')
+
+
+def code_lines(read, root, changed, got, mb, branch):
+    """The code signals (codegraph, codesignals) over the changed non-test Java, C# and Python
+    files, each with its own NOT CHECKED line."""
+    code = [(s, p) for s, p in changed if not is_test(p) and p.lower().endswith(CODE_EXT)]
+    if not code:
+        return []
+    tip = texts(got, branch, [p for s, p in code if s != 'D'])
+    base = texts(got, mb, [p for s, p in code if s != 'A'])
+    try:
+        out = cycle_lines(read, base, tip, mb, branch)
+    except Exception as e:      # noqa: BLE001
+        out = [not_checked('import cycles', e)]
+    try:
+        out += state_lines(base, tip)
+    except Exception as e:      # noqa: BLE001
+        out.append(not_checked('static state', e))
+    try:
+        out += caller_lines(root, branch, base, tip)
+    except Exception as e:      # noqa: BLE001
+        out.append(not_checked('callers', e))
+    return out
+
+
+def _lang(files, exts):
+    return {p: t for p, t in files.items() if p.lower().endswith(exts)}
+
+
+def state_lines(base, tip):
+    """A SIGNAL line per new Java or C# static non-final field and new Python `global` rebind."""
+    fields = codesignals.new_found(codesignals.static_fields, _lang(base, ('.java', '.cs')),
+                                   _lang(tip, ('.java', '.cs')))
+    rebinds = codesignals.new_found(codesignals.global_rebinds, _lang(base, ('.py',)),
+                                    _lang(tip, ('.py',)))
+    return capped(['  SIGNAL new static non-final field: %s:%d %s' % (f.path, f.line, f.text)
+                   for f in fields], 'static fields') + \
+        capped(['  SIGNAL new global rebind: %s:%d %s' % (f.path, f.line, f.text)
+                for f in rebinds], 'global rebinds')
+
+
+def caller_lines(root, branch, base, tip):
+    """A SIGNAL line per new public symbol with one non-test caller or only test callers (one
+    `git grep`, run only when there is a new public symbol)."""
+    symbols = codesignals.new_found(codesignals.public_symbols, base, tip)
+    if not symbols:
+        return []
+    hits = codesignals.grep_hits(root, branch, sorted({f.key for f in symbols}))
+    out = []
+    for f, kind, what in codesignals.callers(symbols, hits, is_test):
+        if kind == 'one':
+            out.append('  SIGNAL new public symbol with one caller: %s:%d %s (caller %s:%d)'
+                       % (f.path, f.line, f.key, what[0], what[1]))
+        else:
+            out.append('  SIGNAL new public symbol called only from tests: %s:%d %s '
+                       '(%d test callers)' % (f.path, f.line, f.key, what))
+    return capped(out, 'public symbols')
+
+
 def section(read, root, mb, branch):
     """The pack's quality lines (empty when there is nothing to say). A failed read gives a
     NOT CHECKED line for what it fed, never an error: the signals do not change the exit status."""
     out = []
     try:
         changed = changed_paths(read, mb, branch)
-        sizes = file_sizes(changed, root, mb, branch)
+        got = blobs(changed, root, mb, branch)
+        sizes = file_sizes(changed, got, mb, branch)
         out = size_lines(sizes) + size_flags(sizes)
     except Exception as e:      # noqa: BLE001 - printed only, as the gate line is
         return [not_checked('sizes', e)]
+    out += code_lines(read, root, changed, got, mb, branch)
     # Added test files too: a test moved into one is not a deletion.
     tests = [p for s, p in changed if is_test(p)]
     if not any(s != 'A' for s, p in changed if is_test(p)):
@@ -206,8 +307,5 @@ def section(read, root, mb, branch):
         gone = deleted_tests(log)
     except Exception as e:      # noqa: BLE001
         return out + [not_checked('deleted tests', e)]
-    out += ['  SIGNAL deleted test, no "%s" in its commit message: %s' % (COVERED, g)
-            for g in gone[:ROWS]]
-    if len(gone) > ROWS:
-        out.append('  ... %d more deleted tests' % (len(gone) - ROWS))
-    return out
+    return out + capped(['  SIGNAL deleted test, no "%s" in its commit message: %s' % (COVERED, g)
+                         for g in gone], 'deleted tests')

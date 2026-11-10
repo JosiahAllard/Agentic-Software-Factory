@@ -2656,6 +2656,12 @@
   },
   {
    "from": "reviewpack",
+   "to": "modulemap",
+   "kind": "build",
+   "why": "feature layer, same-layer use: allowed as of 2026-11-08"
+  },
+  {
+   "from": "reviewpack",
    "to": "preflight",
    "kind": "build",
    "why": "feature layer, same-layer use: allowed as of 2026-11-06"

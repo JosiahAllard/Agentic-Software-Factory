@@ -459,6 +459,7 @@ None: no module is open to every other.
 | reviewpack | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | reviewpack | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| reviewpack | modulemap | build | feature layer, same-layer use: allowed as of 2026-11-08 |
 | reviewpack | preflight | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | reviewpack | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |

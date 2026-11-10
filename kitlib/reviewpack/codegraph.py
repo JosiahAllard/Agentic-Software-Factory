@@ -15,17 +15,13 @@ import ast
 import posixpath
 import re
 
+from kitlib.docs import codemap
 from kitlib.modulemap.detectors import csharp_using, java_imports, python
 from kitlib.modulemap.detectors.paths import Tree
 
 _PACKAGE = re.compile(r'^[ \t]*package[ \t]+([\w.]+)[ \t]*;', re.M)
 _IMPORT = re.compile(r'import[ \t]+(static[ \t]+)?([\w$.]+?)(\.\*)?[ \t]*;')
 _NAMESPACE = re.compile(r'^[ \t]*namespace[ \t]+([\w.]+)', re.M)
-_TYPE = re.compile(r'\b(?:class|struct|interface|record|enum)[ \t]+([A-Za-z_]\w*)')
-
-
-def _ext(path):
-    return posixpath.splitext(path)[1].lower()
 
 
 def _longest(names, dotted):
@@ -72,8 +68,8 @@ def _csharp(texts):
         declared = _NAMESPACE.findall(t) or ['']
         for ns in declared:
             spaces.setdefault(ns, []).append(p)
-            for name in _TYPE.findall(t):
-                types[ns + '.' + name if ns else name] = p
+            for m in filter(None, map(codemap.TYPE.match, t.splitlines())):
+                types[ns + '.' + m.group(2) if ns else m.group(2)] = p
     for p, t in clean.items():
         for m in csharp_using.USING.finditer(t):
             name = m.group(1)
@@ -89,18 +85,11 @@ def _python(texts, tree_paths):
         except (SyntaxError, ValueError):
             continue
         here = posixpath.dirname(p)
-        roots = list(dict.fromkeys((here, python.package_root(here, tree), '')))
+        bases = python.roots(here, tree)
         for _line, level, parts, _what in python.imports(node):
             if not parts:
                 continue
-            if level:
-                base = here
-                for _ in range(level - 1):
-                    base = posixpath.dirname(base)
-                target = python.resolve(parts, base, tree)
-            else:
-                target = next((hit for hit in (python.resolve(parts, r, tree) for r in roots)
-                               if hit), None)
+            target = python.target(level, parts, here, bases, tree)
             if target and not target.endswith('.py'):
                 target = posixpath.join(target, '__init__.py')
             if target:
@@ -112,7 +101,7 @@ def edges(texts, tree_paths):
     in the tree) resolves Python imports."""
     by = {}
     for p, t in texts.items():
-        by.setdefault(_ext(p), {})[p] = t
+        by.setdefault(posixpath.splitext(p)[1].lower(), {})[p] = t
     found = set(_java(by.get('.java', {}))) | set(_csharp(by.get('.cs', {})))
     found |= set(_python(by.get('.py', {}), tree_paths))
     return {(a, b) for a, b in found if a != b and b in texts}

@@ -3,7 +3,8 @@
 - static_fields(): Java and C# `static` fields that are not `final`, `readonly` or `const`; a line
   is a field when `=` or `;` comes before any `(`, and its key is its words up to that mark.
 - global_rebinds(): Python `global` names, keyed by their function.
-- public_symbols(): Java and C# `public` types and methods (not an override, not `main`) and
+- public_symbols(): Java and C# `public` types and methods (not an override, not `main`), read with
+  the code map's TYPE and MEMBER (kitlib/docs/codemap.py: a method indented 2-8 spaces), and
   Python module and class level defs and classes whose name has no leading `_`.
 Each is new on a branch when its key is in no merge-base text of the changed files, so code moved
 from one changed file to another is not new. grep_hits() is the one `git grep` that finds every
@@ -14,6 +15,7 @@ import collections
 import posixpath
 import re
 
+from kitlib.docs import codemap
 from kitlib.git import cmd as gitcmd
 
 GREP_TIMEOUT = 60       # seconds the one `git grep` may take before the callers read NOT CHECKED
@@ -21,11 +23,6 @@ Found = collections.namedtuple('Found', 'key path line text')
 
 _NOT_MUTABLE = {'final', 'readonly', 'const', 'class', 'interface', 'enum', 'record', 'struct',
                 'import', 'using', 'return', 'delegate'}
-_PUBLIC = re.compile(
-    r'^[ \t]*public[ \t]+((?:(?:static|final|abstract|sealed|virtual|override|async|synchronized|'
-    r'default|partial|readonly|new|unsafe|extern|strictfp)[ \t]+)*)'
-    r'(?:(?:class|interface|enum|record|struct)[ \t]+([A-Za-z_]\w*)'
-    r'|[\w<>\[\],.? ]*?[\w>\]?][ \t]+([A-Za-z_]\w*)[ \t]*\()')
 
 
 def _ext(path):
@@ -84,11 +81,15 @@ def public_symbols(path, text):
         return [Found(n.name, path, n.lineno, n.name) for n in tops if not n.name.startswith('_')]
     out, prev = [], ''
     for n, raw in enumerate(text.splitlines(), 1):
-        m = _PUBLIC.match(raw)
-        if m:
-            name = m.group(2) or m.group(3)
-            if 'override' not in m.group(1).split() and prev != '@Override' and name != 'main':
-                out.append(Found(name, path, n, name))
+        m = codemap.TYPE.match(raw)
+        name, at = (m.group(2), m.start(1)) if m else (None, 0)
+        m = m or codemap.MEMBER.match(raw)
+        if m and name is None:
+            name, at = m.group(1), m.start(1)
+        head = raw[:at].split()     # the modifiers and, for a method, its return type
+        if m and 'public' in head and 'override' not in head and prev != '@Override' \
+                and name != 'main':
+            out.append(Found(name, path, n, name))
         if raw.strip():
             prev = raw.strip()
     return out

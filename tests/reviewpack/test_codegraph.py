@@ -37,6 +37,13 @@ class Cycles(unittest.TestCase):
                 ('python', py, [['pkg/a.py', 'pkg/b.py']])):
             self.assertEqual(self.cycles(tip, tree=tip), want, name)
 
+    def test_a_type_named_in_a_comment_is_not_declared(self):
+        cs = {'src/Keys.cs': 'namespace R.Keys;\nusing R.Session;\n// class Foo was here\n'
+                             'class Keys { string s = "class Bar"; }\n',
+              'src/Session.cs': 'namespace R.Session;\nusing static R.Keys.Foo;\n'
+                                'using static R.Keys.Bar;\nclass Session {}\n'}
+        self.assertEqual(self.cycles(cs), [])
+
     def test_a_cycle_already_at_the_merge_base_is_not_new(self):
         self.assertEqual(self.cycles(CAMERA, base=CAMERA), [])
         grown = dict(CAMERA)

@@ -49,6 +49,24 @@ def resolve(parts, base, tree):
     return None
 
 
+def roots(here, tree, modroot=''):
+    """The folders an absolute import in a file of folder `here` resolves from, in order, once
+    each: `here`, its top package's parent, `modroot` (its module's folder), the repository root."""
+    return list(dict.fromkeys((here, package_root(here, tree), modroot, '')))
+
+
+def target(level, parts, here, bases, tree):
+    """The tree path one import (`level`, dotted `parts`, imports()) of a file in folder `here`
+    names: a relative one from its package, an absolute one from the first of `bases` (roots())
+    where it resolves; None when it resolves nowhere."""
+    if level:
+        base = here
+        for _ in range(level - 1):
+            base = posixpath.dirname(base)
+        return resolve(parts, base, tree)
+    return next((t for t in (resolve(parts, r, tree) for r in bases) if t), None)
+
+
 def imports(node):
     """`(line, level, dotted parts, text)` of each import in the tree `node`."""
     for n in ast.walk(node):
@@ -78,24 +96,15 @@ def detect(files, mm, read):
         if node is None:
             continue
         here = posixpath.dirname(f)
-        roots = []
-        for r in (here, package_root(here, tree), modroot, ''):
-            if r not in roots:
-                roots.append(r)
+        bases = roots(here, tree, modroot)
         seen = set()
         for line, level, parts, what in imports(node):
             if not parts:
                 continue
-            if level:
-                base = here
-                for _ in range(level - 1):
-                    base = posixpath.dirname(base)
-                target = resolve(parts, base, tree)
-            else:
-                target = next((t for t in (resolve(parts, r, tree) for r in roots) if t), None)
-            if target is None:
+            hit = target(level, parts, here, bases, tree)
+            if hit is None:
                 continue
-            dst, _ = mm.module_of(target)
+            dst, _ = mm.module_of(hit)
             if dst == src or (line, dst) in seen:
                 continue
             seen.add((line, dst))

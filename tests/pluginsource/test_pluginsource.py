@@ -313,7 +313,7 @@ class CachePruneAfterRefreshTest(Base):
     def account(self, versions, installed, name='.claude', seed=True):
         (f,) = self.k.folders(name)
         cache = P.cache_dir(f)
-        old = time.time() - 30 * 86400
+        old = (NOW - datetime.timedelta(days=30)).timestamp()
         for i, v in enumerate(versions):
             os.makedirs(os.path.join(cache, v, 'tools'))
             os.utime(os.path.join(cache, v), (old + i * 60, old + i * 60))

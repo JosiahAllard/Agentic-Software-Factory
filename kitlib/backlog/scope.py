@@ -2,11 +2,14 @@
 scope member is `none`, a literal repo-relative path, or a path with a `/**` suffix. A comparison
 that cannot be decided raises UndecidableScope and is a collision to every caller; nothing here
 returns "clear" for an input it did not understand."""
+import functools
 import re
 
 NONE = 'none'
 WILDCARD_CHARS = '*?[]{}'
 GLOB_SUFFIX = '/**'
+EMPTY_SET = 'scope set %s is empty; an item that touches no tracked file says `scope: none`'
+MEMO = 1 << 16      # members scope_member_error and _components keep (pure functions of them)
 
 
 class UndecidableScope(Exception):
@@ -42,8 +45,10 @@ def path_shape_error(p, what='path', tab_ok=False, comma_ok=False):
     return None
 
 
+@functools.lru_cache(maxsize=MEMO)
 def scope_member_error(member, tab_ok=False):
-    """None if `member` is a legal scope member, else why not (`tab_ok`: see path_shape_error)."""
+    """None if `member` is a legal scope member, else why not (`tab_ok`: see path_shape_error).
+    Memoised: every collision check asks it of the same members again and again."""
     if member == NONE:
         return None
     if not member:
@@ -63,12 +68,18 @@ def scope_member_error(member, tab_ok=False):
 
 def scope_components(member):
     """The casefolded component list `members_collide` compares."""
+    return list(_components(member))
+
+
+@functools.lru_cache(maxsize=MEMO)
+def _components(member):
+    """scope_components as a tuple, memoised (an UndecidableScope is raised again, never kept)."""
     err = scope_member_error(member, tab_ok=True)
     if err is not None:
         raise UndecidableScope('%s: %s' % (member, err))
     if member == NONE:
         raise UndecidableScope('`none` has no components; it collides with nothing')
-    return member_base(member).casefold().strip('/').split('/')
+    return tuple(member_base(member).casefold().strip('/').split('/'))
 
 
 def is_folder_scope(member):
@@ -130,7 +141,7 @@ def members_collide(a, b, shared=()):
             raise UndecidableScope('%s: %s' % (m, err))
     if a == NONE or b == NONE:
         return False
-    ca, cb = scope_components(a), scope_components(b)
+    ca, cb = _components(a), _components(b)
     n = min(len(ca), len(cb))
     if ca[:n] != cb[:n]:
         return False
@@ -142,8 +153,7 @@ def scopes_collide(scopes_a, scopes_b, shared=()):
     validated, even after a hit; an empty set raises. `shared`: as members_collide."""
     for name, scopes in (('a', scopes_a), ('b', scopes_b)):
         if not scopes:
-            raise UndecidableScope('scope set %s is empty; an item that touches no tracked file '
-                                   'says `scope: none`' % name)
+            raise UndecidableScope(EMPTY_SET % name)
     hit = False
     for a in scopes_a:
         for b in scopes_b:
@@ -154,6 +164,70 @@ def scopes_collide(scopes_a, scopes_b, shared=()):
 
 def colliding_pairs(scopes_a, scopes_b, shared=()):
     return [(a, b) for a in scopes_a for b in scopes_b if members_collide(a, b, shared)]
+
+
+def pull_collisions(sets, shared=()):
+    """For every `i < j`, what `scopes_collide(sets[j], sets[i], shared)` and then
+    `colliding_pairs(sets[j], sets[i], shared)[0]` decide, each member read once and its
+    colliding members found in a component trie instead of by trying every pair: `{(i, j):
+    (x, y)}` for a pair whose first collision is `x` of sets[j] with `y` of sets[i],
+    `{(i, j): UndecidableScope}` for a pair those calls raise on (an empty set, or the first
+    member they meet that is no scope); a clear pair is absent. `shared`: as members_collide."""
+    bad = []                # per set: the UndecidableScope of its first unreadable member, or None
+    for scopes in sets:
+        errs = [(m, scope_member_error(m, tab_ok=True)) for m in scopes]
+        bad.append([UndecidableScope('%s: %s' % (m, e)) for m, e in errs if e is not None])
+    root = ({}, [])         # node: (children by component, [(set index, member index)])
+    for i, scopes in enumerate(sets):
+        if scopes and not bad[i]:
+            for k, m in enumerate(scopes):
+                if m != NONE:
+                    node = root
+                    for c in _components(m):
+                        node = node[0].setdefault(c, ({}, []))
+                    node[1].append((i, k))
+    exempt = {}
+
+    def is_exempt(m):
+        if m not in exempt:
+            exempt[m] = is_shared(m, shared)
+        return exempt[m]
+    out = {}
+    for j, b in enumerate(sets):
+        for i in range(j):
+            a = sets[i]
+            if not b or not a:
+                out[(i, j)] = UndecidableScope(EMPTY_SET % ('a' if not b else 'b'))
+            elif bad[j] or bad[i]:      # met in the order b[0], then a, then the rest of b
+                b0_bad = scope_member_error(b[0], tab_ok=True) is not None
+                out[(i, j)] = bad[j][0] if b0_bad or not bad[i] else bad[i][0]
+        if not b or bad[j]:
+            continue
+        for x in b:
+            if x == NONE:
+                continue
+            node, hits = root, []
+            for c in _components(x):
+                node = node[0].get(c)
+                if node is None:
+                    break
+                hits += node[1]                 # y a prefix of x, or x itself
+            else:
+                stack = list(node[0].values())  # x a prefix of y
+                while stack:
+                    n = stack.pop()
+                    hits += n[1]
+                    stack.extend(n[0].values())
+            if not hits or is_exempt(x):
+                continue
+            first = {}
+            for i, k in hits:
+                if (i < j and (i, j) not in out and k < first.get(i, k + 1)
+                        and not is_exempt(sets[i][k])):
+                    first[i] = k
+            for i, k in first.items():
+                out[(i, j)] = (x, sets[i][k])
+    return out
 
 
 def shared_hits(scopes_a, scopes_b, shared):
@@ -234,8 +308,16 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
                else path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
         if err is not None:
             raise UndecidableScope('%s: %s' % (r, err))
+    # paths_related(path, r) for some r in `removed`, as set lookups: path's components are a
+    # removed path's or a prefix of one (rpre), or a removed path's are a prefix of path's.
+    rset = set(tuple(r.casefold().split('/')) for r in removed)
+    rpre = set(t[:k] for t in rset for k in range(1, len(t)))
+
+    def hits_removed(path):
+        c = tuple(path.casefold().split('/'))
+        return c in rset or c in rpre or any(c[:k] in rset for k in range(1, len(c)))
     base = member_base(member)
-    if member == NONE or not any(paths_related(base, r) for r in removed):
+    if member == NONE or not hits_removed(base):
         return [member]
     below = base + '/'
     under = [p for p in tree if paths_related(base, p)]
@@ -243,22 +325,29 @@ def complement(member, removed, tree, cap=COMPLEMENT_CAP):
         return None         # no tracked data for it, or a letter-case mismatch: do not guess
     if not member.endswith(GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
         return None         # a single file
+    children = {}           # folder -> {name: True when the name is a folder (has more below)}
+    for p in tree:
+        if p.startswith(below):
+            parent, rel = base, p[len(below):]
+            while True:
+                head, sep, rest = rel.partition('/')
+                names = children.setdefault(parent, {})
+                names[head] = names.get(head, False) or bool(rest)
+                if not sep:
+                    break
+                parent, rel = parent + '/' + head, rest
     out = []
 
     def descend(prefix):
-        names = {}
-        for p in tree:
-            if p.startswith(prefix + '/'):
-                head, _, rest = p[len(prefix) + 1:].partition('/')
-                names[head] = names.get(head, False) or bool(rest)
+        names = children.get(prefix, {})
         for name in sorted(names):
             path = prefix + '/' + name
             if names[name]:
-                if any(paths_related(path, r) for r in removed):
+                if hits_removed(path):
                     descend(path)
                 else:
                     out.append(path + GLOB_SUFFIX)
-            elif not any(paths_related(path, r) for r in removed):
+            elif not hits_removed(path):
                 out.append(path)
             if len(out) > cap:
                 return

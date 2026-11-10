@@ -6,8 +6,10 @@ import subprocess
 import tempfile
 import unittest
 
-from kitlib.reviewpack import scorecard as Q
+from kitlib import reviewpack
+from kitlib.reviewpack import quality, scorecard as Q
 from tests.realgit import real_git
+from tests.reviewpack.repo import PackCase
 
 LINES = ['size     1 non-test file(s) | lines 10 -> 1600 | net +1590',
          '  SIGNAL new file over 1500 non-test lines: a.py (1600)',
@@ -28,6 +30,22 @@ class Pure(unittest.TestCase):
                          (['a.py'], ['b.py'], ['t.py::test_y']))
         self.assertEqual(len(out['not_checked']), 1)
 
+    def test_parse_counts_each_code_signal_kind(self):
+        for line, key, want in (
+                ('  SIGNAL import cycle among changed files (2): pkg/a.py, pkg/b.py',
+                 'import_cycles', 'pkg/a.py, pkg/b.py'),
+                ('  SIGNAL namespace cycle among changed files (2): src/Keys.cs, src/Session.cs',
+                 'namespace_cycles', 'src/Keys.cs, src/Session.cs'),
+                ('  SIGNAL new static non-final field: src/S.java:4 static int retries',
+                 'static_fields', 'src/S.java:4'),
+                ('  SIGNAL new global rebind: w2.py:2 n', 'global_rebinds', 'w2.py:2 n'),
+                ('  SIGNAL new public symbol with one caller: src/W.java:3 pick (caller src/H.java:3)',
+                 'one_caller', 'src/W.java:3 pick'),
+                ('  SIGNAL new public symbol called only from tests: src/W.java:4 peek (1 test callers)',
+                 'test_only_callers', 'src/W.java:4 peek')):
+            out = Q.parse([line])
+            self.assertEqual((out[key], out['not_checked']), ([want], []), line)
+
     def test_an_unrecognised_line_or_signal_is_not_checked(self):
         for l in ('something new', '  SIGNAL a signal kind from later'):
             self.assertEqual(len(Q.parse([l])['not_checked']), 1, l)
@@ -47,6 +65,8 @@ class Pure(unittest.TestCase):
         text = Q.table({'a': a, 'b': b})
         self.assertRegex(text, r'r window\s+1 of 2 \(50\.0%\)\s+0 of 1 \(0\.0%\)\s+-50')
         self.assertRegex(text, r'r window\s+20\s+5\s+-15')
+        # records saved before a signal was counted show no value for it, never a 0%
+        self.assertRegex(text, r'new global rebind\n.*\n  r window\s+-\s+-\s+-\n')
 
     def test_save_adds_to_a_file_and_replaces_the_same_repo_and_cohort(self):
         with tempfile.TemporaryDirectory() as d:
@@ -97,6 +117,32 @@ class Landing(unittest.TestCase):
             gone = Q.measure(d, 'main', 'nope', 'spot')
             self.assertFalse(gone['landed'])
             self.assertTrue(gone['not_checked'])
+
+
+@real_git('git grep: the callers signal')
+class RealSection(PackCase):
+    def test_every_line_section_prints_for_code_signals_is_recognised(self):
+        self.write('pkg/__init__.py', '')
+        self.write('pkg/a.py', 'import os\n')
+        self.write('pkg/b.py', 'import sys\n')
+        self.commit_all('base')
+        self.git('checkout', '-q', '-b', 'feature')
+        self.write('pkg/a.py', 'from pkg import b\n')
+        self.write('pkg/b.py', 'from pkg import a\nn = 0\ndef reset():\n    global n\n    n = 0\n')
+        self.write('tests/test_b.py', 'from pkg.b import reset\ndef test_r():\n    reset()\n')
+        self.write('src/Keys.cs', 'namespace R.Keys;\nusing R.Session;\nclass Keys {}\n')
+        self.write('src/Session.cs', 'namespace R.Session {\n  using static R.Keys.Keys;\n'
+                                     '  class Session {}\n}\n')
+        self.write('src/S.java', 'class S {\n    static int retries;\n'
+                                 '    public int pick() { return 1; }\n}\n')
+        self.write('src/H.java', 'final class H {\n    int go() { return new S().pick(); }\n}\n')
+        self.commit_all('signals')
+        mb = self.git('merge-base', 'main', 'feature')
+        out = Q.parse(quality.section(lambda *a: reviewpack.git(self.root, *a), self.root, mb,
+                                      'feature'))
+        self.assertEqual(out['not_checked'], [])
+        for _, key, _ in Q.SIGNALS[3:]:
+            self.assertTrue(out[key], key)
 
 
 if __name__ == '__main__':

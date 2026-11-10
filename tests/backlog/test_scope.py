@@ -1,6 +1,7 @@
 """`complement` (kitlib/backlog/scope.py): the sibling members that cover a scope member minus the
 paths removed from it, over the tracked tree, or None when it cannot be done."""
 import json
+import random
 import unittest
 
 from kitlib.backlog import check as checkmod
@@ -397,6 +398,129 @@ class SharedPathsCli(unittest.TestCase):
         rc, out = self.run_tool('check')
         self.assertEqual(rc, 0, out)
         self.assertIn('shared paths', out)
+
+
+# --- the indexed collision and complement against the pairwise code they replaced ------------
+
+GEN_TOPS = ('brain', 'node', 'docs', 'kit')
+GEN_TREE = ['%s/s%d/t%d/f%d.py' % (t, i, j, k)
+            for t in GEN_TOPS for i in range(5) for j in range(4) for k in range(6)]
+
+
+def pairwise_pull_warnings(subjects, shared):
+    """check_pull_records' warning loop as it was before scope.pull_collisions: the oracle."""
+    warned = []
+    for i, a in enumerate(subjects):
+        for b in subjects[i + 1:]:
+            try:
+                why = None
+                if smod.scopes_collide(b.all('scope'), a.all('scope'), shared):
+                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'), shared)
+                    why = 'scope %s collides with %s' % hit[0]
+            except smod.UndecidableScope as exc:
+                why = 'the scope comparison could not be decided, so it is a collision: %s' % exc
+            if why:
+                warned.append((b.path, b.line_of('scope'), 'in flight alongside `%s`, and its %s'
+                               % (a.id, why)))
+    return warned
+
+
+def walk_complement(member, removed, tree, cap=smod.COMPLEMENT_CAP):
+    """scope.complement as it was before its removed-path index: the oracle."""
+    err = smod.scope_member_error(member, tab_ok=True)
+    if err is not None:
+        raise smod.UndecidableScope('%s: %s' % (member, err))
+    for r in removed:
+        err = ('a glob, not a path' if r.endswith(smod.GLOB_SUFFIX)
+               else smod.path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
+        if err is not None:
+            raise smod.UndecidableScope('%s: %s' % (r, err))
+    base = smod.member_base(member)
+    if member == smod.NONE or not any(smod.paths_related(base, r) for r in removed):
+        return [member]
+    below = base + '/'
+    under = [p for p in tree if smod.paths_related(base, p)]
+    if not under or any(not smod.path_within(base, p) for p in under):
+        return None
+    if not member.endswith(smod.GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
+        return None
+    out = []
+
+    def descend(prefix):
+        names = {}
+        for p in tree:
+            if p.startswith(prefix + '/'):
+                head, _, rest = p[len(prefix) + 1:].partition('/')
+                names[head] = names.get(head, False) or bool(rest)
+        for name in sorted(names):
+            path = prefix + '/' + name
+            if names[name]:
+                if any(smod.paths_related(path, r) for r in removed):
+                    descend(path)
+                else:
+                    out.append(path + smod.GLOB_SUFFIX)
+            elif not any(smod.paths_related(path, r) for r in removed):
+                out.append(path)
+            if len(out) > cap:
+                return
+    descend(base)
+    return None if len(out) > cap else sorted(out)
+
+
+def gen_member(rnd):
+    t, i, j = rnd.choice(GEN_TOPS), rnd.randrange(5), rnd.randrange(4)
+    return rnd.choice([
+        '%s/s%d/t%d/f%d.py' % (t, i, j, rnd.randrange(6)), '%s/s%d/t%d/**' % (t, i, j),
+        '%s/s%d' % (t, i), '%s/s%d/**' % (t, i), '%s/**' % t, t, '%s/S%d/**' % (t.title(), i),
+        'none', LIST, 'docs/a\tb.md', 'docs/a\tb.md/**', '*.java', 'a/[x].py', 'kit/x,y.py'])
+
+
+class IndexedCollisionsMatchPairwise(unittest.TestCase):
+    """check_pull_records (scope.pull_collisions) gives the warnings the pairwise loop gave, in
+    order, on generated stores with broad `**` globs, bare folders, files, letter case, tabs,
+    `none`, shared paths, unreadable members anywhere in a set and empty sets."""
+
+    def test_generated_stores(self):
+        for seed in range(12):
+            rnd = random.Random(seed)
+            recs = []
+            for n in range(30):
+                size = rnd.choice([0, 1, 1, 2, 3, 5, 8])
+                scope = [gen_member(rnd) for _ in range(size)]
+                if rnd.random() < 0.7:          # most records read cleanly
+                    scope = [m for m in scope if smod.scope_member_error(m, True) is None]
+                over = dict(scope=scope) if scope else dict(drop=('scope',))
+                recs.append(priced('G%02d' % n, state='pulled', pulled_at=TODAY,
+                                   pulled_by='kit/g%d' % (n % 4), **over))
+            s = osnap(*recs)
+            subjects = [r for r in s.readable if r.get('state') == 'pulled']
+            for shared in ((), SHARED):
+                with self.subTest(seed=seed, shared=shared):
+                    got = [(f.path, f.line, f.message)
+                           for f in checkmod.check_pull_records(s, shared).warnings]
+                    self.assertEqual(got, pairwise_pull_warnings(subjects, shared))
+                    self.assertTrue(got)
+
+
+class IndexedComplementMatchesWalk(unittest.TestCase):
+    """scope.complement with its removed-path and child index returns what the tree walk did,
+    on a generated tree with broad members and large removed sets, the cap included."""
+
+    def test_generated_trees(self):
+        rnd = random.Random(3)
+        members = ['brain/**', 'brain', 'brain/s1/**', 'brain/s1', 'node/s2/t3/f1.py',
+                   'Brain/**', 'kit/s0/t0/**', 'docs/**', 'none']
+        removals = [[], ['elsewhere/x.py'], ['brain/s1/t2/f3.py'],
+                    [p for p in GEN_TREE if p.startswith('brain/s1/')],
+                    [p for p in GEN_TREE if p.startswith('brain/') and not p.startswith('brain/s4')],
+                    [p for p in GEN_TREE if p.startswith('brain/')], ['BRAIN/s0/t0/f0.py']]
+        removals += [rnd.sample(GEN_TREE, k) for k in (5, 40, 200)]
+        for member in members:
+            for removed in removals:
+                for cap in (1, smod.COMPLEMENT_CAP, 1000):
+                    with self.subTest(member=member, removed=len(removed), cap=cap):
+                        self.assertEqual(smod.complement(member, removed, GEN_TREE, cap),
+                                         walk_complement(member, removed, GEN_TREE, cap))
 
 
 if __name__ == '__main__':

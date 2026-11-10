@@ -110,15 +110,14 @@ def check_pull_records(snap, shared=()):
             found.append(rmod.Finding(PULL_RECORDS, rec.path, rec.line_of('state'), '`state: '
                                       'pulled` on an unpriced item (`priority: %s`) with no '
                                       '`preempt` record' % rec.get('priority')))
+    hits = smod.pull_collisions([r.all('scope') for r in subjects], shared)
     for i, a in enumerate(subjects):
-        for b in subjects[i + 1:]:
-            try:
-                why = None
-                if smod.scopes_collide(b.all('scope'), a.all('scope'), shared):
-                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'), shared)
-                    why = 'scope %s collides with %s' % hit[0]
-            except smod.UndecidableScope as exc:
-                why = 'the scope comparison could not be decided, so it is a collision: %s' % exc
+        for j in range(i + 1, len(subjects)):
+            b, hit = subjects[j], hits.get((i, j))
+            if isinstance(hit, smod.UndecidableScope):
+                why = 'the scope comparison could not be decided, so it is a collision: %s' % hit
+            else:
+                why = hit and 'scope %s collides with %s' % hit
             if why:
                 warned.append(rmod.Finding(PULL_RECORDS, b.path, b.line_of('scope'), 'in flight '
                                            'alongside `%s`, and its %s' % (a.id, why)))

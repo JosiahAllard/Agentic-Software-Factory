@@ -3,6 +3,7 @@ paths removed from it, over the tracked tree, or None when it cannot be done."""
 import json
 import random
 import unittest
+from unittest import mock
 
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import offer as omod
@@ -16,7 +17,7 @@ from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, priced,
-                                   record_text)
+                                   rec, record_text)
 from tests.backlog.test_offer import snap as osnap
 
 
@@ -500,6 +501,23 @@ class IndexedCollisionsMatchPairwise(unittest.TestCase):
                            for f in checkmod.check_pull_records(s, shared).warnings]
                     self.assertEqual(got, pairwise_pull_warnings(subjects, shared))
                     self.assertTrue(got)
+
+
+class WritesSkipTheCollisionWarnings(unittest.TestCase):
+    """A write's check (check.fail_findings) leaves out the colliding-scope pass, which makes
+    WARNs only: every FAIL `check` reports is still there, and `check` still warns."""
+
+    def test_a_write_keeps_every_fail_and_check_keeps_the_warnings(self):
+        s = osnap(pulled('ONE', 'kit/a.py', by='kit/one'), pulled('TWO', 'kit/**', by='kit/two'),
+                  rec('BAD', state='pulled', pulled_at=TODAY, pulled_by='kit/bad',
+                      scope='kit/b.py'))
+        results = checkmod.check_store(s)
+        fails = [f for r in results for f in r.findings]
+        self.assertIn('BAD', ' '.join(f.path for f in fails if f.check == checkmod.PULL_RECORDS))
+        self.assertEqual(len({r.name: r for r in results}[checkmod.PULL_RECORDS].warnings), 2)
+        with mock.patch.object(smod, 'pull_collisions',
+                               side_effect=AssertionError('a write ran the collision pass')):
+            self.assertEqual(checkmod.fail_findings(s), fails)
 
 
 class IndexedComplementMatchesWalk(unittest.TestCase):

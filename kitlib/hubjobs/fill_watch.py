@@ -243,7 +243,7 @@ def read_waits(settings, key, entry, session_live=None):
     rows, snap, holding = [], None, None
     try:
         for session in coord_restart.wake_sessions(key, entry):
-            ctx = opener.open_store(root, fetch=False, session=session)
+            ctx = opener.open_store(root, fetch=False, session=session, probes=opener.NO_PROBES)
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls
                 snap = ctx.store.load()
@@ -919,7 +919,8 @@ def pull_record(root, rid, branch, sessions, liveness=None):
         ctx.offer_session = rec.get('session')
         return pull_branch.plan_pull(snap, ctx, rid)
     try:
-        ctx = opener.open_store(root, fetch=True, session=PULL_SESSION, branch=branch)
+        ctx = opener.open_store(root, fetch=True, session=PULL_SESSION, branch=branch,
+                                probes=opener.NO_PROBES)
         if getattr(ctx.store.backend, 'implicit', False):
             return 'store'
         ctx.session_live = liveness

@@ -554,7 +554,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         stale = self.later_on_main()
         self.branch_with('kit/new', 'kitlib/y/own.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['kitlib/x/later.py'], 'kit/new')
         self.assertIn('ADDED NEW, found on kit/new', change.lines)
         change = self.plan(ctx, ['kitlib/y/**'], 'kit/new')
@@ -565,7 +565,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         stale = self.repo.head()
         self.land('kit/done', 'kitlib/x/done.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['docs/y.md'], 'kit/done')
         self.assertTrue(any(line.startswith('NOTE: branch kit/done landed on main as ')
                             for line in change.lines), change.lines)
@@ -573,7 +573,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_an_unset_code_main_is_the_main_checkouts_main(self):
         self.branch_with(FOO, 'kitlib/x/a.py')
         kit_json = {'backlog': {'id_grammar': 'upper'}, 'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         self.assertEqual(ctx.code_main, 'main')
         change = self.plan(ctx, ['docs/y.md'], FOO)
         self.assertIn('ADDED NEW, found on kit/foo', change.lines)
@@ -581,7 +581,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_a_code_main_that_does_not_resolve_still_fails(self):
         kit_json = {'backlog': {'id_grammar': 'upper', 'code_main': 'trunk'},
                     'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         with self.assertRaises(Failure) as cm:
             self.plan(ctx, ['docs/y.md'], 'kit/gone')
         self.assertIn('`trunk` does not resolve', str(cm.exception))
@@ -590,7 +590,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_outside_the_pm_data_worktree_the_code_remote_is_repo_remote(self):
         self.pm_worktree()
         self.assertIsNone(pull_branch.code_config(self.repo.root))
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         self.assertEqual((ctx.code_remote, ctx.code_main), (ctx.remote, ctx.main_branch))
 
 

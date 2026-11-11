@@ -161,8 +161,8 @@ def _fixtures(directory, profile, env):
     _git(main, ('push', '-q', '-u', 'origin', 'main'), env)
     coordinator = main / FIXTURE_FOLDER / 'worktrees' / 'coordinator'
     _git(main, ('worktree', 'add', '-q', '-b', 'codex/coordinator', str(coordinator)), env)
-    from kitlib.backlog.opener import open_store
-    ctx = open_store(str(coordinator), session=SESSION)
+    from kitlib.backlog.opener import NO_PROBES, open_store
+    ctx = open_store(str(coordinator), session=SESSION, probes=NO_PROBES)
     record = '\n'.join(('id: ' + ITEM, 'area: diagnostic', 'priority: 2', 'priority_by: agent',
                         'effort: -', 'state: open', 'blocked_on: -', 'scope: value.txt',
                         'summary: Owned no-inference acceptance fixture', 'session: ' + SESSION, ''))
@@ -235,9 +235,10 @@ def _prepare_or_isolate(task, coordinator, env):
         # This is controlled setup for subsequent independent native operations.
         # The new-worktree/claim workflow remains failed, visibly in the report.
         _git(task.coordinator, ('worktree', 'add', '-q', '-b', task.branch, task.worker), env)
-        from kitlib.backlog.opener import open_store
+        from kitlib.backlog.opener import NO_PROBES, open_store
         from kitlib.backlog.plan import plan_pull
-        ctx = open_store(task.coordinator, session=task.session, branch=task.branch)
+        ctx = open_store(task.coordinator, session=task.session, branch=task.branch,
+                         probes=NO_PROBES)
         ctx.store.write(lambda snapshot: plan_pull(snapshot, ctx, task.item))
         workflow._checkout(task)
         workflow._claimed(task)

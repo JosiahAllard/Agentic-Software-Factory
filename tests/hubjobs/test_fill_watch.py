@@ -257,7 +257,8 @@ class Slots(unittest.TestCase):
             def __init__(s, root, session):
                 s.root, s.remote, s.store, s.session = root, 'origin', Store(), session
 
-        def open_store(root, fetch=True, session=None, branch=None):
+        def open_store(root, fetch=True, session=None, branch=None, *, probes):
+            self.assertIs(probes, opener.NO_PROBES)     # an offer read stops no pull
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 
@@ -331,7 +332,8 @@ class Slots(unittest.TestCase):
         def offer_for(snap, ctx, cap=5, holding=None, narrow=False):
             asked.append((cap, narrow))
             return [], passed, holding, None
-        with mock.patch.object(opener, 'open_store', lambda root, fetch=True, session=None:
+        with mock.patch.object(opener, 'open_store',
+                               lambda root, fetch=True, session=None, *, probes:
                                Ctx(root, session)), \
                 mock.patch.object(plan, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
@@ -1459,7 +1461,7 @@ class WaitsOnAStore(_bh.StoreCase):
                          [('FOO', ['HOLD'])])
         with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
                 mock.patch.object(opener, 'open_store',
-                                  lambda root, fetch=True, session=None: self.ctx):
+                                  lambda root, fetch=True, session=None, *, probes: self.ctx):
             self.assertEqual(W.read_waits(None, 'game', dict(COORD)), [])
 
 

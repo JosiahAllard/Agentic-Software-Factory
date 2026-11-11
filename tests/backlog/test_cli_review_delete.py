@@ -23,7 +23,7 @@ class Cli(unittest.TestCase):
     def add_marked(self, rid):
         """`add` with the review mark, through the library against the configured store."""
         with mock.patch.dict(os.environ, self.env, clear=True):
-            ctx = opener.open_store(self.repo.root, session='owner-hub')
+            ctx = opener.open_store(self.repo.root, session='owner-hub', probes=opener.NO_PROBES)
             ctx.store.write(lambda s: pmod.plan_add(s, ctx, rid, 'a thing the owner added',
                                                     ['tools/x.py'], session=None, review=MARK,
                                                     **ADD_NONE))

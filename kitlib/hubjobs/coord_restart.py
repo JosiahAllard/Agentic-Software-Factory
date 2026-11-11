@@ -484,7 +484,7 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
         if with_cap:
             cap = opener.repo_cap(settings.repo_path(repo))
         for session in wake_sessions(key, entry):
-            ctx = opener.open_store(root, fetch=False, session=session)
+            ctx = opener.open_store(root, fetch=False, session=session, probes=opener.NO_PROBES)
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()

@@ -54,6 +54,7 @@ from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
 from kitlib.coordstate import log as coordlog                       # noqa: E402
+from kitlib.worktree import quiet as wquiet                         # noqa: E402
 
 
 def say(line=''):
@@ -537,7 +538,10 @@ def main(argv=None):
                 raise Usage(err)
         policy.by_design_refusal(args.session)
         root = os.path.abspath(args.root or os.getcwd())
-        ctx = open_store(root, fetch=not args.no_fetch, session=args.session, branch=args.branch)
+        # The worktree's probes: a block, set-status parked or release here may stop another
+        # branch's pull, which asks whether that branch is live or quiet.
+        ctx = open_store(root, fetch=not args.no_fetch, session=args.session, branch=args.branch,
+                         probes=wquiet.PROBES)
         # `next` and `pull`: another session's record reserves only while it runs (read lazily).
         ctx.session_live = omod.SessionLiveness()
         store = ctx.store

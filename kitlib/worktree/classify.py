@@ -539,9 +539,9 @@ def branch_liveness(top, branch, now=None, machine=sweep.machine_lock_entries,
                     procs=process_cwds, dead_after_s=DEAD_AFTER_S, cwd=None):
     """`(why it is live, None)` or `(None, tip)`: whether the worktree on `branch` is dead by
     `--classify`'s L rule (live_reason), for the backlog's block and release of a stopped pull
-    (kitlib/backlog/opener.py hands it to plan.Context as `liveness`). Anything that cannot be
-    read, and a branch no worktree here is on, is live: only a dead tree's pull may be stopped by
-    anyone but its holder. Read-only."""
+    (quiet.PROBES, which tools/backlog.py hands to the backlog opener as plan.Context's
+    `liveness`). Anything that cannot be read, and a branch no worktree here is on, is live: only
+    a dead tree's pull may be stopped by anyone but its holder. Read-only."""
     ctx, refused = remove.open_ctx(top, cwd)
     if refused:
         return 'the worktrees cannot be read (%s)' % ' '.join(refused.lines), None

@@ -21,7 +21,7 @@ def path_shape_error(p, what='path', tab_ok=False, comma_ok=False):
     the path is an ordinary character - for reading members a record already holds (collision,
     the offer), so an old tab blocks no session; a write's new tab is still a `check` finding.
     `comma_ok`: a comma is an ordinary character - for a literal changed path that is never
-    written as a record line (kitlib.gate.land's scope check)."""
+    written as a record line (the landing's scope check)."""
     if not p:
         return 'an empty %s' % what
     if p != p.strip():
@@ -365,7 +365,7 @@ def area_from_scope(scopes):
 
 
 # --- a changed path against a record's scope (the landing scope check and commit.py's
-# narrowed-record check share these: kitlib.gate.land, kitlib.backlog.narrowed) ----------------
+# narrowed-record check share these: the landing, kitlib.backlog.narrowed) ---------------------
 
 def changed_path_error(path):
     """None when a scope can be said to cover the literal changed path `path`, else why not:

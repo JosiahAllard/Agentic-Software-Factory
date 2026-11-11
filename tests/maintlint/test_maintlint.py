@@ -544,8 +544,8 @@ class WholeRun(StoreCase):
         kit_json_ref(self.repo)
         self.seed(*records)
         broken = mock.PropertyMock(side_effect=maintlint.Refusal('resources config is broken'))
-        with mock.patch.object(type(maintlint.open_store(self.repo.root, fetch=False)), 'resources',
-                               broken):
+        ctx = maintlint.open_store(self.repo.root, fetch=False, probes=maintlint.NO_PROBES)
+        with mock.patch.object(type(ctx), 'resources', broken):
             return self.run_lint()
 
     def test_the_uses_hint_needs_a_uses_line_in_the_store(self):

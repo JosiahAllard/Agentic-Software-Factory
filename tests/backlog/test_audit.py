@@ -307,7 +307,7 @@ class Check(unittest.TestCase):
         # a store commit whose subject reads as a verb roles.py has no row for sorts to no rows:
         # a forged commit with that subject must not pass unflagged
         self.add()
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         ctx.store.write(lambda snap: smod.Change(
             {'FOO': snap.get('FOO').text + '\nforged line\n'},
             'backlog: uncite 1 cite(s) in 1 record(s)'))
@@ -392,7 +392,8 @@ class AnswerCheck(unittest.TestCase):
     def answer(self, session, qid='Q-1001', at=AT):
         """An answer line written straight through the store as `session` (plan_answer, the
         hub's own plan, so only the commit's Session: line tells the writer)."""
-        ctx = opener.open_store(self.repo.root, fetch=False, session=session)
+        ctx = opener.open_store(self.repo.root, fetch=False, session=session,
+                                probes=opener.NO_PROBES)
         ctx.store.write(lambda s: pmod.plan_answer(s, ctx, 'FOO', qid, at, 'which way',
                                                    'this way', role_checked=True))
 
@@ -525,7 +526,7 @@ class AnswerCheck(unittest.TestCase):
 
     def test_a_catch_up_commit_needs_the_hub_match(self):
         self.add()
-        ctx = opener.open_store(self.repo.root, fetch=False, session='kit')
+        ctx = opener.open_store(self.repo.root, fetch=False, session='kit', probes=opener.NO_PROBES)
         ctx.store.write(lambda s: smod.Change(
             pmod.plan_answer(s, ctx, 'FOO', 'Q-1001', AT, 'which way', 'this way',
                              role_checked=True).writes,

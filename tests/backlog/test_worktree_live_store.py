@@ -59,7 +59,7 @@ class WorktreeLiveStore(unittest.TestCase):
         return p.returncode, p.stdout + p.stderr
 
     def test_a_worktree_opens_the_live_store_as_its_branch(self):
-        ctx = opener.open_store(self.wt, fetch=False)
+        ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.pm), ctx.root)
         self.assertEqual(ctx.branch, BRANCH)
         self.assertEqual(ctx.current_branch(), BRANCH)
@@ -68,7 +68,7 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertEqual(rec.get('pulled_by'), BRANCH)
 
     def test_an_as_branch_is_kept(self):
-        ctx = opener.open_store(self.wt, fetch=False, branch='kit/other')
+        ctx = opener.open_store(self.wt, fetch=False, branch='kit/other', probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.pm), ctx.root)
         self.assertEqual(ctx.branch, 'kit/other')
 
@@ -83,7 +83,7 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertNotIn('tools/x/**', self.record_file())
 
     def test_the_main_checkout_keeps_the_default_store(self):
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.repo.root), ctx.root)
         self.assertIsNone(ctx.store.load().get('FOO'))
         rc, out = self.run_tool(self.repo.root, '--no-fetch', 'set', 'FOO', '--scope', 'tools/x/a.py')
@@ -91,30 +91,30 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertIn('tools/x/**', self.record_file())
 
     def test_the_pm_data_worktree_opens_its_own_store(self):
-        ctx = opener.open_store(self.pm, fetch=False)
+        ctx = opener.open_store(self.pm, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.pm), ctx.root)
         self.assertIsNone(ctx.branch)
         self.assertEqual(ctx.current_branch(), 'pmdata')
 
     def test_a_worktree_naming_its_own_store_keeps_it(self):
         self.repo.write('.kit.json', json.dumps({'backlog': {'store': 'ref'}}) + '\n', root=self.wt)
-        ctx = opener.open_store(self.wt, fetch=False)
+        ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
         self.assertIsNone(ctx.store.load().get('FOO'))
 
     def test_a_detached_worktree_keeps_its_own_store(self):
         self.repo.git('checkout', '-q', '--detach', cwd=self.wt)
-        ctx = opener.open_store(self.wt, fetch=False)
+        ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
 
     def test_no_live_store_keeps_its_own(self):
         self.repo.write('.kit.json', json.dumps({'backlog': {}}) + '\n', root=self.pm)
-        ctx = opener.open_store(self.wt, fetch=False)
+        ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
 
     def test_a_pm_data_record_that_cannot_be_read_keeps_its_own_and_a_write_names_why(self):
         with mock.patch.object(pmdata, 'read', side_effect=pmdata.PmDataError('bad json')):
-            ctx = opener.open_store(self.wt, fetch=False)
+            ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
             refusal = smod.default_store_refusal(self.wt)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
         self.assertIn('cannot read the PM data record: bad json', refusal)
@@ -122,7 +122,7 @@ class WorktreeLiveStore(unittest.TestCase):
     def test_an_unexpected_failure_is_raised_never_a_quiet_stale_read(self):
         with mock.patch.object(smod, 'pm_data_live_store', side_effect=RuntimeError('defect')):
             with self.assertRaises(RuntimeError):
-                opener.open_store(self.wt, fetch=False)
+                opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
 
 
 if __name__ == '__main__':

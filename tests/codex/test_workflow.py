@@ -294,9 +294,9 @@ class LocalAcceptance(fixtures.GateRepoCase):
         self.main = self.repo.commit('acceptance fixture', '.gitignore', 'value.txt')
         self.repo.git('push', '-q', 'origin', 'main')
         self.coordinator = self.repo.worktree('coordinator', 'codex/coordinator')
-        from kitlib.backlog.opener import open_store
+        from kitlib.backlog.opener import NO_PROBES, open_store
         from tests.backlog.helpers import priced
-        ctx = open_store(self.coordinator, session='probe-session')
+        ctx = open_store(self.coordinator, session='probe-session', probes=NO_PROBES)
         ctx.store.backend.publish(ctx.store.load(), priced('PROBE', scope='value.txt',
                                   session='probe-session'), 'synthetic acceptance task')
         self.task = W.plan(self.coordinator, 'codex/probe', 'PROBE', 'probe-session',

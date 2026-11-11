@@ -1,4 +1,4 @@
-"""kitlib.roster, tools/agent_roster.py and the roster render: docs/ROSTER.md's tables are rendered
+"""kitlib.content.rosterdoc, tools/agent_roster.py and the roster render: docs/ROSTER.md's tables are rendered
 from content/roles and each host's tier -> model map (decision 17, docs/multi-host-plan.md section 7).
 
 The check runs on the real tree; the edits run on a temp copy and must leave every byte outside the
@@ -12,7 +12,8 @@ import sys
 import tempfile
 import unittest
 
-from kitlib import content, roster
+from kitlib import content
+from kitlib.content import rosterdoc
 from kitlib.host import registry
 from tests import gitfixture
 from kitlib.host.content import ContentError
@@ -78,7 +79,7 @@ class RealRosterTest(unittest.TestCase):
             fm = roster_frontmatter(read(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md')))
             with self.subTest(role=name):
                 self.assertEqual(fm['model'], over.get('claude', models[tier]['claude']))
-                self.assertEqual(fm.get('effort', roster.NONE), effort)
+                self.assertEqual(fm.get('effort', rosterdoc.NONE), effort)
 
     def test_deep_worker_runs_fable_on_claude_and_the_consultant_its_tier(self):
         """By owner decision deep-worker alone runs fable on Claude; the consultant, also deep, keeps
@@ -160,7 +161,7 @@ class TempCopyTest(unittest.TestCase):
 
     def test_the_tier_table_follows_the_host_maps(self):
         maps = dict(MAPS, claude=(dict(MAPS['claude'][0], deep='sonnet'), {}), other=({'light': 'x'}, {}))
-        text = roster.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
+        text = rosterdoc.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
         t = tables(text)['tier']
         self.assertEqual(t[0], ['tier', 'claude', 'codex', 'other'])
         self.assertEqual(t[4], ['deep', 'sonnet', MAPS['codex'][0]['deep'], '-'])
@@ -169,7 +170,7 @@ class TempCopyTest(unittest.TestCase):
 
     def test_a_role_models_entry_shows_in_its_tier_cell(self):
         maps = dict(MAPS, codex=(MAPS['codex'][0], {'worker': 'gpt-x'}))
-        text = roster.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
+        text = rosterdoc.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
         rows = {r[0]: r[1] for r in tables(text)['role'][1:]}
         self.assertEqual(rows['worker'], 'standard (codex: gpt-x)')
         self.assertEqual(rows['deep-worker'], 'deep (claude: fable)')
@@ -180,11 +181,11 @@ class TempCopyTest(unittest.TestCase):
         self.assertEqual(cli.main(['-C', self.top], out), 2)
         self.assertIn('agent_roster: docs/ROSTER.md: needs exactly one <!-- rendered: roles -->', out.getvalue())
         with self.assertRaises(ContentError):
-            roster.render('no regions\n', _content(self.top), MAPS)
+            rosterdoc.render('no regions\n', _content(self.top), MAPS)
         text = read(self.roster).decode('utf-8')
         twice = text.replace('<!-- rendered: roles -->\n', '<!-- rendered: roles -->\n<!-- rendered: roles -->\n', 1)
         with self.assertRaises(ContentError):        # a repeated start marker, though only one region closes
-            roster.render(twice, _content(self.top), MAPS)
+            rosterdoc.render(twice, _content(self.top), MAPS)
 
     def test_crlf_is_kept(self):
         write_file(self.roster, read(self.roster).replace(b'\n', b'\r\n'))

@@ -1,4 +1,4 @@
-"""kitlib.roster: render docs/ROSTER.md's tables from content/roles and each host's model maps.
+"""kitlib.content.rosterdoc: render docs/ROSTER.md's tables from content/roles and each host's model maps.
 
 The maps passed in are {host: (tier -> model, role -> model)}: each host's tier map and the roles
 it runs on a model other than their tier's (hosts.json `tiers` and `role_models`).
@@ -12,7 +12,8 @@ regions, each between a start marker and END:
   <!-- rendered: tiers -->      | tier | <host> | ... |, one row per tier, one column per host
                                 (the tier maps passed in: kitlib names no host)
 `render` returns the text with both regions made what they say and every other byte kept (the
-file's line ending included); kitlib.content renders it with the host files, so the drift check
+file's line ending included); kitlib.content renders it with the host files (it is a
+module of its own, not `roster`, which is kitlib.content's role-list function), so the drift check
 covers it (tools/render_content.py). Pure text work: no printing, no exit.
 """
 import re

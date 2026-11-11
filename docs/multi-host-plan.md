@@ -198,7 +198,7 @@ every install and update. It also means nobody reviews exactly what the agents r
   host ships breaks decision 3, so a host-only skill is made neutral and shipped everywhere, or
   its content moves into role files or the host's instructions.
 - **Roster table.** `docs/ROSTER.md` holds each role's tier, plus a tier → model table per host.
-  `kitlib/roster` checks it against `content/roles`. The `KIT_AGENTS` list in the launcher is
+  `kitlib/content/rosterdoc.py` checks it against `content/roles`. The `KIT_AGENTS` list in the launcher is
   derived from it, not copied by hand.
 - **Instructions.** `AGENTS.md` is the one rules file, and `CLAUDE.md` imports it with `@AGENTS.md`.
   The repo profile is the neutral `docs/agent-profile.md`; each host's own-folder stub

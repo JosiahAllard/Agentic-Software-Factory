@@ -14,7 +14,7 @@ version) is asked for those files too, and they are checked and written like the
 
 The renderers are passed in: this package names no host and imports none (the host is chosen at
 the edge, tools/render_content.py). Given `tiers` ({host: (tier -> model, role -> model)}, every host's, whichever
-renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.roster), so the roster is
+renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.content.rosterdoc), so the roster is
 checked and written like the host files. Pure file work: no printing, no exit.
 
 `roster(kit)` is the kit's role list, read from the role files and nothing else (decision 17 in
@@ -201,7 +201,7 @@ def render(root, renderers, content=None, tiers=None):
     manifests(kit, content) of a renderer with them, and the vendored(root) copies of kit files a
     renderer's plugin ships (read from `root`, so a copy that drifts from its source is drift); two
     renderers writing one path is a ContentError. With `tiers` ({host: (tier -> model, role -> model)}), also
-    `<root>/docs/ROSTER.md` with its tables rendered (kitlib.roster)."""
+    `<root>/docs/ROSTER.md` with its tables rendered (kitlib.content.rosterdoc)."""
     content = load(root) if content is None else content
     out = {}
     if tiers is not None:
@@ -222,13 +222,13 @@ def render(root, renderers, content=None, tiers=None):
 
 
 def _roster_doc(root, content, tiers):
-    from kitlib import roster                   # only a render reads it, never the guard's path
+    from kitlib.content import rosterdoc        # only a render reads it, never the guard's path
     try:
         with open(_join(root, ROSTER_REL), 'rb') as f:
             text = f.read().decode('utf-8')
     except (OSError, UnicodeDecodeError) as e:
         raise ContentError('%s cannot be read: %s' % (ROSTER_REL, e)) from None
-    return roster.render(text, content, tiers, ROSTER_REL).encode('utf-8')
+    return rosterdoc.render(text, content, tiers, ROSTER_REL).encode('utf-8')
 
 
 def _owned_files(root, renderers):

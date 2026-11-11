@@ -260,17 +260,28 @@ class Check(unittest.TestCase):
         replace = ("$p='C:\\r\\docs\\agent-profile.md'; $t=[IO.File]::ReadAllText($p); "
                    "$t=$t.Replace('run python tools/gate.py --full','run gate.py --full'); "
                    "[IO.File]::WriteAllText($p,$t)")
-        for cmd in (replace, 'echo "python tools/gate.py --full"', "echo 'land.py'",
+        for cmd in (replace, 'echo "python tools/gate.py --full"', "echo 'run land.py now'",
                     'Write-Host "python Q:/k/tools/worktree_remove.py x"',
-                    'python -c "print(1)  # gate.py"', 'type docs\\gate.py.md'):
+                    'python -c "print(1)  # gate.py"'):
             with self.subTest(cmd=cmd):
                 self.passes(commands=[cmd])
                 self.passes(steps=[{'run': cmd}])
         for cmd in ('python "Q:/k/tools/gate.py" --full', "& 'Q:\\k\\tools\\land.py' --submit x",
                     'py -3 tools\\worktree_remove.py x', 'cd Q:/r; python tools/gate.py',
-                    'Q:/k/tools/sync_base.py'):
+                    'Q:/k/tools/sync_base.py',
+                    'cmd /c "python tools\\gate.py --full"', 'cmd /k tools\\land.py',
+                    'cmd /c tools\\land.py', 'powershell -Command "python gate.py"',
+                    'pwsh -c "& land.py"', 'bash -c "python gate.py --full"',
+                    "sh -c 'python tools/gate.py'", 'iex "python gate.py"',
+                    'Invoke-Expression ("python gate.py")',
+                    'Start-Process gate.py', 'Start-Process -FilePath "tools\\gate.py"',
+                    'Start-Process python -ArgumentList "tools\\gate.py --full"',
+                    'env X=1 ./gate.py', 'echo x & gate.py', '& $py tools\\gate.py',
+                    "python (Join-Path $k 'tools/gate.py')", 'python -X utf8 gate.py',
+                    'python -W ignore gate.py', 'pythonw gate.py'):
             with self.subTest(cmd=cmd):
                 self.assertIn('coordinator', self.refused('commands', commands=[cmd]))
+                self.refused('steps', steps=[{'run': cmd}])
 
     def test_a_raw_git_delete_is_refused_naming_abandon_as_the_route(self):
         """No carve-out for a raw delete; the refusal names the route."""

@@ -90,47 +90,37 @@ _ABANDON_ROUTE = ('; unlanded work leaves by worktree_remove.py <slug> --abandon
 _STRAY_REF_ROUTE = ('; a ref outside refs/heads, refs/tags, refs/stash and refs/backlog the '
                     'coordinator deletes itself, in its own repository (git update-ref -d <ref>)')
 
-# a token of a command segment: a quoted string stays whole, also inside a larger word
-# (`[IO.File]::WriteAllText($p,'...')` is one token)
-_TOKEN_RE = re.compile(r'''(?:"[^"]*"|'[^']*'|[^\s"'])+''')
-_PYTHON_RE = re.compile(r'(?i)(?:.*[\\/])?(?:py|python[\d.]*)(?:\.exe)?\Z')
-_KIT_TOOL_RE = re.compile(r'(?i)(?:.*[\\/])?(?:gate|land|new_worktree|worktree_remove|sync_base)'
-                          r'\.py\Z')
+# the kit tools a to-do may not run; searched outside quoted strings (_without_quoted)
+_KIT_TOOL_RE = re.compile(r'(?i)(?<![\w-])(?:gate|land|new_worktree|worktree_remove|sync_base)'
+                          r'\.py\b')
+_QUOTED_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+_LONE_TOOL_RE = re.compile(r'(?i)[^\s"\']*(?:gate|land|new_worktree|worktree_remove|sync_base)'
+                           r'\.py\Z')
+# what a quoted string follows when it is run as a command: a shell wrapper's payload
+_WRAPPER_RE = re.compile(r'(?i)(?:(?<![\w-])cmd(?:\.exe)?\s+/[ck]|'
+                         r'(?<![\w-])(?:powershell|pwsh)(?:\.exe)?\b.*?\s-(?:command|c)|'
+                         r'(?<![\w-])(?:bash|sh)\s+(?:-\w+\s+)*-c|'
+                         r'(?<![\w-])(?:iex|invoke-expression)\s*\(?|'
+                         r'(?<![\w-])start-process\b.*?\s-argumentlist)\s*\Z')
 
 
-def _bare(token):
-    """The token with one pair of quotes around the whole of it removed."""
-    if len(token) > 1 and token[0] == token[-1] and token[0] in '"\'' \
-            and token[0] not in token[1:-1]:
-        return token[1:-1]
-    return token
-
-
-class _ToolRun:
-    """search(segment): the segment runs a kit tool, as its command word or as the script of a
-    python invocation. A tool name inside a quoted string argument is not running the tool."""
-
-    @staticmethod
-    def search(segment):
-        tokens = _TOKEN_RE.findall(segment)
-        while tokens and tokens[0] in ('&', '.'):
-            tokens = tokens[1:]
-        if tokens and _KIT_TOOL_RE.match(_bare(tokens[0])):
-            return True
-        for i, t in enumerate(tokens):
-            if _PYTHON_RE.match(_bare(t)):
-                rest = tokens[i + 1:]
-                while rest and rest[0].startswith('-') and rest[0] != '-c':
-                    rest = rest[1:]
-                if rest and _KIT_TOOL_RE.match(_bare(rest[0])):
-                    return True
-        return False
+def _without_quoted(segment):
+    """The segment with the content of each quoted string blanked, so a kit tool's name inside
+    a string argument is not read as running it. Kept: a string that is one path or word ending
+    in a kit tool's name, and a shell wrapper's payload (cmd /c, powershell -Command, bash -c,
+    iex, Start-Process -ArgumentList)."""
+    def blank(m):
+        inner = m.group()[1:-1]
+        if _LONE_TOOL_RE.match(inner) or _WRAPPER_RE.search(segment[:m.start()]):
+            return m.group()
+        return m.group()[0] + ' ' + m.group()[0]
+    return _QUOTED_RE.sub(blank, segment)
 
 
 _COORDINATOR_RES = (
     ('git worktree add/remove', re.compile(_GIT + r'worktree\s+remove\b'), _ABANDON_ROUTE),
     ('git worktree add/remove', re.compile(_GIT + r'worktree\s+(?:add|move|prune)\b'), ''),
-    ('a kit landing, gate or worktree tool', _ToolRun, ''),
+    ('a kit landing, gate or worktree tool', _KIT_TOOL_RE, ''),
     ('a branch or tag delete',
      re.compile(_GIT + r'(?:branch|tag)\b.*?\s(?:-[A-Za-z]*[dD][A-Za-z]*|--delete)(?![\w-])'),
      _ABANDON_ROUTE),
@@ -408,8 +398,9 @@ def check(fields):
                           'change as an {edit: <file>, old, new} step' % where, field)
         if is_command:
             for segment in _SEGMENT_RE.split(text):
+                bare = _without_quoted(segment)
                 for what, r, route in _COORDINATOR_RES:
-                    if r.search(segment):
+                    if r.search(bare if r is _KIT_TOOL_RE else segment):
                         raise Refused('%s is coordinator work (%s): a coordinator does it, not '
                                       'the owner%s' % (where, what, route), field)
 

@@ -151,7 +151,7 @@ ledger line's fields (`result.LEDGER_FIELDS`, picked from the same land record) 
 |---|---|---|
 | (doc id) | server | `L-001`, `L-002`, ...: the document's id, not a field; a higher number is newer |
 | branch, tip, run_id, started_at, finished_at, verdict, code, summary, gate_once, escalated | agent | the branch's land ledger line, field for field |
-| repo | agent | the repository's name (`runner.repo_name`) |
+| repo | agent | the repository's name (`records.place.repo_name`) |
 | main_branch, main | agent | the main branch and the new main the landing pushed: one commit for every branch of a batch |
 | records | agent | the backlog record ids the landing closed for this branch (a list, maybe empty) |
 | mode | agent | the merged gate's mode, from its gate-OK record on the new main, or null |

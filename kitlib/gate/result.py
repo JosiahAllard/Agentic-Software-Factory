@@ -3,7 +3,7 @@
 
 `<dev_drive>/pm-kit/kit-gate-result/<repo key>/<stem>.<kind>.json`, stem = file_stem(branch):
 `dev_drive` is the machine config's Dev Drive root (kitlib.config.user.dev_drive), and the repo
-key (repo_key) names the repository's git common dir, so every worktree of a repository shares
+key (records.place.repo_key) names the repository's git common dir, so every worktree of a repository shares
 one folder and no two repositories do. The session that gates in its worktree and the session
 that waits in another (or in the main checkout) read the same file. The folder is outside every
 checkout and every agent's temp folder, where agents' own file writes do not reach. With no
@@ -103,20 +103,14 @@ import secrets
 import time
 
 from kitlib import gate as G
-from kitlib.config import user as kuser
 from kitlib.fs import replace as fsreplace
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 from kitlib.git import refs, repo
 from kitlib.proc import process
 
 DIR_NAME = 'kit-gate-result'
-KIT_DIR = 'pm-kit'      # <dev_drive>/pm-kit/kit-gate-result: the machine's kit folder
-KEY_NAME_MAX = 40       # the readable part of a repo key; its hash keeps keys apart
-NO_DEV_FOR = ('the machine config sets no dev_drive (the Dev Drive\'s root folder), so there is no '
-              '%s (<dev_drive>\\pm-kit\\%s); the owner sets it (docs/kit-json.md "Machine config '
-              'keys")')
-NO_DEV = NO_DEV_FOR % ('result folder', DIR_NAME)
+NO_DEV = place.NO_DEV_FOR % ('result folder', DIR_NAME)
 SCHEMA = 1
 KINDS = ('gate', 'land')
 RUNNING = 'running'
@@ -176,37 +170,13 @@ def file_stem(branch):
     return stem
 
 
-def kit_folder(name, what):
-    """`<dev_drive>/pm-kit/<name>`: one of the machine's kit folders, each holding one folder per
-    repository (repo_key): kit-gate-result, kitlib.records.gate_ok's kit-gate-ok and
-    kitlib.gate.budget's kit-gate-budget. ResultError when the machine config cannot be read or
-    sets no dev_drive; `what` names the folder in it ("result folder")."""
-    try:
-        cfg = kuser.user_config()
-    except Exception as e:      # noqa: BLE001 - ConfigError, OSError: no folder, and why
-        raise ResultError('the machine config cannot be read, so there is no %s: %s' % (what, e))
-    dev = kuser.dev_drive(cfg)
-    if not dev:
-        raise ResultError(NO_DEV_FOR % (what, name))
-    return os.path.join(os.path.abspath(dev), KIT_DIR, name)
-
-
 def machine_root():
-    """`<dev_drive>/pm-kit/kit-gate-result`: the folder every repository's result folder is in.
-    ResultError when the machine config cannot be read or sets no dev_drive."""
-    return kit_folder(DIR_NAME, 'result folder')
-
-
-def repo_key(common):
-    """The result folder name of the repository whose git common dir is `common`: its folder's
-    name (the common dir's parent, for a `.git`), lower case, [a-z0-9_-] only and at most
-    KEY_NAME_MAX long, then `-` and 12 hex of the sha256 of the common dir's real path
-    (normcase): one name for every worktree of a repository, another for every other one."""
-    real = os.path.normcase(os.path.realpath(common)).rstrip('\\/')
-    head, base = os.path.split(real)
-    name = os.path.basename(head) if base == '.git' else base
-    slug = ''.join(c for c in name.lower() if c in SAFE and c != '.')[:KEY_NAME_MAX] or 'repo'
-    return '%s-%s' % (slug, hashlib.sha256(real.encode('utf-8')).hexdigest()[:12])
+    """`<dev_drive>/pm-kit/kit-gate-result`: the folder every repository's result folder is in
+    (place.kit_folder). ResultError when the machine config cannot be read or sets no dev_drive."""
+    try:
+        return place.kit_folder(DIR_NAME, 'result folder')
+    except place.NoKitFolder as e:
+        raise ResultError(str(e))
 
 
 def _common(root):
@@ -219,7 +189,7 @@ def _common(root):
 def result_dir(root):
     """The result folder of the repository `root` is in (the module docstring): ResultError
     when it cannot be worked out."""
-    return os.path.join(machine_root(), repo_key(_common(root)))
+    return os.path.join(machine_root(), place.repo_key(_common(root)))
 
 
 def legacy_dir(root):
@@ -232,7 +202,7 @@ def record_dirs(root):
     """[result_dir, legacy_dir] of `root`: the folders a reader of every record lists, the new
     one first. ResultError when the new one cannot be worked out."""
     common = _common(root)
-    return [os.path.join(machine_root(), repo_key(common)), os.path.join(common, DIR_NAME)]
+    return [os.path.join(machine_root(), place.repo_key(common)), os.path.join(common, DIR_NAME)]
 
 
 def _file_name(branch, kind):

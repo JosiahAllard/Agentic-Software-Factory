@@ -3,7 +3,7 @@
 branch and hashes, `wait` (seconds), the scratch lock store (root, kinds path, fake hardware) and
 `hold`: with it the merged gate prints INSIDE and waits for a line on stdin before it gates, holding
 the landing lock meanwhile, and `kit`, the folder of the machine's kit folders
-(kitlib.gate.result.kit_folder: the result, gate-OK and budget folders) as the parent test has
+(kitlib.records.place.kit_folder: the result, gate-OK and budget folders) as the parent test has
 it: importing `tests` fences this process's own temp home (tests/__init__.py), so the child
 cannot look the machine config up itself. It prints the outcome's lines and exits with its code. It never touches the machine's lock
 store, a real repository or a real remote."""
@@ -11,10 +11,11 @@ import json
 import os
 import sys
 
-from kitlib.gate import land, result, runner
+from kitlib.gate import land, runner
 from kitlib.lock import layout as lay
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import Settings, Store
+from kitlib.records import place
 from tests.gate.fixtures import compat_book, queue_review
 from tests.lock.helpers import FAST
 
@@ -32,7 +33,7 @@ def scratch_store(spec):
 
 def main(argv):
     a = json.loads(argv[1])
-    result.kit_folder = lambda name, what: os.path.join(a['kit'], name)
+    place.kit_folder = lambda name, what: os.path.join(a['kit'], name)
     book_kw = {'cores': 1, 'store': scratch_store(a['store']), 'env': dict(os.environ)}
     lockrun.book = compat_book([])
     held = None

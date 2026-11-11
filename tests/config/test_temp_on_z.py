@@ -334,12 +334,12 @@ class SharedTempMakesItsFolder(HomeConfig):
                          os.path.join(r'C:\lad', 'Temp'))
 
     def test_the_gate_fallback_log_base_sits_in_the_made_folder(self):
-        from kitlib.gate import runner
+        from kitlib.records import place
         configured = os.path.join(self.home, 'not-yet', 'kit')
         self.write({'temp_dir': configured})
         real = user.shared_temp
         with mock.patch.object(user, 'shared_temp', lambda: real(self.ENV, 'win32', home=self.home)):
-            base = runner.fallback_log_base('demo')
+            base = place.fallback_log_base('demo')
         self.assertEqual(os.path.dirname(base), configured)
         self.assertTrue(os.path.isdir(configured))
 

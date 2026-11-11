@@ -29,7 +29,7 @@ JOIN_SLACK_S = 5
 def refresh(root, repo, main, sha, store=None, say=None, open_link=None, timeout_s=TIMEOUT_S,
             registry_file=None, git=None, clock=time.monotonic):
     """Push `sha` (the landed merge, a full hash) from the checkout `root` to the mirror of
-    `repo` (runner.repo_name) on each registry node whose `repos` include it, as
+    `repo` (records.place.repo_name) on each registry node whose `repos` include it, as
     refs/pmkit/main/<main>, never forced; one thread per node, every push stopped at `timeout_s`.
     Says one line per node: that it went, or a WARNING why not. Silent, asking no node, when
     there is no registry or no node opted the repository in; registry_file None on a test store

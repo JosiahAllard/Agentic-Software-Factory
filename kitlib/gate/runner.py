@@ -45,7 +45,6 @@ import traceback
 from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.config import policy
-from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 from kitlib.gate import budget
 from kitlib.gate import detect
@@ -60,7 +59,7 @@ from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_USAGE, LockError, Store
 from kitlib.proc import process, winwatch
 from kitlib.proc.job import JobError
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 
 NO_STEP = ('REFUSED: no gate step selected: the "gate".steps of .kit.json cover none of the %d '
            'changed path(s), or each step they select is dropped by another\'s skip_if_selected, '
@@ -92,58 +91,6 @@ def _quiet(_line):
     pass
 
 
-def gate_config(cfg):
-    """The value a gate-OK record's `gate_config` hashes: `.kit.json` "gate" over its defaults.
-    The kit guard and the pre-push hook verify a record with this same value. An auto-detected gate
-    (kitlib.gate.detect) hashes this too, not its detected steps: they are a function of the
-    commit's tree (which the record names), its base's tree (`base`) and the kit (its `kit`), so
-    the hash still names what decides the steps. A key of HASH_IF_SET that is unset is left out,
-    so a config that sets none of them hashes as it did before the key existed: a record a kit
-    without the key wrote still verifies. Each key of HASH_REMOVED is put in with the default it
-    hashed as, so a record a kit that still had the key wrote verifies too. A renamed kind
-    hashes under its old name (HASH_KIND_AS)."""
-    gate = cfg.section('gate')
-    hashed = {k: v for k, v in gate.items() if not (k in HASH_IF_SET and v is None)}
-    hashed.update((k, v) for k, v in HASH_REMOVED.items() if k not in hashed)
-    if isinstance(hashed.get('kind'), str):
-        hashed['kind'] = HASH_KIND_AS.get(hashed['kind'], hashed['kind'])
-    return hashed
-
-
-# "gate" keys added after records were first written; unset, they are not in gate_config().
-HASH_IF_SET = ('smoke_steps', 'docs_only')
-# "gate" keys the schema no longer has (a config that sets one fails to load), with the default
-# every config hashed them as while they were keys. Only the hash keeps them, never section() or
-# the steps: dropping one would change every repo's hash, so every gate-OK record written on the
-# other side of that kit change would fail verify_record (docs/gate-records.md "Gate-OK record").
-HASH_REMOVED = {'python_tests': 'discover', 'python_tests_floor': None, 'trailers': None}
-# A renamed kind hashes under the name it had when records were first written (kitlib/lock/
-# kinds.json "aliases"), so "gate".kind under either name, and the default, hash as before the
-# rename: records from both sides of it verify. Fixed here, never read from the table. A kind
-# rename must add its entries here (the new name, and any name between), each mapped to the name
-# first written, not the previous one (tests/gate/test_branch_gate.py checks it against the
-# aliases). A repository-defined kind in "gate".kind goes through this same mapping.
-HASH_KIND_AS = {'test': 'engine-test', 'app-run': 'engine-run'}
-
-
-def gate_config_at(root, rev):
-    """gate_config() of the config commit `rev` holds (kitlib.config.load_at); ConfigError when it
-    cannot be read."""
-    return gate_config(kconfig.load_at(root, rev))
-
-
-def verify_record(root, commit):
-    """gate_ok.verify() with the gate config read from the record's own `config_rev` (the commit
-    whose `.kit.json` the gate ran with): `(record, None)` or `(None, why)`. A record's .git copy
-    counts only when there is no record folder (no dev_drive; gate_ok.read)."""
-    def config_at(rev):
-        try:
-            return gate_config_at(root, rev)
-        except ConfigError as e:
-            raise gate_ok.RecordError('the gate config at %s: %s' % (rev[:10], e))
-    return gate_ok.verify(root, commit, config_at=config_at)
-
-
 def kit_identity():
     """{'commit': the kit checkout's HEAD ('unknown' when git cannot say), 'python': the
     interpreter running the gate, 'clean': True when the kit checkout has no uncommitted or
@@ -163,71 +110,32 @@ def kit_identity():
             'clean': None if status is None else not status}
 
 
-def repo_name(cfg, root):
-    return cfg.repo.get('name') or os.path.basename(os.path.normpath(root))
-
-
-def slug_of(text):
-    s = re.sub(r'[^A-Za-z0-9._-]+', '-', text or '').strip('-.')
-    return s[:60] or 'gate'
-
-
 def say_note(text):
-    """The default `note` of log_base and its makers: one line on stderr."""
+    """The default `note` of place.log_base's makers here: one line on stderr."""
     print('gate logs: %s' % text, file=sys.stderr, flush=True)
-
-
-def log_base(cfg, root, name, note=say_note):
-    """Where gate runs of the repository at `root` keep their logs: `.kit.json` "landing".log_dir
-    (repo-relative), else `<kit temp>/<repo name>-gate` (kitlib.config.user.work_temp of `root`:
-    the checkout's drive, else %LOCALAPPDATA%/Temp on Windows; never an inherited TEMP). One rule
-    for the gate that writes the logs and every tool that reads them (landed.py, which also reads
-    fallback_log_base). A machine config work_temp refuses (ConfigError) gives fallback_log_base,
-    and note(<why>)."""
-    configured = cfg.section('landing').get('log_dir')
-    if configured:
-        return os.path.join(root, configured)
-    try:
-        kit = kuser.work_temp(root)
-    except ConfigError as e:
-        base = fallback_log_base(name)
-        note('%s: the machine config could not be read (%s)' % (base, e))
-        return base
-    return os.path.join(kit, '%s-gate' % slug_of(name))
-
-
-def fallback_log_base(name):
-    """`<shared temp>/<repo name>-gate`: where new_log_dir puts a run's logs when the default
-    log_base cannot be made, and where every default log went before work_temp."""
-    return os.path.join(kuser.shared_temp(), '%s-gate' % slug_of(name))
-
-
-def log_folder(branch):
-    """A branch's folder name under log_base."""
-    return slug_of(branch)
 
 
 def new_log_dir(cfg, root, name, branch, base_dir=None, note=say_note):
     """A fresh folder for one gate run's logs: `<base>/<branch>/<time>-<pid>`. base: base_dir, else
-    log_base; when the default log_base (no base_dir, no "landing".log_dir) cannot be made,
-    fallback_log_base, and note(<why>)."""
+    place.log_base; when the default log_base (no base_dir, no "landing".log_dir) cannot be made,
+    place.fallback_log_base, and note(<why>)."""
     if base_dir:
-        return _new_dir(os.path.join(base_dir, log_folder(branch)))
-    return make_log_dir(cfg, root, name, log_folder(branch), note=note, fresh=True)
+        return _new_dir(os.path.join(base_dir, place.log_folder(branch)))
+    return make_log_dir(cfg, root, name, place.log_folder(branch), note=note, fresh=True)
 
 
 def make_log_dir(cfg, root, name, *parts, note=say_note, fresh=False):
     """`<log_base>/<parts...>`, made if missing (fresh: a new `<time>-<pid>` folder in it). When
-    the default log_base cannot be made, the same under fallback_log_base, and note(<why>); a
+    the default log_base cannot be made, the same under place.fallback_log_base, and note(<why>); a
     "landing".log_dir that cannot be made raises OSError, as does a fallback that cannot."""
     make = _new_dir if fresh else _made
-    path = os.path.join(log_base(cfg, root, name, note), *parts)
+    path = os.path.join(place.log_base(cfg, root, name, note), *parts)
     try:
         return make(path)
     except OSError as e:
         if cfg.section('landing').get('log_dir'):
             raise
-        got = make(os.path.join(fallback_log_base(name), *parts))
+        got = make(os.path.join(place.fallback_log_base(name), *parts))
         note('%s: %s could not be made (%s)' % (got, path, e))
         return got
 
@@ -874,8 +782,8 @@ def queued_refusal(root, base, full, only, book_kw):
         if not runs:
             return None
         cfg = kconfig.load(top)
-        rid = gatecap.queued_twin(store, repo_name(cfg, top), branch, note, tested_tree(top),
-                                  runs=runs)
+        rid = gatecap.queued_twin(store, place.repo_name(cfg, top), branch, note,
+                                  tested_tree(top), runs=runs)
     except Exception:               # noqa: BLE001 - a check that cannot answer never refuses
         return None
     if not rid:
@@ -1021,7 +929,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
             len(untracked), ', '.join(untracked[:10])))
     for line in zero_count_warnings(gate):
         say('WARNING: %s' % line)
-    name = repo_name(cfg, top)
+    name = place.repo_name(cfg, top)
     started = gate_ok.utc()
     logs = new_log_dir(cfg, top, name, branch or head[:10], log_dir)
     if known is not None:
@@ -1083,7 +991,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
             def unchanged(tree):
                 return _unchanged(top, key, tree, [s.name for s in run], branch, head, flags, say)
         results, refused = gated(cfg, top, mb, changed, run, gate['kind'], name,
-                                 slug or slug_of(branch or head[:10]), logs, say, noted,
+                                 slug or place.slug_of(branch or head[:10]), logs, say, noted,
                                  gate=gate, seen=watched, capped=True,
                                  budget_branch=branch or None, unchanged=unchanged, ran=ran)
         if refused is not None:
@@ -1121,8 +1029,8 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     if why:
         say(reuse.PREFIX + 'no input keys in the record: %s' % why)
     try:
-        path, _rec = gate_ok.record_pass(top, head, gate_config(cfg), kit_identity(), name, started,
-                                         record_steps(results), base=mb, config_rev=head,
+        path, _rec = gate_ok.record_pass(top, head, gate_ok.gate_config(cfg), kit_identity(), name,
+                                         started, record_steps(results), base=mb, config_rev=head,
                                          source=eff.source, full=bool(full),
                                          mode='docs' if docs else None, input_keys=input_keys)
     except gate_ok.NoRecordFolder as e:
@@ -1333,7 +1241,7 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     if isinstance(picked, G.Outcome):
         return picked
     head, changed, chosen, docs, empty = picked
-    name = repo_name(cfg, root)
+    name = place.repo_name(cfg, root)
     logs = new_log_dir(cfg, root, name, 'land-' + slug, log_dir)
     if docs:
         say('a docs-only merge: only the "docs_only" steps run (docs/gate-run.md "Docs-only changes")')
@@ -1346,8 +1254,8 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     if run:
         # Its gate_mode: every non-manual step with cmd is "merged"; full_cmd is "full".
         mode = 'docs' if docs else 'full' if full else 'merged'
-        results, refused = gated(cfg, tree, base, changed, run, gate['kind'], name, slug_of(slug),
-                                 logs, say, dict(book_kw or {}, gate_mode=mode), merged=True,
+        results, refused = gated(cfg, tree, base, changed, run, gate['kind'], name,
+                                 place.slug_of(slug), logs, say, dict(book_kw or {}, gate_mode=mode), merged=True,
                                  checks_rev=base, gate=gate,
                                  slot=slot, seen=watched)
         if refused is not None:

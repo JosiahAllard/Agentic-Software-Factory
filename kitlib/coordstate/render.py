@@ -11,7 +11,7 @@ so nothing a tool can see is written by hand.
     that landed with no WARNING and a LANDED line is on the hub feed (LANDED_POSTED). Between the
     final record and the feed post the output has neither: IN_FLIGHT.
   - Verdicts queued by this session and still waiting to land: the queue (kitlib.gate.verdicts,
-    entries whose `session` is it) read as it stands, leaving out the ones verdicts.expired names
+    entries whose `session` is it) read as it stands, leaving out the ones verdict_entry.expired names
     against main as last fetched. Nothing is dropped from the queue here.
   - The latest backlog writes.
   - The judgments file, verbatim: the one part the coordinator writes.
@@ -211,9 +211,10 @@ def queued_for(common_dir, session, main=None, main_why=None):
     because `main` (main as last fetched) is unknown. `(None, why)` when the queue cannot be
     read."""
     from kitlib.gate import verdicts
+    from kitlib.records import verdict_entry
     try:
         mine = [e for e in verdicts.entries(common_dir) if e.get('session') == session]
-        waiting = [e for e in mine if not verdicts.expired(common_dir, e, main)]
+        waiting = [e for e in mine if not verdict_entry.expired(common_dir, e, main)]
     except Exception as e:          # noqa: BLE001 - VerdictError or an OSError: said in the note
         return None, str(e)
     if main:

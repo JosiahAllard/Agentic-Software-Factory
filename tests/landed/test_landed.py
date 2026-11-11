@@ -302,7 +302,7 @@ class TheMainBranchAndRemoteComeFromConfig(Fixture):
 
 
 class Verdicts(Fixture):
-    """The gate log folders (kitlib.gate.runner.log_base / log_folder): FAILED only from evidence."""
+    """The gate log folders (kitlib.records.place.log_base / log_folder): FAILED only from evidence."""
 
     def setUp(self):
         super().setUp()
@@ -387,7 +387,7 @@ class Verdicts(Fixture):
 
 
 class TheDefaultLogDirIsTheGates(Fixture):
-    """No "landing".log_dir: `<temp>/<repo name>-gate`, as kitlib.gate.runner.log_base; with no
+    """No "landing".log_dir: `<temp>/<repo name>-gate`, as kitlib.records.place.log_base; with no
     "repo".name the name is read from the remote's URL (docs/kit-json.md "With no file")."""
 
     def gate_dir(self, base=None):

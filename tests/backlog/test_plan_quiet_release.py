@@ -12,7 +12,7 @@ from kitlib.backlog import offer as omod
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal
-from kitlib.gate import verdicts
+from kitlib.records import verdict_entry
 from kitlib.worktree import classify, holders, remove
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, messages, priced
 from tests.realgit import real_git
@@ -290,14 +290,14 @@ class QuietHoldProbe(QuietCase):
         self.assertEqual(why, 'the landing lock names %s' % OTHER)
 
     def queue(self, tip):
-        path = verdicts.entry_path(self.repo.common_dir(), OTHER)
+        path = verdict_entry.entry_path(self.repo.common_dir(), OTHER)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         entry = {'branch': OTHER, 'tip': tip, 'verdict': 'LAND', 'risk': 'Low',
                  'reviewer': 'pm-kit:analyst', 'reviewer_model': 'opus', 'reviewer_id': 'a1',
                  'author': 'pm-kit:worker', 'range': 'main..%s' % tip, 'session': 'kit-a',
                  'records': [], 'queued_utc': '2026-11-05T00:00:00Z', 'state': 'queued',
                  'last_result': None}
-        self.assertIsNone(verdicts.check(entry))
+        self.assertIsNone(verdict_entry.check(entry))
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(entry, f)
         return path

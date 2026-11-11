@@ -11,7 +11,6 @@ import unittest
 from unittest import mock
 
 from kitlib import pmdata
-from kitlib.gate import runner
 from kitlib.guard import context, ownercommits, prepush
 from kitlib.hubsite import approvals as ap
 from kitlib.records import gate_ok
@@ -48,7 +47,7 @@ class HookTest(pc.PrePushCase):
         self.assertEqual(self.remote_main(), head)
 
     def test_a_record_without_config_rev_or_made_with_another_gate_config_is_refused(self):
-        # the hook reads records with kitlib.gate.runner.verify_record, not bare gate_ok.verify
+        # the hook reads records with gate_ok.verify_record, not bare gate_ok.verify
         self.assertEqual(self.push('origin', 'main')[0], 0)
         self.repo.write('a.txt', 'a\n')
         head = self.repo.commit('a', 'a.txt')
@@ -80,8 +79,8 @@ class HookTest(pc.PrePushCase):
         self.repo.git('checkout', '-q', 'main')
         self.repo.git('merge', '-q', '--no-ff', '-m', 'land kit/y', 'kit/y')
         merge = self.repo.git('rev-parse', 'HEAD')
-        main_gate = runner.gate_config_at(self.repo.root, self.with_kit)
-        self.assertNotEqual(runner.gate_config_at(self.repo.root, merge), main_gate)
+        main_gate = gate_ok.gate_config_at(self.repo.root, self.with_kit)
+        self.assertNotEqual(gate_ok.gate_config_at(self.repo.root, merge), main_gate)
         self.passed(merge, gate_config=main_gate, config_rev=self.with_kit)
         code, err = self.push('origin', 'main')
         self.assertEqual(code, 0, err)
@@ -103,7 +102,7 @@ class HookTest(pc.PrePushCase):
         self.repo.write('a.txt', 'a\n')
         head = self.repo.commit('a', 'a.txt')
         self.passed(head, git_copy_only=True)
-        self.assertIsNone(runner.verify_record(self.repo.root, head)[0])
+        self.assertIsNone(gate_ok.verify_record(self.repo.root, head)[0])
         code, err = self.push('origin', 'main')
         self.assertEqual(code, 1, err)
         self.assertIn('pre-push: refused, %s has no gate-OK record' % head[:12], err)
@@ -377,7 +376,7 @@ class CheckTest(pc.PrePushCase):
     def test_a_record_reader_that_fails_refuses_a_push_to_main_only(self):
         self.base({'repo': {'push_block': True}})
         branch = 'refs/heads/kit/x %s refs/heads/kit/x %s' % ('1' * 40, '0' * 40)
-        with mock.patch.object(runner, 'verify_record', side_effect=OSError('boom')) as reader:
+        with mock.patch.object(gate_ok, 'verify_record', side_effect=OSError('boom')) as reader:
             self.assertEqual(prepush.check(self.repo.root, [branch]), (True, None))
             self.assertFalse(reader.called)
             ok, msg = prepush.check(self.repo.root, [self.LINE])

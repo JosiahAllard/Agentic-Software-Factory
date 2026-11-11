@@ -6,11 +6,9 @@ coordinator carries the verdict to the new head (tools/verdict.py carry) when th
 changed (kitlib.gate.carry). A landing reads its branch's entry and never removes it;
 tools/verdict.py list drops each entry that landed or whose branch is gone (expire()).
 
-Where: `<git common dir>/kit-verdicts/<branch>.json`, the branch name percent-encoded
-(urllib.parse.quote with no safe characters: '/' is '%2F', '%' is '%25'), so the file name gives
-the branch back and holds no character Windows refuses. The common dir is shared by every work
-tree of the repository and never tracked. Every write is a temp file in the same folder, then
-os.replace; a re-add for the same branch replaces its entry.
+An entry's place and keys, its check and its expiry are kitlib.records.verdict_entry's (ve), and
+so are VerdictError and BadEntry. Every write is a temp file in the same folder, then os.replace; a
+re-add for the same branch replaces its entry.
 
 The queue lock: add, drop, mark_failed and scan each run whole (read, check, then write or
 remove) holding `<queue folder>/.queue.lock`, a file made with O_CREAT|O_EXCL and removed when
@@ -26,40 +24,6 @@ next caller removes it and takes the lock. A lock file that cannot be removed wh
 left to that rule. Temp files are made only under the lock, so one that scan (holding it) sees
 was left by a write that died: scan reports it among the files that are not entries, which stops
 entries(); nothing here deletes it.
-
-An entry (every key always present):
-
-  branch          the branch name, as `git branch` names it (kit/x)
-  tip             the full commit hash reviewed; add() checks it is `refs/heads/<branch>` now
-  verdict         LAND | LAND WITH FOLLOW-UP
-  risk            Low | Medium | High
-  reviewer        the reviewer's agent type
-  reviewer_model  the model the reviewer ran on, one for every id reviewer_id lists (a second,
-                  architecture reviewer runs on the same model: skill branch-review);
-                  tools/verdict.py add checks it against each reviewer's transcript where the
-                  host has a reader (model_mismatch_why)
-  reviewer_id     the reviewer's agent or session id, or several (`a,b`); tools/verdict.py add
-                  reads each agent id's final `Verdict:` line where the host has a reader
-                  (reviewer_verdict_why)
-  author          the change's author: commit author and agent type (`Kit Test / worker`); it
-                  picks no reviewer model: a High-risk or strict branch needs a strong-tier
-                  reviewer whoever built it, and a Low or Medium branch off the strict paths has
-                  no tier rule (tier_why: add() and kitlib.gate.land, Lander.review_refusal)
-  range           the range reviewed, `<base>..<tip>`; its right side is the tip or a prefix of
-                  it (7 or more hex digits), so the review covered the commit queued
-  session         the coordinator session that queued it
-  records         [backlog record ids] the branch carries
-  queued_utc      set by add(): YYYY-MM-DDTHH:MM:SSZ
-  state           queued | failed (mark_failed)
-  last_result     None, or why it was marked failed
-
-and, only in an entry carry() moved (a re-add drops it):
-
-  carried         {from, merges, main, diff, utc}: the verdict was given at `from` (the commit the
-                  range ends at), and tip carries it over `merges` (main merges, oldest first, the
-                  last the tip) as kitlib.gate.carry checked against `main` at `utc`; `diff` is the
-                  sha256 of the branch's normalized patch. A record of the check, never proof: a
-                  landing checks it again (docs/gate-landing-policy.md "Carrying a verdict forward").
 
 Errors (all VerdictError): BadEntry for a malformed entry or branch name given, nothing read or
 written; SelfReview (a BadEntry) when add() is given a Medium or High-risk verdict the coordinator queueing
@@ -94,17 +58,14 @@ import os
 import re
 import secrets
 import time
-import urllib.parse
 
 from kitlib.fs import replace as fsreplace
 from kitlib.gate import carry as carrymod
 from kitlib.git import batch as gitbatch
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
+from kitlib.records import verdict_entry as ve
 
-DIR_NAME = 'kit-verdicts'
-SUFFIX = '.json'
-VERDICTS = ('LAND', 'LAND WITH FOLLOW-UP')
 # The check ids a reviewer's `Checks:` line gives (skill specialty-review "Report"), each PASS,
 # FAIL or N/A: a code review lists every CODE_CHECKS id (home, reuse, size and layering N/A when an
 # approved design came), a design review every DESIGN_CHECKS id, its checks 1-7 in order.
@@ -112,23 +73,6 @@ CODE_CHECKS = ('scope', 'done-when', 'defects', 'tests', 'copies', 'home', 'reus
                'layering')
 DESIGN_CHECKS = ('home', 'reuse', 'cause', 'scope', 'size', 'contract', 'layering')
 CHECK_STATES = ('PASS', 'FAIL', 'N/A')
-RISKS = ('Low', 'Medium', 'High')
-QUEUED, FAILED = 'queued', 'failed'
-STATES = (QUEUED, FAILED)
-# What the coordinator states; add() sets the rest.
-GIVEN_KEYS = ('branch', 'tip', 'verdict', 'risk', 'reviewer', 'reviewer_model', 'reviewer_id',
-              'author', 'range', 'session', 'records')
-SET_KEYS = ('queued_utc', 'state', 'last_result')
-KEYS = GIVEN_KEYS + SET_KEYS
-CARRIED = 'carried'         # set only by carry(): an entry may lack it
-CARRIED_KEYS = ('from', 'merges', 'main', 'diff', 'utc')
-DIGEST_RE = re.compile(r'^[0-9a-f]{64}$')
-TEXT_KEYS = ('reviewer', 'reviewer_model', 'reviewer_id', 'author', 'session')
-UTC_RE = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
-RANGE_TIP_RE = re.compile(r'^[0-9a-f]{7,64}$')
-# DOS device names: a file called CON.json or nul.x.json is the device, not a file.
-DEVICES = frozenset(['CON', 'PRN', 'AUX', 'NUL'] + ['COM%d' % i for i in range(1, 10)]
-                    + ['LPT%d' % i for i in range(1, 10)])
 RETRIES = 5                 # tries of a read, replace or remove while it fails with PermissionError
 RETRY_SLEEP = 0.2           # seconds between them
 # RETRIES as a wait for kitlib.fs.replace: try k starts at least k-1 pauses in, so the last (at
@@ -142,25 +86,17 @@ LOCK_POLL_S = 0.05
 BY_HAND = 'remove it by hand'
 
 
-class VerdictError(Exception):
-    """An entry is malformed, its file cannot be read or written, or git gave no answer."""
-
-
-class BadEntry(VerdictError):
-    """The entry (or branch name) given is malformed: nothing was read or written."""
-
-
-class SelfReview(BadEntry):
+class SelfReview(ve.BadEntry):
     """A Medium or High-risk verdict whose reviewer is the coordinator queueing it (self_review_why): its
     text ends with the Instead: line (SELF_REVIEW_INSTEAD). Nothing was read or written."""
 
 
-class ModelMismatch(BadEntry):
+class ModelMismatch(ve.BadEntry):
     """The reviewer's transcript shows a model other than the reviewer_model given
     (model_mismatch_why): its text ends with an Instead: line. Nothing was read or written."""
 
 
-class ReviewerSaid(BadEntry):
+class ReviewerSaid(ve.BadEntry):
     """The reviewer's final report says SEND BACK, has no `Verdict:` line, or its transcript was
     found and cannot be read (reviewer_verdict_why); it has no full `Checks:` line (checks_why) or
     reports a Done-when item UNMET under a plain LAND (done_when_why); the follow-ups are wrong
@@ -168,75 +104,25 @@ class ReviewerSaid(BadEntry):
     Its text ends with an Instead: line. Nothing was read or written."""
 
 
-class LightReview(BadEntry):
+class LightReview(ve.BadEntry):
     """A High-risk verdict whose reviewer_model is not a strong-tier model (tier_why): its text
     ends with the Instead: line (TIER_INSTEAD). Nothing was read or written."""
 
 
-class TipMismatch(VerdictError):
+class TipMismatch(ve.VerdictError):
     """The tip to queue is not the branch's head (or the branch does not exist)."""
 
 
-class OtherBranch(VerdictError):
+class OtherBranch(ve.VerdictError):
     """The file for the branch named holds another branch's entry."""
 
 
-class CarryRefused(VerdictError):
+class CarryRefused(ve.VerdictError):
     """The branch's head does not carry its queued verdict (carry()): nothing was written."""
 
 
 def utc(when=None):
     return (when or datetime.datetime.now(datetime.timezone.utc)).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def _branch_why(branch):
-    if not isinstance(branch, str) or not branch.strip():
-        return 'the branch is a non-empty name, not %r' % (branch,)
-    why = refs.bad_rev(branch)
-    if why:
-        return 'the branch %s' % why
-    if branch != branch.strip() or any(c.isspace() for c in branch):
-        return 'the branch name %r holds white space' % branch
-    if branch.startswith('refs/'):
-        return 'name the branch as git branch does (kit/x), not the ref %s' % branch
-    return None
-
-
-def file_name(branch):
-    """The queue file name for `branch`: percent-encoded, then .json."""
-    why = _branch_why(branch)
-    if why:
-        raise BadEntry(why)
-    name = urllib.parse.quote(branch, safe='') + SUFFIX
-    if name.split('.')[0].upper() in DEVICES:
-        raise BadEntry('the branch %s would be the file %s, a Windows device name' % (branch, name))
-    return name
-
-
-def branch_of(name):
-    """The branch a queue file name holds, or None when `name` is not one file_name() makes."""
-    if not name.endswith(SUFFIX) or name.startswith('.'):
-        return None
-    branch = urllib.parse.unquote(name[:-len(SUFFIX)])
-    try:
-        return branch if file_name(branch) == name else None
-    except VerdictError:
-        return None
-
-
-def queue_dir(common_dir):
-    return os.path.join(common_dir, DIR_NAME)
-
-
-def entry_path(common_dir, branch):
-    return os.path.join(queue_dir(common_dir), file_name(branch))
-
-
-def reviewer_types(text):
-    """The agent types a verdict's `reviewer` names, casefolded: each part split on '/', ',' or
-    ';', stripped, a `plugin:` prefix dropped, empty ones left out (`pm-kit:` names none). Pure."""
-    return set(p.strip().rpartition(':')[2].strip().casefold()
-               for p in re.split(r'[/,;]', text)) - {''}
 
 
 SELF_REVIEW_INSTEAD = ('Instead: dispatch a fresh analyst to review the branch (skill branch-review, '
@@ -254,7 +140,7 @@ def self_reader(entry):
     ids = [i for i in re.split(r'[/,;\s]+', entry['reviewer_id'].casefold()) if i]
     if session in ids:
         return 'its reviewer id %s is the session queueing it' % entry['reviewer_id'].strip()
-    if any(COORDINATOR_RE.search(t) for t in reviewer_types(entry['reviewer'])):
+    if any(COORDINATOR_RE.search(t) for t in ve.reviewer_types(entry['reviewer'])):
         return 'its reviewer %s is the coordinator role' % entry['reviewer'].strip()
     return None
 
@@ -285,20 +171,20 @@ def diff_lines(cwd, rng):
     for rev in (base, tip):
         why = refs.bad_rev(rev)
         if why:
-            raise VerdictError('the range %s: %s' % (rng, why))
+            raise ve.VerdictError('the range %s: %s' % (rng, why))
     out, why = gitcmd.run_text(['diff', '--numstat', '--find-renames', '%s...%s' % (base, tip),
                                 '--'], cwd)
     if out is None:
-        raise VerdictError('git diff --numstat %s...%s: %s' % (base, tip, (why or '').strip()))
+        raise ve.VerdictError('git diff --numstat %s...%s: %s' % (base, tip, (why or '').strip()))
     added = removed = files = 0
     for row in out.splitlines():
         a, sep, rest = row.partition('\t')
         d, sep2, _ = rest.partition('\t')
         if not (sep and sep2):
-            raise VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
+            raise ve.VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
         if (a, d) != ('-', '-'):
             if not (a.isdigit() and d.isdigit()):
-                raise VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
+                raise ve.VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
             added, removed = added + int(a), removed + int(d)
         files += 1
     return added, removed, files
@@ -329,7 +215,7 @@ def self_review_size_why(entry, max_lines, cwd, main, main_why=None):
     for rng in (entry['range'], '%s..%s' % (main, entry['tip'])):
         try:
             counts.append(diff_lines(cwd, rng))
-        except VerdictError as e:
+        except ve.VerdictError as e:
             return head + 'git cannot tell how many lines %s changes (%s)' % (rng, e) + tail
     added, removed, files = max(counts, key=lambda c: c[0] + c[1])
     if added + removed <= max_lines:
@@ -672,7 +558,7 @@ def _git_diff(cwd, args, base, tip):
                                 '--src-prefix=a/', '--dst-prefix=b/']
                                + args + ['%s...%s' % (base, tip), '--'], cwd)
     if out is None:
-        raise VerdictError('git diff %s...%s: %s' % (base, tip, (why or '').strip()))
+        raise ve.VerdictError('git diff %s...%s: %s' % (base, tip, (why or '').strip()))
     return out
 
 
@@ -698,7 +584,7 @@ def new_sources(cwd, rng, exts, is_test, types):
     for rev in (base, tip):
         why = refs.bad_rev(rev)
         if why:
-            raise VerdictError('the range %s: %s' % (rng, why))
+            raise ve.VerdictError('the range %s: %s' % (rng, why))
 
     def source(p):
         return p if p and p.endswith(tuple(exts)) and not is_test(p) else None
@@ -771,84 +657,6 @@ def tier_why(entry, strict, tiers):
                                else 'a High-risk branch', entry['author']))
 
 
-def check(entry, stored=True):
-    """Why `entry` is not a well-formed entry, or None. `stored`: it must carry add()'s keys too
-    (an entry read back; it may hold `carried`); False: only the keys the coordinator states (an
-    entry given to add)."""
-    if not isinstance(entry, dict):
-        return 'an entry is a JSON object, not %s' % type(entry).__name__
-    keys = KEYS if stored else GIVEN_KEYS
-    missing = [k for k in keys if k not in entry]
-    if missing:
-        return 'the entry lacks %s' % ', '.join(missing)
-    extra = sorted(k for k in entry if k not in keys and not (stored and k == CARRIED))
-    if extra:
-        return 'the entry has keys it may not set: %s' % ', '.join(extra)
-    why = _branch_why(entry['branch'])
-    if why:
-        return why
-    tip = entry['tip']
-    if not refs.is_sha(tip):
-        return 'tip is a full commit hash, not %r' % (tip,)
-    reviewed = tip
-    if CARRIED in entry:
-        why = _carried_why(entry[CARRIED], tip)
-        if why:
-            return why
-        reviewed = entry[CARRIED]['from']
-    if entry['verdict'] not in VERDICTS:
-        return 'verdict is one of %s, not %r' % (' | '.join(VERDICTS), entry['verdict'])
-    if entry['risk'] not in RISKS:
-        return 'risk is one of %s, not %r' % (' | '.join(RISKS), entry['risk'])
-    for k in TEXT_KEYS:
-        v = entry[k]
-        if not isinstance(v, str) or not v.strip() or '\n' in v or '\r' in v:
-            return '%s is a non-empty one-line text, not %r' % (k, v)
-    if not reviewer_types(entry['reviewer']):
-        # Fail closed: with no type, land.is_author could not tell the reviewer from the author.
-        return ('reviewer names no agent type: it is the reviewer\'s agent type '
-                '(pm-kit:analyst), not %r' % entry['reviewer'])
-    rng = entry['range']
-    base, sep, right = rng.partition('..') if isinstance(rng, str) else ('', '', '')
-    if (not sep or not base or base.startswith('-') or any(c.isspace() for c in rng)
-            or not RANGE_TIP_RE.match(right) or not reviewed.startswith(right)):
-        return ('range is <base>..<tip> with the %s (or 7+ digits of it) on the right, not %r'
-                % ('reviewed commit the verdict was carried from' if reviewed != tip
-                   else 'queued tip', rng))
-    recs = entry['records']
-    if not isinstance(recs, list) or any(not isinstance(r, str) or not r or any(c.isspace() for c in r)
-                                         for r in recs):
-        return 'records is a list of record ids, not %r' % (recs,)
-    if stored:
-        if not isinstance(entry['queued_utc'], str) or not UTC_RE.match(entry['queued_utc']):
-            return 'queued_utc is YYYY-MM-DDTHH:MM:SSZ, not %r' % (entry['queued_utc'],)
-        if entry['state'] not in STATES:
-            return 'state is one of %s, not %r' % (' | '.join(STATES), entry['state'])
-        if entry['last_result'] is not None and not isinstance(entry['last_result'], str):
-            return 'last_result is null or a text, not %r' % (entry['last_result'],)
-    return None
-
-
-def _carried_why(c, tip):
-    """Why `c` is not the `carried` record of an entry queued at `tip`, or None."""
-    if not isinstance(c, dict) or sorted(c) != sorted(CARRIED_KEYS):
-        return 'carried is an object of %s, not %r' % (', '.join(CARRIED_KEYS), c)
-    for k in ('from', 'main'):
-        if not refs.is_sha(c[k]):
-            return 'carried.%s is a full commit hash, not %r' % (k, c[k])
-    if c['from'] == tip:
-        return 'carried.from is the commit reviewed, not the tip %s it was carried to' % tip[:10]
-    merges = c['merges']
-    if (not isinstance(merges, list) or not merges or any(not refs.is_sha(m) for m in merges)
-            or merges[-1] != tip):
-        return 'carried.merges is the main merges carried over, the last the tip, not %r' % (merges,)
-    if not isinstance(c['diff'], str) or not DIGEST_RE.match(c['diff']):
-        return 'carried.diff is a sha256 in hex, not %r' % (c['diff'],)
-    if not isinstance(c['utc'], str) or not UTC_RE.match(c['utc']):
-        return 'carried.utc is YYYY-MM-DDTHH:MM:SSZ, not %r' % (c['utc'],)
-    return None
-
-
 def _retry(fn, *args):
     """fn(*args), tried RETRIES times RETRY_SLEEP apart while it fails with PermissionError. Kept
     for the entry read (kitlib.fs.replace has no read) and drop()'s remove (a file already gone
@@ -875,14 +683,14 @@ def _load(path, branch):
     except FileNotFoundError:
         return None
     except OSError as e:
-        raise VerdictError('cannot read %s: %s' % (path, e))
+        raise ve.VerdictError('cannot read %s: %s' % (path, e))
     try:
         entry = json.loads(text)
     except ValueError as e:
-        raise VerdictError('%s is not a verdict entry: %s' % (path, e))
-    why = check(entry)
+        raise ve.VerdictError('%s is not a verdict entry: %s' % (path, e))
+    why = ve.check(entry)
     if why:
-        raise VerdictError('%s is not a verdict entry: %s' % (path, why))
+        raise ve.VerdictError('%s is not a verdict entry: %s' % (path, why))
     if entry['branch'] != branch:
         raise OtherBranch('%s holds the entry of %s, not %s (names that differ only in case share '
                           'one file on Windows)' % (path, entry['branch'], branch))
@@ -901,12 +709,12 @@ def _clear_stale(path):
 @contextlib.contextmanager
 def _locked(common_dir):
     """Hold the queue lock (the module docstring says how) for the `with` body."""
-    folder = queue_dir(common_dir)
+    folder = ve.queue_dir(common_dir)
     lock = os.path.join(folder, LOCK_NAME)
     try:
         os.makedirs(folder, exist_ok=True)
     except OSError as e:
-        raise VerdictError('cannot make %s: %s' % (folder, e))
+        raise ve.VerdictError('cannot make %s: %s' % (folder, e))
     deadline = time.monotonic() + LOCK_WAIT_S
     while True:
         denied = None
@@ -918,12 +726,12 @@ def _locked(common_dir):
         except PermissionError as e:     # Windows: a lock file being removed, for a moment
             denied = e
         except OSError as e:
-            raise VerdictError('cannot make the queue lock %s: %s' % (lock, e))
+            raise ve.VerdictError('cannot make the queue lock %s: %s' % (lock, e))
         if time.monotonic() >= deadline:
             if denied is not None:
-                raise VerdictError('cannot make the queue lock %s in %.0f s: %s'
+                raise ve.VerdictError('cannot make the queue lock %s in %.0f s: %s'
                                    % (lock, LOCK_WAIT_S, denied))
-            raise VerdictError('the verdict queue stayed locked for %.0f s (%s); it is removed by '
+            raise ve.VerdictError('the verdict queue stayed locked for %.0f s (%s); it is removed by '
                                'the next call once %.0f s old' % (LOCK_WAIT_S, lock, LOCK_STALE_S))
         time.sleep(LOCK_POLL_S)
     try:
@@ -954,7 +762,7 @@ def _write(path, entry):
             if os.path.exists(tmp):
                 os.remove(tmp)
     except OSError as e:
-        raise VerdictError('cannot write %s: %s' % (path, e))
+        raise ve.VerdictError('cannot write %s: %s' % (path, e))
     return path
 
 
@@ -963,7 +771,7 @@ def head_of(common_dir, branch):
     git gives no answer."""
     sha, why = refs.ref_commit('refs/heads/%s' % branch, common_dir)
     if sha is None:
-        raise VerdictError('git cannot say where %s is: %s' % (branch, why))
+        raise ve.VerdictError('git cannot say where %s is: %s' % (branch, why))
     return sha
 
 
@@ -987,9 +795,9 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
     (a configuration fault: nothing queued). Nothing seen or said is stored. `now`: a datetime for
     queued_utc."""
-    why = check(entry, stored=False)
+    why = ve.check(entry, stored=False)
     if why:
-        raise BadEntry(why)
+        raise ve.BadEntry(why)
     why = self_review_why(entry)
     if why:
         raise SelfReview(why)
@@ -1007,14 +815,14 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     def tiers():
         got = land.tier_models()
         if got[0] is None:                # a configuration fault, not a light review
-            raise VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
+            raise ve.VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
                                'nothing was queued' % got[2])
         return got
     why = tier_why(entry, False, tiers)
     if why:
         raise LightReview('%s; nothing was queued\n%s' % (why, TIER_INSTEAD))
     branch, tip = entry['branch'], entry['tip']
-    path = entry_path(common_dir, branch)
+    path = ve.entry_path(common_dir, branch)
     head = head_of(common_dir, branch)
     if not head:
         raise TipMismatch('there is no branch %s' % branch)
@@ -1023,7 +831,7 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     why = self_review_size_why(entry, self_review_max_lines, common_dir, main, main_why)
     if why:
         raise SelfReview(why)
-    stored = dict(entry, records=list(entry['records']), queued_utc=utc(now), state=QUEUED,
+    stored = dict(entry, records=list(entry['records']), queued_utc=utc(now), state=ve.QUEUED,
                   last_result=None)
     with _locked(common_dir):
         _load(path, branch)              # an unreadable entry, or another branch's, is not replaced
@@ -1041,12 +849,12 @@ def carry(common_dir, root, branch, base, now=None, checker=None):
     head does not carry it; TipMismatch when there is no such branch; VerdictError when the entry
     or the branch moved while the check ran (outside the queue lock: git may be slow). `checker`:
     the check to run (default kitlib.gate.carry.check); `now`: a datetime for carried.utc."""
-    path = entry_path(common_dir, branch)
+    path = ve.entry_path(common_dir, branch)
     with _locked(common_dir):
         entry = _load(path, branch)
     if entry is None:
         return None
-    if entry['state'] != QUEUED:
+    if entry['state'] != ve.QUEUED:
         raise CarryRefused('the verdict of %s is marked %s (%s): review and queue it again'
                            % (branch, entry['state'], entry['last_result'] or 'no reason given'))
     head = head_of(common_dir, branch)
@@ -1055,23 +863,23 @@ def carry(common_dir, root, branch, base, now=None, checker=None):
     if head == entry['tip']:
         raise CarryRefused('the verdict of %s is queued at its head %s already: nothing to carry'
                            % (branch, head[:10]))
-    reviewed = entry[CARRIED]['from'] if CARRIED in entry else entry['tip']
+    reviewed = entry[ve.CARRIED]['from'] if ve.CARRIED in entry else entry['tip']
     facts, why = (checker or carrymod.check)(root, reviewed, head, base)
     if facts is None:
         raise CarryRefused('%s at %s does not carry the verdict given at %s: %s'
                            % (branch, head[:10], reviewed[:10], why))
     stored = dict(entry, tip=head, carried=dict(facts, utc=utc(now)))
-    why = check(stored)
-    if not why and (stored[CARRIED]['from'] != reviewed or stored[CARRIED]['main'] != base):
+    why = ve.check(stored)
+    if not why and (stored[ve.CARRIED]['from'] != reviewed or stored[ve.CARRIED]['main'] != base):
         why = 'carried.from or carried.main is not the commit asked about'
     if why:
         raise CarryRefused('the carry check gave facts that are not a carried record: %s' % why)
     with _locked(common_dir):
         if _load(path, branch) != entry:
-            raise VerdictError('the verdict of %s changed while its carry was checked: run carry '
+            raise ve.VerdictError('the verdict of %s changed while its carry was checked: run carry '
                                'again' % branch)
         if head_of(common_dir, branch) != head:
-            raise VerdictError('%s moved while its carry was checked: run carry again' % branch)
+            raise ve.VerdictError('%s moved while its carry was checked: run carry again' % branch)
         return _write(path, stored), stored
 
 
@@ -1079,14 +887,14 @@ def scan(common_dir):
     """`(entries, bad)`: every well-formed entry, oldest first, and `[(path, why)]` for each file
     in the queue folder that is not one, a temp file a dead write left among them; each why ends
     with how to remove that file (tools/verdict.py drop only where drop removes it)."""
-    folder = queue_dir(common_dir)
+    folder = ve.queue_dir(common_dir)
     if not os.path.isdir(folder):
         return [], []
     with _locked(common_dir):
         try:
             names = sorted(os.listdir(folder))
         except OSError as e:
-            raise VerdictError('cannot list %s: %s' % (folder, e))
+            raise ve.VerdictError('cannot list %s: %s' % (folder, e))
         return _scan(folder, names)
 
 
@@ -1099,7 +907,7 @@ def _scan(folder, names):
         if name.startswith('.') and name.endswith('.tmp'):
             bad.append((path, 'a temp file a write that died left behind; %s' % BY_HAND))
             continue
-        branch = branch_of(name)
+        branch = ve.branch_of(name)
         if branch is None:
             bad.append((path, 'not a name a verdict entry file has; %s' % BY_HAND))
             continue
@@ -1108,7 +916,7 @@ def _scan(folder, names):
         except OtherBranch as e:             # drop refuses it
             bad.append((path, '%s; %s' % (e, BY_HAND)))
             continue
-        except VerdictError as e:
+        except ve.VerdictError as e:
             bad.append((path, '%s; remove it with tools/verdict.py drop %s, or by hand'
                         % (e, branch)))
             continue
@@ -1122,7 +930,7 @@ def entries(common_dir):
     that is not a well-formed entry: a landing takes nothing from a queue it cannot read whole."""
     good, bad = scan(common_dir)
     if bad:
-        raise VerdictError('the verdict queue holds files that are not entries: %s'
+        raise ve.VerdictError('the verdict queue holds files that are not entries: %s'
                            % ' | '.join('%s: %s' % pb for pb in bad))
     return good
 
@@ -1140,19 +948,19 @@ def drop(common_dir, branch, tip=None):
     `tip`, the entry queued is for another tip and is kept). Without `tip` an unreadable entry
     file is removed too. OtherBranch, and nothing removed, when the file holds another branch's
     entry or, unreadable, has another branch's name in another case."""
-    path = entry_path(common_dir, branch)
+    path = ve.entry_path(common_dir, branch)
     with _locked(common_dir):
         try:
             entry = _load(path, branch)
         except OtherBranch:
             raise
-        except VerdictError:
+        except ve.VerdictError:
             if tip is not None:
                 raise
             try:
                 names = os.listdir(os.path.dirname(path))
             except OSError as e:
-                raise VerdictError('cannot list %s: %s' % (os.path.dirname(path), e))
+                raise ve.VerdictError('cannot list %s: %s' % (os.path.dirname(path), e))
             if os.path.basename(path) not in names:
                 raise OtherBranch('%s is not named for %s (names that differ only in case share '
                                   'one file on Windows): nothing removed' % (path, branch))
@@ -1164,7 +972,7 @@ def drop(common_dir, branch, tip=None):
         except FileNotFoundError:
             return False
         except OSError as e:
-            raise VerdictError('cannot remove %s: %s' % (path, e))
+            raise ve.VerdictError('cannot remove %s: %s' % (path, e))
         return True
 
 
@@ -1173,32 +981,15 @@ def mark_failed(common_dir, branch, why, tip=None):
     none is queued (or, with `tip`, the entry queued is for another tip and is left as is). A
     failed entry is never in a batch; a re-add queues it again."""
     if not isinstance(why, str) or not why.strip():
-        raise VerdictError('say why the landing failed')
-    path = entry_path(common_dir, branch)
+        raise ve.VerdictError('say why the landing failed')
+    path = ve.entry_path(common_dir, branch)
     with _locked(common_dir):
         entry = _load(path, branch)
         if entry is None or (tip is not None and entry['tip'] != tip):
             return False
-        entry.update(state=FAILED, last_result=why.strip())
+        entry.update(state=ve.FAILED, last_result=why.strip())
         _write(path, entry)
         return True
-
-
-def expired(common_dir, entry, main):
-    """Why `entry` waits to land no more, or None: `landed` when its tip is an ancestor of `main`
-    (main as fetched, a commit), `superseded` when it is not and `refs/heads/<branch>` is gone.
-    None, the entry kept, whenever that cannot be told: no `main`, or git gives no answer."""
-    if not main:
-        return None
-    landed, _ = refs.is_ancestor(entry['tip'], main, common_dir)
-    if landed:
-        return 'landed: %s is in main %s' % (entry['tip'][:10], main[:10])
-    if landed is None:
-        return None
-    head, _ = refs.ref_commit('refs/heads/%s' % entry['branch'], common_dir)
-    if head == '':
-        return 'superseded: there is no branch %s' % entry['branch']
-    return None
 
 
 def expire(common_dir, items, main):
@@ -1207,12 +998,12 @@ def expire(common_dir, items, main):
     tip meanwhile is kept, and one that cannot be dropped (VerdictError) is kept too."""
     gone = []
     for e in items:
-        why = expired(common_dir, e, main)
+        why = ve.expired(common_dir, e, main)
         if not why:
             continue
         try:
             if drop(common_dir, e['branch'], tip=e['tip']):
                 gone.append((e, why))
-        except VerdictError:
+        except ve.VerdictError:
             continue
     return gone

@@ -256,6 +256,7 @@ from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_USAGE, LockError, Store
 from kitlib.records import gate_ok
 from kitlib.records import landing
+from kitlib.records import place, verdict_entry
 
 PUSH_TIMEOUT = 600      # seconds
 # git's own ref status line for a push it refused (transport.c; untranslated, and kitlib.git.cmd
@@ -465,14 +466,14 @@ def _word_in(word, text):
 def is_author(entry):
     """True when the verdict entry's reviewer may be the branch's author: an id its reviewer_id
     lists (split on '/', ',', ';' or white space), or an agent type its reviewer names
-    (verdicts.reviewer_types), appears anywhere in `author` as a word of its own (_word_in),
+    (verdict_entry.reviewer_types), appears anywhere in `author` as a word of its own (_word_in),
     casefolded, whatever separates it from the rest: `Kit Test / strong-worker`,
     `Kit Test (agent) (pm-kit:strong-worker)`, `x | strong-worker` and `x strong-worker` all name
     strong-worker; `x / strong-worker` does not name worker. A reviewer naming no type is refused
-    earlier, by verdicts.check. Pure."""
+    earlier, by verdict_entry.check. Pure."""
     author = entry['author'].casefold()
     ids = re.split(r'[/,;\s]+', entry['reviewer_id'].casefold())
-    words = [w for w in ids if w] + sorted(verdicts.reviewer_types(entry['reviewer']))
+    words = [w for w in ids if w] + sorted(verdict_entry.reviewer_types(entry['reviewer']))
     return any(_word_in(w, author) for w in words)
 
 
@@ -729,7 +730,7 @@ class Lander(object):
         too, said as `gating here: the load-node plan failed: <error>`."""
         lr = self.routes()
         try:
-            self.route = lr.plan(self.root, runner.repo_name(self.cfg, self.root),
+            self.route = lr.plan(self.root, place.repo_name(self.cfg, self.root),
                                  self.cfg.section('gate')['kind'], store=self.queue_store(),
                                  merged_gate_fn=self.merged_gate_fn)
         except Exception as e:      # noqa: BLE001 - nothing booked or changed yet: gate on main
@@ -788,8 +789,8 @@ class Lander(object):
             kw['detached'] = True   # its launcher's ancestry is in ORIGIN_ENV (kitlib.gate.submit)
         book = self.book_fn or lockrun.book
         kind = self.cfg.section('gate')['kind']
-        self.slot = book(self.land_kind(kind), runner.repo_name(self.cfg, self.root),
-                         runner.slug_of('+'.join(self.branches)), **kw)
+        self.slot = book(self.land_kind(kind), place.repo_name(self.cfg, self.root),
+                         place.slug_of('+'.join(self.branches)), **kw)
         self.booked_kind = kind
         self.say(self.slot.held_text())
 
@@ -862,7 +863,7 @@ class Lander(object):
         branches = rec.get('branches')
         if self.slot is None or not isinstance(branches, list) or not branches:
             return False
-        slug = runner.slug_of('+'.join(str(b) for b in branches))
+        slug = place.slug_of('+'.join(str(b) for b in branches))
         try:
             waiting = [e for e in self.turn_waiters() if e.get('slug') == slug]
         except (OSError, ValueError):
@@ -1400,13 +1401,13 @@ class Lander(object):
         if not common:
             return 'its verdict queue cannot be found: %s' % (why or 'no git common dir')
         try:
-            entry = verdicts._load(verdicts.entry_path(common, b), b)
-        except verdicts.VerdictError as e:
+            entry = verdicts._load(verdict_entry.entry_path(common, b), b)
+        except verdict_entry.VerdictError as e:
             return 'its verdict entry cannot be used: %s' % e
         if entry is None:
             return ('it lands only with a queued verdict (tools/verdict.py add), and none is '
                     'queued for it')
-        if entry['state'] != verdicts.QUEUED:
+        if entry['state'] != verdict_entry.QUEUED:
             return ('its verdict entry is marked %s (%s): queue it again with tools/verdict.py '
                     'add' % (entry['state'], entry['last_result'] or 'no reason given'))
         if entry['tip'].lower() != t.lower():
@@ -1414,10 +1415,10 @@ class Lander(object):
                     'tip, or carry the verdict (tools/verdict.py carry) when a main sync is all '
                     'that changed' % (entry['tip'][:10], t[:10]))
         facts = None
-        if verdicts.CARRIED in entry:
+        if verdict_entry.CARRIED in entry:
             # Never the stored facts: the carry is checked again here, against the base this
             # landing merges onto (docs/gate-landing-policy.md "Carrying a verdict forward").
-            reviewed = entry[verdicts.CARRIED]['from']
+            reviewed = entry[verdict_entry.CARRIED]['from']
             facts, why = carry.check(self.root, reviewed, t, self.expect_main,
                                      git=lambda args: self.git(*args))
             if facts is None:
@@ -2154,7 +2155,7 @@ class Lander(object):
         any other exception goes on up (recover: NOT LANDED). The machine lock not giving the
         full run: a FAILED Outcome."""
         lr, kind = self.routes(), self.cfg.section('gate')['kind']
-        repo_name = runner.repo_name(self.cfg, self.root)
+        repo_name = place.repo_name(self.cfg, self.root)
         why = lr.same_tree_why(self.tree, self.cfg, self.branches[0], self.tips[0],
                                self.expect_main, self.merge, batch=len(self.branches),
                                fresh=self.fresh, full=self.full)
@@ -2172,7 +2173,7 @@ class Lander(object):
         if node is not None:
             try:
                 return lr.run_on_node(node, self.root, self.merge, self.expect_main, self.cfg,
-                                      repo_name, runner.slug_of('+'.join(self.branches)),
+                                      repo_name, place.slug_of('+'.join(self.branches)),
                                       full=self.full, docs=True, tree=self.tree, kind=kind,
                                       say=self.say, store=self.queue_store())
             except lr.Fallback as e:
@@ -2209,8 +2210,8 @@ class Lander(object):
         gate_ok.RecordError."""
         docs = self.gate_out is not None and self.gate_out.facts.get('docs') is True
         ran_on = self.gate_out.facts.get('ran_on') if self.gate_out is not None else None
-        path, _ = gate_ok.record_pass(self.root, self.merge, runner.gate_config(self.cfg),
-                                      runner.kit_identity(), runner.repo_name(self.cfg, self.root),
+        path, _ = gate_ok.record_pass(self.root, self.merge, gate_ok.gate_config(self.cfg),
+                                      runner.kit_identity(), place.repo_name(self.cfg, self.root),
                                       started, runner.record_steps(results or []),
                                       base=self.expect_main, config_rev=self.expect_main,
                                       source=self.source(), full=bool(self.full) and not docs,
@@ -2447,7 +2448,7 @@ class Lander(object):
         whatever happens here. Never raises."""
         try:
             from kitlib.hubsite import landings
-            repo_name = runner.repo_name(self.cfg, self.root)
+            repo_name = place.repo_name(self.cfg, self.root)
             mode = self.merged_mode()
             events = []
             for rr in self.result_runs:
@@ -2501,7 +2502,7 @@ class Lander(object):
         lines = []
         try:
             from kitlib.loadnode import mirror
-            mirror.refresh(self.root, runner.repo_name(self.cfg, self.root), self.cfg.main_branch,
+            mirror.refresh(self.root, place.repo_name(self.cfg, self.root), self.cfg.main_branch,
                            out.facts['merge'], store=self.queue_store(), say=lines.append)
         except BaseException as e:  # noqa: BLE001 - landed: only the nodes' mirrors lag
             lines.append("WARNING: refreshing the load nodes' mirrors of %s stopped (%s); the "

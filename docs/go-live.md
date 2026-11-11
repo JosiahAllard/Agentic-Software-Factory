@@ -86,7 +86,7 @@ Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, 
 - Hook modules load from the landing's base, the main it merges onto (docs/gate-landing.md "Landing", step 6), one file each; sibling imports are unsupported.
 - landing.log_dir inside a checkout must be git-ignored, or every landing is NOT LANDED.
 - Batch landing exists (`land.py A B`, docs/gate-landing.md "Batch"); a repo opts steps into gate reuse with `reuse` (docs/gate-landing-policy.md "Gate reuse").
-- guard.py and pre-push read records with runner.verify_record: a record without config_rev does not count, so a commit gated before config_rev existed is gated again before push_block goes on.
+- guard.py and pre-push read records with records.gate_ok.verify_record: a record without config_rev does not count, so a commit gated before config_rev existed is gated again before push_block goes on.
 
 ## Skills, templates, optional tools, knowledge (owner-run)
 

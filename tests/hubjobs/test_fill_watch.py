@@ -723,6 +723,7 @@ class Survey(unittest.TestCase):
         from kitlib.coordstate import render
         from kitlib.gate import verdicts
         from kitlib.git import refs
+        from kitlib.records import verdict_entry
         from kitlib.git import repo
         from kitlib.worktree import classify
 
@@ -742,7 +743,7 @@ class Survey(unittest.TestCase):
         with mock.patch.object(render, 'main_as_fetched', lambda top: self.main), \
                 mock.patch.object(repo, 'common_dir', lambda top: self.common), \
                 mock.patch.object(verdicts, 'entries', entries), \
-                mock.patch.object(verdicts, 'expired',
+                mock.patch.object(verdict_entry, 'expired',
                                   lambda c, e, m: 'landed' if e['branch'] in self.expired else None), \
                 mock.patch.object(classify, 'classify', fake_classify), \
                 mock.patch.object(classify, 'gate_state',
@@ -813,9 +814,9 @@ class Survey(unittest.TestCase):
                 self.survey()
 
     def test_anything_unread_is_unread(self):
-        from kitlib.gate import verdicts
+        from kitlib.records import verdict_entry
         cases = [('main', (None, 'no origin/main')), ('common', (None, 'not a repo')),
-                 ('entries', verdicts.VerdictError('bad file')),
+                 ('entries', verdict_entry.VerdictError('bad file')),
                  ('trees', {'error': 'git cannot list the worktrees'})]
         for name, value in cases:
             self.setUp()

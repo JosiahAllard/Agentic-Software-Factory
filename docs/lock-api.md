@@ -282,7 +282,7 @@ A repository may name its own run kinds in its `.kit.json` `kinds` section (docs
 - Where it is read: the working-tree `.kit.json` of the main checkout of the current directory's repository (`kitlib.git.repo.main_checkout_toplevel`), never a linked worktree's, so an agent's uncommitted edit in its worktree cannot size a run. Outside any git work tree there are no repository kinds.
 - The kit wins a clash: a name that is a kit kind or a kit alias (`aliases` in kinds.json) books the kit's entry, the repository's entry of that name is ignored, and `.kit.json` is not read at all, so a broken `.kit.json` never stops a kit kind.
 - Sizes: the entry is checked as a kinds.json entry is (`kinds.check_entry`); `--cores N` asks for fewer, never more. The agent cap is checked when the run or hold is booked, against the layout in force: a whole number past it is refused with exit 10, as is a `.kit.json` that does not load when a repository kind is asked for (fail closed). An unknown kind is usage, exit 2, and the message names the checkout whose main checkout `.kit.json` was looked in.
-- Records: a run or hold on a repository kind is recorded under its name, as any kind is: history, `history_expect` and `stats` group by it. The section is not part of the gate's config hash (`kitlib.gate.runner.gate_config`).
+- Records: a run or hold on a repository kind is recorded under its name, as any kind is: history, `history_expect` and `stats` group by it. The section is not part of the gate's config hash (`kitlib.records.gate_ok.gate_config`).
 
 Known limits:
 

@@ -31,6 +31,7 @@ from kitlib.gate import steps as S
 from kitlib.git import cmd as gitcmd
 from kitlib.git import repo
 from kitlib.lock import store as lockstore
+from kitlib.records import place
 
 RESULT = 'result.json'
 SCHEMA = 1
@@ -60,7 +61,8 @@ def settings(cfg, main):
     s['ref'] = s.get('ref') or '%s/%s' % (cfg.remote, cfg.main_branch)
     s['worktree'] = os.path.normpath(os.path.join(
         main, s.get('worktree') or os.path.join(cfg.repo['worktrees_dir'], SLUG)))
-    s['out'] = os.path.join(runner.log_base(cfg, main, runner.repo_name(cfg, main)), 'daily')
+    s['out'] = os.path.join(place.log_base(cfg, main, place.repo_name(cfg, main),
+                                           runner.say_note), 'daily')
     return s
 
 
@@ -226,7 +228,7 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
         log_dir = os.path.join(out, stamp)
         os.makedirs(log_dir, exist_ok=True)
     else:                       # s['out'], or the shared temp's when it cannot be made
-        log_dir = runner.make_log_dir(cfg, main, runner.repo_name(cfg, main), 'daily', stamp,
+        log_dir = runner.make_log_dir(cfg, main, place.repo_name(cfg, main), 'daily', stamp,
                                       note=lambda t: say('daily: note: gate logs: %s' % t))
         out = os.path.dirname(log_dir)      # the results folder this run is in, fallback included
     started = now_text()
@@ -259,7 +261,7 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
     kw = dict(book_kw or {}, gate_mode='daily')     # its lock run's and history line's gate_mode
     kw.setdefault('wait_s', s['max_wait'])
     ran, refused = runner.gated(tested, s['worktree'], sha, [], chosen, s['kind'],
-                                runner.repo_name(cfg, main), SLUG, log_dir, say, kw)
+                                place.repo_name(cfg, main), SLUG, log_dir, say, kw)
     if refused is not None:
         cause = SKIP_CAUSES.get(refused.code)
         if cause is None:
@@ -291,7 +293,7 @@ def _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git):
     red = B.bisectable(result)
     if not conf or probes < 1 or not red:
         return []
-    prober = B.Prober(s['worktree'], red, s['kind'], runner.repo_name(cfg, main), SLUG, log_dir,
+    prober = B.Prober(s['worktree'], red, s['kind'], place.repo_name(cfg, main), SLUG, log_dir,
                       say, kw, git, plan, steps=result['steps'])
     found = B.bisect(result, [r for r in earlier if r.get('dir') != log_dir], prober,
                      s['worktree'], git, probes)

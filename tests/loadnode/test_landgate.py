@@ -12,7 +12,7 @@ import kitlib.config as kconfig
 from kitlib.gate import runner
 from kitlib.loadnode import box, landgate
 from kitlib.loadnode.job import RecordRefused
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 from tests import gitfixture
 from tests.home import result_drive
 
@@ -31,7 +31,7 @@ class Repo(unittest.TestCase):
         self.repo.write('a.py', 'x = 1\n')
         self.merge = self.repo.commit('the merge', 'a.py')
         self.cfg = kconfig.load_at(self.repo.root, self.base)
-        self.gate_config = runner.gate_config(self.cfg)
+        self.gate_config = gate_ok.gate_config(self.cfg)
 
 
 class CheckRecord(Repo):
@@ -234,7 +234,7 @@ class LandGate(Repo):
         expected = {'head': self.merge, 'steps': ['unit', 'lint'], 'mode': 'full', 'full': True,
                     'source': 'gate.json', 'gate_config': gate_ok.config_hash(self.gate_config)}
         self.assertIs(landgate.check_record(self.repo.root, rec, self.merge, self.base, expected,
-                                            runner.repo_name(self.cfg, self.repo.root), KITH,
+                                            place.repo_name(self.cfg, self.repo.root), KITH,
                                             self.gate_config), rec)
 
     def test_a_docs_only_merge_is_recorded_as_docs(self):

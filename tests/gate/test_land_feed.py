@@ -6,9 +6,9 @@ import json
 import unittest
 
 from kitlib import gate as G
-from kitlib.gate import result, runner
+from kitlib.gate import result
 from kitlib.hubsite import client, landings, serve
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 
 from tests.gate.test_land import BRANCH, LandCase
 from tests.gate.test_land_closes_trailer import TRAILERS
@@ -66,7 +66,7 @@ class Posts(FeedCase):
                          {k: line[k] for k in result.LEDGER_FIELDS})
         self.assertEqual((ev['branch'], ev['tip'], ev['verdict']), (BRANCH, tip, 'pass'))
         self.assertEqual(sorted(ev), sorted(f for f in landings.FIELDS if f != 'approvals'))
-        self.assertEqual(ev['repo'], runner.repo_name(lander.cfg, self.repo.root))
+        self.assertEqual(ev['repo'], place.repo_name(lander.cfg, self.repo.root))
         self.assertEqual((ev['main_branch'], ev['main']), ('main', out.merge))
         self.assertEqual((ev['records'], ev['deploy']), ([], 'restart the hub'))
         # the merged gate's mode, as its gate-OK record on the new main says (a select run here)

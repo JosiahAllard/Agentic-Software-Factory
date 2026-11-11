@@ -51,6 +51,49 @@ class _Branches(StoreCase):
                 self.addCleanup(patch.stop)
 
 
+class SharedBaseOffMain(_Branches):
+    """Two branches cut from a commit that is not on main and changed kitlib/x/shared.py: what both
+    inherited is no change of the other's (plan_narrow._one_branch `ours`)."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo.git('checkout', '-q', '-b', 'shared-base', 'main')
+        self.repo.write('kitlib/x/shared.py', 'shared\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'off main')
+        self.base = self.repo.head()
+        self.repo.git('checkout', '-q', '-f', 'main')
+        self.repo.git('branch', '-f', BRANCH, self.base)
+        self.holding = [parse('HOLD', id='HOLD', state='pulled', pulled_at=TODAY, pulled_by=HOLDER,
+                              scope='docs/held.md')]
+
+    def other(self, *paths):
+        self.repo.git('checkout', '-q', '-b', HOLDER, self.base)
+        for p in paths:
+            self.repo.write(p, 'x\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'work on holder')
+        self.repo.git('checkout', '-q', '-f', 'main')
+
+    def hits(self):
+        return plan_narrow._pull_fold_hits(self.ctx, ['kitlib/x/shared.py'], self.holding,
+                                           BRANCH)[0]
+
+    def test_what_both_branches_inherited_is_no_overlap(self):
+        self.other('kitlib/y/own.py')
+        self.assertEqual(self.hits(), [])
+
+    def test_a_change_after_the_shared_commit_is_still_an_overlap(self):
+        self.other('kitlib/x/shared.py')
+        self.assertEqual(self.hits(),
+                         ['kitlib/x/shared.py vs kitlib/x/shared.py (changed on kit/holder)'])
+
+    def test_without_our_branch_the_diff_starts_at_the_code_main(self):
+        self.other('kitlib/y/own.py')
+        changes = plan_narrow._live_changes(self.ctx, self.holding, None)[0]
+        self.assertIn('kitlib/x/shared.py', changes[HOLDER][0][1])
+
+
 class PullOwnBranchOnly(_Branches):
 
     def test_a_code_main_that_does_not_resolve_is_silent_when_only_the_own_branch_holds(self):

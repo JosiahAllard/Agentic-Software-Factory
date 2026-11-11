@@ -238,7 +238,9 @@ class RealHome(SweepCase):
         self.git('push', '-q', 'origin', 'main')
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('skipped   %s [detached]: detached HEAD: no branch, never swept' % self.path, out)
+        self.assertIn('  L  %s  detached' % self.path, out)
+        self.assertIn('locked with `git worktree lock`: launcher home worktree of home-alpha-coord',
+                      out)
         self.assertIn('removed 0, would remove 0', out)
         self.assertTrue(os.path.isdir(self.path), out)
         rc, out = self.run_verb('check')

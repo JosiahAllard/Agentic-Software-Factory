@@ -271,6 +271,26 @@ class Landed(ClassifyCase):
                       ' unclaimed', out)
         self.assertIn('summary   A 1, B 0, C 0, E 0, L 0', out)
 
+    def test_a_claimed_landed_tree_is_c(self):
+        self.configure({'backlog': {'store': 'main'}})
+        path = self.workstream('done')
+        self.land('kit/done')
+        self.record('id: T-001\nstate: pulled\npulled_by: KIT/Done\n')
+        rc, out, data = self.run_classify()
+        row = self.row(data, path)
+        self.assertEqual((row['class'], row['note'], row['claims']),
+                         ('C', 'landed; kept: claimed by T-001', ['T-001']), row)
+
+    def test_a_landed_tree_whose_claims_cannot_be_read_is_c(self):
+        self.configure({'backlog': {'store': 'main'}})
+        path = self.workstream('done')
+        self.land('kit/done')
+        self.record(b'\xff\xfe not a record\n', name='T-009.md')
+        rc, out, data = self.run_classify()
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'C', row)
+        self.assertIn('landed; kept: whether a backlog record claims it is unknown', row['note'])
+
     def test_a_landed_detached_tree_outside_is_a_first(self):
         work = self.workstream('side')
         tip = self.git('rev-parse', 'HEAD', cwd=work)

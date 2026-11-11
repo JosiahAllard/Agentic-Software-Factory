@@ -95,14 +95,19 @@ there they are read in the code repository's main checkout, against its code mai
 ## Worktree checks
 
 `kitlib/maintlint/worktrees.py` reads `classify` without apply and reports what the nightly sweep
-(`kitlib.worktree.sweep`) leaves, never a tree that sweep removes or abandons on its own:
-- an A tree only when a pulled record claims its branch (`claims` is a non-empty list). It also
-  gives `landed-still-pulled` per claim, whose fix is a `release`; when "Landing checks" already
-  gave that record's `landed-still-pulled`, that one is kept and this one dropped (one row per
-  check and target). An A tree no record claims is the sweep's to remove.
+(`kitlib.worktree.nightly`) leaves, never a tree that sweep removes or abandons on its own:
 - a B or C tree only when no stale mark holds on its branch. A tree whose mark holds is the sweep's
   to abandon; one whose mark is void is reported.
-- every E and O tree.
+- a landed tree a pulled record still claims is C (`landed: true`, `landed; kept: claimed by
+  ...`). It also gives `landed-still-pulled` per claim, whose fix is a `release`; when "Landing
+  checks" already gave that record's `landed-still-pulled`, that one is kept and this one dropped
+  (one row per check and target).
+- an A, E or O tree only when the sweep's own route skips it (`classify.sweep_plan`): an E tree on
+  a branch (evidence branches are the coordinator's hand-run `--classify --apply`), an O tree
+  outside the folders or keeping an unsaved commit, an A or E tree whose HEAD reflog holds one,
+  an A tree on a branch outside the worktree folders. Any other A, E or O tree is the sweep's to
+  remove. When the repository cannot be opened to ask, only what the row shows counts (an E tree
+  on a branch, an O tree outside or not known to keep nothing).
 
 Each finding carries its `worktree_remove.py` form.
 
@@ -199,9 +204,9 @@ dev drive, is a `module scope NOT CHECKED` note.
   them; a record closed before that may be filed again on the next run.
 - Step names that make the same id text (`kit_suite` and `kit-suite`) share one record: a live
   record of either holds back the other.
-- An A tree is reported only when it has non-empty claims. An empty A tree whose tip is on the
-  base's first-parent chain is skipped by the nightly sweep as fresh
-  (`kitlib.worktree.sweep`: a fresh worktree is never swept), so neither tool reports it.
+- An empty tree the sweep would remove (A: clean, nothing of its own, unclaimed, no unsaved
+  reflog commit) is not reported, since the nightly sweep removes it; one classify keeps C
+  (claimed, or its claims unknown) is.
 - At 10 rows per check, `page.render` can still go over `pagecheck.MAX_BYTES`.
 - `closed-unlanded` reads only a close whose subject is `closes <ID>: landed <sha>`. A close by
   hand with another reason names no commit to check, so it is not checked; a `<sha>` the checkout

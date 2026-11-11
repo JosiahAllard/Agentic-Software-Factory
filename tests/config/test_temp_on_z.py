@@ -13,7 +13,7 @@ from unittest import mock
 
 from kitlib.config import user
 from kitlib.config.types import ConfigError
-from kitlib.worktree import sweep
+from kitlib.worktree import nightly
 from tests.home import machine_config
 from tests.worktree import test_worktree_sweep
 from tests.platforms import windows_only
@@ -354,11 +354,12 @@ class SweepLogInSharedTemp(test_worktree_sweep.SweepCase):
         self.addCleanup(shutil.rmtree, khome, True)
         configured = os.path.join(khome, 'not-yet', 'kit')
         machine_config(khome, {'temp_dir': configured}, case=self)
-        self.landed('done')
+        self.workstream('open')        # unlanded: classify reads no reflog, which the fake lacks
         real = user.shared_temp
         with mock.patch.object(user, 'shared_temp', lambda: real(home=khome)):
-            got = sweep.sweep(self.repo, apply=True, machine=test_worktree_sweep.free,
-                              now=time.time() + test_worktree_sweep.LATER)
+            got = nightly.sweep(self.repo, apply=True, machine=test_worktree_sweep.free,
+                                now=time.time() + test_worktree_sweep.LATER,
+                                procs=test_worktree_sweep.no_procs)
         out = '\n'.join(got.lines)
         self.assertNotIn('could not be written', out)
         logs = os.listdir(configured)

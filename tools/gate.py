@@ -90,7 +90,7 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
 
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
-from kitlib import pluginsource                                    # noqa: E402
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.coordstate import log as coordlog                       # noqa: E402
 from kitlib.gate import land as landmod                            # noqa: E402
 from kitlib.gate import budget, caller, measure, outfile, rerun, runner  # noqa: E402
@@ -350,7 +350,7 @@ def main(argv):
         # No -C or a relative one: this gate.py on another checkout of its own repository. An
         # absolute -C names the tree on purpose.
         if not (a.root and os.path.isabs(a.root)):
-            refused = caller.own_copy_refusal(root, pluginsource.live_root(KIT), rel=a.root)
+            refused = caller.own_copy_refusal(root, plugin_layout.live_root(KIT), rel=a.root)
             if refused is not None:
                 return emit(refused)
         refused = caller.log_dir_refusal(a.log_dir, root, os.getcwd())

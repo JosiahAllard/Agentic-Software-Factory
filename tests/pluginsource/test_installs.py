@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import unittest
 
-from kitlib import pluginsource
+from kitlib.pluginsource import state as plugin_state
 from kitlib.host import registry
 from kitlib.launcher import accounts
 
@@ -68,7 +68,7 @@ class InstallsTest(InstallsCase):
         two = self.account('two', [{'scope': 'user', 'installPath': self.path('c2')}])
         want = [(self.path('c1'), one), (self.path('c2'), two)]
         self.assertEqual(accounts.installs([one, none, two]), want)
-        self.assertEqual(pluginsource.installs([one, none, two]), want)
+        self.assertEqual(plugin_state.installs([one, none, two]), want)
 
 
 if __name__ == '__main__':

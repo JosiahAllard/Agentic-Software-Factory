@@ -3,7 +3,7 @@ fix, the tool names it takes, and how it runs one (the caller's directory, the a
 the tool's exit code, Ctrl+C).
 
 Every export here is a fake one in a temporary folder: a <sha12> folder holding the export marker
-and a tools folder, named by a marketplace.json kitlib.pluginsource.write_marketplace writes. The
+and a tools folder, named by a marketplace.json kitlib.pluginsource.export.write_marketplace writes. The
 machine config is never read: resolve takes the Settings from its `load` seam.
 """
 import contextlib
@@ -18,7 +18,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import kitcmd, pluginsource
+from kitlib import kitcmd
+from kitlib.pluginsource import layout as plugin_layout, export as plugin_export
 from kitlib.config import ConfigError
 from kitlib.config.user import HomeFenced
 from kitlib.machinesetup import linuxbox
@@ -62,7 +63,7 @@ class Exports(unittest.TestCase):
         folder = os.path.join(root or self.root, name)
         os.makedirs(os.path.join(folder, 'tools'), exist_ok=True)
         if marker:
-            with open(os.path.join(folder, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+            with open(os.path.join(folder, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
                 fh.write('{}\n')
         for tool, text in (tools or {}).items():
             with open(os.path.join(folder, 'tools', tool), 'w', encoding='utf-8') as fh:
@@ -70,10 +71,10 @@ class Exports(unittest.TestCase):
         return folder
 
     def name(self, folder, root=None):
-        pluginsource.write_marketplace(root or self.root, folder)
+        plugin_export.write_marketplace(root or self.root, folder)
 
     def load(self):
-        return pluginsource.Settings(self.root, False, 'origin')
+        return plugin_layout.Settings(self.root, False, 'origin')
 
     def resolve(self, here=None, load=None):
         return kitcmd.resolve(here or self.here, load or self.load)
@@ -121,7 +122,7 @@ class Resolve(Exports):
     def test_a_machine_config_that_cannot_be_read_is_refused_with_the_fix(self):
         self.export()
         self.name(SHA)
-        for error in (ConfigError('pointer is BAD'), pluginsource.RefreshError('LOCALAPPDATA'),
+        for error in (ConfigError('pointer is BAD'), plugin_layout.RefreshError('LOCALAPPDATA'),
                       HomeFenced('fenced'), OSError('denied')):
             with self.subTest(error=type(error).__name__):
                 def load():

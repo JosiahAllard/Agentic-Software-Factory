@@ -1,12 +1,13 @@
 """The PLUGIN event: pm_watch's check of the pm-kit plugin export against the kit's
-refs/remotes/<remote>/main (kitlib.pmwatch.plugin_check over kitlib.pluginsource.poll). A temp kit
+refs/remotes/<remote>/main (kitlib.pmwatch.plugin_check over kitlib.pluginsource.refresh.poll). A temp kit
 with a bare remote, a temp export root; spawn and the liveness probe are fakes."""
 import json
 import os
 import unittest
 from unittest import mock
 
-from kitlib import pluginsource as P
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib import pmwatch as W
 from tests.pluginsource import Kit
 
@@ -18,7 +19,7 @@ class PluginEventTest(unittest.TestCase):
         self.live = set()
 
     def watcher(self, auto, state=None, folders=(), hub_job=lambda: False):
-        s = P.Settings(self.k.root, auto, "origin")
+        s = plugin_layout.Settings(self.k.root, auto, "origin")
         check = W.plugin_check(kit=self.k.kit, settings=s,
                                spawn=lambda kit, root: self.spawned.append((kit, root)),
                                alive=lambda pid, ct: pid in self.live, folders=list(folders),
@@ -33,7 +34,7 @@ class PluginEventTest(unittest.TestCase):
         return self.k.repo.git("rev-parse", "refs/remotes/origin/main")
 
     def export_at(self, sha):
-        P.write_state(self.k.root, {"sha": sha, "folders": {}})
+        plugin_state.write_state(self.k.root, {"sha": sha, "folders": {}})
 
     def advance(self):
         r, self.n = self.k.repo, getattr(self, "n", 0) + 1
@@ -56,7 +57,7 @@ class PluginEventTest(unittest.TestCase):
         new = self.advance()
         w = self.watcher(auto=False)
         self.assertEqual(w.poll(1.0), ["PLUGIN pm-kit plugin behind kit main %s: %s"
-                                       % (new[:12], P.refresh_cmd())])
+                                       % (new[:12], plugin_layout.refresh_cmd())])
         self.assertEqual(w.poll(2.0), [])
         w2 = self.watcher(auto=False, state=json.loads(json.dumps(w.s)))   # a relaunch: saved state
         self.assertEqual(w2.poll(3.0), [])
@@ -79,7 +80,7 @@ class PluginEventTest(unittest.TestCase):
         self.assertEqual(self.spawned, [(self.k.kit, self.k.root)])
         self.assertEqual(w.poll(2.0), [])
         self.assertEqual(len(self.spawned), 1)
-        with open(os.path.join(self.k.root, P.PIDFILE), "w", encoding="utf-8") as fh:
+        with open(os.path.join(self.k.root, plugin_refresh.PIDFILE), "w", encoding="utf-8") as fh:
             json.dump({"pid": 4242, "ctime": 1.0}, fh)
         self.live.add(4242)
         self.advance()
@@ -94,7 +95,7 @@ class PluginEventTest(unittest.TestCase):
         new = self.advance()
         w = self.watcher(auto=True, hub_job=lambda: True)
         self.assertEqual(w.poll(1.0), ["PLUGIN pm-kit plugin behind kit main %s: %s"
-                                       % (new[:12], P.refresh_cmd())])
+                                       % (new[:12], plugin_layout.refresh_cmd())])
         self.assertEqual(self.spawned, [])
         w = self.watcher(auto=True, hub_job=lambda: False)
         self.assertTrue(w.poll(1.0)[0].endswith("(auto_refresh: started)"))
@@ -119,7 +120,7 @@ class PluginEventTest(unittest.TestCase):
 
     def test_a_failing_check_is_an_error_on_the_third(self):
         def boom(last):
-            raise P.RefreshError("LOCALAPPDATA is not set")
+            raise plugin_layout.RefreshError("LOCALAPPDATA is not set")
         w = W.Watcher({}, [], lambda: {}, os.path.join(self.k.base, "alerts"),
                       os.path.join(self.k.base, "sessions.json"), lambda n: None, branch_poll=0,
                       plugin=boom)
@@ -132,14 +133,14 @@ class PluginEventTest(unittest.TestCase):
         w = self.watcher(auto=True)
         ev = w.poll(1.0)
         self.assertEqual(ev, ["PLUGIN pm-kit plugin behind kit main %s: %s (auto_refresh: not started: "
-                              "no export yet)" % (self.main()[:12], P.refresh_cmd(True))])
+                              "no export yet)" % (self.main()[:12], plugin_layout.refresh_cmd(True))])
         os.makedirs(self.k.root)
         (two,) = self.k.folders(".claude-two")
         self.export_at(self.main())
         new = self.advance()
         w = self.watcher(auto=True, folders=[two])
         self.assertEqual(w.poll(2.0), ["PLUGIN pm-kit plugin behind kit main %s: %s (auto_refresh: not "
-                                       "started: not migrated in %s)" % (new[:12], P.refresh_cmd(True), two)])
+                                       "started: not migrated in %s)" % (new[:12], plugin_layout.refresh_cmd(True), two)])
         self.assertEqual(self.spawned, [])
 
     def test_an_unreadable_ref_or_state_is_an_error_on_the_third(self):
@@ -147,22 +148,22 @@ class PluginEventTest(unittest.TestCase):
             w = self.watcher(auto=False)
             if broken == "state":
                 os.makedirs(self.k.root, exist_ok=True)
-                with open(os.path.join(self.k.root, P.STATE), "w", encoding="utf-8") as fh:
+                with open(os.path.join(self.k.root, plugin_state.STATE), "w", encoding="utf-8") as fh:
                     fh.write("{not json")
                 got = [w.poll(1.0 + i) for i in range(4)]
             else:
-                with mock.patch.object(P, "tracking_main", lambda kit, remote: (None, "git broke")):
+                with mock.patch.object(plugin_layout, "tracking_main", lambda kit, remote: (None, "git broke")):
                     got = [w.poll(1.0 + i) for i in range(4)]
             errs = [g for g in got if g]
             self.assertEqual(len(errs), 1, got)
             self.assertTrue(errs[0][0].startswith("ERROR plugin check: "), errs)
-            self.assertIn("git broke" if broken == "ref" else P.STATE, errs[0][0])
+            self.assertIn("git broke" if broken == "ref" else plugin_state.STATE, errs[0][0])
 
     def export_kit(self, checkout):
         """A folder shaped like the plugin export the watcher runs from: a marker, no .git."""
         folder = os.path.join(self.k.base, "export-kit")
         os.makedirs(folder)
-        with open(os.path.join(folder, P.MARKER), "w", encoding="utf-8") as fh:
+        with open(os.path.join(folder, plugin_layout.MARKER), "w", encoding="utf-8") as fh:
             json.dump({"checkout": checkout}, fh)
         return folder
 
@@ -170,21 +171,21 @@ class PluginEventTest(unittest.TestCase):
         os.makedirs(self.k.root)
         self.export_at(self.main())
         new = self.advance()
-        s = P.Settings(self.k.root, False, "origin")
+        s = plugin_layout.Settings(self.k.root, False, "origin")
         got, _ = W.plugin_check(kit=self.export_kit(self.k.kit), settings=s, folders=[])(None)
-        self.assertEqual(got, ["pm-kit plugin behind kit main %s: %s" % (new[:12], P.refresh_cmd())])
+        self.assertEqual(got, ["pm-kit plugin behind kit main %s: %s" % (new[:12], plugin_layout.refresh_cmd())])
 
     def test_an_export_with_no_source_checkout_is_a_failed_check_with_a_clear_line(self):
-        s = P.Settings(self.k.root, False, "origin")
+        s = plugin_layout.Settings(self.k.root, False, "origin")
         check = W.plugin_check(kit=self.export_kit(os.path.join(self.k.base, "gone")), settings=s,
                                folders=[])
-        with self.assertRaises(P.RefreshError) as cm:
+        with self.assertRaises(plugin_layout.RefreshError) as cm:
             check(None)
         self.assertIn("export", str(cm.exception))
         self.assertIn("source checkout", str(cm.exception))
 
     def test_no_tracking_ref_is_silent(self):
-        with mock.patch.object(P, "tracking_main", lambda kit, remote: ("", None)):
+        with mock.patch.object(plugin_layout, "tracking_main", lambda kit, remote: ("", None)):
             w = self.watcher(auto=True)
             self.assertEqual([w.poll(1.0 + i) for i in range(4)], [[], [], [], []])
 

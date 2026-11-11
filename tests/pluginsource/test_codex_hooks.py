@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 from hosts.codex.adapter import content as cc
-from kitlib import pluginsource as P
+from kitlib.pluginsource import export as plugin_export
 from kitlib.host import registry
 from tests.pluginsource import Kit
 
@@ -231,10 +231,10 @@ class Export(unittest.TestCase):
                 f.write(body)
         k.repo.commit('hooks plugin', *[PLUGIN_REL + '/' + rel for rel in stub])
         k.repo.git('push', '-q', 'origin', 'main')
-        sha = P.remote_main(k.kit, 'origin')
+        sha = plugin_export.remote_main(k.kit, 'origin')
         for platform, root in (('windows', 'w'), ('linux', 'l')):
             with self.subTest(platform=platform):
-                folder, version = P.export(k.kit, sha, os.path.join(k.root, root), platform=platform)
+                folder, version = plugin_export.export(k.kit, sha, os.path.join(k.root, root), platform=platform)
                 self.assertNotEqual(version, '1.0.0')
                 got = files(os.path.join(folder, *PLUGIN_REL.split('/')))
                 want = dict(stub)

@@ -701,7 +701,7 @@ class KitExport(Base):
         self.assertFalse(self.is_export(root))
 
     def test_no_export_root_the_guard_can_name_fails_closed(self):
-        """No plugin config and no LOCALAPPDATA (kitlib.pluginsource.settings raises), or a config
+        """No plugin config and no LOCALAPPDATA (kitlib.pluginsource.layout.settings raises), or a config
         the guard cannot read: the export folder is not the kit's."""
         self.w.user_config({})
         self.w.environ.pop('LOCALAPPDATA', None)

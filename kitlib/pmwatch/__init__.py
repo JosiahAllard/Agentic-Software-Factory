@@ -500,7 +500,7 @@ def hub_session_job_block(load=None, make_client=None):
 
 
 def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, hub_job=None):
-    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.poll
+    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.refresh.poll
     (docs/plugin-source.md "Behind warnings"). `last` is the kit main sha last reported (None when
     current), kept in the state file so a relaunch does not report the same sha again. With no
     `settings` the machine config's plugin key is read on every call, so a bad key is a failed
@@ -509,13 +509,13 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
     account folders. With auto_refresh on and the hub's plugin-refresh job up (`hub_job()`, default
     hub_plugin_job_up), the hub is the one owner of the refresh: the check reports the behind
     line and starts nothing; with the hub down it still starts the refresh itself."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh
 
     def check(last):
-        s = pluginsource.load() if settings is None else settings
+        s = plugin_layout.load() if settings is None else settings
         if s.auto_refresh and (hub_job or hub_plugin_job_up)():
             s = s._replace(auto_refresh=False)
-        return pluginsource.poll(kit or pluginsource.kit_root(), s, last, spawn=spawn, alive=alive,
+        return plugin_refresh.poll(kit or plugin_layout.kit_root(), s, last, spawn=spawn, alive=alive,
                                  folders=folders)
     return check
 
@@ -717,8 +717,9 @@ def preload(modules=()):
     import kitlib.hubclient.client
     import kitlib.hubclient.codestale
     import kitlib.hubclient.errors
-    import kitlib.pluginsource
-    import kitlib.schedtask.read            # kitlib.pluginsource's in-use reads (_processes, _tasks)
+    import kitlib.pluginsource.layout
+    import kitlib.pluginsource.refresh      # with export, state and prune, which it imports
+    import kitlib.schedtask.read            # kitlib.pluginsource.prune's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)
     import kitlib.launcher.stop
     import kitlib.proc.process

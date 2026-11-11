@@ -9,7 +9,7 @@ it by renaming), else only when the record is at least EVERY_S old. The record's
 when the session was last named a folder (its start header, or this line), so a session hears the
 line at most once an hour however many refreshes land. A record this line rewrote names the export
 that was current then, and prune keeps every export replaced less than a day ago
-(pluginsource.IN_USE_YOUNG_DAYS), so the hour runs out long before prune can take that folder; a
+(pluginsource.prune.IN_USE_YOUNG_DAYS), so the hour runs out long before prune can take that folder; a
 start header that named an export already old enough to prune is caught by the gone check, at the
 first tool event after the prune.
 
@@ -27,7 +27,7 @@ undoes the line. A startup SessionStart keeps its own folder.
                                  guard names (advice_kit) when `kit` and that folder are exports,
                                  else `kit`. Never raises
   note(kit, payload, agent)      at a start event whose text holds the header: when `kit` is an
-                                 export (it holds pluginsource.MARKER), write the folder to
+                                 export (it holds pluginsource.layout.MARKER), write the folder to
                                  <export root>/headers/<key>; at a SessionStart, drop records
                                  older than MAX_AGE_DAYS first. Nothing for a kit checkout
   line(kit, payload, agent, environ)   at a tool event: the line naming the kit folder the guard
@@ -86,9 +86,9 @@ def _write(path, text):
 def note(kit, payload, agent=None, event=None, now=None):
     """Record that this session's (or agent's) header named the export `kit`. True when written."""
     try:
-        from kitlib import pluginsource
+        from kitlib.pluginsource import layout as plugin_layout
         k = key(payload, agent)
-        if not k or not kit or not os.path.isfile(os.path.join(kit, pluginsource.MARKER)):
+        if not k or not kit or not os.path.isfile(os.path.join(kit, plugin_layout.MARKER)):
             return False
         folder = os.path.join(os.path.dirname(os.path.normpath(kit)), HEADERS)
         os.makedirs(folder, exist_ok=True)
@@ -130,11 +130,11 @@ def start_kit(kit, environ=None):
     session run from a kit checkout stays on it), else `kit`, as on any failure: a start never
     fails for this."""
     try:
-        from kitlib import pluginsource
-        if not kit or not os.path.isfile(os.path.join(kit, pluginsource.MARKER)):
+        from kitlib.pluginsource import layout as plugin_layout
+        if not kit or not os.path.isfile(os.path.join(kit, plugin_layout.MARKER)):
             return kit
         current = _guard_kit(kit, environ)
-        return current if current and os.path.isfile(os.path.join(current, pluginsource.MARKER)) else kit
+        return current if current and os.path.isfile(os.path.join(current, plugin_layout.MARKER)) else kit
     except Exception:
         return kit
 
@@ -154,13 +154,13 @@ def line(kit, payload, agent=None, environ=None, current=None, write=True, now=N
     names, instead of advice_kit's reading. `write` False: do not rewrite the record (the caller
     calls again with True once the line has been shown)."""
     try:
-        from kitlib import pluginsource
+        from kitlib.pluginsource import layout as plugin_layout
         k = key(payload, agent)
         if not k or not kit:
             return None
         if current is None:
             current = _guard_kit(kit, environ)
-            if not current or not os.path.isfile(os.path.join(current, pluginsource.MARKER)):
+            if not current or not os.path.isfile(os.path.join(current, plugin_layout.MARKER)):
                 return None
         root = os.path.dirname(os.path.normpath(current))
         path = os.path.join(root, HEADERS, k)
@@ -171,7 +171,7 @@ def line(kit, payload, agent=None, environ=None, current=None, write=True, now=N
             return None
         if not named or _norm(named) == _norm(current):
             return None
-        there = os.path.isfile(os.path.join(named, pluginsource.MARKER))
+        there = os.path.isfile(os.path.join(named, plugin_layout.MARKER))
         if there and (time.time() if now is None else now) - os.path.getmtime(path) < EVERY_S:
             return None                  # its folder is still there, and it was named one lately
         if write:

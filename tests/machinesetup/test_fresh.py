@@ -19,7 +19,8 @@ import unittest
 from unittest import mock
 
 from kitlib import machinesetup as M
-from kitlib import pluginsource
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib.machinesetup import extras, settings
 from kitlib.launcher import accounts
 from tests import gitfixture
@@ -174,10 +175,10 @@ class FreshBase(unittest.TestCase):
         return self.host.guard_entry(self.kit)['PreToolUse']
 
     def state(self):
-        return pluginsource.read_state(self.export)
+        return plugin_state.read_state(self.export)
 
     def migrate_calls(self, folder, cfg):
-        return [(folder, cfg, list(st), True) for st in pluginsource.migrate_steps(self.export)]
+        return [(folder, cfg, list(st), True) for st in plugin_refresh.migrate_steps(self.export)]
 
 
 class Fresh(FreshBase):
@@ -190,7 +191,7 @@ class Fresh(FreshBase):
         self.assertEqual(T.readb(self.s1), want.encode('utf-8'))     # indent 2, LF, no BOM, final newline
         self.assertEqual([n for n in os.listdir(self.c1) if n.endswith('.bak')], [])
         self.assertIn('%s: the kit plugin is not enabled and no claude CLI is on PATH; once it is, run %s'
-                      % (self.c1, pluginsource.migrate_cmd(self.c1)), out)
+                      % (self.c1, plugin_refresh.migrate_cmd(self.c1)), out)
         self.assertFalse(os.path.exists(self.export))                # no claude: no export either
 
     def test_fresh_appends_and_never_removes_or_rewrites(self):
@@ -251,7 +252,7 @@ class Fresh(FreshBase):
         self.assertIn(' kit:        none (the default mode)', out)        # the old-kit header line
         self.assertIn('change(s) to make', out)
         self.assertIn('+        "matcher": "startup|resume|compact"', out)  # the PM hook's diff
-        self.assertIn('kitlib.pluginsource.ensure_export', out)
+        self.assertIn('kitlib.pluginsource.refresh.ensure_export', out)
         tolerated = "-s user, the remove's failure tolerated; "
         self.assertIn('claude plugin install %s %sCLAUDE_CONFIG_DIR unset' % (PID, tolerated), out)
         self.assertIn('claude plugin install %s %sCLAUDE_CONFIG_DIR=%s' % (PID, tolerated, self.c2), out)
@@ -326,14 +327,14 @@ class Fresh(FreshBase):
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertEqual(self.host.fake.calls,                       # ~/.claude: CLAUDE_CONFIG_DIR unset
                          self.migrate_calls(self.c1, None) + self.migrate_calls(self.c2, self.c2))
-        self.assertEqual(pluginsource.migrate_steps(self.export)[2],
+        self.assertEqual(plugin_refresh.migrate_steps(self.export)[2],
                          ['plugin', 'install', PID, '-s', 'user'])
         state = self.state()
         sha = self.repo.git('rev-parse', 'refs/remotes/origin/main')
         self.assertEqual(state['sha'], sha)
-        self.assertTrue(pluginsource.migrated(state, self.c1))
-        self.assertTrue(pluginsource.migrated(state, self.c2))
-        self.assertEqual(pluginsource.current_folder(self.export), sha[:12])
+        self.assertTrue(plugin_state.migrated(state, self.c1))
+        self.assertTrue(plugin_state.migrated(state, self.c2))
+        self.assertEqual(plugin_layout.current_folder(self.export), sha[:12])
         done = [l for l in out.splitlines() if l.startswith('done: ')]
         settings_done = max(i for i, l in enumerate(done) if 'the guard' in l)
         export_done = min(i for i, l in enumerate(done) if 'ensure_export' in l)
@@ -366,7 +367,7 @@ class Fresh(FreshBase):
         self.assertIn('%s: the kit plugin is enabled but was not installed from the export' % self.c2, out)
         self.assertEqual(self.host.fake.calls,
                          self.migrate_calls(self.c1, None) + self.migrate_calls(self.c2, self.c2))
-        self.assertTrue(pluginsource.migrated(self.state(), self.c2))
+        self.assertTrue(plugin_state.migrated(self.state(), self.c2))
 
     def test_fresh_plugin_install_that_does_not_enable_stops(self):
         self.host.fake.enables = False
@@ -376,14 +377,14 @@ class Fresh(FreshBase):
         self.assertIn('is not true', out)
         self.assertIn('restore: copy "', out)
         self.assertIn('to run it again: %s (it removes the marketplace first, its failure tolerated)'
-                      % pluginsource.migrate_cmd(self.c1), out)
+                      % plugin_refresh.migrate_cmd(self.c1), out)
 
     def test_fresh_tolerates_a_failed_marketplace_remove(self):
         self.host.fake.fail[('.claude-two', 'plugin marketplace remove')] = 1
         code, out = self.run_it(apply=True)
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertEqual(len(self.host.fake.calls), 6)
-        self.assertTrue(pluginsource.migrated(self.state(), self.c2))
+        self.assertTrue(plugin_state.migrated(self.state(), self.c2))
 
     def test_fresh_failed_install_stops_with_the_rerun_and_a_rerun_finishes(self):
         self.host.fake.fail[('.claude-two', 'plugin install pm-kit@pm-kit')] = 1
@@ -391,16 +392,16 @@ class Fresh(FreshBase):
         self.assertEqual(code, M.EXIT_REFUSED, out)
         self.assertIn('machine-setup: STOPPED at: %s: enable the kit plugin' % self.c2, out)
         self.assertIn('FAILED %s: claude plugin install %s -s user exited 1: fake claude' % (self.c2, PID), out)
-        self.assertIn(pluginsource.migrate_cmd(self.c2), out)
+        self.assertIn(plugin_refresh.migrate_cmd(self.c2), out)
         state = self.state()
-        self.assertTrue(pluginsource.migrated(state, self.c1))
-        self.assertFalse(pluginsource.migrated(state, self.c2))
+        self.assertTrue(plugin_state.migrated(state, self.c1))
+        self.assertFalse(plugin_state.migrated(state, self.c2))
         self.host.fake.fail.clear()
         n = len(self.host.fake.calls)
         code, out = self.run_it(apply=True)
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertEqual(self.host.fake.calls[n:], self.migrate_calls(self.c2, self.c2))
-        self.assertTrue(pluginsource.migrated(self.state(), self.c2))
+        self.assertTrue(plugin_state.migrated(self.state(), self.c2))
 
     def test_fresh_refuses_a_bad_export_root_or_state(self):
         self.machine_config({'plugin': {'export_dir': os.path.join(self.kit, 'export')}})
@@ -410,7 +411,7 @@ class Fresh(FreshBase):
         self.assertIn('REFUSED - the plugin export (docs/plugin-source.md): ', out)
         self.assertEqual(self.snapshot(), before)
         self.machine_config({'plugin': {'export_dir': self.export}})
-        T.touch(os.path.join(self.export, pluginsource.STATE), 'not json\n')
+        T.touch(os.path.join(self.export, plugin_state.STATE), 'not json\n')
         before = self.snapshot()
         code, out = self.run_it(apply=True)
         self.assertEqual(code, M.EXIT_REFUSED, out)
@@ -476,13 +477,13 @@ class Fresh(FreshBase):
         self.assertEqual(self.host.fake.calls, self.migrate_calls(self.c1, None))
         self.assertTrue(guard_in(load(os.path.join(other, 'settings.json')), self.kit))
         self.assertNotIn('enabledPlugins', load(os.path.join(other, 'settings.json')))
-        self.assertFalse(pluginsource.migrated(self.state(), other))
+        self.assertFalse(plugin_state.migrated(self.state(), other))
         shutil.rmtree(self.export)
         code, out = self.run_it(apply=True, config_dirs=[other])          # only the outside folder
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertIn('done: export ', out)
         self.assertEqual(len(self.host.fake.calls), 3)                   # no claude run for it
-        self.assertTrue(os.path.isfile(os.path.join(self.export, pluginsource.STATE)))
+        self.assertTrue(os.path.isfile(os.path.join(self.export, plugin_state.STATE)))
 
     def test_fresh_makes_no_shortcut_unless_asked(self):
         code, out = self.run_it(apply=True)

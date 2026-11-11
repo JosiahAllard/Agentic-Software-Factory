@@ -644,7 +644,8 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
     owner changes by hand). None when every rule names the
     current export. Nothing is read when there is no repository; a loader (`settings`, default
     plugin_settings) that gives None checks nothing."""
-    from kitlib import allowrules, kitroot, pluginsource
+    from kitlib import allowrules, kitroot
+    from kitlib.pluginsource import layout as plugin_layout
     from kitlib.machinesetup import memory as kmemory
     repos = (load_repos or launcher_repos)() if repos is None else repos
     targets = [(name, repos[name]) for name in sorted(repos)]
@@ -657,7 +658,7 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
     if s is None:
         return []
     root = s.export_dir
-    current = pluginsource.current_folder(root)
+    current = plugin_layout.current_folder(root)
     lines = []
     for label, path in targets:
         if not os.path.isdir(path):
@@ -706,22 +707,28 @@ def repo_prep(repos=None, prep=None, load_repos=None):
 
 
 def plugin_settings():
-    """The machine config's plugin Settings (kitlib.pluginsource.load)."""
-    from kitlib import pluginsource
-    return pluginsource.load()
+    """The machine config's plugin Settings (kitlib.pluginsource.layout.load)."""
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.load()
 
 
 def plugin_current(settings=None, kit=None, folders=None, load_settings=None):
     """Lines when the pm-kit plugin export is missing or behind the kit's
     refs/remotes/<remote>/main (which kit_sync, just before, has fetched), an account folder is not
-    migrated, or one's last refresh failed (kitlib.pluginsource.current_lines; docs/plugin-source.md
+    migrated, or one's last refresh failed (kitlib.pluginsource.state.current_lines; docs/plugin-source.md
     "Behind warnings"). None for `settings` reads the machine config; a loader that gives None
-    checks nothing. None for `folders`: this machine's account folders."""
-    from kitlib import pluginsource
+    checks nothing. None for `folders`: this machine's account folders, and the marketplace check
+    reads the machine's managed settings file too (kitlib.machinesetup.extras Host.managed_path)."""
+    from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
+
+    def machine_managed():          # called inside current_lines' check, so a failure is its line
+        from kitlib.machinesetup.extras import Host
+        return Host().managed_path()
     s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
-    return pluginsource.current_lines(kit or pluginsource.kit_root(), s, folders=folders)
+    return plugin_state.current_lines(kit or plugin_layout.kit_root(), s, folders=folders,
+                                      managed=machine_managed if folders is None else None)
 
 
 def plugin_enabled(settings=None, folders=None, load_settings=None):
@@ -730,15 +737,15 @@ def plugin_enabled(settings=None, folders=None, load_settings=None):
     (docs/machine-setup.md "Default mode"); false is the owner's choice and is silent. A settings.json
     that is not a JSON object is its own "could not check" line. None for `settings` reads the machine
     config (plugin_settings); a loader that gives None checks nothing. None for `folders`: this
-    machine's account folders (kitlib.pluginsource.account_folders)."""
-    from kitlib import pluginsource
+    machine's account folders (kitlib.pluginsource.state.account_folders)."""
+    from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
     from kitlib.host import registry
     from kitlib.machinesetup import plugin
     s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     lines, absent = [], []
-    for d in pluginsource.account_folders() if folders is None else folders:
+    for d in plugin_state.account_folders() if folders is None else folders:
         have = plugin.enabled(os.path.join(d, "settings.json"), registry.PLUGIN_ID)
         if have is None:
             lines.append("could not check the pm-kit plugin in %s: its settings.json is not a JSON object" % d)
@@ -747,7 +754,7 @@ def plugin_enabled(settings=None, folders=None, load_settings=None):
     if absent:
         lines.insert(0, 'pm-kit plugin: not enabled in %s: python "%s/tools/machine_setup.py" --apply '
                         '(docs/machine-setup.md "Default mode")'
-                     % (", ".join(absent), pluginsource.live_root().replace("\\", "/")))
+                     % (", ".join(absent), plugin_layout.live_root().replace("\\", "/")))
     return lines
 
 

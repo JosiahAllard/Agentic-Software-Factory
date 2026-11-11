@@ -8,7 +8,8 @@ import unittest
 
 from tests.lazyimports import child_loaded, late_kit_imports
 
-PRELOADED = ('kitlib.pluginsource', 'kitlib.launcher.accounts', 'kitlib.machinesetup.extras',
+PRELOADED = ('kitlib.pluginsource.layout', 'kitlib.pluginsource.export', 'kitlib.pluginsource.state',
+             'kitlib.pluginsource.prune', 'kitlib.pluginsource.refresh', 'kitlib.launcher.accounts', 'kitlib.machinesetup.extras',
              'kitlib.launcher.settings', 'kitlib.launcher.usage', 'kitlib.launcher.pipes', 'kitlib.launcher.stop', 'kitlib.proc.process')
 WATCH_PATH = ('kitlib.pmwatch',) + PRELOADED
 

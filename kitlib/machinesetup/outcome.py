@@ -16,24 +16,24 @@ Outcome = collections.namedtuple('Outcome', 'code lines')
 
 def kit_root():
     """The kit a printed command names, read at each call: KIT_ROOT, or the live kit checkout when
-    this code runs from an export (kitlib.pluginsource.live_root: KIT_LIVE_ROOT, set by
+    this code runs from an export (kitlib.pluginsource.layout.live_root: KIT_LIVE_ROOT, set by
     kitlib.gate.pin; else the main checkout the export's marker names, `live_kit`). An export whose
     marker names no main checkout gives the export itself."""
-    from kitlib import pluginsource
-    kit = pluginsource.live_root(KIT_ROOT)
+    from kitlib.pluginsource import layout as plugin_layout
+    kit = plugin_layout.live_root(KIT_ROOT)
     return live_kit(kit)[0] or kit
 
 
 def live_kit(kit):
     """(folder, None): the kit a printed command may name for `kit`, which is `kit` itself unless it
-    is an export (it holds kitlib.pluginsource.MARKER: the plugin's export or a pin's, both of which
+    is an export (it holds kitlib.pluginsource.layout.MARKER: the plugin's export or a pin's, both of which
     a prune may remove); for an export, the main checkout its marker names
-    (kitlib.pluginsource.export_checkout) when that holds kit.json and a tools folder. (None, why)
+    (kitlib.pluginsource.layout.export_checkout) when that holds kit.json and a tools folder. (None, why)
     for an export whose marker names no such checkout."""
-    from kitlib import pluginsource
-    if not os.path.isfile(os.path.join(kit, pluginsource.MARKER)):
+    from kitlib.pluginsource import layout as plugin_layout
+    if not os.path.isfile(os.path.join(kit, plugin_layout.MARKER)):
         return kit, None
-    checkout = pluginsource.export_checkout(kit)
+    checkout = plugin_layout.export_checkout(kit)
     if checkout and os.path.isfile(os.path.join(checkout, 'kit.json')) and os.path.isdir(
             os.path.join(checkout, 'tools')):
         return os.path.normpath(checkout), None

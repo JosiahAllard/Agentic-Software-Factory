@@ -26,10 +26,10 @@ def _checkout(backlog_views):
 
 def kit_checkout(kit_root=None):
     """The kit's main checkout: kit_root (default pmstart.KIT_ROOT) when it is a checkout, else
-    the checkout its plugin export marker names (kitlib.pluginsource.default_kit); None when there
+    the checkout its plugin export marker names (kitlib.pluginsource.layout.default_kit); None when there
     is none."""
-    from kitlib import pluginsource
-    return pluginsource.default_kit(kit_root or pmstart.KIT_ROOT)[0]
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.default_kit(kit_root or pmstart.KIT_ROOT)[0]
 
 
 def _kit_key(repo_name, remote_ids, kit_root=None):

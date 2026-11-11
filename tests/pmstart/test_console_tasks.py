@@ -8,7 +8,8 @@ import os
 import tempfile
 import unittest
 
-from kitlib import pluginsource, pmstart
+from kitlib import pmstart
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.pmstart import consoletasks as ct
 from kitlib.schedtask import read as taskread
 from tests.home import temp_home
@@ -128,8 +129,8 @@ class KitRoots(unittest.TestCase):
         self.assertEqual(ct.kit_roots(self.live, environ={}), {self.norm(self.live)})
 
     def test_an_export_adds_the_folder_of_every_export_and_its_live_checkout(self):
-        open(os.path.join(self.export, pluginsource.MARKER), "w").close()
-        roots = ct.kit_roots(self.export, environ={pluginsource.LIVE_ROOT_ENV: self.live})
+        open(os.path.join(self.export, plugin_layout.MARKER), "w").close()
+        roots = ct.kit_roots(self.export, environ={plugin_layout.LIVE_ROOT_ENV: self.live})
         self.assertEqual(roots, {self.norm(self.export), self.norm(self.top), self.norm(self.live)})
         other = os.path.join(self.top, "0.4.0-main.9", "tools", "daily_full.py")
         self.assertEqual(len(ct.judge([task(r"\x", "python.exe", '"%s"' % other)], roots=roots)), 1)
@@ -141,7 +142,7 @@ class KitRoots(unittest.TestCase):
         os.makedirs(os.path.join(main, ".git"))
         os.makedirs(os.path.join(main, "tools"))
         open(os.path.join(main, "kit.json"), "w").close()
-        with open(os.path.join(self.export, pluginsource.MARKER), "w", encoding="utf-8") as fh:
+        with open(os.path.join(self.export, plugin_layout.MARKER), "w", encoding="utf-8") as fh:
             json.dump({"checkout": main.replace("\\", "/")}, fh)
         roots = ct.kit_roots(self.export, environ={})
         self.assertEqual(roots, {self.norm(self.export), self.norm(self.top), self.norm(main)})

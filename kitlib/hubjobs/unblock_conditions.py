@@ -39,7 +39,7 @@ Where each condition is read: a to-do, question or approval, the hub store's doc
 os.replace, so a read sees a whole document); a record, the named repository's store (closed: gone
 from it, with a commit that removed it: a file missing with no commit is not closed); a path,
 the file system; a plugin folder, the plugin
-export root (kitlib.pluginsource settings, `export_dir`).
+export root (kitlib.pluginsource.layout settings, `export_dir`).
 
 Outcomes (kitlib.hubsite.jobs): nothing met is a skip; an unblock is a success whose note names
 the records. A store that cannot be read, or a write the store refused, is a failure once the
@@ -372,9 +372,9 @@ class RecordReader(object):
 
 def plugin_root(home):
     """The plugin export root, or None when it cannot be told."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     try:
-        return pluginsource.load(home).export_dir
+        return plugin_layout.load(home).export_dir
     except Exception:                   # noqa: BLE001 - a bad config: plugin conditions wait
         return None
 

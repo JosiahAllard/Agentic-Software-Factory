@@ -821,9 +821,9 @@ class SetupCheckCase(CliCase):
         self.assertNotIn('access keys:', out)
 
     def test_kit_copies_that_cannot_be_looked_at_are_not_ready(self):
-        from kitlib import pluginsource
-        with mock.patch.object(pluginsource, 'load',
-                               side_effect=pluginsource.RefreshError('no export root set')):
+        from kitlib.pluginsource import layout as plugin_layout
+        with mock.patch.object(plugin_layout, 'load',
+                               side_effect=plugin_layout.RefreshError('no export root set')):
             code, out, err = self.check()
         self.assertEqual((code, err), (1, ''))
         self.assertIn('kit copies: cannot look: no export root set', out)
@@ -831,11 +831,11 @@ class SetupCheckCase(CliCase):
         self.assertIn('NOT READY: the kit copies could not be looked at', out)
 
     def test_an_account_install_whose_folder_is_gone_says_to_refresh_that_account(self):
-        from kitlib import pluginsource
         self.export('aaaaaaaaaaaa', self.NEW, current=True)
         gone = os.path.join(self.home, 'acct', 'plugins', 'cache', 'pm-kit', 'pm-kit', '0.1')
         acct = os.path.join(self.home, 'acct')
-        with mock.patch.object(pluginsource, 'installs', lambda: [(gone, acct)]):
+        from kitlib.pluginsource import state as plugin_state
+        with mock.patch.object(plugin_state, 'installs', lambda: [(gone, acct)]):
             code, out, err = self.check()
         self.assertEqual((code, err), (1, ''))
         self.assertIn('%s (installed in %s): cannot tell: the folder is missing: refresh that '

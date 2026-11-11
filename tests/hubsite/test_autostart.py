@@ -10,7 +10,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import autostart
 from kitlib.proc import spawn
@@ -91,7 +91,7 @@ class Install(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, True)
         export = os.path.join(tmp, '0123456789ab')
         os.makedirs(os.path.join(export, 'tools'))
-        with open(os.path.join(export, pluginsource.MARKER), 'w') as f:
+        with open(os.path.join(export, plugin_layout.MARKER), 'w') as f:
             f.write('{}')
         export_hub = os.path.join(export, 'tools', 'hub.py')
         isfile = present
@@ -381,7 +381,7 @@ class Linux(unittest.TestCase):
         for wt in WORKTREE_HUB:
             self.assertIn('not a worktree', autostart.refusals(wt, self.py, present, run, {})[0])
         os.makedirs(self.kit)
-        with open(os.path.join(self.kit, pluginsource.MARKER), 'w') as f:
+        with open(os.path.join(self.kit, plugin_layout.MARKER), 'w') as f:
             f.write('{}')
         with self.assertRaises(autostart.AutostartError):
             self.install(run)

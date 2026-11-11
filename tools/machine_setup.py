@@ -85,7 +85,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib import machinesetup                                     # noqa: E402
-from kitlib import pluginsource                                     # noqa: E402
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import user as kuser                             # noqa: E402
 from kitlib.machinesetup import delegation as mdelegation           # noqa: E402
 from kitlib.machinesetup import owner as mowner                     # noqa: E402
@@ -156,7 +156,7 @@ def main(argv=None):
         return machinesetup.EXIT_USAGE if e.code else 0
     safe_stdout()
     if a.kit is None:                                       # an export stands for its main checkout
-        a.kit, why = pluginsource.default_kit(KIT)
+        a.kit, why = plugin_layout.default_kit(KIT)
         if a.kit is None:
             sys.stderr.write('machine_setup.py: REFUSED: %s\n' % why)
             return machinesetup.EXIT_REFUSED

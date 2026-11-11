@@ -11,7 +11,8 @@ import unittest
 from unittest import mock
 
 from hosts.claude.adapter.host import ADAPTER
-from kitlib import agentstart, pluginsource
+from kitlib import agentstart
+from kitlib.pluginsource import layout as plugin_layout, prune as plugin_prune
 from kitlib.config import user
 from kitlib.hookrun import headerfollow, main as hookrun
 from tests import gitfixture
@@ -26,7 +27,7 @@ class Follow(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         for name in (OLD, NEW, NEWER):
             os.makedirs(os.path.join(self.root, name))
-            with open(os.path.join(self.root, name, pluginsource.MARKER), 'w') as fh:
+            with open(os.path.join(self.root, name, plugin_layout.MARKER), 'w') as fh:
                 fh.write('{}')
         self.payload = {'session_id': 'abc-123'}
 
@@ -69,7 +70,7 @@ class Follow(unittest.TestCase):
 
     def test_a_session_whose_old_folder_is_gone_is_told_at_once(self):
         headerfollow.note(self.kit(OLD), self.payload, event='SessionStart')
-        os.rename(self.kit(OLD), self.kit(OLD) + pluginsource.CLAIM + '42')     # prune's claim
+        os.rename(self.kit(OLD), self.kit(OLD) + plugin_prune.CLAIM + '42')     # prune's claim
         line = headerfollow.line('C:/kit', self.payload, current=self.kit(NEW))
         self.assertIn(NEW, line)
         self.assertEqual(self.record(), os.path.normpath(self.kit(NEW)))
@@ -149,7 +150,7 @@ class SubagentStart(unittest.TestCase):
         self.old, self.new = (os.path.join(self.plugin, n) for n in (OLD, NEW))
         for folder in (self.old, self.new):
             os.makedirs(folder)
-            self.write(os.path.join(folder, pluginsource.MARKER), {'checkout': self.checkout})
+            self.write(os.path.join(folder, plugin_layout.MARKER), {'checkout': self.checkout})
             self.write(os.path.join(folder, 'kit.json'), {'version': '1.0.0'})
         os.makedirs(os.path.join(self.plugin, '.claude-plugin'))
         self.write(os.path.join(self.plugin, '.claude-plugin', 'marketplace.json'),

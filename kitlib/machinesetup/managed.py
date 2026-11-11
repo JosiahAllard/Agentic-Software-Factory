@@ -129,11 +129,11 @@ def merge(base, over):
 
 def stable_kit(kit):
     """The kit folder the managed file names for `kit`: `kit` itself, or, for a plugin export
-    (kitlib.pluginsource MARKER), the main checkout its marker records (pluginsource.default_kit),
+    (kitlib.pluginsource.layout MARKER), the main checkout its marker records (pluginsource.layout.default_kit),
     since every plugin refresh replaces the export folder. ManagedError for an export whose
     checkout has moved or gone."""
-    from kitlib import pluginsource as ps
-    got, why = ps.default_kit(kit)
+    from kitlib.pluginsource import layout as plugin_layout
+    got, why = plugin_layout.default_kit(kit)
     if got is None:
         raise ManagedError('%s (a plugin export is replaced at every plugin refresh, so the managed '
                            'settings name the kit checkout)' % why)
@@ -160,8 +160,8 @@ def _guard_hook(ctx):
 
 
 def _plugin_export(ctx):
-    from kitlib import pluginsource as ps
-    return ps.load(ctx.home, kit=ctx.kit).export_dir
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.load(ctx.home, kit=ctx.kit).export_dir
 
 
 def _substitute(data, values):

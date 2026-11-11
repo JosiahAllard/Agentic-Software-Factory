@@ -1,10 +1,13 @@
-"""kitlib.roster: render docs/ROSTER.md's tables from content/roles and each host's tier -> model map.
+"""kitlib.roster: render docs/ROSTER.md's tables from content/roles and each host's model maps.
+
+The maps passed in are {host: (tier -> model, role -> model)}: each host's tier map and the roles
+it runs on a model other than their tier's (hosts.json `tiers` and `role_models`).
 
 The role files are the one roster (docs/multi-host-plan.md section 7, decision 17): a role is added
 or removed with one file and a render. ROSTER.md is prose the owner writes, with two rendered
 regions, each between a start marker and END:
   <!-- rendered: roles -->      | role | tier | effort | use for |, one row per role file, by name:
-                                its `tier` (with any `model.<host>` override: tier_cell), its
+                                its `tier` (with each host's role_models entry: tier_cell), its
                                 `effort` (`-` for none) and its `summary` (else its description)
   <!-- rendered: tiers -->      | tier | <host> | ... |, one row per tier, one column per host
                                 (the tier maps passed in: kitlib names no host)
@@ -29,26 +32,28 @@ def _cell(text):
     return ' '.join(text.split()).replace('|', '\\|')
 
 
-def roles_table(content):
-    """The role table's lines for Content `content`, by role name."""
+def roles_table(content, maps=None):
+    """The role table's lines for Content `content`, by role name; `maps` as render's."""
     out = ['| role | tier | effort | use for |', '|---|---|---|---|']
     for r in sorted(content.roles, key=lambda r: r.name):
-        out.append('| %s | %s | %s | %s |' % (r.name, tier_cell(r), r.effort or NONE, _cell(r.summary or r.description)))
+        out.append('| %s | %s | %s | %s |' % (r.name, tier_cell(r, maps or {}), r.effort or NONE,
+                                             _cell(r.summary or r.description)))
     return out
 
 
-def tier_cell(role):
-    """A role's tier cell: its tier, then each host's model override, by host: `deep (claude: fable)`."""
-    over = ', '.join('%s: %s' % hm for hm in sorted(role.models))
+def tier_cell(role, maps):
+    """A role's tier cell: its tier, then each host's role_models entry for it, by host:
+    `deep (claude: fable)`."""
+    over = ', '.join('%s: %s' % (h, maps[h][1][role.name]) for h in sorted(maps) if role.name in maps[h][1])
     return _cell('%s (%s)' % (role.tier, over) if over else role.tier)
 
 
-def tiers_table(tier_maps):
-    """The tier table's lines for `tier_maps` ({host: {tier: model}}), hosts by name."""
-    hosts = sorted(tier_maps)
+def tiers_table(maps):
+    """The tier table's lines for `maps` (render's), hosts by name."""
+    hosts = sorted(maps)
     out = ['| tier | %s |' % ' | '.join(hosts), '|---|%s' % ('---|' * len(hosts))]
     for tier in TIERS:
-        out.append('| %s | %s |' % (tier, ' | '.join(_cell(tier_maps[h].get(tier, NONE)) for h in hosts)))
+        out.append('| %s | %s |' % (tier, ' | '.join(_cell(maps[h][0].get(tier, NONE)) for h in hosts)))
     return out
 
 
@@ -56,7 +61,7 @@ def render(text, content, tier_maps, source=ROSTER_REL):
     """`text` (ROSTER.md) with its rendered regions remade; ContentError naming `source` when a
     region's markers are missing, repeated or out of order."""
     nl = '\r\n' if '\r\n' in text else '\n'
-    for name, lines in ((ROLES, roles_table(content)), (TIER_TABLE, tiers_table(tier_maps))):
+    for name, lines in ((ROLES, roles_table(content, tier_maps)), (TIER_TABLE, tiers_table(tier_maps))):
         start = START % name
         pat = re.compile(r'^%s[ \t]*\r?\n.*?^%s(?=[ \t]*\r?$)' % (re.escape(start), re.escape(END)), re.M | re.S)
         found = pat.findall(text)

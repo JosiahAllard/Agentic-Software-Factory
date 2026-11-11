@@ -354,6 +354,9 @@ class HostConformance(object):
     def test_the_renderer_maps_tiers_as_hosts_json_does(self):
         self.assertEqual(self.renderer().tier_models(), dict(self.entry.tiers))
 
+    def test_the_renderer_maps_roles_as_hosts_json_does(self):
+        self.assertEqual(self.renderer().role_models(), dict(self.entry.role_models))
+
     def test_the_committed_shell_is_what_the_renderer_writes(self):
         r = self.renderer()
         self.assertEqual(kcontent.drift(self.KIT_ROOT, [r]), [],

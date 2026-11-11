@@ -250,11 +250,14 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(r.newline, '\r\n')
         self.assertEqual(r.body, 'body\r\n')
 
-    def test_a_model_override_beats_the_tier(self):
-        r = hc.parse_role(BETA.replace(b'tier: deep\n', b'tier: deep\nmodel.claude: sonnet\n'))
-        self.assertEqual(r.models, (('claude', 'sonnet'),))
-        self.assertEqual(r.model_for('claude', {'deep': 'opus'}), 'sonnet')
-        self.assertEqual(r.model_for('other', {'deep': 'big'}), 'big')
+    def test_a_role_models_entry_beats_the_tier(self):
+        r = hc.parse_role(BETA)
+        self.assertEqual(r.model_for({'deep': 'opus'}, {'beta': 'sonnet'}), 'sonnet')
+        self.assertEqual(r.model_for({'deep': 'big'}, {'other': 'sonnet'}), 'big')
+
+    def test_a_role_file_names_no_model(self):
+        with self.assertRaisesRegex(hc.ContentError, 'unknown key model.x'):
+            hc.parse_role(BETA.replace(b'tier: deep\n', b'tier: deep\nmodel.x: sonnet\n'))
 
     def test_refusals(self):
         for old, new in ((b'tier: standard', b'tier: huge'), (b'sandbox: workspace-write', b'sandbox: open'),
@@ -378,14 +381,15 @@ class ClaudeRendererTest(unittest.TestCase):
         self.assertIn(b'\nmodel: sonnet\neffort: low\nautoCompactWindow: 170000\n---\n', got)
 
     def test_long_context_model_names_the_roles_own_model(self):
-        """{{long_context_model}} names the role's model: its model.claude override, else its tier's."""
-        own = BETA.replace(b'---\nbody', b'model.claude: fable\n---\nuse {{long_context_model}}', 1)
+        """{{long_context_model}} names the role's model: its role_models entry, else its tier's."""
+        own = BETA.replace(b'---\nbody', b'---\nuse {{long_context_model}}', 1)
         self.assertNotEqual(own, BETA)
-        got = claude_content.renderer().render(self.content(own))['hosts/claude/shell/agents/beta.md']
+        r = claude_content.renderer()
+        got = r.agent_file(hc.parse_role(own), ('beta',), role_models={'beta': 'fable'})
         self.assertIn(b'\nmodel: fable\n', got)
         self.assertIn(b'use the 1M-context fable model', got)
-        plain = BETA.replace(b'---\nbody', b'---\nuse {{long_context_model}}', 1)
-        got = claude_content.renderer().render(self.content(plain))['hosts/claude/shell/agents/beta.md']
+        got = r.agent_file(hc.parse_role(own), ('beta',), role_models={})
+        self.assertIn(b'\nmodel: opus\n', got)
         self.assertIn(b'use the 1M-context opus model', got)
 
     def test_the_real_deep_worker_runs_fable_and_the_consultant_opus(self):
@@ -397,6 +401,7 @@ class ClaudeRendererTest(unittest.TestCase):
                 self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
                 self.assertIn('the 1M-context %s model' % model, got)
         self.assertEqual(dict(registry.host('claude').tiers)['deep'], 'opus')
+        self.assertEqual(dict(registry.host('claude').role_models), {'deep-worker': 'fable'})
 
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))

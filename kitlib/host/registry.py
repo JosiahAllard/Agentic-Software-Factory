@@ -24,8 +24,9 @@ their own. Each call reads the file again: it is small, and a cache would outliv
 
 An entry: {"adapter": "<module>", "shell": "<repo path>", "platforms": ["windows", ...],
 "capabilities": {...}, "profile": {...}, "hook": {...},
-"tiers": {"light", "standard", "strong", "deep" -> model}} and, on exactly one host,
-"default": true. The profile's "process_names" is per platform ({"windows": [...], "linux": [...]},
+"tiers": {"light", "standard", "strong", "deep" -> model}}, optionally "role_models": {role -> model}
+(a role this host runs on that model, not its tier's: kitlib.host.content Role.model_for; each a
+role name, tests/host check each is a role file) and, on exactly one host, "default": true.The profile's "process_names" is per platform ({"windows": [...], "linux": [...]},
 one entry for each of the host's "platforms"); its HostProfile carries the whole map as
 ((platform, images), ...), and process_names() reads the running platform's list of each
 (kitlib.platform.NAME, imported only then), so loading the registry needs no kitlib.platform.
@@ -69,6 +70,7 @@ _TRAILER_KEY = re.compile(r'[A-Za-z][A-Za-z0-9-]*\Z')
 _EMAIL = re.compile(r'[^\s<>@]+@[^\s<>@]+\Z')
 _MODULE = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z')
 _KEYS = {'adapter', 'shell', 'platforms', 'capabilities', 'profile', 'hook', 'tiers'}
+_OPTIONAL_KEYS = {'default', 'role_models'}
 # How boot/hook.py's fast path may skip a call to a tool not in guarded_tools: in every session
 # ("all"), or never ("none"), for a host whose every call the guard must see (one whose hooks cannot
 # tell a subagent apart: its chats are never the owner, so no session of it may skip the guard).
@@ -104,7 +106,8 @@ class HookSpec:
 @dataclass(frozen=True)
 class Host:
     """One registry entry. `adapter` is a module name, never imported here; `tiers` is
-    ((tier, model), ...) in TIERS order; `platforms` the PLATFORMS it runs on, in file order."""
+    ((tier, model), ...) in TIERS order; `role_models` ((role, model), ...) by role, () when none;
+    `platforms` the PLATFORMS it runs on, in file order."""
     name: str
     adapter: str
     shell: str
@@ -114,6 +117,7 @@ class Host:
     hook: HookSpec
     tiers: tuple
     default: bool = False
+    role_models: tuple = ()
 
 
 def _pairs(items):
@@ -301,9 +305,9 @@ def _profile(name, raw, platforms):
 def _entry(name, raw):
     if not isinstance(name, str) or not _NAME.match(name):
         raise RegistryError('hosts.json: host name %r must be lowercase letters, digits and -' % (name,))
-    if not isinstance(raw, dict) or not _KEYS <= set(raw) <= _KEYS | {'default'}:
-        raise RegistryError('hosts.json: %s must have the keys %s (and optionally default)'
-                            % (name, ', '.join(sorted(_KEYS))))
+    if not isinstance(raw, dict) or not _KEYS <= set(raw) <= _KEYS | _OPTIONAL_KEYS:
+        raise RegistryError('hosts.json: %s must have the keys %s (and optionally %s)'
+                            % (name, ', '.join(sorted(_KEYS)), ', '.join(sorted(_OPTIONAL_KEYS))))
     adapter = _text(name + '.adapter', raw['adapter'])
     if not _MODULE.match(adapter):
         raise RegistryError('hosts.json: %s.adapter must be a dotted module name' % name)
@@ -316,7 +320,18 @@ def _entry(name, raw):
     return Host(name, adapter, _relpath(name + '.shell', raw['shell']), platforms,
                 capabilities, _profile(name, raw['profile'], platforms), _hook(name, raw['hook'], capabilities),
                 tuple((t, _text('%s.tiers.%s' % (name, t), tiers[t])) for t in TIERS),
-                _flag(name + '.default', raw.get('default', False)))
+                _flag(name + '.default', raw.get('default', False)),
+                _role_models(name + '.role_models', raw.get('role_models', {})))
+
+
+def _role_models(where, value):
+    """((role, model), ...) by role: each key a role name, each value a model."""
+    if not isinstance(value, dict):
+        raise RegistryError('hosts.json: %s must be an object of role name -> model' % where)
+    for role in value:
+        if not _NAME.match(role):
+            raise RegistryError('hosts.json: %s: %r is not a role name' % (where, role))
+    return tuple(sorted((r, _text('%s.%s' % (where, r), m)) for r, m in value.items()))
 
 
 def load(path=None):

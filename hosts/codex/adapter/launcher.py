@@ -118,7 +118,7 @@ def plan(role, cwd, name, brief, model=None, effort=None, kit=None, classify=Non
         raise ValueError('a brief is non-empty and at most %d characters' % MAX_BRIEF)
     argv = [native_codex(codex_exe), '--no-daemon', 'exec', '--json', '--cd', str(cwd), '--sandbox',
             codex_content.sandbox_mode(r)]
-    chosen = model or r.model_for(HOST, codex_content.renderer().tier_models())
+    chosen = model or codex_content.role_model(r)
     if chosen != codex_content.ACCOUNT_DEFAULT:
         if not isinstance(chosen, str) or not chosen.strip() or any(c in chosen for c in '\r\n\x00'):
             raise ValueError('invalid model')

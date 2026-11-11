@@ -67,7 +67,7 @@ class Deep(Base):
     def test_command_has_agent_model_effort_window_and_name(self):
         out = self.deep()
         self.assertIn('Would open a new window running:', out)
-        # the deep-worker role's own Claude model (content/roles/deep-worker.md model.claude), not the deep tier's
+        # the deep-worker role's own Claude model (hosts.json claude role_models), not the deep tier's
         self.assertIn("claude --agent pm-kit:deep-worker --model 'fable' --effort xhigh --autocompact 500000 "
                       "--permission-mode auto --remote-control 'deep-net-race' -n 'deep-net-race' ", out)
         self.assertIn("$Host.UI.RawUI.WindowTitle = 'deep-net-race'", out)

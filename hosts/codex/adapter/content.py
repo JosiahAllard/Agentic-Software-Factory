@@ -2,8 +2,8 @@
 
 Each role becomes `hosts/codex/shell/agents/kit-<name>.toml`, a Codex agent definition: a header
 comment opening with the generated-file line (kitlib.host.content.banner), then `name` (kit-<name>,
-hosts.json agent_name_format), `description`, `model` (the role's
-`model.codex` override, else hosts.json's model for its tier; no line for ACCOUNT_DEFAULT, so the account's
+hosts.json agent_name_format), `description`, `model` (hosts.json's Codex `role_models` model for
+the role, else its model for the role's tier; no line for ACCOUNT_DEFAULT, so the account's
 configured model runs, as the Codex branch's roles.json had it), `model_reasoning_effort` (the
 role's effort, else TIER_EFFORT of its tier), `sandbox_mode` (read-only for a read or lander
 role, else the role's `sandbox`: sandbox_mode) and
@@ -177,6 +177,17 @@ def tokens(registry_path=None):
     return out
 
 
+def role_model(role):
+    """The model Codex runs `role` on (Role.model_for over hosts.json's Codex maps)."""
+    host = registry.host(HOST)
+    return role.model_for(dict(host.tiers), dict(host.role_models))
+
+
+def role_tokens(role):
+    """tokens() for `role`'s file: {{long_context_model}} names the model this role runs on."""
+    return dict(tokens(), long_context_model=model_phrase(role_model(role)))
+
+
 def prose_models():
     """{tier: how prose names its model} for {{model:<tier>}}."""
     return {t: tier_phrase(t, m) for t, m in registry.host(HOST).tiers}
@@ -219,7 +230,7 @@ def substitute_body(role, names):
     """The developer instructions of `role` on Codex: its body with the tokens filled, the newline
     that ends the front matter dropped. `names` are every role's name (for role tokens)."""
     src = '%s/kit-%s.toml' % (AGENTS_REL, role.name)
-    body = substitute(role.body, tokens(), agent_name, names, src, models=prose_models(), tools=TOOLS)
+    body = substitute(role.body, role_tokens(role), agent_name, names, src, models=prose_models(), tools=TOOLS)
     return body[len(role.newline):] if body.startswith(role.newline) else body
 
 
@@ -229,6 +240,10 @@ class CodexContent:
     def tier_models(self):
         """hosts.json's Codex `tiers`: the one tier -> model map."""
         return dict(registry.host(HOST).tiers)
+
+    def role_models(self):
+        """hosts.json's Codex `role_models`: the roles it runs on a model other than their tier's."""
+        return dict(registry.host(HOST).role_models)
 
     def owned(self):
         return (AGENTS_REL,)
@@ -254,7 +269,7 @@ class CodexContent:
         """[(key, value)] of what `role`'s agent file runs it with, in the file's order: `model`
         (none for ACCOUNT_DEFAULT: the account's model runs), `model_reasoning_effort` and
         `sandbox_mode`. No tool list: a Codex agent file has none."""
-        model = role.model_for(HOST, self.tier_models())
+        model = role.model_for(self.tier_models(), self.role_models())
         if sandbox_mode(role) not in ('read-only', 'workspace-write'):
             raise ContentError('%s: no Codex sandbox_mode for %s' % (self.role_path(role.name), role.sandbox))
         out = [('model', model)] if model != ACCOUNT_DEFAULT else []
@@ -264,7 +279,7 @@ class CodexContent:
     def agent_file(self, role, names):
         """The bytes of `role`'s agent file; `names` are every role's name (for role tokens)."""
         src = self.role_path(role.name)
-        values = tokens()
+        values = role_tokens(role)
         fill = lambda text: substitute(text, values, agent_name, names, src, models=prose_models(),  # noqa: E731
                                        tools=TOOLS)
         nl = role.newline

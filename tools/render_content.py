@@ -54,11 +54,6 @@ def renderers(hosts=None):
     return [_host.adapter_module(h).ADAPTER.content().renderer() for h in sorted(hosts or RENDERERS)]
 
 
-def tier_maps():
-    """{host: {tier: model}} of every host in RENDERERS: docs/ROSTER.md's tier table."""
-    return {r.host: r.tier_models() for r in renderers()}
-
-
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
@@ -71,7 +66,7 @@ def main(argv=None, out=None):
             return USAGE
     try:
         rs = renderers(a.host)
-        tiers = tier_maps()
+        tiers = _host.model_maps(renderers())
         if a.write:
             paths = content.write(root, rs, tiers=tiers)
             for p in paths:

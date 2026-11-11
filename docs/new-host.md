@@ -27,6 +27,7 @@ checks the whole file, and one bad field refuses all of it. The fake host's entr
 | `platforms` | The operating systems it runs on, such as `["windows", "linux"]`. The renderer writes one hook manifest for each (`hooks.json` for Windows, `hooks.<platform>.json` beside it for the others), each command line from `kitlib.host.hookmain.manifest_command` for that platform's interpreter (docs/content.md "Manifests"). |
 | `default` | Leave it out. Exactly one host is the default, and it is `claude`. |
 | `tiers` | `light`, `standard`, `strong` and `deep`, each mapped to the host's model id (docs/ROSTER.md) |
+| `role_models` | Optional. `{"<role>": "<model id>"}`: a role this host runs on that model instead of its tier's (`Role.model_for`; each key a role file's name). Leave it out when every role runs its tier's model. |
 
 `capabilities` says what the host's hooks can carry. The core uses it to degrade one way for every host:
 

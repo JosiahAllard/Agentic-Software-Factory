@@ -80,6 +80,7 @@ KIT_AGENTS = tuple(r.name for r in kcontent.roster(KIT))
 # the guard's role policy reads the same table (kitlib.content.ALIASES)
 AGENT_ALIASES = kcontent.ALIASES
 LONG_MODEL = 'opus[1m]'          # a consultant's; a deep-worker runs its role's own model (deep_model)
+CLI_HOST = 'claude'              # the host whose CLI every launch starts (window.claude_command)
 # a consultant's notes file: <agent temp>/<repo>-consultant/notes.md (consultant_notes_path), outside
 # the repository, so the write jail leaves it open in a home worktree. The agent-temp sweep keeps any
 # <name>-consultant and <name>-coordinator folder (optional/agenttemp/agent_temp_sweep.py BUILT_IN_KEEP);
@@ -406,11 +407,12 @@ def _check_path(flag, path):
 
 
 def deep_model():
-    """The model a deep-worker starts on: its role file's for the default host (its `model.<host>`,
-    else hosts.json's model for its tier: kitlib.content.role_model). Unreadable is a LaunchError."""
+    """The model a deep-worker starts on: CLI_HOST's for that role (hosts.json's `role_models`
+    entry, else its model for the role's tier: kitlib.content.role_model). Unreadable is a
+    LaunchError."""
     try:
-        name = registry.default()
-        model = kcontent.role_model(window.DEEP_WORKER, name, dict(registry.host(name).tiers), KIT)
+        host = registry.host(CLI_HOST)
+        model = kcontent.role_model(window.DEEP_WORKER, dict(host.tiers), dict(host.role_models), KIT)
     except registry.RegistryError as e:
         raise LaunchError('deep: %s; nothing was started.' % e) from None
     if not model:

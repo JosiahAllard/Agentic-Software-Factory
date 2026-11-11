@@ -13,7 +13,7 @@ renderer that also has `manifests(kit, content)` (a host's plugin manifests, whi
 version) is asked for those files too, and they are checked and written like the rest.
 
 The renderers are passed in: this package names no host and imports none (the host is chosen at
-the edge, tools/render_content.py). Given `tiers` ({host: {tier: model}}, every host's, whichever
+the edge, tools/render_content.py). Given `tiers` ({host: (tier -> model, role -> model)}, every host's, whichever
 renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.roster), so the roster is
 checked and written like the host files. Pure file work: no printing, no exit.
 
@@ -24,7 +24,7 @@ The launcher's KIT_AGENTS and the backlog policy's groups (kitlib.backlog.roles)
 `names_of(name)` is a role's name with its old or new one (ALIASES). `role_modes(kit)` is {role: mode} from the role files under the kit root `kit`, for the guard's
 role policy (docs/guard-jail-roles.md "Role policy"); `role_mode(name, kit)` one role's, an old name
 (ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names;
-`role_model(name, host, tiers, kit)` the model a host runs it on (the launcher's deep-worker). These and
+`role_model(name, tiers, role_models, kit)` the model a host runs it on (the launcher's deep-worker). These and
 roster share one read of the role files per kit root, cached, so the guard's hook path parses
 them once. None raises: no `content/roles` folder gives {}, and a role file that cannot be read
 or parsed is left out, so the policy is off for that role rather than the guard failing.
@@ -183,12 +183,12 @@ def role_writes(name, kit):
     return role.writes if role else ()
 
 
-def role_model(name, host, tiers, kit):
-    """The model `host` runs role `name` on (Role.model_for: its `model.<host>`, else `tiers`, the
-    host's tier -> model map, at its tier), from its role file under `kit`; None when it has no
-    readable file."""
+def role_model(name, tiers, role_models, kit):
+    """The model a host runs role `name` on (Role.model_for: its entry in `role_models`, the host's
+    role -> model map, else `tiers`, its tier -> model map, at the role's tier), from the role file
+    under `kit`; None when it has no readable file."""
     role = _roles(kit).get(ALIASES.get(name, name))
-    return role.model_for(host, tiers) if role else None
+    return role.model_for(tiers, role_models) if role else None
 
 
 def load(root):
@@ -200,7 +200,7 @@ def render(root, renderers, content=None, tiers=None):
     """{repo-relative posix path: bytes} of every file the renderers write: render(content), the
     manifests(kit, content) of a renderer with them, and the vendored(root) copies of kit files a
     renderer's plugin ships (read from `root`, so a copy that drifts from its source is drift); two
-    renderers writing one path is a ContentError. With `tiers` ({host: {tier: model}}), also
+    renderers writing one path is a ContentError. With `tiers` ({host: (tier -> model, role -> model)}), also
     `<root>/docs/ROSTER.md` with its tables rendered (kitlib.roster)."""
     content = load(root) if content is None else content
     out = {}

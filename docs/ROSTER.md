@@ -48,8 +48,8 @@ standard tier (Claude: `model: sonnet`).
 ## Tier to model, per host
 
 Each host maps a tier to a model in `hosts.json` `tiers`, which its renderer's `tier_models()` returns;
-the table below is rendered from it. A role file may name a different model for one
-host (`model.<host>:`, docs/content.md), shown in brackets after its tier in the role table:
+the table below is rendered from it. A host may run one role on a different
+model (`hosts.json` `role_models`, docs/new-host.md), shown in brackets after its tier in the role table:
 deep-worker runs `fable` on Claude by owner decision, while the consultant keeps the `deep` tier's model.
 
 <!-- rendered: tiers -->

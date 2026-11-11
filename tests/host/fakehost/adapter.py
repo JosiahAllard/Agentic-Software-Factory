@@ -67,6 +67,9 @@ class FakeContent(object):
     def tier_models(self):
         return dict(registry.host(NAME).tiers)
 
+    def role_models(self):
+        return dict(registry.host(NAME).role_models)
+
     def owned(self):
         return (AGENTS_REL,)
 
@@ -86,7 +89,7 @@ class FakeContent(object):
         return '%s/%s.json' % (AGENTS_REL, name)
 
     def settings(self, role):
-        return [('model', role.model_for(NAME, self.tier_models())), ('sandbox', role.sandbox)]
+        return [('model', role.model_for(self.tier_models(), self.role_models())), ('sandbox', role.sandbox)]
 
     def manifests(self, kit, content, registry_path=None):
         entry = registry.host(NAME, registry_path)

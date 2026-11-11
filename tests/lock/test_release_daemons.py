@@ -19,6 +19,8 @@ from tests.platforms import windows_only
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_end
+    from kitlib.lock import run_held
     from kitlib.proc import process
 
 # Starts a "daemon" and a plain leftover that outlive it, writes "<pid> <ctime>" of each (read
@@ -143,7 +145,7 @@ class ReleaseStopsDaemons(ReleaseCase):
         the run around it is not a gate and leaves them."""
         parent = {"id": "r-outer", "pid": os.getpid(), "ctime": 0, "kind": "engine-test",
                   "shares": {}, "has": {"cpu": 1}, "cores": [0], "gpus": []}
-        env = clean_env(**{rm.NEST_ENV: "r-outer:%d:0" % os.getpid()})
+        env = clean_env(**{run_held.NEST_ENV: "r-outer:%d:0" % os.getpid()})
         with mock.patch.object(rm, "nest_check", return_value=(parent, None)):
             daemon, plain = self.run_leaving(env=env, gate=True)
         self.own(plain)
@@ -405,7 +407,7 @@ class ReleaseLeavesASharedDaemon(ReleaseCase):
         c = self.outside_client()
         s, p = self.book_shared("outside", "worker", "plain", "stay")
         daemon, _, plain = self.shared_pids()
-        self.assertTrue(rm.request_stop(self.store, s.id, "test"))
+        self.assertTrue(run_end.request_stop(self.store, s.id, "test"))
         code, how = s.wait(p)
         s.release(code, how)
         self.assertEqual((code, how), (1, "cancelled"))
@@ -431,7 +433,7 @@ class ReleaseLeavesASharedDaemon(ReleaseCase):
             if len(calls) == 2:
                 raise KeyboardInterrupt
             return real(pid, ct, code)
-        self.assertTrue(rm.request_stop(self.store, s.id, "test"))
+        self.assertTrue(run_end.request_stop(self.store, s.id, "test"))
         with mock.patch.object(process, "terminate_verified", interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 s.wait(p)
@@ -518,7 +520,7 @@ class ReleaseLeavesASharedDaemon(ReleaseCase):
         recorded "not judged", never "left", and spared while it runs; the rest is ended."""
         c = self.outside_client()
         s, p = self.book_shared("outside", "worker", "plain")
-        with mock.patch.object(rm.daemons, "stop", side_effect=RuntimeError("boom")):
+        with mock.patch.object(run_end.daemons, "stop", side_effect=RuntimeError("boom")):
             self.errored(s, p)
         daemon, _, plain = self.shared_pids()
         self.connected(c)
@@ -670,7 +672,7 @@ class ReleaseLeavesASharedDaemon(ReleaseCase):
         c = self.outside_client()
         s, p = self.book_shared("outside", "worker", "plain", "stay")
         daemon, _, plain = self.shared_pids()
-        real_stop, judged = rm.daemons.stop, []
+        real_stop, judged = run_end.daemons.stop, []
         first = (4, "kotlin-daemon", "killed")
 
         def stop(found, contains):
@@ -679,8 +681,8 @@ class ReleaseLeavesASharedDaemon(ReleaseCase):
 
         def interrupted(pid, ct, code=1):   # the first pass's first kill: Ctrl+C
             raise KeyboardInterrupt
-        self.assertTrue(rm.request_stop(self.store, s.id, "test"))
-        with mock.patch.object(rm.daemons, "stop", stop):
+        self.assertTrue(run_end.request_stop(self.store, s.id, "test"))
+        with mock.patch.object(run_end.daemons, "stop", stop):
             with mock.patch.object(process, "terminate_verified", interrupted):
                 with self.assertRaises(KeyboardInterrupt):
                     s.wait(p)

@@ -22,7 +22,8 @@ Low-level design of `kitlib/worktree`, `kitlib/preflight` and `kitlib/strayresto
 |---|---|
 | `worktree/new.py`, `prep.py`, `hostdirs.py` | Create; first-use prep; each host's worktree folder |
 | `worktree/classify.py`, `holders.py`, `marks.py` | Classes; what holds a tree; stale marks |
-| `worktree/remove*.py`, `sweep.py`, `task.py` | Remove (split: checks, the removal, abandon under a tag), the sweep, its scheduled task |
+| `worktree/remove_checks.py`, `remove.py`, `remove_abandon.py` | Remove: its checks; the removal and branch deletion; abandon under a tag |
+| `worktree/sweep.py`, `task.py` | The sweep, its scheduled task |
 | `worktree/scratch.py`, `quiet.py`, `overlap.py` | Scratch trees; the backlog's probes; branch overlap |
 | `preflight/` | The report and its lines, one file per line family; the board |
 | `strayrestore/` | The one check and restore |

@@ -12,7 +12,7 @@ record says (docs/maint-lint.md "Path checks").
 And whether the store and the code agree on what landed (docs/maint-lint.md "Landing checks"),
 against the code base code_base reads: the pushed main (refs/remotes/<remote>/<main>), else the
 local one. A branch has LANDED when its tip is in the base and off the base's first-parent chain
-(kitlib.worktree.remove.merged_worktrees' rule), so a fresh branch, whose tip is a base tip, never
+(kitlib.worktree.remove_checks.merged_worktrees' rule), so a fresh branch, whose tip is a base tip, never
 has.
 
   code_base(root, remote, main)        `((ref, chain, ancestors), None)` or `(None, why)`

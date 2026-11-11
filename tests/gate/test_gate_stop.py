@@ -19,6 +19,7 @@ from kitlib import gate as G
 from kitlib.gate import land, rerun, result, runner, steps, stop
 from kitlib.lock import holds as hl
 from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.lock.store import LockError, utc_now
 from kitlib.proc import process
 from kitlib.records import gate_ok, landing
@@ -503,7 +504,7 @@ class StopAfterTheSteps(StopCase):
         real = runner.window_results
 
         def windows(slot, say, seen=None):
-            lockrun.request_stop(self.store, slot.id, 'test')
+            run_end.request_stop(self.store, slot.id, 'test')
             return real(slot, say, seen)
         with mock.patch.object(runner, 'window_results', windows):
             out = runner.branch_gate(wt, full=True, log_dir=self.logs, book_kw=self.book_kw)

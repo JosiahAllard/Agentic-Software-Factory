@@ -1386,9 +1386,9 @@ class PullOnAStore(unittest.TestCase):
                            threading.Event(), create=create)
 
     def trees(self):
-        from kitlib.worktree import remove
+        from kitlib.worktree import remove_checks
         return {e['branch']: e['path']
-                for e in remove.worktree_entries(remove.worktree_listing(self.root))}
+                for e in remove_checks.worktree_entries(remove_checks.worktree_listing(self.root))}
 
     def branch(self, name):
         return self.repo.git('rev-parse', '--verify', '--quiet', 'refs/heads/' + name,

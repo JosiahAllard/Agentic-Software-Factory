@@ -25,6 +25,7 @@ if os.name == "nt":
     from kitlib.lock import holds as hl
     from kitlib.lock import release
     from kitlib.lock import run as rm
+    from kitlib.lock import run_end
     from kitlib.lock import store as st
     from kitlib.proc import process
     from kitlib.platform.windows import win32
@@ -191,7 +192,7 @@ class ReusedPid(StoreCase):
             def release(self):
                 seen.append((os.path.exists(active),
                              os.path.exists(run.store.path("ended", RID + ".json"))))
-        rm.settle(self.store, run, 0, "done", Mutex())
+        run_end.settle(self.store, run, 0, "done", Mutex())
         self.assertEqual(seen, [(False, True)])
 
     def test_settle_lets_the_run_mutex_go_when_the_record_cannot_leave_active(self):
@@ -213,7 +214,7 @@ class ReusedPid(StoreCase):
             def release(self):
                 seen.append((os.path.exists(active), os.path.exists(ended)))
         with mock.patch.object(st.os, "remove", refuse):
-            rm.settle(self.store, run, 0, "done", Mutex())
+            run_end.settle(self.store, run, 0, "done", Mutex())
         self.assertEqual(seen, [(True, True)])
         self.assertEqual(self.store.read("ended/%s.json" % RID)["state"], "ended")
         self.assertEqual([r["id"] for r in self.store.live_runs()], [RID])   # this process

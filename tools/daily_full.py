@@ -23,7 +23,7 @@ from kitlib import gate as G                                        # noqa: E402
 from kitlib.config import load as load_config                             # noqa: E402
 from kitlib.config.types import ConfigError                         # noqa: E402
 from kitlib.gate import steps as S                                  # noqa: E402
-from kitlib.worktree import remove                                  # noqa: E402
+from kitlib.worktree import remove_checks                           # noqa: E402
 
 
 def say(line):
@@ -45,7 +45,7 @@ def parse_args(argv):
 
 def load(root):
     """`(main, cfg)` of the repository holding `root`; ConfigError or GitReadError."""
-    main = remove.main_checkout(os.path.abspath(root))
+    main = remove_checks.main_checkout(os.path.abspath(root))
     return main, load_config(main)
 
 
@@ -64,7 +64,7 @@ def main(argv=None, book_kw=None):
         return G.USAGE
     try:
         top, cfg = load(a.root)
-    except (ConfigError, remove.GitReadError) as e:
+    except (ConfigError, remove_checks.GitReadError) as e:
         say('REFUSED: %s' % e)
         return G.USAGE
     s = D.settings(cfg, top)

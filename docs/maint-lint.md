@@ -112,7 +112,7 @@ Each finding carries its `worktree_remove.py` form.
 code agree on what landed, measured against the code base: the pushed
 `refs/remotes/<remote>/<main>` when the checkout has it, else `refs/heads/<main>`. A branch has
 landed when its tip is in the base and off the base's first-parent chain (the rule of
-`kitlib.worktree.remove.merged_worktrees`), so a fresh branch, whose tip is a base tip, never has.
+`kitlib.worktree.remove_checks.merged_worktrees`), so a fresh branch, whose tip is a base tip, never has.
 - `landed-still-pulled`: a pulled record whose `pulled_by` branch has landed, for every branch,
   with or without a worktree. The branch is read locally, else on the remote. The fix is a
   `close --reason "landed <merge>"`, or a `release` when that landing was one slice of the record.

@@ -19,7 +19,7 @@ from kitlib.config import ConfigError, load as load_config
 from kitlib.git import cmd
 from kitlib.config import user
 from kitlib.preflight import configline, hooks, lockline, machine, nextblock, report, settings as st
-from kitlib.worktree import remove
+from kitlib.worktree import remove_checks
 from tests import gitfixture
 from tests.home import PM_REPO_FENCE_ENV, machine_config
 from tools import preflight
@@ -519,7 +519,7 @@ class TheLeftoversLine(Fixture):
             'refs/remotes/origin/master'), out)
 
     def test_a_failure_inside_the_check_is_a_warn_line(self):
-        with mock.patch('kitlib.worktree.remove.merged_worktrees', side_effect=OSError('boom')):
+        with mock.patch('kitlib.worktree.remove_checks.merged_worktrees', side_effect=OSError('boom')):
             code, out = self.run_preflight()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.line(out, 'leftovers '), 'leftovers WARN not checked: OSError: boom')
@@ -552,8 +552,8 @@ class TheGitCalls(Fixture):
     def test_without_the_reports_worktree_list_leftovers_asks_git_itself(self):
         self.config(repo={'main_branch': 'master'})
         with mock.patch.object(report.repo, 'worktrees', return_value=(None, 'boom')), \
-                mock.patch('kitlib.worktree.remove.worktree_listing',
-                           side_effect=remove.GitReadError('no listing')):
+                mock.patch('kitlib.worktree.remove_checks.worktree_listing',
+                           side_effect=remove_checks.GitReadError('no listing')):
             code, out = self.run_preflight()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.line(out, 'leftovers '), 'leftovers WARN not checked: GitReadError: no listing')

@@ -29,7 +29,7 @@ from kitlib.loadnode import box, job, registry, remote, reply, route
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 NODE_TOOL = 'python "%s"' % os.path.join(KIT_ROOT, 'tools', 'node.py')
-NEST_ENV = 'MACHINE_LOCK_RUN'                  # kitlib.lock.run.NEST_ENV: a run inside a run
+NEST_ENV = 'MACHINE_LOCK_RUN'                  # kitlib.lock.run_held.NEST_ENV: a run inside a run
 STATUS_TIMEOUT_S = 10
 EXIT_INTERRUPTED = 130
 

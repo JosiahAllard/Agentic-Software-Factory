@@ -1,4 +1,4 @@
-"""kitlib.lock.run and the window monitor (kitlib.platform.windows.winwatch): a run watches for
+"""kitlib.lock.run_held and the window monitor (kitlib.platform.windows.winwatch): a run watches for
 console windows from its first command's start to its release, and stops watching before its job
 ends. The ended record carries what opened; run_command says the report; a gate's slot says nothing,
 the gate does (kitlib.gate.runner.gated). Most tests swap the monitor for FakeMonitor, so no window
@@ -14,6 +14,7 @@ from tests.platforms import windows_only
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.platform.windows import win32, winwatch
 
 TOOL = r"C:\x\tool.exe"
@@ -59,7 +60,7 @@ class Watch(StoreCase):
         self.confine(1)
         FakeMonitor.made, FakeMonitor.pids, FakeMonitor.error = [], [], None
         FakeMonitor.start_raises, FakeMonitor.stop_raises = None, []
-        patcher = mock.patch.object(rm.winwatch, "Monitor", FakeMonitor)
+        patcher = mock.patch.object(run_held.winwatch, "Monitor", FakeMonitor)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.said = []
@@ -128,7 +129,7 @@ class Watch(StoreCase):
         self.assertNotIn("windows", s.ended)
 
     def test_the_switch_turns_it_off(self):
-        with mock.patch.object(rm, "WATCH_WINDOWS", False):
+        with mock.patch.object(run_held, "WATCH_WINDOWS", False):
             with self.book() as s:
                 self.finish(s, self.child(s))
         self.assertEqual(FakeMonitor.made, [])

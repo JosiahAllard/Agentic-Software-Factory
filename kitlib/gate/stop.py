@@ -19,12 +19,12 @@ comes from its lock record alone, and nothing is ended that the record does not 
                              its running result record is finished `error` (finish_dead)
 
 A live run is stopped the way the lock stops any run (api.end_run): its own process ends its tree
-(kitlib.lock.run.Slot.wait), starts no further step, releases its lock as `cancelled` and writes
-its result record, `stopped` (kitlib.gate.runner.stopped_outcome). Only a run that has not ended
-within settings.stop_s (its process is hung itself, not polling) is ended from here, and only with
-process.terminate_verified, which ends a pid only if its creation time is still the record's,
-judged on the handle it kills through: never by name, never a recycled pid. Its job closes with
-it, which ends the tree; a process that left the job is named and never ended. The lock's reap
+(kitlib.lock.run_held.Slot.wait), starts no further step, releases its lock as `cancelled` and
+writes its result record, `stopped` (kitlib.gate.runner.stopped_outcome). Only a run that has not
+ended within settings.stop_s (its process is hung itself, not polling) is ended from here, and only
+with process.terminate_verified, which ends a pid only if its creation time is still the record's,
+judged on the handle it kills through: never by name, never a recycled pid. Its job closes with it,
+which ends the tree; a process that left the job is named and never ended. The lock's reap
 then frees the run, and the result record is finished `stopped` from here (result.finish_stopped).
 
 The landing checks see this machine only. kitlib.loadnode.landgate.land_gate runs runner.merged_gate

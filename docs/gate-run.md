@@ -104,7 +104,7 @@ Several stacks in one checkout run every one's steps, in the table's order. Pyth
 
 Every locked run's Gradle builds run with the daemon off (`-Dorg.gradle.daemon=false` in `GRADLE_OPTS`), so they start no shared Gradle daemon unless a command names `--daemon`, and reuse none: docs/lock-api.md "Build daemons under the lock". What follows applies to the daemons a gate's commands still leave in its job: a Kotlin daemon, a Gradle daemon started with `--daemon`, an MSBuild node, the compiler server.
 
-At the release of a gate run that ended "done", `kitlib/lock/run.py` `Slot.stop_daemons` stops the build daemons the gate's commands left in its job (policy: `machine_lock.daemons`, default `gates`, in `kitlib/lock/site.py`). A daemon is shared: any build on the machine may reuse one this gate started, so `kitlib/proc/daemons.py` `stop` ends one only when it is shown to serve the gate's job alone:
+At the release of a gate run that ended "done", `kitlib/lock/run_held.py` `Slot.stop_daemons` stops the build daemons the gate's commands left in its job (policy: `machine_lock.daemons`, default `gates`, in `kitlib/lock/site.py`). A daemon is shared: any build on the machine may reuse one this gate started, so `kitlib/proc/daemons.py` `stop` ends one only when it is shown to serve the gate's job alone:
 
 - MSBuild nodes and the C#/VB compiler server (VBCSCompiler) are always left running: their clients reach them over named pipes, and which process holds the other end cannot be read from outside.
 - A Gradle or Kotlin daemon is stopped, with its children, only when the other end of every established TCP connection on this machine (`kitlib/proc/tcp.py` `peers`) of every process in its tree is in the gate's job (`kitlib/proc/job.py` `Job.contains`), in that same tree, or a process that has gone.
@@ -130,7 +130,7 @@ Known limits:
 
 ## Console windows
 
-Every gate run's lock run watches for console windows while its steps run: `kitlib/lock/run.py` `Slot.start` starts a `kitlib/platform/windows/winwatch.py` `Monitor` before the first step, and `kitlib/gate/runner.py` `window_results` stops it (`Slot.watch_stop`) after the last step and says the report, before the verdict:
+Every gate run's lock run watches for console windows while its steps run: `kitlib/lock/run_held.py` `Slot.start` starts a `kitlib/platform/windows/winwatch.py` `Monitor` before the first step, and `kitlib/gate/runner.py` `window_results` stops it (`Slot.watch_stop`) after the last step and says the report, before the verdict:
 
 ```
 windows opened: 1 - WARNING: a console window opened (the verdict does not count it)

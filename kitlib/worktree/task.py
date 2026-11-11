@@ -32,7 +32,7 @@ from kitlib.proc.spawn import CARRIER      # tools/no_window.py, beside the tool
 from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
 from kitlib.schedtask.pythonw import base_pythonw, refusal
 
-from .remove import OK, REFUSED, Outcome, GitReadError, canon, main_checkout
+from .remove_checks import OK, REFUSED, Outcome, GitReadError, canon, main_checkout
 
 USAGE = 2
 AT = '03:00'

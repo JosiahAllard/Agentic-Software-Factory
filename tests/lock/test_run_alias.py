@@ -1,10 +1,10 @@
-"""A command whose program is a WindowsApps App Execution Alias (kitlib.lock.run alias_check): what
-the alias starts runs outside the job of whoever starts it, so it is not pinned to the run's cores
-and a stop does not end it. The lock refuses such a command before the run books (1, no record),
-and Slot.start refuses it too; a python name is shown the interpreter to run instead. `status`
-warns when the first python on PATH is the alias (path_alias_line), and a stop names a process
-descended from the run's command that is outside its job and leaves it running (escaped,
-escape_lines). Scratch store and a fake WindowsApps folder only, but for one check of this
+"""A command whose program is a WindowsApps App Execution Alias (kitlib.lock.run_cmdline
+alias_check): what the alias starts runs outside the job of whoever starts it, so it is not pinned
+to the run's cores and a stop does not end it. The lock refuses such a command before the run books
+(1, no record), and Slot.start refuses it too; a python name is shown the interpreter to run
+instead. `status` warns when the first python on PATH is the alias (path_alias_line), and a stop
+names a process descended from the run's command that is outside its job and leaves it running
+(escaped, escape_lines). Scratch store and a fake WindowsApps folder only, but for one check of this
 machine's own alias."""
 import json
 import os
@@ -22,6 +22,9 @@ from .helpers import StoreCase, clean_env
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_cmdline
+    from kitlib.lock import run_end
+    from kitlib.lock import run_held
     from kitlib.proc import process
 
 
@@ -50,14 +53,15 @@ class FakeApps:
         self.appdir = os.path.join(self.base, "app")
         os.makedirs(self.appdir)
         for patch in (mock.patch.dict(os.environ, LOCALAPPDATA=self.local, PATH=self.apps),
-                      mock.patch.object(rm, "_create_process_dirs", return_value=[self.appdir])):
+                      mock.patch.object(run_cmdline, "_create_process_dirs",
+                                        return_value=[self.appdir])):
             patch.start()
             self.addCleanup(patch.stop)
 
     def refused(self, cmd):
         with self.assertRaises(OSError) as cm:
-            rm.script_command(cmd)
-        self.assertIsInstance(cm.exception, rm.ScriptArgError)
+            run_cmdline.script_command(cmd)
+        self.assertIsInstance(cm.exception, run_cmdline.ScriptArgError)
         return str(cm.exception)
 
 
@@ -125,22 +129,22 @@ class AliasCheck(FakeApps, unittest.TestCase):
         business (kitlib.proc.bash), never refused here."""
         touch(os.path.join(self.appdir, "python.exe"))
         cmd = ["python", "-V"]
-        self.assertIs(rm.script_command(cmd), cmd)
+        self.assertIs(run_cmdline.script_command(cmd), cmd)
         early = os.path.join(self.base, "early")
         touch(os.path.join(early, "python3.exe"))
         with mock.patch.dict(os.environ, PATH=os.pathsep.join((early, self.apps))):
             cmd = ["python3", "-V"]
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
         for cmd in (["bash", "-c", "true"], ["BASH.EXE", "-c", "true"]):
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
 
     def test_no_localappdata_or_another_platform_is_left_as_given(self):
         cmd = ["python3", "-V"]
         with mock.patch.dict(os.environ):
             del os.environ["LOCALAPPDATA"]
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
         with mock.patch("kitlib.platform.NAME", "linux"):
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
 
 
 @windows_only("App Execution Aliases are Windows'")
@@ -153,7 +157,7 @@ class ThisMachine(unittest.TestCase):
             self.skipTest("no python3 alias here, or a python3.exe CreateProcess finds first")
         with mock.patch.dict(os.environ, PATH=os.path.dirname(alias)):
             with self.assertRaises(OSError) as cm:
-                rm.script_command(["python3", "-V"])
+                run_cmdline.script_command(["python3", "-V"])
         self.assertIn("App Execution Alias", str(cm.exception))
 
 
@@ -163,7 +167,7 @@ class PathWarning(FakeApps, unittest.TestCase):
         self.fake_apps()
 
     def test_the_alias_first_on_path_is_warned_with_the_folder_to_put_ahead(self):
-        self.assertEqual(rm.path_alias_line(), (
+        self.assertEqual(run_cmdline.path_alias_line(), (
             "python: first on PATH is the WindowsApps alias %s; a non-python child's python "
             "escapes the run's job; put %s ahead of it on the user PATH"
             % (os.path.join(self.apps, "python.exe"),
@@ -174,13 +178,13 @@ class PathWarning(FakeApps, unittest.TestCase):
         touch(os.path.join(real, "python.exe"))
         for path in (os.pathsep.join((real, self.apps)), real, ""):
             with self.subTest(path=path), mock.patch.dict(os.environ, PATH=path):
-                self.assertIsNone(rm.path_alias_line())
+                self.assertIsNone(run_cmdline.path_alias_line())
         with mock.patch("kitlib.platform.NAME", "linux"):
-            self.assertIsNone(rm.path_alias_line())
+            self.assertIsNone(run_cmdline.path_alias_line())
 
     def test_an_interpreter_that_is_itself_the_alias_is_not_named_as_the_fix(self):
         with mock.patch.object(sys, "executable", os.path.join(self.apps, "python.exe")):
-            line = rm.path_alias_line()
+            line = run_cmdline.path_alias_line()
         self.assertTrue(line.endswith("put the real interpreter's folder ahead of it on the user "
                                       "PATH"), line)
 
@@ -193,7 +197,7 @@ class RunRefusal(FakeApps, StoreCase):
         self.said = []
         self.store.say = self.said.append
         self.confine(1)
-        patch = mock.patch.object(rm, "WATCH_WINDOWS", False)
+        patch = mock.patch.object(run_held, "WATCH_WINDOWS", False)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -270,12 +274,12 @@ class StopEscape(StoreCase):
         self.said = []
         self.store.say = self.said.append
         self.confine(1)
-        patch = mock.patch.object(rm, "WATCH_WINDOWS", False)
+        patch = mock.patch.object(run_held, "WATCH_WINDOWS", False)
         patch.start()
         self.addCleanup(patch.stop)
 
     def stop(self, s, p, snap=None):
-        rm.request_stop(self.store, s.id, "test")
+        run_end.request_stop(self.store, s.id, "test")
         with mock.patch.object(process, "snapshot", snap or process.snapshot):
             code, how = s.wait(p)
         s.release(code, how)

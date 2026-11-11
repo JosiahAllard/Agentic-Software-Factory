@@ -69,8 +69,8 @@ class Jobs(unittest.TestCase):
     @windows_only('the lock is Windows only')
     def test_the_variable_is_the_one_the_lock_sets(self):
         from kitlib.lock import giveback
-        from kitlib.lock import run as lock_run
-        self.assertEqual(selfrun.CPUMASK_ENV, lock_run.CPUMASK_ENV)
+        from kitlib.lock import run_held
+        self.assertEqual(selfrun.CPUMASK_ENV, run_held.CPUMASK_ENV)
         self.assertEqual(selfrun.GIVE_ENV, giveback.GIVE_ENV)
 
 

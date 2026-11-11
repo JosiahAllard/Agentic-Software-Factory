@@ -50,13 +50,13 @@ class Live(unittest.TestCase):
     def setUp(self):
         from kitlib.lock import run as rm
         from kitlib.lock.store import Store
-        from kitlib.platform.linux import contain
-        self.rm, self.c = rm, contain
+        from kitlib.platform.linux import contain, contain_cgroup
+        self.rm, self.c = rm, contain_cgroup
         if contain.probe().name != 'S1':
             self.skipTest('no cgroup cpuset here: %s' % contain.probe().text)
         if len(os.sched_getaffinity(0)) < 2:
             self.skipTest('one cpu only')
-        patch = mock.patch.dict(os.environ, {contain.PREFIX_ENV: PREFIX})
+        patch = mock.patch.dict(os.environ, {contain_cgroup.PREFIX_ENV: PREFIX})
         patch.start()
         self.addCleanup(patch.stop)
         self.addCleanup(lambda: wait_until(lambda: not units(), 'no unit of %s left (%s)'

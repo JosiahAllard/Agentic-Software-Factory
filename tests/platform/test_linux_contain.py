@@ -42,6 +42,14 @@ def contain():
     return importlib.import_module('kitlib.platform.linux.contain')
 
 
+def cgroup():
+    return importlib.import_module('kitlib.platform.linux.contain_cgroup')
+
+
+def procs():
+    return importlib.import_module('kitlib.platform.linux.contain_proc')
+
+
 def jobmod():
     return importlib.import_module('kitlib.proc.job')
 
@@ -59,7 +67,7 @@ TOP = '/user.slice/user-1000.slice/user@1000.service/app.slice/pmkit-job-41-2-0a
 
 class KillPath(unittest.TestCase):
     def test_a_job_cgroup_is_a_kit_job_scope_or_a_job_nested_in_one(self):
-        c = contain()
+        c = cgroup()
         for cg in (TOP, TOP + '/j-50-1-ff00aa', TOP + '/j-50-1-ff00aa/j-60-3-0b0b0b',
                    '/pmkit-containment-job-1-1-ab.scope'):
             with self.subTest(cg=cg):
@@ -127,7 +135,8 @@ class Tiers(unittest.TestCase):
         c = contain()
         for value, want in (('pmkit-containment', 'pmkit-containment'), ('a/b', 'pmkit'),
                             ('', 'pmkit'), ('x' * 41, 'pmkit'), ('a b', 'pmkit')):
-            with self.subTest(value=value), mock.patch.dict(os.environ, {c.PREFIX_ENV: value}):
+            with self.subTest(value=value), \
+                    mock.patch.dict(os.environ, {cgroup().PREFIX_ENV: value}):
                 self.assertEqual(c.prefix(), want)
 
     def test_the_w1_line_names_it_why_there_is_no_scope_and_what_it_lacks(self):
@@ -249,6 +258,7 @@ class Delegated(unittest.TestCase):
 
     def setUp(self):
         self.c = c = contain()
+        self.g = g = cgroup()
         self.root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.root, True)
         self.group = self.root + '/pm-kit'
@@ -256,8 +266,10 @@ class Delegated(unittest.TestCase):
         self.ctl('cpuset cpu memory pids')
         open(os.path.join(self.group, 'cgroup.procs'), 'w').close()
         for patch in (mock.patch.object(c, 'CGROOT', self.root),
+                      mock.patch.object(g, 'CGROOT', self.root),
                       mock.patch.object(c, 'cgroup2', return_value=True),
-                      mock.patch.object(c, 'SYSTEMD_DIR', os.path.join(self.root, 'no-systemd')),
+                      mock.patch.object(g, 'cgroup2', return_value=True),
+                      mock.patch.object(g, 'SYSTEMD_DIR', os.path.join(self.root, 'no-systemd')),
                       mock.patch.object(c.os, 'getuid', create=True,
                                         return_value=os.lstat(self.group).st_uid)):
             patch.start()
@@ -275,10 +287,10 @@ class Delegated(unittest.TestCase):
         self.assertEqual(self.group_of('/pm-kit/%s/main' % BASE_JOB), ('/pm-kit', None))
 
     def test_no_cgroup2_or_no_group_on_a_systemd_box_is_no_route_and_no_message(self):
-        with mock.patch.object(self.c, 'cgroup2', return_value=False):
+        with mock.patch.object(self.g, 'cgroup2', return_value=False):
             self.assertEqual(self.group_of(), (None, None))
         shutil.rmtree(self.group)
-        os.makedirs(self.c.SYSTEMD_DIR)
+        os.makedirs(self.g.SYSTEMD_DIR)
         self.assertEqual(self.group_of(), (None, None))
 
     def test_no_group_says_the_boot_hook_did_not_run(self):
@@ -321,10 +333,10 @@ class Delegated(unittest.TestCase):
 
     def test_the_way_in_never_starts_a_server_nor_works_in_the_anchor_s_own_window(self):
         from kitlib.machinesetup import delegation
-        self.assertEqual(self.c.ATTACH, delegation.ATTACH)
-        self.assertTrue(self.c.ATTACH.startswith('tmux -L pm-kit attach -t pm-kit-anchor '))
-        self.assertTrue(self.c.ATTACH.endswith(' \\; new-window'))
-        self.assertNotIn('new-session', self.c.ATTACH)
+        self.assertEqual(self.g.ATTACH, delegation.ATTACH)
+        self.assertTrue(self.g.ATTACH.startswith('tmux -L pm-kit attach -t pm-kit-anchor '))
+        self.assertTrue(self.g.ATTACH.endswith(' \\; new-window'))
+        self.assertNotIn('new-session', self.g.ATTACH)
 
     def test_a_group_that_is_not_this_user_s_is_refused(self):
         with mock.patch.object(self.c.os, 'getuid', create=True,
@@ -430,6 +442,7 @@ class Delegated(unittest.TestCase):
 
         with mock.patch.object(c, '_tool', side_effect=AssertionError('systemd-run looked up')), \
                 mock.patch.object(c, 'bus_env', side_effect=AssertionError('the user bus')), \
+                mock.patch.object(self.g, 'bus_env', side_effect=AssertionError('the user bus')), \
                 mock.patch.object(c, 'carrier', side_effect=AssertionError('a carrier')), \
                 mock.patch.object(c.ScopeJob, '_make_nested', lambda this, cg: made.append(cg)), \
                 mock.patch.object(c.ScopeJob, '_ready', ready), \
@@ -439,7 +452,7 @@ class Delegated(unittest.TestCase):
         self.addCleanup(c._close, job._g)
         self.addCleanup(c._close, job._k)
         self.assertEqual(len(made), 1)
-        self.assertTrue(c.TOP.match(job.name), job.name)
+        self.assertTrue(self.g.TOP.match(job.name), job.name)
         self.assertEqual(made[0], '/pm-kit/' + job.name)
         self.assertEqual(job.cg, made[0])
         argv = popen.call_args[0][0]
@@ -487,7 +500,7 @@ class Delegated(unittest.TestCase):
         dest, pid = moved[0]
         self.assertEqual(pid, '77')
         name = os.path.basename(os.path.dirname(dest))
-        self.assertTrue(c.LEFT.match(name), name)
+        self.assertTrue(self.g.LEFT.match(name), name)
         self.assertEqual(os.path.dirname(os.path.dirname(dest)), self.group)
 
     def test_the_group_s_trial_kills_and_empties_with_no_systemd(self):
@@ -546,8 +559,8 @@ class Delegated(unittest.TestCase):
         with open(os.path.join(self.group, 'pmkit-job-499-4-0d0d0d.scope', 'cgroup.events'),
                   'w') as f:
             f.write('populated 1\nfrozen 0\n')
-        with mock.patch.object(c, 'PROC', proc), \
-                mock.patch.object(c, 'rmtree_cgroup') as rm:
+        with mock.patch.object(self.g, 'PROC', proc), \
+                mock.patch.object(self.g, 'rmtree_cgroup') as rm:
             c.sweep('/pm-kit')
         self.assertEqual(sorted(a[0][0] for a in rm.call_args_list),
                          sorted('/pm-kit/' + n for n, swept in names.items() if swept))
@@ -586,7 +599,7 @@ class KitTmux(unittest.TestCase):
             return types.SimpleNamespace(returncode=code, stdout=out, stderr='')
 
         with mock.patch.object(self.w, 'anchor_socket', return_value=self.sock), \
-                mock.patch.object(contain(), 'cgroup_of', return_value=cg) as of:
+                mock.patch.object(cgroup(), 'cgroup_of', return_value=cg) as of:
             got = self.w.anchor_check(run)
         return got, calls, of
 
@@ -705,13 +718,13 @@ class Expand(unittest.TestCase):
                            ['--expand-environment=no']),         # systemd 254 on
                           (b'  --scope  Run this as scope rather than service\n', []),
                           (b'', [])):
-            with self.subTest(out=out), mock.patch.dict(c._no_expand, clear=True), \
+            with self.subTest(out=out), mock.patch.dict(cgroup()._no_expand, clear=True), \
                     mock.patch.object(c.subprocess, 'run', return_value=subprocess.
                                       CompletedProcess([], 0, out, b'')) as run:
                 self.assertEqual(c.no_expand('/usr/bin/systemd-run'), want)
                 self.assertEqual(c.no_expand('/usr/bin/systemd-run'), want)
                 run.assert_called_once()                         # asked once for each path
-        with mock.patch.dict(c._no_expand, clear=True), \
+        with mock.patch.dict(cgroup()._no_expand, clear=True), \
                 mock.patch.object(c.subprocess, 'run', side_effect=OSError('no such file')):
             self.assertEqual(c.no_expand('/x/systemd-run'), [])
 
@@ -742,10 +755,13 @@ class FakeProc:
 
     def patch(self, test, c):
         nowhere = os.path.join(tempfile.gettempdir(), 'kit-no-proc-%d' % os.getpid())
-        for p in (mock.patch.object(c, '_stat_bytes', side_effect=self.stat),
+        pr = procs()
+        for p in (mock.patch.object(pr, '_stat_bytes', side_effect=self.stat),
                   mock.patch.object(c, '_pids', side_effect=lambda: sorted(self.procs)),
+                  mock.patch.object(pr, '_pids', side_effect=lambda: sorted(self.procs)),
                   mock.patch.object(c, '_boot', return_value=self.BOOT),
-                  mock.patch.object(c, 'PROC', nowhere)):        # no environ: nothing marked
+                  mock.patch.object(pr, '_boot', return_value=self.BOOT),
+                  mock.patch.object(pr, 'PROC', nowhere)):       # no environ: nothing marked
             p.start()
             test.addCleanup(p.stop)
 
@@ -1048,7 +1064,7 @@ class Case(unittest.TestCase):
 
     def setUp(self):
         self.c = contain()
-        patch = mock.patch.dict(os.environ, {self.c.PREFIX_ENV: PREFIX})
+        patch = mock.patch.dict(os.environ, {cgroup().PREFIX_ENV: PREFIX})
         patch.start()
         self.addCleanup(patch.stop)
         self.strays = []
@@ -1445,13 +1461,13 @@ class Carrier(Case):
         b.close()
         self.assertIs(a.carried, b.carried)
         top = a.carried.cg
-        self.assertTrue(self.c.TOP.match(top.rsplit('/', 1)[1]), top)
+        self.assertTrue(cgroup().TOP.match(top.rsplit('/', 1)[1]), top)
         self.assertEqual(out.strip(), '0::%s/main' % a.cg)
         self.assertEqual(cg, '0::%s/main' % b.cg)
         self.assertNotEqual(a.cg, b.cg)
         for job in (a, b):
             self.assertEqual(job.cg.rsplit('/', 1)[0], top)
-            self.assertTrue(self.c.NESTED.match(job.name), job.name)
+            self.assertTrue(cgroup().NESTED.match(job.name), job.name)
             wait_until(lambda: not os.path.isdir(self.c.cg_dir(job.cg)), 'its cgroup went')
         self.assertEqual(len(self.carriers()), 1, unit_names())
 
@@ -1531,7 +1547,7 @@ class Carrier(Case):
             self.assertEqual(rc, 0)
             self.assertIsNone(job.carried)                  # a scope of its own
             self.assertIsNone(job.parent)
-            self.assertTrue(self.c.TOP.match(job.name), job.name)
+            self.assertTrue(cgroup().TOP.match(job.name), job.name)
             self.assertEqual(out.strip(), '0::%s/main' % job.cg)
             with open(ran) as f:
                 self.assertEqual(f.read().split(), ['x'])  # once
@@ -1550,7 +1566,7 @@ class Carrier(Case):
         job.start(['true']).wait(20)
         job.close()
         self.assertIsNone(job.carried)
-        self.assertTrue(self.c.TOP.match(job.name), job.name)
+        self.assertTrue(cgroup().TOP.match(job.name), job.name)
         outer = self.c.Job()
         self.addCleanup(outer.close)
         q = outer.start(self.owner_argv('''

@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 
-from kitlib.worktree import marks, remove, sweep
+from kitlib.worktree import marks, remove_checks, sweep
 from tests import gitfixture
 from tests.worktree.test_worktree_remove import RemoveCase
 
@@ -45,7 +45,7 @@ class MarkCase(RemoveCase):
             return None
 
     def assert_refused(self, rc, out, words, before=None):
-        self.assertEqual(rc, remove.REFUSED, out)
+        self.assertEqual(rc, remove_checks.REFUSED, out)
         self.assertIn('refused   ', out)
         self.assertIn(words, out)
         self.assertIn('nothing was marked', out)
@@ -63,7 +63,7 @@ class Mark(MarkCase):
         self.assertIn('marked    kit/a at ', out)
         self.assertIn('the nightly sweep abandons it under archive/a', out)
         self.assertIn(' kit/a --unmark-stale', out)
-        ctx, refused = remove.open_ctx(b)
+        ctx, refused = remove_checks.open_ctx(b)
         self.assertIsNone(refused)
         self.assertEqual(os.path.normcase(marks.file_of(ctx)), os.path.normcase(self.marks_path()))
         got, why = marks.load(marks.file_of(ctx))
@@ -203,7 +203,7 @@ class MarkDisposable(MarkCase):
         path = self.workstream('a')
         self.fx.write('scratch.tmp', 'x\n', root=path)
         self.assertIn('uncommitted or untracked files (1): ?? scratch.tmp',
-                      sweep.sweep_status(remove.open_ctx(self.repo, None)[0], path))
+                      sweep.sweep_status(remove_checks.open_ctx(self.repo, None)[0], path))
         rc, out = self.mark('kit/a')
         self.assert_refused(rc, out, 'has untracked files (1): ?? scratch.tmp - they match'
                                      ' worktree_remove.disposable_untracked')
@@ -275,7 +275,7 @@ class Unmark(MarkCase):
         with open(self.marks_path(), 'w', encoding='utf-8') as f:
             f.write('{"version": 2, "marks": []}\n')
         rc, out = self.unmark('kit/a')
-        self.assertEqual(rc, remove.REFUSED, out)
+        self.assertEqual(rc, remove_checks.REFUSED, out)
         self.assertIn('has version 2', out)
         self.assertIn('nothing was cleared', out)
         self.assertEqual(self.file_text(), '{"version": 2, "marks": []}\n')

@@ -433,7 +433,7 @@ class PrivateIndexSites(unittest.TestCase):
     temp (user.mkdtemp), never a bare tempfile.mkdtemp in the process's TEMP."""
 
     SITES = {'kitlib/commit/__init__.py': 1, 'kitlib/backlog/store.py': 2,
-             'kitlib/pmdata/init.py': 1, 'kitlib/worktree/remove.py': 1}
+             'kitlib/pmdata/init.py': 1, 'kitlib/worktree/remove_abandon.py': 1}
 
     def test_each_site_calls_user_mkdtemp(self):
         for rel, count in self.SITES.items():

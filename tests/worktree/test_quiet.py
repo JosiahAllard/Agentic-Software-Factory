@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib.records import verdict_entry
-from kitlib.worktree import classify, holders, quiet, remove
+from kitlib.worktree import classify, holders, quiet, remove_checks
 from tests.backlog.helpers import BRANCH, StoreCase
 from tests.realgit import real_git
 
@@ -78,7 +78,7 @@ class QuietHoldProbe(StoreCase):
         self.assertIn('is locked with `git worktree lock`: owner keeps it', why)
 
     def test_an_exempt_tree_refuses(self):
-        with mock.patch.object(remove, 'exemption', return_value='kept by ruling X') as ex:
+        with mock.patch.object(remove_checks, 'exemption', return_value='kept by ruling X') as ex:
             why, _ = self.hold()
         self.assertIn('is exempt (kept by ruling X)', why)
         self.assertTrue(ex.called)

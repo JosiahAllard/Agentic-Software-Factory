@@ -14,7 +14,7 @@ from unittest import mock
 from kitlib import gate as G
 from kitlib.backlog import plan as pmod
 from kitlib.gate import rerun, runner
-from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.records import gate_ok
 from tests.gate import fixtures, test_land
 
@@ -364,7 +364,7 @@ class RedRun(RerunCase):
 class Stopped(RerunCase):
     def ask_stop(self):
         for d in self.store.live_runs():
-            lockrun.request_stop(self.store, d['id'], 'test')
+            run_end.request_stop(self.store, d['id'], 'test')
 
     def test_a_stop_before_the_first_class_starts_none(self):
         wt, _ = self.work('once')

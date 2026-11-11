@@ -19,7 +19,7 @@ class _Held:
     job. A KeyboardInterrupt between CreateProcess and the assign would leave the child suspended
     in no job, never resumed or ended; so would SIGBREAK under SIG_DFL (Python's own default for
     it: Ctrl+Break, or the console closing, ends the process there and then). Meanwhile each held
-    signal runs a handler that only queues it. kitlib.lock.run.settle masks SIGINT the same way
+    signal runs a handler that only queues it. kitlib.lock.run_end.settle masks SIGINT the same way
     (on the main thread, put back in a finally), but with SIG_IGN; here a signal is late, never
     lost.
 

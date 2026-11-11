@@ -14,7 +14,7 @@ its age, context only, never a finding by itself.
 """
 from kitlib import kitroot
 from kitlib.worktree import classify as cmod
-from kitlib.worktree import remove
+from kitlib.worktree import remove_checks
 
 from . import Finding
 
@@ -63,8 +63,8 @@ def findings(top, classify=cmod.classify):
                                                     or ' '.join(res.lines[-1:]) or 'no data')]
     tool = kitroot.command('worktree_remove', top)
     backlog = kitroot.command('backlog')
-    ctx, _refused = remove.open_ctx(top)
-    handle = ((lambda p: remove.handle(ctx, p)) if ctx is not None
+    ctx, _refused = remove_checks.open_ctx(top)
+    handle = ((lambda p: remove_checks.handle(ctx, p)) if ctx is not None
               else (lambda p: '"%s"' % p.replace('\\', '/')))
     out = []
     for row in trees:

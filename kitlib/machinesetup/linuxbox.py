@@ -136,8 +136,8 @@ class Box(object):
 
     def cgroup2(self):
         """Whether /sys/fs/cgroup is a cgroup v2 mount."""
-        from kitlib.platform.linux import contain
-        return contain.cgroup2()
+        from kitlib.platform.linux import contain_cgroup
+        return contain_cgroup.cgroup2()
 
     def account(self, uid):
         """(gid, home) of uid in the password database, or None."""

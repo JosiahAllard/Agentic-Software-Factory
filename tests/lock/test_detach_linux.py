@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 import kitlib.platform
-from kitlib.platform.linux import contain
+from kitlib.platform.linux import contain_cgroup
 from kitlib.platform.linux import detach as ld
 from tests.platforms import posix_only, windows_only
 
@@ -85,7 +85,7 @@ class Scope(unittest.TestCase):
                              if bus else None),
                             ("no_expand", lambda run: ["--expand-environment=no"]),
                             ("prefix", lambda: "kt"), ("_tag", lambda: "1-2-abc")):
-            p = mock.patch.object(contain, name, value)
+            p = mock.patch.object(contain_cgroup, name, value)
             p.start()
             self.addCleanup(p.stop)
 
@@ -253,7 +253,7 @@ class Live(unittest.TestCase):
     then the caller's whole scope is killed; the run lives on in its own detach scope."""
 
     def setUp(self):
-        p = mock.patch.dict(os.environ, {contain.PREFIX_ENV: LIVE_PREFIX})
+        p = mock.patch.dict(os.environ, {contain_cgroup.PREFIX_ENV: LIVE_PREFIX})
         p.start()
         self.addCleanup(p.stop)
         if ld.scope(dict(os.environ)) is None:
@@ -278,7 +278,7 @@ class Live(unittest.TestCase):
         wait_for(lambda: os.path.exists(own) and os.path.getsize(own), "the run wrote its pid")
         with open(own) as f:
             self.assertEqual(int(f.read()), pid, "create says the run's own pid")
-        self.assertRegex(contain.cgroup_of(pid), r"/%s-detach-[^/]+\.scope$" % LIVE_PREFIX)
+        self.assertRegex(contain_cgroup.cgroup_of(pid), r"/%s-detach-[^/]+\.scope$" % LIVE_PREFIX)
         self.assertNotEqual(os.getsid(pid), caller_sid, "a session of its own")
         subprocess.run(["systemctl", "--user", "kill", "--signal=SIGKILL", unit], check=True,
                        timeout=30)
@@ -286,7 +286,7 @@ class Live(unittest.TestCase):
                          % caller_pid)
         time.sleep(0.5)
         self.assertTrue(alive(pid), "the detached run outlives its caller's scope")
-        self.assertRegex(contain.cgroup_of(pid), r"/%s-detach-[^/]+\.scope$" % LIVE_PREFIX)
+        self.assertRegex(contain_cgroup.cgroup_of(pid), r"/%s-detach-[^/]+\.scope$" % LIVE_PREFIX)
         kill(pid)
         wait_for(lambda: ended(pid), "the run ended")
 

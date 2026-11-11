@@ -367,7 +367,7 @@ Known limits:
 - Only committed HEAD is isolated, never the work tree or untracked files. The map, though, is
   read from the work tree: an uncommitted map edit changes the trees and commands a run uses on
   the committed code.
-- Ending a test's tree spares a build daemon another job may use (kitlib.lock.run `end_tree`),
+- Ending a test's tree spares a build daemon another job may use (kitlib.lock.run_held `end_tree`),
   so a build daemon the test started can survive it, still holding files in the clone: a Kotlin
   daemon, or a Gradle daemon only when a command named `--daemon` (locked runs turn Gradle's
   daemon off, docs/lock-api.md "Build daemons under the lock"). The clone's removal then fails

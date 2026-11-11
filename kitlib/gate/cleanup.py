@@ -34,7 +34,7 @@ import os
 from kitlib import gate as G
 from kitlib.gate import steps as S
 from kitlib.git import cmd, refs
-from kitlib.worktree import remove
+from kitlib.worktree import remove, remove_checks
 from kitlib.worktree import sweep as wsweep
 from kitlib.worktree.holders import canon
 
@@ -68,8 +68,8 @@ def _worktrees(ctx, branch, listing=None):
     `listing` is a `git worktree list --porcelain` already read; None reads it here."""
     main = canon(ctx.main)
     if listing is None:
-        listing = remove.worktree_listing(ctx.main)
-    return [e['path'] for e in remove.worktree_entries(listing)
+        listing = remove_checks.worktree_listing(ctx.main)
+    return [e['path'] for e in remove_checks.worktree_entries(listing)
             if e['branch'] == branch and canon(e['path']) != main]
 
 
@@ -109,7 +109,7 @@ def _left(ctx, branch):
 
 
 def clean_branch(ctx, branch, landed, apply=True, git_env=None, remote_sha=None, listing=None):
-    """One branch: `(entry, lines)`. `ctx` is kitlib.worktree.remove's (the main checkout and its
+    """One branch: `(entry, lines)`. `ctx` is kitlib.worktree.remove_checks's (the main checkout and its
     settings); `landed(sha)` is `(True, None)` when main contains `sha`, else `(False, why)` or
     `(None, why)`. `apply` False changes nothing and says what would go. The sweep passes what it
     read once for every branch: `remote_sha` (the branch's tip on the remote, '' when it has none)
@@ -173,7 +173,7 @@ def clean_branch(ctx, branch, landed, apply=True, git_env=None, remote_sha=None,
             said, ctx.out = [l for l in ctx.out if l.strip()], []
             gone = not os.path.isdir(path)
             e['worktree'] = REMOVED if gone else KEPT
-            if code != remove.OK or not gone:
+            if code != remove_checks.OK or not gone:
                 why = _first_refusal(said)
                 keep('worktree %s' % path, why)
                 lines.extend('           ' + l.strip() for l in said if why not in l)
@@ -218,7 +218,7 @@ def after_landing(root, branches, merge, keep_branch=False, git_env=None):
             facts[b], said = skipped(b)
             lines.extend(said)
         return facts, lines
-    ctx, refused = remove.open_ctx(root, cwd=root)
+    ctx, refused = remove_checks.open_ctx(root, cwd=root)
     if refused:
         return ({b: None for b in branches},
                 ['WARNING: the branch cleanup did not run: %s; run it later with: %s' % (
@@ -268,7 +268,7 @@ def sweep(top, apply=False, git_env=None):
     first-parent chain (a branch made from main with no commit of its own is never one). A dry run
     (default) changes nothing and names what would go. OK whatever is kept; BUSY while a landing
     holds the landing lock; REFUSED when the repository cannot be read."""
-    ctx, refused = remove.open_ctx(top, cwd=top)
+    ctx, refused = remove_checks.open_ctx(top, cwd=top)
     if refused:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % ' '.join(refused.lines)])
     held = wsweep.landing_hold(ctx)
@@ -277,10 +277,10 @@ def sweep(top, apply=False, git_env=None):
     why = wsweep.fetch_base(ctx)
     if why:
         return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % why])
-    base, why = remove.base_commit(ctx)
+    base, why = remove_checks.base_commit(ctx)
     got = None
     if base:
-        got, why = remove.ancestry(ctx, base)
+        got, why = remove_checks.ancestry(ctx, base)
     local, remote, why2 = _heads(ctx, git_env) if got else (None, None, None)
     if not got or local is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s; nothing was changed' % (why or why2)])
@@ -303,8 +303,8 @@ def sweep(top, apply=False, git_env=None):
     listing = None
     if names:
         try:        # one read for every branch; unreadable, each branch reads (and warns) itself
-            listing = remove.worktree_listing(ctx.main)
-        except remove.GitReadError:
+            listing = remove_checks.worktree_listing(ctx.main)
+        except remove_checks.GitReadError:
             pass
     for b in names:
         try:

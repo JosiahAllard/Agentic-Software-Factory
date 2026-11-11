@@ -14,7 +14,7 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import result, runner, steps
-from kitlib.lock import run as lockrun
+from kitlib.lock import run_held
 from tests import gitfixture, inproc
 from tests.gate import fixtures
 from tests.home import result_drive
@@ -125,7 +125,7 @@ def ended_records(store):
 class LockRecordOfTheGate(fixtures.GateRepoCase):
     """The machine-lock run a gate books (runner.gated, `with slot:`): a console window line the
     caller's console cannot encode never ends it `error`, and an exception that does end it
-    `error` is named on its ended record (kitlib.lock.run.Slot.__exit__)."""
+    `error` is named on its ended record (kitlib.lock.run_held.Slot.__exit__)."""
 
     def test_a_window_title_cp1252_cannot_encode_leaves_the_run_done(self):
         wt, _ = self.branch('window', {'a.py': 'x = 1\n'})
@@ -133,7 +133,7 @@ class LockRecordOfTheGate(fixtures.GateRepoCase):
 
         def say(line):
             print(line, file=out)
-        with mock.patch.object(lockrun.Slot, 'window_lines', return_value=[WINDOW]):
+        with mock.patch.object(run_held.Slot, 'window_lines', return_value=[WINDOW]):
             res = runner.branch_gate(wt, log_dir=self.logs, book_kw=self.book_kw, say=say)
         self.assertEqual(res.code, G.OK, res.lines)
         recs = ended_records(self.store)

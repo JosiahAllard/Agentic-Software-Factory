@@ -20,7 +20,7 @@ the old one (kitlib.fs.replace).
 
 `mark` refuses, writing nothing, unless the name is exactly a local branch other than the main
 branch, checked out in exactly one registered worktree under a worktree folder (any host's:
-remove.is_workstream), present, not exempt, not locked, on its branch template if one is set, with
+remove_checks.is_workstream), present, not exempt, not locked, on its branch template if one is set, with
 work NOT in the base, clean (what `--abandon` would refuse), with no link inside, with no backlog
 record still pulled by it (an open claim: release or block it first) and not live by
 `--classify`'s L rule (classify.branch_liveness). A branch with no worktree is refused and pointed
@@ -45,9 +45,9 @@ from kitlib.fs import replace as fsreplace
 from kitlib.fs import treelock
 from kitlib.git import refs
 
-from . import holders, remove
+from . import holders, remove, remove_checks
 from .holders import canon
-from .remove import OK, REFUSED
+from .remove_checks import OK, REFUSED
 
 FILE_NAME = 'kit-stale-marks.json'
 LOCK_NAME = 'kit-stale-marks.lock'
@@ -94,8 +94,8 @@ def by(environ=None):
 def common_dir(ctx):
     """The repository's git common dir; MarksError when git cannot say."""
     try:
-        out = remove.read(ctx.main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    except remove.GitReadError as e:
+        out = remove_checks.read(ctx.main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    except remove_checks.GitReadError as e:
         raise MarksError('the git common dir cannot be read (%s)' % e)
     return os.path.normpath(out)
 
@@ -254,7 +254,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
     nightly sweep (the module docstring has every check). `liveness(main, branch)` is
     classify.branch_liveness's seam; `now` (epoch seconds) the mark's time. Outcome(code, lines);
     a mark already there is replaced."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return refused
     s, main = ctx.s, ctx.main
@@ -267,13 +267,13 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
         return _refuse(ctx, err)
     if tip is None:
         return _refuse(ctx, 'there is no local branch %s' % branch)
-    if remove.same_name(branch, s['base']):
+    if remove_checks.same_name(branch, s['base']):
         return _refuse(ctx, '%s is the main branch' % branch)
     try:
-        listing = remove.worktree_listing(main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(main)
+    except remove_checks.GitReadError as e:
         return _refuse(ctx, 'the worktree list could not be read (%s)' % e)
-    on = [e for e in remove.worktree_entries(listing) if e['branch'] == branch]
+    on = [e for e in remove_checks.worktree_entries(listing) if e['branch'] == branch]
     if not on:
         return _refuse(ctx, 'no worktree is on %s: a stale mark is for a worktree the nightly sweep'
                             ' abandons. A branch with no worktree is abandoned by hand, on the'
@@ -286,10 +286,10 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
     path = os.path.normpath(entry['path'])
     if canon(path) == canon(main):
         return _refuse(ctx, '%s is checked out in the main checkout' % branch)
-    if not remove.is_workstream(ctx, path):
+    if not remove_checks.is_workstream(ctx, path):
         return _refuse(ctx, '%s is not under a worktree folder (%s): the sweep takes only'
-                            ' workstream worktrees' % (path, remove.home_of(ctx)))
-    ruling = remove.exemption(s, path)
+                            ' workstream worktrees' % (path, remove_checks.home_of(ctx)))
+    ruling = remove_checks.exemption(s, path)
     if ruling:
         return _refuse(ctx, '%s is exempt (%s)' % (path, ruling))
     if not os.path.isdir(path):
@@ -305,7 +305,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
         if branch not in wants:
             return _refuse(ctx, '%s is on %s, not %s (.kit.json worktree_remove.branch_template):'
                                 ' --abandon would refuse it' % (path, branch, ' or '.join(wants)))
-    base, err = remove.base_commit(ctx)
+    base, err = remove_checks.base_commit(ctx)
     if base is None:
         return _refuse(ctx, 'cannot read %s (%s)' % (s['upstream'], err))
     merged, err = refs.is_ancestor(tip, base, main)
@@ -314,7 +314,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
     if merged:
         return _refuse(ctx, '%s is already in %s %s: landed work needs no mark (the plain verb or'
                             ' the nightly sweep removes it)' % (branch, s['upstream'], base[:10]))
-    work, disposable, ignored, err = remove.dirty(ctx, path)
+    work, disposable, ignored, err = remove_checks.dirty(ctx, path)
     if work is None:
         return _refuse(ctx, '%s: its status could not be read (%s)' % (path, err))
     if work:
@@ -330,7 +330,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
                                 path, len(lines), '; '.join(lines[:5]),
                                 ' ...' if len(lines) > 5 else ''))
     if ignored:
-        return _refuse(ctx, '%s has %s' % (path, remove.ignored_reason(ignored, path)))
+        return _refuse(ctx, '%s has %s' % (path, remove_checks.ignored_reason(ignored, path)))
     link = holders.link_reason(path)
     if link:
         return _refuse(ctx, '%s: %s' % (path, link))
@@ -361,7 +361,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
                 'remarked ' if old else 'marked   ', branch, tip[:10], path, why),
             '  sweep    the nightly sweep abandons it under %s%s (the tag keeps the commits) once'
             ' it is idle %d h, if nothing in it changes first' % (
-                remove.ARCHIVE, os.path.basename(path), SWEEP_IDLE_H),
+                remove_checks.ARCHIVE, os.path.basename(path), SWEEP_IDLE_H),
             '  clear    %s %s --unmark-stale' % (s['tool'], branch))
     return ctx.outcome(OK)
 
@@ -369,7 +369,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
 def unmark(top, branch, cwd=None):
     """`<branch> --unmark-stale`: drop the stale mark of exactly `branch`. No mark: `nothing`,
     exit 0. Outcome(code, lines)."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return refused
     try:

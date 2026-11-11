@@ -76,7 +76,7 @@ NO_STEP_FULL = ('REFUSED: no gate step selected: every step in the "gate".steps 
 NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the gate steps with a '
              '"gate" section in .kit.json or tools/gate.json)')
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
-CANCELLED_WAITING = 'was cancelled by stop while it waited'     # kitlib.lock.run's LockError text
+CANCELLED_WAITING = 'was cancelled by stop while it waited'  # kitlib.lock.run_wait's LockError text
 # A console window the gate's run opened (window_results): False, it warns; True, it fails the
 # gate as a `windows` result. The one switch.
 WINDOWS_FAIL = False

@@ -8,22 +8,30 @@ import os
 import subprocess
 
 from kitlib.config import user as kuser
+from kitlib.config.types import ConfigError
 
 KEY = "pm_start"
 TIMEOUT = 4           # seconds the git ask of _toplevel waits
 
 
-def load_config(path=None):
-    """The "pm_start" dict from the user-profile config, or None when the file or key is missing.
-    With no `path`, a machine config location that cannot be told (kitlib.config.user.locate BAD)
-    raises kitlib.config.ConfigError: never read as "no config"."""
+def section(key, path=None):
+    """The dict at `key` of the machine config: the one reader of a key, with one failure meaning.
+    None when the file is missing, the key is missing or its value is not an object ("not
+    configured"). kitlib.config.ConfigError, naming the file, when the file is there but cannot be
+    used (unreadable, bad JSON, not an object) and, with no `path`, when its location cannot be
+    told (kitlib.config.user.locate BAD): a broken file is never read as "no config". A caller in
+    an unattended process catches the error where it reports and skips its step."""
     p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            cfg = json.load(f).get(KEY)
-    except (OSError, ValueError, AttributeError):
-        return None
+    data = kuser._read_object(p)
+    if data is not None and not isinstance(data, dict):
+        raise ConfigError("%s: the machine config is not a JSON object" % p)
+    cfg = (data or {}).get(key)
     return cfg if isinstance(cfg, dict) else None
+
+
+def load_config(path=None):
+    """The "pm_start" dict (section), or None when the file or key is missing."""
+    return section(KEY, path)
 
 
 def _read(path):

@@ -9,6 +9,7 @@ import os
 import re
 import time
 
+from kitlib.config import pm as pmconfig
 from kitlib.config import user as kuser
 from kitlib.git import cmd as gitcmd
 
@@ -24,16 +25,9 @@ STALE_MINUTES = 60               # a reading older than this is shown as stale (
 
 
 def load_config(path=None):
-    """The "pm_watch" dict from the user-profile config; {} when the file or key is missing.
-    With no `path`, a machine config location that cannot be told (kitlib.config.user.locate BAD)
-    raises kitlib.config.ConfigError."""
-    p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            cfg = json.load(f).get(KEY)
-    except (OSError, ValueError, AttributeError):
-        return {}
-    return cfg if isinstance(cfg, dict) else {}
+    """The "pm_watch" dict from the user-profile config; {} when the file or key is missing. A file
+    that cannot be used raises kitlib.config.ConfigError (kitlib.config.pm.section)."""
+    return pmconfig.section(KEY, path) or {}
 
 
 def default_state_file():
@@ -265,15 +259,10 @@ def alert_events(seen, alerts_dir):
 
 
 def configured_notice_dir(path=None):
-    """machine_lock.notice.dir of the user-profile config, or None. With no `path`, a machine
-    config location that cannot be told (kitlib.config.user.locate BAD) raises
-    kitlib.config.ConfigError."""
-    p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            d = json.load(f)["machine_lock"]["notice"]["dir"]
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    """machine_lock.notice.dir of the user-profile config, or None. A file that cannot be used
+    raises kitlib.config.ConfigError (kitlib.config.pm.section)."""
+    notice = (pmconfig.section("machine_lock", path) or {}).get("notice")
+    d = notice.get("dir") if isinstance(notice, dict) else None
     return d if isinstance(d, str) and d else None
 
 

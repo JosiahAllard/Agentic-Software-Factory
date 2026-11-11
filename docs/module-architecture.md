@@ -139,6 +139,7 @@ None: no module is open to every other.
 | blendermcp | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | boot | hookrun | build | outer layer uses policy layer: allowed as of 2026-11-11 |
+| ci | platform | build | services layer uses foundation layer: allowed as of 2026-11-11 |
 | commit | attribution | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | commit | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | commit | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -336,6 +337,7 @@ None: no module is open to every other.
 | ledger | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | ledger | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | ledger | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| ledger | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | ledger | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | loadnode | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | loadnode | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
@@ -467,6 +469,7 @@ None: no module is open to every other.
 | redfirst | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | redfirst | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| redfirst | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | redfirst | tooldeps | build | feature layer, same-layer use: allowed as of 2026-11-06 |

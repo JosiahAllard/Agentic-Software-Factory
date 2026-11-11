@@ -34,7 +34,7 @@
  "host-build-pluginsource": 0,
  "hubapprove-build-hubsite": 1,
  "hubmcp-build-hubsite": 0,
- "hubsite-build-hubjobs": 2,
+ "hubsite-build-hubjobs": 0,
  "hubsite-build-maintlint": 3,
  "kitlib-root-build-host": 0,
  "kitlib-root-build-lockmcp": 0,

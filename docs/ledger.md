@@ -115,7 +115,7 @@ Logic: `kitlib/ledger/vcs.py`.
 `add --commit` commits the file it wrote alone (`git commit -- <file>`). Other staged files stay staged and out of the commit.
 
 - **Subject:** `ledger: <id> <title>`. The title defaults to the start of Decides, cut to 60 characters.
-- **Trailer:** the kit's Co-Authored-By trailer (`kitlib.commit.coauthor`) for `--model`, else `CLAUDE_AGENT_MODEL`. Neither set is a usage error, and nothing is written.
+- **Trailer:** the kit's Co-Authored-By trailer (`kitlib.attribution.coauthor`) for `--model`, else `CLAUDE_AGENT_MODEL`. Neither set is a usage error, and nothing is written.
 - **`--push`** also pushes the current branch to the ledger repository's `repo.remote` (`origin` by default).
 
 Before writing, `add --commit` refuses in any of these cases:

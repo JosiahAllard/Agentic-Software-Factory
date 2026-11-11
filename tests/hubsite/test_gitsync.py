@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import commit as kcommit
+from kitlib import kitroot
 from kitlib import pmdata
 from kitlib.git import cmd as gitcmd
 from kitlib.hubsite import gitsync
@@ -55,7 +55,8 @@ class Case(unittest.TestCase):
             os.environ.pop(k, None)
         os.environ['GIT_CONFIG_GLOBAL'] = os.devnull
         os.environ['GIT_CONFIG_NOSYSTEM'] = '1'
-        root = mock.patch.object(kcommit, 'KIT_ROOT', tmpdir(self))     # not the kit's repository
+        not_kit = tmpdir(self)                                          # not the kit's repository
+        root = mock.patch.object(kitroot, 'root', lambda: not_kit)
         root.start()
         self.addCleanup(root.stop)
         self.repo = TempRepo(bare_remote=True)
@@ -849,7 +850,7 @@ class PrepareTest(Case):
         self.assertIn('a checkout of the kit itself', str(cm.exception))
 
     def test_the_kits_repository_syncs_only_its_recorded_data_branch_and_remote(self):
-        with mock.patch.object(kcommit, 'KIT_ROOT', self.repo.root):    # this repository is the kit's
+        with mock.patch.object(kitroot, 'root', lambda: self.repo.root):    # this repository is the kit's
             with self.assertRaises(gitsync.Refused) as cm:              # no kit-pm-data.json
                 gitsync.prepare(self.hub, remote='origin')
             self.assertIn('not its data branch (no kit-pm-data.json', str(cm.exception))

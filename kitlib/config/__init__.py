@@ -6,7 +6,7 @@ kinds table, the repo hook module and its gate checks (policy) - and the machine
 from .types import ConfigError
 from .load import Config, config_path, load, load_at
 from .owner import Rules as OwnerRules, merge as merge_owner_rules
-from .policy import (HEAVY_DEFAULTS, ROLE_DEFAULTS, gate_checks, heavy_match, heavy_programs,
+from .policy import (HEAVY_DEFAULTS, ROLE_DEFAULTS, commit_settings, gate_checks, heavy_match, heavy_programs,
                      kinds_table, load_gate_checks, load_hook_module, permissions, role_name, roles)
 from .user import ledger_dir, ledger_files, ledger_path, user_config
 

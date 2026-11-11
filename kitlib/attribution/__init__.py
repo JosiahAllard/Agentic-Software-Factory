@@ -14,7 +14,11 @@ Provider identity is never inferred from a model name.
   session_keys(path)               every host's session trailer key
   agent_trailer(path)              the regex a Co-Authored-By value of any provider matches
   AGENT_TRAILER                    agent_trailer() of the kit's hosts.json, read at import
+  MODEL_ENV                        the default host's model fallback variable, read at import
+  resolve_model(owner_authored, flag, env, provider)   (model, where it came from, usage message)
+  missing_model(provider)          the refusal when no model is named
 """
+import os
 import re
 
 from kitlib.host import registry
@@ -111,3 +115,40 @@ def agent_trailer(path=None):
 
 
 AGENT_TRAILER = agent_trailer()
+
+
+MODEL_ENV = model_environment()       # the default host's (hosts.json)
+
+
+def resolve_model(owner_authored, flag, env=None, provider=None):
+    """`(model, where it came from, usage message or None)`. --model is required on every
+    ordinary commit: the flag, else MODEL_ENV (blank is unset). --owner-authored takes none:
+    --model there is contradictory, and MODEL_ENV is ignored."""
+    env = os.environ if env is None else env
+    try:
+        model_env = model_environment(provider)
+        if not owner_authored and requires_model_id(provider):
+            coauthor(flag, provider)
+    except ValueError as error:
+        return None, None, str(error)
+    if owner_authored:
+        if flag:
+            return None, None, ('--owner-authored and --model contradict each other - one commit '
+                                'cannot be both the owner\'s own and an agent\'s; drop one')
+        return None, None, None
+    if flag and flag.strip():
+        return flag, '--model', None
+    fallback = (env.get(model_env) or '').strip() if model_env else ''
+    if fallback:
+        return fallback, model_env, None
+    return None, None, missing_model(provider)
+
+
+def missing_model(provider=None):
+    """The one refusal commit.py and sync_base.py give when no model is named. It offers the
+    chosen host's own model variable, and none when that host has no fallback: never another
+    host's (hosts.json model_env)."""
+    model_env = model_environment(provider)
+    return ('--model is required: name the model you are running on, --model "<model name>"%s; '
+            'it goes in the commit\'s Co-Authored-By trailer. If you do not know it, say so and '
+            'stop.' % (' (or set %s for this session only)' % model_env if model_env else ''))

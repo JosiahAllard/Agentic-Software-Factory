@@ -12,7 +12,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import commit as kcommit, syncbase
+from kitlib import attribution, syncbase
 from kitlib.config import load as load_config
 from kitlib.git import cmd as gitcmd
 from kitlib.records import landing
@@ -346,7 +346,7 @@ class UsageAndTarget(SyncCase):
         an agent fixing one form from the other's text got it wrong."""
         done = self.cli(self.stage_clean(), '--host', 'claude')
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
-        self.assertIn('USAGE: %s\n' % kcommit.resolve_model(False, None, {}, 'claude')[2],
+        self.assertIn('USAGE: %s\n' % attribution.resolve_model(False, None, {}, 'claude')[2],
                       done.stderr)
         self.assertIn('--model "<model name>"', done.stderr)
 

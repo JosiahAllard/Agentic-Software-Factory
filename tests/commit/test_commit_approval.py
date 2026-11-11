@@ -21,6 +21,7 @@ from tests.platforms import windows_only
 if os.name == 'nt':
     import _winapi
 
+from kitlib import attribution
 from kitlib import commit as C
 from kitlib.commit import approval as commit_approval
 from kitlib.config import owner as ownermod
@@ -833,7 +834,7 @@ class TheCommandLine(ApprovalCase):
     def cli(self, *args):
         r = subprocess.run([sys.executable, tc.TOOL] + list(args), cwd=self.wt,
                            capture_output=True, text=True, encoding='utf-8', errors='replace',
-                           env=gitfixture.fixture_env({C.MODEL_ENV: ''}))
+                           env=gitfixture.fixture_env({attribution.MODEL_ENV: ''}))
         return r.returncode, r.stdout + r.stderr
 
     def test_a_bad_value_is_a_usage_error(self):

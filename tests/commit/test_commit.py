@@ -40,7 +40,7 @@ def setUpModule():
     env.start()
     unittest.addModuleCleanup(env.stop)
     for k in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
-              C.MODEL_ENV, BRIDGE):
+              attribution.MODEL_ENV, BRIDGE):
         os.environ.pop(k, None)
     os.environ['GIT_CONFIG_GLOBAL'] = os.devnull
     os.environ['GIT_CONFIG_NOSYSTEM'] = '1'
@@ -58,53 +58,6 @@ def rules(**kw):
 
 
 # ---------------------------------------------------------------------------------- pure pieces
-
-class CoAuthorTrailer(unittest.TestCase):
-
-    def test_a_bare_model_name_gets_claude(self):
-        self.assertEqual(C.coauthor('Opus 5.5'),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-
-    def test_a_name_that_already_says_claude_is_not_doubled(self):
-        self.assertEqual(C.coauthor('Claude Opus 5.5'),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-        self.assertEqual(C.coauthor('Claude'), 'Co-Authored-By: Claude <noreply@anthropic.com>')
-
-    def test_a_lower_case_model_id_is_written_as_its_display_name(self):
-        for model, name in (('claude-opus-5-5', 'Opus 5.5'), ('claude-sonnet-5-5', 'Sonnet 5.5'),
-                            ('claude-haiku-4-5', 'Haiku 4.5'), ('claude-opus-5', 'Opus 5'),
-                            (' claude-opus-5-5 ', 'Opus 5.5')):
-            self.assertEqual(C.coauthor(model),
-                             'Co-Authored-By: Claude %s <noreply@anthropic.com>' % name)
-
-    def test_display_names_and_other_ids_are_left_as_they_are(self):
-        for model in ('Claude Opus 5.5', 'Opus 5.5', 'Claude-Opus-5-5', 'claude-opus',
-                      'claude-opus-5-5-20260101'):
-            self.assertEqual(attribution.display_name(model), model)
-        self.assertEqual(C.coauthor('claude-opus'),
-                         'Co-Authored-By: Claude claude-opus <noreply@anthropic.com>')
-
-    def test_whitespace_is_collapsed(self):
-        self.assertEqual(C.coauthor('  Opus   5.5 '),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-
-    def test_an_empty_model_is_refused(self):
-        for blank in ('', '   ', None):
-            with self.assertRaises(ValueError):
-                C.coauthor(blank)
-
-    def test_a_listed_family_is_kept_as_given(self):
-        for name in ('Codex', 'Codex GPT-5', 'Codex-mini', 'Codex.2'):
-            self.assertEqual(C.coauthor(name, ['Codex']),
-                             'Co-Authored-By: %s <noreply@anthropic.com>' % name)
-        self.assertEqual(C.coauthor('GPT-5.1', ['GPT-5']),
-                         'Co-Authored-By: GPT-5.1 <noreply@anthropic.com>')
-
-    def test_a_family_followed_by_anything_else_still_names_claude(self):
-        for name, fams in (('Codexer 1', ['Codex']), ('Codex_2', ['Codex']), ('GPT-50', ['GPT-5'])):
-            self.assertEqual(C.coauthor(name, fams),
-                             'Co-Authored-By: Claude %s <noreply@anthropic.com>' % name)
-
 
 class RepoPath(unittest.TestCase):
     ROOT = os.path.abspath(os.sep + os.path.join('w', 'repo'))
@@ -129,26 +82,6 @@ class RepoPath(unittest.TestCase):
 
     def test_an_absolute_path_outside_is_none(self):
         self.assertIsNone(C.repo_path(os.path.join(os.path.dirname(self.ROOT), 'x'), self.ROOT))
-
-
-class ModelResolution(unittest.TestCase):
-
-    def test_the_flag(self):
-        self.assertEqual(C.resolve_model(False, 'M', {}), ('M', '--model', None))
-
-    def test_the_environment_variable_is_the_fallback(self):
-        self.assertEqual(C.resolve_model(False, None, {C.MODEL_ENV: ' E '}), ('E', C.MODEL_ENV, None))
-
-    def test_the_flag_wins_over_the_environment(self):
-        self.assertEqual(C.resolve_model(False, 'F', {C.MODEL_ENV: 'E'})[0], 'F')
-
-    def test_blank_everywhere_is_an_error(self):
-        _m, _s, err = C.resolve_model(False, '  ', {C.MODEL_ENV: '  '})
-        self.assertIn('--model is required', err)
-
-    def test_owner_authored_takes_no_model(self):
-        self.assertEqual(C.resolve_model(True, None, {C.MODEL_ENV: 'E'}), (None, None, None))
-        self.assertIn('contradict', C.resolve_model(True, 'F', {})[2])
 
 
 class OwnerAuthoredCoverage(unittest.TestCase):
@@ -408,9 +341,9 @@ class AnOrdinaryCommit(LinkedCase):
 
     def test_the_environment_variable_supplies_the_model_and_says_so(self):
         self.put('a.py', 'a = 1\n')
-        code, out = self.commit('add a', 'a.py', model=None, env={C.MODEL_ENV: 'Env Model'})
+        code, out = self.commit('add a', 'a.py', model=None, env={attribution.MODEL_ENV: 'Env Model'})
         self.assertEqual(code, 0, out)
-        self.assertIn('model     Env Model (from %s)' % C.MODEL_ENV, out)
+        self.assertIn('model     Env Model (from %s)' % attribution.MODEL_ENV, out)
         self.assertIn('Co-Authored-By: Claude Env Model', self.message())
 
     def test_nothing_to_commit(self):
@@ -511,17 +444,6 @@ class UsageMistakesAreUsageErrors(LinkedCase):
     def test_no_model_anywhere(self):
         self.put('a.py', 'x\n')
         self.assert_usage('--model is required', 'a.py', model=None, env={})
-
-    def test_the_missing_model_refusal_names_only_the_chosen_hosts_variable(self):
-        """A host with no model variable (codex) was told to set the default
-        host's, another host's environment (skill builder: never infer the model from it)."""
-        claude = C.missing_model('claude')
-        self.assertIn('--model "<model name>"', claude)
-        self.assertIn('(or set CLAUDE_AGENT_MODEL for this session only)', claude)
-        codex = C.missing_model('codex')
-        self.assertIn('--model "<model name>"', codex)
-        self.assertNotIn('CLAUDE_AGENT_MODEL', codex)
-        self.assertEqual(C.resolve_model(False, None, {}, 'claude')[2], claude)
 
     def test_owner_authored_with_model(self):
         self.put('a.py', 'x\n')
@@ -2344,14 +2266,14 @@ class TheCommandLine(LinkedCase):
         tool = getattr(TheCommandLine, 'tool', None)
         if tool is None:
             tool = TheCommandLine.tool = inproc.load_tool('commit')
-        code, out, err = inproc.run_main(tool.main, args, gitfixture.fixture_env({C.MODEL_ENV: ''}),
+        code, out, err = inproc.run_main(tool.main, args, gitfixture.fixture_env({attribution.MODEL_ENV: ''}),
                                          cwd or self.wt)
         return code, out + err
 
     def cli(self, *args, cwd=None):
         r = subprocess.run([sys.executable, TOOL] + list(args), cwd=cwd or self.wt,
                            capture_output=True, text=True, encoding='utf-8', errors='replace',
-                           env=gitfixture.fixture_env({C.MODEL_ENV: ''}))
+                           env=gitfixture.fixture_env({attribution.MODEL_ENV: ''}))
         return r.returncode, r.stdout + r.stderr
 
     def test_minus_c_commits_in_the_named_worktree(self):

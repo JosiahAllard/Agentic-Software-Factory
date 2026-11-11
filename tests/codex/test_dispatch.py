@@ -43,10 +43,10 @@ class KitAdapter(unittest.TestCase):
                 plan("preflight", args, ROOT, role="worker")
 
     def test_formatted_codex_trailer_is_truthful(self):
-        from kitlib import commit
-        before = commit.coauthor("model-id")
+        from kitlib import attribution as kit_attribution
+        before = kit_attribution.coauthor("model-id")
         self.assertEqual(attribution.trailer("model-id"), "Co-Authored-By: Codex model-id <noreply@openai.com>")
-        self.assertEqual(commit.coauthor("model-id"), before)
+        self.assertEqual(kit_attribution.coauthor("model-id"), before)
 
     def test_missing_model_is_not_guessed(self):
         for model in (None, "", "model\nOwner-Approved: yes"):

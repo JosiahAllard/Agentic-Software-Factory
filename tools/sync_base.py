@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import commit as kcommit, syncbase                      # noqa: E402
+from kitlib import attribution, syncbase                           # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
 
@@ -67,7 +67,7 @@ def main(argv=None):
     except ValueError as error:
         p.error(str(error))
     if model is None:
-        p.error(kcommit.missing_model(host))            # the chosen host's variable, not the default's
+        p.error(attribution.missing_model(host))            # the chosen host's variable, not the default's
     try:
         out = syncbase.sync(a.root, a.hash, model, source, a.base, wait=a.wait,
                             say=lambda line: print(line, flush=True), provider=host)

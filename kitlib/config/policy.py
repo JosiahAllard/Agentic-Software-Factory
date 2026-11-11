@@ -366,3 +366,17 @@ def load_gate_checks(cfg):
 
 def check_heavy_entry(entry, where='heavy entry'):
     return check(schema.HEAVY_ENTRY, entry, where)
+
+
+def commit_settings(cfg):
+    """`{'merge_fold', 'coauthor_families', 'main_branch', 'remote', 'rule_pointer'}` from a
+    checked Config.
+    Raises ConfigError on a family name that is blank or not single-spaced."""
+    sec = cfg.section('commit')
+    families = sec['coauthor_families'] or []
+    if not all(f.strip() and f == ' '.join(f.split()) for f in families):
+        raise ConfigError('.kit.json "commit".coauthor_families must be a list of names '
+                          '(one or more words, single-spaced), e.g. ["Codex"]')
+    return {'merge_fold': bool(sec['merge_fold']), 'coauthor_families': families,
+            'main_branch': cfg.main_branch, 'remote': cfg.remote,
+            'rule_pointer': cfg.section('checkout_guard')['rule_pointer']}

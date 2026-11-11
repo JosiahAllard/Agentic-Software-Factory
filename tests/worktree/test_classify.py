@@ -821,6 +821,85 @@ class BranchLiveness(ClassifyCase):
                           'cannot be judged', None))
 
 
+@real_git('git reflog: the fake writes no reflog, and activity reads the reflog entries')
+@gitfixture.real_fixture('activity reads the reflog entries a fixture commit() writes, which '
+                         'only real git writes')
+class ReflogTimes(ClassifyCase):
+    """A reflog counts by its newest entry's own time (sweep.reflog_newest), never its mtime: a
+    `git reflog expire --all` (alone or in a gc) rewrites every reflog and adds no entry. Each run
+    is at `later`, three days after the trees were made."""
+
+    def setUp(self):
+        super().setUp()
+        self.later = time.time() + LATER
+
+    def admin(self, slug, *parts):
+        return os.path.join(self.fx.common_dir(), 'worktrees', slug, *parts)
+
+    def rewrite(self, slug, branch=None):
+        """What the repo-wide rewrite leaves: the tree's admin folder (its HEAD.lock), logs/,
+        logs/HEAD and the branch reflog changed a minute before `later`, no entry added."""
+        when = (self.later - 60,) * 2
+        for full in (self.admin(slug), self.admin(slug, 'logs'), self.admin(slug, 'logs', 'HEAD')):
+            os.utime(full, when)
+        if branch:
+            os.utime(os.path.join(self.fx.common_dir(), 'logs', 'refs', 'heads',
+                                  *branch.split('/')), when)
+
+    def test_a_rewrite_with_no_new_entry_is_no_activity(self):
+        for slug, make, branch in (
+                ('kept', lambda: self.workstream('kept'), 'kit/kept'),
+                ('loose', lambda: self.outside('loose', self.git('rev-parse', 'HEAD')), None)):
+            with self.subTest(slug):
+                path = make()
+                self.rewrite(slug, branch)
+                rc, out, data = self.run_classify(now=self.later)
+                row = self.row(data, path)
+                self.assertNotEqual(row['class'], 'L', row)
+                self.assertGreater(row['idle_s'], classify.DEAD_AFTER_S, row)
+
+    def test_a_new_reflog_entry_is_activity(self):
+        # The entry is dated a minute before `later`; the reflog file's mtime stays three days
+        # older, so only the entry's own time can make the tree live.
+        stamp = int(self.later - 60)
+        path = self.workstream('branch')
+        head = self.git('rev-parse', 'HEAD', cwd=path)
+        with mock.patch.dict(os.environ, {'GIT_COMMITTER_DATE': '@%d +0000' % stamp}):
+            # Away and back (git logs no entry for a ref set to the value it has): the tip stays.
+            for to in (head + '^', head):
+                self.git('update-ref', '-m', 'test entry', 'refs/heads/kit/branch', to)
+        path_head = self.workstream('head')
+        head = self.git('rev-parse', 'HEAD', cwd=path_head)
+        with open(self.admin('head', 'logs', 'HEAD'), 'ab') as f:
+            f.write(('%s %s T <t@example.invalid> %d +0000\tcommit: test entry\n'
+                     % (head, head, stamp)).encode('ascii'))
+        rc, out, data = self.run_classify(now=self.later)
+        for where, what in ((path, 'an entry of the reflog of kit/branch'),
+                            (path_head, 'an entry of its HEAD reflog')):
+            with self.subTest(what):
+                row = self.row(data, where)
+                self.assertEqual(row['class'], 'L', row)
+                self.assertIn('active 0.0 h ago (newest: %s)' % what, row['reason'])
+
+    def test_a_reflog_line_that_does_not_parse_is_unreadable_not_dead(self):
+        path = self.workstream('garbled')
+        with open(self.admin('garbled', 'logs', 'HEAD'), 'ab') as f:
+            f.write(b'not a reflog entry\n')
+        rc, out, data = self.run_classify(now=self.later)
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'L', row)
+        self.assertTrue(row['reason'].startswith(
+            'unreadable: its last activity (its HEAD reflog has an entry that cannot be read'
+            ' (line '), row)
+
+    def test_a_rewrite_after_a_stale_mark_does_not_void_it(self):
+        path = self.workstream('marked')
+        StaleMarkShown.write_marks(self, StaleMarkShown.record(self, 'marked', path))
+        self.rewrite('marked', 'kit/marked')
+        rc, out, data = self.run_classify(now=self.later)
+        self.assertIsNone(self.row(data, path)['mark']['void'])
+
+
 class StaleMarkShown(ClassifyCase):
 
     def write_marks(self, *records, text=None):

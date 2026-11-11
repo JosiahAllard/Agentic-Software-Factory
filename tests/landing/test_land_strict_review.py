@@ -1,4 +1,4 @@
-"""kitlib.landing.land and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
+"""kitlib.landing.checks and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
 each module's real-git run stays well under the test pool's unit timeout: the reviewer's tier by
 the author's type, the commit, records and landing entry points as strict paths, a branch that
 changes the gate's config landing alone, and a strict tip landing on a default-mode record.

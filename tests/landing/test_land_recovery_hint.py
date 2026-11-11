@@ -1,4 +1,4 @@
-"""kitlib.landing.land's recovery hint for commits on the remote's main on top of a landed merge
+"""kitlib.landing.push's recovery hint for commits on the remote's main on top of a landed merge
 (Lander.on_origin_steps): the full gate it names runs in a worktree, never with -C the main
 checkout (AGENTS.md: full gates go in a worktree), and it says how to make one
 (tools/new_worktree.py -C <main checkout>).
@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import push
 from kitlib.gate import steps as S
 from tests.landing.test_land import BRANCH, LandCase
 
@@ -30,7 +30,7 @@ class OnTopHint(LandCase):
         self.assertEqual(self.remote_main(), on_top)
         left = lander.leftovers()
         self.assertEqual(left['pushed'], on_top)
-        with mock.patch.object(land.oncommit, 'is_kit', return_value=kit):
+        with mock.patch.object(push.oncommit, 'is_kit', return_value=kit):
             steps = lander.on_origin_steps(left, left['pushed'])
         hits = [what for what, _ in steps if 'on top of the merge' in what]
         self.assertEqual(len(hits), 1, hits)

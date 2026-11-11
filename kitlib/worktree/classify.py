@@ -79,7 +79,7 @@ def claimed(got, branch):
 
 DEAD_AFTER_S = 24 * 3600                       # owner answer Q3: 24 h, the sweep's idle bar
 EVIDENCE_GLOBS = ('agent-*', '*-red', 'redcheck', 'mutant*')
-LANDING_TREE = '_landing'                      # kitlib/landing/land.py TREE_NAME
+LANDING_TREE = '_landing'                      # kitlib/landing/merge.py TREE_NAME
 CLASSES = ('A', 'B', 'C', 'E', 'L', 'O')
 ACTED = ('A', 'E', 'O')                        # the classes --apply acts on
 ORPHAN = 'its folder is missing (an orphan: `--check` reports it)'
@@ -272,7 +272,7 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
         return 'exempt (%s)' % ruling, None
     if remove_checks.is_workstream(ctx, path) and \
             os.path.normcase(os.path.basename(os.path.normpath(path))) == LANDING_TREE:
-        return 'the landing tree (kitlib/landing/land.py)', None
+        return 'the landing tree (kitlib/landing/merge.py)', None
     if entry['locked'] is not None:
         return 'locked with `git worktree lock`%s' % (
             ': ' + entry['locked'] if entry['locked'] else ''), None

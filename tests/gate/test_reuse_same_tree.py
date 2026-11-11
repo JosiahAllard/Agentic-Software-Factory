@@ -8,7 +8,8 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import reuse, runner
-from kitlib.landing import land, verdicts
+from kitlib.landing import lander as land
+from kitlib.landing import verdicts
 from kitlib.gate import steps as S
 from kitlib.records import gate_ok
 from tests.gate import test_reuse

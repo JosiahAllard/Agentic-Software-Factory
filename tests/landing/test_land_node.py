@@ -1,4 +1,4 @@
-"""kitlib.landing.land with a landing's merged gate routed to a load node (docs/load-nodes.md "A
+"""kitlib.landing.lander with a landing's merged gate routed to a load node (docs/load-nodes.md "A
 landing's merged gate on a node"): the route chosen before the booking, a 1-slot run while the
 node gates, the node's pass written with ran_on, its failure and any error NOT LANDED with no
 second gate, and every fallback to main releasing the 1-slot run before it books main's full run.
@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.lock import queue as lockqueue
 from kitlib.lock import run as lockrun
 from kitlib.loadnode import landroute, route

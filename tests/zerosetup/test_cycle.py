@@ -15,7 +15,7 @@ The cycle, in the order a PM and a worker run it:
   4. the worker gates the branch --full with no gate configured (kitlib.gate.runner.branch_gate:
      the stack is detected, `source: auto`, and the clone's own unittest tests run), which writes
      the full-gate OK record a landing takes for the tip;
-  5. the PM lands it from the main checkout (kitlib.landing.land.Lander, `gate.py land`): merge, the
+  5. the PM lands it from the main checkout (kitlib.landing.lander.Lander, `gate.py land`): merge, the
      merged tree's gate, the push to the remote, the branch cleanup.
 
 What stands in for the machine (the rest is the kit's code as it runs):
@@ -46,7 +46,7 @@ from kitlib import kitroot
 from kitlib import gate as G
 from kitlib.config import user as kuser
 from kitlib.gate import runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import cmd as gitcmd
 from kitlib.worktree import prep
 from kitlib.git.fake import repo as fakerepo

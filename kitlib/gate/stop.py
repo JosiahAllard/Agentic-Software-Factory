@@ -72,7 +72,7 @@ def _until(done, wait_s):
 
 
 def is_landing(rec):
-    """True for a landing's own lock run on this machine: only landing.land.Lander.book_slot
+    """True for a landing's own lock run on this machine: only landing.lander.Lander.book_slot
     books these. A load node's land gate books none of these marks (the module docstring)."""
     return (rec.get('priority') == 'land' or bool(rec.get('resource'))
             or str(rec.get('note') or '').startswith('landing:'))

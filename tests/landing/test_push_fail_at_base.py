@@ -1,4 +1,4 @@
-"""kitlib.landing.land Lander.push: a push git refused (exit 1, with git's own ref status line
+"""kitlib.landing.push Lander.push: a push git refused (exit 1, with git's own ref status line
 `! [rejected] ...` or `! [remote rejected] ...`) while <remote>/<main> is still the base
 published nothing, so the landing is NOT LANDED (FAILED) and the lock is released, as on a red
 merged gate. Every push whose outcome git cannot settle stays STUCK: exit 1 with no message (a git
@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import cmd, refs
 from tests.landing.test_land import BRANCH, PushCase, main_only
 

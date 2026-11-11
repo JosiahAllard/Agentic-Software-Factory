@@ -1,11 +1,11 @@
-"""kitlib.landing.land.queue (land.py --queue) with a lock file that is not a record: shown as held by
+"""kitlib.landing.lander.queue (land.py --queue) with a lock file that is not a record: shown as held by
 nobody named (phase ?), with the read error, and the queue still listed - the state in which
 docs/gate-landing.md "The landing queue" says to check --queue before a lock is cleared by hand."""
 import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from tests.landing.test_land import LandCase
 
 

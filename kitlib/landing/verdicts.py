@@ -698,7 +698,7 @@ TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hos
 def tier_why(entry, strict, tiers):
     """Why `entry`'s reviewer is too light for its branch, or None: the one tier rule add() (at
     queue time, `strict` False: strict comes from the diff, so the landing checks it) and
-    kitlib.landing.land (Lander.review_refusal, at landing) share. A branch that is High risk or
+    kitlib.landing.checks (Lander.review_refusal, at landing) share. A branch that is High risk or
     `strict` (changes a strict path) lands only on a review whose reviewer_model names a
     strong-tier model (strong_alias), whoever built it; a Low or Medium one off the strict
     paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives

@@ -1,6 +1,6 @@
 """The reviewer tier rule (kitlib.landing.verdicts.tier_why): a branch that is High risk or strict
 lands only on a strong-tier review, whoever built it. tools/verdict.py add refuses a lighter
-High-risk review at queue time; kitlib.landing.land refuses it at landing, a verdict queued before
+High-risk review at queue time; kitlib.landing.checks refuses it at landing, a verdict queued before
 the rule included (no grandfathering: review it again on a strong-tier model); both use the one
 pure test. A Low or Medium branch off the strict paths lands on any reviewer model."""
 import json
@@ -9,7 +9,6 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
 from kitlib.landing import verdicts as V
 from kitlib.records import verdict_entry as VE
 from tests.landing import test_land_strict, test_land_verdict, test_verdict_cli
@@ -115,7 +114,7 @@ class QueueTime(GateRepoCase):
 
 
 class Landing(test_land_verdict.VerdictCase):
-    """kitlib.landing.land: a High-risk branch off the strict paths lands only on a strong-tier
+    """kitlib.landing.checks: a High-risk branch off the strict paths lands only on a strong-tier
     review, whoever built it; a strict branch is unchanged."""
 
     def queue_past_add(self, branch, tip, **over):

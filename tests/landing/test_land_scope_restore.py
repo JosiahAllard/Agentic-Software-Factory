@@ -1,4 +1,4 @@
-"""kitlib.landing.land's restore clause for a narrowed record (Lander._scope_restore; docs/gate-landing.md
+"""kitlib.landing.checks's restore clause for a narrowed record (Lander._scope_restore; docs/gate-landing.md
 "Landing", step 4). A record narrowed against several live pulls (one `narrowed:` line each) gets
 no restore command while one of them still holds its part: given back then, its original member
 would cover that pull's live paths again. `next`'s RESTORE line gives each part back once the
@@ -7,7 +7,7 @@ and bare remote in temp only."""
 import unittest
 
 from kitlib.backlog.errors import Failure
-from kitlib.landing import land
+from kitlib.landing import checks
 from tests.backlog.helpers import priced
 from tests.landing import test_land_scope as tls
 from tests.landing.test_land_store import pulled
@@ -99,10 +99,10 @@ class NarrowedRestore(tls.ScopeCase):
 
 
 class Live(unittest.TestCase):
-    """land._Held.live over stores read (states) and their histories, without git."""
+    """checks._Held.live over stores read (states) and their histories, without git."""
 
     def held(self, *histories, **states):
-        found = land._Held()
+        found = checks._Held()
         found.states = {rid: list(s) for rid, s in states.items()}
         found.histories = list(histories)
         return found

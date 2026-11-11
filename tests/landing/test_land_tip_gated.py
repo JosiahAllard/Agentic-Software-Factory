@@ -1,4 +1,4 @@
-"""kitlib.landing.land: a branch tip lands only with a gate-OK record for exactly that commit that the
+"""kitlib.landing.checks: a branch tip lands only with a gate-OK record for exactly that commit that the
 landing takes (docs/gate-landing.md "Landing", the locked checks): a `gate.py --full` or a
 default-mode pass's, or a docs-only pass's of a change docs-only under the base. No branch needs a
 --full run (ARCHITECTURE.md "What a landing runs"). No record, a record of no mode a landing

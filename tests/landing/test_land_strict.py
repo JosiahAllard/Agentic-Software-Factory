@@ -1,4 +1,4 @@
-"""kitlib.landing.land and strict paths (docs/gate-landing-policy.md "Strict paths"): a branch that changes a path
+"""kitlib.landing.checks and strict paths (docs/gate-landing-policy.md "Strict paths"): a branch that changes a path
 matching the list in kitlib/gate/strict_defaults.py, read from the base and never from the branch,
 lands only alone, with a queued verdict (kitlib.landing.verdicts) at its tip from a strong-tier
 reviewer who is not its author, whoever built it; its merged gate then runs fresh (its
@@ -12,14 +12,14 @@ import unittest
 
 from kitlib import gate as G
 from kitlib.gate import strict_defaults
-from kitlib.landing import land, verdicts
+from kitlib.landing import checks, verdicts
 from kitlib.git import repo as repomod
 from kitlib.records import gate_ok, verdict_entry
 from tests.gate import fixtures
 from tests.landing import test_land
 
 BRANCH = test_land.BRANCH
-LIST_FILE = 'kitlib/gate/strict_defaults.py'    # read at the base (land.STRICT_FILE)
+LIST_FILE = 'kitlib/gate/strict_defaults.py'    # read at the base (checks.STRICT_FILE)
 STRICT = 'kitlib/gate/thing.py'     # matches kitlib/gate/** of the running kit's STRICT_DEFAULTS
 REVIEWER = {'verdict': 'LAND', 'risk': 'High', 'reviewer': 'pm-kit:reviewer',
             'reviewer_model': 'opus', 'reviewer_id': 'agent-r1',
@@ -167,7 +167,7 @@ class LandsAloneFresh(StrictCase):
 
 class Pure(unittest.TestCase):
     def test_parse_strict_reads_the_literal_and_runs_nothing(self):
-        self.assertEqual(land.parse_strict("'''doc'''\nSTRICT_DEFAULTS = (\n  'a/**',\n  'b/*',\n)\n"),
+        self.assertEqual(checks.parse_strict("'''doc'''\nSTRICT_DEFAULTS = (\n  'a/**',\n  'b/*',\n)\n"),
                          ('a/**', 'b/*'))
         for text, why in (('STRICT_DEFAULTS = (', 'does not parse'),
                           ('X = 1\n', 'assigns STRICT_DEFAULTS 0 times'),
@@ -179,14 +179,14 @@ class Pure(unittest.TestCase):
                           ("STRICT_DEFAULTS = ('a', ' ')\n", 'non-empty glob strings'),
                           ("STRICT_DEFAULTS = ('a', 1)\n", 'non-empty glob strings')):
             with self.assertRaises(ValueError) as cm:
-                land.parse_strict(text)
+                checks.parse_strict(text)
             self.assertIn(why, str(cm.exception))
 
     def test_the_kits_own_list_parses_as_it_imports(self):
-        self.assertEqual(land.STRICT_FILE, LIST_FILE)
+        self.assertEqual(checks.STRICT_FILE, LIST_FILE)
         path = os.path.join(os.path.dirname(strict_defaults.__file__), 'strict_defaults.py')
         with open(path, encoding='utf-8') as f:
-            self.assertEqual(land.parse_strict(f.read()), tuple(strict_defaults.STRICT_DEFAULTS))
+            self.assertEqual(checks.parse_strict(f.read()), tuple(strict_defaults.STRICT_DEFAULTS))
 
     def test_strong_models_are_the_strong_and_deep_tiers_of_no_weaker_tier(self):
         models, why = verdicts.strong_models()

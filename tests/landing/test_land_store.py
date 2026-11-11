@@ -1,4 +1,4 @@
-"""kitlib.landing.land and the backlog store (docs/backlog-store.md "Lifecycle changes", "Merge
+"""kitlib.landing.lander and the backlog store (docs/backlog-store.md "Lifecycle changes", "Merge
 safety"): a landing closes the records its branch still holds pulled once the push is verified, a
 close that fails is a WARNING and the landing stands, and a branch whose history holds the store's
 root commit is refused before any merge. Scratch repository and bare remote in temp only."""
@@ -26,7 +26,7 @@ TODAY = '2026-10-07'
 
 def pulled(rid, by=BRANCH, **over):
     # a.py, the path most landings here change, is in the default scope: the landing's scope check
-    # (kitlib.landing.land SCOPE_REFUSES) then has nothing to say unless a test asks it to.
+    # (kitlib.landing.checks SCOPE_REFUSES) then has nothing to say unless a test asks it to.
     over.setdefault('scope', ['area/%s/**' % rid.lower(), 'a.py'])
     return priced(rid, state='pulled', pulled_at=TODAY, pulled_by=by, **over)
 

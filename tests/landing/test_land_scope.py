@@ -1,7 +1,7 @@
-"""kitlib.landing.land's scope check (docs/gate-landing.md "Landing", step 4): every path a branch changes
+"""kitlib.landing.checks's scope check (docs/gate-landing.md "Landing", step 4): every path a branch changes
 must fall in the scope of a record it holds - pulled by it, or named by a `Closes:` trailer of its
 own commits - besides tests/**, docs/INDEX.md and a folder store's own folder. With
-land.SCOPE_REFUSES a miss is REFUSED before any merge; without it the landing goes ahead with a
+checks.SCOPE_REFUSES a miss is REFUSED before any merge; without it the landing goes ahead with a
 WARNING after the LANDED line. Scratch repository and bare remote in temp only."""
 import os
 import unittest
@@ -10,7 +10,8 @@ from unittest import mock
 from kitlib import gate as G
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as scmod
-from kitlib.landing import land
+from kitlib.landing import lander as land
+from kitlib.landing import checks
 from tests.landing import test_land
 from tests.landing import test_land_store as tls
 from tests.landing.test_land_store import BRANCH, StoreLandCase, pulled
@@ -26,7 +27,7 @@ class ScopeCase(StoreLandCase):
 
     def setUp(self):
         StoreLandCase.setUp(self)
-        patch = mock.patch.object(land, 'SCOPE_REFUSES', self.REFUSES)
+        patch = mock.patch.object(checks, 'SCOPE_REFUSES', self.REFUSES)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -123,13 +124,13 @@ class Refuses(ScopeCase):
 
     def test_more_paths_than_shown_name_the_diff_that_lists_them(self):
         self.seed(pulled('FOO', scope=['a/**']))
-        files = {'z/f%02d.py' % i: 'x\n' for i in range(land.SCOPE_SHOWN + 2)}
+        files = {'z/f%02d.py' % i: 'x\n' for i in range(checks.SCOPE_SHOWN + 2)}
         _, tip = self.branch('feature', files)
         line = self.refused(self.land(tip))
-        self.assertIn('changes %d path(s)' % (land.SCOPE_SHOWN + 2), line)
+        self.assertIn('changes %d path(s)' % (checks.SCOPE_SHOWN + 2), line)
         self.assertIn('z/f%02d.py, and 2 more (git diff --name-only --no-renames %s %s);'
-                      % (land.SCOPE_SHOWN - 1, self.main, tip), line)
-        self.assertNotIn('z/f%02d.py' % land.SCOPE_SHOWN, line)
+                      % (checks.SCOPE_SHOWN - 1, self.main, tip), line)
+        self.assertNotIn('z/f%02d.py' % checks.SCOPE_SHOWN, line)
         self.assertIn('set FOO --scope "a/**" --scope "<each path, or a folder/** that covers '
                       'them>";', line)
 
@@ -309,7 +310,7 @@ class PmDataCase(ScopeCase):
 
     def setUp(self):
         tls.PmDataClose.setUp(self)
-        patch = mock.patch.object(land, 'SCOPE_REFUSES', self.REFUSES)
+        patch = mock.patch.object(checks, 'SCOPE_REFUSES', self.REFUSES)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -362,7 +363,7 @@ class Warns(ScopeCase):
         self.assertTrue(warn.startswith('WARNING: '), out.lines)
         self.assertIn(text, warn)
         self.assertTrue(warn.endswith('; the landing went ahead: the scope check only warns for '
-                                      'now (kitlib.landing.land SCOPE_REFUSES)'), warn)
+                                      'now (kitlib.landing.checks SCOPE_REFUSES)'), warn)
         self.assertEqual(self.scope_lines(out), [warn])
         return warn
 
@@ -542,37 +543,37 @@ class LocalStoreArea(ScopeCase):
 
 class Default(unittest.TestCase):
     def test_the_scope_check_warns_for_now(self):
-        self.assertIs(land.SCOPE_REFUSES, False)
-        self.assertEqual(land.SCOPE_ALWAYS, ('tests/**', 'docs/INDEX.md'))
+        self.assertIs(checks.SCOPE_REFUSES, False)
+        self.assertEqual(checks.SCOPE_ALWAYS, ('tests/**', 'docs/INDEX.md'))
 
 
 class LiteralPaths(unittest.TestCase):
     """A changed path is literal: only the scope member is read in the scope grammar
-    (land._covers), while kitlib.backlog.scope keeps reading a comma or a wildcard in a member as
+    (checks._covers), while kitlib.backlog.scope keeps reading a comma or a wildcard in a member as
     a parse error."""
 
     def test_a_folder_member_covers_a_comma_or_wildcard_path(self):
         for path in ('a/x,y.py', 'a/[x].py', 'a/{x}.py', 'a/*.py', 'a/x?.py', 'a/b,c/d.py'):
-            self.assertTrue(land._covers(['a/**'], path), path)
-            self.assertTrue(land._covers(['A'], path), path)      # components, casefolded
-            self.assertFalse(land._covers(['b/**'], path), path)
-            self.assertIsNone(land._path_error(path), path)
-            self.assertTrue(land._unnamed(path), path)
+            self.assertTrue(checks._covers(['a/**'], path), path)
+            self.assertTrue(checks._covers(['A'], path), path)      # components, casefolded
+            self.assertFalse(checks._covers(['b/**'], path), path)
+            self.assertIsNone(checks._path_error(path), path)
+            self.assertTrue(checks._unnamed(path), path)
 
     def test_a_member_holding_a_wildcard_or_comma_still_covers_nothing(self):
-        self.assertFalse(land._covers(['a/[x].py'], 'a/[x].py'))
-        self.assertFalse(land._covers(['a/x,y.py'], 'a/x,y.py'))
-        self.assertFalse(land._covers(['none'], 'none'))
+        self.assertFalse(checks._covers(['a/[x].py'], 'a/[x].py'))
+        self.assertFalse(checks._covers(['a/x,y.py'], 'a/x,y.py'))
+        self.assertFalse(checks._covers(['none'], 'none'))
 
     def test_a_path_a_member_can_name_compares_as_before(self):
-        self.assertTrue(land._covers(['src/foo.py'], 'SRC/Foo.py'))
-        self.assertFalse(land._covers(['src/Foo.py'], 'src/Foobar.py'))
-        self.assertFalse(land._unnamed('src/foo.py'))
+        self.assertTrue(checks._covers(['src/foo.py'], 'SRC/Foo.py'))
+        self.assertFalse(checks._covers(['src/Foo.py'], 'src/Foobar.py'))
+        self.assertFalse(checks._unnamed('src/foo.py'))
 
     def test_an_undecidable_path_stays_undecidable_and_covered_by_nothing(self):
         for path in ('a\\b.py', 'c:x', 'a//b', '../a', ' a', 'None', 'a/b\nc'):
-            self.assertIsNotNone(land._path_error(path), path)
-            self.assertFalse(land._covers(['a/**', 'tests/**', 'c:x'], path), path)
+            self.assertIsNotNone(checks._path_error(path), path)
+            self.assertFalse(checks._covers(['a/**', 'tests/**', 'c:x'], path), path)
 
     def test_the_backlog_scope_grammar_is_unchanged(self):
         self.assertIn('comma', scmod.path_shape_error('a/x,y.py'))

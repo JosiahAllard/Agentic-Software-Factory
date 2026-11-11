@@ -23,7 +23,7 @@ An entry (every key always present):
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
                   picks no reviewer model: a High-risk or strict branch needs a strong-tier
                   reviewer whoever built it, and a Low or Medium branch off the strict paths has
-                  no tier rule (tier_why: add() and landing.land, Lander.review_refusal)
+                  no tier rule (tier_why: add() and landing.checks, Lander.review_refusal)
   range           the range reviewed, `<base>..<tip>`; its right side is the tip or a prefix of
                   it (7 or more hex digits), so the review covered the commit queued
   session         the coordinator session that queued it

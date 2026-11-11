@@ -1,4 +1,4 @@
-"""kitlib.landing.land through the machine lock's landing queue, and batches: a landing books ONE
+"""kitlib.landing.lander through the machine lock's landing queue, and batches: a landing books ONE
 machine-lock run (resource queue_key(<git common dir>), priority "land") and its merged gate runs
 in that slot; landings into one repository take turns, first come first served, each merging onto
 main as it is at its turn; a gone holder of the landing lock file with nothing unpushed is broken,
@@ -18,7 +18,7 @@ from unittest import mock
 from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.gate import result, runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.lock import queue as lockqueue
 from kitlib.lock.store import EXIT_USAGE, LockError
 from kitlib.records import place
@@ -115,7 +115,7 @@ class AliasedGateKind(QueueCase):
 
 class OneBooking(QueueCase):
     def test_the_machine_lock_books_the_landing_resource(self):
-        # kitlib.landing.land books resource= and priority=: without the machine lock's landing queue
+        # kitlib.landing.lander books resource= and priority=: without the machine lock's landing queue
         # (kit/land-queue-lock) every real landing would raise TypeError. Red until both are in.
         self.assertTrue(fixtures.HAS_RESOURCE, 'kitlib.lock.run.book takes no resource=: the '
                         'machine lock\'s landing queue must land before this landing does')

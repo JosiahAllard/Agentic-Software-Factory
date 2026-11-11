@@ -9,7 +9,7 @@ from unittest import mock
 
 from kitlib import hubjobs
 from kitlib.config import pmdata
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import cmd
 from kitlib.hubjobs import store_upkeep as su
 from kitlib.hubsite import jobs

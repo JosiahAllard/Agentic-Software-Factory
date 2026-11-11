@@ -1,5 +1,5 @@
 """The nodes' mirror of main, refreshed after each landing (docs/load-nodes.md "A landing's merged
-gate on a node", "The mirror of main"). Main's side only: kitlib.landing.land calls refresh once a
+gate on a node", "The mirror of main"). Main's side only: kitlib.landing.after calls refresh once a
 landing has landed and holds nothing.
 
   refresh  for each registry node that opted the repository in, push the landed merge to its

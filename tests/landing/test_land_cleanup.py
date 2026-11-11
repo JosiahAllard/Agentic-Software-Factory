@@ -16,7 +16,7 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import result, runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import cmd
 from kitlib.records import landing
 from tests.gate import fixtures

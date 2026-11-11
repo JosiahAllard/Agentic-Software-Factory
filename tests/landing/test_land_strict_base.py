@@ -1,4 +1,4 @@
-"""kitlib.landing.land and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
+"""kitlib.landing.checks and strict paths (docs/gate-landing-policy.md "Strict paths"), split from test_land_strict so
 each module's real-git run stays well under the test pool's unit timeout: a verdict carried over
 main merges, the strict list read from the base, and the dry check (`land.py --check-strict`).
 Fixtures: test_land_strict.StrictCase."""
@@ -8,7 +8,8 @@ import sys
 import unittest
 
 from kitlib import gate as G
-from kitlib.landing import land, verdicts
+from kitlib.landing import lander as land
+from kitlib.landing import verdicts
 from kitlib.records import verdict_entry
 from tests import gitfixture
 from tests.landing import test_land, test_land_strict

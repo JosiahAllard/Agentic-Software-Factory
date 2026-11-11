@@ -50,7 +50,7 @@ submitted landing writes them running before it starts, so every outcome, a refu
 ends in a final record. A `.kit.json` that still writes a retired key gets one WARNING line on
 stderr per run (kitlib.config.retired_text), never in the detached --submitted landing.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.land, prints and exits.
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.lander, prints and exits.
 Exit codes (kitlib.gate): 0 OK (or SUBMITTED), 1 FAILED (CONFLICT included), 2 USAGE, 3 STUCK,
 4 REFUSED, 5 BUSY; 9 LANDED_UNGATED is retired (no landing gives it); a machine lock refusal
 passes its own code through (6, 8, 10, 11, 12); 130 Ctrl+C.
@@ -86,7 +86,7 @@ from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
 from kitlib.coordstate import log as coordlog                       # noqa: E402
 from kitlib.landing import cleanup                                 # noqa: E402
-from kitlib.landing import land as landmod                         # noqa: E402
+from kitlib.landing import lander as landmod                       # noqa: E402
 from kitlib.gate import runner                                     # noqa: E402
 from kitlib.landing import submit as submitmod                     # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402

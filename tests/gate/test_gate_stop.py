@@ -17,7 +17,7 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import rerun, result, runner, steps, stop
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.lock import holds as hl
 from kitlib.lock import run as lockrun
 from kitlib.lock import run_end

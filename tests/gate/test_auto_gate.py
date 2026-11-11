@@ -9,7 +9,7 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import result, runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.records import gate_ok
 from tests import gitfixture
 from tests.gate import fixtures

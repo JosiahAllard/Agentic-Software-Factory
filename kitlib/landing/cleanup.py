@@ -1,7 +1,7 @@
 """Branch cleanup: a landed branch goes - its remote branch, its worktree and its local branch
 (docs/gate-landing-policy.md "Branch cleanup").
 
-`after_landing()` runs in a landing (kitlib.landing.land.Lander) once the push is verified and the
+`after_landing()` runs in a landing (kitlib.landing.lander.Lander) once the push is verified and the
 landing lock released; `sweep()` (`land.py --sweep-landed [--apply]`) applies the same rule once to
 every branch main already contains. Nothing here prints. For each branch, three parts, each judged
 on its own:

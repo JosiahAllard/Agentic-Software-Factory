@@ -18,7 +18,7 @@
             land record has running
   restore   the payload, read back by the detached tool: the result.Run of each branch (the same
             run_id and started_at), the output file and the land records those runs replaced,
-            for kitlib.landing.land.Lander(submitted=...); it writes its own pid into the records.
+            for kitlib.landing.lander.Lander(submitted=...); it writes its own pid into the records.
             Only the payload submit wrote for this landing, read with the token submit gave the
             detached tool (else Untrusted, with nothing written: Trust, below)
   abandon   the detached tool that cannot read its payload (at the path submit names it)
@@ -498,9 +498,9 @@ def submit(root, tool_file, child_args, branches, tips, expect_main=None, enviro
     `detach` started and to the landing (`landing_of(carrier)`, default
     kitlib.lock.detach.wrapper_pid; the tests' stand-in), and the claim watches the landing, or
     the carrier when no landing was found."""
-    from kitlib.landing import land     # land imports nothing from here; late, as runner does
+    from kitlib.landing.lander import Lander   # imports nothing from here; late, as runner does
     branches, tips = list(branches), list(tips)
-    why = land.Lander(root, branches, expect_main, tips).usage()
+    why = Lander(root, branches, expect_main, tips).usage()
     if why:
         return G.Outcome(G.USAGE, ['USAGE: %s' % why])
     if reviewed_by is not None:
@@ -900,7 +900,7 @@ def redirect_output(path):
 
 # ---------------------------------------------------------------- folding
 # docs/gate-landing.md "Folding queued submissions": a submitted landing at its turn folds the submissions
-# queued behind it into its batch (kitlib.landing.land Lander.fold_queued). Every record a fold
+# queued behind it into its batch (kitlib.landing.lander Lander.fold_queued). Every record a fold
 # takes, gives back or marks is judged again under that record's lock (result.write's `when`), and
 # the batch's first record decides: a landing takes a submission only while that record has no
 # turn_at (its own landing has not had its turn), and a landing marks turn_at only while it is not

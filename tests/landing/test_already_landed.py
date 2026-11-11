@@ -1,4 +1,4 @@
-"""kitlib.landing.land when the owner commits in the main checkout, and pushes, while the merged gate
+"""kitlib.landing.lander when the owner commits in the main checkout, and pushes, while the merged gate
 runs (the unstick case, then the landing tree; docs/gate-landing.md "Landing", steps 5 to 9).
 
 The merge and its gate are in the kit's landing tree, never in the main checkout, so nothing the

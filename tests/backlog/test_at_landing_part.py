@@ -2,7 +2,7 @@
 makes the landing close only what its `Closes:` lines name and release every other record the
 branch holds pulled (kitlib.backlog.at_landing.close_landed; docs/backlog-store.md "Closing at
 landing"). Without such a line the branch's pulls close as before. Scratch repositories with a
-ref store and with the PM data branch's folder store, landed by kitlib.landing.land.Lander."""
+ref store and with the PM data branch's folder store, landed by kitlib.landing.lander.Lander."""
 import os
 import unittest
 from unittest import mock

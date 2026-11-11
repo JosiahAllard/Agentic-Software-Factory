@@ -21,7 +21,7 @@ recorded as `also red at base`; a control past the time limit is recorded `timed
 red nor green. A FLAKE prints the `backlog.py add` line the builder reports;
 the coordinator decides on filing it.
 
-A landing (landing.land) takes a tip with no gate-OK record that lands it when
+A landing (landing.checks) takes a tip with no gate-OK record that lands it when
 verify_flake finds its latest red run and a FLAKE rerun of exactly that run, and refuses any tip
 that has a red run of its own and an id that failed on it and failed twice on the branch
 (twice_refusal), whatever other record it has. A tip with no red run of its own is not counted:

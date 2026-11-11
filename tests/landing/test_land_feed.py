@@ -1,4 +1,4 @@
-"""kitlib.landing.land posts the landing feed (docs/gate-landing.md "Landing feed"): landed, pushed and the lock
+"""kitlib.landing.after posts the landing feed (docs/gate-landing.md "Landing feed"): landed, pushed and the lock
 released, one event per branch built from the land record the ledger line was, posted
 best-effort. A hub that does not take it is a WARNING said as progress; the landing's outcome,
 lines and code stand. A landing that did not land posts nothing."""

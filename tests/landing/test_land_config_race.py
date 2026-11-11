@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import cmd
 from tests.gate import fixtures
 

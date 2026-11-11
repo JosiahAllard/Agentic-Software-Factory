@@ -1,4 +1,4 @@
-"""kitlib.landing.land: one landing into a scratch repository with a bare remote in temp, gated on the
+"""kitlib.landing.lander: one landing into a scratch repository with a bare remote in temp, gated on the
 scratch lock store. Each test proves one contract: refusals before any merge, a red merge undone,
 the push verified, landings into one repository taking turns."""
 import datetime
@@ -14,7 +14,7 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import result, runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import refs
 from kitlib.lock import queue as lockqueue
 from kitlib.records import gate_ok, landing

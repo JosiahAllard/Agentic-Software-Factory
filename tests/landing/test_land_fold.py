@@ -1,4 +1,4 @@
-"""kitlib.landing.land and kitlib.landing.submit: folding queued submissions (docs/gate-landing.md "Folding
+"""kitlib.landing.lander and kitlib.landing.submit: folding queued submissions (docs/gate-landing.md "Folding
 queued submissions"). A submitted landing at its turn folds the submissions queued behind it into
 its batch, under "landing".batch_max; a folded submission's own landing ends saying FOLDED and
 writes nothing; a folded batch drops a unit that does not merge, and a red merged gate gives
@@ -11,7 +11,8 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import result
-from kitlib.landing import land, submit
+from kitlib.landing import lander as land
+from kitlib.landing import submit
 from kitlib.records import gate_ok, verdict_entry
 from tests.gate import fixtures
 from tests.landing.test_land import HANG_S

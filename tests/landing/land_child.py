@@ -12,7 +12,7 @@ import os
 import sys
 
 from kitlib.gate import runner
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.lock import layout as lay
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import Settings, Store

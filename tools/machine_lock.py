@@ -347,7 +347,7 @@ def cmd_run(a, cmd, store, argv):
     resource = getattr(a, "resource", None)     # run only; before a detach books anything
     check_resource(resource)                    # "" is usage here, not in a detached log
     if resource and resource.startswith("landing:"):
-        say("usage: --resource %s: landing resources belong to land.py (kitlib.landing.land); "
+        say("usage: --resource %s: landing resources belong to land.py (kitlib.landing.lander); "
             "name another resource" % resource)
         return EXIT_USAGE
     try:                            # before a detach, whose log is the only place it would show

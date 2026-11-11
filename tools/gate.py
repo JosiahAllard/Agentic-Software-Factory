@@ -92,7 +92,7 @@ from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
 from kitlib import pluginsource                                    # noqa: E402
 from kitlib.coordstate import log as coordlog                       # noqa: E402
-from kitlib.landing import land as landmod                         # noqa: E402
+from kitlib.landing import lander as landmod                       # noqa: E402
 from kitlib.gate import budget, caller, measure, outfile, rerun, runner  # noqa: E402
 from kitlib.gate import result as resultmod                       # noqa: E402
 from kitlib.gate import stop as stopmod                            # noqa: E402

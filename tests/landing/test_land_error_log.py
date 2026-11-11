@@ -11,7 +11,7 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import result
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from tests import inproc
 from tests.gate import fixtures
 from tests.landing.test_land import BRANCH, HANG_S, KIT_ROOT, LandCase

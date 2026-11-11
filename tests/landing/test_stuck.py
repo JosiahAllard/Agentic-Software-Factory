@@ -3,7 +3,7 @@ and the commands a STUCK report prints fit what is left. Each clear-command test
 commands in the scratch repository and asserts the state they leave. Also: a merge interrupted
 part way is undone.
 
-The merge and its gate run in the landing tree (kitlib.landing.land, step 5b), so whatever stops a
+The merge and its gate run in the landing tree (kitlib.landing.mergedgate, step 5b), so whatever stops a
 landing before its push leaves nothing in the main checkout to undo: the lock is released and
 the landing is NOT LANDED, never STUCK. STUCK is left for a push that may have landed.
 
@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
 from kitlib.git import refs
 from tests import testutil
 from tests.landing.test_land import BRANCH, LandCase, main_only

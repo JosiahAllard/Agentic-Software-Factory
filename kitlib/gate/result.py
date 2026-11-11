@@ -21,7 +21,7 @@ A Run writes the file twice: a `running` record when the work starts (it replace
 record of that branch and kind, at that tip or another), then the final record with the same
 run_id and started_at. Each write is a temp file in the same folder, then os.replace, so a reader
 sees one whole record or the other. Who writes when (kitlib.gate.runner.branch_gate,
-landing.land.Lander.run) is in docs/gate-records.md "Result record".
+landing.lander.Lander.run) is in docs/gate-records.md "Result record".
 
 A record has several writers (a landing's own run, its submitter's claim, a waiter's finish_dead),
 so every write takes the record's lock first: an OS lock (kitlib.fs.treelock.TreeLock) on

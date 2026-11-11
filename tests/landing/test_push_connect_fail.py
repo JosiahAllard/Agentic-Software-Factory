@@ -1,4 +1,4 @@
-"""kitlib.landing.land Lander.push: a push that failed before it connected to the remote (git's
+"""kitlib.landing.push Lander.push: a push that failed before it connected to the remote (git's
 `fatal: unable to access '<url>': <curl's connect error>`, exit 128, and nothing else on stderr)
 cannot have landed, so the landing is NOT LANDED (FAILED) and the lock is released, as for a
 refused push, whatever ls-remote then reads (in an outage it fails the same way). Every failure
@@ -15,7 +15,8 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.landing import land
+from kitlib.landing import lander as land
+from kitlib.landing import push
 from kitlib.git import cmd
 from tests.landing.test_land import BRANCH, PushCase
 from tests.landing import test_push_fail_at_base as at_base
@@ -54,24 +55,24 @@ LATER_PHASE = (RESET, HUNG_UP, DISCOVERY_RESET, OPERATION_TIMEOUT, TLS, RPC_CONN
 
 
 class NeverConnected(unittest.TestCase):
-    """land.push_never_connected alone."""
+    """push.push_never_connected alone."""
 
     def test_each_connect_phase_failure_is_told(self):
         for err in CONNECT_PHASE:
             with self.subTest(err=err):
-                self.assertTrue(land.push_never_connected(128, err))
-                self.assertTrue(land.push_never_connected(128, err.replace('\n', '\r\n')))
+                self.assertTrue(push.push_never_connected(128, err))
+                self.assertTrue(push.push_never_connected(128, err.replace('\n', '\r\n')))
 
     def test_each_later_failure_is_not(self):
         for err in LATER_PHASE:
             with self.subTest(err=err):
-                self.assertFalse(land.push_never_connected(128, err))
+                self.assertFalse(push.push_never_connected(128, err))
 
     def test_only_a_git_that_died_with_it_counts(self):
         # exit 128 is git's die(); a timed-out or killed git, or any other exit, is not told
         for rc in (None, 0, 1, 2, 255):
             with self.subTest(rc=rc):
-                self.assertFalse(land.push_never_connected(rc, RESOLVE))
+                self.assertFalse(push.push_never_connected(rc, RESOLVE))
 
 
 class PushNeverConnected(PushCase):

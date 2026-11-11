@@ -136,7 +136,7 @@ class Relaunch(Base):
         out = self.run_it()
         self.assertEqual(len(self.host.opened), 1, out)
         text = self.host.opened[0]
-        cmd = ("claude --resume '%s' --fork-session --agent pm-kit:pm --remote-control '%s' -n '%s' %s"
+        cmd = ("claude --resume '%s' --fork-session --agent pm-kit:pm --autocompact 200000 --remote-control '%s' -n '%s' %s"
                % (OLD, NEW, NEW, window.q(relaunch.fork_prompt(NEW, self.coords_path()))))
         self.assertTrue(text.endswith('; ' + cmd), text)
         self.assertEqual(role_of(text), 'pm')
@@ -290,7 +290,7 @@ class AfterTheRelaunch(Base):
         Base.setUp(self)
         self.h.write_state('coordinators.json', dict(self.coords, pm_session_id=FORK, pm_name=NEW))
         self.fork = {'Name': 'claude.exe', 'ProcessId': 90, 'ParentProcessId': 1, 'ExecutablePath': r'C:\bin\claude.exe',
-                     'CommandLine': "claude --resume '%s' --fork-session --agent pm-kit:pm --remote-control '%s' "
+                     'CommandLine': "claude --resume '%s' --fork-session --agent pm-kit:pm --autocompact 200000 --remote-control '%s' "
                                     "-n '%s' 'x'" % (OLD, NEW, NEW)}
 
     def test_stop_refuses_the_relaunched_pm(self):
@@ -342,7 +342,7 @@ class Crossover(Base):
         self.assertEqual(len(self.host.opened), 1, out)
         text = self.host.opened[0]
         prompt = relaunch.crossover_prompt(NEW, '1', self.coords_path(), self.handoff)
-        cmd = "claude --agent pm-kit:pm --remote-control '%s' -n '%s' %s" % (NEW, NEW, window.q(prompt))
+        cmd = "claude --agent pm-kit:pm --autocompact 200000 --remote-control '%s' -n '%s' %s" % (NEW, NEW, window.q(prompt))
         self.assertTrue(text.endswith('; ' + cmd), text)
         self.assertNotIn('--resume', text)
         self.assertNotIn('--permission-mode', text)

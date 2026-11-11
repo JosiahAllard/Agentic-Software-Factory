@@ -48,7 +48,12 @@ class Commands(unittest.TestCase):
         self.assertEqual(fork, relaunch.fork_command('sid', 'n', 'c.json', None))
         cross = relaunch.crossover_command('n', 'p')
         self.assertNotIn(FLAG, cross)
-        self.assertEqual(cross, window.session_command('n', 'p', 'pm-kit:pm').replace(FLAG + 'auto', '', 1))
+        self.assertEqual(cross, window.session_command('n', 'p', 'pm-kit:pm', autocompact=200000).replace(FLAG + 'auto', '', 1))
+
+    def test_every_pm_command_passes_the_pm_window(self):
+        for cmd in (relaunch.fork_command('sid', 'n', 'c.json'), relaunch.crossover_command('n', 'p')):
+            self.assertIn(' --autocompact 200000 ', cmd)
+        self.assertEqual(start.PM_AUTOCOMPACT, 200000)
 
     def test_an_explicit_mode_is_in_both(self):
         self.assertIn(FLAG + 'acceptEdits', relaunch.fork_command('sid', 'n', 'c.json', 'acceptEdits'))

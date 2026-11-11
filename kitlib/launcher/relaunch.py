@@ -147,7 +147,7 @@ def fork_prompt(name, coordinators_path):
 def fork_command(sid, name, coordinators_path, permission_mode=None):
     """The fork's claude command line."""
     return window.session_command(name, fork_prompt(name, coordinators_path), S.run_as(PM_AGENT), resume=sid,
-                                  fork=True, permission_mode=permission_mode)
+                                  fork=True, autocompact=S.PM_AUTOCOMPACT, permission_mode=permission_mode)
 
 
 def await_fork(settings, host, name, after_ms, old_sid, wait_s):
@@ -305,7 +305,8 @@ def crossover_command(name, prompt, permission_mode=None):
     window.session_command gives a fresh start `--permission-mode auto`; its first occurrence is
     that flag, ahead of the quoted prompt, so dropping it once leaves the prompt as it is. An explicit
     `permission_mode` (launch.py --permission-mode) is passed on instead and kept."""
-    cmd = window.session_command(name, prompt, S.run_as(PM_AGENT), permission_mode=permission_mode)
+    cmd = window.session_command(name, prompt, S.run_as(PM_AGENT), autocompact=S.PM_AUTOCOMPACT,
+                                 permission_mode=permission_mode)
     return cmd if permission_mode else cmd.replace(' --permission-mode auto', '', 1)
 
 

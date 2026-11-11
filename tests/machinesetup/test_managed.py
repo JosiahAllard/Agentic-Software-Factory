@@ -174,12 +174,12 @@ class ManagedMode(ManagedBase):
         self.assertEqual(T.readb(self.target), before)
 
     def test_retired_keys_are_dropped_and_named_in_the_plan_and_diff(self):
-        have = dict(self.rendered(), effortLevel='high',
+        have = dict(self.rendered(), effortLevel='high', autoCompactWindow=200000,
                     modelSettings={'claude-opus-5-5': {'autoCompactWindow': 400000}})
         dump(self.target, have)
         code, out = self.run_it()
         self.assertEqual(code, M.EXIT_OK, out)
-        self.assertIn('drops the retired key(s) effortLevel, modelSettings', out)
+        self.assertIn('drops the retired key(s) autoCompactWindow, effortLevel, modelSettings', out)
         self.assertIn('-  "effortLevel": "high"', out.replace('\r', ''))
         self.assertIn('-  "modelSettings"', out.replace('\r', ''))
         code, out = self.run_it(apply=True)

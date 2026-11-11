@@ -66,6 +66,7 @@ COMMAND = 'tools/machine_setup.py'
 RETIRED = (
     'effortLevel',      # dropped by the commit "Managed settings: drop effortLevel and modelSettings"
     'modelSettings',    # the same commit (it held claude-opus-5-5.autoCompactWindow)
+    'autoCompactWindow',  # the PM's 200k is passed by the launcher (--autocompact), not managed
 )
 
 

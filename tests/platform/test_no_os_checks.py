@@ -18,7 +18,6 @@ ALLOWED = frozenset({
     'optional/usage/_usage.py',
     'optional/usage/agent_costs.py',
     'optional/usage/usage_watch.py',
-    'tools/ci_ratchet.py',
     'tools/kit.py',
 })
 

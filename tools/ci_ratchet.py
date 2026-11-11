@@ -25,6 +25,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib import platform                                         # noqa: E402
 from kitlib.ci import ratchet                                       # noqa: E402
 
 USAGE = 2
@@ -88,7 +89,7 @@ def _run(a, say):
         return USAGE
     path = a.baseline or ratchet.default_baseline(root)
     if path is None:
-        say('ci_ratchet: refused: no default baseline on %s: give --baseline' % sys.platform)
+        say('ci_ratchet: refused: no default baseline on %s: give --baseline' % platform.NAME)
         return USAGE
     try:
         baseline = ratchet.read_baseline(path, default=a.baseline is None)

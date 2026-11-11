@@ -30,7 +30,7 @@ ID_SHAPE_FOLDERS = (
     ('tests/hubvalidate/*', 'tests of the hub id validator, which checks the id shape'),
     ('tests/ownerfiles/test_approvals_delta.py', 'a test that a hub question id is not an approval id'),
     ('tests/guard/test_rules_hub*.py', "tests of the guard's hub rules, which match the id shape"),
-    ('tools/hub.py', "the hub CLI's help and examples show question ids"),
+    ('tools/_hub_args.py', "the hub CLI's help and examples show question ids"),
     ('docs/hub-pm.md', "the hub's doc: question ids are its data"),
     ('docs/hub-push.md', "the hub's doc: question ids are its data"),
     ('docs/hub-questions.md', "the hub's doc: question ids are its data"),
@@ -229,7 +229,7 @@ class TheChecks(unittest.TestCase):
 
     def test_the_id_shape_allowlist_covers_the_hub_but_not_other_files(self):
         line = j('ask ', 'Q', '-123\n')
-        files = {'tests/hubsite/test_a.py': line, 'tools/hub.py': line,
+        files = {'tests/hubsite/test_a.py': line, 'tools/_hub_args.py': line,
                  'tests/ledger/test_a.py': j('R', '-9001\n'), 'kitlib/other.py': line,
                  'tests/guard/test_rules_hub_read.py': line, 'tests/guard/test_other.py': line}
         hits, _ = scrub.scan(sorted(files), files.get, ALLOWED)

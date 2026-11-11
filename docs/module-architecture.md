@@ -37,7 +37,6 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | hostrpc | `kitlib/hostrpc` | feature layer (ARCHITECTURE.md Layers) |
 | hosts | `hosts` | outer layer (ARCHITECTURE.md Layers) |
 | hoststart | `kitlib/hoststart` | feature layer (ARCHITECTURE.md Layers) |
-| hubapprove | `kitlib/hubapprove` | feature layer (ARCHITECTURE.md Layers) |
 | hubbacklog | `kitlib/hubbacklog` | feature layer (ARCHITECTURE.md Layers) |
 | hubclient | `kitlib/hubclient` | feature layer (ARCHITECTURE.md Layers) |
 | hubjobs | `kitlib/hubjobs` | feature layer (ARCHITECTURE.md Layers) |
@@ -65,6 +64,7 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | opt-loadnode | `optional/loadnode` | outer layer (ARCHITECTURE.md Layers) |
 | opt-procwatch | `optional/procwatch` | outer layer (ARCHITECTURE.md Layers) |
 | opt-usage | `optional/usage` | outer layer (ARCHITECTURE.md Layers) |
+| ownerfiles | `kitlib/ownerfiles` | feature layer (ARCHITECTURE.md Layers) |
 | pending | `kitlib/pending` | foundation layer (ARCHITECTURE.md Layers) |
 | pieces | `kitlib/pieces` | feature layer (ARCHITECTURE.md Layers) |
 | platform | `kitlib/platform` | foundation layer (ARCHITECTURE.md Layers) |
@@ -147,9 +147,8 @@ None: no module is open to every other.
 | commit | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | commit | docs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | commit | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| commit | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
-| commit | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | commit | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| commit | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below commit): allowed as of 2026-11-11 |
 | commit | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | commit | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | config | platform | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
@@ -185,9 +184,9 @@ None: no module is open to every other.
 | delegations | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | delegations | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | delegations | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
-| delegations | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | landed | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| delegations | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below delegations): allowed as of 2026-11-11 |
 | delegations | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -206,6 +205,7 @@ None: no module is open to every other.
 | gate | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | gate | kitlib-root | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | gate | lock | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
+| gate | ownerfiles | build | policy layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below gate): allowed as of 2026-11-11 |
 | gate | platform | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | gate | proc | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | gate | records | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
@@ -223,6 +223,7 @@ None: no module is open to every other.
 | guard | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | guard | kitlib-root | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | guard | lock | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
+| guard | ownerfiles | build | policy layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below guard): allowed as of 2026-11-11 |
 | guard | platform | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | guard | records | build | policy layer uses foundation layer: allowed as of 2026-11-11 |
 | hookrun | config | build | policy layer uses foundation layer: allowed as of 2026-11-11 |
@@ -263,10 +264,6 @@ None: no module is open to every other.
 | hoststart | coordinatorstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hoststart | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hoststart | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubapprove | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| hubapprove | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
-| hubapprove | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| hubapprove | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | hubbacklog | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubbacklog | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubbacklog | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -284,6 +281,7 @@ None: no module is open to every other.
 | hubjobs | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| hubjobs | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below hubjobs): allowed as of 2026-11-11 |
 | hubjobs | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -292,10 +290,10 @@ None: no module is open to every other.
 | hubjobs | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | hubjobs | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubmcp | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| hubmcp | hubapprove | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubmcp | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubmcp | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | hubmcp | mcpwire | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| hubmcp | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below hubmcp): allowed as of 2026-11-11 |
 | hubsite | autotasks | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | commit | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -312,6 +310,7 @@ None: no module is open to every other.
 | hubsite | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | lockui | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubsite | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below hubsite): allowed as of 2026-11-11 |
 | hubsite | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -413,6 +412,11 @@ None: no module is open to every other.
 | opt-loadnode | lock | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-procwatch | pmstart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | opt-usage | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
+| ownerfiles | config | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
+| ownerfiles | content | build | feature layer uses policy layer: allowed as of 2026-11-11 |
+| ownerfiles | git | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
+| ownerfiles | hubclient | build | feature layer, same-layer use (ARCHITECTURE.md Layers: the ownerfiles row names hubclient): allowed as of 2026-11-11 |
+| ownerfiles | hubvalidate | build | feature layer, same-layer use (ARCHITECTURE.md Layers: the ownerfiles row names hubvalidate): allowed as of 2026-11-11 |
 | pending | fs | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | pending | git | build | foundation layer, same-layer use: allowed as of 2026-11-10 (W-004: the write lock's place) |
 | pieces | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -486,9 +490,9 @@ None: no module is open to every other.
 | reviewpack | docs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | reviewpack | gate | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | reviewpack | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| reviewpack | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | reviewpack | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | modulemap | build | feature layer, same-layer use: allowed as of 2026-11-08 |
+| reviewpack | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below reviewpack): allowed as of 2026-11-11 |
 | reviewpack | preflight | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | reviewpack | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -537,7 +541,6 @@ None: no module is open to every other.
 | tools | git | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | tools | host | build | outer layer uses policy layer: allowed as of 2026-11-06 |
 | tools | hosts | build | outer layer, same-layer use: allowed as of 2026-11-06 |
-| tools | hubapprove | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | hubclient | build | outer layer uses feature layer: allowed as of 2026-11-11 |
 | tools | hubjobs | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | hubsite | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -553,6 +556,7 @@ None: no module is open to every other.
 | tools | machinesetup | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | maintlint | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | modulemap | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| tools | ownerfiles | build | outer layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below the entry points): allowed as of 2026-11-11 |
 | tools | pending | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | tools | pieces | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | platform | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
@@ -580,6 +584,7 @@ None: no module is open to every other.
 | worktree | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | worktree | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| worktree | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below worktree): allowed as of 2026-11-11 |
 | worktree | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -624,7 +629,6 @@ Crossings counted, not refused; each count is driven down to its goal.
 | guard-build-worktree | guard | worktree | build | 0 | - |
 | host-build-guard | host | guard | build | 0 | - |
 | host-build-pluginsource | host | pluginsource | build | 0 | - |
-| hubapprove-build-hubsite | hubapprove | hubsite | build | 0 | - |
 | hubmcp-build-hubsite | hubmcp | hubsite | build | 0 | - |
 | hubsite-build-hubjobs | hubsite | hubjobs | build | 0 | - |
 | hubsite-build-maintlint | hubsite | maintlint | build | 0 | - |

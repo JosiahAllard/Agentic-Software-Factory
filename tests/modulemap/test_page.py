@@ -59,6 +59,20 @@ class RenderTest(unittest.TestCase):
             '| worker-data-root | worker | (root) | every kind | 2 (the fixtures stay shared) | - |',
         ]) + '\n')
 
+    def test_a_layered_map_lists_modules_by_layer_with_their_same_layer_names(self):
+        mods = {'top': {'paths': ['top'], 'layer': 'hi'},
+                'b': {'paths': ['b'], 'layer': 'lo', 'why': 'the base'},
+                'a': {'paths': ['a'], 'layer': 'lo', 'same_layer': ['b']}}
+        text = page.render(ModuleMap({'modules': mods, 'layers': ['lo', 'hi']}), 'm.json')
+        self.assertIn('\n'.join([
+            '## Modules', '',
+            'Layers, lowest first: lo, hi. An edge goes down a layer, or to a module of its own '
+            'layer the Same layer column names.', '',
+            '| Module | Layer | Same layer | Folders | What it is |', '|---|---|---|---|---|',
+            '| a | lo | `b` | `a` | - |',
+            '| b | lo | - | `b` | the base |',
+            '| top | hi | - | `top` | - |', '']), text)
+
     def test_an_empty_map_says_none(self):
         text = page.render(ModuleMap({'modules': {'a': {'paths': ['a']}}}), 'm.json')
         self.assertIn('## Messaging\n\nNone: no module is open to every other.\n', text)

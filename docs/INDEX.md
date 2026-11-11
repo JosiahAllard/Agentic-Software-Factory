@@ -188,7 +188,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Extras") | kw: auto_tasks, tick, schedules, kit-automatic-tasks
 - `tools/no_window.py` | run a program with no console window, for a scheduled task (`docs/daily-full.md` "The schedule") | kw: no_window, console window, scheduled task
 - `tools/account_inventory.py` | read-only: how far each Claude account folder has drifted from the shared setup (`docs/machine-setup.md` "Account inventory") | kw: account_inventory, account, inventory
-- `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it (`docs/action-hub.md`) | kw: hub, serve
+- `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it; the verbs' work is in `kitlib/hubsite/cli/`, the parser in `tools/_hub_args.py` (`docs/action-hub.md`) | kw: hub, serve
 - `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
 - `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node
 - `tools/stack_skill.py` | copy a stack's skills into a repository (`docs/install.md`) | kw: stack_skill, stack

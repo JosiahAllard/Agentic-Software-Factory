@@ -26,7 +26,7 @@ Low-level design of `kitlib/hubvalidate`, `kitlib/hubclient`, `kitlib/hubsite`, 
 | `hubsite/httpd.py`, `auth.py`, `access.py`, `tunnel.py` | The listeners and who a request is |
 | `hubsite/serve*.py`, `control.py`, `selfrestart.py`, `autostart.py` | The server wired from its parts, split by responsibility; stop, restart, the sign-in task |
 | `hubsite/push.py`, `jobs.py`, `derived.py`, `backlog.py`, `recordwrite.py`, `lockdoor.py`, `repoweb.py`, `skilledits.py` | Push, the job runner, views read from other tools' files, the backlog views and writes, the lock door |
-| `hubsite/cli/` | What `tools/hub.py` runs: setup, pages, approvals, checks |
+| `hubsite/cli/` | The work of each `tools/hub.py` verb, which takes the tool's `out` as its one writer: `common` (what the verbs share), `usage` (the verbs' names, their usage examples and the checks of option values), `server` (serve, status, open, unpair, stop, restart), `task` (the sign-in task or Linux job, in words), `setup` (setup, validate), `asks` (questions to wait), `pages` (pages, skill-edit), `approvals`; the tool's parser is `tools/_hub_args.py` |
 | `hubjobs/` | One job per file: fill watch, coordinator restart, usage crossover, session watch, store commits, store upkeep, reminders, unblock conditions, plugin refresh; `_crossover_decide.py` holds the usage crossover's decisions, a `_` part that makers() skips |
 | `hubbacklog/` | The Current backlog and Completed tabs |
 | `hubmcp/` | The hub's API as MCP tools: the agent's reads and writes only |

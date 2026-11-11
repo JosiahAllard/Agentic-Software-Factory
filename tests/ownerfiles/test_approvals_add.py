@@ -20,6 +20,7 @@ from kitlib.hubclient import client
 from kitlib.hubsite import api, auth
 from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite.api import AGENT, BASE, OWNER
+from kitlib.hubsite.cli import common as cli_common
 from kitlib.hubsite.store import HubError as HubStoreError
 from kitlib.hubsite.store import Store
 from tests.gitfixture import TempRepo
@@ -464,7 +465,7 @@ class OnlyOwnerOnlyPathsAreRequested(Case):
 class TheCommandLine(Case):
     def run_hub(self, *argv):
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(HUB, '_hub', lambda a: self.hub.client), \
+        with mock.patch.object(cli_common, 'hub', lambda a: self.hub.client), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
                 code = HUB.main(list(argv))

@@ -69,9 +69,9 @@
   start the task, or whose new server never answers, leaves no hub (`self-restart.log` says why; start
   it with `hub.py restart`, or as that log says). The self-check proves the new code builds and answers
   on a scratch store, not that the machine's store and settings serve. The restarter runs with no
-  console window, so its output is only in that log. `tools/hub.py` itself is not in the stamp (a
-  change there alone neither warns nor restarts), nor are other packages the hub imports beyond those
-  four folders.
+  console window, so its output is only in that log. `tools/hub.py`, `tools/_hub_args.py` and
+  `kitlib/hubsite/cli/` are not in the stamp (a change there alone neither warns nor restarts), nor
+  are other packages the hub imports beyond those four folders.
 - Remote access is only through the tunnel listener: with `hub.access` set (an Access `team`, the
   application's audience tag `aud` and the allowed `emails`; all three), the server also listens on
   `hub.tunnel_port` (default 8791, loopback too) for a Cloudflare tunnel, and every request there needs a

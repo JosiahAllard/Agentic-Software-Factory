@@ -124,6 +124,19 @@ class PluginEventTest(unittest.TestCase):
                                          % (new[:12], plugin_layout.refresh_cmd())])
         self.assertEqual(self.spawned, [])
 
+    def test_a_refreshed_export_clears_the_memory_under_a_healthy_job(self):
+        os.makedirs(self.k.root)
+        self.export_at(self.main())
+        new = self.advance()
+        cur = [block(failures=1)]
+        w = self.watcher(auto=True, hub_job=lambda: cur[0])
+        self.assertEqual(len(w.poll(1.0)), 1)
+        self.assertIn(new[:12], w.s["plugin_main"])
+        cur[0] = block()
+        self.export_at(new)
+        self.assertEqual(w.poll(2.0), [])
+        self.assertIsNone(w.s["plugin_main"])
+
     def test_a_stale_or_unreadable_hub_job_or_auto_off_still_reports(self):
         os.makedirs(self.k.root)
         self.export_at(self.main())
@@ -143,7 +156,9 @@ class PluginEventTest(unittest.TestCase):
         self.export_at(self.main())
         self.advance()
         w = self.watcher(auto=True, folders=[two], hub_job=lambda: block())
-        self.assertIn("--migrate", w.poll(2.0)[0])
+        got = w.poll(2.0)
+        self.assertEqual(len(got), 1)
+        self.assertIn("--migrate", got[0])
 
     def test_plugin_job_healthy(self):
         for b, want in ((block(), True), (block(ok_ago=900), True), (block(ok_ago=901), False),

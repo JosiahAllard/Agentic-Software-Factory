@@ -547,7 +547,9 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
         if quiet:
             main, _ = plugin_layout.tracking_main(plugin_layout.source_kit(root), s.remote)
             state = plugin_state.read_state(s.export_dir) if main else None
-            if state is not None and main != state.get("sha")                     and not plugin_state.unmigrated(state, plugin_state._folders(folders)):
+            behind = state is not None and main != state.get("sha")
+            accounts = plugin_state.account_folders() if folders is None else list(folders)
+            if behind and not plugin_state.unmigrated(state, accounts):
                 return [], last
         return plugin_refresh.poll(root, s, last, spawn=spawn, alive=alive, folders=folders)
     return check

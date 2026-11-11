@@ -38,7 +38,7 @@ import os
 from kitlib import kitroot
 from kitlib import pieces
 from kitlib.config import ConfigError, load
-from kitlib.git import cmd, refs
+from kitlib.git import cmd, refs, repo
 from kitlib.host.registry import RegistryError
 
 from . import holders, hostdirs
@@ -193,8 +193,10 @@ def settings(main, cfg):
 def main_checkout(start):
     """The checkout that owns the worktrees dir, from any directory of the repository, in its one
     real spelling. GitReadError when git cannot say (never a fallback to `start`)."""
-    common = read(start, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    return os.path.realpath(os.path.abspath(os.path.dirname(common)))
+    main = repo.main_checkout_toplevel(start)
+    if main is None:
+        raise GitReadError('git cannot place %s in a main checkout' % start)
+    return os.path.realpath(os.path.abspath(main))
 
 
 def open_ctx(top, cwd=None):

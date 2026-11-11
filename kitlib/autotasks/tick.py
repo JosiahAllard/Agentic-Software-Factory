@@ -219,8 +219,8 @@ def key(schedule):
 def launcher_repos(home=None):
     """[(label, main checkout, repo name)] of the machine config's launcher.repos, the name as
     kitlib.machinesetup.worktreesweep.repo_task gives it; a folder that is gone or cannot be read is
-    left out. The main checkout is the parent of git's common dir, as repo_task and the worktree
-    sweep tool name it."""
+    left out. The main checkout is git's (kitlib.git.repo.main_checkout_toplevel), as repo_task and
+    the worktree sweep tool name it."""
     from kitlib.config import load as load_kit_config
     from kitlib.launcher import settings as launcher
     from kitlib.git import repo as gitrepo
@@ -229,10 +229,10 @@ def launcher_repos(home=None):
         if not os.path.isdir(folder):       # git would answer for the repo holding its parent
             continue
         try:
-            common, _why = gitrepo.common_dir(folder)
-            if common is None:
+            main = gitrepo.main_checkout_toplevel(folder)
+            if main is None:
                 continue
-            main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
+            main = os.path.realpath(os.path.abspath(main))
             name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
         except (RuntimeError, ConfigError, OSError):
             continue

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import tempfile
+from unittest import mock
 
 from kitlib.config import user
 from kitlib.git import repo
@@ -118,6 +119,15 @@ class World(object):
 
     def cleanup(self):
         shutil.rmtree(self.base, True)
+
+    def stub_main_checkout(self, case):
+        """The mock standing in for kitlib.git.repo.main_checkout_toplevel in `case`, answering this
+        layout's main: the layout is folders with no git behind it, so git cannot be asked. Undone
+        at the case's cleanup."""
+        patch = mock.patch('kitlib.git.repo.main_checkout_toplevel', return_value=self.main)
+        stub = patch.start()
+        case.addCleanup(patch.stop)
+        return stub
 
     def user_config(self, data):
         """The machine config `data` as the PM repository's files (kitlib.config.user.locate's

@@ -425,6 +425,27 @@ def hub_plugin_job_up(load=None, make_client=None):
     return "plugin-refresh" in (hub_jobs(load, make_client) or {})
 
 
+PLUGIN_JOB_OK_RUNS = 3            # the plugin job's last success older than this many periods: not healthy
+
+
+def hub_plugin_job_block(load=None, make_client=None):
+    """The plugin-refresh job's health block from the loopback hub, or None (hub down, unreadable,
+    no such job). Never raises."""
+    block = (hub_jobs(load, make_client) or {}).get("plugin-refresh")
+    return block if isinstance(block, dict) else None
+
+
+def plugin_job_healthy(block, now):
+    """True when a plugin-refresh health block shows a job that will apply a landing: no failure
+    since its last success and a success (`ok_at`; its idle "current" runs count) at most
+    PLUGIN_JOB_OK_RUNS times `every_s` before `now`. A job that skips (busy, retry wait) or hangs
+    has no fresh success, so it does not count. Anything malformed is False."""
+    if not isinstance(block, dict) or type(block.get("failures")) is not int or block["failures"] != 0:
+        return False
+    every, ok = block.get("every_s"), block.get("ok_at")
+    return _number(every) and every > 0 and _number(ok) and now - ok <= PLUGIN_JOB_OK_RUNS * every
+
+
 SESSION_JOB = "session-watch"     # the hub's job that runs the session checks (kitlib.hubjobs.session_watch)
 SESSION_JOB_FAILS = 3             # failures in a row that end its cover (kitlib.hubsite.jobs FAIL_PUSH)
 SESSION_JOB_STALE_S = 300         # its last success older than this: not covering (BEAT_STALE's rule)
@@ -498,24 +519,39 @@ def hub_session_job_block(load=None, make_client=None):
     return block if isinstance(block, dict) else None
 
 
-def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, hub_job=None):
+def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, hub_job=None, now=None):
     """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.refresh.poll
     (docs/plugin-source.md "Behind warnings"). `last` is the kit main sha last reported (None when
     current), kept in the state file so a relaunch does not report the same sha again. With no
     `settings` the machine config's plugin key is read on every call, so a bad key is a failed
     check (ERROR on the third), never a dead watcher, and so is an unreadable tracking ref or
     state.json; with no `kit`, the checkout this code is in; with no `folders`, this machine's
-    account folders. With auto_refresh on and the hub's plugin-refresh job up (`hub_job()`, default
-    hub_plugin_job_up), the hub is the one owner of the refresh: the check reports the behind
-    line and starts nothing; with the hub down it still starts the refresh itself."""
-    from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh
+    account folders. With auto_refresh on and the hub's plugin-refresh job up (`hub_job()` gives its
+    health block, default hub_plugin_job_block), the hub is the one owner of the refresh: the check
+    starts nothing; with the hub down it still starts the refresh itself. When that job is also
+    healthy (plugin_job_healthy, `now` the clock) and the export is merely behind (it exists and is
+    migrated), the hub applies the landing within minutes, so the check is silent, `last` unchanged
+    (a job that turns unhealthy is then reported). No export, an unmigrated folder, an unreadable
+    ref or state, a failing or stale job, and a hub that cannot be read all report."""
+    from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh, state as plugin_state
 
     def check(last):
         s = plugin_layout.load() if settings is None else settings
-        if s.auto_refresh and (hub_job or hub_plugin_job_up)():
-            s = s._replace(auto_refresh=False)
-        return plugin_refresh.poll(kit or plugin_layout.kit_root(), s, last, spawn=spawn, alive=alive,
-                                 folders=folders)
+        root = kit or plugin_layout.kit_root()
+        quiet = False
+        if s.auto_refresh:
+            block = (hub_job or hub_plugin_job_block)()
+            if block is not None:
+                s = s._replace(auto_refresh=False)
+                quiet = plugin_job_healthy(block, (now or time.time)())
+        if quiet:
+            main, _ = plugin_layout.tracking_main(plugin_layout.source_kit(root), s.remote)
+            state = plugin_state.read_state(s.export_dir) if main else None
+            behind = state is not None and main != state.get("sha")
+            accounts = plugin_state.account_folders() if folders is None else list(folders)
+            if behind and not plugin_state.unmigrated(state, accounts):
+                return [], last
+        return plugin_refresh.poll(root, s, last, spawn=spawn, alive=alive, folders=folders)
     return check
 
 

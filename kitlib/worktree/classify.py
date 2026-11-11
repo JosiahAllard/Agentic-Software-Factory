@@ -62,7 +62,7 @@ from kitlib.git import refs
 from kitlib.platform.linux import paths as linux_paths
 
 from . import holders, marks, remove, remove_abandon, remove_checks, scratch, sweep
-from .holders import WALK_MAX, canon, extended, plain, prune
+from .holders import WALK_MAX, canon
 from .remove_checks import OK, REFUSED, failure, git
 
 Result = collections.namedtuple('Result', 'code lines data')
@@ -153,43 +153,6 @@ def _holds(forms, target):
     return any(flat == target or flat.startswith(target + os.sep) for flat in forms)
 
 
-def _newest(root, label, skip=(), drop=()):
-    """`((mtime, path), None)` of the newest entry under `root` (links not followed; names in
-    `skip` at the top left out, and then the top's own mtime too; folders in `drop` at the top
-    neither read nor walked into), or `(None, why)`."""
-    best, errors, seen = [0.0, None], [], 0
-    top = extended(root)
-    for where, dirs, files in os.walk(top, onerror=errors.append):
-        if where == top:
-            dirs[:] = [d for d in dirs if d not in drop]
-        seen += len(dirs) + len(files)
-        if seen > WALK_MAX:
-            return None, '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
-        for name in dirs + files:
-            if where == top and name in skip:
-                continue
-            full = os.path.join(where, name)
-            try:
-                when = os.lstat(full).st_mtime
-            except OSError as e:
-                errors.append(e)
-                continue
-            if when > best[0]:
-                best[:] = [when, plain(full)]
-        prune(where, dirs)
-    if not skip:
-        try:
-            when = os.lstat(top).st_mtime
-            if when > best[0]:
-                best[:] = [when, plain(top)]
-        except OSError as e:
-            errors.append(e)
-    if errors:
-        return None, '%s could not be read in full (%d error(s), first: %s)' % (
-            label, len(errors), errors[0])
-    return (best[0], best[1]), None
-
-
 def activity(main, path, branch, head):
     """`((newest time, what), None)` or `(None, why)`. A tree on a branch: sweep.last_activity. A
     detached tree: the same reads without a branch (the tree, its git dir but the index and
@@ -197,14 +160,14 @@ def activity(main, path, branch, head):
     date)."""
     if branch:
         return sweep.last_activity(main, path, branch)
-    got, why = _newest(path, 'the tree')
+    got, why = sweep.newest(path, 'the tree')
     if got is None:
         return None, why
     rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
     if rc != 0 or not gitdir:
         return None, failure(('rev-parse', '--git-dir'), rc, err)
     gitdir = os.path.normpath(gitdir)
-    inner, why = _newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
+    inner, why = sweep.newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
     if inner is None:
         return None, why
     logged, why = sweep.reflog_newest(os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog')

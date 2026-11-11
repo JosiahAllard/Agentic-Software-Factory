@@ -860,6 +860,7 @@ class FakeCommandsRunInTheLoadedModules(unittest.TestCase):
             del sys.modules[name]
             del vars(fake)['wtcmds']
             fake.run(['rev-parse', '--git-dir'], cwd=tmp)
+            self.assertIn(name, sys.modules)
             self.assertIs(fake.COMMANDS['checkout'].__globals__, vars(sys.modules[name]))
 
 

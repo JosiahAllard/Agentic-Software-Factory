@@ -64,7 +64,7 @@ Scoped gate against `--full` (shared machine, no quiet window; measured on 2026-
 | 4 rawwrite-path-arg | 232 | 444 s | 1072 s | 0.41 | 0/0 |
 | 5 scope-broad-warn | 220 | 408 s | 1414 s | 0.29 | 0/0 |
 
-Mean 247 of 822 modules (30%); wall ratio mean 0.38, min 0.15, max 0.57, n=5. Load: the lock's 12 cpu slots were all held in every run but one (other sessions' tests, builds and land-test runs, and 2 to 6 slots of background training), with 0 to 11 runs queued; queue waits ran 7 to 62 min. Result: a scoped gate selects a clear minority and is faster than `--full` in every pair, so the record closes. The ratios are one machine's loaded numbers (`--full` spanned 1072 to 1414 s), not a quiet-machine timing.
+Mean 247 of 822 modules (30%; the run text above counts `--full` as 821 and the table as 822, a difference of one module that the measured data does not explain, probably a module added between the runs, inferred); wall ratio mean 0.38, min 0.15, max 0.57, n=5. Load: the lock's 12 cpu slots were all held in every run but one (other sessions' tests, builds and land-test runs, and 2 to 6 slots of background training), with 0 to 11 runs queued; queue waits ran 7 to 62 min. Result: a scoped gate selects a clear minority and is faster than `--full` in every pair, so the record closes. The ratios are one machine's loaded numbers (`--full` spanned 1072 to 1414 s), not a quiet-machine timing.
 
 Parallel runs (kitlib/tooldeps/selfrun.py):
 
@@ -173,6 +173,41 @@ A test must never read or write the real home folder: the machine config, the `~
 - The machine config: a temp home has no PM repo pointer, since under the tests the pointer is the environment's `KIT_PM_REPO_FENCE` (`kitlib.config.pointer.FENCE_ENV`, tests/home.py `PM_REPO_FENCE_ENV`) and the registry is never read; `tests/home.py` `machine_config(home, body, case=)` makes a PM repository for the temp home and points it there. The session-start machine config check (`kitlib.pmstart.configcheck.lines`) is stubbed to print nothing by `tests.pmstart.stub_config_lines`, which the `__init__.py` of tests/pmstart, tests/coordinatorstart and tests/hoststart call on import. The stub replaces the module attribute for the whole process and is never undone, so once one of those packages is imported it holds for every later module that process runs (a kit_tests pool worker runs many), not only those three packages; its own tests (tests/pmstart/test_config_check.py, tests/coordinatorstart/test_machine_config.py, tests/hoststart/test_machine_config_check.py) put the real one back on a temp home or pass their own.
 - Testing the fence itself: `fence_decoy(case)` makes a temp home and records it as the fenced one, so the same test without the fence would read an empty temp folder, not the real home. Tests: tests/config/test_home_fence.py and the `test_home_fence` modules of tests/coordinatorstart, tests/pluginsource and tests/pmwatch. In tests/config/test_home_fence.py, `ChildFenceTest` covers a marked child and a kit tool, `SpellingTest` the junction, the short name (the short-name test skips on a volume that gives no short names) and the extended-length prefix, `HelperHomeTest` the temp home of `child_home` and `test_env`, `FailClosedTest` the refusal when Windows does not answer, `MarkerTest` and `FenceEnvTest` the marker, and `ProfileTest` the profile folder. tests/tooldeps/test_kit_tests_base.py `HomeFenceEnvironment` shows that kit_tests marks the units.
 - The one exception: `tests.real_install_config()`. The scrub tests check the kit's files against this install's own names, which only the real machine config holds. These are tests/shipped.py `install_patterns`, `forbidden` and `violations` with no `home`, and tests/scrub/test_generic.py `install_names`. tests/__init__.py records the real home before it calls `fence_home()`. `real_install_config()` reads the machine config file under that home explicitly and returns only its install-name keys (`tests.install_config`): `scrub_patterns`, `machine_path_folders`, pm_start's `sessions_file`, `repos` and `hub_url`, and the `cap` of coordinator_start, else of its old-name key (kitlib/config/user.py SCHEMA). When there is no config file, the calling test raises `unittest.SkipTest` with the reason (tests/shipped.py `NO_INSTALL_NAMES`), so the test shows as skipped and does not pass without the names. `install_patterns()` does the same when the config sets no `scrub_patterns`. The folders of `machine_path_folders` are refused as "machine path" by tests/shipped.py `machine_patterns`, which never skips, and tests/scrub/test_builtin.py `configured_folders` passes them to the built-in scrub; while the key is unset, tests/shipped.py `real_machine_folders` prints the machine-path check's NOTE (kitlib/machinepaths `UNSET_NOTE`) once per test process. The base patterns (ruling ids and user-profile paths: tests/shipped.py `BASE_FORBIDDEN`) and `machine_patterns` run first in any case: tests/shipped.py `scan` and `violations` return a finding of theirs, so the test fails on it, and raise the skip only when that scan is clean. A malformed config fails the test (ConfigError). Tests: tests/agents/test_install_patterns.py `RealScrubPatternsTest`, which also shows that it opens only the machine config file and returns no other key.
+
+## Time fence
+
+A flaky test is a test whose result the machine's speed can decide. The kit fences git ("Fake git"), the home folder ("Home fence") and, here, time: a wall-clock budget whose expiry changes an output (a degrade) is the dangerous kind, because a slow machine changes the answer instead of failing loudly. A ceiling that only ends a hang does not need the fence.
+
+The case that prompted it: the agent-start block (`kitlib.agentstart`, default `BUDGET = 1.0` s) printed `NOT CHECKED - the rest: over the 1.0 s budget` on a loaded machine, and `tests/agentview/test_agentview.py` `Start.test_a_dispatched_role_on_claude_shows_the_agent_start_block`, which asserts `checkout  NOT CHECKED`, went red though nothing was wrong.
+
+### How the fence works
+
+- `kitlib/clock.py`: `FENCE_ENV` (`KIT_TIME_FENCE`), `CEILING` (600 s, past `kitlib.tooldeps.selfrun.UNIT_TIMEOUT`), `fenced(environ=None)` and `budget(seconds)`. `budget` returns `seconds`, or `CEILING` in a fenced process: only the value `1` fences. Both read the environment at each call.
+- Wiring: `tests/__init__.py` sets the marker unless it is already set. `child_env` in `kitlib/tooldeps/childenv.py` does the same for every unit, because a pool worker replaces its environment for each unit; `tools/kit_tests.py` itself stays unmarked. Production never sets it, and `tests/clock/test_clock.py` `Production` holds that: outside `tests/`, only `kitlib/clock.py`, `tools/kit_tests.py`, `kitlib/tooldeps/childenv.py` and this doc name the marker.
+- A degrade budget takes `budget=None` and resolves it with `clock.budget(BUDGET)` at call time (`kitlib.agentstart` `text` and `lines`). A budget passed in is used as is, never fenced.
+- Not fenced: a child whose environment a test built without the marker, and a child that is not the kit's Python code. Such a child runs on the real budget and keeps the old risk.
+- Under the fence a slow machine makes a fenced test slower, not different, and a real hang still ends, as a unit TIMEOUT.
+
+### Tests of the fence
+
+- `tests/clock/test_clock.py`: the test process is fenced and an unmarked one gets the budget; the ceiling is past the unit timeout; a kit child started with the test's environment is fenced and one built without the marker is not; `child_env` marks the units and keeps an outer value; the `Production` scan above.
+- `tests/agentview/test_agentview.py` `Start`: the case above runs the hook's default budget with a `repo.classify` stub that takes 1.2 s and asserts `NOT CHECKED`; `test_a_real_run_keeps_the_one_second_budget` pops the marker, blocks the stub on an Event and asserts `over the 1.0 s budget`.
+- A file directly in `kitlib/` is a `full` glob in `tests/selection.json`, so a change to `kitlib/clock.py` runs the whole suite.
+
+### Rules for a budget and a flake
+
+- A budget whose expiry is a normal output (a degrade) goes through `clock.budget` with `budget=None` as its default. A ceiling that only ends a hang does not.
+- A test of the over-budget path passes an explicit budget and blocks the work on an Event (as `tests/agentstart/test_agentstart.py` `test_the_budget_cuts_what_is_left` does), or pops the marker.
+- A load flake is a test defect, fixed by a seam or a marked tier, never by listing it under "Known flakes" (docs/agent-profile.md). A red `gate.py --full` gets the targeted rerun (docs/gate-rerun-checkout.md "Targeted rerun").
+- A sleep or an elapsed-time assert that flakes gets nothing on its first failure (the builder rule: a one-off flake waits for a second); a lint that counts them against a falling baseline is the follow-up if one does.
+
+### Load-sensitive tests
+
+- `tests/bridge/test_frontend_recovery.py` `FrontendRecoveryTests.test_fresh_actual_metadata_is_not_replaced_by_cached_previous_call`: on a loaded machine the first call after `restart()` can return the frontend's `-32603` "bridge connection unavailable" error frame (refused before it reached the broker), so `response['result']` raised `KeyError`. Fix: `retry_refused` retries that one call once (safe: the frontend's no-replay rule forbids retrying only a failed tool call), and every `['result']` read after a restart goes through `result()`, which asserts `'result'` is present with the whole response as the message, so a recurrence names `data.cause`. The tests that expect an error on the first call are not retried.
+
+### Open
+
+- The Codex hook's `DEADLINE` (`hosts/codex/adapter/host.py`) is a fail-closed safety timeout: still deciding at the deadline is a `deny guard-timeout` (`kitlib/host/hookmain.py`). The fence does not touch it. Fencing it would change what a test sees of a safety check, so it is the owner's decision.
 
 ## Window tests
 
@@ -301,4 +336,4 @@ The whole kit suite, measured 2026-10-10 on the development machine (12 physical
 - The steady cost does not show above run-to-run noise: two solo runs without the hold differed by 12 s.
 - The fixed cost is the 3 s warm-up, paid once per run before the first unit.
 - Two holds at once (one per run) added 1-3 s per run and 5 s to the pair's wall time, inside the same noise.
-- Whether the gate should ever use the hold is open (docs/go-live.md).
+- Whether the gate should ever use the hold is open: until decided, the gate refuses `--pid-hold` (`kitlib/gate/steps.py` `unsupported`).

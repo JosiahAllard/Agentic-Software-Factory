@@ -1,4 +1,4 @@
-"""Claude Code's half of the bridge (optional/bridge/port.py; optional/bridge/STATUS.md "Claude").
+"""Claude Code's half of the bridge (optional/bridge/port.py; optional/bridge/README.md "Status").
 
     provider  assembly.build_sources: desktop and terminal sources (runtime.ClaudeSources)
     delivery  assembly.build_delivery: the protocol-1 peer adapter and its owned return pipe

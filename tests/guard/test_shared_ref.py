@@ -176,7 +176,7 @@ class SharedRefsFromAWorktree(SharedRefBase):
         self.each_refused(['git update-ref refs/heads/kit/wt HEAD~1'])
 
     def test_a_ref_other_than_head_is_judged_by_its_name(self):
-        # a symbolic ref is not followed (docs/guard-v2.md B6, cut: only an attacker plants a
+        # a symbolic ref is not followed (docs/guard-fallback.md "Weakened checks, by row" B6, cut: only an attacker plants a
         # scratch ref that points at main); HEAD is still judged by the branch it is on
         put(os.path.join(self.common, 'refs', 'tmp', 'link'), 'ref: refs/heads/main\n')
         put(os.path.join(self.wt_git, 'ORIG_HEAD'), 'ref: refs/heads/kit/sib\n')
@@ -187,7 +187,7 @@ class SharedRefsFromAWorktree(SharedRefBase):
         self.each_allowed(['git update-ref refs/tmp/mine HEAD'])
 
     def test_a_link_inside_the_ref_store_is_not_followed(self):
-        # docs/guard-v2.md B18, cut: a junction in refs/ is no honest mistake
+        # docs/guard-fallback.md "Weakened checks, by row" B18, cut: a junction in refs/ is no honest mistake
         heads = os.path.join(self.common, 'refs', 'heads')
         os.makedirs(heads)
         try:
@@ -198,7 +198,7 @@ class SharedRefsFromAWorktree(SharedRefBase):
         self.each_allowed(['git update-ref refs/tmp/main HEAD', 'git update-ref -d refs/tmp/main'])
 
     def test_a_reftable_repository_is_judged_by_name_and_head(self):
-        # docs/guard-v2.md B19, cut: a reftable repository is not refused as one; the names are
+        # docs/guard-fallback.md "Weakened checks, by row" B19, cut: a reftable repository is not refused as one; the names are
         # judged as anywhere, and HEAD by the HEAD file git still writes
         os.makedirs(os.path.join(self.common, 'reftable'))
         self.each_allowed(['git update-ref refs/tmp/x HEAD', 'git update-ref HEAD HEAD~1'])

@@ -71,3 +71,8 @@ The backstop for every other start in a process that has imported `kitlib` (a ba
 Tests: `tests/proc/test_spawn.py`, `tests/proc/test_no_window.py` (real `pythonw.exe` runs), `tests/proc/test_spawn_sites.py` and `tests/proc/test_console.py` (the hook).
 
 Not ported: per-piece red mapping and the hold after two reds, a custom step list, deferred steps, and owner-reservation reads beyond the lock's own exit 11. Tests: `tests/dailyfull`.
+
+## Open
+
+- Each repo runs redfirst.py and daily_full.py from the kit with `-C`. redfirst runs without `"redfirst".runners` in that repo's `.kit.json` (the defaults: docs/redfirst.md); written runners replace the defaults. daily_full needs `"daily_full".enabled` true plus a schedule the owner registers; the kit registers none. Repo-local copies retire only once the gaps in "Not ported" are decided.
+- Kit self tests: `tools/kit_tests.py --select` and `--jobs` (docs/test-tools.md "kit_tests") install nothing; kit briefs book `--kind test --cores 2` for kit suites, and kit landings gate with `--select`. For the daily full run, add `full_cmd` (running `--full`) to the kit-suite gate step and enable `daily_full` in `.kit.json`.

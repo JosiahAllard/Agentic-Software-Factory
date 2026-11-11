@@ -3,7 +3,7 @@ rules.shell_writes): from a worktree, a write PowerShell sends into the main che
 FileSystem:: or a module-qualified FileSystem:: is refused, never read as a file in the worktree.
 A drive named by anything but one ASCII letter (New-PSDrive Main FileSystem <main>, 1:, _:) or
 another provider is a place the guard cannot tell: judged as a bash target it cannot place is,
-refused only outside a worktree (docs/guard-v2.md B16, cut). Bash and cmd words, one-letter
+refused only outside a worktree (docs/guard-fallback.md "Weakened checks, by row" B16, cut). Bash and cmd words, one-letter
 drives and relative paths are read as before."""
 import os
 import time
@@ -83,7 +83,7 @@ class IntoMain(Base):
     def test_a_relative_filesystem_path_is_read_from_the_location(self):
         # PowerShell reads FileSystem::x.txt (and \FileSystem::x.txt) from the process's directory,
         # which Set-Location does not move; the guard reads it from the location, as it reads a
-        # relative .NET path (docs/guard-v2.md B16 for the provider path, B17 for the .NET one; both cut)
+        # relative .NET path (docs/guard-fallback.md "Weakened checks, by row" B16 for the provider path, B17 for the .NET one; both cut)
         for text in (r'New-Item FileSystem::x.txt', r'New-Item \FileSystem::x.txt',
                      r"Set-Content -LiteralPath '\FileSystem::x.txt' -Value y",
                      r'New-Item Microsoft.PowerShell.Core\FileSystem::sub\x.txt'):
@@ -716,7 +716,7 @@ class DynamicTargets(Base):
 class DriveAndProviderTargets(Base):
     """A drive named by anything but one ASCII letter, or a provider the guard does not know, is a
     place it cannot tell: from a worktree it passes, as a bash target the guard cannot place does,
-    and from the main checkout it is refused as unplaced (docs/guard-v2.md B16: the PS-drive jail
+    and from the main checkout it is refused as unplaced (docs/guard-fallback.md "Weakened checks, by row" B16: the PS-drive jail
     is cut, an unusual spelling that catches no honest mistake)."""
 
     TEXTS = (r'New-PSDrive Main FileSystem {main}; New-Item Main:\x.txt', r'New-Item 1:\x.txt',

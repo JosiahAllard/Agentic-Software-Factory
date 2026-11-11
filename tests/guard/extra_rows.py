@@ -1,6 +1,6 @@
 """Rows for tests/guard/test_rules.py: busy-wait loops (and the unreadable alternative of a
 nested bash -c wait), Windows paths in python heredocs (which pass: heredoc-winpath is cut,
-docs/guard-v2.md B8), core.hooksPath changes (git config, -c,
+docs/guard-fallback.md "Weakened checks, by row" B8), core.hooksPath changes (git config, -c,
 clone -c, GIT_CONFIG_*), ending processes by name, the .NET and Gradle heavy defaults, and a
 python's code, which counts as written where it runs
 (docs/guard-rules.md "Rules"). Same shape as ROWS there; the expected alternative is str.format text, so
@@ -115,7 +115,7 @@ ROWS = [
      'deny', 'busy-wait', None),
 
     # ---------------------------------------------------------------- Windows paths in python heredocs
-    # heredoc-winpath is cut (docs/guard-v2.md B8): a quoting trap, not a hazard. Each row passes.
+    # heredoc-winpath is cut (docs/guard-fallback.md "Weakened checks, by row" B8): a quoting trap, not a hazard. Each row passes.
     ('heredoc-winpath: python - with C:' + BS + 'Users', lambda w: bash(heredoc('python -', "open('C:%sUsers%sx.txt')" % (BS, BS)), w.wt),
      None, None, None),
     ('heredoc-winpath: python3 with no dash, subagent', lambda w: bash(heredoc('python3', "p = 'D:%snew%sx'" % (BS, BS)), w.wt, sub=True),

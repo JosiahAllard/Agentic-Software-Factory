@@ -1,4 +1,4 @@
-"""The time fence (docs/flaky-tests.md): a wall-clock budget whose expiry is a normal, visible
+"""The time fence (docs/test-tools.md "Time fence"): a wall-clock budget whose expiry is a normal, visible
 output (a degrade, such as kitlib.agentstart's `NOT CHECKED - the rest: over the 1.0 s budget`)
 must not let the machine's load decide a test's result.
 

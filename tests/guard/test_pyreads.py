@@ -56,7 +56,7 @@ class PsNativeUnsure(unittest.TestCase):
 
 class NoProver(unittest.TestCase):
     def test_the_guard_proves_no_code_reads_only(self):
-        """The read-only prover is gone (docs/guard-v2.md, the python program proving row)."""
+        """The read-only prover is gone (docs/guard-rules.md "Shell writes": code given on the line counts as a write)."""
         for name in ('py_reads_only', 'PY_READ_MODULES', 'PY_C_HINT', 'sleep_wait', 'py_only_sleeps'):
             with self.subTest(name):
                 self.assertFalse(hasattr(rules, name))

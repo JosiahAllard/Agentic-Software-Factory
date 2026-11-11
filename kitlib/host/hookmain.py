@@ -34,7 +34,7 @@ lives here once:
         the adapter's optional tool_context(event_name, text, rendered) (none: no line), so a
         reason keeps its format; the record is rewritten only after the answer is written. A deny,
         whatever made it, is then logged before run returns: one line in
-        <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-v2.md "Refusal log"),
+        <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"),
         with the role of the Action the guard judged. The line never changes the answer or the
         exit code; the host reads the answer when the hook exits, so the log adds its time (no
         process, at most refusal_log.BOUND seconds of lock wait plus file reads) to the hook's.

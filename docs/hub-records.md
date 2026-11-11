@@ -140,6 +140,8 @@ PM steps:
 The coordinator files the record itself with its own backlog tool, citing the story.
 
 ## repos/<name>
+
+Open: set `aliases` on the hub store's repos/ docs for every short tag an old item still carries.
 {name, added_at, aliases?}: `aliases` (optional, a list of strings) names old tags an item's `repo` may
 still carry; the page files such an item under this repo (case ignored). The server's repo list (`GET
 /api/v1/repos`, `kitlib.hubsite.derived.repos`) is every repository the PM knows

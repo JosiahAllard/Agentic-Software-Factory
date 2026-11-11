@@ -196,7 +196,7 @@ class LockRunHelpPiped(unittest.TestCase):
 
 class GatePipedRunsNothing(unittest.TestCase):
     """gate.py --help, --plan or --measure runs no gate step and takes no lock: it may be piped
-    (docs/guard-v2.md B9, rules.gate_runs_nothing). The default steps, --full, --only, land and
+    (docs/guard-fallback.md "Weakened checks, by row" B9, rules.gate_runs_nothing). The default steps, --full, --only, land and
     wait-result stay refused piped."""
 
     def setUp(self):

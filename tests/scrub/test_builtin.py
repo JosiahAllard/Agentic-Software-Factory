@@ -56,7 +56,6 @@ PENDING_HISTORY = {
     ('pinned-hash', 'docs/commit.md'): 1,
     ('provenance', 'docs/commit.md'): 2,
     ('provenance', 'docs/doc-tools.md'): 2,
-    ('provenance', 'docs/go-live.md'): 4,
     ('provenance', 'docs/install.md'): 1,
     ('provenance', 'docs/landed.md'): 2,
     ('provenance', 'docs/launcher.md'): 3,

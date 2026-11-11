@@ -1,4 +1,4 @@
-"""The guard's refusal log (kitlib/guard/refusal_log.py; docs/guard-v2.md "Refusal log"): one JSON
+"""The guard's refusal log (kitlib/guard/refusal_log.py; docs/guard-core.md "Refusal log"): one JSON
 line per deny in `<pm_data>/audit/refusals.jsonl`, the folder made on the first write: FIELDS in
 order and nothing else, never the reason, the command, the path, the working directory or the
 Instead text, and never a folder name that could be the account's. Appends hold an OS lock

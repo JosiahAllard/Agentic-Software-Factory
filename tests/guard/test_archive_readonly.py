@@ -109,7 +109,7 @@ class ArchiveReadOnly(ArchiveWorld):
 
     def test_archive_remote_and_exec_read(self):
         # --remote/--exec run git-upload-archive or the program --exec names; only an attacker
-        # hides a write there (honest mistakes only), so they read like any archive (docs/guard-v2.md)
+        # hides a write there (honest mistakes only), so they read like any archive (docs/guard-jail-roles.md "Write jail")
         for opt in ('--remote=. --exec=/tmp/x.sh', '--remote=origin', '--rem=origin', '--e=/tmp/x.sh'):
             text = 'git -C %s archive %s HEAD' % (self.main, opt)
             with self.subTest(text):

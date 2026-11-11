@@ -1,4 +1,4 @@
-# Shell guard: git hooks and go-live
+# Shell guard: git hooks and the settings entry
 
 Part of docs/guard.md (the index); the sections below are moved there unchanged.
 
@@ -29,6 +29,7 @@ Part of docs/guard.md (the index); the sections below are moved there unchanged.
 - **Order:** the PM data stage for every line (tests/guard/test_prepush_pmdata_private.py `PmDataPrivateTest.test_leak_stage_runs_before_main_rules`), then the machine config secrets stage for every line, then per line delete or fast-forward, then gate-OK, then owner-only paths; the first that refuses is the one reported (`test_the_rules_refuse_in_order`).
 - **Base config:** `push_block` and the main branch's name are read from the remote main commit being replaced when this clone has it, else from the default branch's committed `.kit.json` (the first of `<remote>/HEAD`, `<remote>/main`, `<remote>/master`, local `main`, local `master`). The working tree is never the base, and a pushed commit cannot turn the block off.
 - **Broken config:** a `.kit.json` that does not load refuses the push.
+- **A repo's own pre-push** is deleted only once the kit's hook is on there; the non-fast-forward refusal (`kitlib/guard/prepush.py`) applies to a push or delete of main wherever the hook is installed.
 - **Tests:** tests/guard/test_prepush.py pushes to a bare scratch remote with `core.hooksPath` set to the kit's githooks; tests/guard/test_prepush_pmdata.py and test_prepush_pmdata_private.py add a second bare remote as the private one, `PrivateTest` covers `_private` and `_norm_url`; tests/guard/test_machine_config.py `PrePushSecrets` covers the machine config secrets stage, on real git.
 
 ## Owner-only commits

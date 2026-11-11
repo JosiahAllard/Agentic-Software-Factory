@@ -282,7 +282,7 @@ class NoIdentity(unittest.TestCase):
 
 class RefusalLog(unittest.TestCase):
     """Every deny run() answers is logged after the answer is written: one line in
-    <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-v2.md "Refusal log"),
+    <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"),
     whatever made it (the guard, a guard error, the deadline, the host's screen). Nothing else is
     logged, and the log never changes the answer or the exit code."""
 

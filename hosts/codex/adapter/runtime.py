@@ -161,8 +161,7 @@ def evaluate_bound(event, binding, ctx=None, profile=None, environ=None):
 
 
 def _log(decision, action, environ):
-    """The refusal log's line for a broker deny (kitlib.guard.refusal_log; docs/guard-v2.md
-    "Refusal log"): `decision` refused `action` (an ask too: Codex refuses it), or None for the
+    """The refusal log's line for a broker deny (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"): `decision` refused `action` (an ask too: Codex refuses it), or None for the
     broker's own error (rule host-runtime-error, no Action). The role tag is 'subagent', as the
     deny's reason tags it: every bound call is judged as an agent. Never raises."""
     try:

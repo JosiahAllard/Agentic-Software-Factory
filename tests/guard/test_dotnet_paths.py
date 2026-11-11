@@ -225,7 +225,7 @@ class ParseEdges(Base):
 
 
 class ProcessDirectory(Base):
-    """The directory a .NET call's process started in is not judged (docs/guard-v2.md B17): an
+    """The directory a .NET call's process started in is not judged (docs/guard-fallback.md "Weakened checks, by row" B17): an
     unread call is judged at the PowerShell location only, so a Set-Location from the main checkout
     into a worktree clears it."""
 
@@ -311,8 +311,8 @@ class Constructors(Base):
                 self.allowed(self.run_ps(text.replace('{main}', '{wt}')))
 
     def test_net_readonly_filestream_counts_as_write(self):
-        # a FileStream opened Open, Read writes nothing, but the guard counts it (docs/guard-v2.md
-        # v2:114, stricter): allowed before
+        # a FileStream opened Open, Read writes nothing, but the guard counts it (docs/guard-rules.md
+        # "Shell writes", stricter): allowed before
         for text in (r"$f = [IO.FileStream]::new('{main}\x.txt', 'Open', 'Read')",
                      r"$f = [IO.FileStream]::new('{main}\x.txt', 'Open', 'Read', 'ReadWrite', 4096)",
                      r"$f = New-Object IO.FileStream('{main}\x.txt', [IO.FileMode]::Open, [IO.FileAccess]::Read)"):
@@ -337,7 +337,7 @@ class Constructors(Base):
                 self.denied(self.run_ps(text, cwd=self.w.main), rule)
 
     def test_a_cast_or_the_type_as_a_value(self):
-        # the StreamWriter cast is not read (docs/guard-v2.md B7, an unusual spelling): whatever it
+        # the StreamWriter cast is not read (docs/guard-fallback.md "Weakened checks, by row" B7, an unusual spelling): whatever it
         # opens is judged where the line runs, as a FileStream cast and the type as a value are
         for text in (r"$s = [System.IO.StreamWriter]'{main}\x.txt'", r"$s = [System.IO.StreamWriter]('{main}\x.txt')",
                      r"$s = [IO.StreamWriter] ( '{main}\x.txt' )", '$s = [IO.StreamWriter]$p',

@@ -9,7 +9,7 @@
   `hub.store`, else `hub/` in the PM data worktree (docs/pm-data-branch.md). `--store PATH` serves a
   scratch copy with git sync off and no push notifications. The server needs no `hub` key: without one
   every default holds, so a trial run with `--store` never writes the key; the owner writes it only for
-  the live store (docs/go-live.md "Switches"). The PM session-start checklist (docs/pm-start.md) runs its
+  the live store. The PM session-start checklist (docs/pm-start.md) runs its
   site checks with the key's settings or the defaults; writing the key does not switch it.
 - `hub.py serve` raises itself to normal priority at start (`kitlib.proc.process.raise_to_normal`), never lowering it or going above normal: the autostart task runs at Task Scheduler's default priority 7, below normal, and the git calls it starts would inherit that and starve while runs keep every core busy. A raise that fails is one NOTE line.
 - `hub.py status` prints the running server's health, one line each: `revision N`, `store ...`,

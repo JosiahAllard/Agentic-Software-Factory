@@ -111,7 +111,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    do not wrap it in `machine_lock.py run`, or it books twice. The committed setup below writes a
    starting `.kit.json` and the rest in one step.
 5. **Later:** turn on `repo.push_block` only after the repository has landed once through
-   `<kit>/tools/land.py` or `gate.py land` (docs/go-live.md "Universal gate").
+   `<kit>/tools/land.py` or `gate.py land` (docs/gate-landing.md).
 
 ### Backlog records and the rulings ledger
 
@@ -235,7 +235,7 @@ Nothing in the kit needs it.
   rule lines (the owner's go list, the creative limits) stay unless the owner deletes one. Both profiles
   are optional: with no agent profile, every role reads the kit's `content/default-profile.md`
   plus the repository's README and instructions file (docs/agent-profile.md).
-- `.claude/settings.json`: the kit ships none (docs/go-live.md "Joint-review questions"); the
+- `.claude/settings.json`: the kit ships none ("Open switches" below); the
   setup adds only its `autoMemoryDirectory` key, to the ignored `.claude/settings.local.json`.
 - Anything outside the repository: the ledger, the lock and the user config are per machine.
 
@@ -287,6 +287,40 @@ Machine setup (`machine-setup.ps1 -Apply`, its default mode) does the same migra
 whose plugin is not enabled from the export: it makes the export, then runs the migrate steps for
 that folder through the same code (docs/machine-setup.md "Default mode"). The CLI also
 rewrites other keys of that `settings.json`, so the step backs the file up first.
+
+## Open switches
+
+Per repository and per machine; each is the owner's to switch.
+
+- Repo switch-overs to the kit gate, lock and guard: each repository and the PM's.
+- Retirements: the per-repo test-runner wrapper scripts (the plugin's test-runner agent type stays), and heavy_run. The global `reserve_ui.pyw` is replaced by the kit window `reserve_ui.pyw` at the kit root, which stays.
+- `.claude/settings.json` for a new repository: the installer does not write one, and the kit ships no template. Open: whether `templates/common` carries one (hooks, permissions) and what it holds; until then the owner writes each repository's by hand.
+- Specialty cutover, for each downstream repository (status unknown): the `.kit.json` `doc_index.roles` keys and the profile lines naming a retired agent type (docs/content.md "Specialty skills").
+- The hub aliases, the Action Hub site and the backlog store per repository are in docs/hub-records.md "repos/<name>", docs/hub-serving.md "Serving it" and docs/backlog-store.md "Open".
+
+### Per Claude account
+
+Owner-run, once reviewed:
+1. Skills: enable the plugin so skills load from `content/skills` ("Plugin install (local marketplace)"; machine setup does it for every account). Remove each leftover per-skill link ("Existing installs"). Check with `ListSkills` that the skill names in docs/shipping.md appear once each.
+2. Statusline: point `statusLine.command` at `optional/usage/statusline-usage.ps1` in the kit checkout, and any scheduled call of `write-usage-status.ps1` at the kit's copy. Machine setup plans the re-point when the path names the older clone (`--old-kit`) or runs through a `tools` link (docs/machine-setup.md "Settings"). Confirm the line renders.
+3. Optional tools: point comfy, procwatch and usage entry points (shortcuts, scheduled tasks) at `optional/<name>` in the kit. Set env `PROCWATCH_PROTECT` for any extra processes procwatch must spare (the repo's live servers) and `KIT_MACHINE_LOCK` only if the lock tool is not the plugin's (`-OldKit` sets it; the default mode does not).
+4. Knowledge: an account's own asset-generation folder is noted and left (docs/machine-setup.md "Links"). Its LOG.md and samples are not in the kit, so move what is worth keeping before removing it.
+5. Repo-local skills (a model training skill, worktree-start) stay in their repo's `.claude/skills`.
+
+### Ported repo tools
+
+Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, with no copy or stub in the repo (docs/multi-host-plan.md section 7, decision 21). A new repo needs nothing; a repo that wants its kit settings committed runs the committed setup ("Committed setup (--repo)"). Per repo:
+
+- An existing repo's old stubs or tool copies can be deleted once its own scripts and docs name the kit form; the kit writes and checks none.
+- Owner identity: `.kit.json` "owner".email in each repo. commit.py `--owner-authored` and review_pack's owner-authored label need it; the PM kit's doc_budget.json identities are not read.
+- machine_paths: the PM kit's built-in allow entries are gone; a repo adds `machine_paths.allow`/`fixtures` entries. A non-empty `machine_paths.piece_fixtures` is refused (docs/commit.md).
+- pieces: a repo with a pieces table adds `"pieces": "tools/pieces.json"` to `.kit.json`; the file alone is not read.
+- forbidden: create the store (`{}` when `.kit.json` names one), add tokens with `forbidden.py -C <repo> --add` (token on stdin), then a gate step (docs/repo-checks.md).
+- trailers: add the `trailers.py` step with `merged_args` `--merged` and set `.kit.json` "owner".email in the same change (docs/repo-checks.md "trailers").
+- pytests, tool_deps, testlist and kitlib.proc.shield: a repo adopts pytests through a gate step; `python_tests` is no gate key (docs/test-tools.md).
+- PM repo: its kit/tools copies of the ported tools are dropped.
+- PM record tools: the PM repo's `tools/pending.py`, its ledger tool's `standing` and `check`, and `hooks/pre-commit` retire once its callers point at the kit: set `pending_path` in the machine config (docs/pending.md), and for the hook set `"ledger": {"pre_commit_check": true}` in its `.kit.json` and its `core.hooksPath` to `<kit>/githooks` (docs/ledger.md "Pre-commit check"). A kit older than this port refuses a `.kit.json` holding a `ledger` section (unknown sections are refused), so add it only once every kit checkout that reads that repo has the port.
+- The doc tools (tools/doc_budget.py, doc_index.py, codemap.py; docs/doc-tools.md): a repo's doc settings move from tools/doc_budget.json to `.kit.json` "doc_budget"/"doc_index", and doc_budget.json leaves the default owner paths. A repo needs no gate step for the index listing check; `.kit.json` "doc_index".enabled false skips it.
 
 ## Existing installs: a machine with the old home-folder layout
 

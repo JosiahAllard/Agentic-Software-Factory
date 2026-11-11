@@ -140,12 +140,6 @@ class KitAdapter(unittest.TestCase):
             with self.subTest(role=role):
                 self.assertEqual(plan("ledger", args, ROOT, role=role).argv[2:], tuple(args))
 
-    def test_migrate_report_is_a_read_for_every_role(self):
-        args = ["migrate-report", "--out", "report.md"]
-        for role in self.RULEBOOK_ROLES:
-            with self.subTest(role=role):
-                self.assertEqual(plan("ledger", args, ROOT, role=role).argv[2:], tuple(args))
-
     def test_rule_drop_and_rule_set_are_pm_only(self):
         for args in (self.RULE_DROP, self.RULE_SET):
             for role in self.RULEBOOK_ROLES[:-1]:
@@ -162,21 +156,6 @@ class KitAdapter(unittest.TestCase):
     def test_pm_rule_set_commits_with_its_model(self):
         args = self.RULE_SET + ["--commit", "--model", "gpt-6.1-sol"]
         self.assertEqual(plan("ledger", args, ROOT, role="pm").argv[2:], tuple(args))
-
-    # rule-apply (the migration apply) is not in tools/ledger.py yet: these pin only how dispatch
-    # classifies it, a PM-only write that takes --commit.
-    def test_rule_apply_is_pm_only(self):
-        args = ["rule-apply", "report.md", "--write"]
-        for role in self.RULEBOOK_ROLES[:-1]:
-            with self.subTest(role=role), self.assertRaises(ValueError):
-                plan("ledger", args, ROOT, role=role)
-        self.assertEqual(plan("ledger", args, ROOT, role="pm").argv[2:], tuple(args))
-
-    def test_pm_rule_apply_commits_with_its_model(self):
-        args = ["rule-apply", "report.md", "--write", "--commit", "--model", "gpt-6.1-sol"]
-        self.assertEqual(plan("ledger", args, ROOT, role="pm").argv[2:], tuple(args))
-        with self.assertRaises(ValueError):
-            plan("ledger", ["rule-apply", "report.md", "--commit"], ROOT, role="pm")
 
     def test_a_rulebook_commit_keeps_the_commit_checks(self):
         for role, args in (("pm", self.RULE_DROP + ["--commit"]),

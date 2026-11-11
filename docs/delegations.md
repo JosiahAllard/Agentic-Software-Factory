@@ -4,7 +4,7 @@
 
 ## Where it is
 
-`owner-delegations.json` in the PM repository's machine config folder, `<PM repo>/.pm-kit` (`kitlib.config.user.locate`'s `OK` folder; docs/kit-json.md "Machine config keys"), tracked there. `load` reads only that file: with no PM repo pointer there is no list (nothing is delegated), and a machine config that cannot be read (`UNMOVED` or `BAD`) is a `DelegationError`. `tools/config_move.py` copies the home folder's `~/.pm-kit/owner-delegations.json` there when the machine config moves; that home copy is only the move's source (`kitlib.delegations.load.delegations_file`), which the guard still holds, and `load` never reads it. Only the owner writes the list. No setting and no environment variable moves it. Tests pass `home=` with a temp folder.
+`owner-delegations.json` in the PM repository's machine config folder, `<PM repo>/.pm-kit` (`kitlib.config.user.locate`'s `OK` folder; docs/kit-json.md "Machine config keys"), tracked there. `load` reads only that file: with no PM repo pointer there is no list (nothing is delegated), and a machine config that cannot be read (`UNMOVED` or `BAD`) is a `DelegationError`. The owner copies the home folder's `~/.pm-kit/owner-delegations.json` there when the machine config moves (docs/kit-json.md "A machine config in the home folder"); that home copy is only the move's source (`kitlib.delegations.load.delegations_file`), which the guard still holds, and `load` never reads it. Only the owner writes the list. No setting and no environment variable moves it. Tests pass `home=` with a temp folder.
 
 `load(home=None)` returns `Delegations(path, schema, operations)`. It raises these errors:
 

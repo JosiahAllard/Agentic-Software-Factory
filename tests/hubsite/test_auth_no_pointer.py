@@ -69,7 +69,7 @@ class FolderTest(NoPointerCase):
         self.assertEqual(user.locate(self.home).state, user.UNMOVED)
         with self.assertRaises(ConfigError) as got:
             auth.folder(self.home)
-        self.assertIn('config_move.py', str(got.exception))
+        self.assertIn(user.MOVE_DOC, str(got.exception))
         self.assertFalse(os.path.exists(os.path.join(self.home_config_dir(), auth.FOLDER_NAME)))
         self.assertFalse(os.path.exists(os.path.join(pm, user.DIR_NAME)))
 

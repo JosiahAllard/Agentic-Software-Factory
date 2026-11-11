@@ -1,5 +1,5 @@
 """The guard across the machine config's moves (docs/kit-json.md "Moving the machine config
-folder" and "Moving the machine config into the PM repo"; docs/guard-fallback.md "Known limits"). A machine
+folder" and "A machine config in the home folder"; docs/guard-fallback.md "Known limits"). A machine
 config still in the home folder (kitlib.config.user UNMOVED) fails closed for subagents, and its
 ledger_path, with its ledger_dir's rulebooks and digest, stays protected: the old file's while it
 is the only one, the new folder's file when both are there; a new file or folder the guard cannot

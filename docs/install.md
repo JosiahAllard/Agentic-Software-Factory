@@ -33,9 +33,9 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    and `<PM repo>/.pm-kit/local.json` beside it (the machine-local and personal keys, the owner's
    email among them; `kitlib/config/user.py` `LOCAL_FILE_NAME`). Keep `local.json`, the hub's
    token folder `hub/` and `auto-tasks/` out of commits: the pre-push hook refuses a push that
-   holds `local.json` or `hub/` (`kitlib/guard/prepush.py`), but nothing writes their ignore lines
-   in a new PM repository, so add `.pm-kit/.gitignore` with the lines the config move writes
-   (`kitlib/config/move.py` `GITIGNORE`: `local.json`, `hub/`, `auto-tasks/`,
+   holds `local.json` or `hub/` (`kitlib/guard/prepush.py`), but machine setup's first key write
+   adds `.pm-kit/.gitignore` when there is none; before any other write, add it with the same
+   lines (`kitlib/machinesetup/machineconfig.py` `GITIGNORE`: `local.json`, `hub/`, `auto-tasks/`,
    `managed-settings.json`, `*.bak*`, `*.move-tmp`). The kit finds that folder through one
    machine-wide registry value, the PM-repo pointer (docs/kit-json.md "The PM repo pointer"), so
    the pointer comes before anything that reads or writes the machine config.
@@ -296,9 +296,9 @@ the old layout; each is cleared once, after step 1:
 - **An older kit clone:** run machine setup with `-OldKit <that clone>` instead of the default
   mode (docs/machine-setup.md).
 - **A machine config in the home folder** (`~/.pm-kit`): with the pointer set (step 1), move it
-  into the PM repository with `tools/config_move.py`, a dry run first, then `--apply`
-  (docs/kit-json.md "Moving the machine config into the PM repo"). Until it is moved, the kit
-  reads neither copy: a leftover home config is refused with the move's command
+  into the PM repository by hand (docs/kit-json.md "A machine config in the home folder").
+  Until it is moved, the kit reads neither copy: a leftover home config is refused, naming that
+  section
   (`kitlib/config/user.py` `UNMOVED`), the Action Hub's tools included (`kitlib/hubsite/auth.py`
   `folder`).
 - **Links under `~/.claude`** (junctions an earlier setup made): each is reported, with the line

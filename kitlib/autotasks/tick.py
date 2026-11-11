@@ -7,7 +7,7 @@ kit's own (`kit`: the folder holding tools/auto_tasks.py), with the python.exe b
 interpreter, each detached with its output in logs/<schedule>.log of the state folder.
 
 The state folder is `auto-tasks` in the PM repository's machine config folder (<PM repo>/.pm-kit,
-kitlib.config.user.locate's folder), which git ignores (kitlib.config.move GITIGNORE): the tick
+kitlib.config.user.locate's folder), which git ignores (kitlib.machinesetup.machineconfig GITIGNORE): the tick
 starts nothing when the PM-repo pointer is not good, when that folder is not ignored (unignored), or
 while a state is still in the retired home place, ~/.pm-kit/auto-tasks (home_problem names the
 command that moves or removes it; it is never read). state.json holds, per schedule, the last thing
@@ -104,8 +104,8 @@ HOME_BOTH = ("the auto-tasks state is in the PM repository (%s) and an old copy 
              "(Remove-Item -LiteralPath '%s' -Recurse)")
 HOME_NO_FOLDER = ("the auto-tasks state moved to the PM repository's machine config folder (%s), "
                   "which is not there yet; the state is still in the home folder (%s) and the tick "
-                  "starts nothing until it is moved: make that folder first (tools/config_move.py, "
-                  "%s), then the tick names the move")
+                  "starts nothing until it is moved: make that folder first (move the machine config "
+                  "into it, %s), then the tick names the move")
 UNIGNORED = ("git does not ignore the auto-tasks state folder in %s: add the line auto-tasks/ to %s "
              "and commit it")
 
@@ -157,9 +157,9 @@ def unignored(pm):
     raise (OSError, a subprocess error) is a problem line; a BaseException is not caught, so
     KeyboardInterrupt and SystemExit pass, and so does the fake git's Unsupported (a test trap,
     loud on purpose)."""
-    from kitlib.config import move
     try:
-        left, why = move.ignored(pm, [DIR_NAME + '/' + STATE_NAME])
+        from kitlib.config import pointer
+        left, why = pointer.ignored(pm, [DIR_NAME + '/' + STATE_NAME])
     except Exception as e:
         left, why = None, '%s: %s' % (type(e).__name__, e)
     if left is None:

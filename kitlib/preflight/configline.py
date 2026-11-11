@@ -1,7 +1,7 @@
 """preflight's `config` line: which machine config files are read (kitlib.config.user.locate: the
 PM repository's `.pm-kit` folder with a good PM-repo pointer), or why the config cannot be read
 (BROKEN), a machine config still in the home folder among them (kitlib.config.user LEFTOVER and
-UNMOVED; docs/kit-json.md "Moving the machine config into the PM repo"). It names files and keys,
+UNMOVED; docs/kit-json.md "A machine config in the home folder"). It names files and keys,
 never a value.
 
 The `pointer` line (pointer_line) names the PM repository the PM-repo pointer gives

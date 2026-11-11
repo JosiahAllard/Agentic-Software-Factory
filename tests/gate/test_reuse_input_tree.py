@@ -1,4 +1,4 @@
-"""kitlib.gate.reuse: the input-tree path (docs/gate.md "Gate reuse"), split from test_reuse so
+"""kitlib.gate.reuse: the input-tree path (docs/gate-landing-policy.md "Gate reuse"), split from test_reuse so
 each module's run stays well under the test pool's unit timeout: a one-branch landing whose main
 moved since the tip's gate. Fixtures: test_reuse.ReuseCase."""
 import datetime
@@ -7,7 +7,8 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.gate import land, reuse, runner
+from kitlib.gate import reuse, runner
+from kitlib.landing import lander as land
 from kitlib.gate import steps as S
 from kitlib.records import gate_ok
 from tests.gate import fixtures, test_reuse
@@ -36,12 +37,11 @@ class InputTree(ReuseCase):
     """A one-branch landing whose main moved since the tip's gate takes a step from the tip's
     gate-OK record when every part of the step's input key is the one the record holds: its argv
     (the base written <base>), tools, its inputs at the tip and the merge and at both bases, the
-    changed paths and the kit (docs/gate.md "Gate reuse", "The input tree"). A step that declares
+    changed paths and the kit (docs/gate-landing-policy.md "Gate reuse", "The input tree"). A step that declares
     no input, a batch, a docs-only record, a result that was not a pass, or a record without input
     keys serves nothing."""
     GATE = {'steps': [UNIT, BASEY, WHOLE, FULLY, GU, GW, MERGED, PLAIN]}
-    # a default-mode record lands; gate_once off, as its --full merged gate reuses nothing
-    KIT = {'landing': {'shared_paths': ['shared/*'], 'gate_once': False}}
+    KIT = {}        # a default-mode record lands; the merged gate of a plain change may reuse
     ASKING = ('unit', 'basey', 'whole', 'fully', 'gu', 'gw', 'merged')
 
     def full_tip(self):

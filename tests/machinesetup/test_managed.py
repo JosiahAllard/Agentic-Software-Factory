@@ -410,16 +410,16 @@ class ManagedMode(ManagedBase):
 class LinuxRender(ManagedBase):
     """On Linux the managed file is what carries the guard (its entry there means no account
     settings.json gains one), so its guard hook blocks a call when its interpreter is gone, as the
-    account entry would (hookmain.ON_FAILURE through the guard entry), and the PowerShell status
+    account entry would (hookrun.ON_FAILURE through the guard entry), and the PowerShell status
     line is not installed."""
 
     PY = '/usr/bin/python3'
 
     def setUp(self):
         super(LinuxRender, self).setUp()
-        from kitlib.host import hookmain
-        self.hookmain = hookmain
-        self.host.guard_entry = lambda kit: hookmain.settings_entry(
+        from kitlib.hookrun import main as hookrun
+        self.hookrun = hookrun
+        self.host.guard_entry = lambda kit: hookrun.settings_entry(
             'PreToolUse', 'Bash|PowerShell', os.path.join(kit, 'boot', 'hook.py'), self.PY,
             args=('claude', 'PreToolUse'), platform='linux')
         linux = mock.patch.object(managed, 'platform', types.SimpleNamespace(NAME='linux'), create=True)
@@ -431,7 +431,7 @@ class LinuxRender(ManagedBase):
 
     def test_the_managed_guard_hook_carries_the_guard_entrys_on_failure(self):
         hook = self.guard(managed.render(self.ctx()))
-        self.assertEqual(hook['onFailure'], self.hookmain.ON_FAILURE['linux'])
+        self.assertEqual(hook['onFailure'], self.hookrun.ON_FAILURE['linux'])
         self.assertEqual(hook['command'], self.PY)                   # {pythonw}: the full interpreter path
         self.assertEqual(hook['args'], [T.fwd(self.kit) + '/boot/hook.py', 'claude', 'PreToolUse'])
 
@@ -439,7 +439,7 @@ class LinuxRender(ManagedBase):
         with open(self.source, 'wb') as f:
             f.write(committed_template())
         data = managed.render(self.ctx())
-        self.assertEqual(self.guard(data)['onFailure'], self.hookmain.ON_FAILURE['linux'])
+        self.assertEqual(self.guard(data)['onFailure'], self.hookrun.ON_FAILURE['linux'])
         self.assertNotIn('statusLine', data)
 
     def test_an_installed_file_carries_it(self):
@@ -755,10 +755,10 @@ class FreshGuard(F.FreshBase):
         self.assertIn('runs twice', out)
 
     def test_a_rerun_gives_an_older_guard_entry_the_platforms_on_failure(self):
-        """Where the running platform gives the guard entry an onFailure (hookmain.ON_FAILURE: Linux),
+        """Where the running platform gives the guard entry an onFailure (hookrun.ON_FAILURE: Linux),
         an account entry written before it gets it on a rerun, once, and no second entry."""
         from kitlib import platform
-        from kitlib.host import hookmain
+        from kitlib.hookrun import main as hookrun
         doc = dict(self.doc2)
         doc['hooks'] = dict(doc['hooks'], PreToolUse=doc['hooks']['PreToolUse'] + self.guard_groups())
         dump(self.s2, doc)
@@ -769,7 +769,7 @@ class FreshGuard(F.FreshBase):
             got['PreToolUse'][0]['hooks'][0]['onFailure'] = 'block'
             return got
         self.host.guard_entry = entry
-        with mock.patch.dict(hookmain.ON_FAILURE, {platform.NAME: 'block'}):
+        with mock.patch.dict(hookrun.ON_FAILURE, {platform.NAME: 'block'}):
             code, out = self.run_it(apply=True)
             self.assertEqual(code, M.EXIT_OK, out)
             self.assertIn('give the guard\'s PreToolUse entry onFailure "block"', out)

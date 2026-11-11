@@ -3,7 +3,7 @@
 it out (host.py plugin_copy, tools/_host.py plugin_copies); kitlib.pluginsource runs it with the
 export folder and never names this host.
 
-  Step(home, environ)              the step kitlib.pluginsource.refresh runs: step(export, out, apply);
+  Step(home, environ)              the step kitlib.pluginsource.refresh.refresh runs: step(export, out, apply);
                                    an install from the export (plugin_install: pm-kit, then the
                                    hooks plugin pm-kit-hooks) when config.toml names
                                    the marketplace pm-kit; the owner's switch steps when it names only
@@ -11,7 +11,7 @@ export folder and never names this host.
   codex_home(home, environ)        <home>\\.codex when --home names one, else CODEX_HOME, else the
                                    user's ~\\.codex
 
-A marked session (kitlib.sessionmark) installs nothing: the install is the owner's. Every problem is
+A marked session (kitlib.host.sessionmark) installs nothing: the install is the owner's. Every problem is
 a line, never an exit code: the rest of the refresh decides that. An apply that is not a marked
 session's clears the export root's codex pending flag first (plugin_install.clear_deferral), so
 whatever ends the step, only a deferral in this run leaves the flag; a marked session's skip leaves
@@ -20,7 +20,7 @@ it as it is.
 import os
 
 from hosts.codex.adapter import plugin_install
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 LABEL = 'codex'                      # the step's name: its lines start 'codex: '
 MARKET = plugin_install.OLD_MARKET   # the old hand-made copy
@@ -40,7 +40,7 @@ def codex_home(home=None, environ=None):
 
 
 class Step(object):
-    """Codex's plugin step of kitlib.pluginsource.refresh, for the Codex home codex_home(home,
+    """Codex's plugin step of kitlib.pluginsource.refresh.refresh, for the Codex home codex_home(home,
     environ), fixed when the step is made; `environ` (None: os.environ) is read for the session
     mark and handed to codex.exe. step(export, out, apply): when config.toml names the export's
     marketplace `pm-kit`, Codex installs the export (plugin_install.install); when it names only the

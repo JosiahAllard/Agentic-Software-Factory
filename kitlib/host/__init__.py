@@ -1,4 +1,4 @@
-"""The host contract (ARCHITECTURE.md "Host contract"; docs/multi-host-plan.md section 2.1).
+"""The host contract (ARCHITECTURE.md "Host contract").
 
 What the core and a host adapter exchange, and nothing else: the neutral `Action` a hook payload
 is parsed into, the `Decision` rendered back, a host's `HostProfile` and `HostCapabilities`, and
@@ -14,9 +14,9 @@ import for that): kitlib never imports a host, the host is chosen at the edge.
   degrade(decision, caps)   the one way a verdict the host cannot show is lowered
   HostAdapter, SessionHost, CommandHost   what an adapter supplies
   registry                  hosts.json read as data: names, selection, adapter module names
-  hookmain                  the one hook runner: parse, kitlib.guard.decide, degrade, render, fail
-                            closed; and the one place a hook command line is written
-  header                    the kit header every session and subagent start adds to the context
+
+The hook runner that uses these (parse, decide, degrade, render, fail closed) and the kit header
+are kitlib/hookrun, a layer above.
 """
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
@@ -127,9 +127,9 @@ class HostProfile:
     ({name} last), `session_process` the process image a session it launches runs as (whose
     --remote-control value names the session), `env_prefixes` the environment variable prefixes
     its sessions own (a child launched on another host never inherits them;
-    kitlib.sessionmark.child_environment), `cli_program` the name its CLI runs as on Linux and
+    kitlib.host.sessionmark.child_environment), `cli_program` the name its CLI runs as on Linux and
     `cli_package` its npm package's scoped name (@scope/name), which tell a node process that runs
-    the CLI from any other (kitlib.pmstart.runs_cli; kitlib.launcher.lookup and stop)."""
+    the CLI from any other (kitlib.launcher.lookup.runs_host_cli; lookup.runs_cli and stop)."""
     owner_paths: tuple
     worktrees_directory: str
     state_directory: str
@@ -185,12 +185,12 @@ class HostAdapter(Protocol):
     """One per host, built by the host's own entry points and passed into the core. A supported host
     passes the conformance suite (tests/host/conformance.py; docs/new-host.md).
 
-    capabilities                 its HostCapabilities (hosts.json), which hookmain degrades by
+    capabilities                 its HostCapabilities (hosts.json), which the hook runner degrades by
     parse(event_name, payload)   the host's hook payload as an Action, or a non-empty tuple of
-                                 Actions when one call acts on several targets (hookmain judges
+                                 Actions when one call acts on several targets (the runner judges
                                  each; any deny decides)
     screen(action, environ)      optional: the host's own policy over one Action, a Decision or
-                                 None, judged before kitlib.guard (a deny or ask stands alone)
+                                 None, judged before the guard (a deny or ask stands alone)
     render(event_name, decision) (stdout text, exit code) the host's hook reads back
     context(event_name, text)    (stdout text, exit code) of a session or subagent start hook that
                                  adds `text` to the agent's context (the kit header); ('', 0) for
@@ -200,7 +200,7 @@ class HostAdapter(Protocol):
                                  with `environ`: the hook registered on that event with `part`
                                  (None: the plain one, the kit header first; a part it does not
                                  have raises). A check that fails is a line in it. boot/hook.py
-                                 writes it (hookmain.dispatch); tools/agent_view.py shows it.
+                                 writes it (kitlib.hookrun.main.dispatch); tools/agent_view.py shows it.
                                  Without it a start event gets the kit header and takes no part.
     start_parts(event_name, role)  optional: the parts, None for the plain hook, that a session of
                                  `role` runs at that event, every registration it loads (the

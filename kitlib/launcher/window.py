@@ -7,7 +7,7 @@
   3. every inherited CLAUDE*/ANTHROPIC* variable cleared (a window started from a Claude session
      inherits its child-session marker, which turns transcripts off, and its auth routing), then
      CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1;
-  4. PM_KIT_ROLE, the session mark (kitlib.sessionmark; role_for), and PM_KIT_SESSION_NAME;
+  4. PM_KIT_ROLE, the session mark (kitlib.host.sessionmark; role_for), and PM_KIT_SESSION_NAME;
   5. CLAUDE_CONFIG_DIR for the account (removed for the default folder);
   6. AGENT_TEMP set again, and TEMP and TMP pointed at it, when the launcher sees one (a session
      whose guard allows scratch writes only there finds all three; the PM resume too);
@@ -28,11 +28,12 @@ import base64
 import re
 import subprocess
 
-from kitlib import agentname, platform, sessionmark
+from kitlib import platform
+from kitlib.host import agentname, sessionmark
 
 ROLE_ENV = sessionmark.ENV
 NAME_ENV = 'PM_KIT_SESSION_NAME'
-# The session kinds and the mark each sets (docs/guard.md "Session mark").
+# The session kinds and the mark each sets (docs/guard-fallback.md "Session mark").
 COORDINATOR = 'coordinator'
 DEEP_WORKER = 'deep-worker'
 CONSULTANT = 'consultant'
@@ -41,7 +42,7 @@ PLAIN = 'plain'
 TOPIC = 'topic'          # a plain session (no agent) launch.py topic marks: start.topic
 _BY_AGENT = {'coordinator': COORDINATOR, 'deep-worker': DEEP_WORKER, 'consultant': CONSULTANT}
 MODEL = re.compile(r'^[A-Za-z0-9._-]+(\[1m\])?$')
-# an agent name, bare or with the kit plugin's prefix (kitlib.agentname); no other colon
+# an agent name, bare or with the kit plugin's prefix (kitlib.host.agentname); no other colon
 AGENT = re.compile(r'^(?:%s)?[A-Za-z0-9_-]+$' % re.escape(agentname.PREFIX))
 # The modes a launch may ask for; wider ones (dontAsk, bypassPermissions) are the owner's call to add.
 PERMISSION_MODES = ('default', 'acceptEdits', 'auto')

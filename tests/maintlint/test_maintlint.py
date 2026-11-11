@@ -1,6 +1,6 @@
 """kitlib.maintlint and tools/maint_lint.py: the checks on in-memory snapshots, the whole run on a
 real store (a record that is merely old gives no finding), the ledger as counts only, the result
-file, and the page that kitlib.hubsite.pagecheck passes."""
+file, and the page that kitlib.hubvalidate.pagecheck passes."""
 import datetime
 import io
 import json
@@ -14,10 +14,11 @@ from unittest import mock
 from kitlib import maintlint
 from kitlib.backlog import audit_check
 from kitlib.backlog import record as rmod
-from kitlib.backlog import store as smod
-from kitlib.hubsite import pagecheck
+from kitlib.backlog import store_read
+from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import Finding, backlog, ledger, page, result, verify, worktrees
 from kitlib.modulemap import scopelog
+from kitlib.hubclient import errors as huberrors
 
 from tests.backlog.helpers import BRANCH, StoreCase, kit_json_ref, priced, rec
 from tests.backlog.test_stale import at
@@ -36,7 +37,7 @@ def snap(*records):
     for r in records:
         texts.update(r)
     parsed = [rmod.parse('backlog/%s.md' % stem, text, stem) for stem, text in texts.items()]
-    return smod.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
+    return store_read.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
 
 
 def temp_dir(case):
@@ -160,10 +161,9 @@ class AnsweredQuestions(unittest.TestCase):
         self.assertNotIn('a one-off go', got[0].text + got[0].fix)
 
     def test_a_hub_that_cannot_be_asked_is_a_not_checked_note(self):
-        from kitlib.hubsite import serve
 
         def down():
-            raise serve.NotRunning(4321)
+            raise huberrors.NotRunning(4321)
         got, notes = backlog.answered(snap(self.parked('AAA', QID)), CMD, questions=down)
         self.assertEqual((got, notes), ([], ['answered questions NOT CHECKED: no hub server is'
                                              ' listening on port 4321']))
@@ -174,7 +174,7 @@ class AnsweredQuestions(unittest.TestCase):
         self.assertEqual(backlog.answered(snap(priced('AAA')), CMD, questions=never), ([], []))
 
     def test_the_hub_is_read_with_the_agent_token_and_every_status(self):
-        from kitlib.hubsite import client
+        from kitlib.hubclient import client
         seen = []
 
         class Fake(object):
@@ -185,7 +185,7 @@ class AnsweredQuestions(unittest.TestCase):
                 seen.append((collection, status, role))
                 return []
         with mock.patch.object(client, 'Client', Fake), \
-                mock.patch('kitlib.hubsite.settings.load', return_value=mock.Mock(port=4321)):
+                mock.patch('kitlib.hubclient.settings.load', return_value=mock.Mock(port=4321)):
             self.assertEqual(backlog.hub_questions(), [])
         self.assertEqual(seen, [4321, ('questions', 'all', client.AGENT)])
 
@@ -234,7 +234,7 @@ class WorktreeChecks(unittest.TestCase):
 
     def found(self, *rows):
         res = mock.Mock(data={'trees': list(rows)}, lines=[])
-        with mock.patch.object(worktrees.remove, 'open_ctx', return_value=(None, None)):
+        with mock.patch.object(worktrees.remove_checks, 'open_ctx', return_value=(None, None)):
             got, _ = worktrees.findings('top', classify=lambda top: res)
         return got
 
@@ -544,8 +544,8 @@ class WholeRun(StoreCase):
         kit_json_ref(self.repo)
         self.seed(*records)
         broken = mock.PropertyMock(side_effect=maintlint.Refusal('resources config is broken'))
-        with mock.patch.object(type(maintlint.open_store(self.repo.root, fetch=False)), 'resources',
-                               broken):
+        ctx = maintlint.open_store(self.repo.root, fetch=False, probes=maintlint.NO_PROBES)
+        with mock.patch.object(type(ctx), 'resources', broken):
             return self.run_lint()
 
     def test_the_uses_hint_needs_a_uses_line_in_the_store(self):

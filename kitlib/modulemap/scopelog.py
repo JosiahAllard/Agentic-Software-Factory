@@ -2,7 +2,7 @@
 
 A gate step that runs `module_map.py --scope --record` keeps the change's Scope (scope.py) as one
 small record in `<dev_drive>/pm-kit/kit-gate-scope/<repo key>/`: a sibling of the gate's other
-per-repository folders (kitlib.gate.result.kit_folder and repo_key, one folder for every worktree
+per-repository folders (kitlib.records.place.kit_folder and repo_key, one folder for every worktree
 of a repository), outside every checkout. The weekly maintenance lint (kitlib.maintlint) sums the
 last DAYS days of them, so how often gates widened beyond the changed modules, and by which edge,
 shows without an audit. The sum refuses and files nothing: a widening the map allows is no
@@ -43,9 +43,9 @@ import secrets
 from kitlib.config import load as load_config
 from kitlib.config.types import ConfigError
 from kitlib.fs import replace as fsreplace
-from kitlib.gate import result as gresult
 from kitlib.git import refs as gitrefs
 from kitlib.git import repo as gitrepo
+from kitlib.records import place
 
 DIR_NAME = 'kit-gate-scope'
 SCHEMA = 1
@@ -69,10 +69,10 @@ def folder(root):
     if not common:
         return None, 'no git common dir for %s: %s' % (root, why)
     try:
-        base = gresult.kit_folder(DIR_NAME, 'gate scope folder')
-    except gresult.ResultError as e:
+        base = place.kit_folder(DIR_NAME, 'gate scope folder')
+    except place.NoKitFolder as e:
         return None, ' '.join(str(e).split())
-    return os.path.join(base, gresult.repo_key(common)), None
+    return os.path.join(base, place.repo_key(common)), None
 
 
 def stamp_of(name):

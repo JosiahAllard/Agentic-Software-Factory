@@ -161,7 +161,7 @@ class StartInHome(HomeBase):
 
 class OnlyDeepWorkersAndConsultants(HomeBase):
     """A coordinator and other roles work in the main checkout, which a session in a linked worktree
-    may not write (docs/guard.md "Write jail"): refused, nothing made."""
+    may not write (docs/guard-jail-roles.md "Write jail"): refused, nothing made."""
 
     def assert_refused(self, role, call):
         self.host.where = None              # place() would fail the test

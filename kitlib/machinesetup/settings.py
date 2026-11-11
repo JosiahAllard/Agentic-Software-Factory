@@ -26,11 +26,12 @@ every mode and in the PM settings, so a status line keeps working once the link 
 such file is refused, named.
 
 Moved hook paths (docs/machine-setup.md "Moved hook paths"): a hook path to one of this kit's
-RETIRED hook scripts, in HOOKS (`<kit>/hosts/claude/shell/hooks/`, plan steps 7 to 13) or in
+RETIRED hook scripts, in HOOKS (`<kit>/hosts/claude/shell/hooks/`) or in
 MOVED_HOOKS (`<kit>/claude/hooks/`, before the hosts/ move), is re-pointed to the kit's one hook
 entry, ENTRY, followed by the host and the script's words (RETIRED): `guard.py` becomes
 `boot/hook.py <host> PreToolUse`. This runs in every mode and in the PM settings too, so a settings
-file written before plan step 14 keeps its one guard entry and its PM hook. Any other name in those
+file written before the one hook entry keeps its one guard entry and its PM hook. Any other name in
+those
 folders, or a kit with no ENTRY, is refused.
 """
 import copy
@@ -40,6 +41,7 @@ import os
 import re
 
 from kitlib.host import registry
+from kitlib.launcher import accounts
 
 from .common import MOVED_FROM, SHELL, free_name, kit_file, norm, under
 from . import links
@@ -47,7 +49,7 @@ from . import links
 ENTRY = 'boot/hook.py'                                               # every host's one hook entry
 HOOKS = SHELL + '/hooks'
 MOVED_HOOKS = MOVED_FROM + '/hooks'
-# The hook scripts ENTRY replaced (plan step 14), each with the words ENTRY now takes after the host.
+# The hook scripts ENTRY replaced, each with the words ENTRY now takes after the host.
 RETIRED = {
     'guard.py': ('PreToolUse',),
     'pm_session_start.py': ('SessionStart', 'pm'),
@@ -160,11 +162,11 @@ def _wants_guard(plan, path, data, ctx):
 
 
 def on_failure():
-    """The onFailure the guard's entry carries on the running platform (kitlib.host.hookmain
+    """The onFailure the guard's entry carries on the running platform (kitlib.hookrun.main
     ON_FAILURE, which settings_entry reads), or None."""
     from kitlib import platform
-    from kitlib.host import hookmain
-    return hookmain.ON_FAILURE.get(platform.NAME)
+    from kitlib.hookrun import main as hookrun
+    return hookrun.ON_FAILURE.get(platform.NAME)
 
 
 def _guard_on_failure(data, ctx, did):
@@ -327,7 +329,8 @@ def repoint_moved(data, ctx):
     """Re-point, in place, every hook path in `data` (any event; `command` and `args`) that names a
     RETIRED hook script in this kit's HOOKS or MOVED_HOOKS folder to ENTRY and its words; [what it
     did, one line per path]. ValueError for another name there, or a kit with no ENTRY. Runs in
-    every mode: a settings file written before plan step 14 otherwise gets a second guard entry, or
+    every mode: a settings file written before the one hook entry otherwise gets a second guard
+    entry, or
     keeps a hook path the kit no longer has (a missing guard script blocks every tool call)."""
     did = []
     hooks = data.get('hooks') if isinstance(data, dict) else None
@@ -350,9 +353,8 @@ def repoint_moved(data, ctx):
 def _link_dirs(ctx):
     """The config folders whose `tools` links a settings path may run through: the run's, then
     every one under the home (a status line may name another account's folder)."""
-    from . import default_config_dirs                                # the package imports this module
     out, seen = [], set()
-    for d in list(ctx.config_dirs) + default_config_dirs(ctx.home):
+    for d in list(ctx.config_dirs) + accounts.default_config_dirs(ctx.home):
         if norm(d) not in seen:
             seen.add(norm(d))
             out.append(d)
@@ -827,7 +829,7 @@ def _paths(h, home):
 
 def add_on_failure(data, kit, home, value):
     """Give each PreToolUse hook in `data` that runs `kit`'s guard (GUARD) and has no onFailure the
-    onFailure `value()` returns (the guard entry's: kitlib.host.hookmain.ON_FAILURE); `value` is
+    onFailure `value()` returns (the guard entry's: kitlib.hookrun.main.ON_FAILURE); `value` is
     called only for such a hook, and None from it changes nothing. A hook that has one keeps it.
     True when a hook changed."""
     guard = norm(kit_file(kit, GUARD))

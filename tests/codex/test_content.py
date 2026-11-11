@@ -1,9 +1,11 @@
 """hosts.codex.adapter.content: every role rendered as a Codex agent file that TOML reads back, its
 instructions the role body with Codex's token values, and the plugin's manifests (the Codex branch's
 roles.json and committed TOMLs, replaced; docs/content.md "Codex")."""
+import dataclasses
 import json
 import os
 import unittest
+from unittest import mock
 
 try:
     import tomllib
@@ -22,7 +24,7 @@ ROLE = (b'---\nname: alpha\ndescription: "Builds: things. Ask {{agent:beta}} fir
         b'Trailer <{{coauthor_email}}>. Run as `{{launch_agent}} {{agent:beta}}` on {{model:strong}}; '
         b'ask by {{tool:message}}, edit with {{tool:edit}}, in {{owner_folder}} and {{user_folder}}.\n')
 BETA = (b'---\nname: beta\ndescription: b\ntier: light\neffort: high\nsandbox: workspace-write\n'
-        b'capabilities: all\nmodel.codex: gpt-x\n---\r\nbody\r\n')
+        b'capabilities: all\n---\r\nbody\r\n')
 
 
 @unittest.skipIf(tomllib is None, 'tomllib needs Python 3.11')
@@ -44,8 +46,25 @@ class Agents(unittest.TestCase):
         beta = files['hosts/codex/shell/agents/kit-beta.toml']
         self.assertIn(b'\r\n', beta, 'the role file\'s line endings')
         beta = tomllib.loads(beta.decode('utf-8'))
-        self.assertEqual((beta['model'], beta['model_reasoning_effort'], beta['sandbox_mode'],
-                          beta['developer_instructions']), ('gpt-x', 'high', 'workspace-write', 'body\n'))
+        self.assertEqual((beta.get('model'), beta['model_reasoning_effort'], beta['sandbox_mode'],
+                          beta['developer_instructions']), (None, 'high', 'workspace-write', 'body\n'))
+
+    def test_a_role_models_entry_beats_the_tier_in_model_and_long_context_token(self):
+        """hosts.json's Codex `role_models` names a role's model: its `model` line and its
+        {{long_context_model}}; a role without an entry keeps the account's model."""
+        real = registry.host
+
+        def host(name, path=None):
+            h = real(name, path)
+            return dataclasses.replace(h, role_models=(('beta', 'gpt-x'),)) if name == 'codex' else h
+        own = BETA.replace(b'---\r\nbody', b'---\r\nuse {{long_context_model}}', 1)
+        self.assertNotEqual(own, BETA)
+        with mock.patch.object(cc.registry, 'host', host):
+            files = self.render(ROLE, own)
+        beta = tomllib.loads(files['hosts/codex/shell/agents/kit-beta.toml'].decode('utf-8'))
+        self.assertEqual((beta['model'], beta['developer_instructions']), ('gpt-x', 'use gpt-x\n'))
+        alpha = tomllib.loads(files['hosts/codex/shell/agents/kit-alpha.toml'].decode('utf-8'))
+        self.assertNotIn('model', alpha)
 
     def test_a_compact_window_is_not_rendered(self):
         # No per-agent compact key is established for Codex (docs/content.md "Codex").
@@ -119,8 +138,8 @@ class DefaultRole(unittest.TestCase):
 
 class Banner(unittest.TestCase):
     def test_every_committed_agent_file_opens_with_the_generated_line(self):
-        """Its first line names the role file and the render command (decision 19 in
-        docs/multi-host-plan.md section 7; docs/content.md "Generated files")."""
+        """Its first line names the role file and the render command (docs/content.md "Generated
+        files")."""
         folder = os.path.join(ROOT, *cc.AGENTS_REL.split('/'))
         names = kcontent.load(ROOT).role_names()
         self.assertEqual(sorted(n for n in os.listdir(folder) if n.endswith('.toml')),
@@ -281,7 +300,7 @@ class Hook(unittest.TestCase):
 
     def test_the_entrys_budget_counts_the_boot(self):
         """DEADLINE is the whole call's: the time the boot took (a pinned verify hashes every file)
-        comes off what hookmain gets, which names the whole budget when it runs out."""
+        comes off what hookrun gets, which names the whole budget when it runs out."""
         import io
         import sys
         import types
@@ -300,7 +319,7 @@ class Hook(unittest.TestCase):
             return 0
         with unittest.mock.patch.dict(sys.modules, {'kitboot': boot}), \
                 unittest.mock.patch('time.monotonic', lambda: clock[0]), \
-                unittest.mock.patch('kitlib.host.hookmain.run', fake_run):
+                unittest.mock.patch('kitlib.hookrun.main.run', fake_run):
             rc = hook.main(['codex', 'PreToolUse'], io.StringIO('{"tool_name": "Write"}'), io.StringIO(), {})
         self.assertEqual(rc, 0)
         from hosts.codex.adapter.host import ADAPTER
@@ -312,7 +331,7 @@ class Hook(unittest.TestCase):
         import io
         import sys
         import types
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         hook = self.load_hook()
         boot = types.ModuleType('kitboot')
 

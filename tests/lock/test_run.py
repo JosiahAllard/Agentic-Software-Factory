@@ -29,6 +29,9 @@ if os.name == "nt":
     from kitlib.lock import layout as lay
     from kitlib.lock import queue as qm
     from kitlib.lock import run as rm
+    from kitlib.lock import run_cmdline
+    from kitlib.lock import run_held
+    from kitlib.lock import run_wait
     from kitlib.lock import store as store_mod
     from kitlib.lock.store import LockError, utc_now
     from kitlib.proc import process
@@ -64,7 +67,7 @@ def one_usable_slot(case):
     return ok[0]
 
 
-WAIT_S = 3600           # a --max-wait no test waits out: Settling ends it on run.py's clock
+WAIT_S = 3600           # a --max-wait no test waits out: Settling ends it on run_wait.py's clock
 
 WRITE_ENV = ("import os,sys; open(sys.argv[1], 'w').write(os.environ.get('MACHINE_LOCK_RUN', '')"
              " + '|' + os.environ.get('MACHINE_LOCK_CPUMASK', ''))")
@@ -80,13 +83,13 @@ class Slot(StoreCase):
             with rm.slot("engine-test", "kit", "t", cores=1, store=self.store,
                          env=clean_env()) as launch:
                 rid, mask = launch.id, launch.mask
-                token = launch.env[rm.NEST_ENV]
+                token = launch.env[run_held.NEST_ENV]
                 rec = self.store.read("active/%s.json" % rid)
                 self.assertEqual(rec["state"], "held")
                 self.assertEqual(len(launch.cores), 1)
                 self.assertLessEqual(set(launch.cores), set(usable))
                 self.assertEqual(mask, lay.cores_mask(L, launch.cores))
-                self.assertEqual(launch.env[rm.CPUMASK_ENV], hex(mask))
+                self.assertEqual(launch.env[run_held.CPUMASK_ENV], hex(mask))
                 code = launch.run([sys.executable, "-c", WRITE_ENV, seen])
         self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
         self.assertEqual(code, 0)
@@ -232,10 +235,10 @@ class CallerFolder(StoreCase):
     def test_the_hint_needs_the_setting_set(self):
         missing = FileNotFoundError(2, "The system cannot find the file specified")
         with mock.patch.dict(os.environ, {NO_CWD: "1"}):
-            self.assertIn(".\\hello.bat", rm.bare_hint(["hello.bat"], missing))
+            self.assertIn(".\\hello.bat", run_cmdline.bare_hint(["hello.bat"], missing))
         with mock.patch.dict(os.environ):
             os.environ.pop(NO_CWD, None)
-            self.assertEqual(rm.bare_hint(["hello.bat"], missing), "")
+            self.assertEqual(run_cmdline.bare_hint(["hello.bat"], missing), "")
 
     def test_a_folder_qualified_name_gets_no_hint(self):
         missing = FileNotFoundError(2, "The system cannot find the file specified")
@@ -244,13 +247,14 @@ class CallerFolder(StoreCase):
             f.write("@echo off\r\n")
         with mock.patch.dict(os.environ, {NO_CWD: "1"}):
             for name in ("sub\\hello.bat", ".\\hello.bat", os.path.join(self.folder, "hello.bat")):
-                self.assertEqual(rm.bare_hint([name], missing), "", name)
+                self.assertEqual(run_cmdline.bare_hint([name], missing), "", name)
 
     def test_an_unreadable_folder_gets_no_hint(self):
         missing = FileNotFoundError(2, "The system cannot find the file specified")
         with mock.patch.dict(os.environ, {NO_CWD: "1"}), \
-                mock.patch.object(rm.os, "getcwd", side_effect=FileNotFoundError(2, "gone")):
-            self.assertEqual(rm.bare_hint(["hello.bat"], missing), "")
+                mock.patch.object(run_cmdline.os, "getcwd",
+                                  side_effect=FileNotFoundError(2, "gone")):
+            self.assertEqual(run_cmdline.bare_hint(["hello.bat"], missing), "")
 
 
 class Refusals(StoreCase):
@@ -665,34 +669,34 @@ class DockerCpuEnv(unittest.TestCase):
     def test_no_gpu_docker_exec_gets_both(self):
         for docker in ("docker", "docker.exe", r"C:\Program Files\Docker\docker.EXE"):
             with self.subTest(docker=docker):
-                self.assertEqual(rm.docker_cpu_env([docker, "exec", "-it", "box", "python", "t.py"],
-                                                   False),
-                                 [docker, "exec"] + CPU_FLAGS + ["-it", "box", "python", "t.py"])
+                self.assertEqual(run_held.docker_cpu_env(
+                    [docker, "exec", "-it", "box", "python", "t.py"], False),
+                    [docker, "exec"] + CPU_FLAGS + ["-it", "box", "python", "t.py"])
 
     def test_a_gpu_slot_leaves_it_unchanged(self):
         cmd = ["docker", "exec", "box", "python", "t.py"]
-        self.assertEqual(rm.docker_cpu_env(cmd, True), cmd)
+        self.assertEqual(run_held.docker_cpu_env(cmd, True), cmd)
 
     def test_other_commands_are_unchanged(self):
         for cmd in (["python", "-c", "pass"], ["docker", "run", "img"], ["docker"],
                     ["docker", "compose", "exec", "box", "sh"], "docker exec box sh",
                     ["dockerd", "exec"]):
             with self.subTest(cmd=cmd):
-                self.assertEqual(rm.docker_cpu_env(cmd, False), cmd)
+                self.assertEqual(run_held.docker_cpu_env(cmd, False), cmd)
 
     def test_the_callers_own_setting_wins(self):
         for given in (["-e", "JAX_PLATFORMS=cuda"], ["--env", "JAX_PLATFORMS"],
                       ["--env=JAX_PLATFORMS=cpu"], ["-eJAX_PLATFORMS=tpu"]):
             with self.subTest(given=given):
-                got = rm.docker_cpu_env(["docker", "exec"] + given + ["box", "sh"], False)
+                got = run_held.docker_cpu_env(["docker", "exec"] + given + ["box", "sh"], False)
                 self.assertEqual(got, ["docker", "exec", "-e", "CUDA_VISIBLE_DEVICES="] + given
                                  + ["box", "sh"])
-        got = rm.docker_cpu_env(["docker", "exec", "-u", "-e", "-w", "/x", "box", "env", "-e",
-                                 "CUDA_VISIBLE_DEVICES=0"], False)
+        got = run_held.docker_cpu_env(["docker", "exec", "-u", "-e", "-w", "/x", "box", "env", "-e",
+                                       "CUDA_VISIBLE_DEVICES=0"], False)
         self.assertEqual(got[2:6], CPU_FLAGS, "an option's value and the container's own "
                                               "arguments set nothing")
         both = ["docker", "exec", "-e", "CUDA_VISIBLE_DEVICES=1", "-e", "JAX_PLATFORMS=gpu", "b"]
-        self.assertEqual(rm.docker_cpu_env(both, False), both)
+        self.assertEqual(run_held.docker_cpu_env(both, False), both)
 
 
 GRADLE_OFF = "-Dorg.gradle.daemon=false"
@@ -711,14 +715,14 @@ class NoSharedDaemons(unittest.TestCase):
                             "-Xmx2g -Dorg.gradle.daemon=true " + GRADLE_OFF)):
             with self.subTest(have=have):
                 env = {"PATH": "p"} if have is None else {"PATH": "p", "GRADLE_OPTS": have}
-                self.assertIs(rm.no_shared_daemons(env), env)
+                self.assertIs(run_held.no_shared_daemons(env), env)
                 self.assertEqual(env, {"PATH": "p", "GRADLE_OPTS": want})
 
     def test_a_value_that_holds_the_flag_is_left_as_it_is(self):
         for have in (GRADLE_OFF, "-Xmx2g " + GRADLE_OFF, GRADLE_OFF + " -Xmx2g"):
             with self.subTest(have=have):
                 env = {"GRADLE_OPTS": have}
-                rm.no_shared_daemons(rm.no_shared_daemons(env))
+                run_held.no_shared_daemons(run_held.no_shared_daemons(env))
                 self.assertEqual(env, {"GRADLE_OPTS": have})
 
 
@@ -750,7 +754,7 @@ class SlotGradleOpts(StoreCase):
             self.skipTest("this process's parent cannot be read as an ancestor")
         prid = "r-20261006T120000Z-abcdef"
         self.live_record(prid, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
-        env = clean_env(GRADLE_OPTS="-Xmx2g", **{rm.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
+        env = clean_env(GRADLE_OPTS="-Xmx2g", **{run_held.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
         want = "-Xmx2g " + GRADLE_OFF
         # A nested run gets the flag too, and one nested in it (its env: the first's) keeps it once.
         for _depth in (1, 2):
@@ -816,8 +820,8 @@ class Role(StoreCase):
     def test_a_detached_run_takes_its_launchers_role(self):
         L = self.layout()
         me = "%d:%d" % (os.getpid(), process.own_ctime())
-        for env, want in (({rm.ORIGIN_ENV: me}, "owner"), ({}, "agent"),
-                          ({rm.ORIGIN_ENV: "garbage"}, "agent")):
+        for env, want in (({run_held.ORIGIN_ENV: me}, "owner"), ({}, "agent"),
+                          ({run_held.ORIGIN_ENV: "garbage"}, "agent")):
             with self.subTest(env=env):
                 run = rm.Run(self.store, L, "kit", "t", "engine-test", None, None, "waiting",
                              None, True, clean_env(**env), None)
@@ -843,12 +847,12 @@ class Settling(StoreCase):
                 if e["state"] == "waiting"]
 
     def pauses(self, pause, skip=(0.0,)):
-        """Patches kitlib.lock.run's clock while a run books: acquire's pause between looks calls
-        pause(seconds) and does not sleep, and its monotonic clock reads skip[0] seconds ahead.
-        acquire pauses only after a look that left the run in the queue, so what a test does in
-        its first pause happens once the run has joined, however long booking took to get
-        there (no timer to race on a loaded machine)."""
-        return mock.patch.object(rm, "time", types.SimpleNamespace(
+        """Patches kitlib.lock.run_wait's clock while a run books: acquire's pause between looks
+        calls pause(seconds) and does not sleep, and its monotonic clock reads skip[0] seconds
+        ahead. acquire pauses only after a look that left the run in the queue, so what a test does
+        in its first pause happens once the run has joined, however long booking took to get there
+        (no timer to race on a loaded machine)."""
+        return mock.patch.object(run_wait, "time", types.SimpleNamespace(
             monotonic=lambda: time.monotonic() + skip[0], sleep=pause, time=time.time))
 
     def test_ctrl_c_while_it_waits_in_the_queue(self):
@@ -1151,7 +1155,7 @@ class Resources(StoreCase):
             self.skipTest("this process's parent cannot be read as an ancestor")
         prid = "r-20261006T120000Z-abcdef"
         self.live_record(prid, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
-        env = clean_env(**{rm.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
+        env = clean_env(**{run_held.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
         s = self.book("child", env=env, resource=LAND)
         try:
             self.assertFalse(s.nested)

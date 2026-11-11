@@ -717,7 +717,7 @@ ul.hist .sch-line{display:block}
     const tx = n => n < 0 ? "?" : n + "%", hi = n => n >= 90 ? " need" : "";
     const usageRow = u => { const f = pctOf(u.five_hour), w = pctOf(u.seven_day);
       return rowCard("usage", { ...u, id: u.account, title: /^\d+$/.test(String(u.account)) ? "Account " + u.account : String(u.account) },
-        [el("span", {class: "chip" + hi(f), text: "5h " + tx(f)}), el("span", {class: "chip" + hi(w), text: "wk " + tx(w)})],
+        [...(f < 0 ? [] : [el("span", {class: "chip" + hi(f), text: "5h " + tx(f)})]), el("span", {class: "chip" + hi(w), text: "wk " + tx(w)})],
         u.missing ? "no usage file" : (u.measured_at ? "updated " + when(u.measured_at) : "time unknown") + (u.stale ? " · stale" : "")); };
     show(["usage"], el("p", {class:"unote", text: "Read on this machine by the hub server; 90% is amber, 95% red. A reading refreshes only while a session on that account runs: stale means over an hour old, ? means unknown."}), rows.map(u => drawn(usageRow, { ...u, id: u.account })));
     pickDetail(at);
@@ -728,7 +728,7 @@ ul.hist .sch-line{display:block}
     const stale = u.stale || age == null || age > 60;      // 60: kitlib.pmwatch STALE_MINUTES
     return el("article", {class: "acct", id: "u-" + u.account},
       el("h3", {}, el("span", {text: /^\d+$/.test(String(u.account)) ? "Account " + u.account : String(u.account)})),
-      meter("Five-hour", u.five_hour, u.stale, u.five_reset),
+      ...(pctOf(u.five_hour) < 0 ? [] : [meter("Five-hour", u.five_hour, u.stale, u.five_reset)]),   // the host may give no five_hour
       meter("Weekly", u.seven_day, u.stale, u.week_reset),
       el("div", {class: "foot" + (stale ? " stale" : ""), text: u.missing ? "No usage file: no session on this account has written one" : u.measured_at ? "Measured " + when(u.measured_at) + (age != null && age > 60 ? " (" + (age >= 1440 ? Math.round(age / 1440) + " d" : Math.round(age / 60) + " h") + " old, stale)" : "") : "Measurement time unknown"}));
   }
@@ -3110,7 +3110,7 @@ ul.hist .sch-line{display:block}
       ? [el("div", {class:"refs", text: "runs " + String(d.op || "?")}),
          d.what ? el("p", {class:"ctx", text: "The agent's note, not signed: " + String(d.what)}) : null,
          el("div", {class:"cmd"}, el("pre", {class:"diff", text: words.length ? [words.slice(0, 2).join(" "), ...words.slice(2)].join("\n") : "(no line stored)"}))]
-      : [el("div", {class:"refs", text: "on " + String(d.head || "?")}),
+      : [el("div", {class:"refs", text: "on " + String(d.head || "?") + (d.branch ? ", committed on branch " + String(d.branch) : "")}),
          el("div", {class:"cmd"}, el("pre", {class:"diff", text: diff || "(no diff stored)"}))];
     const decide = decision => async () => {
       for (const b of btns) b.disabled = true;

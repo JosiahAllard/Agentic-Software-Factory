@@ -12,8 +12,8 @@ import time
 
 from optional.bridge.core.jsonwire import JsonLineDecoder,encode_frame,_check_structure
 from optional.bridge.core.messages import BeforeWriteError,DeliveryError
-from kitlib.proc.pipe import client_pid,read,write,peek
-from kitlib.proc.errors import ProcError
+from kitlib.platform.windows.pipe import client_pid,read,write,peek
+from kitlib.platform import ProcError
 from kitlib.proc.process import proc_ctime
 from .leader import ServiceLeader
 from .transport import PipeTarget,run_worker

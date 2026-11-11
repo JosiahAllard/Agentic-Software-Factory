@@ -1,4 +1,4 @@
-"""The content contract (ARCHITECTURE.md "Content"; docs/multi-host-plan.md section 2.3): the
+"""The content contract (ARCHITECTURE.md "Content"): the
 neutral model of a role and a skill as `content/` writes them, and the `ContentRenderer` protocol
 each host's adapter implements to turn them into that host's files. Names no host.
 
@@ -14,12 +14,12 @@ A role file, `content/roles/<name>.md`, is front matter between two `---` lines,
   compact: 170000                    optional: the role's auto-compact window in tokens (COMPACT
                                      bounds), a ceiling under the session's own; a host without a
                                      per-agent window renders nothing
-  mode: write                        optional: the role policy it is held to (MODES; docs/guard.md
+  mode: write                        optional: the role policy it is held to (MODES; docs/guard-jail-roles.md
                                      "Role policy"), where a repository turns that policy on.
                                      Read by the guard, never rendered into a host's file
   writes: [docs/notes.local.md]      optional: repo-relative paths or globs (posix, no `..`) the
                                      role may write though its mode makes the checkout read-only
-                                     (docs/guard.md "Role policy"). Never rendered either
+                                     (docs/guard-jail-roles.md "Role policy"). Never rendered either
   group: docs                        optional: the role's group (GROUPS) where its mode alone does
                                      not give it (MODE_GROUP); only with a mode the group allows
                                      (GROUP_MODES). Read by the backlog policy, never rendered
@@ -28,7 +28,9 @@ A role file, `content/roles/<name>.md`, is front matter between two `---` lines,
   summary: ...                       optional: one line, the role's "use for" cell in the rendered
                                      docs/ROSTER.md (its description when absent). Never rendered
                                      into a host's file
-  model.<host>: <model>              optional: that host runs this role on <model>, not the tier's
+
+A role names no model: a host runs it on its tier's model, or on the model hosts.json's
+`role_models` gives that role on that host (Role.model_for).
 
 The body is neutral prose. Values that differ by host are tokens, `{{name}}`, `{{agent:<role>}}`,
 `{{model:<tier>}}` or `{{tool:<capability>}}` (TOKENS); `substitute` fills them from the host's own
@@ -37,8 +39,8 @@ tokens.
 
 A skill is a folder, `content/skills/<name>/`, whose files every host ships unchanged.
 
-`banner(source)` is the line every rendered file a comment can go in opens with (decision 19 in
-docs/multi-host-plan.md section 7): the repo-relative file it is generated from, and the command
+`banner(source)` is the line every rendered file a comment can go in opens with: the repo-relative
+file it is generated from, and the command
 that renders it. Each renderer puts it in its file type's comment form; JSON takes none.
 """
 import dataclasses
@@ -54,7 +56,7 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 SANDBOXES = ('read-only', 'workspace-write')
 CACHES = ('long',)
 COMPACT = (100000, 1000000)   # a role's `compact:` bounds, the Claude CLI's own --autocompact range
-# The role-policy modes (kitlib.guard.rolepolicy, which takes them from here).
+# The role-policy modes (the guard's role policy takes them from here).
 MODES = ('controller', 'write', 'read', 'test', 'lander')
 # A role's group (kitlib.backlog.roles reads them): its mode's (MODE_GROUP), or the `group:` it
 # names, which must be one its mode allows (GROUP_MODES). A role with no mode has no group.
@@ -81,7 +83,8 @@ CAPABILITIES = (
 #   owner_folder        the host's own folder in a repository (owner-only), with its final /
 #   user_folder         the host's per-user folder, home-relative (~/...)
 #   config_dir_env      the environment variable that moves the host's per-user folder
-#   long_context_model  a noun phrase for the model a launched long-context session runs on
+#   long_context_model  a noun phrase for the model a launched long-context session runs on, filled
+#                       per role from the role's model (Role.model_for)
 #   coauthor_email      the address in the host's Co-Authored-By commit trailer
 #   launch_agent        the command that starts the host's main session as a named agent; the
 #                       agent's name ({{agent:<role>}}) follows it
@@ -91,7 +94,6 @@ TOKENS = ARG_TOKENS + ('profile_path', 'coordinator_profile_path', 'instructions
                        'launch_agent')
 REQUIRED = ('name', 'description', 'tier', 'sandbox', 'capabilities')
 OPTIONAL = ('effort', 'cache', 'compact', 'mode', 'writes', 'group', 'run', 'summary')
-MODEL_KEY = 'model.'
 
 _FM = re.compile(r'\A---(\r?\n)(.*?)\r?\n---\r?\n', re.S)
 _TOKEN = re.compile(r'\{\{([a-z_]+)(?::([a-z0-9-]+))?\}\}')
@@ -114,7 +116,6 @@ class Role:
     cache: str = None
     compact: int = None          # COMPACT: the role's auto-compact window in tokens
     mode: str = None             # the role-policy mode (MODES); a host's file never carries it
-    models: tuple = ()           # ((host, model), ...): per-host overrides of the tier's model
     writes: tuple = ()           # repo-relative posix paths or globs the role policy lets it write
     group: str = None            # GROUPS: the `group:` it names, else its mode's (MODE_GROUP)
     run: str = None              # RUNS: 'session' for a role only ever started as its own session
@@ -122,9 +123,10 @@ class Role:
     body: str = ''
     newline: str = '\n'          # the role file's line ending; a host's file keeps it
 
-    def model_for(self, host, tier_models):
-        """The model `host` runs this role on: its override, else the host's model for the tier."""
-        return dict(self.models).get(host) or tier_models[self.tier]
+    def model_for(self, tier_models, role_models):
+        """The model a host runs this role on: its entry in `role_models` (the host's role -> model
+        map, hosts.json `role_models`), else `tier_models` (its tier -> model map) at its tier."""
+        return role_models.get(self.name) or tier_models[self.tier]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -149,8 +151,8 @@ class Content:
 
 
 class ContentRenderer(Protocol):
-    """One host's renderer. `host` is the host's name. `tier_models()` is its tier -> model map.
-    `owned()` lists the repo-relative folders whose every file it writes: a file there that
+    """One host's renderer. `host` is the host's name. `tier_models()` is its tier -> model map,
+    `role_models()` its role -> model map (hosts.json's `tiers` and `role_models`). `owned()` lists the repo-relative folders whose every file it writes: a file there that
     `render` does not produce is stale. `render(content)` returns {repo-relative posix path: bytes}
     for every file it writes. It reads nothing from disk and writes nothing.
 
@@ -166,6 +168,9 @@ class ContentRenderer(Protocol):
     host = None
 
     def tier_models(self):
+        ...
+
+    def role_models(self):
         ...
 
     def owned(self):
@@ -247,7 +252,7 @@ def parse_role(data, source='role'):
     if not m:
         raise ContentError('%s: no front matter between two --- lines' % source)
     newline = m.group(1)
-    fields, models = {}, {}
+    fields = {}
     for line in m.group(2).splitlines():
         if not line.strip():
             continue
@@ -255,12 +260,6 @@ def parse_role(data, source='role'):
         key, value = key.strip(), value.strip()
         if not sep or line[:1] in ' \t':
             raise ContentError('%s: not a `key: value` line: %r' % (source, line[:60]))
-        if key.startswith(MODEL_KEY):
-            host = key[len(MODEL_KEY):]
-            if not _NAME.match(host) or not value:
-                raise ContentError('%s: %s: a host name and a model' % (source, key))
-            models[host] = unquote(value, key)
-            continue
         if key not in REQUIRED + OPTIONAL:
             raise ContentError('%s: unknown key %s' % (source, key))
         if key in fields:
@@ -300,8 +299,8 @@ def parse_role(data, source='role'):
         raise ContentError('%s: empty summary' % source)
     return Role(name=name, description=description, tier=fields['tier'], sandbox=fields['sandbox'],
                 capabilities=caps or (), all_tools=caps is None, effort=fields.get('effort'),
-                cache=fields.get('cache'), compact=compact, mode=mode, models=tuple(sorted(models.items())),
-                writes=writes, group=group or MODE_GROUP.get(mode), run=fields.get('run'), summary=summary,
+                cache=fields.get('cache'), compact=compact, mode=mode, writes=writes,
+                group=group or MODE_GROUP.get(mode), run=fields.get('run'), summary=summary,
                 body=text[m.end():], newline=newline)
 
 

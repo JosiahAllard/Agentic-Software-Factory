@@ -25,7 +25,8 @@ the new approval's id. Run in this order:
      (one another such entry supersedes does not count) is its order (hub_entry). An owner
      ledger id: a live owner entry, written in the last MAX_AGE, whose Decides
      is the run line.
-  5. the preconditions: file-exists, branch-landed, checklist-line.
+  5. the preconditions: file-exists, branch-landed; checklist-line only when the caller hands in
+     the checklist (with_checklist).
   6. the claim, under the runner lock and the ledger write lock: no live runner entry (Source
      `under <anchor>: D-nnn <trigger>`) has this anchor or this trigger, the repo is accepted and
      the existing ledger with the new entry validates; a hub approval is then
@@ -52,9 +53,10 @@ import subprocess
 
 from kitlib.config import user as kuser
 from kitlib.fs import writelock
-from kitlib.hubsite import approvals
-from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import serve as hubserve
+from kitlib.git import lockplace
+from kitlib.ownerfiles import approvals
+from kitlib.hubclient import client as hubclient
+from kitlib.hubclient import errors as huberrors
 from kitlib.ledger import files as lfiles
 from kitlib.ledger import fmt
 from kitlib.ledger import read as lread
@@ -71,7 +73,7 @@ SKEW = datetime.timedelta(minutes=5)         # how far in the future a stamp may
 HUB, OWNER, APPROVAL = 'hub', 'owner', 'approval'
 SESSION = 'session'
 Q_ID = re.compile(r'Q-[0-9]+')
-# A hub approval: kitlib.guard.ownercommits.APPROVAL_RE, copied (the guard is not imported here).
+# A hub approval: kitlib.ownerfiles.rules.APPROVAL_RE, copied (not imported from there).
 APPROVAL_RE = re.compile(r'hub:(A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,}))\Z')
 APPROVAL_TRIGGER = 'hub-approval'
 CWD_PREFIX = 'kit-delegated-'
@@ -493,7 +495,7 @@ def hub_order(op, qid, line, hub, texts, now):
         raise RunRefused('no hub to read %s from' % qid)
     try:
         items = hub.listing('questions', status='all', role=hubclient.AGENT)
-    except (hubserve.ServeError, OSError, ValueError) as e:
+    except (huberrors.ServeError, OSError, ValueError) as e:
         raise RunRefused('cannot read %s from the hub: %s' % (qid, e))
     q = next((d for d in items if isinstance(d, dict) and d.get('id') == qid
               and d.get('status') in ('logged', 'filed')), None)
@@ -630,31 +632,38 @@ def branch_landed(pre):
     return None
 
 
-def checklist_line(pre):
-    """None when a line of the PM start checklist that is not a failed check holds the text."""
-    from kitlib import pmstart
+def checklist_line(pre, checklist):
+    """None when a line of the PM start checklist that is not a failed check holds the text.
+    `checklist(cfg)` is the entry point's: the checklist text, read without changing any state."""
     from kitlib.config import ConfigError
+    from kitlib.config import pm as pmconfig
     text = pre.get('text') or ''
     try:
-        cfg = pmstart.load_config()
+        cfg = pmconfig.load_config()
     except ConfigError as e:
         return 'cannot read the PM start config: %s' % e
     if cfg is None:
         return 'no pm_start config: the PM start checklist cannot be read'
-    for ln in pmstart.checklist(cfg, check_only=True).split('\n'):
+    for ln in checklist(cfg).split('\n'):
         if ln.startswith('- ') and not ln[2:].startswith('could not check') and text in ln:
             return None
     return 'no PM start checklist line holds %r' % text
 
 
-CHECKS = {'file-exists': file_exists, 'branch-landed': branch_landed, 'checklist-line': checklist_line}
+# No 'checklist-line' here: it needs the PM start checklist, which the entry point hands in.
+CHECKS = {'file-exists': file_exists, 'branch-landed': branch_landed}
+
+
+def with_checklist(checklist):
+    """CHECKS plus the checklist-line check, reading the checklist text with `checklist(cfg)`."""
+    return dict(CHECKS, **{'checklist-line': lambda pre: checklist_line(pre, checklist)})
 
 
 def preconditions(pres, checks):
     """RunRefused naming the first precondition that does not hold."""
     for j, pre in enumerate(pres):
         check = checks.get(pre.get('kind'))
-        why = check(pre) if check else 'unknown kind %r' % pre.get('kind')
+        why = check(pre) if check else 'no check of kind %r is handed in' % pre.get('kind')
         if why:
             raise RunRefused('precondition %d (%s) does not hold: %s' % (j, pre.get('kind'), why))
 
@@ -694,8 +703,8 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
     else:
         answer = "the owner's ruling %s orders this run" % order.anchor
     try:
-        with writelock.locked(os.path.join(folder, LOCK_NAME), LOCK_PREFIX, lock_wait,
-                              what='delegated run'):
+        with writelock.locked(lockplace.lock_path(os.path.join(folder, LOCK_NAME), LOCK_PREFIX),
+                              lock_wait, what='delegated run'):
             prior = used(ledger_texts(found), order.anchor, order.trigger)
             if prior:
                 raise RunRefused('%s already ran on %s (%s): each order runs once'
@@ -716,7 +725,7 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
                     before()
                 added = lwrite.add(path, col, PROV, q, answer, line, source,
                                    when=when, repos=repos, split=split, others=others)
-    except writelock.WriteLockError as e:
+    except (writelock.WriteLockError, lockplace.NoPlace) as e:
         raise RunRefused('cannot take the runner lock: %s' % e)
     except (LedgerRefused, LedgerUsage) as e:
         raise RunRefused('the ledger refused the run entry: %s' % e)
@@ -754,7 +763,7 @@ def request(op, pairs, cfg, hub, title, reason=None, environ=None, kit_root=KIT_
         raise RunRefused('no hub to ask on')
     try:
         got = approvals.request_op(hub, op.id, op.repo, line, title, reason=reason, what=op.what)
-    except (hubserve.ServeError, OSError, ValueError) as e:
+    except (huberrors.ServeError, OSError, ValueError) as e:
         raise RunRefused('the hub did not take the request: %s' % (str(e) or type(e).__name__))
     rid = got.get('id') if isinstance(got, dict) else None
     if not isinstance(rid, str) or not rid:
@@ -767,12 +776,12 @@ def run(op, pairs, trigger, cfg, hub=None, now=None, spawn=procspawn.run, checks
         home=None, make_cwd=None):
     """Run the Operation `op` with the arguments `pairs` [(name, value)] on `trigger`; the module
     docstring gives the order. `cfg`: the machine config (kitlib.config.user.user_config). `hub`:
-    a kitlib.hubsite.client.Client for a question trigger or a hub approval. `spawn`, `checks`
-    (the precondition checks by kind, default CHECKS), `environ` (the caller's), `registry`
-    (read_registry's stand-in), `now` (aware UTC), `pause` (called between the use-once scan and
-    the ledger add), `home` (the home folder place.check reads, default the user's) and
-    `make_cwd` (makes an approval run's empty working folder) are for tests. Result, or
-    RunRefused with nothing done."""
+    a kitlib.hubclient.client.Client for a question trigger or a hub approval. `spawn`, `checks`
+    (the precondition checks by kind, default CHECKS: no checklist-line, see with_checklist),
+    `environ` (the caller's), `registry` (read_registry's stand-in), `now` (aware UTC), `pause`
+    (called between the use-once scan and the ledger add), `home` (the home folder place.check
+    reads, default the user's) and `make_cwd` (makes an approval run's empty working folder) are
+    for tests. Result, or RunRefused with nothing done."""
     now = _utc(now)
     environ = dict(os.environ if environ is None else environ)
     kind = trigger_kind(trigger)

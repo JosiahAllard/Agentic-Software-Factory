@@ -1,6 +1,6 @@
-"""The process primitives on Linux (docs/linux-support-plan.md section 2.2 and section 8, slice 4),
-read from /proc, with the meanings kitlib.proc.process gives them on Windows. On Linux
-kitlib.proc.process binds its process names to these, so its callers run unchanged.
+"""The process primitives on Linux, read from /proc, with the meanings
+kitlib.platform.windows.process gives them on Windows. On
+Linux the process face binds its process names to these, so its callers run unchanged.
 
 A process is (pid, ctime). The ctime is `(boot << 64) | starttime`: boot is
 /proc/sys/kernel/random/boot_id read as one 128-bit integer (BOOT_ID, the seam a test points at a
@@ -8,19 +8,20 @@ file), starttime is field 22 of /proc/<pid>/stat, clock ticks since boot. Two bo
 ctime, so a record or token written before a reboot names no live process after it; within a boot
 the order is starttime's. stamp_now() is the same encoding of the clock now (CLOCK_BOOTTIME, the
 clock starttime counts on), so a process created after it never has a ctime below it; one started
-in the stamp's own tick has the stamp's value (a tie errs safe: kitlib.lock.run _end_others ages
+in the stamp's own tick has the stamp's value (a tie errs safe: kitlib.lock.run_end _end_others ages
 only ctimes below the stamp).
 
   identity(pid)       (ctime, exited) of pid, None when no process has it (kitlib.lock.store
                       wrapper_state); exited: a zombie, ended but not reaped
   alive, proc_ctime, own_ctime, snapshot, process_parents, listed_ctimes, listed_ctime, _ancestor,
   ancestry, ancestors_of, own_ancestors, descendants, command_line, terminate_verified, kill_tree
-                      as kitlib.proc.process documents them
+                      as kitlib.platform.windows.process documents them
   pidns(pid)          the inode of pid's PID namespace, None when it cannot be read
-  stamp_now()         the seam's stamp (kitlib.lock.run filetime_now on Linux)
-  rows()              every process as kitlib.pmstart.list_processes's dicts (Name, CommandLine,
-                      ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
-                      (docs/linux-support-plan.md section 8, slice 11)
+  stamp_now()         the seam's stamp (kitlib.lock.run_end filetime_now on Linux)
+  rows()              every process as kitlib.proc.listing.list_processes's dicts (Name,
+                      CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
+  process_rows(timeout, run)
+                      the seam's name for rows: no child is started, so no timeout applies
 
 terminate_verified opens a pidfd on the pid first and reads its starttime after: the pidfd names
 the process it was opened on, so the signal reaches that process or none, and the starttime read
@@ -378,7 +379,7 @@ def rows(readlink=os.readlink):
     """Every process /proc lists as a dict with Name (its comm), CommandLine (command_line; "" for
     none), ExecutablePath (the /proc/<pid>/exe link, None when it cannot be read), ProcessId,
     ParentProcessId and Created (the local ISO time it started, None when that cannot be told), the
-    keys kitlib.pmstart.list_processes gives on Windows. A process that ends or cannot be read
+    keys kitlib.proc.listing.list_processes gives on Windows. A process that ends or cannot be read
     while it is listed is left out. Raises OSError when /proc cannot be listed."""
     btime, tck = _btime(), _clk_tck()
     out = []
@@ -399,3 +400,8 @@ def rows(readlink=os.readlink):
         out.append({'Name': st[3], 'CommandLine': cmd, 'ExecutablePath': exe, 'ProcessId': pid,
                     'ParentProcessId': st[1], 'Created': _created(btime, st[2], tck)})
     return out
+
+
+def process_rows(timeout, run):
+    """rows(); `timeout` and `run` are the seam's arguments and unused here."""
+    return rows()

@@ -1,9 +1,9 @@
 """The kit as Codex's runtime half reads it: the folder it booted from and its roles. This replaces
-the Codex branch's profile.py and release_binding.py (boot/kitboot.py binds and verifies the kit
+the Codex branch's profile.py and release_binding.py (boot/kitboot.py binds and checks the kit
 before any entry imports this) and roles.py/roles.json (content/roles is the one roster).
 
-  discover()          Kit(kit_root, plugin_root, release_identity): the booted kit's folder, this
-                      host's shell folder, and the pinned PM_KIT_RELEASE_ID or None
+  discover()          Kit(kit_root, plugin_root): the booted kit's folder and this host's shell
+                      folder
   load_kit(kit)       nothing: the kit was bound by the entry's kitboot.boot(); kept so the runtime
                       modules read as they did
   catalog()           {role: {'mode', 'effort', 'sandbox'}} from content/roles (every role, the
@@ -13,7 +13,7 @@ before any entry imports this) and roles.py/roles.json (content/roles is the one
                       other name
   current_role(environ)   PM_KIT_ROLE's role ('analyst' when unset); ValueError for one no role file names
   child_environment(environ, additions, preserve_lock)
-                      kitlib.sessionmark.child_environment for a Codex child
+                      kitlib.host.sessionmark.child_environment for a Codex child
   trailer(model)      the Co-Authored-By line for `model` on Codex (an explicit model id)
   host_prefixes(own)  every other registered host's environment prefixes (hosts.json env_prefixes),
                       and Codex's own too when `own`: what a native check scrubs from a fixture
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 HOST = 'codex'
 ROLE_ENV = sessionmark.ENV
@@ -33,15 +33,13 @@ DEFAULT_ROLE = 'analyst'
 class Kit:
     kit_root: Path
     plugin_root: Path
-    release_identity: str = None
 
 
-def discover(environ=None):
+def discover():
     from kitlib import kitroot
     from hosts.codex.adapter import content
-    env = os.environ if environ is None else environ
     root = Path(kitroot.root())
-    return Kit(root, root.joinpath(*content.SHELL_REL.split('/')), env.get('PM_KIT_RELEASE_ID') or None)
+    return Kit(root, root.joinpath(*content.SHELL_REL.split('/')))
 
 
 def load_kit(kit=None):

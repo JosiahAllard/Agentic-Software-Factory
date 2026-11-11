@@ -69,7 +69,7 @@ class RoundTrip(Base):
         self.assertEqual((s.requester, s.brief, s.slug, s.repo_path, s.home),
                          ("o'brien-coord-a1", self.brief, 'net-race', self.repo, False))
         self.assertEqual((s.model, s.effort, s.autocompact, s.agent_temp, s.predecessor),
-                         ('opus[1m]', 'xhigh', 500000, self.temp, None))
+                         (start.deep_model(), 'xhigh', 500000, self.temp, None))
 
     def test_a_consultant_comes_back_with_its_notes_file(self):
         found, never = self.classify(rows(self.consultant(), 710, 'consultant-alpha'))
@@ -129,7 +129,8 @@ class LinuxWindow(Base):
         s, = found['deep-net-race']
         self.assertEqual((s.kind, s.key, s.pid, s.account, s.requester, s.brief, s.repo_path, s.home),
                          (unlisted.DEEP, 'deep-net-race', 900, '1', "o'brien-coord-a1", self.brief, self.repo, False))
-        self.assertEqual((s.model, s.effort, s.autocompact, s.agent_temp), ('opus[1m]', 'xhigh', 500000, self.temp))
+        self.assertEqual((s.model, s.effort, s.autocompact, s.agent_temp),
+                         (start.deep_model(), 'xhigh', 500000, self.temp))
 
     def test_a_consultant_comes_back_from_the_bash_window(self):
         found, never = self.classify(self.bash_rows(self.consultant(), 910, 'consultant-alpha'))

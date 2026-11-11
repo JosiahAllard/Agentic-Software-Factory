@@ -8,7 +8,7 @@ the folder's ACL step). With
 `sweep_task` false (--no-sweep-task) a note carries the PowerShell line that registers it instead.
 A task already registered is left as is. On Linux the task is the pm-kit job TASK
 (linux_job; kitlib.platform.linux.schedule: a systemd user timer, else a crontab line) and
-task_registered reads it back. Nothing here prints or exits.
+kitlib.schedtask.read.task_registered reads it back. Nothing here prints or exits.
 """
 import json
 import os
@@ -17,9 +17,10 @@ import subprocess
 from kitlib import platform
 from kitlib.config import ConfigError
 from kitlib.config import user as kuser
-from kitlib.launcher.pythonw import base_pythonw
 from kitlib.proc import spawn
-from kitlib.worktree.task import CARRIER, NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.proc.spawn import CARRIER
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.schedtask.pythonw import base_pythonw
 
 from . import machineconfig
 from .common import Report, is_link, norm
@@ -49,7 +50,7 @@ def task_line(kit, pythonw=None):
     with no console window: the task's program is pythonw.exe running the carrier
     `<kit>\\tools\\<CARRIER>` (kitlib.proc.spawn.carry), which starts the python.exe beside it.
     `pythonw` is written in as a literal path, default the base install's
-    (kitlib.launcher.pythonw.base_pythonw), never a PATH lookup, which finds the Microsoft Store
+    (kitlib.schedtask.pythonw.base_pythonw), never a PATH lookup, which finds the Microsoft Store
     alias first. The line is PowerShell text, so it checks for itself: it throws, registering
     nothing, when that pythonw is not a file or is under WindowsApps."""
     kit = os.path.normpath(kit)
@@ -72,44 +73,6 @@ def linux_job(kit, python=None):
     kit = os.path.normpath(kit)
     return schedule.Job(TASK, [python or schedule.python(), os.path.join(kit, SWEEP), '--apply'], kit,
                         ('daily', AT), 'daily sweep of the agents\' temp folder')
-
-
-TASK_TIMEOUT = 30
-
-
-def _not_found_text():
-    """Windows' localised text for ERROR_FILE_NOT_FOUND (2), which schtasks /Query prints for a
-    task that does not exist; None off Windows."""
-    try:
-        import ctypes
-        return ctypes.FormatError(2).strip() or None
-    except (ImportError, AttributeError, OSError):
-        return None
-
-
-def task_registered(name, timeout=TASK_TIMEOUT, run=None):
-    """Whether the scheduled task `name` is registered (`schtasks /Query /TN name`): True on exit 0,
-    False only when schtasks says the task does not exist (its output holds Windows' text for error
-    2, file not found). Any other failure (access denied, a timeout after `timeout` seconds) raises
-    RuntimeError, never False; OSError when schtasks cannot be run. run: the tests' subprocess.run.
-    On Linux: whether the pm-kit job `name` is written (schedule.exists; ScheduleError, a
-    RuntimeError, when the crontab cannot be read)."""
-    if platform.NAME == 'linux':
-        from kitlib.platform.linux import schedule
-        return schedule.exists(name, run=run)
-    run = run or subprocess.run
-    try:
-        r = run(['schtasks', '/Query', '/TN', name], capture_output=True, text=True, timeout=timeout,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    except subprocess.TimeoutExpired:
-        raise RuntimeError('schtasks /Query timed out after %s s' % timeout)
-    if r.returncode == 0:
-        return True
-    said = ' '.join(((r.stderr or '') + ' ' + (r.stdout or '')).split())
-    gone = _not_found_text()
-    if gone and ' '.join(gone.split()).lower() in said.lower():
-        return False
-    raise RuntimeError('schtasks /Query exit %d: %s' % (r.returncode, said[:200] or 'no output'))
 
 
 def _config(home):

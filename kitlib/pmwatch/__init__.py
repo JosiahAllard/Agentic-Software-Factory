@@ -14,9 +14,10 @@ from kitlib.git import cmd as gitcmd
 
 KEY = "pm_watch"
 WEEK_BANDS = (95, 98, 99)
-FIVE_BANDS = (95, 98, 99)         # 95 no new work, 98 landings only; no PM headroom
+RESET_DROP = 20                   # weekly points a reading must fall to count as a reset (twice running)
+FIVE_BANDS = (95, 98, 99)         # only read when the host gives a five_hour figure (it may be null)
 ACCOUNT = r"account (\d+|codex): "
-LINE = re.compile(ACCOUNT + r"five_hour=(reset|\d+|\?)%?.*?seven_day=(reset|\d+|\?)%?")
+LINE = re.compile(ACCOUNT + r"(?:five_hour=(reset|\d+|\?)%?.*?)?seven_day=(reset|\d+|\?)%?")
 NO_FILE = re.compile(ACCOUNT + r"no usage (?:file|data)")
 AGE = re.compile(r"\[updated (\d+|\?) min ago\]")
 STALE_MINUTES = 60               # a reading older than this is shown as stale (docs/launcher.md "Usage")
@@ -94,7 +95,7 @@ _EPOCH_AS_FILETIME = 116444736000000000     # 1970-01-01 in 100 ns ticks since 1
 
 def own_start_time():
     """This process's start time in epoch seconds (kernel32 GetProcessTimes), None when it cannot
-    be read. The same clock as the CreationDate kitlib.pmstart.list_processes reports."""
+    be read. The same clock as the CreationDate kitlib.proc.listing.list_processes reports."""
     import ctypes
     from ctypes import wintypes
     try:
@@ -163,7 +164,7 @@ def parse_usage(text):
         if m:
             a = AGE.search(line)
             age = int(a.group(1)) if a and a.group(1) != "?" else None
-            out[m.group(1)] = {"five": conv(m.group(2)), "week": conv(m.group(3)), "age": age,
+            out[m.group(1)] = {"five": conv(m.group(2)) if m.group(2) else None, "week": conv(m.group(3)), "age": age,
                                "stale": age is None or age > STALE_MINUTES, "missing": False}
             continue
         m = NO_FILE.search(line)
@@ -201,7 +202,9 @@ def band(v, bands):
 
 def usage_events(prev, cur):
     """Band and reset events between two parse_usage readings; a window unknown (None) in either
-    is skipped, never read as 0."""
+    is skipped, never read as 0. A weekly drop of RESET_DROP points or more is a RESET only when the
+    stored reading already carries `drop` (merge_usage: the previous poll fell as far too), so one
+    stray low reading between two high ones raises nothing."""
     ev = []
     for acct, u in cur.items():
         p = prev.get(acct)
@@ -216,7 +219,7 @@ def usage_events(prev, cur):
             fb, pfb = band(u["five"], FIVE_BANDS), band(p["five"], FIVE_BANDS)
             if fb > pfb:
                 ev.append("USAGE account %s five_hour %d%% (now %d%%)" % (acct, fb, u["five"]))
-        if known("week") and p["week"] - u["week"] >= 20:
+        if known("week") and p["week"] - u["week"] >= RESET_DROP and p.get("drop") is not None:
             ev.append("RESET account %s (weekly %d%% -> %d%%)" % (acct, p["week"], u["week"]))
     return ev
 
@@ -228,6 +231,9 @@ def merge_usage(prev, cur):
     for acct, u in cur.items():
         p = prev.get(acct) or {}
         out[acct] = {**u, **{k: p[k] for k in ("five", "week") if u.get(k) is None and p.get(k) is not None}}
+        if u.get("week") is not None and p.get("week") is not None and p["week"] - u["week"] >= RESET_DROP:
+            if p.get("drop") is None:       # the first low reading: held, not stored (usage_events)
+                out[acct] = {**out[acct], "week": p["week"], "drop": u["week"]}
     return out
 
 
@@ -402,9 +408,10 @@ def hub_jobs(load=None, make_client=None):
     down, has no token file or no pointer, or answers anything else. Never raises. `load` and
     `make_client` as hub_check."""
     try:
-        from kitlib import pmstart
-        port = (load or pmstart.hub_settings)().port
-        health = (make_client or pmstart._hub_client)(port).get("/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+        from kitlib.hubclient import client as hubclient, settings as hubsettings
+        port = (load or hubsettings.load)().port
+        health = (make_client or hubclient.hub_client)(port).get(
+            "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         jobs = health.get("jobs") if isinstance(health, dict) else None
         return jobs if isinstance(jobs, dict) else None
     except Exception:                       # noqa: BLE001 - a hub we cannot read is a hub that is not up
@@ -492,7 +499,7 @@ def hub_session_job_block(load=None, make_client=None):
 
 
 def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, hub_job=None):
-    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.poll
+    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.refresh.poll
     (docs/plugin-source.md "Behind warnings"). `last` is the kit main sha last reported (None when
     current), kept in the state file so a relaunch does not report the same sha again. With no
     `settings` the machine config's plugin key is read on every call, so a bad key is a failed
@@ -501,13 +508,13 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
     account folders. With auto_refresh on and the hub's plugin-refresh job up (`hub_job()`, default
     hub_plugin_job_up), the hub is the one owner of the refresh: the check reports the behind
     line and starts nothing; with the hub down it still starts the refresh itself."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh
 
     def check(last):
-        s = pluginsource.load() if settings is None else settings
+        s = plugin_layout.load() if settings is None else settings
         if s.auto_refresh and (hub_job or hub_plugin_job_up)():
             s = s._replace(auto_refresh=False)
-        return pluginsource.poll(kit or pluginsource.kit_root(), s, last, spawn=spawn, alive=alive,
+        return plugin_refresh.poll(kit or plugin_layout.kit_root(), s, last, spawn=spawn, alive=alive,
                                  folders=folders)
     return check
 
@@ -515,25 +522,24 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
 def hub_check(load=None, make_client=None):
     """The HUB check for Watcher: check(last) -> (lines, last). Asks the loopback hub server's
     GET health and gives one line, once per stale episode, when its `code` says hub code newer than
-    the running server has landed (kitlib.hubsite.codestale.notice: the owner's restart step).
+    the running server has landed (kitlib.hubclient.codestale.notice: the owner's restart step).
     `last` is True once reported (kept in the state file, so a relaunch does not say it again) and
     None otherwise: a restarted hub, or one that is down, re-arms it. A hub that is down, has no
     token file, or has no pointer to read is no event and no failure; any other error is a failed
     check (ERROR on the third), never a dead watcher. `load` gives the hub Settings and
     `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
     def check(last):
-        from kitlib import pmstart
-        from kitlib.hubsite import codestale, serve
-        down = (pmstart.NoHubToken, serve.NotRunning,
-                getattr(pmstart, "NoHubPointer", pmstart.NoHubToken))
+        from kitlib import kitroot
+        from kitlib.hubclient import client as hubclient, codestale, errors, settings as hubsettings
+        down = (errors.NoHubToken, errors.NotRunning, errors.NoHubPointer)
         try:
-            port = (load or pmstart.hub_settings)().port
-            health = (make_client or pmstart._hub_client)(port).get(
-                "/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+            port = (load or hubsettings.load)().port
+            health = (make_client or hubclient.hub_client)(port).get(
+                "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         except down:
             return [], None
         text = codestale.notice(health.get("code") if isinstance(health, dict) else None,
-                                pmstart.HUB_TOOL)
+                                kitroot.tool("hub"))
         if text is None:
             return [], None
         return ([] if last else [text]), True
@@ -669,16 +675,15 @@ def rc_check(sessions, reader, dirs=None, ctime=None, rc_pids=None, accounts=Non
     The check's `limit` attribute is the LIMIT check over the same sessions and records (limit_check;
     accounts() default: account_folders of the launcher settings, read again on each call), which
     the Watcher picks up, so every builder of the REMOTE check gets LIMIT too."""
-    from kitlib import pmstart
-    from kitlib.launcher import pipes, settings as launcher_settings, stop
-    from kitlib.proc import process
+    from kitlib.launcher import lookup, pipes, settings as launcher_settings, stop
+    from kitlib.proc import listing, process
     if dirs is None:
         dirs = lambda: pipes.registry_dirs(launcher_settings.load())
     ctime = ctime or process.proc_ctime
     if rc_pids is None:
         # every process: only the pids of live registry records are looked up, so no image filter
-        rc_pids = lambda: {p.get("ProcessId"): pmstart.rc_name(p.get("CommandLine"))
-                           for p in pmstart.list_processes()}
+        rc_pids = lambda: {p.get("ProcessId"): lookup.remote_control_name(p.get("CommandLine"))
+                           for p in listing.list_processes()}
 
     def alive(r):
         try:
@@ -708,10 +713,13 @@ def preload(modules=()):
     import kitlib.launcher.settings
     import kitlib.launcher.usage
     import kitlib.machinesetup.extras
-    import kitlib.hubsite.codestale
-    import kitlib.hubsite.serve
-    import kitlib.pluginsource
-    import kitlib.pmstart.consoletasks      # kitlib.pluginsource's in-use reads (_processes, _tasks)
+    import kitlib.hubclient.client
+    import kitlib.hubclient.codestale
+    import kitlib.hubclient.errors
+    import kitlib.hubclient.settings        # the HUB check's and hub_jobs' settings read
+    import kitlib.pluginsource.layout
+    import kitlib.pluginsource.refresh      # with export, state and prune, which it imports
+    import kitlib.schedtask.read            # kitlib.pluginsource.prune's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)
     import kitlib.launcher.stop
     import kitlib.proc.process
@@ -776,9 +784,15 @@ class Watcher:
         for repo, ref in self.branches:             # a newly watched branch: baseline, no event
             key = "%s %s" % (repo, ref)
             if key not in tips:
-                tips[key] = self.tip(repo, ref)
+                try:
+                    tips[key] = self.tip(repo, ref)
+                except Exception:                   # noqa: BLE001 - offline: the next good poll sets it
+                    pass
         if "usage" not in s:
-            s["usage"] = self.usage_reader()
+            try:
+                s["usage"] = self.usage_reader()
+            except Exception:                       # noqa: BLE001 - unreadable: the next poll sets it
+                pass
         if "bg_alerts" not in s:                    # first run: existing alerts are baseline
             s["bg_alerts"] = alert_events([], self.alerts_dir)[1]
         if self.notice_dir and "lock_notices" not in s:
@@ -805,7 +819,9 @@ class Watcher:
             try:
                 for repo, ref in self.branches:
                     key, tip = "%s %s" % (repo, ref), self.tip(repo, ref)
-                    if tip and tip != tips.get(key):
+                    if tip and key not in tips:         # start() could not read it: baseline, no event
+                        tips[key] = tip
+                    elif tip and tip != tips.get(key):
                         events.append("BRANCH %s %s %s" % (repo, ref, tip))
                         tips[key] = tip
                 self.fails["branch"] = 0

@@ -1,4 +1,4 @@
-"""The session gate cap (docs/gate.md "The session gate cap"): before a branch gate books its
+"""The session gate cap (docs/gate-records.md "The session gate cap"): before a branch gate books its
 machine-lock run, it waits while its agent session already has the configured number of gate runs
 of the same repository in flight (booked, waiting or held).
 
@@ -30,7 +30,7 @@ a kit without turns).
 The cap is the machine config's "coordinator_start".gate_cap {repo name: int}. Unset, 0 or null: no cap. A value the cap cannot use, or a machine
 config that cannot be read, is said once as a WARNING and nothing is capped.
 
-The gate queue (docs/gate.md "The gate queue"): a branch gate books with the note queue_note
+The gate queue (docs/gate-records.md "The gate queue"): a branch gate books with the note queue_note
 (its tip and options), so a second gate of the same branch, tip, options and tree that would only
 wait behind it is found (queued_twin), and a session's own queued gate of the branch at an older
 tip is stopped before it starts (replace_stale). A held run is never touched.
@@ -128,7 +128,7 @@ def in_flight(store, who, repo, runs=None):
 
 def started(r):
     """Whether live run record r has started (holds its slots): any state but `waiting`, a run
-    still queued in the machine lock (kitlib.lock.run saves `held` once it takes its slots)."""
+    still queued in the machine lock (kitlib.lock.run_wait saves `held` once it takes its slots)."""
     return r.get('state') != 'waiting'
 
 
@@ -355,9 +355,9 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
 
 
 def gave_way(store, repo, slot, say, cap=None, who=None, home=None, poll_s=None, sleep=None):
-    """Called once a branch gate's booking holds its slots (kitlib.lock.run Slot `slot`), before
-    anything runs. It first writes the run's id into this thread's turn file (wait_turn): the run
-    stands for the turn from now on. A backstop for a count that missed a gate (a record read
+    """Called once a branch gate's booking holds its slots (kitlib.lock.run_held Slot `slot`),
+    before anything runs. It first writes the run's id into this thread's turn file (wait_turn): the
+    run stands for the turn from now on. A backstop for a count that missed a gate (a record read
     while it was rewritten, a turn that could not be written, a gate of a kit without turns):
     the session's other gate runs of repo that
     have started (hold their slots: started(); a run still queued in the lock is not counted, so

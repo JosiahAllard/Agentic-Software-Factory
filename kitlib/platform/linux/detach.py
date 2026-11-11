@@ -1,17 +1,16 @@
 """A run started again outside its caller on Linux (machine_lock.py run|background --detach, the
-gate's detached landing): kitlib.lock.detach's Linux backend (docs/linux-support-plan.md
-section 4, slice 7).
+gate's detached landing): kitlib.lock.detach's Linux backend.
 
 Windows asks WMI, so the run is a child of WMI's provider host. Here the caller starts a
 trampoline (`python -I -c TRAMPOLINE`) in a session of its own (setsid), and the trampoline
 starts the run and exits, so the run is reparented away from the caller: it is in neither the
 caller's process tree, nor its process group, nor its session. Where the user's systemd can be
-reached (cgroup v2, systemd-run found, a user bus: kitlib.platform.linux.contain bus_env), the
-run starts as `systemd-run --user --scope` in a unit of its own, `<prefix>-detach-<tag>.scope`,
+reached (cgroup v2, systemd-run found, a user bus: kitlib.platform.linux.contain_cgroup bus_env),
+the run starts as `systemd-run --user --scope` in a unit of its own, `<prefix>-detach-<tag>.scope`,
 so it is in no cgroup of the caller's either (a terminal's or an agent host's scope, which its
 end may kill as a whole); systemd-run execs the command, so the scope's process is the run. The
 trampoline says the run's pid once the run is in its unit (or at once, with no unit), and says
-why when it is not. Without systemd it is the setsid double fork alone (plan step 10).
+why when it is not. Without systemd it is the setsid double fork alone.
 
 The units here are named `-detach-`; a kit job's are `-job-` (contain), and nothing here stops
 or cleans up a unit: the run's scope goes when its last process ends (--collect).
@@ -23,7 +22,7 @@ import os
 import subprocess
 import sys
 
-from kitlib.platform.linux import contain
+from kitlib.platform.linux import contain_cgroup
 
 CREATE_TIMEOUT_S = 60
 READY_S = 30.0              # how long the trampoline waits for the run to be in its unit
@@ -87,12 +86,12 @@ def missing(argv):
 def scope(env):
     """(the systemd-run argv head, its unit, its environment) for a run in a scope of its own, or
     None where the user's systemd cannot be reached (no cgroup v2, no systemd-run, no user bus)."""
-    run = contain._tool(contain.SYSTEMD_RUN)
-    benv = contain.bus_env(env)
-    if run is None or benv is None or not contain.cgroup2():
+    run = contain_cgroup._tool(contain_cgroup.SYSTEMD_RUN)
+    benv = contain_cgroup.bus_env(env)
+    if run is None or benv is None or not contain_cgroup.cgroup2():
         return None
-    unit = '%s-detach-%s' % (contain.prefix(), contain._tag())
-    head = ([run, '--user', '--scope', '--quiet', '--collect'] + contain.no_expand(run)
+    unit = '%s-detach-%s' % (contain_cgroup.prefix(), contain_cgroup._tag())
+    head = ([run, '--user', '--scope', '--quiet', '--collect'] + contain_cgroup.no_expand(run)
             + ['--unit', unit, '--'])
     return head, unit, benv
 

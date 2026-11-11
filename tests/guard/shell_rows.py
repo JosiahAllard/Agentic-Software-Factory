@@ -1,6 +1,6 @@
 """More rows for tests/guard/test_rules.py: shell keywords, lines the guard cannot read, git
 option spellings, shell writes, Start-Process, nested shells, root-search spellings and the false
-denies that must stay allowed (docs/guard.md "Rules", "Fallback"). Same shape as ROWS there.
+denies that must stay allowed (docs/guard-rules.md "Rules"; docs/guard-fallback.md "Fallback"). Same shape as ROWS there.
 
 Backslashes are built from BS so no editor or shell on this machine can rewrite them."""
 from . import world as W
@@ -128,7 +128,7 @@ ROWS = [
     ('Start-Process redirect into main', lambda w: ps('Start-Process python -ArgumentList x.py -RedirectStandardOutput %s' % win(w.main, 'o.txt'), w.wt, sub=True),
      'deny', 'main-checkout', None),
     # a shell Start-Process starts runs its -ArgumentList as a nested line: the elements joined with
-    # spaces, as Start-Process passes them (commands._sp_shell_text)
+    # spaces, as Start-Process passes them (commands_nested._sp_shell_text)
     ('Start-Process cmd /c redirect into main, double-quoted list', lambda w: ps(
         'Start-Process cmd -ArgumentList "/c echo x > %s"' % win(w.main, 'f.txt'), w.wt, sub=True),
      'deny', 'main-checkout', None),
@@ -157,7 +157,7 @@ ROWS = [
     ('Start-Process cmd /c redirect in its worktree stays allowed', lambda w: ps(
         "Start-Process cmd -ArgumentList '/d', '/c', 'echo hi > out.txt' -Wait", w.wt, sub=True), None, None, None),
     # cmd splits its switches at , ; = too and finds a /c inside a word: any word before the run
-    # switch that holds /c (/k, /r) is unreadable (commands.CMD_RUN_HIDDEN_RE)
+    # switch that holds /c (/k, /r) is unreadable (commands_nested.CMD_RUN_HIDDEN_RE)
     ('Start-Process cmd ;/c into main', lambda w: ps(
         "Start-Process cmd -ArgumentList ';/c echo x > %s'" % win(w.main, 'f.txt'), w.wt, sub=True),
      'deny', 'unreadable', None),

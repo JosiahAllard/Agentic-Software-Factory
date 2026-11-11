@@ -1,4 +1,4 @@
-"""An unchanged red tree (docs/gate.md "An unchanged red tree"): every branch gate of a clean tree
+"""An unchanged red tree (docs/gate-records.md "An unchanged red tree"): every branch gate of a clean tree
 writes a red-tree mark (kitlib.gate.rerun.mark); a later branch gate of the same tree, gate config
 and kit that would only repeat a failed one is REFUSED before it books, and again at its turn,
 unless --again. A pass of the same tree and mode supersedes the mark."""
@@ -9,7 +9,8 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import budget, gatecap, rerun, runner
-from kitlib.lock import run as lockrun
+from kitlib.lock import run_held
+from kitlib.records import gate_ok
 from tests.gate import fixtures, test_targeted_rerun
 
 BRANCH = 'kit/feature'
@@ -83,7 +84,7 @@ class Marks(Case):
                          (self.tree(), self.tip, BRANCH, 'full', 'fail', ['unit'],
                           out.facts['log_dir']))
         self.assertEqual(rec['gate_config'],
-                         rerun.gate_ok.config_hash(runner.gate_config(cfg)))
+                         rerun.gate_ok.config_hash(gate_ok.gate_config(cfg)))
         self.assertEqual(rec['kit'], runner.kit_identity())
         self.assertTrue(rec['ended'])
 
@@ -147,8 +148,8 @@ class Refused(Case):
     def test_another_gate_config_or_kit_runs(self):
         """Each against a red mark of the real config and kit (the --again gate before it)."""
         self.gate()
-        real = runner.gate_config
-        with mock.patch.object(runner, 'gate_config', lambda cfg: dict(real(cfg), extra=1)):
+        real = gate_ok.gate_config
+        with mock.patch.object(gate_ok, 'gate_config', lambda cfg: dict(real(cfg), extra=1)):
             self.assertEqual(self.gate().code, G.FAILED)
         self.assertEqual(self.gate(again=True).code, G.FAILED)
         with mock.patch.object(runner, 'kit_identity', return_value={'commit': 'f' * 40}):
@@ -200,14 +201,14 @@ class AtItsTurn(Case):
     def test_the_mark_is_written_before_the_slot_is_released(self):
         """Nothing planted: a gate queued behind a red one of the same tree takes its turn once
         that one's slot is released, so the mark must be there by then."""
-        real = lockrun.Slot.release
+        real = run_held.Slot.release
         at_release = []
 
         def release(slot, code=None, how=None):
             if how == 'done':
                 at_release.append(self.mark_of('select'))
             return real(slot, code, how)
-        with mock.patch.object(lockrun.Slot, 'release', release):
+        with mock.patch.object(run_held.Slot, 'release', release):
             out = self.gate()
         self.assertEqual(out.code, G.FAILED, out.lines)
         self.assertEqual(len(at_release), 1, at_release)
@@ -216,7 +217,7 @@ class AtItsTurn(Case):
 
     def unclean_reads(self):
         """Run a gate; for each runner._unclean read, whether the slot was released by then."""
-        real_release, real_unclean = lockrun.Slot.release, runner._unclean
+        real_release, real_unclean = run_held.Slot.release, runner._unclean
         released, reads = [], []
 
         def release(slot, code=None, how=None):
@@ -226,7 +227,7 @@ class AtItsTurn(Case):
         def unclean(*args):
             reads.append(bool(released))
             return real_unclean(*args)
-        with mock.patch.object(lockrun.Slot, 'release', release), \
+        with mock.patch.object(run_held.Slot, 'release', release), \
                 mock.patch.object(runner, '_unclean', unclean):
             out = self.gate()
         return out, reads

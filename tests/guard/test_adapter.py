@@ -1,6 +1,6 @@
 """Claude Code's adapter (hosts/claude/adapter): its payloads parsed into kitlib.host.Action and the
 Decision rendered back, the guard's path normaliser, and the layer rule that keeps Claude's payload
-field names out of kitlib.guard (docs/guard.md "Hosts")."""
+field names out of kitlib.guard (docs/guard-core.md "Hosts")."""
 import json
 import os
 import re
@@ -8,7 +8,7 @@ import unittest
 
 from hosts.claude.adapter import events
 from hosts.claude.adapter.host import ADAPTER, MATCHER
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.guard import paths, rules
 from kitlib.host import Action, Decision, registry
 
@@ -81,7 +81,7 @@ class Parse(unittest.TestCase):
     def test_agent_reads_the_identity_alone(self):
         self.assertEqual(events.agent({'agent_id': 'a1'}), 'a1')
         self.assertIsNone(events.agent({}))
-        self.assertRaises(ValueError, events.agent, None)     # hookmain then tags the deny main
+        self.assertRaises(ValueError, events.agent, None)     # hookrun then tags the deny main
 
 
 class Render(unittest.TestCase):
@@ -118,7 +118,7 @@ class Paths(unittest.TestCase):
             self.assertEqual(paths.norm(p, real=True), os.path.normcase(os.path.realpath(p)))
 
     def test_the_guard_folds_paths_only_through_norm(self):
-        # docs/guard.md "Hosts": the later OS work changes one function. (place.py's realpath
+        # docs/guard-core.md "Hosts": the later OS work changes one function. (place.py's realpath
         # resolves links to see whether there are any; it folds nothing, and keeps its own error.)
         found = []
         for name in sorted(os.listdir(os.path.join(KIT, 'kitlib', 'guard'))):

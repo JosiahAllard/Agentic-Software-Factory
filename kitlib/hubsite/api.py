@@ -1,9 +1,10 @@
-"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them (the
-hub site design, section 2 "HTTP API" and section 9).
+"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them
+(docs/modules/hub-design.md "Packages and files").
 
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
-             AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock").
+             AGENT, ANY, APPROVER or LOCK_WRITE: who may call it ("Roles", "Machine lock" in
+             kitlib.hubsite.apilock).
   Api(store, views=None, clock=None, now=None, lock=None, config=None, **hooks)
              .call(method, path, role, body=None, query=None, via='', raise_unexpected=False,
                    agent_words=False, strong=False) -> (status, object)
@@ -26,200 +27,13 @@ that request, kitlib.hubsite.httpd passes it on). Every other caller is refused 
 field `role`, with NOT_STRONG: the owner token, a browser session paired from it and an agent are
 never strong. strong is a call argument, never a field of the body or the query, and it opens no
 other route: on OWNER, AGENT and ANY routes the role alone decides. A handler reads it as
-Request.strong. POST approvals/{id}/decide is an APPROVER route ("Approvals"), and so are the
+Request.strong. POST approvals/{id}/decide is an APPROVER route ("Approvals" in kitlib.hubsite.apiapprovals), and so are the
 lock's reservation and division writes. LOCK_WRITE is a route role too: OWNER, and strong as
-well when the call came over the tunnel ("Machine lock").
+well when the call came over the tunnel ("Machine lock" in kitlib.hubsite.apilock).
 
-Approvals (kitlib.hubsite.approvals holds the rules; these routes only carry them). POST approvals
-(AGENT) adds a pending request: the base of each file is read with git from this machine's
-checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
-that is not the file at head is `invalid`, field files), and the unified diff lines the page
-shows are stored in the document as `diff`. POST approvals/{id}/decide (APPROVER) writes the
-owner's decision, signed with Api's approval_key; POST approvals/{id}/consume (AGENT) marks an
-approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
-and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
-expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
-requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
-does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
-waits on the owner until the approval is decided (park_item, `until: owner approval:A-n
-decided`), and the withdrawal drops that line (unpark_item); an op request takes none. POST
-approvals/{id}/supersede (AGENT) marks a decided approval nobody consumed superseded
-(approvals.supersede_fields): the body gives `from` (`pm`, or a coordinator session of the
-approval's repo, Api.coordinator_keys: a claim, as for questions done), `by` (the approval that replaces it,
-which must exist, or a commit this machine's checkout of the repo has on main as last fetched,
-approvals.on_main) and `if_version`; it leaves pending and is never consumed. GET approvals/{id}/verify
-(AGENT, query repo, head, files as JSON {path: blob} and an optional commit) answers
-{ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
-An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
-is added with kind, op, repo, line, title and optional reason and what, and no checkout is read;
-any other kind is `invalid`, field kind. It is consumed with args_sha256 in place of commit, and
-verified with the query kind=op, op, repo and args (the line's sha256), which answers its version
-too, the pin of the consume that follows.
-GET snapshot carries `strong`: true only on the strong owner's call (Request.strong), so the page
-shows Approve and Deny as usable; the decide route checks the role itself all the same.
-
-Pages. POST pages (AGENT) publishes a page: the card `pages/<id>` and its body `page_html/<id>`.
-The body is {id, title, html, repo?, from?, summary?, refs?, kind?, folder?, if_version?}. The
-id is the caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>`
-with no letter or digit either side, anywhere, so a ref that names a page is never read as an
-item);
-html is judged by kitlib.hubsite.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
-outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
-nothing written. Publishing over a page takes the card's `if_version`; without it, or with
-another, it is `conflict`. store.PAGES_LOCK is held from the reads to the last write of a publish or a
-delete (a page is two documents), so a second publisher reads only after the first has written
-both, and with the same pin
-it is `conflict` with nothing written. The body is put first and the card second, each pinned to
-the version read (0: not there yet), so a card never names a missing body; a card write that
-fails after its body leaves an orphan body, which kitlib.hubvalidate warns of and the next
-publish overwrites. The card carries title, repo, summary, refs, kind, folder (each text, kind
-and folder optional), from (an agent's name, as a to-do's), `at` and `bytes`. POST
-pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folder?, repo?,
-if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
-stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
-kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
-GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out
-(and `handoffs`): the Docs tab reads a body when it is opened. GET snapshot?collections=a,b
-answers {revision, collections} with those collections alone, cut as the whole snapshot cuts
-them, and no views, pending or status; a name that is not one of its collections is `invalid`,
-field collections (Client.inbox reads it so; an older hub ignores the query and answers whole).
-GET snapshot?bare=1 answers the whole snapshot with `collections` {}: the revision, views,
-pending and status, which can move with no store write. The page reads it after a wait that
-timed out (no write ended it) and keeps the documents it holds when the revision is the one it
-drew; bare with collections is `invalid`, field bare. POST pages/{id}/delete (OWNER, if_version
-optional) deletes the card, then the body; a
-body delete that fails leaves the card deleted and the body an orphan, as above. One process
-lock is enough: Store.open lets one process write a store (`_store.lock`).
-
-Schedules. POST schedules (OWNER) sets when one of the kit's automatic tasks runs for one repo:
-{task, repo, cadence, at, days?, if_version?} into `schedules/<task>-<repo>`. task is one of
-SCHEDULE_TASKS; cadence one of CADENCES (`off` keeps the document and runs nothing); at is HH:MM,
-24-hour; days, a list from DAYS, is required for `weekly` and refused for the others, and is
-stored once each in DAYS order. repo must be a repository the hub knows (its repos/ documents'
-names and aliases, and the store's known_repos), case ignored, and is stored as that repo's name.
-A task that runs for one repository (kitlib.autotasks.tick.TASKS per_repo), on any cadence but
-`off`, also needs exactly one checkout of it in the machine config's launcher.repos, as the tick
-finds it (tick.find_repo over Api's schedule_repos, default launcher_checkouts: tick.launcher_repos);
-none, or two, is `invalid`, field repo, and so is a launcher config that cannot be read.
-A refusal is `invalid` naming the field, with nothing written. Writing over a schedule takes its
-`if_version`; without it, or with another, it is `conflict`, as for a page, and that refusal's
-error names the schedule's `id` (so a new one for a task and repo that has one can open it,
-the repo matched as above). The answer carries
-`first_run`: the first slot strictly after set_at by kitlib.autotasks.due's rule, naive local
-time to the minute (None when off). GET schedules (ANY) lists them, with `tick`: {last, running,
-every_s}, last when the tick was last seen (Api's tick_seen, default tick_last_seen: the time of
-its state file) and running false when that is None or more than TICK_STALE_S before the clock.
-Each listed schedule also carries `last_outcome` (the tick's record for it: started, skipped, seen
-or failed; None for none), `last_run` (that record's `at` when it is `started`, else None) and
-`next_due` (the first slot after the clock by due's rule, naive local time to the minute; None when
-off), read from Api's tick_state, default tick_run_state; none is stored.
-Nothing here runs a task: a tick outside the hub reads the list.
-
-Findings. GET findings (ANY) lists the maintenance lint's last findings (the `findings` view),
-filtered by `repo` (case ignored), less every one the owner has marked: a finding_marks/
-<fingerprint> document. POST finding_marks (OWNER) marks one, {fingerprint, status, note?,
-if_version?}: status is one of hubvalidate.STATUSES['finding_marks'], the fingerprint must be one
-the lint shows (`not_found` otherwise), and the mark keeps the finding's repo, check, target and
-text as they were. Writing over a mark takes its `if_version`, as for a schedule. POST
-finding_marks/{id}/delete (OWNER, if_version optional) takes a mark back; GET finding_marks (ANY)
-lists them, less any whose repo's last lint run no longer lists its finding (hidden, still stored;
-the snapshot's finding_marks likewise). POST to_pm with kind `act` passes a finding on to the PM: `finding` (its
-fingerprint, required, and refused for any other kind) prefills repo, refs (the fingerprint and
-the finding's target first) and, when none is given, text; the page marks the finding itself.
-POST to_pm/{id}/edit refuses to make an act note another kind or another note an act note.
-A finding's target and fix can name a path on this machine (a worktree's folder, a kit tool):
-only the local owner (Request.full: the owner, its error answers in its own words, not through
-the tunnel) sees them whole. Any other caller's findings, marks and act-note text have each
-absolute path cut to `.../<its last part>`, and no act note's refs carry one; GET to_pm and GET
-snapshot cut an act note's text and refs and a mark's target the same way (_unpath_act, _seen),
-and GET pending, GET wait and GET snapshot an act note's pending title (_unpath_pending).
-GET findings also answers `runs`: [{repo, started, ledger, skipped}], each repo's last run from
-the optional lint_runs view: ledger its three ledger counts (LEDGER_COUNTS) or null, skipped the
-skip marker's {reason, at} only where its `at` is later than the run's `started` and both parse,
-else null (_lint_runs); no view, or one that fails, is an empty list.
-
-Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
-landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
-fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
-record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
-main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
-whose repo is the event's (repo_name of its remote) is marked spent (that sha) and spent_at,
-once: display only, for a later page (none reads it yet); its status stays, any other is
-skipped, and the answer's `spent` lists the ids marked. GET landings (ANY)
-lists them newest first, filtered by `repo`, at most `limit` (default FEED_MAX); GET snapshot
-carries the newest FEED_MAX. Every event is kept; none is ever pending or pushed, and no route
-changes or deletes one.
-
-Hand-offs (docs/hub-approvals.md "handoffs/C-NNN"). POST handoffs (AGENT) records that a session
-checkpointed and stands down, beside its ready reply to the PM (skill session-handoff): {from,
-kind, state_path}, all required. from is a session key checked as a question's is (a launcher
-session key, read now, or `pm`); kind is one of HANDOFF_KINDS (handoff, restart, stop: the word
-of the reply; checkin: a successor that has checked in, kitlib.launcher.handoff); state_path is
-the absolute path of the state note, on one line. The hub sets `at`.
-GET handoffs (ANY) gives the newest record of each session (newest_handoffs: the highest id per
-`from`), sorted by key, or with `from=<key>` that key's alone; over the tunnel only, the state
-path is cut to `.../<its file name>` (ntpath.basename). Every record is kept; none is pending or pushed, no route changes or
-deletes one, and GET snapshot leaves them out.
-
-Skill edits (docs/hub-skill-pages.md "skill_edits/E-NNN"). The owner writes a new text for one kit
-skill's source, content/skills/<name>/SKILL.md, and an agent commits it; the hub writes no
-repository. GET skills/{name}/source (ANY) gives {name, text, blob}: the whole SKILL.md of a
-listed skill as this hub serves it (the skill_source view; CRLF read as LF) and the git blob id
-of that text. Only the owner writes an edit, as only the owner writes a story (POST stories,
-stories/{id}/withdraw, to_pm and finding_marks are OWNER routes too): POST skill_edits {skill,
-text, submit?}, POST skill_edits/{id}/edit {text?, submit?, if_version} and POST
-skill_edits/{id}/withdraw {if_version?} are OWNER, so an agent's key is refused `forbidden`, field
-role, before the body is read, and nothing is written. An edit is draft, or submitted with
-`submit`; base_blob is the blob of the source the hub served when it was written, so it can lag
-the kit's main. The text is checked by kitlib.hubsite.skilledits.why_not: at most MAX_BYTES of
-UTF-8, no NUL, and front matter whose `name:` is the source's (an edit never renames a skill).
-Only a draft, superseded or failed edit changes; a superseded or failed one is put on the source
-at its source_blob when kit_text reads that blob (the text GET skill_edits/{id} shows the owner),
-else on the served source as it is now; its base_blob is that blob. Submitting when base_blob is
-neither the served source's blob nor the blob on main (kit_blob) makes it superseded, with
-source_blob the blob on main (the served blob when kit_blob reads none), for the owner to re-apply.
-POST skill_edits/{id}/done {branch, blob, if_version} and POST skill_edits/{id}/fail {why,
-current_blob?, if_version} are AGENT, and only for a submitted edit: done refuses a blob that is
-not git_blob of the edit's text as UTF-8, and it reads the blob of the source on `branch` in
-the kit checkout itself (the Api's kit_blob) and refuses one it cannot read or that is not that
-blob (field branch), so an agent cannot mark committed a text it never wrote; with no kit_blob it
-reads nothing, so done is refused. fail with a current_blob
-that is not base_blob (the worker's check against main) makes the edit superseded, else failed.
-GET skill_edits (ANY, status) lists the edits, GET skill_edits/{id} (ANY) gives {item, source}:
-source is {text, blob} at a superseded or failed edit's source_blob when kit_text reads it, else
-null. A
-submitted edit is a pending item of kind `skill_edit` ("Routes").
-
-Fields. A write route names the body fields it takes; any other field is refused (`invalid`, the
-field named), so a body cannot carry a field another role owns (an agent posting a question
-cannot post its answer). status, the time stamps and a to-do's `from: you` are set here from the
-route and the role, never taken from the body. A write to an existing document is pinned to the
-version this module read (or the caller's `if_version`), so a check made on one version is never
-applied to another: the loser gets `conflict`. The `from` an agent gives a to-do is a name in
-printable ASCII (0x21 to 0x7E, single spaces inside it, the ends trimmed); anything else is
-`invalid`, and so is any spelling of `you`. A question's `from` is the session its answer goes
-back to: a key of the launcher's sessions.json, read on each add (Api's session_keys), or `pm`,
-which is also what an absent one is; any other is `invalid`, and the refusal names the known
-keys, never the file; when sessions.json or the launcher's settings cannot be read, only `pm` is
-known and the refusal says the read failed, with the exception's class name. A new to-do's `steps` are made into its commands and detail here and are
-not kept (todo_steps); an agent's to-do is judged by the owner's to-do rules (kitlib.hubsite.
-todosteps.check) for every client. An agent's new to-do may give `record` {repo, id} (checked as
-a question's, _bound): the record waits on the owner until the to-do is done (park_item,
-`until: owner todo:T-n done`), and its withdrawal or the owner's deletion drops that line
-(unpark_item). The owner's to-do and every to-do edit take no record. On the edit routes a null `repo` (and a to-do's
-null `detail`) clears the field exactly as "" does; any other null field is read as absent.
-
-Creators. An agent edits (POST questions/{id}/edit, todos/{id}/edit) or withdraws (POST
-questions/{id}/delete, todos/{id}/delete) only an open item it added: the body gives the item's
-own `from` (`pm` matches an item with none) and the `if_version` it read, both required, and an
-owner's to-do (`from: you`) is never an agent's. A wrong `from` is `forbidden`, an item no longer
-open is `conflict`, field status, and neither changes it. POST questions/{id}/done takes an
-optional `from` (default `pm`) and is `forbidden`, field from, unless it is the question's own
-`from` or `pm`. Every agent shares one token, so the `from` is a claim: the check stops a mistake, not an agent that gives another's name. An agent's
-to-do edit is judged by the owner's to-do rules (todo_steps), the changed fields only; it takes
-no `steps`. The owner edits only a to-do of their own (any status) and deletes one of their own
-at any status, or any open question or open to-do; the owner never edits an agent's item. A
-withdrawal deletes the document: there is no withdrawn status.
+Moved to the module that holds each route group: Approvals (apiapprovals), Pages (apipages),
+Schedules (apisched), Findings (apifindings), Landings and Hand-offs (apilog), Skill edits
+(apiskills), Machine lock (apilock), Fields and Creators (apibase).
 
 Results. status is 200 with the route's object, or the status of STATUS[code] with
 {"ok": false, "error": {"code", "message", "field"}}; both carry `revision`. The codes are the
@@ -285,54 +99,6 @@ answer's `standing` true, or later `standing` alone: _promote): the PM logs it.
 POST questions/{id}/log and POST to_pm/{id}/reply take no ruling id (questions_log): a question
 is marked logged with none. Documents an older hub logged keep their `ruling`; nothing reads it.
 
-Machine lock. By the owner's decision the hub reads and changes the machine lock in-process,
-through `lock`: a door object (kitlib.hubsite.lockdoor.LockDoor on the machine's server; this
-module never imports it) with
-  revision()                     the lock store's revision
-  view(remote=False)             {lock_revision, view, writer}: kitlib.lockui.model to_json's view,
-                                 and 'owner' or 'agent': who the lock takes this hub for
-  stats(days, since, until)      kitlib.lock.api stats
-  reserve, hold, edit, end_hold, end_run, move_to_top, game_mode, games, division
-                                 the writes (lockdoor's docstring), each one lock api call, each
-                                 taking remote; a refusal is a HubError
-Every lock route is closed to an agent (`forbidden`, field role), on every listener: an agent
-reads the lock through its own MCP server and changes it with the lock's tools. The reads (GET
-lock/view, lock/stats, lock/wait) are OWNER's. The writes, by the owner's decision: on this
-machine the owner's login is enough, over the tunnel every lock write needs the strong owner. A
-write the decision does not name (a reservation: any hold write; the division) is the strong
-owner's on every listener, APPROVER; the others (end a run, move one to the top, game mode, the
-games list) are LOCK_WRITE: OWNER with strong, or OWNER on a listener that is not the tunnel
-(via is not TUNNEL_VIA), refused with NOT_LOCK_WRITER. A future relay that reaches the local
-listener for a remote browser must close that local owner path for its callers.
-  POST lock/holds            APPROVER  {kind: reserve, scope: whole|half, start, end (ISO with
-                                       offset), note} or {kind: hold, scope, start, end, note,
-                                       cpu, gpu} (the Hold dialog's text, read in the PC's zone)
-  POST lock/holds/{id}/edit  APPROVER  {start, end, note}: the Edit dialog's text; no note keeps it
-  POST lock/holds/{id}/end   APPROVER  {}
-  POST lock/division         APPROVER  {fields: {key: text}} or {defaults: true}
-  POST lock/runs/{id}/end    LOCK_WRITE {confirm}: confirm repeats the run id
-  POST lock/runs/{id}/top    LOCK_WRITE {}
-  POST lock/game_mode        LOCK_WRITE {enabled}
-  POST lock/games            LOCK_WRITE {text}: the Games dialog's text
-A write answers {ok, result} plus the view after it (as GET lock/view; view null when the lock
-cannot be read then). The page makes owner holds only; there is no `owner` field. A busy lock is
-`conflict` (409). The view answers of the lock routes carry `writes`: {lock, strong, why}, what
-this caller may change (lock: the LOCK_WRITE routes, strong: the APPROVER ones too) and, when
-one is false, why (WRITES_WHY); a hub the lock takes for an agent may change nothing.
-GET lock/view gives the view; `remote` is true only for the tunnel listener's calls (via
-TUNNEL_VIA), whose warnings and refusals that can name a file are fixed phrases
-(model.REMOTE_SAYS, lockdoor.REMOTE_SAYS); every listener gets the same allow-listed keys. The view
-carries `queue_items` (the line behind the runs, with each one's position and why it waits) and its
-finished runs carry `slug`; the action hub page's Schedule view (web/index.html) draws them. GET
-lock/stats takes days (1 to 366), since and until (ISO times with their offset). GET lock/wait
-takes since (a lock revision; default the one now) and timeout (seconds, at most WAIT_MAX_S) and
-answers the view plus `changed` once the lock's revision differs from since, or at the timeout
-with changed false. The lock store has no wake of its own, so the wait looks at its revision
-every LOCK_POLL_S, sleeping in Store.wait so that a close of the hub store ends it at once
-(`store`). It is a wait for the listener (WAIT_HANDLERS): it takes one of the listener's wait
-slots. With no door every route is `unavailable`, field lock; a door that raises anything but a
-HubError is `unavailable` with only the exception's class name (_reason), never its text.
-
 Nothing here opens a socket, starts a thread, prints, parses arguments or exits. GET wait (and GET
 lock/wait) blocks in Store.wait for at most WAIT_MAX_S; how many may wait at once is the listener's
 rule.
@@ -360,7 +126,7 @@ WATCHER_STALE_S) or 'none' (no heartbeat readable), age its seconds (null with n
 that raises is 'down' with a null age.
 
 Code. GET snapshot and GET health carry `code`: null when this hub gives none, else {"stale",
-"restart"} from Hub.code_state (kitlib.hubsite.codestale): stale is true once the hub code on disk
+"restart"} from Hub.code_state (kitlib.hubclient.codestale): stale is true once the hub code on disk
 is newer than this process, restart the owner's to-do text then (null otherwise). The server sets
 Api.code_status when it is built; a status that raises or is not an object gives null. The
 tunnel's health holds fixed words only and carries none.
@@ -408,11 +174,9 @@ Revision. A read's `revision` is taken before the data is copied, so it is never
 data: a client that waits `since` it is told of any write the copy missed. GET health gives the
 store's folder to the owner only.
 """
-import collections
 import contextlib
 import contextvars
 import dataclasses
-import json
 import math
 import re
 import time
@@ -422,22 +186,25 @@ from kitlib import hubvalidate
 from kitlib.launcher import settings as lsettings, state as lstate
 
 from . import schema
-from . import todosteps
 from .store import HubError
 from .apibase import (  # noqa: F401 - re-exported: callers and tests read these off api
     BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
-    NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
+    NOT_LOCK_WRITER, WRITES_WHY, STATUS, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
-    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
-    _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
+    AGENT_FROM, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via, _reason, _timeout,
     _one_of, _SEGMENT, SEGMENT_SAYS, _record_view, _agent_from, _session_from)
+from .apipark import (  # noqa: F401 - re-exported: callers and tests read these off api
+    ASKS, _PARK_SAYS, PARK_SAYS, PARK_RETRY, _UNPARK_FAILED, UNPARK_FAILED, _parks, _ask_coll,
+    _until, _park_says, _asking, park_item, unpark_item, _park_now, _park_failed, _parked,
+    _later_said, _sweep_asks, _unpark_now)
 from .apipages import (  # noqa: F401 - re-exported: callers and tests read these off api
     pages_list, pages_publish, _pages_write, PAGE_PLACE_FIELDS, pages_place, pages_get,
     pages_delete)
 from .apilog import (  # noqa: F401 - re-exported: callers and tests read these off api
     inbox_add, inbox_read, LANDING_FIELDS, _newest, landings_list, landings_add, _mark_spent,
-    _repo_name_of, HANDOFF_KINDS, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
+    _repo_name_of, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
 from .apiskills import (  # noqa: F401 - re-exported: callers and tests read these off api
     SKILL_EDIT_CHANGE, SKILL_EDIT_WITHDRAW, _skill_name, _skill_text, _skill_source, _blob_field,
     skill_edits_list, _source_at, _main_blob, skill_edits_get, skill_edits_add, skill_edits_edit,
@@ -450,6 +217,25 @@ from .apisched import (  # noqa: F401 - re-exported: callers and tests read thes
     SCHEDULE_TASKS, CADENCES, DAYS, _AT, _schedule_repo, launcher_checkouts, tick_last_seen,
     TICK_STALE_S, tick_every_s, _aware, _tick_status, tick_run_state, _next_due, schedules_list,
     _first_run, _one_checkout, schedules_set)
+from .apitodos import (  # noqa: F401 - re-exported: callers and tests read these off api
+    todos_list, todo_steps, todos_add, _ASKS_REPORT,
+    TODO_ASKS_REPORT, _asks_report, TODO_NOTE_MAX, _NOTE_CONTROL, _todo_note, todos_done, todos_ack,
+    _own, todos_edit, todos_delete)
+from .apirecord import (  # noqa: F401 - re-exported: callers and tests read these off api
+    RECORD_SHAPE, _holders, _bound, _no_record, _creator, _still_open, _withdrawn)
+from .apiposts import (  # noqa: F401 - re-exported: callers and tests read these off api
+    to_pm_list, _unpath_act, to_pm_add, _queued, to_pm_edit, to_pm_delete, _refusal, to_pm_send,
+    to_pm_reply)
+from .apiapprovals import (  # noqa: F401 - re-exported: callers and tests read these off api
+    _approval, approvals_add, approvals_decide, approvals_apply, _narrowed, _applied,
+    approvals_consume, approvals_delete, approvals_supersede, approvals_verify)
+from .apiread import (  # noqa: F401 - re-exported: callers and tests read these off api
+    backlog, completed, _segment, skill_get, skill_source_get, record, record_new, _strings,
+    record_add, record_edit, record_delete, record_unblock, _listing, pending, _unpath_pending,
+    wait, _wait_for, SNAPSHOT_SKIP, _snapshot_colls, snapshot, health)
+from .apiask import (  # noqa: F401 - re-exported: callers and tests read these off api
+    questions_list, _class, questions_add, _pulled_refs, _asked, _cited,
+    BINDS_FROM, questions_bind, questions_edit, questions_delete)
 from .apilock import (  # noqa: F401 - re-exported: callers and tests read these off api
     _remote, _lock, _writes, _viewed, lock_view, _wrote, _confirmed, _strs, lock_hold_add,
     lock_hold_edit, lock_hold_end, lock_division, lock_run_end, lock_run_top, lock_game_mode,
@@ -540,7 +326,7 @@ def _launcher_entries():
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
-    (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
+    (`agent` set, as hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
     return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 
@@ -568,19 +354,19 @@ class Api(object):
     iterable, called afresh on each use (default: launcher_keys); `now` gives monotonic seconds
     for the routes (default: time.monotonic). `approval_key()` gives the approval key or None,
     read on each decide and verify; `checkout(repo_id)` gives the root of this machine's checkout
-    of that repository or None ("Approvals"); both default to None, which no approval passes.
+    of that repository or None ("Approvals" in apiapprovals); both default to None, which no approval passes.
     `repo_name(repo_id)` gives the name of this machine's configured repository with that remote,
     or None (default), which routes a decided approval to the PM alone ("Routes").
-    `lock` is the machine lock's door or None ("Machine lock"). `schedule_repos()` gives the
+    `lock` is the machine lock's door or None ("Machine lock" in apilock). `schedule_repos()` gives the
     machine config's launcher.repos as [(label, main checkout, name)] (default:
     launcher_checkouts), `tick_seen()` the ISO time the automatic tasks' tick was last seen or
     None (default: tick_last_seen), `tick_state()` the tick's records by schedule key (default:
-    tick_run_state); all are read on each use ("Schedules"). `kit_key()` gives the session key
+    tick_run_state); all are read on each use ("Schedules" in apisched). `kit_key()` gives the session key
     of the kit repository's coordinator, '' when none is known (default), so a submitted skill
     edit is the PM's; `kit_blob(branch, path)` gives the blob id of `path` on `branch` in this
     machine's kit checkout, or None when git cannot read it; with none given (default) every
     read is None, so the done route is refused; `kit_text(blob)` gives the text of that blob in
-    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits").
+    the kit checkout (CRLF read as LF), or None (default: always None) ("Skill edits" in apiskills).
     `coordinators()` gives {session key: repo} of sessions.json's coordinator sessions, read on
     each supersede (default: launcher_coordinators; coordinator_keys).
     The hooks (session_keys, approval_key, checkout, repo_name, schedule_repos, tick_seen,
@@ -790,7 +576,7 @@ class Api(object):
             return {AGENT_FROM}, _reason(e)
 
     def kit_session_key(self):
-        """The kit coordinator's session key ("Skill edits"): kit_key() gives the kit repository's
+        """The kit coordinator's session key ("Skill edits" in apiskills): kit_key() gives the kit repository's
         configured name, and the key is, by coordinator_keys' rule, a coordinator session of
         sessions.json whose `repo` is that name (the kit's `kit`); the name itself when there is
         none. '' when kit_key fails or gives no string. Whether that session exists is for the
@@ -896,7 +682,7 @@ class Api(object):
                 q = asked.get(d['id']) or {}
                 if d.get('note') == 'filed' and isinstance(q.get('standing'), dict):
                     d['standing'] = True        # the PM logs it too (_for)
-                if not isinstance(q.get('record'), dict) and q.get('class') in QUESTION_CLASSES:
+                if not isinstance(q.get('record'), dict) and q.get('class') in hubvalidate.QUESTION_CLASSES:
                     d['class'] = q['class']     # the PM audits a classed answer (hub.py pending)
             out.append(d)
         now, flips = self.now(), []
@@ -1041,137 +827,6 @@ class Api(object):
 
 
 # ------------------------------------------------------------------ handlers
-def questions_list(api, req):
-    return {'items': api.items('questions', req, since=True)}
-
-
-RECORD_SHAPE = 'record is {"repo": <a configured repository>, "id": <one of its record ids>}'
-
-
-def _holders(api, repo, rid):
-    """The other configured repo names whose backlog has the record `rid` (a kit record is keyed
-    on the PM repo's folder name, not the kit repo's own), for the not_found refusal. Best
-    effort: a view that is missing or fails names none."""
-    try:
-        names = [r.get('name') for r in api._view('repos')() if isinstance(r, dict)]
-    except Exception:       # noqa: BLE001 - a view is another module's code
-        return []
-    held = []
-    for name in names:
-        if not isinstance(name, str) or name.lower() == repo.lower():
-            continue
-        try:
-            got = api._view('record')(name, rid)
-        except Exception:   # noqa: BLE001
-            continue
-        if isinstance(got, dict) and got.get('where') == 'open':
-            held.append(name)
-    return held
-
-
-def _bound(api, value, what='question'):
-    """The `record` a question (or `what`: an agent's to-do, a file approval) is bound to, {repo,
-    id}, after the configured repository's
-    backlog was read now through the `record` view (docs/hub-questions.md "questions/Q-NNN"): repo
-    is the configured name, whatever its case was as given. Refused, field record: `invalid` for
-    another shape, a name that can be no repository or record id, and a completed record;
-    `not_found` for a repository that is not configured and a record its backlog does not have;
-    `unavailable` when the record cannot be checked (no record view on this server, or a store
-    that cannot be read). It fails closed: an answer is filed into this record, so a binding
-    nobody checked is never stored. A record whose view says `writable` false (its repository
-    names no backlog store the hub may write, kitlib.hubsite.backlog writable) is `invalid` too:
-    its answer could never be filed (recordwrite answer, `no_store`), nor its record parked."""
-    if not isinstance(value, dict) or sorted(value) != ['id', 'repo'] or not all(
-            isinstance(value[k], str) and value[k].strip() for k in ('repo', 'id')):
-        raise _invalid(RECORD_SHAPE, 'record')
-    repo, rid = value['repo'].strip(), value['id'].strip()
-    try:
-        got = api._view('record')(repo, rid)
-    except HubError as e:
-        if e.code == 'invalid':
-            raise _invalid('record: %s' % e.message, 'record')
-        named = '%s:%s' % (repo, rid)
-        if e.code == 'not_found' and e.field == 'repo':
-            raise HubError('not_found', 'record names repo %s, which is not a repository the '
-                           'hub has configured' % ascii(repo), 'record')
-        if e.code == 'not_found':
-            held = _holders(api, repo, rid)
-            raise HubError('not_found', "record %s: repo %s's backlog has no record %s%s"
-                           % (named, repo, rid, '; the repo key that holds it is %s' % ', '.join(held)
-                              if held else ''), 'record')
-        raise HubError('unavailable', 'record %s could not be checked: %s; %s' % (
-            named, e.message, 'ask again, or ask without a record' if what == 'question'
-            else 'add it again, or add it without a record'), 'record')
-    except Exception as e:          # noqa: BLE001 - a view is another module's code
-        raise HubError('unavailable', 'record %s:%s could not be checked: the record view '
-                       'failed: %s' % (repo, rid, _reason(e)), 'record')
-    got = got if isinstance(got, dict) else {}
-    name = got.get('repo') if isinstance(got.get('repo'), str) else repo
-    if got.get('where') != 'open':
-        raise _invalid('record %s:%s is completed: bind a %s to an open record'
-                       % (name, rid, what), 'record')
-    if got.get('writable') is False:
-        raise _invalid('record %s:%s: repo %s names no backlog store the hub may write (.kit.json '
-                       '"backlog".store), so %s: %s without a record'
-                       % (name, rid, name, 'its answer could not be filed' if what == 'question'
-                          else 'the hub could not park the record',
-                          'ask' if what == 'question' else 'add it'), 'record')
-    return {'repo': name, 'id': rid}
-
-
-# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
-# a standing rule (a delegation run line too), the machine, work across repositories, or a
-# one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
-QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
-
-
-def _class(b, bound):
-    """Check b's `class` for a question that is `bound` to a record or not, once the fields it
-    ends with are known: refused `invalid`, field `class`, for a class on a bound question, a
-    class not in QUESTION_CLASSES, and no class on an unbound one."""
-    given = b.get('class')
-    if bound:
-        if given is not None:
-            raise _invalid('a question bound to a record takes no class: its answer is filed '
-                           'into the record', 'class')
-        return
-    if given is None:
-        raise _invalid('a question needs --record REPO:ID or --class %s (one bound to no '
-                       'record says what kind it is)' % '|'.join(QUESTION_CLASSES), 'class')
-    if given not in QUESTION_CLASSES:
-        raise _invalid('class is one of %s, not %s' % (', '.join(QUESTION_CLASSES),
-                                                      ascii(given)), 'class')
-
-
-def questions_add(api, req):
-    """A new open question: `record` (the backlog record its answer is filed into) or `class`
-    (_class) is required. A bound question parks its record (park_item: blocked on the owner
-    until it is answered), off the request when the server runs it later. A class-only question
-    whose `refs` name a record pulled in a configured repository is stored, with a warning that
-    the record goes on unparked (_pulled_refs)."""
-    b = _fields(req, ('repo', 'from', 'title', 'context', 'options', 'recommended', 'refs',
-                      'urgent', 'story', 'record', 'class'), required=('title',))
-    for name in ('repo', 'from', 'title', 'context', 'story'):
-        _text(b, name)
-    # the session the answer goes back to: a launcher session key, read now, or the PM's
-    b['from'] = _session_from(api, (b.get('from') or '').strip() or AGENT_FROM, 'a question')
-    _typed(b, 'options', (list,), 'a list of {label, description}')
-    _class(b, 'record' in b)
-    if 'record' in b:               # checked last: the one part that reads a backlog
-        b['record'] = _bound(api, b['record'])
-    b.setdefault('options', [])
-    b.update(status='open', asked_at=api.clock())
-    out = api.add('questions', b, req)
-    if 'record' in b:
-        return _park_now(api, out['id'], out, _via(req))
-    for rid in _pulled_refs(api, b.get('refs')):
-        out['warnings'].append({
-            'level': hubvalidate.WARN, 'rel': 'questions/%s' % out['id'], 'field': 'refs',
-            'code': 'refs-pulled-record',
-            'message': 'refs name pulled record %s: ask with --record so the hub parks it' % rid})
-    return out
-
-
 def questions_answer(api, req):
     """The owner's answer: `choice`, an optional `note`, and `standing` true when the answer is
     to be a standing rule (a question bound to a record only: the PM logs it, docs/hub-questions.md
@@ -1287,7 +942,7 @@ def _record_state(api, record):
 def _filed_as(before, after):
     """What a filed answer did to its record, from the record's state before and after the
     filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
-    hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
+    hold that had stopped its pull, which is back, plan_claim.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
     could not be read (the push then treats it as before this field: docs/hub-push.md "Push
     notifications")."""
@@ -1411,414 +1066,6 @@ def questions_file(api, req):
         park_failed += more
     return {'ok': True, 'filed': filed, 'failed': failed, 'parked': parked,
             'unparked': unparked, 'park_failed': park_failed, 'orphan_hand_lines': hand}
-
-
-# --- the hub as the owner's proxy: a bound ask parks its record -----------------------------------
-
-# The asks that park the record they are bound to: {collection: (noun, the `until` condition the
-# record waits on, % the item's id; what ends it)}. A question is bound when it is asked or
-# edited; an agent's to-do (todos_add) and a file approval (approvals_add) only when added. The
-# owner's act ends each: an answer (filed into the record), a to-do marked done or an approval
-# decided (either way: denied counts), which the hub's unblock-conditions job reads
-# (kitlib.hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
-# job pushes the PM `approval-expired`.
-ASKS = {
-    'questions': ('question', 'question:%s answered', 'answered'),
-    'todos': ('to-do', 'todo:%s done', 'done'),
-    'approvals': ('approval', 'approval:%s decided', 'decided'),
-}
-
-# what an ask's `park` says, by park's outcome (recordwrite.PARK_OUTCOMES) or the code its write
-# failed with: fixed phrases, as FILING_SAYS, the ask's noun and end filled in (_park_says)
-_PARK_SAYS = {
-    'blocked': 'the record waits on this %(noun)s: blocked on the owner until it is %(end)s',
-    'already': 'the record waits on this %(noun)s',
-    'held': 'the record was held on the owner already: that hold keeps its own end',
-    'parked': 'the record is parked: the hub leaves a park as it is',
-    'gone': 'the record is completed or gone: nothing waits on this %(noun)s',
-    'not_found': 'the record is completed or gone: nothing waits on this %(noun)s',
-    'invalid': 'the backlog store refused to block the record: the PM handles it',
-    'store': 'the backlog store could not be written now: the hub tries again',
-    'unavailable': 'this hub cannot write a backlog store: the hub tries again',
-    'no_store': 'this repository names no backlog store the hub may write (.kit.json '
-                '"backlog".store): the PM handles it',
-}
-PARK_SAYS = {k: v % {'noun': 'question', 'end': 'answered'} for k, v in _PARK_SAYS.items()}
-# the codes a later park tries again (POST questions/file; the hub runs it at start)
-PARK_RETRY = ('store', 'unavailable', 'internal')
-_UNPARK_FAILED = ('the record still waits on this %s, which is gone or bound elsewhere: the hub '
-                  'tries again at its next start or questions file call')
-UNPARK_FAILED = _UNPARK_FAILED % 'question'
-
-
-def _parks(api):
-    """Whether this server parks a bound ask's record: it has the record_park view."""
-    return api.views is not None and callable(getattr(api.views, 'record_park', None))
-
-
-def _ask_coll(doc_id):
-    """The collection of ASKS whose id doc_id is (by its prefix), or None."""
-    prefix = doc_id.split('-', 1)[0].upper() if isinstance(doc_id, str) else ''
-    coll = hubvalidate.REF_COLLECTIONS.get(prefix)
-    return coll if coll in ASKS else None
-
-
-def _until(doc_id):
-    """The `until` condition a record parked on the ask doc_id waits on."""
-    return ASKS[_ask_coll(doc_id) or 'questions'][1] % doc_id
-
-
-def _park_says(coll, code):
-    noun, _, end = ASKS[coll]
-    said = _PARK_SAYS.get(code)
-    return (said % {'noun': noun, 'end': end} if said
-            else 'the record could not be parked (%s)' % code)
-
-
-def _asking(api, coll, d):
-    """Whether item d still asks the owner: an open question or to-do, an approval pending and
-    not expired (an expired one is never parked afresh; the line it parked stays)."""
-    if coll == 'approvals':
-        from . import approvals as ap
-        return ap.status_at(d, _when(api.clock(), '')) == ap.PENDING
-    return d.get('status') == 'open'
-
-
-def park_item(api, doc_id, via='hub'):
-    """Block the record the ask doc_id (a question, to-do or approval: ASKS) is bound to on the
-    owner, until the owner's act ends it, through the `record_park` view
-    (kitlib.hubsite.recordwrite park, Session: hub-park: the hub as the owner's proxy), then mark
-    the ask `park` {at, code, message} (code park's outcome, recordwrite.PARK_OUTCOMES, or the
-    failure's; message a fixed phrase, _park_says). The asker is the ask's `from` (`pm` when it
-    has none, as an approval never does). None for an ask that is gone, no longer asking
-    (_asking), bound to no record, or parked already (a `park` whose code is not one to retry,
-    PARK_RETRY); else {id, code, message, version, revision}, or {id, moved: true} when the ask
-    changed before its mark. Under Api.record_lock: an ask withdrawn or ended meanwhile is read
-    as it is now, so a late park never blocks a record on an ask that is gone. The record write
-    is idempotent, so a retry is safe."""
-    coll = _ask_coll(doc_id)
-    if coll is None:
-        return None
-    with api.record_lock:
-        d = api.store.get(coll, doc_id)
-        if d is None or not _asking(api, coll, d) or not isinstance(d.get('record'), dict):
-            return None
-        was = d.get('park') if isinstance(d.get('park'), dict) else None
-        if was is not None and was.get('code') not in PARK_RETRY:
-            return None
-        record = d['record']
-        try:
-            got = api._view('record_park')(record.get('repo'), record.get('id'), doc_id,
-                                           _until(doc_id), d.get('from') or AGENT_FROM)
-        except HubError as e:
-            code = e.code
-        except Exception:           # noqa: BLE001 - a view is another module's code
-            code = 'internal'
-        else:
-            code = got.get('park') if isinstance(got, dict) and got.get('park') else 'blocked'
-        message = _park_says(coll, code)
-        if was is not None and (was.get('code'), was.get('message')) == (code, message):
-            return {'id': doc_id, 'code': code, 'message': message, 'version': _version(d),
-                    'revision': api.store.revision}
-        try:
-            r = api.store.update(coll, doc_id, {
-                'park': {'at': api.clock(), 'code': code, 'message': message}, 'via': via},
-                if_version=_version(d))
-        except HubError as e:
-            if e.code == 'conflict':
-                return {'id': doc_id, 'moved': True}
-            return {'id': doc_id, 'code': e.code, 'message': AGENT_SAYS.get(e.code, e.message)}
-        return {'id': doc_id, 'code': code, 'message': message, 'version': r.version,
-                'revision': r.revision}
-
-
-def unpark_item(api, doc_id, record):
-    """The ask doc_id is gone from `record` ({repo, id}): withdrawn or deleted, or (a question)
-    edited to another record or none. Drop the record's `until: owner <condition>` line
-    (_until) through the `record_unpark` view (recordwrite withdraw: the last owner line clears
-    the owner, reason `ask withdrawn`). Under Api.record_lock, and only while the ask is not
-    bound to `record` now (a rebind back, or the answer's filing, is left to its own write).
-    None when nothing was asked of the view, else the view's {lines, dropped, unblocked}, or
-    {code} when it failed."""
-    coll = _ask_coll(doc_id)
-    if not isinstance(record, dict) or coll is None:
-        return None
-    with api.record_lock:
-        d = api.store.get(coll, doc_id)
-        if d is not None and d.get('record') == record:
-            return None
-        try:
-            return api._view('record_unpark')(record.get('repo'), record.get('id'),
-                                              _until(doc_id))
-        except HubError as e:
-            return {'code': e.code}
-        except Exception:           # noqa: BLE001 - a view is another module's code
-            return {'code': 'internal'}
-
-
-def _park_now(api, doc_id, out, via):
-    """Park the record the ask doc_id was just bound to: off the request through park_later
-    when the server set it, else here, its result on `out` as `park` (with the mark's version
-    and revision, the ask's last write)."""
-    if not _parks(api):
-        return out
-    if api.park_later is not None:
-        api.park_later(doc_id, lambda: _later_said(park_item(api, doc_id, via), 'parked'))
-        return out
-    got = park_item(api, doc_id, via)
-    if got is not None:
-        out['park'] = got
-        if 'version' in got:
-            out.update(version=got['version'], revision=got['revision'])
-    return out
-
-
-def _park_failed(got):
-    """The code of a park that was not made, from park_item's answer: a code to retry
-    (PARK_RETRY), or a mark that was not written (an answer with no version, the ask gone
-    meanwhile, say). None for a park made or left alone, or an ask that moved."""
-    if got is None or got.get('moved'):
-        return None
-    if got.get('code') in PARK_RETRY or 'version' not in got:
-        return got.get('code') or 'internal'
-    return None
-
-
-def _parked(got, doc_id, parked, park_failed):
-    """Count park_item's answer for questions_file: into `parked` [ids] or `park_failed`."""
-    if got is None or got.get('moved'):
-        return
-    code = _park_failed(got)
-    if code:
-        park_failed.append({'id': doc_id, 'code': code, 'message': got.get('message')})
-    else:
-        parked.append(doc_id)
-
-
-def _later_said(got, what):
-    """For serve's log, what a park (`what` 'parked') or its undoing ('unparked') run off the
-    request failed with: 'record not <what>: <code>', or None. An undoing failed when
-    unpark_item answers a code; nothing retries it then but the sweep at the next hub start
-    (questions_file)."""
-    code = _park_failed(got) if what == 'parked' else (got or {}).get('code')
-    return 'record not %s: %s' % (what, code) if code else None
-
-
-def _sweep_asks(api):
-    """Drop the `until: owner <condition>` lines the hub wrote for an ask (`parked`: the record's
-    body says the hub parked it on that ask: a question, a to-do or an approval) that no owner
-    act will ever end: the ask is gone from the hub, or bound now to another record or none
-    (unpark_item, reason `ask withdrawn` on the last line). An approval that expired undecided is
-    still there and keeps its line (it is withdrawn to drop it). The lines come from the
-    `record_asks` view. A line a person wrote is never dropped, so an owner's hold never ends on
-    the hub's word: one whose ask is gone is reported in the third list for the PM to clear by
-    hand. ([{id, record, unblocked}], [{id, code, message}], [{repo, id, q}])."""
-    view = getattr(api.views, 'record_asks', None) if api.views is not None else None
-    if not callable(view):
-        return [], [], []
-    try:
-        lines = view() or []
-    except Exception:               # noqa: BLE001 - a view is another module's code
-        return [], [], []
-    done, failed, hand = [], [], []
-    for a in lines:
-        q, record = a.get('q'), {'repo': a.get('repo'), 'id': a.get('id')}
-        coll = _ask_coll(q)
-        if coll is None:
-            continue
-        d = api.store.get(coll, q)
-        if not a.get('parked'):
-            if d is None:
-                hand.append({'repo': record['repo'], 'id': record['id'], 'q': q})
-            continue
-        if d is not None and d.get('record') == record:
-            continue
-        got = unpark_item(api, q, record)
-        if got is None:
-            continue
-        if got.get('code'):
-            failed.append({'id': q, 'code': got['code'], 'message': _UNPARK_FAILED % ASKS[coll][0]})
-        elif got.get('dropped'):
-            done.append({'id': q, 'record': record, 'unblocked': bool(got.get('unblocked'))})
-    return done, failed, hand
-
-
-def _unpark_now(api, doc_id, record, out):
-    """unpark_item for `record`, off the request through park_later when set."""
-    if not _parks(api) or not isinstance(record, dict):
-        return out
-    if api.park_later is not None:
-        api.park_later(doc_id, lambda: _later_said(unpark_item(api, doc_id, record),
-                                                   'unparked'))
-        return out
-    got = unpark_item(api, doc_id, record)
-    if got is not None:
-        out['unpark'] = got
-    return out
-
-
-def _pulled_refs(api, refs):
-    """The refs (`ID` or `repo:ID`) of a class-only question that name a record pulled in a
-    configured repository, read from the backlog view's held answer: [record id]. Empty when the
-    view is missing or fails: a warning only, never a refusal."""
-    names = [r.strip() for r in (refs if isinstance(refs, list) else [])
-             if isinstance(r, str) and r.strip()]
-    if not names:
-        return []
-    try:
-        entries = api._view('backlog')()
-    except Exception:               # noqa: BLE001 - no backlog read: no warning
-        return []
-    pulled = set()
-    for e in entries if isinstance(entries, list) else []:
-        repo = str(e.get('repo') or '').lower() if isinstance(e, dict) else ''
-        for i in (e.get('items') or []) if isinstance(e, dict) else []:
-            if isinstance(i, dict) and i.get('s') == 'pulled' and isinstance(i.get('id'), str):
-                pulled.add(i['id'])
-                pulled.add('%s:%s' % (repo, i['id'].lower()))
-    out = []
-    for r in names:
-        rid = r.rpartition(':')[2]
-        if (r in pulled or r.lower() in pulled) and rid not in out:
-            out.append(rid)
-    return out
-
-
-def _asked(text):
-    """The number of a question id (`Q-12`, `Q-012`), or None."""
-    m = re.match(r'Q-(\d+)\Z', text or '')
-    return int(m.group(1)) if m else None
-
-
-def _cited(api, repo, item):
-    """([question numbers a record's hold cites, in order, once each], why it is not one to read
-    or None) for an open item of the backlog view: a parked record's `q:` line, an owner-blocked
-    record's `owner_ask`, `q`, `blocked_on` members and `Blocked on` body lines (the record
-    view, read now). (None, None) for any other record."""
-    from kitlib.backlog import record as brecord
-    texts = []
-    if item.get('s') == 'parked':
-        texts.append(item.get('q') or '')
-    elif item.get('s') == 'blocked':
-        try:
-            got = api._view('record')(repo, item.get('id'))
-        except Exception as e:      # noqa: BLE001 - a view is another module's code
-            return None, 'the record could not be read (%s)' % _reason(e)
-        got = got if isinstance(got, dict) else {}
-        if not any(b.get('kind') == 'owner' for b in got.get('blockers') or []
-                   if isinstance(b, dict)):
-            return None, None
-        hold = got.get('hold') if isinstance(got.get('hold'), dict) else {}
-        texts += [hold.get('owner_ask') or '', hold.get('q') or '']
-        texts += [b.get('value') or '' for b in got.get('blockers') or [] if isinstance(b, dict)]
-        texts += [l for l in (got.get('body') or '').split('\n') if l.startswith(brecord.BLOCK_NOTE)]
-    else:
-        return None, None
-    nums = []
-    for text in texts:
-        for c in brecord.cites(text):
-            n = _asked(c)
-            if n is not None and n not in nums:
-                nums.append(n)
-    return nums, None
-
-
-# the statuses questions bind binds a question from: still open, or answered and not yet handled
-BINDS_FROM = ('open', 'answered')
-
-
-def questions_bind(api, req):
-    """POST questions/bind, the PM's alone (`from` pm, as questions_done checks a claim): pair
-    each parked record's `q` and each owner-blocked record's cited question with an open hub
-    question of the same number, and with `apply` true bind them (set `record`). The backlog is
-    read fresh with `apply` (a fetch round) and from the held snapshot without, every configured
-    repository. A pair whose record fails its check is in `failed` only. Nothing but an open or
-    answered, unbound question is written (BINDS_FROM); a filed, logged or done one is a miss. An
-    answered one is filed into its record at once (file_answer), its pair carrying `filing`
-    {filed, code, message}. Answers {ok, applied, pairs: [{question, record, bound}],
-    misses: [{record, why}], multi: [{record, questions}], skipped: [{question, why}],
-    failed: [{question, code, message}]}: `multi` are records citing several questions, left
-    alone; `skipped` a question already bound elsewhere or wanted by two records."""
-    b = _fields(req, ('from', 'apply'), flags=('apply',))
-    _text(b, 'from')
-    claimed = (b.get('from') or '').strip() or AGENT_FROM
-    if claimed != AGENT_FROM:
-        raise HubError('forbidden', 'questions bind is the PM\'s: from is %s (%s was given)'
-                       % (AGENT_FROM, ascii(claimed)), 'from')
-    apply = _flag(b, 'apply', False)
-    docs = api.store.docs('questions')
-    numbered = {}
-    for qid in docs:
-        if _asked(qid) is not None:
-            numbered[_asked(qid)] = qid
-    found = []                      # (record, the one question number it cites)
-    cites = collections.Counter()   # records citing each question number
-    misses, multi = [], []
-    for entry in api.shown('backlog', repo='', state='', fresh=apply):
-        repo = entry.get('repo')
-        if entry.get('error'):
-            misses.append({'record': {'repo': repo, 'id': None},
-                           'why': 'the repository could not be read'})
-            continue
-        for item in entry.get('items') or []:
-            rec = {'repo': repo, 'id': item.get('id')}
-            nums, why = _cited(api, repo, item)
-            cites.update(nums or ())
-            if why:
-                misses.append({'record': rec, 'why': why})
-            elif nums is None:
-                continue
-            elif not nums:
-                if item.get('s') == 'parked':
-                    misses.append({'record': rec, 'why': 'cites no question'})
-            elif len(nums) > 1:
-                multi.append({'record': rec, 'questions': [numbered.get(n, 'Q-%d' % n)
-                                                           for n in nums]})
-            else:
-                found.append((rec, nums[0]))
-    pairs, skipped = [], []
-    for rec, n in found:
-        qid = numbered.get(n)
-        d = docs.get(qid) if qid else None
-        if d is None:
-            misses.append({'record': rec, 'why': 'Q-%d is not a hub question' % n})
-        elif d.get('status') not in BINDS_FROM:
-            misses.append({'record': rec, 'why': '%s is %s, not open or answered'
-                           % (qid, d.get('status'))})
-        elif cites[n] > 1:
-            skipped.append({'question': qid, 'why': 'cited by more than one record'})
-        elif d.get('record') == rec:
-            skipped.append({'question': qid, 'why': 'already bound to this record'})
-        elif d.get('record'):
-            skipped.append({'question': qid, 'why': 'bound to another record'})
-        else:
-            pairs.append({'question': qid, 'record': rec, 'bound': False})
-    failed = []
-    if apply:
-        for p in pairs:
-            d = api.store.docs('questions').get(p['question'])
-            try:
-                if d is None or d.get('status') not in BINDS_FROM or d.get('record'):
-                    raise HubError('conflict', '%s moved meanwhile' % p['question'], 'id')
-                bound = _bound(api, p['record'])
-                api.change('questions', p['question'], d, {'record': bound, 'class': None}, req)
-                p['bound'] = True
-                if d.get('status') == 'answered':
-                    # an answer the PM has not handled yet: filed now, as a bound answer is
-                    got = file_answer(api, p['question'], _via(req), full=req.full)
-                    if got is None:         # no longer answered when the filing read it
-                        p['filing'] = {'filed': False, 'unanswered': True}
-                    else:
-                        p['filing'] = {k: got[k] for k in ('filed', 'code', 'message', 'moved')
-                                       if k in got}
-            except HubError as e:
-                failed.append({'question': p['question'], 'code': e.code,
-                               'message': e.message if req.full else AGENT_SAYS.get(
-                                   e.code, e.message)})
-        lost = set(f['question'] for f in failed)
-        pairs = [p for p in pairs if p['question'] not in lost]
-    return {'ok': True, 'applied': apply, 'pairs': pairs, 'misses': misses, 'multi': multi,
-            'skipped': skipped, 'failed': failed}
 
 
 # The statuses a question is logged or marked done from: an answer the PM handles, and one filed
@@ -1959,295 +1206,6 @@ def _promote(api, req, doc_id, b):
     return api.change('questions', doc_id, d, changes, req, {'standing': standing})
 
 
-def todos_list(api, req):
-    return {'items': api.items('todos', req)}
-
-
-def todo_steps(b, judge=True):
-    """The fields b of a new to-do with its `steps` (kitlib.hubsite.todosteps) made into text:
-    their commands after the given ones, their summary at the end of the detail (or the detail,
-    when there is none), and no `steps` field left. Refused (`invalid`, the field named): a
-    `commands` that is not a list, a given command holding a lone surrogate, a bad step and, when
-    `judge` (an agent's to-do or edit), text the owner's to-do rules forbid (todosteps.check).
-    The rules judge the text as given, before any step is rendered: the owner's text is never
-    judged. An `os` field ('windows' by default, or 'linux') names the OS the steps' per-OS
-    commands are for; it is not kept, and an unknown one is refused (`invalid`, field `os`).
-    The caller says it: a machine-OS source is left for a later slice."""
-    b = dict(b)
-    steps = b.pop('steps', None)
-    os_ = b.pop('os', todosteps.DEFAULT_OS)
-    commands = _typed(b, 'commands', (list,), 'a list of strings')
-    for i, c in enumerate(commands or ()):
-        m = _SURROGATE.search(c) if isinstance(c, str) else None
-        if m:
-            raise _invalid('commands[%d] holds a lone surrogate (U+%04X) at character %d, half '
-                           'of a character that cannot be written'
-                           % (i, ord(m.group()), m.start()), 'commands')
-    try:
-        todosteps.check_os(os_)
-        if judge:
-            todosteps.check(dict(b, steps=steps))
-        if steps is not None:
-            b['commands'] = list(commands or []) + todosteps.render(steps, os_)
-            lines = '\n'.join(todosteps.summary(steps, os_))
-            b['detail'] = (b['detail'].rstrip() + '\n\n' + lines) if b.get('detail') else lines
-    except (todosteps.StepError, todosteps.Refused) as e:
-        raise _invalid(str(e), e.field)
-    return b
-
-
-def _no_record(req, why):
-    """Refused `invalid`, field record, when the body gives a `record` this route never takes."""
-    if isinstance(req.body, dict) and 'record' in req.body:
-        raise _invalid(why, 'record')
-
-
-def todos_add(api, req):
-    """A new open to-do. An agent's may give `record` {repo, id} (_bound, checked last): the
-    record waits on the owner until the to-do is done (park_item); the owner's takes none."""
-    owner = req.role == OWNER
-    names = ('title', 'detail', 'commands', 'steps', 'os', 'repo', 'refs', 'urgent')
-    if owner:
-        _no_record(req, "the owner's to-do takes no record: only an agent's to-do parks one")
-    b = _fields(req, names if owner else names + ('from', 'record'), required=('title',),
-                flags=('urgent',))
-    for name in ('title', 'detail', 'repo', 'from'):
-        _text(b, name)
-    b = todo_steps(b, judge=not owner)
-    if owner:
-        b['from'] = OWNER_FROM
-    else:
-        b['from'] = _agent_from(b.get('from') or '')
-    if 'record' in b:               # checked last: the one part that reads a backlog
-        b['record'] = _bound(api, b['record'], 'to-do')
-    b.update(status='open', added_at=api.clock())
-    out = api.add('todos', b, req)
-    if not owner:
-        field = _asks_report(b)
-        if field:
-            out['warnings'].append({
-                'level': hubvalidate.WARN, 'rel': 'todos/%s' % out['id'], 'field': field,
-                'code': 'todo-asks-report', 'message': TODO_ASKS_REPORT})
-    if 'record' in b:
-        return _park_now(api, out['id'], out, _via(req))
-    return out
-
-
-# An agent's to-do that asks the owner to send a result back: a done mark files nothing into any
-# record (the done note reaches only the push), so such a result is lost to the record
-# (KIT-HUB-TODO-RESULT-LOST). Matched on phrasings that ask for something back, not on any
-# mention of a report; on the live hub (2026-11-05) it matched 2 of 373 to-dos, T-388 and T-389.
-_ASKS_REPORT = re.compile(
-    r'\breport (?:back|in|which|what|whether)\b'
-    r'|\banswer box\b'
-    r'|^[ \t]*(?:[-*]|[0-9]+[.)])?[ \t]*report[ \t]*:', re.IGNORECASE | re.MULTILINE)
-TODO_ASKS_REPORT = ('the to-do asks the owner to report a result: a done mark files nothing into '
-                    'any record (a done note reaches only the push); ask for the result with a '
-                    'question bound to the record (hub_ask record, questions add --record) and '
-                    'keep the to-do for the steps')
-
-
-def _asks_report(b):
-    """The field ('title' or 'detail') of to-do `b` that asks the owner to report a result, or
-    None."""
-    for name in ('title', 'detail'):
-        if isinstance(b.get(name), str) and _ASKS_REPORT.search(b[name]):
-            return name
-    return None
-
-
-TODO_NOTE_MAX = 2000        # characters of the owner's note on marking a to-do done
-_NOTE_CONTROL = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
-
-
-def _todo_note(b, done):
-    """The owner's optional `note` of a done mark, stripped: '' when there is none. Plain text of
-    at most TODO_NOTE_MAX characters (`invalid`, field note, otherwise); a note on a reopen is
-    refused, since a reopened to-do keeps none."""
-    note = (_text(b, 'note') or '').strip()
-    if note and not done:
-        raise _invalid('a note comes with a done mark, not a reopen', 'note')
-    if len(note) > TODO_NOTE_MAX:
-        raise _invalid('the note is %d characters: at most %d' % (len(note), TODO_NOTE_MAX), 'note')
-    if _NOTE_CONTROL.search(note):
-        raise _invalid('the note is plain text: no control characters', 'note')
-    if _SURROGATE.search(note):
-        raise _invalid('the note holds a lone surrogate, half a character', 'note')
-    return note
-
-
-def todos_done(api, req):
-    b = _fields(req, ('done', 'note', 'if_version'), flags=('done',))
-    _pin(b)
-    done = _flag(b, 'done', True)
-    note = _todo_note(b, done)
-    doc_id = req.params['id']
-    d = api.doc('todos', doc_id, b)
-    changes = {'status': 'done' if done else 'open', 'done_at': api.clock() if done else None}
-    if note or d.get('done_note'):
-        changes['done_note'] = note or None      # a re-done or a reopen drops the old note
-    out = api.change('todos', doc_id, d, changes, req, changes)
-    # a reopened or re-done to-do is pending afresh: an old hand-over must not outlive it when
-    # no read ran in between (_routed forgets only what it sees gone)
-    api._handed.pop(('todo', doc_id), None)
-    return out
-
-
-def todos_ack(api, req):
-    b = _fields(req, ('if_version',))
-    _pin(b)
-    doc_id = req.params['id']
-    d = api.doc('todos', doc_id, b)
-    return api.change('todos', doc_id, d, {'pm_ack': True}, req, {'pm_ack': True})
-
-
-def _own(doc_id, d, what):
-    who = d.get('from')
-    if who != OWNER_FROM:           # exactly what todos_add writes for the owner
-        raise HubError('forbidden', '%s is from %s: the owner can %s only a to-do the owner '
-                       'added (from: %s)' % (doc_id, who or 'nobody', what, OWNER_FROM), 'from')
-
-
-def _creator(b, doc_id, d, what):
-    """An agent's edit or withdrawal: refused (`forbidden`, field from) unless the `from` the
-    agent gives is the item's own (AGENT_FROM when the item has none) and the item is not the
-    owner's. All agents share one token, so this is a claim checked against the item: it stops a
-    mistake, not an agent that gives another's name."""
-    stored = d.get('from') or AGENT_FROM
-    claimed = (b.get('from') or '').strip()
-    if stored == OWNER_FROM or claimed != stored:
-        raise HubError('forbidden', '%s is from %s: an agent can %s only an item it added, '
-                       'giving that item\'s from (%s was given)'
-                       % (doc_id, stored, what, ascii(claimed)), 'from')
-
-
-def _still_open(doc_id, d, what):
-    """Refused (`conflict`, field status) once the item is no longer open: an answered, logged
-    or done item is the owner's record and is not changed under it."""
-    if d.get('status') != 'open':
-        raise HubError('conflict', '%s is %s: only an open item can be %s'
-                       % (doc_id, d.get('status'), what), 'status')
-
-
-def _withdrawn(api, coll, doc_id, d):
-    r = api.store.delete(coll, doc_id, if_version=_version(d))
-    return {'ok': True, 'id': doc_id, 'deleted': True, 'revision': r.revision}
-
-
-def questions_edit(api, req):
-    names = ('title', 'context', 'options', 'recommended', 'refs', 'urgent', 'record', 'class')
-    # record null or "" clears the binding
-    b = _fields(req, names + ('from', 'if_version'), required=('from',), flags=('urgent',),
-                blank=('record',))
-    _pin(b, required=True)
-    for name in ('from', 'title', 'context'):
-        _text(b, name)
-    _typed(b, 'options', (list,), 'a list of {label, description}')
-    changes = {k: v for k, v in b.items() if k not in ('from', 'if_version')}
-    if not changes:
-        raise _invalid('give at least one of %s to change' % ', '.join(names), 'body')
-    if 'title' in changes and not changes['title'].strip():
-        raise _invalid('title cannot be made empty', 'title')
-    doc_id = req.params['id']
-    d = api.doc('questions', doc_id, b)
-    _creator(b, doc_id, d, 'edit')
-    _still_open(doc_id, d, 'edited')
-    if changes.get('record') == '':
-        changes['record'] = None
-    if 'record' in changes or 'class' in changes:
-        # what the question ends with: bound and classless, or unbound with a class (_class);
-        # an edit of neither leaves a question asked before classes as it is
-        record = changes['record'] if 'record' in changes else d.get('record')
-        if record:
-            _class(changes, True)
-            changes['class'] = None
-        else:
-            _class({'class': changes['class'] if 'class' in changes else d.get('class')}, False)
-    if changes.get('record'):       # only once the asker and the status passed: no git before
-        changes['record'] = _bound(api, changes['record'])
-    old = d.get('record') if isinstance(d.get('record'), dict) else None
-    moved = 'record' in changes and changes['record'] != old
-    if moved and d.get('park') is not None:
-        changes['park'] = None      # parked afresh on the record it is bound to now
-    out = api.change('questions', doc_id, d, changes, req, {'status': 'open'})
-    if moved:
-        # the old record's line goes (the last one unblocks it: `ask withdrawn`), the new one's
-        # park follows; each reads the question as it is when it runs
-        _unpark_now(api, doc_id, old, out)
-        if changes['record']:
-            _park_now(api, doc_id, out, _via(req))
-    return out
-
-
-def questions_delete(api, req):
-    owner = req.role == OWNER
-    b = _fields(req, ('if_version',) if owner else ('from', 'if_version'),
-                required=() if owner else ('from',))
-    _pin(b, required=not owner)
-    _text(b, 'from')
-    doc_id = req.params['id']
-    d = api.doc('questions', doc_id, b)
-    if not owner:
-        _creator(b, doc_id, d, 'withdraw')
-    _still_open(doc_id, d, 'withdrawn')
-    out = _withdrawn(api, 'questions', doc_id, d)
-    # the ask is gone, so the record it parked no longer waits on it (`ask withdrawn` when it was
-    # the last); an expiry, were there one, would keep the block (there is none for questions)
-    return _unpark_now(api, doc_id, d.get('record'), out)
-
-
-def todos_edit(api, req):
-    owner = req.role == OWNER
-    names = ('title', 'detail', 'commands', 'repo', 'refs', 'urgent')
-    _no_record(req, "a to-do's record is given only when it is added: withdraw it and add it "
-                    "again to bind another")
-    b = _fields(req, names + (('if_version',) if owner else ('from', 'if_version')),
-                required=() if owner else ('from',), flags=('urgent',),
-                blank=('repo', 'detail'))
-    _pin(b, required=not owner)
-    for name in ('title', 'detail', 'repo', 'from'):
-        _text(b, name)
-    for name in ('commands', 'refs'):
-        _typed(b, name, (list,), 'a list')
-    changes = {k: v for k, v in b.items() if k not in ('from', 'if_version')}
-    if not changes:
-        raise _invalid('give at least one of %s to change' % ', '.join(names), 'body')
-    if 'title' in changes and not changes['title'].strip():
-        raise _invalid('title cannot be made empty', 'title')
-    doc_id = req.params['id']
-    d = api.doc('todos', doc_id, b)
-    if owner:
-        _own(doc_id, d, 'edit')
-    else:
-        _creator(b, doc_id, d, 'edit')
-        _still_open(doc_id, d, 'edited')
-        # the text an agent gives is judged by the rules its add was (todo_steps)
-        changes = todo_steps(changes, judge=True)
-    if d.get('pm_ack'):             # the PM read the old text: the changed one is pending again
-        changes['pm_ack'] = False
-    return api.change('todos', doc_id, d, changes, req, {'status': d.get('status')})
-
-
-def todos_delete(api, req):
-    owner = req.role == OWNER
-    b = _fields(req, ('if_version',) if owner else ('from', 'if_version'),
-                required=() if owner else ('from',))
-    _pin(b, required=not owner)
-    _text(b, 'from')
-    doc_id = req.params['id']
-    d = api.doc('todos', doc_id, b)
-    if not owner:
-        _creator(b, doc_id, d, 'withdraw')
-        _still_open(doc_id, d, 'withdrawn')
-    elif d.get('from') != OWNER_FROM:
-        # the owner deletes a to-do of their own at any status, an agent's only while open
-        _still_open(doc_id, d, 'deleted')
-    out = _withdrawn(api, 'todos', doc_id, d)
-    # the ask is gone, so the record it parked no longer waits on it (`ask withdrawn` when it
-    # was the last line); a done to-do's line is the unblock-conditions job's to drop
-    return _unpark_now(api, doc_id, d.get('record'), out)
-
-
 def stories_list(api, req):
     return {'items': api.items('stories', req)}
 
@@ -2267,9 +1225,9 @@ def stories_set(api, req):
     for name in ('status', 'reviewer', 'review_note', 'backlog_id', 'closed_note'):
         _text(b, name)
     status = b['status']
-    if status not in AGENT_STORY_STATUSES:
+    if status not in hubvalidate.AGENT_STORY_STATUSES:
         raise _invalid('status is one of %s, not %r (submitted and withdrawn are the owner\'s)'
-                       % (', '.join(AGENT_STORY_STATUSES), status), 'status')
+                       % (', '.join(hubvalidate.AGENT_STORY_STATUSES), status), 'status')
     doc_id = req.params['id']
     d = api.doc('stories', doc_id, b)
     if d.get('status') == 'withdrawn':
@@ -2292,537 +1250,6 @@ def stories_withdraw(api, req):
                        % (doc_id, d.get('status')), 'status')
     return api.change('stories', doc_id, d, {'status': 'withdrawn', 'closed_at': api.clock()},
                       req, {'status': 'withdrawn'})
-
-
-def to_pm_list(api, req):
-    """The notes; an act note's text and refs with no absolute path but for the local owner
-    (Request.full), as for its finding (_seen)."""
-    items = api.items('to_pm', req)
-    if not req.full:
-        for d in items:
-            _unpath_act(d)
-    return {'items': items}
-
-
-def _unpath_act(d):
-    """Note d (a copy) with an act note's text and refs cut as _unpathed; any other note as
-    it is: the owner's own words are the PM's to read whole."""
-    if isinstance(d, dict) and d.get('kind') == 'act':
-        if isinstance(d.get('text'), str):
-            d['text'] = _unpathed(d['text'])
-        if isinstance(d.get('refs'), list):
-            d['refs'] = [_unpathed(r) if isinstance(r, str) else r for r in d['refs']]
-
-
-def to_pm_add(api, req):
-    b = _fields(req, ('kind', 'repo', 'urgent', 'text', 'refs', 'finding'))
-    for name in ('kind', 'repo', 'text'):
-        _text(b, name)
-    b.setdefault('kind', 'question')
-    _one_of(b, 'kind', schema.KINDS['to_pm'])
-    refs = _typed(b, 'refs', (list,), 'a list of strings')
-    if refs is not None and not all(isinstance(r, str) and r.strip() for r in refs):
-        raise _invalid('refs is a list of non-empty strings', 'refs')
-    if b['kind'] == 'act':
-        _act_note(api, b, req)
-    elif 'finding' in b:
-        raise _invalid('finding is for an act note (kind act), not a %s one' % b['kind'],
-                       'finding')
-    elif not (b.get('text') or '').strip():
-        raise _invalid('text is required', 'text')
-    b.update(status='queued', created_at=api.clock(), sent_at=None, reply=None, done_at=None)
-    return api.add('to_pm', b, req, {'status': 'queued'})
-
-
-def _queued(doc_id, d, what):
-    if d.get('status') != 'queued':
-        raise HubError('conflict', '%s is %s: only a queued note, one not yet sent to the PM, '
-                       'can be %s' % (doc_id, d.get('status'), what), 'status')
-
-
-def to_pm_edit(api, req):
-    b = _fields(req, ('kind', 'repo', 'urgent', 'text', 'if_version'), flags=('urgent',),
-                blank=('repo',))
-    _pin(b)
-    for name in ('kind', 'repo', 'text'):
-        _text(b, name)
-    changes = {k: v for k, v in b.items() if k != 'if_version'}
-    if not changes:
-        raise _invalid('give at least one of kind, repo, urgent, text to change', 'body')
-    if 'text' in changes and not changes['text'].strip():
-        raise _invalid('text cannot be made empty', 'text')
-    doc_id = req.params['id']
-    d = api.doc('to_pm', doc_id, b)
-    _queued(doc_id, d, 'edited')
-    kind = changes.get('kind', d.get('kind'))
-    if kind != d.get('kind') and 'act' in (kind, d.get('kind')):
-        raise _invalid('an act note stays an act note and no other note becomes one: %s is %s'
-                       % (doc_id, d.get('kind')), 'kind')
-    return api.change('to_pm', doc_id, d, changes, req, {'status': 'queued'})
-
-
-def to_pm_delete(api, req):
-    b = _fields(req, ('if_version',))
-    _pin(b)
-    doc_id = req.params['id']
-    d = api.doc('to_pm', doc_id, b)
-    _queued(doc_id, d, 'deleted')
-    r = api.store.delete('to_pm', doc_id, if_version=_version(d))
-    return {'ok': True, 'id': doc_id, 'deleted': True, 'revision': r.revision}
-
-
-def _refusal(docs, coll, doc_id, changes):
-    """Why the store would refuse to send a queued note: to merge changes (the status `sent`,
-    its time, via) into coll/doc_id of docs (a snapshot's collections), as a HubError, or None.
-    It is the schema half of the store's rule (Store._validate), asked before anything is
-    written. The other half, a new hubvalidate error or REFUSED finding, cannot arise here: of
-    a to_pm note hubvalidate judges the status (`sent` is one), its refs and its repo (warnings
-    both), and the changes touch none of the last two."""
-    new = dict(docs[coll][doc_id], **changes)
-    errors = schema.check(coll, new, doc_id)
-    if errors:
-        return HubError('invalid', '%s/%s: %s' % (coll, doc_id,
-                                                  '; '.join(f.message for f in errors)),
-                        errors[0].field)
-    return None
-
-
-def to_pm_send(api, req):
-    _fields(req, ())
-    at = api.clock()
-    changes = {'status': 'sent', 'sent_at': at, 'via': _via(req)}
-    _, docs = api.store.snapshot(('to_pm',))
-    queued = sorted((i for i, d in docs['to_pm'].items() if d.get('status') == 'queued'),
-                    key=_natural)
-    for doc_id in queued:           # every one is checked before any is sent: a bad one sends none
-        why = _refusal(docs, 'to_pm', doc_id, changes)
-        if why:
-            raise why
-    out = {'ok': True, 'sent': queued, 'sent_at': at if queued else None}
-    for doc_id in queued:
-        r = api.store.update('to_pm', doc_id, changes,
-                             if_version=_version(docs['to_pm'][doc_id]))
-        out['revision'] = r.revision
-    return out
-
-
-def to_pm_reply(api, req):
-    b = _fields(req, ('reply', 'if_version'))
-    _pin(b)
-    changes = {'status': 'done', 'done_at': api.clock(), 'reply': _text(b, 'reply')}
-    doc_id = req.params['id']
-    d = api.doc('to_pm', doc_id, b)
-    if d.get('status') != 'sent':
-        raise _invalid('%s is %s: only a sent item is replied to' % (doc_id, d.get('status')),
-                       'status')
-    return api.change('to_pm', doc_id, d, changes, req, {'status': 'done'})
-
-
-# approvals: imported here, not at the top, as kitlib.hubsite.approvals imports this module
-def _approval(make, *args):
-    from . import approvals as ap
-    try:
-        return make(*args)
-    except ap.ApprovalError as e:
-        raise HubError(e.code, e.message, e.field)
-
-
-def approvals_add(api, req):
-    """A new pending request. A file request may give `record` {repo, id} (_bound, checked
-    last): the record waits on the owner until the approval is decided (park_item); an op
-    request takes none."""
-    from . import approvals as ap
-    kind = req.body.get('kind') if isinstance(req.body, dict) else None
-    if kind is not None:
-        if kind != ap.KIND_OP:
-            raise _invalid('kind is %r or absent, not %r' % (ap.KIND_OP, kind), 'kind')
-        _no_record(req, 'an op approval takes no record: only a file approval parks one')
-        b = _fields(req, ('kind', 'op', 'repo', 'line', 'title', 'reason', 'what'))
-        doc = _approval(ap.new_op_doc, b.get('op'), b.get('repo'), b.get('line'), b.get('title'),
-                        _when(api.clock(), ''), b.get('reason'), b.get('what'))
-        return api.add(ap.COLLECTION, doc, req)
-    b = _fields(req, ('repo', 'title', 'head', 'files', 'reason', 'record'))
-    doc = _approval(ap.new_doc, b.get('repo'), b.get('title'), b.get('head'), b.get('files'),
-                    _when(api.clock(), ''), b.get('reason'))
-    root = api.checkout(doc['repo'])
-    if not root:
-        raise _invalid('this machine has no checkout of %s' % doc['repo'], 'repo')
-    lines = []
-    for f in doc['files']:
-        base, why = ap.read_base(root, doc['head'], f['path'], f['base_blob'])
-        if why:
-            raise _invalid('%s: %s' % (f['path'], why), 'files')
-        lines.extend(ap.diff(f['path'], base, f['content']))
-    doc['diff'] = lines
-    if 'record' in b:               # checked last: the one part that reads a backlog
-        doc['record'] = _bound(api, b['record'], 'approval')
-    out = api.add(ap.COLLECTION, doc, req)
-    if 'record' in doc:
-        return _park_now(api, out['id'], out, _via(req))
-    return out
-
-
-def approvals_decide(api, req):
-    from . import approvals as ap
-    b = _fields(req, ('decision', 'if_version'))
-    _pin(b, required=True)
-    doc_id = req.params['id']
-    d = api.doc(ap.COLLECTION, doc_id, b)
-    changes = _approval(ap.decide_fields, api.approval_key(), doc_id, d, b.get('decision'),
-                        _when(api.clock(), ''))
-    return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
-
-
-def approvals_consume(api, req):
-    from . import approvals as ap
-    b = _fields(req, ('commit', 'args_sha256', 'if_version'))
-    _pin(b, required=True)
-    if 'commit' in b and 'args_sha256' in b:
-        raise _invalid('give commit (a change) or args_sha256 (an operation), not both',
-                       'args_sha256')
-    doc_id = req.params['id']
-    d = api.doc(ap.COLLECTION, doc_id, b)
-    if 'args_sha256' in b:
-        changes = _approval(ap.consume_op_fields, api.approval_key(), doc_id, d,
-                            b['args_sha256'], _when(api.clock(), ''))
-    else:
-        changes = _approval(ap.consume_fields, api.approval_key(), doc_id, d, b.get('commit'),
-                            _when(api.clock(), ''))
-    return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
-
-
-def approvals_delete(api, req):
-    """The requester takes back an undecided request, pending or expired undecided
-    (approvals.withdraw_check): the `from` is a claim checked as for a question's withdrawal (an
-    approval has none stored, so it is `pm`). The line the request parked on its record is
-    dropped (unpark_item); the record's other lines stay."""
-    from . import approvals as ap
-    b = _fields(req, ('from', 'if_version'), required=('from',))
-    _pin(b, required=True)
-    _text(b, 'from')
-    doc_id = req.params['id']
-    d = api.doc(ap.COLLECTION, doc_id, b)
-    _creator(b, doc_id, d, 'withdraw')
-    _approval(ap.withdraw_check, d, _when(api.clock(), ''))
-    out = _withdrawn(api, ap.COLLECTION, doc_id, d)
-    return _unpark_now(api, doc_id, d.get('record'), out)
-
-
-def approvals_supersede(api, req):
-    """The PM, or a coordinator session of the approval's repository (coordinator_keys), marks
-    a decided approval nobody consumed superseded by another approval or a commit on main
-    (approvals.supersede_fields, on_main). The `from` is a claim checked as questions_done checks
-    one, before anything else about the approval is said; the decision and the stored status
-    stay."""
-    from . import approvals as ap
-    b = _fields(req, ('from', 'by', 'if_version'), required=('from', 'by'))
-    _pin(b, required=True)
-    _text(b, 'from')
-    doc_id = req.params['id']
-    d = api.doc(ap.COLLECTION, doc_id)
-    claimed = b['from'].strip()
-    allowed = [AGENT_FROM] + [k for k in api.coordinator_keys(d.get('repo')) if k != AGENT_FROM]
-    if claimed not in allowed:
-        raise HubError('forbidden', '%s is for %s: only they can mark it superseded (%s was '
-                       'given)' % (doc_id, ' or '.join(allowed), ascii(claimed)), 'from')
-    d = api.doc(ap.COLLECTION, doc_id, b)
-    by = b['by']
-    changes = _approval(ap.supersede_fields, doc_id, d, by, claimed, _when(api.clock(), ''))
-    if ap.APPROVAL_ID.match(by):
-        if api.store.get(ap.COLLECTION, by) is None:
-            raise _invalid('there is no approval %s' % by, 'by')
-    else:
-        root = api.checkout(d.get('repo'))
-        if not root:
-            raise _invalid('this machine has no checkout of %s to find %s in'
-                           % (d.get('repo'), by), 'by')
-        reached, why = ap.on_main(root, by)
-        if not reached:
-            raise _invalid('main as last fetched does not reach %s%s'
-                           % (by, ': %s' % why if why else ''), 'by')
-    return api.change(ap.COLLECTION, doc_id, d, changes, req, {'superseded': changes['superseded']})
-
-
-def approvals_verify(api, req):
-    from . import approvals as ap
-    doc_id = req.params['id']
-    d = api.store.get(ap.COLLECTION, doc_id) if schema.check_id(doc_id) is None else None
-    if d is None:
-        return {'ok': True, 'valid': False, 'why': ap.WHY_UNKNOWN}
-    if _q(req, 'kind') == ap.KIND_OP:
-        valid, why = ap.check_op(api.approval_key(), doc_id, d, _q(req, 'op'), _q(req, 'repo'),
-                                 _q(req, 'args'), _when(api.clock(), ''))
-        return {'ok': True, 'valid': valid, 'why': why, 'version': _version(d)}
-    try:
-        blobs = json.loads(_q(req, 'files'))
-    except ValueError:
-        blobs = None                # check() answers WHY_FILES
-    # a commit given, even empty, is checked: only an absent one leaves it out
-    commit = _q(req, 'commit') if 'commit' in (req.query or {}) else None
-    valid, why = ap.check(api.approval_key(), doc_id, d, _q(req, 'repo'), _q(req, 'head'), blobs,
-                          _when(api.clock(), ''), commit)
-    return {'ok': True, 'valid': valid, 'why': why}
-
-
-def backlog(api, req):
-    return {'repos': api.shown('backlog', repo=_q(req, 'repo'), state=_q(req, 'state'),
-                               fresh=_q_flag(req, 'fresh'))}
-
-
-def completed(api, req):
-    return {'repos': api.shown('completed', repo=_q(req, 'repo'),
-                               days=_q_int(req, 'days', 1, DAYS_MAX))}
-
-
-def _segment(req, name):
-    value = req.params.get(name)
-    if not isinstance(value, str) or not _SEGMENT.match(value) or '..' in value:
-        raise HubError('invalid', SEGMENT_SAYS[name], name)
-    return value
-
-
-def skill_get(api, req):
-    return _record_view(api, 'skill', _segment(req, 'name'))
-
-
-def skill_source_get(api, req):
-    """The skill's whole SKILL.md and its blob, what the owner edits ("Skill edits")."""
-    return _skill_source(api, _segment(req, 'name'))
-
-
-def record(api, req):
-    return _record_view(api, 'record', _segment(req, 'repo'), _segment(req, 'id'))
-
-
-def record_new(api, req):
-    return _record_view(api, 'record_template', _segment(req, 'repo'))
-
-
-# ---- the owner's record writes (docs/hub-views.md "The record page")
-def _strings(b, name):
-    """b[name] as a list of strings: absent is [], one string is a list of one."""
-    v = b.get(name)
-    if v is None:
-        return []
-    if isinstance(v, str):
-        v = [v]
-    if not isinstance(v, list) or not all(isinstance(s, str) for s in v):
-        raise _invalid('%s must be a list of strings' % name, name)
-    return v
-
-
-def record_add(api, req):
-    repo = _segment(req, 'repo')
-    b = _fields(req, ('id', 'summary', 'scope', 'effort', 'ref'), ('id', 'summary', 'scope'))
-    out = _record_view(api, 'record_add', repo, _text(b, 'id'), _text(b, 'summary'),
-                       _strings(b, 'scope'), _text(b, 'effort'), _text(b, 'ref'))
-    return dict(out, ok=True)
-
-
-def record_edit(api, req):
-    repo, rid = _segment(req, 'repo'), _segment(req, 'id')
-    b = _fields(req, ('version', 'changes', 'unset', 'body'), ('version',))
-    changes = _typed(b, 'changes', (dict,), 'an object of field names and values') or {}
-    out = _record_view(api, 'record_edit', repo, rid, _text(b, 'version'),
-                       [(k, _strings(changes, k)) for k in changes], _strings(b, 'unset'),
-                       _text(b, 'body'))
-    return dict(out, ok=True)
-
-
-def record_delete(api, req):
-    repo, rid = _segment(req, 'repo'), _segment(req, 'id')
-    b = _fields(req, ('why', 'confirm'), ('why', 'confirm'))
-    if _text(b, 'confirm') != rid:
-        raise _invalid('confirm must repeat the record id to delete it', 'confirm')
-    out = _record_view(api, 'record_delete', repo, rid, _text(b, 'why'))
-    return dict(out, ok=True)
-
-
-def record_unblock(api, req):
-    repo, rid = _segment(req, 'repo'), _segment(req, 'id')
-    b = _fields(req, ('on', 'reason'))
-    out = _record_view(api, 'record_unblock', repo, rid, _text(b, 'on'), _text(b, 'reason'))
-    return dict(out, ok=True)
-# ---- end of the owner's record writes
-
-
-def _listing(name):
-    def handler(api, req):
-        return {'items': api.shown(name)}
-    handler.__name__ = name
-    return handler
-
-
-def pending(api, req):
-    items = api.pending(_q(req, 'for'))
-    api.seen(req, 'pulled')
-    api.handed(req, items)
-    return {'items': _unpath_pending(api, items, req)}
-
-
-def _unpath_pending(api, items, req):
-    """Pending items (fresh dicts from api.pending) with an act note's title, its text's first
-    line, cut as _unpathed but for the local owner (Request.full), as GET to_pm cuts its text.
-    The note's kind is the one read with the item (its `note`, dropped here for every caller),
-    never read again: a note deleted since is still known for what it was. A question filed
-    into its record says so: `filed` true."""
-    for d in items:
-        note = d.pop('note', '')
-        if d.get('kind') == 'question' and note == 'filed':
-            d['filed'] = True
-        if (not req.full and d.get('kind') == 'to_pm' and note == 'act'
-                and isinstance(d.get('title'), str)):
-            d['title'] = _unpathed(d['title'])
-    return items
-
-
-def wait(api, req):
-    since = _q_int(req, 'since', 0, 10 ** 12)
-    if since is None:
-        since = api.store.revision
-    timeout = _timeout(req)
-    want = _q_flag(req, 'pending')
-    for_key = _q(req, 'for')
-    if for_key and not want:
-        raise _invalid('for picks among the pending items: give pending=1 with it', 'for')
-    skip = {s.strip() for s in _q(req, 'except').split(',') if s.strip()}
-    if skip and not want:
-        raise _invalid('except leaves out pending items: give pending=1 with it', 'except')
-    filtered = bool(for_key or skip)
-
-    def mine():
-        return [p for p in api.pending(for_key) if p['id'] not in skip]
-    # pending is read whether asked for or not: it is the read that refuses a closed store,
-    # which Store.wait answers at once and with nothing (a client would loop on it)
-    found = mine()
-    items = found if want else []
-    if want:
-        api.seen(req, 'pulled')
-    if items:
-        api.seen(req, 'waited')
-        api.listen(req)
-        ch = api.store.changes_since(since)
-    else:
-        key = object()
-        api.seen(req, 'waited', opened=key)
-        api.listen(req, opened=key)
-        try:
-            if filtered:
-                ch = _wait_for(api, since, min(timeout, WAIT_MAX_S), mine,
-                               for_key == AGENT_FROM)
-            else:
-                ch = api.store.wait(since, min(timeout, WAIT_MAX_S))
-        finally:
-            api.seen(req, 'waited', closed=key)
-            api.listen(req, closed=key)
-        found = mine()
-        items = found if want else []
-    api.handed(req, items)
-    # a filtered wait ends on its own items, a reset or the timeout, never on other writes
-    quiet = not ch.reset and not items and (filtered or not ch.events)
-    return {'revision': ch.revision, 'reset': ch.reset,
-            'timed_out': quiet,
-            'changes': [{'collection': e.collection, 'id': e.id, 'op': e.op, 'status': e.status}
-                        for e in ch.events],
-            'pending': _unpath_pending(api, items, req)}
-
-
-def _wait_for(api, since, timeout, mine, routes=False):
-    """Store.wait until mine() (the pending items this wait is for: its `for` key, less its
-    `except` ids) is not empty, the store resets, or timeout seconds pass; a write that leaves
-    it empty waits on. With routes (a wait for the PM) it also looks again when an item's route
-    next turns to the PM, which no write announces. The changes since `since`, all of them."""
-    end = time.monotonic() + timeout
-    at = since
-    while True:
-        left = max(0.0, end - time.monotonic())
-        if routes:
-            flip = api.route_change_in()
-            if flip is not None:
-                left = min(left, flip + ROUTE_SLACK_S)
-        ch = api.store.wait(at, left)
-        if ch.reset:
-            return ch
-        if mine() or time.monotonic() >= end:
-            break
-        at = ch.revision
-    return api.store.changes_since(since)
-
-
-# never copied for GET snapshot: a page body is read on its own (GET pages/{id}, "Pages"), the
-# hand-offs with GET handoffs, newest per session ("Hand-offs")
-SNAPSHOT_SKIP = ('page_html', 'handoffs')
-
-
-def _snapshot_colls(req):
-    """The collections a GET snapshot's `collections` query names (comma-separated), or None
-    when it names none; a name that is no collection the snapshot gives is `invalid`."""
-    raw = _q(req, 'collections')
-    names = [n.strip() for n in raw.split(',') if n.strip()]
-    if not names:
-        return None
-    for n in names:
-        if n not in schema.COLLECTIONS or n in SNAPSHOT_SKIP:
-            raise _invalid('collections names collections of the snapshot, not %s' % ascii(n),
-                           'collections')
-    return tuple(dict.fromkeys(names))
-
-
-def snapshot(api, req):
-    colls = _snapshot_colls(req)
-    if _q(req, 'bare') and _q_flag(req, 'bare'):
-        # the snapshot less its documents: what can move with no store write (the views, the
-        # pending routes, the status). The page reads it after a wait that timed out, which no
-        # write ended, keeping the documents it holds for that revision (module docstring)
-        if colls is not None:
-            raise _invalid('bare leaves every collection out: give collections or bare, not both',
-                           'bare')
-        revision, docs = api.store.revision, {}
-    else:
-        revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
-    if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings")
-        feed = docs['landings']
-        docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-FEED_MAX:]}
-    if not req.full:                # the paths as GET to_pm and GET finding_marks cut them
-        for d in (docs.get('to_pm') or {}).values():
-            _unpath_act(d)
-        marks = docs.get('finding_marks') or {}
-        for doc_id, m in list(marks.items()):
-            if isinstance(m, dict):
-                marks[doc_id] = _seen(m, req)
-    if docs.get('finding_marks'):   # the marks GET finding_marks gives: resolved ones hidden
-        docs['finding_marks'] = _unresolved_marks(api, docs['finding_marks'])
-    if colls is not None:           # those collections alone: no views, pending or status
-        return {'revision': revision, 'collections': docs}
-    views, missing = {}, {}
-    for name in VIEWS:
-        try:
-            views[name] = api.view(name)
-        except Exception as e:      # noqa: BLE001 - the first paint shows what there is
-            views[name] = None
-            missing[name] = _reason(e)
-    return {'revision': revision, 'collections': docs,
-            'pending': _unpath_pending(api, api.pending(), req),
-            'views': views, 'unavailable': missing, 'pm_seen': api.pm_seen(),
-            'push': api.push_seen(), 'watcher': api.watcher_seen(), 'code': api.code_seen(),
-            'strong': req.strong is True}
-
-
-def health(api, req):
-    out, missing = {'git': None, 'backlog': None}, {}
-    try:
-        extra = api.view('health')
-    except Exception as e:          # noqa: BLE001 - health answers whatever a view does
-        extra, missing = None, {'health': _reason(e)}
-    if isinstance(extra, dict):
-        out.update(extra)
-    out.pop('store', None)
-    out.update(ok=True, version=API_VERSION, revision=api.store.revision, unavailable=missing,
-               watcher=api.watcher_seen(), push=api.push_seen(), code=api.code_seen(),
-               jobs=api.jobs_seen())
-    if req.role == OWNER:           # where the store is on this machine is the owner's to know
-        out['store'] = api.store.root
-    return out
 
 
 def _r(method, path, role, handler):
@@ -2870,6 +1297,7 @@ ROUTES = (
     _r('POST', '/schedules', OWNER, schedules_set),
     _r('POST', '/approvals', AGENT, approvals_add),
     _r('POST', '/approvals/{id}/decide', APPROVER, approvals_decide),
+    _r('POST', '/approvals/{id}/apply', OWNER, approvals_apply),
     _r('POST', '/approvals/{id}/consume', AGENT, approvals_consume),
     _r('POST', '/approvals/{id}/delete', AGENT, approvals_delete),
     _r('POST', '/approvals/{id}/supersede', AGENT, approvals_supersede),

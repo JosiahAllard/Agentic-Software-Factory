@@ -2,7 +2,7 @@
 `<remote>/<main_branch>`, shown to every session at its start so each is driven to an end (ported
 from the PM kit's preflight `leftover_warn`; docs/preflight.md).
 
-kitlib.worktree.remove's own check (`merged_worktrees`), imported, not shelled out to: a fresh
+kitlib.worktree.remove_checks's own check (`merged_worktrees`), imported, not shelled out to: a fresh
 worktree with no commit of its own is not listed, the `"worktree_remove".exempt` folders are not,
 and neither is the worktree this run stands in. The base is read as it stands, never fetched.
 Nothing here raises: a failure is a `not checked` line naming it.
@@ -11,7 +11,7 @@ import os
 
 from kitlib.config import ConfigError, load
 from kitlib.git import repo
-from kitlib.worktree import remove
+from kitlib.worktree import remove_checks
 from kitlib.worktree.holders import canon
 
 LABEL = 'leftovers '
@@ -19,19 +19,19 @@ INDENT = ' ' * 12
 
 
 def _open(top, place, wts):
-    """`(Ctx, None, listing)` like remove.open_ctx, from the Place and the worktree list the report
+    """`(Ctx, None, listing)` like remove_checks.open_ctx, from the Place and the worktree list the report
     already has (no second `rev-parse --git-common-dir`, no second `git worktree list`); listing is
     None when remove must ask git for it. Anything the report's answers cannot vouch for falls back
-    to remove.open_ctx."""
+    to remove_checks.open_ctx."""
     if place is None or place.kind not in (repo.MAIN, repo.LINKED) or not wts \
             or repo.real(os.path.join(wts[0].path, '.git')) != place.common:
-        return (*remove.open_ctx(top, cwd=top), None)
+        return (*remove_checks.open_ctx(top, cwd=top), None)
     main = os.path.realpath(os.path.abspath(wts[0].path))
     try:
-        ctx = remove.Ctx(main, load(main), top)
+        ctx = remove_checks.Ctx(main, load(main), top)
     except ConfigError as e:
-        return None, remove.Outcome(remove.CONFIG, ['%s: refused: kit configuration: %s'
-                                                    % (remove.TOOL, e)]), None
+        return None, remove_checks.Outcome(remove_checks.CONFIG, ['%s: refused: kit configuration: %s'
+                                                    % (remove_checks.TOOL, e)]), None
     return ctx, None, _listing(wts)
 
 
@@ -58,9 +58,9 @@ def lines(top, place=None, wts=None):
         if refused:
             return [LABEL + 'WARN not checked: %s' % ' '.join(' '.join(refused.lines).split())]
         if listing is None:
-            listing = remove.worktree_listing(ctx.main)
+            listing = remove_checks.worktree_listing(ctx.main)
         own = [top] if canon(top) != canon(ctx.main) else []
-        merged, why = remove.merged_worktrees(ctx, listing, skip=own)
+        merged, why = remove_checks.merged_worktrees(ctx, listing, skip=own)
     except Exception as e:               # noqa: BLE001 - a WARN line must never become the failure
         return [LABEL + 'WARN not checked: %s: %s' % (type(e).__name__, e)]
     s = ctx.s

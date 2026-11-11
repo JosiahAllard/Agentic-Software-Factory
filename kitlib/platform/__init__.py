@@ -1,5 +1,5 @@
-"""kitlib.platform: the one place that knows the operating system (docs/linux-support-plan.md
-section 2.1, "The seam").
+"""kitlib.platform: the one place that knows the operating system (docs/modules/base-design.md
+"Contract").
 
   NAME                  'windows', 'linux' or 'unsupported', from sys.platform when kitlib
                         loads. Code reads it as kitlib.platform.NAME at call time, so a test can
@@ -8,13 +8,18 @@ section 2.1, "The seam").
                         raises it for a primitive with no backend (any platform but Windows and
                         Linux, darwin included), for a Linux primitive not built yet, and for a
                         Windows DLL asked for off Windows (kitlib.platform.dll).
+  ProcError             a RuntimeError with a short fixed `code` (such as 'pipe-owner-mismatch'
+                        or 'private-pipe-accept-timeout') that callers branch on; it never
+                        carries a path, a pid or other caller data. The named-pipe and
+                        process-identity helpers raise it (kitlib.platform.windows.pipe).
   backend()             the running platform's backend module (kitlib.platform.windows or
                         kitlib.platform.linux); PlatformUnsupported on any other platform.
   kitlib.platform.<n>   a primitive the contract names (kitlib.platform.api.NAMES), from
                         backend().
 
-This module imports no other kitlib module, so the Windows bindings (kitlib.proc.win32, which
-asks kitlib.platform.dll for its DLLs) can import it without a cycle. The backend is imported only
+This module imports no other kitlib module, so the Windows bindings
+(kitlib.platform.windows.win32, which asks kitlib.platform.dll for its DLLs) can import it without
+a cycle. The backend is imported only
 when a primitive is first asked for.
 """
 import importlib
@@ -34,6 +39,12 @@ NAME = _pick(sys.platform)
 
 class PlatformUnsupported(OSError):
     """The running platform cannot do what was asked: the message names it and the thing asked."""
+
+
+class ProcError(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__('process call refused: %s' % code)
 
 
 def backend():

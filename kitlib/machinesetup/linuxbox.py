@@ -1,5 +1,5 @@
-"""The box checks of machine setup on Linux (docs/linux-support-plan.md section 6 and slice 14;
-docs/machine-setup.md "Linux"), and the front door tools/kit.py asks.
+"""The box checks of machine setup on Linux (docs/machine-setup.md "Linux"), and the front door
+tools/kit.py asks.
 
   front_door(platform)  None when the kit runs on `platform` (sys.platform's spelling); else the
                         refusal: every platform but Windows and Linux (darwin included), and WSL,
@@ -136,8 +136,8 @@ class Box(object):
 
     def cgroup2(self):
         """Whether /sys/fs/cgroup is a cgroup v2 mount."""
-        from kitlib.platform.linux import contain
-        return contain.cgroup2()
+        from kitlib.platform.linux import contain_cgroup
+        return contain_cgroup.cgroup2()
 
     def account(self, uid):
         """(gid, home) of uid in the password database, or None."""

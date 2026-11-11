@@ -52,9 +52,9 @@ class Kit(object):
     def seed_migrated(self, folders):
         """A state.json that records each of `folders` as migrated, and no export (as after a
         migrate whose export the next refresh replaces)."""
-        from kitlib import pluginsource
+        from kitlib.pluginsource import state as plugin_state
         os.makedirs(self.root, exist_ok=True)
-        pluginsource.write_state(self.root, {'folders': {f: {'migrated': True} for f in folders}})
+        plugin_state.write_state(self.root, {'folders': {f: {'migrated': True} for f in folders}})
 
     def push_from_clone(self, name='elsewhere.txt'):
         """A commit pushed to the remote from another clone: the kit has not fetched it."""

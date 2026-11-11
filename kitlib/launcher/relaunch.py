@@ -42,7 +42,7 @@ import json
 import os
 
 from kitlib.fs import replace as fsreplace
-from kitlib.hubsite import push
+from kitlib.hubclient import push
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, pipes, state, stop, window
 from kitlib.launcher import start as S

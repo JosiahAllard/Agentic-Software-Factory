@@ -18,7 +18,7 @@ pass, in order:
      -c pack.threads=CORES gc --quiet`, untimed: step 1 wrote the graph, and packing refs would
      race the ref writes of landings and backlog writes. It runs inside a machine-lock slot
      (kind KIND, CORES cpu slots, slug SLUG) that holds the landing resource of that common dir
-     (kitlib.gate.land.queue_key), so no landing runs beside it. A lock that stays busy for
+     (kitlib.landing.lander.queue_key), so no landing runs beside it. A lock that stays busy for
      WAIT_S, or an owner or game hold, skips the gc to the next pass.
 
 It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S is a finding:
@@ -58,16 +58,17 @@ import tempfile
 import time
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.fs import replace as fsreplace
 from kitlib.config.types import ConfigError
-from kitlib.gate import land, runner
+from kitlib.landing import lander
 from kitlib.git import cache, cmd
 from kitlib.git import repo as gitrepo
 from kitlib.hubsite import jobs
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_BUSY, EXIT_RESERVED, EXIT_TIMEOUT, LockError
 from kitlib.proc import process
+from kitlib.records import place
 
 NAME = 'store-upkeep'
 EVERY_S = 86400
@@ -317,7 +318,7 @@ class StoreUpkeep(object):
             return
         try:
             slot = self.book(KIND, _repo_name(common), SLUG, cores=CORES, wait_s=WAIT_S,
-                             cmd=['git', 'gc'], resource=land.queue_key(common),
+                             cmd=['git', 'gc'], resource=lander.queue_key(common),
                              note='store upkeep: git gc of %s' % common)
         except LockError as e:
             if e.code in NOT_NOW:
@@ -336,7 +337,7 @@ class StoreUpkeep(object):
 
 
 def _repo_name(common):
-    """The lock record's repo name, the one landings book under (kitlib.gate.runner.repo_name of
+    """The lock record's repo name, the one landings book under (kitlib.records.place.repo_name of
     the main checkout: `.kit.json` repo.name, else its folder name). The main checkout is the
     folder of a `.git` common dir; an unreadable config gives the folder name."""
     top = os.path.normpath(common)
@@ -346,7 +347,7 @@ def _repo_name(common):
         cfg = kconfig.load(top)
     except ConfigError:
         return os.path.basename(top) or 'repo'
-    return runner.repo_name(cfg, top) or 'repo'
+    return place.repo_name(cfg, top) or 'repo'
 
 
 def _finding_notes(findings):

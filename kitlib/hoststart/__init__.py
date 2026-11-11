@@ -7,6 +7,7 @@ import datetime
 import os
 
 from kitlib import coordinatorstart, pmstart
+from kitlib.config import pm as pmconfig
 from kitlib.config import user as kuser
 from kitlib.pmstart import configcheck
 
@@ -74,7 +75,7 @@ def shared_checks(role, cwd, repo_name=None, state_note=None, now=None, pm_confi
     rows, checks = [], []
     config_check = ('machine_config', config_lines or configcheck.lines)
     if role == 'pm':
-        cfg = pm_config if pm_config is not None else _config(pmstart.load_config, 'PM', rows)
+        cfg = pm_config if pm_config is not None else _config(pmconfig.load_config, 'PM', rows)
         checks += [('standing', lambda: pmstart.standing(cfg)), config_check,
                    ('eng_review', lambda: pmstart.eng_review(cfg))]
         if cfg.get('memory_dir'):

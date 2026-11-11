@@ -9,7 +9,7 @@ its own job object (docs/test-tools.md).
 
 A name is a test module of the checkout's tools folder, or `module.Class` / `module.Class.test`.
 --select: the changed paths (`git diff --name-only --no-renames -z <merge-base B HEAD>` plus
-untracked files, B = --base, default docs/gate.md "Default base": <remote>/<main branch> when it
+untracked files, B = --base, default docs/gate-run.md "Default base": <remote>/<main branch> when it
 resolves, else the main branch, a line saying when the local one differs; or the --changed
 list) go through kitlib.tooldeps' selection (its `always_run` included); prints `pytests: <why>` and
 `pytests: <names>`, then runs them (--plan: stops there). When git cannot say what changed it
@@ -77,7 +77,7 @@ def run_child(a):
     root = os.path.abspath(a.root)
     tools = runner.tools_path(root)
     child.set_path(tools, a.path, drop=(HERE,))
-    return child.run_child(a.child, a.shard, a.audit, root, tools, sys.stdout, a.path)
+    return child.run_child(a.child, a.shard, tool_deps if a.audit else None, root, tools, sys.stdout, a.path)
 
 
 def main(argv=None, out=None):

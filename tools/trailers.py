@@ -1,11 +1,11 @@
-"""trailers.py: fail a branch holding a commit with no agent Co-Authored-By trailer
+"""trailers.py: warn on each branch commit with no agent Co-Authored-By trailer
 (docs/repo-checks.md).
 
   trailers.py [-C DIR] [--base REV] [--merged]
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.trailerscheck, prints and
-exits. The rule is kitlib.reviewpack.trailers. Exit codes: 0 no failing commit (warnings
-included), 1 a failing commit, 2 USAGE, refused configuration, a refused --merged, or git failed.
+exits. The rule is kitlib.trailerscheck.trailers. Exit codes: 0 checked (a commit with no trailer is
+a WARNING line, never a failure), 2 USAGE, refused configuration, a refused --merged, or git failed.
 """
 import argparse
 import os
@@ -33,10 +33,11 @@ class Parser(argparse.ArgumentParser):
 
 def build_parser():
     p = Parser(prog='trailers.py',
-               description='Fail a commit with no agent Co-Authored-By trailer (docs/repo-checks.md).')
+               description='Warn on a commit with no agent Co-Authored-By trailer '
+                           '(docs/repo-checks.md).')
     p.add_argument('-C', dest='root', default='.', help='the checkout to check (default .)')
     p.add_argument('--base', default=None,
-                   help='default: <remote>/<main>, else <main> (docs/gate.md "Default base")')
+                   help='default: <remote>/<main>, else <main> (docs/gate-run.md "Default base")')
     p.add_argument('--merged', action='store_true',
                    help="a landing's merged-tree gate: the lander's own merges on main are exempt")
     return p

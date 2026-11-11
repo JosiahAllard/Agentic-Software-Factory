@@ -1,8 +1,8 @@
-"""land.py: land a branch, or a batch, on the main branch: the one landing tool (docs/gate.md
+"""land.py: land a branch, or a batch, on the main branch: the one landing tool (docs/gate-landing.md
 "Landing").
 
   land.py BRANCH [BRANCH ...] --expect-tip SHA [--expect-tip SHA ...] [--expect-main SHA]
-          [-C DIR] [--summary TEXT] [--full] [--fresh] [--wait SECONDS]
+          [-C DIR] [--summary TEXT] [--fresh] [--wait SECONDS]
           [--log-dir D] [--keep-branch] [--reviewed-by REVIEWER_ID ... [--wait-result] --submit]
       from the main checkout: take the landing's turn in the machine lock's queue (one booking,
       whose slot the merged gate runs in) and the landing lock, fetch, merge each branch onto
@@ -13,23 +13,26 @@
       (CONFLICT) or a refused push nothing is pushed and the merge is dropped.
       Landed: each branch's remote branch, worktree and local branch go, never forced (what main
       does not contain, or work, or a holder, keeps it); --keep-branch keeps all three. --fresh
-      runs every step of the merged gate (no gate reuse, docs/gate.md "Gate reuse").
+      runs every selected step of the merged gate (no gate reuse, docs/gate-landing-policy.md
+      "Gate reuse"). The merged gate runs the steps the merge's diff selects, in their cmd form;
+      a merge that changes a gate config file runs every step in full once (ARCHITECTURE.md
+      "What a landing runs"). No flag makes a landing --full.
       Every branch lands only with a verdict queued for its tip (tools/verdict.py add, or carried
       to it over main merges by tools/verdict.py carry and checked again here) by a reviewer who
-      is not its author (docs/gate.md "Landing" step 4), strong-tier for a High-risk verdict
-      (kitlib/gate/verdicts.py tier_why). A branch that changes a strict path
+      is not its author (docs/gate-landing.md "Landing" step 4), strong-tier for a High-risk verdict
+      (kitlib/landing/verdicts.py tier_why). A branch that changes a strict path
       (kitlib/gate/strict_defaults.py, read from main) lands alone, its reviewer strong-tier, and
-      its merged gate runs --full --fresh whatever was passed (docs/gate.md "Strict paths").
+      its merged gate runs fresh whatever was passed (docs/gate-landing-policy.md "Strict paths").
       --submit: the same landing, started detached and windowless; prints a REVIEW line for each
       branch with a verdict queued at its tip, then the last line, SUBMITTED ... wait: <the
       gate.py wait-result command that waits for its result record>, and exits 0. It needs one
       --reviewed-by per branch, before --submit, in --expect-tip's order: the reviewer id of its
       verdict queued at its tip. Missing or miscounted: USAGE (2) with an `Instead:` line, the
       command with the queued ids; an id that is not the reviewer, or no verdict queued at the
-      tip: REFUSED (4); nothing written (docs/gate.md "Submitting a landing").
+      tip: REFUSED (4); nothing written (docs/gate-landing.md "Submitting a landing").
       --wait-result (before --submit): once SUBMITTED is printed, wait for the landing to end
       and print its outcome lines, then each branch's RESULT line and record as gate.py
-      wait-result prints them; the exit code is the last record's (kitlib.gate.submit.follow).
+      wait-result prints them; the exit code is the last record's (kitlib.landing.submit.follow).
       Run it as a background command: it lasts as long as the landing
   land.py --queue [-C DIR]
       read-only: the landing lock's holder and the landings in the machine lock's queue
@@ -38,15 +41,16 @@
       reviewer must be strong-tier, and it lands alone) or `NOT STRICT <branch>: ...`, by the
       matcher a landing refuses by, against <remote>/<main> as last fetched; no lock, no verdict
   land.py --sweep-landed [--apply] [-C DIR]
-      the same cleanup for every branch main already contains (docs/gate.md "Branch cleanup");
+      the same cleanup for every branch main already contains (docs/gate-landing-policy.md "Branch cleanup");
       a dry run names what would go, --apply cleans up
 
 --wait: seconds to wait for the turn and the lock (default "landing".wait_s of .kit.json; 0: BUSY
 at once). Every landing writes a result record per branch (gate.py wait-result --kind land); a
 submitted landing writes them running before it starts, so every outcome, a refusal included,
-ends in a final record.
+ends in a final record. A `.kit.json` that still writes a retired key gets one WARNING line on
+stderr per run (kitlib.config.retired_text), never in the detached --submitted landing.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.land, prints and exits.
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.lander, prints and exits.
 Exit codes (kitlib.gate): 0 OK (or SUBMITTED), 1 FAILED (CONFLICT included), 2 USAGE, 3 STUCK,
 4 REFUSED, 5 BUSY; 9 LANDED_UNGATED is retired (no landing gives it); a machine lock refusal
 passes its own code through (6, 8, 10, 11, 12); 130 Ctrl+C.
@@ -78,12 +82,13 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
     if _code is not None:
         sys.exit(_code)
 
+from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
 from kitlib.coordstate import log as coordlog                       # noqa: E402
-from kitlib.gate import cleanup                                    # noqa: E402
-from kitlib.gate import land as landmod                            # noqa: E402
+from kitlib.landing import cleanup                                 # noqa: E402
+from kitlib.landing import lander as landmod                       # noqa: E402
 from kitlib.gate import runner                                     # noqa: E402
-from kitlib.gate import submit as submitmod                        # noqa: E402
+from kitlib.landing import submit as submitmod                     # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402
 
 
@@ -111,9 +116,8 @@ def parser():
                    help='the tip of each BRANCH, in the same order')
     p.add_argument('-C', dest='root', default='.', help='the main checkout (default: here)')
     p.add_argument('--summary', help='the merge title after "Merge <branch>: "')
-    p.add_argument('--full', action='store_true', help='gate every non-manual step')
     p.add_argument('--fresh', action='store_true',
-                   help='run every merged-gate step: reuse none from the branch gate')
+                   help='run every selected merged-gate step: reuse none from the branch gate')
     p.add_argument('--wait', type=int, default=None, metavar='SECONDS',
                    help='wait this long for the turn and the lock (default "landing".wait_s)')
     p.add_argument('--log-dir', help='where the merged gate\'s logs go')
@@ -151,6 +155,8 @@ def main(argv):
     p = parser()
     a = p.parse_args(argv)
     root = os.path.abspath(a.root)
+    if not a.submitted:         # the submitting run said it; the detached landing does not
+        sys.stderr.write(kconfig.retired_text(root))
     if a.apply and not a.sweep_landed:
         p.error('--apply goes with --sweep-landed')
     if a.reviewed_by and not a.submit:
@@ -158,7 +164,7 @@ def main(argv):
     if a.wait_result and not a.submit:
         p.error('--wait-result goes with --submit')
     if a.sweep_landed:
-        if (a.branches or a.expect_main or a.expect_tip or a.queue or a.keep_branch or a.full
+        if (a.branches or a.expect_main or a.expect_tip or a.queue or a.keep_branch
                 or a.fresh or a.summary or a.wait is not None or a.log_dir
                 or a.submit or a.submitted or a.check_strict):
             p.error('--sweep-landed takes only --apply and -C')
@@ -168,7 +174,7 @@ def main(argv):
             print('Ctrl+C: the sweep stopped; run it again to finish')
             return 130
     if a.check_strict:
-        if (a.expect_main or a.expect_tip or a.queue or a.keep_branch or a.full or a.fresh
+        if (a.expect_main or a.expect_tip or a.queue or a.keep_branch or a.fresh
                 or a.summary or a.wait is not None or a.log_dir or a.submit or a.submitted):
             p.error('--check-strict takes only BRANCH ... and -C')
         if not a.branches:
@@ -214,7 +220,7 @@ def main(argv):
     tip = a.expect_tip[0] if len(a.expect_tip) == 1 else a.expect_tip
     try:
         out = landmod.land(root, branch, a.expect_main, tip, summary=a.summary,
-                           full=a.full, wait_s=a.wait, say=say,
+                           wait_s=a.wait, say=say,
                            book_kw={'store': Store(say=say)}, log_dir=a.log_dir,
                            keep_branch=a.keep_branch, fresh=a.fresh, submitted=submitted)
     except SystemExit as e:     # the repo's code calling exit is a FAILED landing, never exit 0

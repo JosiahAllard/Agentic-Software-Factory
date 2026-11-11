@@ -10,7 +10,7 @@ holds nothing, and it starts again after settings.bg_resume_s with no demand on 
 tree ended (yield-late). Failures write alerts/<run id>.json for the PM's watcher.
 
 A tree is ended (yield-late, a stop past bg_stop_grace_s, Ctrl+C) as a foreground run's is
-(end_child, kitlib.lock.run end_sparing): a build daemon another job's client uses or may use is
+(end_child, kitlib.lock.run_end end_sparing): a build daemon another job's client uses or may use is
 left running with its tree, and its judgement is listed in the record's `daemons`. When it spares
 one, ending the rest one by one takes up to about 2 s (END_PASSES x END_PASS_S, then END_WAIT_S),
 so a stop or a yield-late frees the run's slots that much later; with none to spare the whole
@@ -29,11 +29,14 @@ from kitlib.lock import holds as hl
 from kitlib.lock import layout as lay
 from kitlib.lock import queue as qm
 from kitlib.lock import game
-from kitlib.lock.run import (BG_ENV, NEST_ENV, ORIGIN_ENV, PICK, POOLS, XLA_DEFAULT_FRACTION,
-                             XLA_FRACTION_ENV, Run, ScriptArgError, child_code, claim_id,
-                             check_mem, docker_cpu_env, end_sparing, export_threads, mem_need,
-                             move_leftovers, no_shared_daemons, pin_fields, script_command,
-                             settle)
+from kitlib.lock.layout import POOLS
+from kitlib.lock.queue import PICK
+from kitlib.lock.run import BG_ENV, Run, claim_id, check_mem, mem_need
+from kitlib.lock.run_cmdline import ScriptArgError, script_command
+from kitlib.lock.run_end import child_code, end_sparing, move_leftovers, settle
+from kitlib.lock.run_held import (NEST_ENV, ORIGIN_ENV, XLA_DEFAULT_FRACTION, XLA_FRACTION_ENV,
+                                  docker_cpu_env, export_threads, no_shared_daemons,
+                                  pin_fields)
 from kitlib.lock.store import EXIT_REQUIRE, EXIT_USAGE, LockError, Store, iso, write_json
 from kitlib.proc.job import Job, cores_text
 
@@ -81,7 +84,7 @@ def bg_free(store, run):
 
 
 def end_child(job, p, store, run, wait_s=10):
-    """Ends the job's tree as a foreground run's kill path does (kitlib.lock.run end_sparing): a
+    """Ends the job's tree as a foreground run's kill path does (kitlib.lock.run_end end_sparing): a
     build daemon another job's client uses or may use is left running with its tree, the job
     then closed unpinned, its judgement said and listed in the run's record (`daemons`); else
     the whole job is ended. A spared tree leaves the job where it can (move_leftovers). An
@@ -106,10 +109,10 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
     """Runs cmd as a background run until it exits other than PAUSE_EXIT, stop ends it, or it
     yields late. Returns its exit code (1 for yield-late or a failed start, 130 on Ctrl+C).
     A .bat or .cmd, named or found for a name with no extension (./gradlew), starts through the
-    cmd.exe line a foreground run starts it with (kitlib.lock.run script_command); an argument it
-    cannot take is refused before the run's id is claimed: 1, no record. The record keeps cmd as
-    given. Raises LockError (exit 2 with no gpu here or a rid not shaped as a run id, 10 when its
-    id is taken (run.claim_id) or the store or queue cannot be had before it joined).
+    cmd.exe line a foreground run starts it with (kitlib.lock.run_cmdline script_command); an
+    argument it cannot take is refused before the run's id is claimed: 1, no record. The record
+    keeps cmd as given. Raises LockError (exit 2 with no gpu here or a rid not shaped as a run id,
+    10 when its id is taken (run.claim_id) or the store or queue cannot be had before it joined).
     mem_mb: as book's (--mem; recorded as need_mem_mb and mem_from). The child starts only when
     that need fits the commit headroom read then (kitlib.lock.queue.mem_fits); short, it waits,
     its entry's mem_wait saying so."""

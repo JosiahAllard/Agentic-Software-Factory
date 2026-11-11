@@ -1,10 +1,9 @@
-"""Every kit command a skill or role shows exists, with the flags it shows (docs/multi-host-plan.md
-section 5, form C; docs/content.md).
+"""Every kit command a skill or role shows exists, with the flags it shows (docs/content.md).
 
 For each kit tool command in content/skills/**.md, content/roles/*.md and
 content/default-profile.md: it is written `python <kit>/tools/<name>.py`, never a bare
-`python tools/<name>.py` or another folder's copy (a repository holds no stubs: decision 21 in
-docs/multi-host-plan.md section 7); the kit has tools/<name>.py; the command shows `-C` when that
+`python tools/<name>.py` or another folder's copy (docs/install.md "Ported repo tools"); the kit
+has tools/<name>.py; the command shows `-C` when that
 tool's parser defines it, so it names the checkout it acts on and runs the same from any
 directory; and every `-x` / `--flag` the command shows is an option string that tool's parser
 defines. The tools are never run: their source is parsed (ast) for the option
@@ -22,6 +21,8 @@ import unittest
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOLS = os.path.join(KIT_ROOT, 'tools')
+# a tool whose parser is a module beside it: its options are read there
+PARSER_OF = {'hub': '_hub_args'}
 
 CMD = re.compile(r'python3?\s+"?([^\s`"]*?)tools/(\w+)\.py\b"?(.*)')
 KIT_PREFIX = '<kit>/'
@@ -174,7 +175,8 @@ class SkillCommandsTest(unittest.TestCase):
                                      'the kit\'s tools, so write python <kit>/tools/%s.py' % (rel, where, name, name))
                     self.assertTrue(os.path.isfile(tool), '%s names tools/%s.py, which the kit lacks' % (rel, name))
                     if name not in cache:
-                        with open(tool, encoding='utf-8') as f:
+                        parser = os.path.join(TOOLS, PARSER_OF.get(name, name) + '.py')
+                        with open(parser, encoding='utf-8') as f:
                             cache[name] = option_strings(f.read())
                     flags = shown_flags(args)
                     unknown = [fl for fl in flags if fl not in cache[name]]

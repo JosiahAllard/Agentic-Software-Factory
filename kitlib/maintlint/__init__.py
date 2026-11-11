@@ -30,7 +30,7 @@ from kitlib import kitroot
 from kitlib.backlog import audit_check
 from kitlib.backlog.errors import Failure, Refusal
 from kitlib.backlog import pull_branch as pullmod
-from kitlib.backlog.opener import open_store
+from kitlib.backlog.opener import NO_PROBES, open_store
 from kitlib.modulemap import scopelog
 
 Finding = collections.namedtuple('Finding', 'check key text fix age', defaults=(None,))
@@ -71,7 +71,7 @@ def code_checkout(root):
 def _backlog_checks(root, home, now, notes, questions):
     """Every check that reads the store; a store that cannot be opened is one note."""
     try:
-        ctx = open_store(root, fetch=False)
+        ctx = open_store(root, fetch=False, probes=NO_PROBES)
         snap = ctx.store.load()
     except (Refusal, OSError) as exc:
         notes.append('backlog NOT CHECKED: %s' % ' '.join(str(exc).split()))

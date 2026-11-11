@@ -16,9 +16,11 @@ import unittest
 from unittest import mock
 
 from kitlib import machinesetup as M
-from kitlib import pluginsource, pmstart
+from kitlib import pmstart
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import user as kuser
 from kitlib.machinesetup import agenttemp, extras, worktreesweep as W
+from kitlib.schedtask import line as L
 from kitlib.worktree import task as T
 from tests import gitfixture
 from tests.home import machine_config, no_machine_owner, temp_home
@@ -41,7 +43,7 @@ def write_json(path, obj):
 
 
 def sweep_task(name, kit, main):
-    """A registered task as consoletasks.parse gives it, running `kit`'s sweep for `main`."""
+    """A registered task as kitlib.schedtask.read.parse gives it, running `kit`'s sweep for `main`."""
     return {'path': '\\' + T.task_name(name),
             'actions': [{'exe': PYW, 'args': T.argument(os.path.join(kit, 'tools', 'worktree_remove.py'), main)}]}
 
@@ -69,7 +71,7 @@ class TaskLine(unittest.TestCase):
 
     def test_a_store_alias_or_a_missing_file_throws_in_powershell(self):
         line = self.line()
-        self.assertIn(T.NOT_THE_STORE_ALIAS, line)
+        self.assertIn(L.NOT_THE_STORE_ALIAS, line)
         self.assertIn(agenttemp.NOT_A_FILE, line)
 
     def test_force_only_when_registering_again(self):
@@ -81,16 +83,16 @@ class TaskLine(unittest.TestCase):
         self.assertEqual(mine, T.command('C:\\repo', 'demo', self.TOOL, PYW))
 
     def test_the_default_pythonw_is_the_base_install_literal(self):
-        from kitlib.launcher import pythonw as P
+        from kitlib.schedtask import pythonw as P
         line = W.task_line('C:\\repo', 'demo', self.TOOL)
-        self.assertIn("$py = %s" % T.quoted(P.base_pythonw()), line)
+        self.assertIn("$py = %s" % L.quoted(P.base_pythonw()), line)
 
 
 class RemovedExport(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix='wsweep-exports-')
         self.addCleanup(gitfixture.rmtree, self.root)
-        write_json(os.path.join(self.root, THERE, pluginsource.MARKER), {'commit': 'x'})
+        write_json(os.path.join(self.root, THERE, plugin_layout.MARKER), {'commit': 'x'})
 
     def test_a_task_running_a_folder_with_no_marker_names_it(self):
         task = sweep_task('demo', os.path.join(self.root, GONE), 'C:\\repo')
@@ -121,11 +123,11 @@ class ToolRoot(unittest.TestCase):
         os.makedirs(os.path.join(self.live, '.git'))
 
     def marker(self, **data):
-        write_json(os.path.join(self.export, pluginsource.MARKER), data)
+        write_json(os.path.join(self.export, plugin_layout.MARKER), data)
 
     def test_an_export_names_the_live_root_it_runs_for(self):
         self.marker()
-        self.assertEqual(W.tool_root(self.export, {pluginsource.LIVE_ROOT_ENV: self.live}), self.live)
+        self.assertEqual(W.tool_root(self.export, {plugin_layout.LIVE_ROOT_ENV: self.live}), self.live)
 
     def test_an_export_names_the_checkout_its_marker_records(self):
         self.marker(checkout=self.live)
@@ -138,7 +140,16 @@ class ToolRoot(unittest.TestCase):
         self.assertIsNone(W.tool_root(self.export, {}))
 
     def test_a_checkout_is_itself(self):
-        self.assertEqual(W.tool_root(self.live, {pluginsource.LIVE_ROOT_ENV: self.export}), self.live)
+        self.assertEqual(W.tool_root(self.live, {plugin_layout.LIVE_ROOT_ENV: self.export}), self.live)
+
+
+class RepoTask(unittest.TestCase):
+    def test_a_folder_that_is_gone_inside_another_repo_is_refused_not_that_repo(self):
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        self.assertEqual(W.repo_task(repo.root)[0], os.path.realpath(repo.root))
+        with self.assertRaises(RuntimeError):
+            W.repo_task(os.path.join(repo.root, 'gone'))
 
 
 class StepBase(MS.Base):
@@ -153,16 +164,16 @@ class StepBase(MS.Base):
         env = mock.patch.dict(os.environ)
         env.start()
         self.addCleanup(env.stop)
-        os.environ.pop(pluginsource.LIVE_ROOT_ENV, None)
+        os.environ.pop(plugin_layout.LIVE_ROOT_ENV, None)
         kit_repo = gitfixture.TempRepo()                               # the kit's main checkout
         self.addCleanup(kit_repo.cleanup)
         self.checkout = os.path.realpath(kit_repo.root)
         self.tool = os.path.join(self.checkout, 'tools', 'worktree_remove.py')
         MS.touch(self.tool)
         MS.touch(os.path.join(self.kit, 'tools', 'worktree_remove.py'))
-        write_json(os.path.join(self.kit, pluginsource.MARKER), {'commit': 'x', 'checkout': self.checkout})
+        write_json(os.path.join(self.kit, plugin_layout.MARKER), {'commit': 'x', 'checkout': self.checkout})
         self.exports = os.path.join(self.root, 'exports')
-        write_json(os.path.join(self.exports, THERE, pluginsource.MARKER), {'commit': 'y'})
+        write_json(os.path.join(self.exports, THERE, plugin_layout.MARKER), {'commit': 'y'})
         self.repo = gitfixture.TempRepo()
         self.addCleanup(self.repo.cleanup)
         self.main = os.path.realpath(self.repo.root)
@@ -224,7 +235,7 @@ class Step(StepBase):
         self.assertEqual(self.events, [('dry-run', tool, self.main), 'register'])
         self.assertIn('  worktree sweep dry run (nothing removed): would remove C:\\wt\\old  landed', out)
         line = self.regs[0]
-        self.assertIn("-TaskName %s" % T.quoted(self.task), line)
+        self.assertIn("-TaskName %s" % L.quoted(self.task), line)
         self.assertIn(T.argument(tool, self.main), line)
         self.assertNotIn('-Force', line)
         self.assertIn('done: register the scheduled task %s' % self.task, out)
@@ -306,7 +317,7 @@ class Step(StepBase):
         self.addCleanup(live_repo.cleanup)
         live = os.path.realpath(live_repo.root)
         MS.touch(os.path.join(live, 'tools', 'worktree_remove.py'))
-        os.environ[pluginsource.LIVE_ROOT_ENV] = live
+        os.environ[plugin_layout.LIVE_ROOT_ENV] = live
         code, out = self.go(apply=True)
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertIn(T.argument(os.path.join(live, 'tools', 'worktree_remove.py'), self.main), self.regs[0])
@@ -325,7 +336,7 @@ class Step(StepBase):
                         plan.notes)
 
     def test_an_export_with_no_live_main_checkout_plans_no_task(self):
-        write_json(os.path.join(self.kit, pluginsource.MARKER), {'commit': 'x'})
+        write_json(os.path.join(self.kit, plugin_layout.MARKER), {'commit': 'x'})
         code, out = self.go(apply=True)
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertIn('worktree sweep tasks: the kit at %s is a plugin export with no live main checkout'
@@ -347,7 +358,7 @@ class Step(StepBase):
         self.assertIn('worktree sweep task same-worktree-sweep skipped: one (%s), two (%s) take that one name'
                       % (os.path.normpath(os.path.realpath(one)), os.path.normpath(os.path.realpath(two))), out)
         self.assertEqual(len(self.regs), 1, out)                        # demo's own task still goes in
-        self.assertIn(T.quoted(self.task), self.regs[0])
+        self.assertIn(L.quoted(self.task), self.regs[0])
 
     def test_two_labels_on_one_repository_get_one_task(self):
         self.config({'demo': self.repo.root, 'again': self.repo.root})
@@ -444,8 +455,8 @@ class PmStartCheck(unittest.TestCase):
         self.task = T.task_name(os.path.basename(self.main))
         self.exports = tempfile.mkdtemp(prefix='wsweep-pm-exports-')
         self.addCleanup(gitfixture.rmtree, self.exports)
-        write_json(os.path.join(self.exports, THERE, pluginsource.MARKER), {'commit': 'y'})
-        self.settings = pluginsource.Settings(self.exports, False, 'origin')
+        write_json(os.path.join(self.exports, THERE, plugin_layout.MARKER), {'commit': 'y'})
+        self.settings = plugin_layout.Settings(self.exports, False, 'origin')
 
     def lines(self, tasks, repos=None, plugin=None):
         def read():

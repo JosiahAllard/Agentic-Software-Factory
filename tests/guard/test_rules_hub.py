@@ -1,4 +1,4 @@
-"""The hub rules (docs/guard.md "Hub secrets"): hub-secrets, hub-owner-verb, hub-mcp and
+"""The hub rules (docs/guard-owner.md "Hub secrets"): hub-secrets, hub-owner-verb, hub-mcp and
 hub-browser. Each holds every session but the owner's own: a subagent, a launcher-marked
 session (coordinator, pm, plain). The owner's unmarked session is never held. Agents still run
 the agent verbs of tools/hub.py and its validate, serve and status, which read agent.token
@@ -109,7 +109,7 @@ class SecretShell(Hub):
                 self.denied(make, 'hub-secrets')
 
     def test_a_token_name_with_no_path_into_the_folder_passes(self):
-        # docs/guard-v2.md A2: only a real path into the token folder is refused; a word that only names
+        # docs/guard-fallback.md "Weakened checks, by row" A2: only a real path into the token folder is refused; a word that only names
         # a token file, or looks like the folder, and is placed elsewhere passes
         for shell, line in ((ps, "$d = 'x'; Get-Content (Join-Path $d 'owner.token')"),
                             (bash, 'echo owner.token'), (bash, 'cat x/owner.token'),
@@ -166,7 +166,7 @@ class SecretShell(Hub):
         self.allowed(lambda sub: bash('python tools/hub.py questions list | head', self.w.wt, sub))
 
     def test_an_agent_verb_piped_into_code_is_its_data(self):
-        # docs/guard-v2.md W3: a parsed hub tool run of an agent verb piped into python -c is the code's
+        # docs/guard-owner.md "Hub secrets": a parsed hub tool run of an agent verb piped into python -c is the code's
         # data, so a token file's name in its words is not read as code; piped into code read
         # from standard input (`python -`) it is the code, and still refused
         head = 'python "%s" questions add --title "owner.token" --json | ' % self.hub
@@ -227,7 +227,7 @@ class SecretShell(Hub):
                 self.denied(make, rule)
 
     def test_an_unclean_line_naming_the_hub_tool_is_refused(self):
-        # docs/guard.md "Fallback": any hub tool call on a line the parser cannot read, read
+        # docs/guard-fallback.md "Fallback": any hub tool call on a line the parser cannot read, read
         # verbs included, is refused as hub-owner-verb; the owner's own session is not held
         hub = self.hub
         rows = (
@@ -366,7 +366,7 @@ class HomeAndWildcards(Hub):
             (ps, 'chdir; gc .pm-kit\\h*\\o*'),
             (ps, 'gc ${ENV:HomeDrive}$Env:HOMEPATH\\.pm-kit\\h*\\o*'),
         ))
-        # a home folder the line computes is not read (docs/guard.md "Hub secrets", Limits):
+        # a home folder the line computes is not read (docs/guard-owner.md "Hub secrets", Limits):
         # these pass, and a change here means updating that list
         self.rows_allowed((
             (bash, 'H=$HOME; cd $H/.pm-kit && cat hub/x'),
@@ -583,7 +583,7 @@ class BareWordsInTheDataFolder(Hub):
         ), deny=False)
 
     def test_code_given_on_the_line_is_refused_as_a_write_not_as_the_store(self):
-        # python -c writes the directory it runs in (docs/guard.md "Shell writes"), and the data
+        # python -c writes the directory it runs in (docs/guard-jail-roles.md "Shell writes"), and the data
         # folder is a main checkout: a subagent is refused that write, never by the store's rule,
         # and the sessions that may edit a main checkout pass
         make = lambda sub: bash('python -Ic pass --session hub', self.w.data, sub)
@@ -631,6 +631,8 @@ class OwnerVerbs(Hub):
         'pair',
         'approvals approve A-1',
         'approvals deny A-1',
+        'approvals apply A-1',
+        'approvals apply A-1 --if-version 2',
         'todos add --title t --owner',
         'todos add --title t --own',
         'todos add --owner=1 --title t',
@@ -900,7 +902,7 @@ class OwnerVerbs(Hub):
 class ParsedRuns(Hub):
     """hub-owner-verb on the runs the parser reads, however the line spells them. Text that only
     names the hub tool, and a name built at run time, are not read: the rule catches mistakes,
-    not an adversary (docs/guard.md "Hub secrets", Limits)."""
+    not an adversary (docs/guard-owner.md "Hub secrets", Limits)."""
 
     def rows(self, rows, deny):
         for shell, line in rows:
@@ -1065,20 +1067,20 @@ class HubMcp(Hub):
                 self.allowed(self.call(tool))
 
     def test_the_list_is_the_servers(self):
-        # the guard's list of owner-only hub tools is the server's own
+        # the guard's list of owner-only hub tools is the server's own (hubmcp re-exports it)
         from kitlib import hubmcp
         from kitlib.guard import hub
         self.assertEqual(set(hub.OWNER_MCP_TOOLS), set(hubmcp.OWNER_ONLY))
 
     def test_the_guard_does_not_load_the_server(self):
-        # a fresh interpreter: loading the guard's rules imports kitlib.hubmcp's names only
+        # a fresh interpreter: loading the guard's rules imports neither package (the names are kitlib.hubvalidate's)
         code = ('import sys; import kitlib.guard.rules; '
                 'print(sorted(m for m in sys.modules if m.startswith(("kitlib.hubmcp", "kitlib.hubsite"))))')
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         out = subprocess.run([sys.executable, '-I', '-c', 'import sys; sys.path.insert(0, %r); %s' % (root, code)],
                              capture_output=True, text=True, timeout=60)
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(out.stdout.strip(), "['kitlib.hubmcp']")
+        self.assertEqual(out.stdout.strip(), "[]")
 
 
 # ---------------------------------------------------------------- hub-browser
@@ -1133,13 +1135,14 @@ class Browser(Hub):
 class Plumbing(unittest.TestCase):
     def test_the_guard_constants_are_the_hub_sites(self):
         from kitlib.guard import hub
-        from kitlib.hubsite import auth, settings
-        self.assertEqual(hub.FOLDER_NAME, auth.FOLDER_NAME)
-        self.assertEqual((hub.OWNER_FILE, hub.AGENT_FILE), (auth.OWNER_FILE, auth.AGENT_FILE))
+        from kitlib.hubclient import settings
+        from kitlib.hubclient import token as hubtoken
+        self.assertEqual(hub.FOLDER_NAME, hubtoken.FOLDER_NAME)
+        self.assertEqual((hub.OWNER_FILE, hub.AGENT_FILE), (hubtoken.OWNER_FILE, hubtoken.AGENT_FILE))
         self.assertEqual(hub.STORE_DIR, settings.STORE_DIR)
         self.assertEqual((hub.PORT, hub.TUNNEL_PORT), (settings.PORT, settings.TUNNEL_PORT))
         self.assertEqual(hub.secret_folder(os.path.join('C:\\', 'h', '.pm-kit', 'config.json')),
-                         os.path.join('C:\\', 'h', '.pm-kit', auth.FOLDER_NAME))
+                         os.path.join('C:\\', 'h', '.pm-kit', hubtoken.FOLDER_NAME))
 
     def test_the_claude_adapter_passes_mcp_input(self):
         a = action(event('mcp__claude-in-chrome__navigate', {'url': 'http://x/'}, 'C:\\w'))

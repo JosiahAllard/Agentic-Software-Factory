@@ -2,6 +2,7 @@
 a question or marks a to-do done, and keeps telling them until they pick it up
 (docs/hub-push.md "Push notifications"). A fake delivery object stands in for the host's.
 """
+import datetime
 import json
 import os
 import shutil
@@ -12,8 +13,8 @@ import unittest
 from unittest import mock
 
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite import api, auth, push, serve, store as store_mod
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubsite import api, auth, push, serve, servesources, store as store_mod
+from kitlib.hubclient import settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 
@@ -617,6 +618,33 @@ class ResetTest(unittest.TestCase):
         self.assertIn('todo %s done' % tid, fake.calls[2][1])
 
 
+class ApplyEventTest(unittest.TestCase):
+    """The hub's apply of an approved change (docs/hub-push.md): its commit fires `applied`, a
+    failed apply `unapplied`, once for each try."""
+    NOW = datetime.datetime(1970, 1, 12, 14, 0, tzinfo=datetime.timezone.utc)
+    DOC = {'status': 'approved', 'repo': 'kit', 'title': 'T', 'head': 'a' * 40, 'files': [],
+           'created_at': '1970-01-12T13:00:00+00:00', 'decided_at': '1970-01-12T13:46:00+00:00'}
+
+    def fires(self, doc, before):
+        return push.trigger('approval', doc, push.fingerprint('approval', before, self.NOW),
+                            self.NOW)
+
+    def test_the_hubs_commit_fires_applied(self):
+        done = dict(self.DOC, status='consumed', commit='c' * 40,
+                    applied={'by': 'hub', 'branch': 'kit/w', 'worktree': 'W'})
+        self.assertEqual(self.fires(done, self.DOC), 'applied')
+        self.assertNotEqual(self.fires(done, done), 'applied')
+        self.assertIn('A-1', push.guidance('approval', 'A-1', 'applied', 'kit'))
+
+    def test_a_failed_apply_fires_unapplied_once_per_try(self):
+        failed = dict(self.DOC, apply={'at': '1970-01-12T13:46:00+00:00', 'error': 'drift'})
+        self.assertEqual(self.fires(failed, self.DOC), 'unapplied')
+        self.assertNotEqual(self.fires(failed, failed), 'unapplied')
+        again = dict(failed, apply={'at': '1970-01-12T13:50:00+00:00', 'error': 'drift'})
+        self.assertEqual(self.fires(again, failed), 'unapplied')
+        self.assertIn('approvals apply A-1', push.guidance('approval', 'A-1', 'unapplied', 'kit'))
+
+
 class TextTest(PushCase):
     def test_the_text_never_carries_a_title_a_note_or_an_answer(self):
         qid = self.ask(**{'from': 'kit'})
@@ -858,7 +886,7 @@ class ThreadTest(unittest.TestCase):
 
     def test_the_hub_runs_the_worker_and_closes_it_around_the_store(self):
         fake = FakePush()
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=fake,
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=fake,
                                                        push_dir=self.folder,
                                                        static_dir=os.path.join(self.root, 'web')),
                           log=lambda level, text: self.lines.append((level, text)))
@@ -893,13 +921,13 @@ class ThreadTest(unittest.TestCase):
             self.assertIn('question:', f.read())
 
     def test_no_push_without_a_folder(self):
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=FakePush(),
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=FakePush(),
                                                        static_dir=os.path.join(self.root, 'web')))
         self.addCleanup(hub.close)
         self.assertIsNone(hub.push)
 
     def test_a_worker_that_will_not_start_leaves_the_hub_serving(self):
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=FakePush(),
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=FakePush(),
                                                        push_dir=self.folder,
                                                        static_dir=os.path.join(self.root, 'web')),
                           log=lambda level, text: self.lines.append((level, text)))
@@ -1220,14 +1248,14 @@ class FiledRecipientsTest(FiledPushCase):
         self.assertEqual(len(reads), 1)
 
     def test_machine_pm_folder_is_the_folder_holding_sessions_file(self):
-        with mock.patch('kitlib.pmstart.load_config',
-                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.pmstart._toplevel',
+        with mock.patch('kitlib.config.pm.load_config',
+                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.config.pm._toplevel',
                            side_effect=lambda d: 'pmrepo' if d == self.root else None):
             self.assertEqual(push.machine_pm_folder(), 'pmrepo')
 
     def test_machine_pm_folder_is_empty_without_a_sessions_file(self):
         for cfg in ({}, None):
-            with mock.patch('kitlib.pmstart.load_config', return_value=cfg):
+            with mock.patch('kitlib.config.pm.load_config', return_value=cfg):
                 self.assertEqual(push.machine_pm_folder(), '')
 
     def test_a_freed_record_without_resolve_pings_the_pm(self):

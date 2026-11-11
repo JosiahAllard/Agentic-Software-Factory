@@ -6,10 +6,11 @@ import datetime
 import json
 import os
 import unittest
+from unittest import mock
 
 from kitlib.launcher import start, window
 from kitlib.launcher import settings as S
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from tests.launcher.fakes import EXE, NOW, FakeHost, Home, role_of, session, windows_text
 
 DAY = datetime.timedelta(days=1)
@@ -67,13 +68,30 @@ class Deep(Base):
     def test_command_has_agent_model_effort_window_and_name(self):
         out = self.deep()
         self.assertIn('Would open a new window running:', out)
-        self.assertIn("claude --agent pm-kit:deep-worker --model 'opus[1m]' --effort xhigh --autocompact 500000 "
+        # the deep-worker role's own Claude model (hosts.json claude role_models), not the deep tier's
+        self.assertIn("claude --agent pm-kit:deep-worker --model 'fable' --effort xhigh --autocompact 500000 "
                       "--permission-mode auto --remote-control 'deep-net-race' -n 'deep-net-race' ", out)
         self.assertIn("$Host.UI.RawUI.WindowTitle = 'deep-net-race'", out)
         self.assertIn('Set-Location %s' % window.q(self.repo), out)
         self.assertIn("stop --name 'deep-net-race'", out)
         self.assertEqual(role_of(out), 'deep-worker')
         self.assertEqual(self.host.opened, [])
+
+    def test_an_unreadable_deep_worker_model_refuses_the_launch(self):
+        """deep_model: a hosts.json fault, or no readable deep-worker role file, is a LaunchError
+        and nothing starts."""
+        def bad_registry(name, path=None):
+            raise start.registry.RegistryError('hosts.json: broken')
+        for target, fake, msg in (
+                ('registry.host', bad_registry, 'deep: hosts.json: broken; nothing was started.'),
+                ('kcontent.role_model', lambda *a: None, 'deep: no readable deep-worker role file under ')):
+            owner, attr = target.split('.')
+            with self.subTest(target), mock.patch.object(getattr(start, owner), attr, fake):
+                with self.assertRaises(S.LaunchError) as c:
+                    start.deep_model()
+                self.assertIn(msg, str(c.exception))
+                self.refused(msg, plan=False)
+                self.assertEqual(self.host.opened, [])
 
     def test_prompt_names_brief_requester_and_worktree(self):
         out = self.deep()
@@ -563,7 +581,7 @@ class Start(Base):
                 self.assertIn('--agent %s ' % agent, self.go(agent=agent))
 
     def test_the_pm_starts_as_the_kits_pm_agent_with_the_pm_mark(self):
-        """decision 11: the PM is an agent file; a launched PM runs --agent pm-kit:pm, marked pm."""
+        """The PM is an agent file; a launched PM runs --agent pm-kit:pm, marked pm."""
         out = self.go(agent='pm')
         self.assertIn('--agent pm-kit:pm ', out)
         self.assertIn("PM_KIT_ROLE = 'pm'", out)

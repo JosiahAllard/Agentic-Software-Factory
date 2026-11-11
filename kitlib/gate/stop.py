@@ -1,4 +1,4 @@
-"""gate.py stop: one gate run ended by its machine-lock run id (docs/gate.md "Stopping a gate").
+"""gate.py stop: one gate run ended by its machine-lock run id (docs/gate-rerun-checkout.md "Stopping a gate").
 
 The run id is the one the gate's held line prints (`run r-...`) and `machine_lock.py status`
 shows: the lock's id for the run, the only name a gate run has that no other run shares. The
@@ -19,15 +19,15 @@ comes from its lock record alone, and nothing is ended that the record does not 
                              its running result record is finished `error` (finish_dead)
 
 A live run is stopped the way the lock stops any run (api.end_run): its own process ends its tree
-(kitlib.lock.run.Slot.wait), starts no further step, releases its lock as `cancelled` and writes
-its result record, `stopped` (kitlib.gate.runner.stopped_outcome). Only a run that has not ended
-within settings.stop_s (its process is hung itself, not polling) is ended from here, and only with
-process.terminate_verified, which ends a pid only if its creation time is still the record's,
-judged on the handle it kills through: never by name, never a recycled pid. Its job closes with
-it, which ends the tree; a process that left the job is named and never ended. The lock's reap
+(kitlib.lock.run_held.Slot.wait), starts no further step, releases its lock as `cancelled` and
+writes its result record, `stopped` (kitlib.gate.runner.stopped_outcome). Only a run that has not
+ended within settings.stop_s (its process is hung itself, not polling) is ended from here, and only
+with process.terminate_verified, which ends a pid only if its creation time is still the record's,
+judged on the handle it kills through: never by name, never a recycled pid. Its job closes with it,
+which ends the tree; a process that left the job is named and never ended. The lock's reap
 then frees the run, and the result record is finished `stopped` from here (result.finish_stopped).
 
-The landing checks see this machine only. kitlib.loadnode.landgate.land_gate runs runner.merged_gate
+The landing checks see this machine only. loadnode.landgate.land_gate runs runner.merged_gate
 with no slot and no book_kw, so on a load node a land job's merged gate is a plain gate run: a stop
 run there ends it, and main reports NOT LANDED with nothing pushed.
 
@@ -72,7 +72,7 @@ def _until(done, wait_s):
 
 
 def is_landing(rec):
-    """True for a landing's own lock run on this machine: only kitlib.gate.land.Lander.book_slot
+    """True for a landing's own lock run on this machine: only landing.lander.Lander.book_slot
     books these. A load node's land gate books none of these marks (the module docstring)."""
     return (rec.get('priority') == 'land' or bool(rec.get('resource'))
             or str(rec.get('note') or '').startswith('landing:'))

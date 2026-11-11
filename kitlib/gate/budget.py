@@ -1,4 +1,4 @@
-"""The branch gate budget (docs/gate.md "The branch gate budget"): a branch gets RUNS gate runs;
+"""The branch gate budget (docs/gate-records.md "The branch gate budget"): a branch gets RUNS gate runs;
 before booking one more, a branch gate is REFUSED until the branch's coordinator allows more
 (`gate.py allow`).
 
@@ -11,7 +11,7 @@ git) has no such bound.
 The branch is the line's `branch` (case aside: on Windows `Kit/A` and `kit/A` are one loose ref),
 never its slug, which two branches can share and `gate.py --slug` sets; a null `branch` (a run
 booked with none) never counts. A line with no `branch` key, written before history lines kept
-it, counts by the branch's default slug (runner.slug_of), as every line did before. History
+it, counts by the branch's default slug (records.place.slug_of), as every line did before. History
 lines written before they kept `gate` have none and never count. A booking that never got its
 slots (Ctrl+C or a stop while it queued, a hold refusal) has no history line
 (Store.history_append); one that got them and started nothing (`how` NOT_STARTED: a gate that
@@ -22,7 +22,7 @@ gate only, just before it waits for the gate cap and books); a landing, the dail
 redfirst never ask.
 
 An allowance is `<dev_drive>/pm-kit/kit-gate-budget/<repo key>/<result.file_stem(branch)>.json`
-(kitlib.gate.result.kit_folder and repo_key): {branch, runs (the new total), why, at, by (the
+(kitlib.records.place.kit_folder and repo_key): {branch, runs (the new total), why, at, by (the
 caller's role and session)}. The folder is outside every checkout, where agents' own file writes
 do not reach. One written before the branch was last made is not read. With no dev_drive there
 is no folder: `gate.py allow` writes, and this check reads, the .git copy
@@ -40,10 +40,11 @@ from kitlib.gate import result
 from kitlib.git import refs, repo
 from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
+from kitlib.records import place
 
 RUNS = 5
 DIR_NAME = 'kit-gate-budget'
-DOC = 'docs/gate.md "The branch gate budget"'
+DOC = 'docs/gate-records.md "The branch gate budget"'
 NOT_STARTED = lockrun.NOT_STARTED   # a run that got its slots and started nothing
 
 
@@ -112,10 +113,10 @@ def allow_path(root, branch):
     NoBudgetFolder when there is no dev_drive."""
     common = _common(root)
     try:
-        folder = result.kit_folder(DIR_NAME, 'gate budget folder')
-    except result.ResultError as e:
+        folder = place.kit_folder(DIR_NAME, 'gate budget folder')
+    except place.NoKitFolder as e:
         raise NoBudgetFolder(str(e))
-    return os.path.join(folder, result.repo_key(common), '%s.json' % result.file_stem(branch))
+    return os.path.join(folder, place.repo_key(common), '%s.json' % result.file_stem(branch))
 
 
 def legacy_path(root, branch):
@@ -234,19 +235,17 @@ def _write(path, rec):
 
 
 def repo_name_of(root):
-    """The repository name the branch gate books under (runner.repo_name)."""
+    """The repository name the branch gate books under (place.repo_name)."""
     import kitlib.config as kconfig
     from kitlib.config.types import ConfigError
-    from kitlib.gate import runner      # runner imports this module
     top, why = repo.toplevel(root)
     if not top:
         raise BudgetError(why)
     try:
-        return runner.repo_name(kconfig.load(top), top)
+        return place.repo_name(kconfig.load(top), top)
     except ConfigError as e:
         raise BudgetError(str(e))
 
 
 def slug_of(branch):
-    from kitlib.gate import runner      # runner imports this module
-    return runner.slug_of(branch)
+    return place.slug_of(branch)

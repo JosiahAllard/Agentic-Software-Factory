@@ -1,4 +1,4 @@
-"""The write jail (docs/guard.md "Write jail"): an agent session writes only inside its own
+"""The write jail (docs/guard-jail-roles.md "Write jail"): an agent session writes only inside its own
 checkout, the temp folder and the .kit.json "guard" data_roots; the kit-json rule keeps an agent
 off the file that sets those roots. Real folders throughout, so symlinks, junctions and `..` are
 resolved the way the guard resolves them."""
@@ -12,16 +12,16 @@ from unittest import mock
 from kitlib import config as kconfig
 from kitlib import guard
 from kitlib.git import repo
-from kitlib.guard import commands as cm
+from kitlib.guard import commands_nested as cn
 from kitlib.guard import context, rules
 from kitlib.guard import shell as sh
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 
 from . import world as W
 from .claudehost import action, decide
 from .world import bash, event, ps
 
-P = PLUGIN_NAME + ':'                 # kitlib.agentname.PREFIX (tests/agentname pins it)
+P = PLUGIN_NAME + ':'                 # kitlib.host.agentname.PREFIX (tests/host/test_agentname.py pins it)
 COORDINATOR = {context.ROLE_ENV: 'coordinator'}
 OLD_MARK = {context.ROLE_ENV: 'conductor'}   # the coordinator's retired old mark: no longer held
 PM = {context.ROLE_ENV: 'pm'}
@@ -273,7 +273,7 @@ class Siblings(Base):
 
 
 class Sessions(Base):
-    """Agent sessions are the guard's (docs/guard.md "Session mark"): subagents and the marks in
+    """Agent sessions are the guard's (docs/guard-fallback.md "Session mark"): subagents and the marks in
     guard_agent_marks (default: coordinator, deep-worker, consultant, pm). The owner's
     unmarked session and other marks (plain, the retired old coordinator mark) are not jailed."""
 
@@ -300,7 +300,7 @@ class Sessions(Base):
         self.allowed(self.outside({context.ROLE_ENV: 'strong-worker'}))     # start --agent <other>
 
     def test_a_plugin_prefixed_mark_is_the_bare_mark(self):
-        # docs/guard.md "Agent names"
+        # docs/guard-fallback.md "Agent names"
         for mark in (P + 'coordinator', P + 'deep-worker', P + 'consultant', P.upper() + 'pm', P + P + 'pm'):
             with self.subTest(mark):
                 self.jailed(self.outside({context.ROLE_ENV: mark}))
@@ -317,7 +317,7 @@ class Sessions(Base):
 class MarkRoots(Base):
     """The machine config's guard_mark_roots: more write roots for the main sessions of one
     launcher mark, never for a subagent, never on, over or in the machine config's folder
-    (docs/guard.md "Write jail")."""
+    (docs/guard-jail-roles.md "Write jail")."""
 
     def setUp(self):
         Base.setUp(self)
@@ -339,7 +339,7 @@ class MarkRoots(Base):
         self.allowed(self.run_bash('echo x > "%s/y.md"' % W.fwd(self.notes), env=PM, sub=False))
 
     def test_a_plugin_prefixed_mark_gets_the_bare_marks_roots(self):
-        # docs/guard.md "Agent names": the roots are looked up by the mark without the prefix
+        # docs/guard-fallback.md "Agent names": the roots are looked up by the mark without the prefix
         target = os.path.join(self.notes, 'x.md')
         self.roots({'pm': [{'path': self.notes, 'mode': 'open', 'why': 'test'}]})
         for mark in (P + 'pm', P.upper() + 'PM'):
@@ -440,7 +440,7 @@ class DataRoots(Base):
         self.jailed(self.run_bash('cp -T out/run7 "%s"' % add))      # -T: the folder itself is the target
         self.jailed(self.run_bash('cp "$F" "%s/"' % add))              # a source it cannot name: the folder
         self.jailed(self.run_bash('cp out/*.bin "%s/"' % add))         # a wildcard: the folder
-        self.jailed(self.run_bash('robocopy out "%s" new.bin' % add))  # docs/guard.md "Known limits"
+        self.jailed(self.run_bash('robocopy out "%s" new.bin' % add))  # docs/guard-fallback.md "Known limits"
         self.jailed(self.run_bash('cp out/new.bin "%s/"' % W.fwd(self.w.ro)))   # read-only stays read-only
         self.jailed(self.run_bash('cp other/.kit.json "%s/"' % W.fwd(self.w.wt)), rule='kit-json')
 
@@ -585,7 +585,7 @@ class Config(unittest.TestCase):
 
 
 class ShellForms(Base):
-    """The parsed write targets the jail judges (docs/guard.md "Shell writes")."""
+    """The parsed write targets the jail judges (docs/guard-jail-roles.md "Shell writes")."""
 
     def out(self, name='x.txt'):
         return W.fwd(os.path.join(self.w.plain, name))
@@ -810,7 +810,7 @@ class MainGit(Base):
 class LanderMainCheckout(MainGit):
     """The lander role, and no other, may run exactly `git fetch <remote> <main>` and `git merge
     --ff-only <remote>/<main>` in the main checkout from its worktree; nothing else it writes
-    there passes (docs/guard.md "Write jail")."""
+    there passes (docs/guard-jail-roles.md "Write jail")."""
 
     def test_a_lander_may_fetch_and_merge_main_from_its_worktree(self):
         m = self.main
@@ -825,7 +825,7 @@ class LanderMainCheckout(MainGit):
                 self.allowed(self.git(text, tool='PowerShell'))
 
     def test_the_landing_verbs_meet_the_dev_drive_bound(self):
-        # docs/guard.md "Outer bound": the lander's landing run is bounded too; here the Dev Drive is
+        # docs/guard-jail-roles.md "Outer bound": the lander's landing run is bounded too; here the Dev Drive is
         # the lander's own worktree, so the main checkout is off it
         m = self.main
         self.w.user_config({'dev_drive': self.w.wt})
@@ -836,7 +836,7 @@ class LanderMainCheckout(MainGit):
         self.allowed(self.git('git -C "%s" fetch origin main' % m))
 
     def test_a_lander_may_fetch_the_whole_remote(self):
-        # docs/guard.md "Write jail", git bullet: `git fetch <remote>` writes only remote-tracking refs and FETCH_HEAD
+        # docs/guard-jail-roles.md "Write jail", git bullet: `git fetch <remote>` writes only remote-tracking refs and FETCH_HEAD
         m = self.main
         for text in ('git -C "%s" fetch origin' % m, 'cd "%s" && git fetch origin' % m,
                      'cd "%s"; git fetch origin' % m):
@@ -1023,7 +1023,7 @@ class LanderMainCheckout(MainGit):
         self.jailed(d)
 
     def test_the_plugin_prefixed_lander_may_land_and_no_other_spelling(self):
-        # docs/guard.md "Agent names": <plugin>:lander is the lander; any other prefix is not
+        # docs/guard-fallback.md "Agent names": <plugin>:lander is the lander; any other prefix is not
         fetch, merge = 'git -C "%s" fetch origin main' % self.main, 'git -C "%s" merge --ff-only origin/main' % self.main
         self.allowed(self.git(fetch, P + 'lander'))
         self.allowed(self.git(merge, P + 'lander'))
@@ -1057,7 +1057,7 @@ class LanderMainCheckout(MainGit):
 
 class RefDeleteHint(MainGit):
     """`git update-ref -d` of a shared ref is refused (git-shared-ref) with a ref delete's own
-    Instead, never a worktree: every worktree shares the repository's refs (docs/guard.md
+    Instead, never a worktree: every worktree shares the repository's refs (docs/guard-rules.md
     "Rules"). tests/guard/test_shared_ref.py has the rule's own cases."""
 
     def git_at(self, text, cwd):
@@ -1115,7 +1115,7 @@ class UnplacedGit(MainGit):
     """A git write whose checkout the text cannot place (GIT_DIR, GIT_WORK_TREE, --git-dir,
     --work-tree, core.worktree, a computed -C) is refused for every agent role: it may be a main
     checkout, where re-pointing HEAD or renaming main sends the next lander's merge to the wrong
-    branch (docs/guard.md "Write jail")."""
+    branch (docs/guard-jail-roles.md "Write jail")."""
 
     def test_a_worker_may_not_repoint_main_through_git_dir(self):
         m = self.main
@@ -1232,7 +1232,7 @@ class UnplacedGit(MainGit):
 
     def test_set_dashdash_git_dir_not_setter(self):
         # bash's set takes options and positional parameters, never a variable: set -- GIT_DIR and
-        # set GIT_DIR=x set $1 (commands.exporter_names); cmd's set NAME=value is the setter
+        # set GIT_DIR=x set $1 (commands_env.exporter_args); cmd's set NAME=value is the setter
         m, wt = self.main, W.fwd(self.w.wt)
         g = 'git -C "%s" branch -c main old' % wt
         self.judged_as_written(['set -- GIT_DIR; %s' % g, 'set -- GIT_DIR "%s/.git"; %s' % (m, g),
@@ -1259,7 +1259,7 @@ class UnplacedGit(MainGit):
         # other git is placed as written, while the prefixed one stays unplaceable
         wt = W.fwd(self.w.wt)
         line = 'git -C "%s" add a.py && GIT_INDEX_FILE=/tmp/idx git -C "%s" write-tree' % (wt, wt)
-        p = cm.read(line, sh.BASH, wt)
+        p = cn.read(line, sh.BASH, wt)
         self.assertEqual([c.git_env for c in p.commands], [False, 'GIT_INDEX_FILE'])
         d = self.jailed(self.git(line, 'worker'))
         self.assertIn('GIT_INDEX_FILE=/tmp/idx git', d.reason)
@@ -1364,18 +1364,18 @@ class UnplacedGit(MainGit):
         before the git is judged (unplaced, for a worker and the coordinator's mark alike)."""
         for text in texts:
             with self.subTest(text):
-                self.assertTrue(cm.read(text, sh.PS, W.fwd(self.w.wt)).clean, text)
+                self.assertTrue(cn.read(text, sh.PS, W.fwd(self.w.wt)).clean, text)
                 self.assertIn('not literal', self.jailed(self.git(text, 'worker', tool='PowerShell'),
                                                          'unplaced').reason)
                 self.assertIn('not literal', self.jailed(self.marked(text, COORDINATOR, 'PowerShell'),
                                                          'unplaced').reason)
 
     def git_env_jailed(self, texts, tool='Bash'):
-        """Each line sets a git variable by name (commands.git_env_set) before a git write: its
+        """Each line sets a git variable by name (commands_env.git_env_set) before a git write: its
         git is unplaceable (write-jail for a worker) though the line parses clean."""
         for text in texts:
             with self.subTest(text):
-                self.assertTrue(cm.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
+                self.assertTrue(cn.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
                 self.jailed(self.git(text, 'worker', tool=tool))
 
     def judged_as_written(self, texts, tool='Bash'):
@@ -1385,7 +1385,7 @@ class UnplacedGit(MainGit):
         git write in the session's own worktree passes for a worker and the coordinator's mark."""
         for text in texts:
             with self.subTest(text):
-                self.assertTrue(cm.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
+                self.assertTrue(cn.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
                 self.allowed(self.git(text, 'worker', tool=tool))
                 self.allowed(self.marked(text, COORDINATOR, tool))
 
@@ -1440,7 +1440,7 @@ class UnplacedGit(MainGit):
                      "[Environment]::GetEnvironmentVariable('FOO')"):
             for line in (text, '%s; %s' % (text, g)):
                 with self.subTest(line):
-                    self.assertTrue(cm.read(line, sh.PS, W.fwd(self.w.wt)).clean, line)
+                    self.assertTrue(cn.read(line, sh.PS, W.fwd(self.w.wt)).clean, line)
                     self.allowed(self.git(line, 'worker', tool='PowerShell'))
 
     def test_env_changers_on_a_line_with_no_git_write_stay_allowed(self):
@@ -1547,7 +1547,7 @@ class UnplacedGit(MainGit):
                  ('PowerShell', 'cmd /c "for %%i in (a) do set GIT_DIR=%s/.git & %s"' % (m, g))]
         for tool, text in cases:
             with self.subTest(text):
-                self.assertFalse(cm.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
+                self.assertFalse(cn.read(text, sh.BASH if tool == 'Bash' else sh.PS, W.fwd(self.w.wt)).clean, text)
                 self.jailed(self.git(text, 'worker', tool=tool), 'unreadable')
             for environ in (COORDINATOR, PM, DEEP, CONSULTANT):
                 with self.subTest(text, mark=environ[context.ROLE_ENV]):
@@ -1593,7 +1593,7 @@ class UnplacedGit(MainGit):
                                 'echo x | xargs --rep env {} %s' % g])
         # the input in a branch option reads as a computed word, so the line is unclean: refused
         text = 'echo old | xargs -I{} git -C "%s" branch -c main {}' % wt
-        self.assertFalse(cm.read(text, sh.BASH, wt).clean, text)
+        self.assertFalse(cn.read(text, sh.BASH, wt).clean, text)
         self.denied(self.git(text, 'worker'))
         self.denied(self.marked(text, COORDINATOR))
         for text in ('echo x | xargs -n1 echo; %s' % g, 'ls | xargs git -C "%s" add' % wt,
@@ -1619,13 +1619,13 @@ class UnplacedGit(MainGit):
             '$env:BASH_ENV ="x"; %s' % g], tool='PowerShell')
         # a name an env: item is renamed, copied or moved to may then hold env:, a spelling no honest
         # command uses: the provider item is not read as a write target and the line passes, for a
-        # worker and the coordinator's mark alike (docs/guard-v2.md B16, cut)
+        # worker and the coordinator's mark alike (docs/guard-fallback.md "Weakened checks, by row" B16, cut)
         for text in ("Rename-Item env:FOO TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),
                      "Rename-Item env:FOO -NewName TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),
                      "Copy-Item env:FOO env:TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),
                      "Move-Item env:FOO -Destination env:TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g)):
             with self.subTest(text):
-                self.assertTrue(cm.read(text, sh.PS, W.fwd(self.w.wt)).clean, text)
+                self.assertTrue(cn.read(text, sh.PS, W.fwd(self.w.wt)).clean, text)
                 self.allowed(self.git(text, 'worker', tool='PowerShell'))
                 for environ in (COORDINATOR,):
                     self.allowed(self.marked(text, environ, 'PowerShell'))
@@ -1647,7 +1647,7 @@ class UnplacedGit(MainGit):
                  'Write-Output "`$(x) :: $b"; %s' % g, 'Write-Output "$t""::$m"; %s' % g]
         for text in texts:
             with self.subTest(text):
-                p = cm.read(text, sh.PS, wt)
+                p = cn.read(text, sh.PS, wt)
                 self.assertTrue(p.clean, text)
                 self.assertEqual([c.git_env for c in p.commands], [False] * len(p.commands), text)
                 self.allowed(self.git(text, 'worker', tool='PowerShell'))
@@ -1673,7 +1673,7 @@ class UnplacedGit(MainGit):
         for text in ('"$t::$n(\'GIT_DIR\', \'x\')" | iex; %s' % g, '"a :: $b" | Invoke-Expression; %s' % g,
                      '"x $b" | iex; %s' % g, '"git $b" | powershell -Command -'):
             with self.subTest(text):
-                self.assertFalse(cm.read(text, sh.PS, wt).clean, text)
+                self.assertFalse(cn.read(text, sh.PS, wt).clean, text)
                 self.jailed(self.git(text, 'worker', tool='PowerShell'), 'unreadable')
                 for environ in (COORDINATOR,):
                     with self.subTest(text, mark=environ[context.ROLE_ENV]):
@@ -1682,7 +1682,7 @@ class UnplacedGit(MainGit):
         # written (x $b), and the git after it stays placed
         for text in ("'x $b' | iex; %s" % g, '"x `$b" | iex; %s' % g):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, wt)
+                p = cn.read(text, sh.PS, wt)
                 self.assertTrue(p.clean, text)
                 self.assertEqual([c.git_env for c in p.commands], [False] * len(p.commands), text)
                 self.allowed(self.git(text, 'worker', tool='PowerShell'))
@@ -1693,7 +1693,7 @@ class UnplacedGit(MainGit):
         # the line is unreadable
         for text in ('iex "$t::$n(\'GIT_DIR\', \'x\')"; %s' % g, 'Write-Output "${a$(x)}::y"; %s' % g):
             with self.subTest(text):
-                self.assertFalse(cm.read(text, sh.PS, wt).clean, text)
+                self.assertFalse(cn.read(text, sh.PS, wt).clean, text)
                 self.denied(self.git(text, 'worker', tool='PowerShell'))
                 self.denied(self.marked(text, COORDINATOR, 'PowerShell'))
         # a property cmdlet on a computed Environment:: path is refused: its -Path is a write
@@ -1793,7 +1793,7 @@ class UnplacedGit(MainGit):
         # a handler the text does not spell is text the guard cannot read, as eval "$c" is
         for text in ('trap "$h" EXIT; git status', 'trap -- "$h" DEBUG; git -C "%s" branch -c main old' % wt):
             with self.subTest(text):
-                self.assertFalse(cm.read(text, sh.BASH, wt).clean, text)
+                self.assertFalse(cn.read(text, sh.BASH, wt).clean, text)
         self.denied_for_every_jailed_role(['trap "$h" EXIT; git status',
                                            'trap -- "$h" DEBUG; git -C "%s" branch -c main old' % wt])
 
@@ -1859,7 +1859,7 @@ class KitJson(Base):
 
 
 class DevDrive(Base):
-    """The outer bound (docs/guard.md "Write jail", "Outer bound"): with the machine config's
+    """The outer bound (docs/guard-jail-roles.md "Write jail", "Outer bound"): with the machine config's
     dev_drive set, an agent session's write that its roots allow is still refused off the Dev
     Drive (rule dev-drive), and a data or mark root off it is dropped with a warning. Here the
     Dev Drive is the world's base folder and `off` a folder beside it."""
@@ -1997,7 +1997,7 @@ class DevDrive(Base):
         self.assertIn('is not on the Dev Drive', d.reason)
 
     def test_a_dev_drive_that_is_relative_or_not_there_turns_the_bound_off(self):
-        # a bad value must not refuse every agent write: the header warns instead (tests/host/test_header.py)
+        # a bad value must not refuse every agent write: the header warns instead (tests/hookrun/test_header.py)
         for value in ('dev', os.path.join(self.w.base, 'no-such-drive')):
             with self.subTest(value=value):
                 self.bound(dev_drive=value)

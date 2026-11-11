@@ -1,4 +1,4 @@
-"""The backlog roles in the guard (docs/guard.md "Backlog roles"; docs/backlog.md "Roles"): a
+"""The backlog roles in the guard (docs/guard-jail-roles.md "Backlog roles"; docs/backlog.md "Roles"): a
 subagent's backlog.py run is judged by kitlib.backlog.roles for the role its hook payload names
 (backlog-role), and code that imports kitlib.backlog, a write of the backlog's refs and an edit of
 a folder store's record files are raw writes no agent session makes (backlog-raw-write). A main
@@ -9,7 +9,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import agentname, pmdata
+from kitlib.config import pmdata
+from kitlib.host import agentname
 from kitlib.backlog import policy, roles
 from kitlib.git import refs, repo
 from kitlib.guard import backlogrole, context
@@ -292,7 +293,7 @@ class OwnPull(Base):
 
 class AsFromItsWorktree(Base):
     """`-C <store> --as <branch>` from that branch's linked worktree (backlogrole._worktree_on):
-    the form the tool's own refusal names (plan.holder_form). A builder blocking its own pull of a
+    the form the tool's own refusal names (plan_claim.holder_form). A builder blocking its own pull of a
     store in another checkout was refused as not its own (role=subagent). The store here is the
     main checkout, whose branch is main; read_record is patched, so any folder serves."""
 
@@ -610,7 +611,7 @@ class RealStore(unittest.TestCase):
         self.assertTrue(self.decide(self.other))
 
     def test_naming_another_branchs_worktree_acts_as_that_branch(self):
-        """The residual docs/guard.md "Known limits" states: only the -C folder's branch is compared,
+        """The residual docs/guard-fallback.md "Known limits" states: only the -C folder's branch is compared,
         so from kit/wk's worktree, -C kit/oth's worktree passes on kit/oth's pull."""
         self.repo.write('kit/backlog/BAR.md',
                         priced('BAR', state='pulled', pulled_at=TODAY, pulled_by='kit/oth', scope='tools/y/**')['BAR'],
@@ -1075,7 +1076,7 @@ class Refs(Base):
         """A .kit.json that is not UTF-8 raises out of the config load (UnicodeDecodeError, no
         ConfigError, so no ctx.config_error): store_kind's fault is no ground to allow. The rule
         `heavy`, which reads the same config before this one, is stubbed out: its raise is the
-        hook's fail-closed failure (kitlib.host.hookmain), which would hide this rule's answer."""
+        hook's fail-closed failure (kitlib.hookrun.main), which would hide this rule's answer."""
         with open(os.path.join(self.w.main, '.kit.json'), 'wb') as f:
             f.write(b'{"repo": {"name": "d\xff\xfeo"}}')
         with mock.patch('kitlib.guard.rules.heavy', lambda *a: None):
@@ -1155,7 +1156,7 @@ class FolderStore(Base):
 
 
 class Unread(Base):
-    """A subagent's run the line does not show plainly (docs/guard.md "Fallback", "Backlog roles"):
+    """A subagent's run the line does not show plainly (docs/guard-fallback.md "Fallback", "Backlog roles"):
     a part of an unreadable line that names tools/backlog.py is read again and judged, a part that
     still does not read is refused; a computed script word ending in /backlog.py is the tool; a
     script file it runs is read one level deep. A main session and a mention are never refused."""

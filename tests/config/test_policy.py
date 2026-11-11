@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import config, lockmcp
+from kitlib import config
 from kitlib.config import policy
-from kitlib.host import Action
+from kitlib.host import Action, registry
 from tests.config.helpers import TempTree
 
 
@@ -115,7 +115,7 @@ WINDOWS_DEFAULTS = ['godot', 'godot.*', 'godot_*', 'blender*'] + 2 * [
 
 
 class LinuxHeavyTest(unittest.TestCase):
-    """Godot and Blender as Linux names them (docs/linux-support-plan.md section 3, finding 8)."""
+    """Godot and Blender as Linux names them."""
 
     def setUp(self):
         patcher = mock.patch('kitlib.platform.NAME', 'linux')
@@ -238,9 +238,9 @@ class RolesTest(TreeCase):
         self.assertEqual(policy.role_name(ev({'agent_id': 'a', 'agent_type': 'worker'}), table), 'subagent')
 
     def test_the_plugin_prefixed_agent_type_names_the_same_role(self):
-        # docs/guard.md "Agent names": the kit plugin bundles its agents as <plugin>:<name>
-        # (kitlib.agentname.PREFIX; tests/agentname pins it to this value)
-        p = lockmcp.PLUGIN_NAME + ':'
+        # docs/guard-fallback.md "Agent names": the kit plugin bundles its agents as <plugin>:<name>
+        # (kitlib.host.agentname.PREFIX; tests/host/test_agentname.py pins it to this value)
+        p = registry.PLUGIN_NAME + ':'
         table = policy.roles(self.load({'roles': {'lander': {'edit_main_checkout': True, 'why': 'merges'}}}))
         self.assertEqual(policy.role_name(ev({'agent_id': 'a', 'agent_type': p + 'lander'}), table), 'lander')
         self.assertTrue(policy.permissions(ev({'agent_id': 'a', 'agent_type': p + 'lander'}), table)['edit_main_checkout'])

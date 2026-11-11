@@ -8,8 +8,9 @@ import unittest
 from unittest import mock
 
 from kitlib import agentstart, coordinatorstart, pmstart
+from kitlib.config import pm as pmconfig
 from kitlib.config import user
-from kitlib.host import header
+from kitlib.hookrun import header
 from kitlib.pmstart import configcheck
 from tests import home as khome
 from tests import pmstart as tpm
@@ -68,16 +69,16 @@ class Start(unittest.TestCase):
         self.assertEqual(ADAPTER.start_text('SessionStart', KIT, {'cwd': KIT}, {}, 'coordinator'), '')
 
     def test_the_pm_part_is_the_checklist(self):
-        with mock.patch.object(pmstart, 'load_config', return_value={'x': 1}), \
+        with mock.patch.object(pmconfig, 'load_config', return_value={'x': 1}), \
                 mock.patch.object(pmstart, 'checklist', return_value='LIST') as checklist:
             self.assertEqual(ADAPTER.start_text('SessionStart', KIT, {}, {}, 'pm'), 'LIST')
         checklist.assert_called_once_with({'x': 1})
-        with mock.patch.object(pmstart, 'load_config', return_value=None), \
+        with mock.patch.object(pmconfig, 'load_config', return_value=None), \
                 mock.patch.object(user, 'display', return_value='CONFIG'):
             self.assertIn('checklist skipped', ADAPTER.start_text('SessionStart', KIT, {}, {}, 'pm'))
 
     def test_a_failing_check_is_a_line(self):
-        with mock.patch.object(pmstart, 'load_config', side_effect=OSError('gone')):
+        with mock.patch.object(pmconfig, 'load_config', side_effect=OSError('gone')):
             self.assertEqual(ADAPTER.start_text('SessionStart', KIT, {}, {}, 'pm'),
                              'PM session start: checklist failed: OSError: gone')
 
@@ -92,7 +93,7 @@ class Start(unittest.TestCase):
     def test_with_no_pm_start_config_a_failing_check_is_one_line(self):
         def boom():
             raise OSError('disk gone')
-        with mock.patch.object(pmstart, 'load_config', return_value=None), \
+        with mock.patch.object(pmconfig, 'load_config', return_value=None), \
                 mock.patch.object(user, 'display', return_value='CONFIG'), \
                 mock.patch.object(configcheck, 'lines', boom):
             got = ADAPTER.start_text('SessionStart', KIT, {}, {}, 'pm')
@@ -100,7 +101,7 @@ class Start(unittest.TestCase):
                                            '- could not check machine_config: OSError: disk gone'])
 
     def test_with_no_pm_start_config_and_all_well_the_skip_line_stands_alone(self):
-        with mock.patch.object(pmstart, 'load_config', return_value=None), \
+        with mock.patch.object(pmconfig, 'load_config', return_value=None), \
                 mock.patch.object(user, 'display', return_value='CONFIG'), \
                 mock.patch.object(configcheck, 'lines', lambda: []):
             self.assertEqual(ADAPTER.start_text('SessionStart', KIT, {}, {}, 'pm'),

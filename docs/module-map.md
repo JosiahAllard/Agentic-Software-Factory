@@ -68,7 +68,8 @@ A `gate.steps` entry that runs the check, as a warning until the map settles:
 - `messaging`: modules every other module may reach (shared wire formats). Crossings into them
   are always allowed.
 - `edges`: allowed crossings, each `from`, `to`, `kind` (`build`, `data` or `tree`) and `why`.
-  An edge allows its kind only. `(root)` may be either end.
+  An edge allows its kind only. `(root)` may be either end, unless the map names `layers`.
+- `layers`: optional layer names, lowest first. See "Layers".
 - `ratchets`: crossings counted, not refused. `id` (unique), `from`, `to` (two different
   modules), optional `kinds` and `detector` filters, `goal` (0 unless the owner gives
   `goal_reason`), optional `record`. A ratchet with `detector: "java-imports"` also needs
@@ -77,13 +78,24 @@ A `gate.steps` entry that runs the check, as a warning until the map settles:
 - `raises`: the owner's allowed ceiling raises, each `ratchet` (an id the map has, at most one
   entry per ratchet), `ceiling`, `why` and optional `approval` (the A-NNN). See "Raises".
 - `test_sources`: `fnmatch` globs (here `*` crosses `/`) naming the files the paths detector
-  reads; unset: the usual test folders and file names (`kitlib/modulemap/load.py`
+  reads; unset: the usual test folders and file names (`kitlib/config/policy.py`
   `DEFAULT_TEST_SOURCES`).
 - `root_markers`: file names that mean "the repository root" beyond the built-in ones.
 - `namespaces`: C# namespace prefix to module name, for the csharp-using detector; unset: each
   module's csproj `RootNamespace`.
 
 Unknown keys, unknown module names and an edge from a module to itself are refused.
+
+### Layers
+
+A map may set `"layers": ["base", "services", "apps"]`, lowest first. Then every module names
+its `layer`, one of them, and may name `same_layer`: the modules of its own layer it may use.
+The map refuses to load when a module's layer is not one of `layers`, when a `same_layer` name is
+not a module of the same layer (or is the module itself), and when an edge goes up a layer, stays
+in a layer to a module its `from` does not name in `same_layer`, or has `(root)` at either end.
+So every allowed edge goes down, or across to a named module, and a crossing the edges do not
+list is refused as before. A map with no `layers` is not judged by layer, and a module there may
+name neither field. Ratchets, raises and the ceilings file work the same in either kind of map.
 
 ## Kinds
 
@@ -125,7 +137,7 @@ The map is an owner path, so only the owner writes a raise entry. Two rules:
 - A ratchet the base's map does not have is new: adding it was already the owner's edit, so its
   ceiling is not compared with the base, and a note says so.
 
-With no `--base`, the base is the main branch (docs/gate.md "Default base"); when that does not
+With no `--base`, the base is the main branch (docs/gate-run.md "Default base"); when that does not
 resolve, nothing is compared and a note says so. With no map at the base (the first rollout),
 nothing is compared and a note says so. A `--base` git cannot read is exit 2.
 
@@ -197,7 +209,8 @@ without a using.
 ## The architecture page
 
 `--page` prints a Markdown page built from the map alone (`kitlib/modulemap/page.py`): the
-modules with their folders and `why`, the messaging modules, the allowed edges with their `why`,
+modules with their folders and `why` (in a layered map, ordered by layer, with each one's layer
+and `same_layer` names), the messaging modules, the allowed edges with their `why`,
 and the ratchets (from, to, what they count, goal and `goal_reason`, record). It holds no counts
 or ceilings, so it changes only when the map does. `--page --write` writes it to the file
 `modules.page` names, in a linked worktree only (`kitlib.git.checkout.write_text`); with no
@@ -211,7 +224,7 @@ aside) with `PAGE STALE  <page> does not exist|does not match the map: run modul
 ## The scope report
 
 `--scope [--base REV]` prints what a change touches (`kitlib/modulemap/scope.py`). The change is
-the merge base of REV (default: the main branch, docs/gate.md "Default base") and HEAD against
+the merge base of REV (default: the main branch, docs/gate-run.md "Default base") and HEAD against
 the work tree, plus untracked files git does not ignore. It prints a header
 `module_map scope: base REV (merge base), N changed path(s) in M module(s)`, one `  path -> module` line
 per changed path, then one `widen: M <- C  why` line per module M the change widens to:
@@ -243,7 +256,7 @@ drive, a write that failed); either way the exit is the report's. A change with 
 keeps no record.
 
 - Where: `<dev_drive>/pm-kit/kit-gate-scope/<repo key>/`, a sibling of the gate's other
-  per-repository folders (`kitlib.gate.result.kit_folder` and `repo_key`): one folder for every
+  per-repository folders (`kitlib.records.place.kit_folder` and `repo_key`): one folder for every
   worktree of the repository, outside every checkout.
 - A record: one JSON file per gate run, `<YYYYMMDDTHHMMSSZ>-<pid>-<4 hex>.json`, written to a
   dot-named temp file and moved into place, so parallel gates never share a file. Keys (schema
@@ -344,7 +357,7 @@ The run books the machine lock as the `daily_full` kind, waiting up to its `max_
 (docs/daily-full.md). Run as a step of the daily full run, it nests in that run's slot and takes
 nothing more. To run it daily, add a gate step whose ordinary command is the plan (cheap, and
 it checks that the map is owner-locked and its tests are well formed) and whose `daily_cmd` is
-the run (docs/gate.md "Steps"):
+the run (docs/gate-run.md "Steps"):
 
 ```json
 {"name": "module-isolation",
@@ -367,7 +380,7 @@ Known limits:
 - Only committed HEAD is isolated, never the work tree or untracked files. The map, though, is
   read from the work tree: an uncommitted map edit changes the trees and commands a run uses on
   the committed code.
-- Ending a test's tree spares a build daemon another job may use (kitlib.lock.run `end_tree`),
+- Ending a test's tree spares a build daemon another job may use (kitlib.lock.run_held `end_tree`),
   so a build daemon the test started can survive it, still holding files in the clone: a Kotlin
   daemon, or a Gradle daemon only when a command named `--daemon` (locked runs turn Gradle's
   daemon off, docs/lock-api.md "Build daemons under the lock"). The clone's removal then fails
@@ -389,24 +402,22 @@ ordinary files.
   loose `kitlib/*.py` files (`kitlib-root`), `boot`, `hosts`, `tools`, `mcp`, the top-level
   `githooks` folder (`githooks-dir`; `githooks` is `kitlib/githooks`) and each `optional/<pkg>`
   (`opt-<pkg>`). `tests/` is left out: the branch gate selects tests by module.
-- Layers (ARCHITECTURE.md "Layers"): foundation (`git`, `proc`, `lock`, `records`, `config`,
-  `fs`, `platform`, `ci`, `kitlib-root`, `machinepaths`, `mcpwire`, `pending`), policy (`gate`,
-  `guard`, `host`, `content`, `roster`, `attribution`), feature (every other package), outer
-  (`hosts`, `boot`, `tools`, `mcp`, `githooks-dir`, `opt-*`).
-- Allowed `edges` freeze every import that points down or sideways as of 2026-11-06, one
-  `build` edge per package pair with a per-layer `why`. Each import counts, a function-local one
-  as much as a top-level one.
-- `ratchets` hold every import that points up the layers or back against the order inside a
-  layer (an order picked to leave the fewest back imports): one ratchet per package pair, goal 0,
-  ceiling the count of 2026-11-06. Today that is 61 pairs and 151 crossings (including
-  `pytests -> (root)` tree, 3). Breaking an edge lowers its ceiling; a new upward or cyclic
-  import is refused, and a raise needs the owner ("Raises").
-- Regenerate with `module_map.py --baseline --map FILE` (a draft map) and read the counts back;
-  the page comes from `--page --write`.
-- `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the map
-  and every ratchet to a ceiling. It skips while the map file is absent.
-- `.kit.json` `gate.steps` runs it as a warn-only `module-map` step until the owner promotes it,
-  and `tests/selection.json` lists the test under `always`, so the scoped gate runs it on every
+- `test_sources` is `tests/*`, so only the kit's own tests are test sources. `kitlib/pytests`
+  is then checked as production code, and the paths it names (`.git`, `git ls-files`) are not
+  uses of another module.
+- `layers` are ARCHITECTURE.md "Layers", in its order: base, facts, services, work, guard, apps,
+  entry (the entry points: `tools`, `boot`, `mcp`, `githooks-dir`, `hosts`, each `opt-*`). Each
+  module's `layer` and `same_layer` are its row in those tables.
+- Allowed `edges` are the imports the code makes, one `build` edge per package pair, each down a
+  layer or to a same-layer package its row names. Each import counts, a function-local one as
+  much as a top-level one. A new import between two packages no edge joins is refused; an import
+  up a layer or to an unnamed same-layer package cannot be allowed by an edge at all.
+- The map holds no ratchets and no raises, and the ceilings file is `{}`.
+- The page comes from `--page --write`.
+- `tests/modulemap/test_kit_map.py` runs the check over the checkout, matches the page to the
+  map, checks the map holds no ratchet, and reads ARCHITECTURE.md's layer tables to check each
+  module's layer and same-layer names equal the map's. It skips while the map file is absent.
+- `.kit.json` `gate.steps` runs it as the `module-map` step, and `tests/selection.json` lists the test under `always`, so the scoped gate runs it on every
   change; it would otherwise miss a new import into a package the changed file's tests do not
   reach.
 

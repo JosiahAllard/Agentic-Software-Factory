@@ -1,8 +1,8 @@
 """The -WorkingDirectory of a shell Start-Process starts (commands.sp_workdir_unplaceable,
-commands._sp_shell_text): the nested line runs there only when the text names one folder exactly.
+commands_nested._sp_shell_text): the nested line runs there only when the text names one folder exactly.
 A bare drive, a wildcard, a drive-relative C:x and the other forms the guard cannot place give the
 nested line no directory, so a write in it is refused; a literal absolute or relative folder is
-still read where it is (docs/guard.md "Parsing", and "Rules" for main-checkout)."""
+still read where it is (docs/guard-core.md "Parsing", and "Rules" for main-checkout)."""
 import unittest
 
 from kitlib.guard import commands

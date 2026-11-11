@@ -1,5 +1,5 @@
-"""The window a launched session runs in on Linux (docs/launcher.md "The window"; docs/
-linux-support-plan.md section 8, slice 11). kitlib.launcher.window hands its q, script and
+"""The window a launched session runs in on Linux (docs/launcher.md "The window").
+kitlib.launcher.window hands its q, script and
 open_window here when kitlib.platform.NAME is 'linux'.
 
 `script()` is bash, one statement per line, the Windows window's steps in its order: the title;
@@ -15,17 +15,17 @@ server (or the terminal) plus these exports. Every value is single-quoted, a ' w
 tmux 3.0 or later runs them without a shell), or, when launcher.terminal is set, as that command
 with `/bin/bash -c <script>` appended. On a box with no systemd whose boot hook started the kit's
 tmux server (`tmux -L pm-kit`) in its cgroup (anchored: that server's pid is under
-contain.BASE), the session opens in that server instead, so the session is contained: `tmux -L
-pm-kit new-session -d -e K=V ... -s <tmux name> ...`, the caller's PASS_ENV variables passed with
--e (tmux 3.2 or later), since that server was started with HOME and PATH alone; attach with `tmux
--L pm-kit attach -t <tmux name>`. anchor_check also reads that server's #{version} (else `tmux
--V`): below E_VERSION, or unreadable, it is not used; and when it refuses the new-session (but
-for a duplicate name), the session opens in the default server. Either way opened_in (from
-_opened, set by open_window) says it is not contained there, and why. The tmux name is the session name with anything but
-A-Za-z0-9_- made _; a name tmux already has is refused (LaunchError) and nothing is started or
-ended. The launcher never ends a tmux session or a terminal: stop (kitlib.launcher.stop) ends
-the claude process and this shell, each by pid and creation time, and tmux closes the pane when
-its shell has gone.
+contain_cgroup.BASE), the session opens in that server instead, so the session is contained:
+`tmux -L pm-kit new-session -d -e K=V ... -s <tmux name> ...`, the caller's PASS_ENV variables
+passed with -e (tmux 3.2 or later), since that server was started with HOME and PATH alone;
+attach with `tmux -L pm-kit attach -t <tmux name>`. anchor_check also reads that server's #{version}
+(else `tmux -V`): below E_VERSION, or unreadable, it is not used; and when it refuses the
+new-session (but for a duplicate name), the session opens in the default server. Either way
+opened_in (from _opened, set by open_window) says it is not contained there, and why. The tmux name
+is the session name with anything but A-Za-z0-9_- made _; a name tmux already has is refused
+(LaunchError) and nothing is started or ended. The launcher never ends a tmux session or a terminal:
+stop (kitlib.launcher.stop) ends the claude process and this shell, each by pid and creation time,
+and tmux closes the pane when its shell has gone.
 
 `carries(cmd, name)` is stop's test that a process's command line is this window's shell for
 `name`: /bin/bash -c with a line `export PM_KIT_SESSION_NAME='<name>'` and a `cd -- ` line whose
@@ -36,7 +36,7 @@ import os
 import re
 import subprocess
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.launcher import window
 from kitlib.launcher.settings import LaunchError
 from kitlib.proc import spawn
@@ -131,10 +131,10 @@ def tmux_version(text):
 
 def anchor_check(run=None):
     """(True, None) when the kit's tmux server runs in the boot hook's cgroup (its pid's cgroup is
-    under contain.BASE) and is tmux E_VERSION or later, so a window opened there is contained;
-    else (False, why): why None when there is no such server to name (no hook, a systemd box, the
-    server not started, or one started from elsewhere), the reason when that server is in the
-    group but too old for a window's -e."""
+    under contain_cgroup.BASE) and is tmux E_VERSION or later, so a window opened there is
+    contained; else (False, why): why None when there is no such server to name (no hook, a
+    systemd box, the server not started, or one started from elsewhere), the reason when that
+    server is in the group but too old for a window's -e."""
     sock = anchor_socket()
     if not sock or not os.path.exists(sock):
         return False, None
@@ -151,12 +151,12 @@ def anchor_check(run=None):
         pid = int(out[0])
     except (IndexError, ValueError):
         return False, None
-    from kitlib.platform.linux import contain
+    from kitlib.platform.linux import contain_cgroup
     try:
-        cg = contain.cgroup_of(pid)
+        cg = contain_cgroup.cgroup_of(pid)
     except OSError:
         return False, None
-    if not cg or not cg.startswith(contain.BASE + '/'):
+    if not cg or not cg.startswith(contain_cgroup.BASE + '/'):
         return False, None
     text = out[1] if len(out) > 1 else ''
     if tmux_version(text) is None:            # a server with no #{version}: ask the binary

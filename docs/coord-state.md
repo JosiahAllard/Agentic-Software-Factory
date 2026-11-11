@@ -6,7 +6,7 @@ What it solves: a coordinator's note is written by hand, so what a tool already 
 
 ## Files
 
-All in the coordinator folder, `<agent temp>/<repo slug>-coordinator/`, outside the repository (agent temp is `AGENT_TEMP`, else `TEMP`, else the home folder). `<session>` is `PM_KIT_SESSION_NAME` (`kitlib.sessionmark.SESSION_NAME_ENV`), which the kit launcher sets and every tool shell, subagent and detached landing of the session inherits. A name that is not 1 to 100 letters, digits, `.`, `_` or `-` (starting with a letter or digit) is no session.
+All in the coordinator folder, `<agent temp>/<repo slug>-coordinator/`, outside the repository (agent temp is `AGENT_TEMP`, else `TEMP`, else the home folder). `<session>` is `PM_KIT_SESSION_NAME` (`kitlib.host.sessionmark.SESSION_NAME_ENV`), which the kit launcher sets and every tool shell, subagent and detached landing of the session inherits. A name that is not 1 to 100 letters, digits, `.`, `_` or `-` (starting with a letter or digit) is no session.
 
 | File | Who writes it | What it is |
 |---|---|---|
@@ -48,7 +48,7 @@ A landing not submitted (`land.py` without `--submit`) has no `land_submit` even
 1. **Judgments**: `judgments-<session>.md`, verbatim.
 2. **Landings to report to the PM**, until `reported` names them.
 3. **Landings in flight**.
-4. **Verdicts queued by this session** that still wait to land (`kitlib.gate.verdicts`, the entries whose `session` is it), or why the queue cannot be read. The queue keeps an entry after its branch lands, so `show` leaves out what `verdicts.expired` names against main as last fetched, with no network: a tip in main, or a branch that is gone. It only reads: every entry stays on disk. When main as fetched cannot be read, every entry is listed and a line under them says landed ones can be among them.
+4. **Verdicts queued by this session** that still wait to land (`kitlib.landing.verdicts`, the entries whose `session` is it), or why the queue cannot be read. The queue keeps an entry after its branch lands, so `show` leaves out what `records.verdict_entry.expired` names against main as last fetched, with no network: a tip in main, or a branch that is gone. It only reads: every entry stays on disk. When main as fetched cannot be read, every entry is listed and a line under them says landed ones can be among them.
 5. **Landed and on the hub feed**, and **Reported**: the latest 5 of each.
 6. **Backlog writes**: the latest 15.
 
@@ -63,7 +63,7 @@ A landing is the latest `land_submit` of its branch: a new submission replaces t
 | landed | neither yet | in flight |
 | landed | no output named, or it cannot be read | to report, saying the feed cannot be told |
 
-The result record says nothing of the hub feed. `Lander.post_landing` says its `WARNING: the landing of <branch> was not posted to the hub feed (<why>); the landing stands` (docs/gate.md "Landing feed") in the landing's own output, the `<stem>.<run_id>.land.log` of docs/gate.md "Submitting a landing", after the last `result record:` line and before the `LANDED` line, which is what `outcome_block` returns. A successful post says nothing, so "on the hub feed" is read from a `LANDED` line with no WARNING. In the moments between the final record and the post, the output has neither.
+The result record says nothing of the hub feed. `Lander.post_landing` says its `WARNING: the landing of <branch> was not posted to the hub feed (<why>); the landing stands` (docs/gate-landing.md "Landing feed") in the landing's own output, the `<stem>.<run_id>.land.log` of docs/gate-landing.md "Submitting a landing", after the last `result record:` line and before the `LANDED` line, which is what `outcome_block` returns. A successful post says nothing, so "on the hub feed" is read from a `LANDED` line with no WARNING. In the moments between the final record and the post, the output has neither.
 
 A `reported` mark counts only on a final record at the tip. A landing in flight stays in flight, so a failed landing cannot fall into the trimmed Reported section on a mark made before it failed.
 

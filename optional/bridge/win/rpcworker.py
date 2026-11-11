@@ -4,8 +4,8 @@ from ctypes import wintypes as w
 import time
 
 from optional.bridge.core.jsonwire import JsonLineDecoder,encode_frame
-from kitlib.proc.errors import ProcError
-from kitlib.proc.pipe import K,bind,connect,write
+from kitlib.platform import ProcError
+from kitlib.platform.windows.pipe import K,bind,connect,write
 from .rpc import MAX_BUSY_WAIT_MS,MAX_BYTES,encode,read_frame
 from .transport import PipeTarget
 

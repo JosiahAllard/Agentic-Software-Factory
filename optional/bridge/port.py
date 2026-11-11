@@ -1,7 +1,7 @@
 """The bridge port: what a host's half (optional/bridge/hosts/<name>/) gives the bridge service.
 
 This replaces the scaffold's never-imported ports.py with the seam the working code really uses
-(docs/multi-host-plan.md section 2.4; optional/bridge/README.md "The port"). The service
+(optional/bridge/README.md "The port"). The service
 (win/runtime.py) reaches a host only through these names and loops over the installed halves
 (registry.py); it never names a host.
 

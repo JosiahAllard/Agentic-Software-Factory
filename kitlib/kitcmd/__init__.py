@@ -8,12 +8,12 @@ plugin export the machine uses now (tools/kit.py is the entry point).
   argv(kit, name, args)      the child's command line
   run(kit, name, args)       start it in the caller's directory, wait, and give its exit code
 
-Which kit: the machine config's `plugin.export_dir` (kitlib.pluginsource.load: the PM repo pointer,
-then that repository's .pm-kit/config.json; unset, kitlib.pluginsource.default_export_dir:
+Which kit: the machine config's `plugin.export_dir` (kitlib.pluginsource.layout.load: the PM repo pointer,
+then that repository's .pm-kit/config.json; unset, kitlib.pluginsource.layout.default_export_dir:
 %LOCALAPPDATA%\\pm-kit\\plugin, on Linux <profile>/.local/share/pm-kit/plugin, as for
 tools/plugin_refresh.py), and in it the folder <export_dir>/.claude-plugin/marketplace.json names
-(kitlib.pluginsource.current_folder), read at every call, so a refreshed export is used at the
-next one. That folder must be an export (it holds kitlib.pluginsource.MARKER) with a tools folder.
+(kitlib.pluginsource.layout.current_folder), read at every call, so a refreshed export is used at the
+next one. That folder must be an export (it holds kitlib.pluginsource.layout.MARKER) with a tools folder.
 A config that cannot be read, no marketplace, or a named folder that is missing or no export is a
 refusal naming the fix; there is no fallback to the kit's main checkout or to the folder this code
 is in. When this code itself runs from an export (`here` holds MARKER) that is not under that
@@ -23,7 +23,7 @@ How it runs: a child python (sys.executable) on `<export>/tools/<tool>.py` with 
 given, in the caller's directory, with the caller's environment, through kitlib.proc.spawn. So -C
 and every other argument reach the tool unchanged, the tool's default `-C .` is the caller's
 directory, and the child's command line names the export's folder, which keeps a prune from
-removing it while the tool runs (kitlib.pluginsource.read_in_use). The gate and land tools still
+removing it while the tool runs (kitlib.pluginsource.prune.read_in_use). The gate and land tools still
 pin themselves to pushed main (kitlib.gate.pin).
 
 Exit codes: the tool's own (all 32 bits, kitlib.proc.spawn.exit_code); REFUSED 2 for kit's own
@@ -37,7 +37,7 @@ import os
 import re
 import sys
 
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import ConfigError
 from kitlib.config.user import HomeFenced
 from kitlib.proc import spawn
@@ -52,7 +52,7 @@ SHARED = (
     'backlog', 'checkout_guard', 'codemap', 'commit', 'coord_state', 'daily_full', 'doc_budget',
     'doc_index', 'forbidden', 'gate', 'land', 'landed', 'ledger', 'machine_paths', 'module_map',
     'new_worktree',
-    'pieces', 'preflight', 'pytests', 'redfirst', 'review_pack', 'stack_skill',
+    'pieces', 'preflight', 'pytests', 'quality_scorecard', 'redfirst', 'review_pack', 'stack_skill',
     'sync_base', 'testlist', 'tool_deps', 'trailers', 'verdict', 'worktree_paths',
     'worktree_remove',
 )
@@ -61,10 +61,10 @@ SHARED = (
 # exactly one of SHARED and KIT_ONLY (tests/kitcmd: a new tool fails until it is classified).
 KIT_ONLY = (
     'agent_roster', 'agent_temp_init', 'agent_view', 'auto_tasks', 'allow_rules', 'backlog_audit',
-    'maint_lint', 'branch_overlap', 'config_move', 'delegated', 'hub', 'kit',
+    'maint_lint', 'branch_overlap', 'delegated', 'hub', 'kit',
     'kit_tests', 'launch', 'lock_release_check', 'machine_lock', 'machine_setup', 'no_window',
     'pending', 'pm_data', 'pm_watch', 'plugin_refresh', 'render_content', 'worktree_sweep_task',
-    'kit_release', 'stray_restore', 'ci_ratchet', 'node', 'account_inventory',
+    'stray_restore', 'ci_ratchet', 'node', 'account_inventory',
 )
 
 REFRESH_FIX = 'refresh the plugin export (tools/plugin_refresh.py --apply; docs/plugin-source.md)'
@@ -84,22 +84,22 @@ def _under(path, top):
 
 
 def _is_export(folder):
-    return os.path.isfile(os.path.join(folder, pluginsource.MARKER))
+    return os.path.isfile(os.path.join(folder, plugin_layout.MARKER))
 
 
 def settings():
-    """The machine's plugin Settings (kitlib.pluginsource.load); raises what that raises."""
-    return pluginsource.load()
+    """The machine's plugin Settings (kitlib.pluginsource.layout.load); raises what that raises."""
+    return plugin_layout.load()
 
 
 def resolve(here=None, load=settings):
     """(export folder, None), or (None, why) naming the fix. `here` (default: the kit folder this
     code is in) is only checked when it is an export: it must lie under the configured export_dir.
     `load` gives the plugin Settings (a test seam)."""
-    here = here or pluginsource.kit_root()
+    here = here or plugin_layout.kit_root()
     try:
         s = load()
-    except (ConfigError, pluginsource.RefreshError, OSError, ValueError, HomeFenced) as e:
+    except (ConfigError, plugin_layout.RefreshError, OSError, ValueError, HomeFenced) as e:
         return None, 'the machine config cannot be read (%s: %s); %s' % (type(e).__name__, e,
                                                                        CONFIG_FIX)
     root = s.export_dir
@@ -107,17 +107,17 @@ def resolve(here=None, load=settings):
         return None, ('this kit command is in %s, which is not under the plugin export folder the '
                       'machine config names (plugin.export_dir %s); run the kit command from %s'
                       % (os.path.normpath(here), root, os.path.join(root, 'bin')))
-    name = pluginsource.current_folder(root)
+    name = plugin_layout.current_folder(root)
     if not name:
         return None, ('no plugin export is named: %s is missing or names no pm-kit folder; %s'
-                      % (pluginsource.marketplace_path(root), REFRESH_FIX))
+                      % (plugin_layout.marketplace_path(root), REFRESH_FIX))
     folder = os.path.normpath(os.path.join(root, name))
     if os.path.dirname(folder) != os.path.normpath(root):
         return None, ('%s names %r, which is not a folder of %s; %s'
-                      % (pluginsource.marketplace_path(root), name, root, REFRESH_FIX))
+                      % (plugin_layout.marketplace_path(root), name, root, REFRESH_FIX))
     if not os.path.isdir(os.path.join(folder, 'tools')) or not _is_export(folder):
         return None, ('the plugin export %s that %s names is missing or is not an export; %s'
-                      % (folder, pluginsource.marketplace_path(root), REFRESH_FIX))
+                      % (folder, plugin_layout.marketplace_path(root), REFRESH_FIX))
     return folder, None
 
 

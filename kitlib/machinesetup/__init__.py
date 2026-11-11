@@ -1,7 +1,7 @@
 """kitlib.machinesetup: set up a machine for the kit (tools/machine_setup.py,
-installer/machine-setup.ps1; docs/machine-setup.md). Plan decision 27: it writes nothing into any
+installer/machine-setup.ps1; docs/machine-setup.md). It writes nothing into any
 repository; a repository works with the kit with nothing committed in it, and the kit's first use
-there writes only local git settings (kitlib.git.prep).
+there writes only local git settings (kitlib.worktree.prep).
 
 survey() reads the machine and returns a Plan: the changes to make, in order, each with the text a
 dry run prints and the function --apply runs, plus the refusals that stop both. Two modes:
@@ -40,7 +40,7 @@ elevated terminal.
 
 The committed repo setup is kitlib.machinesetup.repo (`--repo PATH`, run_repo), a mode of its own.
 run_agent_temp() does the agents' temp folder steps alone (tools/agent_temp_init.py).
-On Linux (docs/linux-support-plan.md slice 14) the default mode first runs the box checks
+On Linux (docs/machine-setup.md "Linux") the default mode first runs the box checks
 (kitlib.machinesetup.linuxbox: WSL, root, a second kit user, a container, git and tmux, the
 containment tier with the delegation step offered below S1) in a `box` section of its own. The
 delegation step is `--delegation` (run_delegation; kitlib.machinesetup.delegation), a mode of its
@@ -52,6 +52,7 @@ import datetime
 import os
 
 from kitlib import platform
+from kitlib.launcher import accounts
 
 from . import (agenttemp, extras, kitcommand, linuxbox, links, managed, owner, plugin, settings,
                worktreesweep)
@@ -88,8 +89,8 @@ class Context(object):
         self.pm_settings = os.path.abspath(pm_settings) if pm_settings else None
         self.config_dirs_given = bool(config_dirs)
         if not config_dirs:
-            config_dirs = account_dirs(self.home) if fresh else default_config_dirs(self.home)
-        self.config_dirs = dedupe(os.path.abspath(d) for d in config_dirs)
+            config_dirs = account_dirs(self.home) if fresh else accounts.default_config_dirs(self.home)
+        self.config_dirs = accounts.dedupe(os.path.abspath(d) for d in config_dirs)
         self.agent_temp = agent_temp
         self.sweep_task = bool(sweep_task)
         self.worktree_sweep = bool(worktree_sweep)
@@ -105,37 +106,11 @@ class Context(object):
         self.managed_data = None
 
 
-def default_config_dirs(home):
-    """`<home>/.claude` and every `<home>/.claude-*` folder."""
-    out = []
-    try:
-        names = sorted(os.listdir(home))
-    except OSError:
-        return out
-    for n in names:
-        if (n == '.claude' or n.startswith('.claude-')) and os.path.isdir(os.path.join(home, n)):
-            out.append(os.path.join(home, n))
-    return out
-
-
 def account_dirs(home):
-    """The account folders a fresh run edits when none is named: kitlib.pluginsource.claude
+    """The account folders a fresh run edits when none is named: kitlib.launcher.accounts
     account_folders, the set tools/plugin_refresh.py runs in (every folder default_config_dirs
     lists, then the launcher's account and org folders that exist)."""
-    from kitlib.pluginsource import claude as pclaude
-    return pclaude.account_folders(home)
-
-
-def dedupe(dirs):
-    """`dirs` in order, each real folder once: a folder that is a link to another one listed (an
-    account folder following ~/.claude) would otherwise be edited twice."""
-    out, seen = [], set()
-    for d in dirs:
-        key = os.path.normcase(os.path.realpath(d))
-        if key not in seen:
-            seen.add(key)
-            out.append(d)
-    return out
+    return accounts.account_folders(home)
 
 
 def survey(ctx):
@@ -351,6 +326,5 @@ def run_agent_temp(ctx, apply=False, out=None):
     return _carry_out('agent-temp-init', survey_agent_temp(ctx), apply, emit, lines)
 
 
-__all__ = ['AgentTempContext', 'Change', 'Context', 'ManagedContext', 'Plan', 'account_dirs', 'dedupe',
-           'default_config_dirs', 'run', 'run_agent_temp', 'run_delegation', 'run_managed', 'run_pointer',
+__all__ = ['AgentTempContext', 'Change', 'Context', 'ManagedContext', 'Plan', 'account_dirs', 'run', 'run_agent_temp', 'run_delegation', 'run_managed', 'run_pointer',
            'run_repo', 'survey', 'survey_agent_temp']

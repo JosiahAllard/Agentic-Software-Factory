@@ -20,14 +20,14 @@ from kitlib.config import load
 from kitlib.records import inflight, landing
 from kitlib.worktree import new
 from kitlib.git import cmd as gitcmd
-from kitlib.git import prep as gitprep
+from kitlib.worktree import prep as gitprep
 from tests import gitfixture
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(KIT, 'tools', 'new_worktree.py')
 REFUSAL = new.REFUSAL
 # the red-first command a `route` line names: the kit's own tool, quoted in forward slashes
-# (docs/multi-host-plan.md section 7 decision 21; step 15 "No stubs")
+# (docs/install.md "Ported repo tools")
 REDFIRST = '`python "%s/tools/redfirst.py" -C <your worktree> --tests <test file>`' % (
     KIT.replace('\\', '/'))
 MASTER_CONFIG = {'repo': {'main_branch': 'master'}}
@@ -64,7 +64,7 @@ class WorktreeCase(unittest.TestCase):
         self.addCleanup(env.stop)
         # The first-use repo prep would set these repositories' core.hooksPath to the kit's
         # githooks; the cases here test the worktree, PrepIsRun the prep's call and
-        # tests/git/test_prep.py the prep itself.
+        # tests/worktree/test_prep.py the prep itself.
         prep = mock.patch.object(gitprep, 'run', return_value=[])
         self.prep = prep.start()
         self.addCleanup(prep.stop)
@@ -217,18 +217,18 @@ class NewBranchMode(WorktreeCase):
         self.assertTrue(os.path.isdir(self.slug_path('second')))
 
     def test_next_names_the_kits_preflight_for_the_new_worktree(self):
-        """The worktree holds no copy of the kit's tools (decision 21): the kit's preflight, -C it."""
+        """The worktree holds no copy of the kit's tools: the kit's preflight, -C it."""
         out = self.tool('fix/fresh')[1]
         self.assertIn('next      %s' % kitroot.command('preflight', self.slug_path('fresh')), out)
 
 
 class PrepIsRun(WorktreeCase):
-    """A worktree that is made runs the first-use repo prep (kitlib.git.prep) on the main checkout,
+    """A worktree that is made runs the first-use repo prep (kitlib.worktree.prep) on the main checkout,
     with every host's worktree folder; its lines follow the worktree line. A refusal runs none."""
 
     def setUp(self):
         # Config passed through the environment (GIT_CONFIG_COUNT/KEY_n/VALUE_n, which a sandbox
-        # may set and the fake git refuses) is dropped, as tests/git/test_prep.py does.
+        # may set and the fake git refuses) is dropped, as tests/worktree/test_prep.py does.
         env = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.upper()
                                            .startswith(('GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_',
                                                         'GIT_CONFIG_VALUE_'))}, clear=True)
@@ -277,13 +277,13 @@ class BaseOption(WorktreeCase):
 
 
 class FakeHub(object):
-    """A hub client whose /snapshot holds `approvals` (kitlib.commit.approval.fetch reads it)."""
+    """A hub client whose /snapshot holds `approvals` (kitlib.ownerfiles.apply.fetch reads it)."""
 
     def __init__(self, approvals=None, error=None):
         self.approvals, self.error, self.asked = approvals or {}, error, []
 
-    def get(self, route):
-        self.asked.append(route)
+    def get(self, route, role=None, query=None):
+        self.asked.append((route, query))
         if self.error is not None:
             raise self.error
         return {'collections': {'approvals': self.approvals}}
@@ -291,7 +291,8 @@ class FakeHub(object):
 
 class BaseCommit(WorktreeCase):
     """`--base <full hash>` and `--approval hub:A-<n>`: a new branch at a fixed commit, as
-    commit.py --owner-approval needs once the main branch has moved past the approval's base."""
+    a branch for the hub to apply an approval on needs once the main branch has moved past the
+    approval's base."""
 
     def setUp(self):
         super().setUp()
@@ -354,7 +355,7 @@ class BaseCommit(WorktreeCase):
         self.assert_at(got, 'fix/approved', self.old)
         self.assertIn('approval  hub:A-007 is for base %s; this branch starts there'
                       % self.old[:12], got.lines)
-        self.assertEqual(hub.asked, ['/snapshot'])
+        self.assertEqual(hub.asked, [('/snapshot', {'collections': 'approvals'})])
 
     def test_a_consumed_approval_is_refused(self):
         hub = self.approval(commit=self.tip)
@@ -1198,7 +1199,7 @@ class ALocalOnlyBaseNamesTheRoute(LandingCase):
 
     def test_the_route_names_the_kit_tool_not_the_configured_tools_dir(self):
         # no repository holds a copy of the kit's tools, so "repo".tools_dir does not spell the
-        # route (docs/multi-host-plan.md section 7 decision 21; step 15 "No stubs")
+        # route (docs/install.md "Ported repo tools")
         self.configure({'repo': {'main_branch': 'master', 'tools_dir': 'devtools'}})
         self.make_dev()
         self.hold()
@@ -1355,7 +1356,7 @@ class ConfigKeys(WorktreeCase):
         self.assertFalse(os.path.exists(self.slug_path('fresh')), out)
 
     def test_the_tools_dir_never_spells_a_kit_command(self):
-        """The repository's tools folder holds no kit tool (decision 21): the hints name the kit's."""
+        """The repository's tools folder holds no kit tool: the hints name the kit's."""
         self.configure({'repo': {'tools_dir': 'devtools'}})
         out = self.tool('fix/fresh')[1]
         self.assertIn(kitroot.command('preflight', self.slug_path('fresh')), out)

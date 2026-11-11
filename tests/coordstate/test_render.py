@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 from kitlib.coordstate import log, render
-from kitlib.gate import submit
-from kitlib.hubsite import landings
+from kitlib.landing import submit
+from kitlib.landing import feed as landings
 from tests.gitfixture import rmtree
 
 TIP = 'a' * 40

@@ -35,9 +35,9 @@ import os
 import time
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import errors
-from kitlib.backlog import store as bstore
+from kitlib.backlog import store_folder, store_open, store_read
 from kitlib.hubsite import jobs
 
 NAME = 'store-commits'
@@ -70,7 +70,7 @@ def check_record(path, data):
     """'' when `data` (the bytes of the record file `path`, as git spells it) is a whole record:
     it parses with no structural finding and its `id:` is its file name; else why not."""
     stem = path.rsplit('/', 1)[-1][:-3]
-    rec = bstore.parse_blob(stem, data, path)
+    rec = store_read.parse_blob(stem, data, path)
     if not rec.readable:
         return '; '.join(f.message for f in rec.structural)
     if rec.get('id') != stem:
@@ -80,19 +80,19 @@ def check_record(path, data):
 
 class StoreCommits(object):
     """run(ctx) is the job. `root` is the PM data worktree. The tests' seams: `backend(root)` the
-    store's backend (default the one the worktree's .kit.json names, bstore.open_backend) and
+    store's backend (default the one the worktree's .kit.json names, store_open.open_backend) and
     `clock` epoch seconds."""
 
     def __init__(self, root=None, backend=None, clock=None):
         self.root = root
-        self.backend = backend or (lambda root: bstore.open_backend(root, kconfig.load(root),
-                                                                    fetch=False))
+        self.backend = backend or (lambda root: store_open.open_backend(root, kconfig.load(root),
+                                                                        fetch=False))
         self.clock = clock or time.time
         self._stuck = None          # (paths, text) of the failure that stopped the job
 
     def __call__(self, ctx):
         be = self.backend(self.root)
-        if not isinstance(be, bstore.MainBackend) or not be.commit_branch():
+        if not isinstance(be, store_folder.MainBackend) or not be.commit_branch():
             return jobs.Skip('%s is not a folder store in the PM data worktree: its writes are '
                              'not committed there' % be.describe())
         pending = be.pending()

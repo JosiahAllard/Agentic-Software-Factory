@@ -9,11 +9,17 @@ agent may lower a ceiling.
 A module may name its isolation test (`test`), and `isolate.include` the root-held paths every
 isolation tree holds; kitlib.modulemap.isolate runs them (docs/module-map.md "Isolation runs").
 The map's owner lock is what lets a test's command run.
+
+A map may name its `layers`, lowest first (docs/module-map.md "Layers"). Then every module names
+its `layer` and the modules of its own layer it may use (`same_layer`), and every edge goes down
+a layer, or to a module of the same layer its `from` names. A map without `layers` is not judged
+by layer.
 """
 import fnmatch
 import posixpath
 import re
 
+from kitlib.config.policy import DEFAULT_TEST_SOURCES   # noqa: F401 - the name stays importable here
 from kitlib.config.types import (ConfigError, Enum, Field, Int, ListOf, MapOf, Obj, RelPath, Str,
                                  is_note, parse_json)
 
@@ -23,9 +29,6 @@ KINDS = ('build', 'source', 'data', 'tree')
 EDGE_KINDS = ('build', 'data', 'tree')
 DETECTORS = ('csproj', 'paths', 'gradle', 'python', 'java-imports', 'csharp-using')
 JAVA_IMPORTS = 'java-imports'      # the detector a ratchet drives itself (its files and imports)
-DEFAULT_TEST_SOURCES = ['*/src/test/*', '*Tests/*', '*.Tests/*', 'tests/*', '*/tests/*',
-                        '*/test/*', 'test/*', '*/test_*.py', 'test_*.py', '*_test.py', '*Test.java',
-                        '*Tests.java', '*Test.kt', '*Tests.cs', '*.test.js', '*.test.ts']
 
 TEST_TIMEOUT = 1800         # seconds a module's isolation test may run, by default
 MAX_TEST_TIMEOUT = 14400    # and at most
@@ -49,7 +52,9 @@ MODULE = Obj({
     'why': Field(Str(), None, 'what the module is'),
     'test': Field(TEST, None, 'its isolation test (docs/module-map.md "Isolation runs"); unset: '
                               'the module is not isolated'),
-}, required=('paths',), what='{paths, why, test}')
+    'layer': Field(Name, None, 'its layer, one the map\'s "layers" names'),
+    'same_layer': Field(ListOf(Name), None, 'the modules of its own layer it may use'),
+}, required=('paths',), what='{paths, why, test, layer, same_layer}')
 
 ISOLATE = Obj({
     'include': Field(ListOf(RelPath(), nonempty=True), None,
@@ -88,6 +93,8 @@ RAISE = Obj({
 
 MAP = Obj({
     'modules': Field(MapOf(MODULE, 'module'), None, 'module name -> its folders'),
+    'layers': Field(ListOf(Name, nonempty=True), None,
+                    'the layer names, lowest first; set, every edge is judged by them'),
     'messaging': Field(ListOf(Name), None, 'the messaging module(s): a crossing into one is always allowed'),
     'edges': Field(ListOf(EDGE), None, 'the allowed edges'),
     'ratchets': Field(ListOf(RATCHET), None, 'the counted couplings'),
@@ -126,6 +133,10 @@ class ModuleMap(object):
         self.modules = {n: [_norm(p) for p in ps] for n, ps in raw.items()}
         self.paths_as_written = raw
         self.why = {n: m.get('why') for n, m in data['modules'].items() if not is_note(n)}
+        self.layers = list(data.get('layers') or [])
+        self.layer = {n: m.get('layer') for n, m in data['modules'].items() if not is_note(n)}
+        self.same_layer = {n: list(m.get('same_layer') or [])
+                           for n, m in data['modules'].items() if not is_note(n)}
         self.messaging = list(data.get('messaging') or [])
         self.edges = list(data.get('edges') or [])
         self.ratchets = list(data.get('ratchets') or [])
@@ -197,8 +208,53 @@ class ModuleMap(object):
                 if bad:
                     errs.append('module %s: test.cmd fills in only %s, not %s'
                                 % (n, ', '.join(TEST_FIELDS), ', '.join(bad)))
+        self._validate_layers(errs)
         if not errs:                # module_of needs a map whose paths are sound
             self._validate_isolate(errs)
+
+    def _validate_layers(self, errs):
+        """With `layers` set: every module in a known layer, each same_layer name a module of its
+        own layer, every edge down a layer or to a same-layer module its `from` names, no edge at
+        (root). Without it, a module may name neither field."""
+        if not self.layers:
+            for n in sorted(self.modules):
+                if self.layer[n] is not None or self.same_layer[n]:
+                    errs.append('module %s: layer and same_layer need the map\'s "layers"' % n)
+            return
+        rank = {}
+        for i, name in enumerate(self.layers):
+            if name in rank:
+                errs.append('layers names %s twice' % name)
+            rank.setdefault(name, i)
+        for n in sorted(self.modules):
+            if self.layer[n] not in rank:
+                errs.append('module %s: layer %s is not one of the map\'s layers (%s)'
+                            % (n, self.layer[n], ', '.join(self.layers)))
+                continue
+            for other in self.same_layer[n]:
+                if other == n:
+                    errs.append('module %s: same_layer names itself' % n)
+                elif other not in self.modules:
+                    errs.append('module %s: same_layer names %s, which is not a module'
+                                % (n, other))
+                elif self.layer.get(other) != self.layer[n]:
+                    errs.append('module %s: same_layer names %s, which is in layer %s, not %s'
+                                % (n, other, self.layer.get(other), self.layer[n]))
+        for i, e in enumerate(self.edges):
+            src, dst = e['from'], e['to']
+            if ROOT in (src, dst):
+                errs.append('edges[%d] %s -> %s: with layers, an edge may not join (root)'
+                            % (i, src, dst))
+                continue
+            if self.layer.get(src) not in rank or self.layer.get(dst) not in rank:
+                continue                # reported above
+            up, down = rank[self.layer[src]], rank[self.layer[dst]]
+            if down > up:
+                errs.append('edges[%d] %s -> %s goes up a layer (%s uses %s)'
+                            % (i, src, dst, self.layer[src], self.layer[dst]))
+            elif down == up and dst not in self.same_layer[src]:
+                errs.append('edges[%d] %s -> %s stays in layer %s, and %s\'s same_layer does '
+                            'not name %s' % (i, src, dst, self.layer[src], src, dst))
 
     def _validate_isolate(self, errs):
         for p in self.isolate_include:

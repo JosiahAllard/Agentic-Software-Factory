@@ -1,7 +1,7 @@
 """kitlib.hubsite.lockdoor: the hub server's door to the machine lock, which it calls in-process
 through kitlib.lock.api, by the owner's decision. The Api's lock routes reach the lock only
-through a door (kitlib.hubsite.api, "Machine lock"); kitlib.hubsite.serve gives the machine's
-server this one.
+through a door (kitlib.hubsite.api, "Machine lock"); kitlib.hubsite.servesources gives the
+machine's server this one.
 
     LockDoor(make_store=None, actor=None, clock=None)
       .revision()                    the lock store's revision (lock api.revision)

@@ -15,11 +15,11 @@ Not landed, it reports:
   verdict   the newest kit verdict line in the branch's gate logs. The folders read are
             `<log base>/<log_folder(ref)>` and `<log base>/<log_folder('land-' + ref)>` (the
             branch gate's and the landing's merged gate's), recursively, where the log base is
-            kitlib.gate.runner.log_base for the checkout -C names, its main checkout and every
+            kitlib.records.place.log_base for the checkout -C names, its main checkout and every
             worktree that has the branch checked out (the gate names the base after the checkout
             it ran in unless "repo".name is set). With no such folder, files directly in a log
             base whose name holds log_folder(ref) are read. The newest file (by modification time)
-            holding a verdict line decides, its LAST verdict line: VERDICT below. kitlib.gate
+            holding a verdict line decides, its LAST verdict line: VERDICT below. The gate
             prints these lines to stdout and writes none of them into its step logs, so a verdict
             is found only where a caller saved the gate's output under the log folder.
 A failed verdict older than the tip commit is stale (the branch moved on) and not counted.
@@ -34,14 +34,13 @@ import os
 import re
 
 from kitlib.config import ConfigError, load
-from kitlib.gate import runner
 from kitlib.git import cmd, refs, repo
-from kitlib.records import gate_ok, landing
+from kitlib.records import gate_ok, landing, place
 
 LANDED, NOT_YET, FAILED = 0, 1, 2
 CANNOT = 2
 
-# The kit's own verdict lines (kitlib.gate): a branch gate's GATE OK / GATE FAILED, a landing's
+# The kit's own verdict lines (the gate's): a branch gate's GATE OK / GATE FAILED, a landing's
 # LANDED / NOT LANDED / CONFLICT / STUCK. `failed` takes part only in a failing one.
 VERDICT = re.compile(r'^(?:GATE OK\b|LANDED \S|(?P<failed>GATE FAILED\b|NOT LANDED:|'
                      r'CONFLICT \S+ with main |STUCK:))', re.M)
@@ -79,7 +78,7 @@ def remote_main(root, remote, main):
 
     GOTCHA: a remote missing while others exist is a misnamed one (`.kit.json` "repo".remote), and
     the local main must not decide then either: NoAnswer naming the remotes there are, the rule of
-    kitlib/backlog/store.py find_remote. Only a clone with no remote at all falls back."""
+    kitlib/backlog/store_ref.py find_remote. Only a clone with no remote at all falls back."""
     r = cmd.call(['remote', 'get-url', remote], root, timeout=GIT_TIMEOUT)
     if r.rc == NO_SUCH_REMOTE:
         names, why = cmd.run_text(['remote'], root, timeout=GIT_TIMEOUT)
@@ -113,27 +112,27 @@ def contains(root, tip, target):
     return refs.is_ancestor(tip, target, root)
 
 
-def log_bases(cfg, root, ref, note=runner.say_note):
-    """The gate log bases to read for `ref`, each once, in a stable order: runner.log_base of
-    each checkout, then (no "landing".log_dir) runner.fallback_log_base of each, where a gate that
+def log_bases(cfg, root, ref, note):
+    """The gate log bases to read for `ref`, each once, in a stable order: place.log_base of
+    each checkout, then (no "landing".log_dir) place.fallback_log_base of each, where a gate that
     could not make the default base, or ran before the kit temp moved, wrote. With no written
     "repo".name, each checkout's folder name is read too: the name read from the remote's URL
     (docs/kit-json.md "With no file") is newer than the folder-named logs. note: as
-    runner.log_base's (a machine config that cannot be read)."""
+    place.log_base's (a machine config that cannot be read)."""
     tops = [root]
     main = repo.main_checkout_toplevel(root)
     if main:
         tops.append(main)
     wts, _why = repo.worktrees(root)
     tops.extend(w.path for w in (wts or []) if w.branch == ref)
-    names = [(top, runner.repo_name(cfg, top)) for top in tops]
+    names = [(top, place.repo_name(cfg, top)) for top in tops]
     if not cfg.written('repo', 'name'):
         names += [(top, os.path.basename(os.path.normpath(top))) for top in tops]
-    bases = [runner.log_base(cfg, top, name, note) for top, name in names]
+    bases = [place.log_base(cfg, top, name, note) for top, name in names]
     if not cfg.section('landing').get('log_dir'):
         for _top, name in names:
             try:
-                bases.append(runner.fallback_log_base(name))
+                bases.append(place.fallback_log_base(name))
             except RuntimeError:        # no shared temp to read: the kit temp was read
                 pass
     out, seen = [], set()
@@ -147,10 +146,10 @@ def log_bases(cfg, root, ref, note=runner.say_note):
 
 def candidate_logs(bases, ref):
     """Log files for branch `ref`, newest first (at most MAX_LOGS)."""
-    key = runner.log_folder(ref)
+    key = place.log_folder(ref)
     found = []
     for base in bases:
-        subs = [os.path.join(base, f) for f in (key, runner.log_folder('land-' + ref))]
+        subs = [os.path.join(base, f) for f in (key, place.log_folder('land-' + ref))]
         subs = [s for s in subs if os.path.isdir(s)]
         for sub in subs:
             for d, _dirs, files in os.walk(sub):

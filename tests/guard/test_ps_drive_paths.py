@@ -3,13 +3,13 @@ rules.shell_writes): from a worktree, a write PowerShell sends into the main che
 FileSystem:: or a module-qualified FileSystem:: is refused, never read as a file in the worktree.
 A drive named by anything but one ASCII letter (New-PSDrive Main FileSystem <main>, 1:, _:) or
 another provider is a place the guard cannot tell: judged as a bash target it cannot place is,
-refused only outside a worktree (docs/guard-v2.md B16, cut). Bash and cmd words, one-letter
+refused only outside a worktree (docs/guard-fallback.md "Weakened checks, by row" B16, cut). Bash and cmd words, one-letter
 drives and relative paths are read as before."""
 import os
 import time
 import unittest
 
-from kitlib.guard import commands as cm
+from kitlib.guard import commands_nested as cn
 from kitlib.guard import context
 from kitlib.guard import shell as sh
 
@@ -83,7 +83,7 @@ class IntoMain(Base):
     def test_a_relative_filesystem_path_is_read_from_the_location(self):
         # PowerShell reads FileSystem::x.txt (and \FileSystem::x.txt) from the process's directory,
         # which Set-Location does not move; the guard reads it from the location, as it reads a
-        # relative .NET path (docs/guard-v2.md B16 for the provider path, B17 for the .NET one; both cut)
+        # relative .NET path (docs/guard-fallback.md "Weakened checks, by row" B16 for the provider path, B17 for the .NET one; both cut)
         for text in (r'New-Item FileSystem::x.txt', r'New-Item \FileSystem::x.txt',
                      r"Set-Content -LiteralPath '\FileSystem::x.txt' -Value y",
                      r'New-Item Microsoft.PowerShell.Core\FileSystem::sub\x.txt'):
@@ -312,11 +312,11 @@ class DynamicTargets(Base):
                             ('Copy-Item a -Destination(Join-Path a b)',
                              ['Copy-Item', 'a', '-Destination', '(Join-Path a b)'])):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, W.fwd(self.w.wt))
+                p = cn.read(text, sh.PS, W.fwd(self.w.wt))
                 self.assertEqual([c.argv for c in p.commands if c.nested_in is None], [words])
         for text in ('$r = if (Test-Path x) { 1 }', 'if (-not(Test-Path x)) { 1 }'):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, W.fwd(self.w.wt))
+                p = cn.read(text, sh.PS, W.fwd(self.w.wt))
                 self.assertTrue(any(c.argv[:1] == ['Test-Path'] and c.nested_in is None and c.groups
                                     for c in p.commands), [(c.argv, c.groups) for c in p.commands])
 
@@ -328,7 +328,7 @@ class DynamicTargets(Base):
         for text, words in (('Copy-Item a.txt(Join-Path a b)', ['Copy-Item', 'a.txt', '(Join-Path a b)']),
                             ('Set-Content(Join-Path a b) hi', ['Set-Content', '(Join-Path a b)', 'hi'])):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, W.fwd(self.w.wt))
+                p = cn.read(text, sh.PS, W.fwd(self.w.wt))
                 self.assertEqual([c.argv for c in p.commands if c.nested_in is None], [words])
         # a method call stays one word: $x.M( ), [T]::M( ), 'lit'.M( ), (expr).M( )
         for text in (r"Set-Content x.txt -Value $s.Replace('a','b')", r"$t = $s.Replace('a','b'); Set-Content x.txt $t",
@@ -355,14 +355,14 @@ class DynamicTargets(Base):
                 self.refused_for_both(text)
         d = self.denied(self.run_ps(r'Set-Content -Value $x[(1)] -Path {main}\x.txt'), 'main-checkout')
         self.assertIn('is in the main checkout', d.reason)
-        p = cm.read("Set-Content -Value 'x'(1) -Path x.txt", sh.PS, W.fwd(self.w.wt))
+        p = cn.read("Set-Content -Value 'x'(1) -Path x.txt", sh.PS, W.fwd(self.w.wt))
         self.assertEqual([c.argv for c in p.commands if c.nested_in is None],
                          [['Set-Content', '-Value', 'x', '(1)', '-Path', 'x.txt']])
 
     def test_a_command_the_line_splits_around_a_group_fails_closed(self):
         # shell.Command.split: a { } or a method call's ( ) the scanner reads as a group, with more
         # of the command's arguments after it: the write's target is unknown (rules.write_targets)
-        # and the line unreadable (commands.expand)
+        # and the line unreadable (commands_nested.expand)
         # rules.ps_pwd_path: a $PWD write whose own arguments hold a group the line is cut at is not
         # the line's one command, split or not
         for text in (r'Set-Content -Value {{sv PWD {main}}} "$PWD\x.txt"',
@@ -376,7 +376,7 @@ class DynamicTargets(Base):
             with self.subTest(text):
                 d = self.denied(self.run_ps(text), 'unreadable')
                 self.assertIn('a command the line splits', d.reason)
-        p = cm.read('Set-Content -Value $s.Trim() -Path x.txt', sh.PS, W.fwd(self.w.wt))
+        p = cn.read('Set-Content -Value $s.Trim() -Path x.txt', sh.PS, W.fwd(self.w.wt))
         self.assertEqual([(c.argv, c.split) for c in p.commands],
                          [(['Set-Content', '-Value', '$s.Trim'], True), (['-Path', 'x.txt'], False)])
         # a keyword's own ( ) and { }, a method chain, a pipeline after a block: no split
@@ -399,7 +399,7 @@ class DynamicTargets(Base):
                      r'Set-Content -Value hi -$x(Join-Path {main} x.txt)'):
             with self.subTest(text):
                 self.refused_for_both(text)
-        p = cm.read("'x' | Set-Content -Path { $p }", sh.PS, W.fwd(self.w.wt))
+        p = cn.read("'x' | Set-Content -Path { $p }", sh.PS, W.fwd(self.w.wt))
         self.assertEqual([(c.argv, c.split, c.next_op) for c in p.commands],
                          [(["x"], False, '|'), (['Set-Content', '-Path'], False, '{'), (['$p'], False, '}')])
         # not a writer, or a member call bound to a parameter that is no target: not judged
@@ -418,7 +418,7 @@ class DynamicTargets(Base):
                 self.refused_for_both(text)
         for text in ('Set-Content -Value hi 2>&1 (Join-Path a b)', 'Set-Content -Value hi <#c#>(Join-Path a b)'):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, W.fwd(self.w.wt))
+                p = cn.read(text, sh.PS, W.fwd(self.w.wt))
                 self.assertEqual([c.argv for c in p.commands if c.nested_in is None],
                                  [['Set-Content', '-Value', 'hi', '(Join-Path a b)']])
 
@@ -435,7 +435,7 @@ class DynamicTargets(Base):
                      r"'x' 2> ($p)", r"'x' > {{ {main}\x.txt }}"):
             with self.subTest(text):
                 self.refused_for_both(text)
-        p = cm.read("'x' > (Join-Path a b)", sh.PS, W.fwd(self.w.wt))
+        p = cn.read("'x' > (Join-Path a b)", sh.PS, W.fwd(self.w.wt))
         self.assertEqual(p.unclean, [])
         self.assertEqual(sorted(c.argv for c in p.commands), [['Join-Path', 'a', 'b'], ['x']])
         self.assertEqual([(r.target.text, r.target.dyn) for c in p.commands for r in c.redirects],
@@ -447,11 +447,11 @@ class DynamicTargets(Base):
         for text in ('if ($a) { 1 } else { 2 }', '$r = if ($a) { 1 }', 'foreach ($f in $g) { 1 }',
                      'try { 1 } catch [IO.IOException] { 2 }', 'function f($a) { 1 }'):
             with self.subTest(text):
-                p = cm.read(text, sh.PS, W.fwd(self.w.wt))
+                p = cn.read(text, sh.PS, W.fwd(self.w.wt))
                 self.assertEqual([c.argv for c in p.commands if c.split], [])
 
     def test_a_script_block_to_any_writer_fails_closed(self):
-        # rules.ps_unread, as docs/guard.md "Rules" names it: a delay-bind script block, a
+        # rules.ps_unread, as docs/guard-rules.md "Rules" names it: a delay-bind script block, a
         # { } to a parameter that is no target, an Export-* cmdlet, tar from PowerShell; and a
         # ( ) touching a group's ), last on the line
         for text in ("Get-ChildItem *.txt | Rename-Item -NewName {{ $_.Name + '.bak' }}",
@@ -468,7 +468,7 @@ class DynamicTargets(Base):
                      r"Set-Content -Value 'if' -Path (Join-Path {main} x.txt)"):
             with self.subTest(text):
                 self.refused_for_both(text)
-        p = cm.read("Set-Content -Value '=','if' -Path (Join-Path a b)", sh.PS, W.fwd(self.w.wt))
+        p = cn.read("Set-Content -Value '=','if' -Path (Join-Path a b)", sh.PS, W.fwd(self.w.wt))
         self.assertEqual([c.argv for c in p.commands if c.nested_in is None],
                          [['Set-Content', '-Value', '=', 'if', '-Path', '(Join-Path a b)']])
 
@@ -563,7 +563,7 @@ class DynamicTargets(Base):
                 self.allowed(self.run_ps(text))
 
     def test_an_unknown_powershell_switch_is_judged_both_ways(self):
-        # commands._nested_text: powershell.exe runs a switch it does not know, and every word after
+        # commands_nested._nested_text: powershell.exe runs a switch it does not know, and every word after
         # it, as the command; pwsh reads the later -Command; both readings are judged
         for text in ('powershell "-x; Remove-Item {main}\\x.txt"', 'powershell "–x; Remove-Item {main}\\x.txt"',
                      'powershell "/x; Remove-Item {main}\\x.txt"',
@@ -584,7 +584,7 @@ class DynamicTargets(Base):
                 self.allowed(self.run_ps(text))
 
     def test_a_switch_the_shells_read_with_and_without_a_value_is_judged_both_ways(self):
-        # commands.PS_VALUE_EITHER: -i and -in are -InputFormat with a value to powershell.exe and
+        # commands_nested.PS_VALUE_EITHER: -i and -in are -InputFormat with a value to powershell.exe and
         # -Interactive without one to pwsh; an -EncodedArguments prefix takes a value. The word
         # after the switch is read both as that value and as the start of the command, and the
         # scan goes on from each reading
@@ -599,7 +599,7 @@ class DynamicTargets(Base):
         for text in ('powershell -i Text "Write-Output hi"', 'pwsh -i -nop -c "Write-Output hi"'):
             with self.subTest(text):
                 self.allowed(self.run_ps(text))
-        # commands.PS_FORKS_MAX: past that many such switches on one reading path the line is not
+        # commands_nested.PS_FORKS_MAX: past that many such switches on one reading path the line is not
         # read; the reading that takes no value is still judged
         self.denied(self.run_ps('powershell %s"Write-Output hi"' % ('-i ' * 40)), 'unreadable')
         for shell in ('powershell', 'pwsh'):
@@ -613,16 +613,16 @@ class DynamicTargets(Base):
         text = 'pwsh %sText "Remove-Item {main}\\x.txt"' % ('-i ' * 40)
         self.denied(self.run_ps(text), 'unreadable')
         self.assertIn('a powershell switch line with too many readings',
-                      cm.read(text.format(main=self.w.main), sh.PS, self.w.wt).unclean)
+                      cn.read(text.format(main=self.w.main), sh.PS, self.w.wt).unclean)
 
     def test_readings_that_fork_again_at_each_level_are_bounded(self):
-        # commands.MAX_NESTS: each reading of `pwsh -i pwsh -i pwsh ...` is a pwsh line that forks
+        # commands_nested.MAX_NESTS: each reading of `pwsh -i pwsh -i pwsh ...` is a pwsh line that forks
         # again, some 17 readings per level down to shell.MAX_DEPTH (17^6 parses: over 20000 and
         # 25 s before the cap, r11 probe). The line's nested parses stop at the cap and it is flagged
         text = 'pwsh' + ' -i pwsh' * 110 + '; Remove-Item {main}\\x.txt'
-        parsed = cm.read(text.format(main=self.w.main), sh.PS, self.w.wt)
-        self.assertLessEqual(parsed.nests, cm.MAX_NESTS)
-        self.assertIn('more than %d nested shell texts' % cm.MAX_NESTS, parsed.unclean)
+        parsed = cn.read(text.format(main=self.w.main), sh.PS, self.w.wt)
+        self.assertLessEqual(parsed.nests, cn.MAX_NESTS)
+        self.assertIn('more than %d nested shell texts' % cn.MAX_NESTS, parsed.unclean)
         start = time.monotonic()
         d = self.run_ps(text)
         self.assertLess(time.monotonic() - start, 5.0)
@@ -631,7 +631,7 @@ class DynamicTargets(Base):
         self.assertIn(d.rule, ('main-checkout', 'unreadable'), d.reason)
 
     def test_each_reading_of_a_powershell_line_is_parsed_on_its_own(self):
-        # commands._nested_text gives each reading as a text of its own and commands.expand parses
+        # commands_nested._nested_text gives each reading as a text of its own and commands_nested.expand parses
         # each: an unclosed <# in one reading hides no other reading, nor standard input
         for text in ('pwsh -CustomPipeName "<#" -c "Remove-Item {main}\\x.txt"',
                      'powershell -CustomPipeName "<#" -c "Remove-Item {main}\\x.txt"',
@@ -640,10 +640,10 @@ class DynamicTargets(Base):
                 self.denied(self.run_ps(text), 'main-checkout')
 
     def test_the_readings_of_a_switch_line_are_counted_once(self):
-        # commands._nested_text: readings are kept once each, so sixteen -i give one copy of the
+        # commands_nested._nested_text: readings are kept once each, so sixteen -i give one copy of the
         # command, not one per reading path (1597), and standard input is read once
         def said(text):
-            parsed = cm.read(text, sh.PS, self.w.wt)
+            parsed = cn.read(text, sh.PS, self.w.wt)
             return [c for c in parsed.commands if c.words and c.words[0].text.lower() == 'write-output']
         for text in ('powershell %s-c "Write-Output hi"' % ('-i ' * 16),
                      'echo "Write-Output hi" | powershell -i -i -i -i -Zork'):
@@ -670,14 +670,14 @@ class DynamicTargets(Base):
         self.allowed(self.run_ps('pwsh --command "Write-Output hi"'))
 
     def test_a_value_switch_powershell_exe_does_not_know_is_no_value(self):
-        # commands.PS51_SWITCHES: value switches powershell.exe 5.1 does not know, which it runs,
+        # commands_nested.PS51_SWITCHES: value switches powershell.exe 5.1 does not know, which it runs,
         # and every word after, as the command (observed: probe8.log)
         for sw in ('-ConfigurationFile', '-SettingsFile', '-CustomPipeName', '-conf', '-PSConsoleFile'):
             with self.subTest(sw):
                 self.denied(self.run_ps('powershell %s "; Remove-Item {main}\\x.txt"' % sw), 'main-checkout')
 
     def test_a_pwsh_only_switch_is_unknown_to_powershell_exe(self):
-        # commands.PS51_SWITCHES: -Login, -l, -Interactive and -NoProfileLoadTime are pwsh's; to
+        # commands_nested.PS51_SWITCHES: -Login, -l, -Interactive and -NoProfileLoadTime are pwsh's; to
         # powershell.exe the switch and what follows are the command; pwsh reads standard input
         for sw in ('-Login', '-l', '-Interactive', '-NoProfileLoadTime', '-mt', '-cwa'):
             with self.subTest(sw):
@@ -716,7 +716,7 @@ class DynamicTargets(Base):
 class DriveAndProviderTargets(Base):
     """A drive named by anything but one ASCII letter, or a provider the guard does not know, is a
     place it cannot tell: from a worktree it passes, as a bash target the guard cannot place does,
-    and from the main checkout it is refused as unplaced (docs/guard-v2.md B16: the PS-drive jail
+    and from the main checkout it is refused as unplaced (docs/guard-fallback.md "Weakened checks, by row" B16: the PS-drive jail
     is cut, an unusual spelling that catches no honest mistake)."""
 
     TEXTS = (r'New-PSDrive Main FileSystem {main}; New-Item Main:\x.txt', r'New-Item 1:\x.txt',

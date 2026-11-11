@@ -39,7 +39,7 @@ Where each condition is read: a to-do, question or approval, the hub store's doc
 os.replace, so a read sees a whole document); a record, the named repository's store (closed: gone
 from it, with a commit that removed it: a file missing with no commit is not closed); a path,
 the file system; a plugin folder, the plugin
-export root (kitlib.pluginsource settings, `export_dir`).
+export root (kitlib.pluginsource.layout settings, `export_dir`).
 
 Outcomes (kitlib.hubsite.jobs): nothing met is a skip; an unblock is a success whose note names
 the records. A store that cannot be read, or a write the store refused, is a failure once the
@@ -151,13 +151,13 @@ class Readers(object):
 
     def approval_expired(self, aid, now=None):
         """True when approval `aid` is still stored `pending` and expired undecided
-        (kitlib.hubsite.approvals status_at at `now`, default the current time); its hold stays
+        (kitlib.ownerfiles.approvals status_at at `now`, default the current time); its hold stays
         (the PM's ruling) and the job pushes the PM once (EXPIRED_EVENT)."""
         doc = self._doc('approvals', aid)
         if doc is None or doc.get('status') != 'pending':
             return False
         import datetime
-        from kitlib.hubsite import approvals
+        from kitlib.ownerfiles import approvals
         when = now or datetime.datetime.now(datetime.timezone.utc)
         return approvals.status_at(doc, when) == approvals.EXPIRED
 
@@ -198,7 +198,8 @@ def open_snapshot(root):
     raises."""
     from kitlib.backlog import opener
     from kitlib.hubsite import recordwrite
-    ctx = opener.open_store(root, fetch=False, session=recordwrite.CONDITION_SESSION)
+    ctx = opener.open_store(root, fetch=False, session=recordwrite.CONDITION_SESSION,
+                            probes=opener.NO_PROBES)
     if getattr(ctx.store.backend, 'implicit', False):
         return None, None
     return ctx.store.load(), ctx.store
@@ -371,16 +372,16 @@ class RecordReader(object):
 
 def plugin_root(home):
     """The plugin export root, or None when it cannot be told."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     try:
-        return pluginsource.load(home).export_dir
+        return plugin_layout.load(home).export_dir
     except Exception:                   # noqa: BLE001 - a bad config: plugin conditions wait
         return None
 
 
 def hub_store(home):
     """The hub store folder, or None when it cannot be told."""
-    from kitlib.hubsite import settings as hsettings
+    from kitlib.hubclient import settings as hsettings
     try:
         return hsettings.load(home=home).store
     except Exception:                   # noqa: BLE001

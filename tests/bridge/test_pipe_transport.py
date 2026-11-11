@@ -10,7 +10,7 @@ import uuid
 
 from optional.bridge.core.jsonwire import encode_frame
 from optional.bridge.core.messages import BeforeWriteError, DeliveryError
-from kitlib.proc.pipe import PrivateListener
+from kitlib.platform.windows.pipe import PrivateListener
 from optional.bridge.win.transport import PipeTarget, write_peer
 from kitlib.proc.job import Job
 from kitlib.proc.process import own_ctime

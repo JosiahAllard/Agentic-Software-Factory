@@ -101,7 +101,7 @@ class OwnerIdentity(PackCase):
         self.assertNotIn('do not land', out)
 
     def test_the_owners_commit_with_no_trailer_is_ok_as_the_landing_judges_it(self):
-        # kitlib.guard.ownercommits accepts an owner-authored commit with no trailer at all; the
+        # kitlib.ownerfiles.rules accepts an owner-authored commit with no trailer at all; the
         # table printed MISSING ("trailers on this commit: none") for it.
         self.git('checkout', '-q', '-b', 'feature')
         self.write('CLAUDE.md', 'v1')
@@ -129,18 +129,18 @@ class OwnerIdentity(PackCase):
         self.git('checkout', '-q', '-b', 'feature')
         self.write('CLAUDE.md', 'v1')
         self.commit_all('owner edit')
-        real = reviewpack.ownercommits.commits
+        real = reviewpack.ownerrules.commits
         seen = []
 
         def as_agent(root, tip, exclude=(), env=None):
             seen.append((tip, list(exclude)))
             found, why = real(root, tip, exclude, env)
             return [(sha, parents, AGENT, values) for sha, parents, _, values in found], why
-        with mock.patch.object(reviewpack.ownercommits, 'commits', as_agent):
+        with mock.patch.object(reviewpack.ownerrules, 'commits', as_agent):
             _changed, rows = self.owner_only()
         self.assertEqual(seen, [('feature', ['main'])])
         self.assertEqual([r[1] for r in rows], ['MISSING'], rows)
-        with mock.patch.object(reviewpack.ownercommits, 'commits',
+        with mock.patch.object(reviewpack.ownerrules, 'commits',
                                lambda *a, **k: (None, 'git log failed: injected')):
             code, out = self.run_pack('feature', '--base', 'main')
         self.assertEqual(code, 2, out)
@@ -184,7 +184,7 @@ class NoOwnerConfigured(PackCase):
 
 class HubOwnerApproval(PackCase):
     """`Owner-Approval: hub:A-<n>` (commit.py --owner-approval) is not MISSING; the hub checks it
-    at land time (kitlib.guard.ownercommits)."""
+    at land time (kitlib.ownerfiles.rules)."""
 
     def agent_edit(self, trailer):
         self.git('checkout', '-q', '-b', 'feature')
@@ -201,6 +201,26 @@ class HubOwnerApproval(PackCase):
         [row] = self.agent_edit('Owner-Approval: hub:A-1')
         self.assertEqual(row[1], 'MISSING', row)
         self.assertIn('not one hub:A-<n>', row[3])
+
+
+class ShrinkOnlyPath(PackCase):
+    """A `"owner".shrink_only` path (the base's list, as landing reads it) an agent commit only
+    deletes lines of reads ok, by ownerrules.deletes_only; an added line still blocks."""
+
+    CONFIG = {'owner': {'email': EMAIL, 'shrink_only': ['CLAUDE.md']}}
+
+    def test_a_delete_reads_ok_and_a_later_add_is_missing(self):
+        self.write('CLAUDE.md', 'a\nb\nc\n')
+        self.commit_all('the owner')
+        self.git('checkout', '-q', '-b', 'feature')
+        self.write('CLAUDE.md', 'a\nc\n')
+        self.commit_all('drop b', author=AGENT)
+        [row] = self.owner_only()[1]
+        self.assertEqual((row[1], row[2]), ('ok', 'CLAUDE.md'), row)
+        self.assertIn('shrink_only', row[3])
+        self.write('CLAUDE.md', 'a\nc\nd\n')
+        self.commit_all('add d', author=AGENT)
+        self.assertEqual(sorted(r[1] for r in self.owner_only()[1]), ['MISSING', 'ok'])
 
 
 class RangeCommits(PackCase):
@@ -287,10 +307,10 @@ class TheHeaderLines(PackCase):
 
     def test_a_fallback_read_ended_from_outside_stops_and_never_reads_as_no(self):
         # A git ended from outside exits 1 having printed nothing
-        # (kitlib.proc.shield's GOTCHA; measured: `taskkill /PID <n> /T /F` on a git leaves
-        # exit 1, empty stdout and stderr), the same shape as `merge-base --is-ancestor`'s NO. The
-        # fallback read that NO, so `level` - the base tip itself - printed 'contains base tip:
-        # NO'. Every fallback read so ended must stop the pack naming it, or leave the header
+        # (kitlib.platform.windows.shield's GOTCHA; measured: `taskkill /PID <n> /T /F` on a git
+        # leaves exit 1, empty stdout and stderr), the same shape as `merge-base --is-ancestor`'s
+        # NO. The fallback read that NO, so `level` - the base tip itself - printed 'contains base
+        # tip: NO'. Every fallback read so ended must stop the pack naming it, or leave the header
         # true; none may print an answer git never gave.
         self.three_branches()
         no_log = failing_call(('log', '--no-walk=unsorted'))

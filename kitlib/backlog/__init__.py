@@ -4,14 +4,25 @@ docs/backlog-store.md). Logic only: no argparse, no printing, no exit.
   errors    Refusal, Usage, NotFound, Failure (each with its exit code)
   scope     scope members, collision (undecidable counts as a collision), area
   record    parse, the schema, record-local validation, render, apply_changes
-  store     Snapshot, the ref/branch/main backends, the compare-and-swap write loop
+  store     the compare-and-swap write loop: Store, Change, the plan notes
+  store_read  Snapshot, validation, the id checks and the history reads every backend shares
+  store_ref  the ref and branch backends
+  store_folder  the main backend, and catch-up in the PM data worktree
+  store_live  where the live store is: the PM data worktree's, a worktree's, the default refusal
+  store_open  the checkout's config and rules, resolve_store and open_backend
   ledger    the rulings ledger's entries, re-exported for their readers; no backlog write and
             no `check` reads a ledger file
   policy    tools/backlog.py's role check: a write's rows (roles.py ACTIONS) and who may take them
   offer     partition, rank, in flight, requires, the `next` offer
   check     every `check` line with its own denominator
-  plan      the write verbs as plans: add, set, block, unblock, pull, release, close, retire,
-            delete, set-status, unpark, clear-review
+  plan      the write verbs as plans: the shared Context, checks and refusals
+  plan_narrow  the scope and resource rules the verbs share: next's offer and its narrowing,
+            the live pulls and their diffs, the fold-in guard
+  plan_edit  add, set, clear-review, and the keys only a verb writes (WRITTEN_BY)
+  plan_claim  pull (a takeover among them), release, and the stopped-pull notes
+  plan_hold  block, unblock, set-status, unpark, and filing the owner's answer
+  plan_end  close, retire, delete
+  plan_citations  uncite
   retarget  `backlog.py retarget`: a moved path rewritten across every record in one commit
   landable  may a branch land without leaving a dead pull
   at_landing  the store at `gate.py land`: the ancestry refusal and closing the landed pulls

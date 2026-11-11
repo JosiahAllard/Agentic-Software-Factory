@@ -1,21 +1,25 @@
 """`complement` (kitlib/backlog/scope.py): the sibling members that cover a scope member minus the
 paths removed from it, over the tracked tree, or None when it cannot be done."""
 import json
+import random
 import unittest
+from unittest import mock
 
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import offer as omod
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as smod
 from kitlib.backlog import store as sstore
+from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal
 
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
 from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, priced,
-                                   record_text)
+                                   rec, record_text)
 from tests.backlog.test_offer import snap as osnap
 
 
@@ -253,13 +257,13 @@ class SharedPathCallers(unittest.TestCase):
 
     def test_pull_live_hits_exempt_the_listed_path_and_report_the_share(self):
         held = rparse(pulled('HOLD', LIST))
-        self.assertEqual(len(pmod.live_hits(['docs/**'], [held])), 1)
-        self.assertEqual(pmod.live_hits(['docs/**'], [held], shared=SHARED), [])
-        self.assertEqual(pmod.live_shares(['docs/**'], [held], shared=SHARED),
+        self.assertEqual(len(plan_narrow.live_hits(['docs/**'], [held])), 1)
+        self.assertEqual(plan_narrow.live_hits(['docs/**'], [held], shared=SHARED), [])
+        self.assertEqual(plan_narrow.live_shares(['docs/**'], [held], shared=SHARED),
                          ['shares %s with HOLD (shared path)' % LIST])
-        self.assertEqual(len(pmod.live_hits(['docs/**', 'area/hold/**'],
-                                            [rparse(pulled('HOLD', [LIST, 'area/hold/a.py']))],
-                                            shared=SHARED)), 1)
+        self.assertEqual(len(plan_narrow.live_hits(['docs/**', 'area/hold/**'],
+                                                   [rparse(pulled('HOLD', [LIST, 'area/hold/a.py']))],
+                                                   shared=SHARED)), 1)
 
     def test_check_refuses_a_glob_or_a_folder_and_exempts_a_good_entry(self):
         s = osnap(pulled('ONE', [LIST, 'kit/a.py'], by='kit/one'),
@@ -320,18 +324,17 @@ class SharedPathWrites(StoreCase):
         self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
         self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py', LIST])
 
-    def test_add_found_on_a_branch_that_changed_a_listed_file_is_refused(self):
+    def test_add_found_on_a_branch_that_changed_a_listed_file_warns_and_files(self):
         self.share()
-        for scope in ([LIST], ['docs/**']):
+        for i, scope in enumerate(([LIST], ['docs/**'])):
             with self.subTest(scope=scope):
-                with self.assertRaises(Refusal) as cm:
-                    self.verb('add', 'NEW', 'a defect found while working', scope,
-                              found_on='kit/holder', why_not_folded=ADD_WHY)
-                msg = str(cm.exception)
-                self.assertIn('its scope overlaps the work of kit/holder', msg)
-                self.assertIn('(changed on kit/holder)', msg)
-                self.assertIn('(scope of HOLD, pulled by kit/holder)', msg)
-                self.assertIsNone(self.get('NEW'))
+                change = self.verb('add', 'NEW%d' % i, 'a defect found while working', scope,
+                                   found_on='kit/holder', why_not_folded=ADD_WHY)
+                warning = '\n'.join(x for x in change.lines if x.startswith('WARNING:'))
+                self.assertIn('scope overlaps the work of kit/holder', warning)
+                self.assertIn('(changed on kit/holder)', warning)
+                self.assertIn('(scope of HOLD, pulled by kit/holder)', warning)
+                self.assertIsNotNone(self.get('NEW%d' % i))
 
 
 class SharedPathsCli(unittest.TestCase):
@@ -343,7 +346,7 @@ class SharedPathsCli(unittest.TestCase):
 
     def setUp(self):
         self.setUp_cli()
-        backend = sstore.RefBackend(self.repo.root, 'origin', sstore.STORE_REF, sstore.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', sstore.STORE_REF, sstore.STORE_REF)
         snap = sstore.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
@@ -397,6 +400,146 @@ class SharedPathsCli(unittest.TestCase):
         rc, out = self.run_tool('check')
         self.assertEqual(rc, 0, out)
         self.assertIn('shared paths', out)
+
+
+# --- the indexed collision and complement against the pairwise code they replaced ------------
+
+GEN_TOPS = ('brain', 'node', 'docs', 'kit')
+GEN_TREE = ['%s/s%d/t%d/f%d.py' % (t, i, j, k)
+            for t in GEN_TOPS for i in range(5) for j in range(4) for k in range(6)]
+
+
+def pairwise_pull_warnings(subjects, shared):
+    """check_pull_records' warning loop as it was before scope.pull_collisions: the oracle."""
+    warned = []
+    for i, a in enumerate(subjects):
+        for b in subjects[i + 1:]:
+            try:
+                why = None
+                if smod.scopes_collide(b.all('scope'), a.all('scope'), shared):
+                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'), shared)
+                    why = 'scope %s collides with %s' % hit[0]
+            except smod.UndecidableScope as exc:
+                why = 'the scope comparison could not be decided, so it is a collision: %s' % exc
+            if why:
+                warned.append((b.path, b.line_of('scope'), 'in flight alongside `%s`, and its %s'
+                               % (a.id, why)))
+    return warned
+
+
+def walk_complement(member, removed, tree, cap=smod.COMPLEMENT_CAP):
+    """scope.complement as it was before its removed-path index: the oracle."""
+    err = smod.scope_member_error(member, tab_ok=True)
+    if err is not None:
+        raise smod.UndecidableScope('%s: %s' % (member, err))
+    for r in removed:
+        err = ('a glob, not a path' if r.endswith(smod.GLOB_SUFFIX)
+               else smod.path_shape_error(r, 'removed path', tab_ok=True, comma_ok=True))
+        if err is not None:
+            raise smod.UndecidableScope('%s: %s' % (r, err))
+    base = smod.member_base(member)
+    if member == smod.NONE or not any(smod.paths_related(base, r) for r in removed):
+        return [member]
+    below = base + '/'
+    under = [p for p in tree if smod.paths_related(base, p)]
+    if not under or any(not smod.path_within(base, p) for p in under):
+        return None
+    if not member.endswith(smod.GLOB_SUFFIX) and not any(p.startswith(below) for p in tree):
+        return None
+    out = []
+
+    def descend(prefix):
+        names = {}
+        for p in tree:
+            if p.startswith(prefix + '/'):
+                head, _, rest = p[len(prefix) + 1:].partition('/')
+                names[head] = names.get(head, False) or bool(rest)
+        for name in sorted(names):
+            path = prefix + '/' + name
+            if names[name]:
+                if any(smod.paths_related(path, r) for r in removed):
+                    descend(path)
+                else:
+                    out.append(path + smod.GLOB_SUFFIX)
+            elif not any(smod.paths_related(path, r) for r in removed):
+                out.append(path)
+            if len(out) > cap:
+                return
+    descend(base)
+    return None if len(out) > cap else sorted(out)
+
+
+def gen_member(rnd):
+    t, i, j = rnd.choice(GEN_TOPS), rnd.randrange(5), rnd.randrange(4)
+    return rnd.choice([
+        '%s/s%d/t%d/f%d.py' % (t, i, j, rnd.randrange(6)), '%s/s%d/t%d/**' % (t, i, j),
+        '%s/s%d' % (t, i), '%s/s%d/**' % (t, i), '%s/**' % t, t, '%s/S%d/**' % (t.title(), i),
+        'none', LIST, 'docs/a\tb.md', 'docs/a\tb.md/**', '*.java', 'a/[x].py', 'kit/x,y.py'])
+
+
+class IndexedCollisionsMatchPairwise(unittest.TestCase):
+    """check_pull_records (scope.pull_collisions) gives the warnings the pairwise loop gave, in
+    order, on generated stores with broad `**` globs, bare folders, files, letter case, tabs,
+    `none`, shared paths, unreadable members anywhere in a set and empty sets."""
+
+    def test_generated_stores(self):
+        for seed in range(12):
+            rnd = random.Random(seed)
+            recs = []
+            for n in range(30):
+                size = rnd.choice([0, 1, 1, 2, 3, 5, 8])
+                scope = [gen_member(rnd) for _ in range(size)]
+                if rnd.random() < 0.7:          # most records read cleanly
+                    scope = [m for m in scope if smod.scope_member_error(m, True) is None]
+                over = dict(scope=scope) if scope else dict(drop=('scope',))
+                recs.append(priced('G%02d' % n, state='pulled', pulled_at=TODAY,
+                                   pulled_by='kit/g%d' % (n % 4), **over))
+            s = osnap(*recs)
+            subjects = [r for r in s.readable if r.get('state') == 'pulled']
+            for shared in ((), SHARED):
+                with self.subTest(seed=seed, shared=shared):
+                    got = [(f.path, f.line, f.message)
+                           for f in checkmod.check_pull_records(s, shared).warnings]
+                    self.assertEqual(got, pairwise_pull_warnings(subjects, shared))
+                    self.assertTrue(got)
+
+
+class WritesSkipTheCollisionWarnings(unittest.TestCase):
+    """A write's check (check.fail_findings) leaves out the colliding-scope pass, which makes
+    WARNs only: every FAIL `check` reports is still there, and `check` still warns."""
+
+    def test_a_write_keeps_every_fail_and_check_keeps_the_warnings(self):
+        s = osnap(pulled('ONE', 'kit/a.py', by='kit/one'), pulled('TWO', 'kit/**', by='kit/two'),
+                  rec('BAD', state='pulled', pulled_at=TODAY, pulled_by='kit/bad',
+                      scope='kit/b.py'))
+        results = checkmod.check_store(s)
+        fails = [f for r in results for f in r.findings]
+        self.assertIn('BAD', ' '.join(f.path for f in fails if f.check == checkmod.PULL_RECORDS))
+        self.assertEqual(len({r.name: r for r in results}[checkmod.PULL_RECORDS].warnings), 2)
+        with mock.patch.object(smod, 'pull_collisions',
+                               side_effect=AssertionError('a write ran the collision pass')):
+            self.assertEqual(checkmod.fail_findings(s), fails)
+
+
+class IndexedComplementMatchesWalk(unittest.TestCase):
+    """scope.complement with its removed-path and child index returns what the tree walk did,
+    on a generated tree with broad members and large removed sets, the cap included."""
+
+    def test_generated_trees(self):
+        rnd = random.Random(3)
+        members = ['brain/**', 'brain', 'brain/s1/**', 'brain/s1', 'node/s2/t3/f1.py',
+                   'Brain/**', 'kit/s0/t0/**', 'docs/**', 'none']
+        removals = [[], ['elsewhere/x.py'], ['brain/s1/t2/f3.py'],
+                    [p for p in GEN_TREE if p.startswith('brain/s1/')],
+                    [p for p in GEN_TREE if p.startswith('brain/') and not p.startswith('brain/s4')],
+                    [p for p in GEN_TREE if p.startswith('brain/')], ['BRAIN/s0/t0/f0.py']]
+        removals += [rnd.sample(GEN_TREE, k) for k in (5, 40, 200)]
+        for member in members:
+            for removed in removals:
+                for cap in (1, smod.COMPLEMENT_CAP, 1000):
+                    with self.subTest(member=member, removed=len(removed), cap=cap):
+                        self.assertEqual(smod.complement(member, removed, GEN_TREE, cap),
+                                         walk_complement(member, removed, GEN_TREE, cap))
 
 
 if __name__ == '__main__':

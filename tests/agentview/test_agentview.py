@@ -1,5 +1,5 @@
-"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (decision 18,
-docs/multi-host-plan.md section 7; docs/content.md "Agent view").
+"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (docs/content.md
+"Agent view").
 
 Each section is checked against the live source it is built from (the host's ContentRenderer and
 start_text, the kit header, the skills folder, kitlib.backlog.roles, the guard's role policy), on
@@ -25,7 +25,8 @@ from kitlib.backlog import roles as broles
 from kitlib.git import repo as gitrepo
 from kitlib.guard import rolepolicy
 from kitlib.guard.context import Ctx
-from kitlib.host import content as hcontent, header, registry
+from kitlib.hookrun import header
+from kitlib.host import content as hcontent, registry
 
 from hosts.claude.adapter import content as claude_content
 from tests.home import TempHomeCase
@@ -161,7 +162,7 @@ class Start(Base):
         self.assertEqual([c[0] for c in self.calls], ['SubagentStart'])
 
     def test_a_dispatched_role_on_claude_shows_the_agent_start_block(self):
-        # The block's default budget is 1.0 s of wall time. Under the time fence (docs/flaky-tests.md)
+        # The block's default budget is 1.0 s of wall time. Under the time fence (docs/test-tools.md "Time fence")
         # it is the ceiling, so a reading slower than that (a loaded machine; here a stub that sleeps
         # past it) still finishes: the hook's own default is what is checked, with no budget passed in.
         from hosts.claude.adapter.host import ADAPTER
@@ -255,7 +256,7 @@ class GivenAndHeld(Base):
         rel = VALUES['profile_path']
         none = self.section(self.view('worker', brief=True), 'Repo profile').lines[0]
         self.assertIn('none', none)
-        # The profile is opt-in (decision 26): with none, the role reads the kit's default.
+        # The profile is opt-in: with none, the role reads the kit's default.
         default = os.path.join(KIT, 'content', 'default-profile.md')
         self.assertTrue(os.path.isfile(default))
         self.assertTrue(none.endswith("; in use: the kit's default, %s" % default), none)

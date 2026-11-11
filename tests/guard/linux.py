@@ -1,5 +1,5 @@
-"""The guard on Linux, for tests that run on any platform (docs/linux-support-plan.md section 3,
-slice 8): on_linux() holds kitlib.platform.NAME at 'linux' and gives each guard module an `os`
+"""The guard on Linux, for tests that run on any platform: on_linux() holds kitlib.platform.NAME at
+'linux' and gives each guard module an `os`
 whose path is posixpath, so on Windows the guard reads paths as it does on Linux (where os.path
 is posixpath already and the stand-in changes nothing). The mount table is a stand-in too
 (paths._mounts), as is the password database (kitlib.platform.linux.paths._pw_dir: no entry, so
@@ -20,13 +20,14 @@ from kitlib.git import repo
 from kitlib.platform.linux import paths as linux_paths
 from kitlib.guard import (backlogrole, context, delegfile, fallback, generated, hub, jail, paths,
                           place, prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit,
-                          rules_gitcore, rules_owner, rules_push, rules_run, rules_write, shell)
+                          rules_gitcore, rules_gitjail, rules_gitref, rules_owner, rules_push, rules_run,
+                          rules_write, shell)
 
 from .world import FakeGit, SHA_GATED
 
 GUARD_MODULES = (backlogrole, context, delegfile, fallback, generated, hub, jail, paths, place,
                  prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit, rules_gitcore,
-                 rules_owner, rules_push, rules_run, rules_write, shell)
+                 rules_gitjail, rules_gitref, rules_owner, rules_push, rules_run, rules_write, shell)
 
 EXT4 = [('/', 'ext4')]
 

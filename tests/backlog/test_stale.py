@@ -8,6 +8,7 @@ from unittest import mock
 
 from kitlib.backlog import stale as stmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder
 from kitlib.backlog import record as rmod
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -98,7 +99,7 @@ class Stale(StoreCase):
         repo = TempRepo()
         self.addCleanup(repo.cleanup)
         root = repo.worktree('w')
-        backend = smod.MainBackend(root, 'docs/backlog')
+        backend = store_folder.MainBackend(root, 'docs/backlog')
         store = smod.Store(backend, rmod.Rules())
         repo.write('docs/backlog/FOO.md', helpers.record_text(id='FOO'), root=root)
         with at('2026-08-01'):

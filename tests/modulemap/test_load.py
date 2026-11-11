@@ -113,6 +113,70 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(sorted(mm.modules), ['brain', 'node', 'protocol', 'worker'])
 
 
+def layered(edges=(), **mods):
+    """The fixture map with layers low < mid < top: node and protocol low, brain and worker mid
+    (brain may use worker). `mods` replaces a module's fields."""
+    data = with_(layers=['low', 'mid', 'top'], edges=list(edges))
+    fields = {'node': {'layer': 'low'}, 'protocol': {'layer': 'low'},
+              'brain': {'layer': 'mid', 'same_layer': ['worker']}, 'worker': {'layer': 'mid'}}
+    for n, extra in fields.items():
+        data['modules'][n].update(extra)
+    for n, extra in mods.items():
+        data['modules'][n].update(extra)
+    return data
+
+
+def edge(src, dst, kind='build'):
+    return {'from': src, 'to': dst, 'kind': kind, 'why': 'w'}
+
+
+class LayersTest(unittest.TestCase):
+    refuses = RulesTest.refuses
+
+    def test_a_map_without_layers_loads_as_before_ratchets_and_all(self):
+        mm = ModuleMap(with_(edges=[edge('node', 'brain'), edge('brain', '(root)', 'tree')],
+                             ratchets=[{'id': 'r', 'from': 'worker', 'to': 'brain', 'goal': 0}]))
+        self.assertEqual(mm.layers, [])
+        self.assertEqual(mm.layer['brain'], None)
+        self.assertEqual([r['id'] for r in mm.ratchets], ['r'])
+
+    def test_a_layered_map_with_down_and_named_same_layer_edges_loads(self):
+        mm = ModuleMap(layered([edge('brain', 'node'), edge('brain', 'worker', 'data')]))
+        self.assertEqual(mm.layers, ['low', 'mid', 'top'])
+        self.assertEqual(mm.layer['worker'], 'mid')
+        self.assertEqual(mm.same_layer['brain'], ['worker'])
+
+    def test_a_module_in_no_known_layer_refuses(self):
+        self.refuses(layered(worker={'layer': 'side'}),
+                     'module worker: layer side is not one of the map\'s layers')
+        data = layered()
+        del data['modules']['node']['layer']
+        self.refuses(data, 'module node: layer None is not one of')
+
+    def test_an_upward_edge_refuses(self):
+        self.refuses(layered([edge('node', 'brain')]),
+                     'edges[0] node -> brain goes up a layer (low uses mid)')
+
+    def test_a_same_layer_edge_its_source_does_not_name_refuses(self):
+        self.refuses(layered([edge('worker', 'brain')]),
+                     "edges[0] worker -> brain stays in layer mid, and worker's same_layer")
+
+    def test_a_root_edge_refuses(self):
+        self.refuses(layered([edge('brain', '(root)', 'tree')]),
+                     'edges[0] brain -> (root): with layers, an edge may not join (root)')
+        self.refuses(layered([edge('(root)', 'node')]), 'may not join (root)')
+
+    def test_a_same_layer_name_in_another_layer_refuses(self):
+        self.refuses(layered(brain={'same_layer': ['node']}),
+                     'module brain: same_layer names node, which is in layer low, not mid')
+        self.refuses(layered(brain={'same_layer': ['nope']}), 'same_layer names nope, which is not')
+
+    def test_layer_fields_without_layers_refuse(self):
+        data = with_()
+        data['modules']['brain']['layer'] = 'mid'
+        self.refuses(data, 'module brain: layer and same_layer need the map\'s "layers"')
+
+
 class FilesTest(unittest.TestCase):
     def setUp(self):
         self.t = Tree()

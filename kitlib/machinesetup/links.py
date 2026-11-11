@@ -40,7 +40,8 @@ TOOL_LINKS = (('machine_lock', 'tools'), ('kitlib', 'kitlib'), ('comfy', 'option
 KNOWLEDGE_LINKS = (('asset-generation', 'knowledge/asset-generation'),)
 SKILLS_DIR = 'content/skills'                  # the skills, written once (no rendered copy)
 # Where the skills were before: claude/skills before the hosts/ move, then the Claude shell's
-# rendered copy until decision 29. Both are under the kit, so a link into either is a leftover.
+# rendered copy until skills moved to content/skills. Both are under the kit, so a link into either
+# is a leftover.
 MOVED_SKILLS_DIRS = (MOVED_FROM + '/skills', SHELL + '/skills')
 CONTAINERS = ('tools', 'knowledge', 'skills')
 REMOVE = 'cmd /c rmdir "%s"'                   # a junction or directory link: the link only; never /s

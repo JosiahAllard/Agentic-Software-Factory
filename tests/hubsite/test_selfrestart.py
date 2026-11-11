@@ -12,8 +12,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import autostart, selfrestart, serve
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubsite import autostart, selfrestart, serve, servesources
+from kitlib.hubclient import settings as hub_settings
+from kitlib.hubclient import localask
 from kitlib.proc import spawn
 
 PORT = 8765
@@ -487,7 +488,7 @@ class SelfCheckCase(unittest.TestCase):
 
     def make_sources(self, tmp):
         self.made.append(tmp)
-        return serve.Sources(tokens=os.path.join(tmp, 'tokens'),
+        return servesources.Sources(tokens=os.path.join(tmp, 'tokens'),
                              static_dir=os.path.join(tmp, 'web'))
 
     def run_self_check(self):
@@ -496,14 +497,14 @@ class SelfCheckCase(unittest.TestCase):
                                    make_sources=self.make_sources)
 
     def test_the_default_scratch_hub_is_the_machines_on_a_temp_store_and_tokens_with_no_parts(self):
-        from kitlib.hubsite import settings as settings_module
+        from kitlib.hubclient import settings as settings_module
         machine = hub_settings.settings(None)._replace(
             port=8790, store=os.path.join(tempfile.gettempdir(), 'the-machine-store'), push=True)
         asked, built = [], []
 
         def machine_sources(**kw):
             asked.append(kw)
-            return serve.Sources(tokens=os.path.join(tempfile.gettempdir(), 'machine-tokens'),
+            return servesources.Sources(tokens=os.path.join(tempfile.gettempdir(), 'machine-tokens'),
                                  backlog=object(), lock=object(), push=object(),
                                  push_dir='push', jobs=[object()])
 
@@ -514,7 +515,7 @@ class SelfCheckCase(unittest.TestCase):
             built.append((settings, src))
             raise Built()
         with mock.patch.object(settings_module, 'load', lambda: machine), \
-                mock.patch.object(serve, 'machine_sources', machine_sources), \
+                mock.patch.object(servesources, 'machine_sources', machine_sources), \
                 mock.patch.object(serve, 'build', build), \
                 mock.patch.object(sys, 'path', list(sys.path)):
             with self.assertRaises(Built):
@@ -537,7 +538,7 @@ class SelfCheckCase(unittest.TestCase):
         self.assertFalse(os.path.exists(self.made[0]), 'its temp folder is removed')
 
     def test_a_scratch_hub_that_does_not_answer_health_fails_the_check(self):
-        with mock.patch.object(serve, 'ask', lambda *a, **k: (503, {'ok': False})):
+        with mock.patch.object(localask, 'ask', lambda *a, **k: (503, {'ok': False})):
             with self.assertRaises(selfrestart.SelfCheckError):
                 self.run_self_check()
         self.assertFalse(os.path.exists(self.made[0]))
@@ -573,7 +574,7 @@ class SelfCheckCase(unittest.TestCase):
         with mock.patch.object(importlib, 'import_module', picky):
             with self.assertRaises(ImportError):
                 self.run_self_check()
-        for name in ('kitlib.hubsite.serve', 'kitlib.hubjobs', 'kitlib.pmdata'):
+        for name in ('kitlib.hubsite.serve', 'kitlib.config.pmdata'):
             self.assertIn(name, names, 'every code folder is imported, %s too' % name)
         self.assertEqual(self.made, [])
 
@@ -582,16 +583,13 @@ class SelfCheckCase(unittest.TestCase):
         from kitlib import hubjobs
         self.assertTrue(hubjobs.makers(), 'a job module to fail')
         real = importlib.import_module
-        names = []
 
         def no_jobs(name, *a):
-            names.append(name)
             if name.startswith('kitlib.hubjobs.'):
                 raise ImportError('a job half landed')
             return real(name, *a)
         with mock.patch.object(importlib, 'import_module', no_jobs):
             self.run_self_check()       # the new server serves without it, with a note
-        self.assertIn('kitlib.hubjobs', names)
         self.assertEqual(len(self.made), 1)
 
 

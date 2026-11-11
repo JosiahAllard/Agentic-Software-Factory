@@ -8,9 +8,11 @@ import os
 import re
 
 from kitlib.config import user as kuser
-from kitlib import lockmcp as lockmcp_names
+from kitlib.lock import names as lockmcp_names
+from kitlib.host import registry
 
 from . import commands as cm
+from . import commands_nested as cn
 from . import hub as hubg
 from . import jail
 from . import shell as sh
@@ -23,8 +25,7 @@ def host_mcp_prefix(profile):
     """The lock MCP's tool-name prefix on the host `profile` (kitlib.host.HostProfile) describes:
     its mcp_tool_format with the kit's plugin and the lock server's name filled in and the tool
     left off. INFERRED for Claude Code, not observed: the kit has no installed plugin yet."""
-    return profile.mcp_tool_format.format(plugin=lockmcp_names.PLUGIN_NAME,
-                                          server=lockmcp_names.SERVER_NAME, tool='')
+    return profile.mcp_tool_format.format(plugin=registry.PLUGIN_NAME, server=lockmcp_names.SERVER_NAME, tool='')
 
 
 def host_mcp_separator(profile):
@@ -44,7 +45,7 @@ def mcp_owner_tool(ctx, tool, kind='mcp'):
     """The owner-only lock MCP tool `tool` names, or None: under the configured prefix, under any
     other server name (the tail after the host's separator, `mcp__<server>__<tool>`), or listed in
     full in guard_mcp_tools. Only an MCP call (Action kind 'mcp') names one. The names are the
-    retired owner writes pinned in kitlib.lockmcp.OWNER_ONLY: the server no longer serves them,
+    retired owner writes pinned in kitlib.lock.names.OWNER_ONLY: the server no longer serves them,
     but one started from an older release still does until it restarts."""
     if kind != 'mcp' or not tool:
         return None
@@ -177,7 +178,7 @@ def _tool_run(inv):
         k = 0
         while k < len(args):
             t = args[k].text
-            if t in cm.BASH_VALUE_OPTS:
+            if t in cn.BASH_VALUE_OPTS:
                 k += 2
                 continue
             if t in ('-', '--'):
@@ -260,7 +261,7 @@ def lock_owner_write(words):
     return None
 
 
-# Machine setup's --apply writes the machine config, the owner's email among them (plan decision 27),
+# Machine setup's --apply writes the machine config, the owner's email among them,
 # and the owner's email is what proves a commit the owner's (owner-only paths, owner-identity). An agent
 # that ran it could make its own address the owner's, so only the owner runs it to act. Its dry run stays
 # open. The entry points: tools/machine_setup.py, its PowerShell front ends and its Linux front end
@@ -333,8 +334,8 @@ NODE_VALUE_OPTS = ('-r', '--require', '--import', '--loader', '--experimental-lo
 HUB_SECRETS_WHY = ('the Action Hub\'s token folder holds the owner\'s key to the hub (owner.token answers as the '
                    'owner) and its store is the hub server\'s to write; an agent reaches the hub only through its '
                    'tool and its MCP server, which read agent.token themselves (docs/guard.md "Hub secrets").')
-HUB_OWNER_WHY = ('answering, closing, submitting, sending and approving on the Action Hub are the owner\'s alone '
-                 '(docs/guard.md "Hub secrets").')
+HUB_OWNER_WHY = ('answering, closing, submitting, sending, approving and applying on the Action Hub '
+                 'are the owner\'s alone (docs/guard.md "Hub secrets").')
 
 
 def hub_config(ctx):
@@ -369,7 +370,7 @@ def hub_secret_folders(ctx):
     """[(path, real)]: the hub's token folders, each as written and as jail.real gives it. `hub`
     in the home folder's machine config folder (kitlib.config.user.DIR_NAME), where the hub kept
     them before the move and the move leaves its source; the one beside the machine config the
-    guard reads (kitlib.guard.hub.secret_folder of Location.new, where kitlib.hubsite.auth.folder
+    guard reads (kitlib.guard.hub.secret_folder of Location.new, where kitlib.hubclient.token.folder
     finds them); and `hub` in the PM repository's machine config folder
     (jail.pointer_config_dir), where the owner's machine setup copies the hub's files before the
     hub reads them from there. A folder named twice is listed once, and one jail.real cannot take
@@ -595,7 +596,7 @@ def hub_secret_shell(ctx, cmd, inv, places):
     """What the command `cmd` names of the hub's secrets, as text, or None: a literal path in
     the token folder (a word that only names a token file or looks like the folder, with
     no path into it, passes), and python or node code that names a token file or the folder
-    (kitlib.guard.hub.INLINE_RE; docs/guard-v2.md W3: a parsed hub tool run of an agent verb piped into
+    (kitlib.guard.hub.INLINE_RE; docs/guard-owner.md "Hub secrets": a parsed hub tool run of an agent verb piped into
     code given on the command line is that code's data, hub_run_verb). A wildcard path is read as the literal folder before its first
     wildcard (glob_folder); a DOS wildcard (LEDGER_GLOB_CHARS: `<`, `>`, `"`) is read both ways,
     as that folder and as the literal path (hub_texts); the store and the word hub are not refused (the guard blocks only

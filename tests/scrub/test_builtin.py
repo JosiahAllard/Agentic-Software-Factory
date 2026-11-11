@@ -23,11 +23,13 @@ from tests.scrub.test_scrub import FIXTURE_FOLDERS, read_text, tracked_files
 ID_SHAPE_FOLDERS = (
     ('kitlib/hubsite/*', "the hub's store and API: question ids are its data"),
     ('kitlib/hubmcp/*', "the hub's MCP tools: question ids are its data"),
+    ('kitlib/hubvalidate/*', 'the hub id validator, moved out of kitlib/hubsite: its docstrings show the id shape'),
     ('tests/hubsite/*', "tests of the hub's store and API: question ids are its data"),
+    ('tests/hubclient/*', "tests of the hub's client, moved out of tests/hubsite: question ids are its data"),
     ('tests/hubmcp/*', "tests of the hub's MCP tools: question ids are its data"),
     ('tests/hubvalidate/*', 'tests of the hub id validator, which checks the id shape'),
+    ('tests/ownerfiles/test_approvals_delta.py', 'a test that a hub question id is not an approval id'),
     ('tests/guard/test_rules_hub*.py', "tests of the guard's hub rules, which match the id shape"),
-    ('tools/hub.py', "the hub CLI's help and examples show question ids"),
     ('docs/hub-pm.md', "the hub's doc: question ids are its data"),
     ('docs/hub-push.md', "the hub's doc: question ids are its data"),
     ('docs/hub-questions.md', "the hub's doc: question ids are its data"),
@@ -56,7 +58,6 @@ PENDING_HISTORY = {
     ('pinned-hash', 'docs/commit.md'): 1,
     ('provenance', 'docs/commit.md'): 2,
     ('provenance', 'docs/doc-tools.md'): 2,
-    ('provenance', 'docs/go-live.md'): 4,
     ('provenance', 'docs/install.md'): 1,
     ('provenance', 'docs/landed.md'): 2,
     ('provenance', 'docs/launcher.md'): 3,
@@ -93,11 +94,11 @@ PENDING_HISTORY = {
     ('provenance', 'kitlib/pytests/child.py'): 2,
     ('provenance', 'kitlib/pytests/runner.py'): 2,
     ('provenance', 'kitlib/reviewpack/__init__.py'): 1,
-    ('provenance', 'kitlib/reviewpack/trailers.py'): 1,
     ('provenance', 'kitlib/syncbase/__init__.py'): 1,
     ('provenance', 'kitlib/testlist/__init__.py'): 2,
     ('provenance', 'kitlib/tooldeps/__init__.py'): 2,
     ('provenance', 'kitlib/tooldeps/deps.py'): 2,
+    ('provenance', 'kitlib/trailerscheck/trailers.py'): 1,
     ('provenance', 'kitlib/verdict/__init__.py'): 1,
     ('provenance', 'kitlib/worktree/holders.py'): 2,
     ('provenance', 'kitlib/worktree/new.py'): 2,
@@ -120,7 +121,7 @@ PENDING_HISTORY = {
     ('provenance', 'tests/testutil.py'): 2,
     ('provenance', 'tests/tooldeps/piecetable.py'): 1,
     ('provenance', 'tools/machine_setup.py'): 1,
-    ('record-id', 'docs/guard.md'): 1,
+    ('record-id', 'docs/guard-owner.md'): 1,
     ('record-id', 'tests/delegations/test_cli.py'): 1,
     ('record-id', 'tests/delegations/test_run.py'): 13,
     ('record-id', 'tests/guard/test_backlog_role.py'): 1,
@@ -227,7 +228,7 @@ class TheChecks(unittest.TestCase):
 
     def test_the_id_shape_allowlist_covers_the_hub_but_not_other_files(self):
         line = j('ask ', 'Q', '-123\n')
-        files = {'tests/hubsite/test_a.py': line, 'tools/hub.py': line,
+        files = {'tests/hubsite/test_a.py': line, 'kitlib/hubsite/cli/usage.py': line,
                  'tests/ledger/test_a.py': j('R', '-9001\n'), 'kitlib/other.py': line,
                  'tests/guard/test_rules_hub_read.py': line, 'tests/guard/test_other.py': line}
         hits, _ = scrub.scan(sorted(files), files.get, ALLOWED)

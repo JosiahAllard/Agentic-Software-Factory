@@ -1,11 +1,11 @@
-"""Every session kind the launcher opens carries a PM_KIT_ROLE mark (kitlib.sessionmark): each test
+"""Every session kind the launcher opens carries a PM_KIT_ROLE mark (kitlib.host.sessionmark): each test
 opens the window through a fake host and reads the mark out of the window's script."""
 import os
 import unittest
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.launcher import reboot, start, window
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from tests.launcher.fakes import FakeHost, Home, role_of, windows_text
 
 P = PLUGIN_NAME + ':'
@@ -24,7 +24,7 @@ class RoleFor(unittest.TestCase):
         self.assertEqual(window.role_for('analyst'), 'analyst')
 
     def test_the_plugin_prefixed_agent_gets_the_bare_agents_mark(self):
-        # docs/guard.md "Agent names": the mark never carries the prefix
+        # docs/guard-fallback.md "Agent names": the mark never carries the prefix
         self.assertEqual(window.role_for(P + 'deep-worker'), 'deep-worker')
         self.assertEqual(window.role_for(P + 'consultant'), 'consultant')
         self.assertEqual(window.role_for(P + 'analyst'), 'analyst')

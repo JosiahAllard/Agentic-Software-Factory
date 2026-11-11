@@ -20,6 +20,7 @@ from unittest import mock
 from kitlib.config import heavy_programs
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
+from kitlib.worktree import scratch as S
 from tests.lock.helpers import KINDS, StoreCase
 from tests.lock.test_run import one_usable_slot
 
@@ -28,6 +29,8 @@ from tests.platforms import windows_only
 
 if os.name == 'nt':
     from kitlib.lock import run as lockrun
+    from kitlib.lock import run_held
+    from kitlib.lock import run_wait
     from kitlib.lock.store import EXIT_BUSY, EXIT_TIMEOUT
     from kitlib.proc import process
 
@@ -117,7 +120,7 @@ class BookMode(unittest.TestCase):
 
     @windows_only('the lock is Windows only')
     def test_the_wait_is_the_lock_s_queue_wait(self):
-        self.assertIs(R.Interrupts().wait_code, lockrun.acquire.__code__)
+        self.assertIs(R.Interrupts().wait_code, run_wait.acquire.__code__)
 
 
 class LockCase(Case, StoreCase):
@@ -136,7 +139,7 @@ class LockCase(Case, StoreCase):
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID')
                     and not k.startswith('MACHINE_LOCK_')}
-        self.slug = R.PREFIX + self.base[:10]
+        self.slug = S.PREFIX + self.base[:10]
         self.booked = []
         self.real_book = lockrun.book
         guard = mock.patch.object(lockrun, 'book', self.checked_book)
@@ -269,7 +272,7 @@ class Booking(LockCase):
             return store
         with mock.patch.object(R, 'Store', scratch):
             rc, out = self.run_locked('--tests', 'tests/test_add.py', store=None,
-                                      env=dict(self.env, **{lockrun.NEST_ENV: 'junk'}))
+                                      env=dict(self.env, **{run_held.NEST_ENV: 'junk'}))
         self.assertEqual(rc, V.EXIT_GREEN, out)
         self.assertEqual(len(made), 1)
         self.assertIn('lock      MACHINE_LOCK_RUN ignored (malformed value); this run takes its '
@@ -337,7 +340,7 @@ class Nested(LockCase):
         token = self.caller_holds(2)
         self.commit({'tests/test_lockrun.py': SHOW_RUN})
         rc, out = self.run_locked('--tests', 'tests/test_lockrun.py', cores=None,
-                                  env=dict(self.env, **{lockrun.NEST_ENV: token}))
+                                  env=dict(self.env, **{run_held.NEST_ENV: token}))
         self.assertEqual(rc, V.EXIT_RED, out)
         self.assertIn('lock      nested: run %s already holds what it needs; the command runs '
                       'in its job' % RID, out)
@@ -351,7 +354,7 @@ class Nested(LockCase):
         token = self.caller_holds(1)
         self.commit({'tests/test_lockrun.py': SHOW_RUN})
         rc, out = self.run_locked('--tests', 'tests/test_lockrun.py', cores=None,
-                                  env=dict(self.env, **{lockrun.NEST_ENV: token}))
+                                  env=dict(self.env, **{run_held.NEST_ENV: token}))
         self.assertEqual(rc, V.EXIT_USAGE, out)
         self.assertIn('refused: the machine lock: nested run refused: a engine-test run needs ',
                       out)
@@ -465,7 +468,7 @@ class Stopped(LockCase):
                 signal.raise_signal(signal.SIGINT)
         self.store.say = say
         rc, out = self.run_locked('--tests', 'tests/test_lockrun.py',
-                                  env=dict(self.env, **{lockrun.NEST_ENV: 'junk'}))
+                                  env=dict(self.env, **{run_held.NEST_ENV: 'junk'}))
         self.assertEqual(len(told), 1, out)
         self.assertEqual(rc, V.EXIT_UNDECIDED, out)
         self.assertIn('stopped   interrupted before the tree was made', out)

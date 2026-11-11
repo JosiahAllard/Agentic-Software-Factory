@@ -3,16 +3,15 @@
   steps    the configured steps: built, selected by what changed, judged by their logs
   detect   with no "gate" section, the steps detected from the checkout (source auto)
   runner   the steps run in a machine-lock slot; the branch gate and the merged-tree gate
-  land     one branch landed: landing lock, expected refs, merge, merged gate, push, verify
   stop     one gate run ended by its lock run id: its own tree and lock; a landing's is refused
   stash    the stash guard: no gate and no landing while the repository's stash stack has an entry
   measure  a proposed kinds table from the lock's run history (never written in place)
 
 tools/gate.py parses, prints and exits; everything else is here. Nothing here prints: progress
-goes to a `say` callable the caller passes. docs/gate.md holds the exit codes and messages.
+goes to a `say` callable the caller passes. docs/gate-run.md holds the exit codes and messages.
 """
 
-# Exit codes (docs/gate.md "Exit codes"). The machine lock's refusal codes pass through unchanged
+# Exit codes (docs/gate-run.md "Exit codes"). The machine lock's refusal codes pass through unchanged
 # (kitlib.lock.store: 6 busy, 8 timeout, 10 require-lock, 11 reserved, 12 hold).
 OK = 0          # the gate passed / the branch landed / measure wrote its proposal
 FAILED = 1      # the gate failed / the landing did not land (red gate, merge conflict, push
@@ -26,7 +25,7 @@ LANDED_UNGATED = 9  # retired: no landing produces it (it was a landing finished
                     # on main while its merged gate ran); kept so old result records still read
 STOPPED = 16    # a stop (gate.py stop, machine_lock.py stop) ended the gate before its verdict: no
                 # pass and no gate-OK record. `gate.py stop` itself exits OK, FAILED or REFUSED.
-                # Unused by the load node's codes too (kitlib.loadnode.job): node.py gate passes
+                # Unused by the load node's codes too (loadnode.job): node.py gate passes
                 # a gate's code on, and there 13 is a job that succeeded
 
 NAMES = {OK: 'OK', FAILED: 'FAILED', USAGE: 'USAGE', STUCK: 'STUCK', REFUSED: 'REFUSED',

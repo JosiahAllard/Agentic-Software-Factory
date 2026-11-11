@@ -1,6 +1,6 @@
 """Bounded identifier, digest and integer checks for opaque ids carried between processes.
 
-Promoted from the bridge's Phase 0 model (docs/multi-host-plan.md section 2.4), where every bridge
+Promoted from the bridge's Phase 0 model (optional/bridge/README.md), where every bridge
 record used them. Each check returns its value unchanged or raises IdentError with a content-free
 code, so a refused value is never echoed back.
 """

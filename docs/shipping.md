@@ -13,15 +13,16 @@ the install's own names stay with `tests/scrub/test_generic.py` and `scrub_patte
 
 - `gender`: the masculine subject, object, possessive and reflexive pronouns as whole words in
   any case, `\bh(?:e|is|im|imself)\b` (GENDER), and nothing else; the kit writes "the owner".
-- `record-id`: a backlog record id, and also an owner question or ruling id: a one-letter `Q` or
+- `record-id`: a backlog record id (an uppercase prefix, then one or more hyphenated parts of
+  uppercase letters or digits), and also an owner question or ruling id: a one-letter `Q` or
   `R`, a dash, then digits (written `Q-nnnn` here). Files where that shape is the hub's own data
   are allowlisted in ID_SHAPE_FOLDERS (`tests/scrub/test_builtin.py`). STOP_IDS lists the acronyms
   and markers that only look like one, and an invented id in a fixture starts with `EX-`
   (MADE_UP_ID_PREFIX).
 - `provenance`: the kit this one replaced, called old, earlier, previous or legacy, or one of its
   files named; the bare title "PM kit" (AGENTS.md) passes.
-- `pinned-hash`: a commit hash, outside tests/ only; git's empty tree and the hex alphabet pass
-  (NOT_HASHES).
+- `pinned-hash`: a commit hash, outside tests/ only; git's empty tree, the hex alphabet and the ssh key type
+  `ed25519` pass (NOT_HASHES).
 - `hardware`: a GPU model, a CPU family or chiplet, or a total core or thread count of ten or
   more.
 - `drive`: a drive path into one of MACHINE_FOLDERS, the machine folders that tests/shipped.py
@@ -72,7 +73,7 @@ than the baseline fails, a file with no baseline fails on its first hit, and few
   `installer/new-repo.ps1`) writes into a repository that asks for it (docs/install.md
   "Committed setup (--repo)").
   `templates/common/agent-profile.TEMPLATE.md` and `templates/common/coordinator-profile.TEMPLATE.md`
-  are what the coordinator drafts a repository's two profiles from (hosts/claude/shell/agents/coordinator.md, "On start");
+  are what the coordinator drafts a repository's two profiles from (hosts/claude/shell/agents/coordinator.md, "The owner");
   their headings are the ones the agents read, and `tests/templates` checks them.
 - `templates/stacks/{dotnet,godot,java,python}`: `stack.json` (build and test commands,
   gitignore, gitattributes; `new-repo.ps1 -Stack` applies the two lists), `tools/gate.json` (a `"gate"` section of `.kit.json`; point to it
@@ -99,8 +100,7 @@ than the baseline fails, a file with no baseline fails on its first hit, and few
   (exe names) with env `PROCWATCH_ORIGINS` (`;`-separated).
 - `usage`: usage reports and the statusline (`statusline-usage.ps1`, `write-usage-status.ps1`).
 - `bridge`: agent-to-agent messaging between open host chats, an optional install that no host
-  shell mentions until the owner registers it (`optional/bridge/README.md`; what works:
-  `optional/bridge/STATUS.md`). Tests in `tests/bridge`.
+  shell mentions until the owner registers it (`optional/bridge/README.md`; what works: its "Status" section). Tests in `tests/bridge`.
 - `agenttemp`: `agent_temp_sweep.py` clears old entries from the agents' shared temp folder and its
   session folders, set by `agent_temp_sweep` in the machine config (docs/kit-json.md). It never
   removes a `*-coordinator`, `*-consultant` or `shared` folder, whatever `keep` says (`BUILT_IN_KEEP`; the first two

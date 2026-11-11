@@ -1,4 +1,4 @@
-"""The caller's checkout (docs/gate.md, The caller's checkout): a gate.py run on another checkout
+"""The caller's checkout (docs/gate-rerun-checkout.md, The caller's checkout): a gate.py run on another checkout
 of its own repository with no -C or a relative one (the kit's own repository, where every checkout
 has a real gate.py) is refused, and a relative --log-dir that would be made outside the gated
 checkout is USAGE (OwnCopy, LogDir, RunByPath).
@@ -332,18 +332,18 @@ class RunByPath(unittest.TestCase):
     def test_the_plugins_gate_py_from_a_worktree_is_the_main_checkouts_own(self):
         """A gate.py in an export whose marker names the main checkout pins through it
         (kitlib.gate.pin target), and the run gets KIT_LIVE_ROOT=<main checkout>, which the
-        own-copy refusal compares against (pluginsource.live_root): from a linked worktree with no
+        own-copy refusal compares against (pluginsource.layout.live_root): from a linked worktree with no
         -C or a relative one it is refused as the main checkout's own gate.py is. An absolute -C
         still gates the tree it names."""
-        from kitlib import pluginsource
+        from kitlib.pluginsource import layout as plugin_layout
         from kitlib.gate import pin
         export = os.path.join(self.repo.base, 'plugin', '0123456789ab')
         os.makedirs(os.path.join(export, 'tools'))
-        with open(os.path.join(export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': '0123456789ab' * 3 + 'abcd', 'checkout': self.main}, fh)
         live = pin.target(os.path.join(export, 'tools', 'gate.py'), environ={})
         self.assertEqual(live, self.main)
-        env = {pluginsource.LIVE_ROOT_ENV: live}
+        env = {plugin_layout.LIVE_ROOT_ENV: live}
         for args in ((), ('-C', '.')):
             with self.subTest(args=args):
                 code, out = self.gate(self.wt, export, *args, extra_env=env)
@@ -354,25 +354,25 @@ class RunByPath(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn('RUN   unit (always)', out)
         # the control: an export whose marker names no checkout, with no KIT_LIVE_ROOT, is its
-        # own live root (pluginsource.live_root); it is in no repository, so it runs
-        with open(os.path.join(export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        # own live root (pluginsource.layout.live_root); it is in no repository, so it runs
+        with open(os.path.join(export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': '0123456789ab' * 3 + 'abcd'}, fh)
         code, out = self.gate(self.wt, export)
         self.assertEqual(code, 0, out)
         self.assertIn('RUN   unit (always)', out)
 
     def test_the_plugins_gate_py_with_no_live_root_is_the_marker_checkouts_own(self):
-        """With no KIT_LIVE_ROOT, pluginsource.live_root of an export whose marker names the main
+        """With no KIT_LIVE_ROOT, pluginsource.layout.live_root of an export whose marker names the main
         checkout is that checkout, so the own-copy refusal treats the export's gate.py as the main
         checkout's own: from a linked worktree with no -C it is refused."""
-        from kitlib import pluginsource
+        from kitlib.pluginsource import layout as plugin_layout
         # live_root takes the marker checkout only when it looks like a kit
         with open(os.path.join(self.main, 'kit.json'), 'w', encoding='utf-8') as fh:
             fh.write('{}\n')
         os.makedirs(os.path.join(self.main, 'tools'), exist_ok=True)
         export = os.path.join(self.repo.base, 'plugin', '0123456789ab')
         os.makedirs(os.path.join(export, 'tools'))
-        with open(os.path.join(export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': '0123456789ab' * 3 + 'abcd', 'checkout': self.main}, fh)
         code, out = self.gate(self.wt, export)
         self.assertEqual(code, G.REFUSED, out)

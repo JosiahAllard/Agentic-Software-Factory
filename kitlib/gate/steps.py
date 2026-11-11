@@ -10,11 +10,11 @@ Selection (`select`):
   full     every step that is not `manual`; build(full=True) gives each its `full_cmd` when set,
            and build(daily=True) (the daily full run) its `daily_cmd` before that.
   only     exactly the named steps (manual ones included); an unknown name is a GateConfigError.
-  docs     exactly the `docs_only`.steps (a docs-only change, docs_only(); docs/gate.md
+  docs     exactly the `docs_only`.steps (a docs-only change, docs_only(); docs/gate-run.md
            "Docs-only changes").
   In diff and full, a step is then dropped when a step its `skip_if_selected` names is selected.
   Diff mode then adds every `smoke_steps` step not already selected (reason `smoke`, manual ones
-  included, never dropped), so a landing can take its record (docs/gate.md "Landing"). A
+  included, never dropped), so a landing can take its record (docs/gate-landing.md "Landing"). A
   `smoke_steps` or `docs_only`.steps name no step has, or a `docs_only` with no steps, is a
   GateConfigError (build).
 Order: `stage` first, main (the default), last; `defer` steps after all of them; config order
@@ -31,7 +31,7 @@ zero-test run (a warning: judge's zero rules are then the only backstop).
 
 The old gate keys this gate does not implement (`python_tests`, `python_tests_floor`, `trailers`,
 a step's `kill_retry`) are no keys at all: kitlib.config refuses each as an unknown key, so a
-config that sets one never loads. docs/gate.md "Not ported" says why. A `--pid-hold` argument in
+config that sets one never loads. docs/gate-rerun-checkout.md "Not ported" says why. A `--pid-hold` argument in
 `setup`, a step's `cmd`, `full_cmd`, `daily_cmd` or `merged_args` refuses (GateConfigError,
 `unsupported`): the pid hold of tools/pytests.py and tools/kit_tests.py is opt-in for agent runs,
 never in the gate.
@@ -57,11 +57,11 @@ KIT_TOOLS = os.path.join(KIT_ROOT, 'tools')     # the gate's own runs: an export
 
 
 def kit_live():
-    """The kit checkout a printed command names (kitlib.pluginsource.live_root): when this code
+    """The kit checkout a printed command names (kitlib.pluginsource.layout.live_root): when this code
     runs from a pinned export of pushed main (kitlib.gate.pin), the checkout that started it,
     since a later prune may remove the export."""
-    from kitlib import pluginsource
-    return pluginsource.live_root(KIT_ROOT)
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.live_root(KIT_ROOT)
 
 # toolchain: the probe argvs of the step's "toolchain" (kitlib.gate.reuse), placeholders filled
 Step = collections.namedtuple('Step', 'name cmd check cwd passes fails ok_exits cont warn requires '

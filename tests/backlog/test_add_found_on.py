@@ -1,15 +1,17 @@
 """`add --found-on BRANCH|none --why-not-folded TEXT` (docs/backlog.md, "The fold-in guard"): a
-finding is folded into the branch that found it unless it cannot be; `add` refuses a record whose
-scope overlaps that branch's diff or the scope of a record the branch holds pulled, and records
-where the finding came from and why it was not folded."""
+finding is folded into the branch that found it unless it cannot be; `add` warns, and still files,
+a record whose scope overlaps that branch's diff or the scope of a record the branch holds pulled,
+writing the overlap into `## Found`, and records where the finding came from and why it was not
+folded."""
 import json
 import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_edit, plan_narrow
 from kitlib.backlog import pull_branch
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.git import cmd, refs
@@ -71,16 +73,21 @@ class FoundOn(StoreCase):
         self.assertIn('## Found\n\nFound on no branch (or on a branch since landed); not folded: %s\n' % WHY,
                       new.body)
 
-    def test_a_scope_the_branch_changed_is_refused(self):
+    def overlap(self, scopes, pair, **kw):
+        """`add` files the record (`NEW`), warns with `pair`, and writes `pair` into `## Found`."""
+        change = self.add(scopes, **kw)
+        warning = [x for x in change.lines if x.startswith('WARNING: scope overlaps')]
+        self.assertEqual(len(warning), 1, change.lines)
+        self.assertIn(pair, warning[0])
+        self.assertIn(pair, self.get(kw.get('rid', 'NEW')).body.split('## Found')[1])
+        return change
+
+    def test_a_scope_the_branch_changed_is_filed_with_a_warning(self):
         before = self.remote_tip()
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'])
-        msg = str(cm.exception)
-        self.assertIn('kitlib/x/** vs kitlib/x/a.py (changed on kit/foo)', msg)
-        self.assertIn('fold it into kit/foo, or file it after kit/foo lands', msg)
-        self.assertNotIn('--found-on none', msg)
-        self.assertNotIn('--ruling', msg)
-        self.assertEqual(self.remote_tip(), before)
+        change = self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/a.py (changed on kit/foo)')
+        self.assertIn('Scope overlaps the work of kit/foo when filed:', self.get('NEW').body)
+        self.assertIn('ADDED NEW, found on kit/foo', change.lines)
+        self.assertNotEqual(self.remote_tip(), before)
 
     def test_a_disjoint_scope_is_added_with_where_it_was_found(self):
         change = self.add(['docs/y.md'])
@@ -91,20 +98,14 @@ class FoundOn(StoreCase):
         self.assertIn('## Why this is here', new.body)
         self.assertTrue(any('found on kit/foo' in line for line in change.lines), change.lines)
 
-    def test_a_scope_a_record_the_branch_holds_is_refused(self):
+    def test_a_scope_a_record_the_branch_holds_is_filed_with_a_warning(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=FOO, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'])
-        self.assertIn('tools/z/a.py vs tools/z/** (scope of BAR, pulled by kit/foo)',
-                      str(cm.exception))
+        self.overlap(['tools/z/a.py'], 'tools/z/a.py vs tools/z/** (scope of BAR, pulled by kit/foo)')
 
     def test_a_differently_cased_branch_still_finds_what_it_holds_pulled(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=FOO, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'], found_on='KIT/FOO')
-        self.assertIn('tools/z/a.py vs tools/z/** (scope of BAR, pulled by KIT/FOO)',
-                      str(cm.exception))
-        self.assertIsNone(self.get('NEW'))
+        self.overlap(['tools/z/a.py'], 'tools/z/a.py vs tools/z/** (scope of BAR, pulled by KIT/FOO)',
+                     found_on='KIT/FOO')
 
     def test_a_record_another_branch_holds_does_not_count(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by='kit/other',
@@ -155,21 +156,16 @@ class FoundOn(StoreCase):
         gone = 'kit/gone'
         self.remote_only(gone, 'kitlib/x/b.py')
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=gone, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'], found_on=gone)
-        self.assertIn('(scope of BAR, pulled by kit/gone)', str(cm.exception))
-        change = self.add(['docs/y.md'], found_on=gone)
+        self.overlap(['tools/z/a.py'], '(scope of BAR, pulled by kit/gone)', found_on=gone)
+        change = self.add(['docs/y.md'], found_on=gone, rid='NEW2')
         self.assertIn('NOTE: branch kit/gone is not a local branch; its diff was compared as last '
                       'fetched from origin', change.lines)
 
     def test_a_branch_only_a_remote_has_has_its_diff_compared(self):
         other = self.second_remote()
         self.remote_only('kit/far', 'kitlib/x/b.py', remotes=(other,))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'], found_on='kit/far')
-        self.assertIn('kitlib/x/** vs kitlib/x/b.py (changed on upstream/kit/far)',
-                      str(cm.exception))
-        self.assertIsNone(self.get('NEW'))
+        self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/b.py (changed on upstream/kit/far)',
+                     found_on='kit/far')
 
     def test_each_remote_tip_of_a_remote_only_branch_is_compared(self):
         self.remote_only('kit/far', 'kitlib/x/b.py')
@@ -179,9 +175,8 @@ class FoundOn(StoreCase):
         self.repo.git('branch', '-q', '-D', 'kit/far')
         for scope, where in (('kitlib/x/**', 'origin/kit/far'), ('tools/w/**', 'upstream/kit/far')):
             with self.subTest(scope=scope):
-                with self.assertRaises(Refusal) as cm:
-                    self.add([scope], found_on='kit/far')
-                self.assertIn('(changed on %s)' % where, str(cm.exception))
+                self.overlap([scope], '(changed on %s)' % where, found_on='kit/far',
+                             rid='NEW' + where[0].upper())
         change = self.add(['docs/y.md'], found_on='kit/far')
         self.assertIn('NOTE: branch kit/far is not a local branch; its diff was compared as last '
                       'fetched from origin, upstream', change.lines)
@@ -279,7 +274,7 @@ class FoundOn(StoreCase):
         for branch, want in (('kit/one', ['upstream']), ('kit/both', ['origin', 'upstream']),
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                got = pmod._remotes_with(self.ctx, branch)
+                got = plan_narrow._remotes_with(self.ctx, branch)
                 self.assertEqual([r for r, _ref, _tip in got], want)
                 self.assertEqual([ref for _r, ref, _tip in got],
                                  ['refs/remotes/%s/%s' % (r, branch.lower()) for r in want])
@@ -298,11 +293,9 @@ class FoundOn(StoreCase):
             self.add(['docs/y.md'])
         self.assertIn('backlog.code_main', str(cm.exception))
 
-    def test_a_diff_path_that_cannot_be_compared_is_refused(self):
+    def test_a_diff_path_that_cannot_be_compared_is_filed_with_a_warning(self):
         self.branch_with('kit/odd', 'kitlib/y/[a].py')
-        with self.assertRaises(Refusal) as cm:
-            self.add(['docs/y.md'], found_on='kit/odd')
-        self.assertIn('kitlib/y/[a].py', str(cm.exception))
+        self.overlap(['docs/y.md'], 'kitlib/y/[a].py', found_on='kit/odd')
 
     def test_a_short_or_machine_path_reason_is_usage(self):
         with self.assertRaises(Usage) as cm:
@@ -377,21 +370,23 @@ class FoundOn(StoreCase):
         self.assertIsNone(self.get('NEW'))
 
     def test_an_unreadable_record_fails_the_pulled_scope_check(self):
-        # Store.write refuses an unreadable store first (store.require_readable); the guard's own
-        # check is reached by planning directly.
+        # Store.write refuses an unreadable store first (store_read.require_readable); the guard's
+        # own check is reached by planning directly.
         self.seed({'BAD': 'no separator here\n'})
         with self.assertRaises(Failure) as cm:
-            pmod.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
-                          ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
+            plan_edit.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
+                               ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
         self.assertIn('cannot tell which records kit/foo holds pulled', str(cm.exception))
         self.assertIn('BAD', str(cm.exception))
 
     def failing(self, module, **over):
-        """Patch plan.py's own `module` (refs or cmd) so the named functions answer as `over`
-        says; every other call goes to the real module."""
-        patch = mock.patch.object(pmod, module, _Wrap(getattr(pmod, module), **over))
-        patch.start()
-        self.addCleanup(patch.stop)
+        """Patch the plan modules' own `module` (refs or cmd) so the named functions answer as
+        `over` says; every other call goes to the real module."""
+        for mod in (pmod, plan_narrow, plan_claim):
+            if hasattr(mod, module):
+                patch = mock.patch.object(mod, module, _Wrap(getattr(mod, module), **over))
+                patch.start()
+                self.addCleanup(patch.stop)
 
     def assert_git_failure(self):
         with self.assertRaises(Failure) as cm:
@@ -435,9 +430,10 @@ class FoundOn(StoreCase):
           'Windows, a packed-refs line does not')
 class FoundOnPackedRefs(StoreCase):
     """Loose and packed refs are found alike, the name compared ignoring case (git's own list of
-    ref names, kitlib/backlog/plan.py `_ref_names` and `_spelling`)."""
+    ref names, kitlib/backlog/plan_narrow.py `_ref_names` and `_spelling`)."""
     branch_with = FoundOn.branch_with
     add = FoundOn.add
+    overlap = FoundOn.overlap
     remote_only = FoundOn.remote_only
     second_remote = FoundOn.second_remote
 
@@ -454,19 +450,15 @@ class FoundOnPackedRefs(StoreCase):
                     self.repo.git('pack-refs', '--all')
                     self.assertFalse(os.path.exists(os.path.join(
                         self.repo.root, '.git', 'refs', 'heads', 'kit', 'foo')))
-                with self.assertRaises(Refusal) as cm:
-                    self.add(['kitlib/x/**'], found_on='KIT/FOO')
-                self.assertIn('kitlib/x/** vs kitlib/x/a.py (changed on KIT/FOO)',
-                              str(cm.exception))
+                self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/a.py (changed on KIT/FOO)',
+                             found_on='KIT/FOO', rid='OVER%d' % packed)
                 change = self.add(['docs/y.md'], found_on='KIT/FOO', rid='NEW%d' % packed)
                 self.assertEqual(change.subject, 'backlog: add NEW%d, found on KIT/FOO' % packed)
 
     def test_a_packed_remote_branch_named_in_another_case_is_found(self):
         self.remote_only('kit/far', 'kitlib/x/b.py')
         self.repo.git('pack-refs', '--all')
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'], found_on='Kit/Far')
-        self.assertIn('(changed on origin/kit/far)', str(cm.exception))
+        self.overlap(['kitlib/x/**'], '(changed on origin/kit/far)', found_on='Kit/Far')
 
     def test_remotes_with_finds_packed_and_loose_refs_in_any_case(self):
         other = self.second_remote()
@@ -478,7 +470,7 @@ class FoundOnPackedRefs(StoreCase):
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/loose', ['origin']),
                              ('KIT/LOOSE', ['origin']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                self.assertEqual([r for r, _ref, _tip in pmod._remotes_with(self.ctx, branch)],
+                self.assertEqual([r for r, _ref, _tip in plan_narrow._remotes_with(self.ctx, branch)],
                                  want)
 
     def test_two_branches_that_differ_only_in_case_are_usage_however_named(self):
@@ -517,7 +509,7 @@ PM_KIT_JSON = {'backlog': {'id_grammar': 'upper', 'code_main': 'main'},
 
 
 class PmDataWorktree(StoreCase):
-    """The PM data worktree (kitlib.pmdata): a worktree of the code repository on the data branch,
+    """The PM data worktree (kitlib.config.pmdata): a worktree of the code repository on the data branch,
     whose .kit.json names the data remote. The code lands on the main checkout's remote
     (`repo.remote`, origin here), so `add --found-on` measures from that remote's main, not from
     the local main, which lags it until somebody pulls (kitlib/backlog/opener.py `open_store`,
@@ -553,8 +545,8 @@ class PmDataWorktree(StoreCase):
         return stale
 
     def plan(self, ctx, scopes, found_on):
-        return pmod.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
-                             found_on=found_on, why_not_folded=WHY)
+        return plan_edit.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
+                                  found_on=found_on, why_not_folded=WHY)
 
 
 class FoundOnInThePmDataWorktree(PmDataWorktree):
@@ -565,18 +557,18 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         stale = self.later_on_main()
         self.branch_with('kit/new', 'kitlib/y/own.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['kitlib/x/later.py'], 'kit/new')
         self.assertIn('ADDED NEW, found on kit/new', change.lines)
-        with self.assertRaises(Refusal) as cm:
-            self.plan(ctx, ['kitlib/y/**'], 'kit/new')
-        self.assertIn('kitlib/y/** vs kitlib/y/own.py (changed on kit/new)', str(cm.exception))
+        change = self.plan(ctx, ['kitlib/y/**'], 'kit/new')
+        self.assertTrue(any('kitlib/y/** vs kitlib/y/own.py (changed on kit/new)' in x
+                            for x in change.lines), change.lines)
 
     def test_a_branch_that_landed_on_the_code_remotes_main_is_proof(self):
         stale = self.repo.head()
         self.land('kit/done', 'kitlib/x/done.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['docs/y.md'], 'kit/done')
         self.assertTrue(any(line.startswith('NOTE: branch kit/done landed on main as ')
                             for line in change.lines), change.lines)
@@ -584,7 +576,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_an_unset_code_main_is_the_main_checkouts_main(self):
         self.branch_with(FOO, 'kitlib/x/a.py')
         kit_json = {'backlog': {'id_grammar': 'upper'}, 'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         self.assertEqual(ctx.code_main, 'main')
         change = self.plan(ctx, ['docs/y.md'], FOO)
         self.assertIn('ADDED NEW, found on kit/foo', change.lines)
@@ -592,7 +584,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_a_code_main_that_does_not_resolve_still_fails(self):
         kit_json = {'backlog': {'id_grammar': 'upper', 'code_main': 'trunk'},
                     'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         with self.assertRaises(Failure) as cm:
             self.plan(ctx, ['docs/y.md'], 'kit/gone')
         self.assertIn('`trunk` does not resolve', str(cm.exception))
@@ -601,7 +593,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_outside_the_pm_data_worktree_the_code_remote_is_repo_remote(self):
         self.pm_worktree()
         self.assertIsNone(pull_branch.code_config(self.repo.root))
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         self.assertEqual((ctx.code_remote, ctx.code_main), (ctx.remote, ctx.main_branch))
 
 

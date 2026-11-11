@@ -1,4 +1,4 @@
-"""The stash guard (kitlib.gate.stash; docs/gate.md "The stash guard"): the branch gate and a
+"""The stash guard (kitlib.gate.stash; docs/gate-rerun-checkout.md "The stash guard"): the branch gate and a
 landing refuse while the repository's stash stack holds an entry, whichever checkout made it, and
 an entry that appears while a gate runs costs the branch gate its gate-OK record and undoes a
 landing's merge.
@@ -14,12 +14,13 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.gate import result, runner, submit
+from kitlib.gate import result, runner
+from kitlib.landing import submit
 from kitlib.git import refs
 from kitlib.records import gate_ok
 from tests.gate import fixtures
-from tests.gate.test_land import BRANCH, HANG_S, KIT_ROOT, LandCase
-from tests.gate.test_land_submit import GATE_PY, SubmitCase
+from tests.landing.test_land import BRANCH, HANG_S, KIT_ROOT, LandCase
+from tests.landing.test_land_submit import GATE_PY, SubmitCase
 from tests.realgit import real_git
 
 REF = 'refs/stash'
@@ -247,7 +248,7 @@ class LandingRefuses(_Stack, LandCase):
 
 
 class SubmittedLandingRefuses(_Stack, SubmitCase):
-    """A --submit landing (kitlib.gate.submit) with an entry on the stack: the submitter, which
+    """A --submit landing (kitlib.landing.submit) with an entry on the stack: the submitter, which
     checks nothing, prints SUBMITTED and exits 0; the detached landing refuses before any merge,
     and the refusal is its final land result record, which wait-result prints."""
 
@@ -259,7 +260,7 @@ class SubmittedLandingRefuses(_Stack, SubmitCase):
         self.assertTrue(sub_out.lines[0].startswith('SUBMITTED kit/feature'), sub_out.lines)
         running = self.record(BRANCH)
         self.assertEqual(running['verdict'], 'running')
-        # what the detached tool runs (tests/gate/test_land_submit.py TheDetachedLanding)
+        # what the detached tool runs (tests/landing/test_land_submit.py TheDetachedLanding)
         sub = self.restored(sub_out, detach, [BRANCH], [tip], expect_main=self.main)
         out = self.lander(BRANCH, self.main, tip, submitted=sub).run()
         self.assertEqual(out.code, G.REFUSED, out.lines)

@@ -14,7 +14,7 @@ A run is stale when all of these hold (reason):
 A record with no `hosts` (the owner's own runs, runs booked before hosts were recorded, a run one
 of whose hosts was not surely live at booking) is never stale.
 
-reap(store, stop) is called by a booking (kitlib.lock.run.acquire) after its first look at the
+reap(store, stop) is called by a booking (kitlib.lock.run_wait.acquire) after its first look at the
 queue and then every stale_check_s while it waits. It runs under the store's "reap" mutex, taken
 without waiting (a booking that does not get it skips that pass), re-reads each record there and
 writes the run's own stop request (by "lock", with `why`), never over one already there: the

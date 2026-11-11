@@ -1,6 +1,6 @@
 """rules.py_program: how python reads its program. Code on the line (-c) and a program read from
 standard input count as a write of the directory python runs in, whatever the code is; the guard
-does not read it (docs/guard.md "Shell writes"). rules.ps_native_unsure: the PowerShell words
+does not read it (docs/guard-jail-roles.md "Shell writes"). rules.ps_native_unsure: the PowerShell words
 that make any python run such a write."""
 import unittest
 
@@ -56,7 +56,7 @@ class PsNativeUnsure(unittest.TestCase):
 
 class NoProver(unittest.TestCase):
     def test_the_guard_proves_no_code_reads_only(self):
-        """The read-only prover is gone (docs/guard-v2.md, the python program proving row)."""
+        """The read-only prover is gone (docs/guard-rules.md "Shell writes": code given on the line counts as a write)."""
         for name in ('py_reads_only', 'PY_READ_MODULES', 'PY_C_HINT', 'sleep_wait', 'py_only_sleeps'):
             with self.subTest(name):
                 self.assertFalse(hasattr(rules, name))

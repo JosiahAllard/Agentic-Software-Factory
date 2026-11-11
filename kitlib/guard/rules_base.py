@@ -7,7 +7,7 @@ import contextvars
 import os
 import re
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib import kitroot
 from kitlib.git import repo
 from kitlib.host import Decision
@@ -23,7 +23,6 @@ DENY, ASK, ALLOW = 'deny', 'ask', 'allow'
 # kitlib.host.Action.shell -> the parser's dialect
 SHELLS = {'bash': sh.BASH, 'powershell': sh.PS}
 TAG = '[kit guard: rule=%s role=%s]'
-NULL_TARGETS = {'/dev/null', '$null', 'nul', 'nul:', '&1', '&2'}
 
 
 def tag(rule, role):
@@ -88,6 +87,19 @@ def quote(path):
     return '"%s"' % fwd(path)
 
 
+SAFE_WORD_RE = re.compile(r'^[\w@%+=:,./-]+$')
+
+
+def spelt(text):
+    """`text` as one shell word: bare when it needs no quoting, else single-quoted (double-quoted,
+    with bash's escapes, when it holds a single quote)."""
+    if SAFE_WORD_RE.match(text):
+        return text
+    if "'" not in text:
+        return "'%s'" % text
+    return '"%s"' % re.sub(r'(["\\$`])', r'\\\1', text)
+
+
 def shell_word(text):
     """`text` as one word bash and PowerShell both read as written: bare when it holds only
     characters neither shell treats specially (no `,`, which PowerShell reads as an array, and no
@@ -122,37 +134,37 @@ def advice_kit(ctx):
     """The kit folder an alternative names (docs/guard.md "Kit paths in advice"): the installed
     export the sessions' kit tools run from, when the guard can know it, else the kit the guard
     runs from (ctx.kit). The guard names the export the machine's plugin marketplace names now
-    (kitlib.pluginsource.current_folder under the plugin export root), when that folder is an
+    (kitlib.pluginsource.layout.current_folder under the plugin export root), when that folder is an
     export (a 12-hex-digit name, the marker and kit.json in it) whose marker names the kit checkout
     the guard is from (export_checkout): the guard's own checkout, or, for a guard run from an
     export, the checkout that export's marker names. So a guard still running from an export a
-    refresh replaced names the current one, which prune keeps, and which kitlib.host.headerfollow
+    refresh replaced names the current one, which prune keeps, and which kitlib.hookrun.headerfollow
     then tells the session its header names. The hook is not told which folder a session's header
     named, so a session that started on an older export is still pointed at the current one."""
     kit = getattr(ctx, 'kit', None)
     if not kit:
         return kit
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     from . import rolepolicy
     source = kit
-    if os.path.isfile(os.path.join(kit, pluginsource.MARKER)):
-        source = pluginsource.export_checkout(kit)
+    if os.path.isfile(os.path.join(kit, plugin_layout.MARKER)):
+        source = plugin_layout.export_checkout(kit)
         if not source:
             return kit
     user = ctx.user()
     if not isinstance(user, dict) or user.get('error'):
         return kit
     try:
-        root = pluginsource.settings(user.get(pluginsource.CONFIG_KEY), ctx.environ).export_dir
-    except (pluginsource.RefreshError, OSError, ValueError, TypeError):
+        root = plugin_layout.settings(user.get(plugin_layout.CONFIG_KEY), ctx.environ).export_dir
+    except (plugin_layout.RefreshError, OSError, ValueError, TypeError):
         return kit
-    name = pluginsource.current_folder(root)
+    name = plugin_layout.current_folder(root)
     if not isinstance(name, str) or not rolepolicy.EXPORT_NAME_RE.fullmatch(name):
         return kit
     folder = os.path.join(root, name)
     if not all(os.path.isfile(os.path.join(folder, f)) for f in rolepolicy.EXPORT_FILES):
         return kit
-    checkout = pluginsource.export_checkout(folder)
+    checkout = plugin_layout.export_checkout(folder)
     if not checkout or paths.norm(checkout) != paths.norm(source):
         return kit
     return folder
@@ -167,9 +179,8 @@ def lock_tool(ctx):
 
 def kit_tool(ctx, name):
     """A kit tool an alternative names: tools/<name>.py of the kit folder advice names
-    (advice_kit), quoted. A repository holds no copy of the kit's tools (decision 21 in
-    docs/multi-host-plan.md section 7), so an alternative never names a repository's own tools
-    folder."""
+    (advice_kit), quoted. A repository holds no copy of the kit's tools (docs/install.md
+    "Ported repo tools"), so an alternative never names a repository's own tools folder."""
     return quote(kitroot.tool(name, advice_kit(ctx)))
 
 
@@ -336,7 +347,7 @@ def ps_params(cmd, words, spec):
             for c in cands:
                 named.setdefault(c, []).extend(vals)
             continue
-        pos.extend(_split_commas(w))
+        pos.extend(split_commas(w))
         k += 1
     return named, pos
 
@@ -363,7 +374,7 @@ def ps_args(cmd, words, cmdlet):
     return ps_bound(spec, named, pos)
 
 
-def _split_commas(w):
+def split_commas(w):
     if w.dyn or ',' not in w.text:
         return [w]
     return [sh.Word(p, False, w.start, w.end) for p in w.text.split(',') if p]
@@ -429,7 +440,7 @@ def agent_session(event, ctx):
     AGENT_MARKS: coordinator, deep-worker, consultant and pm), case
     ignored; a guard_agent_marks value replaces the default list. The rules only agents are held to (kill by name, lock state,
     kit-json, the write jail, git-stash-shared) use it. The mark is compared without the kit plugin's prefix
-    (kitlib.agentname.bare_mark), so a role_resolver that does not strip it fails closed too.
+    (kitlib.host.agentname.bare_mark), so a role_resolver that does not strip it fails closed too.
     On a host whose hooks carry no subagent identity (hosts.json capabilities
     subagent_identity_in_hooks false: Codex) every session is an agent session, the unmarked
     main chat too, and so is one on a host no hosts.json entry has the profile of (fail closed)."""

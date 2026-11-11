@@ -1,5 +1,5 @@
 """Host names left in kitlib code (ARCHITECTURE.md "Hosts": a host name appears only in hosts.json,
-its own folder and tests). Step 6 of docs/multi-host-plan.md moves them to hosts.json or the edge;
+its own folder and tests). Moving them to hosts.json or the edge is not finished;
 what is left is listed here, file by file, with the count of occurrences, so the count can only
 shrink: a new occurrence fails, a removed one passes (then lower the number here).
 
@@ -18,14 +18,12 @@ HOST_WORDS = re.compile(r'claude|codex|anthropic|openai', re.I)
 # refactor). Prose in help strings stays. Step 9
 # registered Codex in hosts.json and removed its placeholders (attribution, lock, owner paths).
 ALLOWED = {
-    'kitlib/commit/__init__.py':           1,    # an example family in an error message
+    'kitlib/config/policy.py':             1,    # an example family in an error message
     'kitlib/config/schema.py':             2,    # a key's help text; the owner-guarded managed-settings template
     'kitlib/config/user.py':               1,    # a key's help text
     'kitlib/guard/rules.py':               1,    # the guard refactor
     'kitlib/guard/rules_edit.py':          2,    # the guard refactor (worktree folder: lock_state_dir, WT_ADD)
-    'kitlib/kitrelease/bootstrap.py':      3,    # release inventory, runs before kitlib
-    'kitlib/launcher/accounts.py':         4,    # launcher wave
-    'kitlib/launcher/autostart.py':        2,
+    'kitlib/launcher/accounts.py':         19,   # launcher wave; the account folders and the claude runner
     'kitlib/launcher/lookup.py':           3,
     'kitlib/launcher/reboot.py':           4,
     'kitlib/launcher/settings.py':         1,
@@ -34,13 +32,14 @@ ALLOWED = {
     'kitlib/launcher/usage.py':            9,
     'kitlib/launcher/window.py':           9,
     'kitlib/lock/store.py':                1,    # legacy actor key read
-    'kitlib/machinesetup/__init__.py':     12,   # machinesetup wave
+    'kitlib/machinesetup/__init__.py':     7,    # machinesetup wave
     'kitlib/machinesetup/common.py':       2,    # Claude's shell path and its pre-move folder (step 7)
-    'kitlib/machinesetup/extras.py':       7,
-    'kitlib/machinesetup/plugin.py':       18,
+    'kitlib/machinesetup/extras.py':       3,
+    'kitlib/machinesetup/plugin.py':       11,
     'kitlib/machinesetup/settings.py':     7,
-    'kitlib/pluginsource/__init__.py':     9,    # pluginsource wave
-    'kitlib/pluginsource/claude.py':       15,
+    'kitlib/pluginsource/layout.py':       2,    # pluginsource wave
+    'kitlib/pluginsource/refresh.py':      4,
+    'kitlib/pluginsource/state.py':        1,
     'kitlib/pmwatch/__init__.py':          1,    # the usage line's codex account
     'kitlib/scrub/__init__.py':            1,    # a capitalised marker word the scrub allows
 }
@@ -111,7 +110,7 @@ class HostNames(unittest.TestCase):
                 over.append('%s: %d, allowed %d: %s' % (rel, len(found), ALLOWED.get(rel, 0),
                                                          ', '.join('%d %r' % f for f in found)))
         self.assertEqual(over, [], 'host names in kitlib code: move them to hosts.json or the '
-                                   'edge (docs/multi-host-plan.md step 6)')
+                                   'edge')
 
     def test_every_listed_file_exists(self):
         for rel in ALLOWED:
@@ -119,17 +118,18 @@ class HostNames(unittest.TestCase):
 
     def test_the_scan_counts_code_and_skips_prose(self):
         source = ('"""Claude docstring."""\n# claude comment\n'
-                  'import kitlib.pluginsource.claude\nX = "CLAUDE_X"\n'
+                  'import kitlib.example.claude\nX = "CLAUDE_X"\n'
                   'def codex_f(claude=1):\n    """codex docstring."""\n    return y.claude_z\n')
-        self.assertEqual([t for _, t in occurrences(source)].count('kitlib.pluginsource.claude'), 1)
+        self.assertEqual([t for _, t in occurrences(source)].count('kitlib.example.claude'), 1)
         self.assertEqual(len(occurrences(source)), 5)
 
 
-# Plan section 2.7: a host name appears only in hosts.json, hosts/, optional/bridge/hosts/ and tests,
+# ARCHITECTURE.md "Hosts": a host name appears only in hosts.json, hosts/, optional/bridge/hosts/
+# and tests,
 # so adding a host changes no other folder. kitlib is counted above. Below: the kit's top folders,
 # boot/ (code, as kitlib) and content/ (every occurrence, prose too, since content is what every
 # host renders). What is left is listed with its reason and can only shrink.
-TOP_ALLOWED = {}            # claude/ (the pre-step-7 hook stubs) went with plan step 14
+TOP_ALLOWED = {}            # claude/ (the old hook stubs) are gone
 CONTENT_ALLOWED = {}        # every host value in role prose is a token now (docs/content.md "Tokens")
 
 
@@ -152,7 +152,8 @@ class HostSlot(unittest.TestCase):
         names = set(registry.names()) | {'codex', 'claude', 'anthropic', 'openai'}
         found = sorted(n for n in os.listdir(ROOT) if os.path.isdir(os.path.join(ROOT, n))
                        and n.lower() in names and n not in TOP_ALLOWED)
-        self.assertEqual(found, [], 'a host\'s files go under hosts/<name>/ (docs/multi-host-plan.md 2.7)')
+        self.assertEqual(found, [],
+                         'a host\'s files go under hosts/<name>/ (ARCHITECTURE.md "Hosts")')
 
     def test_every_registered_host_lives_under_hosts(self):
         from kitlib.host import registry

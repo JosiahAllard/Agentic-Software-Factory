@@ -1,7 +1,7 @@
-"""Who may lift a branch's gate-run budget (docs/guard.md "Gate allow").
+"""Who may lift a branch's gate-run budget (docs/guard-jail-roles.md "Gate allow").
 
   gate-allow   a run of tools/gate.py allow (kitlib/gate/budget.py `allow`: it raises the gate
-               runs a branch may make; docs/gate.md "The branch gate budget") by any session but
+               runs a branch may make; docs/gate-records.md "The branch gate budget") by any session but
                the owner's own or a main session marked coordinator or pm (MARKS). Every subagent is refused, whatever role its payload names, and so is any
                other marked main session (deep-worker, consultant, plain).
 
@@ -11,22 +11,22 @@ is the first word after the script, as tools/gate.py `main` reads it, so `-C <di
 usage error at the tool) and text that only names the command pass. A computed first word is not
 read (the guard catches honest mistakes, not evasion). It needs no switch in .kit.json.
 
-A host with no subagent identity (kitlib.host.hookmain.UNIDENTIFIED, Codex) gives a marked
+A host with no subagent identity (kitlib.hookrun.main.UNIDENTIFIED, Codex) gives a marked
 session's every call, its children's too, agent UNIDENTIFIED and agent_role the mark: such a call
 is judged by that mark, so a coordinator's session there may allow, and so may a child under it.
 """
-from kitlib import agentname
+from kitlib.host import agentname
 
 from . import rules
 
 RULE = 'gate-allow'
-UNIDENTIFIED = 'unidentified'                   # kitlib.host.hookmain.UNIDENTIFIED
+UNIDENTIFIED = 'unidentified'                   # kitlib.hookrun.main.UNIDENTIFIED
 SCRIPTS = ('gate.py', 'gate')                   # commands.wrapper's names for the gate
 VERB = 'allow'
 # the main sessions that may allow more runs: the coordinator and the PM
 MARKS = ('coordinator', 'pm')
 WHY = ('`gate.py allow` raises the gate runs a branch may make past the branch gate budget, and only '
-       'its coordinator (or the PM) runs it (docs/gate.md "The branch gate budget").')
+       'its coordinator (or the PM) runs it (docs/gate-records.md "The branch gate budget").')
 INSTEAD = ('stop and send your coordinator what each gate run found and why another is needed; '
            'it runs gate.py allow')
 

@@ -57,7 +57,7 @@ def read(path):
             return dt.datetime.fromisoformat(w['resets_at'][:26] + w['resets_at'][-6:])
         except (KeyError, ValueError, TypeError):
             return None
-    return dict(updated=updated, five=int(five.get('used_percentage') or 0), five_reset=when(five),
+    return dict(updated=updated, five=None if five.get('used_percentage') is None else int(five['used_percentage']), five_reset=when(five),
                 week=int(week.get('used_percentage') or 0), week_reset=when(week))
 
 
@@ -66,8 +66,9 @@ def line(r):
     age = int((now - r['updated'].astimezone(dt.timezone.utc)).total_seconds() / 60)
     fr = r['five_reset'].astimezone().strftime('%H:%M') if r['five_reset'] else 'none open'
     wr = r['week_reset'].astimezone().strftime('%m-%d %H:%M') if r['week_reset'] else '?'
-    return 'five_hour %d%% (resets %s) | seven_day %d%% (resets %s) | read %d min ago | %s%s' % (
-        r['five'], fr, r['week'], wr, age, BANDS[band(r['five'])][1],
+    five = '' if r['five'] is None else 'five_hour %d%% (resets %s) | ' % (r['five'], fr)   # the host may give none
+    return '%sseven_day %d%% (resets %s) | read %d min ago%s%s' % (
+        five, r['week'], wr, age, '' if r['five'] is None else ' | ' + BANDS[band(r['five'])][1],
         ' | seven_day over 80: ask the owner before any L-sized or strongest-model dispatch' if r['week'] > 80 else '')
 
 
@@ -90,9 +91,11 @@ def event(last, r, now):
     for key, name in (('five_reset', 'five_hour'), ('week_reset', 'seven_day')):
         if last[key] and last[key].astimezone(dt.timezone.utc) <= now and r[key] != last[key]:
             return 'RESET %s window reset | %s' % (name, line(r))
-    if band(r['five']) != band(last['five']):
+    if r['five'] is None or last['five'] is None:
+        pass
+    elif band(r['five']) != band(last['five']):
         return 'BAND five_hour %d%% -> %d%% | %s' % (last['five'], r['five'], line(r))
-    if r['five'] >= 60 and r['five'] // 5 > max(last['five'], 60) // 5:
+    elif r['five'] >= 60 and r['five'] // 5 > max(last['five'], 60) // 5:
         return 'STEP five_hour %d%% -> %d%% | %s' % (last['five'], r['five'], line(r))
     if (r['week'] > 80) != (last['week'] > 80):
         return 'WEEK seven_day %d%% -> %d%% | %s' % (last['week'], r['week'], line(r))

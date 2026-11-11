@@ -1,4 +1,4 @@
-"""What the guard reads of real state (docs/guard.md "State"; every rule is a read-only
+"""What the guard reads of real state (docs/guard-core.md "State"; every rule is a read-only
 check). Ctx gathers it behind one object so tests hand the rules a fake machine: every reader is
 a constructor argument, and the defaults read this machine.
 
@@ -7,9 +7,9 @@ a constructor argument, and the defaults read this machine.
                      PM data worktree (docs/pm-data-branch.md "Guard place and commit hooks"),
                      which git calls LINKED, is answered as MAIN, so the main-checkout rules
                      apply there. It is that worktree when the machine config's pm_data.path
-                     names its top (kitlib.pmdata.machine_settings), or, only when the machine
+                     names its top (kitlib.config.pmdata.machine_settings), or, only when the machine
                      config names no pm_data, when its HEAD is `ref: refs/heads/<branch>` of the
-                     kit-pm-data.json record in its common dir (kitlib.pmdata.read). A MAIN
+                     kit-pm-data.json record in its common dir (kitlib.config.pmdata.read). A MAIN
                      place is never changed.
   is_pm_data(path), pm_data_branch(path)
                      whether place(path) is the PM data worktree, and its data branch
@@ -35,7 +35,7 @@ a constructor argument, and the defaults read this machine.
   lock_held()        (True, None) only when MACHINE_LOCK_RUN names a run nest_check accepts:
                      the named wrapper is an ancestor of this process, alive, and holding. The
                      variable alone is never proof.
-  gate_ok(root, sha) kitlib.gate.runner.verify_record: the record must name a config_rev in
+  gate_ok(root, sha) kitlib.records.gate_ok.verify_record: the record must name a config_rev in
                      sha's history and hash the gate config that commit holds; a record's .git
                      copy counts only when there is no record folder (no dev_drive;
                      kitlib.records.gate_ok.read)
@@ -74,13 +74,13 @@ a constructor argument, and the defaults read this machine.
   kit                the kit the guard runs from (kitlib.kitroot.root(): the checkout this module
                      is in), or a test's folder; the lock tool an alternative names is under it
                      (rules.lock_tool).
-  session_role(a)    who runs the session of the kitlib.host.Action `a` (kitlib.sessionmark):
+  session_role(a)    who runs the session of the kitlib.host.Action `a` (kitlib.host.sessionmark):
                      'subagent' when the host named a subagent (Action.agent), else the launcher's
                      mark (PM_KIT_ROLE: Action.role when the host hands it over, else this
                      environment's), else 'owner': a session nothing marks is the owner's own.
                      Replaceable (role_resolver, called with the Action and the environment).
   host_profile()     the kitlib.host.HostProfile of the host whose hook asked (the `profile`
-                     argument, or a callable returning it, which kitlib.host.hookmain passes from
+                     argument, or a callable returning it, which kitlib.hookrun.main passes from
                      its adapter), else the one PM_KIT_HOST
                      selects in hosts.json (kitlib.host.registry), read once. An MCP call reads
                      it (rules.mcp_prefix), and host_capabilities.
@@ -89,7 +89,7 @@ a constructor argument, and the defaults read this machine.
                      session reads it (rules.agent_session).
 
 The pm_data argument replaces the machine-config read (a callable returning
-kitlib.pmdata.machine_settings's answer, or raising its errors). The pointer argument replaces the
+kitlib.config.pmdata.machine_settings's answer, or raising its errors). The pointer argument replaces the
 PM-repo pointer value pm_repo_pointer answers (a callable returning it or None), and only that:
 the machine config is still read through the registry's pointer. The location argument replaces
 config_location (a callable returning a kitlib.config.user.Location).
@@ -98,9 +98,9 @@ import json
 import os
 
 from kitlib import config as kconfig
-from kitlib import kitroot
-from kitlib import pmdata
-from kitlib import sessionmark
+from kitlib import kitroot, platform
+from kitlib.config import pmdata
+from kitlib.host import sessionmark
 from kitlib.config import pointer as kpointer
 from kitlib.config import user as kuser
 from kitlib.git import refs, repo
@@ -123,9 +123,9 @@ def _gettempdir():
 
 def default_session_role(action, environ):
     """'subagent' when the Action names a subagent (Action.agent); else the launcher's mark (a PM,
-    coordinator or deep-worker session it started; kitlib.sessionmark.mark), from Action.role when
+    coordinator or deep-worker session it started; kitlib.host.sessionmark.mark), from Action.role when
     the host handed it over, else from `environ`; else 'owner': a session nothing marks is the
-    owner's own (docs/guard.md "Session mark")."""
+    owner's own (docs/guard-fallback.md "Session mark")."""
     if getattr(action, 'agent', None):
         return SUBAGENT
     role = getattr(action, 'role', None)
@@ -136,7 +136,7 @@ def _default_lock_held(environ, store):
     value = environ.get('MACHINE_LOCK_RUN')
     if not value:
         return False, 'MACHINE_LOCK_RUN is not set: this session runs under no lock'
-    if os.name != 'nt':
+    if platform.NAME != 'windows':
         return False, 'the machine lock is Windows only'
     try:
         from kitlib.lock import run as lockrun
@@ -148,7 +148,7 @@ def _default_lock_held(environ, store):
 
 
 def _machine_pm_data(home, location=None):
-    """kitlib.pmdata.machine_settings(home): the pm_data the PM-repo pointer derives
+    """kitlib.config.pmdata.machine_settings(home): the pm_data the PM-repo pointer derives
     (kitlib.config.user.Location.pm_data), which no key of the machine config's files can hide; an
     UNMOVED or BAD `location` (kitlib.config.user.locate) raises, and the guard fails closed."""
     return pmdata.machine_settings(home, location=location or kuser.locate(home))
@@ -482,8 +482,8 @@ class Ctx(object):
         if self._gate_ok is not None:
             return self._gate_ok(root, sha)
         try:
-            from kitlib.gate import runner
-            return runner.verify_record(root, sha)
+            from kitlib.records import gate_ok
+            return gate_ok.verify_record(root, sha)
         except Exception as e:
             return None, '%s: %s' % (type(e).__name__, e)
 

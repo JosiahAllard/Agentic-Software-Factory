@@ -1,11 +1,12 @@
 """The kit command (tools/kit.py, and `kit` on the PATH) runs a kit tool by name, so the guard reads
-`kit X ...` and `python <kit>/tools/kit.py X ...` as `python <kit>/tools/X.py ...` (docs/guard.md
+`kit X ...` and `python <kit>/tools/kit.py X ...` as `python <kit>/tools/X.py ...` (docs/guard-owner.md
 "The kit command"): every rule that knows a kit tool by its file name judges them the same. The other
 rules' rows (owner-tool, wrapped-gate, role-lock) are test_kit_tool_forms.py's, whose forms include
 both kit spellings."""
 import unittest
 
 from kitlib.guard import commands as cm
+from kitlib.guard import commands_nested as cn
 from kitlib.guard import rules
 from kitlib.guard import shell as sh
 
@@ -126,7 +127,7 @@ class Hub(unittest.TestCase):
 
 
 class Unreadable(unittest.TestCase):
-    """docs/guard.md "Fallback": a line the parser cannot read that names an owner's tool is
+    """docs/guard-fallback.md "Fallback": a line the parser cannot read that names an owner's tool is
     refused under that tool's rule, the kit command's spelling of the name included."""
 
     def setUp(self):
@@ -213,7 +214,7 @@ class PowerShellSplit(unittest.TestCase):
 
 
 def run_of(text, shell=sh.BASH):
-    parsed = cm.read(text, shell, 'C:\\w')
+    parsed = cn.read(text, shell, 'C:\\w')
     return [rules.tool_run(cm.invocation(c)) for c in parsed.commands]
 
 
@@ -246,7 +247,7 @@ class ToolRun(unittest.TestCase):
                 self.assertEqual(self.named(text, sh.PS), want)
 
     def test_tool_at_names_the_word_holding_the_name(self):
-        parsed = cm.read("kit '' gate --full", sh.PS, 'C:\\w')
+        parsed = cn.read("kit '' gate --full", sh.PS, 'C:\\w')
         got = cm.tool_at(cm.invocation(parsed.commands[0]))
         self.assertEqual((got[0], got[1], [w.text for w in got[2]]), (1, 'gate.py', ['--full']))
 
@@ -257,7 +258,7 @@ class ToolRun(unittest.TestCase):
         self.assertEqual(self.named('python tools/kit.py --x backlog'), ('kit.py', ['--x', 'backlog']))
 
     def test_script_run_reads_runpy_of_the_kit(self):
-        parsed = cm.read('python -m runpy tools.kit backlog close X-1', sh.BASH, 'C:\\w')
+        parsed = cn.read('python -m runpy tools.kit backlog close X-1', sh.BASH, 'C:\\w')
         got = rules.script_run(cm.invocation(parsed.commands[0]))
         self.assertEqual((got[0], [w.text for w in got[1]]), ('backlog.py', ['close', 'X-1']))
 
@@ -268,7 +269,7 @@ class ToolRun(unittest.TestCase):
                            ('python -u tools/kit.py gate --full', (2, 'gate.py', ['--full'])),
                            ('kit -h', None), ('kit', None), ('kit $t', None), ('git status', None)):
             with self.subTest(text):
-                parsed = cm.read(text, sh.BASH, 'C:\\w')
+                parsed = cn.read(text, sh.BASH, 'C:\\w')
                 got = cm.tool_at(cm.invocation(parsed.commands[0]))
                 self.assertEqual(got and (got[0], got[1], [w.text for w in got[2]]), want)
 
@@ -277,7 +278,7 @@ class ToolRun(unittest.TestCase):
                            ('kit machine_lock run --kind build -- x', 'lock-run'),
                            ('kit machine_lock status', None), ('kit backlog list', None)):
             with self.subTest(text):
-                parsed = cm.read(text, sh.BASH, 'C:\\w')
+                parsed = cn.read(text, sh.BASH, 'C:\\w')
                 self.assertEqual(cm.wrapper(cm.invocation(parsed.commands[0])), want)
 
 

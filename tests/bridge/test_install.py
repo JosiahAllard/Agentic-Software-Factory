@@ -19,7 +19,7 @@ from optional.bridge.core.messages import DeliveryError
 from optional.bridge.win import install
 from optional.bridge.win.runtime import load_config
 from optional.bridge.win.lifecycle import _verify_root
-from kitlib.proc.pipe import INVALID,create_file
+from kitlib.platform.windows.pipe import INVALID,create_file
 
 
 class InstallTests(unittest.TestCase):

@@ -1,7 +1,6 @@
 # Agent profile: the kit's default
 
-The profile an agent reads when its repository has none of its own (a repo profile is opt-in:
-docs/multi-host-plan.md decision 26). It has every heading a role reads, in the same words as a repo
+The profile an agent reads when its repository has none of its own. It has every heading a role reads, in the same words as a repo
 profile. `<kit>` is the kit's folder, `<worktree>` your worktree, `<repo>` the repository's main
 checkout.
 
@@ -26,15 +25,14 @@ worktree (a linked worktree of the repository), write nothing there: your task w
 
 ## Build and test
 The gate is ONE command: `python <kit>/tools/gate.py -C <worktree>`. The one gate runs after review, on the
-reviewed tip, when the coordinator asks: `--full` (every step) for a branch that changes a strict path (`STRICT_DEFAULTS`
-in `<kit>/kitlib/gate/strict_defaults.py`: it lands alone after a strong-tier review by someone other
-than its author, and its merged gate runs `--full --fresh`), except where the base has `"landing".gate_once` on (the default; `.kit.json` false opts out):
-that merged gate is then its one full run, and it ends like any other branch. Any other branch runs the final gate `<kit>/docs/gate.md` "The final gate" names: the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell); the optimized
-default gate is the no-flag run (diff selection and the smoke steps, plus reuse for a step whose config asks
-for it). `--only <step>` is for interim runs. The gate reads the repository's `"gate"` section
+reviewed tip, when the coordinator asks: the plain gate, for every branch (`<kit>/docs/gate-run.md` "The final gate"), the
+no-flag run (diff selection and the smoke steps, plus reuse for a step whose config asks for it); a landing takes
+its record. A branch that changes a strict path (`STRICT_DEFAULTS` in `<kit>/kitlib/gate/strict_defaults.py`)
+lands alone after a strong-tier review by someone other than its author, and its merged gate runs its
+selection fresh (nothing reused); only a merge that changes a gate config file runs every step in full. `--only <step>` is for interim runs. The gate reads the repository's `"gate"` section
 in `.kit.json` when there is one, else detects the stack from the files (Python, Node, Rust, Go,
 .NET) and runs its usual test and lint steps; its verdict line then says "auto-detected"
-(`<kit>/docs/gate.md` "Auto-detected gate"). Read that line: an auto-detected gate may run the wrong
+(`<kit>/docs/gate-run.md` "Auto-detected gate"). Read that line: an auto-detected gate may run the wrong
 checks, and one that found no stack ran none. A faster command for one area: the one the README
 names, else the detected test runner on that area only. Red-first: commit the new test, then
 `python <kit>/tools/redfirst.py -C <worktree> --tests FILE[::FILTER]` runs it at the base in a
@@ -58,7 +56,7 @@ land; say what is missing. From the main checkout, on the main branch:
 queued verdict's reviewer, it queues the landing and prints the `gate.py wait-result ... -C <repo>` command to wait with; its `RESULT` line
 carries the same verdict line).
 It queues, locks, merges onto the main it finds, gates the merged tree, pushes and verifies
-(`<kit>/docs/gate.md` "Landing"). Success: a `LANDED ` line and exit 0. A red gate leaves main untouched (the merge is made in the
+(`<kit>/docs/gate-landing.md` "Landing"). Success: a `LANDED ` line and exit 0. A red gate leaves main untouched (the merge is made in the
 kit landing tree). A conflict is
 `CONFLICT <branch> with main <sha>: the author merges main`: nothing changed, the branch goes back
 to its author. Any other verdict line (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT RUN:`)

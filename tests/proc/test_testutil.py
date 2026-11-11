@@ -10,7 +10,7 @@ from tests import testutil
 from tests.platforms import windows_only
 
 if os.name == 'nt':
-    from kitlib.proc import shield, win32
+    from kitlib.platform.windows import shield, win32
 
 
 @windows_only('the shield is Windows-only')

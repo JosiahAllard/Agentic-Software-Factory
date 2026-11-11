@@ -1,9 +1,9 @@
 """Rows for tests/guard/test_rules.py: busy-wait loops (and the unreadable alternative of a
 nested bash -c wait), Windows paths in python heredocs (which pass: heredoc-winpath is cut,
-docs/guard-v2.md B8), core.hooksPath changes (git config, -c,
+docs/guard-fallback.md "Weakened checks, by row" B8), core.hooksPath changes (git config, -c,
 clone -c, GIT_CONFIG_*), ending processes by name, the .NET and Gradle heavy defaults, and a
 python's code, which counts as written where it runs
-(docs/guard.md "Rules"). Same shape as ROWS there; the expected alternative is str.format text, so
+(docs/guard-rules.md "Rules"). Same shape as ROWS there; the expected alternative is str.format text, so
 a PowerShell brace is doubled.
 
 Backslashes are built from BS so no editor or shell on this machine can rewrite them."""
@@ -115,7 +115,7 @@ ROWS = [
      'deny', 'busy-wait', None),
 
     # ---------------------------------------------------------------- Windows paths in python heredocs
-    # heredoc-winpath is cut (docs/guard-v2.md B8): a quoting trap, not a hazard. Each row passes.
+    # heredoc-winpath is cut (docs/guard-fallback.md "Weakened checks, by row" B8): a quoting trap, not a hazard. Each row passes.
     ('heredoc-winpath: python - with C:' + BS + 'Users', lambda w: bash(heredoc('python -', "open('C:%sUsers%sx.txt')" % (BS, BS)), w.wt),
      None, None, None),
     ('heredoc-winpath: python3 with no dash, subagent', lambda w: bash(heredoc('python3', "p = 'D:%snew%sx'" % (BS, BS)), w.wt, sub=True),
@@ -264,7 +264,7 @@ ROWS = [
 
     # ---------------------------------------------------------------- python's code counts as written where it runs
     # python -c, or a program read from standard input, writes the directory python runs in, whatever
-    # the code is: the guard does not read it (docs/guard.md "Shell writes")
+    # the code is: the guard does not read it (docs/guard-jail-roles.md "Shell writes")
     ('main-checkout: python -I -c that only reads json, subagent', lambda w: bash(
         'python -I -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d))" x.json', w.main, sub=True),
      'deny', 'unplaced', None),

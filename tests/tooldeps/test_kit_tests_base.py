@@ -1,4 +1,4 @@
-"""tools/kit_tests.py --select's base (docs/test-tools.md "kit_tests", docs/gate.md "Default
+"""tools/kit_tests.py --select's base (docs/test-tools.md "kit_tests", docs/gate-run.md "Default
 base"): origin/main when it resolves, a line when the local main differs, and an explicit --base
 kept. The change list is mocked; the refs are a throwaway repository's (tests/gitfixture.py).
 Also the git tier (KIT_FAKE_GIT) and the home fence's marker (KIT_HOME_FENCE) the units are given,
@@ -128,7 +128,8 @@ class PidHoldOptIn(unittest.TestCase):
     def test_the_one_process_run_from_no_console_asks_for_no_window(self):
         """kit_tests starts its one process through kitlib.proc.spawn.call, which adds a keyword
         when kit_tests has no console (pythonw, a detached parent): the fakes here take it."""
-        from kitlib.proc import job, win32
+        from kitlib.proc import job
+        from kitlib.platform.windows import win32
         with mock.patch.object(job, 'has_console', return_value=False):
             rc, order, seen, out = self.run_full(1)
         self.assertEqual((rc, order), (0, ['units']), out)
@@ -272,17 +273,17 @@ class HomeFenceEnvironment(unittest.TestCase):
         self.assertEqual([os.path.normcase(m or '') for m in seen], [os.path.normcase(home)] * 2)
 
 
-MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x', 'tests.gate.test_other']
+MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x', 'tests.gate.test_other']
 
 
 class KitSessionEnvironment(unittest.TestCase):
     """No test child gets the session's kit binding (kit_tests KIT_SESSION_ENV): PM_KIT_ROOT,
-    PM_KIT_RELEASE_ID, KIT_LIVE_ROOT, KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST, PM_KIT_SESSION_NAME,
+    KIT_LIVE_ROOT, KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST, PM_KIT_SESSION_NAME,
     PM_KIT_CODEX_STATE, PM_KIT_CODEX_EXE and every host's session_env variable (hosts.json) are
     dropped from the pooled units', the --jobs 1 process's, the real-git count child's and --list's
     loader's environment, while another variable passes and kit_tests' own process keeps them all."""
     HOST_SESSION = {n: 'host-session' for n in hostregistry.union('session_env')}
-    SESSION = dict({'PM_KIT_ROOT': r'C:\session\kit', 'PM_KIT_RELEASE_ID': 'session-pin',
+    SESSION = dict({'PM_KIT_ROOT': r'C:\session\kit',
                     'KIT_LIVE_ROOT': r'C:\session\main', 'KIT_PINNED': 'live',
                     'PM_KIT_ROLE': 'worker', 'PM_KIT_HOST': 'claude',
                     'PM_KIT_SESSION_NAME': 'coord-x', 'PM_KIT_CODEX_STATE': r'C:\codex\state',
@@ -383,7 +384,7 @@ class BothTiers(unittest.TestCase):
         with mock.patch.object(cli.kitrun, 'run_pass', side_effect=lambda args, *a, **k: ran.append(args) or 0):
             rc, calls, text = self.run_both([0, 0])
         self.assertEqual(rc, 0, text)
-        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.gate.test_land_x']])
+        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.landing.test_land_x']])
 
     def test_a_red_real_git_pass_fails_the_run_and_prints_no_ok(self):
         rc, calls, text = self.run_both([0, 1])
@@ -516,7 +517,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertEqual([c[:2] for c in calls],
                          [('1', MODULES),
-                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x'])])
+                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x'])])
         self.assertEqual(self.oks(text), [OK_BOTH], text)
 
     def test_plan_names_the_real_git_modules_and_runs_nothing(self):
@@ -532,6 +533,93 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertEqual([c[4] for c in calls], [True, False], text)
         self.assertIn('without the pid hold', text)
+
+    def test_a_module_changed_only_in_comments_and_docstrings_runs_on_the_fake_only(self):
+        asked = []
+
+        def quiet(top, base, modules):
+            asked.append((base, list(modules)))
+            return ['tests.gate.test_other']
+        changed = (['tests/gate/test_other.py', 'tests/git/test_g.py'], None)
+        for argv in (['--full'], ['--select']):
+            del asked[:]
+            with mock.patch.object(cli.kitrun, 'comment_only', side_effect=quiet):
+                rc, calls, bases, text = self.run_main(argv, changed=changed)
+            self.assertEqual(rc, 0, text)
+            self.assertEqual(asked, [('main', ['tests.git.test_g', 'tests.gate.test_other'])])
+            self.assertEqual(calls[1][:2], ('0', ['tests.git.test_g']), text)
+            self.assertIn('kit_tests: real-git pass: 1 test module(s) changed only in comments or '
+                          'docstrings, fake git only: tests.gate.test_other\n', text)
+            self.assertIn('kit_tests: real-git pass: 1 added or changed test module(s): '
+                          'tests.git.test_g\n', text)
+        # every changed module quiet: one pass, and the line that says no real-git pass runs
+        with mock.patch.object(cli.kitrun, 'comment_only', return_value=['tests.gate.test_other']):
+            rc, calls, bases, text = self.run_main(
+                ['--full'], changed=(['tests/gate/test_other.py'], None))
+        self.assertEqual((rc, [c[0] for c in calls]), (0, ['1']), text)
+        self.assertIn(NONE_CHANGED + '\n', text)
+
+    def test_changed_paths_given_by_hand_have_no_base_and_all_count(self):
+        with mock.patch.object(cli.kitrun, 'comment_only', side_effect=AssertionError) as quiet:
+            rc, calls, bases, text = self.run_main(['--select', '--changed', 'tests/a/test_m.py'])
+        self.assertEqual((rc, quiet.call_count), (0, 0), text)
+        self.assertEqual(calls[1][:2], ('0', ['tests.a.test_m']), text)
+
+
+DOC_BASE = '"""Doc: docs/gate.md."""\nimport os\n\n\ndef test_x():\n    return os.sep  # why\n'
+
+
+class CommentOnlyAgainstTheBase(unittest.TestCase):
+    """kitrun.comment_only on a throwaway repository: the work-tree source of each changed test
+    module against its source at the merge-base with the base (one cat-file batch). The merge-base
+    is pinned: the branch commits a doc-only and a code edit (against HEAD both would look
+    unchanged), and main moves past the fork point with a code edit to the doc-only module and the
+    branch's code edit (against main the answer would flip)."""
+
+    def setUp(self):
+        self.repo = gitfixture.TempRepo()
+        self.addCleanup(self.repo.cleanup)
+        names = ('test_doc', 'test_code', 'test_both', 'test_broken', 'test_gone')
+        for n in names:
+            self.repo.write('tests/x/%s.py' % n, DOC_BASE)
+        self.repo.commit('fork point', *['tests/x/%s.py' % n for n in names])
+        doc_only = DOC_BASE.replace('gate.md', 'gate-run.md').replace('# why', '# why not')
+        code = DOC_BASE.replace('os.sep', 'os.pathsep')
+        self.repo.git('checkout', '-q', '-b', 'topic')
+        self.repo.write('tests/x/test_doc.py', doc_only)
+        self.repo.write('tests/x/test_code.py', code)
+        self.repo.commit('topic: a doc-only and a code edit',
+                         'tests/x/test_doc.py', 'tests/x/test_code.py')
+        self.repo.git('checkout', '-q', 'main')
+        self.repo.write('tests/x/test_doc.py', DOC_BASE.replace('os.sep', 'os.curdir'))
+        self.repo.write('tests/x/test_code.py', code)
+        self.repo.commit('main moves past the fork point',
+                         'tests/x/test_doc.py', 'tests/x/test_code.py')
+        self.repo.git('checkout', '-q', 'topic')
+        # and the work tree's own changes on top of the branch
+        self.repo.write('tests/x/test_both.py',
+                        DOC_BASE.replace('gate.md', 'gate-run.md').replace('os.sep', 'os.pathsep'))
+        self.repo.write('tests/x/test_broken.py', DOC_BASE + 'def (:\n')
+        self.repo.write('tests/x/test_new.py', DOC_BASE)              # added: no base
+        os.remove(os.path.join(self.repo.root, 'tests', 'x', 'test_gone.py'))
+
+    def modules(self):
+        return ['tests.x.test_%s' % n for n in ('both', 'broken', 'code', 'doc', 'gone', 'new')]
+
+    def test_only_the_comment_and_docstring_edit_is_left_out(self):
+        self.assertEqual(cli.kitrun.comment_only(self.repo.root, 'main', self.modules()),
+                         ['tests.x.test_doc'])
+
+    def test_a_base_git_cannot_resolve_leaves_none_out(self):
+        self.assertEqual(cli.kitrun.comment_only(self.repo.root, 'no-such-base', self.modules()),
+                         [])
+
+    def test_no_readable_module_asks_git_nothing(self):
+        with mock.patch.object(cli.kitrun.gitrefs, 'merge_base',
+                               side_effect=AssertionError) as mb:
+            self.assertEqual(cli.kitrun.comment_only(self.repo.root, 'main',
+                                                     ['tests.x.test_gone', 'tests.y.test_z']), [])
+        self.assertEqual(mb.call_count, 0)
 
 
 if __name__ == '__main__':

@@ -1,7 +1,8 @@
 """Gate logs: `.kit.json` "landing".log_dir, else `<kit temp>/<repo>-gate`, where the kit temp is
 kitlib.config.user.work_temp of the checkout (its own drive's temp folder, else the shared temp
 folder, %LOCALAPPDATA%/Temp on Windows). Never whatever TEMP a process inherited, so an agent
-whose TEMP was moved and the owner's shells read the same folder."""
+whose TEMP was moved and the owner's shells read the same folder. The log base itself:
+tests/records/test_place.py."""
 import contextlib
 import io
 import os
@@ -12,16 +13,8 @@ from unittest import mock
 
 from kitlib.config import user
 from kitlib.gate import runner
+from kitlib.records import place
 from tests.home import machine_config
-from tests.platforms import windows_only
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-DRIVE = os.path.splitdrive(HERE)[0]
-
-
-def other_letter(*avoid):
-    used = {a[0].upper() for a in avoid if a}
-    return next(c for c in 'QRSTUVWXYJKLMNOP' if c not in used) + ':'
 
 
 class _Cfg(object):
@@ -47,44 +40,6 @@ class SharedTemp(unittest.TestCase):
         with mock.patch('tempfile.gettempdir', return_value='/tmp/x'):
             self.assertEqual(user.shared_temp({}, 'darwin'), '/tmp/x')
             self.assertEqual(user.shared_temp({}, 'linux'), '/tmp')   # Linux: /tmp, whatever TMPDIR says
-
-
-@windows_only('drive letters are Windows only')
-@unittest.skipUnless(DRIVE, 'drive letters are Windows only')
-class LogBase(unittest.TestCase):
-    def setUp(self):
-        home = tempfile.mkdtemp(prefix='kit-home-')        # no machine config: no temp_dir
-        self.addCleanup(shutil.rmtree, home, True)
-        patch = mock.patch.object(user, 'home_dir', return_value=home)
-        patch.start()
-        self.addCleanup(patch.stop)
-        self.root = os.path.join(DRIVE + os.sep, 'r', 'demo')
-
-    def base(self, env, cfg=None):
-        with mock.patch.dict(os.environ, env), mock.patch('sys.platform', 'win32'):
-            return runner.log_base(cfg or _Cfg(), self.root, 'demo')
-
-    def test_off_the_shared_temps_drive_the_logs_stay_on_the_checkouts_drive(self):
-        lad = other_letter(DRIVE) + os.sep + 'lad'
-        moved = other_letter(DRIVE, lad) + os.sep + 'moved'
-        base = self.base({'LOCALAPPDATA': lad, 'TEMP': moved, 'TMP': moved})
-        self.assertEqual(base, os.path.join(DRIVE + os.sep, user.TEMP_DIR_NAME, 'demo-gate'))
-
-    def test_on_the_shared_temps_drive_the_base_ignores_a_moved_temp(self):
-        moved = other_letter(DRIVE) + os.sep + 'moved'
-        base = self.base({'LOCALAPPDATA': DRIVE + os.sep + 'lad', 'TEMP': moved, 'TMP': moved})
-        self.assertEqual(base, os.path.join(DRIVE + os.sep, 'lad', 'Temp', 'demo-gate'))
-
-    def test_the_fallback_base_is_in_the_shared_temp(self):
-        lad = other_letter(DRIVE) + os.sep + 'lad'
-        with mock.patch.dict(os.environ, {'LOCALAPPDATA': lad}), \
-                mock.patch('sys.platform', 'win32'):
-            self.assertEqual(runner.fallback_log_base('demo'),
-                             os.path.join(lad, 'Temp', 'demo-gate'))
-
-    def test_configured_log_dir_still_wins(self):
-        base = runner.log_base(_Cfg({'log_dir': 'logs/gate'}), r'D:\r\demo', 'demo')
-        self.assertEqual(base, os.path.join(r'D:\r\demo', 'logs/gate'))
 
 
 class NewLogDir(unittest.TestCase):
@@ -154,7 +109,7 @@ class BadMachineConfig(unittest.TestCase):
     def test_the_log_base_is_the_fallback_base_with_a_note(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            base = runner.log_base(_Cfg(), self.tmp, 'demo')
+            base = place.log_base(_Cfg(), self.tmp, 'demo', runner.say_note)
         self.assertEqual(base, os.path.join(self.shared, 'demo-gate'))
         self.assertIn('machine config', err.getvalue())
         self.assertIn('temp_dir must be an absolute path', err.getvalue())

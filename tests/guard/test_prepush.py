@@ -10,13 +10,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
-from kitlib.gate import runner
-from kitlib.guard import context, ownercommits, prepush
-from kitlib.hubsite import approvals as ap
+from kitlib.config import pmdata
+from kitlib.guard import context, prepush
+from kitlib.ownerfiles import rules as ownerrules
+from kitlib.ownerfiles import approvals as ap
 from kitlib.records import gate_ok
 from tests import gitfixture
-from tests.guard import test_ownercommits as toc
+from tests.ownerfiles import test_rules as toc
 from tests.realgit import real_git
 from tests.guard import prepush_case as pc
 from tests.guard.prepush_case import AGENT, GATE, HOOKS
@@ -48,7 +48,7 @@ class HookTest(pc.PrePushCase):
         self.assertEqual(self.remote_main(), head)
 
     def test_a_record_without_config_rev_or_made_with_another_gate_config_is_refused(self):
-        # the hook reads records with kitlib.gate.runner.verify_record, not bare gate_ok.verify
+        # the hook reads records with gate_ok.verify_record, not bare gate_ok.verify
         self.assertEqual(self.push('origin', 'main')[0], 0)
         self.repo.write('a.txt', 'a\n')
         head = self.repo.commit('a', 'a.txt')
@@ -80,8 +80,8 @@ class HookTest(pc.PrePushCase):
         self.repo.git('checkout', '-q', 'main')
         self.repo.git('merge', '-q', '--no-ff', '-m', 'land kit/y', 'kit/y')
         merge = self.repo.git('rev-parse', 'HEAD')
-        main_gate = runner.gate_config_at(self.repo.root, self.with_kit)
-        self.assertNotEqual(runner.gate_config_at(self.repo.root, merge), main_gate)
+        main_gate = gate_ok.gate_config_at(self.repo.root, self.with_kit)
+        self.assertNotEqual(gate_ok.gate_config_at(self.repo.root, merge), main_gate)
         self.passed(merge, gate_config=main_gate, config_rev=self.with_kit)
         code, err = self.push('origin', 'main')
         self.assertEqual(code, 0, err)
@@ -103,7 +103,7 @@ class HookTest(pc.PrePushCase):
         self.repo.write('a.txt', 'a\n')
         head = self.repo.commit('a', 'a.txt')
         self.passed(head, git_copy_only=True)
-        self.assertIsNone(runner.verify_record(self.repo.root, head)[0])
+        self.assertIsNone(gate_ok.verify_record(self.repo.root, head)[0])
         code, err = self.push('origin', 'main')
         self.assertEqual(code, 1, err)
         self.assertIn('pre-push: refused, %s has no gate-OK record' % head[:12], err)
@@ -183,15 +183,15 @@ class HookTest(pc.PrePushCase):
 class OwnerApprovalTest(pc.PrePushCase):
     """An agent commit carrying `Owner-Approval: hub:A-<n>` is pushed to main when the hub
     verifies that approval for exactly that commit, and refused like any agent commit when it does
-    not (kitlib.guard.ownercommits, through its approvals seam: the stand-in hub of
-    tests/guard/test_ownercommits.py). prepush.check runs in this process, so the seam is patched;
+    not (kitlib.ownerfiles.rules, through its approvals seam: the stand-in hub of
+    tests/ownerfiles/test_rules.py). prepush.check runs in this process, so the seam is patched;
     git running the hook would ask the machine's hub."""
 
     def setUp(self):
         pc.PrePushCase.setUp(self)
         self.repo.git('push', '-q', 'origin', 'main')
         self.hub = toc.StandInHub()
-        patcher = mock.patch.object(ownercommits, 'default_approvals', lambda: self.hub)
+        patcher = mock.patch.object(ownerrules, 'default_approvals', lambda: self.hub)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -235,15 +235,15 @@ class OwnerApprovalTest(pc.PrePushCase):
 
     def test_an_approved_commit_on_a_base_moved_by_other_paths_is_pushed(self):
         tip = self.approved_commit('approved\n', before={'a.txt': 'a\n'})
-        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
-        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+        hub = ownerrules.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownerrules, 'default_approvals', lambda: hub):
             self.assertEqual(self.check(tip), (True, None))
         self.assertEqual(self.hub.asked[-1][1], self.with_kit)
 
     def test_an_approved_commit_on_a_base_where_the_owner_changed_its_path_is_refused(self):
         tip = self.approved_commit('approved\n', before={'CLAUDE.md': 'owner\n'})
-        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
-        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+        hub = ownerrules.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownerrules, 'default_approvals', lambda: hub):
             ok, msg = self.check(tip)
         self.assertFalse(ok)
         # the approval creates CLAUDE.md, which the owner made since: the delta rule refuses it
@@ -294,7 +294,7 @@ class CheckTest(pc.PrePushCase):
         self.assertEqual(self.check(branch), (True, None))                     # not main
 
     def test_the_rules_refuse_in_order(self):
-        """Delete or non-fast-forward, then gate-OK, then owner-only paths (docs/guard.md
+        """Delete or non-fast-forward, then gate-OK, then owner-only paths (docs/guard-hooks.md
         "Pre-push"): a push that breaks all three is refused for the first, then the next."""
         self.base({'repo': {'push_block': True}, 'owner': {'email': gitfixture.EMAIL}})
         base = self.repo.git('rev-parse', 'main')
@@ -377,7 +377,7 @@ class CheckTest(pc.PrePushCase):
     def test_a_record_reader_that_fails_refuses_a_push_to_main_only(self):
         self.base({'repo': {'push_block': True}})
         branch = 'refs/heads/kit/x %s refs/heads/kit/x %s' % ('1' * 40, '0' * 40)
-        with mock.patch.object(runner, 'verify_record', side_effect=OSError('boom')) as reader:
+        with mock.patch.object(gate_ok, 'verify_record', side_effect=OSError('boom')) as reader:
             self.assertEqual(prepush.check(self.repo.root, [branch]), (True, None))
             self.assertFalse(reader.called)
             ok, msg = prepush.check(self.repo.root, [self.LINE])

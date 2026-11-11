@@ -1,5 +1,5 @@
 """git archive reads the repository it runs in; only its -o/--output file and the folder a tar
-fed by it extracts into are written (docs/guard.md "Write jail", the git bullet, and "Shell writes").
+fed by it extracts into are written (docs/guard-jail-roles.md "Write jail", the git bullet, and "Shell writes").
 
 The repro from the PM's session: `git -C <kit> archive <sha> | tar -x -C <scratch>` was refused as
 a write to the kit checkout. These rows pin both sides: the archive passes, the tar side is judged
@@ -109,7 +109,7 @@ class ArchiveReadOnly(ArchiveWorld):
 
     def test_archive_remote_and_exec_read(self):
         # --remote/--exec run git-upload-archive or the program --exec names; only an attacker
-        # hides a write there (honest mistakes only), so they read like any archive (docs/guard-v2.md)
+        # hides a write there (honest mistakes only), so they read like any archive (docs/guard-jail-roles.md "Write jail")
         for opt in ('--remote=. --exec=/tmp/x.sh', '--remote=origin', '--rem=origin', '--e=/tmp/x.sh'):
             text = 'git -C %s archive %s HEAD' % (self.main, opt)
             with self.subTest(text):
@@ -454,7 +454,7 @@ class ArchiveHoles(ArchiveWorld):
         text = 'tar -x -C %s -C ../../repo' % self.scratch
         self.refused_by(self.pm(bash(text, deep)), 'write-jail', 'tar')
         # -C <base> also writes <base>, the folder that holds the fixture home and so the owner's
-        # delegation list: that rule refuses it first (docs/guard.md "Owner delegation list")
+        # delegation list: that rule refuses it first (docs/guard-owner.md "Owner delegation list")
         text = 'tar -x -C %s -C repo' % W.fwd(self.w.base)
         self.refused_by(self.pm(bash(text, self.w.plain)), 'owner-delegations', 'tar')
         self.assertIsNone(self.pm(bash('tar -x -C %s -C sub' % self.scratch, self.w.plain)))

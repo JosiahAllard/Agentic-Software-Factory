@@ -25,8 +25,8 @@ import _host                                                        # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
 USAGE = 2
-# Every host hosts.json registers; its adapter module's ADAPTER.content().renderer() is its
-# ContentRenderer (which also writes its plugin manifests from kit.json).
+# Every host hosts.json registers; _host.renderers gives each one's ContentRenderer (which also
+# writes its plugin manifests from kit.json).
 RENDERERS = registry.names()
 
 
@@ -49,16 +49,6 @@ def build_parser():
     return p
 
 
-def renderers(hosts=None):
-    """The ContentRenderer of each named host (default: all of RENDERERS), in name order."""
-    return [_host.adapter_module(h).ADAPTER.content().renderer() for h in sorted(hosts or RENDERERS)]
-
-
-def tier_maps():
-    """{host: {tier: model}} of every host in RENDERERS: docs/ROSTER.md's tier table."""
-    return {r.host: r.tier_models() for r in renderers()}
-
-
 def main(argv=None, out=None):
     out = sys.stdout if out is None else out
     a = build_parser().parse_args(argv)
@@ -70,8 +60,8 @@ def main(argv=None, out=None):
             out.write('render_content: -C: %s\n' % why)
             return USAGE
     try:
-        rs = renderers(a.host)
-        tiers = tier_maps()
+        rs = _host.renderers(a.host)
+        tiers = _host.model_maps()
         if a.write:
             paths = content.write(root, rs, tiers=tiers)
             for p in paths:

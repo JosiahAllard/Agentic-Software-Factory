@@ -15,6 +15,7 @@ from .test_run import store_files
 if os.name == "nt":
     from kitlib.lock import background as bg
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.lock.store import EXIT_REQUIRE, LockError
     from kitlib.proc import process
 
@@ -125,11 +126,11 @@ class Background(StoreCase):
     def test_its_command_goes_through_r1415_holding_its_gpu(self):
         # A background run always holds a gpu slot, so a docker exec it runs is left alone.
         cmd = [sys.executable, "-c", "import sys; sys.exit(0)"]
-        with mock.patch.object(bg, "docker_cpu_env", wraps=rm.docker_cpu_env) as f:
+        with mock.patch.object(bg, "docker_cpu_env", wraps=run_held.docker_cpu_env) as f:
             self.assertEqual(bg.run_background(cmd, "kit", "bg", store=self.store,
                                                env=clean_env()), 0)
         f.assert_called_once_with(cmd, True)
-        self.assertEqual(rm.docker_cpu_env(["docker", "exec", "box", "sh"], True),
+        self.assertEqual(run_held.docker_cpu_env(["docker", "exec", "box", "sh"], True),
                          ["docker", "exec", "box", "sh"])
 
     def test_ctrl_c_ends_the_child_and_settles(self):

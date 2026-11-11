@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pmstart, pmwatch
-from kitlib.pmstart import consoletasks
+from kitlib.schedtask import read as taskread
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos
 from tests.pmstart.test_hub_site import SET, FiledClient
@@ -45,7 +45,7 @@ class ReadsOnceTest(unittest.TestCase):
         with mock.patch.object(pmstart, "launcher_repos", counted("repos", {"a": GONE})), \
                 mock.patch.object(pmstart, "plugin_settings", counted("settings", None)), \
                 mock.patch.object(pmstart, "pm_memory_repo", counted("top", "X:/pm")), \
-                mock.patch.object(consoletasks, "read_tasks", counted("tasks", [])), \
+                mock.patch.object(taskread, "read_tasks", counted("tasks", [])), \
                 mock.patch.object(pmwatch, "load_config", counted("watch", {"state_file": os.path.join(state, "s.json")})):
             txt = pmstart.checklist({}, NOW, procs=[], **fakes)
         return txt, calls
@@ -61,14 +61,14 @@ class ReadsOnceTest(unittest.TestCase):
     def test_a_failed_read_is_each_checks_own_line(self):
         temp_home(self)
         boom = mock.Mock(side_effect=RuntimeError("no schtasks"))
-        with mock.patch.object(consoletasks, "read_tasks", boom):
+        with mock.patch.object(taskread, "read_tasks", boom):
             txt = pmstart.checklist({}, NOW, procs=[], pm_data=lambda: None, handoff=HANDOFF_FAKE,
                                     reminders={"read": lambda p: "[]"}, liveness={"read": lambda p: "{}"},
                                     repos={"a": GONE}, repo_prep={"prep": lambda p: []},
                                     watcher={"beat": lambda: None, "now": 0}, foreground_lock={"read": lambda: 0})
         self.assertEqual(boom.call_count, 1)
         self.assertIn("- could not check the worktree sweep tasks: RuntimeError: no schtasks", txt)
-        if consoletasks.platform.NAME != "linux":
+        if taskread.platform.NAME != "linux":
             self.assertIn("- could not check console_tasks: RuntimeError: no schtasks", txt)
 
     def test_the_watch_config_loader_is_the_callers(self):

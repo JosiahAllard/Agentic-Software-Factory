@@ -5,7 +5,7 @@ listed for a hand edit, in the dry run and the apply output alike. And the clear
 import unittest
 
 from kitlib.backlog import opener
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_citations, plan_edit
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal, Usage
 
@@ -20,14 +20,14 @@ class Line(unittest.TestCase):
     for a hand edit. No rewrite says `the owner` or `the owner's`."""
 
     def check(self, before, after, opens=True):
-        self.assertEqual(pmod.uncite_line(before, opens), (after, False), before)
+        self.assertEqual(plan_citations.uncite_line(before, opens), (after, False), before)
         self.assertNotRegex(after, r'\b(?:The|the) owner\b(?!_)', before)
         # idempotent: the rewrite cites nothing, so a second pass leaves it
-        self.assertEqual(pmod.uncite_line(after, opens), (after, False), after)
+        self.assertEqual(plan_citations.uncite_line(after, opens), (after, False), after)
 
     def left(self, line, opens=True):
         """The line comes back unchanged and listed for a hand edit."""
-        self.assertEqual(pmod.uncite_line(line, opens), (line, True), line)
+        self.assertEqual(plan_citations.uncite_line(line, opens), (line, True), line)
 
     def test_each_rule_reads_as_words(self):
         for before, after in (
@@ -155,22 +155,22 @@ class Line(unittest.TestCase):
         self.left('note: reverted to its pre-R-9102 priority (PM R-9106)')
 
     def test_a_leading_mark_is_the_bodys_to_join(self):
-        self.assertEqual(pmod.uncite_line('(R-9033), then x'), (', then x', False))
-        self.assertEqual(pmod.uncite_line('  (PM R-9818). It checks U1'),
+        self.assertEqual(plan_citations.uncite_line('(R-9033), then x'), (', then x', False))
+        self.assertEqual(plan_citations.uncite_line('  (PM R-9818). It checks U1'),
                          ('  . It checks U1', False))
 
     def test_what_is_not_an_owner_cite_is_untouched(self):
         # (a `Blocked on` line's reason is worded: tests/backlog/test_uncite_fields.py)
         for line in ('T-1234 and item:FOO and R-12 stay.', 'XR-9033 and R-9033x-1', '',
                      'Blocked on owner (2026-01-01): T-1234 first'):
-            self.assertEqual(pmod.uncite_line(line), (line, False), line)
+            self.assertEqual(plan_citations.uncite_line(line), (line, False), line)
 
 
 class Body(unittest.TestCase):
     """_uncite_body: the stray mark a rewrite leaves at a line's start, and hand-edit lines."""
 
     def test_a_stray_mark_rejoins_the_line_above(self):
-        body, rewritten, hand = pmod._uncite_body(
+        body, rewritten, hand = plan_citations._uncite_body(
             "the cap\n(PM R-9922), not this record's.\n- fallback (PM R-9823). No RSProx\n"
             '  (PM R-9818). It checks U1, the\n  more')
         self.assertEqual(body.split('\n'), ['the cap,', "not this record's.",
@@ -180,19 +180,19 @@ class Body(unittest.TestCase):
         self.assertIn(['the cap', 'the cap,'], rewritten)
 
     def test_a_stray_mark_after_a_finished_line_is_dropped(self):
-        body, _, hand = pmod._uncite_body('Done.\n(R-9001). it checks U1\n\n(R-9002), more')
+        body, _, hand = plan_citations._uncite_body('Done.\n(R-9001). it checks U1\n\n(R-9002), more')
         self.assertEqual(body.split('\n'), ['Done.', 'It checks U1', '', 'More'])
         self.assertEqual(hand, [])
-        body, _, _ = pmod._uncite_body('## Heading\n(R-9001), more')
+        body, _, _ = plan_citations._uncite_body('## Heading\n(R-9001), more')
         self.assertEqual(body.split('\n'), ['## Heading', 'More'])
 
     def test_a_line_of_only_cites_goes(self):
-        body, rewritten, _ = pmod._uncite_body('x\n(R-9001)\nSee R-9002.\ny')
+        body, rewritten, _ = plan_citations._uncite_body('x\n(R-9001)\nSee R-9002.\ny')
         self.assertEqual(body.split('\n'), ['x', 'y'])
         self.assertEqual(rewritten, [['(R-9001)', None], ['See R-9002.', None]])
 
     def test_a_hand_edit_line_is_kept_and_numbered(self):
-        body, rewritten, hand = pmod._uncite_body(
+        body, rewritten, hand = plan_citations._uncite_body(
             'x\n(R-9001)\nOne R-9508 debug run\n(R-9002). It checks')
         self.assertEqual(body.split('\n'), ['x', 'One R-9508 debug run', '(R-9002). It checks'])
         # the line after one left for a hand edit cannot give it its mark: left too
@@ -315,7 +315,7 @@ class Store(StoreCase):
 
 
 class ClearPath(StoreCase):
-    """`set ID --unset K` clears a key no verb writes (plan.UNWRITTEN); writing one stays refused.
+    """`set ID --unset K` clears a key no verb writes (plan_edit.UNWRITTEN); writing one stays refused.
     Clearing `resume` is the owner's and the PM's (`set-price-owner`)."""
     remote = False
 
@@ -333,7 +333,7 @@ class ClearPath(StoreCase):
         self.assertIsNone(self.get('FOO').get('priority_per'))
 
     def test_each_is_cleared_once_the_role_check_ran(self):
-        for key in pmod.UNWRITTEN:
+        for key in plan_edit.UNWRITTEN:
             change = self.verb('set', 'FOO', [], (key,), role_checked=True)
             self.assertIsNone(self.get('FOO').get(key), key)
             self.assertIn('-> (absent)', '\n'.join(change.lines), key)
@@ -351,7 +351,7 @@ class ClearPath(StoreCase):
         self.assertEqual(self.get('FOO').get('resume'), 'R-9003')
 
     def test_writing_one_is_still_refused(self):
-        for key in pmod.UNWRITTEN:
+        for key in plan_edit.UNWRITTEN:
             with self.assertRaises(Refusal) as cm:
                 self.verb('set', 'FOO', [(key, ['R-9009'])], role_checked=True)
             self.assertIn('is no longer written', str(cm.exception))

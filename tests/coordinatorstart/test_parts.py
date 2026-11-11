@@ -136,7 +136,7 @@ class CommandPartsTest(unittest.TestCase):
             cfg = mock.Mock()
             cfg.written.return_value = repo_named
             with mock.patch("kitlib.config.load", return_value=cfg), \
-                    mock.patch("kitlib.backlog.store.pm_data_live_store", return_value=pm):
+                    mock.patch("kitlib.backlog.store_live.pm_data_live_store", return_value=pm):
                 return parts.store_root("R")
         self.assertEqual(root(None, ("PM", "kit/backlog", None)), "PM")
         self.assertEqual(root("ref", ("PM", "kit/backlog", None)), "R")      # the repo names its own store

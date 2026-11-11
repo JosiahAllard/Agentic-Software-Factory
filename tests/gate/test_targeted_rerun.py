@@ -1,8 +1,8 @@
-"""kitlib.gate.rerun: the targeted rerun of a red `gate.py --full` (docs/gate.md "Targeted
-rerun"). A red --full run of a clean tree writes a red run; `gate.py --rerun` reruns its failing
-test classes at the tip (each paired with a control at the base, which is information only) and
-the steps it never reached, under one gate slot of the branch, and says FLAKE or REAL. A landing
-takes a tip with no full gate-OK record on a FLAKE rerun of its latest red run, and never lands
+"""kitlib.gate.rerun: the targeted rerun of a red whole gate (docs/gate-rerun-checkout.md "Targeted
+rerun"). A red --full or default-mode run of a clean tree writes a red run; `gate.py --rerun` reruns
+its failing test classes at the tip (each paired with a control at the base, which is information
+only) and the steps it never reached, under one gate slot of the branch, and says FLAKE or REAL. A
+landing takes a tip with no gate-OK record that lands it on a FLAKE rerun of its latest red run, and never lands
 a tip a test failed on when that test failed twice over the branch's commits, whatever record it
 has. Every missing, unreadable or altered record refuses."""
 import json
@@ -12,11 +12,12 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.gate import rerun, runner
-from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.records import gate_ok
-from tests.gate import fixtures, test_land
+from tests.gate import fixtures
+from tests.landing import test_land
 
 BRANCH = test_land.BRANCH
 ID = 'flaky_mod.Case.test_flaky'
@@ -257,7 +258,7 @@ class AddLine(unittest.TestCase):
                     'ids': ['%s.Case%d.test_%s' % (long, n, 'z' * 50)]} for n in range(5)]
         add = rerun.add_line(os.getcwd(), BRANCH, 'a' * 40, classes)
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
-        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertLessEqual(len(summary), plan_edit.SUMMARY_MAX, summary)
         self.assertIn('and 4 more', summary)
         why = re.search(r'--why-not-folded "([^"]*)"', add).group(1)
         for c in classes:
@@ -284,7 +285,7 @@ class RerunCase(test_land.LandCase):
         return self.branch('feature', {'flaky_mod.py': FLAKY, 'MARK': 'here\n'})
 
     def red(self, wt, again=False):
-        """A red `--full` gate; `again` repeats one of the same tree (docs/gate.md "An unchanged
+        """A red `--full` gate; `again` repeats one of the same tree (docs/gate-records.md "An unchanged
         red tree")."""
         out = runner.branch_gate(wt, full=True, book_kw=self.book_kw, again=again,
                                  log_dir=os.path.join(self.tmp, 'own'))
@@ -333,11 +334,15 @@ class RedRun(RerunCase):
         self.assertEqual(out.code, G.FAILED, out.lines)
         self.assertEqual(self.loaded(tip), ([], []))
 
-    def test_a_default_mode_run_writes_no_red_run(self):
+    def test_a_default_mode_red_run_records_a_selected_red_run(self):
         wt, tip = self.work('red')
         out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=os.path.join(self.tmp, 'own'))
         self.assertEqual(out.code, G.FAILED, out.lines)
-        self.assertEqual(self.loaded(tip), ([], []))
+        reds, reruns = self.loaded(tip)
+        self.assertEqual((len(reds), reruns), (1, []))
+        self.assertEqual((reds[0]['config_rev'], reds[0]['full']), (tip, False))
+        self.assertEqual([f['id'] for f in {s['name']: s for s in reds[0]['steps']}
+                          ['unit']['failures']], [ID])
 
     def test_a_dirty_tree_writes_no_red_run(self):
         wt, tip = self.work('red')
@@ -353,14 +358,14 @@ class RedRun(RerunCase):
         wt, tip = self.work('done')
         out = self.rerun(wt)
         self.assertEqual(out.code, G.REFUSED, out.lines)
-        self.assertIn('no red gate.py --full run', out.lines[0])
+        self.assertIn('no red gate.py run', out.lines[0])
         self.assertEqual(self.book_calls, [])
 
 
 class Stopped(RerunCase):
     def ask_stop(self):
         for d in self.store.live_runs():
-            lockrun.request_stop(self.store, d['id'], 'test')
+            run_end.request_stop(self.store, d['id'], 'test')
 
     def test_a_stop_before_the_first_class_starts_none(self):
         wt, _ = self.work('once')
@@ -416,7 +421,7 @@ class Flake(RerunCase):
         self.assertIn('--found-on %s' % BRANCH, add)
         # the summary is a title `backlog.py add` takes; the test id goes in the reason
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
-        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertLessEqual(len(summary), plan_edit.SUMMARY_MAX, summary)
         self.assertIn(ID, re.search(r'--why-not-folded "([^"]*)"', add).group(1))
         self.assertIn('report this line to your coordinator', out.lines[-2])
         # one gate slot of the branch: it counts toward the branch gate budget
@@ -433,6 +438,23 @@ class Flake(RerunCase):
                          ['after'])
         self.assertIsNone(rerun.verify_flake(self.repo.root, tip))
         self.assertIsNone(rerun.twice_refusal(self.repo.root, tip, self.main))
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+
+    def test_a_selected_red_run_reruns_its_failed_tests_fresh_and_the_tip_lands_on_it(self):
+        wt, tip = self.work('once')
+        out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=os.path.join(self.tmp, 'own'))
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        # one red run, of the default mode
+        self.assertEqual([r['full'] for r in self.loaded(tip)[0]], [False])
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN FLAKE'), out.lines)
+        reds, reruns = self.loaded(tip)
+        self.assertEqual([(r['verdict'], r['red']) for r in reruns], [('FLAKE', reds[0]['hash'])])
+        self.assertEqual([c['cls'] for c in reruns[0]['classes']], ['flaky_mod.Case'])
+        self.assertIsNone(gate_ok.read(self.repo.root, tip)[0])
+        self.assertIsNone(rerun.verify_flake(self.repo.root, tip))
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
 
@@ -605,7 +627,7 @@ class GradleStep(RerunCase):
         n = len(self.book_calls)
         out = self.rerun(wt)
         self.assertEqual(out.code, G.REFUSED, out.lines)
-        self.assertIn('only a passing gate.py --full lands this tip', out.lines[0])
+        self.assertIn('only a passing gate lands this tip', out.lines[0])
         self.assertIn('  gradle: ' + COVERS, '\n'.join(out.lines))
         self.assertEqual(self.book_calls[n:], [])
         self.assertIn(COVERS, rerun.verify_flake(self.repo.root, tip))
@@ -613,7 +635,7 @@ class GradleStep(RerunCase):
 
 class Branch(RerunCase):
     """The twice rule counts a test's failures over every commit of the branch since its merge
-    base, for a tip that has a red run of its own; a tip without one (a green --full) lands."""
+    base, for a tip that has a red run of its own; a tip without one (a green gate) lands."""
 
     def next_commit(self, wt, state):
         self.set_state(state)

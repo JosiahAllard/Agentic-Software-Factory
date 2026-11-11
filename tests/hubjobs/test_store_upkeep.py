@@ -8,8 +8,8 @@ import unittest
 from unittest import mock
 
 from kitlib import hubjobs
-from kitlib import pmdata
-from kitlib.gate import land
+from kitlib.config import pmdata
+from kitlib.landing import lander as land
 from kitlib.git import cmd
 from kitlib.hubjobs import store_upkeep as su
 from kitlib.hubsite import jobs
@@ -370,7 +370,7 @@ class StaleLock(UpkeepCase):
 
 
 class LaunchSlot(object):
-    """A booked slot's start and wait (kitlib.lock.run.Slot), recording what was started."""
+    """A booked slot's start and wait (kitlib.lock.run_held.Slot), recording what was started."""
     id = 'r-test'
 
     def __init__(self, how='done', code=0, start_error=None):

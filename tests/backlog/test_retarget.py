@@ -158,7 +158,7 @@ class Plan(StoreCase):
 
 class LivePulls(StoreCase):
     """A pulled record whose `scope:` retarget would rewrite refuses while its branch is live,
-    fails when git cannot tell, and is rewritten when its pull is dead (plan._refuse_live_pulls,
+    fails when git cannot tell, and is rewritten when its pull is dead (plan_end._refuse_live_pulls,
     the guard `retire` and `delete` share). Only a scope rewrite counts: the branch builds
     against its scope, not its `ref:` or `summary:`."""
     remote = False

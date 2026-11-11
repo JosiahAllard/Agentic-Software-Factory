@@ -20,7 +20,7 @@ Two sections, one per platform: read the one your platform line names (Windows o
 9. One foreground gate per worktree, on its assigned ports; never background one with a stray `&` (two at once fought over the same build).
 10. Cleanup goes through the kit's tools (`python <kit>/tools/worktree_remove.py -C <main checkout> <worktree>`), only for a worktree that is yours to remove; otherwise report it to the lander or coordinator.
 11. Read a tool's usage with `<tool> --help` alone, or into a file you read with Read; never pipe it to `head`, `tail` or `grep`.
-12. Wait on a background run as <kit>/docs/gate.md "Waiting on a gate: who arms what" says (a run of your own: `run_in_background` and its exit notice), never with a foreground `sleep` or a poll loop: the host blocks a foreground `sleep`. To wait on any other condition: `run_in_background` with an until-loop that exits when it holds (`until <check>; do sleep 5; done`), or Monitor, which needs its `description` and `timeout_ms` (a call without them fails).
+12. Wait on a background run as <kit>/docs/gate-records.md "Waiting on a gate: who arms what" says (a run of your own: `run_in_background` and its exit notice), never with a foreground `sleep` or a poll loop: the host blocks a foreground `sleep`. To wait on any other condition: `run_in_background` with an until-loop that exits when it holds (`until <check>; do sleep 5; done`), or Monitor, which needs its `description` and `timeout_ms` (a call without them fails).
 
 ### Never (Windows)
 
@@ -43,7 +43,7 @@ Details: `<kit>/docs/worktree-remove.md`; `<kit>/docs/new-worktree.md`.
 8. One foreground gate per worktree, on its assigned ports; never background one with a stray `&` or `nohup` (two at once fought over the same build), and whether a `&` job survives its shell depends on your host's shell tool, so use the kit's background mode (`run_in_background`), never a bare `&`.
 9. Cleanup goes through the kit's tools (`python <kit>/tools/worktree_remove.py -C <main checkout> <worktree>`), only for a worktree that is yours to remove; otherwise report it to the lander or coordinator.
 10. Read a tool's usage with `<tool> --help` alone, or into a file you read with Read; never pipe it to `head`, `tail` or `grep`.
-11. Wait on a background run as <kit>/docs/gate.md "Waiting on a gate: who arms what" says (a run of your own: `run_in_background` and its exit notice), never with a foreground `sleep` or a poll loop: the host blocks a foreground `sleep`. To wait on any other condition: `run_in_background` with an until-loop that exits when it holds (`until <check>; do sleep 5; done`), or Monitor, which needs its `description` and `timeout_ms` (a call without them fails).
+11. Wait on a background run as <kit>/docs/gate-records.md "Waiting on a gate: who arms what" says (a run of your own: `run_in_background` and its exit notice), never with a foreground `sleep` or a poll loop: the host blocks a foreground `sleep`. To wait on any other condition: `run_in_background` with an until-loop that exits when it holds (`until <check>; do sleep 5; done`), or Monitor, which needs its `description` and `timeout_ms` (a call without them fails).
 12. File permissions and symlinks: a checkout keeps the executable bit and symlinks as git recorded them; do not `chmod -R` a tree, and do not `cp -r` or `rm -rf` through a symlink that points out of the worktree.
 
 ### Never (Linux)

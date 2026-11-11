@@ -43,7 +43,8 @@
       "guarded_tools": ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "PowerShell", "Read", "Grep", "mcp__*"],
       "fast_path": "all"
     },
-    "tiers": {"light": "haiku", "standard": "sonnet", "strong": "opus", "deep": "opus"}
+    "tiers": {"light": "haiku", "standard": "sonnet", "strong": "opus", "deep": "opus"},
+    "role_models": {"deep-worker": "fable"}
   },
   "codex": {
     "adapter": "hosts.codex.adapter",

@@ -9,6 +9,7 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib.hubjobs import _crossover_decide as D
 from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import usage_crossover as U
 from kitlib.hubsite import jobs, push
@@ -25,8 +26,8 @@ ENTRY = {'repo': 'kit', 'agent': True, 'stem': 'kit-coord', 'state': 'x.md', 'ac
          'name': 'kit-coord-a1'}
 MOVED = dict(ENTRY, account=2, name='kit-coord-a2')
 CREATED = '2027-01-01T00:00:00'
-OLD = U.Live('kit-coord-a1', 11, CREATED)
-NEW = U.Live('kit-coord-a2', 22, CREATED)
+OLD = D.Live('kit-coord-a1', 11, CREATED)
+NEW = D.Live('kit-coord-a2', 22, CREATED)
 STALL = ('1', NOW + 2 * DAY)
 
 
@@ -52,7 +53,7 @@ def crossing(phase, **fields):
     c = {'phase': phase, 'phase_at': NOW - 60, 'asked_at': NOW - 120, 'account': '1',
          'target': '2', 'old_name': OLD.name, 'old_pid': OLD.pid, 'old_created': OLD.created,
          'entry_name': OLD.name, 'high_c': 5, 'delivered': True}
-    if phase in (U.STARTING, U.STARTED, U.STOPPING):
+    if phase in (D.STARTING, D.STARTED, D.STOPPING):
         c['new_name'] = NEW.name
     c.update(fields)
     return c
@@ -61,7 +62,7 @@ def crossing(phase, **fields):
 def decide(entry=ENTRY, cross=None, live=(OLD,), stall=None, quiet=None, accounts=ACCOUNTS,
            newest=None, starts=None, running=None, landed=None, mode='normal', now=NOW,
            note_at=None, cleared=None, asks=None, **weeks):
-    return U.decide('kit', entry, cross, list(live), stall, quiet, accounts, newest, starts or {},
+    return D.decide('kit', entry, cross, list(live), stall, quiet, accounts, newest, starts or {},
                     {'1': 1} if running is None else running, landed or {}, mode, now,
                     note_at=note_at, cleared=cleared, asks=asks, **weeks)
 
@@ -73,57 +74,57 @@ def record(number, kind):
 class Trigger(unittest.TestCase):
     def test_a_fresh_reading_at_99_of_the_week_asks_for_a_checkpoint(self):
         d = decide()
-        self.assertEqual((d.action, d.target, d.word, d.detail), (U.ASK, '2', 'crossing', 'kit:a2'))
+        self.assertEqual((d.action, d.target, d.word, d.detail), (D.ASK, '2', 'crossing', 'kit:a2'))
 
     def test_98_of_the_week_does_nothing(self):
-        self.assertEqual(decide(accounts={'1': on(98), '2': on(20)}).action, U.HOLD)
+        self.assertEqual(decide(accounts={'1': on(98), '2': on(20)}).action, D.HOLD)
 
     def test_the_five_hour_window_is_ignored(self):
-        self.assertEqual(decide(accounts={'1': on(20, five=100), '2': on(20)}).action, U.HOLD)
+        self.assertEqual(decide(accounts={'1': on(20, five=100), '2': on(20)}).action, D.HOLD)
 
     def test_a_stale_reading_at_99_with_no_stall_read_holds(self):
         d = decide(accounts={'1': on(99, age=3660 + 60), '2': on(20)})
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('stale', d.note)
 
     def test_a_reading_an_hour_old_still_counts_and_a_minute_more_does_not(self):
-        self.assertEqual(decide(accounts={'1': on(99, age=3659), '2': on(20)}).action, U.ASK)
-        self.assertEqual(decide(accounts={'1': on(99, age=3660), '2': on(20)}).action, U.HOLD)
+        self.assertEqual(decide(accounts={'1': on(99, age=3659), '2': on(20)}).action, D.ASK)
+        self.assertEqual(decide(accounts={'1': on(99, age=3660), '2': on(20)}).action, D.HOLD)
 
     def test_a_week_that_reset_counts_as_zero(self):
         d = decide(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S), '2': on(20)})
-        self.assertEqual((d.action, d.note), (U.HOLD, 'under the trigger'))
+        self.assertEqual((d.action, d.note), (D.HOLD, 'under the trigger'))
 
     def test_a_week_just_past_its_reset_waits_out_the_grace(self):
         d = decide(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S + 1), '2': on(20)})
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('resets within', d.note)
 
     def test_a_reading_without_the_week_never_counts(self):
         data = reading(99)
         del data['seven_day']['used_percentage']
         accounts = {'1': C.AccountState(True, data), '2': on(20)}
-        self.assertEqual(decide(accounts=accounts).action, U.HOLD)
+        self.assertEqual(decide(accounts=accounts).action, D.HOLD)
 
     def test_a_reset_within_the_hour_is_waited_for(self):
         d = decide(accounts={'1': on(99, week_in=3599), '2': on(20)})
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('resets within', d.note)
-        self.assertEqual(decide(accounts={'1': on(99, week_in=3601), '2': on(20)}).action, U.ASK)
+        self.assertEqual(decide(accounts={'1': on(99, week_in=3601), '2': on(20)}).action, D.ASK)
 
     def test_no_entry_detail_or_process_holds(self):
-        self.assertEqual(decide(entry=dict(ENTRY, stem='')).action, U.HOLD)
-        self.assertEqual(decide(entry=dict(ENTRY, state='')).action, U.HOLD)
-        self.assertEqual(decide(live=()).action, U.HOLD)
+        self.assertEqual(decide(entry=dict(ENTRY, stem='')).action, D.HOLD)
+        self.assertEqual(decide(entry=dict(ENTRY, state='')).action, D.HOLD)
+        self.assertEqual(decide(live=()).action, D.HOLD)
 
     def test_several_processes_of_the_stem_hold(self):
         d = decide(live=(OLD, NEW))
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('several', d.note)
 
     def test_no_room_holds_and_pushes(self):
         d = decide(accounts={'1': HOT, '2': on(98)})
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'kit'))
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', 'kit'))
         self.assertEqual(d.note, 'no account has room')
 
     def test_no_room_names_the_accounts_whose_reading_is_unknown_or_stale(self):
@@ -133,7 +134,7 @@ class Trigger(unittest.TestCase):
                     '5': C.AccountState(True, None)}
         d = decide(accounts=accounts, running={'1': 1, '3': 1})
         self.assertEqual((d.action, d.word, d.detail, d.mark),
-                         (U.HOLD, 'no-room', 'kit:unknown:a3.a4.a5', 'no-room:unknown:a3.a4.a5'))
+                         (D.HOLD, 'no-room', 'kit:unknown:a3.a4.a5', 'no-room:unknown:a3.a4.a5'))
         self.assertEqual(d.note, 'no account has room it can read: account 3 stale, account 4 seven_day '
                                  'unknown, account 5 no usage file')
 
@@ -144,46 +145,46 @@ class Trigger(unittest.TestCase):
         accounts = {'1': HOT, '2': C.AccountState(True, gone), '3': on(99)}
         for running in ({'1': 1, '3': 1}, {'1': 1, '2': 1, '3': 1}):
             d = decide(accounts=accounts, running=running)
-            self.assertEqual((d.action, d.target, d.word), (U.ASK, '2', 'crossing'), running)
+            self.assertEqual((d.action, d.target, d.word), (D.ASK, '2', 'crossing'), running)
             # never named unknown or stale in a no-room: its detail is the key alone
-            self.assertEqual(U.no_room('kit', accounts, {'1', '3'}, running, {}, NOW)[1], 'kit')
+            self.assertEqual(D.no_room('kit', accounts, {'1', '3'}, running, {}, NOW)[1], 'kit')
 
     def test_a_cap_on_the_key_or_the_machine_holds_before_the_child(self):
         three = {'kit': [NOW - 60, NOW - 120, NOW - 180]}
         self.assertEqual(decide(starts=three).word, 'cross-failed')
         six = {'a': [NOW - 60] * 3, 'b': [NOW - 60] * 3}
         d = decide(starts=six)
-        self.assertEqual((d.action, d.word), (U.HOLD, 'cross-failed'))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'cross-failed'))
         self.assertIn('machine', d.note)
 
     def test_starts_older_than_the_window_do_not_count(self):
         old = {'kit': [NOW - 2 * DAY] * 3}
-        self.assertEqual(decide(starts=old).action, U.ASK)
+        self.assertEqual(decide(starts=old).action, D.ASK)
 
     def test_notify_only_says_what_it_would_do(self):
         d = decide(mode='notify')
-        self.assertEqual((d.action, d.target, d.word), (U.WOULD, '2', 'would-cross'))
+        self.assertEqual((d.action, d.target, d.word), (D.WOULD, '2', 'would-cross'))
         d = decide(mode='notify', stall=STALL, quiet=120, accounts={'1': on(50), '2': on(20)})
-        self.assertEqual(d.action, U.WOULD)
+        self.assertEqual(d.action, D.WOULD)
 
     def test_a_crossing_cleared_this_week_on_the_account_is_not_asked_again(self):
         week_reset = NOW + 2 * DAY
         d = decide(cleared={'account': '1', 'reset': week_reset + 30})
-        self.assertEqual((d.action, d.word), (U.HOLD, None))
+        self.assertEqual((d.action, d.word), (D.HOLD, None))
         self.assertIn('cleared', d.note)
         d = decide(cleared={'account': '1', 'reset': week_reset}, mode='full', stall=STALL, quiet=600)
-        self.assertEqual((d.action, d.word), (U.HOLD, None))        # full: not stopped, no push
-        self.assertEqual(decide(cleared={'account': '1', 'reset': week_reset - 7 * DAY}).action, U.ASK)
-        self.assertEqual(decide(cleared={'account': '3', 'reset': week_reset}).action, U.ASK)
+        self.assertEqual((d.action, d.word), (D.HOLD, None))        # full: not stopped, no push
+        self.assertEqual(decide(cleared={'account': '1', 'reset': week_reset - 7 * DAY}).action, D.ASK)
+        self.assertEqual(decide(cleared={'account': '3', 'reset': week_reset}).action, D.ASK)
 
     def test_a_cleared_key_that_stalls_on_normal_is_still_pushed_stalled(self):
         d = decide(cleared={'account': '1', 'reset': NOW + 2 * DAY}, stall=STALL, quiet=600)
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'stalled', 'kit'))
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'stalled', 'kit'))
 
     def test_the_early_trigger_asks_a_session_before_99_when_its_burn_rate_reaches_100_inside_the_lead(self):
         warm = {'1': on(97), '2': on(20)}
         fast = decide(accounts=warm, weeks={'1': rising(90, 97, 30)})
-        self.assertEqual((fast.action, fast.target, fast.word, fast.detail), (U.ASK, '2', 'crossing', 'kit:a2'))
+        self.assertEqual((fast.action, fast.target, fast.word, fast.detail), (D.ASK, '2', 'crossing', 'kit:a2'))
         self.assertIn('97% of its week, 100% in', fast.note)
         self.assertIn('at its burn rate', fast.note)
         holds = {
@@ -195,15 +196,15 @@ class Trigger(unittest.TestCase):
             'another account rising': decide(accounts=warm, weeks={'2': rising(90, 97, 30)}),
         }
         for why, d in holds.items():
-            self.assertEqual((d.action, d.word), (U.HOLD, None), why)
+            self.assertEqual((d.action, d.word), (D.HOLD, None), why)
         d = decide(accounts=warm, weeks={'1': rising(90, 97, 30)}, mode='notify')
-        self.assertEqual((d.action, d.word, d.mark), (U.WOULD, 'would-cross', 'would-cross:2:week'))
+        self.assertEqual((d.action, d.word, d.mark), (D.WOULD, 'would-cross', 'would-cross:2:week'))
 
     def test_asks_have_a_cap_per_key(self):
         d = decide(asks=[NOW - 60, NOW - 120, NOW - 180])
-        self.assertEqual((d.action, d.word, d.mark), (U.HOLD, 'cross-failed', 'ask-cap'))
-        self.assertEqual(decide(asks=[NOW - 60, NOW - 120]).action, U.ASK)
-        self.assertEqual(decide(asks=[NOW - 2 * DAY] * 3).action, U.ASK)
+        self.assertEqual((d.action, d.word, d.mark), (D.HOLD, 'cross-failed', 'ask-cap'))
+        self.assertEqual(decide(asks=[NOW - 60, NOW - 120]).action, D.ASK)
+        self.assertEqual(decide(asks=[NOW - 2 * DAY] * 3).action, D.ASK)
 
 
 class Stall(unittest.TestCase):
@@ -211,49 +212,49 @@ class Stall(unittest.TestCase):
 
     def test_full_stops_a_stalled_session_first(self):
         d = decide(stall=STALL, quiet=60, accounts=self.QUIET, mode='full')
-        self.assertEqual((d.action, d.target, d.word), (U.STOP_STALLED, '2', 'stalled'))
+        self.assertEqual((d.action, d.target, d.word), (D.STOP_STALLED, '2', 'stalled'))
 
     def test_normal_holds_and_tells_the_pm(self):
         d = decide(stall=STALL, quiet=60, accounts=self.QUIET)
-        self.assertEqual((d.action, d.word), (U.HOLD, 'stalled'))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'stalled'))
 
     def test_normal_with_a_fresh_reading_at_99_still_never_asks_a_stalled_session(self):
         d = decide(stall=STALL, quiet=600, accounts=ACCOUNTS)       # account 1 at 99%, fresh
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'stalled', 'kit'))
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'stalled', 'kit'))
 
     def test_activity_under_a_minute_old_is_no_stall(self):
         d = decide(stall=STALL, quiet=59, accounts=self.QUIET, mode='full')
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('active', d.note)
 
     def test_an_unknown_quiet_time_is_no_stall(self):
         self.assertEqual(decide(stall=STALL, quiet=None, accounts=self.QUIET, mode='full').action,
-                         U.HOLD)
+                         D.HOLD)
 
     def test_a_stall_read_whose_reset_has_passed_is_no_stall(self):
         d = decide(stall=('1', NOW - 1), quiet=600, accounts=self.QUIET, mode='full')
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
 
     def test_a_stall_with_the_reset_near_waits_for_it(self):
         d = decide(stall=('1', NOW + 600), quiet=600, accounts=self.QUIET, mode='full')
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
         self.assertIn('resets within', d.note)
 
     def test_a_stall_with_no_room_stops_nothing(self):
         d = decide(stall=STALL, quiet=600, accounts={'1': on(50), '2': on(99)}, mode='full')
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-room'))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-room'))
 
     def test_the_stall_reads_account_is_the_sessions_even_when_its_name_says_otherwise(self):
-        live = U.Live('kit-coord-a2', 11, CREATED)
+        live = D.Live('kit-coord-a2', 11, CREATED)
         d = decide(entry=dict(ENTRY, name='kit-coord-a2', account=2), live=(live,),
                    stall=('1', NOW + DAY), quiet=600, accounts={'1': on(50), '2': on(50), '3': on(20)},
                    mode='full')
-        self.assertEqual((d.action, d.target), (U.STOP_STALLED, '3'))
+        self.assertEqual((d.action, d.target), (D.STOP_STALLED, '3'))
 
 
 class Target(unittest.TestCase):
     def pick(self, accounts, current=('1',), running=None, landed=None):
-        return U.pick_target(accounts, set(current), running or {}, landed or {}, NOW)
+        return D.pick_target(accounts, set(current), running or {}, landed or {}, NOW)
 
     def test_tier_one_is_the_week_that_resets_first(self):
         accounts = {'2': on(80, week_in=3 * DAY), '3': on(10, week_in=5 * DAY), '4': on(90, week_in=DAY)}
@@ -268,8 +269,8 @@ class Target(unittest.TestCase):
         self.assertEqual(self.pick(accounts)[0], '3')
 
     def test_the_five_hour_window_is_never_read_in_either_tier(self):
-        self.assertEqual(self.pick({'2': on(20, five=100)}), ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
-        self.assertEqual(self.pick({'2': on(96, five=100)}), ('2', 'the lowest week under %d%%' % U.TIER2_WEEK))
+        self.assertEqual(self.pick({'2': on(20, five=100)}), ('2', 'under %d%%, its week resets first' % D.TARGET_LIMIT))
+        self.assertEqual(self.pick({'2': on(96, five=100)}), ('2', 'the lowest week under %d%%' % D.TIER2_WEEK))
 
     def test_98_of_the_week_is_no_target(self):
         self.assertIsNone(self.pick({'2': on(98)}))
@@ -292,13 +293,13 @@ class Target(unittest.TestCase):
             data = reading(0)
             absent(data)
             self.assertEqual(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}),
-                             ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
+                             ('2', 'under %d%%, its week resets first' % D.TARGET_LIMIT))
 
     def test_a_stale_reading_with_no_five_hour_counts_as_its_week(self):
         data = dict(reading(0, age=7200), five_hour=None)
         self.assertEqual(self.pick({'2': C.AccountState(True, data)})[0], '2')
         self.assertIsNone(self.pick({'2': C.AccountState(True, data)}, running={'2': 1}))
-        note, detail, _ = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {'2': 1}, {}, NOW)
+        note, detail, _ = D.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {'2': 1}, {}, NOW)
         self.assertEqual((note, detail), ('no account has room it can read: account 2 stale',
                                           'kit:unknown:a2'))
 
@@ -308,7 +309,7 @@ class Target(unittest.TestCase):
             data = dict(reading(100, week_in=-DAY, age=age), five_hour=None)
             for running in ({}, {'2': 1}):
                 self.assertEqual(self.pick({'2': C.AccountState(True, data)}, running=running),
-                                 ('2', 'under %d%%, its week resets first' % U.TARGET_LIMIT))
+                                 ('2', 'under %d%%, its week resets first' % D.TARGET_LIMIT))
 
     def test_the_week_rolls_on_a_week_at_a_time_for_the_tier_one_order(self):
         rolled = C.AccountState(True, dict(reading(100, week_in=-10 * DAY, age=12 * DAY), five_hour=None))  # resets in 4 days
@@ -328,7 +329,7 @@ class Target(unittest.TestCase):
         bad_reset['seven_day']['resets_at'] = 'Fri 11:00'
         for data in (no_reset, bad_reset, dict(reading(0), five_hour=None, seven_day=None)):
             self.assertIsNone(self.pick({'2': C.AccountState(True, data)}))
-            note = U.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)[0]
+            note = D.no_room('kit', {'2': C.AccountState(True, data)}, {'1'}, {}, {}, NOW)[0]
             self.assertEqual(note, 'no account has room it can read: account 2 seven_day unknown')
 
     def test_a_reset_week_still_waits_for_a_reading_after_the_jobs_last_start(self):
@@ -351,15 +352,15 @@ PM_NAME, PM_PID, PM_SID = 'pm-session', 40, 'pm-sid-1'
 
 
 def pm_live(name=PM_NAME, pid=PM_PID):
-    return U.PmLive(name, pid, CREATED, '1')
+    return D.PmLive(name, pid, CREATED, '1')
 
 
 def decide_pm(pms=None, cross=None, stall=None, quiet=None, accounts=ACCOUNTS, newest=None, starts=None,
               running=None, landed=None, mode='normal', now=NOW, note_at=None, cleared=None, asks=None,
               points=None, recorded=None, names=()):
     pms = [pm_live()] if pms is None else pms
-    recorded = U.Recorded(PM_SID, None, 1) if recorded is None else recorded
-    return U.decide_pm(list(pms), cross, stall, quiet, accounts, newest, starts or {},
+    recorded = D.Recorded(PM_SID, None, 1) if recorded is None else recorded
+    return D.decide_pm(list(pms), cross, stall, quiet, accounts, newest, starts or {},
                        {'1': 1} if running is None else running, landed or {}, mode, now, note_at=note_at,
                        cleared=cleared, asks=asks, points=points, recorded=recorded, names=set(names))
 
@@ -368,7 +369,7 @@ def pm_crossing(phase, **fields):
     c = {'phase': phase, 'phase_at': NOW - 60, 'asked_at': NOW - 120, 'account': '1', 'target': '2',
          'old_name': PM_NAME, 'old_pid': PM_PID, 'old_created': CREATED, 'old_sid': PM_SID,
          'high_c': 5, 'delivered': True}
-    if phase == U.STARTING:
+    if phase == D.STARTING:
         c['new_name'] = 'pm-a2'
     c.update(fields)
     return c
@@ -381,173 +382,173 @@ def rising(start, end, minutes):
 
 class BurnEta(unittest.TestCase):
     def test_the_time_to_100_at_the_rise_of_the_readings(self):
-        self.assertAlmostEqual(U.burn_eta([[NOW - 1800, 90], [NOW, 96]], NOW), 1200)
-        self.assertAlmostEqual(U.burn_eta([[NOW - 1860, 90], [NOW - 60, 96]], NOW), 1140)
+        self.assertAlmostEqual(D.burn_eta([[NOW - 1800, 90], [NOW, 96]], NOW), 1200)
+        self.assertAlmostEqual(D.burn_eta([[NOW - 1860, 90], [NOW - 60, 96]], NOW), 1140)
 
     def test_no_rise_or_too_short_a_span_is_none(self):
-        self.assertIsNone(U.burn_eta(None, NOW))
-        self.assertIsNone(U.burn_eta([[NOW, 96]], NOW))
-        self.assertIsNone(U.burn_eta([[NOW - 1800, 96], [NOW, 96]], NOW))
-        self.assertIsNone(U.burn_eta([[NOW - U.BURN_MIN_S + 1, 90], [NOW, 96]], NOW))
+        self.assertIsNone(D.burn_eta(None, NOW))
+        self.assertIsNone(D.burn_eta([[NOW, 96]], NOW))
+        self.assertIsNone(D.burn_eta([[NOW - 1800, 96], [NOW, 96]], NOW))
+        self.assertIsNone(D.burn_eta([[NOW - D.BURN_MIN_S + 1, 90], [NOW, 96]], NOW))
 
     def test_a_drop_starts_the_run_again_and_old_or_bad_points_are_left_out(self):
-        self.assertIsNone(U.burn_eta([[NOW - 1800, 90], [NOW - 900, 99], [NOW, 2]], NOW))
-        pts = [[NOW - U.BURN_SPAN_S - 60, 0], ['x', 5], [NOW - 1800, 90], [NOW, 96], [NOW + 60, 99]]
-        self.assertAlmostEqual(U.burn_eta(pts, NOW), 1200)
+        self.assertIsNone(D.burn_eta([[NOW - 1800, 90], [NOW - 900, 99], [NOW, 2]], NOW))
+        pts = [[NOW - D.BURN_SPAN_S - 60, 0], ['x', 5], [NOW - 1800, 90], [NOW, 96], [NOW + 60, 99]]
+        self.assertAlmostEqual(D.burn_eta(pts, NOW), 1200)
 
     def test_past_due_is_zero(self):
-        self.assertEqual(U.burn_eta([[NOW - 3600, 50], [NOW - 1800, 99]], NOW), 0.0)
+        self.assertEqual(D.burn_eta([[NOW - 3600, 50], [NOW - 1800, 99]], NOW), 0.0)
 
 
 class PmDecide(unittest.TestCase):
     def test_a_fresh_reading_at_99_asks_the_pm_for_a_checkpoint(self):
         d = decide_pm()
-        self.assertEqual((d.action, d.target, d.word, d.detail), (U.ASK, '2', 'crossing', 'pm:a2'))
+        self.assertEqual((d.action, d.target, d.word, d.detail), (D.ASK, '2', 'crossing', 'pm:a2'))
 
     def test_the_early_trigger_needs_95_and_a_burn_rate_that_reaches_100_inside_the_lead(self):
         fast = decide_pm(accounts={'1': on(97), '2': on(20)}, points=rising(90, 97, 30))
-        self.assertEqual((fast.action, fast.word), (U.ASK, 'crossing'))
+        self.assertEqual((fast.action, fast.word), (D.ASK, 'crossing'))
         self.assertIn('at its burn rate', fast.note)
         self.assertEqual(decide_pm(accounts={'1': on(94), '2': on(20)}, points=rising(80, 94, 30)).action,
-                         U.HOLD)
+                         D.HOLD)
         self.assertEqual(decide_pm(accounts={'1': on(97), '2': on(20)}, points=rising(96, 97, 30)).action,
-                         U.HOLD)
-        self.assertEqual(decide_pm(accounts={'1': on(97), '2': on(20)}).action, U.HOLD)
+                         D.HOLD)
+        self.assertEqual(decide_pm(accounts={'1': on(97), '2': on(20)}).action, D.HOLD)
         stale = {'1': on(97, age=2 * 3600), '2': on(20)}
-        self.assertEqual(decide_pm(accounts=stale, points=rising(90, 97, 30)).action, U.HOLD)
+        self.assertEqual(decide_pm(accounts=stale, points=rising(90, 97, 30)).action, D.HOLD)
 
     def test_tier_one_only_else_no_room(self):
         d = decide_pm(accounts={'1': HOT, '2': on(96), '3': on(97)})
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'pm'))
-        self.assertEqual(U.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW, tier2=False), None)
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', 'pm'))
+        self.assertEqual(D.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW, tier2=False), None)
 
     def test_no_room_for_the_pm_names_an_account_it_cannot_read(self):
         d = decide_pm(accounts={'1': HOT, '2': on(96), '3': on(20, age=7200)}, running={'1': 1, '3': 1})
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'no-room', 'pm:unknown:a3'))
-        self.assertEqual(U.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW)[0], '2')
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', 'pm:unknown:a3'))
+        self.assertEqual(D.pick_target({'1': HOT, '2': on(96)}, {'1'}, {}, {}, NOW)[0], '2')
 
     def test_notify_says_what_it_would_do(self):
         d = decide_pm(mode='notify')
-        self.assertEqual((d.action, d.word, d.detail), (U.WOULD, 'would-cross', 'pm:a2'))
+        self.assertEqual((d.action, d.word, d.detail), (D.WOULD, 'would-cross', 'pm:a2'))
 
     def test_a_stall_is_pushed_on_normal_and_started_with_no_ask_on_full(self):
         quiet = dict(stall=('1', NOW + 2 * DAY), quiet=600, accounts={'1': on(20), '2': on(20), '3': on(10)})
         d = decide_pm(**quiet)
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'stalled', 'pm'))
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'stalled', 'pm'))
         d = decide_pm(mode='full', **quiet)
-        self.assertEqual((d.action, d.word, d.detail), (U.START, 'stalled', 'pm:a2'))
+        self.assertEqual((d.action, d.word, d.detail), (D.START, 'stalled', 'pm:a2'))
 
     def test_no_session_id_or_account_recorded_holds_as_pm_limit(self):
-        for rec in (U.Recorded(None, None, 1), U.Recorded('<PM session id>', None, 1),
-                    U.Recorded('pm-sid-1', None, None)):
+        for rec in (D.Recorded(None, None, 1), D.Recorded('<PM session id>', None, 1),
+                    D.Recorded('pm-sid-1', None, None)):
             d = decide_pm(recorded=rec)
-            self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'pm-limit', 'pm'), rec)
+            self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'pm-limit', 'pm'), rec)
 
     def test_no_or_several_pm_processes_hold(self):
-        self.assertEqual(decide_pm(pms=()).action, U.HOLD)
+        self.assertEqual(decide_pm(pms=()).action, D.HOLD)
         d = decide_pm(pms=(pm_live(), pm_live('pm-x', 41)))
-        self.assertEqual((d.action, d.word), (U.HOLD, None))
+        self.assertEqual((d.action, d.word), (D.HOLD, None))
 
     def test_a_crossing_cleared_this_week_is_not_asked_again(self):
         d = decide_pm(cleared={'account': '1', 'reset': NOW + 2 * DAY})
-        self.assertEqual(d.action, U.HOLD)
+        self.assertEqual(d.action, D.HOLD)
 
     def test_asks_and_starts_have_their_caps(self):
-        d = decide_pm(asks=[NOW - 60] * U.ASK_CAP)
-        self.assertEqual((d.action, d.word, d.mark), (U.HOLD, 'cross-failed', 'ask-cap'))
-        d = decide_pm(starts={U.PM_DOC: [NOW - 60] * U.KEY_CAP})
-        self.assertEqual((d.action, d.word, d.mark), (U.HOLD, 'cross-failed', 'cap'))
+        d = decide_pm(asks=[NOW - 60] * D.ASK_CAP)
+        self.assertEqual((d.action, d.word, d.mark), (D.HOLD, 'cross-failed', 'ask-cap'))
+        d = decide_pm(starts={D.PM_DOC: [NOW - 60] * D.KEY_CAP})
+        self.assertEqual((d.action, d.word, d.mark), (D.HOLD, 'cross-failed', 'cap'))
 
 
 class PmPhases(unittest.TestCase):
     def test_asked_waits_then_a_newer_ready_record_moves_on_with_its_path(self):
-        self.assertEqual(decide_pm(cross=pm_crossing(U.ASKED)).action, U.HOLD)
-        d = decide_pm(cross=pm_crossing(U.ASKED), newest=record(6, 'handoff'))
-        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.READY, {'state_path': 'Z:/note-6.md'}))
+        self.assertEqual(decide_pm(cross=pm_crossing(D.ASKED)).action, D.HOLD)
+        d = decide_pm(cross=pm_crossing(D.ASKED), newest=record(6, 'handoff'))
+        self.assertEqual((d.action, d.phase, d.fields), (D.ADVANCE, D.READY, {'state_path': 'Z:/note-6.md'}))
 
     def test_asked_not_delivered_asks_again(self):
-        d = decide_pm(cross=pm_crossing(U.ASKED, delivered=False))
-        self.assertEqual((d.action, d.word), (U.ASK, None))
+        d = decide_pm(cross=pm_crossing(D.ASKED, delivered=False))
+        self.assertEqual((d.action, d.word), (D.ASK, None))
 
     def test_asked_and_stalled_on_full_goes_to_ready_stalled(self):
-        d = decide_pm(cross=pm_crossing(U.ASKED), stall=('1', NOW + 2 * DAY), quiet=600, mode='full')
-        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.READY, {'stalled': True}))
+        d = decide_pm(cross=pm_crossing(D.ASKED), stall=('1', NOW + 2 * DAY), quiet=600, mode='full')
+        self.assertEqual((d.action, d.phase, d.fields), (D.ADVANCE, D.READY, {'stalled': True}))
 
     def test_ready_starts_once_settled_and_a_stalled_one_at_once(self):
-        c = pm_crossing(U.READY, state_path='Z:/note-6.md')
-        self.assertEqual(decide_pm(cross=c, note_at=NOW - 200, quiet=600).action, U.HOLD)
+        c = pm_crossing(D.READY, state_path='Z:/note-6.md')
+        self.assertEqual(decide_pm(cross=c, note_at=NOW - 200, quiet=600).action, D.HOLD)
         d = decide_pm(cross=c, note_at=NOW - 30, quiet=600)
-        self.assertEqual((d.action, d.target), (U.START, '2'))
-        d = decide_pm(cross=pm_crossing(U.READY, stalled=True))
-        self.assertEqual((d.action, d.target), (U.START, '2'))
-        d = decide_pm(cross=pm_crossing(U.READY, stalled=True), accounts={'1': HOT, '2': on(96)})
-        self.assertEqual((d.action, d.word, d.detail, d.remember), (U.CLEAR, 'no-room', 'pm', False))
+        self.assertEqual((d.action, d.target), (D.START, '2'))
+        d = decide_pm(cross=pm_crossing(D.READY, stalled=True))
+        self.assertEqual((d.action, d.target), (D.START, '2'))
+        d = decide_pm(cross=pm_crossing(D.READY, stalled=True), accounts={'1': HOT, '2': on(96)})
+        self.assertEqual((d.action, d.word, d.detail, d.remember), (D.CLEAR, 'no-room', 'pm', False))
 
     def test_starting_is_done_once_coordinators_json_names_the_new_pm_on_the_target(self):
-        c = pm_crossing(U.STARTING)
-        d = decide_pm(cross=c, recorded=U.Recorded('pm-sid-2', 'pm-a2', 2), names={'pm-a2', 'pm-session'})
-        self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'crossed', 'pm-a2'))
+        c = pm_crossing(D.STARTING)
+        d = decide_pm(cross=c, recorded=D.Recorded('pm-sid-2', 'pm-a2', 2), names={'pm-a2', 'pm-session'})
+        self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'crossed', 'pm-a2'))
 
     def test_coordinators_json_moved_by_someone_else_clears_it(self):
-        for phase in (U.ASKED, U.READY, U.STARTING):
-            d = decide_pm(cross=pm_crossing(phase), recorded=U.Recorded('pm-sid-9', 'pm-other', 3))
-            self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'cross-cleared', 'pm'), phase)
+        for phase in (D.ASKED, D.READY, D.STARTING):
+            d = decide_pm(cross=pm_crossing(phase), recorded=D.Recorded('pm-sid-9', 'pm-other', 3))
+            self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'cross-cleared', 'pm'), phase)
 
     def test_a_new_pm_up_and_not_named_fails_and_is_remembered(self):
-        d = decide_pm(cross=pm_crossing(U.STARTING), names={'pm-a2', 'pm-session'})
-        self.assertEqual((d.action, d.word, d.remember), (U.CLEAR, 'cross-failed', True))
+        d = decide_pm(cross=pm_crossing(D.STARTING), names={'pm-a2', 'pm-session'})
+        self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
         self.assertEqual(d.fields, {'account': '1', 'reset': NOW + 2 * DAY})
 
     def test_starting_backs_off_to_ready_with_no_new_pm_in_five_minutes(self):
-        self.assertEqual(decide_pm(cross=pm_crossing(U.STARTING)).action, U.HOLD)
-        d = decide_pm(cross=pm_crossing(U.STARTING, phase_at=NOW - U.START_WAIT_S - 1))
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.READY))
+        self.assertEqual(decide_pm(cross=pm_crossing(D.STARTING)).action, D.HOLD)
+        d = decide_pm(cross=pm_crossing(D.STARTING, phase_at=NOW - D.START_WAIT_S - 1))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.READY))
 
     def test_notify_drops_an_asked_or_ready_crossing(self):
-        d = decide_pm(cross=pm_crossing(U.READY), mode='notify')
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        d = decide_pm(cross=pm_crossing(D.READY), mode='notify')
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_the_pm_key_is_the_hubs_pm_key(self):
         self.assertEqual(U.PM_FROM, push.PM_KEY)
 
     def test_ready_clears_on_a_week_reset_unless_still_stalled(self):
         reset = {'1': on(20), '2': on(20)}
-        for c in (pm_crossing(U.READY, state_path='Z:/note-6.md'), pm_crossing(U.READY, stalled=True)):
+        for c in (pm_crossing(D.READY, state_path='Z:/note-6.md'), pm_crossing(D.READY, stalled=True)):
             d = decide_pm(cross=c, accounts=reset)
-            self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'cross-cleared', 'pm'), c)
-        d = decide_pm(cross=pm_crossing(U.READY, stalled=True), accounts=reset,
+            self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'cross-cleared', 'pm'), c)
+        d = decide_pm(cross=pm_crossing(D.READY, stalled=True), accounts=reset,
                       stall=('1', NOW + 2 * DAY), quiet=600, mode='full')
-        self.assertEqual((d.action, d.target), (U.START, '2'))
+        self.assertEqual((d.action, d.target), (D.START, '2'))
 
     def test_ready_with_no_room_then_a_week_reset_clears_and_is_asked_again_once_there_is_room(self):
         full = {'1': HOT, '2': on(96)}
-        d = decide_pm(cross=pm_crossing(U.READY, state_path='Z:/note-6.md'), accounts=full,
+        d = decide_pm(cross=pm_crossing(D.READY, state_path='Z:/note-6.md'), accounts=full,
                       note_at=NOW - 30, quiet=600)
-        self.assertEqual((d.action, d.word, d.detail, d.remember), (U.CLEAR, 'no-room', 'pm', False))
-        self.assertEqual((decide_pm(accounts=full).action, decide_pm(accounts=full).word), (U.HOLD, 'no-room'))
-        self.assertEqual(decide_pm().action, U.ASK)
-        d = decide_pm(cross=pm_crossing(U.READY, state_path='Z:/note-6.md'),
+        self.assertEqual((d.action, d.word, d.detail, d.remember), (D.CLEAR, 'no-room', 'pm', False))
+        self.assertEqual((decide_pm(accounts=full).action, decide_pm(accounts=full).word), (D.HOLD, 'no-room'))
+        self.assertEqual(decide_pm().action, D.ASK)
+        d = decide_pm(cross=pm_crossing(D.READY, state_path='Z:/note-6.md'),
                       accounts={'1': on(20), '2': on(96)}, note_at=NOW - 30, quiet=600)
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_every_way_a_pm_crossing_ends_short_tells_the_pm_to_resume(self):
-        moved = U.Recorded('pm-sid-9', 'pm-other', 3)
+        moved = D.Recorded('pm-sid-9', 'pm-other', 3)
         ends = {
-            'asked, the week reset': decide_pm(cross=pm_crossing(U.ASKED), accounts={'1': on(20), '2': on(20)}),
-            'asked, coordinators.json moved': decide_pm(cross=pm_crossing(U.ASKED), recorded=moved),
-            'ready, coordinators.json moved': decide_pm(cross=pm_crossing(U.READY), recorded=moved),
-            'ready, the week reset': decide_pm(cross=pm_crossing(U.READY), accounts={'1': on(20), '2': on(20)}),
-            'ready, the start cap': decide_pm(cross=pm_crossing(U.READY, stalled=True),
-                                              starts={U.PM_DOC: [NOW - 60] * U.KEY_CAP}),
-            'ready, no room': decide_pm(cross=pm_crossing(U.READY, stalled=True),
+            'asked, the week reset': decide_pm(cross=pm_crossing(D.ASKED), accounts={'1': on(20), '2': on(20)}),
+            'asked, coordinators.json moved': decide_pm(cross=pm_crossing(D.ASKED), recorded=moved),
+            'ready, coordinators.json moved': decide_pm(cross=pm_crossing(D.READY), recorded=moved),
+            'ready, the week reset': decide_pm(cross=pm_crossing(D.READY), accounts={'1': on(20), '2': on(20)}),
+            'ready, the start cap': decide_pm(cross=pm_crossing(D.READY, stalled=True),
+                                              starts={D.PM_DOC: [NOW - 60] * D.KEY_CAP}),
+            'ready, no room': decide_pm(cross=pm_crossing(D.READY, stalled=True),
                                         accounts={'1': HOT, '2': on(96)}),
-            'ready, the PM ended': decide_pm(cross=pm_crossing(U.READY), pms=()),
-            'starting, up and not named': decide_pm(cross=pm_crossing(U.STARTING), names={'pm-a2'}),
-            'asked, stalled on normal': decide_pm(cross=pm_crossing(U.ASKED), stall=('1', NOW + 2 * DAY),
+            'ready, the PM ended': decide_pm(cross=pm_crossing(D.READY), pms=()),
+            'starting, up and not named': decide_pm(cross=pm_crossing(D.STARTING), names={'pm-a2'}),
+            'asked, stalled on normal': decide_pm(cross=pm_crossing(D.ASKED), stall=('1', NOW + 2 * DAY),
                                                   quiet=600),
-            'notify': decide_pm(cross=pm_crossing(U.READY), mode='notify'),
+            'notify': decide_pm(cross=pm_crossing(D.READY), mode='notify'),
             'no crossing, no room': decide_pm(accounts={'1': HOT, '2': on(96)}),
-            'no crossing, the ask cap': decide_pm(asks=[NOW - 60] * U.ASK_CAP),
+            'no crossing, the ask cap': decide_pm(asks=[NOW - 60] * D.ASK_CAP),
         }
         for why, d in ends.items():
             self.assertEqual(d.detail, 'pm', why)
@@ -562,63 +563,63 @@ class PmPhases(unittest.TestCase):
 
 class Asked(unittest.TestCase):
     def step(self, *args, **kwargs):
-        kwargs.setdefault('cross', crossing(U.ASKED, *args))
+        kwargs.setdefault('cross', crossing(D.ASKED, *args))
         return decide(**kwargs)
 
     def test_it_waits(self):
-        self.assertEqual(self.step().action, U.HOLD)
+        self.assertEqual(self.step().action, D.HOLD)
 
     def test_a_newer_ready_record_moves_on_with_its_note(self):
         for kind in ('handoff', 'restart'):
             d = self.step(newest=record(6, kind))
             self.assertEqual((d.action, d.phase, d.fields['state_path']),
-                             (U.ADVANCE, U.READY, 'Z:/note-6.md'))
+                             (D.ADVANCE, D.READY, 'Z:/note-6.md'))
 
     def test_a_record_not_newer_than_the_ask_is_not_its_reply(self):
-        self.assertEqual(self.step(newest=record(5, 'handoff')).action, U.HOLD)
+        self.assertEqual(self.step(newest=record(5, 'handoff')).action, D.HOLD)
 
     def test_a_checkin_record_is_no_ready_reply(self):
-        self.assertEqual(self.step(newest=record(6, 'checkin')).action, U.HOLD)
+        self.assertEqual(self.step(newest=record(6, 'checkin')).action, D.HOLD)
 
     def test_ready_to_stop_clears_it(self):
         d = self.step(newest=record(6, 'stop'))
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_not_delivered_asks_again_with_no_second_push(self):
-        d = self.step(cross=crossing(U.ASKED, delivered=False))
-        self.assertEqual((d.action, d.word), (U.ASK, None))
+        d = self.step(cross=crossing(D.ASKED, delivered=False))
+        self.assertEqual((d.action, d.word), (D.ASK, None))
 
     def test_half_an_hour_says_no_ready_once_and_stays_open(self):
-        d = self.step(cross=crossing(U.ASKED, phase_at=NOW - U.WAIT_READY_S))
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-ready'))
+        d = self.step(cross=crossing(D.ASKED, phase_at=NOW - D.WAIT_READY_S))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-ready'))
 
     def test_a_week_that_reset_clears_it(self):
         d = self.step(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S), '2': on(20)})
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
         d = self.step(accounts={'1': on(99, week_in=-U.A.RESET_GRACE_S + 1), '2': on(20)})
-        self.assertEqual(d.action, U.HOLD)          # within the grace: not reset yet
+        self.assertEqual(d.action, D.HOLD)          # within the grace: not reset yet
 
     def test_an_early_crossing_stays_open_under_99_and_clears_under_95(self):
-        self.assertEqual(self.step(accounts={'1': on(97), '2': on(20)}).action, U.HOLD)
-        self.assertEqual(self.step(accounts={'1': on(95), '2': on(20)}).action, U.HOLD)
+        self.assertEqual(self.step(accounts={'1': on(97), '2': on(20)}).action, D.HOLD)
+        self.assertEqual(self.step(accounts={'1': on(95), '2': on(20)}).action, D.HOLD)
         d = self.step(accounts={'1': on(94), '2': on(20)})
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_the_session_gone_or_replaced_clears_it(self):
-        self.assertEqual(self.step(live=()).action, U.CLEAR)
-        same_pid_new_process = U.Live(OLD.name, OLD.pid, 'another time')
-        self.assertEqual(self.step(live=(same_pid_new_process,)).action, U.CLEAR)
+        self.assertEqual(self.step(live=()).action, D.CLEAR)
+        same_pid_new_process = D.Live(OLD.name, OLD.pid, 'another time')
+        self.assertEqual(self.step(live=(same_pid_new_process,)).action, D.CLEAR)
 
     def test_an_entry_moved_by_someone_else_clears_it(self):
-        self.assertEqual(self.step(entry=MOVED).action, U.CLEAR)
+        self.assertEqual(self.step(entry=MOVED).action, D.CLEAR)
 
     def test_a_stall_on_full_goes_stop_first(self):
         d = self.step(mode='full', stall=STALL, quiet=600)
-        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.STALL_STOP, {'stalled': True}))
+        self.assertEqual((d.action, d.phase, d.fields), (D.ADVANCE, D.STALL_STOP, {'stalled': True}))
 
     def test_a_stall_on_normal_is_left_to_the_pm_as_stalled(self):
         d = self.step(stall=STALL, quiet=600)
-        self.assertEqual((d.action, d.word, d.detail, d.remember), (U.CLEAR, 'stalled', 'kit', False))
+        self.assertEqual((d.action, d.word, d.detail, d.remember), (D.CLEAR, 'stalled', 'kit', False))
 
     def test_ready_to_stop_is_remembered_for_the_week(self):
         d = self.step(newest=record(6, 'stop'))
@@ -626,10 +627,10 @@ class Asked(unittest.TestCase):
 
     def test_a_stall_on_full_with_no_room_stops_nothing(self):
         d = self.step(mode='full', stall=STALL, quiet=600, accounts={'1': HOT, '2': on(99)})
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-room'))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-room'))
 
     def test_notify_drops_an_asked_crossing(self):
-        self.assertEqual(self.step(mode='notify').action, U.CLEAR)
+        self.assertEqual(self.step(mode='notify').action, D.CLEAR)
 
 
 class Ready(unittest.TestCase):
@@ -637,175 +638,175 @@ class Ready(unittest.TestCase):
         fields = kwargs.pop('fields', {})
         kwargs.setdefault('quiet', 600)
         kwargs.setdefault('note_at', NOW - 30)          # after the ask at NOW - 120
-        return decide(cross=crossing(U.READY, state_path='Z:/n.md', **fields), **kwargs)
+        return decide(cross=crossing(D.READY, state_path='Z:/n.md', **fields), **kwargs)
 
     def test_it_starts_on_the_target_picked_now(self):
         d = self.step(accounts={'1': HOT, '2': on(99), '3': on(20)})
-        self.assertEqual((d.action, d.target), (U.START, '3'))
+        self.assertEqual((d.action, d.target), (D.START, '3'))
 
     def test_a_state_note_not_written_since_the_ask_never_starts(self):
         for note_at in (None, NOW - 120, NOW - 3 * DAY):
             d = self.step(note_at=note_at)
-            self.assertEqual((d.action, d.word), (U.HOLD, None), note_at)
+            self.assertEqual((d.action, d.word), (D.HOLD, None), note_at)
             self.assertIn('not written since the ask', d.note)
 
     def test_a_transcript_written_under_a_minute_ago_never_starts(self):
-        for quiet in (None, 0, U.QUIET_S - 1):
+        for quiet in (None, 0, D.QUIET_S - 1):
             d = self.step(quiet=quiet)
-            self.assertEqual(d.action, U.HOLD, quiet)
+            self.assertEqual(d.action, D.HOLD, quiet)
             self.assertIn('transcript', d.note)
-        self.assertEqual(self.step(quiet=U.QUIET_S).action, U.START)
+        self.assertEqual(self.step(quiet=D.QUIET_S).action, D.START)
 
     def test_half_an_hour_unsettled_says_no_ready(self):
-        d = self.step(note_at=None, fields={'phase_at': NOW - U.WAIT_READY_S})
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-ready'))
+        d = self.step(note_at=None, fields={'phase_at': NOW - D.WAIT_READY_S})
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-ready'))
 
     def test_its_own_start_moved_the_entry_with_no_successor_fails_it(self):
         d = self.step(entry=MOVED, fields={'new_name': NEW.name})
-        self.assertEqual((d.action, d.word, d.remember), (U.CLEAR, 'cross-failed', True))
+        self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
         self.assertIn('which is not running; the old session stays', d.note)
 
     def test_a_successor_up_is_never_started_again(self):
-        d = self.step(live=(OLD, U.Live('kit-coord-a2', 22, CREATED)),
+        d = self.step(live=(OLD, D.Live('kit-coord-a2', 22, CREATED)),
                       fields={'new_name': NEW.name})
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STARTING))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STARTING))
 
     def test_the_old_session_gone_clears_it(self):
-        self.assertEqual(self.step(live=()).action, U.CLEAR)
+        self.assertEqual(self.step(live=()).action, D.CLEAR)
 
     def test_an_entry_moved_by_someone_else_clears_it(self):
-        self.assertEqual(self.step(entry=MOVED).action, U.CLEAR)
+        self.assertEqual(self.step(entry=MOVED).action, D.CLEAR)
 
     def test_the_cap_fails_it(self):
         d = self.step(starts={'kit': [NOW - 60] * 3})
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-failed'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-failed'))
 
     def test_backoff_holds(self):
-        self.assertEqual(self.step(fields={'retry_at': NOW + 1}).action, U.HOLD)
-        self.assertEqual(self.step(fields={'retry_at': NOW}).action, U.START)
+        self.assertEqual(self.step(fields={'retry_at': NOW + 1}).action, D.HOLD)
+        self.assertEqual(self.step(fields={'retry_at': NOW}).action, D.START)
 
     def test_no_room_holds_with_nothing_stopped(self):
         d = self.step(accounts={'1': HOT, '2': on(99)})
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-room'))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-room'))
 
     def test_a_stalled_session_already_stopped_starts_with_nothing_live(self):
-        self.assertEqual(self.step(live=(), fields={'stalled': True}).action, U.START)
+        self.assertEqual(self.step(live=(), fields={'stalled': True}).action, D.START)
 
     def test_a_stalled_session_started_again_by_someone_clears_it(self):
-        self.assertEqual(self.step(fields={'stalled': True}).action, U.CLEAR)
+        self.assertEqual(self.step(fields={'stalled': True}).action, D.CLEAR)
 
 
 class Starting(unittest.TestCase):
     def test_up_and_moved_is_started(self):
-        d = decide(entry=MOVED, cross=crossing(U.STARTING), live=(OLD, NEW))
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STARTED))
+        d = decide(entry=MOVED, cross=crossing(D.STARTING), live=(OLD, NEW))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STARTED))
 
     def test_up_and_not_moved_finishes_the_write_and_never_runs_handoff(self):
-        self.assertEqual(decide(cross=crossing(U.STARTING), live=(OLD, NEW)).action, U.FINISH)
+        self.assertEqual(decide(cross=crossing(D.STARTING), live=(OLD, NEW)).action, D.FINISH)
 
     def test_a_short_wait_holds(self):
-        self.assertEqual(decide(cross=crossing(U.STARTING)).action, U.HOLD)
+        self.assertEqual(decide(cross=crossing(D.STARTING)).action, D.HOLD)
 
     def test_no_successor_in_five_minutes_backs_off_to_ready(self):
-        d = decide(cross=crossing(U.STARTING, phase_at=NOW - U.START_WAIT_S))
-        self.assertEqual((d.action, d.phase, d.fields['fails']), (U.ADVANCE, U.READY, 1))
-        self.assertEqual(d.fields['retry_at'], NOW + U.BACKOFF_S[0])
-        d = decide(cross=crossing(U.STARTING, phase_at=NOW - U.START_WAIT_S, fails=9))
-        self.assertEqual(d.fields['retry_at'], NOW + U.BACKOFF_S[-1])
+        d = decide(cross=crossing(D.STARTING, phase_at=NOW - D.START_WAIT_S))
+        self.assertEqual((d.action, d.phase, d.fields['fails']), (D.ADVANCE, D.READY, 1))
+        self.assertEqual(d.fields['retry_at'], NOW + D.BACKOFF_S[0])
+        d = decide(cross=crossing(D.STARTING, phase_at=NOW - D.START_WAIT_S, fails=9))
+        self.assertEqual(d.fields['retry_at'], NOW + D.BACKOFF_S[-1])
 
 
 class Started(unittest.TestCase):
     def step(self, **kwargs):
-        cross = kwargs.pop('cross', crossing(U.STARTED))
+        cross = kwargs.pop('cross', crossing(D.STARTED))
         kwargs.setdefault('live', (OLD, NEW))
         return decide(entry=MOVED, cross=cross, **kwargs)
 
     def test_a_newer_checkin_record_moves_to_the_stop(self):
         d = self.step(newest=record(6, 'checkin'))
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STOPPING))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STOPPING))
 
     def test_an_older_or_other_record_does_not(self):
-        self.assertEqual(self.step(newest=record(5, 'checkin')).action, U.HOLD)
-        self.assertEqual(self.step(newest=record(6, 'handoff')).action, U.HOLD)
+        self.assertEqual(self.step(newest=record(5, 'checkin')).action, D.HOLD)
+        self.assertEqual(self.step(newest=record(6, 'handoff')).action, D.HOLD)
 
     def test_half_an_hour_with_no_checkin_never_stops_anything(self):
-        d = self.step(cross=crossing(U.STARTED, phase_at=NOW - 10 * U.WAIT_CHECKIN_S))
-        self.assertEqual((d.action, d.word), (U.HOLD, 'no-checkin'))
+        d = self.step(cross=crossing(D.STARTED, phase_at=NOW - 10 * D.WAIT_CHECKIN_S))
+        self.assertEqual((d.action, d.word), (D.HOLD, 'no-checkin'))
 
     def test_the_old_session_gone_is_done(self):
         d = self.step(live=(NEW,))
-        self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'crossed', NEW.name))
+        self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'crossed', NEW.name))
 
     def test_the_successor_gone_fails_it_and_stops_nothing(self):
         d = self.step(live=(OLD,))
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-failed'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-failed'))
 
     def test_a_stall_of_the_old_session_on_full_stops_it(self):
         d = self.step(mode='full', stall=STALL, quiet=600)
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STALL_STOP))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STALL_STOP))
 
 
 class Stopping(unittest.TestCase):
     def step(self, live):
-        return decide(entry=MOVED, cross=crossing(U.STOPPING), live=live)
+        return decide(entry=MOVED, cross=crossing(D.STOPPING), live=live)
 
     def test_it_stops_the_old_session(self):
-        self.assertEqual(self.step((OLD, NEW)).action, U.STOP_OLD)
+        self.assertEqual(self.step((OLD, NEW)).action, D.STOP_OLD)
 
     def test_a_successor_gone_stops_nothing(self):
         d = self.step((OLD,))
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-failed'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-failed'))
 
     def test_the_old_session_gone_is_done(self):
         self.assertEqual(self.step((NEW,)).word, 'crossed')
 
     def test_a_new_process_under_the_old_name_is_never_stopped(self):
-        d = self.step((U.Live(OLD.name, 99, CREATED), NEW))
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'crossed'))
+        d = self.step((D.Live(OLD.name, 99, CREATED), NEW))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'crossed'))
 
     def test_a_refused_stop_waits_out_its_backoff_then_gives_up(self):
         def step(**fields):
-            return decide(entry=MOVED, cross=crossing(U.STOPPING, **fields), live=(OLD, NEW))
-        self.assertEqual(step(stop_tries=1, stop_retry_at=NOW + 1).action, U.HOLD)
-        self.assertEqual(step(stop_tries=1, stop_retry_at=NOW).action, U.STOP_OLD)
-        d = step(stop_tries=U.STOP_TRIES, stop_retry_at=NOW - 1)
-        self.assertEqual((d.action, d.word, d.remember), (U.CLEAR, 'cross-failed', True))
+            return decide(entry=MOVED, cross=crossing(D.STOPPING, **fields), live=(OLD, NEW))
+        self.assertEqual(step(stop_tries=1, stop_retry_at=NOW + 1).action, D.HOLD)
+        self.assertEqual(step(stop_tries=1, stop_retry_at=NOW).action, D.STOP_OLD)
+        d = step(stop_tries=D.STOP_TRIES, stop_retry_at=NOW - 1)
+        self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
 
 
 class StallStop(unittest.TestCase):
     def step(self, **kwargs):
         kwargs.setdefault('mode', 'full')
-        return decide(cross=crossing(U.STALL_STOP, stalled=True), **kwargs)
+        return decide(cross=crossing(D.STALL_STOP, stalled=True), **kwargs)
 
     def test_it_stops_a_session_still_stalled(self):
-        self.assertEqual(self.step(stall=STALL, quiet=600).action, U.STOP_STALLED)
+        self.assertEqual(self.step(stall=STALL, quiet=600).action, D.STOP_STALLED)
 
     def test_a_session_no_longer_stalled_is_not_stopped(self):
         d = self.step()
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_a_mode_turned_down_stops_nothing(self):
         d = self.step(mode='normal', stall=STALL, quiet=600)
-        self.assertEqual(d.action, U.CLEAR)
+        self.assertEqual(d.action, D.CLEAR)
 
     def test_the_session_gone_goes_on_to_the_start_on_its_own_note(self):
         d = self.step(live=())
-        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.READY, {'stalled': True}))
+        self.assertEqual((d.action, d.phase, d.fields), (D.ADVANCE, D.READY, {'stalled': True}))
 
     def test_a_successor_up_goes_back_to_started(self):
-        d = decide(entry=MOVED, cross=crossing(U.STALL_STOP, new_name=NEW.name), live=(NEW,),
+        d = decide(entry=MOVED, cross=crossing(D.STALL_STOP, new_name=NEW.name), live=(NEW,),
                    mode='full')
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STARTED))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STARTED))
 
 
 class Notify(unittest.TestCase):
     def test_a_crossing_past_the_start_is_left_as_it_is(self):
-        for phase in (U.STARTING, U.STARTED, U.STOPPING, U.STALL_STOP):
+        for phase in (D.STARTING, D.STARTED, D.STOPPING, D.STALL_STOP):
             d = decide(cross=crossing(phase), mode='notify')
-            self.assertEqual(d.action, U.HOLD, phase)
+            self.assertEqual(d.action, D.HOLD, phase)
 
     def test_an_entry_gone_clears_any_crossing(self):
-        self.assertEqual(decide(entry=None, cross=crossing(U.STARTED)).action, U.CLEAR)
+        self.assertEqual(decide(entry=None, cross=crossing(D.STARTED)).action, D.CLEAR)
 
 
 class Words(unittest.TestCase):
@@ -936,7 +937,7 @@ class JobBase(unittest.TestCase):
         transcript quiet ten minutes."""
         rec = self.note(6, NOW - 30)
         self.host.written[OLD.name] = NOW - 600
-        self.put(crossing(U.READY, state_path=rec['state_path'], **fields))
+        self.put(crossing(D.READY, state_path=rec['state_path'], **fields))
         return rec
 
     def run_job(self, ctx=None):
@@ -955,7 +956,7 @@ class Job(JobBase):
         real = self.deliver
         self.job.deliver = lambda name, text: (seen.append(self.crossing()), real(name, text))[1]
         self.assertEqual(self.run_job(), self.ctx_note())
-        self.assertEqual(seen[0]['phase'], U.ASKED)
+        self.assertEqual(seen[0]['phase'], D.ASKED)
         self.assertEqual(self.sent[0][0], OLD.name)
         self.assertIn('account 2', self.sent[0][1])
         self.assertIn('hub_handoff_ready', self.sent[0][1])
@@ -974,12 +975,12 @@ class Job(JobBase):
         self.usage['1'] = reading(97)
         self.write(U.STATE_FILE, {'weeks': {'1': rising(90, 97, 30)}})
         self.run_job()
-        self.assertEqual(self.crossing()['phase'], U.ASKED)
+        self.assertEqual(self.crossing()['phase'], D.ASKED)
         self.assertEqual([name for name, _ in self.sent], [OLD.name])
         self.assertIn('near its weekly limit', self.sent[0][1])
         self.assertEqual(self.ctx.events, [('crossing', 'kit:a2')])
         self.run_job()                  # the next run, still at 97%: the crossing stays open
-        self.assertEqual(self.crossing()['phase'], U.ASKED)
+        self.assertEqual(self.crossing()['phase'], D.ASKED)
         self.assertEqual(len(self.sent), 1)
 
     def test_a_timed_out_listing_is_a_quiet_skip_that_writes_nothing(self):
@@ -1006,7 +1007,7 @@ class Job(JobBase):
         self.now += 300
         self.run_job()
         self.assertEqual(self.calls[0][:5], ['handoff', '--session', 'kit', '--account', '2'])
-        self.assertEqual(self.crossing()['phase'], U.STARTING)
+        self.assertEqual(self.crossing()['phase'], D.STARTING)
 
     def test_another_listing_failure_still_fails_the_run(self):
         self.job.procs = lambda: (_ for _ in ()).throw(RuntimeError('powershell exit 1'))
@@ -1037,7 +1038,7 @@ class Job(JobBase):
         self.run_job()
         self.assertEqual(self.calls, [['handoff', '--session', 'kit', '--account', '2', '--state',
                                        self.newest['kit']['state_path']]])
-        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STARTING)
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STARTING)
         self.assertEqual(self.saved_at_child['starts'], {'kit': [NOW + 300]})
         self.assertEqual(self.saved_at_child['landed'], {'2': NOW + 300})
         self.assertEqual(self.crossing()['high_c'], 1)
@@ -1046,13 +1047,13 @@ class Job(JobBase):
         self.write('sessions.json', {'kit': MOVED})
         self.now += 300
         self.assertIsInstance(self.run_job(), jobs.Skip)
-        self.assertEqual(self.crossing()['phase'], U.STARTED)
+        self.assertEqual(self.crossing()['phase'], D.STARTED)
         self.now += 300
         self.newest = {'kit': record(2, 'checkin')}
         self.run_job()
         self.assertEqual(self.calls[-1], ['stop', '--name', OLD.name, '--successor', NEW.name,
                                           '--pid', '11'])
-        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STOPPING)
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STOPPING)
         self.live = [NEW]
         self.now += 300
         self.run_job()
@@ -1066,7 +1067,7 @@ class Job(JobBase):
         self.now += 300
         self.assertIsInstance(self.run_job(), jobs.Skip)
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.crossing()['phase'], U.READY)
+        self.assertEqual(self.crossing()['phase'], D.READY)
         self.assertIn('not written since the ask', self.log_text())
 
     def test_a_ready_record_waits_for_the_transcript_to_go_quiet(self):
@@ -1095,7 +1096,7 @@ class Job(JobBase):
         self.assertEqual(self.doc()['cleared'], {'kit': {'account': '1', 'reset': NOW + 2 * DAY}})
 
     def test_an_idle_predecessor_whose_successor_died_is_not_asked_or_started_again(self):
-        self.put(crossing(U.STARTED, high_c=1))
+        self.put(crossing(D.STARTED, high_c=1))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD]
         self.run_job()
@@ -1112,11 +1113,11 @@ class Job(JobBase):
         self.assertEqual(self.doc()['cleared'], {})
 
     def test_a_refused_stop_backs_off_then_gives_up_with_the_old_session_left(self):
-        self.put(crossing(U.STOPPING))
+        self.put(crossing(D.STOPPING))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD, NEW]
         self.code = 2
-        for wait in U.BACKOFF_S:
+        for wait in D.BACKOFF_S:
             with self.assertRaises(U.StepFailed):
                 self.run_job()
             calls = len(self.calls)
@@ -1125,12 +1126,12 @@ class Job(JobBase):
             self.assertEqual(len(self.calls), calls)
             self.now += wait - 60
         self.run_job()
-        self.assertEqual(len(self.calls), U.STOP_TRIES)
+        self.assertEqual(len(self.calls), D.STOP_TRIES)
         self.assertEqual(self.ctx.events, [('cross-failed', 'kit')])
         self.assertIsNone(self.crossing())
 
     def test_the_started_state_is_read_back_after_a_hub_restart(self):
-        self.put(crossing(U.STARTED, high_c=1))
+        self.put(crossing(D.STARTED, high_c=1))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD, NEW]
         self.newest = {'kit': record(2, 'checkin')}
@@ -1139,7 +1140,7 @@ class Job(JobBase):
         self.assertEqual(self.calls[-1][:3], ['stop', '--name', OLD.name])
 
     def test_a_handoff_that_died_before_its_write_is_finished_never_run_again(self):
-        self.put(crossing(U.STARTING))
+        self.put(crossing(D.STARTING))
         self.write('coordinators.json', {'kit': 1, 'pm_account': 3})
         self.live = [OLD, NEW]
         self.run_job()
@@ -1147,14 +1148,14 @@ class Job(JobBase):
         self.assertEqual(self.read('sessions.json')['kit']['name'], NEW.name)
         self.assertEqual(self.read('sessions.json')['kit']['account'], 2)
         self.assertEqual(self.read('coordinators.json'), {'kit': 2, 'pm_account': 3})
-        self.assertEqual(self.crossing()['phase'], U.STARTED)
+        self.assertEqual(self.crossing()['phase'], D.STARTED)
 
     def test_a_failed_start_counts_and_fails_the_run_with_the_state_kept(self):
         self.ready()
         self.code = 3
         with self.assertRaises(U.StepFailed):
             self.run_job()
-        self.assertEqual(self.crossing()['phase'], U.STARTING)
+        self.assertEqual(self.crossing()['phase'], D.STARTING)
         self.assertEqual(self.doc()['starts'], {'kit': [NOW]})
 
     def test_a_timeout_fails_the_run_too(self):
@@ -1164,13 +1165,13 @@ class Job(JobBase):
             self.run_job()
 
     def test_a_stop_refused_fails_the_run_and_stays_stopping(self):
-        self.put(crossing(U.STOPPING))
+        self.put(crossing(D.STOPPING))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD, NEW]
         self.code = 2
         with self.assertRaises(U.StepFailed):
             self.run_job()
-        self.assertEqual(self.crossing()['phase'], U.STOPPING)
+        self.assertEqual(self.crossing()['phase'], D.STOPPING)
 
     def test_a_full_stall_stops_first_then_starts_on_the_entrys_note(self):
         self.mode = 'full'
@@ -1178,7 +1179,7 @@ class Job(JobBase):
         self.stall(OLD.name, OLD.pid, '1')
         self.run_job()
         self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--pid', '11']])
-        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STALL_STOP)
         self.assertEqual(self.ctx.events, [('stalled', 'kit:a2')])
         self.live = []
         self.now += 300
@@ -1187,7 +1188,7 @@ class Job(JobBase):
 
     def test_a_stall_with_a_successor_up_names_it_to_the_stop(self):
         self.mode = 'full'
-        self.put(crossing(U.STARTED))
+        self.put(crossing(D.STARTED))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD, NEW]
         self.stall(OLD.name, OLD.pid, '1')
@@ -1212,31 +1213,31 @@ class Job(JobBase):
     def test_asked_to_ready_to_stall_stop_stops_in_the_same_run(self):
         self.mode = 'full'
         self.run_job()
-        self.assertEqual(self.crossing()['phase'], U.ASKED)
+        self.assertEqual(self.crossing()['phase'], D.ASKED)
         self.newest = {'kit': record(6, 'handoff')}
         self.stall(OLD.name, OLD.pid, '1')
         self.now += 300
         self.run_job()      # two state changes, then the stop: no run lost between them
         self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--pid', '11']])
-        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STALL_STOP)
 
     def test_ready_to_starting_to_started_to_stall_stop_stops_in_the_same_run(self):
         self.mode = 'full'
-        self.put(crossing(U.READY, new_name=NEW.name))
+        self.put(crossing(D.READY, new_name=NEW.name))
         self.write('sessions.json', {'kit': MOVED})
         self.live = [OLD, NEW]
         self.stall(OLD.name, OLD.pid, '1')
         self.run_job()      # three state changes, then the stop: no run lost between them
         self.assertEqual(self.calls, [['stop', '--name', OLD.name, '--successor', NEW.name,
                                        '--pid', '11']])
-        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], U.STALL_STOP)
+        self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STALL_STOP)
 
     def test_one_acting_step_per_run_a_stop_before_an_ask(self):
-        other = U.Live('zed-coord-a2', 33, CREATED)
+        other = D.Live('zed-coord-a2', 33, CREATED)
         self.write('sessions.json', {'kit': MOVED, 'zed': dict(ENTRY, stem='zed-coord', name=other.name,
                                                                account=2)})
         self.usage = {'1': reading(50), '2': reading(99), '3': reading(20)}
-        self.put(crossing(U.STOPPING))
+        self.put(crossing(D.STOPPING))
         self.live = [OLD, NEW, other]
         self.run_job()
         self.assertEqual(self.calls[0][0], 'stop')
@@ -1245,7 +1246,7 @@ class Job(JobBase):
 
     def test_every_key_is_still_decided_on_a_run_that_acts(self):
         self.write('sessions.json', {'kit': dict(ENTRY), 'zed': dict(ENTRY, stem='zed', name='zed-a3')})
-        self.write(U.STATE_FILE, {'crossings': {'zed': crossing(U.ASKED, old_name='zed-a3', old_pid=9)}})
+        self.write(U.STATE_FILE, {'crossings': {'zed': crossing(D.ASKED, old_name='zed-a3', old_pid=9)}})
         self.run_job()
         self.assertEqual(len(self.sent), 1)
         self.assertIn(('cross-cleared', 'zed'), self.ctx.events)      # zed has gone
@@ -1314,7 +1315,7 @@ class Notifying(JobBase):
         self.assertEqual((self.ctx.events, len(self.calls)), ([], 2))
 
     def test_a_would_cross_already_told_leaves_the_next_key_its_turn(self):
-        other = U.Live('zed-a1', 33, CREATED)
+        other = D.Live('zed-a1', 33, CREATED)
         self.write('sessions.json', {'kit': dict(ENTRY), 'zed': dict(ENTRY, stem='zed', name=other.name)})
         self.live = [OLD, other]
         self.run_job()
@@ -1349,7 +1350,7 @@ class Others(JobBase):
     def test_a_launched_pm_with_no_session_id_recorded_is_not_moved_and_gets_one_push(self):
         self.write('sessions.json', {'pm': {'stem': 'pm-session', 'name': 'pm-session', 'state': 'x.md'}})
         self.write('coordinators.json', {'pm_account': 1})
-        self.live = [U.Live('pm-session', 40, CREATED)]
+        self.live = [D.Live('pm-session', 40, CREATED)]
         self.run_job()
         self.assertEqual(self.ctx.events, [('pm-limit', 'pm')])
         self.run_job()
@@ -1374,7 +1375,7 @@ class Others(JobBase):
     def test_a_stalled_pm_with_no_session_id_recorded_is_pushed_pm_limit(self):
         self.usage['1'] = reading(20)
         self.write('sessions.json', {})
-        self.live = [U.Live('pm-session', 40, CREATED)]
+        self.live = [D.Live('pm-session', 40, CREATED)]
         self.stall('pm-session', 40, '1')
         self.run_job()
         self.assertEqual(self.ctx.events, [('pm-limit', 'pm')])
@@ -1390,7 +1391,7 @@ class Others(JobBase):
 
     def test_a_session_with_no_entry_is_pushed_and_left_alone(self):
         self.write('sessions.json', {})
-        self.live = [U.Live('stray-a1', 50, CREATED)]
+        self.live = [D.Live('stray-a1', 50, CREATED)]
         self.run_job()
         self.assertEqual(self.ctx.events, [('unmanaged', 'stray-a1:no-window')])
         self.run_job()
@@ -1398,7 +1399,7 @@ class Others(JobBase):
 
     def test_a_new_week_pushes_again(self):
         self.write('sessions.json', {})
-        self.live = [U.Live('stray-a1', 50, CREATED)]
+        self.live = [D.Live('stray-a1', 50, CREATED)]
         self.run_job()
         self.now += 2 * DAY + 60
         self.usage['1'] = dict(reading(99), updated_at=iso(self.now - 60))
@@ -1415,7 +1416,7 @@ class PmJob(JobBase):
         self.write('sessions.json', {})
         self.coords = {'pm_session_id': 'pm-sid-1', 'pm_account': 1, 'pm_folder': self.tmp}
         self.write('coordinators.json', self.coords)
-        self.pm = U.Live('pm-session', 40, CREATED)
+        self.pm = D.Live('pm-session', 40, CREATED)
         self.live = [self.pm]
 
     def crossed(self):
@@ -1427,7 +1428,7 @@ class PmJob(JobBase):
         self.run_job()
         self.write('coordinators.json', dict(self.coords, pm_session_id='pm-sid-2', pm_name='pm-a2',
                                              pm_account=2))
-        self.new = U.Live('pm-a2', 41, CREATED)
+        self.new = D.Live('pm-a2', 41, CREATED)
         self.live = [self.pm, self.new]
         self.now += 300
 
@@ -1439,23 +1440,23 @@ class PmJob(JobBase):
         self.assertIn('HANDOFF.md', self.sent[0][1])
         self.assertIn('from pm', self.sent[0][1])
         self.assertEqual(self.calls, [])
-        c = self.crossing(U.PM_DOC)
-        self.assertEqual((c['phase'], c['old_sid'], c['target'], c['old_pid']), (U.ASKED, 'pm-sid-1', '2', 40))
+        c = self.crossing(D.PM_DOC)
+        self.assertEqual((c['phase'], c['old_sid'], c['target'], c['old_pid']), (D.ASKED, 'pm-sid-1', '2', 40))
         self.newest = {'pm': self.note(7, NOW + 30)}
         self.host.written['pm-session'] = NOW + 120
         self.now += 300
         self.run_job()
         self.assertEqual(self.calls, [['pm-crossover', '--account', '2', '--name', 'pm-a2', '--state',
                                        self.newest['pm']['state_path']]])
-        self.assertEqual(self.saved_at_child['crossings'][U.PM_DOC]['phase'], U.STARTING)
-        self.assertEqual(self.saved_at_child['starts'], {U.PM_DOC: [NOW + 300]})
+        self.assertEqual(self.saved_at_child['crossings'][D.PM_DOC]['phase'], D.STARTING)
+        self.assertEqual(self.saved_at_child['starts'], {D.PM_DOC: [NOW + 300]})
         self.write('coordinators.json', dict(self.coords, pm_session_id='pm-sid-2', pm_name='pm-a2',
                                              pm_account=2))
-        self.live = [self.pm, U.Live('pm-a2', 41, CREATED)]
+        self.live = [self.pm, D.Live('pm-a2', 41, CREATED)]
         self.now += 300
         self.run_job()
         self.assertEqual(self.ctx.events, [('crossed', 'pm-a2')])
-        self.assertIsNone(self.crossing(U.PM_DOC))
+        self.assertIsNone(self.crossing(D.PM_DOC))
         self.assertEqual(self.doc()['pm_old'], {'name': 'pm-session', 'pid': 40, 'created': CREATED})
         self.now += 300
         self.run_job()
@@ -1487,8 +1488,8 @@ class PmJob(JobBase):
         self.now += 300
         self.run_job()
         self.assertEqual((self.ctx.events, self.calls), ([('no-room', 'pm')], []))
-        self.assertIsNone(self.crossing(U.PM_DOC))
-        self.assertNotIn(U.PM_DOC, self.doc()['cleared'])
+        self.assertIsNone(self.crossing(D.PM_DOC))
+        self.assertNotIn(D.PM_DOC, self.doc()['cleared'])
         self.now += 300
         self.run_job()
         self.assertEqual((self.ctx.events, len(self.sent)), ([], 1))
@@ -1497,7 +1498,7 @@ class PmJob(JobBase):
         self.run_job()
         self.assertEqual(self.ctx.events, [('crossing', 'pm:a2')])
         self.assertEqual(len(self.sent), 2)
-        self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.ASKED)
+        self.assertEqual(self.crossing(D.PM_DOC)['phase'], D.ASKED)
 
     def test_no_room_once_ready_naming_an_unknown_account_is_pushed_once_across_the_next_trigger(self):
         self.run_job()
@@ -1507,7 +1508,7 @@ class PmJob(JobBase):
         self.now += 300
         self.run_job()
         self.assertEqual((self.ctx.events, self.calls), ([('no-room', 'pm:unknown:a3')], []))
-        self.assertIsNone(self.crossing(U.PM_DOC))
+        self.assertIsNone(self.crossing(D.PM_DOC))
         self.now += 300
         self.run_job()
         self.assertEqual((self.ctx.events, self.calls), ([], []))
@@ -1527,19 +1528,19 @@ class PmJob(JobBase):
         self.assertEqual(self.ctx.events, [('stalled', 'pm:a2')])
         self.assertEqual(self.sent, [])
         self.assertEqual(self.calls, [['pm-crossover', '--account', '2', '--name', 'pm-a2']])
-        self.assertTrue(self.crossing(U.PM_DOC)['stalled'])
+        self.assertTrue(self.crossing(D.PM_DOC)['stalled'])
 
     def test_asked_to_ready_to_stalled_ready_starts_in_the_same_run(self):
         self.mode = 'full'
         self.run_job()
-        self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.ASKED)
+        self.assertEqual(self.crossing(D.PM_DOC)['phase'], D.ASKED)
         self.newest = {'pm': self.note(7, NOW + 30)}
         self.stall('pm-session', 40, '1')
         self.now += 300
         self.run_job()      # two state changes, then the start: no run lost between them
         self.assertEqual([c[0] for c in self.calls], ['pm-crossover'])
-        c = self.saved_at_child['crossings'][U.PM_DOC]
-        self.assertEqual((c['phase'], c['stalled']), (U.STARTING, True))
+        c = self.saved_at_child['crossings'][D.PM_DOC]
+        self.assertEqual((c['phase'], c['stalled']), (D.STARTING, True))
 
     def test_a_stall_on_normal_is_pushed_and_left(self):
         self.usage['1'] = reading(20)
@@ -1555,13 +1556,13 @@ class PmJob(JobBase):
         self.code = 1
         with self.assertRaises(U.StepFailed):
             self.run_job()
-        self.assertEqual(self.crossing(U.PM_DOC)['phase'], U.STARTING)
-        self.live = [self.pm, U.Live('pm-a2', 41, CREATED)]
+        self.assertEqual(self.crossing(D.PM_DOC)['phase'], D.STARTING)
+        self.live = [self.pm, D.Live('pm-a2', 41, CREATED)]
         self.now += 300
         self.run_job()
         self.assertEqual(self.ctx.events, [('cross-failed', 'pm')])
-        self.assertIsNone(self.crossing(U.PM_DOC))
-        self.assertEqual(self.doc()['cleared'][U.PM_DOC]['account'], '1')
+        self.assertIsNone(self.crossing(D.PM_DOC))
+        self.assertEqual(self.doc()['cleared'][D.PM_DOC]['account'], '1')
 
     def test_the_new_name_steps_past_a_taken_one(self):
         self.write('sessions.json', {'kit': dict(ENTRY, account=2, name='pm-a2')})
@@ -1580,9 +1581,9 @@ class PmJob(JobBase):
 
 class Claims(JobBase):
     def test_a_crossing_claims_its_key_until_it_goes_quiet_too_long(self):
-        self.put(crossing(U.STARTED, phase_at=NOW - U.CLAIM_TTL_S + 1))
+        self.put(crossing(D.STARTED, phase_at=NOW - U.CLAIM_TTL_S + 1))
         self.assertEqual(U.claims(self.load(), NOW), {'kit'})
-        self.put(crossing(U.STARTED, phase_at=NOW - U.CLAIM_TTL_S))
+        self.put(crossing(D.STARTED, phase_at=NOW - U.CLAIM_TTL_S))
         self.assertEqual(U.claims(self.load(), NOW), set())
 
     def test_no_file_claims_nothing(self):
@@ -1648,10 +1649,10 @@ class Make(JobBase):
 
 
 DEEP = 'deep-net-race'
-DEEP_OLD = U.Live(DEEP, 31, CREATED)
-DEEP_NEW = U.Live(DEEP + '-a2', 41, CREATED)
-CONS = U.Live('consultant-alpha', 51, CREATED)
-CONS_NEW = U.Live('consultant-alpha', 61, '2027-01-02T00:00:00')
+DEEP_OLD = D.Live(DEEP, 31, CREATED)
+DEEP_NEW = D.Live(DEEP + '-a2', 41, CREATED)
+CONS = D.Live('consultant-alpha', 51, CREATED)
+CONS_NEW = D.Live('consultant-alpha', 61, '2027-01-02T00:00:00')
 
 
 def session(kind=UL.DEEP, live=DEEP_OLD, account='1'):
@@ -1669,85 +1670,85 @@ def ucrossing(phase, kind=UL.DEEP, old=DEEP_OLD, **fields):
 
 def udecide(cross=None, live=(DEEP_OLD,), sess=None, files=None, starts=None, mode='normal', accounts=ACCOUNTS,
             stall=None, quiet=None, key=DEEP):
-    return U.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1}, {},
+    return D.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1}, {},
                              mode, NOW, files=files)
 
 
 class DecideUnlisted(unittest.TestCase):
     def test_a_session_at_99_of_its_week_is_asked(self):
         d = udecide(sess=session())
-        self.assertEqual((d.action, d.target, d.word, d.detail), (U.ASK, '2', 'crossing', DEEP + ':a2'))
+        self.assertEqual((d.action, d.target, d.word, d.detail), (D.ASK, '2', 'crossing', DEEP + ':a2'))
 
     def test_a_successors_own_account_is_never_its_target(self):
         accounts = {'1': on(20, week_in=DAY), '2': HOT, '3': on(20, week_in=3 * DAY)}
         d = udecide(live=(DEEP_NEW,), sess=session(live=DEEP_NEW, account='2'), accounts=accounts)
-        self.assertEqual((d.action, d.target), (U.ASK, '1'))
+        self.assertEqual((d.action, d.target), (D.ASK, '1'))
 
     def test_several_processes_of_its_key_hold(self):
-        self.assertEqual(udecide(live=(DEEP_OLD, DEEP_NEW), sess=session()).action, U.HOLD)
+        self.assertEqual(udecide(live=(DEEP_OLD, DEEP_NEW), sess=session()).action, D.HOLD)
 
     def test_asked_moves_on_only_on_a_ready_file_written_after_the_ask(self):
-        c = ucrossing(U.ASKED)
-        self.assertEqual(udecide(c, files={'ready': NOW - 200}).action, U.HOLD)
+        c = ucrossing(D.ASKED)
+        self.assertEqual(udecide(c, files={'ready': NOW - 200}).action, D.HOLD)
         d = udecide(c, files={'ready': NOW - 30})
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.READY))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.READY))
 
     def test_asked_clears_when_the_week_reset(self):
-        d = udecide(ucrossing(U.ASKED), accounts={'1': on(50), '2': on(20)})
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        d = udecide(ucrossing(D.ASKED), accounts={'1': on(50), '2': on(20)})
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_ready_waits_for_the_note_and_quiet_then_a_deep_worker_starts_and_a_consultant_stops_first(self):
-        c = ucrossing(U.READY)
-        self.assertEqual(udecide(c, files={'note': None}, quiet=600).action, U.HOLD)
-        self.assertEqual(udecide(c, files={'note': NOW - 30}, quiet=10).action, U.HOLD)
+        c = ucrossing(D.READY)
+        self.assertEqual(udecide(c, files={'note': None}, quiet=600).action, D.HOLD)
+        self.assertEqual(udecide(c, files={'note': NOW - 30}, quiet=10).action, D.HOLD)
         d = udecide(c, files={'note': NOW - 30}, quiet=600)
-        self.assertEqual((d.action, d.target), (U.START, '2'))
-        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS), live=(CONS,), files={'note': NOW - 30}, quiet=600,
+        self.assertEqual((d.action, d.target), (D.START, '2'))
+        d = udecide(ucrossing(D.READY, UL.CONSULTANT, CONS), live=(CONS,), files={'note': NOW - 30}, quiet=600,
                     key=CONS.name)
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STOP_FIRST))
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STOP_FIRST))
 
     def test_stop_first_stops_the_old_consultant_then_starts_it_with_nothing_live(self):
-        c = ucrossing(U.STOP_FIRST, UL.CONSULTANT, CONS)
-        self.assertEqual(udecide(c, live=(CONS,), key=CONS.name).action, U.STOP_OLD)
+        c = ucrossing(D.STOP_FIRST, UL.CONSULTANT, CONS)
+        self.assertEqual(udecide(c, live=(CONS,), key=CONS.name).action, D.STOP_OLD)
         d = udecide(c, live=(), key=CONS.name)
-        self.assertEqual((d.action, d.phase, d.fields), (U.ADVANCE, U.READY, {'stopped': True}))
-        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True), live=(), key=CONS.name)
-        self.assertEqual((d.action, d.target), (U.START, '2'))
-        d = udecide(ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True), live=(CONS_NEW,), key=CONS.name)
-        self.assertEqual((d.action, d.word), (U.CLEAR, 'cross-cleared'))
+        self.assertEqual((d.action, d.phase, d.fields), (D.ADVANCE, D.READY, {'stopped': True}))
+        d = udecide(ucrossing(D.READY, UL.CONSULTANT, CONS, stopped=True), live=(), key=CONS.name)
+        self.assertEqual((d.action, d.target), (D.START, '2'))
+        d = udecide(ucrossing(D.READY, UL.CONSULTANT, CONS, stopped=True), live=(CONS_NEW,), key=CONS.name)
+        self.assertEqual((d.action, d.word), (D.CLEAR, 'cross-cleared'))
 
     def test_a_stopped_consultant_at_its_cap_holds_rather_than_clears(self):
-        c = ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True)
-        d = udecide(c, live=(), starts={CONS.name: [NOW - 60] * U.KEY_CAP}, key=CONS.name)
-        self.assertEqual((d.action, d.word, d.detail), (U.HOLD, 'cross-failed', CONS.name))
+        c = ucrossing(D.READY, UL.CONSULTANT, CONS, stopped=True)
+        d = udecide(c, live=(), starts={CONS.name: [NOW - 60] * D.KEY_CAP}, key=CONS.name)
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'cross-failed', CONS.name))
 
     def test_a_stop_first_refused_too_often_gives_up_and_is_remembered(self):
-        c = ucrossing(U.STOP_FIRST, UL.CONSULTANT, CONS, stop_tries=U.STOP_TRIES)
+        c = ucrossing(D.STOP_FIRST, UL.CONSULTANT, CONS, stop_tries=D.STOP_TRIES)
         d = udecide(c, live=(CONS,), key=CONS.name)
-        self.assertEqual((d.action, d.word, d.remember), (U.CLEAR, 'cross-failed', True))
+        self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
         self.assertEqual(d.fields, {'account': '1', 'reset': NOW + 2 * DAY})
 
     def test_a_consultant_successor_checks_in_or_is_left_running(self):
-        c = ucrossing(U.STARTED, UL.CONSULTANT, CONS, new_name=CONS.name, start_at=NOW - 100, stopped=True)
+        c = ucrossing(D.STARTED, UL.CONSULTANT, CONS, new_name=CONS.name, start_at=NOW - 100, stopped=True)
         d = udecide(c, live=(CONS_NEW,), files={'checkin': NOW - 10}, key=CONS.name)
-        self.assertEqual((d.action, d.word, d.detail), (U.CLEAR, 'crossed', CONS.name))
-        self.assertEqual(udecide(c, live=(CONS_NEW,), files={'checkin': NOW - 200}, key=CONS.name).action, U.HOLD)
-        late = dict(c, phase_at=NOW - U.WAIT_CHECKIN_S)
+        self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'crossed', CONS.name))
+        self.assertEqual(udecide(c, live=(CONS_NEW,), files={'checkin': NOW - 200}, key=CONS.name).action, D.HOLD)
+        late = dict(c, phase_at=NOW - D.WAIT_CHECKIN_S)
         self.assertEqual(udecide(late, live=(CONS_NEW,), key=CONS.name).word, 'no-checkin')
         self.assertEqual(udecide(c, live=(), key=CONS.name).word, 'cross-failed')
 
     def test_a_deep_successor_checked_in_stops_the_old_one(self):
-        c = ucrossing(U.STARTED, new_name=DEEP_NEW.name, start_at=NOW - 100)
+        c = ucrossing(D.STARTED, new_name=DEEP_NEW.name, start_at=NOW - 100)
         live = (DEEP_OLD, DEEP_NEW)
-        self.assertEqual(udecide(c, live=live, files={'checkin': NOW - 200}).action, U.HOLD)
+        self.assertEqual(udecide(c, live=live, files={'checkin': NOW - 200}).action, D.HOLD)
         d = udecide(c, live=live, files={'checkin': NOW - 10})
-        self.assertEqual((d.action, d.phase), (U.ADVANCE, U.STOPPING))
-        self.assertEqual(udecide(dict(c, phase=U.STOPPING), live=live).action, U.STOP_OLD)
+        self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STOPPING))
+        self.assertEqual(udecide(dict(c, phase=D.STOPPING), live=live).action, D.STOP_OLD)
 
     def test_notify_drops_an_asked_crossing_and_leaves_a_stopped_one(self):
-        self.assertEqual(udecide(ucrossing(U.ASKED), mode='notify').action, U.CLEAR)
-        c = ucrossing(U.READY, UL.CONSULTANT, CONS, stopped=True)
-        self.assertEqual(udecide(c, live=(), mode='notify', key=CONS.name).action, U.HOLD)
+        self.assertEqual(udecide(ucrossing(D.ASKED), mode='notify').action, D.CLEAR)
+        c = ucrossing(D.READY, UL.CONSULTANT, CONS, stopped=True)
+        self.assertEqual(udecide(c, live=(), mode='notify', key=CONS.name).action, D.HOLD)
 
     def test_an_unmanaged_detail_keeps_its_reason_whole_within_64_characters(self):
         self.assertEqual(U.unmanaged_detail('stray-a1', UL.NO_WINDOW), 'stray-a1:no-window')
@@ -1816,7 +1817,7 @@ class Unlisted(JobBase):
         ready, checkin, note = (os.path.join(folder, f) for f in (U.READY_FILE, U.CHECKIN_FILE, U.DEEP_STATE))
         c = self.crossing(DEEP)
         self.assertEqual((c['kind'], c['phase'], c['account'], c['target'], c['ready'], c['checkin'],
-                          c['state_path']), (UL.DEEP, U.ASKED, '1', '2', ready, checkin, note))
+                          c['state_path']), (UL.DEEP, D.ASKED, '1', '2', ready, checkin, note))
         self.assertTrue(os.path.isdir(folder))
         (to, text), = self.sent
         self.assertEqual(to, DEEP)
@@ -1840,13 +1841,13 @@ class Unlisted(JobBase):
                          ('deep', '2', DEEP, note, checkin, True))
         saved = self.saved_at_child
         self.assertEqual((saved['crossings'][DEEP]['phase'], saved['crossings'][DEEP]['new_name']),
-                         (U.STARTING, DEEP_NEW.name))
+                         (D.STARTING, DEEP_NEW.name))
         self.assertEqual((saved['starts'], saved['landed']), ({DEEP: [NOW + 300]}, {'2': NOW + 300}))
         # launch.py deep did it: the successor runs on account 2
         self.deep(DEEP_NEW, '2', predecessor=DEEP)
         self.now += 300
         self.assertIsInstance(self.run_job(), jobs.Skip)
-        self.assertEqual(self.crossing(DEEP)['phase'], U.STARTED)
+        self.assertEqual(self.crossing(DEEP)['phase'], D.STARTED)
         self.touch(checkin, self.now + 10)
         self.now += 300
         self.run_job()
@@ -1860,7 +1861,7 @@ class Unlisted(JobBase):
 
     def test_a_recycled_session_of_the_key_counts_as_live_so_the_crossing_holds(self):
         self.deep()
-        self.live.append(U.Live(DEEP + '-a2-r1', 77, CREATED))    # <key>-a<N>-r<k>: lookup.of_stem
+        self.live.append(D.Live(DEEP + '-a2-r1', 77, CREATED))    # <key>-a<N>-r<k>: lookup.of_stem
         self.run_job()
         self.assertEqual((self.sent, self.calls, self.crossing(DEEP)), ([], [], None))
 
@@ -1879,7 +1880,7 @@ class Unlisted(JobBase):
         self.now += 300
         self.run_job()
         self.assertEqual(self.calls, [['stop', '--name', CONS.name, '--pid', '51']])
-        self.assertEqual(self.saved_at_child['crossings'][CONS.name]['phase'], U.STOP_FIRST)
+        self.assertEqual(self.saved_at_child['crossings'][CONS.name]['phase'], D.STOP_FIRST)
         self.live = []                  # launch.py stop did it
         self.now += 300
         self.run_job()
@@ -1894,7 +1895,7 @@ class Unlisted(JobBase):
         self.consultant(CONS_NEW, '2')
         self.now += 300
         self.run_job()
-        self.assertEqual(self.crossing(CONS.name)['phase'], U.STARTED)
+        self.assertEqual(self.crossing(CONS.name)['phase'], D.STARTED)
         self.touch(c['checkin'], self.now + 10)
         self.now += 300
         self.run_job()
@@ -1914,7 +1915,7 @@ class Unlisted(JobBase):
         self.stall(DEEP, DEEP_OLD.pid, '1')
         self.run_job()
         self.assertEqual(self.calls, [['stop', '--name', DEEP, '--pid', '31']])
-        self.assertEqual(self.saved_at_child['crossings'][DEEP]['phase'], U.STALL_STOP)
+        self.assertEqual(self.saved_at_child['crossings'][DEEP]['phase'], D.STALL_STOP)
         for path in files:
             self.assertFalse(os.path.exists(path), path)
             self.assertEqual(os.path.getmtime(path + '.prev'), NOW - DAY, path)
@@ -1940,7 +1941,7 @@ class Unlisted(JobBase):
         self.consultant(CONS_NEW, '2')
         self.now += 300
         self.run_job()
-        self.assertEqual(self.crossing(CONS.name)['phase'], U.STARTED)
+        self.assertEqual(self.crossing(CONS.name)['phase'], D.STARTED)
         self.live = []                  # the successor exits before its check-in
         self.now += 300
         self.run_job()
@@ -1972,14 +1973,14 @@ class Unlisted(JobBase):
         self.assertEqual((self.sent, self.doc()['crossings']), ([], {}))
 
     def test_every_session_never_crossed_is_pushed_and_noted_with_its_reason(self):
-        coord = U.Live('alpha-coord-a1', 71, CREATED)
+        coord = D.Live('alpha-coord-a1', 71, CREATED)
         cmd = window.session_command(coord.name, 'hi', agent='pm-kit:coordinator')
         self.windows[coord.pid] = window.script(coord.name, 'coordinator', self.repo, cmd,
                                                 config_dir=self.acct['1'])
         self.live.append(coord)
         self.deep()
-        self.deep(U.Live(DEEP, 81, CREATED))     # two of one key: which one would cross is unknown
-        self.live.append(U.Live('stray-a1', 91, CREATED))
+        self.deep(D.Live(DEEP, 81, CREATED))     # two of one key: which one would cross is unknown
+        self.live.append(D.Live('stray-a1', 91, CREATED))
         result = self.run_job()
         self.assertEqual(sorted(self.ctx.events), [('unmanaged', 'alpha-coord-a1:other-role'),
                                                    ('unmanaged', DEEP + ':several'),

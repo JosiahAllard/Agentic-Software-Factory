@@ -66,7 +66,7 @@ acknowledgement. `to-pm reply` sets `done`.
 | park | hub: `{at, code, message}`, what binding the to-do did to its record, as a question's `park` (docs/hub-questions.md "A question bound to a record") |
 
 A new to-do (`POST /todos`, so `hub.py todos add` and the MCP tool `hub_todo_add` alike) may also carry
-`steps`, which is not stored: `kitlib.hubsite.api.todo_steps` turns each step into a command appended
+`steps`, which is not stored: `kitlib.hubvalidate.todosteps.todo_fields` (through `kitlib.hubsite.api.todo_steps`) turns each step into a command appended
 after `commands` and adds one summary line per step at the end of `detail` (docs/hub-mcp.md "To-do
 steps"). `hub.py todos add --steps F` reads the list from F, a UTF-8 JSON file. The server refuses, as
 `invalid` naming the field: a bad step (`steps`), a `commands` entry holding a lone surrogate (U+D800 to
@@ -75,7 +75,7 @@ plain Notepad, a hand edit described in prose, coordinator work). The owner's ow
 those rules. A raw worktree, branch, tag or ref delete has no carve-out: its refusal names
 `worktree_remove.py <slug> --abandon "<why>"`, which the coordinator runs on a ruling (docs/worktree-remove.md
 "Tools"); a ref delete's also says a ref outside `refs/heads`, `refs/tags`, `refs/stash` and
-`refs/backlog` the coordinator deletes itself, in its own repository (docs/guard.md "Rules",
+`refs/backlog` the coordinator deletes itself, in its own repository (docs/guard-rules.md "Rules",
 `git-shared-ref`). An agent's new to-do may carry `record` (`todos add --record REPO:ID`), which parks
 the record until the to-do is done (docs/hub-questions.md "A question bound to a record"); the owner's own to-do and an edit
 take none (`invalid`, field `record`). An agent's to-do whose title or detail asks the owner to send a
@@ -140,10 +140,12 @@ PM steps:
 The coordinator files the record itself with its own backlog tool, citing the story.
 
 ## repos/<name>
+
+Open: set `aliases` on the hub store's repos/ docs for every short tag an old item still carries.
 {name, added_at, aliases?}: `aliases` (optional, a list of strings) names old tags an item's `repo` may
 still carry; the page files such an item under this repo (case ignored). The server's repo list (`GET
 /api/v1/repos`, `kitlib.hubsite.derived.repos`) is every repository the PM knows
-(`kitlib.pmstart.known_repos`: each session's repo in `sessions_file`, the PM's repository, this kit's
+(`kitlib.config.pm.known_repos`: each session's repo in `sessions_file`, the PM's repository, this kit's
 repository and the optional `pm_start.repos`) with the aliases the store holds. An item whose repo is
 `all` is for every repo and shows under each one.
 

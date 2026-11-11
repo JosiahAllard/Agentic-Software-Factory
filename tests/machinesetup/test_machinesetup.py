@@ -17,6 +17,7 @@ from unittest import mock
 from kitlib import machinesetup as M
 from kitlib.machinesetup import common, extras, settings
 from kitlib.config import user as kuser
+from kitlib.launcher import accounts
 from tests.home import fence_decoy, pm_repo, temp_home
 from tests.platforms import windows_only
 
@@ -530,7 +531,7 @@ class ExecFormAndPlugin(Base):
         return doc
 
     def kit_hook(self, name):
-        """Where a retired hook script was, plan steps 7 to 13."""
+        """Where a retired hook script was."""
         return fwd(os.path.join(self.kit, 'hosts', 'claude', 'shell', 'hooks', name))
 
     def kit_entry(self, *words):
@@ -683,7 +684,7 @@ class Parts(unittest.TestCase):
         for n in ('.claude', '.claude-two', kuser.DIR_NAME, 'other'):
             os.makedirs(os.path.join(root, n))
         touch(os.path.join(root, '.claude-file'))
-        self.assertEqual([os.path.basename(d) for d in M.default_config_dirs(root)], ['.claude', '.claude-two'])
+        self.assertEqual([os.path.basename(d) for d in accounts.default_config_dirs(root)], ['.claude', '.claude-two'])
 
     def test_layout_round_trips_indent_ascii_bom_and_final_newline(self):
         for indent, ascii_, bom, final in ((4, True, True, False), (2, False, False, True), ('\t', False, False, True)):
@@ -741,8 +742,8 @@ class Parts(unittest.TestCase):
 class Tool(Base):
     def test_a_missing_old_kit_is_usage(self):
         """--old-kit names a folder that is not there: usage, before any home is looked up. With
-        no --old-kit the tool runs the default mode, not a usage error (plan step 20;
-        tests/machinesetup/test_fresh.py test_the_default_mode_needs_no_switch)."""
+        no --old-kit the tool runs the default mode, not a usage error
+        (tests/machinesetup/test_fresh.py test_the_default_mode_needs_no_switch)."""
         r = subprocess.run([sys.executable, TOOL, '--old-kit', os.path.join(self.root, 'none')],
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, M.EXIT_USAGE)

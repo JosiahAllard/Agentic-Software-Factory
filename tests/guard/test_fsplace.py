@@ -1,5 +1,5 @@
 """kitlib.guard.place reads a path's place from the filesystem and must answer exactly what
-kitlib.git.repo.classify (one git rev-parse) answers (docs/guard.md "State"). Every case here is
+kitlib.git.repo.classify (one git rev-parse) answers (docs/guard-core.md "State"). Every case here is
 asked of both on real scratch repositories; each also says whether the filesystem answered or
 handed the path to git, so a case that silently always falls back is caught."""
 import os

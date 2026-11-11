@@ -123,8 +123,6 @@ def _environment(home, temporary, profile):
                PYTHONDONTWRITEBYTECODE='1', KIT_FAKE_GIT='0',
                NO_PROXY='127.0.0.1,localhost',
                PSModuleAnalysisCachePath=str(temporary / 'ps-cache'))
-    if profile.release_identity is not None:
-        env['PM_KIT_RELEASE_ID'] = profile.release_identity
     return env
 
 
@@ -163,8 +161,8 @@ def _fixtures(directory, profile, env):
     _git(main, ('push', '-q', '-u', 'origin', 'main'), env)
     coordinator = main / FIXTURE_FOLDER / 'worktrees' / 'coordinator'
     _git(main, ('worktree', 'add', '-q', '-b', 'codex/coordinator', str(coordinator)), env)
-    from kitlib.backlog.opener import open_store
-    ctx = open_store(str(coordinator), session=SESSION)
+    from kitlib.backlog.opener import NO_PROBES, open_store
+    ctx = open_store(str(coordinator), session=SESSION, probes=NO_PROBES)
     record = '\n'.join(('id: ' + ITEM, 'area: diagnostic', 'priority: 2', 'priority_by: agent',
                         'effort: -', 'state: open', 'blocked_on: -', 'scope: value.txt',
                         'summary: Owned no-inference acceptance fixture', 'session: ' + SESSION, ''))
@@ -237,9 +235,10 @@ def _prepare_or_isolate(task, coordinator, env):
         # This is controlled setup for subsequent independent native operations.
         # The new-worktree/claim workflow remains failed, visibly in the report.
         _git(task.coordinator, ('worktree', 'add', '-q', '-b', task.branch, task.worker), env)
-        from kitlib.backlog.opener import open_store
-        from kitlib.backlog.plan import plan_pull
-        ctx = open_store(task.coordinator, session=task.session, branch=task.branch)
+        from kitlib.backlog.opener import NO_PROBES, open_store
+        from kitlib.backlog.plan_claim import plan_pull
+        ctx = open_store(task.coordinator, session=task.session, branch=task.branch,
+                         probes=NO_PROBES)
         ctx.store.write(lambda snapshot: plan_pull(snapshot, ctx, task.item))
         workflow._checkout(task)
         workflow._claimed(task)
@@ -368,7 +367,7 @@ def probe(codex_exe=None, profile=None, fixture_root=None):
                 raise RuntimeError('fixture main changed')
             from kitlib.records import gate_ok
             from kitlib.config import load
-            from kitlib.gate.runner import gate_config
+            from kitlib.records.gate_ok import gate_config
             record, why = gate_ok.verify(task.worker, tip, gate_config=gate_config(load(task.worker)))
             if not record or why or record.get('base') != task.base:
                 raise RuntimeError('real fixture gate proof does not cover the exact tip/base')

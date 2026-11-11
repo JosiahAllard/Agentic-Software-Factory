@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 import kitlib.config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import pull_branch
 from kitlib.backlog.errors import Refusal

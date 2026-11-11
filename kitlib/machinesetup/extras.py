@@ -20,10 +20,12 @@ try:
 except ImportError:                                                  # not Windows
     winreg = None
 
-from kitlib import platform
-from kitlib.launcher import pythonw as pythonw_mod
+from kitlib import autotasks, platform
 from kitlib.platform.linux import schedule
-from kitlib.worktree.task import CARRIER, NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.proc.spawn import CARRIER
+from kitlib.schedtask import host as schedhost
+from kitlib.schedtask import pythonw as pythonw_mod
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
 
 from . import agenttemp, linuxjobs, procwatch
 from .common import Report, kit_file, norm, under
@@ -32,9 +34,8 @@ SHORTCUT = 'Machine schedule.lnk'
 LOCK_ENV = 'KIT_MACHINE_LOCK'
 SIDS = ('*S-1-5-18', '*S-1-5-32-544')                               # SYSTEM, Administrators
 GRANT = '(OI)(CI)F'
-_NOWIN = 0x08000000 if sys.platform == 'win32' else 0                # CREATE_NO_WINDOW
+_NOWIN = 0x08000000 if platform.NAME == 'windows' else 0             # CREATE_NO_WINDOW
 AUTO_TASK = 'kit-automatic-tasks'
-AUTO_EVERY_MINUTES = 15
 AUTO_TOOL = os.path.join('tools', 'auto_tasks.py')
 ENV_FILE = ('.config', 'environment.d', 'pm-kit.conf')             # Linux, under the profile
 DESKTOP_FILE = ('.local', 'share', 'applications', 'pm-kit-machine-schedule.desktop')
@@ -102,16 +103,10 @@ def _ps_quote(s):
     return "'" + s.replace("'", "''") + "'"
 
 
-class Host(object):
-    """The real machine: PowerShell for shortcuts and the user environment, icacls, the guard's
-    settings entry (boot/hook.py), the `claude` runner."""
-
-    def _ps(self, script):
-        r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
-                           capture_output=True, text=True, creationflags=_NOWIN)
-        if r.returncode != 0:
-            raise RuntimeError('powershell exit %d: %s' % (r.returncode, (r.stderr or r.stdout).strip()))
-        return r.stdout
+class Host(schedhost.Host):
+    """The real machine: the scheduled tasks (kitlib.schedtask.host.Host, with its PowerShell
+    runner), PowerShell for shortcuts and the user environment, icacls, the guard's settings entry
+    (boot/hook.py), the `claude` runner."""
 
     def desktop(self):
         return self._ps('[Environment]::GetFolderPath("Desktop")').strip()
@@ -188,47 +183,15 @@ class Host(object):
             return Report(['the PATH change was not broadcast: sign out and in to see it'])
         return None
 
-    def task_exists(self, name):
-        """Whether the scheduled task `name` is registered (agenttemp.task_registered: False only
-        when schtasks says it does not exist; RuntimeError on a timeout or another failure)."""
-        return agenttemp.task_registered(name)
-
-    def task_register(self, line):
-        """Run the PowerShell line that registers a scheduled task (agenttemp.task_line)."""
-        self._ps(line)
-
-    def job_backend(self, job):
-        """Linux: the backend the pm-kit job `job` goes to (schedule.choose: ScheduleError when
-        there is none)."""
-        return schedule.choose(job)
-
-    def job_describe(self, job, kind):
-        """Linux: the lines saying what job_install(job) writes (schedule.describe)."""
-        return schedule.describe(job, kind)
-
     def job_install(self, job):
-        """Linux: write and enable the pm-kit job `job` (schedule.install); its lines."""
-        return Report(schedule.install(job))
-
-    def systemd(self):
-        """Linux: whether the user's systemd manager answers."""
-        return schedule.has_systemd()
-
-    def linger(self):
-        """Linux: whether linger is on for this user (True, False, None: unknown)."""
-        return schedule.linger()
+        """Linux: write and enable the pm-kit job `job`; its lines, as a Report so they are
+        printed."""
+        return Report(super(Host, self).job_install(job))
 
     def sweep_dry_run(self, kit, home=None):
         """The sweep's report lines from one run without --apply (agenttemp.sweep_dry_run), under
         this interpreter, reading the machine config of `home`."""
         return agenttemp.sweep_dry_run(kit, sys.executable, home=home)
-
-    def task_list(self):
-        """Every scheduled task with its actions (kitlib.pmstart.consoletasks.read_tasks):
-        RuntimeError, OSError or ET.ParseError when schtasks cannot be read. On Linux every
-        pm-kit job read back."""
-        from kitlib.pmstart import consoletasks
-        return consoletasks.read_tasks(timeout=agenttemp.TASK_TIMEOUT)
 
     def worktree_sweep_dry_run(self, tool, main):
         """The worktree sweep's report lines from one run without --apply on the main checkout
@@ -283,19 +246,19 @@ class Host(object):
         return cmd.text(r.out or b'').strip() or None
 
     def plugin_runner(self, home, claude=None, timeout=None, environ=None):
-        """The `claude` runner of the plugin step: kitlib.pluginsource.claude.Runner (the claude on
+        """The `claude` runner of the plugin step: kitlib.launcher.accounts.Runner (the claude on
         PATH unless `claude` names one; CLAUDE_CONFIG_DIR set to the folder, removed for ~/.claude,
         by its env_for), with run_tree as its subprocess.run."""
-        from kitlib.pluginsource import claude as pclaude
-        return pclaude.Runner(home, claude=claude, run_proc=run_tree,
-                              timeout=timeout or pclaude.TIMEOUT, environ=environ)
+        from kitlib.launcher import accounts
+        return accounts.Runner(home, claude=claude, run_proc=run_tree,
+                               timeout=timeout or accounts.TIMEOUT, environ=environ)
 
 
 KILL_GRACE = 10
 
 
 def run_tree(cmd, timeout=None, **kw):
-    """subprocess.run for kitlib.pluginsource.claude.Runner, the command's whole process tree in a
+    """subprocess.run for kitlib.launcher.accounts.Runner, the command's whole process tree in a
     job (kitlib.proc.job.Job): past `timeout` the job ends every process in it, then
     subprocess.TimeoutExpired. subprocess.run kills only its direct child, then reads the pipes to
     their end: a claude installed through npm is a .cmd shim, so that child is cmd.exe and node is
@@ -316,13 +279,6 @@ def run_tree(cmd, timeout=None, **kw):
         return subprocess.CompletedProcess(cmd, p.returncode, out, err)
     finally:
         j.close()
-
-
-def pythonw():
-    """The windowless python of this interpreter's base install (kitlib.launcher.pythonw), never
-    a venv's or the Store alias; this interpreter when that is not a usable file."""
-    w = pythonw_mod.base_pythonw()
-    return sys.executable if pythonw_mod.refusal(w) else w
 
 
 def survey(plan, ctx):
@@ -377,12 +333,13 @@ def auto_task_line(root, pythonw=None):
             " -ExecutionTimeLimit (New-TimeSpan -Minutes 10))"
             " -User $env:USERNAME -RunLevel Limited -Description %s"
             % (PYTHONW_IS % quoted(pythonw), NOT_THE_STORE_ALIAS, agenttemp.NOT_A_FILE, quoted(AUTO_TASK),
-               AUTO_EVERY_MINUTES, quoted(auto_argument(root)), quoted(root),
+               autotasks.AUTO_EVERY_MINUTES, quoted(auto_argument(root)), quoted(root),
                quoted('kit automatic tasks: starts what the Action Hub schedules (auto_tasks.py tick)')))
 
 
 def auto_task_same(task, pythonw, argument):
-    """Whether the registered `task` (consoletasks' form) runs `pythonw` with `argument` already."""
+    """Whether the registered `task` (kitlib.schedtask.read.parse's form) runs `pythonw` with
+    `argument` already."""
     exe = os.path.normcase(os.path.normpath(pythonw))
     for a in (task or {}).get('actions') or ():
         have = os.path.normcase(os.path.normpath((a.get('exe') or '').strip().strip('"') or '.'))
@@ -396,7 +353,7 @@ def auto_job(root, python=None):
     AUTO_EVERY_MINUTES minutes, ended after 10."""
     root = os.path.normpath(root)
     return schedule.Job(AUTO_TASK, [python or schedule.python(), os.path.join(root, AUTO_TOOL), 'tick'],
-                        root, ('every', AUTO_EVERY_MINUTES),
+                        root, ('every', autotasks.AUTO_EVERY_MINUTES),
                         'kit automatic tasks: starts what the Action Hub schedules', 10)
 
 
@@ -440,7 +397,7 @@ def auto_task_step(plan, ctx):
     line = auto_task_line(root, pythonw)
     plan.add('extras', '%s the scheduled task %s (every %d min, as you, not elevated, no window; starts what '
                        'the Action Hub schedules): %s'
-             % ('update' if have else 'register', AUTO_TASK, AUTO_EVERY_MINUTES, line),
+             % ('update' if have else 'register', AUTO_TASK, autotasks.AUTO_EVERY_MINUTES, line),
              lambda: ctx.host.task_register(line),
              undo='Unregister-ScheduledTask -TaskName "%s" -Confirm:$false' % AUTO_TASK)
 
@@ -456,7 +413,7 @@ def _shortcut(plan, ctx):
         plan.note('extras', 'machine schedule shortcut skipped: no desktop folder at %s' % desk)
         return
     path = os.path.join(desk, SHORTCUT)
-    want = {'target': pythonw(), 'args': '"%s"' % os.path.join(ctx.kit, 'reserve_ui.pyw'),
+    want = {'target': pythonw_mod.windowless(), 'args': '"%s"' % os.path.join(ctx.kit, 'reserve_ui.pyw'),
             'workdir': ctx.kit}
     try:
         have = host.read_shortcut(path)

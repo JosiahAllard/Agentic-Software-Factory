@@ -1,8 +1,42 @@
 """kitlib.hubsite.apipages: the api's page routes ("Pages"): publish, place, read and delete an
-HTML page and its card. kitlib.hubsite.api re-exports every name here."""
+HTML page and its card. kitlib.hubsite.api re-exports every name here.
+
+Pages. POST pages (AGENT) publishes a page: the card `pages/<id>` and its body `page_html/<id>`.
+The body is {id, title, html, repo?, from?, summary?, refs?, kind?, folder?, if_version?}. The
+id is the caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>`
+with no letter or digit either side, anywhere, so a ref that names a page is never read as an
+item);
+html is judged by kitlib.hubvalidate.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
+outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
+nothing written. Publishing over a page takes the card's `if_version`; without it, or with
+another, it is `conflict`. store.PAGES_LOCK is held from the reads to the last write of a publish or a
+delete (a page is two documents), so a second publisher reads only after the first has written
+both, and with the same pin
+it is `conflict` with nothing written. The body is put first and the card second, each pinned to
+the version read (0: not there yet), so a card never names a missing body; a card write that
+fails after its body leaves an orphan body, which kitlib.hubvalidate warns of and the next
+publish overwrites. The card carries title, repo, summary, refs, kind, folder (each text, kind
+and folder optional), from (an agent's name, as a to-do's), `at` and `bytes`. POST
+pages/{id}/place (ANY: the agent that files it or the owner) takes {kind?, folder?, repo?,
+if_version} and sets those on the card, at least one of them (null sets ""), pinned by if_version (required; a
+stale one is `conflict`) under PAGES_LOCK; it never writes the body. A republish that gives no
+kind or folder keeps the card's stored one; one it gives replaces it (repo is as given). GET pages lists the cards;
+GET pages/{id} gives {ok, id, html, version} of the body. GET snapshot leaves `page_html` out
+(and `handoffs`): the Docs tab reads a body when it is opened. GET snapshot?collections=a,b
+answers {revision, collections} with those collections alone, cut as the whole snapshot cuts
+them, and no views, pending or status; a name that is not one of its collections is `invalid`,
+field collections (Client.inbox reads it so; an older hub ignores the query and answers whole).
+GET snapshot?bare=1 answers the whole snapshot with `collections` {}: the revision, views,
+pending and status, which can move with no store write. The page reads it after a wait that
+timed out (no write ended it) and keeps the documents it holds when the revision is the one it
+drew; bare with collections is `invalid`, field bare. POST pages/{id}/delete (OWNER, if_version
+optional) deletes the card, then the body; a
+body delete that fails leaves the card deleted and the body an orphan, as above. One process
+lock is enough: Store.open lets one process write a store (`_store.lock`).
+"""
 from kitlib import hubvalidate
 
-from . import pagecheck
+from kitlib.hubvalidate import pagecheck
 from . import schema
 from .apibase import (
     _REF_SHAPED, _agent_from, _fields, _invalid, _pin, _text, _typed, _version, _via)

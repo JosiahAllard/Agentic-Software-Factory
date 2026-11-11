@@ -1,4 +1,4 @@
-"""kitlib.guard.decide over PreToolUse-shaped payloads (docs/guard.md "Rules"): main session and
+"""kitlib.guard.decide over PreToolUse-shaped payloads (docs/guard-rules.md "Rules"): main session and
 subagent, Bash and PowerShell, allow and deny, and the exact alternative each deny names.
 
 Each row: (name, payload builder, expected kind or None for allow, rule, the text after
@@ -9,10 +9,14 @@ import os
 import re
 import unittest
 
-from kitlib import lockmcp as lockmcp_names, pmdata
+from kitlib import lockmcp as lockmcp_names
+from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.git import repo
+from kitlib.host import registry
 from kitlib.guard import commands as cm, context, rules, shell as sh
+from kitlib.guard import commands_git as cg
+from kitlib.guard import commands_nested as cn
 from kitlib.lockmcp import server as lockmcp
 
 from . import test_rules_hub as TH
@@ -232,7 +236,7 @@ ROWS = [
 ] + SHELL_ROWS + REVIEW_ROWS + EXTRA_ROWS
 
 # An alternative is a command to run as written: no closing full stop, no leading prose word
-# (docs/guard.md "Rules"). The prose goes in its own sentence before "Instead:".
+# (docs/guard-rules.md "Rules"). The prose goes in its own sentence before "Instead:".
 PROSE_WORDS = ('run', 'work', 'make', 'read', 'write', 'commit', 'merge', 'name', 'nothing', 'fix', 'ask', 'the',
                'as', 'from', 'reproduce', 'approve', 'stage', 'search', 'use')
 
@@ -643,7 +647,7 @@ class LockMcp(unittest.TestCase):
                 self.assertEqual(d.verdict, 'deny')
                 self.assertIn('This session is coordinator.', d.reason)
                 self.assertIn('Instead: python "%s/tools/machine_lock.py" status ' % W.fwd(self.w.kit_dir), d.reason)
-                # a session nothing marks is the owner's own (docs/guard.md "Session mark")
+                # a session nothing marks is the owner's own (docs/guard-fallback.md "Session mark")
                 self.assertIsNone(decide(self.ev(name), self.w.ctx(environ={})))
 
     def test_read_tools_stay_open(self):
@@ -820,7 +824,7 @@ class OwnerLockTools(unittest.TestCase):
                         status, rules.tag('owner-tool', 'subagent' if sub else 'main'))), d.reason)
 
     def test_the_owner_session_may(self):
-        # a main session nothing marks is the owner's own (docs/guard.md "Session mark")
+        # a main session nothing marks is the owner's own (docs/guard-fallback.md "Session mark")
         for shell, text in self.BLOCKED:
             with self.subTest(text):
                 d = self.run_one(shell, text, False, environ={})
@@ -832,7 +836,7 @@ class OwnerLockTools(unittest.TestCase):
                 d = self.run_one(shell, text, True)
                 self.assertIsNone(d, d and d.reason)
 
-    # docs/guard.md "Fallback": a line the parser cannot read that names the lock CLI is refused
+    # docs/guard-fallback.md "Fallback": a line the parser cannot read that names the lock CLI is refused
     # whole, its read verbs included, in every session but the owner's own
     UNCLEAN = [
         ('bash', 'eval "$c"; python tools/machine_lock.py status'),
@@ -877,7 +881,7 @@ class OwnerLockTools(unittest.TestCase):
 
 
 class OwnerSetup(unittest.TestCase):
-    """Machine setup's writes (the machine config's owner_email among them, plan decision 27) are the
+    """Machine setup's writes (the machine config's owner_email among them) are the
     owner's to make: a session other than the owner's own that runs it to act is denied, its dry
     run is not, and an agent session's edit of the machine config is the write jail's."""
 
@@ -1260,8 +1264,8 @@ class RolesFromConfig(unittest.TestCase):
                          'git-restore')
 
     def test_the_plugin_prefixed_lander_is_the_lander(self):
-        # docs/guard.md "Agent names": <plugin>:lander holds the lander role, no other spelling does
-        p = lockmcp_names.PLUGIN_NAME + ':'           # kitlib.agentname.PREFIX
+        # docs/guard-fallback.md "Agent names": <plugin>:lander holds the lander role, no other spelling does
+        p = registry.PLUGIN_NAME + ':'           # kitlib.host.agentname.PREFIX
         w = W.World(kit={'repo': {'name': 'demo'}, 'roles': {'lander': {'edit_main_checkout': True, 'why': 'test'}}})
         self.addCleanup(w.cleanup)
         target = os.path.join(w.main, 'a.md')
@@ -1297,7 +1301,7 @@ class MainCwdHint(unittest.TestCase):
 
 
 # python's code on the line, or read from standard input, counts as a write of the directory python
-# runs in, whatever the code is: the guard does not read it (docs/guard.md "Shell writes")
+# runs in, whatever the code is: the guard does not read it (docs/guard-jail-roles.md "Shell writes")
 PY_UNREAD = 'counted as written: the guard does not read what the code python is given writes'
 
 
@@ -1462,13 +1466,13 @@ class PlainCommit(unittest.TestCase):
                 ('merge', ['--no-ff', '--no-edit', '--no-commit', 'main'], False),
                 ('merge', ['--no-commit', '--frob', 'main'], False), ('revert', ['-n', '--', 'HEAD'], False)):
             with self.subTest(sub=sub, argv=argv):
-                cmd = cm.read('git %s %s' % (sub, ' '.join(argv)), sh.BASH, W.fwd(self.w.wt)).commands[0]
-                self.assertEqual(rules.commit_scan(sub, cm.git_call(cm.invocation(cmd)).rest)[0], makes)
+                cmd = cn.read('git %s %s' % (sub, ' '.join(argv)), sh.BASH, W.fwd(self.w.wt)).commands[0]
+                self.assertEqual(rules.commit_scan(sub, cg.git_call(cm.invocation(cmd)).rest)[0], makes)
 
     def test_a_computed_word_after_a_hold_is_read_as_a_commit(self):
         # a known limit (rules.py, above COMMIT_VERBS): `$X` may be --commit, but is read as a commit
-        cmd = cm.read('git cherry-pick -n $X', sh.BASH, W.fwd(self.w.wt)).commands[0]
-        self.assertFalse(rules.commit_scan('cherry-pick', cm.git_call(cm.invocation(cmd)).rest)[0])
+        cmd = cn.read('git cherry-pick -n $X', sh.BASH, W.fwd(self.w.wt)).commands[0]
+        self.assertFalse(rules.commit_scan('cherry-pick', cg.git_call(cm.invocation(cmd)).rest)[0])
 
     def test_quit_advice_says_to_read_what_is_left_first(self):
         for text, where in (('git cherry-pick --skip', 'sequencer/todo'), ('git revert --continue', 'sequencer/todo'),
@@ -1487,8 +1491,8 @@ class PlainCommit(unittest.TestCase):
                             (['--quoted-cr', '--abort'], True), (['-C', '--abort'], True),
                             (['x.patch'], True)):
             with self.subTest(argv=argv):
-                cmd = cm.read('git am %s' % ' '.join(argv), sh.BASH, W.fwd(self.w.wt)).commands[0]
-                self.assertEqual(rules.commit_scan('am', cm.git_call(cm.invocation(cmd)).rest)[0], makes)
+                cmd = cn.read('git am %s' % ' '.join(argv), sh.BASH, W.fwd(self.w.wt)).commands[0]
+                self.assertEqual(rules.commit_scan('am', cg.git_call(cm.invocation(cmd)).rest)[0], makes)
         self.assertIsNone(self.decide('git am --show-current-patch=diff', sub=True))
 
     def test_held_form_keeps_strategy_and_drops_an_unplaced_value(self):

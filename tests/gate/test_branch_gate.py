@@ -20,7 +20,7 @@ class BranchGate(fixtures.GateRepoCase):
         return runner.branch_gate(wt, book_kw=self.book_kw, **kw)
 
     def gate_config(self, wt):
-        return runner.gate_config(kconfig.load(wt))
+        return gate_ok.gate_config(kconfig.load(wt))
 
     def test_pass_writes_the_record_for_exactly_that_commit(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
@@ -270,7 +270,7 @@ class BranchGate(fixtures.GateRepoCase):
 
 
 class GateConfigHash(unittest.TestCase):
-    """runner.gate_config leaves out a HASH_IF_SET key that is unset, so a record an older kit
+    """gate_ok.gate_config leaves out a HASH_IF_SET key that is unset, so a record an older kit
     wrote, before the key existed, still verifies against the config it was made with."""
 
     class Cfg:
@@ -284,24 +284,24 @@ class GateConfigHash(unittest.TestCase):
         section = {'steps': [], 'kind': 'engine-test', 'fail': None}
         older = dict(section, python_tests='discover', python_tests_floor=None, trailers=None)
         now = dict(section, smoke_steps=None, docs_only=None)
-        self.assertEqual(runner.gate_config(self.Cfg(now)), older)
-        self.assertEqual(gate_ok.config_hash(runner.gate_config(self.Cfg(now))),
+        self.assertEqual(gate_ok.gate_config(self.Cfg(now)), older)
+        self.assertEqual(gate_ok.config_hash(gate_ok.gate_config(self.Cfg(now))),
                          gate_ok.config_hash(older))
         smoke = dict(now, smoke_steps=['unit'])
-        self.assertEqual(runner.gate_config(self.Cfg(smoke)), dict(older, smoke_steps=['unit']))
-        self.assertIsNone(runner.gate_config(self.Cfg(now))['fail'])   # an older key stays, unset
+        self.assertEqual(gate_ok.gate_config(self.Cfg(smoke)), dict(older, smoke_steps=['unit']))
+        self.assertIsNone(gate_ok.gate_config(self.Cfg(now))['fail'])   # an older key stays, unset
 
     def test_every_key_left_out_is_a_gate_key_unset_by_default(self):
         from kitlib.config import schema
         defaults = schema.defaults('gate')
-        self.assertEqual({k: defaults[k] for k in runner.HASH_IF_SET},
-                         dict.fromkeys(runner.HASH_IF_SET))
+        self.assertEqual({k: defaults[k] for k in gate_ok.HASH_IF_SET},
+                         dict.fromkeys(gate_ok.HASH_IF_SET))
 
     def test_a_removed_key_is_no_gate_key_and_stays_out_of_the_section(self):
         from kitlib.config import schema
-        self.assertFalse(set(runner.HASH_REMOVED) & set(schema.defaults('gate')))
+        self.assertFalse(set(gate_ok.HASH_REMOVED) & set(schema.defaults('gate')))
         with tempfile.TemporaryDirectory() as root:
-            self.assertFalse(set(runner.HASH_REMOVED) & set(kconfig.load(root).section('gate')))
+            self.assertFalse(set(gate_ok.HASH_REMOVED) & set(kconfig.load(root).section('gate')))
 
     def test_every_alias_in_the_kinds_table_hashes_as_the_name_first_written(self):
         """Each kinds.json alias {old: new}: new is in HASH_KIND_AS, maps to a name an alias
@@ -312,14 +312,14 @@ class GateConfigHash(unittest.TestCase):
         self.assertTrue(al)
         for old, new in al.items():
             with self.subTest(old=old, new=new):
-                self.assertIn(new, runner.HASH_KIND_AS)
-                first = runner.HASH_KIND_AS[new]
+                self.assertIn(new, gate_ok.HASH_KIND_AS)
+                first = gate_ok.HASH_KIND_AS[new]
                 self.assertIn(first, al)
                 self.assertEqual(al[first], new)
-                self.assertNotIn(first, runner.HASH_KIND_AS)
-                a = gate_ok.config_hash(runner.gate_config(self.Cfg({'kind': old})))
-                b = gate_ok.config_hash(runner.gate_config(self.Cfg({'kind': new})))
-                c = gate_ok.config_hash(runner.gate_config(self.Cfg({'kind': first})))
+                self.assertNotIn(first, gate_ok.HASH_KIND_AS)
+                a = gate_ok.config_hash(gate_ok.gate_config(self.Cfg({'kind': old})))
+                b = gate_ok.config_hash(gate_ok.gate_config(self.Cfg({'kind': new})))
+                c = gate_ok.config_hash(gate_ok.gate_config(self.Cfg({'kind': first})))
                 self.assertEqual(a, b)
                 self.assertEqual(a, c)
 
@@ -327,17 +327,17 @@ class GateConfigHash(unittest.TestCase):
         # gate.kind "test" and "engine-test" (and app-run, engine-run) name one kind: a record
         # made under either verifies under the other, in old and new kits alike.
         for new, old in (('test', 'engine-test'), ('app-run', 'engine-run')):
-            a = gate_ok.config_hash(runner.gate_config(self.Cfg({'steps': [], 'kind': new})))
-            b = gate_ok.config_hash(runner.gate_config(self.Cfg({'steps': [], 'kind': old})))
+            a = gate_ok.config_hash(gate_ok.gate_config(self.Cfg({'steps': [], 'kind': new})))
+            b = gate_ok.config_hash(gate_ok.gate_config(self.Cfg({'steps': [], 'kind': old})))
             self.assertEqual(a, b, new)
-        self.assertNotEqual(runner.gate_config(self.Cfg({'kind': 'build'})),
-                            runner.gate_config(self.Cfg({'kind': 'engine-test'})))
+        self.assertNotEqual(gate_ok.gate_config(self.Cfg({'kind': 'build'})),
+                            gate_ok.gate_config(self.Cfg({'kind': 'engine-test'})))
 
     def test_a_default_config_hashes_as_it_did_before_the_keys_were_removed(self):
         # The hash a repo with no gate config had at 19f5763e0, while python_tests,
         # python_tests_floor and trailers were gate keys: a record from either side verifies.
         with tempfile.TemporaryDirectory() as root:
-            self.assertEqual(gate_ok.config_hash(runner.gate_config(kconfig.load(root))),
+            self.assertEqual(gate_ok.config_hash(gate_ok.gate_config(kconfig.load(root))),
                              'fe96461f7c0adde1d0e99dd14663dd5352ed730909ba5fcfa68415cb5e237b6f')
 
 
@@ -378,7 +378,7 @@ class FullCmd(fixtures.GateRepoCase):
 class DocsOnlyAndSmoke(fixtures.GateRepoCase):
     """A docs-only change (the branch's "gate".docs_only) runs only the docs_only steps and writes
     a gate-OK record of mode `docs`; any other change runs what it selects plus the smoke steps
-    and writes mode `select`; --full writes `full` (docs/gate.md "Docs-only changes")."""
+    and writes mode `select`; --full writes `full` (docs/gate-run.md "Docs-only changes")."""
     GATE = {'smoke_steps': ['boot'],
             'docs_only': {'globs': ['docs/*.md'], 'steps': ['scrub']},
             'steps': [{'name': 'suite', 'always': True, 'cmd': mode_step('suite'), 'pass': '^mode '},
@@ -391,7 +391,7 @@ class DocsOnlyAndSmoke(fixtures.GateRepoCase):
 
     def record(self, wt, out):
         self.assertEqual(out.code, G.OK, out.lines)
-        rec, why = gate_ok.verify(wt, out.head, runner.gate_config(kconfig.load(wt)))
+        rec, why = gate_ok.verify(wt, out.head, gate_ok.gate_config(kconfig.load(wt)))
         self.assertIsNone(why, out.lines)
         return [s['name'] for s in rec['steps']], gate_ok.mode_of(rec)
 

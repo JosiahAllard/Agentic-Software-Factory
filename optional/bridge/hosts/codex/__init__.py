@@ -1,4 +1,4 @@
-"""Codex's half of the bridge (optional/bridge/port.py; optional/bridge/STATUS.md "Codex").
+"""Codex's half of the bridge (optional/bridge/port.py; optional/bridge/README.md "Status").
 
     provider     runtime.CodexSources: desktop and terminal sources from the Codex profile
     delivery     the direct desktop adapter (runtime._DirectDesktopAdapter), between two selected

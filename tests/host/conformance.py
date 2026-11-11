@@ -1,4 +1,4 @@
-"""The host conformance suite (docs/multi-host-plan.md section 2.6; docs/new-host.md): what a
+"""The host conformance suite (docs/new-host.md): what a
 supported host is. Not a test module (no `test` prefix, and the mixin is no TestCase), so it runs
 only through a host's subclass:
 
@@ -33,8 +33,8 @@ What a subclass supplies:
                   behind the contract yet; the session test skips, saying so)
   LEAK_ALLOWED    {kit path: count} of the host's name left where section 2.7 forbids it (shrink only)
 
-Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>] (plan
-decision 20), or, for a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
+Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>], or, for
+a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
 host adds no hook script. The entry is run here in-process over the host's recorded payloads.
 
 Every check reads hosts.json and the adapter's own answers; none names a host.
@@ -49,7 +49,8 @@ import re
 from unittest import mock
 
 from kitlib import content as kcontent
-from kitlib.host import Action, Decision, HostCapabilities, HostProfile, header, hookmain, registry
+from kitlib.hookrun import header, main as hookrun
+from kitlib.host import Action, Decision, HostCapabilities, HostProfile, registry
 from kitlib.host.content import ARG_TOKENS, CAPABILITIES, TOKENS, ContentError
 from tests.host.test_leaks import occurrences
 
@@ -164,11 +165,11 @@ class HostConformance(object):
         return self.cases(kind='shell')[0]
 
     def hook(self, event, payload, decide, stdin=None):
-        """(verdict, reason, code) of kitlib.host.hookmain.run over the adapter, decide standing in
+        """(verdict, reason, code) of kitlib.hookrun.main.run over the adapter, decide standing in
         for kitlib.guard.decide."""
         out = io.StringIO()
         with mock.patch('kitlib.guard.decide', decide):
-            code = hookmain.run(self.adapter, event, io.StringIO(stdin if stdin is not None else json.dumps(payload)),
+            code = hookrun.run(self.adapter, event, io.StringIO(stdin if stdin is not None else json.dumps(payload)),
                                 out, environ={}, entry='C:/kit/hook.py')
         verdict, reason = self.read_output(out.getvalue(), code)
         return verdict, reason, code
@@ -294,7 +295,7 @@ class HostConformance(object):
                  for c in self.fixtures['malformed']]
         for verdict, reason, code in runs:
             self.assertEqual((verdict, code), ('deny', deny_code))
-            self.assertIn('rule=%s' % hookmain.ERROR, reason)
+            self.assertIn('rule=%s' % hookrun.ERROR, reason)
         self.assertIn('RuntimeError: guard broke', runs[0][1])
 
     def test_a_payload_that_is_not_an_object_is_denied(self):
@@ -310,7 +311,7 @@ class HostConformance(object):
                     verdict, reason, code = self.hook(event, None, lambda *a, **k: Decision('allow'),
                                                       stdin=json.dumps(value))
                     self.assertEqual((verdict, code), ('deny', deny_code))
-                    self.assertIn('rule=%s' % hookmain.ERROR, reason)
+                    self.assertIn('rule=%s' % hookrun.ERROR, reason)
 
     # -- kit header -----------------------------------------------------------------------------
     def test_the_kit_header_reaches_every_start_event(self):
@@ -353,6 +354,9 @@ class HostConformance(object):
 
     def test_the_renderer_maps_tiers_as_hosts_json_does(self):
         self.assertEqual(self.renderer().tier_models(), dict(self.entry.tiers))
+
+    def test_the_renderer_maps_roles_as_hosts_json_does(self):
+        self.assertEqual(self.renderer().role_models(), dict(self.entry.role_models))
 
     def test_the_committed_shell_is_what_the_renderer_writes(self):
         r = self.renderer()
@@ -427,8 +431,8 @@ class HostConformance(object):
 
     def test_skills_ship_when_declared(self):
         """A host with skills ships every skill file: copied byte for byte by its renderer, or
-        loaded from content/skills itself, which its plugin manifest names (decision 29 in
-        docs/multi-host-plan.md section 7)."""
+        loaded from content/skills itself, which its plugin manifest names (docs/content.md
+        "Manifests")."""
         if not self.entry.capabilities.skills:
             return
         c = kcontent.load(self.KIT_ROOT)
@@ -526,8 +530,7 @@ class HostConformance(object):
             entry.kit_here = mock.Mock(side_effect=AssertionError('the kit was booted'))
         argv = [self.HOST, event] + ([part] if part else [])
         with mock.patch.dict(os.environ), mock.patch('kitlib.guard.decide', decide):
-            for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-                os.environ.pop(name, None)
+            os.environ.pop('PM_KIT_ROOT', None)
             code = entry.main(argv, io.StringIO(json.dumps(payload)), out, environ=environ or {},
                               hosts=self.REGISTRY or registry.PATH)
         return code, out.getvalue()
@@ -597,6 +600,6 @@ class HostConformance(object):
         over = ['%s: %d, allowed %d' % (p, n, self.LEAK_ALLOWED.get(p, 0))
                 for p, n in sorted(counts.items()) if n > self.LEAK_ALLOWED.get(p, 0)]
         self.assertEqual(over, [], 'the host name outside hosts.json, hosts/%s/ and tests '
-                                   '(docs/multi-host-plan.md 2.7)' % self.HOST)
+                                   '(ARCHITECTURE.md "Hosts")' % self.HOST)
         for p in self.LEAK_ALLOWED:
             self.assertTrue(os.path.isfile(os.path.join(self.KIT_ROOT, *p.split('/'))), p)

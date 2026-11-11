@@ -24,7 +24,7 @@ class ServiceLeaderTests(unittest.TestCase):
             self.assertTrue(leader.owns())
 
     def test_retained_private_endpoint_blocks_takeover_even_after_mutex_is_released(self):
-        from kitlib.proc.pipe import PrivateListener
+        from kitlib.platform.windows.pipe import PrivateListener
         scope=uuid.uuid4().hex
         listener=PrivateListener(r'\\.\pipe\LOCAL\pm-kit-bridge-'+scope)
         try:

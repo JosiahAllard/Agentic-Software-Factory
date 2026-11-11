@@ -113,10 +113,13 @@ class ClaudeImagesTests(unittest.TestCase):
         # The service verifies the hook within the hook's own request budget. A machine-wide
         # process listing per ancestry walk made that cost follow the machine's load and
         # process count, and the hook then gave up with nothing enrolled.
-        with patch('kitlib.proc.process.snapshot',wraps=process.snapshot) as listings:
+        win='kitlib.platform.windows.process.snapshot'
+        with patch('kitlib.proc.process.snapshot',wraps=process.snapshot) as listings, \
+                patch(win,wraps=process.snapshot) as win_listings:
             child.stdin.write(json.dumps(event).encode()+b'\n');child.stdin.flush()
             self.assertEqual(child.stdout.readline(),b'hook-done\r\n')
         self.assertEqual(listings.call_count,0)
+        self.assertEqual(win_listings.call_count,0)
         binding=next(item for item in self.controller.pairs.registered() if item.identity.native_session_id==session)
         self.assertEqual(self.sources.resolve(binding).executable,self.pythonw)
         self.assertEqual(self.sources.sender_mode(binding),'prompting')

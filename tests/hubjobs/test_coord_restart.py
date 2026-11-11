@@ -351,10 +351,10 @@ class Job(JobBase):
         self.assertEqual(self.job._fails, 1)
 
     def test_the_default_listing_waits_longer_than_the_session_start(self):
-        with mock.patch.object(C.pmstart, 'list_processes', return_value=[]) as lp:
+        with mock.patch.object(C.listing, 'list_processes', return_value=[]) as lp:
             self.assertEqual(C.list_processes(), [])
         lp.assert_called_once_with(timeout=C.PROC_TIMEOUT_S)
-        self.assertGreater(C.PROC_TIMEOUT_S, C.pmstart.TIMEOUT)
+        self.assertGreater(C.PROC_TIMEOUT_S, C.listing.TIMEOUT)
 
     def test_a_crossing_on_the_entry_holds_the_start_until_its_claim_lapses(self):
         crossing = {'phase': 'stall-stop', 'phase_at': NOW}
@@ -875,8 +875,8 @@ class Offered(unittest.TestCase):
 
     def offered(self, key, entry, pm=(None, None, None), **kw):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
-        from kitlib.backlog import store as bstore
+        from kitlib.backlog import opener, plan_narrow
+        from kitlib.backlog import store_live
 
         class Store(object):
             def __init__(s, session):
@@ -890,7 +890,8 @@ class Offered(unittest.TestCase):
             def __init__(s, root, session):
                 s.root, s.remote, s.store, s.session = root, 'origin', Store(session), session
 
-        def open_store(root, fetch=True, session=None, branch=None):
+        def open_store(root, fetch=True, session=None, branch=None, *, probes):
+            self.assertIs(probes, opener.NO_PROBES)     # an offer read stops no pull
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 
@@ -899,9 +900,10 @@ class Offered(unittest.TestCase):
             self.lives.append(getattr(ctx, 'session_live', 'unset'))
             return [mock.Mock(rec=Rec(r)) for r in self.by_session.get(ctx.session, ())], [], holding, None
         with mock.patch.object(opener, 'open_store', open_store), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split', lambda snap, root, remote: (['pull'], [], None)), \
-                mock.patch.object(bstore, 'pm_data_live_store', pm if callable(pm) else lambda root: pm):
+                mock.patch.object(store_live, 'pm_data_live_store',
+                                  pm if callable(pm) else lambda root: pm):
             return C.offered_ids(self.settings, key, entry, **kw)
 
     def test_a_session_tagged_coordinator_reads_its_own_session_only(self):

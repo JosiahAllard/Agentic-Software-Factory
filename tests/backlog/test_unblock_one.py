@@ -5,7 +5,7 @@ refuses with the blockers listed and the command to run. The `check` hint for a 
 import unittest
 
 from kitlib import kitroot
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 from kitlib.backlog.errors import Refusal, Usage
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -99,7 +99,7 @@ class DanglingHint(unittest.TestCase):
 
     def test_check_hint_names_the_on_form(self):
         r = parse(stem='FOO', id='FOO', state='blocked', blocked_on=['item:GONE', 'live-client'])
-        found = smod.dangling_items({'FOO': r})
+        found = store_read.dangling_items({'FOO': r})
         self.assertEqual(len(found), 1, found)
         self.assertIn('`unblock FOO --on item:GONE --reason "<why>"`', found[0].message)
 

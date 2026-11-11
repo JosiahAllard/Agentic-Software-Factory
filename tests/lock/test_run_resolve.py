@@ -1,10 +1,10 @@
-"""`machine_lock.py run -- ./gradlew` on Windows (kitlib.lock.run script_command): a name with no
-extension resolves to a .bat or .cmd as the shell would (over PATHEXT, beside a name with a folder
-part; a bare name on PATH only, never the current folder, and never in place of an .exe
+"""`machine_lock.py run -- ./gradlew` on Windows (kitlib.lock.run_cmdline script_command): a name
+with no extension resolves to a .bat or .cmd as the shell would (over PATHEXT, beside a name with a
+folder part; a bare name on PATH only, never the current folder, and never in place of an .exe
 CreateProcess finds), a bare x.bat is the file CreateProcess would start (the current folder
-included), and a .bat or .cmd, resolved or named, starts through an explicit cmd.exe
-line (SystemRoot's) the kit quotes itself, in the run's job. An argument cmd.exe would expand or
-split (`%`, `"`, a line break) is refused before the run books. Scratch store only."""
+included), and a .bat or .cmd, resolved or named, starts through an explicit cmd.exe line
+(SystemRoot's) the kit quotes itself, in the run's job. An argument cmd.exe would expand or split
+(`%`, `"`, a line break) is refused before the run books. Scratch store only."""
 import json
 import os
 import shutil
@@ -21,6 +21,8 @@ from .helpers import StoreCase, clean_env
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_cmdline
+    from kitlib.lock import run_held
 
 
 def make_scripts(folder, bat_lines):
@@ -51,35 +53,35 @@ class ScriptCommand(unittest.TestCase):
         self.bat = os.path.join(self.tmp, "gradlew.bat")
 
     def head(self):
-        return '"%s" /d /v:off /s /c ""%s"' % (rm.comspec(), self.bat)
+        return '"%s" /d /v:off /s /c ""%s"' % (run_cmdline.comspec(), self.bat)
 
     def test_a_folder_name_resolves_to_the_bat_beside_it(self):
-        line = rm.script_command([os.path.join(self.tmp, "gradlew"), "build"])
+        line = run_cmdline.script_command([os.path.join(self.tmp, "gradlew"), "build"])
         self.assertEqual(line.lower(), (self.head() + ' build"').lower())
 
     def test_a_bare_name_resolves_on_path(self):
-        line = rm.script_command(["gradlew", "build"], dict(clean_env(), PATH=self.tmp))
+        line = run_cmdline.script_command(["gradlew", "build"], dict(clean_env(), PATH=self.tmp))
         self.assertEqual(line.lower(), (self.head() + ' build"').lower())
 
     def test_a_bat_named_by_its_full_path_gets_the_same_line(self):
-        self.assertEqual(rm.script_command([self.bat, "build"]), self.head() + ' build"')
+        self.assertEqual(run_cmdline.script_command([self.bat, "build"]), self.head() + ' build"')
 
     def test_an_exe_or_no_match_is_left_as_given(self):
         for cmd in (["python", "-c", "pass"], ["no-such-tool-xyz", "a"],
                     [os.path.join(self.tmp, "nothing-here")], "gradlew build"):
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
 
     def test_arguments_are_quoted_for_cmd(self):
-        line = rm.script_command([self.bat, "plain", "a&b", "x y", "", "(c)", "C:\\d x\\",
-                                  "v\x0bt", "f\x0cf"])
+        line = run_cmdline.script_command([self.bat, "plain", "a&b", "x y", "", "(c)", "C:\\d x\\",
+                                           "v\x0bt", "f\x0cf"])
         self.assertEqual(line, self.head() + ' plain "a&b" "x y" "" "(c)" "C:\\d x\\\\" '
                                '"v\x0bt" "f\x0cf""')
 
     def test_an_argument_cmd_would_expand_or_split_is_refused(self):
         for arg, shown in (("%OS%", "`%`"), ('a"b', '`"`'), ("a\nb", "a line break"),
                            ("a\rb", "a line break")):
-            with self.assertRaises(rm.ScriptArgError) as cm:
-                rm.script_command([os.path.join(self.tmp, "gradlew"), "ok", arg])
+            with self.assertRaises(run_cmdline.ScriptArgError) as cm:
+                run_cmdline.script_command([os.path.join(self.tmp, "gradlew"), "ok", arg])
             self.assertIsInstance(cm.exception, OSError)
             self.assertIn("argument 2 of gradlew.bat holds %s" % shown, str(cm.exception))
 
@@ -92,7 +94,7 @@ class ScriptCommand(unittest.TestCase):
         open(os.path.join(real, "tool.exe"), "w").close()
         env = dict(clean_env(), PATH=os.pathsep.join((shims, real)))
         for cmd in (["tool", "%x%"], ["python", "-c", "print('%x%')"]):
-            self.assertIs(rm.script_command(cmd, env), cmd)
+            self.assertIs(run_cmdline.script_command(cmd, env), cmd)
 
     def in_tmp(self):
         """The current folder is self.tmp; returns an env whose PATH is an empty folder."""
@@ -108,7 +110,7 @@ class ScriptCommand(unittest.TestCase):
         for nodefault in ("", "1"):
             with mock.patch.dict(os.environ, NoDefaultCurrentDirectoryInExePath=nodefault):
                 cmd = ["gradlew", "a"]
-                self.assertIs(rm.script_command(cmd, env), cmd)
+                self.assertIs(run_cmdline.script_command(cmd, env), cmd)
 
     def test_a_bare_bat_is_the_file_createprocess_would_start(self):
         """Red before: a bare x.bat CreateProcess finds in its own folders (the current one
@@ -118,36 +120,37 @@ class ScriptCommand(unittest.TestCase):
         with mock.patch.dict(os.environ, NoDefaultCurrentDirectoryInExePath=""):
             for name in ("gradlew.bat", "GRADLEW.BAT", "gradlew.bat.", "gradlew.bat . "):
                 with self.subTest(name=name):
-                    self.assertEqual(str(rm.script_command([name, "a"], env)).lower(),
+                    self.assertEqual(str(run_cmdline.script_command([name, "a"], env)).lower(),
                                      (self.head() + ' a"').lower())
         with mock.patch.dict(os.environ, NoDefaultCurrentDirectoryInExePath="1"):
             cmd = ["gradlew.bat", "a"]      # CreateProcess skips the current folder: as given
-            self.assertIs(rm.script_command(cmd, env), cmd)
+            self.assertIs(run_cmdline.script_command(cmd, env), cmd)
             with mock.patch.dict(os.environ, PATH=self.tmp):    # its PATH, not the child's
-                self.assertEqual(str(rm.script_command(cmd, env)).lower(),
+                self.assertEqual(str(run_cmdline.script_command(cmd, env)).lower(),
                                  (self.head() + ' a"').lower())
 
     def test_a_trailing_dot_or_space_after_a_folder_part_is_dropped(self):
         for name in (self.bat + ".", self.bat + " "):
             with self.subTest(name=name):
-                self.assertEqual(rm.script_command([name, "a"]), self.head() + ' a"')
+                self.assertEqual(run_cmdline.script_command([name, "a"]), self.head() + ' a"')
 
     def test_cmd_is_systemroots_and_nothing_else(self):
-        self.assertEqual(os.path.normcase(rm.comspec()), os.path.normcase(
+        self.assertEqual(os.path.normcase(run_cmdline.comspec()), os.path.normcase(
             os.path.join(os.environ["SystemRoot"], "System32", "cmd.exe")))
         with mock.patch.dict(os.environ, ComSpec=os.path.join(self.tmp, "other.exe")):
-            self.assertTrue(rm.script_command([self.bat]).startswith('"%s" ' % rm.comspec()))
+            self.assertTrue(run_cmdline.script_command([self.bat]).startswith(
+                '"%s" ' % run_cmdline.comspec()))
         unset = {k: v for k, v in os.environ.items() if k.upper() != "SYSTEMROOT"}
         for patched in (unset, dict(os.environ, SystemRoot=self.tmp)):
             with mock.patch.dict(os.environ, patched, clear=True):
-                with self.assertRaises(rm.ScriptArgError) as cm:
-                    rm.script_command([self.bat, "build"])
+                with self.assertRaises(run_cmdline.ScriptArgError) as cm:
+                    run_cmdline.script_command([self.bat, "build"])
                 self.assertEqual(str(cm.exception), "cmd.exe not found under SystemRoot")
 
     def test_other_platforms_are_left_as_given(self):
         cmd = [os.path.join(self.tmp, "gradlew"), "%OS%"]
         with mock.patch("kitlib.platform.NAME", "linux"):
-            self.assertIs(rm.script_command(cmd), cmd)
+            self.assertIs(run_cmdline.script_command(cmd), cmd)
 
 
 @windows_only("a .bat or .cmd and PATHEXT are Windows'")
@@ -157,7 +160,7 @@ class RunScript(StoreCase):
         self.said = []
         self.store.say = self.said.append
         self.confine(1)
-        patch = mock.patch.object(rm, "WATCH_WINDOWS", False)
+        patch = mock.patch.object(run_held, "WATCH_WINDOWS", False)
         patch.start()
         self.addCleanup(patch.stop)
         self.dir = os.path.join(self.tmp, "proj")
@@ -186,7 +189,7 @@ class RunScript(StoreCase):
         make_scripts(self.dir, ['@"%s" -c "import time; time.sleep(2)"' % sys.executable])
         s = rm.book("engine-test", "kit", "resolve", cores=1, store=self.store, env=clean_env())
         with s:
-            p = s.start(rm.script_command([os.path.join(self.dir, "gradlew")]),
+            p = s.start(run_cmdline.script_command([os.path.join(self.dir, "gradlew")]),
                         stdout=subprocess.DEVNULL)
             self.assertEqual(s.job.contains(p.pid), "in")
             self.assertEqual(s.wait(p), (0, "done"))

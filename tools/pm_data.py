@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import pmdata                                           # noqa: E402
+from kitlib.config import pmdata                                    # noqa: E402
 from kitlib.pmdata import init as pminit                            # noqa: E402
 
 USAGE = 2

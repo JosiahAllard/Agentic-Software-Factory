@@ -1,5 +1,4 @@
-"""The kit's folders and process reads on Linux (docs/linux-support-plan.md section 2.2 and
-section 8, slice 9), with the meanings the Windows lookups give them.
+"""The kit's folders and process reads on Linux, with the meanings the Windows lookups give them.
 
   profile()        the user's profile folder from the password database
                    (pwd.getpwuid(os.getuid()).pw_dir), never from $HOME: a session can change

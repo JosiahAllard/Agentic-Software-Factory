@@ -2,6 +2,6 @@
 # ratchet"): the test ids that fail on Linux, one per line, sorted, none twice. A branch that fixes
 # one takes it out in the same branch; a new failure is never added to make a run green.
 #
-# Since slice 2 of docs/linux-support-plan.md the tests package imports on Linux. The list is
+# The tests package imports on Linux. The list is
 # empty: no Linux failure is accepted; a test that cannot pass on Linux is marked (tests/platforms.py)
 # or fixed.

@@ -1,13 +1,12 @@
 """tools/hub.py pages: a card's kind and folder, given at publish (--kind, --folder) and set later
 with `pages place`. The cases of tests/hubsite/test_hub_cli.py's helpers: a temp home and a server
-on port 0, or serve.ask stood in for."""
+on port 0, or localask.ask stood in for."""
 import os
 from unittest import mock
 
-from kitlib.hubsite import auth, serve
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, auth
 from tests.hubsite import test_hub_cli as cli
-
-HUB = cli.HUB
 
 
 class PagesPlaceCase(cli.VerbCase):
@@ -61,8 +60,8 @@ class PagesRouteCase(cli.CliCase):
             seen.append((method, path, token == agent, body))
             return 200, {'ok': True, 'id': 'plan', 'version': 2}
 
-        base = HUB.api.BASE
-        with mock.patch.object(serve, 'ask', ask):
+        base = api.BASE
+        with mock.patch.object(localask, 'ask', ask):
             code, out, err = self.run_cli('pages', 'publish', 'plan', '--title', 't',
                                           '--html-file', page, '--kind', 'plan', '--folder', 'f',
                                           '--port', '8791')

@@ -38,9 +38,9 @@ ctypes, CREATE_NEW_CONSOLE, DETACHED_PROCESS (unless the start's argv names pyth
 AllocConsoleWithOptions, AttachConsole, a WMI Win32_Process Create, and Start-Process, `cmd /c
 start`, `start ""` and `-WindowStyle Hidden`, and Python code text pythonw runs (`-c`) that
 starts a console child with no window choice and no kitlib import. Each one is forbidden unless it is in its home
-(RULE_HOMES: the console calls in kitlib/proc/console.py, the WMI start in kitlib/lock/detach.py,
-the lock tool's detach path) or has a HAZARD_EXEMPT row, counted and reasoned the same way as
-EXEMPT.
+(RULE_HOMES: the console calls in kitlib/platform/windows/console.py, the WMI start in
+kitlib/lock/detach.py, the lock tool's detach path) or has a HAZARD_EXEMPT row, counted and
+reasoned the same way as EXEMPT.
 """
 import os
 import unittest
@@ -71,9 +71,9 @@ EXEMPT = {
     ('kitlib/launcher/window.py', 'open_window', 'ref subprocess.run'): (
         1, 'the default of a test seam; the one call through it passes CREATE_NO_WINDOW, and the '
            'session window that PowerShell opens is meant to be seen'),
-    ('kitlib/pluginsource/claude.py', 'Runner.__init__', 'ref subprocess.run'): (
+    ('kitlib/launcher/accounts.py', 'Runner.__init__', 'ref subprocess.run'): (
         1, 'the default of a test seam; Runner.run, the one call through it, passes creationflags'),
-    ('kitlib/machinesetup/agenttemp.py', 'task_registered', 'ref subprocess.run'): (
+    ('kitlib/schedtask/read.py', 'task_registered', 'ref subprocess.run'): (
         1, 'the default of a test seam; the one call through it passes CREATE_NO_WINDOW'),
     ('kitlib/redfirst/run.py', 'cleanup_in_child', 'subprocess.Popen'): (
         1, 'its keywords are OWN_CONSOLE, which is creationflags=CREATE_NO_WINDOW on Windows: the '
@@ -95,9 +95,9 @@ HAZARD_SKIP = {     # files the hazard scan does not read: the rule's own tables
                                       'every hazard, written to a temporary repository and never run',
 }
 RULE_HOMES = {      # what -> the one file where the rule itself allows it
-    'AllocConsole': 'kitlib/proc/console.py',
-    'AllocConsoleWithOptions': 'kitlib/proc/console.py',
-    'AttachConsole': 'kitlib/proc/console.py',
+    'AllocConsole': 'kitlib/platform/windows/console.py',
+    'AllocConsoleWithOptions': 'kitlib/platform/windows/console.py',
+    'AttachConsole': 'kitlib/platform/windows/console.py',
     'WMI Win32_Process Create': 'kitlib/lock/detach.py',
 }
 
@@ -113,8 +113,8 @@ HAZARD_EXEMPT = {
     ('kitlib/guard/commands.py', '_start_process', 'Start-Process'): (3, GUARD_READS),
     ('kitlib/guard/commands.py', '_sp_unreadable', 'Start-Process'): (4, GUARD_READS),
     ('kitlib/guard/commands.py', 'invocation', 'Start-Process'): (2, GUARD_READS),
-    ('kitlib/guard/commands.py', '_nested_text', 'Start-Process'): (1, GUARD_READS),
-    ('kitlib/guard/commands.py', '_sp_shell_text', 'Start-Process'): (2, GUARD_READS),
+    ('kitlib/guard/commands_nested.py', '_nested_text', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/guard/commands_nested.py', '_sp_shell_text', 'Start-Process'): (2, GUARD_READS),
     ('kitlib/guard/rules_tools.py', '<module>', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules_tools.py', 'python_unread', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules_run.py', 'plain_run', 'Start-Process'): (1, GUARD_READS),
@@ -129,21 +129,21 @@ HAZARD_EXEMPT = {
         1, 'a load node\'s forced command (optional/loadnode/loadnode.py serve, run by sshd on a '
            'Linux node, never on Windows) replaces itself with receive-pack for a push, so the '
            'receiving side reads and writes the ssh channel itself; there is no console to open'),
-    ('kitlib/pluginsource/__init__.py', '<module>', 'DETACHED_PROCESS'): (
+    ('kitlib/pluginsource/refresh.py', '<module>', 'DETACHED_PROCESS'): (
         1, '_DETACHED (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP) is used by one start only, '
            'Popen([pythonw(), plugin_refresh.py, ...]): pythonw is a GUI program that never gets '
            'a console. The find is the bit in the constant definition; every use of the name '
            '_DETACHED in a creationflags is followed, and one in a start that does not name '
            'pythonw is reported on its own'),
-    ('kitlib/proc/console.py', '<module>', 'CREATE_NEW_CONSOLE'): (
+    ('kitlib/platform/windows/console.py', '<module>', 'CREATE_NEW_CONSOLE'): (
         2, 'the CreateProcess hook itself: it defines the bit and reads it in CONSOLE_CHOICE to '
            'leave a caller\'s own console choice alone; it never asks for one'),
-    ('kitlib/proc/console.py', '<module>', 'DETACHED_PROCESS'): (
+    ('kitlib/platform/windows/console.py', '<module>', 'DETACHED_PROCESS'): (
         2, 'the CreateProcess hook itself: it defines the bit and reads it in CONSOLE_CHOICE to '
            'leave a caller\'s own console choice alone; it never asks for one'),
-    ('kitlib/proc/win32.py', '<module>', 'CREATE_NEW_CONSOLE'): (
+    ('kitlib/platform/windows/win32.py', '<module>', 'CREATE_NEW_CONSOLE'): (
         1, 'the constant definition the kit\'s callers and tests name; defining it starts nothing'),
-    ('kitlib/proc/win32.py', '<module>', 'DETACHED_PROCESS'): (
+    ('kitlib/platform/windows/win32.py', '<module>', 'DETACHED_PROCESS'): (
         1, 'the constant definition the kit\'s callers and tests name; defining it starts nothing'),
     ('optional/bridge/win/startup.py', 'render', '-WindowStyle Hidden'): (
         2, 'renders the optional bridge\'s logon task (powershell -WindowStyle Hidden -File) and '
@@ -264,7 +264,8 @@ HAZARD_EXEMPT = {
      'DETACHED_PROCESS'): (
         1, 'asserts the flag is absent from what kitlib.proc.spawn hands on; nothing is started '
            'with it'),
-    ('tests/proc/test_winwatch.py', 'ConsoleWindow.test_a_new_console_child_is_recorded_with_its_pid',
+    ('tests/platform/test_winwatch.py',
+     'ConsoleWindow.test_a_new_console_child_is_recorded_with_its_pid',
      'CREATE_NEW_CONSOLE'): (
         1, 'the window monitor\'s one real-window test: it must open one console window to prove '
            'the monitor sees it. ConsoleWindow runs only when KIT_WINDOW_TESTS=1, so the gate never '
@@ -620,7 +621,8 @@ class HazardFixture(unittest.TestCase):
         r.write('tests/test_bad.py', 'import os\nos.system("x")\n')
         r.write('tests/test_plain.py', 'import subprocess\nsubprocess.run(["x"])\n')
         r.write('.claude/worktrees/w/bad.py', 'import os\nos.system("x")\n')
-        r.write('kitlib/proc/console.py', 'from ctypes import windll\nwindll.kernel32.AllocConsole()\n')
+        r.write('kitlib/platform/windows/console.py',
+                'from ctypes import windll\nwindll.kernel32.AllocConsole()\n')
         r.write('kitlib/other.py', 'from ctypes import windll\nwindll.kernel32.AttachConsole(-1)\n')
         r.write('kitlib/lock/detach.py', 'D = "Win32_Process -MethodName Create"\n')
         r.write('tools/other.py', 'D = "Win32_Process -MethodName Create"\n')
@@ -655,7 +657,7 @@ class HazardFixture(unittest.TestCase):
         self.assertNotIn('.claude/worktrees/w/bad.py', hazard_files(self.repo.root))
 
     def test_a_rule_home_is_allowed_only_in_its_file(self):
-        self.assertEqual(self.labels('kitlib/proc/console.py'), [])
+        self.assertEqual(self.labels('kitlib/platform/windows/console.py'), [])
         self.assertEqual(self.labels('kitlib/other.py'), ['AttachConsole'])
         self.assertEqual(self.labels('kitlib/lock/detach.py'), [])
         self.assertEqual(self.labels('tools/other.py'), ['WMI Win32_Process Create'])
@@ -706,14 +708,15 @@ class Hazards(unittest.TestCase):
     def test_the_scan_saw_the_kit(self):
         """It read Python in kitlib, tests and optional/, and the PowerShell and cmd files."""
         files = hazard_files(ROOT)
-        for rel in ('kitlib/proc/win32.py', 'tests/proc/test_console.py', 'githooks/pre-push',
-                    'reserve_ui.pyw', 'boot/hook.py', 'kitlib/host/hookmain.py'):
+        for rel in ('kitlib/platform/windows/win32.py', 'tests/proc/test_console.py',
+                    'githooks/pre-push', 'reserve_ui.pyw', 'boot/hook.py',
+                    'kitlib/hookrun/main.py'):
             self.assertIn(rel, files)
         self.assertTrue([f for f in files if f.startswith('optional/bridge/')])
         self.assertTrue([f for f in files if f.startswith('hosts/')])
         self.assertTrue([f for f in files if os.path.splitext(f)[1] in SCRIPT_EXTS])
         self.assertFalse([f for f in files if '.claude/' in f])
-        self.assertIn(('kitlib/proc/win32.py', '<module>', 'CREATE_NEW_CONSOLE'),
+        self.assertIn(('kitlib/platform/windows/win32.py', '<module>', 'CREATE_NEW_CONSOLE'),
                       [f[:3] for f in self.found])
 
 

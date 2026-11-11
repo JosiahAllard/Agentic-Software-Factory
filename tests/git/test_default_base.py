@@ -1,4 +1,4 @@
-"""The one default-base rule (kitlib.git.refs.default_base, docs/gate.md "Default base") and the
+"""The one default-base rule (kitlib.git.refs.default_base, docs/gate-run.md "Default base") and the
 environment of a kit network read (kitlib.git.cmd NETWORK_ENV), against throwaway repositories
 (tests/gitfixture.py), and the callers that use the rule: each measures against origin/main when
 the local main is stale, says so, and keeps a base the caller names."""

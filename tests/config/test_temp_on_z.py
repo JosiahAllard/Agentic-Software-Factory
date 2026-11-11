@@ -334,12 +334,12 @@ class SharedTempMakesItsFolder(HomeConfig):
                          os.path.join(r'C:\lad', 'Temp'))
 
     def test_the_gate_fallback_log_base_sits_in_the_made_folder(self):
-        from kitlib.gate import runner
+        from kitlib.records import place
         configured = os.path.join(self.home, 'not-yet', 'kit')
         self.write({'temp_dir': configured})
         real = user.shared_temp
         with mock.patch.object(user, 'shared_temp', lambda: real(self.ENV, 'win32', home=self.home)):
-            base = runner.fallback_log_base('demo')
+            base = place.fallback_log_base('demo')
         self.assertEqual(os.path.dirname(base), configured)
         self.assertTrue(os.path.isdir(configured))
 
@@ -432,8 +432,9 @@ class PrivateIndexSites(unittest.TestCase):
     """The private-index folders of commit, the backlog store and pmdata init go in the shared
     temp (user.mkdtemp), never a bare tempfile.mkdtemp in the process's TEMP."""
 
-    SITES = {'kitlib/commit/__init__.py': 1, 'kitlib/backlog/store.py': 2,
-             'kitlib/pmdata/init.py': 1, 'kitlib/worktree/remove.py': 1}
+    SITES = {'kitlib/commit/run.py': 1, 'kitlib/backlog/store_ref.py': 1,
+             'kitlib/backlog/store_folder.py': 1, 'kitlib/pmdata/init.py': 1,
+             'kitlib/worktree/remove_abandon.py': 1}
 
     def test_each_site_calls_user_mkdtemp(self):
         for rel, count in self.SITES.items():

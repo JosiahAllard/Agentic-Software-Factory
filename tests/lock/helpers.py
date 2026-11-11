@@ -20,7 +20,7 @@ if os.name == "nt":
     from kitlib.lock import holds as hl
     from kitlib.lock import layout as lay
     from kitlib.lock.store import Settings, Store, iso, utc_now
-    from kitlib.proc import process, win32
+    from kitlib.platform.windows import process, win32
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KINDS = {"kinds": {

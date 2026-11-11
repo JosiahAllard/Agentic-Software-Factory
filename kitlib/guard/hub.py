@@ -1,4 +1,4 @@
-"""What the guard's hub rules know of the Action Hub (docs/guard.md "Hub secrets"): pure helpers
+"""What the guard's hub rules know of the Action Hub (docs/guard-owner.md "Hub secrets"): pure helpers
 for kitlib.guard.rules' hub-secrets, hub-owner-verb, hub-mcp and hub-browser.
 
   secret_folder(config_path)   the hub's token folder beside the machine config file
@@ -12,10 +12,10 @@ for kitlib.guard.rules' hub-secrets, hub-owner-verb, hub-mcp and hub-browser.
   owner_mcp(tail, server)      True for a hub MCP tool only the owner calls
   hub_origins(values, ports)   the loopback host:port texts in an MCP call's input on a hub port
 
-The names are kitlib.hubsite's (auth, settings), copied rather than imported: the guard runs on
-every tool call and stays free of the hub site's imports. tests/guard/test_rules_hub.py checks
-they are the same. The owner-only MCP tool names are kitlib.hubmcp's own OWNER_ONLY, imported:
-that package's __init__ imports nothing. Nothing here reads a file or the environment.
+The names are kitlib.hubclient's (token, settings), copied rather than imported: the guard runs on
+every tool call and stays free of the hub's imports. tests/guard/test_rules_hub.py checks
+they are the same. The owner-only MCP tool names are kitlib.hubvalidate's OWNER_ONLY, imported:
+that package's __init__ imports only the standard library. Nothing here reads a file or the environment.
 
 owner_verb judges the arguments of a parsed hub tool run (kitlib.guard.rules.hub_run_args:
 python with tools/hub.py as its script or -m tools.hub, tools/hub.py run as the program, or
@@ -31,22 +31,22 @@ import os
 import re
 import urllib.parse
 
-from kitlib.hubmcp import OWNER_ONLY
+from kitlib.hubvalidate import OWNER_ONLY
 
-# kitlib.hubsite.auth: the token folder beside the machine config, and its files
+# kitlib.hubclient.token: the token folder beside the machine config, and its files
 FOLDER_NAME = 'hub'
 OWNER_FILE = 'owner.token'
 AGENT_FILE = 'agent.token'
 # the key the owner's approval path will sign with, guarded before that path exists
 APPROVAL_FILE = 'approval.key'
 SECRET_FILES = (OWNER_FILE, AGENT_FILE, APPROVAL_FILE)
-# kitlib.hubsite.settings: the store's folder in the PM data worktree, and the two listeners
+# kitlib.hubclient.settings: the store's folder in the PM data worktree, and the two listeners
 STORE_DIR = 'hub'
 PORT = 8790
 TUNNEL_PORT = 8791
 
-# The hub MCP server's owner-only tools: the server's own list (kitlib.hubmcp, which imports
-# nothing, so the server is not loaded)
+# The hub MCP server's owner-only tools: the list in kitlib.hubvalidate (the MCP server
+# imports it, and is not loaded here)
 OWNER_MCP_TOOLS = OWNER_ONLY
 # words in a hub tool's name that make it the owner's too, whatever a later server calls it
 OWNER_MCP_WORDS = ('decide', 'approve')
@@ -66,7 +66,7 @@ SCAN_ITEMS = 4000
 
 def secret_folder(config_path):
     """The hub's token folder: `hub` beside the machine config file `config_path` (the
-    kitlib.config.user DIR_NAME file, as kitlib.hubsite.auth.folder finds it)."""
+    kitlib.config.user DIR_NAME file, as kitlib.hubclient.token.folder finds it)."""
     return os.path.join(os.path.dirname(config_path), FOLDER_NAME)
 
 
@@ -181,11 +181,10 @@ def ports(hub):
 
 # tools/hub.py's parser (argparse: subcommand names are exact; a long option may be cut to a
 # unique prefix). Verbs with no sub-verb that are the owner's, and the owner sub-verbs.
-# unpair ends every paired browser's session; stop and restart (the hub server's) are held before
-# tools/hub.py has them
+# unpair ends every paired browser's session; stop and restart are the hub server's
 OWNER_VERBS = ('answer', 'open', 'pair', 'unpair', 'stop', 'restart')
 OWNER_SUBS = {'todos': ('done',), 'stories': ('add', 'withdraw'), 'to-pm': ('add', 'send'),
-              'inbox': ('read',), 'approvals': ('approve', 'deny')}
+              'inbox': ('read',), 'approvals': ('approve', 'deny', 'apply')}
 # options a listed verb takes before its sub-verb, and those that take a value
 VERB_OPTS = ('--port', '--json', '--status', '--repo', '--help')
 VERB_VALUE_OPTS = ('--port', '--status', '--repo')

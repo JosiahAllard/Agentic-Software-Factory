@@ -1,4 +1,4 @@
-"""kitlib.maintlint.page: a run's result as one static HTML page that kitlib.hubsite.pagecheck.check
+"""kitlib.maintlint.page: a run's result as one static HTML page that kitlib.hubvalidate.pagecheck.check
 passes (docs/maint-lint.md "Output"): no script, no link, no url(); every value escaped.
 
   render(result)   the whole document, as a string
@@ -11,7 +11,7 @@ first findings of each check, and the first notes, and says how many it left out
 import html
 import re
 
-from kitlib.hubsite import pagecheck
+from kitlib.hubvalidate import pagecheck
 
 STYLE = ('body{font:14px/1.45 system-ui,sans-serif;margin:16px;max-width:1100px;color:#1d1d1f;'
          'background:#fff}h1{font-size:20px}h2{font-size:16px;margin-top:24px}'

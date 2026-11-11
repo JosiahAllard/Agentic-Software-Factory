@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 import optional.bridge.win.startup as startup
 from optional.bridge.win.runtime import parse_config
-from kitlib.proc.pipe import process_sids
+from kitlib.platform.windows.pipe import process_sids
 from kitlib.proc.job import Job
 from kitlib.proc.spawn import pythonw_beside
 

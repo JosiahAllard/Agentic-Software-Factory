@@ -1,5 +1,4 @@
-"""Every role name the kit's prose and code names is a role file (decision 17, docs/multi-host-plan.md
-section 7: the role list lives only in content/roles/).
+"""Every role name the kit's prose and code names is a role file (ARCHITECTURE.md "Content").
 
 The scan reads only the unambiguous forms: `{{agent:<name>}}` anywhere; a host's dispatch name
 (hosts.json agent_name_format, filled in with the kit plugin's name) anywhere when its prefix holds
@@ -17,7 +16,7 @@ from kitlib import content
 from kitlib.backlog import roles as backlog_roles
 from kitlib.host import registry
 from kitlib.launcher import start
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 
 from hosts.claude.adapter import host as claude_host
 

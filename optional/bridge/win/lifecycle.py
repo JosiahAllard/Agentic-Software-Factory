@@ -9,7 +9,7 @@ import threading
 import uuid
 
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.pipe import (K,INVALID,SecurityAttributes,bind,close,
+from kitlib.platform.windows.pipe import (K,INVALID,SecurityAttributes,bind,close,
     create_file,descriptor,from_sddl,local_free,process_sids,protect_file)
 from kitlib.proc.process import own_ctime
 from .controller import Controller

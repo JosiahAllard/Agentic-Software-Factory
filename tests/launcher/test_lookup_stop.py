@@ -12,6 +12,7 @@ class Lookup(unittest.TestCase):
     def test_rc_name_parses_every_quoting(self):
         self.assertEqual(lookup.rc_name("claude --remote-control 'a b' -n x"), 'a b')
         self.assertEqual(lookup.rc_name('claude --remote-control "q" -n x'), 'q')
+        self.assertEqual(lookup.rc_name('claude --remote-control "a b"'), 'a b')
         self.assertEqual(lookup.rc_name('claude --remote-control=bare-a1 -n x'), 'bare-a1')
         self.assertIsNone(lookup.rc_name('claude --resume x'))
         self.assertIsNone(lookup.rc_name(None))

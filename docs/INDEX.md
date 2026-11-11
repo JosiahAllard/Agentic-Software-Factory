@@ -13,7 +13,28 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `CLAUDE.md` | Claude's pointer: imports AGENTS.md | always | kw: rules, claude
 - `AGENTS.md` | kit repo rules for every agent host (canonical) | always | kw: rules, agents
 - `README.md` | what the kit is | first look | kw: readme, overview
-- `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract, design, target
+- `ARCHITECTURE.md` | the kit's high-level design, the top authority: layers, every package and what it owns, dependency rules, contracts, data ownership | before any design or change | kw: architecture, contract, design, target, layers, modules, hld
+- `docs/modules/base-design.md` | low-level design: platform, proc, fs, schedtask, the wires, root files | changing OS, process or file code | kw: design, lld, base, platform, proc, fs, schedtask
+- `docs/modules/git-design.md` | low-level design: git and the fake git | changing git access | kw: design, lld, git, fake-git
+- `docs/modules/host-design.md` | low-level design: host contract, registry, attribution, host folders, boot | changing a host adapter or the contract | kw: design, lld, host, adapter, hosts.json, attribution
+- `docs/modules/content-design.md` | low-level design: roles and skills written once, render, roster, githooks | changing how content renders | kw: design, lld, content, roles, skills, render
+- `docs/modules/config-design.md` | low-level design: .kit.json, machine config, pointer, PM-data record, PM settings | changing config | kw: design, lld, config, kit-json, machine-config
+- `docs/modules/lock-design.md` | low-level design: the machine lock, its API and UIs | changing the lock | kw: design, lld, lock, machine-lock, lockui, lockmcp
+- `docs/modules/records-design.md` | low-level design: gate-OK record, landing lock, in flight, verdict entry, landed | changing a record's format or place | kw: design, lld, records, gate-ok, landing-lock, landed
+- `docs/modules/hub-design.md` | low-level design: hub client, shapes, server, jobs, MCP, automatic tasks | changing the Action Hub | kw: design, lld, hub, hubclient, hubsite, hubjobs
+- `docs/modules/owner-files-design.md` | low-level design: owner-only paths, approvals and who applies them, the delegation list | changing owner-file rules | kw: design, lld, owner-files, approval, owner-only, delegations
+- `docs/modules/ledger-design.md` | low-level design: rulings ledger, rulebooks, pending steps | changing the ledger | kw: design, lld, ledger, rulebook, pending
+- `docs/modules/checks-design.md` | low-level design: doc tools, repo checks, module map, maintenance lint | changing a check | kw: design, lld, checks, docs, scrub, module-map, maint-lint
+- `docs/modules/tests-design.md` | low-level design: test selection, runners, red-first, the ratchet | changing test tools | kw: design, lld, tests, kit_tests, selection, redfirst
+- `docs/modules/sessions-design.md` | low-level design: launcher, watcher, session starts, coordinator state | changing sessions or a start | kw: design, lld, sessions, launcher, pmstart, pmwatch
+- `docs/modules/backlog-design.md` | low-level design: records, scope and claims, plans, narrowing, roles | changing the backlog | kw: design, lld, backlog, scope, narrowing, claims
+- `docs/modules/worktree-design.md` | low-level design: worktrees, classify, remove, sweep, scratch trees, preflight | changing worktree tools | kw: design, lld, worktree, sweep, preflight, scratch
+- `docs/modules/commit-design.md` | low-level design: commit, sync base, review pack | changing commit checks | kw: design, lld, commit, sync-base, review-pack
+- `docs/modules/gate-design.md` | low-level design: the gate, reuse, rerun, load nodes, daily full run | changing the gate | kw: design, lld, gate, reuse, rerun, daily-full, load-nodes
+- `docs/modules/landing-design.md` | low-level design: verdict queue, landing steps, what a landing runs, batch, cleanup | changing landing | kw: design, lld, landing, verdict, merged-gate, strict
+- `docs/modules/guard-design.md` | low-level design: guard rules, parser, role policy, hook runner, agent view | changing the guard or a hook | kw: design, lld, guard, hookrun, role-policy
+- `docs/modules/install-design.md` | low-level design: kit export, machine setup, installers, templates | changing install or refresh | kw: design, lld, install, pluginsource, machine-setup, export
+- `docs/modules/extras-design.md` | low-level design: Blender bridge and the optional packages | changing an optional package | kw: design, lld, extras, optional, blender, bridge
 - `docs/agent-profile.md` | this repo's profile for worker agents | starting a task | kw: profile, branches, build, test
 - `.claude/agent-profile.md` | stub: the profile moved to docs/agent-profile.md | an agent names the old path | kw: profile
 - `.claude/coordinator-profile.md` | this repo's coordinator profile: risk map pointer, agent types, owner decisions | coordinating the kit | kw: coordinator, profile
@@ -38,37 +59,44 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/backlog-store.md` | backlog store design | changing the store | kw: backlog-store, store
 - `docs/branch-overlap.md` | branch overlap: unmerged branches touching a file set | checking a sweep's exclusions | kw: branch_overlap, overlap
 - `docs/commit.md` | commit.py and machine_paths.py | committing | kw: commit, machine_paths
-- `docs/content.md` | content/ and render_content: roles and skills written once, rendered per host with the plugin manifests (kit.json's version) and the kit header | editing an agent or a skill | kw: content, render_content, roles, render, kit.json, manifest, header
+- `docs/content.md` | content/ and render_content: roles and skills written once, rendered per host with the specialty skills, the docs-writer tier and the plugin manifests (kit.json's version) and the kit header | editing an agent or a skill | kw: content, specialty, skills, roster, merge, render_content, roles, render, kit.json, manifest, header
 - `docs/coord-state.md` | coord_state.py: a coordinator's event log, on by default, and the state note rendered from it | reading or changing the event log, its note, or who appends | kw: coord_state, coord-state, coordstate, event log, judgments
 - `docs/daily-full.md` | daily_full | the nightly full run | kw: daily-full, nightly
 - `docs/delegations.md` | the owner's delegation list: location, schema 1, the hard exclusions E1 to E5, running one, known limits | reading or changing what the PM may run for the owner, or running it | kw: delegations, owner-delegations, exclusions, delegated, runner
 - `docs/doc-tools.md` | doc_budget, doc_index, codemap | finding or checking docs | kw: doc-tools, doc_index, doc_budget, codemap, find, section, stale
 - `docs/engineering-rulings.md` | engineering rulings | before a design choice | kw: rulings, engineering
-- `docs/flaky-tests.md` | flaky tests: the time fence (kitlib.clock; agentstart's budget), the reviewer rules for a time budget | a test fails under load, adding a time budget | kw: flaky, flake, time-fence, clock, budget
-- `docs/gate.md` | gate.py | running the gate | kw: gate, test, stash
-- `docs/go-live.md` | go-live list | switching a repo to the kit | kw: go-live
-- `docs/guard.md` | shell guard and git hooks | a command is refused | kw: guard, hooks, refusal, hub secrets
-- `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
-- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
+- `docs/gate.md` | gate.py: the index of its pages | running the gate | kw: gate, test, stash
+- `docs/gate-run.md` | gate.py: commands, exit codes, steps, auto-detected gate, daemons, console windows | running or configuring the gate | kw: gate, steps, exit codes, commands, daemons, docs-only
+- `docs/gate-records.md` | gate.py: Gate-OK and Result records, gate budget, session cap, gate queue | a gate record, budget or queue | kw: gate, records, budget, queue, result, unchanged red
+- `docs/gate-rerun-checkout.md` | gate.py: stopping a gate, targeted rerun, the caller's checkout, stash guard, limits | stopping, rerunning or running a gate from another checkout | kw: gate, rerun, stash, caller checkout
+- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
+- `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
+- `docs/guard.md` | shell guard and git hooks: the index of its pages | a command is refused | kw: guard, hooks, refusal, hub secrets
+- `docs/guard-core.md` | shell guard: output, refusal log, rule modes, hosts, parsing, state | reading a guard refusal or how the guard parses a line | kw: guard, refusal log, modes, hosts, parsing
+- `docs/guard-rules.md` | shell guard: the rules and kit paths in advice | a rule refuses a command | kw: guard, rules, refusal, instead
+- `docs/guard-jail-roles.md` | shell guard: write jail, generated files, role policy, backlog roles, gate allow, batch files | a write is jailed or a role is refused | kw: guard, write jail, git jail, role policy, backlog roles
+- `docs/guard-fallback.md` | shell guard: the fallback and its known limits, weakened checks by row, lock MCP, session mark, agent names | the guard cannot read a line | kw: guard, fallback, weakened checks, known limits, session mark
+- `docs/guard-owner.md` | shell guard: owner lock tools, machine setup, delegation list, hub secrets | an owner-only tool or a hub secret is refused | kw: guard, owner, hub secrets, delegation
+- `docs/guard-hooks.md` | shell guard: pre-push, owner-only commits, self-test, settings entry | a push or commit is refused | kw: guard, pre-push, owner-only
+- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, checked before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin
 - `docs/jev-fit-audit.md` | Jev fit audit step 1: the kit's routing and labelling decisions, cost and fit findings (desk study, no trial) | weighing a structured-decision model for kit decisions | kw: jev, fit-audit, audit, cost
 - `docs/kit-json.md` | `.kit.json` keys, types and defaults | configuring | kw: kit-json, config
 - `docs/landed.md` | landed: has a branch landed | checking a branch | kw: landed
 - `docs/launcher.md` | launcher | starting sessions | kw: launcher, launch
 - `docs/ledger.md` | the rulings ledger | recording a ruling | kw: ledger, rulings
-- `docs/linux-support-plan.md` | Linux support plan (mostly built): the platform seam, Linux backends, the guard's path review, CI, slices and owner questions | planning or building Linux support | kw: linux, platform, posix, cgroup, wsl, port
+- `docs/linux-support-plan.md` | Linux support: what is still open (peer messaging and the bridge, the docs, CI legs, the live proofs) and the reference-VM test procedure | finishing Linux support or running tests on the Linux VM | kw: linux, platform, posix, cgroup, wsl, port
 - `docs/load-nodes.md` | load nodes: the registry and its repos opt-in, setting up a node, node.py list, status, run, follow and stop, choosing a machine, lock runs on a node, exit codes | sending heavy runs to another box | kw: load-node, node.py, loadnode, registry, offload
 - `docs/lock-api.md` | machine lock API, runs on a load node | heavy runs | kw: lock, machine-lock
 - `docs/lock-mcp.md` | lock MCP server | lock from an agent | kw: lock-mcp, mcp
 - `docs/lock-release.md` | lock release pre-check | releasing a lock | kw: lock-release
 - `docs/machine-setup.md` | machine setup | a new machine | kw: machine-setup, setup, leftover links, kit.cmd
 - `docs/maint-lint.md` | maintenance lint: read-only upkeep findings (holds, dead pulls and blockers, duplicates, paths gone, worktrees, landed pulls and closes of unlanded work, ledger counts, the gates' module scope sum), each with its fix; its weekly schedule and lock slot; its page published on the hub as `maint-lint-<repo>` | linting a repository's upkeep | kw: maint-lint, maint_lint, maintenance, upkeep, schedule
+- `docs/module-architecture.md` | the generated module page: each module's layer and same-layer names, and the allowed edges | reading the module structure | kw: module-architecture, modules, layers, generated
 - `docs/module-map.md` | module boundary check: the map file, kinds, ratchets and ceilings, detectors, the architecture page, the scope report and its records summed weekly, isolation runs | changing what a module may depend on, or reading a change's scope | kw: module-map, module_map, modules, boundary, scope
 - `docs/model-ab.md` | model A/B results | choosing a model | kw: model, ab
-- `docs/multi-host-plan.md` | multi-host architecture plan (approved; steps 0-20 built) | changing host adapters, plugins or the bridge | kw: multi-host, codex, host, plugin, bridge
 - `docs/agent-review.md` | agent review: usage, refusals, definition findings (undecided) | choosing a model, editing agent definitions | kw: agent-review, agents, model
-- `optional/bridge/README.md` | the agent bridge (optional install): layout, the host port, contracts, configuration, install | changing or installing the bridge, adding a host's bridge half | kw: bridge, optional, port, mcp, messaging, install
-- `optional/bridge/STATUS.md` | the agent bridge: what works per host and direction, what is open | before relying on the bridge | kw: bridge, status, capability, matrix
+- `optional/bridge/README.md` | the agent bridge (optional install): layout, the host port, contracts, configuration, status per host and direction, install | changing or installing the bridge, adding a host's bridge half | kw: bridge, optional, port, mcp, messaging, install, status, capability, matrix
 - `docs/new-host.md` | adding a host: the hosts.json entry, adapter, shell, fixtures and the conformance suite | adding an AI platform | kw: new-host, host, adapter, conformance, hosts.json
 - `docs/new-worktree.md` | new_worktree | starting a task | kw: new-worktree, worktree
 - `docs/pending.md` | the pending-steps file | pending steps | kw: pending
@@ -83,10 +111,8 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/repo-checks.md` | forbidden, trailers, pieces | repo checks | kw: forbidden, trailers, pieces
 - `docs/review-pack.md` | review_pack | preparing a review | kw: review-pack, review
 - `docs/shipping.md` | what ships | changing the shipped set | kw: shipping, ships
-- `docs/specialty-skills.md` | decided and built spec: specialties as skills, merged read and docs agent types (analyst, docs-writer) | changing the roster or a specialty skill | kw: specialty, skills, roster, roles, merge
-- `docs/subtraction-audit.md` | kit subtraction audit: code, tools and config to remove or shrink, kept items, owner decisions | planning removals | kw: subtraction-audit, audit, removal
 - `docs/sync-base.md` | sync_base | main moved | kw: sync-base, merge
-- `docs/test-tools.md` | testlist, tool_deps, pytests | test selection | kw: testlist, tool_deps, pytests, tests
+- `docs/test-tools.md` | testlist, tool_deps, pytests, the time fence (kitlib.clock) and flaky tests | test selection | kw: flaky, flake, time-fence, clock, budget, testlist, tool_deps, pytests, tests
 - `docs/windows-token-leak.md` | Windows token leak: slow process launches | slow launches | kw: windows, token-leak
 - `docs/worktree-paths.md` | worktree paths | where worktrees live | kw: worktree-paths
 - `docs/worktree-remove.md` | worktree remove | removing a worktree | kw: worktree-remove, sweep
@@ -155,15 +181,14 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/plugin_refresh.py` | export pushed kit main and refresh the plugin in every account folder (`docs/plugin-source.md`) | kw: plugin_refresh, plugin
 - `tools/pieces.py` | the path-to-piece table (`docs/repo-checks.md`) | kw: pieces
 - `tools/pm_data.py` | make or re-link the PM-data branch (`docs/pm-data-branch.md`) | kw: pm_data
-- `tools/trailers.py` | fail a commit with no agent trailer (`docs/repo-checks.md`) | kw: trailers
+- `tools/trailers.py` | warn on a commit with no agent trailer (`docs/repo-checks.md`) | kw: trailers
 - `tools/worktree_paths.py` | which path a worktree write may go to (`docs/worktree-paths.md`) | kw: worktree_paths
 - `tools/worktree_sweep_task.py` | nightly worktree sweep scheduled task (`docs/worktree-remove.md`) | kw: worktree_sweep_task, sweep
 - `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Extras") | kw: auto_tasks, tick, schedules, kit-automatic-tasks
 - `tools/no_window.py` | run a program with no console window, for a scheduled task (`docs/daily-full.md` "The schedule") | kw: no_window, console window, scheduled task
 - `tools/account_inventory.py` | read-only: how far each Claude account folder has drifted from the shared setup (`docs/machine-setup.md` "Account inventory") | kw: account_inventory, account, inventory
-- `tools/config_move.py` | move the machine config from the home folder into the PM repository; dry run, `--apply` copies (`docs/kit-json.md` "Moving the machine config into the PM repo") | kw: config_move, machine config
-- `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it (`docs/action-hub.md`) | kw: hub, serve
+- `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it; the verbs' work is in `kitlib/hubsite/cli/`, the parser in `tools/_hub_args.py` (`docs/action-hub.md`) | kw: hub, serve
 - `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
 - `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node
 - `tools/stack_skill.py` | copy a stack's skills into a repository (`docs/install.md`) | kw: stack_skill, stack
-- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate.md` "The landing queue") | kw: verdict, queue
+- `tools/verdict.py` | queue a reviewed branch's verdict for landing (`docs/gate-landing.md` "The landing queue") | kw: verdict, queue

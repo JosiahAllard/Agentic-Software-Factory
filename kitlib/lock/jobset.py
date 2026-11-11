@@ -1,7 +1,6 @@
-"""The jobs of one held run where a job starts one command (Linux; docs/linux-support-plan.md
-section 8, slice 7).
+"""The jobs of one held run where a job starts one command (Linux).
 
-kitlib.lock.run's Slot starts every command of a run (a gate's steps, red-first's selectors) in
+kitlib.lock.run_held's Slot starts every command of a run (a gate's steps, red-first's selectors) in
 its `job`. A Windows job object takes any number of them. A Linux job (kitlib.platform.linux
 .contain.Job) starts one command and refuses a second, so on Linux a Slot's job is a JobSet: a
 job of its own for each command, behind the one Job interface the Slot, the give-back and the

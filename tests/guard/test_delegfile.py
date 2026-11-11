@@ -1,4 +1,4 @@
-"""The owner's delegation list (kitlib.guard.delegfile, docs/guard.md "Owner delegation list"): every
+"""The owner's delegation list (kitlib.guard.delegfile, docs/guard-owner.md "Owner delegation list"): every
 session but the owner's own is refused a write, move or delete of either copy, the home one
 (~/.pm-kit/owner-delegations.json) and the PM repository's (<pointer>/.pm-kit/...), by file
 tool, shell or git; reads and copies out stay open."""
@@ -181,7 +181,7 @@ class OwnerDelegations(unittest.TestCase):
     def test_a_brace_line_past_the_limit_is_refused(self):
         """A word whose brace groups give more than 256 words is not written out, so no path rule
         sees the words bash makes from it: rule brace-limit refuses the line in every session, the
-        owner's included (docs/guard.md "Rules"). At 256 words every word is read, and the list's
+        owner's included (docs/guard-rules.md "Rules"). At 256 words every word is read, and the list's
         own rule refuses the line."""
         many = ','.join('a%d' % n for n in range(1, 257))
         over = ('rm ~/.pm-kit/owner-{delegations,%s}.json' % many,

@@ -1,19 +1,52 @@
 """kitlib.hubsite.apibase: what the api's handlers share: the role and status constants, Route and
-Request, the error body, the readers of a request's body and query, and ApiConfig (the api module docstring
-has the rules; kitlib.hubsite.api re-exports every name here, so a caller keeps importing it
-from there)."""
+Request, the error body, the readers of a request's body and query, and ApiConfig (the rules
+are "Fields" and "Creators" below; kitlib.hubsite.api re-exports every name here, so a caller
+keeps importing it from there).
+
+Fields. A write route names the body fields it takes; any other field is refused (`invalid`, the
+field named), so a body cannot carry a field another role owns (an agent posting a question
+cannot post its answer). status, the time stamps and a to-do's `from: you` are set here from the
+route and the role, never taken from the body. A write to an existing document is pinned to the
+version this module read (or the caller's `if_version`), so a check made on one version is never
+applied to another: the loser gets `conflict`. The `from` an agent gives a to-do is a name in
+printable ASCII (0x21 to 0x7E, single spaces inside it, the ends trimmed); anything else is
+`invalid`, and so is any spelling of `you`. A question's `from` is the session its answer goes
+back to: a key of the launcher's sessions.json, read on each add (Api's session_keys), or `pm`,
+which is also what an absent one is; any other is `invalid`, and the refusal names the known
+keys, never the file; when sessions.json or the launcher's settings cannot be read, only `pm` is
+known and the refusal says the read failed, with the exception's class name. A new to-do's `steps` are made into its commands and detail here and are
+not kept (todo_steps); an agent's to-do is judged by the owner's to-do rules (kitlib.hubsite.
+todosteps.check) for every client. An agent's new to-do may give `record` {repo, id} (checked as
+a question's, _bound): the record waits on the owner until the to-do is done (park_item,
+`until: owner todo:T-n done`), and its withdrawal or the owner's deletion drops that line
+(unpark_item). The owner's to-do and every to-do edit take no record. On the edit routes a null `repo` (and a to-do's
+null `detail`) clears the field exactly as "" does; any other null field is read as absent.
+
+Creators. An agent edits (POST questions/{id}/edit, todos/{id}/edit) or withdraws (POST
+questions/{id}/delete, todos/{id}/delete) only an open item it added: the body gives the item's
+own `from` (`pm` matches an item with none) and the `if_version` it read, both required, and an
+owner's to-do (`from: you`) is never an agent's. A wrong `from` is `forbidden`, an item no longer
+open is `conflict`, field status, and neither changes it. POST questions/{id}/done takes an
+optional `from` (default `pm`) and is `forbidden`, field from, unless it is the question's own
+`from` or `pm`. Every agent shares one token, so the `from` is a claim: the check stops a mistake, not an agent that gives another's name. An agent's
+to-do edit is judged by the owner's to-do rules (todo_steps), the changed fields only; it takes
+no `steps`. The owner edits only a to-do of their own (any status) and deletes one of their own
+at any status, or any open question or open to-do; the owner never edits an agent's item. A
+withdrawal deletes the document: there is no withdrawn status.
+"""
 import collections
 import dataclasses
 import datetime
 import math
 import re
 
-from . import pagecheck
+from kitlib import hubvalidate
+from kitlib.hubclient.push import PM_KEY
+from kitlib.hubclient.token import AGENT, ANY, OWNER
+from kitlib.hubvalidate import BASE, natural as _natural, pagecheck
 from .store import HubError
 
-BASE = '/api/v1'
 API_VERSION = 'v1'
-OWNER, AGENT, ANY = 'owner', 'agent', 'any'
 APPROVER = 'approver'               # a route for the strong owner alone ("Roles")
 LOCK_WRITE = 'lock-write'           # a lock write: the owner here, the strong owner remotely
 ROLES = (OWNER, AGENT, ANY, APPROVER, LOCK_WRITE)   # what a route may ask for
@@ -33,19 +66,17 @@ WRITES_WHY = {
               'the strong owner, or Cloudflare Access)'}
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
           'unavailable': 503, 'internal': 500}
-WAIT_MAX_S = 55
 FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
 LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
 LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
 LOCK_DAYS_MAX = 366                 # GET lock/stats `days`
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's via (kitlib.hubsite.httpd): a remote view
 ACK_WINDOW_S = 30 * 60              # a creator's time to handle an item handed to it ("Routes")
-REACH_GRACE_S = WAIT_MAX_S + 30     # a key is reachable this long after its last wait ("Routes")
+REACH_GRACE_S = hubvalidate.WAIT_MAX_S + 30   # a key is reachable this long after its last wait ("Routes")
 ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
 VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
 OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
-AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
-AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')
+AGENT_FROM = PM_KEY                 # a to-do's `from` when an agent gives none
 DAYS_MAX = 3650
 # what a caller who is not the owner is told in place of the store's own message, by code
 AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
@@ -56,10 +87,9 @@ Request = collections.namedtuple('Request', 'role params body query via strong f
 
 _TRUE = ('1', 'true', 'yes', 'on')
 _FALSE = ('', '0', 'false', 'no', 'off')
-_ID_SPLIT = re.compile(r'([0-9]+)')
 _NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
 _SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
-# A hub item's id or a ruling's anywhere in a page id ("Pages"): hubvalidate._REF's pattern, plus
+# A hub item's id or a ruling's anywhere in a page id ("Pages" in apipages): hubvalidate._REF's pattern, plus
 # A, E and R and the per-repo ledger id H-<repo>-nnnn, searched, so neither `plan-Q-1` nor `Q-1.v2` holds a ref a reader would follow.
 _REF_SHAPED = re.compile(r'(?<![A-Za-z0-9])(?:[QMTPSARE]-\d+|H-[a-z0-9][a-z0-9-]*-\d+)(?![A-Za-z0-9])', re.I)
 PAGE_HTML_MAX = pagecheck.MAX_BYTES
@@ -71,11 +101,6 @@ def error_body(code, message, field=''):
 
 def _invalid(message, field=''):
     return HubError('invalid', message, field)
-
-
-def _natural(doc_id):
-    # split on a group: text at the even places, ASCII digits at the odd ones
-    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
 
 
 def _version(doc):
@@ -192,11 +217,11 @@ def _timeout(req):
     """A wait's `timeout` query: seconds, WAIT_MAX_S when not given; not capped here."""
     raw = _q(req, 'timeout')
     try:
-        timeout = float(raw) if raw else float(WAIT_MAX_S)
+        timeout = float(raw) if raw else float(hubvalidate.WAIT_MAX_S)
     except ValueError:
         timeout = float('nan')
     if not math.isfinite(timeout) or timeout < 0:
-        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (WAIT_MAX_S, raw),
+        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (hubvalidate.WAIT_MAX_S, raw),
                        'timeout')
     return timeout
 

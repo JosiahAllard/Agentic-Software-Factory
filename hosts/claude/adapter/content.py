@@ -4,13 +4,15 @@ Each role becomes `hosts/claude/shell/agents/<name>.md`: front matter opening wi
 line as a YAML comment (kitlib.host.content.banner; the front matter stays the file's first thing),
 then `name`, `description`, `tools` (the
 role's capabilities as Claude tool names, in order; no line for `capabilities: all`), `model`
-(the role's `model.claude` override, else hosts.json's `tiers` model for its tier: tier_models), `effort`
+(hosts.json's Claude `role_models` model for the role, else its `tiers` model for its tier:
+role_models, tier_models), `effort`
 when the role has one, and for `cache: long` the `experimental` map with `cacheTtl: 1h`; then the
 body with its tokens filled from tokens(): TOKENS, and PROFILE_TOKENS read from hosts.json's Claude
-entry, so a value hosts.json holds is written once; `{{model:<tier>}}` from tier_models() and
+entry, so a value hosts.json holds is written once (`{{long_context_model}}` names the role's own
+`model` line's model: long_context_phrase); `{{model:<tier>}}` from tier_models() and
 `{{tool:<capability>}}` from TOOLS, the map the `tools` line uses. Lines end as the role file's do.
-Skills are not copied: the plugin manifest points at `content/skills/` itself (decision 29 in
-docs/multi-host-plan.md section 7).
+Skills are not copied: the plugin manifest points at `content/skills/` itself (docs/content.md
+"Manifests").
 
 manifests(kit, content) writes the files that carry the kit's one version (kit.json; ARCHITECTURE.md
 "Packaging"), each JSON with indent 2 and a final newline:
@@ -22,7 +24,7 @@ manifests(kit, content) writes the files that carry the kit's one version (kit.j
   `.claude-plugin/plugin.<platform>.json`, which the plugin export writes in its place.
 - `.claude-plugin/marketplace.json`: the checkout as a local marketplace of that one plugin
   (`"source": "./"`), its version as `metadata.version`.
-- HOOKS_REL: the plugin's hooks (HOOKS), each command line from kitlib.host.hookmain.manifest_command
+- HOOKS_REL: the plugin's hooks (HOOKS), each command line from kitlib.hookrun.main.manifest_command
   for Windows: the kit's one hook entry, ${CLAUDE_PLUGIN_ROOT}/ENTRY, with `claude`, the event and,
   for the coordinator rules, its part (boot/hook.py). Each other platform hosts.json gives Claude
   gets the same hooks with that platform's command line in hooks_rel(platform),
@@ -33,15 +35,17 @@ generated-file line; plugin.json's description says it is rendered.
 """
 import json
 
-from kitlib import agentname
-from kitlib.host import hookmain, registry
+from kitlib.host import agentname
+from kitlib.hookrun import main as hookrun
+from kitlib.host import registry
 from kitlib.host.content import ContentError, banner, quote, role_source, substitute
 
 HOST = 'claude'
 SHELL_REL = 'hosts/claude/shell'
 AGENTS_REL = SHELL_REL + '/agents'
 SKILLS_REL = 'content/skills'                  # the plugin's skills: the content folder itself
-RETIRED_SKILLS_REL = SHELL_REL + '/skills'     # the skills' copy before decision 29: any file there is stale
+# the skills' copy before they moved to content/skills: any file there is stale
+RETIRED_SKILLS_REL = SHELL_REL + '/skills'
 HOOKS_REL = SHELL_REL + '/hooks/hooks.json'
 MANIFEST_REL = '.claude-plugin/plugin.json'
 MARKETPLACE_REL = '.claude-plugin/marketplace.json'
@@ -65,8 +69,8 @@ MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mc
 
 
 def mcp_servers(platform='windows'):
-    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookmain.mcp_interpreter)."""
-    command = hookmain.mcp_interpreter(platform)
+    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookrun.mcp_interpreter)."""
+    command = hookrun.mcp_interpreter(platform)
     return {name: dict(server, command=command) for name, server in MCP_SERVERS.items()}
 TOOLS = {
     'read': 'Read', 'edit': 'Edit', 'write': 'Write', 'search': 'Grep', 'find': 'Glob',
@@ -90,8 +94,15 @@ PROFILE_TOKENS = {
     'owner_folder': lambda host: next(p for p in host.profile.owner_paths if p.endswith('/')),
     'user_folder': lambda host: '~/' + host.profile.state_directory,
     'coauthor_email': lambda host: host.profile.attribution.email,
-    'long_context_model': lambda host: 'the 1M-context %s model' % dict(host.tiers)['deep'],
+    'long_context_model': lambda host: long_context_phrase(dict(host.tiers)['deep']),
 }
+
+
+def long_context_phrase(model):
+    """How role prose names the model a launched long-context session runs on."""
+    return 'the 1M-context %s model' % model
+
+
 CACHE_TTL = {'long': '1h'}
 
 
@@ -116,6 +127,10 @@ class ClaudeContent:
         """hosts.json's Claude `tiers`: the one tier -> model map."""
         return dict(registry.host(HOST).tiers)
 
+    def role_models(self):
+        """hosts.json's Claude `role_models`: the roles it runs on a model other than their tier's."""
+        return dict(registry.host(HOST).role_models)
+
     def owned(self):
         return (AGENTS_REL,)
 
@@ -136,19 +151,20 @@ class ClaudeContent:
     def role_path(name):
         return '%s/%s.md' % (AGENTS_REL, name)
 
-    def settings(self, role, tiers=None):
+    def settings(self, role, tiers=None, role_models=None):
         """[(key, value)] of the front matter `role`'s agent file runs it with, in the file's order:
-        `tools` (no line for `capabilities: all`), `model`, `effort`, `autoCompactWindow` (the role's
-        `compact`; the CLI holds a subagent's window at or under it), and `cacheTtl` (under
-        `experimental`)."""
+        `tools` (no line for `capabilities: all`), `model` (Role.model_for: `role_models`, else
+        `tiers`; default: hosts.json's), `effort`, `autoCompactWindow` (the role's `compact`; the
+        CLI holds a subagent's window at or under it), and `cacheTtl` (under `experimental`)."""
         tiers = self.tier_models() if tiers is None else tiers
+        role_models = self.role_models() if role_models is None else role_models
         out = []
         if not role.all_tools:
             missing = [c for c in role.capabilities if c not in TOOLS]
             if missing:
                 raise ContentError('%s: no Claude tool for %s' % (self.role_path(role.name), ', '.join(missing)))
             out.append(('tools', ', '.join(TOOLS[c] for c in role.capabilities)))
-        out.append(('model', role.model_for(HOST, tiers)))
+        out.append(('model', role.model_for(tiers, role_models)))
         if role.effort:
             out.append(('effort', role.effort))
         if role.compact:
@@ -157,17 +173,21 @@ class ClaudeContent:
             out.append(('cacheTtl', CACHE_TTL[role.cache]))
         return out
 
-    def agent_file(self, role, names, values=None, tiers=None):
+    def agent_file(self, role, names, values=None, tiers=None, role_models=None):
         """The bytes of `role`'s agent file; `names` are every role's name (for agent tokens),
-        `values` the tokens' values and `tiers` the tier -> model map (default: hosts.json's)."""
+        `values` the tokens' values, `tiers` the tier -> model map and `role_models` the role ->
+        model map (default: hosts.json's)."""
         src = self.role_path(role.name)
         values = tokens() if values is None else values
         tiers = self.tier_models() if tiers is None else tiers
+        role_models = self.role_models() if role_models is None else role_models
+        # {{long_context_model}} names the model this role runs on: its role_models entry, else its tier's
+        values = dict(values, long_context_model=long_context_phrase(role.model_for(tiers, role_models)))
         fill = lambda text: substitute(text, values, agent_name, names, src, models=tiers,    # noqa: E731
                                        tools=TOOLS)
         lines = ['---', '# ' + banner(role_source(role.name)), 'name: %s' % role.name,
                  'description: %s' % quote(fill(role.description))]
-        for key, value in self.settings(role, tiers):
+        for key, value in self.settings(role, tiers, role_models):
             lines += ['experimental:', '  cacheTtl: %s' % value] if key == 'cacheTtl' else ['%s: %s' % (key, value)]
         lines.append('---')
         nl = role.newline
@@ -175,10 +195,10 @@ class ClaudeContent:
 
     def render(self, content):
         names = content.role_names()
-        values, tiers = tokens(), self.tier_models()
+        values, tiers, role_models = tokens(), self.tier_models(), self.role_models()
         out = {}
         for role in content.roles:
-            out[self.role_path(role.name)] = self.agent_file(role, names, values, tiers)
+            out[self.role_path(role.name)] = self.agent_file(role, names, values, tiers, role_models)
         return out
 
     def hooks(self, registry_path=None, platform='windows'):
@@ -186,7 +206,7 @@ class ClaudeContent:
         events = {}
         for event, matcher, part in HOOKS:
             hook = {'type': 'command'}
-            hook.update(hookmain.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), platform, HOST, event,
+            hook.update(hookrun.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), platform, HOST, event,
                                                   *([part] if part else []), blocking=event == tool_event))
             group = {'matcher': matcher} if matcher else {}
             group['hooks'] = [hook]
@@ -220,14 +240,14 @@ class ClaudeContent:
 
 def manifest_rel(platform):
     """The plugin manifest for `platform`: MANIFEST_REL on Windows, the one Claude Code reads;
-    beside it `plugin.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its
+    beside it `plugin.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its
     place."""
     return MANIFEST_REL if platform == 'windows' else MANIFEST_REL[:-len('.json')] + '.%s.json' % platform
 
 
 def hooks_rel(platform):
     """The hooks file for `platform`: HOOKS_REL on Windows, the one plugin.json names; beside it
-    `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its place."""
+    `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its place."""
     return HOOKS_REL if platform == 'windows' else HOOKS_REL[:-len('.json')] + '.%s.json' % platform
 
 

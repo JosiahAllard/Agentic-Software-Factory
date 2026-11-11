@@ -148,8 +148,8 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual([p['source'] for p in market['plugins']], ['./'])
 
     def test_the_hook_commands_come_from_the_one_helper(self):
-        from kitlib.host import hookmain
-        want = hookmain.manifest_command('x', 'windows')['command']
+        from kitlib.hookrun import main as hookrun
+        want = hookrun.manifest_command('x', 'windows')['command']
         hooks = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.json')['hooks']
         self.assertEqual(sorted(hooks), ['SessionStart', 'SubagentStart'])
         for event, groups in hooks.items():
@@ -161,7 +161,8 @@ class ManifestTest(unittest.TestCase):
         """hooks.linux.json: every event, matcher and hook argument hooks.json has, each run by the
         Linux command line (a start event: python3 under /bin/sh, printing the did-not-load line
         when it fails), so the two files differ in the command alone."""
-        from kitlib.host import hookmain, registry
+        from kitlib.hookrun import main as hookrun
+        from kitlib.host import registry
         self.assertEqual(registry.host('claude').platforms, ('windows', 'linux'))
         windows = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.json')['hooks']
         linux = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.linux.json')['hooks']
@@ -169,7 +170,7 @@ class ManifestTest(unittest.TestCase):
         for event in windows:
             self.assertEqual([g.get('matcher') for g in linux[event]], [g.get('matcher') for g in windows[event]])
             for w, l in zip((h for g in windows[event] for h in g['hooks']), (h for g in linux[event] for h in g['hooks'])):
-                self.assertEqual(l, dict(w, **hookmain.manifest_command(w['args'][0], 'linux', *w['args'][1:])))
+                self.assertEqual(l, dict(w, **hookrun.manifest_command(w['args'][0], 'linux', *w['args'][1:])))
                 self.assertEqual(l['args'][:3], ['-c', l['args'][1], 'kit-hook'])
                 self.assertIn('the kit did not load', l['args'][1])
 
@@ -198,7 +199,7 @@ class ManifestTest(unittest.TestCase):
                 content.load_kit(root)
 
     def test_every_role_names_its_policy_mode(self):
-        """The owner's table (docs/guard.md "Role policy"): leads control, builders write, the
+        """The owner's table (docs/guard-jail-roles.md "Role policy"): leads control, builders write, the
         read-only roles read, the test-runner tests, the lander lands. role_modes reads the same."""
         want = {'pm': 'controller', 'coordinator': 'controller',
                 'weak-worker': 'write', 'worker': 'write', 'senior-worker': 'write', 'strong-worker': 'write', 'deep-worker': 'write',
@@ -250,11 +251,14 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(r.newline, '\r\n')
         self.assertEqual(r.body, 'body\r\n')
 
-    def test_a_model_override_beats_the_tier(self):
-        r = hc.parse_role(BETA.replace(b'tier: deep\n', b'tier: deep\nmodel.claude: sonnet\n'))
-        self.assertEqual(r.models, (('claude', 'sonnet'),))
-        self.assertEqual(r.model_for('claude', {'deep': 'opus'}), 'sonnet')
-        self.assertEqual(r.model_for('other', {'deep': 'big'}), 'big')
+    def test_a_role_models_entry_beats_the_tier(self):
+        r = hc.parse_role(BETA)
+        self.assertEqual(r.model_for({'deep': 'opus'}, {'beta': 'sonnet'}), 'sonnet')
+        self.assertEqual(r.model_for({'deep': 'big'}, {'other': 'sonnet'}), 'big')
+
+    def test_a_role_file_names_no_model(self):
+        with self.assertRaisesRegex(hc.ContentError, 'unknown key model.x'):
+            hc.parse_role(BETA.replace(b'tier: deep\n', b'tier: deep\nmodel.x: sonnet\n'))
 
     def test_refusals(self):
         for old, new in ((b'tier: standard', b'tier: huge'), (b'sandbox: workspace-write', b'sandbox: open'),
@@ -377,6 +381,28 @@ class ClaudeRendererTest(unittest.TestCase):
         got = claude_content.renderer().render(self.content(role, BETA))['hosts/claude/shell/agents/alpha.md']
         self.assertIn(b'\nmodel: sonnet\neffort: low\nautoCompactWindow: 170000\n---\n', got)
 
+    def test_long_context_model_names_the_roles_own_model(self):
+        """{{long_context_model}} names the role's model: its role_models entry, else its tier's."""
+        own = BETA.replace(b'---\nbody', b'---\nuse {{long_context_model}}', 1)
+        self.assertNotEqual(own, BETA)
+        r = claude_content.renderer()
+        got = r.agent_file(hc.parse_role(own), ('beta',), role_models={'beta': 'fable'})
+        self.assertIn(b'\nmodel: fable\n', got)
+        self.assertIn(b'use the 1M-context fable model', got)
+        got = r.agent_file(hc.parse_role(own), ('beta',), role_models={})
+        self.assertIn(b'\nmodel: opus\n', got)
+        self.assertIn(b'use the 1M-context opus model', got)
+
+    def test_the_real_deep_worker_runs_fable_and_the_consultant_opus(self):
+        """Owner decision: deep-worker alone runs fable on Claude; the consultant keeps the deep tier's
+        opus. The rendered agent files (hosts.json itself: tests/host/test_registry.py)."""
+        for name, model in (('deep-worker', 'fable'), ('consultant', 'opus')):
+            with open(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md'), 'rb') as f:
+                got = f.read().decode('utf-8').replace('\r\n', '\n')
+            with self.subTest(name):
+                self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
+                self.assertIn('the 1M-context %s model' % model, got)
+
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))
         self.assertEqual(claude_content.renderer().tier_models(), dict(registry.host('claude').tiers))
@@ -458,8 +484,8 @@ class TempTreeTest(unittest.TestCase):
 
     def test_an_installed_plugin_export_is_never_written(self):
         # --write run from an installed export once rewrote its plugin.json
-        from kitlib import pluginsource
-        self.assertEqual(content.EXPORT_MARKER, pluginsource.MARKER)
+        from kitlib.pluginsource import layout as plugin_layout
+        self.assertEqual(content.EXPORT_MARKER, plugin_layout.MARKER)
         write(self.path('kit.json'), b'{"name": "pm-kit", "version": "9.8.7"}\n')
         write(self.path('.pm-kit-export'), b'Q:/somewhere\n')
         before = read(self.path('.claude-plugin', 'plugin.json'))

@@ -24,7 +24,7 @@ add and send, inbox read) are refused to the agent. The creator of an open quest
 with `edit` and removes it with `withdraw`, naming the `from` it was added with and the version it read;
 the owner never edits an agent's item and only removes one (docs/hub-questions.md "questions/Q-NNN" and docs/hub-records.md "todos/T-NNN").
 
-Verbs (`tools/hub.py` docstring is the source), with the line each prints:
+Verbs (the docstrings of `kitlib/hubsite/cli/` are the source), with the line each prints:
 
 | Verb | Prints |
 |---|---|

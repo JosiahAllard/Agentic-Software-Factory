@@ -1,11 +1,11 @@
-"""kitlib.worktree.scratch reachability (`reachable`, `_reaches`) and remove.kept_reflog: whether
+"""kitlib.worktree.scratch reachability (`reachable`, `_reaches`) and remove_checks.kept_reflog: whether
 a ref reaches every commit a tree's HEAD reflog holds is decided by one git call for all of them,
 whatever the number of refs and commits, and each commit still gets its own right answer."""
 import os
 import unittest
 from unittest import mock
 
-from kitlib.worktree import remove, scratch
+from kitlib.worktree import remove_checks, scratch
 from tests import gitfixture
 
 WALKS = ('merge-base', 'rev-list')
@@ -29,7 +29,7 @@ class ReachCase(unittest.TestCase):
             self.chain.append(self.fx.commit('c%d' % i, 'c%d.txt' % i))
         self.lone = self.fx.git('commit-tree', self.base + '^{tree}', '-p', self.base, '-m',
                                 'lone', cwd=self.repo).strip()
-        self.ctx, refused = remove.open_ctx(self.repo)
+        self.ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
 
     made = 0
@@ -42,14 +42,14 @@ class ReachCase(unittest.TestCase):
 
     def walks(self, call):
         """`(call's result, the number of reachability walks git ran)`."""
-        real, seen = remove.git, []
+        real, seen = remove_checks.git, []
 
         def counting(cwd, *args, **kw):
             if args[:1] and args[0] in WALKS:
                 seen.append(args[0])
             return real(cwd, *args, **kw)
 
-        with mock.patch.object(remove, 'git', counting):
+        with mock.patch.object(remove_checks, 'git', counting):
             got = call()
         return got, len(seen)
 
@@ -70,7 +70,7 @@ class Batched(ReachCase):
         self.spare(20)
         reflog = mock.patch.object(scratch, 'reflog', return_value=(self.chain + [self.lone], None))
         with reflog:
-            got, n = self.walks(lambda: remove.kept_reflog(self.ctx, 'p', self.lone, True))
+            got, n = self.walks(lambda: remove_checks.kept_reflog(self.ctx, 'p', self.lone, True))
         self.assertEqual(got, self.chain + [self.lone], self.ctx.out)
         self.assertEqual(n, 1)
 
@@ -78,11 +78,11 @@ class Batched(ReachCase):
         self.spare(20)
         head = self.chain[1]                # not a tip: naming its ref would walk per ref
         with mock.patch.object(scratch, 'reflog', return_value=(self.chain, None)):
-            got, n = self.walks(lambda: remove.kept_reflog(self.ctx, 'p', head, False))
+            got, n = self.walks(lambda: remove_checks.kept_reflog(self.ctx, 'p', head, False))
         self.assertEqual(got, self.chain, self.ctx.out)
         self.assertEqual(n, 1)
         with mock.patch.object(scratch, 'reflog', return_value=([self.lone, head], None)):
-            self.assertIsNone(remove.kept_reflog(self.ctx, 'p', head, False))
+            self.assertIsNone(remove_checks.kept_reflog(self.ctx, 'p', head, False))
         self.assertIn('holds %s, which no ref reaches' % self.lone[:10], self.ctx.out[-1])
 
 
@@ -117,12 +117,12 @@ class Answers(ReachCase):
         on_lone = self.fx.git('commit-tree', self.base + '^{tree}', '-p', self.lone, '-m', 'top',
                               cwd=self.repo).strip()
         with mock.patch.object(scratch, 'reflog', return_value=([self.lone, on_lone], None)):
-            self.assertEqual(remove.kept_reflog(self.ctx, 'p', on_lone, True),
+            self.assertEqual(remove_checks.kept_reflog(self.ctx, 'p', on_lone, True),
                              [self.lone, on_lone], self.ctx.out)
         other = self.fx.git('commit-tree', self.base + '^{tree}', '-p', self.base, '-m', 'other',
                             cwd=self.repo).strip()
         with mock.patch.object(scratch, 'reflog', return_value=([other, on_lone], None)):
-            self.assertIsNone(remove.kept_reflog(self.ctx, 'p', on_lone, True))
+            self.assertIsNone(remove_checks.kept_reflog(self.ctx, 'p', on_lone, True))
         self.assertIn('holds %s, which no ref reaches' % other[:10], self.ctx.out[-1])
 
 

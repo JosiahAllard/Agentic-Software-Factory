@@ -3,12 +3,16 @@ import re
 import unittest
 from pathlib import Path
 
+from kitlib.host import registry
 from tests.shipped import scan
 
+# every model a Claude agent file may name: the host's tier models and its role_models (hosts.json)
+CLAUDE_MODELS = ({m for _, m in registry.host("claude").tiers}
+                 | {m for _, m in registry.host("claude").role_models})
 AGENTS = Path(__file__).resolve().parents[2] / "hosts" / "claude" / "shell" / "agents"
 EXPECTED = {"pm", "coordinator", "weak-worker", "worker", "senior-worker", "strong-worker", "deep-worker", "consultant",
             "analyst", "lander", "docs-writer", "test-runner", "helper", "topic"}
-# the seven role files the specialty skills replaced (docs/specialty-skills.md): no host ships them
+# the seven role files the specialty skills replaced (docs/content.md "Specialty skills"): no host ships them
 RETIRED = ("asset-smith", "tech-artist", "sound-smith", "researcher", "reviewer", "records", "spec-writer")
 BULK_RULE = "Bulk work to the helper"
 BULK_PARENTS = ("worker", "strong-worker", "senior-worker", "deep-worker")
@@ -227,7 +231,7 @@ class AgentFilesTest(unittest.TestCase):
             self.assertIsNotNone(fm, p.name)
             self.assertEqual(fm.get("name"), p.stem, p.name)
             self.assertTrue(fm.get("description"), p.name)
-            self.assertIn(fm.get("model"), {"opus", "sonnet", "haiku"}, p.name)
+            self.assertIn(fm.get("model"), CLAUDE_MODELS, p.name)
 
     def test_plugin_manifest_lists_every_agent_file(self):
         # plugin.json's `agents` takes files, not a folder, and replaces the default agents/
@@ -235,7 +239,7 @@ class AgentFilesTest(unittest.TestCase):
         manifest = json.loads((AGENTS.parents[3] / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(manifest["agents"]),
                          sorted("./hosts/claude/shell/agents/%s" % p.name for p in AGENTS.glob("*.md")))
-        # the skills are content/skills itself: no rendered copy (decision 29, docs/content.md)
+        # the skills are content/skills itself: no rendered copy (docs/content.md)
         self.assertEqual(manifest["skills"], ["./content/skills/"])
         self.assertTrue((AGENTS.parents[3] / "content" / "skills").is_dir())
         self.assertFalse((AGENTS.parents[3] / "hosts" / "claude" / "shell" / "skills").exists())

@@ -2,8 +2,8 @@
 
 A host is an AI platform the kit runs on, such as Claude Code. Adding one means adding a folder
 and one `hosts.json` entry. A host adds no hook script: its hooks run the kit's one entry,
-`boot/hook.py <host> <event>` (plan decision 20). No file in `kitlib/`, `content/`, `boot/` or
-another host's folder changes (docs/multi-host-plan.md section 2.7; ARCHITECTURE.md "Hosts"). A
+`boot/hook.py <host> <event>`. No file in `kitlib/`, `content/`, `boot/` or
+another host's folder changes (ARCHITECTURE.md "Hosts"). A
 host is supported when its test
 class passes the conformance suite, `tests/host/conformance.py`.
 
@@ -24,9 +24,10 @@ checks the whole file, and one bad field refuses all of it. The fake host's entr
 |---|---|
 | `adapter` | The adapter's dotted module name, `hosts.<name>.adapter`. kitlib never imports it. `tools/_host.py` does. |
 | `shell` | `hosts/<name>/shell`, the folder with the host's manifests and rendered files |
-| `platforms` | The operating systems it runs on, such as `["windows", "linux"]`. The renderer writes one hook manifest for each (`hooks.json` for Windows, `hooks.<platform>.json` beside it for the others), each command line from `kitlib.host.hookmain.manifest_command` for that platform's interpreter (docs/content.md "Manifests"). |
+| `platforms` | The operating systems it runs on, such as `["windows", "linux"]`. The renderer writes one hook manifest for each (`hooks.json` for Windows, `hooks.<platform>.json` beside it for the others), each command line from `kitlib.hookrun.main.manifest_command` for that platform's interpreter (docs/content.md "Manifests"). |
 | `default` | Leave it out. Exactly one host is the default, and it is `claude`. |
 | `tiers` | `light`, `standard`, `strong` and `deep`, each mapped to the host's model id (docs/ROSTER.md) |
+| `role_models` | Optional. `{"<role>": "<model id>"}`: a role this host runs on that model instead of its tier's (`Role.model_for`; each key a role file's name). Leave it out when every role runs its tier's model. |
 
 `capabilities` says what the host's hooks can carry. The core uses it to degrade one way for every host:
 
@@ -62,9 +63,9 @@ checks the whole file, and one bad field refuses all of it. The fake host's entr
 | `attribution` | The commit trailer: `name`, `email`, `model_env` (or `null`), and `model_pattern` (`null` allows any model name); optional `session_trailer` (`{"key", "env", "url"}` with one `{id}` in `url`, or `null`), the session line its commits carry (docs/commit.md) |
 | `agent_name_format` | How it names a bundled agent: `{plugin}` once at most, then `{name}` last |
 | `session_process` | The process image of a session it launches |
-| `env_prefixes` | The environment variable prefixes its sessions own (`CLAUDE_`). A child launched on another host never inherits them (`kitlib.sessionmark.child_environment`). |
+| `env_prefixes` | The environment variable prefixes its sessions own (`CLAUDE_`). A child launched on another host never inherits them (`kitlib.host.sessionmark.child_environment`). |
 | `cli_program` | The name its CLI runs as on Linux (`claude`). |
-| `cli_package` | Its npm package's scoped name, `@scope/name` (`@anthropic-ai/claude-code`). With `cli_program` it tells a Linux `node` process that runs the CLI from any other: its script lies in the package directly under a `node_modules` folder (`kitlib.pmstart.runs_cli`). |
+| `cli_package` | Its npm package's scoped name, `@scope/name` (`@anthropic-ai/claude-code`). With `cli_program` it tells a Linux `node` process that runs the CLI from any other: its script lies in the package directly under a `node_modules` folder (`kitlib.launcher.lookup.runs_host_cli`). |
 
 ## 2. The adapter: `hosts/<name>/adapter/`
 
@@ -77,7 +78,7 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   subagent's identity goes in `agent`, and its bare role in `agent_role`. A payload of the wrong
   shape raises, and the hook then denies it. A call that acts on several targets (Codex's
   `apply_patch` adds, deletes and renames files in one call) returns a tuple of Actions, one per
-  target: `hookmain` judges each and the first deny decides. An empty tuple is denied.
+  target: `hookrun` judges each and the first deny decides. An empty tuple is denied.
 - `screen(action, environ)` (optional): the host's own policy over one Action, a `Decision` or
   `None`. It runs before the guard; its deny stands alone. Use it only for what is true of this
   host and no other (Codex: a shell command that runs `apply_patch`, a tool outside its allowlist).
@@ -86,7 +87,7 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
 - `render(event_name, decision) -> (stdout, exit code)`. Use the host's own deny form. An allow
   says nothing. A host without ask never receives an ask.
 - `context(event_name, text) -> (stdout, exit code)`. A start event adds `text` (the kit header,
-  `kitlib.host.header`) to the agent's context. No text writes nothing.
+  `kitlib.hookrun.header`) to the agent's context. No text writes nothing.
 - `CONTEXT_EVENTS`: the start events, every hook event but `hook.tool_event`.
 - `start_text(event_name, kit, payload, environ, part)` (optional): the text one start hook adds,
   when it is more than the kit header (Codex adds a lead's start checks). `part` names one of
@@ -105,7 +106,7 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   `host`, `tier_models()` (the same map as `hosts.json` `tiers`), `owned()` (folders in the shell
   where it writes every file), `render(content)` for every role (and every skill if the host has
   skills), and `manifests(kit, content)` for the plugin files carrying `kit.json`'s version and the
-  hook registration (command lines from `hookmain.manifest_command`). Role bodies fill tokens from
+  hook registration (command lines from `hookrun.manifest_command`). Role bodies fill tokens from
   the host's own table (docs/content.md "Tokens"): every one-value token in `kitlib.host.content.TOKENS`,
   `{{model:<tier>}}` from `tier_models()` and `{{tool:<capability>}}` from its capability map, passed
   to `kitlib.host.content.substitute` (`models=`, `tools=`). For `tools/agent_view.py` it also says
@@ -124,15 +125,17 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   `--reviewer-model` with, a function from a reviewer id to the sorted models that subagent's
   transcripts show: `[]` for a subagent id with no transcript found (`add` queues with a NOTE),
   `None` for an id that is not a subagent's (a session name, not looked up). `verdict.py` asks
-  for it with `getattr`; without it no reviewer model is checked (Codex; docs/gate.md "Strict
+  for it with `getattr`; without it no reviewer model is checked (Codex; docs/gate-landing-policy.md "Strict
   paths"; Claude: `hosts/claude/adapter/agent_models.py` `models`).
 - `agent_verdict()` (optional): the reviewer verdict reader `tools/verdict.py add` refuses a
-  `LAND` over a reviewer's `SEND BACK` with, a function from a reviewer id to `(found, verdict)`:
-  `found` whether a transcript of that subagent was found (`add` queues with a NOTE when not),
-  `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND BACK`)
-  or `None` (refused), or `'unread'` when a transcript was found and cannot be read (refused:
-  fail closed); `None` for an id that is not a subagent's. Asked for with `getattr` the
-  same way; without it no reviewer verdict is checked (Codex; docs/gate.md "Strict paths";
+  `LAND` over a reviewer's `SEND BACK` with, a function from a reviewer id to `(found, verdict,
+  report)`: `found` whether a transcript of that subagent was found (`add` queues with a NOTE when
+  not), `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND
+  BACK`) or `None` (refused), or `'unread'` when a transcript was found and cannot be read
+  (refused: fail closed), `report` that final report's text (`None` when none was read), whose
+  `Checks:`, `Done-when:` and `Design:` lines `add` checks too; `None` for an id that is not a
+  subagent's. Asked for with `getattr` the
+  same way; without it no reviewer verdict is checked (Codex; docs/gate-landing-policy.md "Strict paths";
   Claude: `hosts/claude/adapter/agent_models.py` `verdict`).
 - The renderer's optional `vendored(root)`: `{path: bytes}` of kit files the host's plugin ships a
   copy of, read from the kit checkout `root` and drift-checked with the rest. A plugin root that is
@@ -144,10 +147,10 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
 ## 3. The shell: `hosts/<name>/shell/`
 
 - No hook script. The manifest the renderer writes registers each hook event as
-  `<interpreter> <root>/boot/hook.py <host> <event>` (`hookmain.manifest_command`), `<root>` the
+  `<interpreter> <root>/boot/hook.py <host> <event>` (`hookrun.manifest_command`), `<root>` the
   plugin root's variable. The entry reads the host's `hosts.json` `hook` data, skips an unguarded
   call before the kit boots, boots the kit (docs/kitboot.md), imports the adapter `hosts.json` names
-  and calls `kitlib.host.hookmain.dispatch`: the guard through `hookmain.run` for the tool event,
+  and calls `kitlib.hookrun.main.dispatch`: the guard through `hookrun.run` for the tool event,
   which fails closed (any error becomes the host's deny), and `ADAPTER.context` for a start event.
   When the kit will not boot, a tool call exits 2 (a block on every host so far) and a start event
   says so in plain text. The fake host's `plugin.json` runs it this way. One exception: a host
@@ -182,7 +185,7 @@ The suite checks:
 - the registry entry, and the adapter `tools/_host.py` imports
 - parse for every case, and subagent identity only where it is declared
 - a several-target call denied when any one target is
-- render of allow, deny and ask, and the ask lowered through `hookmain.run`
+- render of allow, deny and ask, and the ask lowered through `hookrun.run`
 - fail-closed denies
 - the kit header at each start event
 - sessions, rendered-file drift, and every role rendered

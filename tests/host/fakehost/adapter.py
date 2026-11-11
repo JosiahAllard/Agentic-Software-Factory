@@ -7,7 +7,7 @@ Its hook payloads, made up but shaped like a real host's:
                  any other name a call no rule judges
   session_begin  {"cwd"}
 Its answer: nothing for an allow; for a deny {"block": true, "message": <reason>} and exit 2. It
-has no ask: kitlib.host.hookmain lowers one to a deny before render sees it (hosts.json
+has no ask: kitlib.hookrun.main lowers one to a deny before render sees it (hosts.json
 capabilities), so render refuses an ask outright. It has no hook script: its plugin.json runs the
 kit's one entry, boot/hook.py, with its name and the event (its hosts.json "hook" entry names the
 guarded tools; the plugin root is the kit, as Claude's is).
@@ -15,7 +15,8 @@ guarded tools; the plugin root is the kit, as Claude's is).
 import json
 import os
 
-from kitlib.host import Action, header, hookmain, registry
+from kitlib.hookrun import header, main as hookrun
+from kitlib.host import Action, registry
 
 NAME = 'fakehost'
 SHELL_REL = 'tests/host/fakehost/shell'
@@ -67,6 +68,9 @@ class FakeContent(object):
     def tier_models(self):
         return dict(registry.host(NAME).tiers)
 
+    def role_models(self):
+        return dict(registry.host(NAME).role_models)
+
     def owned(self):
         return (AGENTS_REL,)
 
@@ -86,11 +90,11 @@ class FakeContent(object):
         return '%s/%s.json' % (AGENTS_REL, name)
 
     def settings(self, role):
-        return [('model', role.model_for(NAME, self.tier_models())), ('sandbox', role.sandbox)]
+        return [('model', role.model_for(self.tier_models(), self.role_models())), ('sandbox', role.sandbox)]
 
     def manifests(self, kit, content, registry_path=None):
         entry = registry.host(NAME, registry_path)
-        hooks = {e: hookmain.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), entry.platforms[0], NAME, e)
+        hooks = {e: hookrun.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), entry.platforms[0], NAME, e)
                  for e in entry.capabilities.hook_events}
         return {MANIFEST_REL: _dump({'name': kit['name'], 'version': kit['version'], 'hooks': hooks,
                                      'agents': sorted(content.role_names())})}
@@ -139,7 +143,7 @@ class FakeAdapter(object):
         if decision.verdict == 'allow':
             return '', 0
         if decision.verdict == 'ask':
-            raise ValueError('this host has no ask (hookmain lowers it first)')
+            raise ValueError('this host has no ask (hookrun lowers it first)')
         return json.dumps({'block': True, 'message': decision.reason}) + '\n', 2
 
     @staticmethod

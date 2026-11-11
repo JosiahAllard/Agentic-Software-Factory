@@ -1,4 +1,4 @@
-"""The lock's hardware look on Linux (docs/linux-support-plan.md section 2.4, slice 6 of section 8):
+"""The lock's hardware look on Linux:
 kitlib.platform.linux.hardware reads /sys and /proc, layout.detect_linux turns that into detect()'s
 dict, and the four synthetic trees of tests/lock/linux_trees.py divide with no shared id. These
 run on any platform: the reader is pointed at a tree in a temp folder. LiveSys reads the running

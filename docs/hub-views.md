@@ -2,8 +2,8 @@
 
 ## Machine lock routes
 The hub server reads and changes the machine lock in-process through `kitlib.lock.api` (the owner's
-decision), for the schedule page. `kitlib/hubsite/api.py` docstring "Machine lock" is the source; the
-server's door to the lock is `kitlib/hubsite/lockdoor.py`, made by `serve.machine_sources` and first
+decision), for the schedule page. `kitlib/hubsite/apilock.py` docstring "Machine lock" is the source; the
+server's door to the lock is `kitlib/hubsite/lockdoor.py`, made by `servesources.machine_sources` and first
 opening the lock on its first call.
 - Three reads, all the owner's: `GET /api/v1/lock/view`, `GET /api/v1/lock/stats` and `GET
   /api/v1/lock/wait`. An agent token, or no token, is refused every one with 403 `forbidden` (field
@@ -76,8 +76,8 @@ Never stored; read from their sources (`kitlib.hubsite.derived`, `kitlib.hubsite
   snapshot reads as the routes do.
 - usage: `launch.py usage` (docs/launcher.md "Usage").
 - agents: the rendered agent definitions of the host the server runs for (`<host shell>/agents`,
-  `serve.agents_dir`).
-- skills: the kit's skill sources, `<kit>/content/skills/<name>/SKILL.md` (`serve.skills_dir`): each one's
+  `servesources.agents_dir`).
+- skills: the kit's skill sources, `<kit>/content/skills/<name>/SKILL.md` (`servesources.skills_dir`): each one's
   name (the folder's) and description (its front matter). `GET /api/v1/skills` and the snapshot carry
   just those; `GET /api/v1/skills/<name>` gives one skill's body, the name checked against the listed folders
   (an unknown or malformed name is a 404 or 400). Never a host's rendered copy.
@@ -99,8 +99,8 @@ and a private repository asks the viewer to sign in on the host; the hub cannot 
 request to the host.
 
 ## The record page
-One backlog record, read live and never part of the snapshot (`kitlib/hubsite/api.py` `record`,
-`record_new` and the record writes block; `kitlib/hubsite/serve.py` `SiteViews`). `{repo}` only picks a
+One backlog record, read live and never part of the snapshot (`kitlib/hubsite/apiread.py` `record`,
+`record_new` and the record writes block; `kitlib/hubsite/serveviews.py` `SiteViews`). `{repo}` only picks a
 configured repository (`Views._named` in `kitlib/hubsite/backlog.py`); its folder never comes from the
 caller.
 - `GET /api/v1/records/{repo}/{id}` (owner and agents): `read_record` in `kitlib/hubsite/backlog.py`,

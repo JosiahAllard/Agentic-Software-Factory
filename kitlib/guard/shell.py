@@ -1,4 +1,4 @@
-"""Bash, PowerShell and cmd command lines read as commands, not matched as text (docs/guard.md
+"""Bash, PowerShell and cmd command lines read as commands, not matched as text (docs/guard-core.md
 "Parsing").
 
 parse(text, shell, cwd) -> Parsed. Each Command has its words (a quoted word is one word; a
@@ -7,7 +7,7 @@ in the text, whether it pipes into the next command, and the directory it runs i
 text says (cd / Set-Location / pushd with one literal path; anything else makes the directory
 unknown, None). Substitutions ($(...), backticks, <(...), @(...)) are parsed as commands of their
 own; nested shells (bash -c, powershell -Command, cmd /c, Invoke-Expression, eval) are expanded by
-kitlib.guard.commands. Anything the reader does not model marks the parse unclean (Parsed.unclean
+kitlib.guard.commands_nested. Anything the reader does not model marks the parse unclean (Parsed.unclean
 names why) and the caller runs the regex fallback as well (kitlib.guard.fallback).
 
 Deliberate departures from the shells, all toward reading what a Windows user meant:
@@ -41,7 +41,7 @@ def ps_dashed(text):
 
 
 # What cmd.exe reads in a batch file's arguments when it runs the line again (a .cmd or .bat run
-# through cmd /c: `python x.py %*` substitutes the caller's words as text, docs/guard.md "Batch
+# through cmd /c: `python x.py %*` substitutes the caller's words as text, docs/guard-jail-roles.md "Batch
 # files and cmd.exe"): % expands (phase 1); ^ escapes and " toggles quoting, which un-hides the
 # operators & | < > after it (phase 2); ( ) open and close a block; ! expands under delayed
 # expansion (off under cmd /c unless the Command Processor DelayedExpansion registry value turns
@@ -103,7 +103,7 @@ def _brace_group(s, i):
     it written out (`{a,b{c,d}}`: a, bc, bd); alternatives None when it gives more than
     BRACE_LIMIT words. None when s[i] starts no group bash expands as read here: no comma at its
     own level, or a space, quote, expansion, backslash or operator before its `}` (left literal:
-    docs/guard.md "Known limits")."""
+    docs/guard-fallback.md "Known limits")."""
     alts, cur, over, comma, j = [], [''], False, False, i + 1
     while j < len(s):
         c = s[j]
@@ -199,9 +199,9 @@ class Command(object):
         self.prev_op = self.next_op = None      # the operators around it: ; && || & newline ( ) { } |
         self.pipe_from = None       # the Command piping into this one
         self.nested_in = None       # the Command whose word held this one ($(), a nested shell)
-        self.git_env = False        # the GIT_DIR-like variable some command of the line sets (commands.mark_git_env), else False
+        self.git_env = False        # the GIT_DIR-like variable some command of the line sets (commands_env.mark_git_env), else False
         self.home_env = False       # the variable naming git's user config folder the line sets (HOME, ...), else False
-        self.path_env = False       # True when some command of the line sets PATH (commands.mark_git_env)
+        self.path_env = False       # True when some command of the line sets PATH (commands_env.mark_git_env)
         # PowerShell: a ( ) or { } it touches is read as a group (a method call's arguments, a script
         # block) and more of the line follows the group before a separator, words or another group:
         # its arguments go on past the group, in commands of their own (_Scan.commands)
@@ -232,7 +232,7 @@ class Parsed(object):
         self.home = home            # the folder `~` names (home_folder)
         self.commands = []
         self.unclean = []
-        self.nests = 0              # nested shell texts parsed into it (commands._nest, MAX_NESTS)
+        self.nests = 0              # nested shell texts parsed into it (commands_nested._nest, MAX_NESTS)
         self.brace_over = None      # (text, start, end) of the first word whose brace groups give more
                                     # than BRACE_LIMIT words; text is that word's shell text, nested or not
 
@@ -792,7 +792,7 @@ class _Scan(object):
     def ansi_c(self, out):
         """$'...': the escapes bash decodes. A decoded escape other than a quote or a backslash
         marks the word synthetic: the text the guard reads is not the text written (in a program
-        name, commands.expand marks the parse unclean)."""
+        name, commands_nested.expand marks the parse unclean)."""
         s, j, buf = self.s, self.i + 2, []
         while j < self.n and s[j] != "'":
             if s[j] == '\\' and j + 1 < self.n:
@@ -1115,7 +1115,7 @@ def ps_filesystem_relative(p):
     """The relative path a PowerShell `FileSystem::<rel>` (or
     `Microsoft.PowerShell.Core\\FileSystem::<rel>`, either after a leading separator) spells, read
     from the location as the guard reads a .NET method's relative path; else None. PowerShell
-    itself reads it from the process's directory, which a cd does not move (docs/guard.md "Known
+    itself reads it from the process's directory, which a cd does not move (docs/guard-fallback.md "Known
     limits"). A drive-relative C:x, ~, another provider or a long drive in <rel> is no such path."""
     m = _ps_provider(p)
     if not m or m.group(2).lower() != 'filesystem':
@@ -1146,7 +1146,7 @@ def ps_unplaceable(p):
 def home_folder(home=None):
     """`home`, else the user's home folder as kitlib.config.user.home_dir() gives it, so the
     tests' home fence applies (docs/test-tools.md "Home fence"). Its HomeFenced is a
-    BaseException: it passes every `except Exception` in the guard and kitlib.host.hookmain, and
+    BaseException: it passes every `except Exception` in the guard and kitlib.hookrun.main, and
     boot/hook.py run() blocks the call."""
     return home or kuser.home_dir()
 

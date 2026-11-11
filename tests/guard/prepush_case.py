@@ -5,8 +5,7 @@ import os
 import subprocess
 import unittest
 
-from kitlib import pmdata
-from kitlib.gate import runner
+from kitlib.config import pmdata
 from kitlib.records import gate_ok
 from tests import gitfixture
 from tests.home import child_home, result_drive
@@ -48,7 +47,7 @@ class PrePushCase(unittest.TestCase):
         `git_copy_only`: only its .git copy (gate_ok.legacy_path), as a gate with no dev_drive
         writes it."""
         if gate_config is None:
-            gate_config = runner.gate_config_at(self.repo.root, rev)
+            gate_config = gate_ok.gate_config_at(self.repo.root, rev)
         rec = gate_ok.build(self.repo.root, rev, gate_config, KIT, 'kit-test',
                             '2026-10-06T10:00:00Z', [{'name': 'unit', 'result': 'pass', 'seconds': 1.0}],
                             config_rev=rev if config_rev == 'same' else config_rev)
@@ -93,7 +92,7 @@ def _with_pmdata(repo):
 
 
 class PmDataCase(PrePushCase):
-    """The leak stage (docs/guard.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
+    """The leak stage (docs/guard-hooks.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
     git common dir, the data branch, its history and its objects reach only the recorded private
     remote, and that remote gets nothing else. origin is the public remote."""
 

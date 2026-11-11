@@ -67,13 +67,13 @@ class.
 - `unpriced`: the records `backlog.py needs-priority` lists.
 - `dead-pull`: a pull with no branch by its `pulled_by` (`offer.in_flight_split`). A failed git
   probe gives a note and no finding.
-- `dead-blocker`: an `item:X` blocker that names no live record (`store.dangling_items`). Closing
-  or retiring a record deletes it.
+- `dead-blocker`: an `item:X` blocker that names no live record (`store_read.dangling_items`).
+  Closing or retiring a record deletes it.
 - `duplicate`: live records whose summaries are the same words in the same order. A near match is
   not flagged. Its target is the sorted record ids.
 - `answered-question`: a parked record whose question (`q`) the owner has answered on the Action
   Hub (status answered, logged or done). The hub's questions are read, read-only, with the agent token
-  through `kitlib.hubsite.client`, as `tools/hub.py` reads them, and only when a record is parked.
+  through `kitlib.hubclient.client`, as `tools/hub.py` reads them, and only when a record is parked.
   The fix is `unpark <ID>`, giving the ruling it was logged as (the ledger entry whose Source names
   the question; the hub keeps no id), after the PM logs the answer when it is not logged yet; for a question the PM marked done (`hub.py questions done`), `unpark
   <ID>` alone, with no ruling to cite. No ruling id is shown. A hub that cannot be asked gives a NOT CHECKED note.
@@ -112,7 +112,7 @@ Each finding carries its `worktree_remove.py` form.
 code agree on what landed, measured against the code base: the pushed
 `refs/remotes/<remote>/<main>` when the checkout has it, else `refs/heads/<main>`. A branch has
 landed when its tip is in the base and off the base's first-parent chain (the rule of
-`kitlib.worktree.remove.merged_worktrees`), so a fresh branch, whose tip is a base tip, never has.
+`kitlib.worktree.remove_checks.merged_worktrees`), so a fresh branch, whose tip is a base tip, never has.
 - `landed-still-pulled`: a pulled record whose `pulled_by` branch has landed, for every branch,
   with or without a worktree. The branch is read locally, else on the remote. The fix is a
   `close --reason "landed <merge>"`, or a `release` when that landing was one slice of the record.
@@ -214,7 +214,7 @@ The plain run writes two files and prints their paths, the notes, the counts and
   `<pm_data>/maint-lint/<repo>/result.json`, a stable folder beside the backlog's `audit/` folder
   under the machine config's `pm_data.path`, left untracked like it.
 - `page.html` beside it, or `--out`, from `kitlib/maintlint/page.py`. It passes
-  `kitlib.hubsite.pagecheck.check`: everything is escaped, with no script and no link, and a lone
+  `kitlib.hubvalidate.pagecheck.check`: everything is escaped, with no script and no link, and a lone
   surrogate is dropped. When the page would be over pagecheck's size cap, it shows fewer rows per
   check and fewer notes.
 
@@ -237,7 +237,7 @@ Action Hub (`kitlib/maintlint/publish.py`) as page `maint-lint-<repo>`, one per 
 written over by each run, with `from` `maint-lint` and the agent token; a scheduled run has no hub
 session key and needs none (docs/hub-skill-pages.md "pages/<id> and page_html/<id>"). Over a page
 already there it sends that card's version as `if_version`. The page is judged by
-`kitlib.hubsite.pagecheck.check` before it is sent. It prints `PUBLISHED maint-lint-<repo> v<n>`;
+`kitlib.hubvalidate.pagecheck.check` before it is sent. It prints `PUBLISHED maint-lint-<repo> v<n>`;
 a page that was not sent (the page check refuses it, the hub is not running or cannot be reached,
 the server refuses the write) is one `hub page NOT CHECKED: <why>` note instead, and the exit code
 stays what the findings make it. `--dry-run` never publishes.

@@ -23,7 +23,6 @@ Not a tour of what sounds plausible: a short answer, or a few options that fit t
 
 - Edit, create or delete anything in the repository; run builds, tests or the game.
 - Decide what gets built.
-- Put the owner's personal details in any query, URL or header sent off the machine; web fetches use a neutral User-Agent.
 
 ## Report
 

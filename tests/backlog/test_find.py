@@ -1,4 +1,4 @@
-"""`backlog.py find TEXT` (kitlib/backlog/find.py, store.py `removed_records`): open and ended
+"""`backlog.py find TEXT` (kitlib/backlog/find.py, store_read.py `removed_records`): open and ended
 records matched in id, summary and body; one git log and one cat-file however many records ended;
 no fetch; the cap says how many hits it left out."""
 import os
@@ -11,6 +11,7 @@ from kitlib.git import cmd
 from kitlib.backlog import find as findmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_read
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, StoreCase, kit_json_ref, rec
@@ -85,12 +86,15 @@ class Search(StoreCase):
         for i in range(40):
             self.verb('close', 'E%03d' % i, 'the work is finished')
         snap = self.store.load()
-        with mock.patch.object(smod.cmd, 'run_text', wraps=smod.cmd.run_text) as log, \
-                mock.patch.object(smod.batch, 'cat_file', wraps=smod.batch.cat_file) as cat, \
+        with mock.patch.object(store_read.cmd, 'run_text', wraps=store_read.cmd.run_text) as log, \
+                mock.patch.object(store_read.batch, 'cat_file',
+                                  wraps=store_read.batch.cat_file) as cat, \
                 mock.patch.object(self.backend, '_fetch', side_effect=AssertionError('fetched')):
             lines, omitted = findmod.search(snap, self.store, 'bulk', cap=100)
         self.assertEqual((len(lines), omitted), (40, 0))
-        self.assertEqual((log.call_count, cat.call_count), (1, 1))
+        # the tip and git-dir lookups of the removed-records cache are no store history read
+        logs = [c for c in log.call_args_list if 'log' in c.args[0]]
+        self.assertEqual((len(logs), cat.call_count), (1, 1))
 
 
 class Cli(StoreCase):
@@ -133,7 +137,7 @@ class FolderStore(unittest.TestCase):
         temp_home(self)
         self.repo = TempRepo()
         self.addCleanup(self.repo.cleanup)
-        return smod.Store(smod.MainBackend(self.repo.root, self.DIR), rmod.Rules())
+        return smod.Store(store_folder.MainBackend(self.repo.root, self.DIR), rmod.Rules())
 
     def test_a_record_deleted_from_the_folder_is_found_with_its_ending_commit(self):
         store = self.make()
@@ -155,7 +159,7 @@ class FolderStore(unittest.TestCase):
         root = tempfile.mkdtemp(prefix='kit-empty-')
         self.addCleanup(rmtree, root)
         self.assertIsNotNone(cmd.run_text(['init', '-q'], root)[0])
-        store = smod.Store(smod.MainBackend(root, self.DIR), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(root, self.DIR), rmod.Rules())
         self.assertEqual(store.removed(store.load()), [])
         self.assertEqual(findmod.search(store.load(), store, 'anything'), ([], 0))
 

@@ -1,5 +1,5 @@
 """Where a path is, read from the filesystem: kitlib.git.repo.classify's answer without starting
-git (docs/guard.md "State"). The guard asks for a place on most calls, and each git child costs
+git (docs/guard-core.md "State"). The guard asks for a place on most calls, and each git child costs
 a process launch and the owner wants fewer launches per tool call, so the common layouts are
 read here and everything else is handed to repo.classify unchanged.
 
@@ -46,6 +46,7 @@ kitlib.git.refs.current_branch answers it, or None when the file does not say (t
 import os
 import re
 
+from kitlib import platform
 from kitlib.git import repo
 from kitlib.guard import paths
 
@@ -125,7 +126,7 @@ def _walk(path, owned):
     start = os.path.realpath(written)
     if paths.norm(start) != paths.norm(written):
         raise _Fallback()                   # a junction, symlink or subst drive on the way
-    plain = (start[:1].isalpha() and start[1:3] == ':\\') if os.name == 'nt' else start.startswith('/')
+    plain = (start[:1].isalpha() and start[1:3] == ':\\') if platform.NAME == 'windows' else start.startswith('/')
     if not plain:
         raise _Fallback()
     d = start
@@ -339,7 +340,7 @@ def owned_by_me(path):
     """True when `path`'s owner is this process's user (git for Windows' ownership check passes
     without safe.directory). False when it cannot tell. Always True off Windows, where the
     fallback is not needed for the kit's machine (INFERRED: git's POSIX check compares st_uid)."""
-    if os.name != 'nt':
+    if platform.NAME != 'windows':
         try:
             return os.stat(path).st_uid == os.geteuid()
         except (OSError, AttributeError):

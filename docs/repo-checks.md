@@ -14,24 +14,24 @@ python tools/forbidden.py [-C DIR] --add                                     one
 
 - **Store.** `.kit.json` "forbidden" names a repo-relative JSON file; unset, `<tools_dir>/forbidden-tokens.json` (`kitlib.forbidden.store_path`). An inline store is refused: the section is opaque to the schema (`kitlib/config/schema.py` OPAQUE) and the store is data, not config. Because `kitlib.config.load` refuses a named file that does not exist, a repository that names one creates it holding `{}` before the first `--add`.
 - **Self-test.** Before any scan the store must find its own known-positive (the canary) and its `checksum` must match its token records; either failing is `SELF-TEST FAILED`, exit 2. A store that is missing or holds no tokens is exit 2 too, never a clean pass.
-- **What is read.** By default the paths changed against the merge base of `--base` (default `.kit.json` "repo".main_branch when written, else `main` if it exists, else `master`, measured as `<remote>/<that>` when it resolves: gate.md "Default base") and HEAD; `--worktree` adds uncommitted and untracked changes. When the merge base is HEAD (a merged tree) every tracked path is swept, with `--worktree` too. `--paranoid` also checks the space-removed form, which catches a token split across a line break but welds neighbouring words.
+- **What is read.** By default the paths changed against the merge base of `--base` (default `.kit.json` "repo".main_branch when written, else `main` if it exists, else `master`, measured as `<remote>/<that>` when it resolves: gate-run.md "Default base") and HEAD; `--worktree` adds uncommitted and untracked changes. When the merge base is HEAD (a merged tree) every tracked path is swept, with `--worktree` too. `--paranoid` also checks the space-removed form, which catches a token split across a line break but welds neighbouring words.
 - **`--add`** reads one line on stdin (never an argument, so the token is in no history or process list), refuses one under 4 characters, and rewrites the store with the new digest records (a multi-word token stores two: the space-kept form the default scan reads and the spaceless form `--paranoid` reads) and the checksum.
 - **Exit:** 0 clean (or added), 1 a hit, 2 refused config, a store missing, empty or failing its self-test, nothing readable, or git failed.
 
 ## trailers
 
-`tools/trailers.py`, logic `kitlib/trailerscheck` over the rule in `kitlib/reviewpack/trailers.py` (the one review_pack judges by). Fails a branch holding a commit with no `Co-Authored-By: <name> <noreply@anthropic.com>` trailer.
+`tools/trailers.py`, logic `kitlib/trailerscheck` over the rule in `kitlib/trailerscheck/trailers.py` (the one review_pack judges by). Warns on each branch commit with no `Co-Authored-By: <name> <noreply@anthropic.com>` trailer; such a commit never fails the step, so it never stops a gate or a landing.
 
 ```
 python tools/trailers.py [-C DIR] [--base REV] [--merged]
 ```
 
-- **Commits read:** every commit `HEAD` has that the base does not (`HEAD --not <base>`, merges included, so a sync merge counts); the base defaults as in gate.md "Default base".
-- **FAIL:** a commit made since the rule's cutoff (`TRAILER_FAIL_SINCE`) with no such trailer, or with no readable committer date. **WARNING, exit 0:** an older commit, and a commit carrying `Owner-Approved:` or `Owner-Authored: yes` whose AUTHOR email is `.kit.json` "owner".email, read from the base (an unset email proves nothing). The same claim on anyone else's commit is judged as no claim, with a WARNING.
-- **`--merged`:** a landing's merged-tree gate. The first-parent merges in `<base>..HEAD` are the lander's own and are exempt. It holds with HEAD on the `.kit.json` "repo".main_branch, or detached at a landing's merge: the landing tree `gate.py land` merges and gates in (docs/gate.md "Landing"), where HEAD's first-parent chain from the base is merges only and the oldest was made onto the base itself (`kitlib.trailerscheck.landing_head`). Refused (exit 2) on any other branch, and at any other detached HEAD, since there the merges are the branch's own sync merges.
-- **Config:** owner claims count only with `.kit.json` "owner".email set; without it an owner-authored commit fails.
-- **In the gate:** a plain `cmd` step: a FAIL stops the later steps unless the repo adds `"continue": true`, and its WARNING lines show as WARN only if the gate's `warn_lines` matches them.
-- **Exit:** 0 no failing commit, 1 a failing commit, 2 usage, refused config, git failed, or `--merged` neither on main nor at a landing's merge.
+- **Commits read:** every commit `HEAD` has that the base does not (`HEAD --not <base>`, merges included, so a sync merge counts); the base defaults as in gate-run.md "Default base".
+- **WARNING, exit 0:** one `WARNING:` line naming each commit with no such trailer (hash, commit or merge, subject), whatever its date. A commit carrying `Owner-Approved:` or `Owner-Authored: yes` whose AUTHOR email is `.kit.json` "owner".email, read from the base (an unset email proves nothing), is named the same way as owner-authored or owner-approved. The same claim on anyone else's commit is judged as no claim, with a second WARNING.
+- **`--merged`:** a landing's merged-tree gate. The first-parent merges in `<base>..HEAD` are the lander's own and are exempt. It holds with HEAD on the `.kit.json` "repo".main_branch, or detached at a landing's merge: the landing tree `gate.py land` merges and gates in (docs/gate-landing.md "Landing"), where HEAD's first-parent chain from the base is merges only and the oldest was made onto the base itself (`kitlib.trailerscheck.landing_head`). Refused (exit 2) on any other branch, and at any other detached HEAD, since there the merges are the branch's own sync merges.
+- **Config:** owner claims count only with `.kit.json` "owner".email set; without it an owner-authored commit is warned on as one with no claim.
+- **In the gate:** a plain `cmd` step that passes whatever trailers the commits carry; its WARNING lines stay in the step's log and show as WARN only if the gate's `warn_lines` matches them. Only a refusal (exit 2) fails the step.
+- **Exit:** 0 checked (warnings included), 2 usage, refused config, git failed, or `--merged` neither on main nor at a landing's merge.
 
 ## pieces
 
@@ -48,7 +48,7 @@ A library caller asks `has_table(root)` first: a repository without a table is n
 
 ## Wiring a gate step
 
-A repository runs these as `cmd` steps in its `.kit.json` "gate" (docs/gate.md, Steps); `{here}` is the kit's tools folder:
+A repository runs these as `cmd` steps in its `.kit.json` "gate" (docs/gate-run.md, Steps); `{here}` is the kit's tools folder:
 
 ```json
 {"name": "forbidden", "always": true,

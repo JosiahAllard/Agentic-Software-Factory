@@ -16,7 +16,7 @@ Two changes, each planned only when it differs:
   then WM_SETTINGCHANGE broadcast. A dry run only reads the Path. A process started before
   --apply (an open terminal or session) keeps its old PATH.
 
-On Linux (docs/linux-support-plan.md section 6, step 11) the launcher is LINUX_FILE,
+On Linux (docs/machine-setup.md "Linux") the launcher is LINUX_FILE,
 `~/.local/bin/kit` under the home folder: a sh script (MARK_SH its second line, mode 0755) whose
 last line is `exec python3 '<live main checkout>/tools/kit.py' "$@"`. No PATH is changed: most
 distributions put ~/.local/bin on a login shell's PATH when it exists, and a note says so when
@@ -36,7 +36,8 @@ job (Y/N)?".
 import os
 import shlex
 
-from kitlib import platform, pluginsource
+from kitlib import platform
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import ConfigError
 from kitlib.git import repo as gitrepo
 
@@ -128,8 +129,8 @@ def survey(plan, ctx):
         linux_steps(plan, root, os.path.join(ctx.home, *LINUX_FILE))
         return
     try:
-        export = pluginsource.load(ctx.home, kit=ctx.kit).export_dir
-    except (ConfigError, pluginsource.RefreshError, OSError, ValueError) as e:
+        export = plugin_layout.load(ctx.home, kit=ctx.kit).export_dir
+    except (ConfigError, plugin_layout.RefreshError, OSError, ValueError) as e:
         plan.note('extras', 'kit command: plugin.export_dir could not be read (%s); not planned' % e)
         return
     plan_steps(plan, ctx.host, root, os.path.join(export, FOLDER))

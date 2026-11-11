@@ -1,5 +1,5 @@
 """hosts.codex.adapter.session_registry (no delivery tests: session_delivery.py, the owner-grant transport scaffolding the bridge
-(plan step 10) replaces, is gone; no startup tests: no hook entry reaches the runtime registry
+replaces, is gone; no startup tests: no hook entry reaches the runtime registry
 hook-up of session_adapter.startup)."""
 from dataclasses import replace
 from pathlib import Path

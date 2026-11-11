@@ -76,7 +76,7 @@ KIND_ENTRY = Obj({
 
 ROLE = Obj({
     'edit_main_checkout': Field(Bool(), None, 'may edit files in a main checkout; unset: the base role (main: true, any other: false)'),
-    'mode': Field(Enum(*MODES), None, 'the role policy this role is held to, over its role file\'s `mode` (docs/guard.md "Role policy"); unset: the role file\'s, else none'),
+    'mode': Field(Enum(*MODES), None, 'the role policy this role is held to, over its role file\'s `mode` (docs/guard-jail-roles.md "Role policy"); unset: the role file\'s, else none'),
     'why': Field(Str(), None, 'the ruling that grants it'),
 }, what='{edit_main_checkout, mode, why}')
 
@@ -141,7 +141,7 @@ class _DataRootPath(Str):
         Str.check(self, v, where, errs)
 
 
-# A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard.md "Write jail").
+# A folder outside git an agent session may write, and how (kitlib/guard/jail.py, docs/guard-jail-roles.md "Write jail").
 DATA_ROOT = Obj({
     'path': Field(_DataRootPath(), None, 'the folder, absolute'),
     'mode': Field(Enum('add-only', 'read-only', 'open'), None, 'add-only: new files only, never overwrite, move or delete; read-only: no write; open: any write'),
@@ -182,6 +182,7 @@ SECTIONS = {
         'agent_emails': Field(ListOf(Email()), [], 'author emails known to be agents\', never the owner\'s'),
         'paths': Field(Strs, OWNER_PATHS, 'owner-only paths; an entry ending / locks a directory; replaces the default'),
         'paths_except': Field(Strs, OWNER_PATHS_EXCEPT, 'what under a locked directory is not locked'),
+        'shrink_only': Field(Strs, [], 'owner-only files (exact paths) any commit may change by deleting lines only; any other change stays the owner\'s (docs/guard-hooks.md "Owner-only commits")'),
         'trailer': Field(Str(pattern=r'[A-Za-z][A-Za-z-]*', what='a trailer key'), 'Owner-Approved', 'the trailer key approving an owner-only change'),
     },
     'hook': {
@@ -259,24 +260,21 @@ SECTIONS = {
                             required=('match',), what='{match, excuse, expect}'),
                         None, 'error-line policy'),
         'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'test', 'the kinds-table kind a gate run books (gate.py and gate.py land)'),
-        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) branch gate runs whatever changed; a landing takes such a gate\'s record for a tip once these steps passed in it (docs/gate.md "Landing"); unset: a landing needs a --full record'),
-        'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate.md "Docs-only changes"); unset: no change is docs-only'),
+        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) gate runs whatever changed, a branch gate and a landing\'s merged gate alike (docs/gate-landing.md "Landing"); unset: none, only the steps the change selects'),
+        'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate-run.md "Docs-only changes"); unset: no change is docs-only'),
     },
     'guard': {
-        'data_roots': Field(ListOf(DATA_ROOT), [], 'folders besides their checkout and temp that agent sessions may write, each with its mode; read from the main checkout only (docs/guard.md "Write jail")'),
-        'role_policy': Field(Bool(), False, 'hold roles to their role policy mode (docs/guard.md "Role policy"); off: no role is held, whatever its mode; read from the main checkout only'),
+        'data_roots': Field(ListOf(DATA_ROOT), [], 'folders besides their checkout and temp that agent sessions may write, each with its mode; read from the main checkout only (docs/guard-jail-roles.md "Write jail")'),
+        'role_policy': Field(Bool(), False, 'hold roles to their role policy mode (docs/guard-jail-roles.md "Role policy"); off: no role is held, whatever its mode; read from the main checkout only'),
     },
     'landing': {
         'log_dir': Field(RelPath(), None, 'where gate logs live'),
         'wait_s': Field(Int(0, 86400), 21600, 'seconds tools/land.py waits for its turn (its machine-lock booking, then the landing lock) unless --wait says otherwise'),
-        'batch_max': Field(Int(1, 20), 5, 'most branches one tools/land.py landing merges and gates together; a submitted landing folds the submissions queued behind it into its batch, up to it (docs/gate.md "Folding queued submissions"); 1: no batch and no folding (the opt-out)'),
-        'self_review_max_lines': Field(Int(1, 100000), None, 'most changed lines (added plus removed, git diff --numstat: the larger of <base>...<tip> and <main as fetched>...<tip>) a verdict the queueing coordinator reviewed itself may cover: tools/verdict.py add refuses a larger self-read, or one whose size cannot be told (docs/gate.md "Strict paths"); unset: no size check'),
+        'batch_max': Field(Int(1, 20), 5, 'most branches one tools/land.py landing merges and gates together; a submitted landing folds the submissions queued behind it into its batch, up to it (docs/gate-landing.md "Folding queued submissions"); 1: no batch and no folding (the opt-out)'),
+        'self_review_max_lines': Field(Int(1, 100000), None, 'most changed lines (added plus removed, git diff --numstat: the larger of <base>...<tip> and <main as fetched>...<tip>) a verdict the queueing coordinator reviewed itself may cover: tools/verdict.py add refuses a larger self-read, or one whose size cannot be told (docs/gate-landing-policy.md "Strict paths"); unset: no size check'),
         'reuse_max_age_h': Field(Int(0, 168), 24, 'hours a pass stored in the gate cache serves a branch gate rerun or a landing; 0: no gate reads or stores a step result'),
         'reuse_never': Field(Strs, [], 'globs of paths whose change makes a gate (branch or landing) read and store no step result in the gate cache'),
         'in_flight': Field(IN_FLIGHT, None, 'how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")'),
-        # Not in "gate": a key there is in every gate-OK record's gate_config hash (runner.gate_config).
-        'shared_paths': Field(ListOf(Str(pattern=r'(?s).*[^/\\]', what='whole-path glob (a folder is "api/*", never "api/")'), nonempty=True), None, 'globs of the repo\'s shared code: a landing takes a default-mode (scoped) record of a tip that changes none of them, no strict path and no gate config file, without "gate".smoke_steps; a tip that changes one of those needs a --full record, whatever "gate".smoke_steps or "gate".docs_only say (docs/gate.md "Shared paths"); unset: a landing needs a --full record unless "gate".smoke_steps or "gate".docs_only take it'),
-        'gate_once': Field(Bool(), True, 'a landing takes a default-mode (scoped) record of any tip that changes no gate config file, shared and strict paths included, and its merged gate runs --full (each step\'s full_cmd) once on the merged or batched tree; a docs-only merge stays docs-only (docs/gate.md "Gate once at landing"); false (the opt-out): "landing".shared_paths, "gate".smoke_steps and "gate".docs_only decide alone'),
     },
     'ledger': {
         'pre_commit_check': Field(Bool(), False, 'githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes the ledger file or its standing digest (opt-in; docs/ledger.md "Pre-commit check")'),
@@ -328,7 +326,7 @@ SECTIONS = {
         'hold_wait': Field(Int(0), 60, 'seconds a held throwaway tree is re-checked before it is left'),
     },
     'review_pack': {
-        'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a failing one blocks'),
+        'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block'),
     },
     'testlist': {
         'junit': Field(Strs, ['**/build/test-results/**/*.xml'], 'JUnit result globs'),
@@ -387,8 +385,9 @@ MAPS = {
 
 
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
-# dropped unchecked (not an unknown-key refusal), so an install written before the removal works.
-RETIRED = {'landing': ('lanes', 'lock_file')}
+# dropped unchecked (not an unknown-key refusal), so an install written before the removal works,
+# and the Config names it (Config.retired) for gate.py and land.py to warn about once a run.
+RETIRED = {'landing': ('lanes', 'lock_file', 'shared_paths', 'gate_once')}
 
 
 def section_type(name):

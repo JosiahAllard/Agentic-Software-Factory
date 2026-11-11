@@ -1,4 +1,4 @@
-"""The generated-file rule (docs/guard.md "Generated files"): in a kit checkout, no session edits a
+"""The generated-file rule (docs/guard-jail-roles.md "Generated files"): in a kit checkout, no session edits a
 file tools/render_content.py writes; the refusal names the source to edit and the render command.
 The renderer itself runs as a process and is never refused. kitlib.guard.generated maps a rendered
 path to its source."""
@@ -11,7 +11,8 @@ import unittest
 
 from kitlib import content as kcontent
 from kitlib.guard import context, generated, rules
-from kitlib.host import hookmain, registry
+from kitlib.hookrun import main as hookrun
+from kitlib.host import registry
 
 from . import world as W
 from .claudehost import decide
@@ -79,14 +80,14 @@ class Source(unittest.TestCase):
 
 class EveryRenderedManifest(unittest.TestCase):
     """generated.MANIFESTS names each hooks file by hand. This ties it to hosts.json: each host's
-    renderer, given every platform the hook interpreter knows (hookmain.INTERPRETERS, a superset of
+    renderer, given every platform the hook interpreter knows (hookrun.INTERPRETERS, a superset of
     the hosts' own platforms), writes no manifest the rule leaves unguarded, so a new platform's
     `hooks/hooks.<platform>.json` fails here before it can be rendered unguarded."""
 
     def registry_with_every_platform(self):
         with open(os.path.join(ROOT, 'hosts.json'), encoding='utf-8') as f:
             raw = json.load(f)
-        known = [p for p in registry.PLATFORMS if p in hookmain.INTERPRETERS]
+        known = [p for p in registry.PLATFORMS if p in hookrun.INTERPRETERS]
         for name in registry.names():
             entry = raw[name]
             self.assertLessEqual(set(entry['platforms']), set(known), name)

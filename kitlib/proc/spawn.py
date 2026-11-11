@@ -22,7 +22,7 @@ inherits. PROGRAM is not put in a job (kitlib.proc.job allows no breakaway, so a
 hold every window `launch.py after-reboot` opens until the carrier ends). `exit_code` is how the
 carrier ends with PROGRAM's own code, a crash's included. PROGRAM's TEMP and TMP are the agents'
 temp folder AGENT_TEMP when there is one (`agent_temp_env`): a scheduled task and a detached start
-(kitlib.lock.detach, kitlib.gate.submit) inherit the user environment's TEMP, on the system drive,
+(kitlib.lock.detach, kitlib.landing.submit) inherit the user environment's TEMP, on the system drive,
 while everything agents produce goes in AGENT_TEMP (docs/daily-full.md "The schedule"; a launched
 session's window does the same, kitlib.launcher.window). Nothing here prints.
 """

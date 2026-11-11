@@ -1,4 +1,4 @@
-"""Who may lift a branch's gate-run budget (docs/guard.md "Gate allow"): `gate.py allow` is the
+"""Who may lift a branch's gate-run budget (docs/guard-jail-roles.md "Gate allow"): `gate.py allow` is the
 owner's and the coordinator's (or the PM's), so every subagent and every other marked main session
 is refused it (gate-allow), in every spelling the guard reads a kit tool run in."""
 import os
@@ -7,7 +7,7 @@ import unittest
 from hosts.codex.adapter.host import ADAPTER as CODEX
 from kitlib import guard
 from kitlib.guard import context
-from kitlib.host import hookmain
+from kitlib.hookrun import main as hookrun
 
 from . import claudehost
 
@@ -147,11 +147,11 @@ class GateAllow(unittest.TestCase):
     # ------------------------------------------------------------ a host with no subagent identity
 
     def codex(self, text, m):
-        """The call as hookmain hands it to the guard on Codex, whose hooks name no subagent: a
+        """The call as hookrun hands it to the guard on Codex, whose hooks name no subagent: a
         marked session's call (its children's too) comes as agent UNIDENTIFIED, agent_role the mark."""
         env = mark(m) if m else {}
         ev = event('Bash', {'command': text, 'description': 'test'}, self.w.wt, sub=False)
-        act = hookmain.unidentified(CODEX, claudehost.action(ev), env)
+        act = hookrun.unidentified(CODEX, claudehost.action(ev), env)
         d = guard.decide(act, self.w.ctx(environ=env))
         return None if d.verdict == 'allow' else d
 

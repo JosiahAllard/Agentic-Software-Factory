@@ -4,7 +4,7 @@ import unittest
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as sc
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 
 from tests.backlog.helpers import messages, parse, record_text
 
@@ -145,7 +145,7 @@ class Schema(unittest.TestCase):
     def test_structural_problems_make_a_record_unreadable(self):
         for text in ('', '\nid: FOO\n', 'id FOO\n', 'Id: FOO\n'):
             self.assertFalse(rmod.parse('backlog/FOO.md', text, 'FOO').readable, repr(text))
-        self.assertFalse(smod.parse_blob('FOO', b'\xff\xfe', 'backlog/FOO.md').readable)
+        self.assertFalse(store_read.parse_blob('FOO', b'\xff\xfe', 'backlog/FOO.md').readable)
 
 
 REPO_RECORD = '''id: EX-STORE-STEP
@@ -183,8 +183,8 @@ class RepoFormat(unittest.TestCase):
 
     def test_a_repo_record_parses_validates_and_round_trips(self):
         rules = rmod.Rules('upper', ('L0', 'L1'))
-        rec = smod.parse_blob('EX-STORE-STEP', REPO_RECORD.encode('utf-8'),
-                              'backlog/EX-STORE-STEP.md')
+        rec = store_read.parse_blob('EX-STORE-STEP', REPO_RECORD.encode('utf-8'),
+                                    'backlog/EX-STORE-STEP.md')
         self.assertTrue(rec.readable)
         self.assertEqual(rmod.validate(rec, rules), [])
         self.assertEqual(rec.all('blocked_on'), ['item:EX-OBTAIN', 'live-client'])
@@ -192,7 +192,7 @@ class RepoFormat(unittest.TestCase):
 
     def test_crlf_and_a_bom_still_parse(self):
         data = b'\xef\xbb\xbf' + REPO_RECORD.replace('\n', '\r\n').encode('utf-8')
-        rec = smod.parse_blob('EX-STORE-STEP', data, 'x')
+        rec = store_read.parse_blob('EX-STORE-STEP', data, 'x')
         self.assertTrue(rec.readable, rec.structural)
         self.assertEqual(rec.get('id'), 'EX-STORE-STEP')
 

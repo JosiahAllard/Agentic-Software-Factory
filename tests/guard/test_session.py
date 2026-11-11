@@ -1,4 +1,4 @@
-"""The session mark (kitlib.sessionmark, docs/guard.md "Session mark") and the rules that read it:
+"""The session mark (kitlib.host.sessionmark, docs/guard-fallback.md "Session mark") and the rules that read it:
 who counts as the owner for the retired owner-only lock tool names, which sessions are agent
 sessions for kill-by-name and lock-state, the owner-identity rule, and that the lock MCP server
 installs no owner check."""
@@ -7,11 +7,12 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.guard import context, rules
 from kitlib.host import Action
 from kitlib.lock import api
-from kitlib.lockmcp import OWNER_ONLY, PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
+from kitlib.lockmcp import OWNER_ONLY
 from kitlib.lockmcp.server import TOOLS
 
 from . import world as W
@@ -23,7 +24,7 @@ COORDINATOR = {context.ROLE_ENV: 'coordinator'}
 PM = {context.ROLE_ENV: 'pm'}
 PLAIN = {context.ROLE_ENV: 'plain'}          # a launcher mark no agent-session rule holds by default
 OWNER_EMAIL = 'owner@example.com'
-P = PLUGIN_NAME + ':'                 # kitlib.agentname.PREFIX (tests/agentname pins it)
+P = PLUGIN_NAME + ':'                 # kitlib.host.agentname.PREFIX (tests/host/test_agentname.py pins it)
 
 
 class Mark(unittest.TestCase):
@@ -56,7 +57,7 @@ class Mark(unittest.TestCase):
         self.assertEqual(role(None, COORDINATOR), 'coordinator')
 
     def test_the_plugin_prefix_is_read_off_before_the_reserved_check(self):
-        # docs/guard.md "Agent names": a mark with the kit plugin's prefix is the bare mark
+        # docs/guard-fallback.md "Agent names": a mark with the kit plugin's prefix is the bare mark
         for value, out in ((P + 'coordinator', 'coordinator'), (P.upper() + 'Deep-Worker', 'Deep-Worker'),
                            (' %s pm ' % P, 'pm'), (P + 'owner', 'marked-owner'), (P + P + 'OWNER', 'marked-OWNER'),
                            (P + 'subagent', 'marked-subagent'), ('other:owner', 'other:owner')):
@@ -159,11 +160,11 @@ class AgentSessions(unittest.TestCase):
                 self.assertIsNone(check({}))
 
     def test_the_retired_old_coordinator_mark_is_not_held(self):
-        # the old mark was a one-release fallback; no launcher sets it now (docs/guard.md "Session mark")
+        # the old mark was a one-release fallback; no launcher sets it now (docs/guard-fallback.md "Session mark")
         self.assertIsNone(self.kill({context.ROLE_ENV: 'conductor'}))
 
     def test_a_plugin_prefixed_mark_is_held_as_the_bare_mark(self):
-        # docs/guard.md "Agent names": without the strip these sessions would pass as unheld marks
+        # docs/guard-fallback.md "Agent names": without the strip these sessions would pass as unheld marks
         for check in (self.kill, self.edit_state):
             for mark in (P + 'deep-worker', P + 'coordinator', P.upper() + 'PM', P + 'consultant'):
                 with self.subTest(check.__name__, mark=mark):

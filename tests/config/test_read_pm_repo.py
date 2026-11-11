@@ -8,8 +8,8 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
-from kitlib.config import ConfigError, move, user
+from kitlib.config import pmdata
+from kitlib.config import ConfigError, user
 from tests.home import RECORD_ROOT, PM_REPO_FENCE_ENV, pm_repo, temp_home
 RID = 'R-' + '9001'     # built, so tests/scrub sees no ruling id in this file
 
@@ -36,13 +36,6 @@ class _PmRepo(unittest.TestCase):
 
 
 class KeySetsTest(unittest.TestCase):
-    def test_the_key_sets_are_the_moves(self):
-        self.assertEqual(user.POLICY_KEYS, move.POLICY)
-        self.assertEqual(user.LOCAL_KEYS, move.LOCAL)
-        self.assertEqual(user.DROPPED_KEYS, move.DROPPED)
-        self.assertEqual(user.RELATIVE_KEYS, move.RELATIVE_KEYS)
-        self.assertEqual(user.LOCAL_FILE_NAME, move.LOCAL_FILE)
-
     def test_every_schema_key_is_in_exactly_one_file_or_dropped(self):
         sets = (user.POLICY_KEYS, user.LOCAL_KEYS, user.DROPPED_KEYS)
         for key in set(user.SCHEMA):

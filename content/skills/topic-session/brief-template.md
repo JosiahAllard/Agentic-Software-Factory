@@ -7,6 +7,7 @@ You are a plain session the owner drives directly, like a normal session. Do wha
 Build these records on one branch, `<branch>`:
 - `<ID>`: <one line: what it is, and anything the owner already decided about it>
 - `<ID>`: <...>
+- A split or a new class is never small and never set by the docs: report its design (parts, one job each, dependency direction, net size) and have it reviewed before you build it. Checks you add never replace a skill's.
 
 Read each record first: `python <kit>/tools/backlog.py -C <worktree> show <ID>`. <The design or page the owner approved, if any, to verify against.>
 
@@ -21,6 +22,6 @@ Read each record first: `python <kit>/tools/backlog.py -C <worktree> show <ID>`.
 ## Finishing
 
 - Commit as you go, small and named, by explicit path: `python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`.
-- When the owner says the work is done, run the touched tests; no gate runs before review. When the coordinator asks for the one final gate on the reviewed tip: `python <kit>/tools/gate.py -C <worktree>`, the plain gate; `--full` only when it prints `FULL NEEDED` (or the `NOTE` that it cannot tell).
+- When the owner says the work is done, run the touched tests; no gate runs before review. When the coordinator asks for the one final gate on the reviewed tip: `python <kit>/tools/gate.py -C <worktree>`, the plain gate.
 - Then message `<PM session name>` with the branch, the tip, the touched-test results and the records it covers. The coordinator reviews it and lands it. You never merge, land or push.
 - Never cite ruling ids in repository text.

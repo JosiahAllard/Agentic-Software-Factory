@@ -36,7 +36,7 @@ import subprocess
 import time
 
 import kitlib.platform
-from kitlib.lock.run import ORIGIN_ENV
+from kitlib.lock.run_held import ORIGIN_ENV
 from kitlib.lock.store import DETACHED_ENV
 from kitlib.proc import process, spawn
 
@@ -76,7 +76,7 @@ def _linux():
 
 def pythons(python):
     """(pythonw.exe, python.exe) in the folder of `python` (either of the two). Neither is checked
-    to exist here. Not the hooks' windowless() (kitlib/host/hookmain.py) or machine setup's
+    to exist here. Not the hooks' windowless() (kitlib/hookrun/main.py) or machine setup's
     pythonw(): both fall back to a console python where this must refuse (`missing`), and importing
     either puts the guard, the gate and the backlog in the lock tool's import reach, which a release
     may then not change under a live run (kitlib.lock.release.LOCK_PATHS, tests/lock/test_release.py)."""

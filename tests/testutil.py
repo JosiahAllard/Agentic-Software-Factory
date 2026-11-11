@@ -1,5 +1,6 @@
-"""Process helpers for kit tests that check the pid shield (kitlib.proc.shield): a child's own
-probe of its shield, and how long an OUTER shield keeps a new process of this one shielded.
+"""Process helpers for kit tests that check the pid shield (kitlib.platform.windows.shield): a
+child's own probe of its shield, and how long an OUTER shield keeps a new process of this one
+shielded.
 """
 import os
 import subprocess
@@ -13,7 +14,7 @@ CREATE_NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 # A process's own check, from inside: may it be opened for PROCESS_TERMINATE? Source text that a
 # test prepends to a child's `-c` code; `shielded()` is True only on ERROR_ACCESS_DENIED (5), the
-# pid shield (kitlib.proc.shield) at work.
+# pid shield (kitlib.platform.windows.shield) at work.
 SHIELDED = '''
 def shielded():
     import ctypes, os

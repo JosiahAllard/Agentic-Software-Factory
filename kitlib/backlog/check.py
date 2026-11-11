@@ -10,7 +10,7 @@ from . import offer as omod
 from . import record as rmod
 from . import scope as smod
 from .errors import Failure
-from .store import dangling_items
+from .store_read import dangling_items
 
 PREEMPTIONS = 'pre-emptions'
 PULL_RECORDS = 'pull records'
@@ -100,9 +100,10 @@ def check_preemptions(snap):
                        proxy='reads the shape; it cannot tell a computed `displaced:` from a typed one')
 
 
-def check_pull_records(snap, shared=()):
+def check_pull_records(snap, shared=(), collisions=True):
     """`shared`: `.kit.json` "backlog".shared_paths, the literal files a scope collision may meet
-    on (scope.members_collide)."""
+    on (scope.members_collide). `collisions` False leaves out the colliding-scope WARNs, which
+    are never a FAIL (fail_findings)."""
     subjects = [r for r in snap.readable if r.get('state') == 'pulled']
     found, warned = [], []
     for rec in subjects:
@@ -110,15 +111,14 @@ def check_pull_records(snap, shared=()):
             found.append(rmod.Finding(PULL_RECORDS, rec.path, rec.line_of('state'), '`state: '
                                       'pulled` on an unpriced item (`priority: %s`) with no '
                                       '`preempt` record' % rec.get('priority')))
+    hits = smod.pull_collisions([r.all('scope') for r in subjects], shared) if collisions else {}
     for i, a in enumerate(subjects):
-        for b in subjects[i + 1:]:
-            try:
-                why = None
-                if smod.scopes_collide(b.all('scope'), a.all('scope'), shared):
-                    hit = smod.colliding_pairs(b.all('scope'), a.all('scope'), shared)
-                    why = 'scope %s collides with %s' % hit[0]
-            except smod.UndecidableScope as exc:
-                why = 'the scope comparison could not be decided, so it is a collision: %s' % exc
+        for j in range(i + 1, len(subjects)):
+            b, hit = subjects[j], hits.get((i, j))
+            if isinstance(hit, smod.UndecidableScope):
+                why = 'the scope comparison could not be decided, so it is a collision: %s' % hit
+            else:
+                why = hit and 'scope %s collides with %s' % hit
             if why:
                 warned.append(rmod.Finding(PULL_RECORDS, b.path, b.line_of('scope'), 'in flight '
                                            'alongside `%s`, and its %s' % (a.id, why)))
@@ -157,7 +157,7 @@ DEFAULT_STORE = 'default store'
 
 def check_default_store(snap):
     """One WARN per record of the implicit default store (refs/backlog/main while .kit.json names
-    no "backlog".store: store.default_store_refusal), which nothing writes, so a landing closes
+    no "backlog".store: store_live.default_store_refusal), which nothing writes, so a landing closes
     none of its records (at_landing._read_default): they are stranded there. Never red."""
     found = [rmod.Finding(DEFAULT_STORE, rec.path, 1, '%s is held by the default backlog store, '
                           'read only while .kit.json names no "backlog".store, so no landing '
@@ -229,13 +229,14 @@ def shared_paths_unread(why):
     return CheckResult(SHARED_PATHS, 1, [found], unit='shared_paths entries')
 
 
-def check_store(snap, implicit=False, resources=None, shared=None):
+def check_store(snap, implicit=False, resources=None, shared=None, collisions=True):
     """Every check, each with its own denominator. `implicit`: `snap` is the implicit default
     store's, which adds check_default_store when it holds any file. `resources` ({name: capacity},
     the repository's; None: not read) adds check_uses when a record names one, so a store with no
     `uses:` line reads as it always did, and a write, which passes none, meets no config.
     `shared` (opener.repo_shared_paths' `[(path, why)]`; None: not read) adds check_shared_paths
-    when it has an entry, and its good paths exempt their pairs in check_pull_records."""
+    when it has an entry, and its good paths exempt their pairs in check_pull_records.
+    `collisions`: as check_pull_records."""
     shared = list(shared or [])
     good = tuple(p for p, why in shared if why is None)
     by_name = {}
@@ -257,7 +258,7 @@ def check_store(snap, implicit=False, resources=None, shared=None):
                     by_name.get(rmod.PIN_UNIQUENESS, ()), unit='pinned records'),
         CheckResult(rmod.ID_FILENAME, len(readable), by_name.get(rmod.ID_FILENAME, ())),
         check_preemptions(snap),
-        check_pull_records(snap, good),
+        check_pull_records(snap, good, collisions),
         check_hold_citations(snap),
     ]
     if shared:
@@ -273,5 +274,6 @@ def check_store(snap, implicit=False, resources=None, shared=None):
 
 def fail_findings(snap):
     """Every FAIL `check` reports for `snap`: a write may not add one (store.check_change), so
-    `check` and writes share one meaning of red."""
-    return [f for r in check_store(snap) for f in r.findings]
+    `check` and writes share one meaning of red. The colliding-scope pass makes WARNs only, so it
+    is left out."""
+    return [f for r in check_store(snap, collisions=False) for f in r.findings]

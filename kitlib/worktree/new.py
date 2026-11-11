@@ -46,9 +46,10 @@ folder, or a branch that differs only in case from a local branch, is refused. B
 is an exact-spelling match.
 
 A base commit (`base` a full commit hash, or `approval` hub:A-<n>, whose `head` approval_base
-reads from the hub as kitlib.commit.approval does): a NEW branch starts at that commit, after the
+reads from the hub as kitlib.ownerfiles.apply does): a NEW branch starts at that commit, after the
 fetch, when the repository has it. No landing wait, lock or remote comparison applies: the start
-point is fixed. Made for commit.py --owner-approval, which needs HEAD to be the approval's base.
+point is fixed. Made for a branch the hub applies an owner approval on (kitlib.ownerfiles.apply,
+docs/hub-approvals.md "Applying"), started where the approval was asked.
 
 Exit codes: OK 0; REFUSED 1 (nothing made, the lines say why); CONFIG 2 (the kit configuration
 was refused).
@@ -61,7 +62,7 @@ import time
 from kitlib import kitroot
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd
-from kitlib.git import prep as gitprep
+from kitlib.worktree import prep as gitprep
 from kitlib.git import refs as gitrefs
 from kitlib.records import inflight, landing
 from kitlib.host.registry import RegistryError
@@ -196,10 +197,10 @@ def base_commit(base):
 
 def approval_base(value, client=None):
     """`(base commit, None)` of the owner approval `value` (hub:A-<n>), or `(None, why)`. The hub
-    is asked as commit.py asks it (kitlib.commit.approval: doc_id, hub_client, fetch,
+    is asked as commit.py asks it (kitlib.ownerfiles.apply: doc_id, hub_client, fetch,
     state_error), so a consumed or undecided approval is refused here as there; `client` None is
     the machine's hub."""
-    from kitlib.commit import approval as ap
+    from kitlib.ownerfiles import apply as ap
     did = ap.doc_id(value)
     if did is None:
         return None, '--approval takes %s, as %s (not %r)' % (ap.VALUE, ap.oc.EXAMPLE, value)
@@ -234,7 +235,7 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     flight (None: they lead the Outcome's lines); `sleep` and `clock` are time's, for tests.
     `host` is a hosts.json name whose folder the worktree goes in (kitlib.worktree.hostdirs); None
     is "repo".worktrees_dir, as before hosts. `prep(main, folders)` is the first-use repo prep
-    (None: kitlib.git.prep.run) run once the worktree is made; its lines follow the worktree line."""
+    (None: kitlib.worktree.prep.run) run once the worktree is made; its lines follow the worktree line."""
     rc, common, err = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     if rc != 0 or not common:
         return Outcome(REFUSED, ['refused: %s is not a git checkout (no common dir: %s).'

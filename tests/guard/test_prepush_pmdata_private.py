@@ -1,7 +1,7 @@
 """The PM data leak stage of githooks/pre-push: what the private remote takes and refuses, and the stage running before the main rules. The rest is in test_prepush_pmdata.py."""
 import os
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.guard import prepush
 from tests.realgit import real_git
 from tests.guard import prepush_case as pc
@@ -10,7 +10,7 @@ from tests.guard.prepush_case import SECRET
 
 @real_git('git push runs the real pre-push hook (core.hooksPath); rev-list --no-object-names')
 class PmDataPrivateTest(pc.PmDataCase):
-    """The leak stage (docs/guard.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
+    """The leak stage (docs/guard-hooks.md "Pre-push", "PM data branch"): with kit-pm-data.json in the
     git common dir, the data branch, its history and its objects reach only the recorded private
     remote, and that remote gets nothing else. origin is the public remote. Pushes to the private remote, and the stage order."""
 

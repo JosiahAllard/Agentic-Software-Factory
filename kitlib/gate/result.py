@@ -1,9 +1,9 @@
 """The result record: how a branch gate or a landing is going or ended, for a session waiting on it
-(docs/gate.md "Result record").
+(docs/gate-records.md "Result record").
 
 `<dev_drive>/pm-kit/kit-gate-result/<repo key>/<stem>.<kind>.json`, stem = file_stem(branch):
 `dev_drive` is the machine config's Dev Drive root (kitlib.config.user.dev_drive), and the repo
-key (repo_key) names the repository's git common dir, so every worktree of a repository shares
+key (records.place.repo_key) names the repository's git common dir, so every worktree of a repository shares
 one folder and no two repositories do. The session that gates in its worktree and the session
 that waits in another (or in the main checkout) read the same file. The folder is outside every
 checkout and every agent's temp folder, where agents' own file writes do not reach. With no
@@ -15,13 +15,13 @@ The old folder, `<git common dir>/kit-gate-result/` (legacy_dir), is read, and w
 finish_dead finishes a dead old-folder record in place (under that file's lock, which it makes
 there): read() and wait() take a record there when the new folder has none of that branch and
 kind, or when it started strictly later than the new folder's (an older kit's run; pick). The readers a landing trusts
-(kitlib.gate.submit's claim and restore) read the new folder only.
+(landing.submit's claim and restore) read the new folder only.
 
 A Run writes the file twice: a `running` record when the work starts (it replaces any earlier
 record of that branch and kind, at that tip or another), then the final record with the same
 run_id and started_at. Each write is a temp file in the same folder, then os.replace, so a reader
 sees one whole record or the other. Who writes when (kitlib.gate.runner.branch_gate,
-kitlib.gate.land.Lander.run) is in docs/gate.md "Result record".
+landing.lander.Lander.run) is in docs/gate-records.md "Result record".
 
 A record has several writers (a landing's own run, its submitter's claim, a waiter's finish_dead),
 so every write takes the record's lock first: an OS lock (kitlib.fs.treelock.TreeLock) on
@@ -30,8 +30,8 @@ os.replace, so no writer replaces a record another wrote after that re-read. wri
 finish_dead re-read under it; an unconditional write (a run writing its own outcome) only waits
 its turn. The lock file stays (TreeLock never removes one), and its leading dot keeps it out of
 every scan of the folder. A lock not had within LOCK_WAIT_S is a ResultError, like any write that
-fails. kitlib.fs.writelock is not used: it places its lock files by asking git which checkout the
-file is in, and the result folder is in none.
+fails. kitlib.git.lockplace does not place it: it asks git which checkout the file is in, and the
+result folder is in none.
 
 The record (SCHEMA 1), every key always present:
 
@@ -53,7 +53,7 @@ The record (SCHEMA 1), every key always present:
   summary         the outcome's verdict line, or the exception for error
   gate_ok_record  the gate-OK record written for the tip, or null
   cleanup         a landing that landed: the branch cleanup's result for this branch
-                  (kitlib.gate.cleanup: remote_branch, worktree, worktree_path, local_branch,
+                  (landing.cleanup: remote_branch, worktree, worktree_path, local_branch,
                   kept); null for a branch gate, a landing that did not land, and one whose
                   cleanup did not run
   source          where the gate's steps came from (kitlib.gate.detect): "gate.json" (the
@@ -63,18 +63,19 @@ The record (SCHEMA 1), every key always present:
                   record without the key as null (source_of)
   pid, ctime      the process writing the run's records (its creation time, FILETIME), or null:
                   a submitted landing's running records until the detached landing records
-                  itself (kitlib.gate.submit restore), and a record written before the keys.
+                  itself (landing.submit restore), and a record written before the keys.
                   Added after the schema, like source
-  gate_once       a landing's final and error records: whether the base's config sets
-                  "landing".gate_once (Lander.gate_once); null for a branch gate, a running
-                  record, a landing that ended before it read the base's config, a record
-                  another writer finished (kitlib.gate.submit, finish_dead) and one written
-                  before the key. Added after the schema, like source
-  escalated       the same records: whether gate_once made the merged gate run --full
-                  (Lander.once_escalate); null where gate_once is
+  gate_once       always null: the "landing".gate_once key it reported is retired, and the
+                  field stays so a record keeps its shape (one written before the retirement
+                  may hold true or false). Added after the schema, like source
+  escalated       a landing's final and error records: whether the gate-config rule made the
+                  merged gate run every step in full (Lander.config_escalate, which says
+                  `GATE CONFIG: ...`); null for a branch gate, a running record, a landing
+                  that ended before it read the base's config, a record another writer
+                  finished (landing.submit, finish_dead) and one written before the key
   turn_at         a submitted landing's records: when its own process was given its landing
-                  turn (kitlib.gate.submit turn), or null: still queued. No other landing folds a
-                  submission whose turn came (docs/gate.md "Folding queued submissions")
+                  turn (landing.submit turn), or null: still queued. No other landing folds a
+                  submission whose turn came (docs/gate-landing.md "Folding queued submissions")
   folded_into     the run_id of the landing that folded this submission into its batch and
                   lands it (its pid and ctime are then that landing's, its log that landing's
                   output), or null
@@ -103,20 +104,14 @@ import secrets
 import time
 
 from kitlib import gate as G
-from kitlib.config import user as kuser
 from kitlib.fs import replace as fsreplace
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 from kitlib.git import refs, repo
 from kitlib.proc import process
 
 DIR_NAME = 'kit-gate-result'
-KIT_DIR = 'pm-kit'      # <dev_drive>/pm-kit/kit-gate-result: the machine's kit folder
-KEY_NAME_MAX = 40       # the readable part of a repo key; its hash keeps keys apart
-NO_DEV_FOR = ('the machine config sets no dev_drive (the Dev Drive\'s root folder), so there is no '
-              '%s (<dev_drive>\\pm-kit\\%s); the owner sets it (docs/kit-json.md "Machine config '
-              'keys")')
-NO_DEV = NO_DEV_FOR % ('result folder', DIR_NAME)
+NO_DEV = place.NO_DEV_FOR % ('result folder', DIR_NAME)
 SCHEMA = 1
 KINDS = ('gate', 'land')
 RUNNING = 'running'
@@ -133,7 +128,7 @@ LOCK_WAIT_S = 10.0  # a record's lock is held for one read and one replace; past
 LOCK_PAUSE = 0.02
 MAX_STEM = 120      # longer stems are cut and given a hash, so the file name stays short
 # A running record with no pid this young is taken as live: a submitted landing's, whose detached
-# process has not recorded itself yet (kitlib.gate.submit). An older one is 'unknown'.
+# process has not recorded itself yet (landing.submit). An older one is 'unknown'.
 CLAIM_S = 120
 WHAT = {'land': 'landing', 'gate': 'gate'}
 SAFE = frozenset('abcdefghijklmnopqrstuvwxyz0123456789._-')
@@ -146,7 +141,7 @@ LEDGER_FIELDS = ('branch', 'tip', 'run_id', 'started_at', 'finished_at', 'verdic
 # and the hub takes no other field): batch_size, how many branches the landing merged and gated
 # together (the length of the record's `batch`; null when it has none), and folded_into, the
 # run_id of the landing that folded it into its batch (null for that landing's own branches), so a
-# counter of gate runs dedupes on `folded_into or run_id` (docs/gate.md "Land ledger")
+# counter of gate runs dedupes on `folded_into or run_id` (docs/gate-records.md "Land ledger")
 LEDGER_BATCH = ('batch_size', 'folded_into')
 VERDICTS = {G.OK: 'pass', G.FAILED: 'fail', G.USAGE: 'usage', G.STUCK: 'stuck',
             G.REFUSED: 'refused', G.BUSY: 'busy', G.LANDED_UNGATED: 'landed-ungated',
@@ -176,37 +171,13 @@ def file_stem(branch):
     return stem
 
 
-def kit_folder(name, what):
-    """`<dev_drive>/pm-kit/<name>`: one of the machine's kit folders, each holding one folder per
-    repository (repo_key): kit-gate-result, kitlib.records.gate_ok's kit-gate-ok and
-    kitlib.gate.budget's kit-gate-budget. ResultError when the machine config cannot be read or
-    sets no dev_drive; `what` names the folder in it ("result folder")."""
-    try:
-        cfg = kuser.user_config()
-    except Exception as e:      # noqa: BLE001 - ConfigError, OSError: no folder, and why
-        raise ResultError('the machine config cannot be read, so there is no %s: %s' % (what, e))
-    dev = kuser.dev_drive(cfg)
-    if not dev:
-        raise ResultError(NO_DEV_FOR % (what, name))
-    return os.path.join(os.path.abspath(dev), KIT_DIR, name)
-
-
 def machine_root():
-    """`<dev_drive>/pm-kit/kit-gate-result`: the folder every repository's result folder is in.
-    ResultError when the machine config cannot be read or sets no dev_drive."""
-    return kit_folder(DIR_NAME, 'result folder')
-
-
-def repo_key(common):
-    """The result folder name of the repository whose git common dir is `common`: its folder's
-    name (the common dir's parent, for a `.git`), lower case, [a-z0-9_-] only and at most
-    KEY_NAME_MAX long, then `-` and 12 hex of the sha256 of the common dir's real path
-    (normcase): one name for every worktree of a repository, another for every other one."""
-    real = os.path.normcase(os.path.realpath(common)).rstrip('\\/')
-    head, base = os.path.split(real)
-    name = os.path.basename(head) if base == '.git' else base
-    slug = ''.join(c for c in name.lower() if c in SAFE and c != '.')[:KEY_NAME_MAX] or 'repo'
-    return '%s-%s' % (slug, hashlib.sha256(real.encode('utf-8')).hexdigest()[:12])
+    """`<dev_drive>/pm-kit/kit-gate-result`: the folder every repository's result folder is in
+    (place.kit_folder). ResultError when the machine config cannot be read or sets no dev_drive."""
+    try:
+        return place.kit_folder(DIR_NAME, 'result folder')
+    except place.NoKitFolder as e:
+        raise ResultError(str(e))
 
 
 def _common(root):
@@ -219,7 +190,7 @@ def _common(root):
 def result_dir(root):
     """The result folder of the repository `root` is in (the module docstring): ResultError
     when it cannot be worked out."""
-    return os.path.join(machine_root(), repo_key(_common(root)))
+    return os.path.join(machine_root(), place.repo_key(_common(root)))
 
 
 def legacy_dir(root):
@@ -232,7 +203,7 @@ def record_dirs(root):
     """[result_dir, legacy_dir] of `root`: the folders a reader of every record lists, the new
     one first. ResultError when the new one cannot be worked out."""
     common = _common(root)
-    return [os.path.join(machine_root(), repo_key(common)), os.path.join(common, DIR_NAME)]
+    return [os.path.join(machine_root(), place.repo_key(common)), os.path.join(common, DIR_NAME)]
 
 
 def _file_name(branch, kind):
@@ -398,7 +369,7 @@ def append_ledger(root, record):
 def _summary(outcome):
     keys = ('LANDED ', 'NOT LANDED', 'CONFLICT ', 'STUCK:', 'REFUSED:', 'BUSY:', 'USAGE:',
             'NOT RUN:', 'STOPPED:')
-    for line in outcome.lines:      # a landing's verdict line (docs/gate.md "Exit codes")
+    for line in outcome.lines:      # a landing's verdict line (docs/gate-run.md "Exit codes")
         if line.startswith(keys):
             return line
     return outcome.lines[0] if outcome.lines else ''
@@ -409,9 +380,9 @@ class Run(object):
     record with the same run_id and started_at. Each returns `(path, line)`: the line to say as
     progress, `result record: <path>` or a WARNING (path None). Nothing here raises: a record
     that cannot be written never changes the run's outcome. Its records name this process (pid,
-    ctime), the one doing the run; a submission clears them (kitlib.gate.submit). `turn_at`,
+    ctime), the one doing the run; a submission clears them (landing.submit). `turn_at`,
     `folded_into` and `fold_dropped` go into every record it writes (FOLD_KEYS; a submitted
-    landing's, kitlib.gate.submit), `batch` into its final and error records."""
+    landing's, landing.submit), `batch` into its final and error records."""
 
     def __init__(self, root, kind, branch, tip, base=None):
         self.root, self.kind, self.branch, self.tip, self.base = root, kind, branch, tip, base
@@ -675,7 +646,7 @@ def at_tip(rec, branch, kind, tip):
 def result_lines(rec, kind, branch):
     """The two lines a waiter gives for the final record `rec` of `branch` and `kind`: `RESULT
     <verdict> <kind> <branch> at <tip[:10]>: <summary> (<log>)`, then the record as one JSON
-    line (gate.py wait-result, and land.py --wait-result through kitlib.gate.submit.follow)."""
+    line (gate.py wait-result, and land.py --wait-result through landing.submit.follow)."""
     return ['RESULT %s %s %s at %s: %s (%s)' % (rec.get('verdict'), kind, branch,
                                                str(rec.get('tip'))[:10], rec.get('summary'),
                                                rec.get('log')),

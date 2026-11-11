@@ -1,10 +1,11 @@
-"""git-stash-shared (docs/guard.md "Rules"): an agent session's stash in a linked worktree that adds
+"""git-stash-shared (docs/guard-rules.md "Rules"): an agent session's stash in a linked worktree that adds
 an untagged entry or takes one it does not name. The sessions it holds follow agent_session, as
 kill-by-name does; a main checkout's stash stays git-stash's. The command rows are in
 tests/guard/shell_rows.py."""
 import unittest
 
-from kitlib.guard import commands as cm, context, rules, shell as sh
+from kitlib.guard import context, rules, shell as sh
+from kitlib.guard import commands_git as cg
 
 from . import world as W
 from .claudehost import decide
@@ -76,7 +77,7 @@ class VerbIsTheFirstWord(unittest.TestCase):
 
     @staticmethod
     def call(*words):
-        return cm.GitCall(None, 'stash', [sh.Word(t, False, 0, 0) for t in words], None, False)
+        return cg.GitCall(None, 'stash', [sh.Word(t, False, 0, 0) for t in words], None, False)
 
     def test_an_option_or_dashes_first_is_no_read(self):
         for words in (('--', 'show'), ('--', 'list'), ('-q', 'list'), ('--quiet', 'show'), ('-q', '--', 'show'),

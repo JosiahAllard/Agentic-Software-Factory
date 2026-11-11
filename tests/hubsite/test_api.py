@@ -15,7 +15,9 @@ from unittest import mock
 
 from kitlib import hubvalidate
 from kitlib.backlog import store as smod
-from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve, todosteps
+from kitlib.hubsite import api, apipages, derived, push, recordwrite, schema, serve, serverepos, servesources, serveviews
+from kitlib.ownerfiles import approvals
+from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import backlog as hbacklog
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
@@ -929,7 +931,7 @@ class PendingReadsTest(ApiCase):
             return {'kit': {}, 'zeta': {}}
         self.patch(mock.patch.object(api.lsettings, 'load', lambda home=None: object()))
         self.patch(mock.patch.object(api.lstate, 'read_sessions', read_sessions))
-        repo_name = serve._repo_name(Repos(), api.launcher_keys,
+        repo_name = serverepos._repo_name(Repos(), api.launcher_keys,
                                      remote_ids=lambda root: ('github.com/x/kit', None))
         self.api = api.Api(self.store, clock=CLOCK, repo_name=repo_name,
                            kit_key=lambda: repo_name('github.com/x/kit'))
@@ -1245,7 +1247,7 @@ class PagesTest(ApiCase):
         for raw in ('3600', '1e9', '55', '', '2.5'):
             self.ok('GET', '/wait', AGENT, None, {'timeout': raw} if raw else None)
         self.assertEqual(seen, [(1, 55), (1, 55), (1, 55), (1, 55), (1, 2.5)])
-        self.assertEqual(api.WAIT_MAX_S, 55)
+        self.assertEqual(hubvalidate.WAIT_MAX_S, 55)
         for raw in ('-1', 'soon', 'nan', 'inf'):
             self.refused('invalid', 'timeout', 'GET', '/wait', AGENT, None, {'timeout': raw})
         self.refused('invalid', 'since', 'GET', '/wait', AGENT, None, {'since': '-1'})
@@ -2385,7 +2387,7 @@ class IdGuardTest(ApiCase):
 
 
 class RecordViews(object):
-    """The two record views as kitlib.hubsite.serve.SiteViews gives them: known names answer, the
+    """The two record views as kitlib.hubsite.serveviews.SiteViews gives them: known names answer, the
     rest raise the HubErrors SiteViews maps kitlib.hubsite.backlog's refusals to."""
 
     def __init__(self):
@@ -2702,8 +2704,8 @@ class QuestionClassTest(ApiCase):
         return dict({'from': 'pm', 'if_version': self.doc(qid)['version']}, **kw)
 
     def test_each_class_is_kept_on_the_question(self):
-        self.assertEqual(api.QUESTION_CLASSES, ('rule', 'machine', 'cross-repo', 'go'))
-        for name in api.QUESTION_CLASSES:
+        self.assertEqual(hubvalidate.QUESTION_CLASSES, ('rule', 'machine', 'cross-repo', 'go'))
+        for name in hubvalidate.QUESTION_CLASSES:
             with self.subTest(name=name):
                 qid = self.ok('POST', '/questions', AGENT, self.ask(**{'class': name}))['id']
                 self.assertEqual(self.doc(qid)['class'], name)
@@ -3071,7 +3073,7 @@ class RecordWriteRouteTest(ApiCase):
 
 class ApprovalRouteTest(ApiCase):
     """The approvals routes over a real checkout: TempRepo's one commit holds README.md
-    "hello\\n". The rules themselves are tests/hubsite/test_approvals_verify.py."""
+    "hello\\n". The rules themselves are tests/ownerfiles/test_approvals_verify.py."""
 
     KEY = 'k' * 64
     URL = 'https://github.com/Owner/Repo.git'
@@ -3169,20 +3171,28 @@ class ApprovalRouteTest(ApiCase):
         self.refused('conflict', 'status', 'POST', '/approvals/%s/decide' % doc_id, OWNER,
                      {'decision': 'approve', 'if_version': 2}, strong=True)
 
-    def test_an_approval_is_consumed_once(self):
+    def test_no_agent_consumes_a_change_approval_with_a_commit(self):
+        # only the hub's own apply consumes one (apiapprovals._applied): an agent naming a commit
+        # would spend an approval the owner approved and the hub has not applied
+        doc_id = self.add()['id']
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+                     {'commit': self.COMMIT, 'if_version': 1})
+        self.decide(doc_id)
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+                     {'commit': self.COMMIT, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)
+        self.assertEqual(doc['status'], 'approved')
+        self.assertNotIn('commit', doc)
+
+    def test_no_agent_consumes_a_change_approval_by_args(self):
+        # the op form of the route (args_sha256) refuses a change approval: the kind is checked
         doc_id = self.add()['id']
         self.decide(doc_id)
-        obj = self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
-                      {'commit': self.COMMIT, 'if_version': 2})
-        self.assertEqual(obj['status'], 'consumed')
-        self.assertEqual(self.store.get('approvals', doc_id)['commit'], self.COMMIT)
-        self.refused('conflict', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
-                     {'commit': self.COMMIT, 'if_version': 3})
-
-    def test_a_request_not_approved_is_not_consumed(self):
-        doc_id = self.add()['id']
-        self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
-                     {'commit': self.COMMIT, 'if_version': 1})
+        self.refused('conflict', 'kind', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+                     {'args_sha256': 'a' * 64, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)
+        self.assertEqual((doc['status'], doc['version']), ('approved', 2))
+        self.assertNotIn('consumed_at', doc)
 
     def test_verify_answers_the_check_and_never_the_sig(self):
         doc_id = self.add()['id']
@@ -3213,8 +3223,9 @@ class ApprovalRouteTest(ApiCase):
         self.assertEqual(self.verify(doc_id, commit=self.COMMIT)['why'], approvals.WHY_COMMIT)
         self.assertEqual(self.verify(doc_id, commit='')['why'], approvals.WHY_COMMIT)
         self.assertIs(self.verify(doc_id)['valid'], True)
-        self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
-                {'commit': self.COMMIT, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)      # as the hub's apply consumes it
+        self.store.update('approvals', doc_id, approvals.consume_fields(
+            self.KEY, doc_id, doc, self.COMMIT, datetime.datetime.fromisoformat(NOW)))
         self.assertIs(self.verify(doc_id, commit=self.COMMIT)['valid'], True)
         # a rebuilt commit keeps the approval: consumed by any commit (spent is the client's)
         self.assertIs(self.verify(doc_id, commit='d' * 40)['valid'], True)
@@ -3236,7 +3247,7 @@ class ApprovalRouteTest(ApiCase):
 
 class OpApprovalRouteTest(ApiCase):
     """The approvals routes for the op kind: one run of a delegated operation (docs/delegations.md
-    "Hub approvals"). No checkout is read for it. The rules are tests/hubsite/test_approvals_op.py."""
+    "Hub approvals"). No checkout is read for it. The rules are tests/ownerfiles/test_approvals_op.py."""
 
     KEY = 'k' * 64
     LINE = 'run D-001 dest=dd/out src=dd/in'
@@ -3315,7 +3326,7 @@ class OpApprovalRouteTest(ApiCase):
         obj = self.ok('GET', '/approvals/%s/verify' % doc_id, AGENT,
                       query={'repo': 'pm', 'head': 'a' * 40, 'files': '{}'})
         self.assertEqual((obj['valid'], obj['why']), (False, approvals.WHY_KIND_OP))
-        self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'commit': 'c' * 40, 'if_version': 2})
 
     def test_an_op_approval_is_consumed_once_by_its_own_arguments(self):
@@ -3323,7 +3334,7 @@ class OpApprovalRouteTest(ApiCase):
         args = approvals.line_sha256(self.LINE)
         self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': approvals.line_sha256('x'), 'if_version': 2})
-        self.refused('invalid', 'args_sha256', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': args, 'commit': 'c' * 40, 'if_version': 2})
         self.refused('conflict', 'if_version', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': args, 'if_version': 1})
@@ -3764,9 +3775,9 @@ class ScheduleTest(ApiCase):
                                                    'every_s': 15 * 60})
         # the period is the one machine setup registers the tick with, not a copy of it; a few
         # missed ticks before it is said not to run
-        from kitlib.machinesetup import extras
-        self.assertEqual(api.tick_every_s(), extras.AUTO_EVERY_MINUTES * 60)
-        with mock.patch.object(extras, 'AUTO_EVERY_MINUTES', 7):
+        from kitlib import autotasks
+        self.assertEqual(api.tick_every_s(), autotasks.AUTO_EVERY_MINUTES * 60)
+        with mock.patch.object(autotasks, 'AUTO_EVERY_MINUTES', 7):
             self.assertEqual(self.ok('GET', '/schedules', OWNER)['tick']['every_s'], 7 * 60)
         self.assertGreater(api.TICK_STALE_S, 2 * api.tick_every_s())
 
@@ -4347,7 +4358,7 @@ class FindingsSourceTest(unittest.TestCase):
         self.result('kit', [self.row(), self.row(fingerprint=FP2)])
         store = Store.open(os.path.join(self.root, 'store'), clock=CLOCK)
         self.addCleanup(store.close)
-        views = serve.SiteViews(store, serve.Sources(findings=self.root))
+        views = serveviews.SiteViews(store, servesources.Sources(findings=self.root))
         self.assertEqual(views.findings(), derived.findings(self.root))
         a = api.Api(store, views=views, clock=CLOCK)
         status, obj = a.call('POST', BASE + '/finding_marks', OWNER,
@@ -4356,7 +4367,7 @@ class FindingsSourceTest(unittest.TestCase):
         status, obj = a.call('GET', BASE + '/findings', AGENT)
         self.assertEqual([f['fingerprint'] for f in obj['items']], [FP2])
         # a server with no findings folder (no pm_data) shows none
-        self.assertEqual(serve.SiteViews(store, serve.Sources()).findings(), [])
+        self.assertEqual(serveviews.SiteViews(store, servesources.Sources()).findings(), [])
 
     def test_site_views_show_each_lint_run_in_the_findings_runs(self):
         """KIT-HUB-FINDINGS-LINT-RUNS: the lint folder's runs reach GET findings' runs."""
@@ -4367,14 +4378,14 @@ class FindingsSourceTest(unittest.TestCase):
                         now=datetime.datetime(2026, 1, 9, 3, 0, tzinfo=datetime.timezone.utc))
         store = Store.open(os.path.join(self.root, 'store'), clock=CLOCK)
         self.addCleanup(store.close)
-        a = api.Api(store, views=serve.SiteViews(store, serve.Sources(findings=self.root)),
+        a = api.Api(store, views=serveviews.SiteViews(store, servesources.Sources(findings=self.root)),
                     clock=CLOCK)
         status, obj = a.call('GET', BASE + '/findings', AGENT)
         self.assertEqual(status, 200, obj)
         self.assertEqual(obj['runs'], [{'repo': 'kit', 'started': '2026-01-02T03:04:05Z',
                                         'ledger': None, 'skipped': {
                                             'reason': 'busy', 'at': '2026-01-09T03:00:00Z'}}])
-        bare = api.Api(store, views=serve.SiteViews(store, serve.Sources()), clock=CLOCK)
+        bare = api.Api(store, views=serveviews.SiteViews(store, servesources.Sources()), clock=CLOCK)
         self.assertEqual(bare.call('GET', BASE + '/findings', AGENT)[1]['runs'], [])
 
     def test_the_machine_sources_read_the_pm_data_lint_folder(self):
@@ -4382,11 +4393,11 @@ class FindingsSourceTest(unittest.TestCase):
         os.makedirs(home)
         pm = os.path.join(self.root, 'pm')
         pm_repo(self, record=False)          # the hub's token folder needs the PM-repo pointer
-        with mock.patch.object(serve.pmdata, 'machine_settings', lambda h: {'path': pm}):
-            src = serve.machine_sources(home, sync=False)
+        with mock.patch.object(servesources.pmdata, 'machine_settings', lambda h: {'path': pm}):
+            src = servesources.machine_sources(home, sync=False)
         self.assertEqual(src.findings, os.path.join(pm, lint_result.FOLDER))
-        with mock.patch.object(serve.pmdata, 'machine_settings', lambda h: None):
-            self.assertIsNone(serve.machine_sources(home, sync=False).findings)
+        with mock.patch.object(servesources.pmdata, 'machine_settings', lambda h: None):
+            self.assertIsNone(servesources.machine_sources(home, sync=False).findings)
 
 
 class UnblockStoreTest(trw.Case):
@@ -4440,7 +4451,7 @@ class UnblockStoreTest(trw.Case):
             def record(self, repo, rid):
                 return {'repo': repo, 'id': rid}
 
-        views = serve.SiteViews(None, serve.Sources(), backlog_views=Backlog())
+        views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=Backlog())
         out = views.record_unblock('r', 'FOO', None, None)
         self.assertEqual(out['record'], {'repo': 'r', 'id': 'FOO'})
         self.assertEqual(reread, [('r', root)])
@@ -4835,7 +4846,8 @@ class FilingTest(ApiCase):
                 pass
 
         hub = serve.Hub(None, self.store, self.api, self.views, None, [], None, Timer(), [],
-                        log=lambda level, text: said.append((level, text)))
+                        log=lambda level, text: said.append((level, text)),
+                        code=serve.code_folders())
         hub._refile()
         self.assertEqual(said, [('note', '%s not filed: %s' % (qid, api.FILING_SAYS['store']))])
         self.views.fail = None
@@ -5143,7 +5155,7 @@ class AnswerStoreTest(trw.Case):
                 return {'repo': repo, 'id': rid, 'where': 'open'}
 
         self.backlog = Backlog()
-        self.views = serve.SiteViews(None, serve.Sources(), backlog_views=self.backlog)
+        self.views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=self.backlog)
         hub = tempfile.mkdtemp(prefix='kit-hubapi-')
         self.addCleanup(shutil.rmtree, hub, True)
         self.store = Store.open(hub, clock=CLOCK)
@@ -5210,7 +5222,7 @@ class AnswerNoStoreTest(trw.Case):
             def record(self, repo, rid):
                 return {'repo': repo, 'id': rid, 'where': 'open'}
 
-        self.views = serve.SiteViews(None, serve.Sources(), backlog_views=Backlog())
+        self.views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=Backlog())
         hub = tempfile.mkdtemp(prefix='kit-hubapi-')
         self.addCleanup(shutil.rmtree, hub, True)
         self.store = Store.open(hub, clock=CLOCK)
@@ -5262,9 +5274,10 @@ class EachModuleImportsFirst(unittest.TestCase):
         import sys
         from kitlib.proc import spawn
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for name in ('api', 'approvals', 'client', 'landings', 'push', 'serve', 'store'):
+        for name in ('hubsite.api', 'ownerfiles.approvals', 'hubclient.client', 'landing.feed',
+                     'hubsite.push', 'hubsite.serve', 'hubsite.store'):
             with self.subTest(module=name):
-                r = spawn.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
+                r = spawn.run([sys.executable, '-c', 'import kitlib.%s' % name],
                                    cwd=root, capture_output=True, text=True, timeout=60)
                 self.assertEqual(r.returncode, 0, r.stderr[-600:])
 

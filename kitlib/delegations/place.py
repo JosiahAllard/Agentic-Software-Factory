@@ -25,8 +25,8 @@ import re
 
 from kitlib.config import user as kuser
 from kitlib.host import registry
-from kitlib.pluginsource import RefreshError
-from kitlib.pluginsource import settings as plugin_settings
+from kitlib.pluginsource.layout import RefreshError
+from kitlib.pluginsource.layout import settings as plugin_settings
 
 SCAN_CAP = 20000
 # An option token: -x, --name, /NAME, each optionally with :value or =value.

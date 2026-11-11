@@ -4,6 +4,9 @@
                  `<trailer>: <that entry>` is a blanket approval for them; any other entry is one
                  exact path. No other prefix is a blanket.
   paths_except   what under a locked directory is not locked (`.claude/worktrees/`).
+  shrink_only    owner-only paths (exact, never a directory) that any commit may change by
+                 deleting lines only (kitlib.ownerfiles.rules.deletes_only); any other change
+                 to one stays the owner's.
   email          the author email of the owner's own commits. A trailer counts only on a commit
                  whose AUTHOR email is this one. Unset in `.kit.json`: the machine config's
                  owner_email (Config.owner_rules hands it over as a callable, read the first
@@ -17,8 +20,8 @@
 
 Fail-closed: an unset owner email (or one also listed as an agent's) proves nothing, so every
 owner-only change blocks. For a landing check `merge()` unions the path lists of the base and the
-branch, intersects their exceptions and takes the owner from the base alone: a branch cannot
-unlock a path, or name its own author the owner, in the change it lands.
+branch, intersects their exceptions and takes the owner and shrink_only from the base alone: a
+branch cannot unlock or loosen a path, or name its own author the owner, in the change it lands.
 
 Paths compare through norm(): forward slashes, lower case (`.lower()`, never `.casefold()`), no
 `./` stripping and no `..` resolution.
@@ -28,16 +31,16 @@ from . import schema
 DEFAULT = tuple(schema.OWNER_PATHS)
 DEFAULT_EXCEPT = tuple(schema.OWNER_PATHS_EXCEPT)
 TRAILER = 'Owner-Approved'
-APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.guard.ownercommits.TRAILER
+APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.ownerfiles.rules.TRAILER
 
 
 def trailer_problem(key):
     """None when `key` may be the "owner".trailer, else why not: git matches trailer keys
     without regard to case, so Owner-Approval in any case is the hub approval's trailer."""
     if (key or '').strip().lower() == APPROVAL_TRAILER.lower():
-        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (commit.py '
-                '--owner-approval), and a claim key equal to it would read every hub approval as '
-                'an owner claim' % APPROVAL_TRAILER)
+        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (the hub\'s '
+                'commit of an approved change), and a claim key equal to it would read every hub '
+                'approval as an owner claim' % APPROVAL_TRAILER)
     return None
 
 
@@ -58,9 +61,10 @@ class Rules(object):
     email is first asked for."""
 
     def __init__(self, entries=DEFAULT, excepts=DEFAULT_EXCEPT, owner_email='', agent_emails=(),
-                 trailer=TRAILER):
+                 trailer=TRAILER, shrink_only=()):
         self.entries = [e.replace('\\', '/') for e in entries]
         self.excepts = [e.replace('\\', '/') for e in excepts]
+        self.shrink_only = [e.replace('\\', '/') for e in shrink_only]
         self._email = owner_email
         self.agent_emails = {e.strip().lower() for e in agent_emails if e and e.strip()}
         self.trailer = trailer
@@ -95,6 +99,11 @@ class Rules(object):
         if self._excepted(p):
             return False
         return any(p.startswith(norm(e)) if e.endswith('/') else p == norm(e) for e in self.entries)
+
+    def is_shrink_only(self, path):
+        """True when `path` is owner-only and a shrink_only entry names it exactly."""
+        p = norm(path)
+        return self.is_locked(path) and any(p == norm(e) for e in self.shrink_only)
 
     def blanket_for(self, path):
         """The directory entry (configured spelling) covering a locked `path`, or None."""
@@ -143,7 +152,8 @@ def from_section(owner, fallback_email=None):
     """Rules from a checked `owner` section dict (Config.owner()). `fallback_email`: a callable
     giving the email when the section sets none (the machine config's)."""
     return Rules(owner['paths'] or DEFAULT, owner['paths_except'], owner['email'] or fallback_email or '',
-                 owner['agent_emails'] or (), owner['trailer'] or TRAILER)
+                 owner['agent_emails'] or (), owner['trailer'] or TRAILER,
+                 owner.get('shrink_only') or ())
 
 
 def merge(work, base):
@@ -154,4 +164,5 @@ def merge(work, base):
     base_except = {norm(x) for x in b.excepts}
     excepts = [e for e in work.excepts if norm(e) in base_except]
     owner = b._email if base is not None else ''
-    return Rules(entries, excepts, owner, sorted(b.agent_emails | work.agent_emails), b.trailer)
+    return Rules(entries, excepts, owner, sorted(b.agent_emails | work.agent_emails), b.trailer,
+                 b.shrink_only)

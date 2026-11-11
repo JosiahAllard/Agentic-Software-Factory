@@ -14,6 +14,7 @@ import sys
 import time
 
 from kitlib import config as kconfig
+from kitlib.git import batch as gitbatch
 from kitlib.git import refs as gitrefs
 from kitlib.git import repo as gitrepo
 from kitlib.lock import giveback
@@ -42,7 +43,10 @@ def plan(root, changed, cfg, say):
     tree = selftree.scan(root)
     picked, why, notes = selftree.selection(changed, tree, cfg)
     for f in notes:
-        say('  (no test)  %s: prose no test names' % f)
+        if selftree._matches(f, cfg['prose']):
+            say('  (no test)  %s: prose no test names' % f)
+        else:
+            say('  (no test)  nothing reads %s: always-run set only' % f)
     if picked == selftree.ALL:
         say('kit_tests: %s' % why[0])
         return FULL
@@ -62,6 +66,40 @@ def plan(root, changed, cfg, say):
         'changed path(s)' % (len(modules), len(selftree.all_test_modules(root)), len(packages),
                              len(tree.tests), len(changed)))
     return modules
+
+
+def comment_only(top, base, modules):
+    """The test modules of `modules` (added or changed ones, dotted) whose work-tree source differs
+    from the merge-base of `base` and HEAD only in comments and docstrings (tiers.code_changed), in
+    `modules`' order: the real-git pass leaves them to the fake pass. Fail safe: a module whose
+    work-tree file cannot be read, or that the merge-base does not hold as a file, stays changed;
+    when git cannot say the merge-base or the base sources, none is left out. Git is asked only
+    when some module's file reads: a merge-base, then one `cat-file --batch` for every source."""
+    tip = {}
+    for m in modules:
+        path = m.replace('.', '/') + '.py'
+        try:
+            with open(os.path.join(top, *path.split('/')), 'rb') as f:
+                tip[m] = (path, f.read())
+        except OSError:
+            pass
+    if not tip:
+        return []
+    mb, _why = gitrefs.merge_base(base, 'HEAD', top)
+    if not mb:
+        return []
+    specs = {m: '%s:%s' % (mb, path) for m, (path, _src) in tip.items()}
+    old, _why = gitbatch.cat_file(list(specs.values()), top)
+    if old is None:
+        return []
+    quiet = []
+    for m in modules:
+        if m not in tip:
+            continue
+        got = old.get(specs[m])
+        if got is not None and got[0] == 'blob' and not tiers.code_changed(got[1], tip[m][1]):
+            quiet.append(m)
+    return quiet
 
 
 def drainer(say):
@@ -156,6 +194,7 @@ def run(a, top, out):
     # on real git, as a second pass (kitlib.tooldeps.tiers): a test that only ever ran on the fake
     # cannot reach main unseen by real git.
     tier = '0' if a.real_git else os.environ.get('KIT_FAKE_GIT', '1')
+    base = None             # set when git lists the change; --changed and --scrub have none
     if a.scrub:
         # The docs-only gate step: no test a docs change cannot reach, but every tracked file
         # still scanned. One pass, with the same isolation as any other run.
@@ -214,6 +253,14 @@ def run(a, top, out):
     again = []
     if tier == '1':
         again = tiers.changed_test_modules(changed, selftree.all_test_modules(top))
+        if again and base is not None:
+            # A module changed only in comments and docstrings cannot behave differently on real
+            # git; the fake pass still runs it. With --changed there is no base: every one counts.
+            quiet = comment_only(top, base, again)
+            if quiet:
+                say('kit_tests: real-git pass: %d test module(s) changed only in comments or '
+                    'docstrings, fake git only: %s' % (len(quiet), ', '.join(quiet)))
+                again = [m for m in again if m not in quiet]
     if again:
         say('kit_tests: real-git pass: %d added or changed test module(s): %s'
             % (len(again), ', '.join(again)))

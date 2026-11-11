@@ -9,7 +9,7 @@ Deployment lifecycle and native dispatch providers are assembled separately.
 from pathlib import Path
 import threading
 
-from kitlib.proc.pipe import protect_file
+from kitlib.platform.windows.pipe import protect_file
 from optional.bridge import registry
 from optional.bridge.win.evidence import regular
 from optional.bridge.win.leader import ServiceLeader

@@ -2,7 +2,7 @@
 "Gate-OK record").
 
 gate.py writes `<dev_drive>/pm-kit/kit-gate-ok/<repo key>/<commit>.json` (record_dir; the repo
-key is kitlib.gate.result.repo_key's, one for every worktree of a repository) for the commit it
+key is records.place.repo_key's, one for every worktree of a repository) for the commit it
 passed; landings, the kit guard and the pre-push hook read it. The folder is outside every
 checkout and every agent's temp folder, where agents' own file writes do not reach; the git
 common dir, where records were before, is writable by any session that can write `.git`. With no
@@ -38,22 +38,22 @@ unless the caller asks for what they carry):
                 branch gate: the commit gated; a landing: --expect-main), or null
   source        where the gate's steps came from: "gate.json" (the "gate" section of
                 `.kit.json`, inline or in its file) or "auto" (detected from the tree,
-                kitlib.gate.detect), or null. A reader takes a record without it as "gate.json"
+                gate.detect), or null. A reader takes a record without it as "gate.json"
                 (source_of)
   full          true when the gate ran `--full` (every non-manual step, each by its full_cmd when
-                it has one; kitlib.gate.steps.select), false for any other run. Only the JSON
+                it has one; gate.steps.select), false for any other run. Only the JSON
                 true counts (full_of): a record without the key was written by a gate from before
                 records said which (an older kit, or a kit branch's own gate.py), and a reader that needs a full gate (verify_full; a landing's branch tips)
                 takes it as not full. Nothing in the older keys tells the two apart: the steps
                 carry names only, and a step with a full_cmd has the same name in both modes
   mode          what the gate selected (MODES): "full" (--full; `full` is true), "select" (the
-                steps the change selects, plus "gate".smoke_steps; kitlib.gate.steps.select) or
+                steps the change selects, plus "gate".smoke_steps; gate.steps.select) or
                 "docs" (a docs-only change: only "gate".docs_only steps ran;
-                kitlib.gate.steps.docs_only). A record without it is "full" when full_of says so,
+                gate.steps.docs_only). A record without it is "full" when full_of says so,
                 else unknown (mode_of: None), and a landing takes an unknown mode only as --full
   input_keys    {"schema": 1, "steps": {name: {part: sha256}}}: for each step that asks for reuse
                 and passed, the digests a landing compares to serve it from this record when
-                main moved (kitlib.gate.reuse, "The input tree"; INPUT_PARTS), or null (no step
+                main moved (gate.reuse, "The input tree"; INPUT_PARTS), or null (no step
                 has one, or the gate wrote none: --only, a partial or docs-only gate, a work tree
                 not clean at its start)
 
@@ -78,8 +78,11 @@ import json
 import os
 import secrets
 
+import kitlib.config as kconfig
+from kitlib.config.types import ConfigError
 from kitlib.fs import replace as fsreplace
 from kitlib.git import cmd, refs, repo
+from kitlib.records import place
 
 DIR_NAME = 'kit-gate-ok'
 SCHEMA = 1
@@ -118,11 +121,6 @@ def config_hash(gate_config):
     return hashlib.sha256(canonical_json(gate_config).encode('utf-8')).hexdigest()
 
 
-def _result():
-    from kitlib.gate import result      # result imports this module
-    return result
-
-
 def _common(root):
     common, why = repo.common_dir(root)
     if not common:
@@ -132,20 +130,19 @@ def _common(root):
 
 def machine_dir():
     """`<dev_drive>/pm-kit/kit-gate-ok`: the folder every repository's record folder is in
-    (kitlib.gate.result.kit_folder). NoRecordFolder when there is no dev_drive."""
-    r = _result()
+    (place.kit_folder). NoRecordFolder when there is no dev_drive."""
     try:
-        return r.kit_folder(DIR_NAME, 'gate-OK folder')
-    except r.ResultError as e:
+        return place.kit_folder(DIR_NAME, 'gate-OK folder')
+    except place.NoKitFolder as e:
         raise NoRecordFolder(str(e))
 
 
 def record_dir(root):
     """The record folder of the repository `root` is in: `<dev_drive>/pm-kit/kit-gate-ok/<repo
-    key>` (kitlib.gate.result.repo_key: one for every worktree of a repository). RecordError when
+    key>` (place.repo_key: one for every worktree of a repository). RecordError when
     it cannot be worked out (no git common dir; NoRecordFolder: no dev_drive)."""
     common = _common(root)
-    return os.path.join(machine_dir(), _result().repo_key(common))
+    return os.path.join(machine_dir(), place.repo_key(common))
 
 
 def legacy_dir(root):
@@ -244,6 +241,58 @@ def verify_full(root, commit):
     return None, 'the record for %s is from a gate run without --full' % rec['commit']
 
 
+def gate_config(cfg):
+    """The value a gate-OK record's `gate_config` hashes: `.kit.json` "gate" over its defaults.
+    The kit guard and the pre-push hook verify a record with this same value. An auto-detected gate
+    (gate.detect) hashes this too, not its detected steps: they are a function of the
+    commit's tree (which the record names), its base's tree (`base`) and the kit (its `kit`), so
+    the hash still names what decides the steps. A key of HASH_IF_SET that is unset is left out,
+    so a config that sets none of them hashes as it did before the key existed: a record a kit
+    without the key wrote still verifies. Each key of HASH_REMOVED is put in with the default it
+    hashed as, so a record a kit that still had the key wrote verifies too. A renamed kind
+    hashes under its old name (HASH_KIND_AS)."""
+    gate = cfg.section('gate')
+    hashed = {k: v for k, v in gate.items() if not (k in HASH_IF_SET and v is None)}
+    hashed.update((k, v) for k, v in HASH_REMOVED.items() if k not in hashed)
+    if isinstance(hashed.get('kind'), str):
+        hashed['kind'] = HASH_KIND_AS.get(hashed['kind'], hashed['kind'])
+    return hashed
+
+
+# "gate" keys added after records were first written; unset, they are not in gate_config().
+HASH_IF_SET = ('smoke_steps', 'docs_only')
+# "gate" keys the schema no longer has (a config that sets one fails to load), with the default
+# every config hashed them as while they were keys. Only the hash keeps them, never section() or
+# the steps: dropping one would change every repo's hash, so every gate-OK record written on the
+# other side of that kit change would fail verify_record (docs/gate-records.md "Gate-OK record").
+HASH_REMOVED = {'python_tests': 'discover', 'python_tests_floor': None, 'trailers': None}
+# A renamed kind hashes under the name it had when records were first written (kitlib/lock/
+# kinds.json "aliases"), so "gate".kind under either name, and the default, hash as before the
+# rename: records from both sides of it verify. Fixed here, never read from the table. A kind
+# rename must add its entries here (the new name, and any name between), each mapped to the name
+# first written, not the previous one (tests/gate/test_branch_gate.py checks it against the
+# aliases). A repository-defined kind in "gate".kind goes through this same mapping.
+HASH_KIND_AS = {'test': 'engine-test', 'app-run': 'engine-run'}
+
+
+def gate_config_at(root, rev):
+    """gate_config() of the config commit `rev` holds (kitlib.config.load_at); ConfigError when it
+    cannot be read."""
+    return gate_config(kconfig.load_at(root, rev))
+
+
+def verify_record(root, commit):
+    """verify() with the gate config read from the record's own `config_rev` (the commit
+    whose `.kit.json` the gate ran with): `(record, None)` or `(None, why)`. A record's .git copy
+    counts only when there is no record folder (no dev_drive; read)."""
+    def config_at(rev):
+        try:
+            return gate_config_at(root, rev)
+        except ConfigError as e:
+            raise RecordError('the gate config at %s: %s' % (rev[:10], e))
+    return verify(root, commit, config_at=config_at)
+
+
 def _input_keys(keys):
     """`keys` when it is None or {"schema": int, "steps": {name: {part: 64-hex}}}, else
     RecordError."""
@@ -278,9 +327,9 @@ def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
           config_rev=None, source=None, full=False, mode=None, input_keys=None, ran_on=None):
     """The record for `rev` (resolved here: commit, tree and author come from git, never the
     caller). `config_rev`: the commit the gate config was read from (resolved to a full hash).
-    `source`: "gate.json" or "auto" (kitlib.gate.detect), or None. `full`: the gate ran --full.
+    `source`: "gate.json" or "auto" (gate.detect), or None. `full`: the gate ran --full.
     `mode`: one of MODES; None: "full" with `full`, else "select". "full" goes with `full` and
-    only with it (RecordError). `input_keys`: kitlib.gate.reuse.record_keys, or None. `ran_on`:
+    only with it (RecordError). `input_keys`: gate.reuse.record_keys, or None. `ran_on`:
     the steps ran on a load node ({"node", "host_key", "job"}, from main's registry), so the
     record gets that key and no input_keys (RecordError when both are given)."""
     if ran_on is not None:

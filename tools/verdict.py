@@ -1,7 +1,8 @@
-"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/gate/verdicts.py).
+"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/landing/verdicts.py).
 
   verdict.py add --branch B --tip SHA --verdict V --risk R --reviewer TYPE --reviewer-model M
-                 --reviewer-id ID --author A --range BASE..TIP --session S [--record ID ...] [-C DIR]
+                 --reviewer-id ID --author A --range BASE..TIP --session S [--record ID ...]
+                 [--follow-up ID ...] [--design-reviewer-id ID] [-C DIR]
       queue B at SHA (the coordinator, after reading the review; never the reviewer). SHA must be
       B's head now. A re-add replaces B's entry. V: LAND | "LAND WITH FOLLOW-UP"; R: Low |
       Medium | High. Prints `QUEUED <branch> <tip>`. A Medium or High-risk verdict whose reviewer is the
@@ -26,6 +27,18 @@
       verdicts.reviewer_verdict_why); an
       id with no transcript prints `NOTE: the reviewer's verdict is not checked: ...`. Before
       QUEUED, each verdict read prints `reviewer <id> said <verdict> at <tip>`.
+      The same final report must carry a `Checks:` line giving each verdicts.CODE_CHECKS id PASS,
+      FAIL or N/A (skill specialty-review "Report"; verdicts.checks_why), and a plain LAND is
+      refused when it reports a Done-when item UNMET, with an `Instead:` line naming
+      `--verdict "LAND WITH FOLLOW-UP" --follow-up <ID>` (verdicts.done_when_why). LAND WITH
+      FOLLOW-UP needs --follow-up naming a record whose state in the backlog store as last fetched
+      is open, blocked, parked or pulled, not one the branch carries (verdicts.follow_up_why; a
+      store that cannot be read is NOT DONE). When --range adds a new non-test source file or
+      class (verdicts.new_sources), --design-reviewer-id must name the design review: its final
+      report's last `Design:` line APPROVE and a `Checks:` line giving each verdicts.DESIGN_CHECKS
+      id (verdicts.design_why); with no transcript, or a host with no reader, it prints
+      `NOTE: the design review is not checked: ...`. Each refusal prints `REFUSED: ...` and an
+      `Instead:` line (exit 2, nothing written).
       A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
       or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
       strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
@@ -34,7 +47,7 @@
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one
-      reviewed (docs/gate.md "Carrying a verdict forward"), checked against main as last fetched
+      reviewed (docs/gate-landing-policy.md "Carrying a verdict forward"), checked against main as last fetched
       (`<remote>/<main_branch>`). Prints `CARRIED <branch> <head> from reviewed <sha>: ...`, or
       `NOT CARRIED: <why>` (exit 1, nothing written; review and queue the head instead).
   verdict.py list [-C DIR]
@@ -50,12 +63,12 @@
 
 -C: a path in the repository (default: here); every work tree of it shares one queue.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.verdicts, prints and
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.verdicts, prints and
 exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot be read or written,
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
-entry add finds malformed, or a self-review, model mismatch, reviewer's SEND BACK or light
-review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
+entry add finds malformed, or a self-review, model mismatch, reviewer's SEND BACK, report lines,
+follow-up, design review or light review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
 there is no such branch; nothing written).
 """
 import argparse
@@ -68,7 +81,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _host                                                        # noqa: E402
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib.coordstate.render import main_as_fetched                # noqa: E402,F401
-from kitlib.gate import verdicts                                    # noqa: E402
+from kitlib.landing import verdicts                                 # noqa: E402
+from kitlib.records import verdict_entry
 from kitlib.git import refs, repo                                  # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
@@ -93,8 +107,8 @@ def parser():
     ad = sub.add_parser('add', help='queue a reviewed branch')
     ad.add_argument('--branch', required=True)
     ad.add_argument('--tip', required=True, metavar='SHA', help='the full hash reviewed')
-    ad.add_argument('--verdict', required=True, choices=verdicts.VERDICTS)
-    ad.add_argument('--risk', required=True, choices=verdicts.RISKS)
+    ad.add_argument('--verdict', required=True, choices=verdict_entry.VERDICTS)
+    ad.add_argument('--risk', required=True, choices=verdict_entry.RISKS)
     ad.add_argument('--reviewer', required=True, metavar='TYPE', help="the reviewer's agent type")
     ad.add_argument('--reviewer-model', required=True, metavar='MODEL')
     ad.add_argument('--reviewer-id', required=True, metavar='ID', help="the reviewer's agent id")
@@ -103,6 +117,12 @@ def parser():
     ad.add_argument('--session', required=True, help='the coordinator session queueing it')
     ad.add_argument('--record', action='append', default=[], metavar='ID',
                     help='a backlog record the branch carries (repeatable)')
+    ad.add_argument('--follow-up', action='append', default=[], metavar='ID',
+                    help='an open backlog record for the unmet part of a LAND WITH FOLLOW-UP '
+                         '(repeatable)')
+    ad.add_argument('--design-reviewer-id', metavar='ID',
+                    help="the design reviewer's agent id: needed when the diff adds a new non-test "
+                         'source file or class')
     common(ad)
     ca = sub.add_parser('carry', help="move a queued verdict to the branch's head after a main sync")
     ca.add_argument('--branch', required=True)
@@ -149,9 +169,42 @@ def transcript_reader(environ=None):
 
 def verdict_reader(environ=None):
     """The selected host's reviewer verdict reader, from its ADAPTER's optional `agent_verdict()`
-    (docs/new-host.md; id -> `(found, verdict)`, None for an id that is not an agent id), or None
-    when that host has none (Codex) or hosts.json cannot be read."""
+    (docs/new-host.md; id -> `(found, verdict, report)`, None for an id that is not an agent id),
+    or None when that host has none (Codex) or hosts.json cannot be read."""
     return _adapter_reader('agent_verdict', environ)
+
+
+def follow_up_states(root, ids):
+    """`{id: (state, open)}` for each --follow-up id (verdicts.follow_up_why), read from the live
+    store (kitlib.backlog.opener.follow_up_states). VerdictError (NOT DONE) when it cannot be
+    read."""
+    if not ids:
+        return {}
+    from kitlib.backlog import opener
+    got, why = opener.follow_up_states(root, [i.strip() for i in ids])
+    if why:
+        raise verdict_entry.VerdictError('the backlog store cannot be read for --follow-up: %s; nothing '
+                                    'was queued' % why)
+    return got
+
+
+def test_source(root):
+    """The repo module map's ModuleMap.is_test_source (.kit.json "modules".map), or the default
+    map's (DEFAULT_TEST_SOURCES) when none is named or it cannot be read."""
+    from kitlib.modulemap import MapError, ModuleMap, load_map
+    from kitlib.modulemap.check import map_paths
+    try:
+        return load_map(map_paths(root, kconfig.load(root), require_owner=False)[0]).is_test_source
+    except (MapError, kconfig.ConfigError, OSError):
+        return ModuleMap({'modules': {}}).is_test_source
+
+
+def new_sources(root, rng):
+    """verdicts.new_sources for the range `rng` in `root`, with kitlib.docs.codemap's source
+    extensions and type patterns and the repo's test sources (test_source)."""
+    from kitlib.docs import codemap
+    return verdicts.new_sources(root, rng, codemap.EXTS, test_source(root),
+                                (('.gd', codemap.GD_TYPE), (None, codemap.TYPE)))
 
 
 def carry(a, common_dir):
@@ -196,16 +249,29 @@ def run(a, common_dir):
             return fail('NOT DONE', 'the kit configuration cannot be read: %s; nothing was queued'
                         % e, NOT_DONE)
         main, main_why = main_as_fetched(a.root) if cap is not None else (None, None)
-        well = not verdicts.check(entry, stored=False)
+        well = not verdict_entry.check(entry, stored=False)
         seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
-        said = verdicts.seen_verdicts(entry, verdict_reader()) if well else {}
+        reader = verdict_reader()
+        said = verdicts.seen_verdicts(entry, reader) if well else {}
+        follow_ups = follow_up_states(a.root, a.follow_up) if well else None
+        new = new_sources(a.root, a.range) if well else None
+        design_id = a.design_reviewer_id
+        design_said = (verdicts.seen_reports(design_id, reader)
+                       if well and new and design_id and reader is not None else None)
         _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,
-                                 main_why=main_why, seen=seen, said=said)
+                                 main_why=main_why, seen=seen, said=said, follow_ups=follow_ups,
+                                 new=new, design_id=design_id, design_said=design_said)
         for rid in sorted(r for r, models in seen.items() if not models):
             print('NOTE: --reviewer-model %s is not checked: no transcript found for the reviewer '
                   'id %s' % (stored['reviewer_model'], rid), flush=True)
-        for rid in sorted(r for r, (found, _) in said.items() if not found):
+        for rid in sorted(r for r, (found, _, _) in said.items() if not found):
             print('NOTE: the reviewer\'s verdict is not checked: no transcript found for the '
+                  'reviewer id %s' % rid, flush=True)
+        if new and reader is None:
+            print('NOTE: the design review is not checked: this host has no transcript reader',
+                  flush=True)
+        for rid in sorted(r for r, (found, _, _) in (design_said or {}).items() if not found):
+            print('NOTE: the design review is not checked: no transcript found for the design '
                   'reviewer id %s' % rid, flush=True)
         for text in verdicts.said_lines(stored, said):
             print(text, flush=True)
@@ -230,7 +296,7 @@ def run(a, common_dir):
             print('NOTHING QUEUED')
         return NOT_DONE if bad else DONE
     if a.tip is not None and not refs.is_sha(a.tip):
-        raise verdicts.BadEntry('--tip is a full commit hash, not %r' % a.tip)
+        raise verdict_entry.BadEntry('--tip is a full commit hash, not %r' % a.tip)
     if not verdicts.drop(common_dir, a.branch, tip=a.tip):
         return fail('NOT QUEUED', '%s%s' % (a.branch, ' at %s' % a.tip if a.tip else ''), NOT_DONE)
     print('DROPPED %s' % a.branch, flush=True)
@@ -249,13 +315,13 @@ def main(argv=None):
     except (verdicts.SelfReview, verdicts.ModelMismatch, verdicts.ReviewerSaid,
             verdicts.LightReview) as e:
         return fail('REFUSED', str(e), USAGE)
-    except verdicts.BadEntry as e:
+    except verdict_entry.BadEntry as e:
         p.print_usage(sys.stderr)
         sys.stderr.write('USAGE: %s\n' % e)
         return USAGE
     except verdicts.TipMismatch as e:
         return fail('TIP MISMATCH', str(e), TIP_MISMATCH)
-    except verdicts.VerdictError as e:
+    except verdict_entry.VerdictError as e:
         return fail('NOT DONE', str(e), NOT_DONE)
 
 

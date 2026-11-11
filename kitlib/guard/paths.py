@@ -1,5 +1,4 @@
-"""The guard's one path normaliser and placer (multi-host plan section 6, rule 2;
-docs/linux-support-plan.md section 3, "Guard path semantics").
+"""The guard's one path normaliser and placer.
 
 Every place the guard folds a filesystem path to compare it, key a cache on it or build a canonical
 form calls norm(). On Windows the rules are unchanged: os.path.normpath folds `.`, `..`, doubled
@@ -20,7 +19,7 @@ fstype is neither folding nor known not to fold (CASE_FS), and every part when t
 be read, is in doubt: the fold for what the guard refuses or judges as protected (the default)
 folds it, which refuses more; the strict fold, for what it allows (kitlib.guard.jail's allowed
 roots), does not, so doubt never widens what an agent may write. A folder with ext4's per-folder
-casefold attribute on a mount that does not fold is not read (docs/guard.md "Known limits").
+casefold attribute on a mount that does not fold is not read (docs/guard-fallback.md "Known limits").
 
 Not paths here: the text of a command line (drive letters, quoting, PowerShell provider paths) is
 read by kitlib.guard.shell and commands, and a URL by kitlib.guard.prepush; those are a shell's

@@ -1,4 +1,4 @@
-"""The owner-only-path rule of githooks/pre-push (kitlib.guard.prepush with kitlib.guard.ownercommits), through git running the real hook."""
+"""The owner-only-path rule of githooks/pre-push (kitlib.guard.prepush with kitlib.ownerfiles.rules), through git running the real hook."""
 import json
 
 from tests import gitfixture
@@ -91,6 +91,25 @@ class OwnerTest(pc.PrePushCase):
         code, err = self.push('origin', 'main')
         self.assertEqual(code, 0, err)
         self.assertEqual(self.remote_main(), tip)
+
+    def test_a_shrink_only_path_pushes_a_delete_but_not_a_later_add(self):
+        self.repo.write('.kit.json', json.dumps({'repo': {'name': 'kit-test', 'push_block': True},
+                                                 'owner': {'email': gitfixture.EMAIL,
+                                                           'shrink_only': ['CLAUDE.md']}}))
+        base = self.commit_as(gitfixture.EMAIL, {'.kit.json': None, 'CLAUDE.md': 'a\nb\nc\n'})
+        self.passed(base)
+        self.assertEqual(self.push('origin', 'main')[0], 0)
+        drop = self.commit_as(AGENT, {'CLAUDE.md': 'a\nc\n'})
+        self.passed(drop)
+        code, err = self.push('origin', 'main')
+        self.assertEqual(code, 0, err)
+        self.commit_as(AGENT, {'CLAUDE.md': 'c\n'})
+        add = self.commit_as(AGENT, {'CLAUDE.md': 'c\nd\n'})        # net: a and the line d swapped
+        self.passed(add)
+        code, err = self.push('origin', 'main')
+        self.assertEqual(code, 1, err)
+        self.assertIn('%s by %s changes CLAUDE.md' % (add[:10], AGENT), err)
+        self.assertEqual(self.remote_main(), drop)
 
     def test_a_base_without_an_owner_refuses_every_owner_only_change(self):
         self.repo.write('.kit.json', json.dumps({'repo': {'name': 'kit-test', 'push_block': True}}))

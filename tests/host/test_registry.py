@@ -199,11 +199,30 @@ class Validation(Case):
                 lambda e: e['hook'].update(guarded_tools=['Bash', 'Bash']),
                 lambda e: e['hook'].update(fast_path='sometimes'),
                 lambda e: e['tiers'].pop('deep'),
-                lambda e: e['tiers'].update(light='')):
+                lambda e: e['tiers'].update(light=''),
+                lambda e: e.update(role_models=['fable']),
+                lambda e: e.update(role_models={'Deep Worker': 'fable'}),
+                lambda e: e.update(role_models={'deep-worker': ''}),
+                lambda e: e.update(role_models={'deep-worker': 5})):
             bad = copy.deepcopy(data)
             change(bad['claude'])
             with self.subTest(entry=bad['claude']):
                 self.refused(bad)
+
+    def test_role_models_is_optional_and_read_by_role(self):
+        data = kit_hosts()
+        data['claude']['role_models'] = {'worker': 'sonnet', 'analyst': 'opus'}
+        path = self.put(second(data, role_models={}))
+        self.assertEqual(registry.host('claude', path).role_models, (('analyst', 'opus'), ('worker', 'sonnet')))
+        self.assertEqual(registry.host('other', path).role_models, ())
+        del data['claude']['role_models']
+        self.assertEqual(registry.host('claude', self.put(data)).role_models, ())
+
+    def test_the_kit_runs_deep_worker_on_fable_on_claude_alone(self):
+        hosts = registry.load()
+        self.assertEqual(dict(hosts['claude'].role_models), {'deep-worker': 'fable'})
+        self.assertEqual({n: h.role_models for n, h in hosts.items() if n != 'claude'},
+                         {n: () for n in hosts if n != 'claude'})
 
     def test_the_hook_data_is_read_and_matches_names_and_prefixes(self):
         hook = registry.host('claude', self.put(kit_hosts())).hook
@@ -282,7 +301,7 @@ class Profiles(Case):
 class ProcessNames(Case):
     """process_names is per platform: each host's profile carries the whole map, and
     registry.process_names() is the running platform's agent images (kitlib.platform.NAME, read
-    at that call) over every host (docs/linux-support-plan.md slice 2)."""
+    at that call) over every host."""
 
     def union(self, name, path=None):
         with mock.patch.object(kitlib.platform, 'NAME', name):

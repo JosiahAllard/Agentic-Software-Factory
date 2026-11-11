@@ -1,5 +1,5 @@
 """Pinned tools: tools/land.py and tools/gate.py, started from the kit's main checkout, re-run
-themselves from an export of pushed main (docs/gate.md "Landing", "Pinned tools").
+themselves from an export of pushed main (docs/gate-landing.md "Landing", "Pinned tools").
 
 A landing merges into the main checkout it runs from, so a tool running there would import new
 modules (loaded lazily, after the merge) against old ones already loaded: a mixed generation. An
@@ -17,14 +17,14 @@ writes: the tool runs whole from one commit.
           or (None, warning) when it cannot, and the caller runs live (fail open)
 
 The exports live in <plugin export root>/pins/<sha12> (kitlib.pluginsource: the machine config's
-plugin.export_dir, default pluginsource.default_export_dir: %LOCALAPPDATA%\\pm-kit\\plugin, on
+plugin.export_dir, default pluginsource.layout.default_export_dir: %LOCALAPPDATA%\\pm-kit\\plugin, on
 Linux <profile>/.local/share/pm-kit/plugin), apart from the plugin's own exports,
-which pluginsource.prune never confuses with them. A lease per running pinned tool,
+which pluginsource.prune.prune never confuses with them. A lease per running pinned tool,
 pins/leases/<sha12>-<pid>.json {sha, pid, ctime, child_pid, child_ctime}, keeps its export: each
 pin, under the lock, removes the exports no live lease holds, except the commit it runs.
 
 The child gets KIT_PINNED=<sha> (so it, and every process it starts, runs live) and KIT_LIVE_ROOT=
-<the main checkout> (kitlib.pluginsource.live_root: a printed command names the main checkout,
+<the main checkout> (kitlib.pluginsource.layout.live_root: a printed command names the main checkout,
 never an export a later prune may remove). A pin that fails open sets KIT_PINNED=live in this
 process for the same reason; started from an export, run also sets KIT_LIVE_ROOT=<the main
 checkout> in this process when it is unset, so the tool that then runs live from the export still
@@ -55,7 +55,7 @@ def target(tool_file, environ=None):
     """The checkout to pin `tool_file` from, or None to run live: KIT_PINNED is set (already
     pinned, or a pin that failed open), or the checkout is not a main checkout (a linked worktree
     has a .git file). A tool started from an export (the plugin's, say) pins through the main
-    checkout its marker names (kitlib.pluginsource.export_checkout), as a start from that checkout
+    checkout its marker names (kitlib.pluginsource.layout.export_checkout), as a start from that checkout
     would; an export whose marker names none runs live."""
     env = os.environ if environ is None else environ
     if env.get(PINNED_ENV):
@@ -63,8 +63,8 @@ def target(tool_file, environ=None):
     checkout = checkout_of(tool_file)
     if os.path.isdir(os.path.join(checkout, '.git')):
         return checkout
-    from kitlib import pluginsource
-    return pluginsource.export_checkout(checkout)
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.export_checkout(checkout)
 
 
 def warning(why):
@@ -83,8 +83,8 @@ def run(tool_file, argv, environ=None, wait_s=LOCK_WAIT_S):
     if not _same(checkout, checkout_of(tool_file)):
         # Started from an export: should the pin fail open, the tool runs live from the export,
         # and what it names (printed commands) must still be the main checkout.
-        from kitlib import pluginsource
-        env.setdefault(pluginsource.LIVE_ROOT_ENV, checkout)
+        from kitlib.pluginsource import layout as plugin_layout
+        env.setdefault(plugin_layout.LIVE_ROOT_ENV, checkout)
     try:
         return _run(checkout, tool_file, argv, env, wait_s)
     except KeyboardInterrupt:
@@ -103,16 +103,16 @@ def _fail(env, why):
 
 
 def _run(checkout, tool_file, argv, env, wait_s):
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     from kitlib.config import ConfigError
     from kitlib.proc import job
     try:
-        settings = pluginsource.load(environ=env, kit=checkout)
-    except (pluginsource.RefreshError, ConfigError) as exc:
+        settings = plugin_layout.load(environ=env, kit=checkout)
+    except (plugin_layout.RefreshError, ConfigError) as exc:
         return _fail(env, 'the plugin export root: %s' % exc)
-    sha, why = pluginsource.tracking_main(checkout, settings.remote)
+    sha, why = plugin_layout.tracking_main(checkout, settings.remote)
     if sha is None:
-        return _fail(env, 'cannot read %s/%s: %s' % (settings.remote, pluginsource.MAIN, why))
+        return _fail(env, 'cannot read %s/%s: %s' % (settings.remote, plugin_layout.MAIN, why))
     if not sha:
         env[PINNED_ENV] = LIVE
         return None, None           # nothing pushed to pin to: run live, nothing to warn about
@@ -127,7 +127,7 @@ def _run(checkout, tool_file, argv, env, wait_s):
                                                                     os.path.basename(tool_file)))
         child_env = dict(env)
         child_env[PINNED_ENV] = sha
-        child_env[pluginsource.LIVE_ROOT_ENV] = checkout
+        child_env[plugin_layout.LIVE_ROOT_ENV] = checkout
         # This run's -X utf8, -B, -I, -W ...: a private helper, so none when it is gone.
         flags = getattr(subprocess, '_args_from_interpreter_flags', list)()
         if getattr(sys.__stdout__, 'write_through', False):
@@ -194,25 +194,26 @@ def ensure(checkout, sha, root, wait_s=LOCK_WAIT_S, clock=None, sleep=None):
     """Under <root>/refresh.pid: the export <root>/<sha12> of `sha` (made when missing), a lease on
     it for this process, and the exports no live lease holds removed. (folder, lease path, None),
     or (None, None, why)."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import (
+        layout as plugin_layout, export as plugin_export, refresh as plugin_refresh)
     clock, sleep = clock or time.monotonic, sleep or time.sleep
     os.makedirs(root, exist_ok=True)
-    lock = pluginsource.RefreshLock(root)
+    lock = plugin_refresh.RefreshLock(root)
     deadline = clock() + wait_s
     while True:
         try:
             lock.acquire()
             break
-        except pluginsource.Busy as exc:
+        except plugin_refresh.Busy as exc:
             if clock() >= deadline:
                 return None, None, 'the pin export lock stayed busy for %d s (%s)' % (wait_s, exc)
             sleep(LOCK_POLL_S)
     try:
-        folder, _version = pluginsource.export(checkout, sha, root, made_by=MADE_BY)
+        folder, _version = plugin_export.export(checkout, sha, root, made_by=MADE_BY)
         lease = _lease_path(root, sha)
         _write_lease(lease, sha)
-        prune(root, keep=pluginsource.folder_name(sha))
-    except (pluginsource.RefreshError, OSError) as exc:
+        prune(root, keep=plugin_layout.folder_name(sha))
+    except (plugin_layout.RefreshError, OSError) as exc:
         return None, None, 'cannot export %s: %s' % (sha[:12], exc)
     finally:
         lock.release()
@@ -237,12 +238,12 @@ def _write_lease(path, sha, child=None):
 
 def lease_child(tool_file, pid, environ=None):
     """A lease on the export `tool_file` runs from, held by process `pid`: a pinned tool's
-    detached child (kitlib.gate.submit), which outlives the tool and so the tool's own lease. The
+    detached child (landing.submit), which outlives the tool and so the tool's own lease. The
     path is pins/leases/<sha12>-<pid>.json, {sha, pid, ctime}; prune removes it once that process
     is gone. True when written; False when there is nothing to lease (`tool_file` is not run
     from an export of KIT_PINNED's commit, KIT_PINNED is unset or `live`, or `pid` is already
     gone). OSError when the file cannot be written."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     from kitlib.proc import process
     env = os.environ if environ is None else environ
     sha = env.get(PINNED_ENV)
@@ -250,7 +251,7 @@ def lease_child(tool_file, pid, environ=None):
         return False
     folder = checkout_of(tool_file)
     pins = os.path.dirname(folder)
-    if (os.path.normcase(os.path.basename(folder)) != os.path.normcase(pluginsource.folder_name(sha))
+    if (os.path.normcase(os.path.basename(folder)) != os.path.normcase(plugin_layout.folder_name(sha))
             or os.path.normcase(os.path.basename(pins)) != os.path.normcase(PINS)):
         return False
     ctime = process.proc_ctime(pid)
@@ -316,11 +317,12 @@ def lease_live(data, alive=None):
 
 def prune(root, keep=None, alive=None, clock=None):
     """Under the lock: remove the leases whose processes are gone (and lease files that cannot be
-    read, or a lease's .tmp, once older than pluginsource.LOCK_GRACE_S: younger, the <sha12> its
+    read, or a lease's .tmp, once older than pluginsource.refresh.LOCK_GRACE_S: younger, the <sha12> its
     name starts with stays held), then every <sha12>
     export holding the marker that no live lease holds, except `keep`, and every <sha12>.tmp left
     by a run that stopped. Returns [removed path]."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import (
+        layout as plugin_layout, prune as plugin_prune, refresh as plugin_refresh)
     clock = clock or time.time
     held, removed = set(), []
     leases = os.path.join(root, LEASES)
@@ -333,11 +335,11 @@ def prune(root, keep=None, alive=None, clock=None):
         data = read_lease(full) if n.endswith('.json') else None
         if data is not None and isinstance(data.get('sha'), str):
             if lease_live(data, alive):
-                held.add(pluginsource.folder_name(data['sha']))
+                held.add(plugin_layout.folder_name(data['sha']))
                 continue
         else:
             try:
-                if clock() - os.path.getmtime(full) <= pluginsource.LOCK_GRACE_S:
+                if clock() - os.path.getmtime(full) <= plugin_refresh.LOCK_GRACE_S:
                     held.add(n[:12])    # being written: its name says which export it holds
                     continue
             except OSError:
@@ -350,18 +352,18 @@ def prune(root, keep=None, alive=None, clock=None):
         return removed
     for n in sorted(names):
         full = os.path.join(root, n)
-        if not os.path.isdir(full) or pluginsource._is_link(full):
+        if not os.path.isdir(full) or plugin_layout._is_link(full):
             continue
-        if pluginsource._TMP.match(n):
+        if plugin_prune._TMP.match(n):
             stale = True                # the lock is held: no export is being written
-        elif pluginsource._SHA12.match(n):
+        elif plugin_layout._SHA12.match(n):
             stale = (n != keep and n not in held
-                     and pluginsource.read_marker(full) is not None)
+                     and plugin_layout.read_marker(full) is not None)
         else:
             stale = False
         if stale:
             try:
-                pluginsource._rmtree(full)
+                plugin_layout._rmtree(full)
                 removed.append(full)
             except OSError:
                 pass                    # a file still open: the next pin tries again

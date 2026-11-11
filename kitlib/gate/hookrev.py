@@ -1,6 +1,6 @@
 """The repo hook module as one commit has it: a landing's merged-tree gate runs the GATE_CHECKS
 of --expect-main's tree, the same commit its config is read from, so a branch cannot loosen a
-check by changing the hook module it lands (docs/gate.md "Landing").
+check by changing the hook module it lands (docs/gate-landing.md "Landing").
 
 Only the module's own file is taken from the commit. An import inside it resolves as Python
 resolves it in the gating process (the merged checkout's files are not on sys.path), so a hook

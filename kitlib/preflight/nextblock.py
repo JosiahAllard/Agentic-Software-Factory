@@ -1,8 +1,8 @@
 """The `next` block (a repo's tools-adoption block, moved into the kit): the kit commands
 this session should run, with its own values filled in. Print-only, from readings already taken:
 it starts no process. `--model "<your model>"` is printed literally. Each command runs the kit's
-own tool (`tools`: the kit's tools folder; a repository holds no copy of them, decision 21 in
-docs/multi-host-plan.md section 7) and names its checkout with -C, so it runs from anywhere.
+own tool (`tools`: the kit's tools folder; docs/install.md "Ported repo tools") and names its
+checkout with -C, so it runs from anywhere.
 """
 SHELL_UNSAFE = set('"$`\\!')
 MAX_COMMIT_PATHS = 12

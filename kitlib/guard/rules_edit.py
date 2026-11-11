@@ -5,12 +5,12 @@ write jail with its Dev Drive bound, with the refusals and alternatives they giv
 import fnmatch
 import os
 import re
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib import config as kconfig
 from kitlib.config import user as kuser
 from kitlib.git import repo
 
-from . import commands as cm
+from . import commands_git as cg
 from . import context
 from . import generated
 from . import jail
@@ -381,7 +381,7 @@ def ledger_git_tree_form(sub, args, short, longs, xargs=False):
     for any other call. ledger_git judges a clean's pathspecs, and a stash's after `--`, as a
     path form's: one that misses the ledger passes; none, or exclusions alone, is the tree.
     Checkout, switch or reset with a word the shell computes before `--` (not the value of an
-    option that names a branch, commands.GIT_SUB_VALUES) can be any of these (`git reset "$m"`),
+    option that names a branch, commands_git.GIT_SUB_VALUES) can be any of these (`git reset "$m"`),
     and so can checkout, switch, reset or clean that xargs runs (`xargs`: it appends words)."""
     from . import delegfile
     if xargs and sub in ('checkout', 'switch', 'reset', 'clean'):
@@ -410,9 +410,9 @@ def ledger_git_tree_form(sub, args, short, longs, xargs=False):
 
 def computed_option_word(sub, args):
     """The text of the first word the shell computes among a git call's arguments `args` before
-    a literal `--`, skipping the value of an option commands.GIT_SUB_VALUES names for `sub` (a
+    a literal `--`, skipping the value of an option commands_git.GIT_SUB_VALUES names for `sub` (a
     branch name: `checkout -b "$b"`), else None."""
-    values = cm.GIT_SUB_VALUES.get(sub, ())
+    values = cg.GIT_SUB_VALUES.get(sub, ())
     k = 0
     while k < len(args):
         w = args[k]
@@ -760,12 +760,12 @@ def in_git_dir(target):
     return '.git' in paths.norm(target).replace('/', '\\').split('\\')
 
 
-GATE_RESULT = 'kit-gate-result'                 # kitlib.gate.result.DIR_NAME
+GATE_RESULT = 'kit-gate-result'                 # gate.result.DIR_NAME
 
 
 def gate_result(event, ctx, target, role, what):
     """An agent session's literal write into a repository's gate result folder
-    (`<git common dir>/kit-gate-result/`, kitlib.gate.result): the records there tell a waiting
+    (`<git common dir>/kit-gate-result/`, gate.result): the records there tell a waiting
     session how a gate or a landing ended, and only the gate writes them. The folder is matched by
     name under a git directory (a folder named .git, or one holding HEAD and objects)."""
     if not target or not agent_session(event, ctx):
@@ -779,7 +779,7 @@ def gate_result(event, ctx, target, role, what):
             if parts[k - 1].lower() == '.git' or (os.path.isfile(os.path.join(gitdir, 'HEAD')) and
                                                   os.path.isdir(os.path.join(gitdir, 'objects'))):
                 return refuse('gate-result', role, '%s: %s is in the gate result folder %s, which only the '
-                              'gate writes (kitlib.gate.result); a record written by hand would tell a waiting '
+                              'gate writes (gate.result); a record written by hand would tell a waiting '
                               'session a gate or a landing ended as it did not. To wait for a result:'
                               % (what, fwd(target), fwd(os.path.join(gitdir, parts[k]))),
                               'python %s wait-result <branch> --tip <sha>' % kit_tool(ctx, 'gate'))

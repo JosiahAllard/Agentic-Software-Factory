@@ -16,6 +16,7 @@ from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
 from kitlib.gate import hookrev, rerun, runner
 from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.lock.store import LockError
 from tests import gitfixture
 from tests.gate import fixtures
@@ -101,7 +102,7 @@ class BisectCase(Case):
         return shas['RED'], self.result('20261009-040000')
 
     def record(self, rid):
-        ctx = opener.open_store(self.main_dir, fetch=True)
+        ctx = opener.open_store(self.main_dir, fetch=True, probes=opener.NO_PROBES)
         return ctx.store.load().get(rid)
 
     def daily_head(self):
@@ -141,7 +142,7 @@ class Culprit(BisectCase):
         self.assertEqual(ids, [rid])
 
     def ids(self):
-        ctx = opener.open_store(self.main_dir, fetch=True)
+        ctx = opener.open_store(self.main_dir, fetch=True, probes=opener.NO_PROBES)
         return [r.stem for r in ctx.store.load().records]
 
 
@@ -362,7 +363,7 @@ class ProbeCannotFinish(ProbeCase):
         def run_class(launcher, *args, **kw):
             for d in self.store.live_runs():
                 if d.get('kind') == 'test':
-                    lockrun.request_stop(self.store, d['id'], 'test')
+                    run_end.request_stop(self.store, d['id'], 'test')
             return real(launcher, *args, **kw)
         return mock.patch.object(rerun, 'run_class', run_class)
 

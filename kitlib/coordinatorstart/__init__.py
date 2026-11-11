@@ -22,11 +22,14 @@ import os
 import re
 import sys
 
-from kitlib import kitroot, pmstart, sessionmark
+from kitlib import kitroot, pmstart
+from kitlib.host import sessionmark
 from kitlib.config import user as kuser
+from kitlib.config import pm as pmconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.launcher import lookup
 from kitlib.pmstart import configcheck
+from kitlib.proc import listing
 from kitlib.coordinatorstart import parts
 from kitlib.records import landing
 
@@ -46,10 +49,11 @@ ENG_LINE = ("ENG rulings: an engineering question (API shape, class versus recor
             "Owner-only, never an ENG (send it to the PM): anything that changes or supersedes an owner ruling; Realism and game feel "
             "(what a player or bot may see or do, timings, detection risk); Security (permissions, settings, the "
             "classifier, credentials, hooks that guard owner files); Money and accounts (purchases, cloud credit, "
-            "game accounts, bans); Priority and pre-empts (one owner entry per change); Go-live and live-client "
+            "game accounts, bans); Priority 1 (one owner entry per change) and pre-emptions (the PM's "
+            "decision); Go-live and live-client "
             "runs, and removals of owner files; anything the owner flagged for review (eng_review).")
-# When a coordinator prices a record (hosts/claude/shell/agents/coordinator.md, On start step 6 and Slots,
-# Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
+# When a coordinator prices a record (content/skills/session-handoff/SKILL.md "Coordinator start" step 8,
+# and the coordinator role, Slots, Follow-ups): the start-up pricing pass leaves follow-up records unpriced.
 # Emitted only when coordinator_start.pricing_pass is true.
 PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, follow-up records excepted: run "
                 "`python <kit>/tools/backlog.py -C <repo> list --needs-priority`. A follow-up record (filed from a finding on a "
@@ -62,12 +66,13 @@ PRICING_LINE = ("Pricing pass and backlog audit before your first dispatch, foll
                 "follow-ups worth doing now, check each for duplicates, size and fit, and price only those you "
                 "pull now; never a sweep. `next` never offers an unpriced record; its banner counts it "
                 "under `unprioritised+open`, not under `held` (`held` = blocked). "
-                "A record that needs the owner (priority 1, a pre-emption, an owner-held area, a question only "
-                "the owner can answer) goes to the PM as one question; never ask the owner directly.")
+                "A record that needs the owner (priority 1, an owner-held area, a question only the owner "
+                "can answer) goes to the PM as one question, and so does a pre-emption (the PM's decision); "
+                "never ask the owner directly.")
 
 
 def is_coordinator(env=None):
-    """The session mark (ROLE_VAR, read by kitlib.sessionmark: the kit plugin's prefix removed) is
+    """The session mark (ROLE_VAR, read by kitlib.host.sessionmark: the kit plugin's prefix removed) is
     the coordinator's."""
     return sessionmark.mark(os.environ if env is None else env) == ROLE
 
@@ -113,18 +118,18 @@ def _parse_time(text):
 
 def own_name(procs, env, pid):
     """This session's Remote Control name: PM_KIT_SESSION_NAME, else the nearest session process
-    (pmstart.session_images; on Linux one that runs a host's CLI, pmstart.runs_a_cli) above pid;
+    (lookup.session_images; on Linux one that runs a host's CLI, lookup.runs_a_cli) above pid;
     None if unknown."""
     if env.get(NAME_VAR):
         return env[NAME_VAR]
     by_pid = {p.get("ProcessId"): p for p in procs}
-    images, clis = pmstart.session_images(), pmstart.linux_clis()
+    images, clis = lookup.session_images(), lookup.linux_clis()
     seen = set()
     while pid in by_pid and pid not in seen:
         seen.add(pid)
         p = by_pid[pid]
-        if p.get("Name") in images and pmstart.runs_a_cli(p, clis):
-            n = pmstart.rc_name(p.get("CommandLine"))
+        if p.get("Name") in images and lookup.runs_a_cli(p, clis):
+            n = lookup.remote_control_name(p.get("CommandLine"))
             if n:
                 return n
         pid = p.get("ParentProcessId")
@@ -267,11 +272,11 @@ def others(entry, procs, env, pid):
     stem = _need(entry, "stem")
     me = own_name(procs, env, pid)
     cand = []
-    images, clis = pmstart.session_images(), pmstart.linux_clis()
+    images, clis = lookup.session_images(), lookup.linux_clis()
     for p in procs:
         if (p.get("Name") in images and p.get("CommandLine")
-                and pmstart.STORE_DIR not in (p.get("ExecutablePath") or "") and pmstart.runs_a_cli(p, clis)):
-            n = pmstart.rc_name(p["CommandLine"])
+                and lookup.STORE_DIR not in (p.get("ExecutablePath") or "") and lookup.runs_a_cli(p, clis)):
+            n = lookup.remote_control_name(p["CommandLine"])
             if lookup.of_stem(n, stem):
                 cand.append((p.get("Created") or "", n))
     if me is None and cand:
@@ -301,12 +306,12 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
 
         def procs_once():
             if "p" not in box:
-                box["p"] = procs if procs is not None else pmstart.list_processes()
+                box["p"] = procs if procs is not None else listing.list_processes()
             return box["p"]
 
         def entry_once():
             if "e" not in box:
-                sf = (pm_cfg if pm_cfg is not None else pmstart.load_config() or {}).get("sessions_file")
+                sf = (pm_cfg if pm_cfg is not None else pmconfig.load_config() or {}).get("sessions_file")
                 if not sf:
                     raise KeyError("pm_start.sessions_file not configured")
                 try:

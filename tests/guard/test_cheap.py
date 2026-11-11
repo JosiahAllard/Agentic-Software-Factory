@@ -7,10 +7,12 @@ from unittest import mock
 
 from hosts.claude.adapter import host as claude_host
 from hosts.codex.adapter.host import ADAPTER as CODEX
-from kitlib import config, pmdata
+from kitlib import config
+from kitlib.config import pmdata
 from kitlib.config import schema, user
 from kitlib.guard import modes, rules
-from kitlib.host import Action, Decision, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Action, Decision
 
 from . import world as W
 from .claudehost import action, output
@@ -424,7 +426,7 @@ class InlineAliasJudged(unittest.TestCase):
 class HubKept(World):
     """Item 5 keeps the owner-only hub tools: with the kit's default modes, a parsed run of the hub
     tool's owner verb is denied to any session but the owner's, and so is a line the parser cannot
-    read whose text names the hub tool, read verbs included (docs/guard.md "Fallback")."""
+    read whose text names the hub tool, read verbs included (docs/guard-fallback.md "Fallback")."""
 
     def setUp(self):
         super().setUp()
@@ -461,7 +463,7 @@ class HubKept(World):
 
 class Warned(World):
     """Item 3: heavy (lock etiquette) warns; the owner's machine config makes it deny again
-    (heredoc-winpath is cut: docs/guard-v2.md B8); a warned heavy line the fallback reads is still
+    (heredoc-winpath is cut: docs/guard-fallback.md "Weakened checks, by row" B8); a warned heavy line the fallback reads is still
     judged by the kept rules."""
 
     def heavy(self):
@@ -694,7 +696,7 @@ class Render(World):
 
 
 class HookRunner(unittest.TestCase):
-    """kitlib.host.hookmain._judge keeps a warning: the allow it returns carries every action's."""
+    """kitlib.hookrun.main._judge keeps a warning: the allow it returns carries every action's."""
 
     def judge(self, decisions):
         it = iter(decisions)
@@ -707,7 +709,7 @@ class HookRunner(unittest.TestCase):
         class Adapter(object):
             profile = None
         acts = tuple(Action('edit', 'Write', path='p%d' % i) for i in range(len(decisions)))
-        return hookmain._judge(Adapter(), Guard(), acts, {}, None)
+        return hookrun._judge(Adapter(), Guard(), acts, {}, None)
 
     def test_warnings_of_every_action_are_joined(self):
         d = self.judge([Decision('allow'), Decision('allow', 'warn', 'a'), Decision('allow', 'warn', 'b'),

@@ -7,6 +7,8 @@ import posixpath
 import re
 
 from . import commands as cm
+from . import commands_env as ce
+from . import commands_git as cg
 from . import paths
 from . import shell as sh
 from .rules_base import bare, is_owner_session, quote, refuse, same_dir
@@ -138,6 +140,11 @@ def _pos(args):
     return [w for w in args if not w.text.startswith('-')]
 
 
+def computed_word(w):
+    """True for a Word whose text is not what git gets: computed, an alias's, or one bash changes."""
+    return bool(w.dyn or w.alt is not None or w.synth)
+
+
 def inline_alias(gc):
     """`gc` as git runs it when its subcommand names an alias the line itself defines (-c
     alias.<name>=<value>): the value's words are the subcommand and its first arguments, so the
@@ -161,14 +168,14 @@ def inline_alias(gc):
         if not words or words[0].startswith('-'):
             return gc
         rest = [sh.Word(t, False, None, None) for t in words[1:]] + list(gc.rest)
-        gc = cm.GitCall(gc.dir, words[0], rest, gc.inv, gc.unknown, gc.alias, False, gc.blind,
+        gc = cg.GitCall(gc.dir, words[0], rest, gc.inv, gc.unknown, gc.alias, False, gc.blind,
                         len(words) - 1 + gc.synth)
     return gc
 
 
 def git_call_judged(inv):
-    """commands.git_call, with an alias the line defines expanded (inline_alias)."""
-    return inline_alias(cm.git_call(inv))
+    """commands_git.git_call, with an alias the line defines expanded (inline_alias)."""
+    return inline_alias(cg.git_call(inv))
 
 
 def clean_dry_run(args):
@@ -287,8 +294,8 @@ def split_alias(text):
 
 # ---------------------------------------------------------------- environment assignments
 
-# kept in commands, which marks git whose place an assignment hides (commands.mark_git_env)
-env_assignments = cm.env_assignments
+# kept in commands_env, which marks git whose place an assignment hides (commands_env.mark_git_env)
+env_assignments = ce.env_assignments
 
 
 # ---------------------------------------------------------------- core.hooksPath
@@ -616,7 +623,7 @@ def owner_identity(event, ctx, cmd, inv, cwd, role):
     """A session other than the owner's own giving a commit the owner's email: git commit
     --author, git config or git -c user/author/committer.email, or GIT_AUTHOR_EMAIL,
     GIT_COMMITTER_EMAIL or EMAIL. Owner-only paths are judged by the author email
-    (kitlib.guard.ownercommits), so these would pass an agent's change as the owner's."""
+    (kitlib.ownerfiles.rules), so these would pass an agent's change as the owner's."""
     if is_owner_session(event, ctx):
         return None
     where = cmd.cwd or cwd

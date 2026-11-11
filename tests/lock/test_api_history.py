@@ -78,10 +78,11 @@ class History(StoreCase):
 
     def test_a_history_line_names_who_started_and_who_stopped_the_run(self):
         from kitlib.lock import run as rm
+        from kitlib.lock import run_end
         r = rm.Run(self.store, self.layout(), "kit", "g", "engine-test", "n", ["x"], "running",
                    env={"CLAUDE_CODE_SESSION_ID": "sess-start"})
         r.save(held_since=iso(utc_now()))
-        self.assertTrue(rm.request_stop(self.store, r.id, "agent-b", "sess-stop"))
+        self.assertTrue(run_end.request_stop(self.store, r.id, "agent-b", "sess-stop"))
         self.store.history_append(r.finish(0, "stopped"))
         row = api.history(self.store)[0]
         self.assertEqual(row["session"], "sess-start")

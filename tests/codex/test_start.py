@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from hosts.codex.adapter import ADAPTER, start
-from kitlib.host import header
+from kitlib.hookrun import header
 
 KIT = 'C:/kit'
 

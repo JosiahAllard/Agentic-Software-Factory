@@ -17,7 +17,7 @@ from tests.host.test_leaks import occurrences
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = ROOT / 'optional' / 'bridge'
 
-# Deleted by plan step 10 (docs/multi-host-plan.md section 2.4); git history keeps them.
+# Deleted when the bridge was ported (optional/bridge/README.md); git history keeps them.
 DELETED_MODULES = (
     'kitlib.bridgeprobe', 'kitlib.bridge', 'kitlib.bridgewin', 'kitlib.bridgeui',
     'claude.bridge_phase0', 'claude.bridge_assembly', 'claude.bridge_runtime',

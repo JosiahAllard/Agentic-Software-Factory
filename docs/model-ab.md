@@ -65,7 +65,7 @@ Missed: Sonnet B2 doc contradiction, B3 silent data loss, B10 removed refusal; O
 
 Decision (owner decision, 2026-10-10, recorded in the project's decision log outside this repository): the reviewer is split by the risk tier of the worker that built the branch. Worker branches (low and medium risk) get Haiku at high effort. Opus-worker (now senior-worker), strong-worker and deep-worker branches (high risk) get Opus. The coordinator verifies any Haiku "blocking" claim before it holds a landing, because Haiku overstated severity twice. Built as one review role pinned to the light tier (now the `analyst`, content/roles/analyst.md, `tier: light`, effort high; docs/ROSTER.md row) that the dispatch rule raises to the strong tier: for a branch built by strong-worker, senior-worker or deep-worker, and for a branch that changes a strict path. The rule is content/skills/coordinator-dispatch/roster.md, "Choosing", "Reviewer model".
 
-A High-risk branch is raised to the strong tier too, whoever built it: the split assumed High-risk branches go to strong builders, and a High branch built by a plain worker got a Haiku review. `tools/verdict.py add` refuses a lighter review of a High-risk branch, and `land.py` refuses a lighter review of a High-risk or strict branch (kitlib/gate/verdicts.py, `tier_why`).
+A High-risk branch is raised to the strong tier too, whoever built it: the split assumed High-risk branches go to strong builders, and a High branch built by a plain worker got a Haiku review. `tools/verdict.py add` refuses a lighter review of a High-risk branch, and `land.py` refuses a lighter review of a High-risk or strict branch (kitlib/landing/verdicts.py, `tier_why`).
 
 Findings added with the decision: every model missed at least one silent data loss. Opus and Haiku together still miss B8 (only Sonnet caught it), so a Haiku second pass is no cover on high-risk work. Haiku was the slowest (222s against 88s for Sonnet). Real review history could not separate the tiers either way: see "Reviewer miss history" in [agent-review.md](agent-review.md).
 
@@ -217,3 +217,62 @@ The 20 cases are fixed, so each run repeats the same questions. The figures trea
 **No third run has been made.** None is started without the project manager's yes.
 
 Reading, still UNDECIDED: the addendum recommends keeping the coordinator on opus, because sonnet saves about half of a small replay cost, the sonnet miss rate is about 13 in 100 answers on the strict key and about 9 in 100 on the corrected key (computed), and opus low showed no price edge. The owner decides the coordinator's model.
+
+## Branch quality scorecard (plan and baseline)
+
+Question: do two instruction changes improve the branches agents land? (1) A reviewer's report must carry a full Checks line. (2) A brief keeps the checks the record names. The first evidence was a hand spot check of five branches, so nothing yet shows whether either change moves anything. This section is the plan to measure it; the owner's open question on the reviewer tier (whether structural changes need a strong reviewer) is decided once a baseline exists.
+
+**What is measured.** The quality signals of `review_pack` (review-pack.md "Quality signals"), taken per landed branch by `tools/quality_scorecard.py` (logic in `kitlib/reviewpack/scorecard.py`), which calls `kitlib.reviewpack.quality.section()` on the merge's two parents: a new file over 1500 non-test lines, a file that grew over 50% and past 500 lines, a deleted test with no "covered by" in its commit message, the branch's net non-test lines (median and 90th percentile), and the code signals over changed Java, C# and Python files: an import or namespace cycle among them, a new static non-final field, a new Python `global` rebind, and a new public symbol with one caller or with test callers only, one table each. A signal is a flag for a reader, not a defect. The signals are blunt: git is asked for no renames, so a renamed or split file counts as a new file and a renamed test counts as a deleted one, and those are in the shares below. The signals see size, deleted tests and those code shapes; they do not read the Checks line, so they measure the effect on branch quality, not the compliance.
+
+**Cohorts.**
+- Spot: the five hand-checked branches of a game repository, named in a `--branches` file (`name[:mergesha]`). A branch with no merge is measured as unlanded, its tip against its merge-base with the base. All five were built before the two changes.
+- Window: every landing (first-parent merge on the base) in a 14-day window, per repo: the kit on `main`, the game repository on its integration branch. Sync merges are skipped: a subject "Merge X into Y" (the `into` before any parenthesis), "Merge <sha> ..." and "Merge master|main ...", which bring a batch or the base into a branch. The cohort label is the fixed word `window`, so two windows share a row; each record keeps its own date.
+- Rerun window: the 14 days that start once both changes have landed, per repo.
+
+**Commands.** Baseline and rerun use the same calls; `--out` adds to a file (replacing the same repo and cohort), untracked and outside any repository. Dates are full timestamps: a bare date means that date at the current time of day.
+
+    python <kit>/tools/quality_scorecard.py <repo> --base <ref> --since 2026-10-25T00:00:00 --until 2026-11-08T23:59:59 --out base.json
+    python <kit>/tools/quality_scorecard.py <repo> --base <ref> --branches spot.txt --out base.json
+    python <kit>/tools/quality_scorecard.py --compare base.json rerun.json
+
+`--compare` prints one table per signal: the share of branches with the signal (count of those measured), the median and p90 net lines, and the branches NOT CHECKED, one row per repo and cohort. Given two files it adds a delta in percentage points (lines for a net); counts are not compared, because the branch counts differ. A branch whose git read fails or times out, or whose section the script does not recognise, is counted NOT CHECKED, never as a pass. Cost: about five git reads per branch, plus two tree listings (`git ls-tree`) when a changed file is Python and one `git grep` when the branch adds a public symbol, no machine lock; a window of several hundred landings takes minutes.
+
+**Reading it.** One sample per branch and no control, so a difference is a lead, not proof; the windows differ in what was built, so look at the share next to the number of branches. Rerun only when both changes have been live for the full window.
+
+**Baseline (2026-11-08).** Windows 2026-10-25 to 2026-11-08; the kit on its main branch, the game repository on its integration branch. The spot cohort is five branches of the game repository, three landed and two measured unlanded. Each cell is the branches with the signal out of the branches measured, with the share. Every branch was read; none was NOT CHECKED. It was taken before the code signals existed, so its file has no value for them and `--compare` prints `-` in their baseline column. This is the tool's output (`--compare` on the baseline file) with the repository labels replaced by "kit" and "game repo", for the windows 2026-10-25T00:00:00 to 2026-11-08T23:59:59.
+
+    new file over 1500 lines
+      cohort                                             baseline.json
+      kit window                                       1 of 589 (0.2%)
+      game repo spot                                       0 of 5 (0.0%)
+      game repo window                                2 of 1096 (0.2%)
+
+    grew over 50% past 500 lines
+      cohort                                             baseline.json
+      kit window                                       2 of 589 (0.3%)
+      game repo spot                                       0 of 5 (0.0%)
+      game repo window                               11 of 1096 (1.0%)
+
+    deleted test, no "covered by"
+      cohort                                             baseline.json
+      kit window                                     76 of 589 (12.9%)
+      game repo spot                                      4 of 5 (80.0%)
+      game repo window                             143 of 1096 (13.0%)
+
+    median net lines
+      cohort                                             baseline.json
+      kit window                                                    18
+      game repo spot                                                  84
+      game repo window                                              45
+
+    p90 net lines
+      cohort                                             baseline.json
+      kit window                                                   245
+      game repo spot                                                  266
+      game repo window                                              428
+
+    NOT CHECKED
+      cohort                                             baseline.json
+      kit window                                       0 of 589 (0.0%)
+      game repo spot                                       0 of 5 (0.0%)
+      game repo window                                0 of 1096 (0.0%)

@@ -18,7 +18,7 @@ config still in the home folder (DIR_NAME's)
 while the PM repository has none is UNMOVED; one beside the PM repository's files is LEFTOVER (the
 config moved: the copy must go, LEFTOVER_WHY); a pointer that is BAD, or a PM folder or file that
 cannot be told apart from absent, is BAD: each a ConfigError, never a fallback. home_location()
-still reads the home folder's file, for the move (kitlib.config.move) alone.
+still reads the home folder's file, the source of the owner's move by hand (MOVE_DOC), alone.
 """
 import collections
 import os
@@ -26,6 +26,7 @@ import stat
 
 import kitlib.platform
 from kitlib.platform.linux import paths as linux_paths
+from kitlib.proc import console
 
 from .types import ConfigError, Email, Enum, Field, ListOf, MapOf, Obj, Regex, Str, T, is_note, parse_json
 
@@ -46,7 +47,7 @@ LEFTOVER = 'leftover'  # the PM repository's config, and a copy still in the hom
 BAD = 'bad'          # the pointer is BAD, or a PM folder or file cannot be read as present or absent
 # kitlib.config.pointer's states, repeated (that module imports this one).
 OK_POINTER, BAD_POINTER = 'OK', 'BAD'
-# home_location() states, the move's source (kitlib.config.move), with NONE and BAD above.
+# home_location() states (the home folder's file, the owner's move's source), with NONE and BAD above.
 NEW = 'new'      # DIR_NAME's file
 # The kit's temp folder at the root of a checkout's drive (work_temp): the kit's default, which
 # the machine config's `temp_dir` overrides.
@@ -125,7 +126,7 @@ def expand_home(path, home):
     return path
 
 
-# kitlib.sessionmark.RESERVED, repeated here so the machine config (which the lock tool reads)
+# kitlib.host.sessionmark.RESERVED, repeated here so the machine config (which the lock tool reads)
 # does not import the session mark; tests/config/test_user_docs.py keeps the two equal
 RESERVED_MARKS = ('owner', 'subagent')
 
@@ -157,13 +158,13 @@ SCHEMA = {
     'ledger_path': Field(PmRepoPath(), None, 'the one-file rulings ledger (R-nnnn ids); set here only; once `ledger_dir` is set it is frozen: read, never written; removed one release after the split'),
     'pending_path': Field(PmRepoPath(), None, "the owner's pending-steps file tools/pending.py edits (docs/pending.md)"),
     'scrub_patterns': Field(ListOf(Regex()), None, "case-insensitive patterns for the install's own names (repositories, owner, accounts) that the shipped-text tests and tests/scrub/test_generic.py also refuse"),
-    'guard_mcp_prefix': Field(Str(), None, 'the lock MCP tool-name prefix the guard denies owner-only tools under; unset: the kit default (docs/guard.md "Lock MCP")'),
-    'guard_mcp_tools': Field(ListOf(Str()), None, 'more full tool names the guard treats as the lock MCP\'s owner-only tools, as a PreToolUse payload names them (docs/guard.md "Lock MCP")'),
-    'guard_agent_marks': Field(ListOf(Str()), None, 'the session marks the guard treats as agent sessions for the kill-by-name, lock-state, kit-json, write-jail and git-stash-shared rules; it replaces the default list, so it names every mark it holds; unset: coordinator, deep-worker, consultant and pm (docs/guard.md "Session mark")'),
-    'guard_mark_roots': Field(MarkMap(ListOf(MARK_ROOT), what='mark'), None, 'more write-jail roots for the main sessions of one launcher mark, as {mark: [{path, mode, why}]}; a root that is, holds or lies inside the machine config folder is ignored unless it is read-only (docs/guard.md "Write jail")'),
-    'guard_rules': Field(MapOf(Enum('deny', 'warn', 'off'), what='rule'), None, 'the guard\'s rule modes, {rule: deny|warn|off}, over the kit defaults (kitlib.guard.modes.DEFAULTS); set here only, never in .kit.json (docs/guard.md "Rule modes"); older kit copies reject the key; set it only after every folder runs a kit that knows it'),
-    'pm_data': Field(Owned('kitlib.pmdata'), None, 'the worktree of the PM data branch: {path, branch, remote} (docs/pm-data-branch.md "Layout")'),
-    'hub': Field(Owned('kitlib.hubsite.settings'), None, 'the Action Hub site settings: port, tunnel_port, store, commit_every_s, push (unset: on only when store is unset and pm_data is set), backlog_refresh_s, access: {team, aud, emails}; unset: every default, and the site still runs; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
+    'guard_mcp_prefix': Field(Str(), None, 'the lock MCP tool-name prefix the guard denies owner-only tools under; unset: the kit default (docs/guard-fallback.md "Lock MCP")'),
+    'guard_mcp_tools': Field(ListOf(Str()), None, 'more full tool names the guard treats as the lock MCP\'s owner-only tools, as a PreToolUse payload names them (docs/guard-fallback.md "Lock MCP")'),
+    'guard_agent_marks': Field(ListOf(Str()), None, 'the session marks the guard treats as agent sessions for the kill-by-name, lock-state, kit-json, write-jail and git-stash-shared rules; it replaces the default list, so it names every mark it holds; unset: coordinator, deep-worker, consultant and pm (docs/guard-fallback.md "Session mark")'),
+    'guard_mark_roots': Field(MarkMap(ListOf(MARK_ROOT), what='mark'), None, 'more write-jail roots for the main sessions of one launcher mark, as {mark: [{path, mode, why}]}; a root that is, holds or lies inside the machine config folder is ignored unless it is read-only (docs/guard-jail-roles.md "Write jail")'),
+    'guard_rules': Field(MapOf(Enum('deny', 'warn', 'off'), what='rule'), None, 'the guard\'s rule modes, {rule: deny|warn|off}, over the kit defaults (kitlib.guard.modes.DEFAULTS); set here only, never in .kit.json (docs/guard-core.md "Rule modes"); older kit copies reject the key; set it only after every folder runs a kit that knows it'),
+    'pm_data': Field(Owned('kitlib.config.pmdata'), None, 'the worktree of the PM data branch: {path, branch, remote} (docs/pm-data-branch.md "Layout")'),
+    'hub': Field(Owned('kitlib.hubclient.settings'), None, 'the Action Hub site settings: port, tunnel_port, store, commit_every_s, push (unset: on only when store is unset and pm_data is set), backlog_refresh_s, access: {team, aud, emails}; unset: every default, and the site still runs; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'pm_start': Field(Owned('kitlib.pmstart'), None, 'the PM session-start checklist settings (docs/pm-start.md "Config")'),
     'coordinator_start': Field(Owned('kitlib.coordinatorstart'), None, 'the coordinator session-start settings'),
     'pm_watch': Field(Owned('kitlib.pmwatch'), None, 'the PM watcher settings'),
@@ -172,13 +173,11 @@ SCHEMA = {
     'temp_dir': Field(AbsPath(), None, "the folder the kit's own temp files go in (test run folders, gate logs), and the shared temp folder (gate fallback logs, the worktree sweep log, private index folders, comfy_gen's GPU self-lock and state) while its drive is there, made if missing; on Windows, as the test and gate folder, it is skipped when it is, holds or sits inside a session temp (`agent_temp_sweep` `dir`, or the user environment's AGENT_TEMP, TEMP or TMP); unset or skipped: the first of these clear of every session temp: `kit-temp`, then `kit-work`, at the root of the checkout's drive (not the system temp folder's drive), the system temp folder (%LOCALAPPDATA%\\Temp; on Linux /tmp), `kit-work` beside it (docs/test-tools.md \"Temp folders\"); older kit copies reject the key"),
     'machine_path_folders': Field(ListOf(Str(pattern=r'[^\\/:*?"<>|\s]+', what='a folder name')), None, 'the drive-rooted folder names the machine-paths check refuses besides a user profile (docs/commit.md "machine_paths.py"); unset: none, so only drive-rooted user-profile paths are refused and tools/machine_paths.py prints a NOTE saying so; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'agent_temp_sweep': Field(Owned('optional/agenttemp/agent_temp_sweep.py'), None, "the agents' temp folder to sweep (`dir`), the age past which an unused entry goes (`max_age_days`, default 3), the entries it never removes (`keep`, relative paths such as `claude/<project>/<session>`) and whether it also sweeps the session folders under the user's own temp, HKCU\\Environment TEMP, else TMP (`user_temp`, true or false, default false; older sweeps refuse the key); `tools/machine_setup.py` adds it when absent (docs/machine-setup.md \"Extras\")"),
-    'dev_drive': Field(AbsPath(), None, 'the Dev Drive\'s root folder: the gate and landing result records go under it, in `<dev_drive>\\pm-kit\\kit-gate-result` (docs/gate.md "Result record"), and `delegated.py run --approval` runs an operation, and `delegated.py request` asks for one, only on paths under it and outside every checkout (docs/delegations.md "Hub approvals"), and the guard holds every agent write on it (docs/guard.md "Write jail", "Outer bound"); unset: a gate writes no result record, every landing refuses, every approval run and request refuses, and the outer bound of the guard is off, said at every session start; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
+    'dev_drive': Field(AbsPath(), None, 'the Dev Drive\'s root folder: the gate and landing result records go under it, in `<dev_drive>\\pm-kit\\kit-gate-result` (docs/gate-records.md "Result record"), and `delegated.py run --approval` runs an operation, and `delegated.py request` asks for one, only on paths under it and outside every checkout (docs/delegations.md "Hub approvals"), and the guard holds every agent write on it (docs/guard-jail-roles.md "Write jail", "Outer bound"); unset: a gate writes no result record, every landing refuses, every approval run and request refuses, and the outer bound of the guard is off, said at every session start; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'plugin': Field(Owned('kitlib.pluginsource'), None, 'where the plugin export of pushed kit main lives, and whether pm_watch refreshes it on its own (docs/plugin-source.md); older kit copies reject the key; set it only after every folder is migrated'),
 }
 
-# Which of the PM repository's two files holds each key (kitlib.config.move writes them so;
-# tests/config/test_read_pm_repo.py keeps these equal to move's POLICY, LOCAL, DROPPED and
-# RELATIVE_KEYS: this module does not import move, which imports kitlib.coordinatorstart).
+# Which of the PM repository's two files holds each key (docs/kit-json.md "Machine config keys").
 POLICY_KEYS = ('ledger_path', 'ledger_dir', 'ledger_repos', 'pending_path',
                'guard_rules', 'guard_mark_roots', 'guard_agent_marks',
                'guard_mcp_tools', 'guard_mcp_prefix', 'pm_start', 'coordinator_start', 'pm_watch',
@@ -618,7 +617,7 @@ class Location(collections.namedtuple('Location', 'state path local folder pm pm
     name; UNMOVED, LEFTOVER), else None. `error` why the config cannot be read (UNMOVED,
     LEFTOVER, BAD), else None. `home` the home folder.
 
-    `new` exists only for kitlib.hubsite.auth.folder (the hub's credential folder
+    `new` exists only for kitlib.hubclient.token.folder (the hub's credential folder
     beside it) and the guard's matching hold on that folder (kitlib.guard.rules.hub_secret_folders);
     the hub session removes it: `path` for OK, else the home file."""
 
@@ -629,8 +628,8 @@ class Location(collections.namedtuple('Location', 'state path local folder pm pm
 
 
 class HomeLocation(collections.namedtuple('HomeLocation', 'state path new error home')):
-    """The machine config file in the home folder (home_location), the move's source
-    (kitlib.config.move): `state` one of NEW, NONE, BAD; `path` the file read
+    """The machine config file in the home folder (home_location), the source of the owner's
+    move (MOVE_DOC): `state` one of NEW, NONE, BAD; `path` the file read
     (DIR_NAME's for NONE and BAD); `new` the candidate file; `error` why a BAD
     location cannot be read, else None; `home` the home folder."""
 
@@ -668,7 +667,7 @@ def _kind(path):
 
 def home_location(home=None):
     """The HomeLocation of the machine config file in the home folder `home` (default the
-    user's): the move's source (kitlib.config.move), never what the kit reads (locate). It
+    user's): the source of the owner's move (MOVE_DOC), never what the kit reads (locate). It
     reads nothing but the file system's answers and never raises."""
     h = home or home_dir()
     new_dir = os.path.join(h, DIR_NAME)
@@ -720,7 +719,7 @@ def _leftover(h):
     return None, None
 
 
-MOVE_DOC = 'docs/kit-json.md "Moving the machine config into the PM repo"'
+MOVE_DOC = 'docs/kit-json.md "A machine config in the home folder"'
 POINTER_DOC = 'docs/machine-setup.md "PM repo pointer"'
 # LEFTOVER's error: (the PM repository's policy file, the home file, the home file with each '
 # doubled for PowerShell's single-quoted string, MOVE_DOC).
@@ -745,11 +744,11 @@ def locate(home=None, ptr=None):
     def unmoved(leftover, pm_file):
         if pm_file:
             why = ('the machine config is still in the home folder (%s) and the PM repository has '
-                   'none (%s): move it with tools/config_move.py (%s)' % (leftover, pm_file, MOVE_DOC))
+                   'none (%s): move it there (%s)' % (leftover, pm_file, MOVE_DOC))
         else:
             why = ('the machine config is still in the home folder (%s), and the kit reads it from '
                    'the PM repository now: set the PM repo pointer (tools/machine_setup.py '
-                   '--pm-repo, %s), then move it with tools/config_move.py (%s)'
+                   '--pm-repo, %s), then move it into the PM repository (%s)'
                    % (leftover, POINTER_DOC, MOVE_DOC))
         return make(UNMOVED, leftover, why, leftover=leftover)
 
@@ -1073,3 +1072,17 @@ def dev_drive(cfg):
 
 def doc_lines():
     return ['- `%s` (%s): %s' % (k, f.type.describe(), f.doc) for k, f in SCHEMA.items()]
+
+
+def _console_log_dir():
+    """The folder of the console guard's incident log (kitlib.proc.console.set_log_dir): the kit
+    temp folder of this kit checkout (work_temp); None, no log, in a fenced test process
+    (HomeFenced). A bad machine config raises ConfigError."""
+    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        return work_temp(kit)
+    except HomeFenced:
+        return None
+
+
+console.set_log_dir(_console_log_dir)

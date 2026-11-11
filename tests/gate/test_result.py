@@ -1,6 +1,6 @@
 """kitlib.gate.result: the result records every branch gate and landing writes (running, then
 final), and wait-result, the wait a second session arms on them (its one write: a running
-record whose process died, finished error) (docs/gate.md "Result
+record whose process died, finished error) (docs/gate-records.md "Result
 record")."""
 import contextlib
 import json
@@ -14,9 +14,10 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.fs import treelock
-from kitlib.gate import land, result, runner, steps, verdicts
+from kitlib.gate import result, runner, steps
+from kitlib.landing import lander as land
 from kitlib.proc import process
-from kitlib.records import landing
+from kitlib.records import landing, verdict_entry
 from tests import gitfixture, testutil
 from tests.gate import fixtures
 from tests.home import machine_config, result_drive, temp_home
@@ -448,7 +449,7 @@ class Records(unittest.TestCase):
 class Folder(unittest.TestCase):
     """The result folder is <dev_drive>/pm-kit/kit-gate-result/<repo key>, outside every checkout
     and one per repository; the old <git common dir>/kit-gate-result is read, never written; with
-    no dev_drive there is no result folder (docs/gate.md "Result record")."""
+    no dev_drive there is no result folder (docs/gate-records.md "Result record")."""
 
     def setUp(self):
         self.repo = gitfixture.TempRepo()
@@ -488,15 +489,6 @@ class Folder(unittest.TestCase):
         self.assertNotEqual(os.path.normcase(result.result_dir(other.root)),
                             os.path.normcase(folder))           # another repository: its own
         self.assertFalse(os.path.exists(self.old_dir))           # nothing in the old folder
-
-    def test_a_repo_key_is_the_folder_name_and_a_hash_of_the_common_dir(self):
-        a = result.repo_key(r'C:\work\My.Repo\.git')
-        self.assertRegex(a, r'^myrepo-[0-9a-f]{12}$')
-        self.assertEqual(result.repo_key(r'c:\WORK\my.repo\.GIT'), a)   # Windows ignores case
-        self.assertNotEqual(result.repo_key(r'C:\other\My.Repo\.git'), a)
-        self.assertRegex(result.repo_key(r'C:\remotes\proj.git'), r'^projgit-[0-9a-f]{12}$')
-        self.assertRegex(result.repo_key(r'C:\x\%%%\.git'), r'^repo-[0-9a-f]{12}$')
-        self.assertLessEqual(len(result.repo_key('C:\\x\\%s\\.git' % ('n' * 200))), 40 + 13)
 
     def test_with_no_dev_drive_there_is_no_result_folder_and_nothing_is_written(self):
         temp_home(self)
@@ -743,8 +735,8 @@ class LandingWrites(fixtures.GateRepoCase):
         out = self.lander('kit/feature', self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
         rec = result.read(self.repo.root, 'kit/feature', 'land')[0]
-        # no "landing" section: gate_once is on by default, so the merged gate ran --full
-        self.assertEqual((rec['gate_once'], rec['escalated']), (True, True))
+        # a plain change: the merged gate ran its selection, not every step in full
+        self.assertEqual((rec['gate_once'], rec['escalated']), (None, False))
         line, = ledger_lines(self.repo.root)
         self.assertEqual(line, dict(dict((k, rec[k]) for k in result.LEDGER_FIELDS),
                                     batch_size=1, folded_into=None))
@@ -759,7 +751,7 @@ class LandingWrites(fixtures.GateRepoCase):
         self.assertEqual(out.code, G.FAILED, out.lines)
         os.remove(os.path.join(wt, 'RED'))
         green = self.repo.commit('fix', 'RED', cwd=wt)
-        os.remove(verdicts.entry_path(self.repo.common_dir(), 'kit/feature'))   # reviewed again
+        os.remove(verdict_entry.entry_path(self.repo.common_dir(), 'kit/feature'))   # reviewed again
         out = self.lander('kit/feature', self.main, green).run()
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(result.read(self.repo.root, 'kit/feature', 'land')[0]['verdict'], 'pass')

@@ -18,7 +18,7 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   refs/remotes/<remote>/<base> (refusal-log P27): a commit on local <base> alone is one the
   remote may never get (someone's unpushed commit, a local <base> ahead of the remote; a
   landing merges in its own landing tree and moves local <base> only after its push is
-  verified, kitlib.gate.land). The refusal names the hash to use instead: the
+  verified, kitlib.landing.lander). The refusal names the hash to use instead: the
   fetched <remote>/<base> (`git ls-remote <remote> <base>`), never local <base>. A dirty tree is
   refused; a <target> that is not a commit here is NOT FOUND.
 - With `.kit.json` "landing".in_flight set (kitlib.records.inflight), a landing in flight is
@@ -35,7 +35,7 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
 - The merge runs with merge.directoryRenames=true: a file this branch added under a
   folder the base moved lands in the new folder instead of resurrecting the old one.
 - Clean merge, before its commit: an owner-only path it changes must be one commit.py would
-  carry (owner_refusal, kitlib.commit.merge_owner_refusal: the merged branch's own owner or
+  carry (owner_refusal, kitlib.commit.checks.merge_owner_refusal: the merged branch's own owner or
   approved change, or the clean merge of such changes on both sides); anything else aborts the
   merge and is refused.
 - Clean merge: checks the silent-undo hazard - a file the base shrank a lot that came out of
@@ -57,7 +57,7 @@ import time
 from kitlib import attribution
 from kitlib import kitroot
 
-from kitlib.config import ConfigError, load as load_config
+from kitlib.config import ConfigError, commit_settings, load as load_config
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
@@ -247,13 +247,13 @@ def in_flight_reader(top, cfg):
 def owner_refusal(top, cfg, full):
     """The refusal lines, or None, for the clean merge of `full` in progress in `top`, before it
     is committed: an owner-only path it changes is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal, with <remote>/<main> as last fetched judged already; with
-    `"commit".merge_fold` off, it carries no path both sides changed). On a refusal the merge is
-    aborted."""
-    from kitlib import commit as kcommit      # here: only a merge that is committed needs it
+    (kitlib.commit.checks.merge_owner_refusal, with <remote>/<main> as last fetched judged
+    already; with `"commit".merge_fold` off, it carries no path both sides changed). On a refusal
+    the merge is aborted."""
+    from kitlib.commit import checks as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
-        fold = kcommit.settings(cfg)['merge_fold']
+        fold = commit_settings(cfg)['merge_fold']
     except ConfigError as e:
         bad, why = None, 'kit configuration: %s' % e
     else:
@@ -318,7 +318,7 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
     # (someone's unpushed commit, a local base ahead of the remote; a landing never leaves one,
     # as it moves local base only after its push is verified) may never reach the remote; merged
     # in here, it stays in this branch as a base commit the remote never gets - a trailerless
-    # "branch commit" a gate's trailer check then fails for good.
+    # "branch commit" a gate's trailer check then warns on at every gate and landing.
     for name in (remote, base):
         if gitrefs.bad_rev(name):
             return done(USAGE, '%s: refused: %s' % (TOOL, gitrefs.bad_rev(name)))

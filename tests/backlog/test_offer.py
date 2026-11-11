@@ -7,8 +7,10 @@ from kitlib.git import cmd
 from kitlib.backlog import offer as omod
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read, store_ref
 
 from tests.backlog import test_cli
 from tests.backlog.helpers import TODAY, StoreCase, priced, rec, record_text
@@ -20,7 +22,7 @@ def snap(*records, rules=None):
         texts.update(r)
     rules = rules or rmod.Rules('upper', ('L0', 'L1'))
     parsed = [rmod.parse('backlog/%s.md' % stem, text, stem) for stem, text in texts.items()]
-    return smod.Snapshot(parsed, 'a' * 40, 'test', rules)
+    return store_read.Snapshot(parsed, 'a' * 40, 'test', rules)
 
 
 def offer_ids(s, holding=(), **kw):
@@ -792,7 +794,7 @@ class NextNarrows(unittest.TestCase):
 
 
 class ProtectedSet(StoreCase):
-    """`next`'s narrowing end to end on a real repository (plan.offer_for(narrow=True)): T is the
+    """`next`'s narrowing end to end on a real repository (plan_narrow.offer_for(narrow=True)): T is the
     live branch's diff, its worktree's dirty paths and its `## Files`, read from git; any part
     that cannot be read keeps today's pass-over."""
 
@@ -812,7 +814,7 @@ class ProtectedSet(StoreCase):
                          scope='kitlib/**', body=files),
                   priced('FOO', priority='3', scope='kitlib/**'))
         snap = self.store.load()
-        offers, passed, _holding, _own = pmod.offer_for(snap, self.ctx, narrow=True)
+        offers, passed, _holding, _own = plan_narrow.offer_for(snap, self.ctx, narrow=True)
         return offers, {p.rec.id: p for p in passed}
 
     def test_t_is_the_diff_the_dirty_paths_and_the_files_section(self):
@@ -826,7 +828,7 @@ class ProtectedSet(StoreCase):
         self.seed(priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='kit/holder',
                          scope='kitlib/**', body='## Files\n- kitlib/y/c.py\n'),
                   priced('FOO', priority='3', scope='kitlib/**'))
-        offers, passed, _h, _o = pmod.offer_for(self.store.load(), self.ctx)
+        offers, passed, _h, _o = plan_narrow.offer_for(self.store.load(), self.ctx)
         self.assertEqual(offers, [])
         self.assertIn('FOO', [p.rec.id for p in passed])
 
@@ -844,12 +846,12 @@ class ProtectedSet(StoreCase):
     def test_dirty_paths_count_both_sides_of_a_rename_and_a_staged_delete(self):
         self.repo.git('mv', 'kitlib/y/d.py', 'kitlib/y/e.py', cwd=self.wt)
         self.repo.git('rm', '-q', 'kitlib/x/b.py', cwd=self.wt)
-        self.assertEqual(pmod._dirty_paths(self.ctx, 'kit/holder'),
+        self.assertEqual(plan_narrow._dirty_paths(self.ctx, 'kit/holder'),
                          ['kitlib/x/b.py', 'kitlib/x/new.py', 'kitlib/y/d.py', 'kitlib/y/e.py'])
 
     def test_each_live_branch_is_diffed_once_per_offer(self):
         calls = []
-        real = pmod._live_changes
+        real = plan_narrow._live_changes
 
         def counted(*a, **kw):
             calls.append(a)
@@ -858,8 +860,8 @@ class ProtectedSet(StoreCase):
                          scope='kitlib/**', body='## Files\n- kitlib/y/c.py\n'),
                   priced('FOO', priority='3', scope='kitlib/**'),
                   priced('BAR', priority='4', scope='kitlib/x/**'))
-        with mock.patch.object(pmod, '_live_changes', counted):
-            pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        with mock.patch.object(plan_narrow, '_live_changes', counted):
+            plan_narrow.offer_for(self.store.load(), self.ctx, narrow=True)
         self.assertEqual(len(calls), 1)
 
     def test_a_status_git_cannot_run_keeps_the_pass_over(self):
@@ -1008,7 +1010,7 @@ class NextCliNarrows(unittest.TestCase):
         self.repo.commit('work', 'brain/a.py', cwd=wt)
 
     def test_next_shows_the_narrowing_and_writes_nothing(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
@@ -1038,7 +1040,7 @@ class LiveBranchesOnce(unittest.TestCase):
     def setUp(self):
         test_cli.Cli.setUp(self)
         self.repo.worktree('holder')
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
@@ -1084,7 +1086,7 @@ class NextCliRestore(unittest.TestCase):
         test_cli.Cli.setUp(self)
 
     def test_next_prints_the_restore_and_counts_it(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'C-ONE': record_text(id='C-ONE', priority='3', priority_by='agent', state='pulled',

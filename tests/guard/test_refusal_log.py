@@ -1,4 +1,4 @@
-"""The guard's refusal log (kitlib/guard/refusal_log.py; docs/guard-v2.md "Refusal log"): one JSON
+"""The guard's refusal log (kitlib/guard/refusal_log.py; docs/guard-core.md "Refusal log"): one JSON
 line per deny in `<pm_data>/audit/refusals.jsonl`, the folder made on the first write: FIELDS in
 order and nothing else, never the reason, the command, the path, the working directory or the
 Instead text, and never a folder name that could be the account's. Appends hold an OS lock
@@ -16,7 +16,8 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import kitroot, sessionmark
+from kitlib import kitroot
+from kitlib.host import sessionmark
 from kitlib.fs import treelock
 from kitlib.guard import refusal_log
 from kitlib.host import Action, Decision
@@ -171,7 +172,7 @@ class Record(unittest.TestCase):
 
     def test_a_fenced_home_is_no_line_and_no_raise(self):
         from kitlib.config import user
-        with mock.patch('kitlib.pmdata.machine_settings', side_effect=user.HomeFenced('fenced')):
+        with mock.patch('kitlib.config.pmdata.machine_settings', side_effect=user.HomeFenced('fenced')):
             self.assertIsNone(refusal_log.record(DENY, ACTION, 'claude', 'main', {}))
 
     def test_a_busy_lock_is_no_line(self):

@@ -95,7 +95,7 @@ class RunTiersTest(unittest.TestCase):
         self.assertIn('kit_tests: --both-tiers: tier real git (KIT_FAKE_GIT=0)\n', text)
 
 
-MODULES = ['tests.gate.test_land_x', 'tests.gate.test_other', 'tests.git.test_g',
+MODULES = ['tests.landing.test_land_x', 'tests.gate.test_other', 'tests.git.test_g',
            'tests.test_top']
 
 
@@ -110,19 +110,73 @@ class ChangedTestModules(unittest.TestCase):
     def test_what_is_not_a_test_module_of_the_tree_is_left_out(self):
         changed = ['tests/gate/test_gone.py',        # deleted: the tree holds no such module
                    'tests/gate/fixtures.py',         # a helper
-                   'tests/selection.json', 'kitlib/gate/land.py', 'docs/gate.md',
+                   'tests/selection.json', 'kitlib/landing/lander.py', 'docs/gate.md',
                    'tests/gate/test_other.txt', 'tools/test_like.py']
         self.assertEqual(tiers.changed_test_modules(changed, MODULES), [])
         self.assertEqual(tiers.changed_test_modules([], MODULES), [])
 
     def test_the_real_git_modules_take_the_changed_ones_too(self):
-        self.assertEqual(tiers.real_git_modules(MODULES), ['tests.gate.test_land_x',
+        self.assertEqual(tiers.real_git_modules(MODULES), ['tests.landing.test_land_x',
                                                            'tests.git.test_g'])
         self.assertEqual(tiers.real_git_modules(MODULES, also=['tests.test_top', 'tests.git.test_g']),
-                         ['tests.gate.test_land_x', 'tests.git.test_g', 'tests.test_top'])
+                         ['tests.landing.test_land_x', 'tests.git.test_g', 'tests.test_top'])
         # a changed module the list does not hold still runs
         self.assertEqual(tiers.real_git_modules(['tests.a.test_a'], also=['tests.b.test_b']),
                          ['tests.b.test_b'])
+
+
+BASE_SRC = '''"""Module doc: docs/gate.md "Steps"."""
+import os
+
+
+class T(object):
+    """Class doc."""
+
+    def test_a(self):
+        """Test doc."""
+        x = 1  # a comment
+        return x
+
+    async def run(self):
+        """Async doc."""
+        return 2
+'''
+
+
+class CodeChanged(unittest.TestCase):
+    """A test module changed only in comments and docstrings is not "changed" for the real-git
+    pass; a code change is, and so is a side that is missing or does not parse (fail safe)."""
+
+    def test_only_a_code_change_counts(self):
+        sub = BASE_SRC.replace
+        for name, base, tip, want in (
+                ('unchanged', BASE_SRC, BASE_SRC, False),
+                ('a docstring citation re-pointed', BASE_SRC,
+                 sub('docs/gate.md "Steps"', 'docs/gate-run.md "Steps"'), False),
+                ('every docstring edited', BASE_SRC,
+                 sub('Class doc', 'C').replace('Test doc', 'T').replace('Async doc', 'A'), False),
+                ('a comment edited, added and moved', BASE_SRC,
+                 '# new top comment\n' + sub('# a comment', '# another\n        # and more'),
+                 False),
+                ('a docstring added where none was', 'def f():\n    return 1\n',
+                 'def f():\n    """Now documented."""\n    return 1\n', False),
+                ('CRLF bytes against LF bytes', BASE_SRC.encode('utf-8'),
+                 BASE_SRC.replace('\n', '\r\n').encode('utf-8'), False),
+                ('a value changed', BASE_SRC, sub('x = 1', 'x = 2'), True),
+                ('a code and a docstring edit in one module', BASE_SRC,
+                 sub('Test doc', 'T').replace('return 2', 'return 3'), True),
+                ('a string statement that is not the first', 'x = 1\n"a"\n', 'x = 1\n"b"\n', True),
+                ('a docstring-only body replaced by pass', 'def f():\n    """D."""\n',
+                 'def f():\n    pass\n', True),
+                ('an import added', BASE_SRC, sub('import os', 'import os\nimport sys'), True),
+                ('an added module (no base)', None, BASE_SRC, True),
+                ('an unreadable tip', BASE_SRC, None, True),
+                ('the base does not parse', 'def f(:\n', BASE_SRC, True),
+                ('the tip does not parse', BASE_SRC, BASE_SRC + 'def g(:\n', True),
+                ('neither side parses, same text', 'def f(:\n', 'def f(:\n', True),
+                ('a NUL byte in the tip', BASE_SRC, BASE_SRC.encode('utf-8') + b'\0', True)):
+            with self.subTest(name):
+                self.assertIs(tiers.code_changed(base, tip), want)
 
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

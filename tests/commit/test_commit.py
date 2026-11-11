@@ -15,10 +15,11 @@ import unittest
 from unittest import mock
 
 from kitlib import attribution
-from kitlib import commit as C
+from kitlib.commit import checks, message
+from kitlib.commit import run as C
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from tests import gitfixture, inproc
 from tests.gitfixture import TempRepo
 from tests.home import TempHomeCase, machine_config, no_machine_owner
@@ -40,7 +41,7 @@ def setUpModule():
     env.start()
     unittest.addModuleCleanup(env.stop)
     for k in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
-              C.MODEL_ENV, BRIDGE):
+              attribution.MODEL_ENV, BRIDGE):
         os.environ.pop(k, None)
     os.environ['GIT_CONFIG_GLOBAL'] = os.devnull
     os.environ['GIT_CONFIG_NOSYSTEM'] = '1'
@@ -59,96 +60,29 @@ def rules(**kw):
 
 # ---------------------------------------------------------------------------------- pure pieces
 
-class CoAuthorTrailer(unittest.TestCase):
-
-    def test_a_bare_model_name_gets_claude(self):
-        self.assertEqual(C.coauthor('Opus 5.5'),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-
-    def test_a_name_that_already_says_claude_is_not_doubled(self):
-        self.assertEqual(C.coauthor('Claude Opus 5.5'),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-        self.assertEqual(C.coauthor('Claude'), 'Co-Authored-By: Claude <noreply@anthropic.com>')
-
-    def test_a_lower_case_model_id_is_written_as_its_display_name(self):
-        for model, name in (('claude-opus-5-5', 'Opus 5.5'), ('claude-sonnet-5-5', 'Sonnet 5.5'),
-                            ('claude-haiku-4-5', 'Haiku 4.5'), ('claude-opus-5', 'Opus 5'),
-                            (' claude-opus-5-5 ', 'Opus 5.5')):
-            self.assertEqual(C.coauthor(model),
-                             'Co-Authored-By: Claude %s <noreply@anthropic.com>' % name)
-
-    def test_display_names_and_other_ids_are_left_as_they_are(self):
-        for model in ('Claude Opus 5.5', 'Opus 5.5', 'Claude-Opus-5-5', 'claude-opus',
-                      'claude-opus-5-5-20260101'):
-            self.assertEqual(attribution.display_name(model), model)
-        self.assertEqual(C.coauthor('claude-opus'),
-                         'Co-Authored-By: Claude claude-opus <noreply@anthropic.com>')
-
-    def test_whitespace_is_collapsed(self):
-        self.assertEqual(C.coauthor('  Opus   5.5 '),
-                         'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-
-    def test_an_empty_model_is_refused(self):
-        for blank in ('', '   ', None):
-            with self.assertRaises(ValueError):
-                C.coauthor(blank)
-
-    def test_a_listed_family_is_kept_as_given(self):
-        for name in ('Codex', 'Codex GPT-5', 'Codex-mini', 'Codex.2'):
-            self.assertEqual(C.coauthor(name, ['Codex']),
-                             'Co-Authored-By: %s <noreply@anthropic.com>' % name)
-        self.assertEqual(C.coauthor('GPT-5.1', ['GPT-5']),
-                         'Co-Authored-By: GPT-5.1 <noreply@anthropic.com>')
-
-    def test_a_family_followed_by_anything_else_still_names_claude(self):
-        for name, fams in (('Codexer 1', ['Codex']), ('Codex_2', ['Codex']), ('GPT-50', ['GPT-5'])):
-            self.assertEqual(C.coauthor(name, fams),
-                             'Co-Authored-By: Claude %s <noreply@anthropic.com>' % name)
-
-
 class RepoPath(unittest.TestCase):
     ROOT = os.path.abspath(os.sep + os.path.join('w', 'repo'))
 
     def test_a_relative_path_is_unchanged_but_for_its_slashes(self):
-        self.assertEqual(C.repo_path('docs\\a.md', self.ROOT), 'docs/a.md')
-        self.assertEqual(C.repo_path('Docs/A.md', self.ROOT), 'Docs/A.md')
+        self.assertEqual(checks.repo_path('docs\\a.md', self.ROOT), 'docs/a.md')
+        self.assertEqual(checks.repo_path('Docs/A.md', self.ROOT), 'Docs/A.md')
 
     def test_dot_and_dot_dot_segments_are_folded(self):
-        self.assertEqual(C.repo_path('./CLAUDE.md', self.ROOT), 'CLAUDE.md')
-        self.assertEqual(C.repo_path('tools/../CLAUDE.md', self.ROOT), 'CLAUDE.md')
-        self.assertEqual(C.repo_path('.\\.claude\\x.md', self.ROOT), '.claude/x.md')
+        self.assertEqual(checks.repo_path('./CLAUDE.md', self.ROOT), 'CLAUDE.md')
+        self.assertEqual(checks.repo_path('tools/../CLAUDE.md', self.ROOT), 'CLAUDE.md')
+        self.assertEqual(checks.repo_path('.\\.claude\\x.md', self.ROOT), '.claude/x.md')
 
     def test_a_path_climbing_out_is_none(self):
-        self.assertIsNone(C.repo_path('..', self.ROOT))
-        self.assertIsNone(C.repo_path('../x.txt', self.ROOT))
-        self.assertIsNone(C.repo_path('a/../../x.txt', self.ROOT))
+        self.assertIsNone(checks.repo_path('..', self.ROOT))
+        self.assertIsNone(checks.repo_path('../x.txt', self.ROOT))
+        self.assertIsNone(checks.repo_path('a/../../x.txt', self.ROOT))
 
     def test_an_absolute_path_inside_is_made_relative(self):
-        self.assertEqual(C.repo_path(os.path.join(self.ROOT, 'tools', 'x.py'), self.ROOT),
+        self.assertEqual(checks.repo_path(os.path.join(self.ROOT, 'tools', 'x.py'), self.ROOT),
                          'tools/x.py')
 
     def test_an_absolute_path_outside_is_none(self):
-        self.assertIsNone(C.repo_path(os.path.join(os.path.dirname(self.ROOT), 'x'), self.ROOT))
-
-
-class ModelResolution(unittest.TestCase):
-
-    def test_the_flag(self):
-        self.assertEqual(C.resolve_model(False, 'M', {}), ('M', '--model', None))
-
-    def test_the_environment_variable_is_the_fallback(self):
-        self.assertEqual(C.resolve_model(False, None, {C.MODEL_ENV: ' E '}), ('E', C.MODEL_ENV, None))
-
-    def test_the_flag_wins_over_the_environment(self):
-        self.assertEqual(C.resolve_model(False, 'F', {C.MODEL_ENV: 'E'})[0], 'F')
-
-    def test_blank_everywhere_is_an_error(self):
-        _m, _s, err = C.resolve_model(False, '  ', {C.MODEL_ENV: '  '})
-        self.assertIn('--model is required', err)
-
-    def test_owner_authored_takes_no_model(self):
-        self.assertEqual(C.resolve_model(True, None, {C.MODEL_ENV: 'E'}), (None, None, None))
-        self.assertIn('contradict', C.resolve_model(True, 'F', {})[2])
+        self.assertIsNone(checks.repo_path(os.path.join(os.path.dirname(self.ROOT), 'x'), self.ROOT))
 
 
 class OwnerAuthoredCoverage(unittest.TestCase):
@@ -159,7 +93,7 @@ class OwnerAuthoredCoverage(unittest.TestCase):
         self.r = rules()
 
     def err(self, approved, paths, owner_authored=True):
-        return C.model_requirement_error(self.r, owner_authored, approved, paths)
+        return checks.model_requirement_error(self.r, owner_authored, approved, paths)
 
     def test_an_agent_commit_is_never_judged_here(self):
         self.assertIsNone(self.err([], ['CLAUDE.md'], owner_authored=False))
@@ -189,120 +123,95 @@ class OwnerOnlyPaths(unittest.TestCase):
     def test_the_default_list(self):
         for p in ('CLAUDE.md', '.claude/settings.json', '.github/workflows/ci.yml', '.kit.json',
                   'tools/gate.json'):
-            self.assertEqual(C.locked_paths(self.r, [p]), [p], p)
+            self.assertEqual(checks.locked_paths(self.r, [p]), [p], p)
 
     def test_the_retired_doc_budget_json_is_not_in_the_default(self):
         # Nothing reads tools/doc_budget.json since the doc tools moved to .kit.json (docs/doc-tools.md).
-        self.assertEqual(C.locked_paths(self.r, ['tools/doc_budget.json']), [])
+        self.assertEqual(checks.locked_paths(self.r, ['tools/doc_budget.json']), [])
 
     def test_case_does_not_matter(self):
-        self.assertEqual(C.locked_paths(self.r, ['claude.MD', '.Claude/x']), ['claude.MD', '.Claude/x'])
+        self.assertEqual(checks.locked_paths(self.r, ['claude.MD', '.Claude/x']), ['claude.MD', '.Claude/x'])
 
     def test_lookalikes_are_not_locked(self):
-        self.assertEqual(C.locked_paths(self.r, ['.claudex/foo.md', 'CLAUDE.md.bak',
+        self.assertEqual(checks.locked_paths(self.r, ['.claudex/foo.md', 'CLAUDE.md.bak',
                                                  'docs/CLAUDE.md', 'README.md']), [])
 
     def test_the_worktrees_folder_is_excepted(self):
-        self.assertEqual(C.locked_paths(self.r, ['.claude/worktrees/x/a.py']), [])
+        self.assertEqual(checks.locked_paths(self.r, ['.claude/worktrees/x/a.py']), [])
 
     def test_a_blanket_never_covers_claude_md(self):
-        self.assertEqual(C.unapproved_locked(self.r, ['CLAUDE.md'], ['.claude/']), ['CLAUDE.md'])
-        self.assertEqual(C.unapproved_locked(self.r, ['.Claude/X.md'], ['.claude/']), [])
+        self.assertEqual(checks.unapproved_locked(self.r, ['CLAUDE.md'], ['.claude/']), ['CLAUDE.md'])
+        self.assertEqual(checks.unapproved_locked(self.r, ['.Claude/X.md'], ['.claude/']), [])
 
     def test_a_deeper_directory_is_not_a_blanket(self):
-        self.assertEqual(C.unapproved_locked(self.r, ['.claude/a/b.md'], ['.claude/a/']),
+        self.assertEqual(checks.unapproved_locked(self.r, ['.claude/a/b.md'], ['.claude/a/']),
                          ['.claude/a/b.md'])
 
     def test_canonical_values_are_the_committed_spelling(self):
-        self.assertEqual(C.canonical_approved(self.r, ['claude.md', 'unrelated'], ['CLAUDE.md']),
+        self.assertEqual(message.canonical_approved(self.r, ['claude.md', 'unrelated'], ['CLAUDE.md']),
                          ['CLAUDE.md', 'unrelated'])
 
     def test_a_configured_list_replaces_the_default(self):
         r = ownermod.from_section({'paths': ['ops/'], 'paths_except': [], 'email': '',
                                    'agent_emails': [], 'trailer': None})
-        self.assertEqual(C.locked_paths(r, ['ops/x', 'CLAUDE.md']), ['ops/x'])
+        self.assertEqual(checks.locked_paths(r, ['ops/x', 'CLAUDE.md']), ['ops/x'])
 
 
 class Trailers(unittest.TestCase):
 
     def test_an_agent_commit_gets_co_authored_by(self):
-        self.assertEqual(C.build_trailers(rules(), [], False, 'Test Model'), [COAUTHOR])
+        self.assertEqual(message.build_trailers(rules(), [], False, 'Test Model'), [COAUTHOR])
 
     def test_an_owner_authored_commit_says_so_instead(self):
-        self.assertEqual(C.build_trailers(rules(), ['CLAUDE.md'], True, None),
+        self.assertEqual(message.build_trailers(rules(), ['CLAUDE.md'], True, None),
                          ['Owner-Approved: CLAUDE.md', 'Owner-Authored: yes'])
-        self.assertEqual(C.build_trailers(rules(), [], True, None), ['Owner-Authored: yes'])
+        self.assertEqual(message.build_trailers(rules(), [], True, None), ['Owner-Authored: yes'])
 
     def test_the_configured_trailer_name_is_used(self):
-        self.assertEqual(C.build_trailers(rules(trailer='Owner-OK'), ['x'], True, None)[0],
+        self.assertEqual(message.build_trailers(rules(trailer='Owner-OK'), ['x'], True, None)[0],
                          'Owner-OK: x')
 
     def test_the_families_reach_the_trailers(self):
-        self.assertEqual(C.build_trailers(rules(), [], False, 'Codex-mini', ['Codex']),
+        self.assertEqual(message.build_trailers(rules(), [], False, 'Codex-mini', ['Codex']),
                          ['Co-Authored-By: Codex-mini <noreply@anthropic.com>'])
 
     def test_the_message_shape(self):
-        self.assertEqual(C.build_message('s', '', ['t']), 's\n\nt\n')
-        self.assertEqual(C.build_message('s', 'b', ['t', 'u']), 's\n\nb\n\nt\nu\n')
+        self.assertEqual(message.build_message('s', '', ['t']), 's\n\nt\n')
+        self.assertEqual(message.build_message('s', 'b', ['t', 'u']), 's\n\nb\n\nt\nu\n')
 
 
 class OwnerIdentity(unittest.TestCase):
 
     def test_each_refusal(self):
         r = rules(owner_email=OWNER, agent_emails=[AGENT])
-        self.assertIsNone(C.owner_identity_error(r, OWNER))
-        self.assertIn('could not say', C.owner_identity_error(r, None))
-        self.assertIn("an agent's", C.owner_identity_error(r, AGENT))
-        self.assertIn("not the owner's", C.owner_identity_error(r, 'x@example.invalid'))
-        self.assertIn('not configured', C.owner_identity_error(rules(), OWNER))
+        self.assertIsNone(checks.owner_identity_error(r, OWNER))
+        self.assertIn('could not say', checks.owner_identity_error(r, None))
+        self.assertIn("an agent's", checks.owner_identity_error(r, AGENT))
+        self.assertIn("not the owner's", checks.owner_identity_error(r, 'x@example.invalid'))
+        self.assertIn('not configured', checks.owner_identity_error(rules(), OWNER))
 
 
 class MessagePieces(unittest.TestCase):
 
-    def test_parse_merge_tree_layouts(self):
-        oid = '1' * 40
-        self.assertEqual(C.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(C.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(C.parse_merge_tree(oid + '\n'), (oid, set()))
-        self.assertEqual(C.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
-                         (oid, {'p.txt', ' q dir/r.txt'}))
-
-    def test_no_merge_or_an_octopus_owns_nothing(self):
-        self.assertEqual(C.merge_owned('.', rules(), {'a.txt'}, []), (set(), None))
-        self.assertEqual(C.merge_owned('.', rules(), {'a.txt'}, ['a' * 40, 'b' * 40]), (set(), None))
-
-    def test_a_merge_tree_failure_reason_reaches_the_refusal(self):
-        def fake(args, cwd, **kw):
-            if args[0] == 'merge-tree':
-                return cmd.Result(128, b'', 'fatal: merge-tree stubbed to fail')
-            return cmd.Result(0, b'', '')
-        with mock.patch.object(C.cmd, 'call', fake):
-            owned, why = C.merge_owned('.', rules(), {'other.txt'}, ['f' * 40])
-        self.assertEqual(owned, set())
-        self.assertIn('merge-tree stubbed to fail', why)
-        text = C.foreign_refusal({'other.txt'}, why, True)
-        self.assertTrue(text.startswith('refused: already staged'), text)
-        self.assertIn('merge-tree stubbed to fail', text)
-
     def test_a_machine_path_in_the_message(self):
         drive = 'C:' + '\\'
         gh = ('GitHub',)
-        self.assertEqual(C.machine_path_error('subject', 'body %AGENT_TEMP%\\x', folders=gh),
+        self.assertEqual(checks.machine_path_error('subject', 'body %AGENT_TEMP%\\x', folders=gh),
                          (None, []))
         self.assertIn('machine path',
-                      C.machine_path_error('see %sGitHub\\x' % drive, '', folders=gh)[0])
-        self.assertIsNone(C.machine_path_error('see %sGitHub\\x' % drive, '', folders=())[0])
+                      checks.machine_path_error('see %sGitHub\\x' % drive, '', folders=gh)[0])
+        self.assertIsNone(checks.machine_path_error('see %sGitHub\\x' % drive, '', folders=())[0])
         # The typed form is scanned too: `\n` would cut `...\Users\nick` short.
         typed = 'in %sUsers\\nick\\x' % drive
-        self.assertIn('machine path', C.machine_path_error('s', typed.replace('\\n', '\n'), typed,
+        self.assertIn('machine path', checks.machine_path_error('s', typed.replace('\\n', '\n'), typed,
                                                            folders=())[0])
 
     def test_an_unreadable_machine_config_is_a_warning_of_the_message_check(self):
         drive = 'C:' + '\\'
         note = 'WARNING: machine config X could not be read'
-        with mock.patch.object(C.machinepaths, 'folders', return_value=((), note)):
-            self.assertEqual(C.machine_path_error('subject', 'body'), (None, [note]))
-            refusal, warnings = C.machine_path_error('see %sUsers\\nick\\x' % drive, '')
+        with mock.patch.object(checks.machinepaths, 'folders', return_value=((), note)):
+            self.assertEqual(checks.machine_path_error('subject', 'body'), (None, [note]))
+            refusal, warnings = checks.machine_path_error('see %sUsers\\nick\\x' % drive, '')
         self.assertIn('machine path', refusal)
         self.assertEqual(warnings, [note])
 
@@ -399,18 +308,18 @@ class AnOrdinaryCommit(LinkedCase):
                          'https://x/s')
 
     def test_a_body_without_a_double_tilde_is_unchanged(self):
-        self.assertEqual(C.message_body('plain body, no marker', None, '.', '.'),
+        self.assertEqual(message.message_body('plain body, no marker', None, '.', '.'),
                          ('plain body, no marker', None))
 
     def test_a_single_tilde_stays_literal(self):
-        self.assertEqual(C.message_body('about ~5 files, ~/x and a~b', None, '.', '.'),
+        self.assertEqual(message.message_body('about ~5 files, ~/x and a~b', None, '.', '.'),
                          ('about ~5 files, ~/x and a~b', None))
 
     def test_the_environment_variable_supplies_the_model_and_says_so(self):
         self.put('a.py', 'a = 1\n')
-        code, out = self.commit('add a', 'a.py', model=None, env={C.MODEL_ENV: 'Env Model'})
+        code, out = self.commit('add a', 'a.py', model=None, env={attribution.MODEL_ENV: 'Env Model'})
         self.assertEqual(code, 0, out)
-        self.assertIn('model     Env Model (from %s)' % C.MODEL_ENV, out)
+        self.assertIn('model     Env Model (from %s)' % attribution.MODEL_ENV, out)
         self.assertIn('Co-Authored-By: Claude Env Model', self.message())
 
     def test_nothing_to_commit(self):
@@ -467,18 +376,6 @@ class AnEmptyCommit(LinkedCase):
         self.assertIn('carries a machine path', out)
         self.assertEqual(self.head(), head)
 
-    def test_owner_approval_or_consume_with_the_flag_are_usage_errors(self):
-        head = self.head()
-        for kw in ({'owner_approval': 'hub:A-001'},
-                   {'owner_approval': 'hub:A-001', 'consume': 'HEAD'}):
-            code, out = self.commit('s', allow_empty=True, **kw)
-            self.assertEqual(code, 2, (kw, out))
-            self.assertIn('USAGE:', out)
-        code, out = self.commit(None, allow_empty=True, owner_approval='hub:A-001', consume='HEAD')
-        self.assertEqual(code, 2, out)
-        self.assertIn('USAGE:', out)
-        self.assertEqual(self.head(), head)
-
     def test_an_unborn_branch_is_refused(self):
         self.git('checkout', '-q', '--orphan', 'kit/unborn')
         self.git('rm', '-r', '-q', '--cached', '--', '.')
@@ -511,17 +408,6 @@ class UsageMistakesAreUsageErrors(LinkedCase):
     def test_no_model_anywhere(self):
         self.put('a.py', 'x\n')
         self.assert_usage('--model is required', 'a.py', model=None, env={})
-
-    def test_the_missing_model_refusal_names_only_the_chosen_hosts_variable(self):
-        """A host with no model variable (codex) was told to set the default
-        host's, another host's environment (skill builder: never infer the model from it)."""
-        claude = C.missing_model('claude')
-        self.assertIn('--model "<model name>"', claude)
-        self.assertIn('(or set CLAUDE_AGENT_MODEL for this session only)', claude)
-        codex = C.missing_model('codex')
-        self.assertIn('--model "<model name>"', codex)
-        self.assertNotIn('CLAUDE_AGENT_MODEL', codex)
-        self.assertEqual(C.resolve_model(False, None, {}, 'claude')[2], claude)
 
     def test_owner_authored_with_model(self):
         self.put('a.py', 'x\n')
@@ -712,7 +598,7 @@ class AStagedMachinePathIsRefused(LinkedCase):
     def commit_rewriting_before_the_check(self, text):
         """Commit a.py, rewriting its work-tree file to `text` after the call has staged it and
         just before the staged check runs: the staged copy and the work tree then differ."""
-        real = C.staged_machine_path_error
+        real = checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             self.put('a.py', text)
@@ -856,13 +742,13 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), '')
 
     def fail_head_read(self, rc):
-        real = C._git
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             if args[:1] == ('rev-parse',) and 'HEAD^{commit}' in args:
                 return rc, '', 'fatal: injected'
             return real(root, *args, **kw)
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 
@@ -886,7 +772,7 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assert_refused_unchanged(head, *self.commit('add a', 'a.py'), 'HEAD')
 
     def test_head_moved_before_the_commit_refuses(self):
-        real, theirs = C.staged_machine_path_error, []
+        real, theirs = checks.staged_machine_path_error, []
 
         def wrapper(*a, **kw):
             theirs.append(self.other_writer_commits())
@@ -964,15 +850,15 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), theirs[0])
 
     def fake_read_back(self, rewrite):
-        """C._git's answer to the read-back after `git commit`, passed through `rewrite`."""
-        real = C._git
+        """run_git's answer to the read-back after `git commit`, passed through `rewrite`."""
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             got = real(root, *args, **kw)
             if args[:1] == ('log',) and C.READ_BACK_FORMAT in args:
                 return rewrite(got)
             return got
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 
@@ -1173,7 +1059,7 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
     def test_a_restage_after_the_machine_path_check_refuses(self):
         """The blobs checked are the blobs committed: a named file staged again with other
         content after the check refuses the commit."""
-        head, real = self.head(), C.staged_machine_path_error
+        head, real = self.head(), checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             got = real(*a, **kw)
@@ -1542,6 +1428,39 @@ class TheOwnersIdentity(LinkedCase):
                             owner_approved=['CLAUDE.md'])
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
 
+    def test_a_shrink_only_path_commits_when_it_only_loses_lines(self):
+        self.configure(owner={'email': OWNER, 'agent_emails': [AGENT], 'shrink_only': ['CLAUDE.md']})
+        self.put('CLAUDE.md', 'a\nb\nc\n')
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner', '--', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\nd\n')
+        self.assert_refused('only a commit the owner authors', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\n')
+        code, out = self.commit('drop b', 'CLAUDE.md')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('show', 'HEAD:CLAUDE.md'), 'a\nc')
+
+    def test_a_shrink_only_path_is_judged_again_as_staged(self):
+        """The work tree grows after its shrink was judged and before `git add`: the staged copy,
+        the one committed, is judged again and refused, and nothing this call staged stays."""
+        from kitlib.ownerfiles import rules as ownerrules
+        real = ownerrules.deletes_only
+
+        def then_grow(root, path, revs, env=None):
+            got = real(root, path, revs, env)
+            if revs == ['HEAD']:
+                self.put('CLAUDE.md', 'a\nc\nd\n')
+            return got
+        self.configure(owner={'email': OWNER, 'agent_emails': [AGENT], 'shrink_only': ['CLAUDE.md']})
+        self.put('CLAUDE.md', 'a\nb\nc\n')
+        self.git('add', '--', 'CLAUDE.md')
+        self.git('commit', '-q', '-m', 'the owner', '--', 'CLAUDE.md')
+        self.put('CLAUDE.md', 'a\nc\n')
+        with mock.patch.object(ownerrules, 'deletes_only', then_grow):
+            self.assert_refused('refused: CLAUDE.md is owner-only, and only a commit the owner '
+                                'authors', 'CLAUDE.md')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+
     def test_dot_spellings_of_an_owner_only_path_are_still_owner_only(self):
         self.put('CLAUDE.md', 'x\n')
         self.assert_refused('only a commit the owner authors', './CLAUDE.md')
@@ -1803,7 +1722,7 @@ class MergeInProgress(MergeCase):
     def test_a_file_another_writer_stages_mid_call_stays_out_of_the_merge(self):
         tip, base = self.start_merge()
         self.put('intruder.txt', 'not yours\n')
-        real = C.staged_machine_path_error
+        real = checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             self.git('add', '--', 'intruder.txt')
@@ -2071,7 +1990,7 @@ class MergeCarriesAnOwnerChange(MergeCase):
             def check(self, root, doc_id, head, blobs, commit):
                 asked.append(doc_id)
                 return False, why
-        p = mock.patch.object(ownercommits, 'default_approvals', Stale)
+        p = mock.patch.object(ownerrules, 'default_approvals', Stale)
         p.start()
         self.addCleanup(p.stop)
         tip, main = self.merge('approved edit\n', main_author=AGENT,
@@ -2134,7 +2053,7 @@ class JoinCase(MergeCase):
 
     def approve(self, *ids):
         seam = Approves(ids)
-        p = mock.patch.object(ownercommits, 'default_approvals', lambda: seam)
+        p = mock.patch.object(ownerrules, 'default_approvals', lambda: seam)
         p.start()
         self.addCleanup(p.stop)
         return seam
@@ -2211,7 +2130,7 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         tip, main = self.merge(self.top(), self.bottom())
         self.assertEqual(self.commit('merge main', 'work.txt')[0], 0)
         rules = C.kconfig.load(self.wt).owner_rules()
-        self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
 
     def test_an_extra_edit_on_top_of_the_merge_is_refused(self):
         self.approve('A-001', 'A-002')
@@ -2260,7 +2179,7 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.approve('A-001', 'A-002')
         tip, _ = self.merge(self.top(), self.bottom())
         self.git('config', 'merge.default', 'union')
-        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assertFalse(ownerrules.merge_attribute_unset(self.wt, self.F))
         self.assert_refused_naming(self.F, tip)
 
     def test_a_mode_change_on_one_side_is_refused(self):
@@ -2282,52 +2201,9 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.merge(self.top(), self.bottom())
         self.git('add', '--', 'work.txt')
         rules = C.kconfig.load(self.wt).owner_rules()
-        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([self.F], None))
+        self.assertEqual(checks.merge_owner_refusal(self.wt, rules), ([self.F], None))
         self.approve('A-001', 'A-002')
-        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([], None))
-
-
-@real_git('merge-tree and merge-base --all over a three-way merge: the fake has none of them')
-class AMergeThatOnlyDeletes(JoinCase):
-    """Each side deletes a line of the owner-only file in an approved commit, lines 3 and 4: the
-    merge conflicts on it, and the agent resolves it by hand (docs/commit.md "A merge that only
-    deletes")."""
-
-    def start(self):
-        tip, main = self.merge(SEVEN.replace('line 3\n', ''), SEVEN.replace('line 4\n', ''))
-        self.assertIn(self.F, self.git('diff', '--name-only', '--diff-filter=U'))
-        return tip, main
-
-    def assert_owner_refusal(self, out, code, head):
-        self.assertEqual(code, 1, out)
-        self.assertIn('refused: %s is owner-only' % self.F, out)
-        self.assertEqual(self.head(), head)
-
-    def test_a_resolution_that_only_deletes_commits_with_no_approval(self):
-        self.approve('A-001', 'A-002')
-        tip, main = self.start()
-        both = SEVEN.replace('line 3\n', '').replace('line 4\n', '')
-        self.put(self.F, both)
-        code, out = self.commit('merge main', 'work.txt', self.F)
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
-        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', both)
-        rules = C.kconfig.load(self.wt).owner_rules()
-        self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
-
-    def test_a_resolution_that_adds_a_line_is_refused(self):
-        self.approve('A-001', 'A-002')
-        tip, _ = self.start()
-        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', 'the agent\'s\n'))
-        code, out = self.commit('merge main', 'work.txt', self.F)
-        self.assert_owner_refusal(out, code, tip)
-
-    def test_an_unapproved_side_is_refused(self):
-        self.approve('A-002')
-        tip, _ = self.start()
-        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
-        code, out = self.commit('merge main', 'work.txt', self.F)
-        self.assert_owner_refusal(out, code, tip)
+        self.assertEqual(checks.merge_owner_refusal(self.wt, rules), ([], None))
 
 
 @gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
@@ -2339,7 +2215,7 @@ class AMergeDriverIsRefused(JoinCase):
         self.approve('A-001', 'A-002')
         tip, _ = self.merge(self.top(), self.bottom(), attributes='CLAUDE.md merge=union\n')
         self.assertEqual(self.git('show', ':%s' % self.F) + '\n', self.both())
-        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assertFalse(ownerrules.merge_attribute_unset(self.wt, self.F))
         self.assert_refused_naming(self.F, tip)
 
 
@@ -2354,15 +2230,27 @@ class TheCommandLine(LinkedCase):
         tool = getattr(TheCommandLine, 'tool', None)
         if tool is None:
             tool = TheCommandLine.tool = inproc.load_tool('commit')
-        code, out, err = inproc.run_main(tool.main, args, gitfixture.fixture_env({C.MODEL_ENV: ''}),
+        code, out, err = inproc.run_main(tool.main, args, gitfixture.fixture_env({attribution.MODEL_ENV: ''}),
                                          cwd or self.wt)
         return code, out + err
 
     def cli(self, *args, cwd=None):
         r = subprocess.run([sys.executable, TOOL] + list(args), cwd=cwd or self.wt,
                            capture_output=True, text=True, encoding='utf-8', errors='replace',
-                           env=gitfixture.fixture_env({C.MODEL_ENV: ''}))
+                           env=gitfixture.fixture_env({attribution.MODEL_ENV: ''}))
         return r.returncode, r.stdout + r.stderr
+
+    def test_an_agents_owner_approval_is_a_usage_error_naming_the_hub(self):
+        self.put('a.py', 'x\n')
+        head = self.head()
+        for extra in (('--owner-approval', 'hub:A-001', 'a.py'),
+                      ('--owner-approval', 'hub:A-001', '--consume', 'HEAD'),
+                      ('--consume', 'HEAD', '--allow-empty')):
+            code, out = self.in_process('-m', 's', '--model', 'M', *extra)
+            self.assertEqual(code, checks.USAGE, (extra, out))
+            self.assertIn('USAGE: the hub applies a change the owner approved', out)
+            self.assertIn('hub.py approvals apply', out)
+        self.assertEqual(self.head(), head)
 
     def test_minus_c_commits_in_the_named_worktree(self):
         self.put('tools/a.py', 'x\n')
@@ -2527,7 +2415,7 @@ class TheSessionTrailer(LinkedCase):
                          + COAUTHOR)
 
     def test_the_owner_approval_lines_come_first(self):
-        trailers = C.build_trailers(rules(), ['docs/'], False, 'M', session=['Claude-Session: u'])
+        trailers = message.build_trailers(rules(), ['docs/'], False, 'M', session=['Claude-Session: u'])
         self.assertEqual(trailers, ['%s: docs/' % rules().trailer,
                                     'Co-Authored-By: Claude M <noreply@anthropic.com>',
                                     'Claude-Session: u'])

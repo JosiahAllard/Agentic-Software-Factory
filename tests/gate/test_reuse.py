@@ -1,4 +1,4 @@
-"""kitlib.gate.reuse: the per-step gate cache (docs/gate.md "Gate reuse"). A step that asks for
+"""kitlib.gate.reuse: the per-step gate cache (docs/gate-landing-policy.md "Gate reuse"). A step that asks for
 reuse and declares its inputs is not run again, in a branch-gate rerun or a landing, when a pass of
 the same key (its inputs, argv, cwd, gate config and kit files) is stored; every doubt runs it. A
 scratch repository with a bare remote, the scratch lock store; the gate-OK record's kit identity
@@ -18,7 +18,9 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.gate import land, result, reuse, runner, strict_defaults, verdicts
+from kitlib.gate import result, reuse, runner, strict_defaults
+from kitlib.landing import lander as land
+from kitlib.landing import verdicts
 from kitlib.gate import steps as S
 from kitlib.records import gate_ok
 from tests.gate import fixtures
@@ -40,8 +42,8 @@ STAMP = r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ'
 
 class ReuseCase(fixtures.GateRepoCase):
     GATE = {'steps': [UNIT, MERGED, PLAIN]}
-    # gate_once off: its merged gate runs --full, which reuses nothing
-    KIT = {'landing': {'gate_once': False}}
+    # the merged gate of a plain change runs its selection, which may reuse
+    KIT = {}
     ASKING = ('unit', 'merged')
 
     def setUp(self):
@@ -238,8 +240,8 @@ class Strict(ReuseCase):
         self.assert_none(out, out.log_dir, why)
         self.assertEqual(self.entries(), [])
         tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
-        # a strict branch lands only with a strong non-author verdict, and its merged gate is
-        # escalated to --full --fresh (docs/gate.md "Strict paths"): --fresh is the why there
+        # a strict branch lands only with a strong non-author verdict, and its merged gate runs
+        # fresh (docs/gate-landing-policy.md "Strict paths"): --fresh is the why there
         common, _ = land.repo.common_dir(self.repo.root)
         verdicts.add(common, {'branch': BRANCH, 'tip': tip, 'verdict': 'LAND', 'risk': 'High',
                               'reviewer': 'pm-kit:reviewer', 'reviewer_model': 'opus',
@@ -350,7 +352,7 @@ class Writer(ReuseCase):
 
 
 class NeverReused(ReuseCase):
-    KIT = {'landing': {'reuse_never': ['docs/*'], 'gate_once': False}}
+    KIT = {'landing': {'reuse_never': ['docs/*']}}
 
     def test_a_reuse_never_path_reads_and_stores_nothing(self):
         wt, tip = self.branch('feature', dict(SRC, **{'docs/x.md': 'x\n'}))
@@ -382,7 +384,7 @@ class AllReused(ReuseCase):
     GATE = {'setup': OK_CMD, 'steps': [UNIT]}
 
     def test_nothing_to_run_books_only_the_landing_turn_and_runs_no_setup(self):
-        # the landing books its one turn before the merge (docs/gate.md "The landing queue"); the
+        # the landing books its one turn before the merge (docs/gate-landing.md "The landing queue"); the
         # merged gate, with every step reused, books nothing more
         _, tip = self.gated_branch()
         del self.book_calls[:]
@@ -398,9 +400,10 @@ class AllReused(ReuseCase):
 
 class NeverList(ReuseCase):
     """The config, a section file and the hook module are never reused across, whatever
-    "landing".reuse_never says. Owner-only paths are narrowed so the branch may change them."""
-    KIT = {'landing': {'gate_once': False}, 'owner': {'paths': ['CLAUDE.md']},
-           'hook': {'module': 'gate_hook'}}
+    "landing".reuse_never says; the landing of such a change runs its merged gate --full
+    (Lander.config_escalate), which reuses nothing either. Owner-only paths are narrowed so the
+    branch may change them."""
+    KIT = {'owner': {'paths': ['CLAUDE.md']}, 'hook': {'module': 'gate_hook'}}
 
     def setUp(self):
         ReuseCase.setUp(self)
@@ -411,18 +414,18 @@ class NeverList(ReuseCase):
                                      'cfg/forbidden.json')
         self.repo.git('push', '-q', 'origin', 'main')
 
-    def check(self, files, path):
+    def check(self, files, path, landed=None):
         wt, tip = self.branch('feature', dict(SRC, **files))
         out = self.gate(wt)
         self.assert_none(out, out.log_dir, 'the change touches %s' % path)
         lander, out = self.land(BRANCH, tip)
-        self.assert_none(out, lander.gate_logs, 'the change touches %s' % path)
+        self.assert_none(out, lander.gate_logs, landed or 'the change touches %s' % path)
         self.assertEqual(self.entries(), [])
 
     def test_the_kit_json_is_never_reused_across(self):
         kit = dict(self.KIT, gate=self.GATE, forbidden='cfg/forbidden.json',
                    repo={'name': 'renamed'})                   # the gate config is unchanged
-        self.check({'.kit.json': json.dumps(kit, indent=1) + '\n'}, '.kit.json')
+        self.check({'.kit.json': json.dumps(kit, indent=1) + '\n'}, '.kit.json', '--full')
 
 
 BASEY = {'name': 'basey', 'always': True, 'globs': ['src/*'], 'pass': '^ok$', 'reuse': True,

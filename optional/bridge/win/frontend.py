@@ -6,10 +6,10 @@ import os
 from pathlib import Path
 
 from optional.bridge.core.messages import DeliveryError,launch_mark
-from kitlib.proc.pipe import bind,local_free,process_image,process_sids
-from kitlib.proc.process import (PROCESS_QUERY_LIMITED_INFORMATION,SYNCHRONIZE,WAIT_TIMEOUT,
-    close,command_line,handle_ctime,open_process,proc_ctime,process_parents)
-from kitlib.proc.win32 import K32
+from kitlib.platform.windows.pipe import bind,local_free,process_image,process_sids
+from kitlib.platform.windows.process import (PROCESS_QUERY_LIMITED_INFORMATION,SYNCHRONIZE,
+    WAIT_TIMEOUT,close,command_line,handle_ctime,open_process,proc_ctime,process_parents)
+from kitlib.platform.windows.win32 import K32
 from .channel import NativeChannel,capture_inherited_channel,revalidate_channel
 from .evidence import regular,stable_bytes
 from .hosts import native_hosts as normalize_hosts

@@ -1,17 +1,17 @@
-"""What a plugin export ships for a cmd script: the blob's own bytes (kitlib.pluginsource.export
+"""What a plugin export ships for a cmd script: the blob's own bytes (kitlib.pluginsource.export.export
 reads blobs with one cat-file batch and no eol filter), and kitlib.machinesetup copies them byte
 for byte into a new repository. cmd.exe misreads goto labels in a file with LF line endings, so the
 kit stores its .cmd and .bat files as-is (`-text` in .gitattributes), CRLF in the blob."""
 import unittest
 
-from kitlib import pluginsource as P
+from kitlib.pluginsource import layout as plugin_layout, export as plugin_export
 from kitlib.git import batch
 
 
 class ExportedCmdScriptsKeepCrlf(unittest.TestCase):
     def test_every_tracked_cmd_and_bat_blob_at_head_has_crlf_line_endings(self):
-        kit = P.kit_root()
-        blobs = [e for e in P._tree(kit, 'HEAD')
+        kit = plugin_layout.kit_root()
+        blobs = [e for e in plugin_export._tree(kit, 'HEAD')
                  if e[1] == 'blob' and e[3].lower().endswith(('.cmd', '.bat'))]
         paths = [e[3] for e in blobs]
         self.assertIn('templates/stacks/godot/tools/godot.cmd', paths)

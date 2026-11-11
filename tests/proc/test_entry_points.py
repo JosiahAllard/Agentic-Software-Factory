@@ -41,7 +41,7 @@ STARTS_NOTHING = 'starts nothing: '
 BOOT_HOOK = (STARTS_NOTHING + 'the one hook entry of every host. Its fast path (a tool the host '
              'adapter need not judge) returns before any kit code loads, so a hook costs no import; '
              'otherwise it binds the kit through kitboot, then imports the host adapter (which '
-             'imports kitlib) and kitlib.host.hookmain, both before dispatch runs anything')
+             'imports kitlib) and kitlib.hookrun.main, both before dispatch runs anything')
 BOOT_KITBOOT = (STARTS_NOTHING + 'the check every host entry runs before it imports kitlib: it '
                 'finds and validates the kit folder and puts it on sys.path, so it must not '
                 'import kitlib itself (tests/host/conformance.py holds that order)')
@@ -93,7 +93,7 @@ ENTRY_DIRS = ('boot', 'githooks', 'hosts', 'kitlib', 'mcp', 'optional', 'tools')
 # Modules a whole kind of run imports before anything else; none has a __main__ block.
 FIRST_IMPORTED = {
     'boot/kitboot.py': 'every host entry runs it before it imports kitlib',
-    'kitlib/host/hookmain.py': 'the one hook runner behind boot/hook.py',
+    'kitlib/hookrun/main.py': 'the one hook runner behind boot/hook.py',
     'tests/__init__.py': 'every test run imports the tests package before any test module',
     'tools/_host.py': 'the shared tools import it to reach a host adapter',
 }
@@ -292,10 +292,10 @@ class EntryPoints(unittest.TestCase):
                         self.assertEqual(process_uses(f.read(), rel), [])
 
     def test_the_list_saw_every_kind_of_entry_point(self):
-        for rel in ('tools/gate.py', 'tools/_host.py', 'tools/agent_view.py', 'tools/kit_release.py',
+        for rel in ('tools/gate.py', 'tools/_host.py', 'tools/agent_view.py',
                     'tools/render_content.py', 'tools/machine_lock.py', 'githooks/pre-push',
                     'githooks/pre-commit.py', 'reserve_ui.pyw', 'tests/__init__.py', 'boot/hook.py',
-                    'boot/kitboot.py', 'kitlib/host/hookmain.py',
+                    'boot/kitboot.py', 'kitlib/hookrun/main.py',
                     'mcp/lock_server.py', 'hosts/codex/shell/mcp/lock_server.py',
                     'hosts/codex/shell/scripts/kit.py', 'optional/bridge/tools/bridge_service.py',
                     'optional/agenttemp/agent_temp_sweep.py', 'optional/procwatch/procwatch.py',

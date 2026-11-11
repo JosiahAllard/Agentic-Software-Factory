@@ -76,7 +76,7 @@ a listener that reads the header records its own `via` then (the local one: `api
 the tunnel listener ever records `tunnel`.
 
 Waits. GET wait and GET lock/wait (api.WAIT_HANDLERS) block in the Api for up to
-api.WAIT_MAX_S. At most max_waits requests may be in them at once on one listener: the next is
+hubvalidate.WAIT_MAX_S. At most max_waits requests may be in them at once on one listener: the next is
 refused at once with 429 `busy` and a Retry-After, and takes no slot. A caller the route refuses
 (an agent on lock/wait) takes no slot either: it gets the Api's 403, never a 429. The counters are guarded by one lock that is held for a few statements and never
 across a wait, a body read or a response.
@@ -132,11 +132,11 @@ import traceback
 import urllib.parse
 
 from kitlib import platform
+from kitlib.hubclient.localask import JSON, LOOPBACK, VIA_HEADER
 
 from . import api as _api
 from . import auth
 
-LOOPBACK = '127.0.0.1'
 MAX_BODY = 1 << 20              # bytes of one write's body
 MAX_WAITS = 32                  # requests blocked in GET wait at once, per listener
 MAX_CONNECTIONS = 128           # handler threads at once; a connection past it is closed
@@ -148,11 +148,9 @@ ORIGIN_SCHEMES = ('http', 'https')
 LINGER_S = 2                   # reading away what a client still sends after its answer,
 LINGER_BYTES = 4 << 20          # and never more than this much of it
 METHODS = ('GET', 'HEAD', 'POST')
-JSON = 'application/json'
 GZIP_MIN = 1024                 # bytes of a JSON body below which it is never gzipped
 GZIP_LEVEL = 6
 INDEX = 'index.html'
-VIA_HEADER = 'X-Hub-Via'
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's own source: no VIA_HEADER may claim it
 PAIR_ROUTE = _api.BASE + '/pair'    # POST, the owner's token: a one-time link for the browser
 PAIR_PATH = '/pair'                 # GET ?code=...: redeems it and sets the session cookie

@@ -1,10 +1,10 @@
 """The ratchet: the suite's failing tests held to a baseline that only shrinks (docs/test-tools.md
-"Platform markers and the ratchet"; docs/linux-support-plan.md section 4).
+"Platform markers and the ratchet").
 
   run_suite(root, timeout, environ)  one child runs the whole suite under `root`: a Run
   read_baseline(path, default)       the baseline's ids; Refused when it is malformed
   compare(failing, baseline)         (new, stale): failing ids not in it, its ids not failing
-  default_baseline(root, platform)   tests/linux-baseline.txt, tests/windows-baseline.txt or None
+  default_baseline(root, name)       tests/linux-baseline.txt, tests/windows-baseline.txt or None
 
 The child is `python -c _CHILD` in `root`: it imports the tests package (a package that does not
 import is a broken run, never a pass), runs `unittest discover -s tests -t .` and prints one line,
@@ -13,7 +13,7 @@ failure counts as its test's), the import failures among them (unittest's _Faile
 number of tests run and the platform markers by reason (tests/platforms.py REASONS). A child that
 dies, times out or prints no such line is a broken run, as is one that ran no test.
 
-This module must import where kitlib.proc cannot (Linux, before slice 2 of the plan): it uses
+This module must import where kitlib.proc cannot (Linux): it uses
 subprocess with an explicit creationflags= and loads no kitlib.proc beyond kitlib/__init__'s
 console hook, and no kitlib.config or kitlib.git.
 The child's environment is the caller's without the session's kit binding
@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 
+from kitlib import platform
 from kitlib.tooldeps import childenv
 
 MARK = 'kit-ci-ratchet: '
@@ -87,13 +88,13 @@ say(failing=sorted(failing | set(imports)), imports=imports, ran=result.testsRun
 '''
 
 
-def default_baseline(root, platform=None):
-    """The baseline for `platform` (default sys.platform) under `root`, or None for a platform
-    with none."""
-    platform = sys.platform if platform is None else platform
-    if platform.startswith('linux'):
+def default_baseline(root, name=None):
+    """The baseline for platform `name` (default kitlib.platform.NAME) under `root`, or None for a
+    platform with none."""
+    name = platform.NAME if name is None else name
+    if name == 'linux':
         rel = LINUX_BASELINE
-    elif platform == 'win32':
+    elif name == 'windows':
         rel = WINDOWS_BASELINE
     else:
         return None

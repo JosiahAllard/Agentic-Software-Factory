@@ -51,7 +51,7 @@ at most SPEC_CAP bytes, checked here before anything is done):
     fetch  {job}                 M the manifest of the spec's artifact globs (regular files inside
                                  the worktree, no link on the way), F their bytes, E
     clean  {job}                 remove an ended job: worktree, refs and folder
-    stop   {job}                 ask the job's machine lock run to stop (kitlib.lock.run
+    stop   {job}                 ask the job's machine lock run to stop (kitlib.lock.run_end
                                  request_stop), else end the runner with SIGTERM
 
 The job runner (`loadnode.py job <job>`, started only by `start`, `gate` and `land`, never over
@@ -755,9 +755,9 @@ class Box(object):
         rid = (_read_json(self._p(job, 'run.json')) or {}).get('rid')
         if rid:
             if request_stop is None:
-                from kitlib.lock import run as lockrun
+                from kitlib.lock import run_end
                 from kitlib.lock.store import Store
-                ok = lockrun.request_stop(Store(), rid, 'node.py stop from the main machine')
+                ok = run_end.request_stop(Store(), rid, 'node.py stop from the main machine')
             else:
                 ok = request_stop(rid)
             if ok:

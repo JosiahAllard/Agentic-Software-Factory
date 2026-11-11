@@ -3,7 +3,7 @@
 - treelock: TreeLock, an OS byte-range lock on one file (the daily full run's tree lock, the hub
   store's lock, and under writelock every per-file write lock).
 - writelock: one writer of a file at a time, across processes and threads (the rulings ledger,
-  the pending-steps file).
+  the pending-steps file, the delegated runner), on a lock file its caller names.
 - replace: os.replace retried while Windows refuses it because a reader or a scanner has the
   target open.
 - atomic: write_text and write_bytes, a whole file written through a unique temp file beside it

@@ -1,7 +1,7 @@
 """Claude Code's kitlib.host.HostAdapter (ARCHITECTURE.md "Hosts"; plan 2.1 and 2.2).
 
 ADAPTER is the one instance; boot/hook.py (`hook.py claude <event> [<part>]`) hands it to
-kitlib.host.hookmain.dispatch.
+kitlib.hookrun.main.dispatch.
 
   name                 'claude', its key in hosts.json
   profile, capabilities  hosts.json's "claude" entry (kitlib.host.registry), read on first use so
@@ -14,19 +14,19 @@ kitlib.host.hookmain.dispatch.
                        allow with a reason (a warn-mode rule's warning, kitlib.guard.modes) is
                        {"hookSpecificOutput": {"hookEventName", "additionalContext"}}, with no
                        permissionDecision, while WARN_CONTEXT is on; off, it renders as nothing.
-                       Always exit 0: the verdict is in the JSON (docs/guard.md "Output").
+                       Always exit 0: the verdict is in the JSON (docs/guard-core.md "Output").
   context(event_name, text)    (stdout, 0): text a session or subagent start hook adds to the
                        agent's context, {"hookSpecificOutput": {"hookEventName",
                        "additionalContext"}} and a newline; nothing for no text. Only the
                        CONTEXT_EVENTS take it.
   tool_context(event_name, text, rendered)   stdout that is `rendered` (render's text) with `text`
-                       added to the agent's context (kitlib.host.hookmain's header-update line):
+                       added to the agent's context (kitlib.hookrun.main's header-update line):
                        the same hookSpecificOutput with "additionalContext" set (after a warning's,
                        on a line of its own). Empty `rendered` (a plain allow): no permissionDecision,
                        so Claude Code's own permission flow runs as for an empty answer. A deny's or
                        ask's decision and reason are untouched. `rendered` itself for no text
   start_text(event_name, kit, payload, environ, part)   the text of one start hook, by its part
-                       (PARTS): None the kit header (kitlib.host.header; hooks.json, SessionStart
+                       (PARTS): None the kit header (kitlib.hookrun.header; hooks.json, SessionStart
                        and SubagentStart), and at a SubagentStart of a dispatched kit role the
                        agent-start block after it (kitlib.agentstart, _agent_start); 'coordinator' the coordinator rules
                        (kitlib.coordinatorstart.render, checked in the payload's cwd) in a session
@@ -74,7 +74,7 @@ CONTEXT_EVENTS = ('SessionStart', 'SubagentStart')
 PARTS = ('coordinator', 'pm')
 LINUX_MANAGED_SETTINGS = '/etc/claude-code/managed-settings.json'      # managed_settings_path on Linux
 # A warned allow's reason as PreToolUse additionalContext (render). False: a warned allow renders
-# as nothing, as any allow did before rule modes (docs/guard.md "Rule modes").
+# as nothing, as any allow did before rule modes (docs/guard-core.md "Rule modes").
 WARN_CONTEXT = True
 
 
@@ -143,7 +143,7 @@ class ClaudeAdapter(object):
     @staticmethod
     def start_text(event_name, kit, payload=None, environ=None, part=None):
         if part is None:
-            from kitlib.host import header
+            from kitlib.hookrun import header
             head = header.text(kit)
             if event_name == 'SubagentStart':
                 block = _agent_start(kit, payload, environ)
@@ -160,7 +160,8 @@ class ClaudeAdapter(object):
                 return "Coordinator session start: could not check: %s: %s" % (type(e).__name__, e)
         try:
             from kitlib import pmstart
-            cfg = pmstart.load_config()
+            from kitlib.config import pm as pmconfig
+            cfg = pmconfig.load_config()
             if cfg is None:
                 from kitlib.config import user
                 from kitlib.pmstart import configcheck     # the machine config lines still show
@@ -177,8 +178,8 @@ class ClaudeAdapter(object):
         return parts + (('pm',) if event_name == 'SessionStart' and role == 'pm' else ())
 
     def settings_entry(self, script, executable=None):
-        from kitlib.host import hookmain
-        return hookmain.settings_entry('PreToolUse', MATCHER, script, executable, args=(self.name, 'PreToolUse'))
+        from kitlib.hookrun import main as hookrun
+        return hookrun.settings_entry('PreToolUse', MATCHER, script, executable, args=(self.name, 'PreToolUse'))
 
     def sessions(self):
         from hosts.claude.adapter import claude_host
@@ -225,9 +226,10 @@ class ClaudeAdapter(object):
 
     def agent_verdict(self):
         """The reviewer verdict reader tools/verdict.py add refuses LAND over a SEND BACK with:
-        hosts.claude.adapter.agent_models.verdict (agent id -> `(found, verdict)`: whether a
-        transcript was found, and its final report's `Verdict:` line, None, or 'unread' when a
-        transcript found cannot be read; None for an id that is not an agent id)."""
+        hosts.claude.adapter.agent_models.verdict (agent id -> `(found, verdict, report)`: whether
+        a transcript was found, its final report's `Verdict:` line, None, or 'unread' when a
+        transcript found cannot be read, and that report's text or None; None for an id that is
+        not an agent id)."""
         from hosts.claude.adapter import agent_models
         return agent_models.verdict
 
@@ -239,7 +241,8 @@ def _agent_start(kit, payload, environ):
     a host's own agent (Explore) and a session role do not. The one call site: an opt-in setting
     would go here."""
     try:
-        from kitlib import agentstart, sessionmark
+        from kitlib import agentstart
+        from kitlib.host import sessionmark
         act = events.parse('SubagentStart', payload or {})
         role = act.agent_role if act.agent else sessionmark.mark(environ)
         if not agentstart.is_dispatched(role, kit):

@@ -8,7 +8,8 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import job, spawn, win32
+    from kitlib.proc import job, spawn
+    from kitlib.platform.windows import win32
 
 NEW_GROUP = 0x200
 

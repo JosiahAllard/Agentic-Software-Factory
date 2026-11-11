@@ -1,9 +1,9 @@
-"""Who the guard counts as an agent session on each host (rules.agent_session; docs/guard.md
+"""Who the guard counts as an agent session on each host (rules.agent_session; docs/guard-fallback.md
 "Session mark"). Codex's hooks carry no subagent identity (hosts.json capabilities), so on Codex
 every chat is an agent session, the owner's unmarked main chat too: the rules only agents are held
 to (kit-json among them) refuse it there. On Claude an unmarked main chat is still the owner's.
 
-Each call goes through kitlib.host.hookmain._judge with the host's own adapter, which hands the
+Each call goes through kitlib.hookrun.main._judge with the host's own adapter, which hands the
 guard the adapter's profile as the real hook does (seen live: an unmarked Codex desktop chat wrote
 a worktree's .kit.json and the guard let it through as the owner's)."""
 import os
@@ -14,7 +14,8 @@ from hosts.claude.adapter.host import ADAPTER as CLAUDE
 from hosts.codex.adapter import ADAPTER as CODEX
 from kitlib import kitroot
 from kitlib.guard import decide, rules
-from kitlib.host import Action, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Action
 
 from . import world as W
 
@@ -26,13 +27,13 @@ class Base(unittest.TestCase):
         self.target = os.path.join(self.w.wt, '.kit.json')
 
     def judge(self, adapter, payload, role=None):
-        """The Decision hookmain reaches on `payload` on `adapter`'s host, in a session marked
+        """The Decision hookrun reaches on `payload` on `adapter`'s host, in a session marked
         `role` (None: unmarked, the main chat no launcher started)."""
         env = {'PM_KIT_ROLE': role} if role else {}
         guard = SimpleNamespace(decide=lambda a, environ=None, profile=None:
                                 decide(a, self.w.ctx(environ=environ, profile=profile, kit=kitroot.root())))
         actions = adapter.parse('PreToolUse', payload)
-        return hookmain._judge(adapter, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
+        return hookrun._judge(adapter, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
 
     def payload(self, tool, data):
         return {'hook_event_name': 'PreToolUse', 'tool_name': tool, 'tool_input': data, 'cwd': self.w.wt}

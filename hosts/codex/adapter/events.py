@@ -9,7 +9,7 @@ client's payload has been captured yet (hosts/codex/README.md, "Not verified").
       PreToolUse: `tool_name` sorts the call; `cwd` must be an absolute path.
       - apply_patch: its patch text (tool_input.command, or the tool_input string itself) names
         every file it adds, updates, deletes or moves to (patch_targets). One edit Action per
-        target, in patch order, `retarget` the same patch line aimed at `{path}`: hookmain judges
+        target, in patch order, `retarget` the same patch line aimed at `{path}`: hookrun judges
         each, and any deny refuses the whole patch. A patch of the wrong shape raises, so no part
         of it is judged as allowed.
       - a file tool (FILE_TOOLS) is one edit, its target from the tool's own key.
@@ -79,7 +79,7 @@ def absolute(path):
 
 def cmd_c(text):
     """cmd.exe `text` as a PowerShell `cmd /c '<text>'` call: one single-quoted literal (each ' doubled)
-    that the guard's PowerShell reading passes whole to its cmd.exe dialect (kitlib.guard.commands
+    that the guard's PowerShell reading passes whole to its cmd.exe dialect (kitlib.guard.commands_nested
     reads `cmd /c` text as sh.CMD), so no PowerShell comment (#, <#), quote or operator in the text
     hides what cmd.exe runs."""
     return "cmd /c '%s'" % text.replace("'", "''")

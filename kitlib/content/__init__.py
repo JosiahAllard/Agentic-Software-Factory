@@ -13,17 +13,18 @@ renderer that also has `manifests(kit, content)` (a host's plugin manifests, whi
 version) is asked for those files too, and they are checked and written like the rest.
 
 The renderers are passed in: this package names no host and imports none (the host is chosen at
-the edge, tools/render_content.py). Given `tiers` ({host: {tier: model}}, every host's, whichever
-renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.roster), so the roster is
+the edge, tools/render_content.py). Given `tiers` ({host: (tier -> model, role -> model)}, every host's, whichever
+renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.content.rosterdoc), so the roster is
 checked and written like the host files. Pure file work: no printing, no exit.
 
-`roster(kit)` is the kit's role list, read from the role files and nothing else (decision 17 in
-docs/multi-host-plan.md section 7): a RosterEntry (name, mode, tier, group, run) per role, by name.
+`roster(kit)` is the kit's role list, read from the role files and nothing else (ARCHITECTURE.md
+"Content"): a RosterEntry (name, mode, tier, group, run) per role, by name.
 The launcher's KIT_AGENTS and the backlog policy's groups (kitlib.backlog.roles) are read from it.
 
 `names_of(name)` is a role's name with its old or new one (ALIASES). `role_modes(kit)` is {role: mode} from the role files under the kit root `kit`, for the guard's
-role policy (docs/guard.md "Role policy"); `role_mode(name, kit)` one role's, an old name
-(ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names. These and
+role policy (docs/guard-jail-roles.md "Role policy"); `role_mode(name, kit)` one role's, an old name
+(ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names;
+`role_model(name, tiers, role_models, kit)` the model a host runs it on (the launcher's deep-worker). These and
 roster share one read of the role files per kit root, cached, so the guard's hook path parses
 them once. None raises: no `content/roles` folder gives {}, and a role file that cannot be read
 or parsed is left out, so the policy is off for that role rather than the guard failing.
@@ -40,7 +41,7 @@ SKILLS_REL = 'content/skills'
 KIT_REL = 'kit.json'
 ROSTER_REL = 'docs/ROSTER.md'
 SKIP_DIRS = ('__pycache__',)
-# kitlib.pluginsource.MARKER, in every installed plugin export; spelled here, not imported, so the
+# kitlib.pluginsource.layout.MARKER, in every installed plugin export; spelled here, not imported, so the
 # lock tool, which reaches this module, does not reach pluginsource (tests/lock/test_release.py)
 EXPORT_MARKER = '.pm-kit-export'
 # a role's old name -> its name now, for one release (docs/ROSTER.md; the launcher's AGENT_ALIASES)
@@ -182,6 +183,14 @@ def role_writes(name, kit):
     return role.writes if role else ()
 
 
+def role_model(name, tiers, role_models, kit):
+    """The model a host runs role `name` on (Role.model_for: its entry in `role_models`, the host's
+    role -> model map, else `tiers`, its tier -> model map, at the role's tier), from the role file
+    under `kit`; None when it has no readable file."""
+    role = _roles(kit).get(ALIASES.get(name, name))
+    return role.model_for(tiers, role_models) if role else None
+
+
 def load(root):
     """The Content under `<root>/content`; ContentError when a file is not of its shape."""
     return Content(roles=load_roles(root), skills=load_skills(root))
@@ -191,8 +200,8 @@ def render(root, renderers, content=None, tiers=None):
     """{repo-relative posix path: bytes} of every file the renderers write: render(content), the
     manifests(kit, content) of a renderer with them, and the vendored(root) copies of kit files a
     renderer's plugin ships (read from `root`, so a copy that drifts from its source is drift); two
-    renderers writing one path is a ContentError. With `tiers` ({host: {tier: model}}), also
-    `<root>/docs/ROSTER.md` with its tables rendered (kitlib.roster)."""
+    renderers writing one path is a ContentError. With `tiers` ({host: (tier -> model, role -> model)}), also
+    `<root>/docs/ROSTER.md` with its tables rendered (kitlib.content.rosterdoc)."""
     content = load(root) if content is None else content
     out = {}
     if tiers is not None:
@@ -213,13 +222,13 @@ def render(root, renderers, content=None, tiers=None):
 
 
 def _roster_doc(root, content, tiers):
-    from kitlib import roster                   # only a render reads it, never the guard's path
+    from kitlib.content import rosterdoc        # only a render reads it, never the guard's path
     try:
         with open(_join(root, ROSTER_REL), 'rb') as f:
             text = f.read().decode('utf-8')
     except (OSError, UnicodeDecodeError) as e:
         raise ContentError('%s cannot be read: %s' % (ROSTER_REL, e)) from None
-    return roster.render(text, content, tiers, ROSTER_REL).encode('utf-8')
+    return rosterdoc.render(text, content, tiers, ROSTER_REL).encode('utf-8')
 
 
 def _owned_files(root, renderers):

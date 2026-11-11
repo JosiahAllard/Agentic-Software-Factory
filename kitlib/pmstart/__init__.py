@@ -11,54 +11,14 @@ import re
 import subprocess
 import time
 
-from kitlib import kitroot, platform
+from kitlib import kitroot
+from kitlib.config import pm as pmconfig
 from kitlib.config import user as kuser
+from kitlib.launcher import lookup
 from kitlib.ledger import files as ledger_files, rulebook
-from kitlib.host import registry
 from kitlib.pmstart import configcheck, consoletasks, fglock
-from kitlib.proc import spawn
-
-KEY = "pm_start"
-TIMEOUT = 4
-
-_PS = ("Get-CimInstance Win32_Process | Select-Object Name,CommandLine,ExecutablePath,"
-       "ProcessId,ParentProcessId,@{n='Created';e={$_.CreationDate.ToString('o')}}"
-       " | ConvertTo-Json -Compress")
-
-
-def load_config(path=None):
-    """The "pm_start" dict from the user-profile config, or None when the file or key is missing.
-    With no `path`, a machine config location that cannot be told (kitlib.config.user.locate BAD)
-    raises kitlib.config.ConfigError: never read as "no config"."""
-    p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            cfg = json.load(f).get(KEY)
-    except (OSError, ValueError, AttributeError):
-        return None
-    return cfg if isinstance(cfg, dict) else None
-
-
-def _read(path):
-    """A JSON file's text; utf-8-sig because PowerShell writes the file with a BOM."""
-    with open(path, encoding="utf-8-sig") as f:
-        return f.read()
-
-
-def list_processes(timeout=TIMEOUT):
-    """All processes as dicts with Name, CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created (PowerShell Get-CimInstance).
-    subprocess.TimeoutExpired after `timeout` seconds (the session start's TIMEOUT by default).
-    On Linux the rows are read from /proc (kitlib.platform.linux.process.rows), with no timeout;
-    OSError when /proc cannot be listed."""
-    if platform.NAME == 'linux':
-        from kitlib.platform.linux import process as linux_process
-        return linux_process.rows()
-    r = spawn.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS],
-                  capture_output=True, text=True, timeout=timeout)
-    if r.returncode != 0:
-        raise RuntimeError("powershell exit %d: %s" % (r.returncode, r.stderr.strip()[:200]))
-    data = json.loads(r.stdout or "[]")
-    return [data] if isinstance(data, dict) else data
+from kitlib.proc import listing
+from kitlib.schedtask import read as taskread
 
 
 def standing(cfg):
@@ -90,42 +50,18 @@ PM_WATCH_DEFAULT_CMD = 'python -u "%s"' % os.path.join(KIT_ROOT, "tools", "pm_wa
 BEAT_STALE = 300      # seconds: a heartbeat older than this is a watcher that stopped polling
 
 
-def machine_config(path=None):
-    """The whole machine config as a dict ({} when the file is missing or is not a JSON object),
-    read as load_config reads it: unchecked, so one bad key elsewhere does not stop the hub line.
-    With no `path`, a PM repository's local.json is read too (its keys over config.json's: `hub`
-    and `launcher` live there, kitlib.config.user.LOCAL_KEYS). ConfigError when its location
-    cannot be told (kitlib.config.user.readable_file)."""
-    def read(p):
-        try:
-            with open(p, encoding="utf-8-sig") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    if path:
-        return read(os.path.expanduser(path))
-    data = read(kuser.readable_file())
-    loc = kuser.locate()
-    if loc.state == kuser.OK and loc.local:
-        data.update(read(loc.local))
-    return data
-
-
 def current_account():
     """This session's account label (kitlib.launcher.accounts.current_account over the machine
     config and the environment); "default" for a machine with no launcher accounts."""
     from kitlib.launcher import accounts
-    return accounts.current_account(machine_config())
+    return accounts.current_account(pmconfig.machine_config())
 
 
-HUB_SITE_TIMEOUT_S = 1.5    # seconds each ask of the hub server waits (three asks at most)
 HUB_TOOL = os.path.join(KIT_ROOT, "tools", "hub.py")
 HUB_ERROR_MAX = 400         # characters of a rejected `hub` key's message shown in its line
 
 
-# How kitlib.config and kitlib.pmdata end a rule when they refuse a value: `, not ` and the value
+# How kitlib.config and kitlib.config.pmdata end a rule when they refuse a value: `, not ` and the value
 # as Python writes it (repr): a string quoted, a quote or backslash inside it escaped; a number,
 # true/false or null as one word, ended by the `; ` that joins problems or by the text's end.
 _ECHOED = re.compile(r""", not (?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|[-+\w.]+(?=;|\Z))""", re.S)
@@ -148,46 +84,23 @@ class HubSettingsError(Exception):
     """The machine config has a `hub` key that cannot be used."""
 
 
-class NoHubToken(Exception):
-    """Neither token file of the hub (agent or owner) is there to read."""
-
-
-class NoHubPointer(Exception):
-    """No PM-repo pointer is set, so the hub has no token folder to look in."""
-
-
 def hub_settings():
-    """The hub Settings (kitlib.hubsite.settings.load): the `hub` key's, or every default (port
+    """The hub Settings (kitlib.hubclient.settings.load): the `hub` key's, or every default (port
     8790) when the machine config has no `hub` key. HubSettingsError when they cannot be had and
     the raw file holds a `hub` key, also when it is the machine config's check that refuses; any
     other error as it is raised: the config could not be read, with no `hub` key in it."""
     from kitlib.config.types import ConfigError
-    from kitlib.hubsite import settings as hubsettings
+    from kitlib.hubclient import settings as hubsettings
     try:
         return hubsettings.load()
     except Exception as e:
         try:
-            has_key = machine_config().get(hubsettings.KEY) is not None
+            has_key = pmconfig.machine_config().get(hubsettings.KEY) is not None
         except ConfigError:
             has_key = False
         if has_key:
             raise HubSettingsError(str(e))
         raise
-
-
-def _hub_client(port):
-    """The real client, after a look that a token file is there: NoHubToken when neither is."""
-    from kitlib.config.types import ConfigError
-    from kitlib.hubsite import auth, client
-    try:
-        folder = auth.folder()
-    except ConfigError as e:
-        if str(e) == auth.NO_POINTER:
-            raise NoHubPointer()
-        raise
-    if not any(auth.read_token(folder, role) for role in auth.ROLES):
-        raise NoHubToken()
-    return client.Client(port, tokens=folder, timeout=HUB_SITE_TIMEOUT_S)
 
 
 _PUSH_STATES = ("up", "down")
@@ -232,10 +145,11 @@ def push_line(health):
     return "hub: WARN %s; %s" % (said, read)
 
 
-def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
+def hub_site(load=None, make_client=None, stamp=None, now=None):
     """The hub site's lines, on the `hub` key's settings or, with no key, on the defaults (port
     8790): the site is the hub whether or not the key is written. Asks only the loopback server,
-    with HUB_SITE_TIMEOUT_S per ask; starts nothing. A machine config that cannot be read is one
+    through `make_client` (None: kitlib.hubclient.client.hub_client), with HUB_SITE_TIMEOUT_S per
+    ask; starts nothing. A machine config that cannot be read is one
     line naming the exception's class (the test home fence is not caught). A failure of the
     server side is one line naming no more than the port and the exception's class, so no token,
     URL or message of the server reaches the text. The one message shown is a rejected `hub`
@@ -251,17 +165,19 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
         return ["hub: the hub key of the machine config cannot be used: %s" % text]
     except Exception as e:
         return ["hub: the machine config could not be read (%s)" % type(e).__name__]
-    from kitlib.hubsite import serve
+    from kitlib.hubclient import client as hubclient
+    from kitlib.hubclient.client import HUB_SITE_TIMEOUT_S
+    from kitlib.hubclient.errors import NoHubPointer, NoHubToken, NotRunning
     port = site.port
     try:
-        hub = make_client(port)
+        hub = (make_client or hubclient.hub_client)(port)
         health = hub.get("/health", timeout=HUB_SITE_TIMEOUT_S)
     except NoHubPointer:
         return ["hub: no PM repo pointer is set, so the hub has no token folder: set it with "
                 "tools/machine_setup.py --pm-repo <PM repository> (an elevated owner step)"]
     except NoHubToken:
         return ["hub: no hub token file is there to read: run python \"%s\" setup" % HUB_TOOL]
-    except serve.NotRunning:
+    except NotRunning:
         return ["hub: hub server down (nothing listens on port %d): start it with python \"%s\" serve"
                 % (port, HUB_TOOL)]
     except Exception as e:
@@ -276,7 +192,7 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
     except Exception as e:
         return ["hub: server up on port %d, pending not asked (%s)" % (port, type(e).__name__)]
     lines = ["hub: server up on port %d, %d pending for the PM" % (port, len(items))]
-    from kitlib.hubsite import codestale
+    from kitlib.hubclient import codestale
     old = codestale.notice(health.get("code"), HUB_TOOL)      # never raises; None: current or no field
     if old:
         lines.append("hub: WARN " + old)
@@ -337,6 +253,7 @@ def filed_digest(hub, stamp, now=None):
     status=done, each &since=T): the questions whose filed_at is at or after T are counted, of
     the done ones only those the hub marked done once their asker had the answer (done_by `hub`,
     kitlib.hubsite.push "Done by the hub"), which the line counts apart; none is no line."""
+    from kitlib.hubclient.client import HUB_SITE_TIMEOUT_S
     now = now or datetime.datetime.now(datetime.timezone.utc)
     try:
         path = stamp() if callable(stamp) else stamp
@@ -392,7 +309,7 @@ START_SLACK = 2       # seconds: heartbeat and process list may round the same s
 
 
 def _created(p):
-    """A process dict's Created (list_processes, ISO 8601) as epoch seconds; None when absent or unreadable."""
+    """A process dict's Created (listing.list_processes, ISO 8601) as epoch seconds; None when absent or unreadable."""
     try:
         return datetime.datetime.fromisoformat(p.get("Created") or "").timestamp()
     except (TypeError, ValueError):
@@ -492,7 +409,7 @@ def reminders(cfg, today, read=None):
     if not path:
         raise KeyError("reminders_file not configured")
     if read is None:
-        read = _read
+        read = pmconfig._read
     items = json.loads(read(path))
     out = []
     for it in sorted(items, key=lambda i: i["due"]):
@@ -501,89 +418,17 @@ def reminders(cfg, today, read=None):
     return out
 
 
-STORE_DIR = chr(92) + "WindowsApps" + chr(92)
-_RC = re.compile(r"""(?:^|\s)--remote-control(?:\s+|=)(?:"([^"]*)"|'([^']*)'|(\S+))""")
-
-
-def session_images(path=None):
-    """The process images a host's launched session runs as (each hosts.json profile's
-    session_process; claude.exe on Claude), matched exactly against a process's Name. On Linux the
-    running platform's process_names over every host (registry.process_names): claude, node, codex."""
-    if platform.NAME == 'linux':
-        return frozenset(registry.process_names(path))
-    return frozenset(registry.union('session_process', path))
-
-
-def rc_name(cmd):
-    """The --remote-control value of a session's command line, or None (kitlib.launcher.lookup uses it too)."""
-    m = _RC.search(cmd or "")
-    return next((g for g in m.groups() if g), None) if m else None
-
-
-def cli_names(path=None):
-    """((cli_program, cli_package), ...) of every host in hosts.json, for runs_cli."""
-    return tuple((p.cli_program, p.cli_package) for p in registry.profiles(path))
-
-
-def _in_package(parts, package):
-    """True when the path parts hold node_modules followed directly by the scoped package's two
-    parts (@scope, name), with the file below them."""
-    seg = package.split("/")
-    return any(parts[i] == "node_modules" and parts[i + 1:i + 1 + len(seg)] == seg
-               for i in range(len(parts) - len(seg) - 1))
-
-
-def runs_cli(cmd, clis):
-    """True when a Linux command line (/proc's arguments joined by spaces) runs one of `clis`,
-    ((program, scoped npm package), ...): its program, or the first word after it that is not an
-    option (node's script), has the program as its last path part or lies in the package
-    directly under a node_modules folder. `node app.js --remote-control x` runs none, nor
-    `node ~/src/claude-code/x.js`."""
-    words = (cmd or "").split()
-    script = next((w for w in words[1:] if not w.startswith("-")), "")
-    for word in words[:1] + [script]:
-        parts = word.split("/")
-        if any(parts[-1] == program or _in_package(parts, package) for program, package in clis):
-            return True
-    return False
-
-
-def linux_clis(path=None):
-    """cli_names() on Linux, for runs_a_cli; None elsewhere (a Windows image is the CLI's own)."""
-    return cli_names(path) if platform.NAME == 'linux' else None
-
-
-def runs_a_cli(row, clis):
-    """A process row runs a host's CLI: always when clis is None (linux_clis off Linux)."""
-    return clis is None or runs_cli(row.get("CommandLine"), clis)
-
-
-def live_session_names(procs):
-    """Remote Control names of launched sessions (session_images); the Store app (under WindowsApps) is not one,
-    nor on Linux a process that runs no host's CLI (runs_cli)."""
-    names = set()
-    images = session_images()
-    clis = linux_clis()
-    for p in procs:
-        if (p.get("Name") in images and p.get("CommandLine")
-                and STORE_DIR not in (p.get("ExecutablePath") or "") and runs_a_cli(p, clis)):
-            n = rc_name(p["CommandLine"])
-            if n:
-                names.add(n)
-    return names
-
-
 def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
     path = cfg.get("sessions_file")
     if not path:
         raise KeyError("sessions_file not configured")
     if read is None:
-        read = _read
+        read = pmconfig._read
     sessions = json.loads(read(path))
-    alive = live_session_names(procs)
+    alive = lookup.live_session_names(procs)
     label = None
     out = []
-    for key, e in down_entries(sessions, alive):
+    for key, e in lookup.down_entries(sessions, alive):
         if label is None:     # read once, and only when something is down
             from kitlib.launcher import accounts
             label = (account or current_account)()
@@ -592,16 +437,6 @@ def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
         out.append("coordinator %s (%s) is not running: launch.py start --session %s --account %s"
                    % (key, e["name"], key, label))
     return out + _consultants_missing(sessions, alive, repos, load_repos)
-
-
-def down_entries(sessions, alive):
-    """[(key, entry)] of the sessions.json entries that should run and do not: an object with a
-    name, `autostart` not false, and no live session of exactly that name in `alive` (exact,
-    case-sensitive, as kitlib.launcher.lookup.find_exact). The PM checklist's coordinator lines
-    and the hub's coordinator restart job (kitlib.hubjobs.coord_restart) both read it."""
-    return [(key, e) for key, e in sessions.items()
-            if isinstance(e, dict) and e.get("name") and e.get("autostart") is not False
-            and e["name"] not in alive]
 
 
 def _consultants_missing(sessions, alive, repos=None, load_repos=None):
@@ -627,52 +462,13 @@ def _consultants_missing(sessions, alive, repos=None, load_repos=None):
     return out
 
 
-def _toplevel(path):
-    """The basename of the git repository holding path, or None outside one."""
-    from kitlib.git import cmd as gitcmd     # here, not at the top: only this line needs git
-    try:
-        r = gitcmd.subprocess_run(["git", "-C", path, "rev-parse", "--show-toplevel"],
-                                  capture_output=True, text=True, timeout=TIMEOUT)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    top = r.stdout.strip() if r.returncode == 0 else ""
-    return os.path.basename(top.rstrip("/")) or None
-
-
-def known_repos(cfg, read=None, toplevel=_toplevel, kit_dir=None):
-    """Every repository the PM knows, sorted: each session's "repo" in sessions_file,
-    the PM's own repository (the one holding sessions_file), this kit's repository, and any names
-    in the optional "repos" list. The Action Hub builds every repo menu from these; nothing is
-    hard-coded, so a new coordinator's repository appears on its own."""
-    path = cfg.get("sessions_file")
-    if not path:
-        raise KeyError("sessions_file not configured")
-    if read is None:
-        read = _read
-    names = {e["repo"] for e in json.loads(read(path)).values()
-             if isinstance(e, dict) and isinstance(e.get("repo"), str) and e["repo"]}
-    for d in (os.path.dirname(os.path.abspath(path)),
-              kit_dir or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
-        n = toplevel(d)
-        if n:
-            names.add(n)
-    extra = cfg.get("repos") or []
-    if not isinstance(extra, list) or not all(isinstance(x, str) and x for x in extra):
-        raise ValueError("pm_start.repos must be a list of names")
-    names.update(extra)
-    folded = {}
-    for n in sorted(names):  # one entry per name, whatever its case
-        folded.setdefault(n.lower(), n)
-    return sorted(folded.values(), key=str.lower)
-
-
 FETCH_TIMEOUT = 3     # seconds: the kit_sync fetch must not hold the session start up
 REMOTE, MAIN = "origin", "main"
 
 
 def pm_data_settings():
-    """The machine config's pm_data settings dict, or None when unset (kitlib.pmdata.machine_settings)."""
-    from kitlib import pmdata
+    """The machine config's pm_data settings dict, or None when unset (kitlib.config.pmdata.machine_settings)."""
+    from kitlib.config import pmdata
     return pmdata.machine_settings()
 
 
@@ -785,9 +581,9 @@ def _same_folder(a, b):
 
 def _pm_memory_folder(top):
     """The memory folder the PM repository's settings name: its autoMemoryDirectory when it is there
-    (the kit's value or one the owner chose), else the kit's value for it (kitlib.stubs.memory.wanted).
+    (the kit's value or one the owner chose), else the kit's value for it (kitlib.machinesetup.memory.wanted).
     Looked up at call time, so a test can replace either reader."""
-    from kitlib.stubs import memory as kmemory
+    from kitlib.machinesetup import memory as kmemory
     m = kmemory.survey(top)
     if m.state in (kmemory.OK, kmemory.OTHER):
         return m.value
@@ -795,13 +591,13 @@ def _pm_memory_folder(top):
 
 
 def memory(cfg, repos=None, check=None, pm_repo=None, folder=None, load_repos=None):
-    """The agent memory folder (kitlib.stubs.memory; docs/pm-start.md): one line per repository in
+    """The agent memory folder (kitlib.machinesetup.memory; docs/pm-start.md): one line per repository in
     launcher.repos, and for the PM's own repository, whose .claude/settings.json has no
     autoMemoryDirectory (an owner step: the command that adds it) or cannot be read; then one line
     when pm_start.memory_dir is not the folder the PM repository's settings name (`folder`, default
     _pm_memory_folder: a value the owner chose is the one compared). None when all match. A folder
     that is not there, or a check that raises, is that repo's own "could not check memory" line."""
-    from kitlib.stubs import memory as kmemory
+    from kitlib.machinesetup import memory as kmemory
     if check is None:
         check = kmemory.problem_line
     folder = folder or _pm_memory_folder
@@ -848,8 +644,9 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
     owner changes by hand). None when every rule names the
     current export. Nothing is read when there is no repository; a loader (`settings`, default
     plugin_settings) that gives None checks nothing."""
-    from kitlib import allowrules, kitroot, pluginsource
-    from kitlib.stubs import memory as kmemory
+    from kitlib import allowrules, kitroot
+    from kitlib.pluginsource import layout as plugin_layout
+    from kitlib.machinesetup import memory as kmemory
     repos = (load_repos or launcher_repos)() if repos is None else repos
     targets = [(name, repos[name]) for name in sorted(repos)]
     top = (pm_repo or pm_memory_repo)(cfg)
@@ -861,7 +658,7 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
     if s is None:
         return []
     root = s.export_dir
-    current = pluginsource.current_folder(root)
+    current = plugin_layout.current_folder(root)
     lines = []
     for label, path in targets:
         if not os.path.isdir(path):
@@ -891,12 +688,12 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
 
 
 def repo_prep(repos=None, prep=None, load_repos=None):
-    """The first-use repo prep (kitlib.git.prep.run; docs/new-worktree.md "First-use prep") of each
+    """The first-use repo prep (kitlib.worktree.prep.run; docs/new-worktree.md "First-use prep") of each
     repository in launcher.repos, the repositories the kit's workers make worktrees in: its lines,
     none for a repository already prepared. A folder that is not there is that repo's own "could
     not prep" line; prep never raises."""
     if prep is None:
-        from kitlib.git import prep as gitprep
+        from kitlib.worktree import prep as gitprep
         prep = gitprep.run
     repos = (load_repos or launcher_repos)() if repos is None else repos
     lines = []
@@ -910,22 +707,28 @@ def repo_prep(repos=None, prep=None, load_repos=None):
 
 
 def plugin_settings():
-    """The machine config's plugin Settings (kitlib.pluginsource.load)."""
-    from kitlib import pluginsource
-    return pluginsource.load()
+    """The machine config's plugin Settings (kitlib.pluginsource.layout.load)."""
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.load()
 
 
 def plugin_current(settings=None, kit=None, folders=None, load_settings=None):
     """Lines when the pm-kit plugin export is missing or behind the kit's
     refs/remotes/<remote>/main (which kit_sync, just before, has fetched), an account folder is not
-    migrated, or one's last refresh failed (kitlib.pluginsource.current_lines; docs/plugin-source.md
+    migrated, or one's last refresh failed (kitlib.pluginsource.state.current_lines; docs/plugin-source.md
     "Behind warnings"). None for `settings` reads the machine config; a loader that gives None
-    checks nothing. None for `folders`: this machine's account folders."""
-    from kitlib import pluginsource
+    checks nothing. None for `folders`: this machine's account folders, and the marketplace check
+    reads the machine's managed settings file too (kitlib.machinesetup.extras Host.managed_path)."""
+    from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
+
+    def machine_managed():          # called inside current_lines' check, so a failure is its line
+        from kitlib.machinesetup.extras import Host
+        return Host().managed_path()
     s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
-    return pluginsource.current_lines(kit or pluginsource.kit_root(), s, folders=folders)
+    return plugin_state.current_lines(kit or plugin_layout.kit_root(), s, folders=folders,
+                                      managed=machine_managed if folders is None else None)
 
 
 def plugin_enabled(settings=None, folders=None, load_settings=None):
@@ -934,15 +737,16 @@ def plugin_enabled(settings=None, folders=None, load_settings=None):
     (docs/machine-setup.md "Default mode"); false is the owner's choice and is silent. A settings.json
     that is not a JSON object is its own "could not check" line. None for `settings` reads the machine
     config (plugin_settings); a loader that gives None checks nothing. None for `folders`: this
-    machine's account folders (kitlib.pluginsource.account_folders)."""
-    from kitlib import pluginsource
+    machine's account folders (kitlib.pluginsource.state.account_folders)."""
+    from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
+    from kitlib.host import registry
     from kitlib.machinesetup import plugin
     s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     lines, absent = [], []
-    for d in pluginsource.account_folders() if folders is None else folders:
-        have = plugin.enabled(os.path.join(d, "settings.json"), pluginsource.PLUGIN_ID)
+    for d in plugin_state.account_folders() if folders is None else folders:
+        have = plugin.enabled(os.path.join(d, "settings.json"), registry.PLUGIN_ID)
         if have is None:
             lines.append("could not check the pm-kit plugin in %s: its settings.json is not a JSON object" % d)
         elif have is plugin.ABSENT:
@@ -950,7 +754,7 @@ def plugin_enabled(settings=None, folders=None, load_settings=None):
     if absent:
         lines.insert(0, 'pm-kit plugin: not enabled in %s: python "%s/tools/machine_setup.py" --apply '
                         '(docs/machine-setup.md "Default mode")'
-                     % (", ".join(absent), pluginsource.live_root().replace("\\", "/")))
+                     % (", ".join(absent), plugin_layout.live_root().replace("\\", "/")))
     return lines
 
 
@@ -974,11 +778,11 @@ def agent_temp_sweep_key():
 
 
 def agent_temp_task_exists(name=AGENT_TEMP_TASK):
-    """Whether the scheduled task `name` is registered (kitlib.machinesetup.agenttemp.task_registered,
+    """Whether the scheduled task `name` is registered (kitlib.schedtask.read.task_registered,
     TIMEOUT seconds): False only when schtasks says it does not exist; RuntimeError or OSError when
     schtasks fails another way (access denied, a timeout) or cannot be run."""
-    from kitlib.machinesetup.agenttemp import task_registered
-    return task_registered(name, TIMEOUT)
+    from kitlib.schedtask.read import task_registered
+    return task_registered(name, listing.TIMEOUT)
 
 
 def agent_temp_lines(env=None, sweep_key=None, task_exists=None):
@@ -1061,7 +865,7 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
     "Extras"); none when every task is current. A task list that cannot be read is one "could not
     check" line; a repository that cannot be read is its own; repositories that take one task name
     (machine setup registers it for none) are one line naming each. `read`: the task list
-    (consoletasks.read_tasks); `plugin`: the plugin Settings, None or a raising loader checks
+    (kitlib.schedtask.read.read_tasks); `plugin`: the plugin Settings, None or a raising loader checks
     presence only."""
     from kitlib.machinesetup import worktreesweep
     from kitlib.worktree.task import task_name
@@ -1069,7 +873,7 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
     if not repos:
         return []
     try:
-        tasks = (read or consoletasks.read_tasks)()
+        tasks = (read or taskread.read_tasks)()
     except Exception as e:      # access denied, a timeout, no schtasks: unknown, never "not registered"
         return ["could not check the worktree sweep tasks: %s: %s" % (type(e).__name__, e)]
     try:
@@ -1110,8 +914,8 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
 def _failure_text(e):
     """The reason in a "could not check" line: the exception's own text, with any rejected value
     taken out (_without_values) when it is a machine config refusal (kitlib.config or
-    kitlib.pmdata), so a malformed pm_data value is named by key and rule and never shown."""
-    from kitlib import pmdata
+    kitlib.config.pmdata), so a malformed pm_data value is named by key and rule and never shown."""
+    from kitlib.config import pmdata
     from kitlib.config.types import ConfigError
     text = str(e)
     if isinstance(e, (ConfigError, pmdata.PmDataError)):
@@ -1183,7 +987,7 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
     # again to each check that asks, as its own. A check's own fake replaces the shared reader.
     load_repos = _once(lambda: launcher_repos())
     load_settings = _once(lambda: plugin_settings())
-    load_tasks = _once(lambda: consoletasks.read_tasks())
+    load_tasks = _once(lambda: taskread.read_tasks())
     load_pm_top = _once(lambda: pm_memory_repo(cfg))
     load_watch = _once(lambda: _watch_config())
 
@@ -1192,7 +996,7 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
 
     def procs_once():
         if "p" not in box:
-            box["p"] = procs if procs is not None else list_processes()
+            box["p"] = procs if procs is not None else listing.list_processes()
         return box["p"]
 
     checks = [

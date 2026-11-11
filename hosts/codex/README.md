@@ -1,6 +1,6 @@
 # Codex host
 
-Codex's slot in the multi-host kit (docs/multi-host-plan.md step 9; docs/new-host.md): the Codex
+Codex's slot in the multi-host kit (docs/new-host.md): the Codex
 companion plugin's behaviour on the host contract. **Nothing here is installed or activated on any
 machine, and live parity with the default host is not verified.** The package passes the conformance
 suite on payloads in the branch's recorded shapes; no installed Codex client has run it. Every
@@ -11,9 +11,9 @@ rendered agent file says so in its header comment.
 | Part | Where | State |
 |---|---|---|
 | Registry entry | `hosts.json` `codex` | Windows and Linux; hooks PreToolUse, SessionStart, PostCompact, SubagentStart; no ask; no subagent identity in hooks; MCP; skills; TOML agents |
-| Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | no call passes before boot (`fast_path: none`: a Codex chat is never the owner, so even a tool `hosts.json` `hook.guarded_tools` leaves out goes to the guard); every PreToolUse goes through `kitlib.host.hookmain` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
+| Hook entry | the plugin `pm-kit-hooks` (`shell/hooks-plugin/`, fixed bytes, not rendered): its stub `pm_kit_hook.py` runs `boot/hook.py codex <event>`, the kit's one entry, from the `pm-kit` export Codex installed beside it (docs/plugin-source.md "Codex hooks plugin") | no call passes before boot (`fast_path: none`: a Codex chat is never the owner, so even a tool `hosts.json` `hook.guarded_tools` leaves out goes to the guard); every PreToolUse goes through `kitlib.hookrun.main` (`ADAPTER.DEADLINE`, 7 s for the whole call, boot included) with Codex's parse, screen and render; a start event adds the kit header (and a PM's or coordinator's start checks, `ADAPTER.start_text`) |
 | Hook policy | `adapter/policy.py` | a marked session: unknown tools, other MCP servers' tools, `apply_patch` through the shell, calls the guard cannot fully judge (no named shell, cmd.exe, a TTY, fed input) and a read, test or lander role's edits in its own checkout refused |
-| Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard.md "Generated files"); review templates, not installed |
+| Agents | `shell/agents/kit-<role>.toml` | every role, rendered from `content/` (`python tools/render_content.py`), each agent file opening with the generated-file line; the skills are not copied: Codex loads `content/skills/` from the export; the guard refuses a hand edit (docs/guard-jail-roles.md "Generated files"); review templates, not installed |
 | Manifests | `shell/plugin.json`, `shell/mcp.json`; the hooks plugin's `shell/hooks-plugin/hooks/hooks.json` | `plugin.json` and `mcp.json` rendered from `kit.json`; the plugin export places `shell/plugin.json` at `.codex-plugin/plugin.json`, stamped, and its paths (`./content/skills/`, `mcp.json`) are from the export folder's root (docs/plugin-source.md "Codex"); it names no hooks. The hooks plugin is written by hand and pinned, held equal to the renderer's `hooks()` (tests/pluginsource/test_codex_hooks.py) |
 | Lock MCP | `shell/mcp/lock_server.py` | the lock's read tools, server `machine-lock`; the lock server has no write tools on any host (docs/lock-mcp.md "No write tools"), and `adapter/lock.py` lists and answers nothing else |
 | Hub MCP | `shell/mcp/hub_server.py` | the hub's tools (docs/hub-mcp.md), server `hub`; a marked session is refused them by `adapter/policy.py` |
@@ -30,11 +30,11 @@ never changes, so the owner trusts its four hooks once and each new kit version 
 
 Codex's hooks carry no child identity: a child's payload names its parent's session, and a child
 inherits the parent's `PM_KIT_ROLE`. So the kit holds every edit, shell and MCP call of a **marked**
-session as an agent of its mark's role (`kitlib.host.hookmain`, agent `unidentified`): the
+session as an agent of its mark's role (`kitlib.hookrun.main`, agent `unidentified`): the
 main-checkout rule and the write jail apply to it as to a subagent on any host, and the role policy
 by its mode. A Codex PM or coordinator therefore cannot edit the main checkout or land from it:
 stricter than the default host, where a launched lead's main session may. An **unmarked** chat, the one no launcher started,
-skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard.md
+skips the hook policy but not the shared rules, and the guard holds it two ways (docs/guard-fallback.md
 "Session mark"):
 
 - It is an agent session (`rules_base.agent_session`): the rules only agents are held to (kit-json,
@@ -114,7 +114,7 @@ From the branch's `codex/` tree. Each is open work before activation.
 - `pmkit_codex/install_acceptance.py`: native marketplace registration in a private `CODEX_HOME`,
   cached skill, hook and MCP discovery, read-only MCP start.
 - `scripts/package.py` and `scripts/shared_release.py`: the command lines over those and over
-  `kitlib.kitrelease.store`.
+  a pinned release store; the kit ships no pinned release (ARCHITECTURE.md "Packaging").
 
 ## Checks
 

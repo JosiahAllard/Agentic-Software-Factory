@@ -172,7 +172,7 @@ class KnownReposCase(Case):
         sessions = os.path.join(self.home, 'pm', 's.json')
         write(sessions, json.dumps({'g': {'repo': 'Gamerepo'}}))
         machine_config(self.home, {'pm_start': {'sessions_file': sessions}}, case=self)
-        with mock.patch('kitlib.pmstart._toplevel', lambda folder: None):   # no git
+        with mock.patch('kitlib.config.pm._toplevel', lambda folder: None):   # no git
             found = storecheck.validate(root)
         self.assertEqual(self.codes(found), [('questions/Q-002', 'repo-alias')])
 

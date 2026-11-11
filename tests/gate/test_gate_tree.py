@@ -10,8 +10,8 @@ import os
 
 from kitlib import gate as G
 from kitlib.gate import runner
-from tests.gate import test_land
-from tests.gate.test_land_tip_gated import SELECT_GATE
+from tests.landing import test_land
+from tests.landing.test_land_tip_gated import SELECT_GATE
 
 BRANCH = test_land.BRANCH
 
@@ -61,9 +61,18 @@ class GateTree(test_land.LandCase):
 
 class LandingGateMode(test_land.LandCase):
     """The slot a landing holds notes its merged gate's gate_mode (Slot.note_tree): "merged";
-    "full" for a strict (--full) landing; "docs" for a docs-only change under the base's
+    "full" for a landing whose merge changes a gate config file (here the hook module), whose
+    merged gate runs every step in full; "docs" for a docs-only change under the base's
     "gate".docs_only."""
     GATE = SELECT_GATE
+    KIT = dict(test_land.LandCase.KIT, hook={'module': 'kit_hooks'})
+    HOOKS = 'GATE_CHECKS = {}\n'
+
+    def setUp(self):
+        test_land.LandCase.setUp(self)
+        self.repo.write('tools/kit_hooks.py', self.HOOKS)
+        self.main = self.repo.commit('hook module', 'tools/kit_hooks.py')
+        self.repo.git('push', '-q', 'origin', 'main')
 
     def landed_modes(self, files, **kw):
         _wt, tip = self.branch('feature', files)
@@ -75,8 +84,9 @@ class LandingGateMode(test_land.LandCase):
     def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
         self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}), ['merged'])
 
-    def test_a_strict_landing_notes_full(self):
-        self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}, full=True), ['full'])
+    def test_a_gate_config_landing_notes_full(self):
+        self.assertEqual(self.landed_modes({'tools/kit_hooks.py': '# changed\n' + self.HOOKS}),
+                         ['full'])
 
     def test_a_docs_only_landing_notes_docs(self):
         self.assertEqual(self.landed_modes({'docs/guide.md': 'words\n'}), ['docs'])

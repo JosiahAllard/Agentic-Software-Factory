@@ -1,8 +1,8 @@
-"""Codex's own hook policy: what only this host needs, judged before kitlib.guard (kitlib.host.hookmain
+"""Codex's own hook policy: what only this host needs, judged before kitlib.guard (kitlib.hookrun.main
 `screen`). The role policy every host shares is kitlib.guard.rolepolicy; this is what step 4 left in
 the Codex branch's guard_adapter and actions.py.
 
-It holds a session the kit marks (PM_KIT_ROLE set; kitlib.sessionmark). An unmarked chat is held
+It holds a session the kit marks (PM_KIT_ROLE set; kitlib.host.sessionmark). An unmarked chat is held
 only by the shared rules, which count it as an agent session and never as the owner's
 (kitlib.guard.rules agent_session, is_owner_session).
 
@@ -21,9 +21,9 @@ only by the shared rules, which count it as an agent session and never as the ow
                       list to keep an edit tool from such a role (the Codex branch's guard_adapter
                       held them so). Temp and scratch folders stay the write jail's.
 Every deny is tagged with the role the guard holds the call as (rules.tag_role: `subagent` for a
-marked session, kitlib.host.hookmain.unidentified).
+marked session, kitlib.hookrun.main.unidentified).
 """
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.host import Decision
 
 READ_TOOLS = frozenset({'Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'view_image', 'read_file', 'list_dir',
@@ -88,12 +88,12 @@ def lock_read_call(tool):
 
 def patch_in_shell(action):
     """The apply_patch program a shell Action runs, or None."""
-    from kitlib.guard import commands, rules
+    from kitlib.guard import commands, commands_nested, rules
     from kitlib.guard import shell as sh
     text = action.command
     if not isinstance(text, str) or not text.strip():
         return None
-    parsed = commands.read(text, rules.SHELLS.get(action.shell, sh.BASH), action.workdir or action.cwd)
+    parsed = commands_nested.read(text, rules.SHELLS.get(action.shell, sh.BASH), action.workdir or action.cwd)
     for cmd in parsed.commands:
         inv = commands.invocation(cmd)
         if inv is not None and inv.name.lower() in PATCH_PROGRAMS:

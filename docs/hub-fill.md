@@ -27,7 +27,7 @@ reader `coord-restart`'s backlog wake shares:
   sessions.json key. A record with no `session:` counts for the repository's main coordinator,
   the entry whose key is the repository's name. Inference: one live pull is about one slot
   (Known limits).
-- **Startable**: the offer `backlog.py next --all` gives the same sessions (`plan.offer_for`, no
+- **Startable**: the offer `backlog.py next --all` gives the same sessions (`plan_narrow.offer_for`, no
   cap, no fetch), in offer order. A collision, a hold, another session's record and an unmet
   `requires:` are already passed over. It judges session liveness as `next` does: another
   session's record whose session is not running reserves no scope, so it holds back nothing of
@@ -100,7 +100,7 @@ work (`standdown()`). It reads the main checkout's `.kit.json` (docs/kit-json.md
 
 - `backlog.fill_queued_max` (default 3): stood down, `queued N>=MAX`, while N branches wait to
   land. Each branch is counted once, whether it is:
-  - in the verdict queue and not expired (`kitlib.gate.verdicts`: landed or its branch gone);
+  - in the verdict queue and not expired (`kitlib.landing.verdicts`: landed or its branch gone);
   - or on a worktree, live or not, whose tip has a green gate-OK record (`classify.gate_state`)
     and is not in main as fetched. A tip git cannot place against main counts.
 - `backlog.fill_idle_max` (default 2): stood down, `idle N>=MAX`, while N worktrees are class B

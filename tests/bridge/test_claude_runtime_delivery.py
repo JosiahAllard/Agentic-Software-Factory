@@ -35,7 +35,7 @@ class ClaudeRuntimeDeliveryTests(unittest.TestCase):
         # killed with the job at tearDown, so a test that never writes does not wait out the 30 s.
         pipe=r'\\.\pipe\LOCAL\cc-msg-runtime-recipient-'+uuid.uuid4().hex
         code=("import sys; sys.path.insert(0,"+repr(str(self.kit))+" ); "
-            "import json,os; from urllib.parse import unquote; from kitlib.proc.pipe import PrivateListener,connect; from tests.bridge.pipes import send,frames_until_close; "
+            "import json,os; from urllib.parse import unquote; from kitlib.platform.windows.pipe import PrivateListener,connect; from tests.bridge.pipes import send,frames_until_close; "
             "listener=PrivateListener("+repr(pipe)+"); print('ready',flush=True); "
             "listener.accept(timeout=30); frames,closed=frames_until_close(listener,5); "
             "print(json.dumps({'frames':frames,'closed':closed}),flush=True); "

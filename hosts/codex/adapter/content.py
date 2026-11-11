@@ -2,8 +2,8 @@
 
 Each role becomes `hosts/codex/shell/agents/kit-<name>.toml`, a Codex agent definition: a header
 comment opening with the generated-file line (kitlib.host.content.banner), then `name` (kit-<name>,
-hosts.json agent_name_format), `description`, `model` (the role's
-`model.codex` override, else hosts.json's model for its tier; no line for ACCOUNT_DEFAULT, so the account's
+hosts.json agent_name_format), `description`, `model` (hosts.json's Codex `role_models` model for
+the role, else its model for the role's tier; no line for ACCOUNT_DEFAULT, so the account's
 configured model runs, as the Codex branch's roles.json had it), `model_reasoning_effort` (the
 role's effort, else TIER_EFFORT of its tier), `sandbox_mode` (read-only for a read or lander
 role, else the role's `sandbox`: sandbox_mode) and
@@ -17,7 +17,7 @@ so any file left there is stale.
 
 manifests(kit, content) writes the plugin's files, each JSON with indent 2 and a final newline:
 - `hosts/codex/shell/plugin.json`: Codex's plugin manifest, which the plugin export
-  (kitlib.pluginsource.export) writes, version stamped, at `.codex-plugin/plugin.json` of the
+  (kitlib.pluginsource.export.export) writes, version stamped, at `.codex-plugin/plugin.json` of the
   export folder: the plugin root is the whole export, as the default host's is. kit.json's name and version,
   the skills (PLUGIN_SKILLS_REL, the kit's own `content/skills/`) and the MCP servers file (MCP_REL),
   each a path from that root (docs/plugin-source.md "Codex"). No hooks: Codex asks the owner to trust
@@ -38,15 +38,16 @@ HOOKS_REL (and hooks_rel(platform) for each other platform) must hold, byte for 
 whose bytes never change with the kit (docs/plugin-source.md "Codex hooks plugin"): every hosts.json
 hook event, each running its STUB_ENTRY as ${PLUGIN_ROOT}/pm_kit_hook.py (the plugin root: its cache
 folder) with `codex` and the event's name; the stub runs boot/hook.py of the installed pm-kit.
-Codex reads a hook's command as one string, so it is kitlib.host.hookmain.manifest_command's
+Codex reads a hook's command as one string, so it is kitlib.hookrun.main.manifest_command's
 command line joined, the script quoted (command_text); elsewhere than Windows, a POSIX shell line,
 which the plugin export (kitlib.pluginsource) writes in hooks.json's place.
 """
 import json
 import re
 
-from kitlib import agentname
-from kitlib.host import hookmain, registry
+from kitlib.host import agentname
+from kitlib.hookrun import main as hookrun
+from kitlib.host import registry
 from kitlib.blendermcp import SERVER_NAME as BLENDER_NAME
 from kitlib.hubmcp import SERVER_NAME as HUB_NAME
 from kitlib.lockmcp import SERVER_NAME
@@ -83,18 +84,18 @@ HOOKS = (
 HOOK_TIMEOUT = 10
 MCP_SERVERS = {SERVER_NAME: {'type': 'stdio', 'command': 'python',
                                 'args': [SHELL_REL + '/mcp/lock_server.py'], 'cwd': '.',
-                                'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
+                                'env_vars': ['PM_KIT_ROOT']},
                HUB_NAME: {'type': 'stdio', 'command': 'python',
                           'args': [SHELL_REL + '/mcp/hub_server.py'], 'cwd': '.',
-                          'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
+                          'env_vars': ['PM_KIT_ROOT']},
                BLENDER_NAME: {'type': 'stdio', 'command': 'python',
                               'args': [SHELL_REL + '/mcp/blender_server.py'], 'cwd': '.',
-                              'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID', 'PM_KIT_BLENDER']}}
+                              'env_vars': ['PM_KIT_ROOT', 'PM_KIT_BLENDER']}}
 
 
 def mcp_servers(platform='windows'):
-    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookmain.mcp_interpreter)."""
-    command = hookmain.mcp_interpreter(platform)
+    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookrun.mcp_interpreter)."""
+    command = hookrun.mcp_interpreter(platform)
     return {name: dict(server, command=command) for name, server in MCP_SERVERS.items()}
 
 # hosts.json's Codex tiers are all ACCOUNT_DEFAULT: every role runs on the account's configured
@@ -177,6 +178,17 @@ def tokens(registry_path=None):
     return out
 
 
+def role_model(role):
+    """The model Codex runs `role` on (Role.model_for over hosts.json's Codex maps)."""
+    host = registry.host(HOST)
+    return role.model_for(dict(host.tiers), dict(host.role_models))
+
+
+def role_tokens(role):
+    """tokens() for `role`'s file: {{long_context_model}} names the model this role runs on."""
+    return dict(tokens(), long_context_model=model_phrase(role_model(role)))
+
+
 def prose_models():
     """{tier: how prose names its model} for {{model:<tier>}}."""
     return {t: tier_phrase(t, m) for t, m in registry.host(HOST).tiers}
@@ -219,7 +231,7 @@ def substitute_body(role, names):
     """The developer instructions of `role` on Codex: its body with the tokens filled, the newline
     that ends the front matter dropped. `names` are every role's name (for role tokens)."""
     src = '%s/kit-%s.toml' % (AGENTS_REL, role.name)
-    body = substitute(role.body, tokens(), agent_name, names, src, models=prose_models(), tools=TOOLS)
+    body = substitute(role.body, role_tokens(role), agent_name, names, src, models=prose_models(), tools=TOOLS)
     return body[len(role.newline):] if body.startswith(role.newline) else body
 
 
@@ -229,6 +241,10 @@ class CodexContent:
     def tier_models(self):
         """hosts.json's Codex `tiers`: the one tier -> model map."""
         return dict(registry.host(HOST).tiers)
+
+    def role_models(self):
+        """hosts.json's Codex `role_models`: the roles it runs on a model other than their tier's."""
+        return dict(registry.host(HOST).role_models)
 
     def owned(self):
         return (AGENTS_REL,)
@@ -254,7 +270,7 @@ class CodexContent:
         """[(key, value)] of what `role`'s agent file runs it with, in the file's order: `model`
         (none for ACCOUNT_DEFAULT: the account's model runs), `model_reasoning_effort` and
         `sandbox_mode`. No tool list: a Codex agent file has none."""
-        model = role.model_for(HOST, self.tier_models())
+        model = role.model_for(self.tier_models(), self.role_models())
         if sandbox_mode(role) not in ('read-only', 'workspace-write'):
             raise ContentError('%s: no Codex sandbox_mode for %s' % (self.role_path(role.name), role.sandbox))
         out = [('model', model)] if model != ACCOUNT_DEFAULT else []
@@ -264,7 +280,7 @@ class CodexContent:
     def agent_file(self, role, names):
         """The bytes of `role`'s agent file; `names` are every role's name (for role tokens)."""
         src = self.role_path(role.name)
-        values = tokens()
+        values = role_tokens(role)
         fill = lambda text: substitute(text, values, agent_name, names, src, models=prose_models(),  # noqa: E731
                                        tools=TOOLS)
         nl = role.newline
@@ -286,7 +302,7 @@ class CodexContent:
 
     @staticmethod
     def command_text(command, platform='windows'):
-        """A hookmain.manifest_command as one command string. Windows: each argument holding a
+        """A hookrun.manifest_command as one command string. Windows: each argument holding a
         space or a `$` in double quotes. Elsewhere a POSIX shell line: an argument naming a
         variable (`${`) in double quotes, so the shell or Codex fills it; any other argument
         that is not plain in single quotes, so `$@` and `$?` reach the /bin/sh it starts."""
@@ -303,7 +319,7 @@ class CodexContent:
             raise ContentError('%s: HOOKS must cover exactly the hook events hosts.json declares' % HOOKS_REL)
         events = {}
         for event, matcher, status in HOOKS:
-            command = hookmain.manifest_command('%s/%s' % (PLUGIN_ROOT, STUB_ENTRY), platform, HOST, event,
+            command = hookrun.manifest_command('%s/%s' % (PLUGIN_ROOT, STUB_ENTRY), platform, HOST, event,
                                                 blocking=event == entry.hook.tool_event)
             hook = {'type': 'command', 'command': self.command_text(command, platform), 'timeout': HOOK_TIMEOUT}
             if status:
@@ -329,13 +345,13 @@ def dump(data):
 
 def mcp_rel(platform):
     """The MCP servers file for `platform`: MCP_REL on Windows, the one the plugin reads; beside it
-    `mcp.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its place."""
+    `mcp.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its place."""
     return MCP_REL if platform == 'windows' else MCP_REL[:-len('.json')] + '.%s.json' % platform
 
 
 def hooks_rel(platform):
     """The hooks plugin's hooks file for `platform`: HOOKS_REL on Windows, the one its plugin.json
-    names; beside it `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in
+    names; beside it `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in
     its place."""
     return HOOKS_REL if platform == 'windows' else HOOKS_REL[:-len('.json')] + '.%s.json' % platform
 

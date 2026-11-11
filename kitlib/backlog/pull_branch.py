@@ -7,20 +7,20 @@ landing's close (kitlib.backlog.at_landing, which closes what the landed branch 
 would never match the record and it would stay pulled. plan_pull refuses that pull and says how to
 make it: with `--as <branch>`, or from the branch's worktree.
 
-In the PM data worktree (kitlib.pmdata) the configured main branch is the data branch, so the code
+In the PM data worktree (kitlib.config.pmdata) the configured main branch is the data branch, so the code
 repository's main (main_branches: the main checkout's) is refused there too.
 
-The rule lives here, wrapping plan.plan_pull, so tools/backlog.py's `pull` goes through it (by
+The rule lives here, wrapping plan_claim.plan_pull, so tools/backlog.py's `pull` goes through it (by
 opener.planner); it may
-move into plan.plan_pull itself later.
+move into plan_claim.plan_pull itself later.
 """
 import os
 
 import kitlib.config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import repo as gitrepo
 
-from . import plan as pmod
+from . import plan_claim
 from .errors import Refusal
 
 # The code repository's main when its main checkout's configuration cannot be read: refuse both
@@ -122,10 +122,10 @@ def change_session(snap, rid):
 
 
 def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batch=False):
-    """plan.plan_pull, refused when the branch it records is a main branch (main_branches). The
+    """plan_claim.plan_pull, refused when the branch it records is a main branch (main_branches). The
     record's own refusals come first: an unpullable record says why before where it is pulled
-    from. `batch`: a topic session's pull (plan.plan_pull)."""
-    change = pmod.plan_pull(snap, ctx, rid, reason, may_collide, blocker, batch=batch)
+    from. `batch`: a topic session's pull (plan_claim.plan_pull)."""
+    change = plan_claim.plan_pull(snap, ctx, rid, reason, may_collide, blocker, batch=batch)
     why = refusal(rid, ctx.current_branch(), main_branches(ctx), change_session(snap, rid))
     if why:
         raise Refusal(why)

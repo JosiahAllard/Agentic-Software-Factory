@@ -12,10 +12,12 @@ from unittest import mock
 from kitlib.backlog import conditions as condmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.hubjobs import unblock_conditions as U
 from kitlib import hubvalidate
 from kitlib import platform as kplatform
-from kitlib.hubsite import approvals, jobs, recordwrite
+from kitlib.hubsite import jobs, recordwrite
+from kitlib.ownerfiles import approvals
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree
@@ -75,7 +77,7 @@ class Case(unittest.TestCase):
         writes = {}
         for r in records:
             writes.update(r)
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         backend.publish(smod.Store(backend, rmod.Rules()).load(), writes, 'seed\n')
 
     def doc(self, coll, doc_id, status):
@@ -96,7 +98,7 @@ class Case(unittest.TestCase):
                             write=self.write)
 
     def get(self, rid):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         return smod.Store(backend, rmod.Rules()).load().get(rid)
 
     def log(self):

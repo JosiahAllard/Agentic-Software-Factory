@@ -5,10 +5,12 @@ import datetime
 import json
 import os
 import unittest
+from unittest import mock
 
-from kitlib import pluginsource as P
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib import pmstart
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests.home import temp_home
 from tests.pluginsource import FakeProc, Kit
 
@@ -24,15 +26,15 @@ FAKES = dict(pm_data=lambda: None, handoff=HANDOFF_FAKE, reminders={"read": lamb
 class PluginCurrentTest(unittest.TestCase):
     def setUp(self):
         self.k = Kit(self)
-        self.s = P.Settings(self.k.root, False, "origin")
+        self.s = plugin_layout.Settings(self.k.root, False, "origin")
         self.folders = []
 
     def check(self):
         return pmstart.plugin_current(settings=self.s, kit=self.k.kit, folders=self.folders)
 
     def refresh(self, folders, proc):
-        runner = claude.Runner(self.k.home, claude="claude.cmd", run_proc=proc)
-        return P.refresh(self.k.kit, self.s, folders, lambda line: None, apply=True, runner=runner,
+        runner = accounts.Runner(self.k.home, claude="claude.cmd", run_proc=proc)
+        return plugin_refresh.refresh(self.k.kit, self.s, folders, lambda line: None, apply=True, runner=runner,
                          now=NOW, own=(1, 1), alive=lambda pid, ct: False)
 
     def test_no_export_failed_folder_current_behind(self):
@@ -65,13 +67,13 @@ class PluginCurrentTest(unittest.TestCase):
         """A folder shaped like the plugin export the PM's tools run from: a marker, no .git."""
         folder = os.path.join(self.k.base, "export-kit")
         os.makedirs(folder)
-        with open(os.path.join(folder, P.MARKER), "w", encoding="utf-8") as fh:
+        with open(os.path.join(folder, plugin_layout.MARKER), "w", encoding="utf-8") as fh:
             json.dump({"checkout": checkout}, fh)
         return folder
 
     def test_a_kit_that_is_an_export_reads_the_ref_from_its_source_checkout(self):
         os.makedirs(self.k.root)
-        P.write_state(self.k.root, {"sha": self.k.repo.git("rev-parse", "refs/remotes/origin/main"),
+        plugin_state.write_state(self.k.root, {"sha": self.k.repo.git("rev-parse", "refs/remotes/origin/main"),
                                     "folders": {}})
         export = self.export_kit(self.k.kit)
         self.assertEqual(pmstart.plugin_current(settings=self.s, kit=export, folders=[]), [])
@@ -84,7 +86,7 @@ class PluginCurrentTest(unittest.TestCase):
 
     def test_an_export_with_no_source_checkout_is_a_could_not_check_line(self):
         os.makedirs(self.k.root)
-        P.write_state(self.k.root, {"sha": "0" * 40, "folders": {}})
+        plugin_state.write_state(self.k.root, {"sha": "0" * 40, "folders": {}})
         export = self.export_kit(os.path.join(self.k.base, "gone"))
         got = pmstart.plugin_current(settings=self.s, kit=export, folders=[])
         self.assertEqual(len(got), 1)
@@ -93,7 +95,7 @@ class PluginCurrentTest(unittest.TestCase):
 
     def test_unreadable_state(self):
         os.makedirs(self.k.root)
-        with open(os.path.join(self.k.root, P.STATE), "w", encoding="utf-8") as fh:
+        with open(os.path.join(self.k.root, plugin_state.STATE), "w", encoding="utf-8") as fh:
             fh.write("[]")
         got = self.check()
         self.assertEqual(len(got), 1)
@@ -107,7 +109,7 @@ class PluginCurrentTest(unittest.TestCase):
         self.assertIn("- pm-kit plugin: no export at %s yet" % self.k.root, txt)
 
         def boom():
-            raise P.RefreshError("LOCALAPPDATA is not set")
+            raise plugin_layout.RefreshError("LOCALAPPDATA is not set")
         orig = pmstart.plugin_settings
         pmstart.plugin_settings = boom
         try:
@@ -115,6 +117,59 @@ class PluginCurrentTest(unittest.TestCase):
         finally:
             pmstart.plugin_settings = orig
         self.assertIn("- could not check plugin_current: RefreshError: LOCALAPPDATA is not set", txt)
+
+
+class StartCheckTest(unittest.TestCase):
+    """plugin_current hands pluginsource.state.current_lines the machine's managed settings file
+    (kitlib.machinesetup.extras Host.managed_path) only when it reads the machine's own account
+    folders. Every file is in a temp tree."""
+
+    def setUp(self):
+        self.k = Kit(self)
+        self.s = plugin_layout.Settings(self.k.root, False, "origin")
+        self.elsewhere = os.path.join(self.k.base, "elsewhere")
+
+    def account(self, name):
+        """A migrated account folder whose known marketplaces name the export, the export state
+        current at the kit's tracking main."""
+        folder = os.path.join(self.k.base, name)
+        os.makedirs(os.path.join(folder, "plugins"))
+        with open(os.path.join(folder, *accounts.KNOWN_MARKETPLACES), "w", encoding="utf-8") as fh:
+            json.dump({"pm-kit": {"installLocation": self.k.root}}, fh)
+        os.makedirs(self.k.root, exist_ok=True)
+        plugin_state.write_state(self.k.root, {
+            "sha": self.k.repo.git("rev-parse", "refs/remotes/origin/main"),
+            "folders": {folder: {"migrated": True, "rc": 0}}})
+        return folder
+
+    def managed(self, path):
+        p = os.path.join(self.k.base, "pf", "managed-settings.json")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"extraKnownMarketplaces": {
+                "pm-kit": {"source": {"source": "directory", "path": path}}}}, fh)
+        return p
+
+    def test_given_folders_do_not_read_the_machine_managed_file(self):
+        acct = self.account("a")
+        with mock.patch("kitlib.machinesetup.extras.Host.managed_path",
+                        side_effect=AssertionError("read the machine file")):
+            self.assertEqual(pmstart.plugin_current(settings=self.s, kit=self.k.kit, folders=[acct]), [])
+
+    def test_no_folders_given_reads_the_machine_managed_file(self):
+        acct, m = self.account("a"), self.managed(self.elsewhere)
+        with mock.patch.object(accounts, "account_folders", return_value=[acct]), \
+                mock.patch("kitlib.machinesetup.extras.Host.managed_path", return_value=m):
+            lines = pmstart.plugin_current(settings=self.s, kit=self.k.kit)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("in the managed settings is %s" % self.elsewhere, lines[0])
+
+    def test_a_failing_machine_managed_read_is_one_line_never_a_raise(self):
+        acct = self.account("a")
+        with mock.patch.object(accounts, "account_folders", return_value=[acct]), \
+                mock.patch("kitlib.machinesetup.extras.Host.managed_path", side_effect=ValueError("x")):
+            lines = pmstart.plugin_current(settings=self.s, kit=self.k.kit)
+        self.assertEqual(lines, ["could not check the pm-kit marketplace paths: ValueError: x"])
 
 
 if __name__ == "__main__":

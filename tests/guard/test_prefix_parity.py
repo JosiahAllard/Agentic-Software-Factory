@@ -1,7 +1,7 @@
-"""Bare and plugin-prefixed agent names get the same decisions (docs/guard.md "Agent names").
+"""Bare and plugin-prefixed agent names get the same decisions (docs/guard-fallback.md "Agent names").
 
 The rule table, role policy and session tests (SENTINEL_MODULES) run again with the prefix knob
-on: each subagent's agent_type is qualified (kitlib.agentname.qualified, through world.AGENT_TYPE)
+on: each subagent's agent_type is qualified (kitlib.host.agentname.qualified, through world.AGENT_TYPE)
 and the PM_KIT_ROLE mark every guard context is built with gets the prefix. They must all pass, so
 every row's decision equals its bare twin. Sentinels show the guard really read prefixed names;
 without the knob they stay at zero. A main session (no agent_id) is untouched by an agent_type it
@@ -11,7 +11,7 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.guard import context
 
 from . import world as W

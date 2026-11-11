@@ -12,11 +12,11 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import commit as kcommit, syncbase
+from kitlib import attribution, syncbase
 from kitlib.config import load as load_config
 from kitlib.git import cmd as gitcmd
 from kitlib.records import landing
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from tests.gitfixture import NAME, EMAIL, TempRepo, fixture_env, real_fixture
 from tests.pathfree import without_paths
 from tests.realgit import real_git
@@ -131,8 +131,8 @@ class SyncCase(unittest.TestCase):
 
     def kit_hint(self, name):
         """The command a hint prints for kit tool `name`: this kit's own tools/<name>.py with
-        -C the linked checkout, both quoted in forward slashes (no repository holds a copy of
-        the kit's tools: decision 21 and step 15 in docs/multi-host-plan.md)."""
+        -C the linked checkout, both quoted in forward slashes (docs/install.md "Ported repo
+        tools")."""
         return 'python "%s/tools/%s.py" -C "%s"' % (KIT.replace('\\', '/'), name,
                                                      self.git('rev-parse', '--show-toplevel'))
 
@@ -346,7 +346,7 @@ class UsageAndTarget(SyncCase):
         an agent fixing one form from the other's text got it wrong."""
         done = self.cli(self.stage_clean(), '--host', 'claude')
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
-        self.assertIn('USAGE: %s\n' % kcommit.resolve_model(False, None, {}, 'claude')[2],
+        self.assertIn('USAGE: %s\n' % attribution.resolve_model(False, None, {}, 'claude')[2],
                       done.stderr)
         self.assertIn('--model "<model name>"', done.stderr)
 
@@ -683,7 +683,7 @@ class ConfiguredRemote(SyncCase):
 class ConfiguredToolsDir(SyncCase):
     """`.kit.json` "repo".tools_dir does not spell the commands this prints: they name the kit's
     own tool with -C the checkout, since no repository holds a copy of the kit's tools
-    (docs/multi-host-plan.md section 7 decision 21, "Tool stubs in repos"; step 15 "No stubs")."""
+    (docs/install.md "Ported repo tools")."""
 
     CONFIG = {'repo': {'main_branch': 'master', 'tools_dir': 'devtools'}}
 
@@ -830,7 +830,7 @@ SEVEN = ''.join('line %d\n' % i for i in range(1, 8))     # edits on lines 1 and
 
 
 class Approves(object):
-    """The approvals seam (kitlib.guard.ownercommits): the hub verifies exactly the ids in `ok`."""
+    """The approvals seam (kitlib.ownerfiles.rules): the hub verifies exactly the ids in `ok`."""
 
     def __init__(self, ok):
         self.ok, self.asked = set(ok), []
@@ -849,7 +849,7 @@ class OwnerCase(SyncCase):
 
     def approve(self, *ids):
         seam = Approves(ids)
-        p = mock.patch.object(ownercommits, 'default_approvals', lambda: seam)
+        p = mock.patch.object(ownerrules, 'default_approvals', lambda: seam)
         p.start()
         self.addCleanup(p.stop)
         return seam
@@ -923,8 +923,8 @@ class OwnerCase(SyncCase):
           'of them')
 class OwnerOnlyFiles(OwnerCase):
     """A clean merge that changes an owner-only file is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal): here, the clean join of two approved changes; anything
-    else aborts the merge."""
+    (kitlib.commit.checks.merge_owner_refusal): here, the clean join of two approved changes;
+    anything else aborts the merge."""
 
     def test_the_clean_merge_of_two_approved_changes_is_committed(self):
         seam = self.approve('A-001')
@@ -1002,7 +1002,7 @@ class OwnerOnlyFiles(OwnerCase):
         self.approve('A-001')
         target = self.stage(self.bottom(), self.top())
         tip = self.head()
-        with mock.patch.object(ownercommits, 'violations', lambda *a, **k: (None, 'git died')):
+        with mock.patch.object(ownerrules, 'violations', lambda *a, **k: (None, 'git died')):
             done = self.sync(target)
         self.assert_refused(done, self.F, tip)
         self.assertIn('git died', self.out(done))

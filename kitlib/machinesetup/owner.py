@@ -1,4 +1,4 @@
-"""The owner's email in the machine config (docs/machine-setup.md "Owner email"; plan decision 27):
+"""The owner's email in the machine config (docs/machine-setup.md "Owner email"):
 the machine config's `owner_email` (kitlib.config.user), which every repository whose `.kit.json`
 sets no "owner".email reads (docs/kit-json.md "With no file"). With none, no commit is provable as
 the owner's, so every owner-only path refuses every edit.

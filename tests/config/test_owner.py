@@ -92,6 +92,34 @@ class MergeTest(unittest.TestCase):
         self.assertIsNotNone(r.identity_problem())
 
 
+class ShrinkOnlyTest(unittest.TestCase):
+    """"owner".shrink_only: exact owner-only paths, read from the config; landing takes the base's."""
+
+    def test_the_config_lists_exact_owner_only_paths(self):
+        t = TempTree({'owner': {'shrink_only': ['.claude\\grants.txt', 'README.md']}})
+        self.addCleanup(t.cleanup)
+        r = config.load(t.root).owner_rules()
+        self.assertEqual(r.shrink_only, ['.claude/grants.txt', 'README.md'])
+        self.assertTrue(r.is_shrink_only('.claude/grants.txt'))
+        self.assertTrue(r.is_shrink_only('.CLAUDE\\Grants.txt'))
+        for p in ('README.md', '.claude/other.txt', 'CLAUDE.md'):   # not owner-only, or not listed
+            self.assertFalse(r.is_shrink_only(p), p)
+        self.assertFalse(rules().is_shrink_only('CLAUDE.md'))       # the default lists nothing
+
+    def test_a_bad_list_is_a_configuration_error(self):
+        t = TempTree({'owner': {'shrink_only': 'CLAUDE.md'}})
+        self.addCleanup(t.cleanup)
+        with self.assertRaises(ConfigError):
+            config.load(t.root)
+
+    def test_a_branch_cannot_add_a_shrink_only_path(self):
+        base = rules(shrink_only=['AGENTS.md'])
+        m = owner.merge(rules(shrink_only=['CLAUDE.md']), base)
+        self.assertEqual(m.shrink_only, ['AGENTS.md'])
+        self.assertFalse(m.is_shrink_only('CLAUDE.md'))
+        self.assertEqual(owner.merge(rules(shrink_only=['CLAUDE.md']), None).shrink_only, [])
+
+
 class TrailerTest(unittest.TestCase):
     """"owner".trailer is never Owner-Approval, the hub approval's own trailer (docs/commit.md
     "Owner approval"): read as the claim key, every hub:A-<n> value would be an owner claim."""
@@ -115,8 +143,8 @@ class TrailerTest(unittest.TestCase):
         self.assertIsNone(owner.trailer_problem('Owner-Approvals'))
 
     def test_the_reserved_key_is_the_one_the_land_check_reads(self):
-        from kitlib.guard import ownercommits
-        self.assertEqual(owner.APPROVAL_TRAILER, ownercommits.TRAILER)
+        from kitlib.ownerfiles import rules as ownerrules
+        self.assertEqual(owner.APPROVAL_TRAILER, ownerrules.TRAILER)
 
 
 if __name__ == '__main__':

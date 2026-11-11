@@ -1,6 +1,5 @@
 """The files of a kit checkout that tools/render_content.py writes, and what each is rendered from
-(the guard's generated-file rule; docs/guard.md "Generated files"; decision 19 in
-docs/multi-host-plan.md section 7).
+(the guard's generated-file rule; docs/guard-jail-roles.md "Generated files").
 
   source(top, rel)   for `rel` (a path relative to the checkout `top`, either separator) that the
                      renderer writes: the source a person edits instead; None for any other path,
@@ -22,7 +21,7 @@ judge.
 """
 import os
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.content import oncommit
 
 ROLES = 'content/roles/'

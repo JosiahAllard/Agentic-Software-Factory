@@ -3,7 +3,8 @@ files), duplicate keys, the hook and owner sections, and load_at reading a revis
 import unittest
 
 from kitlib import config
-from kitlib.config.load import _gate_rules as loadmod_gate_rules, check_value
+from kitlib.config.load import (RETIRED_WARNING, _gate_rules as loadmod_gate_rules,
+                                check_value)
 from kitlib.config import schema
 from kitlib.config.types import Regex
 from tests import gitfixture
@@ -503,6 +504,29 @@ class WrongTypesTest(TreeCase):
         with self.assertRaises(config.ConfigError):
             cfg.hook()
         self.assertIsNone(self.load({'hook': {'options': {}}}).hook())
+
+
+class RetiredTextTest(TreeCase):
+    """retired_text(root): the one stderr block of retired_warnings, a line per retired key."""
+
+    def test_the_block_is_each_warning_newline_ended_or_empty(self):
+        def block(root, *keys):
+            where = config.config_path(root)
+            return ''.join(RETIRED_WARNING % (where, k) + '\n' for k in keys)
+        cases = (
+            ('no .kit.json', None, ()),
+            ('no retired key', {'repo': {'main_branch': 'master'}}, ()),
+            ('one retired key', {'landing': {'gate_once': True}}, ('landing.gate_once',)),
+            ('two retired keys, in schema order',
+             {'landing': {'shared_paths': ['x'], 'lanes': 2}},
+             ('landing.lanes', 'landing.shared_paths')),
+            ('a config that cannot load', {'repo': {'main_branch': 5}, 'landing': {'lanes': 2}},
+             ()),
+        )
+        for name, kit, keys in cases:
+            with self.subTest(name):
+                root = self.tree(kit).root
+                self.assertEqual(config.retired_text(root), block(root, *keys))
 
 
 class CheckValueTest(unittest.TestCase):

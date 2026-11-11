@@ -11,7 +11,7 @@ yours.
 
 Point the tunnel at the tunnel port, never at the local port (`hub.port`, default 8790). The local
 listener trusts a local token; the tunnel listener trusts only an Access token. The two ports must
-differ (`kitlib.hubsite.settings.check` refuses a config where they are equal).
+differ (`kitlib.hubclient.settings.check` refuses a config where they are equal).
 
 Names in angle brackets below are yours:
 
@@ -268,7 +268,7 @@ control, and no step weakens, shares or bypasses Access or pairing: those stay y
 open a public port on the PC for this.
 
 What the code shows: the hub uses no WebSocket. The page loads one snapshot, then repeats one
-long-poll (`GET /wait`, held open up to 55 s, `kitlib.hubsite.api.WAIT_MAX_S`) and reads the
+long-poll (`GET /wait`, held open up to 55 s, `kitlib.hubvalidate.WAIT_MAX_S`) and reads the
 snapshot again after each change, and the tunnel listener is on loopback only. Per Cloudflare's setup (INFERENCE from the repo, not shown by it): the
 laptop talks HTTPS on port 443 to `<hostname>` and to `<team>.cloudflareaccess.com` (the Access
 login), plus your identity provider's sign-in host if step 6.4 uses one.
@@ -364,7 +364,7 @@ The PC's browser can be made strong from the Access login (the owner's choice):
   choice). The server makes it at start (`kitlib.hubsite.auth.ensure_approval_key`) and never
   replaces it; a key that cannot be read stops the start and names the file. Without a usable
   key a strong link pairs nothing. The key is meant to sign the owner's approvals
-  (`kitlib/hubsite/approvals.py`).
+  (`kitlib/ownerfiles/approvals.py`).
 
 The routes of role `approver` are POST `/api/v1/approvals/{id}/decide`
 (`kitlib.hubsite.api.ROUTES`), the owner's Approve or Deny of a pending approval, which the server

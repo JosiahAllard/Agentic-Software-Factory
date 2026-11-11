@@ -380,7 +380,7 @@ class NextFold(_Branches):
         self.assertEqual((self.get('R2').get('state'), self.get('R2').get('pulled_by')),
                          ('pulled', HOLDER))
 
-    def test_the_two_offers_a_pull_checks_read_the_diffs_once(self):
+    def test_the_two_offers_a_pull_checks_read_the_diffs_once_per_way_of_measuring(self):
         self.seed(priced('R1', scope='kitlib/x/**'), priced('R2', scope='kitlib/y/**'))
         self.ctx = pmod.Context(self.store, self.repo.root, branch=HOLDER, today=TODAY)
         real, reads = plan_narrow._live_changes, []

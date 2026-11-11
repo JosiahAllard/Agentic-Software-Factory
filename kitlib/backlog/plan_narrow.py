@@ -228,7 +228,8 @@ def current_offer(snap, ctx, branch=None, seeds=(), whys=None, diffs=None):
         # The fold check `next` runs in the main checkout (no own branch, so the branch's own
         # diff counts too): `also` must be exactly that offer, or a record the main checkout
         # offers because a higher one folds into this branch would be refused here. The diffs
-        # are read once for both offers (`diffs`).
+        # are read once per way of measuring (`diffs`, `_live_reader`): the branch's offer from
+        # its own merge base, this one from the code main's.
         result, refusals, _ranks = omod.next_offer(snap, holding, cap=ctx.cap,
                                                    session=ctx.session,
                                                    unmet=ctx.unmet(snap),

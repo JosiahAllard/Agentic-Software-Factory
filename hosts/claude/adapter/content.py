@@ -7,7 +7,8 @@ role's capabilities as Claude tool names, in order; no line for `capabilities: a
 (the role's `model.claude` override, else hosts.json's `tiers` model for its tier: tier_models), `effort`
 when the role has one, and for `cache: long` the `experimental` map with `cacheTtl: 1h`; then the
 body with its tokens filled from tokens(): TOKENS, and PROFILE_TOKENS read from hosts.json's Claude
-entry, so a value hosts.json holds is written once; `{{model:<tier>}}` from tier_models() and
+entry, so a value hosts.json holds is written once (`{{long_context_model}}` names the role's own
+`model` line's model: long_context_phrase); `{{model:<tier>}}` from tier_models() and
 `{{tool:<capability>}}` from TOOLS, the map the `tools` line uses. Lines end as the role file's do.
 Skills are not copied: the plugin manifest points at `content/skills/` itself (decision 29 in
 docs/multi-host-plan.md section 7).
@@ -90,8 +91,13 @@ PROFILE_TOKENS = {
     'owner_folder': lambda host: next(p for p in host.profile.owner_paths if p.endswith('/')),
     'user_folder': lambda host: '~/' + host.profile.state_directory,
     'coauthor_email': lambda host: host.profile.attribution.email,
-    'long_context_model': lambda host: 'the 1M-context %s model' % dict(host.tiers)['deep'],
+    'long_context_model': lambda host: long_context_phrase(dict(host.tiers)['deep']),
 }
+
+
+def long_context_phrase(model):
+    """How role prose names the model a launched long-context session runs on."""
+    return 'the 1M-context %s model' % model
 CACHE_TTL = {'long': '1h'}
 
 
@@ -163,6 +169,8 @@ class ClaudeContent:
         src = self.role_path(role.name)
         values = tokens() if values is None else values
         tiers = self.tier_models() if tiers is None else tiers
+        # {{long_context_model}} names the model this role runs on: its override, else its tier's
+        values = dict(values, long_context_model=long_context_phrase(role.model_for(HOST, tiers)))
         fill = lambda text: substitute(text, values, agent_name, names, src, models=tiers,    # noqa: E731
                                        tools=TOOLS)
         lines = ['---', '# ' + banner(role_source(role.name)), 'name: %s' % role.name,

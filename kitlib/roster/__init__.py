@@ -4,8 +4,8 @@ The role files are the one roster (docs/multi-host-plan.md section 7, decision 1
 or removed with one file and a render. ROSTER.md is prose the owner writes, with two rendered
 regions, each between a start marker and END:
   <!-- rendered: roles -->      | role | tier | effort | use for |, one row per role file, by name:
-                                its `tier`, its `effort` (`-` for none) and its `summary` (else its
-                                description)
+                                its `tier` (with any `model.<host>` override: tier_cell), its
+                                `effort` (`-` for none) and its `summary` (else its description)
   <!-- rendered: tiers -->      | tier | <host> | ... |, one row per tier, one column per host
                                 (the tier maps passed in: kitlib names no host)
 `render` returns the text with both regions made what they say and every other byte kept (the
@@ -33,8 +33,14 @@ def roles_table(content):
     """The role table's lines for Content `content`, by role name."""
     out = ['| role | tier | effort | use for |', '|---|---|---|---|']
     for r in sorted(content.roles, key=lambda r: r.name):
-        out.append('| %s | %s | %s | %s |' % (r.name, r.tier, r.effort or NONE, _cell(r.summary or r.description)))
+        out.append('| %s | %s | %s | %s |' % (r.name, tier_cell(r), r.effort or NONE, _cell(r.summary or r.description)))
     return out
+
+
+def tier_cell(role):
+    """A role's tier cell: its tier, then each host's model override, by host: `deep (claude: fable)`."""
+    over = ', '.join('%s: %s' % hm for hm in sorted(role.models))
+    return _cell('%s (%s)' % (role.tier, over) if over else role.tier)
 
 
 def tiers_table(tier_maps):

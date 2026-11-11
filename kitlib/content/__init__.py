@@ -23,7 +23,8 @@ The launcher's KIT_AGENTS and the backlog policy's groups (kitlib.backlog.roles)
 
 `names_of(name)` is a role's name with its old or new one (ALIASES). `role_modes(kit)` is {role: mode} from the role files under the kit root `kit`, for the guard's
 role policy (docs/guard-jail-roles.md "Role policy"); `role_mode(name, kit)` one role's, an old name
-(ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names. These and
+(ALIASES) read as its new one; `role_writes(name, kit)` the paths its `writes` names;
+`role_model(name, host, tiers, kit)` the model a host runs it on (the launcher's deep-worker). These and
 roster share one read of the role files per kit root, cached, so the guard's hook path parses
 them once. None raises: no `content/roles` folder gives {}, and a role file that cannot be read
 or parsed is left out, so the policy is off for that role rather than the guard failing.
@@ -180,6 +181,14 @@ def role_writes(name, kit):
         return ()
     role = _roles(kit).get(ALIASES.get(name, name))
     return role.writes if role else ()
+
+
+def role_model(name, host, tiers, kit):
+    """The model `host` runs role `name` on (Role.model_for: its `model.<host>`, else `tiers`, the
+    host's tier -> model map, at its tier), from its role file under `kit`; None when it has no
+    readable file."""
+    role = _roles(kit).get(ALIASES.get(name, name))
+    return role.model_for(host, tiers) if role else None
 
 
 def load(root):

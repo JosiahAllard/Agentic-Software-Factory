@@ -81,7 +81,8 @@ CAPABILITIES = (
 #   owner_folder        the host's own folder in a repository (owner-only), with its final /
 #   user_folder         the host's per-user folder, home-relative (~/...)
 #   config_dir_env      the environment variable that moves the host's per-user folder
-#   long_context_model  a noun phrase for the model a launched long-context session runs on
+#   long_context_model  a noun phrase for the model a launched long-context session runs on (a host
+#                       may fill it per role, from the role's model: Claude does)
 #   coauthor_email      the address in the host's Co-Authored-By commit trailer
 #   launch_agent        the command that starts the host's main session as a named agent; the
 #                       agent's name ({{agent:<role>}}) follows it

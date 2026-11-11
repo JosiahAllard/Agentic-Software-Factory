@@ -104,7 +104,7 @@ profile there, never written a second time in the renderer (Claude: `PROFILE_TOK
 | `{{owner_folder}}` | the host's own folder in a repository, owner-only, with its final `/` | `.claude/` (the folder among hosts.json profile `owner_paths`) | `.codex/` |
 | `{{user_folder}}` | the host's per-user folder, home-relative | `~/.claude` (`~/` and hosts.json profile `state_directory`) | `~/.codex` |
 | `{{config_dir_env}}` | the environment variable that moves that per-user folder | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` |
-| `{{long_context_model}}` | a noun phrase for the model a launched long-context session (deep-worker, consultant) runs on | `the 1M-context opus model` (the `deep` tier's model from hosts.json) | `the account's model` |
+| `{{long_context_model}}` | a noun phrase for the model a launched long-context session (deep-worker, consultant) runs on | `the 1M-context <model> model`, `<model>` the role's own (its `model.claude`, else the `deep` tier's from hosts.json): `fable` for deep-worker, `opus` for consultant | `the account's model` |
 | `{{coauthor_email}}` | the address in the host's Co-Authored-By trailer | `noreply@anthropic.com` (hosts.json profile `attribution.email`) | `noreply@openai.com` |
 | `{{launch_agent}}` | the command that starts the host's main session as a named agent; `{{agent:<role>}}` follows it | `claude --agent` | `python <kit>/hosts/codex/shell/scripts/launch.py --role` (a plan only) |
 

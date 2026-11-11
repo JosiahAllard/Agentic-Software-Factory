@@ -377,6 +377,27 @@ class ClaudeRendererTest(unittest.TestCase):
         got = claude_content.renderer().render(self.content(role, BETA))['hosts/claude/shell/agents/alpha.md']
         self.assertIn(b'\nmodel: sonnet\neffort: low\nautoCompactWindow: 170000\n---\n', got)
 
+    def test_long_context_model_names_the_roles_own_model(self):
+        """{{long_context_model}} names the role's model: its model.claude override, else its tier's."""
+        own = BETA.replace(b'---\nbody', b'model.claude: fable\n---\nuse {{long_context_model}}', 1)
+        self.assertNotEqual(own, BETA)
+        got = claude_content.renderer().render(self.content(own))['hosts/claude/shell/agents/beta.md']
+        self.assertIn(b'\nmodel: fable\n', got)
+        self.assertIn(b'use the 1M-context fable model', got)
+        plain = BETA.replace(b'---\nbody', b'---\nuse {{long_context_model}}', 1)
+        got = claude_content.renderer().render(self.content(plain))['hosts/claude/shell/agents/beta.md']
+        self.assertIn(b'use the 1M-context opus model', got)
+
+    def test_the_real_deep_worker_runs_fable_and_the_consultant_opus(self):
+        """Owner decision: deep-worker alone runs fable on Claude; the consultant keeps the deep tier."""
+        for name, model in (('deep-worker', 'fable'), ('consultant', dict(registry.host('claude').tiers)['deep'])):
+            with open(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md'), 'rb') as f:
+                got = f.read().decode('utf-8').replace('\r\n', '\n')
+            with self.subTest(name):
+                self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
+                self.assertIn('the 1M-context %s model' % model, got)
+        self.assertEqual(dict(registry.host('claude').tiers)['deep'], 'opus')
+
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))
         self.assertEqual(claude_content.renderer().tier_models(), dict(registry.host('claude').tiers))

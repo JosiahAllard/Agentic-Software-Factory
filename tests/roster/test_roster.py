@@ -66,15 +66,31 @@ class RealRosterTest(unittest.TestCase):
         self.assertEqual(t['tier'][0][1:], sorted(registry.names()))
 
     def test_every_rendered_model_is_the_roster_tiers(self):
-        """The model an agent file names is the role's tier through the host's tier table."""
+        """The model an agent file names is the role's Claude override its tier cell shows, else
+        its tier through the host's tier table."""
         t = tables(read(os.path.join(KIT_ROOT, 'docs', 'ROSTER.md')).decode('utf-8'))
         hosts = t['tier'][0][1:]
         models = {row[0]: dict(zip(hosts, row[1:])) for row in t['tier'][1:]}
-        for name, tier, effort, _ in t['role'][1:]:
+        for name, cell, effort, _ in t['role'][1:]:
+            tier, _, over = cell.partition(' (')
+            over = dict(hm.split(': ') for hm in over.rstrip(')').split(', ')) if over else {}
             fm = roster_frontmatter(read(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md')))
             with self.subTest(role=name):
-                self.assertEqual(fm['model'], models[tier]['claude'])
+                self.assertEqual(fm['model'], over.get('claude', models[tier]['claude']))
                 self.assertEqual(fm.get('effort', roster.NONE), effort)
+
+    def test_deep_worker_runs_fable_on_claude_and_the_consultant_its_tier(self):
+        """By owner decision deep-worker alone runs fable on Claude; the consultant, also deep, keeps
+        the tier's model; Codex has no override for either."""
+        rows = {r[0]: r[1] for r in tables(read(os.path.join(KIT_ROOT, 'docs', 'ROSTER.md')).decode('utf-8'))['role'][1:]}
+        self.assertEqual(rows['deep-worker'], 'deep (claude: fable)')
+        self.assertEqual(rows['consultant'], 'deep')
+        roles = {r.name: r for r in content.load_roles(KIT_ROOT)}
+        self.assertEqual(roles['deep-worker'].model_for('claude', MAPS['claude']), 'fable')
+        self.assertEqual(roles['consultant'].model_for('claude', MAPS['claude']), MAPS['claude']['deep'])
+        self.assertEqual(MAPS['claude']['deep'], 'opus')
+        for name in ('deep-worker', 'consultant'):
+            self.assertEqual(roles[name].model_for('codex', MAPS['codex']), MAPS['codex']['deep'], name)
 
 
 def roster_frontmatter(data):

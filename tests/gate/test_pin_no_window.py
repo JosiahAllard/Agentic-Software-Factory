@@ -13,7 +13,8 @@ from tests.pluginsource import Kit
 from tests.platforms import windows_only
 
 if os.name == 'nt':
-    from kitlib.proc import job, win32
+    from kitlib.proc import job
+    from kitlib.platform.windows import win32
 
 
 @windows_only('Windows only')

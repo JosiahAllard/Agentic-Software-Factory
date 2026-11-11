@@ -1,6 +1,6 @@
 """kitlib.proc.process ancestry on real processes: the recorded parent of an exited ancestor is
 read from its own handle (NtQueryInformationProcess), so the walk past it reaches this process.
-tests/proc/test_ancestry.py fakes that read; this test does not."""
+tests/platform/test_ancestry.py fakes that read; this test does not."""
 import os
 import subprocess
 import sys

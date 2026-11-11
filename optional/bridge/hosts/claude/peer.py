@@ -24,7 +24,7 @@ from optional.bridge.core.contracts import AdapterDescription, Capability
 from optional.bridge.core.jsonwire import JsonLineDecoder, encode_frame
 from optional.bridge.core.messages import BeforeWriteError, DeliveryError, NativeResult, OutboundMessage
 from optional.bridge.core.prompt import delivery_prompt
-from kitlib.proc.pipe import PrivateListener, client_pid, peek, protect_file, read
+from kitlib.platform.windows.pipe import PrivateListener, client_pid, peek, protect_file, read
 from kitlib.proc.process import own_ctime
 
 MAX_PENDING = 512

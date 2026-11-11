@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from optional.bridge.hosts.claude.records import MAX_RECORD_BYTES, read_record
 
 

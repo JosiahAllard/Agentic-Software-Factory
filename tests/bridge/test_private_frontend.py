@@ -16,7 +16,7 @@ from optional.bridge.win.frontend import FrontendInspector,NativeFrontend
 from optional.bridge.win.leader import ServiceLeader
 from optional.bridge.win.service import BrokerService
 from kitlib.proc.job import Job
-from kitlib.proc.process import close,handle_ctime,open_process,own_ctime
+from kitlib.platform.windows.process import close,handle_ctime,open_process,own_ctime
 from tests.bridge.test_claude_runtime import long_hook_context
 from tests.bridge.test_pairing import chat
 
@@ -126,7 +126,7 @@ class PrivateFrontendTests(unittest.TestCase):
         self.initialize()
 
     def test_client_identity_race_does_not_stop_the_broker(self):
-        from kitlib.proc.errors import ProcError
+        from kitlib.platform import ProcError
         from optional.bridge.win.rpc import request
         from optional.bridge.win.transport import PipeTarget
         with mock.patch.object(self.leader.listener,'verify_client',side_effect=ProcError('pipe-client-process-mismatch')):

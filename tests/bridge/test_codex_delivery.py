@@ -21,8 +21,8 @@ from optional.bridge.core.contracts import Capability
 from optional.bridge.core.messages import BeforeWriteError, DeliveryError, NativeResult, OutboundMessage
 from optional.bridge.core.contracts import SessionIdentity, WorkspaceIdentity
 from optional.bridge.core.pairing import ChatBinding
-from kitlib.proc.errors import ProcError
-from kitlib.proc.pipe import PrivateListener, peek, read, write
+from kitlib.platform import ProcError
+from kitlib.platform.windows.pipe import PrivateListener, peek, read, write
 from kitlib.proc.job import Job
 from kitlib.proc.process import own_ctime, proc_ctime
 

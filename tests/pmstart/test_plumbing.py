@@ -44,7 +44,8 @@ class ListProcessesTest(unittest.TestCase):
     @windows_only("Windows only")
     def test_with_no_console_powershell_is_started_with_no_window(self):
         """Session start runs this where there may be no console: PowerShell must not open one."""
-        from kitlib.proc import job, win32
+        from kitlib.proc import job
+        from kitlib.platform.windows import win32
         for console, flags in ((False, win32.CREATE_NO_WINDOW), (True, 0)):
             with mock.patch.object(job, "has_console", return_value=console), \
                     mock.patch.object(pmstart.subprocess, "run", return_value=ran(out="")) as run:

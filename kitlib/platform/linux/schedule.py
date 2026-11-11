@@ -136,7 +136,7 @@ def when_text(when):
 
 def subprocess_run(argv, **kw):
     """subprocess.run on Linux: there is no console window to choose, so creation flags are 0
-    whatever `kw` says (POSIX refuses any other value). Not kitlib.proc.spawn.run, whose
+    whatever `kw` says (POSIX refuses any other value). Not the process face's spawn.run, whose
     no-window check asks Windows for its console."""
     kw.pop('creationflags', None)
     return subprocess.run(argv, creationflags=0, **kw)

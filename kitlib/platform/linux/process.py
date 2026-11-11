@@ -1,6 +1,6 @@
 """The process primitives on Linux (docs/linux-support-plan.md section 2.2 and section 8, slice 4),
-read from /proc, with the meanings kitlib.proc.process gives them on Windows. On Linux
-kitlib.proc.process binds its process names to these, so its callers run unchanged.
+read from /proc, with the meanings kitlib.platform.windows.process gives them on Windows. On
+Linux the process face binds its process names to these, so its callers run unchanged.
 
 A process is (pid, ctime). The ctime is `(boot << 64) | starttime`: boot is
 /proc/sys/kernel/random/boot_id read as one 128-bit integer (BOOT_ID, the seam a test points at a
@@ -15,7 +15,7 @@ only ctimes below the stamp).
                       wrapper_state); exited: a zombie, ended but not reaped
   alive, proc_ctime, own_ctime, snapshot, process_parents, listed_ctimes, listed_ctime, _ancestor,
   ancestry, ancestors_of, own_ancestors, descendants, command_line, terminate_verified, kill_tree
-                      as kitlib.proc.process documents them
+                      as kitlib.platform.windows.process documents them
   pidns(pid)          the inode of pid's PID namespace, None when it cannot be read
   stamp_now()         the seam's stamp (kitlib.lock.run filetime_now on Linux)
   rows()              every process as kitlib.pmstart.list_processes's dicts (Name, CommandLine,

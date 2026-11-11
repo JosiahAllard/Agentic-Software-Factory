@@ -1,17 +1,17 @@
-"""kitlib.proc.process ancestry: the walk ancestors_of makes, the exited flag it reports, and the
-walk past an exited ancestor (through_exited) that kitlib.lock.store.caller asks for. Fakes only
-(tests/proc/fakeproc.py); tests/bridge/test_ancestry.py walks real processes."""
+"""kitlib.platform.windows.process ancestry: the walk ancestors_of makes, the exited flag it
+reports, and the walk past an exited ancestor (through_exited) that kitlib.lock.store.caller asks
+for. Fakes only (tests/platform/fakeproc.py); tests/bridge/test_ancestry.py walks real processes."""
 import unittest
 from unittest import mock
 
-from kitlib.proc import process
+from kitlib.platform.windows import process
 
-from tests.proc.fakeproc import FakeProc, patched
+from tests.platform.fakeproc import FakeProc, patched
 from tests.platforms import windows_only
 
 ME, SHELL, HOST, TOP = 900001, 900002, 900003, 900004
 WALK = ('the fakes answer the calls the Windows walk makes (handles, the listing); on Linux the '
-        'walk reads /proc (tests/proc/test_linux_process.py)')
+        'walk reads /proc (tests/platform/test_linux_process.py)')
 
 
 def table():

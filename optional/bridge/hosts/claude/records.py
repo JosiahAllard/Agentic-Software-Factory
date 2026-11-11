@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import stat
 
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from optional.bridge.core.jsonwire import JsonLineDecoder, WireError
 
 MAX_RECORD_BYTES = 8192

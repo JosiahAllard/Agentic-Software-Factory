@@ -12,7 +12,7 @@ if os.name == "nt":
     from kitlib.lock import game
     from kitlib.lock import layout as lay
     from kitlib.lock.kinds import KindsError
-    from kitlib.proc import job
+    from kitlib.platform.windows import job
 
 
 @windows_only("the lock is Windows only")
@@ -465,7 +465,7 @@ class DetectFailed(unittest.TestCase):
         self.assertEqual(lay.fake_hardware()["failed"], [])
 
     def test_unlisted_groups_are_a_failed_look(self):
-        # groups() then stands in group 0 alone (kitlib.proc.cpu.listed_groups).
+        # groups() then stands in group 0 alone (kitlib.platform.windows.cpu.listed_groups).
         with mock.patch.object(lay.cpu, "listed_groups", return_value=None), \
                 mock.patch.object(lay, "dxgi_adapters", return_value=[]):
             hw = lay.detect()
@@ -476,11 +476,10 @@ class DetectFailed(unittest.TestCase):
     def test_unlisted_groups_use_the_group_0_stand_in_not_a_second_listing(self):
         # Windows lists the groups only when asked again: the failed look must still be group 0's
         # stand-in, never every group under a "groups" failure.
-        from kitlib.proc import process
         answers = iter([None])
         with mock.patch.object(lay.cpu, "listed_groups",
                                side_effect=lambda: next(answers, [(0, 0b1111), (1, 0b1)])), \
-                mock.patch.object(process, "system_mask", return_value=0b11), \
+                mock.patch.object(lay.cpu, "system_mask", return_value=0b11), \
                 mock.patch.object(lay, "dxgi_adapters", return_value=[]):
             hw = lay.detect()
         self.assertIn("groups", hw["failed"])
@@ -506,14 +505,13 @@ class GroupsStandIn(StoreCase):
         self.store = self.make_store()
 
     def test_a_group_0_stand_in_does_not_replace_a_good_layout(self):
-        from kitlib.proc import process
         with mock.patch.object(lay, "dxgi_adapters", return_value=[]):
             real = lay.detect()
         if len(real["threads"]) < 2 or real["failed"]:
             self.skipTest("this machine's own look is not a good one of two threads or more")
         half = (1 << (len(real["threads"]) // 2)) - 1
         with mock.patch.object(lay.cpu, "listed_groups", return_value=None), \
-                mock.patch.object(process, "system_mask", return_value=half), \
+                mock.patch.object(lay.cpu, "system_mask", return_value=half), \
                 mock.patch.object(lay, "dxgi_adapters", return_value=[]):
             standin = lay.detect()
         self.assertEqual(len(standin["threads"]), len(real["threads"]) // 2)

@@ -1,4 +1,5 @@
-"""Tests for kitlib.proc.pipe: private pipes, their client and server identity checks and file ACLs.
+"""Tests for kitlib.platform.windows.pipe: private pipes, their client and server identity checks
+and file ACLs.
 
 Plain subprocesses and raw JSON lines stand in for a bridge harness. Each helper process is the test's own."""
 import ctypes
@@ -12,12 +13,12 @@ import time
 import unittest
 import uuid
 
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from tests.platforms import windows_only
 
 if os.name == 'nt':
     from ctypes import wintypes as w
-    from kitlib.proc.pipe import PrivateListener, connect, peek, process_image, protect_file, read, write
+    from kitlib.platform.windows.pipe import PrivateListener, connect, peek, process_image, protect_file, read, write
     from kitlib.proc.process import own_ctime, proc_ctime
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -150,7 +151,7 @@ class PrivatePipes(unittest.TestCase):
         # The owner's sessions folder: inherited Administrators/SYSTEM full, Authenticated Users
         # Modify, Users read, and no entry for the user, so a filtered token holds no WRITE_OWNER
         # on a new file there; only the owner's implicit WRITE_DAC.
-        from kitlib.proc import pipe
+        from kitlib.platform.windows import pipe
         user = pipe.process_sids(os.getpid())[0]
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory) / 'sessions'
@@ -187,7 +188,7 @@ class PrivatePipes(unittest.TestCase):
 
 
 CONNECTED = ('import json,sys,ctypes; from ctypes import wintypes as w; '
-             'from kitlib.proc.pipe import connect, write; '
+             'from kitlib.platform.windows.pipe import connect, write; '
              'p=connect(sys.argv[1],int(sys.argv[2]),int(sys.argv[3])); '
              "data=json.dumps({'claimed_role':'owner'}).encode()+b'\\n'; n=w.DWORD(); "
              'write(p.handle,data,len(data),ctypes.byref(n),None); '
@@ -195,7 +196,7 @@ CONNECTED = ('import json,sys,ctypes; from ctypes import wintypes as w; '
 
 ANONYMOUS = '''import ctypes,json,sys
 from ctypes import wintypes as w
-from kitlib.proc.pipe import K,A,bind,create_file,close,INVALID
+from kitlib.platform.windows.pipe import K,A,bind,create_file,close,INVALID
 thread=bind(K,'GetCurrentThread',[],w.HANDLE)
 impersonate=bind(A,'ImpersonateAnonymousToken',[w.HANDLE],w.BOOL)
 revert=bind(A,'RevertToSelf',[],w.BOOL)
@@ -217,7 +218,7 @@ print(json.dumps({'anonymous_open_errors':output}),flush=True)
 
 RESTRICTED = '''import ctypes,json,sys
 from ctypes import wintypes as w
-from kitlib.proc.pipe import K,A,bind,close,local_free,create_file,INVALID
+from kitlib.platform.windows.pipe import K,A,bind,close,local_free,create_file,INVALID
 class SidAndAttributes(ctypes.Structure):
     _fields_=[('sid',w.LPVOID),('attributes',w.DWORD)]
 current=bind(K,'GetCurrentProcess',[],w.HANDLE)

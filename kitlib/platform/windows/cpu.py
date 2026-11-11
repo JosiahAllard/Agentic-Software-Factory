@@ -1,50 +1,17 @@
 """Processor topology across every processor group (any Windows machine, past 64 logical
-processors). A thread is named by one global id, group * 64 + its bit in the group's mask, so a
-set of threads is one Python int (a mask of any width) and group 0 keeps the ids it always had.
+processors). A thread is named by its global id (kitlib.platform.mask), so a set of threads is
+one Python int (a mask of any width) and group 0 keeps the ids it always had.
 """
 import ctypes
 import struct
 from ctypes import wintypes
 
+# cpu.<name> stays a name for its callers (kitlib.lock's layout and run)
+from kitlib.platform.mask import GROUP_BITS, bits, bits_mask, gid, mask_text, split  # noqa: F401
 from . import win32
 from .win32 import K32, DW
 
-GROUP_BITS = 64
 RELATION_PROCESSOR_CORE, RELATION_GROUP = 0, 4
-
-
-def gid(group, bit):
-    return group * GROUP_BITS + bit
-
-
-def split(mask):
-    """{group: 64-bit mask} of a global mask."""
-    out, g = {}, 0
-    while mask:
-        m = mask & ((1 << GROUP_BITS) - 1)
-        if m:
-            out[g] = m
-        mask >>= GROUP_BITS
-        g += 1
-    return out
-
-
-def bits(mask):
-    """The global ids set in mask, ascending."""
-    out, i = [], 0
-    while mask:
-        if mask & 1:
-            out.append(i)
-        mask >>= 1
-        i += 1
-    return out
-
-
-def bits_mask(ids):
-    m = 0
-    for i in ids:
-        m |= 1 << i
-    return m
 
 
 def _query(relation):
@@ -132,9 +99,16 @@ def groups():
     when Windows will not say (listed_groups is None then)."""
     out = listed_groups()
     if not out:
-        from .process import system_mask
         out = [(0, system_mask())]
     return out
+
+
+def system_mask():
+    """The system affinity mask of this process's processor group (at most 64 logical
+    processors); groups() for every group."""
+    pm, sm = ctypes.c_size_t(), ctypes.c_size_t()
+    K32.GetProcessAffinityMask(K32.GetCurrentProcess(), ctypes.byref(pm), ctypes.byref(sm))
+    return sm.value
 
 
 def threads():
@@ -144,18 +118,6 @@ def threads():
 
 def all_mask():
     return bits_mask(threads())
-
-
-def mask_text(mask):
-    """A Linux cpuset list of a global mask: '0-3,8', '' for none."""
-    ids, parts, i = bits(mask), [], 0
-    while i < len(ids):
-        j = i
-        while j + 1 < len(ids) and ids[j + 1] == ids[j] + 1:
-            j += 1
-        parts.append(str(ids[i]) if i == j else "%d-%d" % (ids[i], ids[j]))
-        i = j + 1
-    return ",".join(parts)
 
 
 RELATION_CACHE = 2

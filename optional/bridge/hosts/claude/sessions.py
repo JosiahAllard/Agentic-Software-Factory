@@ -15,8 +15,8 @@ import threading
 
 from hosts.claude.adapter import peer as claude_peer
 from optional.bridge.hosts.claude.records import read_record
-from kitlib.proc.pipe import K, bind, close, process_image, process_sids, open_process
-from kitlib.proc.process import handle_ctime
+from kitlib.platform.windows.pipe import K, bind, close, process_image, process_sids, open_process
+from kitlib.platform.windows.process import handle_ctime
 
 get_pid = bind(K, 'GetProcessId', [w.HANDLE], w.DWORD)
 wait = bind(K, 'WaitForSingleObject', [w.HANDLE, w.DWORD], w.DWORD)

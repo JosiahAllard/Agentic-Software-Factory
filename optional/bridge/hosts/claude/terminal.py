@@ -28,7 +28,7 @@ from optional.bridge.core.contracts import SessionIdentity, WorkspaceIdentity
 from optional.bridge.core.messages import MessageIntent, SenderAuthority, text_bytes
 from optional.bridge.core.mcp import TOOLS, _args
 from optional.bridge.core.pairing import ChatBinding
-from kitlib.proc.pipe import process_image, process_sids
+from kitlib.platform.windows.pipe import process_image, process_sids
 from optional.bridge.win.evidence import document, regular, stable_bytes
 from optional.bridge.win.ancestry import ancestors_of
 from optional.bridge.win.launch import PYTHON_FLAGS

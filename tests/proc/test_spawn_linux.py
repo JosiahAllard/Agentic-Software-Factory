@@ -20,7 +20,7 @@ class OffWindowsTest(unittest.TestCase):
 
     def setUp(self):
         for patch in (mock.patch('kitlib.platform.NAME', 'linux'),
-                      mock.patch.object(console, '_k32', side_effect=no_kernel32)):
+                      mock.patch('kitlib.platform.windows.console._k32', side_effect=no_kernel32)):
             patch.start()
             self.addCleanup(patch.stop)
 

@@ -1,8 +1,8 @@
 """kitlib.gate.runner and the window monitor: every gate run says `windows opened: N` (and a line per
-window) after its steps, from its lock run's monitor (kitlib.lock.run, kitlib.proc.winwatch). A
-window warns and does not change the verdict; runner.WINDOWS_FAIL is the one switch that makes it
-fail the gate. The monitor is swapped for a fake that reports the windows a test gives it, so no
-window opens."""
+window) after its steps, from its lock run's monitor (kitlib.lock.run,
+kitlib.platform.windows.winwatch). A window warns and does not change the verdict;
+runner.WINDOWS_FAIL is the one switch that makes it fail the gate. The monitor is swapped for a fake
+that reports the windows a test gives it, so no window opens."""
 import os
 from unittest import mock
 
@@ -10,7 +10,7 @@ from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.gate import runner
 from kitlib.lock import run as lockrun
-from kitlib.proc import winwatch
+from kitlib.platform.windows import winwatch
 from kitlib.records import gate_ok
 from tests.gate import fixtures
 

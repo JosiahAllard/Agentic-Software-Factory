@@ -16,7 +16,9 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import job, process, spawn, win32
+    from kitlib.platform import jobparts
+    from kitlib.proc import job, spawn
+    from kitlib.platform.windows import job as winjob, process, win32
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PASS = [sys.executable, "-c", "pass"]
@@ -29,6 +31,7 @@ MARK = "import sys, time; open(sys.argv[1], 'w').close(); time.sleep(30)"
 UNDER_DEFAULT = "\n".join([
     "import signal, subprocess, sys",
     "from kitlib.proc import job",
+    "from kitlib.platform.windows import job as winjob",
     "sig, pidfile, marker = getattr(signal, sys.argv[1]), sys.argv[2], sys.argv[3]",
     "signal.signal(sig, signal.SIG_DFL)",
     "real = subprocess.Popen",
@@ -41,7 +44,7 @@ UNDER_DEFAULT = "\n".join([
     "            f.write(str(p.pid))",
     "        signal.raise_signal(sig)",
     "        return p",
-    "job.subprocess = Sub()",
+    "winjob.subprocess = Sub()",
     "j = job.Job(kill_on_close=False)",
     "j.start([sys.executable, '-c', %r, marker])" % MARK,
     "print('start returned', flush=True)"])
@@ -59,7 +62,7 @@ def _break(signum, frame):
 
 
 class _Subprocess:
-    """job.subprocess with Popen replaced; every other name is the real module's."""
+    """winjob.subprocess with Popen replaced; every other name is the real module's."""
 
     def __init__(self, popen):
         self.Popen = popen
@@ -69,7 +72,7 @@ class _Subprocess:
 
 
 class _Signal:
-    """job.signal whose getsignal says None (a handler not set from Python) for one signal."""
+    """jobparts.signal whose getsignal says None (a handler not set from Python) for one signal."""
 
     def __init__(self, none_for):
         self.none_for = none_for
@@ -82,7 +85,7 @@ class _Signal:
 
 
 class _SignalHook:
-    """job.signal whose signal(s, h) calls hook(s, h) first: CPython's signal.signal runs any
+    """jobparts.signal whose signal(s, h) calls hook(s, h) first: CPython's signal.signal runs any
     pending handler before it swaps, so a signal raised from the hook lands where a real one
     would, and a handler that raises there leaves the swap undone."""
 
@@ -135,7 +138,7 @@ class CtrlCWhileStarting(unittest.TestCase):
             if then:
                 then()
             return p
-        return mock.patch.object(job, "subprocess", _Subprocess(start))
+        return mock.patch.object(winjob, "subprocess", _Subprocess(start))
 
     def ctrl_c(self):
         signal.raise_signal(signal.SIGINT)
@@ -220,7 +223,7 @@ class CtrlCWhileStarting(unittest.TestCase):
         self.restored()
 
     def test_a_signal_whose_handler_python_cannot_put_back_is_not_held(self):
-        with mock.patch.object(job, "signal", _Signal(signal.SIGINT)), self.popen():
+        with mock.patch.object(jobparts, "signal", _Signal(signal.SIGINT)), self.popen():
             p = self.j.start(PASS)
         self.assertEqual(p.wait(60), 0)
         (_, on_int, on_break), = self.seen
@@ -242,7 +245,7 @@ class CtrlCWhileStarting(unittest.TestCase):
             elif s == signal.SIGBREAK and h is restore_break and "break" not in fired:
                 fired.add("break")
                 signal.raise_signal(signal.SIGINT)
-        with mock.patch.object(job, "signal", _SignalHook(hook)), self.popen():
+        with mock.patch.object(jobparts, "signal", _SignalHook(hook)), self.popen():
             with self.assertRaises(KeyboardInterrupt):
                 self.j.start(PASS)
         self.assertEqual(fired, {"int", "break"})
@@ -258,7 +261,7 @@ class CtrlCWhileStarting(unittest.TestCase):
         def hook(s, h):
             if s == signal.SIGBREAK and h is not _break:
                 signal.raise_signal(signal.SIGBREAK)
-        with mock.patch.object(job, "signal", _SignalHook(hook)), self.popen():
+        with mock.patch.object(jobparts, "signal", _SignalHook(hook)), self.popen():
             with self.assertRaises(KeyboardInterrupt):
                 self.j.start(PASS)
         self.assertEqual(self.seen, [], "a child was made")

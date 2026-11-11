@@ -1,6 +1,6 @@
-"""Tests for kitlib.proc.cpu: topology records of every processor group, parsed from synthetic
-buffers laid out as Windows lays them out (this machine has one group, so the multi-group paths
-are proven only here), and the live machine's answer."""
+"""Tests for kitlib.platform.windows.cpu: topology records of every processor group, parsed from
+synthetic buffers laid out as Windows lays them out (this machine has one group, so the multi-group
+paths are proven only here), and the live machine's answer."""
 import os
 import struct
 import unittest
@@ -8,7 +8,7 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import cpu
+    from kitlib.platform.windows import cpu
 
 
 def core_record(groups, smt=True, efficiency=0):
@@ -52,7 +52,8 @@ def cache_record(level, groups):
 
 
 def cpu_set(sid, group, lp, core, llc, eff=0, sched=0, parked=False):
-    """A SYSTEM_CPU_SET_INFORMATION of 32 bytes (layout: kitlib.proc.cpu.parse_cpu_sets)."""
+    """A SYSTEM_CPU_SET_INFORMATION of 32 bytes (layout:
+    kitlib.platform.windows.cpu.parse_cpu_sets)."""
     b = bytearray(32)
     struct.pack_into("<IIIHBBBBBBB", b, 0, 32, 0, sid, group, lp, core, llc, 0, eff,
                      1 if parked else 0, sched)
@@ -121,9 +122,8 @@ class GroupFallback(unittest.TestCase):
     says so (None), so a caller can tell the stand-in from Windows' answer."""
 
     def look(self, raw):
-        from kitlib.proc import process
         with mock.patch.object(cpu, "_query", return_value=raw), \
-                mock.patch.object(process, "system_mask", return_value=0xF) as sm:
+                mock.patch.object(cpu, "system_mask", return_value=0xF) as sm:
             return cpu.listed_groups(), cpu.groups(), sm.called
 
     def test_no_answer_from_windows_is_reported_and_group_zero_stands_in(self):

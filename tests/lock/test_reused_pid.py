@@ -26,8 +26,9 @@ if os.name == "nt":
     from kitlib.lock import release
     from kitlib.lock import run as rm
     from kitlib.lock import store as st
-    from kitlib.proc import process, win32
-    from kitlib.proc.win32 import K32
+    from kitlib.proc import process
+    from kitlib.platform.windows import win32
+    from kitlib.platform.windows.win32 import K32
 
 RID = "r-20261011T064159Z-0ae903"
 PROTECTED = ("wininit.exe", "services.exe", "lsass.exe", "csrss.exe", "smss.exe")

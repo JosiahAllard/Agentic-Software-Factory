@@ -28,9 +28,9 @@ class Backends(unittest.TestCase):
         self.assertEqual(sorted(names), sorted(api.NAMES))
         self.assertEqual(len(set(names)), len(names))
 
-    @windows_only('the Windows backend binds the real kitlib.proc functions')
+    @windows_only('the Windows backend binds its own process and cpu functions')
     def test_the_windows_backend_is_todays_kitlib_proc_functions(self):
-        from kitlib.proc import cpu, process
+        from kitlib.platform.windows import cpu, process
         windows = importlib.import_module('kitlib.platform.windows')
         for name in api.NAMES:
             with self.subTest(name=name):

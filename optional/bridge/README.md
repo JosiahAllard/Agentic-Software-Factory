@@ -398,8 +398,8 @@ Four helpers were load-bearing and moved instead:
 
 | Was | Now |
 |---|---|
-| `kitlib/bridgeprobe/winpipe.py` | `kitlib/proc/pipe.py`. Its probe-only JSON `send` and `frames_until_close` went to the test helper `tests/bridge/pipes.py`. |
-| `bridgeprobe.runtime.ProbeError` | `kitlib.proc.errors.ProcError` |
+| `kitlib/bridgeprobe/winpipe.py` | `kitlib/platform/windows/pipe.py`. Its probe-only JSON `send` and `frames_until_close` went to the test helper `tests/bridge/pipes.py`. |
+| `bridgeprobe.runtime.ProbeError` | `kitlib.platform.ProcError` |
 | `bridge/bootstrap.identifier`, `digest` and `integer` | `kitlib/ident.py` (`IdentError` replaces `BootstrapError` for these) |
 | `claude/bridge_phase0.read_record` | `optional/bridge/hosts/claude/records.py` |
 
@@ -411,7 +411,7 @@ the bridge uses it.
 
 ## Tests
 
-`tests/bridge/` covers the core, the service, both halves and the port. `tests/proc/test_pipe.py`
-covers the promoted pipe helpers, and `tests/ident/` covers `kitlib.ident`. Most of these tests use
-real named pipes, job objects and process tokens, so they run on Windows only (STATUS.md
-"Verification").
+`tests/bridge/` covers the core, the service, both halves and the port.
+`tests/platform/test_pipe.py` covers the promoted pipe helpers, and `tests/ident/` covers
+`kitlib.ident`. Most of these tests use real named pipes, job objects and process tokens, so they
+run on Windows only (STATUS.md "Verification").

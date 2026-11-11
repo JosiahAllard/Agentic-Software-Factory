@@ -1,5 +1,5 @@
-"""Tests for kitlib.proc.winwatch: the window monitor. The real-process tests start their own
-children only, end them by their Popen handle, and wait for events with a deadline.
+"""Tests for kitlib.platform.windows.winwatch: the window monitor. The real-process tests start
+their own children only, end them by their Popen handle, and wait for events with a deadline.
 
 No test here shows a window the user can see. RealWindows' child shows a 1x1 tool window off
 screen, never activated, of a class of its own (PROBE_CLASS) that only the test's monitor records.
@@ -18,7 +18,7 @@ from tests.platforms import windows_only
 if os.name == "nt":
     from ctypes import wintypes
 
-    from kitlib.proc import win32, winwatch
+    from kitlib.platform.windows import win32, winwatch
 
 EVENT_WAIT_S = 15       # a window's events reach the monitor well within this
 EXIT_WAIT_S = 30

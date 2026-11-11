@@ -7,7 +7,7 @@ from pathlib import Path
 import stat
 import time
 
-from kitlib.proc.pipe import INVALID,close,create_file
+from kitlib.platform.windows.pipe import INVALID,close,create_file
 
 GENERIC_READ=0x80000000
 SHARE_ALL=7  # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE

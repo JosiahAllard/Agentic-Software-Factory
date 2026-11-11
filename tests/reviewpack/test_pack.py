@@ -307,10 +307,10 @@ class TheHeaderLines(PackCase):
 
     def test_a_fallback_read_ended_from_outside_stops_and_never_reads_as_no(self):
         # A git ended from outside exits 1 having printed nothing
-        # (kitlib.proc.shield's GOTCHA; measured: `taskkill /PID <n> /T /F` on a git leaves
-        # exit 1, empty stdout and stderr), the same shape as `merge-base --is-ancestor`'s NO. The
-        # fallback read that NO, so `level` - the base tip itself - printed 'contains base tip:
-        # NO'. Every fallback read so ended must stop the pack naming it, or leave the header
+        # (kitlib.platform.windows.shield's GOTCHA; measured: `taskkill /PID <n> /T /F` on a git
+        # leaves exit 1, empty stdout and stderr), the same shape as `merge-base --is-ancestor`'s
+        # NO. The fallback read that NO, so `level` - the base tip itself - printed 'contains base
+        # tip: NO'. Every fallback read so ended must stop the pack naming it, or leave the header
         # true; none may print an answer git never gave.
         self.three_branches()
         no_log = failing_call(('log', '--no-walk=unsorted'))

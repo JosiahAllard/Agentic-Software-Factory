@@ -452,9 +452,10 @@ def tips(root, base, branch, mb):
     failed or odd answer falls back to one read per rev, each through git_answer(): a read that
     fails or prints nothing stops the pack naming it, so no answer comes from a read that failed.
     GOTCHA: a git ended from outside (a stale `taskkill /PID`
-    that reached a reused pid, kitlib.proc.shield's GOTCHA) exits 1 having printed nothing, the
-    same shape as `merge-base --is-ancestor`'s NO. The fallback asked that read, so a killed one
-    printed a NO git never said; it now compares the base's full hash with `mb`, as the log does."""
+    that reached a reused pid, kitlib.platform.windows.shield's GOTCHA) exits 1 having printed
+    nothing, the same shape as `merge-base --is-ancestor`'s NO. The fallback asked that read, so a
+    killed one printed a NO git never said; it now compares the base's full hash with `mb`, as the
+    log does."""
     r = gitcmd.call(['log', '--no-walk=unsorted', '--format=%H %h', base, branch, '--'], root)
     lines = gitcmd.text(r.out).strip().splitlines() if r.rc == 0 else []
     pairs = [l.split(' ', 1) for l in lines if ' ' in l]

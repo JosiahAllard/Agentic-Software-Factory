@@ -1,5 +1,5 @@
-"""Containment on Linux: the Job of kitlib.proc.job (docs/linux-support-plan.md section 2.3 and
-section 8, slice 5). On Linux kitlib.proc.job.Job is this module's Job, with the same methods and
+"""Containment on Linux: the Job of the process face (docs/linux-support-plan.md section 2.3 and
+section 8, slice 5). On Linux the face's Job is this module's Job, with the same methods and
 meanings, on the strongest tier the machine gives, probed at run time (probe()):
 
   S1  a cgroup v2 scope of the user's systemd (`systemd-run --user --scope -p Delegate=yes`) with
@@ -122,9 +122,11 @@ import sys
 import threading
 import time
 
+from kitlib.platform.jobparts import JobError, _Held
 from kitlib.platform.linux import cpu as lcpu
 from kitlib.platform.linux import hardware
 from kitlib.platform.linux import process as lproc
+from kitlib.platform.mask import cores_text, mask_text
 
 CGROOT = '/sys/fs/cgroup'
 PROC = '/proc'
@@ -468,13 +470,8 @@ os._exit(128 + sig)
 '''
 
 
-def _jobmod():
-    from kitlib.proc import job
-    return job
-
-
 def _error(text):
-    return _jobmod().JobError(text)
+    return JobError(text)
 
 
 def prefix():
@@ -1186,7 +1183,7 @@ _mixed = {}
 
 
 class Job:
-    """kitlib.proc.job.Job on Linux: Job(mask=None, kill_on_close=True) is a ScopeJob (S1, S2), an
+    """The face's Job on Linux: Job(mask=None, kill_on_close=True) is a ScopeJob (S1, S2), an
     NsJob (W1) or a WeakJob (W2) as probe() finds (`tier` instead: a test's or the trial's). One
     command per job: start a second time and it raises JobError. `pin`, `effective` and `note`
     mean what they mean on Windows. short=True: a short command (a git call), carried in this
@@ -1214,7 +1211,7 @@ class Job:
         self.mask = (mask & every) if mask is not None else None
         if mask is not None and not self.mask:
             self.note, self.mask = ('this machine has none of cores %s'
-                                    % _jobmod().cores_text(mask)), None
+                                    % cores_text(mask)), None
         self.wd = None
         self.pin = 'pinned' if self.mask is not None else None
         self.effective = self.mask
@@ -1222,9 +1219,9 @@ class Job:
     # ---- start
     def start(self, cmd, before_resume=None, **kw):
         """Popen(cmd) through the stub, in the job and pinned before it runs, then let go; as
-        kitlib.proc.job.Job.start on Windows (Ctrl+C held the same way, _Held). Raises OSError
-        when the command cannot start (FileNotFoundError when it is not found), and JobError when
-        it cannot be put in the job; the stub is then ended. `creationflags` are Windows's and
+        kitlib.platform.windows.job.Job.start on Windows (Ctrl+C held the same way, _Held). Raises
+        OSError when the command cannot start (FileNotFoundError when it is not found), and JobError
+        when it cannot be put in the job; the stub is then ended. `creationflags` are Windows's and
         dropped; shell=True runs cmd under /bin/sh."""
         if self._child is not None or self.closed:
             raise _error('a job on Linux starts one command; this one has started one or is closed')
@@ -1241,7 +1238,7 @@ class Job:
             raise ValueError('Job.start on Linux takes no executable=')
         env = dict(os.environ if kw.get('env') is None else kw['env'])
         _find(cmd[0], env, kw.get('cwd'))
-        held = _jobmod()._Held()
+        held = _Held()
         try:
             p = self._begin(cmd, env, kw)
             try:
@@ -1341,7 +1338,7 @@ class Job:
         except OSError:
             return self.pin
         if got != self.mask:
-            mt = _jobmod().cpu.mask_text
+            mt = mask_text
             self.pin, self.effective = 'overridden', got
             self.note = ('a limit outside the job wins: the command runs on cpus %s, not %s'
                          % (mt(got), mt(self.mask)))
@@ -1504,7 +1501,7 @@ class ScopeJob(Job):
         self.parent, self.carried = via.cg, via
         try:
             return self._begin_in(cmd, env, kw, via)
-        except _jobmod().JobError as e:
+        except JobError as e:
             self.parent = self.carried = self.cg = self.name = self.unit = self.wd = None
             if getattr(e, 'refused', False):
                 via.refuse(str(e))
@@ -1570,7 +1567,7 @@ class ScopeJob(Job):
                     unset.append('INVOCATION_ID')
                 props = ['-p', 'Delegate=yes']
                 if self.mask is not None and self.cpuset:
-                    props += ['-p', 'AllowedCPUs=' + _jobmod().cpu.mask_text(self.mask)]
+                    props += ['-p', 'AllowedCPUs=' + mask_text(self.mask)]
                 argv = ([run, '--user', '--scope', '--quiet', '--collect'] + no_expand(run)
                         + ['--unit', self.unit] + props + ['--'])
                 join, penv = '', benv
@@ -1640,7 +1637,7 @@ class ScopeJob(Job):
             os.mkdir(d + '/' + WATCH_LEAF)
             if self.mask is not None and self.cpuset:
                 if os.path.exists(d + '/cpuset.cpus'):
-                    _write(d + '/cpuset.cpus', _jobmod().cpu.mask_text(self.mask))
+                    _write(d + '/cpuset.cpus', mask_text(self.mask))
                 else:
                     self.cpuset = False
                     self.note = 'the cpus are pinned by affinity only: the outer job has no cpuset'
@@ -1676,7 +1673,7 @@ class ScopeJob(Job):
             return False
         if not self.cpuset:
             return self._pin_affinity(self.pids(), mask)
-        text = _jobmod().cpu.mask_text(mask) if mask is not None else ''
+        text = mask_text(mask) if mask is not None else ''
         d = cg_dir(self.cg)
         if self.parent is None and self.base is None:
             _call([_tool(SYSTEMCTL) or SYSTEMCTL, '--user', 'set-property', '--runtime',

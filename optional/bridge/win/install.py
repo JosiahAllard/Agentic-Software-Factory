@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.pipe import (K,INVALID,bind,close,
+from kitlib.platform.windows.pipe import (K,INVALID,bind,close,
     create_file,from_sddl,local_free,process_sids)
 from optional.bridge import registry
 from optional.bridge.paths import FRONTEND_REL,SERVICE_REL,kit_file

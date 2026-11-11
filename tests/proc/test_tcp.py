@@ -2,15 +2,14 @@
 connection paired, a real connection this test opens (port 0) found with its owner, and a real
 listener found with its owner."""
 import os
-import shutil
 import socket
 import struct
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
 from kitlib.proc import tcp
+from tests.platform.test_linux_tcp import proc_files
 from tests.platforms import windows_only
 
 
@@ -111,41 +110,12 @@ class RealTable(unittest.TestCase):
 
 @unittest.skipUnless(sys.byteorder == "little", "the rows below are /proc/net as a little-endian kernel writes it")
 class ProcNet(unittest.TestCase):
-    """Linux's listener table: /proc/net/tcp and tcp6, whose rows name no owner."""
-    HEAD = "  sl  local_address                         rem_address                           st\n"
-
-    def files(self, v4, v6=None):
-        d = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, d, True)
-        paths = []
-        for name, text in (("tcp", v4), ("tcp6", v6)):
-            path = os.path.join(d, name)
-            if text is not None:
-                with open(path, "w", encoding="ascii") as f:
-                    f.write(self.HEAD + text)
-            paths.append(path)
-        return tuple(paths)
-
-    def test_the_listening_rows_are_their_ends_with_no_owner(self):
-        paths = self.files("   0: 0100007F:2685 00000000:0000 0A 00000000\n"
-                           "   1: 0100007F:2686 0100007F:9C40 01 00000000\n"
-                           "   2: 00000000:2687 00000000:0000 0A 00000000\n",
-                           "   0: 00000000000000000000000001000000:2688 00000000000000000000000000000000:0000 0A 0\n"
-                           "   1: 0000000000000000FFFF00000100007F:2689 00000000000000000000000000000000:0000 0A 0\n"
-                           "   2: 00000000000000000000000001000000:268A 00000000000000000000000001000000:9C40 01 0\n")
-        self.assertEqual(tcp.proc_net_listeners(paths),
-                         [((4, LO4, 0x2685), None), ((4, b"\0" * 4, 0x2687), None),
-                          ((6, LO6, 0x2688), None), ((4, LO4, 0x2689), None)])
-
-    def test_no_tcp6_table_is_no_ipv6_and_no_tcp_table_raises(self):
-        v4, v6 = self.files("   0: 0100007F:2685 00000000:0000 0A 00000000\n")
-        self.assertEqual(tcp.proc_net_listeners((v4, v6)), [((4, LO4, 0x2685), None)])
-        with self.assertRaises(OSError):
-            tcp.proc_net_listeners((v6, v6))
+    """On Linux, listeners reads kitlib.platform.linux.tcp's /proc/net tables."""
 
     def test_on_linux_listeners_reads_proc_net(self):
-        paths = self.files("   0: 0100007F:2685 00000000:0000 0A 00000000\n")
-        with mock.patch("kitlib.platform.NAME", "linux"), mock.patch.object(tcp, "PROC_NET", paths):
+        paths = proc_files(self, "   0: 0100007F:2685 00000000:0000 0A 00000000\n")
+        with mock.patch("kitlib.platform.NAME", "linux"), \
+                mock.patch("kitlib.platform.linux.tcp.PROC_NET", paths):
             self.assertEqual(tcp.listeners(), [((4, LO4, 0x2685), None)])
 
 

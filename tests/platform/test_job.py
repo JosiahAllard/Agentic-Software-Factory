@@ -14,7 +14,8 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import job, process, win32
+    from kitlib.proc import job
+    from kitlib.platform.windows import job as winjob, process, win32
 
 TREE = ("import subprocess,sys,time;"
         "g=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
@@ -70,16 +71,16 @@ def first_own_thread():
 @windows_only("Windows only")
 class Plans(unittest.TestCase):
     def test_group_zero_is_a_basic_pin(self):
-        self.assertEqual(job.affinity_plan(0xF0), ("basic", 0xF0))
-        self.assertIsNone(job.affinity_plan(None))
-        self.assertIsNone(job.affinity_plan(0))
+        self.assertEqual(winjob.affinity_plan(0xF0), ("basic", 0xF0))
+        self.assertIsNone(winjob.affinity_plan(None))
+        self.assertIsNone(winjob.affinity_plan(0))
 
     def test_a_mask_past_64_is_set_per_group(self):
-        self.assertEqual(job.affinity_plan(0b11 | (0b1 << 64)), ("groups", [(0, 0b11), (1, 1)]))
-        self.assertEqual(job.affinity_plan(0b1 << 70), ("groups", [(1, 1 << 6)]))
+        self.assertEqual(winjob.affinity_plan(0b11 | (0b1 << 64)), ("groups", [(0, 0b11), (1, 1)]))
+        self.assertEqual(winjob.affinity_plan(0b1 << 70), ("groups", [(1, 1 << 6)]))
 
     def test_group_affinities_lay_out_as_windows_reads_them(self):
-        raw = bytes(job.group_affinities([(0, 0b11), (1, 1 << 63)]))
+        raw = bytes(winjob.group_affinities([(0, 0b11), (1, 1 << 63)]))
         self.assertEqual(len(raw), 32)                       # GROUP_AFFINITY is 16 bytes
         self.assertEqual(int.from_bytes(raw[0:8], "little"), 0b11)
         self.assertEqual(int.from_bytes(raw[8:10], "little"), 0)
@@ -92,13 +93,13 @@ class LimitRefused(unittest.TestCase):
     """SetInformationJobObject refused (faked): a Job never comes back without kill-on-close."""
 
     def test_an_unpinned_job_whose_limit_is_refused_raises(self):
-        with mock.patch.object(job, "_set_ext", return_value=False):
+        with mock.patch.object(winjob, "_set_ext", return_value=False):
             with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):
                 job.Job()
 
     def test_a_job_that_asks_for_no_kill_on_close_accepts_a_refused_limit(self):
         # kitlib.git.cmd makes Job(kill_on_close=False): a refusal leaves it as asked.
-        with mock.patch.object(job, "_set_ext", return_value=False):
+        with mock.patch.object(winjob, "_set_ext", return_value=False):
             j = job.Job(kill_on_close=False)
         try:
             self.assertFalse(j.kill_on_close)
@@ -107,7 +108,7 @@ class LimitRefused(unittest.TestCase):
             j.close()
 
     def test_a_pinned_job_whose_limit_is_refused_twice_raises(self):
-        with mock.patch.object(job, "_set_ext", return_value=False):
+        with mock.patch.object(winjob, "_set_ext", return_value=False):
             with self.assertRaisesRegex(job.JobError, "SetInformationJobObject"):
                 job.Job(1 << first_own_thread())
 
@@ -118,7 +119,7 @@ class LimitRefused(unittest.TestCase):
             calls.append(flags)
             return not flags & win32.JOB_AFFINITY
 
-        with mock.patch.object(job, "_set_ext", side_effect=refuse_pin):
+        with mock.patch.object(winjob, "_set_ext", side_effect=refuse_pin):
             j = job.Job(1 << first_own_thread())
         try:
             self.assertIsNone(j.pin)
@@ -284,7 +285,7 @@ class Live(unittest.TestCase):
             real(self)
 
         with mock.patch.object(job.Job, "close", spy):
-            with mock.patch.object(job.cpu, "all_mask", side_effect=RuntimeError("boom")):
+            with mock.patch.object(winjob.cpu, "all_mask", side_effect=RuntimeError("boom")):
                 with self.assertRaises(RuntimeError):
                     job.Job(1)
         self.assertEqual(len(closed), 1)

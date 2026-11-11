@@ -18,10 +18,10 @@ Low-level design of the base layer: `platform`, `proc`, `fs`, `schedtask`, the w
 
 | Path | Holds |
 |---|---|
-| `platform/__init__.py`, `api.py`, `dll.py` | `NAME`, `backend()`, the contract's names, lazy DLLs |
-| `platform/windows/` | The Win32 bindings and every Windows primitive: process, cpu topology, job object, pipes, the pid shield, the console hook, the window watch |
-| `platform/linux/` | `contain` (cgroup or fallback containment), `cpu`, `process`, `hardware`, `locks`, `paths`, `detach`, `schedule` |
-| `proc/` | The OS-neutral face: `spawn`, `job`, `process`, `listing`, `daemons`, `bash`, `tcp`, `console` (installs the hook), `errors` |
+| `platform/__init__.py`, `api.py`, `dll.py`, `mask.py`, `jobparts.py` | `NAME`, `backend()`, `ProcError`, the contract's names, lazy DLLs, the processor-mask arithmetic, the job parts both backends share |
+| `platform/windows/` | The Win32 bindings and every Windows primitive: process, cpu topology, job object, pipes, the TCP table, the pid shield, the console hook, the window watch |
+| `platform/linux/` | `contain` (cgroup or fallback containment), `cpu`, `process`, `hardware`, `locks`, `paths`, `detach`, `schedule`, `tcp` (the /proc/net listeners) |
+| `proc/` | The OS-neutral face: `spawn`, `job`, `process`, `listing`, `daemons`, `bash`, `tcp`, `console` (installs the hook) |
 | `fs/` | `atomic`, `replace`, `rmtree`, `treelock`, `writelock` |
 | `schedtask/` | The interpreter a task runs, the task command line, register, read, remove; the fake-able host object |
 | `mcpwire/`, `hostrpc/`, `verdict/` | One file each |
@@ -33,7 +33,7 @@ No stored data. The console hook is process-wide and installed once under a lock
 
 ## Errors
 
-`PlatformUnsupported` for a missing backend. `proc.errors` for pipe and process-identity failures. A write lock that cannot be made, taken or is busy raises its own named error; the caller turns it into its refusal. Containment that cannot be set up fails the start: nothing runs uncontained.
+`PlatformUnsupported` for a missing backend. `ProcError` (kitlib.platform) for pipe and process-identity failures. A write lock that cannot be made, taken or is busy raises its own named error; the caller turns it into its refusal. Containment that cannot be set up fails the start: nothing runs uncontained.
 
 ## Adding to it
 

@@ -16,6 +16,7 @@ import kitlib.platform
 from kitlib.hubsite import api, auth, httpd
 from kitlib.hubsite.store import Store
 from kitlib.proc import tcp
+from kitlib.platform.linux import tcp as linuxtcp
 
 CLOCK = lambda: '2026-01-02T03:04:05+00:00'      # noqa: E731
 TIMEOUT = 20                    # a client socket never waits longer; no test sleeps
@@ -204,7 +205,7 @@ def proc_time_wait(lines, family):
     for line in lines:
         cols = line.split()
         if len(cols) > 3 and cols[3] == PROC_TIME_WAIT:
-            out.append((tcp._proc_end(cols[1], family), tcp._proc_end(cols[2], family)))
+            out.append((linuxtcp._proc_end(cols[1], family), linuxtcp._proc_end(cols[2], family)))
     return out
 
 
@@ -213,7 +214,7 @@ def time_wait_ends():
     a loopback address. Raises OSError when a table cannot be read."""
     if kitlib.platform.NAME == 'linux':
         rows = []
-        for family, path in zip((4, 6), tcp.PROC_NET):
+        for family, path in zip((4, 6), linuxtcp.PROC_NET):
             try:
                 with open(path, encoding='ascii') as f:
                     lines = f.read().splitlines()[1:]
@@ -223,10 +224,10 @@ def time_wait_ends():
                 continue                # a kernel with no IPv6
             rows += proc_time_wait(lines, family)
     else:
-        from kitlib.proc import win32
+        from kitlib.platform.windows import tcp as wintcp, win32
         rows = [(l, r) for l, r, _pid in
-                tcp.parse_v4(tcp._table(win32.AF_INET), WIN_TIME_WAIT)
-                + tcp.parse_v6(tcp._table(win32.AF_INET6), WIN_TIME_WAIT)]
+                tcp.parse_v4(wintcp.table(win32.AF_INET), WIN_TIME_WAIT)
+                + tcp.parse_v6(wintcp.table(win32.AF_INET6), WIN_TIME_WAIT)]
     return {(l, r) for l, r in rows if tcp.is_loopback(l) and tcp.is_loopback(r)}
 
 

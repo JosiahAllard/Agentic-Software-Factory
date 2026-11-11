@@ -118,7 +118,7 @@ that carries `permission_mode`.
 
 The port changes these behaviours, all visible to a caller or an operator:
 - **Error classes and messages:**
-  - The probe's `ProbeError` is now `kitlib.proc.errors.ProcError`, with the message
+  - The probe's `ProbeError` is now `kitlib.platform.ProcError`, with the message
     `process call refused: <code>`. It was `live probe stopped: <code>`. The codes are unchanged.
     `read_record` raises it too.
   - `identifier`, `digest` and `integer` raise `kitlib.ident.IdentError`, a `ValueError`, with
@@ -406,7 +406,7 @@ Windows:
 - `tests/bridge`: 425 tests, of which 159 pass on Linux. The 266 that fail all open real pipes,
   tokens or processes, and they are exactly the tests that failed the same way on the source
   branch. Checked after merging step 9: there are no other new failing ids.
-- `tests/proc/test_pipe.py`: 10 tests; the 9 Windows-only ones skip on Linux.
+- `tests/platform/test_pipe.py`: 10 tests; the 9 Windows-only ones skip on Linux.
 - `tests/ident`: 7 tests, all passing on Linux.
 - The bridge part of the conformance suite runs for Claude and for Codex: 4 tests each. 3 pass
   on Linux, and the fake-pipe delivery test skips there. Codex records no fake recipient pipe yet,

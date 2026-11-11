@@ -286,7 +286,7 @@ class RealPipe(unittest.TestCase):
     """write_once through the hidden helper to a pipe this process serves."""
 
     def setUp(self):
-        from kitlib.proc.pipe import PrivateListener
+        from kitlib.platform.windows.pipe import PrivateListener
         from kitlib.proc.process import own_ctime
         self.pipe = r'\\.\pipe\LOCAL\cc-msg-test-' + uuid.uuid4().hex
         self.listener = PrivateListener(self.pipe)

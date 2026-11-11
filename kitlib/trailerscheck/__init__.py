@@ -1,12 +1,13 @@
-"""kitlib.trailerscheck: the gate step that fails a branch holding a commit with no agent
+"""kitlib.trailerscheck: the gate step that warns on each branch commit with no agent
 Co-Authored-By trailer; docs/repo-checks.md "trailers".
 
 The rule is kitlib.reviewpack.trailers (the one review_pack judges by); this module only reads the
-branch's commits (`HEAD --not <base>`, merges included) and prints the verdicts. A commit made
-since the rule's cutoff with no `Co-Authored-By: <name> <noreply@anthropic.com>` FAILs; an older
-one, or one the owner authored and claims (`Owner-Approved:` / `Owner-Authored: yes`), is a
-WARNING. The owner's identity is the base's `owner` section alone, so a branch cannot name itself
-the owner.
+branch's commits (`HEAD --not <base>`, merges included) and prints the verdicts. A commit with no
+`Co-Authored-By: <name> <noreply@anthropic.com>` is a WARNING naming it, never a failure; so is one
+the owner authored and claims (`Owner-Approved:` / `Owner-Authored: yes`). The owner's identity is
+the base's `owner` section alone, so a branch cannot name itself the owner. The step refuses
+(REFUSED) only when it cannot check: a bad base, refused configuration, a failed git read, or a
+refused `merged`.
 
 `merged` (a landing's merged-tree gate): the first-parent merges in `<base>..HEAD` are the
 lander's own and are not branch commits. It holds with HEAD on the main branch, or detached at a
@@ -23,9 +24,7 @@ from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 from kitlib.reviewpack import trailers
 
-OK, FAILED, REFUSED = 0, 1, 2
-RECOVERY = ('never amend or rewrite it: redo the work on a fresh branch from the base through '
-            'tools/commit.py, and report it to the coordinator')
+OK, REFUSED = 0, 2
 
 Outcome = collections.namedtuple('Outcome', 'code lines')
 
@@ -87,7 +86,7 @@ def _merged_refusal(root, base, main):
     return 'HEAD is detached and not a landing merge: %s' % why
 
 
-def check(root, base=None, cfg=None, merged=False, since=None):
+def check(root, base=None, cfg=None, merged=False):
     """Outcome(code, lines) for the checkout `root`. `base` None is the default base."""
     cfg = cfg if cfg is not None else load_config(root)
     lines = []
@@ -124,32 +123,24 @@ def check(root, base=None, cfg=None, merged=False, since=None):
                 "trailers: `git rev-list --first-parent --merges %s..HEAD` failed - the lander's "
                 "merges could not be told apart from the branch's commits. git said: %s"
                 % (base, err)])
-    judged = [(c, trailers.classify(c, rules, exempt, since)) for c in commits]
+    judged = [(c, trailers.classify(c, rules, exempt)) for c in commits]
     lacking = [(c, v) for c, v in judged if v not in (trailers.TRAILERED, trailers.LANDER)]
-    failed = [v for _c, v in lacking if v in trailers.FAILED_VERDICTS]
     lines.append('trailers: %d commit(s) on this branch and not on %s, %d without a Co-Authored-By '
-                 'trailer (%d failing)%s'
-                 % (len(commits), base, len(lacking), len(failed),
+                 'trailer%s'
+                 % (len(commits), base, len(lacking),
                     '; %d lander merge(s) exempt' % sum(v == trailers.LANDER for _c, v in judged)
                     if merged else ''))
     for c, v in lacking:
         head = '%s %s "%s" has no Co-Authored-By trailer' % (
             c.hash[:10], 'merge' if c.merge else 'commit', c.subject[:60])
-        if v == trailers.MISSING:
-            lines.append('FAILED: %s - %s%s' % (head, RECOVERY, ' (sync merges go through '
-                                                'tools/sync_base.py)' if c.merge else ''))
-        elif v == trailers.UNDATED:
-            lines.append('FAILED: %s and git gave no readable committer date, so it cannot be '
-                         'shown to predate the rule - %s' % (head, RECOVERY))
-        elif v == trailers.OWNER:
-            lines.append('WARNING: %s - %s; name it in your report'
-                         % (head, 'owner-authored' if not c.approved
-                            else 'carries Owner-Approved from the owner'))
-        else:
-            lines.append('WARNING: %s - made before the rule (never amend or rewrite it); name it '
-                         'in your report' % head)
+        if v == trailers.OWNER:
+            head += ' - %s' % ('owner-authored' if not c.approved
+                               else 'carries Owner-Approved from the owner')
+        elif c.merge:
+            head += ' (sync merges go through tools/sync_base.py)'
+        lines.append('WARNING: %s; name it in your report' % head)
         claim = trailers.unproven_claim(c, rules)
         if claim:
             lines.append('WARNING: %s carries an owner claim that proves nothing (%s) - judged as '
                          'an agent commit' % (c.hash[:10], claim))
-    return Outcome(FAILED if failed else OK, lines)
+    return Outcome(OK, lines)

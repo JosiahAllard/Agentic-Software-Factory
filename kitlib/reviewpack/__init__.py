@@ -32,8 +32,8 @@ landing's own predicate (ownercommits.deletes_only).
 
 `.kit.json` "review_pack" as the BASE holds it (a branch cannot switch its own check off):
 "coauthor" (default false) lists the branch's commits with no Co-Authored-By trailer, each with
-the verdict of the trailers rule (kitlib.reviewpack.trailers), and a commit that rule fails stops
-the landing. An Owner-Approved or `Owner-Authored: yes` trailer excuses a commit only when the
+the verdict of the trailers rule (kitlib.reviewpack.trailers); the list is a warning and never
+changes the exit status. An Owner-Approved or `Owner-Authored: yes` trailer excuses a commit only when the
 owner authored it; on anyone else's commit it is printed as an unproven claim and the commit is
 judged as if it carried none.
 
@@ -50,8 +50,8 @@ no line and runs nothing; the tool reads every doc index setting at the base too
 `.kit.json` can neither switch the check off nor rename the index it checks. commit and preflight
 still read the working tree's: they are advisory and gate no landing; this pack is the landing check.
 
-Exit codes: OK 0 nothing to stop a landing; FAILED 1 an owner-only trailer problem, a commit the
-trailers rule fails, a failing doc budget or a failing doc index listing; USAGE 2 no merge-base, a
+Exit codes: OK 0 nothing to stop a landing; FAILED 1 an owner-only trailer problem, a failing doc
+budget or a failing doc index listing; USAGE 2 no merge-base, a
 git read that failed, or an unusable kit configuration.
 """
 import collections
@@ -468,11 +468,11 @@ def tips(root, base, branch, mb):
 
 
 def coauthor_section(root, base, branch, remote, rules):
-    """`(lines, failing count)`: the branch's commits with no Co-Authored-By trailer or with an
+    """The section's lines: the branch's commits with no Co-Authored-By trailer or with an
     Owner-Approval, each with its trailers-rule verdict and `owner approval hub:A-<n>` when it has
     one (docs/commit.md "Owner approval"; shown, never an owner claim), then a WARNING per
-    unproven owner claim. Stop when the range cannot be read: an unread range must not read as
-    "every commit trailered"."""
+    unproven owner claim. None of it fails the pack. Stop when the range cannot be read: an unread
+    range must not read as "every commit trailered"."""
     commits, err = trailers.branch_commits(base, root, head=branch, remote=remote,
                                            approved_key=rules.trailer)
     if commits is None:
@@ -480,9 +480,8 @@ def coauthor_section(root, base, branch, remote, rules):
                    % (TOOL, base, branch, err))
     judged = [(c, trailers.classify(c, rules)) for c in commits]
     lacking = [(c, v) for c, v in judged if v != trailers.TRAILERED]
-    failing = sum(v in trailers.FAILED_VERDICTS for _, v in lacking)
-    lines = ['co-author  %d commit(s) | %d without a Co-Authored-By trailer | %d failing'
-             % (len(commits), len(lacking), failing)]
+    lines = ['co-author  %d commit(s) | %d without a Co-Authored-By trailer'
+             % (len(commits), len(lacking))]
     for c, v in judged:
         if v == trailers.TRAILERED and not c.approval:
             continue
@@ -495,7 +494,7 @@ def coauthor_section(root, base, branch, remote, rules):
             lines.append('  WARNING: %s carries %s, an unproven owner claim (%s) - judged as an '
                          'agent commit' % (c.hash[:7], trailers.OWNER_APPROVED if c.approved
                                            else '%s: yes' % trailers.OWNER_AUTHORED, why))
-    return lines, failing
+    return lines
 
 
 def warnings_first(text):
@@ -723,14 +722,12 @@ def _pack(lines, path, branch, base, diff):
         lines.extend('  %-7s %-9s %s  %s' % (sha, status.upper(), subject, detail)
                      for sha, status, subject, detail in rows)
 
-    co_failing = 0
     if coauthor:
-        co_lines, co_failing = coauthor_section(top, base, branch, base_cfg.remote, rules)
-        lines.extend(co_lines)
+        lines.extend(coauthor_section(top, base, branch, base_cfg.remote, rules))
     docs, docs_failed = docs_line(top, base, branch)
     lines.append(docs)
     index, index_failed = index_line(top, base, branch, base_cfg)
     if index:
         lines.append(index)
     lines.append('next     %s %s --diff <path>' % (kitroot.command('review_pack', top), branch))
-    return Outcome(FAILED if (bad or docs_failed or index_failed or co_failing) else OK, lines)
+    return Outcome(FAILED if (bad or docs_failed or index_failed) else OK, lines)

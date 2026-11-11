@@ -1,8 +1,8 @@
 """The trailers step through a real landing (kitlib.gate.land): the merge is made and gated in the
 detached landing tree, and the step runs there as a repository's gate runs it, `{here}/trailers.py
 -C {root} --base {base}` with merged_args `--merged` (docs/repo-checks.md "trailers"). The
-lander's trailerless merge is exempt and the branch lands; a trailerless branch commit still
-fails the step and nothing lands."""
+lander's trailerless merge is exempt and the branch lands; a trailerless branch commit is a
+warning in the step's log and the branch lands all the same."""
 import os
 import unittest
 
@@ -37,15 +37,16 @@ class TrailersLanding(LandCase):
         self.assertEqual(self.remote_main(), out.merge)
         self.assertEqual(self.repo.git('rev-parse', out.merge + '^2'), tip)
 
-    def test_a_trailerless_branch_commit_fails_the_landing(self):
+    def test_a_trailerless_branch_commit_lands_with_a_warning(self):
         tip = self.branch_with('bare work')
         lander = self.lander(BRANCH, self.main, tip)
         out = lander.run()
         log = self.trailers_log(lander)
-        self.assertEqual(out.code, G.FAILED, out.lines + [log])
-        self.assertIn('"bare work" has no Co-Authored-By trailer', log)
-        self.assertNotIn('REFUSED', log)
-        self.assert_untouched(out, G.FAILED)
+        self.assertEqual(out.code, G.OK, out.lines + [log])
+        self.assertIn('WARNING: %s commit "bare work" has no Co-Authored-By trailer' % tip[:10],
+                      log)
+        self.assertEqual(self.remote_main(), out.merge)
+        self.assertEqual(self.repo.git('rev-parse', out.merge + '^2'), tip)
 
 
 if __name__ == '__main__':

@@ -329,7 +329,7 @@ SECTIONS = {
         'hold_wait': Field(Int(0), 60, 'seconds a held throwaway tree is re-checked before it is left'),
     },
     'review_pack': {
-        'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a failing one blocks'),
+        'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block'),
     },
     'testlist': {
         'junit': Field(Strs, ['**/build/test-results/**/*.xml'], 'JUnit result globs'),

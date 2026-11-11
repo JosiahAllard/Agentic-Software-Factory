@@ -482,11 +482,11 @@ class StaleMarks(StaleMarkCase):
         self.write_marks(self.record('gone', path))
         real, seen = sweep.sweep_status, []
 
-        def status(ctx, p):
+        def status(ctx, p, landed=False):
             seen.append(p)
             if len(seen) == 2:      # the read just before the abandon: the mark is re-written now
                 self.write_marks(self.record('gone', path, why='another reason'))
-            return real(ctx, p)
+            return real(ctx, p, landed)
         with mock.patch.object(sweep, 'sweep_status', status):
             rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
@@ -544,12 +544,12 @@ class StaleMarks(StaleMarkCase):
         self.write_marks(self.record('gone', path))
         real, seen = sweep.sweep_status, []
 
-        def status(ctx, p):
+        def status(ctx, p, landed=False):
             seen.append(p)
             if len(seen) == 2:      # a commit lands on the branch between the checks and the abandon
                 self.fx.write('late.txt', 'late\n', root=path)
                 self.fx.commit('late', 'late.txt', cwd=path)
-            return real(ctx, p)
+            return real(ctx, p, landed)
         with mock.patch.object(sweep, 'sweep_status', status):
             rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 1, out)
@@ -583,6 +583,43 @@ class StaleMarksLanded(StaleMarkCase):
         self.assertEqual(rc, 0, out)
         self.assertIn('removed   %s: A, plain remove' % path, out)
         self.assertEqual(self.tag_tip('archive/done'), '')
+
+    def landed_dirty(self, slug):
+        """A landed tree holding a changed tracked file and an untracked one, both older than its
+        stale mark."""
+        path = self.landed(slug)
+        self.fx.write('%s-0.txt' % slug, 'changed\n', root=path)
+        self.fx.write('wip.txt', 'x\n', root=path)
+        old = time.time() - 60
+        for name in ('%s-0.txt' % slug, 'wip.txt'):
+            os.utime(os.path.join(path, name), (old, old))
+        mark = self.record(slug, path, at=time.time() + 60)
+        self.write_marks(mark)
+        return path, mark
+
+    def test_a_marked_landed_tree_with_leftovers_is_removed_and_they_are_archived(self):
+        path, _ = self.landed_dirty('done')
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(os.path.exists(path), out)
+        self.assertNotIn(os.path.normcase(path), self.registered(), out)
+        self.assertNotIn('kit/done', self.branches(), out)
+        self.assertEqual(self.read_marks(), [], out)
+        self.assertEqual(self.git('show', 'archive/done:done-0.txt'), 'changed')
+        self.assertEqual(self.git('show', 'archive/done:wip.txt'), 'x')
+
+    def test_activity_after_the_mark_keeps_a_landed_tree_with_leftovers(self):
+        path, mark = self.landed_dirty('done')
+        later = time.time() + 120
+        os.utime(os.path.join(path, 'wip.txt'), (later, later))
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('its stale mark is void: ', out)
+        self.assertIn('wip.txt changed at ', out)
+        self.assertTrue(os.path.isdir(path), out)
+        self.assertIn('kit/done', self.branches(), out)
+        self.assertEqual(self.tag_tip('archive/done'), '', out)
+        self.assertEqual(self.read_marks(), [mark], out)
 
 
 class StaleMarkExempt(StaleMarkCase):

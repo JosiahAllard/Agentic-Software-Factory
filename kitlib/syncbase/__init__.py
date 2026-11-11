@@ -25,7 +25,9 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   waited for before the fetch, up to its wait_s (`wait` False: not at all); at the bound a line
   says so and the merge goes on. Still exactly <target>: when the fetched <remote>/<base> is past
   it, one `note` line says so and names the tip, for the coordinator to decide.
-- Conflicts: lists them, writes the `Co-Authored-By:` trailer into the message git prepared (so
+- Conflicts: lists them, writes the kit-sync-base marker (kitlib.commit.checks.record_sync_base:
+  <base> and the merged sha, so commit.py judges the finished merge against <remote>/<base>),
+  writes the `Co-Authored-By:` trailer into the message git prepared (so
   the resolution commit carries it whether it is finished with the commit tool (tools/commit.py,
   "commit".merge_fold) or an editor - git's auto-generated message never carried one), and stops
   with the merge in progress. Docs conflicts: a union of both sides' lines is WRONG - it silently

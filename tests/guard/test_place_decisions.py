@@ -90,9 +90,10 @@ class SameDecisions(unittest.TestCase):
                 if a:
                     rules_seen.add(a.rule)
         if MINE:     # an elevated run's files are Administrators': the owner check hands them to git
-            # A path inside a git directory (the sync-base marker rows) is git's to place, by
+            # A path below <main>/.git/worktrees (the sync-base marker rows) is git's to place, by
             # design (kitlib.guard.place: "a folder on the way is itself a git directory").
-            handed = sorted(p for p in fell_back.seen if '.git' not in p.split(os.sep))
+            gitdirs = os.path.normcase(os.path.abspath(os.path.join(self.w.main, '.git', 'worktrees'))) + os.sep
+            handed = sorted(p for p in fell_back.seen if not p.startswith(gitdirs))
             self.assertEqual(handed, [], 'the filesystem reader handed %d place(s) to git: %s'
                              % (len(handed), ', '.join(handed)))
         self.assertGreater(by_git.calls, 0)

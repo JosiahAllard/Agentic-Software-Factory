@@ -30,9 +30,12 @@ run imports checks and message; neither imports the other or run.
   --owner-authored exemption; the paths this call staged are unstaged again. A machine config the
   kit cannot read is a WARNING, printed once (by the message check, or by the staged check of an
   --owner-authored commit), and user-profile paths are still refused.
-- A merge in progress whose MERGE_HEAD is not on <remote>/<main> as last fetched (on_main, the
+- A merge in progress whose MERGE_HEAD is not on <remote>/<base> as last fetched (on_main, the
   rule sync_base.py applies after its fetch) is refused (unsynced_merge_refusal): a base
-  sync_base.py would refuse is never committed here instead.
+  sync_base.py would refuse is never committed here instead. <base> is <main>, unless the
+  kit-sync-base marker sync_base.py writes on a conflict (checks.SYNC_BASE, in the work tree's
+  git dir) names that MERGE_HEAD's sha: then it is the --base the marker records. A commit that
+  goes through removes the marker; a refused one leaves it.
 - Anything ELSE already staged is refused (it may be another session's), with one exception: with
   .kit.json "commit".merge_fold, during a merge in progress (one MERGE_HEAD), the files the merge
   staged itself (merge_owned, in kitlib.ownerfiles.rules with the other merge checks named

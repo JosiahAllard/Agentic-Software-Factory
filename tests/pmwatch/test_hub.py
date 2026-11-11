@@ -4,8 +4,9 @@ client are fakes; nothing is asked of a real server."""
 import os
 import unittest
 
-from kitlib import pmstart
+from kitlib import kitroot
 from kitlib import pmwatch as W
+from kitlib.config.types import ConfigError
 from kitlib.hubclient import codestale, errors
 
 
@@ -41,8 +42,8 @@ class HubEventTest(unittest.TestCase):
         w = self.watcher(c)
         ev = w.poll(1.0)
         self.assertEqual(len(ev), 1)
-        self.assertEqual(ev[0], "HUB " + codestale.text(pmstart.HUB_TOOL))
-        self.assertIn('python "%s" restart' % pmstart.HUB_TOOL, ev[0])
+        self.assertEqual(ev[0], "HUB " + codestale.text(kitroot.tool("hub")))
+        self.assertIn('python "%s" restart' % kitroot.tool("hub"), ev[0])
         self.assertEqual(c.asked[0][0], "/health")
         self.assertEqual(w.poll(2.0), [])
         self.assertIs(w.s["hub_stale"], True)
@@ -100,7 +101,7 @@ class HubEventTest(unittest.TestCase):
 
     def test_settings_that_cannot_be_had_are_a_failed_check_not_a_dead_watcher(self):
         def load():
-            raise pmstart.HubSettingsError("bad key")
+            raise ConfigError("bad key")
         w = self.watcher(Client(STALE), load=load)
         for n in (1.0, 2.0):
             self.assertEqual(w.poll(n), [])

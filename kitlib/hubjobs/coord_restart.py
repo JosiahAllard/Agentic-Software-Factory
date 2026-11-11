@@ -91,7 +91,7 @@ import subprocess
 import sys
 import time
 
-from kitlib import platform, pmstart, pmwatch
+from kitlib import kitroot, platform, pmwatch
 from kitlib.hubsite import jobs
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, state
@@ -569,7 +569,7 @@ class RestartJob(object):
         self.procs = procs or list_processes
         self.child = child or run_child
         self.clock = clock or time.time
-        self.kit = kit or pmstart.KIT_ROOT
+        self.kit = kit or kitroot.root()
         self.uptime = uptime or uptime_s
         self.detached = detached or spawn_detached
         self._boot_checked = False      # this hub process has asked once whether after-reboot is due

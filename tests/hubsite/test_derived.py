@@ -253,7 +253,7 @@ class AgentsTests(Tmp):
         from kitlib.hubsite import servesources
         for name in registry.names():
             with self.subTest(host=name):
-                want = os.path.join(servesources.pmstart.KIT_ROOT, os.path.normpath(registry.host(name).shell), 'agents')
+                want = os.path.join(servesources.kitroot.root(), os.path.normpath(registry.host(name).shell), 'agents')
                 self.assertEqual(servesources.agents_dir({registry.ENV: name}), want)
         default = registry.host(registry.default()).shell
         got = derived.agents(servesources.agents_dir({}))
@@ -298,7 +298,7 @@ class SkillsTests(Tmp):
         from kitlib.hubsite import servesources
         got = derived.skills(servesources.skills_dir())
         self.assertTrue(got['available'], got)
-        self.assertEqual(servesources.skills_dir(), os.path.join(servesources.pmstart.KIT_ROOT, 'content', 'skills'))
+        self.assertEqual(servesources.skills_dir(), os.path.join(servesources.kitroot.root(), 'content', 'skills'))
         by = {s['name']: s for s in got['skills']}
         self.assertIn('builder', by)
         self.assertEqual(sorted(by['builder']), ['description', 'name'])

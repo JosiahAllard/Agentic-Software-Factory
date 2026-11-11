@@ -71,7 +71,7 @@ def write_heartbeat(path, pid, now, stream, started=None, yielded=False):
     """Record that pm_watch `pid` polled at `now` (epoch seconds); `stream` is its --stream flag
     (the PM start no longer passes it: docs/pm-watch.md) and `started` its process start time
     (epoch seconds, None when unknown), so a reused pid is not
-    taken for the watcher. kitlib.pmstart.watcher reads it to tell a live watcher from a hung or
+    taken for the watcher. The PM start (pmstart.watcher) reads it to tell a live watcher from a hung or
     exited one. `yielded`: its session checks stepped aside for the hub's session-watch job at
     that pass (Watcher.yielded), so that job does not wait for it (a beat without the field, from
     an older pm_watch, counts as not stepped aside)."""
@@ -112,7 +112,7 @@ def own_start_time():
     return (ticks - _EPOCH_AS_FILETIME) / 1e7
 
 
-POLL_SLEEP = 60       # seconds between passes; well inside kitlib.pmstart BEAT_STALE
+POLL_SLEEP = 60       # seconds between passes; well inside the PM start's BEAT_STALE (pmstart)
 
 
 def run(w, clock, sleep, save, emit, beat, once=False, stream=False):
@@ -408,9 +408,8 @@ def hub_jobs(load=None, make_client=None):
     down, has no token file or no pointer, or answers anything else. Never raises. `load` and
     `make_client` as hub_check."""
     try:
-        from kitlib import pmstart
-        from kitlib.hubclient import client as hubclient
-        port = (load or pmstart.hub_settings)().port
+        from kitlib.hubclient import client as hubclient, settings as hubsettings
+        port = (load or hubsettings.load)().port
         health = (make_client or hubclient.hub_client)(port).get(
             "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         jobs = health.get("jobs") if isinstance(health, dict) else None
@@ -528,19 +527,19 @@ def hub_check(load=None, make_client=None):
     None otherwise: a restarted hub, or one that is down, re-arms it. A hub that is down, has no
     token file, or has no pointer to read is no event and no failure; any other error is a failed
     check (ERROR on the third), never a dead watcher. `load` gives the hub Settings and
-    `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
+    `make_client(port)` the client, as pmstart.hub_site takes them."""
     def check(last):
-        from kitlib import pmstart
-        from kitlib.hubclient import client as hubclient, codestale, errors
+        from kitlib import kitroot
+        from kitlib.hubclient import client as hubclient, codestale, errors, settings as hubsettings
         down = (errors.NoHubToken, errors.NotRunning, errors.NoHubPointer)
         try:
-            port = (load or pmstart.hub_settings)().port
+            port = (load or hubsettings.load)().port
             health = (make_client or hubclient.hub_client)(port).get(
                 "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         except down:
             return [], None
         text = codestale.notice(health.get("code") if isinstance(health, dict) else None,
-                                pmstart.HUB_TOOL)
+                                kitroot.tool("hub"))
         if text is None:
             return [], None
         return ([] if last else [text]), True
@@ -717,6 +716,7 @@ def preload(modules=()):
     import kitlib.hubclient.client
     import kitlib.hubclient.codestale
     import kitlib.hubclient.errors
+    import kitlib.hubclient.settings        # the HUB check's and hub_jobs' settings read
     import kitlib.pluginsource
     import kitlib.schedtask.read            # kitlib.pluginsource's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)

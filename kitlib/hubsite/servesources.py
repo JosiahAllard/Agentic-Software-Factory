@@ -12,7 +12,7 @@ import json
 import os
 import time
 
-from kitlib import hubbacklog, pmstart, pmwatch
+from kitlib import hubbacklog, kitroot, pmwatch
 from kitlib.config import pm as pmconfig, pmdata
 from kitlib.config import user
 from kitlib.config.types import ConfigError
@@ -154,12 +154,12 @@ def agents_dir(environ=None):
         shell = registry.host(registry.selected(environ)).shell
     except registry.RegistryError:
         return None
-    return os.path.join(pmstart.KIT_ROOT, os.path.normpath(shell), 'agents')
+    return os.path.join(kitroot.root(), os.path.normpath(shell), 'agents')
 
 
 def skills_dir():
     """The kit's skill sources, <kit>/content/skills: never a host's rendered copy."""
-    return os.path.join(pmstart.KIT_ROOT, 'content', 'skills')
+    return os.path.join(kitroot.root(), 'content', 'skills')
 
 
 def _configured_repos(cfg, toplevel=None):

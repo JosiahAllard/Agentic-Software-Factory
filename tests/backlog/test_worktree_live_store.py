@@ -10,7 +10,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import opener
 from kitlib.backlog import store as smod
 

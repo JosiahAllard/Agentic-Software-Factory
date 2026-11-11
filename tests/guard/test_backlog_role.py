@@ -9,7 +9,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.host import agentname
 from kitlib.backlog import policy, roles
 from kitlib.git import refs, repo

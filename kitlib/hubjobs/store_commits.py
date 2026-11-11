@@ -35,7 +35,7 @@ import os
 import time
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import errors
 from kitlib.backlog import store as bstore
 from kitlib.hubsite import jobs

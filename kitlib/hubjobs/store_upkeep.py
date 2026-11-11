@@ -58,7 +58,7 @@ import tempfile
 import time
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.fs import replace as fsreplace
 from kitlib.config.types import ConfigError
 from kitlib.gate import land

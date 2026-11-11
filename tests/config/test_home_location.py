@@ -15,6 +15,7 @@ from unittest import mock
 
 from kitlib import coordinatorstart, pmstart, pmwatch
 from kitlib.config import ConfigError, user
+from kitlib.config import pm as pmconfig
 from tests.home import machine_config, pm_repo
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'optional', 'agenttemp'))
@@ -244,7 +245,7 @@ class ReadersTest(_Home):
         self.pointed()
         machine_config(self.home, dict(READER_KEYS, machine_lock={'notice': {'dir': self.home}}), case=self)
         with self.env():
-            self.assertEqual(pmstart.load_config(), {'hub_url': 'u'})
+            self.assertEqual(pmconfig.load_config(), {'hub_url': 'u'})
             self.assertEqual(coordinatorstart.load_config(), {'k': 1})
             self.assertEqual(pmwatch.load_config(), {'w': 1})
             self.assertEqual(pmwatch.configured_notice_dir(), self.home)
@@ -268,7 +269,7 @@ class ReadersTest(_Home):
                 self.assertIn(user.locate(self.home).state, (user.UNMOVED, user.BAD))
                 with self.env():
                     for name, read, error in (
-                            ('pmstart', pmstart.load_config, ConfigError),
+                            ('pmstart', pmconfig.load_config, ConfigError),
                             ('coordinatorstart', coordinatorstart.load_config, ConfigError),
                             ('pmwatch', pmwatch.load_config, ConfigError),
                             ('pmwatch notice dir', pmwatch.configured_notice_dir, ConfigError),

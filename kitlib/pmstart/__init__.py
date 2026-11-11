@@ -12,37 +12,18 @@ import subprocess
 import time
 
 from kitlib import kitroot, platform
+from kitlib.config import pm as pmconfig
 from kitlib.config import user as kuser
 from kitlib.ledger import files as ledger_files, rulebook
 from kitlib.host import registry
 from kitlib.pmstart import configcheck, consoletasks, fglock
 from kitlib.proc import spawn
 
-KEY = "pm_start"
 TIMEOUT = 4
 
 _PS = ("Get-CimInstance Win32_Process | Select-Object Name,CommandLine,ExecutablePath,"
        "ProcessId,ParentProcessId,@{n='Created';e={$_.CreationDate.ToString('o')}}"
        " | ConvertTo-Json -Compress")
-
-
-def load_config(path=None):
-    """The "pm_start" dict from the user-profile config, or None when the file or key is missing.
-    With no `path`, a machine config location that cannot be told (kitlib.config.user.locate BAD)
-    raises kitlib.config.ConfigError: never read as "no config"."""
-    p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            cfg = json.load(f).get(KEY)
-    except (OSError, ValueError, AttributeError):
-        return None
-    return cfg if isinstance(cfg, dict) else None
-
-
-def _read(path):
-    """A JSON file's text; utf-8-sig because PowerShell writes the file with a BOM."""
-    with open(path, encoding="utf-8-sig") as f:
-        return f.read()
 
 
 def list_processes(timeout=TIMEOUT):
@@ -90,34 +71,11 @@ PM_WATCH_DEFAULT_CMD = 'python -u "%s"' % os.path.join(KIT_ROOT, "tools", "pm_wa
 BEAT_STALE = 300      # seconds: a heartbeat older than this is a watcher that stopped polling
 
 
-def machine_config(path=None):
-    """The whole machine config as a dict ({} when the file is missing or is not a JSON object),
-    read as load_config reads it: unchecked, so one bad key elsewhere does not stop the hub line.
-    With no `path`, a PM repository's local.json is read too (its keys over config.json's: `hub`
-    and `launcher` live there, kitlib.config.user.LOCAL_KEYS). ConfigError when its location
-    cannot be told (kitlib.config.user.readable_file)."""
-    def read(p):
-        try:
-            with open(p, encoding="utf-8-sig") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    if path:
-        return read(os.path.expanduser(path))
-    data = read(kuser.readable_file())
-    loc = kuser.locate()
-    if loc.state == kuser.OK and loc.local:
-        data.update(read(loc.local))
-    return data
-
-
 def current_account():
     """This session's account label (kitlib.launcher.accounts.current_account over the machine
     config and the environment); "default" for a machine with no launcher accounts."""
     from kitlib.launcher import accounts
-    return accounts.current_account(machine_config())
+    return accounts.current_account(pmconfig.machine_config())
 
 
 HUB_SITE_TIMEOUT_S = 1.5    # seconds each ask of the hub server waits (three asks at most)
@@ -125,7 +83,7 @@ HUB_TOOL = os.path.join(KIT_ROOT, "tools", "hub.py")
 HUB_ERROR_MAX = 400         # characters of a rejected `hub` key's message shown in its line
 
 
-# How kitlib.config and kitlib.pmdata end a rule when they refuse a value: `, not ` and the value
+# How kitlib.config and kitlib.config.pmdata end a rule when they refuse a value: `, not ` and the value
 # as Python writes it (repr): a string quoted, a quote or backslash inside it escaped; a number,
 # true/false or null as one word, ended by the `; ` that joins problems or by the text's end.
 _ECHOED = re.compile(r""", not (?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|[-+\w.]+(?=;|\Z))""", re.S)
@@ -167,7 +125,7 @@ def hub_settings():
         return hubsettings.load()
     except Exception as e:
         try:
-            has_key = machine_config().get(hubsettings.KEY) is not None
+            has_key = pmconfig.machine_config().get(hubsettings.KEY) is not None
         except ConfigError:
             has_key = False
         if has_key:
@@ -492,7 +450,7 @@ def reminders(cfg, today, read=None):
     if not path:
         raise KeyError("reminders_file not configured")
     if read is None:
-        read = _read
+        read = pmconfig._read
     items = json.loads(read(path))
     out = []
     for it in sorted(items, key=lambda i: i["due"]):
@@ -578,7 +536,7 @@ def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
     if not path:
         raise KeyError("sessions_file not configured")
     if read is None:
-        read = _read
+        read = pmconfig._read
     sessions = json.loads(read(path))
     alive = live_session_names(procs)
     label = None
@@ -627,52 +585,13 @@ def _consultants_missing(sessions, alive, repos=None, load_repos=None):
     return out
 
 
-def _toplevel(path):
-    """The basename of the git repository holding path, or None outside one."""
-    from kitlib.git import cmd as gitcmd     # here, not at the top: only this line needs git
-    try:
-        r = gitcmd.subprocess_run(["git", "-C", path, "rev-parse", "--show-toplevel"],
-                                  capture_output=True, text=True, timeout=TIMEOUT)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    top = r.stdout.strip() if r.returncode == 0 else ""
-    return os.path.basename(top.rstrip("/")) or None
-
-
-def known_repos(cfg, read=None, toplevel=_toplevel, kit_dir=None):
-    """Every repository the PM knows, sorted: each session's "repo" in sessions_file,
-    the PM's own repository (the one holding sessions_file), this kit's repository, and any names
-    in the optional "repos" list. The Action Hub builds every repo menu from these; nothing is
-    hard-coded, so a new coordinator's repository appears on its own."""
-    path = cfg.get("sessions_file")
-    if not path:
-        raise KeyError("sessions_file not configured")
-    if read is None:
-        read = _read
-    names = {e["repo"] for e in json.loads(read(path)).values()
-             if isinstance(e, dict) and isinstance(e.get("repo"), str) and e["repo"]}
-    for d in (os.path.dirname(os.path.abspath(path)),
-              kit_dir or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
-        n = toplevel(d)
-        if n:
-            names.add(n)
-    extra = cfg.get("repos") or []
-    if not isinstance(extra, list) or not all(isinstance(x, str) and x for x in extra):
-        raise ValueError("pm_start.repos must be a list of names")
-    names.update(extra)
-    folded = {}
-    for n in sorted(names):  # one entry per name, whatever its case
-        folded.setdefault(n.lower(), n)
-    return sorted(folded.values(), key=str.lower)
-
-
 FETCH_TIMEOUT = 3     # seconds: the kit_sync fetch must not hold the session start up
 REMOTE, MAIN = "origin", "main"
 
 
 def pm_data_settings():
-    """The machine config's pm_data settings dict, or None when unset (kitlib.pmdata.machine_settings)."""
-    from kitlib import pmdata
+    """The machine config's pm_data settings dict, or None when unset (kitlib.config.pmdata.machine_settings)."""
+    from kitlib.config import pmdata
     return pmdata.machine_settings()
 
 
@@ -1110,8 +1029,8 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
 def _failure_text(e):
     """The reason in a "could not check" line: the exception's own text, with any rejected value
     taken out (_without_values) when it is a machine config refusal (kitlib.config or
-    kitlib.pmdata), so a malformed pm_data value is named by key and rule and never shown."""
-    from kitlib import pmdata
+    kitlib.config.pmdata), so a malformed pm_data value is named by key and rule and never shown."""
+    from kitlib.config import pmdata
     from kitlib.config.types import ConfigError
     text = str(e)
     if isinstance(e, (ConfigError, pmdata.PmDataError)):

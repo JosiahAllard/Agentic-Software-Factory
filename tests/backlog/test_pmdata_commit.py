@@ -11,7 +11,7 @@ import threading
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import cmd
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod

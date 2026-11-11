@@ -1,4 +1,4 @@
-"""kitlib.pmdata: kit-pm-data.json read/write, locate() from the main checkout and a linked
+"""kitlib.config.pmdata: kit-pm-data.json read/write, locate() from the main checkout and a linked
 worktree, and the machine config's pm_data key."""
 import json
 import os
@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import config, pmdata
+from kitlib import config
+from kitlib.config import pmdata
 from kitlib.config import user
 from tests import gitfixture
 from tests.home import PM_REPO_FENCE_ENV, machine_config, pm_repo

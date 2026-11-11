@@ -602,7 +602,7 @@ class Preconditions(Fixture):
 
     def test_a_checklist_line_is_read_from_the_pm_start_checklist(self):
         text = 'PM session start checklist:\n- hub key: kit\n- could not check cap: kit x'
-        with mock.patch('kitlib.pmstart.load_config', return_value={}), \
+        with mock.patch('kitlib.config.pm.load_config', return_value={}), \
                 mock.patch('kitlib.pmstart.checklist', return_value=text):
             self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
             self.assertIn('no PM start checklist line',
@@ -625,14 +625,14 @@ class Preconditions(Fixture):
              'worktree_sweep_lines', 'rulebook_lines', 'list_processes', 'pm_data_settings'), lambda *a, **k: [])
         with open(stamp) as f:
             before = f.read()
-        with mock.patch('kitlib.pmstart.load_config', return_value={}),                 mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
+        with mock.patch('kitlib.config.pm.load_config', return_value={}),                 mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
             self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
             sync.assert_not_called()
             with open(stamp) as f:
                 self.assertEqual(f.read(), before)
 
     def test_no_pm_start_config_is_refused(self):
-        with mock.patch('kitlib.pmstart.load_config', return_value=None):
+        with mock.patch('kitlib.config.pm.load_config', return_value=None):
             self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}))
 
 

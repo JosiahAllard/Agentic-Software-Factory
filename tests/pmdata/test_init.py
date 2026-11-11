@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import user
 from kitlib.git import cmd
 from kitlib.pmdata import init as pminit

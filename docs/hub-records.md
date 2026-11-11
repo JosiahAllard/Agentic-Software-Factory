@@ -143,7 +143,7 @@ The coordinator files the record itself with its own backlog tool, citing the st
 {name, added_at, aliases?}: `aliases` (optional, a list of strings) names old tags an item's `repo` may
 still carry; the page files such an item under this repo (case ignored). The server's repo list (`GET
 /api/v1/repos`, `kitlib.hubsite.derived.repos`) is every repository the PM knows
-(`kitlib.pmstart.known_repos`: each session's repo in `sessions_file`, the PM's repository, this kit's
+(`kitlib.config.pm.known_repos`: each session's repo in `sessions_file`, the PM's repository, this kit's
 repository and the optional `pm_start.repos`) with the aliases the store holds. An item whose repo is
 `all` is for every repo and shows under each one.
 

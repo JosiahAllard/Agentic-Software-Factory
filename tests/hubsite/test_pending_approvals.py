@@ -310,7 +310,7 @@ class RepoNameCase(unittest.TestCase):
 
 class GitCount(object):
     """Counts the git children the code under test starts: kitlib.git.cmd.call's (through its
-    `_run`) and the ones started with kitlib.git.cmd.subprocess_run (pmstart._toplevel)."""
+    `_run`) and the ones started with kitlib.git.cmd.subprocess_run (kitlib.config.pm._toplevel)."""
 
     def __init__(self, case):
         self.n = 0

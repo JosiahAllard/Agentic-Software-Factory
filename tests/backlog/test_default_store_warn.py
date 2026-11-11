@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import at_landing
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import record as rmod

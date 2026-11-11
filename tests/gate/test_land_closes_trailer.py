@@ -9,7 +9,7 @@ from unittest import mock
 
 import kitlib.config as kconfig
 from kitlib import gate as G
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import at_landing, offer
 from kitlib.backlog import store as smod
 from kitlib.gate import land

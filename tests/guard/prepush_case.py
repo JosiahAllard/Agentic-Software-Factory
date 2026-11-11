@@ -5,7 +5,7 @@ import os
 import subprocess
 import unittest
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.records import gate_ok
 from tests import gitfixture
 from tests.home import child_home, result_drive

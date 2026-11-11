@@ -635,9 +635,10 @@ def checklist_line(pre):
     """None when a line of the PM start checklist that is not a failed check holds the text."""
     from kitlib import pmstart
     from kitlib.config import ConfigError
+    from kitlib.config import pm as pmconfig
     text = pre.get('text') or ''
     try:
-        cfg = pmstart.load_config()
+        cfg = pmconfig.load_config()
     except ConfigError as e:
         return 'cannot read the PM start config: %s' % e
     if cfg is None:

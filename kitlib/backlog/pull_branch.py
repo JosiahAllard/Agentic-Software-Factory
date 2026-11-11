@@ -7,7 +7,7 @@ landing's close (kitlib.backlog.at_landing, which closes what the landed branch 
 would never match the record and it would stay pulled. plan_pull refuses that pull and says how to
 make it: with `--as <branch>`, or from the branch's worktree.
 
-In the PM data worktree (kitlib.pmdata) the configured main branch is the data branch, so the code
+In the PM data worktree (kitlib.config.pmdata) the configured main branch is the data branch, so the code
 repository's main (main_branches: the main checkout's) is refused there too.
 
 The rule lives here, wrapping plan.plan_pull, so tools/backlog.py's `pull` goes through it (by
@@ -17,7 +17,7 @@ move into plan.plan_pull itself later.
 import os
 
 import kitlib.config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import repo as gitrepo
 
 from . import plan as pmod

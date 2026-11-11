@@ -172,7 +172,7 @@ class Record(unittest.TestCase):
 
     def test_a_fenced_home_is_no_line_and_no_raise(self):
         from kitlib.config import user
-        with mock.patch('kitlib.pmdata.machine_settings', side_effect=user.HomeFenced('fenced')):
+        with mock.patch('kitlib.config.pmdata.machine_settings', side_effect=user.HomeFenced('fenced')):
             self.assertIsNone(refusal_log.record(DENY, ACTION, 'claude', 'main', {}))
 
     def test_a_busy_lock_is_no_line(self):

@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib import hubjobs
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.gate import land
 from kitlib.git import cmd
 from kitlib.hubjobs import store_upkeep as su

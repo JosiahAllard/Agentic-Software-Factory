@@ -1266,12 +1266,13 @@ class ReasonCase(ServeCase):
         self.assertEqual(self.build().tokens, self.tokens)
 
     def test_the_hub_code_is_its_package_its_jobs_and_the_settings_packages(self):
-        from kitlib import hubjobs, pmdata
+        from kitlib import hubjobs
+        from kitlib.config import pmdata
         folders = serve.code_folders()
         for module in (serve, hubjobs, pmdata, user):
             self.assertIn(os.path.dirname(os.path.abspath(module.__file__)), folders)
         self.assertEqual(os.path.basename(folders[-1]), 'config')
-        self.assertEqual(len(set(folders)), 4)
+        self.assertEqual(len(set(folders)), 3)
 
     def test_quiet_waits_for_every_request_in_flight_and_every_running_job(self):
         class Lis(object):
@@ -2041,7 +2042,7 @@ class MachineCase(unittest.TestCase):
             return [(n, None) for n in names]
 
         with mock.patch.object(serve.hubbacklog, 'git', git), \
-                mock.patch.object(serve.pmstart, 'known_repos', lambda c, **kw: ['a', 'b']), \
+                mock.patch.object(serve.pmconfig, 'known_repos', lambda c, **kw: ['a', 'b']), \
                 mock.patch.object(serve.backlog, 'repo_list', repo_list):
             pairs = serve._repo_pairs(cfg)
             self.assertEqual(asked, [])
@@ -2083,7 +2084,7 @@ class MachineCase(unittest.TestCase):
             asked.append(folder)
             return 'pmrepo' if folder == os.path.dirname(path) else 'kitrepo'
 
-        with mock.patch.object(serve.pmstart, '_toplevel', toplevel):
+        with mock.patch.object(serve.pmconfig, '_toplevel', toplevel):
             src = serve.machine_sources(self.home)
             self.assertEqual(asked, [], 'reading the sources ran git')
             names = ['extra', 'Gamerepo', 'kitrepo', 'pmrepo']
@@ -2125,7 +2126,7 @@ class MachineCase(unittest.TestCase):
 
     def test_a_session_key_is_an_alias_of_its_repo_so_its_tag_has_no_warning(self):
         self.sessions(json.dumps({'kit': {'repo': 'kitrepo'}, 'pm-kit': {'repo': 'kitrepo'}}))
-        with mock.patch.object(serve.pmstart, '_toplevel', lambda d: 'kitrepo'):
+        with mock.patch.object(serve.pmconfig, '_toplevel', lambda d: 'kitrepo'):
             src = serve.machine_sources(self.home)
             store = self.store(src)
             for tag in ('kit', 'PM-KIT'):
@@ -2188,7 +2189,7 @@ class MachineCase(unittest.TestCase):
         def toplevel(folder):
             asked.append(folder)
             return answers[folder]
-        with mock.patch.object(serve.pmstart, '_toplevel', toplevel):
+        with mock.patch.object(serve.pmconfig, '_toplevel', toplevel):
             tops = serve._toplevels(clock=lambda: now[0])
             for _ in range(3):
                 self.assertEqual((tops('pm'), tops('gone')), ('pmrepo', None))
@@ -2201,7 +2202,7 @@ class MachineCase(unittest.TestCase):
         self.assertEqual(asked, ['pm', 'gone', 'gone'])
 
     def test_a_pm_data_key_in_the_machine_config_is_never_the_sources_pm_data(self):
-        # pm_data is derived from the PM-repo pointer (kitlib.pmdata.machine_settings), so a key
+        # pm_data is derived from the PM-repo pointer (kitlib.config.pmdata.machine_settings), so a key
         # planted in the file cannot change it; the file itself is refused by hub_settings.load,
         # which `hub.py serve` reads before machine_sources.
         pm = os.path.dirname(self.config({'pm_data': {'path': os.path.join(self.home, 'pm')}}))

@@ -160,7 +160,8 @@ class ClaudeAdapter(object):
                 return "Coordinator session start: could not check: %s: %s" % (type(e).__name__, e)
         try:
             from kitlib import pmstart
-            cfg = pmstart.load_config()
+            from kitlib.config import pm as pmconfig
+            cfg = pmconfig.load_config()
             if cfg is None:
                 from kitlib.config import user
                 from kitlib.pmstart import configcheck     # the machine config lines still show

@@ -25,6 +25,7 @@ import sys
 from kitlib import kitroot, pmstart
 from kitlib.host import sessionmark
 from kitlib.config import user as kuser
+from kitlib.config import pm as pmconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.launcher import lookup
 from kitlib.pmstart import configcheck
@@ -309,7 +310,7 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
 
         def entry_once():
             if "e" not in box:
-                sf = (pm_cfg if pm_cfg is not None else pmstart.load_config() or {}).get("sessions_file")
+                sf = (pm_cfg if pm_cfg is not None else pmconfig.load_config() or {}).get("sessions_file")
                 if not sf:
                     raise KeyError("pm_start.sessions_file not configured")
                 try:

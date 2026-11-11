@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 import kitlib.config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import offer as omod
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod

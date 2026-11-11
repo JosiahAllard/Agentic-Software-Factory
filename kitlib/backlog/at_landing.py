@@ -1,7 +1,7 @@
 """The backlog store at a landing (docs/backlog-store.md "Lifecycle changes", "Merge safety";
 called by kitlib.gate.land). The configured store takes part when it is a `ref` or `branch`
 store; a main store's records travel with the branch, so a landing leaves them alone. The PM
-data branch's store (kitlib.pmdata: a folder store in the worktree that has the recorded data
+data branch's store (kitlib.config.pmdata: a folder store in the worktree that has the recorded data
 branch checked out) takes part too: the PM's records of this repository live there.
 
   ancestry_refusal  before any merge: why the branch may not land when its history holds the
@@ -34,7 +34,8 @@ ancestry_refusal moves no ref: it fetches the store's objects with an empty --re
 import os
 
 import kitlib.config as kconfig
-from kitlib import pluginsource, pmdata
+from kitlib import pluginsource
+from kitlib.config import pmdata
 from kitlib.git import cmd, refs
 from kitlib.git import repo as gitrepo
 
@@ -97,7 +98,7 @@ def _local_tip(ref, root):
 
 def pmdata_refusal(root, tip):
     """None when the repository has no PM data record (kit-pm-data.json in its git common dir,
-    kitlib.pmdata) or `tip`'s history does not hold the recorded root; else why `tip` may not
+    kitlib.config.pmdata) or `tip`'s history does not hold the recorded root; else why `tip` may not
     land. A record that cannot be read, a root this clone lacks, or an ancestry git cannot tell
     refuses (fail closed)."""
     common, why = gitrepo.common_dir(root)
@@ -339,7 +340,7 @@ def _same_path(a, b):
 
 def pm_data_root(root, *, worktrees=None):
     """`(path, None)` of the worktree of `root`'s repository that has the PM data branch checked
-    out (the branch kit-pm-data.json records; kitlib.pmdata), `(None, None)` when the repository
+    out (the branch kit-pm-data.json records; kitlib.config.pmdata), `(None, None)` when the repository
     has no PM data record, or `(None, why)` when there is one and that worktree cannot be found.
     `worktrees` is a gitrepo.Worktrees, when the caller has one: it holds the list and the common
     dir (`common`) of the repository, each asked of git once."""

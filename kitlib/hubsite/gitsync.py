@@ -167,7 +167,7 @@ import threading
 import time
 
 from kitlib import kitroot
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import cmd, refs, repo
 
 from . import store as _store

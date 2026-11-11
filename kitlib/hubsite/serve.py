@@ -229,7 +229,8 @@ import re
 import threading
 import time
 
-from kitlib import hubbacklog, hubjobs, pmdata, pmstart, pmwatch
+from kitlib import hubbacklog, hubjobs, pmstart, pmwatch
+from kitlib.config import pm as pmconfig, pmdata
 from kitlib.config import user
 from kitlib.config.types import ConfigError
 from kitlib.proc import process
@@ -335,7 +336,7 @@ class Sources(object):
 
       tokens       the credential folder (auth.folder)
       static_dir   the page's folder; a missing one answers 404
-      pm_data      kitlib.pmdata's {path, branch, remote}, or None
+      pm_data      kitlib.config.pmdata's {path, branch, remote}, or None
       notices      the machine lock's notice folder
       findings     the maintenance lint's results folder, <pm_data>/maint-lint (one
                    <repo>/result.json each: kitlib.maintlint.result, and its skip marker);
@@ -414,7 +415,7 @@ TOPLEVEL_MISS_S = 60.0      # seconds a folder git found no top level for is not
 
 
 def _toplevels(clock=time.monotonic):
-    """pmstart._toplevel with what it finds kept: a callable(folder) -> the basename of its git
+    """pmconfig._toplevel with what it finds kept: a callable(folder) -> the basename of its git
     top level, git asked once per folder for the process's life. A miss (no git, not a work
     tree, a timeout) is kept for TOPLEVEL_MISS_S only, so a failed run neither starts git on
     every read nor leaves the name out for good. Called from several threads (requests, the
@@ -426,7 +427,7 @@ def _toplevels(clock=time.monotonic):
         kept = tops.get(folder)
         if kept is not None and (kept[0] or clock() - kept[1] < TOPLEVEL_MISS_S):
             return kept[0]
-        name = pmstart._toplevel(folder)
+        name = pmconfig._toplevel(folder)
         tops[folder] = (name, clock())
         return name
     return toplevel
@@ -435,7 +436,7 @@ def _toplevels(clock=time.monotonic):
 def _repo_pairs(cfg, toplevel=None):
     """A callable giving backlog.Views its (name, root) pairs from the pm_start config `cfg`,
     each root as kitlib.hubbacklog.repo_root finds it. The PM repository's root is asked of git
-    once, and so is each folder pmstart.known_repos names a repository by (`toplevel`, a
+    once, and so is each folder pmconfig.known_repos names a repository by (`toplevel`, a
     _toplevels(); default a new one); sessions_file is read on each call."""
     found = []
     toplevel = toplevel or _toplevels()
@@ -445,7 +446,7 @@ def _repo_pairs(cfg, toplevel=None):
             top = hubbacklog.git(os.path.dirname(os.path.abspath(cfg['sessions_file'])),
                                  'rev-parse', '--show-toplevel')
             found.append(top.decode('utf-8').strip())
-        return backlog.repo_list(pmstart.known_repos(cfg, toplevel=toplevel), found[0],
+        return backlog.repo_list(pmconfig.known_repos(cfg, toplevel=toplevel), found[0],
                                  cfg.get('repo_paths'))
     return pairs
 
@@ -468,7 +469,7 @@ def skills_dir():
 
 
 def _configured_repos(cfg, toplevel=None):
-    """A callable giving pmstart.known_repos of the pm_start config `cfg`, the store's repo-alias
+    """A callable giving pmconfig.known_repos of the pm_start config `cfg`, the store's repo-alias
     check's names. As in _repo_pairs, git is asked once: each folder's git top level (the PM's
     repository and the kit's, two git runs) is kept (`toplevel`, a _toplevels(); default a new
     one), while sessions_file is read on each call, so
@@ -476,13 +477,13 @@ def _configured_repos(cfg, toplevel=None):
     the names cannot be read, since a store write must never fail on them: KeyError no
     sessions_file, ValueError bad "repos" or bad JSON, OSError an unreadable sessions file,
     AttributeError a sessions file whose JSON is not an object, TypeError a sessions_file that is
-    not a path. No git is not an error: pmstart._toplevel gives None and the name is left out.
+    not a path. No git is not an error: pmconfig._toplevel gives None and the name is left out.
     Anything else is a bug in this code and is left to raise."""
     toplevel = toplevel or _toplevels()
 
     def names():
         try:
-            return list(pmstart.known_repos(cfg, toplevel=toplevel)) + sorted(
+            return list(pmconfig.known_repos(cfg, toplevel=toplevel)) + sorted(
                 {k for ks in _session_aliases(cfg).values() for k in ks}, key=str.lower)
         except (KeyError, ValueError, OSError, AttributeError, TypeError):
             return ()
@@ -496,7 +497,7 @@ def _session_aliases(cfg):
     {} when the file cannot be read, is not an object or names no repo, so the hub falls back to
     the repo names alone."""
     try:
-        sessions = json.loads(pmstart._read(cfg['sessions_file']))
+        sessions = json.loads(pmconfig._read(cfg['sessions_file']))
         out = {}
         for key, e in sessions.items():
             if (isinstance(e, dict) and isinstance(e.get('repo'), str) and e['repo']
@@ -523,7 +524,7 @@ def machine_sources(home=None, sync=True):
     door reads the machine lock (its own fixed folder, not `home`) on its first call, never
     here. ConfigError when the machine config cannot be used."""
     path = user.readable_file(home)
-    cfg = pmstart.load_config(path)
+    cfg = pmconfig.load_config(path)
     try:
         pm = pmdata.machine_settings(home)
     except pmdata.PmDataError as e:
@@ -1363,11 +1364,11 @@ def build(settings, sources, log=None):
 
 def code_folders():
     """The folders whose .py files are the hub's code: this package, the timed jobs'
-    (kitlib.hubjobs), so a job added or changed on disk is stale code too, and the two packages
-    the server reads its machine settings through (kitlib.pmdata, kitlib.config)."""
+    (kitlib.hubjobs), so a job added or changed on disk is stale code too, and the package
+    the server reads its machine settings through (kitlib.config)."""
     here = os.path.dirname(os.path.abspath(__file__))
     return [here] + [os.path.dirname(os.path.abspath(m.__file__))
-                     for m in (hubjobs, pmdata, user)]
+                     for m in (hubjobs, user)]
 
 
 def code_stamp(folders=None):

@@ -12,7 +12,8 @@ stay pinned."""
 import os
 import unittest
 
-from kitlib import guard, pmdata
+from kitlib import guard
+from kitlib.config import pmdata
 
 from . import claudehost
 from . import world as W

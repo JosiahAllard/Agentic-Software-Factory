@@ -8,7 +8,7 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import ConfigError, user
 from tests.home import RECORD_ROOT, PM_REPO_FENCE_ENV, pm_repo, temp_home
 RID = 'R-' + '9001'     # built, so tests/scrub sees no ruling id in this file

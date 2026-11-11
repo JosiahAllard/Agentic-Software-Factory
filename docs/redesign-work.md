@@ -344,7 +344,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-042 Delete the one-shot migrations**
 - Serves: the owner's decision.
 - Files: `kitlib/config/move.py`, `tools/config_move.py`, `tests/config/test_config_move.py`, `tests/config/test_move.py`, `tests/guard/test_jail_config_move.py`; `kitlib/ledger/migrate.py`, `kitlib/ledger/move.py`, the `split-move`, `migrate-report` and `rule-apply` verbs of `tools/ledger.py`, `tests/ledger/test_migrate.py`, `tests/ledger/test_move.py`; mentions in `kitlib/config/user.py`, `kitlib/delegations/load.py`, `kitlib/autotasks/tick.py`, `kitlib/kitcmd/__init__.py`, `kitlib/machinesetup/machineconfig.py`, `hosts/codex/adapter/dispatch.py`, the guard's owner-tool list, docs/kit-json.md ("Moving the machine config into the PM repo"), docs/ledger.md, docs/install.md, docs/guard-owner.md, docs/guard-jail-roles.md, docs/delegations.md.
-- Done when: `grep -rnE "config_move|split-move|migrate-report|rule-apply|ledger\.migrate" --include=*.py --include=*.md .` prints only this file.
+- Done when: `grep -rnE "config_move\b|split-move|migrate-report|rule-apply|ledger\.migrate" --include=*.py --include=*.md .` prints only this file.
 - Risk and tier: Medium. worker, fresh reviewer for the guard list.
 - Owner: guard.
 

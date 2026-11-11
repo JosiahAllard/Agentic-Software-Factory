@@ -70,7 +70,7 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_inbox_post` | `text`; `title`, `ref`, `asked`, `repo`, `from`, `refs` | `POST /inbox` |
 | `hub_page_publish` | `id`, `title`, `html_file`; `summary`, `repo`, `from`, `refs`, `kind`, `folder`, `if_version` | `POST /pages` |
 | `hub_page_place` | `id`, `if_version`; `kind`, `folder`, `repo` (at least one) | `POST /pages/<id>/place` |
-| `hub_approval_request` | `checkout`, `title`, `files` (`[{path, content_file}]`); `repo`, `head`, `reason`, `record` | `POST /approvals` |
+| `hub_approval_request` | `checkout`, `title`, `files` (`[{path, content_file}]`); `repo`, `head`, `reason`, `record`, `branch` | `POST /approvals` |
 | `hub_handoff_ready` | `kind` (`handoff`, `restart`, `stop`, `checkin`), `state_path`, `from` | `POST /handoffs` |
 
 `hub_handoff_ready` records a session's hand-off beside its ready reply to the PM (skill
@@ -84,7 +84,7 @@ newest record.
 (docs/hub-approvals.md "approvals/A-NNN"): `kitlib.ownerfiles.request.build` makes the body from the git
 checkout `checkout`, each file's base its blob at `head` (default: the checkout's HEAD; none for a
 new file) and its content the exact UTF-8 bytes of its `content_file`, and `repo` defaults to the
-checkout's origin. It only adds a request (no destructive hint): it never decides or consumes one,
+checkout's origin; `branch`, where the hub applies the approved change (docs/hub-approvals.md "Applying"), defaults to the checkout's current branch. It only adds a request (no destructive hint): it never decides or applies one,
 it cannot ask for a delete, and it takes no `from`, which the document has no field for. Its
 `record`, given as is to the builder and posted, is bound as a to-do's is (below). This
 process reads each `content_file` outside the guard, so `checkout` and every `content_file` must

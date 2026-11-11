@@ -38,9 +38,9 @@ def trailer_problem(key):
     """None when `key` may be the "owner".trailer, else why not: git matches trailer keys
     without regard to case, so Owner-Approval in any case is the hub approval's trailer."""
     if (key or '').strip().lower() == APPROVAL_TRAILER.lower():
-        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (commit.py '
-                '--owner-approval), and a claim key equal to it would read every hub approval as '
-                'an owner claim' % APPROVAL_TRAILER)
+        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (the hub\'s '
+                'commit of an approved change), and a claim key equal to it would read every hub '
+                'approval as an owner claim' % APPROVAL_TRAILER)
     return None
 
 

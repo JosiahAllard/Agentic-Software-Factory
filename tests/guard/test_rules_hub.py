@@ -631,6 +631,8 @@ class OwnerVerbs(Hub):
         'pair',
         'approvals approve A-1',
         'approvals deny A-1',
+        'approvals apply A-1',
+        'approvals apply A-1 --if-version 2',
         'todos add --title t --owner',
         'todos add --title t --own',
         'todos add --owner=1 --title t',

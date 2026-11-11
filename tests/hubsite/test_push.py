@@ -2,6 +2,7 @@
 a question or marks a to-do done, and keeps telling them until they pick it up
 (docs/hub-push.md "Push notifications"). A fake delivery object stands in for the host's.
 """
+import datetime
 import json
 import os
 import shutil
@@ -615,6 +616,33 @@ class ResetTest(unittest.TestCase):
         w.poll()
         self.assertEqual([r for r, _ in fake.calls[2:]], ['pm'], 'a done hidden by a reset')
         self.assertIn('todo %s done' % tid, fake.calls[2][1])
+
+
+class ApplyEventTest(unittest.TestCase):
+    """The hub's apply of an approved change (docs/hub-push.md): its commit fires `applied`, a
+    failed apply `unapplied`, once for each try."""
+    NOW = datetime.datetime(1970, 1, 12, 14, 0, tzinfo=datetime.timezone.utc)
+    DOC = {'status': 'approved', 'repo': 'kit', 'title': 'T', 'head': 'a' * 40, 'files': [],
+           'created_at': '1970-01-12T13:00:00+00:00', 'decided_at': '1970-01-12T13:46:00+00:00'}
+
+    def fires(self, doc, before):
+        return push.trigger('approval', doc, push.fingerprint('approval', before, self.NOW),
+                            self.NOW)
+
+    def test_the_hubs_commit_fires_applied(self):
+        done = dict(self.DOC, status='consumed', commit='c' * 40,
+                    applied={'by': 'hub', 'branch': 'kit/w', 'worktree': 'W'})
+        self.assertEqual(self.fires(done, self.DOC), 'applied')
+        self.assertNotEqual(self.fires(done, done), 'applied')
+        self.assertIn('A-1', push.guidance('approval', 'A-1', 'applied', 'kit'))
+
+    def test_a_failed_apply_fires_unapplied_once_per_try(self):
+        failed = dict(self.DOC, apply={'at': '1970-01-12T13:46:00+00:00', 'error': 'drift'})
+        self.assertEqual(self.fires(failed, self.DOC), 'unapplied')
+        self.assertNotEqual(self.fires(failed, failed), 'unapplied')
+        again = dict(failed, apply={'at': '1970-01-12T13:50:00+00:00', 'error': 'drift'})
+        self.assertEqual(self.fires(again, failed), 'unapplied')
+        self.assertIn('approvals apply A-1', push.guidance('approval', 'A-1', 'unapplied', 'kit'))
 
 
 class TextTest(PushCase):

@@ -204,6 +204,12 @@ the server alone decides what a role may do.
                                                      asks: no delete, no --from (kitlib.ownerfiles.request);
                                                      --record: the record waits on the owner until
                                                      the request is decided (the hub parks it)
+  hub.py approvals apply A-1 [--if-version V]       `APPLIED A-1 <commit>`, or `UNAPPLIED A-1:
+                                                     <why>` and exit 1: the owner has the hub
+                                                     apply an approved change again, on the
+                                                     request's branch in its linked worktree
+                                                     (docs/hub-approvals.md "Applying"; an
+                                                     approve applies it the first time)
   hub.py approvals withdraw A-1 --from KEY --if-version V    `WITHDRAWN A-1`
                                                      the requester takes back a request still
                                                      undecided, expired or not (KEY is pm:
@@ -367,6 +373,7 @@ EXAMPLES = {
     'hub.py approvals': 'hub.py approvals',
     'hub.py approvals show': 'hub.py approvals show A-1',
     'hub.py approvals add': 'hub.py approvals add --title "<title>" --file <path> <content-file>',
+    'hub.py approvals apply': 'hub.py approvals apply A-1',
     'hub.py approvals withdraw': 'hub.py approvals withdraw A-1 --from <key> --if-version 3',
     'hub.py approvals supersede': 'hub.py approvals supersede A-1 --by A-2 --from <key> '
                                   '--if-version 3',
@@ -767,8 +774,9 @@ def _client_verbs(sub):
     _pins(x, required=True)
 
     x = _listed(sub, 'approvals', "list the requests for the owner's approval; show; add: ask "
-                "for one; withdraw: take back a pending one; supersede: mark a decided one "
-                "replaced", tuple(S['approvals']) + (approvals.SUPERSEDED,))
+                "for one; apply: the owner has the hub apply an approved one again; withdraw: "
+                "take back a pending one; supersede: mark a decided one replaced",
+                tuple(S['approvals']) + (approvals.SUPERSEDED,))
     _leaf(x, 'show', 'one request and its files').add_argument('id')
     y = _leaf(x, 'add', "ask the owner to approve writing these files")
     y.add_argument('--checkout', default='.', metavar='DIR',
@@ -784,6 +792,9 @@ def _client_verbs(sub):
     y.add_argument('--record', type=_record, metavar='REPO:ID',
                    help='the backlog record that waits on this request: the hub parks it until '
                         'the owner decides (checked by the hub)')
+    y = _leaf(x, 'apply', 'the owner has the hub apply an approved change again')
+    y.add_argument('id')
+    _pins(y)
     _creator(_leaf(x, 'withdraw', 'take back a request still undecided'), 'KEY')
     y = _leaf(x, 'supersede', 'mark a decided approval nobody consumed superseded')
     y.add_argument('id')
@@ -1659,7 +1670,13 @@ def _skill_edit(a, stop):
 def _approvals(a, stop):
     """The requests from GET /snapshot (the api has no route that lists approvals), each with
     its status read now: approvals.status_at applies the expiry, `malformed` for a bad document.
-    add posts one request (kitlib.ownerfiles.request): it never decides or consumes one."""
+    add posts one request (kitlib.ownerfiles.request): it never decides or consumes one. apply is
+    the owner's (approvals.apply_approved)."""
+    if a.sub == 'apply':
+        got = approvals.apply_approved(_hub(a), a.id, a.if_version)
+        if got.get('applied') is not True:
+            raise huberrors.ServeError('UNAPPLIED %s: %s' % (a.id, got.get('why')))
+        return _wrote(a, got, 'APPLIED %s %s' % (a.id, got.get('commit')))
     if a.sub == 'withdraw':
         got = _hub(a).post(_one('approvals', a) + '/delete', client.AGENT, _edits(a, {}))
         return _wrote(a, got, 'WITHDRAWN %s' % got.get('id'))

@@ -1449,6 +1449,18 @@ class ApprovalsCase(VerbCase):
             'AGENTS.md %s -> %s' % ('b' * 40, self.blob), 'gone.md %s -> deleted' % ('c' * 40)])
         self.assertIn('no approval A-009', self.refused('approvals', 'show', 'A-009'))
 
+    def test_apply_asks_the_hub_and_says_why_it_could_not(self):
+        now = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
+        files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'}]
+        fresh = dict(approvals.new_doc('https://github.com/o/r', 'fresh one', 'a' * 40, files,
+                                       now, branch='kit/w'),
+                     status='approved', decision='approve', decided_at=now.isoformat())
+        self.assertEqual(self.hub.store.add('approvals', fresh).id, 'A-003')
+        err = self.refused('approvals', 'apply', 'A-003')
+        self.assertIn('UNAPPLIED A-003: this machine has no checkout of ', err)
+        self.assertIn('error', self.hub.store.get('approvals', 'A-003')['apply'])
+        self.assertIn('REFUSED conflict', self.refused('approvals', 'apply', 'A-001'))
+
     def test_a_document_that_is_not_an_object_is_malformed(self):
         real = self.hub.store.snapshot
 

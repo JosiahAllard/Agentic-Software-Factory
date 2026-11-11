@@ -17,13 +17,13 @@ store's git push (the `push` setting).
   while the filing is under way), an answer already given made a standing rule (`standing`, to the PM:
   docs/hub-questions.md "A standing rule"), a to-do done (or done again), a done to-do reopened, a to-do the owner added (to the
   PM only), a story the owner submitted (`submitted`, PM only), a skill edit the owner submitted
-  (`submitted`), a note to the PM the owner sent (`sent`, PM only), an approval the owner approved or denied (`decided`), and an approval still approved and not
+  (`submitted`), a note to the PM the owner sent (`sent`, PM only), an approval the owner approved or denied (`decided`), a file approval the hub applied, committed on its branch (`applied`, in place of `decided` when the approve applied it), an approved one the hub tried and could not apply, once per try (`unapplied`, its `apply.at`; docs/hub-approvals.md "Applying"), and an approval still approved and not
   consumed 4 hours before it expires (`expiring`, `push.EXPIRING_LEAD_S` before `approvals.expires_at`:
   30 days after the decision for a file approval, 24 hours for an op one), the one reminder. A phase
   that goes back from `expiring` to `decided` (an approval whose life grew, at a deploy) fires nothing. Each item has a fingerprint (a question's phase, `answer.at`, a digest of the
   answer and, once a standing rule, `standing.at`; a to-do's status and `done_at`; a story's status and
   `submitted_at`, and a skill edit's too; a note's status and `sent_at`; an approval's status, `decided_at` and phase, `decided`
-  then `expiring`, read at the worker's clock each round), and only a changed fingerprint fires, so
+  then `expiring`, read at the worker's clock each round, and once there is one its `commit` and its failed `apply.at`), and only a changed fingerprint fires, so
   `pm_ack` alone never does. An approval's phase ending (consumed, expired, a denial's 24 hours past)
   drops what was still owed and sends nothing.
 - Who hears: the item's `from`, unless that is the PM's own (`pm`, the owner, empty), and the PM, once;

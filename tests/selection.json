@@ -78,7 +78,7 @@
     "tests.lock.test_cli",
     "tests.lock.test_holds",
     "tests.lock.test_queue",
-    "tests.commit.test_commit_approval",
+    "tests.ownerfiles.test_apply",
     "tests.commit.test_codex"
   ],
   "skip_fails": [

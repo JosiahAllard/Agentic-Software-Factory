@@ -227,8 +227,8 @@ from .apiposts import (  # noqa: F401 - re-exported: callers and tests read thes
     to_pm_list, _unpath_act, to_pm_add, _queued, to_pm_edit, to_pm_delete, _refusal, to_pm_send,
     to_pm_reply)
 from .apiapprovals import (  # noqa: F401 - re-exported: callers and tests read these off api
-    _approval, approvals_add, approvals_decide, approvals_consume, approvals_delete,
-    approvals_supersede, approvals_verify)
+    _approval, approvals_add, approvals_decide, approvals_apply, _narrowed, _applied,
+    approvals_consume, approvals_delete, approvals_supersede, approvals_verify)
 from .apiread import (  # noqa: F401 - re-exported: callers and tests read these off api
     backlog, completed, _segment, skill_get, skill_source_get, record, record_new, _strings,
     record_add, record_edit, record_delete, record_unblock, _listing, pending, _unpath_pending,
@@ -1297,6 +1297,7 @@ ROUTES = (
     _r('POST', '/schedules', OWNER, schedules_set),
     _r('POST', '/approvals', AGENT, approvals_add),
     _r('POST', '/approvals/{id}/decide', APPROVER, approvals_decide),
+    _r('POST', '/approvals/{id}/apply', OWNER, approvals_apply),
     _r('POST', '/approvals/{id}/consume', AGENT, approvals_consume),
     _r('POST', '/approvals/{id}/delete', AGENT, approvals_delete),
     _r('POST', '/approvals/{id}/supersede', AGENT, approvals_supersede),

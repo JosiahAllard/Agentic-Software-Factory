@@ -78,7 +78,7 @@ class KitTable(unittest.TestCase):
     def select(self, path):
         return selftree.selection([path], self.tree, self.cfg)[0]
 
-    def test_the_smoke_set_is_guard_land_lock_and_commit_approval(self):
+    def test_the_smoke_set_is_guard_land_lock_commit_and_the_hubs_apply(self):
         smoke = self.cfg['smoke']
         mods = set(selftree.all_test_modules(KIT))
         for module in smoke:
@@ -86,7 +86,7 @@ class KitTable(unittest.TestCase):
         for pkg in ('guard', 'gate', 'lock', 'commit'):
             self.assertTrue([m for m in smoke if m.startswith('tests.%s.' % pkg)], pkg)
         self.assertIn('tests.gate.test_land', smoke)
-        self.assertIn('tests.commit.test_commit_approval', smoke)
+        self.assertIn('tests.ownerfiles.test_apply', smoke)
         self.assertNotIn('tests.commit.test_commit', smoke)     # 107 s, not split by class
 
     def test_a_docs_heading_change_runs_the_content_citation_tests(self):

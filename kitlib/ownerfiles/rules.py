@@ -71,8 +71,8 @@ NOREPLACE = ['--no-replace-objects']
 LIST_TIMEOUT = 120    # seconds
 TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses it as its own trailer
 # The id exactly as the hub issues it ('A-%03d', kitlib.hubsite.store): A-001 to A-999, then
-# A-1000 on; A-1, A-01 and A-000 are no id it writes (tests/commit/test_commit_approval.py
-# TheIdTheHubIssues takes one from a real hub).
+# A-1000 on; A-1, A-01 and A-000 are no id it writes (tests/ownerfiles/test_apply.py
+# test_commit_passes_owner_rules takes one from a real hub).
 APPROVAL_RE = re.compile(r'hub:(A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,}))\Z')
 EXAMPLE = 'hub:A-001'
 _SEP = '\x01'                       # between the trailer values of one commit in commits()

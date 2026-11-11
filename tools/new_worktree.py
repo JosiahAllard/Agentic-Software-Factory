@@ -44,8 +44,8 @@ def parser():
     p.add_argument('--base', help='the base branch (default: "repo".main_branch), or a full commit '
                                   'hash a new branch starts at')
     p.add_argument('--approval', default=None, metavar='hub:A-<n>',
-                   help="a new branch at the owner approval's base commit (commit.py "
-                        '--owner-approval needs HEAD there)')
+                   help="a new branch at the owner approval's base commit (a branch for the "
+                        'hub to apply it on)')
     p.add_argument('--host', default=None,
                    help='the agent host whose worktree folder to use (default: $PM_KIT_HOST, else '
                         'the hosts.json default, whose folder is "repo".worktrees_dir)')

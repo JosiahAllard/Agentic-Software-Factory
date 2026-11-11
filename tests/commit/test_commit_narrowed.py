@@ -10,7 +10,6 @@ from unittest import mock
 from kitlib import commit as C
 from tests.backlog.helpers import record_text
 from tests.commit import test_commit
-from tests.commit import test_commit_approval as tca
 from tests.commit.test_commit import AGENT, OWNER, LinkedCase
 
 setUpModule = test_commit.setUpModule
@@ -140,21 +139,6 @@ class WhoCommits(NarrowedCase):
         self.assertEqual(code, 1, out)
         self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
         self.assertEqual(self.head(), head)
-
-
-class AnApprovedCommit(NarrowedCase, tca.ApprovalCase):
-
-    def test_an_owner_approved_commit_is_checked_before_anything_is_written(self):
-        self.narrowed_pair()
-        self.approve({'CLAUDE.md': 'new rules\n', 'kit/b/x.py': 'x\n'})
-        head = self.head()
-        code, out = self.approved_commit('kit/b/x.py', 'CLAUDE.md')
-        self.assertEqual(code, 1, out)
-        self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
-        self.assertEqual(self.head(), head)
-        self.assertEqual(self.read('CLAUDE.md'), 'rules\n')
-        self.assertFalse(os.path.exists(os.path.join(self.wt, 'kit', 'b', 'x.py')))
-        self.assert_not_consumed()
 
 
 class AMerge(NarrowedCase, test_commit.MergeCase):

@@ -11,8 +11,8 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
 - --allow-empty (Request.allow_empty) is the one commit of no paths: HEAD's tree unchanged, only
   the message and its trailers (a `Closes:` line). It refuses anything staged, a merge in
   progress and an unborn branch (no HEAD to keep); a hook that changes the commit's tree has it
-  undone and refused (commit_only); with a path, --owner-approval or --consume it is a usage
-  error. Every other check runs as for any commit. No paths without it is never an empty commit.
+  undone and refused (commit_only); with a path it is a usage error. Every other check runs as
+  for any commit. No paths without it is never an empty commit.
 - The body: `-b` is the TEXT (a typed `\n` becomes a newline); --body-file reads it from a file
   (UTF-8, a BOM dropped, CRLF made LF; empty, unreadable or not UTF-8 is a usage error). A `-b`
   whose whole value is one line naming an existing file, or shaped like an absolute path, is a
@@ -51,14 +51,10 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   --owner-approved is required only when an owner-only path is in the commit, and
   every value given must be a blanket entry or a path committed in this call. An --owner-authored
   commit carries `Owner-Authored: yes` in place of Co-Authored-By.
-- Or an agent commits the change the owner approved on the hub: --owner-approval hub:A-<n>
-  (kitlib.ownerfiles.apply; docs/commit.md "Owner approval"). The paths named must be exactly the
-  approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
-  content is written, staged and checked blob for blob, committed with `Owner-Approval: hub:A-<n>`
-  before Co-Authored-By, and the approval consumed, recording that commit (a rebuild of it needs
-  no new approval: docs/commit.md "Owner approval"). A refusal after the write
-  puts the work tree back and unstages what this call staged. A consume that fails leaves the
-  commit (REFUSED, naming the retry): --owner-approval hub:A-<n> --consume <commit> consumes it.
+- A change the owner approves on the hub is not committed here: the hub applies it, on the
+  request's branch in its linked worktree (kitlib.ownerfiles.apply; docs/commit.md "Owner
+  approval"). tools/commit.py's --owner-approval and --consume are usage errors saying so
+  (HUB_APPLIES).
 - Otherwise the trailer is `Co-Authored-By: Claude <model> <noreply@anthropic.com>`, "Claude "
   added when the name lacks it - unless the name is a family in .kit.json
   "commit".coauthor_families or starts with one followed by a space, '.' or '-'.
@@ -100,7 +96,6 @@ from kitlib.content import oncommit
 from kitlib.git import checkout, cmd, refs, repo
 from kitlib.proc import spawn
 
-from kitlib.ownerfiles import apply as approval
 from kitlib.ownerfiles import rules as ownerrules
 
 OK, REFUSED, USAGE = 0, 1, 2
@@ -108,28 +103,30 @@ TOOL = 'commit.py'
 OWNER_AUTHORED_TRAILER = 'Owner-Authored: yes'
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DOC_BUDGET_TIMEOUT = 600     # seconds
+HUB_APPLIES = ('the hub applies a change the owner approved, on the branch the request names, in '
+               'its worktree: an agent never commits it. Ask with hub.py approvals add; one the '
+               'hub could not apply, the owner applies with hub.py approvals apply A-<n> '
+               '(docs/hub-approvals.md "Applying")')
 
 norm = ownermod.norm
 
 # root: the work tree's top level; cwd: the caller's directory (a relative --body-file); env: the
 # environment the host's model variable is read from (None: os.environ); provider: the host name
-# (None: the hosts.json default); owner_approval: `hub:A-<n>` (--owner-approval); consume: the
-# commit --consume names; hub: the hub client to ask (None: the machine's hub; tests pass one);
-# allow_empty: --allow-empty, a commit of no paths (module docstring).
+# (None: the hosts.json default); allow_empty: --allow-empty, a commit of no paths (module
+# docstring).
 Request = collections.namedtuple(
     'Request', 'root subject b body_file model owner_authored owner_approved '
-               'lander_main_checkout paths cwd env provider owner_approval consume hub '
-               'allow_empty',
-    defaults=(None, None, None, None, False))
+               'lander_main_checkout paths cwd env provider allow_empty',
+    defaults=(None, False))
 Outcome = collections.namedtuple('Outcome', 'code lines')
 
 
 def request(root, subject, paths, b='', body_file=None, model=None, owner_authored=False,
             owner_approved=(), lander_main_checkout=False, cwd=None, env=None, provider=None,
-            owner_approval=None, consume=None, hub=None, allow_empty=False):
+            allow_empty=False):
     return Request(root, subject, b, body_file, model, owner_authored, list(owner_approved),
                    lander_main_checkout, list(paths), cwd or os.getcwd(), env, provider,
-                   owner_approval, consume, hub, allow_empty)
+                   allow_empty)
 
 
 class _Stop(Exception):
@@ -177,7 +174,7 @@ def owner_only_refusal(locked, carried=()):
     in progress would carry unnamed, named in a hint)."""
     return ('refused: %s is owner-only, and only a commit the owner authors (their own git '
             'identity, --owner-authored) can carry its approval. Propose the change to the owner.%s '
-            'Or ask the owner on the hub and commit with --owner-approval hub:A-<n>.' % (
+            'Or ask the owner on the hub (hub.py approvals add): the hub commits it once approved.' % (
                 ', '.join(locked), (' (A merge in progress carries the merged branch\'s own copy '
                                     'of %s without it being named: leave it out of your list.)'
                                     % ', '.join(carried)) if carried else ''))
@@ -957,58 +954,8 @@ def render_sources(root, paths):
     return got
 
 
-# The approval an --owner-approval commit carries: the hub client, its id (A-<n>), its document,
-# the HEAD the steps before the write judged it on and what they found to write there
-# (approval.prewrite; both None until _approval_before_write).
-_Hub = collections.namedtuple('_Hub', 'client did doc head plan', defaults=(None, None))
-
-
-def _approval_first(req, root, paths):
-    """_Hub for --owner-approval once the hub has the approval, approved and not consumed; raises
-    _Stop for what refuses it before the index is read: no hub, no such approval, its state, a
-    render source among `paths` (the commit would carry rendered files the owner did not approve)
-    or a merge in progress (the commit would have two parents)."""
-    did = approval.doc_id(req.owner_approval)
-    client, why = approval.hub_client(req.hub)
-    doc = None
-    if client is not None:
-        doc, why = approval.fetch(client, did)
-    why = why if doc is None else approval.state_error(did, doc)
-    if why:
-        raise _Stop(REFUSED, 'refused: %s. Nothing was written or committed.' % why)
-    if oncommit.wants_render(paths) and oncommit.is_kit(root):
-        raise _Stop(REFUSED, 'refused: a render source is named, and an approved commit carries '
-                    'the approved files only. Nothing was written or committed.')
-    heads = merge_heads(root)
-    if heads:
-        raise _Stop(REFUSED, 'refused: a merge in progress (MERGE_HEAD %s): an approved commit has '
-                    'one parent, its base. Nothing was written or committed.'
-                    % ', '.join(h[:12] for h in heads))
-    return _Hub(client, did, doc)
-
-
-def _approval_before_write(root, hub, paths, status_before):
-    """`hub`, with the HEAD it was judged on and what to write there, once the approved change may
-    be written: none of its paths staged already, the paths its own and the change applying on
-    HEAD (approval.prewrite: the approved content, or its clean merge onto HEAD's copy), and the
-    hub verifying it for its base; else _Stop."""
-    staged = sorted(set(status_before) & set(approval.approved_paths(hub.doc)))
-    why = None
-    if staged:
-        why = ('%s is staged already: an approved commit records the approved content only. '
-               'Unstage it first' % ', '.join(staged))
-    head = plan = None
-    if not why:
-        head = head_commit(root)
-        plan, why = approval.prewrite(root, hub.did, hub.doc, paths, head)
-    why = why or approval.preverify_error(root, hub.client, hub.did, hub.doc, head)
-    if why:
-        raise _Stop(REFUSED, 'refused: %s. Nothing was written or committed.' % why)
-    return hub._replace(head=head, plan=plan)
-
-
 def _stage(req, root, paths, rendered, named, merged, status_before, msg_warnings, body, trailers,
-           lines, hub, shrink=(None, ())):
+           lines, shrink=(None, ())):
     """`(head, snap, status_after, others, message)`: the named paths staged and checked, for
     commit_only; raises _Stop on a refusal. `shrink`: (rules, the owner-only paths exempt as
     work-tree shrinks), each judged again here on its staged copy against `head`."""
@@ -1036,9 +983,6 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     # after the machine-path check, so the blobs checked are the blobs committed.
     head = head_commit(root)
     snap = index_snapshot(root, status_after)
-    why = hub and approval.staged_error(hub.doc, head, status_after, snap, hub.head, hub.plan)
-    if why:
-        raise _Stop(REFUSED, 'refused: %s. Nothing was committed.' % why)
     rules, shrunk = shrink
     grown = sorted(set(shrunk) - (shrunk_paths(root, rules, shrunk, ['--cached', head])
                                   if shrunk and head else set()))
@@ -1055,45 +999,6 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
                     'was checked. Nothing was committed; run this again.' % ', '.join(changed))
     lines.extend(l for l in warnings if l not in msg_warnings)
     return head, snap, status_after, others, build_message(req.subject, body, trailers)
-
-
-def _put_back(root, written, paths, stop_lines):
-    """`stop_lines` and how the work tree and index were left, after an --owner-approval commit
-    was refused once the approved content was written: the files put back, the paths unstaged
-    (none was staged before the call: _approval_before_write)."""
-    failed = approval.restore(written)
-    rc, _out, gerr = ownerrules.run_git(root, 'reset', '-q', '--', *paths)
-    if not failed and rc == 0:
-        return stop_lines + ['The work tree is as it was, and nothing this call staged is staged.']
-    return stop_lines + ['The work tree and index could not be put back: %s. Check `git status` by '
-                         'hand.' % '; '.join(failed + (
-                             ['git reset failed: %s' % (gerr or 'exit %s' % rc)] if rc else []))]
-
-
-def _consume(req, lines):
-    """--owner-approval hub:A-<n> --consume COMMIT: consume the approval for COMMIT, made already
-    (approval.consume_commit)."""
-    did = approval.doc_id(req.owner_approval)
-    value = req.consume.strip()
-    rc, out, _err = ((1, '', '') if not value or value.startswith('-')
-                     else ownerrules.run_git(req.root, 'rev-parse', '-q', '--verify',
-                                             value + '^{commit}'))
-    sha = out.strip()
-    if rc != 0 or not sha:
-        raise _Stop(REFUSED, 'refused: --consume %s is not a commit here. Nothing was consumed.'
-                    % req.consume)
-    client, why = approval.hub_client(req.hub)
-    line, consumed = None, False
-    if client is not None:
-        line, why, consumed = approval.consume_commit(req.root, client, did, req.owner_approval,
-                                                      sha)
-    if line is None and consumed:
-        raise _Stop(REFUSED, approval.consume_refusal(req.owner_approval, sha, why, True),
-                    'Run this again to ask the hub again: python %s' % approval.retry_command(
-                        os.path.join(KIT_ROOT, 'tools', 'commit.py'), req.owner_approval, sha))
-    if line is None:
-        raise _Stop(REFUSED, 'refused: %s. %s was not consumed.' % (why, req.owner_approval))
-    lines.append(line)
 
 
 def commit(req):
@@ -1119,14 +1024,8 @@ def _commit(req, lines):
     except kconfig.ConfigError as e:
         raise _Stop(USAGE, 'REFUSED: the kit configuration is refused: %s. Nothing was committed.'
                     % e)
-    err = approval.usage_error(req)
-    if err:
-        raise _usage(err)
-    if req.allow_empty and (req.paths or req.owner_approval or req.consume is not None):
-        raise _usage('--allow-empty takes no paths and no --owner-approval: it commits only the '
-                     'message and its trailers')
-    if req.consume is not None:
-        return _consume(req, lines)
+    if req.allow_empty and req.paths:
+        raise _usage('--allow-empty takes no paths: it commits only the message and its trailers')
     model, source, err = attribution.resolve_model(req.owner_authored, req.model, req.env, req.provider)
     if err:
         raise _usage(err)
@@ -1162,7 +1061,6 @@ def _commit(req, lines):
     if err:
         raise _usage(err)
 
-    hub = _approval_first(req, root, paths) if req.owner_approval else None
     ran = render_sources(root, paths)
     rendered = ran or []
     named = set(paths) | set(rendered)
@@ -1196,20 +1094,18 @@ def _commit(req, lines):
     lines.extend(warnings)
     if refusal:
         raise _Stop(REFUSED, *(refusal + ['Nothing was committed.']))
-    if hub:
-        hub = _approval_before_write(root, hub, paths, status_before)
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
     shrunk = set()      # judged again on the staged copy, in _stage
-    if locked and not req.owner_authored and not hub and not merge_heads(root):  # a merge: never
+    if locked and not req.owner_authored and not merge_heads(root):  # a merge: never
         shrunk = shrunk_paths(root, rules, locked)
         locked = [p for p in locked if p not in shrunk]
-    if locked and not req.owner_authored and not hub:
+    if locked and not req.owner_authored:
         # The hint only for a path the merge would carry unnamed, as it is staged now.
         carried = sorted(ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
                                                 heads, landed)[0])
         raise _Stop(REFUSED, owner_only_refusal(locked, carried))
-    for p in ([] if hub else unapproved_locked(rules, locked, approved)):
+    for p in unapproved_locked(rules, locked, approved):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
     if req.owner_authored:
         err = owner_identity_error(rules, author_email(root))
@@ -1218,31 +1114,13 @@ def _commit(req, lines):
     body, session = session_lines(body, req.owner_authored, req.env, req.provider)
     trailers = build_trailers(rules, approved, req.owner_authored, model, opts['coauthor_families'],
                               req.provider, session)
-    written = None
-    if hub:
-        trailers.insert(0, approval.trailer(req.owner_approval))
-        written, why = approval.write(root, hub.doc, hub.plan)
-        if written is None:
-            raise _Stop(REFUSED, 'refused: %s. Nothing was committed.' % why)
-    try:
-        head, snap, status_after, others, msg = _stage(
-            req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
-            trailers, lines, hub, (rules, shrunk))
-        try:
-            rc, out, err, new, notes, trees = commit_only(root, head, snap, msg,
-                                                          allow_empty=req.allow_empty)
-        except _Stop as stop:
-            if hub:                 # the commit may stand: the work tree is left as committed
-                stop.lines.append('%s was not consumed; the approved content is left in the work '
-                                  'tree.' % req.owner_approval)
-            written = None
-            raise
-        if rc != 0:
-            raise _Stop(REFUSED, 'commit failed: %s' % (err or out.strip() or 'exit %s' % rc))
-    except _Stop as stop:
-        if written is None:
-            raise
-        raise _Stop(stop.code, *_put_back(root, written, paths, stop.lines))
+    head, snap, status_after, others, msg = _stage(
+        req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
+        trailers, lines, (rules, shrunk))
+    rc, out, err, new, notes, trees = commit_only(root, head, snap, msg,
+                                                  allow_empty=req.allow_empty)
+    if rc != 0:
+        raise _Stop(REFUSED, 'commit failed: %s' % (err or out.strip() or 'exit %s' % rc))
     _rc, short, _err = ownerrules.run_git(root, 'rev-parse', '--short', new)
     lines.append('committed %s  %s' % (short.strip() or new[:12], req.subject))
     lines.append('files     %s' % (', '.join(
@@ -1267,19 +1145,5 @@ def _commit(req, lines):
             lines.append(iline)
         if not (ok and iok):
             lines.append('          fix it in a follow-up commit before this branch can land')
-    if hub:
-        line, why, consumed = approval.consume_commit(root, hub.client, hub.did,
-                                                      req.owner_approval, new)
-        if line:
-            lines.append(line)
-        else:
-            misaligned = [
-                approval.consume_refusal(req.owner_approval, new, why, consumed),
-                'The commit %s stands; gate land and the pre-push hook refuse it until the hub '
-                'verifies the approval as consumed by it. Run in this work tree%s: python %s' % (
-                    new[:12], ' to ask the hub again' if consumed else '',
-                    approval.retry_command(os.path.join(KIT_ROOT, 'tools', 'commit.py'),
-                                           req.owner_approval, new))
-            ] + list(misaligned)
     if misaligned:
         raise _Stop(REFUSED, *misaligned)

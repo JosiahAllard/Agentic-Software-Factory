@@ -4,7 +4,6 @@
   schema   the fields each collection's documents carry, checked before every write
   auth     who a request on the local listener is: the owner token, the pairing code, the session cookie
   access   the Cloudflare Access token check for the tunnel listener: verify, KeyCache
-  approvals the approvals a request waits on: asked, decided, verified
   api      the site's JSON API: routes, roles, and the writes behind them
   apiask   the api's question routes: list, ask, edit, withdraw and bind to a record
   apibase  what the api's handlers share: role and status constants, Route, Request, the request readers
@@ -14,7 +13,7 @@
   apirecord the checks a bound ask shares: the record it is bound to, an agent's claim
   apitodos the api's to-do routes: add, steps, done, edit and withdraw
   apiposts the api's routes for the owner's notes to the PM
-  apiapprovals the api's approval routes: add, decide, consume, withdraw, supersede, verify
+  apiapprovals the api's approval routes: add, decide (and the hub's apply), apply, consume, withdraw, supersede, verify
   apipark  the api's parking of a record on a bound ask, and the sweep of lines whose ask is gone
   apipages the api's page routes: publish, place, read and delete an HTML page and its card
   apilog   the api's log routes: the inbox, the landing feed and the hand-off records

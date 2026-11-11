@@ -5,8 +5,8 @@
   approvals.py  the approval record: the delta rule, verify, consume, spent, its life
   request.py    building an approval request from a checkout (tools/hub.py approvals add, the
                 hub MCP tool)
-  apply.py      the steps of commit.py --owner-approval: pre-write checks, write, staged check,
-                consume, put back on a refusal
+  apply.py      the hub applies an approved change: on the request's branch in its linked
+                worktree, checks first, one commit, put back on a refusal
 
 No argparse, no printing, no exits (AGENTS.md).
 """

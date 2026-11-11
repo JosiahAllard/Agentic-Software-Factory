@@ -1,61 +1,80 @@
-"""The owner's approval on the hub, for commit.py --owner-approval hub:A-<n> (docs/commit.md
-"Owner approval"). kitlib.commit runs these steps; nothing here prints, exits or raises a refusal:
-each answers why it refuses, or None.
+"""The hub applies a change the owner approved (docs/hub-approvals.md "Applying"): it commits the
+approved files on the branch the request named, in that branch's one linked worktree, and the
+approval is consumed by that commit. kitlib.hubsite.apiapprovals runs it when the owner approves,
+and again on `hub.py approvals apply A-<n>`. Nothing here prints, exits or raises a refusal: each
+step answers why it refuses, or None.
 
-  usage_error(req)                  why the flags do not go together, or None
-  hub_client(given)                 (client, why): `given`, else the machine's hub
-  fetch(client, doc_id)             (document, why) from the hub's snapshot
-  state_error(doc_id, doc)          why the document cannot be committed now (consumed, not
-                                    approved), or None
+  worktree_for(checkout, branch)    (path, None): the one linked worktree of `checkout`'s
+                                    repository on refs/heads/<branch> (never the main checkout),
+                                    or (None, why)
+  apply(root, branch, did, doc, key, now, checks=())
+                                    (Applied, None) once the approved change is committed on
+                                    `branch` in the worktree `root` and its files are written;
+                                    else (None, why) with the branch, files and index as they were
+  undo(applied)                     the failures of putting an Applied back (the branch moved back
+                                    by compare-and-swap, the files restored), as text
+  hub_client(given) / fetch(client, doc_id) / state_error(doc_id, doc)
+                                    the hub's copy of an approval and why it cannot be applied
+                                    now (kitlib.worktree.new reads a base through them)
   prewrite(root, doc_id, doc, paths, head)
                                     (plan, None): what to write on HEAD, {path: (blob, bytes)}
                                     (None, None for a delete); or (None, why) when the change
-                                    cannot be written: the named paths are not exactly the
-                                    approval's, a content is not its signed blob, a file is
-                                    unchanged, the approved change does not apply on HEAD (the
-                                    delta rule), HEAD holds it already, or a file in the work
-                                    tree is not HEAD's copy (or a path not a plain file of the
-                                    work tree). prewrite_error(...) is its why alone
-  preverify_error(root, client, doc_id, doc, head)
-                                    why the hub does not verify the approval before the write
+                                    cannot be written: the paths are not exactly the approval's,
+                                    a content is not its signed blob, a file is unchanged, the
+                                    approved change does not apply on HEAD (the delta rule), HEAD
+                                    holds it already, or a file in the work tree is not HEAD's copy
+                                    (or a path not a plain file of the work tree)
   write(root, doc, plan=None) / restore(state)
                                     the plan (default: the approved content) into the work tree,
                                     and back
-  staged_error(doc, head, staged, snap, judged, plan=None)
-                                    why what was staged is not the plan's blobs (default: the
-                                    approved ones) on the HEAD the steps before judged
-  consume_commit(root, client, doc_id, value, sha)
-                                    (line, why, consumed): consume the approval for the commit
-                                    `sha`, then ask the hub to verify it for that commit
 
 What is written on HEAD (the delta rule, kitlib.ownerfiles.approvals.delta_targets): for each
-approved path, the approved content where HEAD holds the base's copy (HEAD is the base, a
-descendant that changed none of the approved paths, or a rebuilt line with the same copy), and
-the clean merge of the approved change onto HEAD's copy (`git merge-file`) where HEAD changed the
-path since the base. A merge that conflicts, a path HEAD holds as something other than a regular
-file, or a file the approval creates that HEAD holds with other content refuses. So the commit
-made is the one gate land judges by the same rule.
+approved path, the approved content where HEAD holds the base's copy, and the clean merge of the
+approved change onto HEAD's copy (`git merge-file`) where HEAD changed the path since the base. A
+merge that conflicts, a path HEAD holds as something other than a regular file, or a file the
+approval creates that HEAD holds with other content refuses.
 
-The hub is asked through kitlib.ownerfiles (approvals.Verifier.verify, for the approval's base,
-and approvals.consume, the agent's calls); every failure to ask it is a refusal, never a pass.
-The commit gate land and the pre-push hook judge is kitlib.ownerfiles.rules.violations, by
-the delta rule (kitlib.ownerfiles.approvals.delta_error): the approved commit has one parent, changes
-only the approval's files, makes the approved change on that parent (a clean merge onto it when the
-parent moved past the base), and is consumed by the hub, by any commit, and not
-spent. consume_commit judges the commit by delta_error too before it consumes.
+apply, in order. Read-only checks first: the approval is signed under `key`, approved, never
+consumed and not expired at `now`, for the worktree's repository (approvals.check); HEAD is the
+branch, with no merge, cherry-pick, revert or rebase in progress; prewrite passes on HEAD; each
+approved path's index entry is HEAD's (nothing staged on it); each probe in `checks` ((root,
+paths) -> why or None) passes. Then the commit is made on a private index (GIT_INDEX_FILE), never
+the worktree's: the approved bytes hashed as they are (--no-filters), HEAD's tree with the
+approved entries, one parent, the message the approval's title, its reason and `Owner-Approval:
+hub:A-<n>`, author and committer AUTHOR (never the owner, so the owner-file rules judge it by its
+approval), no hook. kitlib.ownerfiles.rules.violations must find nothing on it, with the approval
+judged in process (the delta rule and approvals.check, unconsumed). The branch is moved by
+compare-and-swap (`update-ref <new> <old>`: the commit point), then the files are written and the
+approved paths' index entries set to the commit's (git's index.lock, a bounded retry). A failure
+after the branch moved puts back what was done: the branch moved back by compare-and-swap, the
+files restored, the index entries HEAD's again; a put-back that fails is named in the why. The
+caller consumes the approval (approvals.consume_fields) and, when that write fails, calls undo.
 """
+import collections
 import os
+import shutil
+import tempfile
+import time
 
 from kitlib.git import cmd
+from kitlib.git import repo as gitrepo
 from kitlib.ownerfiles import rules as oc
 
 TRAILER = oc.TRAILER
 VALUE = 'hub:A-<n>'
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+AUTHOR = ('PM kit hub', 'hub@pm-kit.invalid')   # the author and committer of every applied commit
+OPERATIONS = ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply')
+INDEX_TRIES = 10            # attempts at the worktree's index while another git holds index.lock
+INDEX_WAIT_S = 0.2
+NULL = '0' * 40
+
+# What apply did: the commit, the branch tip it replaced, the branch and the worktree, and the
+# files it wrote (write's state, for undo).
+Applied = collections.namedtuple('Applied', 'commit old branch worktree written entries')
 
 
 def doc_id(value):
-    """The approval id of an --owner-approval value, exactly as the hub issues it (A-001), or
+    """The approval id of a `hub:A-<n>` value, exactly as the hub issues it (A-001), or
     None (oc.APPROVAL_RE)."""
     m = oc.APPROVAL_RE.match(value) if isinstance(value, str) else None
     return m.group(1) if m else None
@@ -63,54 +82,6 @@ def doc_id(value):
 
 def trailer(value):
     return '%s: %s' % (TRAILER, value)
-
-
-def base_route(root, did):
-    """The sentence naming the way to commit the approval `did` when HEAD is not on its base's
-    content: a worktree made at that base (docs/new-worktree.md "A base commit"), or a new
-    approval."""
-    return ('Commit it from a worktree at that base: python %s -C %s <area>/<slug> --approval '
-            'hub:%s (docs/new-worktree.md "A base commit"), then merge that branch into this one; '
-            'or ask the owner again from this HEAD.'
-            % (os.path.join(KIT_ROOT, 'tools', 'new_worktree.py'), root, did))
-
-
-def retry_command(tool, value, sha):
-    """The command line (after `python`) that consumes `value` for the commit `sha`."""
-    return '%s --owner-approval %s --consume %s' % (tool, value, sha)
-
-
-def consume_refusal(value, sha, why, consumed):
-    """The `refused:` line for a consume_commit of `value` for the commit `sha` that failed:
-    `consumed` says whether the hub did consume it (consume_commit)."""
-    if consumed:
-        return ('refused: %s was consumed by %s, and the hub does not verify it for that commit: '
-                '%s.' % (value, sha[:12], why))
-    return 'refused: %s was not consumed: %s.' % (value, why)
-
-
-def usage_error(req):
-    """Why --owner-approval / --consume do not go with the rest of `req`, or None."""
-    if req.consume is not None and req.owner_approval is None:
-        return '--consume needs --owner-approval %s: the approval it consumes' % VALUE
-    if req.owner_approval is None:
-        return None
-    if not doc_id(req.owner_approval):
-        return ('--owner-approval takes %s, the approval\'s id as the hub shows it, as %s '
-                '(not %r)' % (VALUE, oc.EXAMPLE, req.owner_approval))
-    if req.owner_authored:
-        return ('--owner-approval and --owner-authored do not go together: the owner commits a '
-                'change of their own with --owner-authored, an agent the approved one with '
-                '--owner-approval')
-    if req.owner_approved:
-        return ('--owner-approval and --owner-approved do not go together: --owner-approved is '
-                'for the owner\'s own commit')
-    if req.consume is not None:
-        if req.paths:
-            return '--consume takes no paths: it consumes the approval for a commit already made'
-        if req.subject or req.b or req.body_file:
-            return '--consume takes no -m, -b or --body-file: the commit is made already'
-    return None
 
 
 def _err(e):
@@ -226,8 +197,8 @@ def prewrite(root, did, doc, paths, head):
         else ap.delta_targets(root, doc, head)
     if targets is None:
         return None, ('the approval is for base %s, and its change does not apply on HEAD %s: %s. '
-                      '%s' % (doc['head'][:12], (head or 'unborn')[:12], why,
-                              base_route(root, did)))
+                      'Ask the owner again from this HEAD.'
+                      % (doc['head'][:12], (head or 'unborn')[:12], why))
     plan = {}
     for p in want:
         par, blob, data = targets[p]
@@ -245,45 +216,6 @@ def prewrite(root, did, doc, paths, head):
                           'is made on: %s. Put it back, or ask the owner again.' % (p, drift))
         plan[p] = (blob, data)
     return plan, None
-
-
-def preverify_error(root, client, did, doc, head):
-    """Why the hub does not verify the approval as it stands, before anything is written (its
-    signature, status and repository, for the approval's own base and blobs:
-    approvals.Verifier.verify; prewrite judged the change on `head` against that base), or
-    None."""
-    from kitlib.ownerfiles import approvals as ap
-    repo, why = ap.remote_id(root)
-    if repo is None:
-        return 'the repository has no remote to name it: %s' % why
-    ok, why = ap.Verifier(client).verify(did, repo, doc['head'],
-                                         {f['path']: f.get('blob') for f in doc['files']})
-    return None if ok else 'hub:%s refused: %s' % (did, why)
-
-
-def staged_error(doc, head, staged, snap, judged, plan=None):
-    """Why what is staged is not the approved change, or None. `head`: HEAD as read for the
-    commit; `judged`: the HEAD prewrite and preverify_error judged; `staged`: {path: status
-    letter} this call commits; `snap`: their index entries ({path: (mode, oid)}, None for a
-    deletion; kitlib.commit.index_snapshot); `plan`: prewrite's, else the approved blobs."""
-    if head != judged:
-        return 'HEAD is %s, not %s, the commit the approval was checked on' % (
-            (head or 'unborn')[:12], (judged or 'unborn')[:12])
-    want = approved_paths(doc)
-    if sorted(staged) != want:
-        return 'the staged paths are %s, not the approval\'s %s' % (
-            ', '.join(sorted(staged)) or 'none', ', '.join(want))
-    for f in doc['files']:
-        entry = snap.get(f['path'])
-        if entry and entry[0] not in oc.REGULAR_MODES:
-            return ('the staged %s has mode %s: an approval holds regular files only (100644 or '
-                    '100755)' % (f['path'], entry[0]))
-        blob = plan[f['path']][0] if plan else f.get('blob')
-        if (entry[1] if entry else None) != blob:
-            return ('the staged %s is not the %s (a git filter or .gitattributes changed it on '
-                    'staging)' % (f['path'], 'approved blob' if blob == f.get('blob') else
-                                  'approved change merged onto HEAD'))
-    return None
 
 
 def write(root, doc, plan=None):
@@ -344,65 +276,244 @@ def restore(state):
     return failed
 
 
-def commit_facts(root, sha):
-    """((parents, Owner-Approval values), None) of the commit `sha`, or (None, why)."""
-    r = cmd.call(oc.NOREPLACE + ['show', '-s', '--format=%%P%%x00%%(trailers:key=%s,valueonly,'
-                                 'separator=%%x01)' % TRAILER, sha, '--'], root)
+def worktree_for(checkout, branch):
+    """(path, None): the one linked worktree of the repository `checkout` is in whose HEAD is
+    refs/heads/<branch>; or (None, why): no branch, git cannot list the worktrees, the branch is
+    the main checkout's (an approved change is never committed there), or no worktree has it."""
+    if not isinstance(branch, str) or not branch:
+        return None, 'the request names no branch to apply it on'
+    found, why = gitrepo.worktrees(checkout)
+    if found is None:
+        return None, 'the worktrees of %s cannot be listed: %s' % (checkout, why)
+    if found and found[0].branch == branch:
+        return None, ("%s is the main checkout's branch: an approved change is applied in a "
+                      "linked worktree only" % branch)
+    on = [w.path for w in found[1:] if w.branch == branch and not w.bare]
+    if len(on) != 1:
+        return None, 'no linked worktree has %s checked out' % branch
+    return on[0], None
+
+
+def _git(root, args, env=None, stdin=None):
+    """(stdout text, None) of `git <args>` in `root`, or (None, why)."""
+    r = cmd.call(oc.NOREPLACE + list(args), root, stdin=stdin, env=env)
     if r.rc != 0:
-        return None, 'git show %s failed: %s' % (sha[:12], r.err or 'exit %s' % r.rc)
-    parents, _nul, values = cmd.text(r.out).partition('\0')
-    return (parents.split(), [v.strip() for v in values.split('\x01') if v.strip()]), None
+        return None, 'git %s failed: %s' % (args[0], r.err or 'exit %s' % r.rc)
+    return cmd.text(r.out), None
 
 
-def consume_commit(root, client, did, value, sha):
-    """(the `approval` line, None, True) once the hub has consumed `did` for the commit `sha` (40
-    hex) and verifies it for that commit; else (None, why, consumed): `consumed` True when the hub
-    did consume it for `sha` (now or before) and only the verify for the commit failed, so a retry
-    (--consume) asks that verify again. The commit must carry exactly `Owner-Approval: <value>`
-    and have one parent, and make the approved change on it (approvals.delta_error, the land
-    check's rule); the hub verifies the approved blobs for the signed base before the consume
-    (Verifier.verify, no commit) and after it (with the commit)."""
+def _head_error(root, branch):
+    """Why HEAD of `root` is not `branch` ready to commit on (or an operation is in progress
+    there), or None."""
+    out, _why = _git(root, ['symbolic-ref', '-q', 'HEAD'])
+    if out is None or out.strip() != 'refs/heads/' + branch:
+        return 'the worktree %s is not on %s' % (root, branch)
+    for name in OPERATIONS:
+        path, why = gitrepo.git_path(root, name)
+        if path is None:
+            return 'git cannot say whether an operation is in progress: %s' % why
+        if os.path.lexists(path):
+            return 'the worktree %s has %s: an operation is in progress there' % (root, name)
+    return None
+
+
+def _at_head(root, old, paths):
+    """({path: (mode, oid) or None}, None) of `paths` in `old`, or (None, why) when git cannot say
+    or a path is staged away from it (nothing may be staged on an approved path)."""
+    got, staged = {}, []
+    for p in paths:
+        known, entry = oc.tree_entry(root, old, p)
+        known_ix, entry_ix = oc.index_entry(root, p)
+        if not (known and known_ix):
+            return None, 'git cannot read the entry of %s in %s' % (p, root)
+        got[p] = entry
+        if entry_ix != entry:
+            staged.append(p)
+    if staged:
+        return None, ('%s is staged in %s: an applied commit records the approved content only. '
+                      'Unstage it there first' % (', '.join(staged), root))
+    return got, None
+
+
+def _info(entries, paths):
+    """The `update-index --index-info` lines that set `paths` to `entries` ({path: (mode, oid) or
+    None}; None removes the path)."""
+    return ''.join('%s %s\t%s\n' % ((entries.get(p) or ('0', NULL)) + (p,))
+                   for p in paths).encode('utf-8')
+
+
+def _target(at_head, plan):
+    """{path: (mode, oid) or None}: the approved paths' entries in the applied commit (HEAD's
+    mode kept)."""
+    return {p: ((at_head.get(p) or ('100644',))[0], blob) if blob is not None else None
+            for p, (blob, _data) in plan.items()}
+
+
+def _set_index(root, entries):
+    """None once the worktree's index holds `entries` ({path: (mode, oid) or None}), else why;
+    while another git holds index.lock it is tried INDEX_TRIES times."""
+    data, why = _info(entries, sorted(entries)), None
+    for _ in range(INDEX_TRIES):
+        r = cmd.call(['update-index', '--index-info'], root, stdin=data)
+        if r.rc == 0:
+            cmd.call(['update-index', '-q', '--refresh'], root)    # stat data only: best effort
+            return None
+        why = 'git update-index failed: %s' % (r.err or 'exit %s' % r.rc)
+        if 'index.lock' not in (r.err or ''):
+            break
+        time.sleep(INDEX_WAIT_S)
+    return why
+
+
+def _message(did, doc):
+    title = ' '.join(str(doc.get('title') or '').split()) or 'Apply hub:%s' % did
+    reason = str(doc.get('reason') or '').strip()
+    return '%s\n\n%s%s\n' % (title, reason + '\n\n' if reason else '', trailer('hub:' + did))
+
+
+class _Approved(object):
+    """The approvals seam of rules.violations for the one approval being applied: the delta rule
+    (approvals.delta_error) on the document in hand, then approvals.check under the key in
+    process, unconsumed."""
+
+    def __init__(self, key, did, doc, repo, now):
+        self.key, self.did, self.doc, self.repo, self.now = key, did, doc, repo, now
+
+    def check(self, root, doc_id, head, blobs, commit):
+        from kitlib.ownerfiles import approvals as ap
+        if doc_id != self.did:
+            return False, 'the commit carries hub:%s, not hub:%s' % (doc_id, self.did)
+        approved, why = ap.delta_error(root, self.doc, head, commit, blobs)
+        if approved is None:
+            return False, why
+        return ap.check(self.key, doc_id, self.doc, self.repo, self.doc['head'], approved,
+                        self.now)
+
+
+def _checks(root, branch, did, doc, key, now, checks):
+    """((old, plan, at_head, repo), None) once the read-only checks pass (module docstring), else
+    (None, why)."""
     from kitlib.ownerfiles import approvals as ap
-    facts, why = commit_facts(root, sha)
-    if facts is None:
-        return None, why, False
-    parents, values = facts
-    if values != [value]:
-        return None, 'the commit %s does not carry %s alone' % (sha[:12], trailer(value)), False
-    if len(parents) != 1:
-        return None, 'the commit %s is %s: an approved commit has one parent' % (
-            sha[:12], 'a merge' if parents else 'a root commit'), False
-    changed, why = oc.plain_changes(root, [sha])
-    if changed is None:
-        return None, why, False
-    blobs, why = oc.blobs_at(root, sha, changed[sha])
-    if blobs is None:
-        return None, why, False
-    odd = oc.irregular(blobs)
-    if odd:
-        return None, 'the commit %s holds %s' % (sha[:12], odd), False
+    if ap.approved_files(doc) is None or doc.get('kind') is not None:
+        return None, 'hub:%s is not a well-formed file approval' % did
+    why = state_error(did, doc)
+    if why:
+        return None, why
     repo, why = ap.remote_id(root)
     if repo is None:
-        return None, 'the repository has no remote to name it: %s' % why, False
-    doc, why = fetch(client, did)
-    if doc is None:
-        return None, why, False
-    if doc.get('commit') != sha and doc.get('commit'):
-        return None, state_error(did, doc), False
-    approved, why = ap.delta_error(root, doc, parents[0], sha, blobs)
-    if approved is None:
-        return None, 'hub:%s refused: %s' % (did, why), False
-    verifier = ap.Verifier(client)
-    if doc.get('commit') != sha:
-        ok, why = verifier.verify(did, repo, doc['head'], approved)
-        if not ok:
-            return None, 'hub:%s refused: %s' % (did, why), False
-        version = doc.get('version', 0)
-        try:
-            ap.consume(client, did, sha, version if isinstance(version, int) else 0)
-        except Exception as e:      # noqa: BLE001 - the commit stands; the caller says so
-            return None, 'the hub did not consume hub:%s (%s)' % (did, _err(e)), False
-    ok, why = verifier.verify(did, repo, doc['head'], approved, commit=sha)
+        return None, 'the repository of %s has no remote to name it: %s' % (root, why)
+    ok, why = ap.check(key, did, doc, repo, doc['head'],
+                       {f['path']: f.get('blob') for f in doc['files']}, now)
     if not ok:
-        return None, 'hub:%s refused: %s' % (did, why), True
-    return 'approval  hub:%s consumed by %s' % (did, sha[:12]), None, True
+        return None, 'hub:%s cannot be applied: %s' % (did, why)
+    why = _head_error(root, branch)
+    if why:
+        return None, why
+    out, why = _git(root, ['rev-parse', '--verify', 'HEAD^{commit}'])
+    if out is None:
+        return None, why
+    old, paths = out.strip(), approved_paths(doc)
+    plan, why = prewrite(root, did, doc, paths, old)
+    if plan is None:
+        return None, why
+    at_head, why = _at_head(root, old, paths)
+    if at_head is None:
+        return None, why
+    for probe in checks:
+        why = probe(root, paths)
+        if why:
+            return None, why
+    return (old, plan, at_head, repo), None
+
+
+def _build(root, did, doc, old, plan, at_head):
+    """(the commit of the approved change on `old`, None), made on a private index, or (None,
+    why)."""
+    tmp = tempfile.mkdtemp(prefix='kit-apply-')
+    try:
+        env = dict(cmd.scrubbed_env(), GIT_INDEX_FILE=os.path.join(tmp, 'index'),
+                   GIT_AUTHOR_NAME=AUTHOR[0], GIT_AUTHOR_EMAIL=AUTHOR[1],
+                   GIT_COMMITTER_NAME=AUTHOR[0], GIT_COMMITTER_EMAIL=AUTHOR[1])
+        for p, (blob, data) in sorted(plan.items()):
+            if data is None:
+                continue
+            out, why = _git(root, ['hash-object', '-w', '--no-filters', '--stdin'], env, data)
+            if out is None:
+                return None, why
+            if out.strip() != blob:
+                return None, '%s hashed as %s, not %s' % (p, out.strip()[:12], blob[:12])
+        for args, stdin in ((['read-tree', old], None),
+                            (['update-index', '--index-info'],
+                             _info(_target(at_head, plan), sorted(plan)))):
+            out, why = _git(root, args, env, stdin)
+            if out is None:
+                return None, why
+        tree, why = _git(root, ['write-tree'], env)
+        if tree is None:
+            return None, why
+        sha, why = _git(root, ['commit-tree', tree.strip(), '-p', old], env,
+                        _message(did, doc).encode('utf-8'))
+        return (sha.strip(), None) if sha is not None else (None, why)
+    finally:
+        shutil.rmtree(tmp, True)
+
+
+def apply(root, branch, did, doc, key, now, checks=()):
+    """(Applied, None) once the approved change of `doc` (the approval `did`, the hub's stored
+    document) is committed on `branch` in the worktree `root` and written there; else (None, why),
+    with what was done put back (module docstring). `key`: the approval key; `now`: an aware
+    datetime; `checks`: probes (root, paths) -> why or None, run before anything is written."""
+    from kitlib import config as kconfig
+    got, why = _checks(root, branch, did, doc, key, now, checks)
+    if got is None:
+        return None, why
+    old, plan, at_head, repo = got
+    try:
+        rules = kconfig.load(root).owner_rules()
+    except kconfig.ConfigError as e:
+        return None, 'the kit configuration of %s is refused: %s' % (root, e)
+    new, why = _build(root, did, doc, old, plan, at_head)
+    if new is None:
+        return None, 'the commit could not be made: %s' % why
+    bad, why = oc.violations(root, rules, new, (old,),
+                             approvals=_Approved(key, did, doc, repo, now))
+    if bad is None or bad:
+        return None, 'the commit would not pass the owner-file rules: %s' % (
+            why or oc.describe(rules, bad))
+    out, why = _git(root, ['update-ref', '-m', 'hub: apply hub:%s' % did,
+                           'refs/heads/' + branch, new, old])
+    if out is None:
+        return None, '%s could not be moved from %s: %s' % (branch, old[:12], why)
+    done = Applied(new, old, branch, root, None, at_head)
+    written, why = write(root, doc, plan)
+    if written is None:
+        return None, why + _undone(undo(done))
+    done = done._replace(written=written)
+    why = _set_index(root, _target(at_head, plan))
+    if why:
+        return None, 'the index of %s could not be set: %s%s' % (root, why, _undone(undo(done)))
+    return done, None
+
+
+def _undone(failed):
+    if failed:
+        return '; and it could not all be put back: %s' % '; '.join(failed)
+    return '; the branch, files and index are as they were'
+
+
+def undo(applied):
+    """Put back what `applied` did: the branch moved back from the commit by compare-and-swap,
+    the files restored, the approved paths' index entries HEAD's again. The failures, as text
+    ([] when all is back)."""
+    failed = []
+    out, why = _git(applied.worktree, ['update-ref', '-m', 'hub: put back hub apply',
+                                       'refs/heads/' + applied.branch, applied.old,
+                                       applied.commit])
+    if out is None:
+        failed.append('%s is still at %s: %s' % (applied.branch, applied.commit[:12], why))
+    if applied.written is not None:
+        failed.extend(restore(applied.written))
+        why = _set_index(applied.worktree, applied.entries)
+        if why:
+            failed.append(why)
+    return failed

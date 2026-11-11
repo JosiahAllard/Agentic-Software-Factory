@@ -22,7 +22,7 @@ Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level
 | `ownerfiles/rules.py` | Which commits and merges touch owner-only paths: `violations`, the net change, shrink-only, the clean-merge rule |
 | `ownerfiles/approvals.py` | The approval record: the delta rule, verify, consume, spent, the 30-day life |
 | `ownerfiles/request.py` | Building a request from a checkout (the CLI and the hub MCP tool call it) |
-| `ownerfiles/apply.py` | Making the approved commit in a worktree: pre-write checks, write, stage, commit, consume, put back on a refusal |
+| `ownerfiles/apply.py` | The hub's apply of an approved change on the request's branch in its linked worktree: checks, a commit on a private index, the branch moved by compare-and-swap, files and index written, put back on a failure |
 | `delegations/load.py`, `schema.py`, `place.py`, `run.py` | The list, its checks, where a run may act, running one operation |
 
 ## State
@@ -31,7 +31,7 @@ Approvals live in the hub store; `ownerfiles` reads them through `hubclient` and
 
 ## Errors
 
-Each check returns the reason as text; the caller prints it under its own label (`refused:` for a commit, `REFUSED:` for a landing, a deny for a push). An apply that fails after it wrote puts every file back and unstages its paths.
+Each check returns the reason as text; the caller prints it under its own label (`refused:` for a commit, `REFUSED:` for a landing, a deny for a push). An apply that fails after it moved the branch puts the branch, the files and the index back.
 
 ## Adding to it
 

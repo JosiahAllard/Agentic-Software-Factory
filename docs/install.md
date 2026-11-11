@@ -318,6 +318,9 @@ Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, 
 - forbidden: create the store (`{}` when `.kit.json` names one), add tokens with `forbidden.py -C <repo> --add` (token on stdin), then a gate step (docs/repo-checks.md).
 - trailers: add the `trailers.py` step with `merged_args` `--merged` and set `.kit.json` "owner".email in the same change (docs/repo-checks.md "trailers").
 - pytests, tool_deps and kitlib.platform.windows.shield: a repo adopts pytests through a gate step; `python_tests` is no gate key (docs/test-tools.md).
+- The kitlib names this section lists (such as `kitlib.platform.windows.shield`) are the surface a consumer repo imports.
+  tests/content/test_doc_kitlib_names.py fails when a kitlib module or path named in any doc no longer exists, so a move
+  that leaves no forwarder shows up here first.
 - PM repo: its kit/tools copies of the ported tools are dropped.
 - PM record tools: the PM repo's `tools/pending.py`, its ledger tool's `standing` and `check`, and `hooks/pre-commit` retire once its callers point at the kit: set `pending_path` in the machine config (docs/pending.md), and for the hook set `"ledger": {"pre_commit_check": true}` in its `.kit.json` and its `core.hooksPath` to `<kit>/githooks` (docs/ledger.md "Pre-commit check"). A kit older than this port refuses a `.kit.json` holding a `ledger` section (unknown sections are refused), so add it only once every kit checkout that reads that repo has the port.
 - The doc tools (tools/doc_budget.py, doc_index.py, codemap.py; docs/doc-tools.md): a repo's doc settings move from tools/doc_budget.json to `.kit.json` "doc_budget"/"doc_index", and doc_budget.json leaves the default owner paths. A repo needs no gate step for the index listing check; `.kit.json` "doc_index".enabled false skips it.

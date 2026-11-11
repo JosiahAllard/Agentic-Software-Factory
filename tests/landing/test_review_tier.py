@@ -99,7 +99,7 @@ class QueueTime(GateRepoCase):
     def test_tiers_that_cannot_be_read_at_add_are_not_done_not_refused(self):
         """hosts.json unreadable: a High add is NOT DONE (exit 1, a configuration message, nothing
         queued), not REFUSED with an Instead: line to dispatch a strong-tier analyst."""
-        unread = mock.patch.object(land, 'tier_models', return_value=(None, None, 'no hosts.json'))
+        unread = mock.patch.object(V, 'tier_models', return_value=(None, None, 'no hosts.json'))
         with unread:
             code, out, err = self.run_tool(*self.add_args(**{'--risk': 'High'}))
         self.assertEqual(code, 1, (out, err))

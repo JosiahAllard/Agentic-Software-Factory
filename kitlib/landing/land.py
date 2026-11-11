@@ -414,70 +414,6 @@ def parse_strict(text):
     return tuple(globs)
 
 
-def tier_models(path=None):
-    """`(strong, weak, None)`: the casefolded models hosts.json gives the strong or deep tier of
-    any host (strong) and the light or standard tier of any host (weak); or `(None, None, why)`
-    when hosts.json cannot be read. `path`: kitlib.host.registry.load's."""
-    try:
-        hosts = registry.load(path)
-    except registry.RegistryError as e:
-        return None, None, str(e)
-    strong, weak = set(), set()
-    for h in hosts.values():
-        for tier, model in h.tiers:
-            (strong if tier in ('strong', 'deep') else weak).add(model.strip().casefold())
-    return strong - {''}, weak - {''}, None
-
-
-def strong_models(path=None):
-    """`(models, None)`: tier_models' strong models less every weak one (a model in both cannot
-    show which tier ran: Codex's account-default); or `(None, why)` when hosts.json cannot be
-    read."""
-    strong, weak, why = tier_models(path)
-    return (None, why) if strong is None else (strong - weak, None)
-
-
-def named_model(model, strong, weak):
-    """The one model of `strong` or `weak` that `model`, a verdict's reviewer_model, names; else
-    None. `model` names it when it is that model (case and outer spaces aside), or a full model
-    id holding it as a word of its own (`claude-opus-5-5` names opus) and no other model of
-    `strong` or `weak`. An id naming none or two is None. Pure."""
-    models, text = (strong | weak) - {''}, model.strip().casefold()
-    if text in models:
-        return text
-    named = [m for m in models if re.search(r'(?<![0-9a-z])%s(?![0-9a-z])' % re.escape(m), text)]
-    return named[0] if len(named) == 1 else None
-
-
-def strong_alias(model, strong, weak):
-    """The strong-only model (strong less weak, as strong_models) that `model`, a verdict's
-    reviewer_model, names (named_model); else None. An id naming none, a weak one or two is
-    None: fail closed. Pure."""
-    named = named_model(model, strong, weak)
-    return named if named in strong - weak else None
-
-
-def _word_in(word, text):
-    """True when `word` appears in `text` as a word of its own: no letter, digit, '_' or '-' on
-    either side, so `worker` is not found in `strong-worker` nor `strong-worker` in
-    `strong-worker-2`. A ':' before it (a `plugin:` prefix) is a boundary."""
-    return bool(re.search(r'(?<![\w-])%s(?![\w-])' % re.escape(word), text))
-
-
-def is_author(entry):
-    """True when the verdict entry's reviewer may be the branch's author: an id its reviewer_id
-    lists (split on '/', ',', ';' or white space), or an agent type its reviewer names
-    (verdict_entry.reviewer_types), appears anywhere in `author` as a word of its own (_word_in),
-    casefolded, whatever separates it from the rest: `Kit Test / strong-worker`,
-    `Kit Test (agent) (pm-kit:strong-worker)`, `x | strong-worker` and `x strong-worker` all name
-    strong-worker; `x / strong-worker` does not name worker. A reviewer naming no type is refused
-    earlier, by verdict_entry.check. Pure."""
-    author = entry['author'].casefold()
-    ids = re.split(r'[/,;\s]+', entry['reviewer_id'].casefold())
-    words = [w for w in ids if w] + sorted(verdict_entry.reviewer_types(entry['reviewer']))
-    return any(_word_in(w, author) for w in words)
-
-
 def _closing_reader(root, rev):
     """`history(rid)` of the store whose commits are in `root` at `rev`: `<sha> <subject>` of the
     last one whose subject closes, retires or deletes `rid`, or None (the store's own history
@@ -1223,7 +1159,8 @@ class Lander(object):
         """A locked check (docs/gate-landing-policy.md "Strict paths"): the paths each branch changes (merge base
         with the base to its tip) against strict_globs(). A branch with a hit lands only alone,
         with a verdict queued for its tip (kitlib.landing.verdicts) whose reviewer ran on a
-        strong-tier model (strong_alias), whoever built it, and is not its author (is_author); then
+        strong-tier model (verdicts.strong_alias), whoever built it, and is not its author
+        (verdicts.is_author); then
         self.strict_hits and self.strict_review are set, and _locked makes the merged gate run
         fresh (strict_escalate). None, or why not (REFUSED, nothing merged). Every read that fails
         refuses."""
@@ -1306,7 +1243,7 @@ class Lander(object):
     def review_refusal(self, b, t, strict):
         """None when the verdict queued for branch `b` lets its tip `t` land; else why not. Every
         landing: an entry that can be used, queued (not marked failed), at `t`, its reviewer not
-        the author (is_author). A carried entry (verdicts.carry) lands only when
+        the author (verdicts.is_author). A carried entry (verdicts.carry) lands only when
         kitlib.landing.carry.check passes again, from the commit reviewed to `t` against
         self.expect_main. The tier rule (verdicts.tier_why: a strong-tier reviewer, whoever built
         the branch) holds for a High-risk entry and for `strict` (a branch that changes a strict
@@ -1340,10 +1277,10 @@ class Lander(object):
                 return ('the verdict was given at %s and carried to %s, but the carry does not '
                         'hold against %s %s: %s; review and queue the tip'
                         % (reviewed[:10], t[:10], self.cfg.main_branch, self.expect_main[:10], why))
-        why = verdicts.tier_why(entry, strict, tier_models)
+        why = verdicts.tier_why(entry, strict, verdicts.tier_models)
         if why:
             return why
-        if is_author(entry):
+        if verdicts.is_author(entry):
             return ('the reviewer %s (%s) is its author (%s): it lands with a review by an agent '
                     'that did not write it' % (entry['reviewer_id'], entry['reviewer'],
                                               entry['author']))

@@ -189,39 +189,39 @@ class Pure(unittest.TestCase):
             self.assertEqual(land.parse_strict(f.read()), tuple(strict_defaults.STRICT_DEFAULTS))
 
     def test_strong_models_are_the_strong_and_deep_tiers_of_no_weaker_tier(self):
-        models, why = land.strong_models()
+        models, why = verdicts.strong_models()
         self.assertIsNone(why)
         self.assertIn('opus', models)
         for weak in ('sonnet', 'haiku', 'account-default'):
             self.assertNotIn(weak, models)
-        models, why = land.strong_models(os.path.join(os.path.dirname(__file__), 'no-such.json'))
+        models, why = verdicts.strong_models(os.path.join(os.path.dirname(__file__), 'no-such.json'))
         self.assertIsNone(models)
         self.assertIn('hosts.json', why)
 
     def test_is_author(self):
         def entry(**over):
             return dict(REVIEWER, **over)
-        self.assertFalse(land.is_author(entry()))
-        self.assertTrue(land.is_author(entry(author='opus / strong-worker Agent-R1')))
-        self.assertFalse(land.is_author(entry(author='opus / strong-worker agent-r12')))
-        self.assertTrue(land.is_author(entry(reviewer='pm-kit:strong-worker')))
-        self.assertTrue(land.is_author(entry(reviewer='Strong-Worker')))
-        self.assertFalse(land.is_author(entry(reviewer='pm-kit:worker')))
+        self.assertFalse(verdicts.is_author(entry()))
+        self.assertTrue(verdicts.is_author(entry(author='opus / strong-worker Agent-R1')))
+        self.assertFalse(verdicts.is_author(entry(author='opus / strong-worker agent-r12')))
+        self.assertTrue(verdicts.is_author(entry(reviewer='pm-kit:strong-worker')))
+        self.assertTrue(verdicts.is_author(entry(reviewer='Strong-Worker')))
+        self.assertFalse(verdicts.is_author(entry(reviewer='pm-kit:worker')))
 
     def test_is_author_splits_the_author_on_slash_comma_and_semicolon(self):
         for author in ('Kit Test (agent), strong-worker', 'Kit Test (agent); strong-worker',
                        'Kit Test (agent),pm-kit:strong-worker'):
             with self.subTest(author=author):
-                self.assertTrue(land.is_author(dict(REVIEWER, reviewer='pm-kit:strong-worker',
+                self.assertTrue(verdicts.is_author(dict(REVIEWER, reviewer='pm-kit:strong-worker',
                                                     author=author)))
-        self.assertFalse(land.is_author(dict(REVIEWER, author='Kit Test (agent), strong-worker')))
+        self.assertFalse(verdicts.is_author(dict(REVIEWER, author='Kit Test (agent), strong-worker')))
 
     def test_is_author_finds_the_reviewer_type_as_a_word_anywhere_in_the_author(self):
         for author in ('Kit Test (agent) (pm-kit:strong-worker)', 'Kit Test | strong-worker',
                        'Kit Test & strong-worker', 'Kit Test strong-worker',
                        'Kit Test (agent) other-plugin:Strong-Worker.', 'strong-worker'):
             with self.subTest(author=author):
-                self.assertTrue(land.is_author(dict(REVIEWER, reviewer='pm-kit:strong-worker',
+                self.assertTrue(verdicts.is_author(dict(REVIEWER, reviewer='pm-kit:strong-worker',
                                                     author=author)))
 
     def test_is_author_matches_each_id_of_a_reviewer_id_list(self):
@@ -231,7 +231,7 @@ class Pure(unittest.TestCase):
                             ('agent-r9/agent-r1', 'Kit Test / worker agent-r1'),
                             ('agent-r9 agent-r1', 'Kit Test / worker (agent-r1)')):
             with self.subTest(reviewer_id=rid, author=author):
-                self.assertTrue(land.is_author(dict(REVIEWER, reviewer_id=rid, author=author)))
+                self.assertTrue(verdicts.is_author(dict(REVIEWER, reviewer_id=rid, author=author)))
 
     def test_is_author_never_matches_part_of_a_longer_type(self):
         for reviewer, author in (('pm-kit:worker', 'Kit Test | strong-worker'),
@@ -244,11 +244,11 @@ class Pure(unittest.TestCase):
                                  ('pm-kit:strong-worker', 'Kit Test strong-worker_x'),
                                  ('pm-kit:reviewer', 'Kit Test | strong-worker')):
             with self.subTest(reviewer=reviewer, author=author):
-                self.assertFalse(land.is_author(dict(REVIEWER, reviewer=reviewer,
+                self.assertFalse(verdicts.is_author(dict(REVIEWER, reviewer=reviewer,
                                                      author=author)))
         for rid in ('agent-r9,agent-r1', 'agent-r9 / agent-r1', 'agent-r9 agent-r1'):
             with self.subTest(reviewer_id=rid):
-                self.assertFalse(land.is_author(dict(REVIEWER, reviewer_id=rid,
+                self.assertFalse(verdicts.is_author(dict(REVIEWER, reviewer_id=rid,
                                                      author='Kit Test / worker agent-r12')))
 
     def test_strong_alias_maps_a_full_model_id_and_refuses_the_rest(self):
@@ -261,9 +261,9 @@ class Pure(unittest.TestCase):
                              ('opusx-1', None), ('claude-opus5', None),
                              ('claude-opus-sonnet', None), ('', None)):
             with self.subTest(model=model):
-                self.assertEqual(land.strong_alias(model, strong, weak), alias)
+                self.assertEqual(verdicts.strong_alias(model, strong, weak), alias)
         # a model in a strong and a weak tier (Codex's account-default) never counts
-        self.assertIsNone(land.strong_alias('account-default', {'opus', 'account-default'},
+        self.assertIsNone(verdicts.strong_alias('account-default', {'opus', 'account-default'},
                                             {'account-default'}))
 
 

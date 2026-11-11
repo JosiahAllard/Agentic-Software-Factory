@@ -328,7 +328,7 @@ def blocked(root, branches, tips):
 
 
 def reviewer_ids(entry):
-    """The ids a verdict entry's `reviewer_id` lists, split as kitlib.landing.land.is_author splits
+    """The ids a verdict entry's `reviewer_id` lists, split as kitlib.landing.verdicts.is_author splits
     it (on `/`, `,`, `;` or white space); the whole value when that leaves none."""
     ids = [i for i in ID_SPLIT.split(entry['reviewer_id'].strip()) if i]
     return ids or [entry['reviewer_id']]

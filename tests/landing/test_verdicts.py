@@ -77,7 +77,7 @@ class TwoReviewers(unittest.TestCase):
     TIERS = ({'opus'}, {'haiku', 'sonnet'}, None)
 
     def setUp(self):
-        p = mock.patch('kitlib.landing.land.tier_models', return_value=self.TIERS)
+        p = mock.patch('kitlib.landing.verdicts.tier_models', return_value=self.TIERS)
         p.start()
         self.addCleanup(p.stop)
         self.entry = given('kit/a', 'a' * 40, risk='High', reviewer='pm-kit:analyst',

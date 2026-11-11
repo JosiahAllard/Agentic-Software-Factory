@@ -162,7 +162,7 @@ def check(entry, stored=True):
         if not isinstance(v, str) or not v.strip() or '\n' in v or '\r' in v:
             return '%s is a non-empty one-line text, not %r' % (k, v)
     if not reviewer_types(entry['reviewer']):
-        # Fail closed: with no type, land.is_author could not tell the reviewer from the author.
+        # Fail closed: with no type, verdicts.is_author could not tell the reviewer from the author.
         return ('reviewer names no agent type: it is the reviewer\'s agent type '
                 '(pm-kit:analyst), not %r' % entry['reviewer'])
     rng = entry['range']

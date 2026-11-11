@@ -64,6 +64,7 @@ from kitlib.landing import carry as carrymod
 from kitlib.git import batch as gitbatch
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
+from kitlib.host import registry
 from kitlib.records import verdict_entry as ve
 
 # The check ids a reviewer's `Checks:` line gives (skill specialty-review "Report"), each PASS,
@@ -133,7 +134,7 @@ COORDINATOR_RE = re.compile(r'(?<![a-z0-9])coordinator(?![a-z0-9])')
 
 def self_reader(entry):
     """How `entry`'s reviewer is the coordinator queueing it, or None: an id `reviewer_id` lists
-    (split as land.is_author splits it) is `session`, case and outer space aside, or an agent type
+    (split as is_author splits it) is `session`, case and outer space aside, or an agent type
     the reviewer names (reviewer_types) holds `coordinator` as a word (`pm-kit:coordinator`,
     `kit-coordinator`). `entry` is well formed (check). Pure."""
     session = entry['session'].strip().casefold()
@@ -227,7 +228,7 @@ def self_review_size_why(entry, max_lines, cwd, main, main_why=None):
 
 
 def _reviewer_ids(text):
-    """The ids a verdict's `reviewer_id` lists, split as land.is_author splits them. Pure."""
+    """The ids a verdict's `reviewer_id` lists, split as is_author splits them. Pure."""
     return [i for i in re.split(r'[/,;\s]+', text) if i]
 
 
@@ -251,21 +252,20 @@ def seen_models(entry, reader):
 def model_mismatch_why(entry, seen):
     """Why add() refuses `entry` because its reviewer ran on another model than its reviewer_model
     says, or None. `seen` is seen_models(): a model seen matches when it is reviewer_model (case
-    and outer space aside) or names the same tier model of hosts.json (land.named_model:
+    and outer space aside) or names the same tier model of hosts.json (named_model:
     `claude-haiku-5-5` names haiku). Refused when any model seen for any id does not match; an id
     with none seen (no transcript) is not checked. The Instead: line names the one model seen, or,
     when the review ran on more than one, asks for a fresh review on reviewer_model (in place of
     each reviewer off it, when several reviewers were seen): no one reviewer_model could name it. Two reviewers (a review and an
     architecture check) on one model pass. `entry` is well formed (check)."""
-    from kitlib.landing import land       # land imports this module: a late import
-    strong, weak, _ = land.tier_models()
+    strong, weak, _ = tier_models()
     strong, weak = strong or set(), weak or set()
     typed = entry['reviewer_model'].strip()
-    want = land.named_model(typed, strong, weak)
+    want = named_model(typed, strong, weak)
 
     def same(model):
         return (model.casefold() == typed.casefold()
-                or (want is not None and land.named_model(model, strong, weak) == want))
+                or (want is not None and named_model(model, strong, weak) == want))
     off = [(rid, models) for rid, models in sorted(seen.items())
            if models and not all(same(m) for m in models)]
     if not off:
@@ -289,7 +289,7 @@ def model_mismatch_why(entry, seen):
                        'needs (%s for a High-risk branch or one land.py --check-strict calls '
                        'STRICT; skill branch-review)' % (', '.join(every), typed, which, tier))
     use = 'queue it with --reviewer-model %s, the model it ran on' % (
-        land.named_model(every[0], strong, weak) or every[0])
+        named_model(every[0], strong, weak) or every[0])
     return head + ('%s; a High-risk branch, or one land.py --check-strict calls STRICT, needs a '
                    'review on %s: dispatch a fresh analyst with model %s (skill branch-review)'
                    % (use, tier, tier))
@@ -627,6 +627,70 @@ def new_sources(cwd, rng, exts, is_test, types):
     return sorted(files | set('%s:%s' % (p, n) for p, n in added if n not in removed))
 
 
+def tier_models(path=None):
+    """`(strong, weak, None)`: the casefolded models hosts.json gives the strong or deep tier of
+    any host (strong) and the light or standard tier of any host (weak); or `(None, None, why)`
+    when hosts.json cannot be read. `path`: kitlib.host.registry.load's."""
+    try:
+        hosts = registry.load(path)
+    except registry.RegistryError as e:
+        return None, None, str(e)
+    strong, weak = set(), set()
+    for h in hosts.values():
+        for tier, model in h.tiers:
+            (strong if tier in ('strong', 'deep') else weak).add(model.strip().casefold())
+    return strong - {''}, weak - {''}, None
+
+
+def strong_models(path=None):
+    """`(models, None)`: tier_models' strong models less every weak one (a model in both cannot
+    show which tier ran: Codex's account-default); or `(None, why)` when hosts.json cannot be
+    read."""
+    strong, weak, why = tier_models(path)
+    return (None, why) if strong is None else (strong - weak, None)
+
+
+def named_model(model, strong, weak):
+    """The one model of `strong` or `weak` that `model`, a verdict's reviewer_model, names; else
+    None. `model` names it when it is that model (case and outer spaces aside), or a full model
+    id holding it as a word of its own (`claude-opus-5-5` names opus) and no other model of
+    `strong` or `weak`. An id naming none or two is None. Pure."""
+    models, text = (strong | weak) - {''}, model.strip().casefold()
+    if text in models:
+        return text
+    named = [m for m in models if re.search(r'(?<![0-9a-z])%s(?![0-9a-z])' % re.escape(m), text)]
+    return named[0] if len(named) == 1 else None
+
+
+def strong_alias(model, strong, weak):
+    """The strong-only model (strong less weak, as strong_models) that `model`, a verdict's
+    reviewer_model, names (named_model); else None. An id naming none, a weak one or two is
+    None: fail closed. Pure."""
+    named = named_model(model, strong, weak)
+    return named if named in strong - weak else None
+
+
+def _word_in(word, text):
+    """True when `word` appears in `text` as a word of its own: no letter, digit, '_' or '-' on
+    either side, so `worker` is not found in `strong-worker` nor `strong-worker` in
+    `strong-worker-2`. A ':' before it (a `plugin:` prefix) is a boundary."""
+    return bool(re.search(r'(?<![\w-])%s(?![\w-])' % re.escape(word), text))
+
+
+def is_author(entry):
+    """True when the verdict entry's reviewer may be the branch's author: an id its reviewer_id
+    lists (split on '/', ',', ';' or white space), or an agent type its reviewer names
+    (verdict_entry.reviewer_types), appears anywhere in `author` as a word of its own (_word_in),
+    casefolded, whatever separates it from the rest: `Kit Test / strong-worker`,
+    `Kit Test (agent) (pm-kit:strong-worker)`, `x | strong-worker` and `x strong-worker` all name
+    strong-worker; `x / strong-worker` does not name worker. A reviewer naming no type is refused
+    earlier, by verdict_entry.check. Pure."""
+    author = entry['author'].casefold()
+    ids = re.split(r'[/,;\s]+', entry['reviewer_id'].casefold())
+    words = [w for w in ids if w] + sorted(ve.reviewer_types(entry['reviewer']))
+    return any(_word_in(w, author) for w in words)
+
+
 TIER_INSTEAD = ('Instead: dispatch a fresh analyst with a strong-tier model (hosts.json "tiers") '
                 'to review the branch (skill branch-review), then queue its verdict')
 
@@ -636,19 +700,18 @@ def tier_why(entry, strict, tiers):
     queue time, `strict` False: strict comes from the diff, so the landing checks it) and
     kitlib.landing.land (Lander.review_refusal, at landing) share. A branch that is High risk or
     `strict` (changes a strict path) lands only on a review whose reviewer_model names a
-    strong-tier model (land.strong_alias), whoever built it; a Low or Medium one off the strict
+    strong-tier model (strong_alias), whoever built it; a Low or Medium one off the strict
     paths has no tier rule. `tiers`: called with no arguments only when the rule applies, it gives
-    land.tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed), and
+    tier_models()'s `(strong, weak, why)`; models it cannot give refuse (fail closed), and
     an exception it raises passes through (add() raises VerdictError for unread tiers).
     `entry` is well formed (check). Pure."""
     if not (strict or entry['risk'] == 'High'):
         return None
-    from kitlib.landing import land       # land imports this module: a late import
     strong, weak, why = tiers()
     if strong is None:
         return 'the strong-tier models cannot be read: %s' % why
     model = entry['reviewer_model']
-    if land.strong_alias(model, strong, weak) is not None:
+    if strong_alias(model, strong, weak) is not None:
         return None
     return ('the reviewer ran on %s, not a strong-tier model (%s, or a full model id naming it; '
             'hosts.json "tiers"): %s lands only on a strong-tier review, whoever built it (its '
@@ -810,10 +873,9 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
                 design_why(entry, new, design_id, design_said) if new is not None else None):
         if why:
             raise ReviewerSaid(why)
-    from kitlib.landing import land       # land imports this module: a late import
 
     def tiers():
-        got = land.tier_models()
+        got = tier_models()
         if got[0] is None:                # a configuration fault, not a light review
             raise ve.VerdictError('the kit configuration cannot be read: hosts.json "tiers": %s; '
                                'nothing was queued' % got[2])

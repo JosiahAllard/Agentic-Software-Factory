@@ -9,7 +9,7 @@ The coordinator names a commit hash. You merge that hash, and nothing else, with
 
 1. Commit work in progress by explicit path first (`python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`): the tracked tree must be clean.
 2. Untracked generated files the base now tracks make git refuse the merge: delete only those the repo profile's "Branches and worktrees" section names, nothing else.
-3. Merge: `python <kit>/tools/sync_base.py -C <worktree> <hash> --model "<model name>"`. It fetches, refuses a hash not on the fetched remote main (do not substitute another: tell the coordinator), merges exactly that hash, checks a clean merge for regrowth and adds the commit trailer when it makes a merge commit (a fast-forward makes no commit and adds none).
+3. Merge: `python <kit>/tools/sync_base.py -C <worktree> <hash> --model "<model name>"`. It fetches, refuses a hash not on the fetched remote main (do not substitute another, and never redo the merge another way: commit.py refuses a merge of such a hash too; stop and tell the coordinator), merges exactly that hash, checks a clean merge for regrowth and adds the commit trailer when it makes a merge commit (a fast-forward makes no commit and adds none).
 4. Regrowth reported (a file the base shrank came back big, a stale branch reinstating deleted text): `git checkout <hash> -- <path>`, re-apply only your own change, commit it.
 5. Conflicts (the merge is left in progress) in files you changed: resolve on your branch with your file-edit tool, one command per call, never a scratch script that rewrites a tracked file.
 6. Conflicts in files you did not touch, or text you did not write: `git merge --abort` and tell the coordinator.
@@ -23,5 +23,6 @@ The coordinator names a commit hash. You merge that hash, and nothing else, with
 - Rebase, merge local `main` or `origin/...` by name, force-push, reset or rewrite history. You do not push.
 - `git commit --no-edit` (the safety check refuses it), or a commit identity the tool did not write.
 - Resolve a conflict in someone else's change.
+- Redo a refused sync or a guard or hook block on a merge another way (`git merge --no-commit` then commit.py, another tool, another form): stop and report the exact command and message to the coordinator.
 
 Details: `<kit>/docs/sync-base.md`; the repo profile, "Branches and worktrees".

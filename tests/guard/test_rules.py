@@ -1427,6 +1427,9 @@ class PlainCommit(unittest.TestCase):
                 d = self.decide(text, sub=True, shell=shell)
                 self.assertEqual(d and d.rule, 'git-plain-commit', d and d.reason)
                 self.assertEqual(d.instead, tool + '%s --model "<your model>"' % commit)
+                # The advice names no other way to merge: a refused sync is never redone.
+                self.assertIn('never redone another way', d.reason)
+                self.assertNotIn('--no-commit', d.reason)
 
     def test_a_sequence_step_names_what_commit_py_leaves(self):
         for text in ('git cherry-pick --continue', 'git revert --continue', 'git am --continue'):

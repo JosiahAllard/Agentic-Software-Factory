@@ -20,6 +20,7 @@ It stages exactly the PATHs named and commits them in the work tree that DIR is 
 
 What it refuses (`kitlib/commit/run.py`, `_commit`; the checks are `kitlib/commit/checks.py`):
 - **Explicit paths only.** A directory, `.`, `-A`, `--all` or a path with a `*` is a usage error (a `?` or `[` pattern is not tested). A path outside the work tree is a usage error too.
+- **A merge of a base sync_base.py would refuse.** During a merge, every MERGE_HEAD must be on `<remote>/<base>` as last fetched (`on_main`, the predicate `sync_base.py` asks right after its fetch); one that is not, or one git cannot place, is refused (`unsynced_merge_refusal`), and the refusal points to `sync_base.py` and the coordinator. `<base>` is `<main>` unless sync_base.py stopped on a conflict: it then writes `kit-sync-base` in the work tree's git dir (`git rev-parse --git-path`; `checks.record_sync_base`) naming its `--base` and the commit it merged, and a MERGE_HEAD that is that commit is judged against that base. The remote is always `.kit.json`'s. A successful commit removes the marker. A refused sync is never redone as `git merge --no-commit` finished with commit.py.
 - **Foreign staged files.** Anything already staged and not named is refused, because it may belong to another session.
   - With `"commit".merge_fold` on, during a merge with one MERGE_HEAD, the files the merge staged itself are exempt (`kitlib.ownerfiles.rules.merge_owned`).
   - An owner-only file is exempt only when its staged state is exactly the merged branch's copy: the same mode and blob as `MERGE_HEAD`'s, or a deletion of a path `MERGE_HEAD` deleted (`carries_merged_copy`). That branch must have changed it from the merge base, so the merge is carrying the owner's change in, not undoing this branch's. Every commit the merge brings in (reachable from `MERGE_HEAD`, not from `HEAD`) that changes it must be authored by the owner or carry an owner approval the hub verifies, judged as `gate land` judges a branch (`non_owner_paths`, through `kitlib.ownerfiles.rules.violations` against `HEAD`); when git cannot tell, it stays refused. A commit reachable from `<remote>/<main>` as last fetched is not judged again (`landed_main`, the ref pre-push trusts): it was judged when it landed, and an approved one's approval is spent once it is there (and stops verifying 30 days after the owner's decision, or whenever the hub is down). A conflict resolved to that copy counts too, and so does the clean merge of both sides' approved changes ("Owner approval", "A merge of approved changes"); any other staged state, an unresolved conflict, or an octopus merge stays refused.
@@ -73,6 +74,10 @@ After a commit that includes a `.md` file or an owner-only file, it prints the d
 | 0 | committed (`committed <hash>  <subject>`, `files     ...`, and `rendered  ...` after a render) |
 | 1 | refused (`refused: ...`), or git failed (`git add failed`, `commit failed`, `nothing to commit in`) |
 | 2 | `USAGE: ...`, the main-checkout refusal, or a refused `.kit.json` |
+
+**Known limits** of the merge check:
+- The owner's own commit of a merge through commit.py is refused too; `--owner-authored` is no exemption.
+- A session with no agent mark (a topic session, the owner's chat) can write the `kit-sync-base` marker or move `refs/remotes/origin/main`, so the check binds only marked sessions and subagents, the same as gate results.
 
 ## A narrowed record
 

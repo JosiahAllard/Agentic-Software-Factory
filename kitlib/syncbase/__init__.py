@@ -25,7 +25,9 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   waited for before the fetch, up to its wait_s (`wait` False: not at all); at the bound a line
   says so and the merge goes on. Still exactly <target>: when the fetched <remote>/<base> is past
   it, one `note` line says so and names the tip, for the coordinator to decide.
-- Conflicts: lists them, writes the `Co-Authored-By:` trailer into the message git prepared (so
+- Conflicts: lists them, writes the kit-sync-base marker (kitlib.commit.checks.record_sync_base:
+  <base> and the merged sha, so commit.py judges the finished merge against <remote>/<base>),
+  writes the `Co-Authored-By:` trailer into the message git prepared (so
   the resolution commit carries it whether it is finished with the commit tool (tools/commit.py,
   "commit".merge_fold) or an editor - git's auto-generated message never carried one), and stops
   with the merge in progress. Docs conflicts: a union of both sides' lines is WRONG - it silently
@@ -57,6 +59,7 @@ import time
 from kitlib import attribution
 from kitlib import kitroot
 
+from kitlib.commit import checks as kcommit       # on_main: the one base rule, commit.py's too
 from kitlib.config import ConfigError, commit_settings, load as load_config
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
@@ -250,7 +253,6 @@ def owner_refusal(top, cfg, full):
     (kitlib.commit.checks.merge_owner_refusal, with <remote>/<main> as last fetched judged
     already; with `"commit".merge_fold` off, it carries no path both sides changed). On a refusal
     the merge is aborted."""
-    from kitlib.commit import checks as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
         fold = commit_settings(cfg)['merge_fold']
@@ -344,10 +346,9 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         return done(FAILED, 'NOT FOUND: %s is not a commit in this repository, even after fetching '
                             '%s. Do not substitute another hash: tell the coordinator.'
                     % (target, upstream))
-    tip, _ = gitrefs.remote_tip(remote, base, top)
+    on, tip, why = kcommit.on_main(top, full, remote, base)
     if tip is None:
         return done(FAILED, 'refused: %s does not resolve - fetch first.' % upstream)
-    on, why = gitrefs.is_ancestor(full, tip, top)
     if on is None:
         return done(FAILED, 'refused: could not tell whether %s is on %s (%s).'
                     % (target, upstream, why))
@@ -385,6 +386,11 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
                         % (err or out or 'git merge exited %s' % rc))
         lines.append('CONFLICTS (%d), merge left in progress:' % len(conflicted))
         lines.extend('  ' + f for f in conflicted)
+        why = kcommit.record_sync_base(top, base, full)    # commit.py judges it against `base`
+        if why:
+            lines.append('WARNING: the base this merge came from could not be recorded for '
+                         'commit.py (%s); it will judge the merge against %s/%s.'
+                         % (why, remote, cfg.main_branch))
         return done(FAILED, conflict_advice(base, full, model, arm_merge_msg(top, model, provider), provider))
     # GOTCHA: this asked `rev-parse --verify --quiet MERGE_HEAD`, whose
     # "no MERGE_HEAD" is exit 1 with no output, a killed git's shape (gitrefs.KILLED_SHAPE): a kill

@@ -193,6 +193,11 @@ ROWS = [
      'deny', 'main-checkout', 'Write(file_path="{wt}/n.md")'),
     ('subagent relative redirect in main from its worktree', lambda w: bash('cd %s && python x.py > out.log 2>&1' % W.fwd(w.main), w.wt, sub=True),
      'deny', 'main-checkout', 'python x.py > "{wt}/out.log" 2>&1'),
+    # the marker commit.py reads to judge a merge sync_base.py left (kitlib.commit.checks.SYNC_BASE)
+    ('subagent Write to the sync-base marker', lambda w: W.event('Write', {'file_path': win(w.main, '.git', 'worktrees', 'wt', 'kit-sync-base'), 'content': ''}, w.wt, sub=True),
+     'deny', 'main-checkout', None),
+    ('subagent redirect to the sync-base marker', lambda w: bash('echo x > %s/.git/worktrees/wt/kit-sync-base' % W.fwd(w.main), w.wt, sub=True),
+     'deny', 'main-checkout', None),
     ('python -c in main from its worktree', lambda w: bash('python -c "print(1)"', w.main, sub=True), 'deny', 'unplaced',
      'cd "<worktree>" && python -c "print(1)"'),
     ('root-search from the root itself', lambda w: bash('find . -name x', 'C:' + BS), 'deny', 'root-search',

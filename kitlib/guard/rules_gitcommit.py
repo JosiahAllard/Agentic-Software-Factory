@@ -232,8 +232,8 @@ def commit_alternative(ctx, gc, where):
         return 'Commit with the kit tool, which stages the paths you name and adds the trailer.%s The commit:' % rest, \
             commit
     if sub in ('merge', 'pull'):
-        return ('Sync with the commit your coordinator named; the tool merges exactly it and adds the trailer (to '
-                'merge anything else, run git -C %s merge --no-commit <rev>, then in its own call %s):' % (top, commit),
+        return ('Sync with the commit your coordinator named; the tool merges exactly it and adds the trailer. A '
+                'merge it refuses is never redone another way: stop and tell your coordinator. The sync:',
                 'python %s -C %s %s --model "<your model>"' % (kit_tool(ctx, 'sync_base'), top, typed_hash(revs)))
     if sub == 'am':
         return ('Apply the patch to the index, then in its own call commit it with %s:' % commit,

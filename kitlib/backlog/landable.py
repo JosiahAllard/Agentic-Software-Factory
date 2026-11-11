@@ -20,7 +20,8 @@ from kitlib.git import refs
 from . import at_landing
 from .errors import Failure
 from .plan import branch_name_error
-from .store import MainBackend, records_in_tree
+from .store_folder import MainBackend
+from .store_read import records_in_tree
 
 LANDABLE = 'LANDABLE'
 NOT_LANDABLE = 'NOT LANDABLE'

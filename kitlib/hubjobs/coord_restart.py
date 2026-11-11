@@ -50,13 +50,13 @@ baseline, kept as `held` {stop_at, ids}). So a coordinator woken for some record
 is not woken for them again. The offer is read only for an entry held on a deliberate stop whose
 autostart and pace_hold (DOWN_RUNS, the cap, the backoff) pass, through kitlib.backlog
 (opener.open_store with no fetch, plan_narrow.offer_for), from the store the repo's .kit.json names,
-else the PM data worktree's (store.pm_data_live_store). A store that cannot be read wakes nothing
-and is a note, not a failure. The wake judges session liveness as `next` does (session_liveness,
-from the run's own sessions.json and process listing): a record of a session that is not running
-takes no place in the offer, so the wake sees what `next` offers. An owner wake (an answered or
-filed question it asked, class ones included, or a decided approval of its repo, newer than the
-stopped session's start) is read first, on the same terms, and needs no baseline. A wake start
-passes `--prompt` with the reason, the new ids and the entry's state note path.
+else the PM data worktree's (store_live.pm_data_live_store). A store that cannot be read wakes
+nothing and is a note, not a failure. The wake judges session liveness as `next` does
+(session_liveness, from the run's own sessions.json and process listing): a record of a session that
+is not running takes no place in the offer, so the wake sees what `next` offers. An owner wake (an
+answered or filed question it asked, class ones included, or a decided approval of its repo, newer
+than the stopped session's start) is read first, on the same terms, and needs no baseline. A wake
+start passes `--prompt` with the reason, the new ids and the entry's state note path.
 
 The account: accounts.restart_pick, the signed-in account whose week resets first of those whose
 week has reset (accounts.week_state: a recorded reset passed, 0%, even on a stale reading) or
@@ -428,11 +428,11 @@ def wake_sessions(key, entry):
 def store_root(settings, repo):
     """The checkout whose configured backlog store holds `repo`'s records: the repo's folder in
     launcher.repos when its .kit.json names a "backlog".store, else its PM data worktree when that
-    names one (store.pm_data_live_store), else the repo's folder (the implicit store).
+    names one (store_live.pm_data_live_store), else the repo's folder (the implicit store).
     BacklogUnread when the repo is not in launcher.repos, its .kit.json cannot be read, or its PM
     data worktree cannot be found or read: a store that may be the wrong one is never read."""
     from kitlib import config as kconfig
-    from kitlib.backlog import store as bstore
+    from kitlib.backlog import store_live
     try:
         root = settings.repo_path(repo)
     except LaunchError:
@@ -442,7 +442,7 @@ def store_root(settings, repo):
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its .kit.json cannot be read (%s)' % type(exc).__name__)
     try:                                # its expected failures come back as `why`; anything else
-        path, why = bstore.live_store_root(root, cfg)           # is a bug and fails the run
+        path, why = store_live.live_store_root(root, cfg)       # is a bug and fails the run
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its PM data worktree cannot be found (%s)' % type(exc).__name__)
     if why:

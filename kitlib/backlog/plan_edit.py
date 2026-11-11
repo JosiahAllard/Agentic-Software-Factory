@@ -14,7 +14,8 @@ from . import scope as smod
 from .errors import Failure, Refusal, Usage
 from .plan import (_text, branch_name_error, reason_error, refuse_machine_paths, refuse_top,
                    require, shared_of)
-from .store import Change, id_refusal
+from .store import Change
+from .store_read import id_refusal
 
 RULED_PRICE_BY = ('owner', 'pm')
 ADD_BODY = ('## Why this is here\n\nRecorded by `backlog.py add`. Unprioritised on purpose: '

@@ -150,8 +150,8 @@ def store_root(repo):
     """Where `repo`'s records are read: the repo itself when its .kit.json names a "backlog" store
     (or no PM data worktree names one), else the PM data worktree that does (the repo's own checkout
     reads an empty default store then)."""
-    from kitlib.backlog import store
-    return store.live_store_root(repo)[0]
+    from kitlib.backlog import store_live
+    return store_live.live_store_root(repo)[0]
 
 
 def backlog_next(repo, session, run, kit=None, where=store_root):

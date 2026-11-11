@@ -370,8 +370,8 @@ class FoundOn(StoreCase):
         self.assertIsNone(self.get('NEW'))
 
     def test_an_unreadable_record_fails_the_pulled_scope_check(self):
-        # Store.write refuses an unreadable store first (store.require_readable); the guard's own
-        # check is reached by planning directly.
+        # Store.write refuses an unreadable store first (store_read.require_readable); the guard's
+        # own check is reached by planning directly.
         self.seed({'BAD': 'no separator here\n'})
         with self.assertRaises(Failure) as cm:
             plan_edit.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',

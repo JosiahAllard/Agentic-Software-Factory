@@ -13,6 +13,7 @@ from unittest import mock
 
 from kitlib import hubbacklog
 from kitlib.backlog import store as bstore
+from kitlib.backlog import store_ref
 from kitlib.git import cmd as gitcmd
 from kitlib.hubsite import backlog
 from tests.gitfixture import TempRepo, fixture_env
@@ -548,7 +549,7 @@ class ARefStore(Case):
         super().setUp()
         self.repo = TempRepo(bare_remote=True)
         self.addCleanup(self.repo.cleanup)
-        backend = bstore.RefBackend(self.repo.root, "origin", bstore.STORE_REF, bstore.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, "origin", bstore.STORE_REF, bstore.STORE_REF)
         backend.publish(backend.load(None), {"A": record("A", "first")}, "seed A\n")
         behind = self.repo.git("rev-parse", bstore.STORE_REF)
         backend.publish(backend.load(None), {"B": record("B", "second")}, "seed B\n")
@@ -616,7 +617,7 @@ class ARefStore(Case):
 
     def said(self, failure):
         """What open_read says when the store's own load raises `failure` during a fetch."""
-        with mock.patch.object(bstore.RefBackend, "load", side_effect=failure):
+        with mock.patch.object(store_ref.RefBackend, "load", side_effect=failure):
             with self.assertRaises(backlog.ReadError) as raised:
                 backlog.open_read(self.repo.root, True)
         return raised.exception.said

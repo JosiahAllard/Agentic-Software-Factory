@@ -10,6 +10,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read, store_ref
 
 from tests.backlog import test_cli
 from tests.backlog.helpers import TODAY, StoreCase, priced, rec, record_text
@@ -21,7 +22,7 @@ def snap(*records, rules=None):
         texts.update(r)
     rules = rules or rmod.Rules('upper', ('L0', 'L1'))
     parsed = [rmod.parse('backlog/%s.md' % stem, text, stem) for stem, text in texts.items()]
-    return smod.Snapshot(parsed, 'a' * 40, 'test', rules)
+    return store_read.Snapshot(parsed, 'a' * 40, 'test', rules)
 
 
 def offer_ids(s, holding=(), **kw):
@@ -1009,7 +1010,7 @@ class NextCliNarrows(unittest.TestCase):
         self.repo.commit('work', 'brain/a.py', cwd=wt)
 
     def test_next_shows_the_narrowing_and_writes_nothing(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
@@ -1039,7 +1040,7 @@ class LiveBranchesOnce(unittest.TestCase):
     def setUp(self):
         test_cli.Cli.setUp(self)
         self.repo.worktree('holder')
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',
@@ -1085,7 +1086,7 @@ class NextCliRestore(unittest.TestCase):
         test_cli.Cli.setUp(self)
 
     def test_next_prints_the_restore_and_counts_it(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         store = smod.Store(backend, rmod.Rules())
         backend.publish(store.load(), {
             'C-ONE': record_text(id='C-ONE', priority='3', priority_by='agent', state='pulled',

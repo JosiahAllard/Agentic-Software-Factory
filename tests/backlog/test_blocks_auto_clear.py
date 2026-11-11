@@ -9,6 +9,7 @@ import unittest
 from kitlib.backlog import policy
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal, Usage
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -115,7 +116,7 @@ class NextLines(unittest.TestCase):
     ok = test_cli.Cli.ok
 
     def publish(self, texts):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         backend.publish(smod.Store(backend, rmod.Rules()).load(), texts, 'seed\n')
 
     def test_each_record_to_review_gets_a_line_and_keeps_its_mark(self):

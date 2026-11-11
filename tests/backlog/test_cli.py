@@ -11,6 +11,7 @@ from unittest import mock
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal
 from kitlib.worktree import quiet
 from tests.backlog import ownertree
@@ -116,7 +117,7 @@ class Cli(unittest.TestCase):
         # `add` refuses `a/*.py`, so the live pull is seeded through the library.
         self.repo.git('branch', 'tools/other')
         with mock.patch.dict(os.environ, self.env, clear=True):
-            backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
             store = smod.Store(backend, rmod.Rules())
             backend.publish(store.load(), dict(
                 priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='tools/other',
@@ -224,7 +225,7 @@ class Cli(unittest.TestCase):
 
     def test_an_invalid_record_on_the_ref_makes_check_red(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap,{'BAD': 'id: BAD\nstate: open\n'}, 'hand edit\n')
         rc, out = self.run_tool('check')
@@ -270,7 +271,7 @@ class RulingCitesUnchecked(unittest.TestCase):
     def test_check_stays_green_over_cites_the_ledger_does_not_hold(self):
         # records an older tool priced with a cite: R-9999 is absent from the ledger, R-9007 retired
         with mock.patch.dict(os.environ, self.env, clear=True):
-            backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
             store = smod.Store(backend, rmod.Rules())
             backend.publish(store.load(), dict(
                 priced('FOO', priority='1', priority_by='owner', priority_ruling='R-9999',

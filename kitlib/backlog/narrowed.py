@@ -25,7 +25,7 @@ from kitlib.git import repo as gitrepo
 
 from . import record as rmod
 from . import scope as scmod
-from . import store as smod
+from . import store_open
 from .errors import Failure
 
 # The fixed refusal (docs/commit.md "A narrowed record"); its only Instead is the block.
@@ -94,14 +94,14 @@ def hits(records, branch, paths, rules, shared=False, tops=(), renames=None):
 
 def read(root):
     """`(top, branch, records, rules, shared)`: the checkout `root` is in, and the store
-    `backlog.py -C <root>` opens (store.resolve_store: the PM data worktree's live store for a
+    `backlog.py -C <root>` opens (store_open.resolve_store: the PM data worktree's live store for a
     linked worktree, `shared` then True; else the configured one), read without a fetch. Raises
     when it cannot be read, and when the PM data worktree cannot be found or read: its own store
     is then not the one backlog.py would read for it."""
     code_top, why = gitrepo.toplevel(root)
     if not code_top:
         raise Failure(why)
-    store_root, cfg, rules, branch, why = smod.resolve_store(code_top)
+    store_root, cfg, rules, branch, why = store_open.resolve_store(code_top)
     if why:
         raise Failure('the PM data worktree\'s store cannot be opened: %s' % why)
     shared = branch is not None
@@ -109,7 +109,7 @@ def read(root):
         branch, why = refs.current_branch(code_top)
         if branch is None:
             raise Failure('git cannot name the checked-out branch: %s' % why)
-    snap = smod.open_backend(store_root, cfg, fetch=False).load(rules)
+    snap = store_open.open_backend(store_root, cfg, fetch=False).load(rules)
     return code_top, branch, snap.records, rules, shared
 
 

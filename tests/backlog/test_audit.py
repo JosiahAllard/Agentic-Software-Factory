@@ -21,6 +21,7 @@ from kitlib.backlog import plan_end, plan_hold
 from kitlib.backlog import record as rmod
 from kitlib.backlog import roles
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_open
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, priced
@@ -216,7 +217,7 @@ class Check(unittest.TestCase):
 
     def report(self, entries=None, since=0):
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
         if entries is None:
             entries, _notes = audit_check.read_log(self.log)
         return audit_check.check(backend, rules, entries, since)
@@ -399,7 +400,7 @@ class AnswerCheck(unittest.TestCase):
 
     def report(self, docs=(), calls=None):
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
 
         def questions():
             if calls is not None:
@@ -475,7 +476,7 @@ class AnswerCheck(unittest.TestCase):
                 reads.append(specs)
             return real(specs, root)
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
         entries, _notes = audit_check.read_log(self.log)
         with mock.patch.object(audit_check.batch, 'cat_file', counted):
             r = audit_check.check(backend, rules, entries, 0, lambda: [])
@@ -565,7 +566,7 @@ class CheckFolder(unittest.TestCase):
         self.assertIn('seed the store', r.findings[1].text)
 
     def test_a_folder_store_elsewhere_is_not_checked(self):
-        other = smod.MainBackend(self.repo.root, 'kit/backlog')
+        other = store_folder.MainBackend(self.repo.root, 'kit/backlog')
         with self.assertRaises(audit_check.NotChecked):
             audit_check.check(other, rmod.Rules(), [], 0)
 

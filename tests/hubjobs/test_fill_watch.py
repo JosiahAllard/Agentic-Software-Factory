@@ -1351,6 +1351,7 @@ class PullOnAStore(unittest.TestCase):
     def setUp(self):
         from kitlib.backlog import record as rmod
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_ref
         from tests.backlog import helpers as bh
         from tests.home import temp_home
         patch = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
@@ -1362,7 +1363,7 @@ class PullOnAStore(unittest.TestCase):
         self.root = os.path.realpath(self.repo.root)
         bh.kit_json_ref(self.repo)
         self.repo.git('push', '-q', 'origin', 'main')
-        self.backend = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        self.backend = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         self.store = smod.Store(self.backend, rmod.Rules())
         writes = {}
         for r in (bh.priced('FOO', session='kit'), bh.priced('BAR', session='other'),
@@ -1397,6 +1398,7 @@ class PullOnAStore(unittest.TestCase):
     def test_a_record_in_the_offer_is_pulled_onto_its_own_tree(self):
         from kitlib.backlog import audit_check, opener
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_open
         got = self.pull(['FOO'], 1)
         self.assertEqual(got, ([('FOO', 'kit/fill-foo')], []))
         self.assertTrue(os.path.isdir(self.trees()['kit/fill-foo']))
@@ -1406,7 +1408,7 @@ class PullOnAStore(unittest.TestCase):
         tip = self.repo.git('ls-remote', 'origin', smod.STORE_REF).split('\t')[0]
         self.assertIn('Session: hub-fill', self.repo.git('log', '-1', '--format=%B', tip))
         top, cfg, rules = opener.open_repo(self.root)
-        report = audit_check.check(smod.open_backend(top, cfg, fetch=False), rules, [], 0)
+        report = audit_check.check(store_open.open_backend(top, cfg, fetch=False), rules, [], 0)
         self.assertEqual(report.changes, 2)                 # the seed and the pull
         self.assertEqual([f for f in report.findings if tip[:10] in f.text], [])
 

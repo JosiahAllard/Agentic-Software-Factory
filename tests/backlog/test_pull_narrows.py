@@ -8,6 +8,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_narrow
 from kitlib.backlog import policy
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder
 from kitlib.backlog.errors import Refusal
 
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, priced
@@ -200,7 +201,7 @@ class SharedStore(StoreCase):
         self.assertTrue(plan_narrow._shared_store(self.ctx))
 
     def test_a_folder_store_outside_the_pm_data_worktree_is_not(self):
-        store = smod.Store(smod.MainBackend(self.repo.root, 'docs/backlog'), self.rules)
+        store = smod.Store(store_folder.MainBackend(self.repo.root, 'docs/backlog'), self.rules)
         ctx = pmod.Context(store, self.repo.root, branch=BRANCH, today=TODAY)
         self.assertFalse(plan_narrow._shared_store(ctx))
         self.assertFalse(plan_narrow._shared_store(pmod.Context(None, self.repo.root)))

@@ -17,6 +17,7 @@ from kitlib.backlog import ledger as lmod
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from tests.backlog.helpers import StoreCase, TODAY, rec, record_text
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
@@ -43,7 +44,7 @@ class OpenStore(unittest.TestCase):
                               clear=True)
         env.start()
         self.addCleanup(env.stop)
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {'FOO': record_text()}, 'seed\n')
         self.repo.git('update-ref', '-d', smod.STORE_REF)

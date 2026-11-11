@@ -12,6 +12,7 @@ from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as smod
 from kitlib.backlog import store as sstore
+from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal
 
 from tests import inproc
@@ -345,7 +346,7 @@ class SharedPathsCli(unittest.TestCase):
 
     def setUp(self):
         self.setUp_cli()
-        backend = sstore.RefBackend(self.repo.root, 'origin', sstore.STORE_REF, sstore.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', sstore.STORE_REF, sstore.STORE_REF)
         snap = sstore.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {
             'HOLD': record_text(id='HOLD', priority='2', priority_by='agent', state='pulled',

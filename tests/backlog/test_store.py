@@ -11,6 +11,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_claim, plan_edit
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_open, store_read, store_ref
 from kitlib.fs import replace as fsreplace
 from kitlib.backlog.errors import Failure, Usage
 from kitlib.git import cmd
@@ -431,7 +432,7 @@ class RemoteDetection(StoreCase):
 
     def test_a_misnamed_remote_is_refused_when_the_repository_has_others(self):
         with self.assertRaises(Failure) as cm:
-            smod.RefBackend(self.repo.root, 'upstream', smod.STORE_REF, smod.STORE_REF)
+            store_ref.RefBackend(self.repo.root, 'upstream', smod.STORE_REF, smod.STORE_REF)
         self.assertIn('origin', str(cm.exception))
 
     def test_a_remote_lookup_that_fails_is_a_failure_not_no_remote(self):
@@ -452,7 +453,8 @@ class RemoteDetection(StoreCase):
                 with mock.patch.object(cmd, 'call', lambda a, c, _r=cmd.call, _on=on, **kw:
                                        _on(list(a), lambda: _r(a, c, **kw)) or _r(a, c, **kw)):
                     with self.assertRaises(Failure):
-                        smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+                        store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF,
+                                             smod.STORE_REF)
 
     def test_a_local_store_the_remote_does_not_have_is_refused(self):
         """The remote has no store but the local ref holds one: writing would start a new store
@@ -811,11 +813,11 @@ class BranchStoreBase(StoreCase):
         from kitlib import config
         root = root or self.repo.root
         self.repo.write('.kit.json', '{"backlog": {"store": "branch"}}', root=root)
-        return smod.open_backend(root, config.load(root))
+        return store_open.open_backend(root, config.load(root))
 
     def landed_ids(self):
         rev, folder = self.backend.landed('main')
-        records, _, why = smod.records_in_tree(self.repo.root, rev, folder)
+        records, _, why = store_read.records_in_tree(self.repo.root, rev, folder)
         self.assertIsNone(why)
         return rev, folder, sorted(r.id for r in records)
 
@@ -850,7 +852,7 @@ class OtherBackends(TempHomeCase):
         def opened(store):
             if store is not None:
                 repo.write('.kit.json', '{"backlog": {"store": "%s"}}' % store)
-            return smod.open_backend(repo.root, config.load(repo.root))
+            return store_open.open_backend(repo.root, config.load(repo.root))
         ref = opened(None)
         self.assertEqual((ref.remote_ref, ref.local_ref), (smod.STORE_REF, smod.STORE_REF))
         br = opened('branch')
@@ -865,7 +867,7 @@ class OtherBackends(TempHomeCase):
         repo = TempRepo()
         self.addCleanup(repo.cleanup)
         root = repo.worktree('w')
-        store = smod.Store(smod.MainBackend(root, 'docs/backlog'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(root, 'docs/backlog'), rmod.Rules())
         ctx = pmod.Context(store,root, branch=BRANCH)
         return repo, root, store, ctx
 
@@ -885,7 +887,7 @@ class OtherBackends(TempHomeCase):
         worktree. A main checkout is the landers'."""
         repo = TempRepo()
         self.addCleanup(repo.cleanup)
-        store = smod.Store(smod.MainBackend(repo.root, 'docs/backlog'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(repo.root, 'docs/backlog'), rmod.Rules())
         ctx = pmod.Context(store,repo.root, branch=BRANCH)
         with self.assertRaises(Failure) as cm:
             store.write(lambda s: plan_edit.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
@@ -938,7 +940,7 @@ class OtherBackends(TempHomeCase):
             repo.write('docs/backlog/FOO.md', priced('FOO', **over)['FOO'])
             repo.write('docs/backlog/deeper/BAR.md', priced('BAR')['BAR'])
             repo.commit(branch, 'docs/backlog')
-        got = L.check(smod.MainBackend(repo.root, 'docs/backlog'), None, repo.root,
+        got = L.check(store_folder.MainBackend(repo.root, 'docs/backlog'), None, repo.root,
                       ['tools/held', 'tools/free', 'main', 'a..b'])
         self.assertEqual([(v.verdict, v.held, v.detail) for v in got],
                          [(L.NOT_LANDABLE, ('FOO',), '1 records read'),
@@ -986,7 +988,7 @@ class ReplaceRetry(unittest.TestCase):
         self.clock = FakeTime()
         for patcher in (mock.patch.object(fsreplace, 'time', self.clock),
                         mock.patch.object(fsreplace, 'PAUSE', 0.0625),
-                        mock.patch.object(smod, 'REPLACE_WAIT', 0.25)):
+                        mock.patch.object(store_folder, 'REPLACE_WAIT', 0.25)):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.dir = tempfile.mkdtemp(prefix='kit-backlog-')
@@ -1003,7 +1005,7 @@ class ReplaceRetry(unittest.TestCase):
             return f.read()
 
     def held_lock(self):
-        lock = smod._IndexLock(self.index)
+        lock = store_folder._IndexLock(self.index)
         self.assertTrue(lock.take(0))
         with open(lock.path, 'wb') as f:
             f.write(b'new index')
@@ -1012,7 +1014,7 @@ class ReplaceRetry(unittest.TestCase):
     def test_replace_file_retries_a_refused_move_until_it_goes_through(self):
         fake, calls = refused(os.replace, 3)
         with mock.patch('os.replace', side_effect=fake):
-            smod._replace_file(self.full, b'new\n')
+            store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(len(calls), 4)
         self.assertEqual(self.clock.sleeps, [0.0625] * 3)
         self.assertEqual(self.content(self.full), b'new\n')
@@ -1021,7 +1023,7 @@ class ReplaceRetry(unittest.TestCase):
     def test_replace_file_raises_the_refusal_after_REPLACE_WAIT_and_leaves_the_record(self):
         with mock.patch('os.replace', side_effect=PermissionError(13, 'sharing')) as m:
             with self.assertRaises(PermissionError) as got:
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(m.call_count, 5)
         self.assertEqual(self.clock.sleeps, [0.0625] * 4)
         self.assertEqual(got.exception.errno, 13)
@@ -1031,7 +1033,7 @@ class ReplaceRetry(unittest.TestCase):
     def test_replace_file_raises_another_error_at_once(self):
         with mock.patch('os.replace', side_effect=OSError(5, 'io')) as m:
             with self.assertRaises(OSError) as got:
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(m.call_count, 1)
         self.assertNotIsInstance(got.exception, PermissionError)
         self.assertEqual(self.content(self.full), b'old\n')

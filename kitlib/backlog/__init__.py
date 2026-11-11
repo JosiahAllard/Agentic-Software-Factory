@@ -4,7 +4,12 @@ docs/backlog-store.md). Logic only: no argparse, no printing, no exit.
   errors    Refusal, Usage, NotFound, Failure (each with its exit code)
   scope     scope members, collision (undecidable counts as a collision), area
   record    parse, the schema, record-local validation, render, apply_changes
-  store     Snapshot, the ref/branch/main backends, the compare-and-swap write loop
+  store     the compare-and-swap write loop: Store, Change, the plan notes
+  store_read  Snapshot, validation, the id checks and the history reads every backend shares
+  store_ref  the ref and branch backends
+  store_folder  the main backend, and catch-up in the PM data worktree
+  store_live  where the live store is: the PM data worktree's, a worktree's, the default refusal
+  store_open  the checkout's config and rules, resolve_store and open_backend
   ledger    the rulings ledger's entries, re-exported for their readers; no backlog write and
             no `check` reads a ledger file
   policy    tools/backlog.py's role check: a write's rows (roles.py ACTIONS) and who may take them

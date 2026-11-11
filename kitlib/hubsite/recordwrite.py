@@ -61,6 +61,7 @@ from kitlib.backlog import opener
 from kitlib.backlog import plan_edit, plan_end, plan_hold
 from kitlib.backlog import scope as bscope
 from kitlib.backlog import store as bstore
+from kitlib.backlog import store_live
 from kitlib.backlog.errors import Failure, IndexStale, NotFound, Refusal
 
 from .store import HubError
@@ -79,7 +80,7 @@ def _open(root, no_store='store', session=SESSION):
     except Failure as e:
         raise HubError('store', str(e), 'repo')
     if getattr(ctx.store.backend, 'implicit', False):
-        raise HubError(no_store, bstore.default_store_refusal(ctx.root), 'repo')
+        raise HubError(no_store, store_live.default_store_refusal(ctx.root), 'repo')
     return ctx
 
 

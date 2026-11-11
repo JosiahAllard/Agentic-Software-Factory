@@ -25,7 +25,8 @@ from . import offer as omod
 from . import policy
 from . import record as rmod
 from .errors import Ended, Failure, NotFound, Refusal, Usage
-from .store import PLAIN_ID, add_plan_note
+from .store import add_plan_note
+from .store_read import PLAIN_ID
 
 MIN_REASON = 12
 

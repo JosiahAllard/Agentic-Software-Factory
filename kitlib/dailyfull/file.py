@@ -23,6 +23,7 @@ from kitlib.backlog import at_landing, opener
 from kitlib.backlog import plan_edit
 from kitlib.backlog import scope as bscope
 from kitlib.backlog import store as bstore
+from kitlib.backlog import store_live
 from kitlib.backlog.errors import Refusal
 from kitlib.config.types import ConfigError
 
@@ -60,7 +61,7 @@ def open_filing_store(root, session=SLUG):
         return ctx, None
     pm_root, _cfg, _backend, why = at_landing.pm_data_store(root, None)
     if pm_root is None:
-        return None, why or bstore.default_store_refusal(ctx.root)
+        return None, why or store_live.default_store_refusal(ctx.root)
     return opener.open_store(pm_root, fetch=True, session=session, probes=opener.NO_PROBES), None
 
 

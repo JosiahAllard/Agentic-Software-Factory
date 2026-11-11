@@ -192,8 +192,8 @@ class Classes(ClassifyCase):
         self.configure({'backlog': {'store': 'main'}})
         for slug in ('one', 'two', 'three'):
             self.workstream(slug)
-        with mock.patch.object(remove.backlog_store, 'open_backend',
-                               wraps=remove.backlog_store.open_backend) as opened:
+        with mock.patch.object(remove.store_open, 'open_backend',
+                               wraps=remove.store_open.open_backend) as opened:
             rc, out, data = self.run_classify()
         self.assertEqual(opened.call_count, 1)
         self.assertEqual(len(data['trees']), 3)

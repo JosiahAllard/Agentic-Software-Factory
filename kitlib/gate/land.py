@@ -238,7 +238,7 @@ from kitlib.backlog import at_landing
 from kitlib.backlog import narrowed as nmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as scmod
-from kitlib.backlog import store as smod
+from kitlib.backlog import store as smod, store_folder, store_open, store_read, store_ref
 from kitlib.backlog.errors import Refusal
 import kitlib.config as kconfig
 from kitlib.config import policy as kpolicy
@@ -481,7 +481,7 @@ def _closing_reader(root, rev):
     """`history(rid)` of the store whose commits are in `root` at `rev`: `<sha> <subject>` of the
     last one whose subject closes, retires or deletes `rid`, or None (the store's own history
     reader, which `next`'s offer.ended_reader reads too)."""
-    return lambda rid: smod._last_closing(root, rid, rev)
+    return lambda rid: store_read._last_closing(root, rid, rev)
 
 
 class _Held(object):
@@ -506,7 +506,7 @@ class _Held(object):
         read says nothing: the part is held."""
         if rid in self.states:
             return any(s != 'open' for s in self.states[rid])
-        if not smod.PLAIN_ID.match(rid):
+        if not store_read.PLAIN_ID.match(rid):
             return True
         for history in self.histories:
             try:
@@ -1639,7 +1639,7 @@ class Lander(object):
         found = _Held()
         root, cfg = self.root, self.cfg
         try:
-            backend = smod.open_backend(root, cfg, fetch=False)
+            backend = store_open.open_backend(root, cfg, fetch=False)
         except (Refusal, OSError) as e:
             found.unread.append('the configured store: %s' % _what(e))
             backend = None
@@ -1647,10 +1647,10 @@ class Lander(object):
         def close_cmd(*args):
             return at_landing.close_command(root, *args)
 
-        if isinstance(backend, smod.MainBackend):
+        if isinstance(backend, store_folder.MainBackend):
             rel = backend.rel.replace('\\', '/').strip('/')
             found.folders.append(rel + '/**')
-            records, _raw, why = smod.records_in_tree(root, t, rel)
+            records, _raw, why = store_read.records_in_tree(root, t, rel)
             if records is None:
                 found.unread.append('%s at %s: %s' % (rel, t[:10], why))
             else:
@@ -1672,7 +1672,7 @@ class Lander(object):
                                  lambda rid: self._scope_last(root, tip, smod.STORE_DIR, rid),
                                  close_cmd)
                 found.histories.append(_closing_reader(root, tip))
-        configured = backend.describe() if isinstance(backend, smod.RefBackend) else None
+        configured = backend.describe() if isinstance(backend, store_ref.RefBackend) else None
         got = self.scope_reads.get('pm')
         if got is None:
             got = self.scope_reads['pm'] = self._scope_pm_records(configured)
@@ -1705,7 +1705,7 @@ class Lander(object):
         for r in candidates:
             found.states.setdefault(r.stem, []).append(r.get('state'))
         for rid in sorted((set(named) | set(gone)) - stems):
-            rec = last(rid) if smod.PLAIN_ID.match(rid) else None
+            rec = last(rid) if store_read.PLAIN_ID.match(rid) else None
             if rec is not None and rec.readable:
                 candidates.append(rec)
         for r in candidates:
@@ -1718,7 +1718,7 @@ class Lander(object):
     def _scope_last(self, root, rev, rel, rid):
         """The record `rid` as it was before the newest commit reachable from `rev` deleted
         `<rel>/<rid>.md`, or None."""
-        gone = smod.last_removal(root, rev, rel, rid)
+        gone = store_read.last_removal(root, rev, rel, rid)
         if gone is None:
             return None
         return self._scope_blob(root, '%s^:%s/%s.md' % (gone.sha, rel, rid), rid)
@@ -1728,7 +1728,7 @@ class Lander(object):
         data, _ = cmd.run(['cat-file', '-p', spec], root)
         if data is None:
             return None
-        return smod.parse_blob(rid, data, spec.partition(':')[2])
+        return store_read.parse_blob(rid, data, spec.partition(':')[2])
 
     def _scope_ref_records(self, root, backend):
         """`(records, tip, None)` of a `ref` or `branch` store as its remote holds it (the local
@@ -1752,7 +1752,7 @@ class Lander(object):
                 return None, None, '%s: %s' % (backend.describe(), why)
         if not tip:
             return [], '', None
-        records, _raw, why = smod.records_in_tree(root, tip, smod.STORE_DIR)
+        records, _raw, why = store_read.records_in_tree(root, tip, smod.STORE_DIR)
         if records is None:
             return None, None, '%s at %s: %s' % (backend.describe(), tip[:10], why)
         return records, tip, None
@@ -1768,7 +1768,7 @@ class Lander(object):
             return None, None, None, None, why, None
         if backend is None:
             return None, None, None, None, None, None
-        if isinstance(backend, smod.RefBackend):
+        if isinstance(backend, store_ref.RefBackend):
             records, tip, why = self._scope_ref_records(pm_root, backend)
             if records is None:
                 return None, None, None, None, why, None

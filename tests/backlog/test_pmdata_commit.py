@@ -17,6 +17,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_claim, plan_edit, plan_end
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder
 from kitlib.backlog import errors
 from kitlib.backlog.errors import Failure, Uncommitted, Usage
 from tools import backlog as backlog_tool
@@ -97,7 +98,7 @@ def index_move_fails(index, error=None):
         if os.path.normcase(os.path.abspath(dst)) == index:
             raise error or OSError('the index is in use')
         return real(src, dst)
-    return mock.patch.object(smod.os, 'replace', replace)
+    return mock.patch.object(store_folder.os, 'replace', replace)
 
 
 class PmDataStore(unittest.TestCase):
@@ -116,7 +117,7 @@ class PmDataStore(unittest.TestCase):
                            + list(priced('BAZ').items())):
             self.repo.write('%s/%s.md' % (DIR, stem), text, root=self.wt)
         self.repo.commit('seed the store', DIR, cwd=self.wt)
-        self.backend = smod.MainBackend(self.wt, DIR)
+        self.backend = store_folder.MainBackend(self.wt, DIR)
         self.store = smod.Store(self.backend, rmod.Rules(), session='kit-test')
         self.ctx = pmod.Context(self.store, self.wt, branch=BRANCH)
 
@@ -202,7 +203,7 @@ class PmDataStore(unittest.TestCase):
     # -- a clean backend writes over no uncommitted change ----------------------------------------
 
     def clean_store(self):
-        backend = smod.MainBackend(self.wt, DIR, clean=True)
+        backend = store_folder.MainBackend(self.wt, DIR, clean=True)
         return smod.Store(backend, rmod.Rules(), session='kit-test')
 
     def test_a_clean_write_over_an_uncommitted_edit_is_dirty_and_writes_nothing(self):
@@ -357,7 +358,8 @@ class PmDataStore(unittest.TestCase):
         commit_beside) commits while this one is between its first attempt's HEAD read and its
         update-ref. The retry sees HEAD's BAR changed since its base and stops,
         Overtaken (an Uncommitted), naming the path; the other writer's commit stands."""
-        other = smod.Store(smod.MainBackend(self.wt, DIR), rmod.Rules(), session='kit-other')
+        other = smod.Store(store_folder.MainBackend(self.wt, DIR), rmod.Rules(),
+                           session='kit-other')
         other_ctx = pmod.Context(other, self.wt, branch=BRANCH)
         real = self.backend._head
         theirs = []
@@ -386,7 +388,8 @@ class PmDataStore(unittest.TestCase):
         other (without the index lock, commit_beside) writes and commits BAR before this one's first commit attempt reads HEAD. The base
         is HEAD from before the check, so the first attempt sees BAR changed and stops, Overtaken;
         the other writer's commit stands and the error names no catch-up to run."""
-        other = smod.Store(smod.MainBackend(self.wt, DIR), rmod.Rules(), session='kit-other')
+        other = smod.Store(store_folder.MainBackend(self.wt, DIR), rmod.Rules(),
+                           session='kit-other')
         other_ctx = pmod.Context(other, self.wt, branch=BRANCH)
         real = self.backend._write_files
         theirs = []
@@ -417,7 +420,8 @@ class PmDataStore(unittest.TestCase):
         ctx)` having been written and committed (without the index lock, commit_change) after
         this one checked the files and before its first commit attempt. `after_my_files()` runs
         once this write's files are on disk."""
-        other = smod.Store(smod.MainBackend(self.wt, DIR), rmod.Rules(), session='kit-other')
+        other = smod.Store(store_folder.MainBackend(self.wt, DIR), rmod.Rules(),
+                           session='kit-other')
         other_ctx = pmod.Context(other, self.wt, branch=BRANCH)
         real = self.backend._write_files
         index = self.git('ls-files', '-s', '--', DIR)
@@ -497,7 +501,8 @@ class PmDataStore(unittest.TestCase):
         """The Overtaken of this backend's publish of `writes` ({stem: text or None}) on what it
         reads now, another store's `theirs(snap, ctx)` having been written and committed (without
         the index lock, commit_change) after this one checked the files. `patches`: backend methods replaced for the publish."""
-        other = smod.Store(smod.MainBackend(self.wt, DIR), rmod.Rules(), session='kit-other')
+        other = smod.Store(store_folder.MainBackend(self.wt, DIR), rmod.Rules(),
+                           session='kit-other')
         other_ctx = pmod.Context(other, self.wt, branch=BRANCH)
         real = self.backend._write_files
 
@@ -579,7 +584,7 @@ class PmDataStore(unittest.TestCase):
                 if len(moves) > 1:
                     raise OSError('disk full')
             return real(src, dst)
-        with mock.patch.object(smod.os, 'replace', replace):
+        with mock.patch.object(store_folder.os, 'replace', replace):
             exc = self.overtaken_publish(
                 lambda s, ctx: plan_edit.plan_set(s, ctx, 'BAR', [('summary', ['theirs'])]),
                 {'BAR': mine})
@@ -616,7 +621,7 @@ class PmDataStore(unittest.TestCase):
         self.assertEqual(self.read('BAZ'), baz)
         self.git('checkout', 'HEAD', '--', DIR)
         theirs = lambda s, ctx: plan_edit.plan_set(s, ctx, 'BAR', [('summary', ['theirs again'])])
-        with mock.patch.object(smod.cmd, 'run', side_effect=no_blob):
+        with mock.patch.object(store_folder.cmd, 'run', side_effect=no_blob):
             exc = self.overtaken_publish(theirs, writes)
         self.assertEqual(exc.left, [DIR + '/BAR.md'])
         self.assertIn(b'summary: mine', self.read('BAR'))
@@ -634,7 +639,7 @@ class PmDataStore(unittest.TestCase):
         before = self.head()
         with open(self.path('BAR'), 'rb') as f:
             bar = f.read()
-        with mock.patch.object(smod.cmd, 'run_text', side_effect=no_head):
+        with mock.patch.object(store_folder.cmd, 'run_text', side_effect=no_head):
             with self.assertRaises(Failure) as cm:
                 self.store.write(lambda s: plan_edit.plan_set(s, self.ctx, 'BAR',
                                                               [('summary', ['mine'])]))
@@ -689,7 +694,7 @@ class PmDataStore(unittest.TestCase):
         """A store under `kit/back log`: the IndexStale repair, split as a shell splits it, makes
         status clean, and the Uncommitted message's catch-up command quotes the path."""
         spaced = 'kit/back log'
-        backend = smod.MainBackend(self.wt, spaced)
+        backend = store_folder.MainBackend(self.wt, spaced)
         store = smod.Store(backend, rmod.Rules(), session='kit-test')
         ctx = pmod.Context(store, self.wt, branch=BRANCH)
         with index_move_fails(self.worktree_index()):
@@ -701,10 +706,10 @@ class PmDataStore(unittest.TestCase):
         self.assertNotEqual(self.status(), [])
         words = [a or b for a, b in re.findall(r'"([^"]*)"|(\S+)', repair)]   # as a shell splits
         self.assertEqual(words[0], 'git')
-        done = cmd.call(words[1:], self.repo.root, env=smod._store_env())
+        done = cmd.call(words[1:], self.repo.root, env=store_folder._store_env())
         self.assertEqual(done.rc, 0, done.err)
         self.assertEqual(self.status(), [])
-        self.assertEqual(smod.quoted(['a b/C.md', 'd/E.md']), '"a b/C.md" "d/E.md"')
+        self.assertEqual(store_folder.quoted(['a b/C.md', 'd/E.md']), '"a b/C.md" "d/E.md"')
         self.assertTrue(str(backend._uncommitted([spaced + '/FOO.md'], 'why')).endswith(
             '`backlog.py catch-up --apply "%s/FOO.md"` commits them' % spaced))
 
@@ -771,7 +776,7 @@ class PmDataStore(unittest.TestCase):
             f.write('another git\n')
         self.addCleanup(os.remove, lock)
         before, status = self.head(), self.status()
-        with mock.patch.object(smod, 'INDEX_WAIT', 0.2):
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 0.2):
             with self.assertRaises(errors.Busy) as cm:
                 self.store.write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         exc = cm.exception
@@ -792,7 +797,7 @@ class PmDataStore(unittest.TestCase):
         with open(lock, 'w') as f:
             f.write('')
         self.addCleanup(os.remove, lock)
-        with mock.patch.object(smod, 'INDEX_WAIT', 0.2):
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 0.2):
             with self.assertRaises(errors.Busy) as cm:
                 self.store.write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         text = str(cm.exception)
@@ -808,7 +813,7 @@ class PmDataStore(unittest.TestCase):
         timer.start()
         self.addCleanup(timer.join)
         before = self.head()
-        with mock.patch.object(smod, 'INDEX_WAIT', 30):
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 30):
             _, tip = self.store.write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         self.assert_committed(before, tip, [('D', DIR + '/BAR.md')])
 
@@ -816,7 +821,8 @@ class PmDataStore(unittest.TestCase):
         """Two store writes in the PM data worktree run one after the other: one that starts
         while another holds the lock waits INDEX_WAIT seconds for it, then stops Busy with
         nothing written; the first commits as ever."""
-        other = smod.Store(smod.MainBackend(self.wt, DIR), rmod.Rules(), session='kit-other')
+        other = smod.Store(store_folder.MainBackend(self.wt, DIR), rmod.Rules(),
+                           session='kit-other')
         other_ctx = pmod.Context(other, self.wt, branch=BRANCH)
         real = self.backend._write_files
         refused = []
@@ -827,7 +833,7 @@ class PmDataStore(unittest.TestCase):
             refused.append(cm.exception)
             return real(*args)
         before = self.head()
-        with mock.patch.object(smod, 'INDEX_WAIT', 0.2), \
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 0.2), \
                 mock.patch.object(self.backend, '_write_files',
                                   side_effect=the_other_writes_then_write):
             _, tip = self.store.write(lambda s: plan_edit.plan_set(s, self.ctx, 'BAR',
@@ -854,7 +860,7 @@ class PmDataStore(unittest.TestCase):
         with open(lock, 'w') as f:
             f.write('')
         self.addCleanup(os.remove, lock)
-        with mock.patch.object(smod, 'INDEX_WAIT', 0.2):
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 0.2):
             with self.assertRaises(errors.Busy):
                 self.backend.commit_paths([DIR + '/BAZ.md'], 'backlog: catch up\n')
         self.assertEqual(self.head(), tip)
@@ -874,7 +880,7 @@ class PmDataStore(unittest.TestCase):
                 raise PermissionError(13, 'Access is denied', dst)
             return real(src, dst)
         before = self.head()
-        with mock.patch.object(smod.os, 'replace', replace):
+        with mock.patch.object(store_folder.os, 'replace', replace):
             _, tip = self.store.write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         self.assertEqual(len(refused), 2)
         self.assert_committed(before, tip, [('D', DIR + '/BAR.md')])
@@ -885,7 +891,7 @@ class PmDataStore(unittest.TestCase):
         which says nothing was written), and the lock file is removed."""
         before = self.head()
         with index_move_fails(self.worktree_index(), PermissionError(13, 'Access is denied')), \
-                mock.patch.object(smod, 'REPLACE_WAIT', 0.2):
+                mock.patch.object(store_folder, 'REPLACE_WAIT', 0.2):
             with self.assertRaises(errors.IndexStale) as cm:
                 self.store.write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         exc = cm.exception
@@ -931,8 +937,8 @@ class PmDataStore(unittest.TestCase):
             if os.path.normcase(os.path.abspath(path)) == os.path.normcase(lock):
                 raise PermissionError(13, 'Access is denied', path)
             return real(path)
-        with mock.patch.object(smod.os, 'remove', remove), \
-                mock.patch.object(smod, 'REPLACE_WAIT', 0.2):
+        with mock.patch.object(store_folder.os, 'remove', remove), \
+                mock.patch.object(store_folder, 'REPLACE_WAIT', 0.2):
             with self.assertRaises(errors.Dirty) as cm:
                 self.clean_store().write(lambda s: plan_end.plan_close(s, self.ctx, 'BAR', REASON))
         self.assertTrue(os.path.exists(lock))
@@ -954,7 +960,7 @@ class PmDataStore(unittest.TestCase):
 
     def test_a_worktree_on_another_branch_commits_nothing(self):
         other = self.repo.worktree('elsewhere')
-        backend = smod.MainBackend(other, DIR)
+        backend = store_folder.MainBackend(other, DIR)
         store = smod.Store(backend, rmod.Rules(), session='kit-test')
         ctx = pmod.Context(store, other, branch=BRANCH)
         before = self.repo.git('rev-parse', 'HEAD', cwd=other)
@@ -1003,7 +1009,7 @@ class PmDataStore(unittest.TestCase):
     def test_catch_up_apply_commits_only_the_paths_it_names(self):
         self.leave_pending()
         before = self.head()
-        tip = smod.catch_up(self.backend, [DIR + '\\NEW.md'], 'kit-test')
+        tip = store_folder.catch_up(self.backend, [DIR + '\\NEW.md'], 'kit-test')
         self.assertEqual(self.git('rev-parse', tip + '^'), before)
         self.assertEqual(self.changed_in(tip), [('A', DIR + '/NEW.md')])
         self.assertEqual(self.git('log', '-1', '--format=%B', tip),
@@ -1017,7 +1023,7 @@ class PmDataStore(unittest.TestCase):
         for paths in ([], [DIR + '/notes.txt'], [DIR + '/QUX.md'], ['elsewhere.txt'],
                       [DIR + '/NEW.md', DIR + '/notes.txt']):
             with self.assertRaises(Usage, msg=paths):
-                smod.catch_up(self.backend, paths, 'kit-test')
+                store_folder.catch_up(self.backend, paths, 'kit-test')
         self.assertEqual(self.head(), before)
         self.assertEqual(len(self.backend.pending()), 4)
 
@@ -1140,10 +1146,10 @@ def nth_write_fails(n):
             if count[0] == n:
                 return _FullDisk(f)
         return f
-    return (mock.patch.object(smod, 'open', create=True,
+    return (mock.patch.object(store_folder, 'open', create=True,
                               new=lambda p, mode='r', *a, **k: wrap(real_open(p, mode, *a, **k),
                                                                    mode)),
-            mock.patch.object(smod.os, 'fdopen',
+            mock.patch.object(store_folder.os, 'fdopen',
                               new=lambda fd, mode='r', *a, **k: wrap(real_fdopen(fd, mode, *a, **k),
                                                                     mode)))
 
@@ -1186,7 +1192,7 @@ class WriteWhole(unittest.TestCase):
         snap = self.backend.load(rmod.Rules())
         before = dict(snap.raw)
         writes = dict((stem, before[stem].decode('utf-8') + '\nchanged\n') for stem in ('BAR', 'BAZ'))
-        with mock.patch.object(smod, '_replace_file', side_effect=self.fail_from_second()):
+        with mock.patch.object(store_folder, '_replace_file', side_effect=self.fail_from_second()):
             with self.assertRaises(Failure) as cm:
                 self.backend.publish(snap, writes, 'both\n')
         now = self.backend._read()
@@ -1210,7 +1216,7 @@ class WriteWhole(unittest.TestCase):
             if os.path.basename(path) == 'BAR.md':
                 raise PermissionError(errno.EACCES, 'in use')
             return real(path)
-        with mock.patch.object(smod.os, 'remove', remove):
+        with mock.patch.object(store_folder.os, 'remove', remove):
             msg = self.publish_fails({'BAR': None})
         self.assertIn('cannot write %s/BAR.md (it is left as it was)' % DIR, msg)
         self.assertEqual(self.backend._read(), before)
@@ -1222,13 +1228,14 @@ class WriteWhole(unittest.TestCase):
             if os.path.normcase(path) == os.path.normcase(self.backend.dir):
                 raise PermissionError(errno.EACCES, 'denied')
             return real(path, *a, **k)
-        with mock.patch.object(smod.os, 'makedirs', makedirs):
+        with mock.patch.object(store_folder.os, 'makedirs', makedirs):
             msg = self.publish_fails({'BAR': 'x\n'})
         self.assertIn('cannot write %s' % self.backend.dir, msg)
 
     def test_a_temp_file_that_cannot_be_made_leaves_the_record_whole(self):
         before = self.backend._read()
-        with mock.patch.object(smod.tempfile, 'mkstemp', side_effect=OSError(errno.ENOSPC, 'full')):
+        with mock.patch.object(store_folder.tempfile, 'mkstemp',
+                               side_effect=OSError(errno.ENOSPC, 'full')):
             msg = self.publish_fails({'BAR': 'x\n'})
         self.assertIn('cannot write %s/BAR.md (it is left as it was)' % DIR, msg)
         self.assertEqual(self.backend._read(), before)
@@ -1243,8 +1250,9 @@ class WriteWhole(unittest.TestCase):
             if os.path.basename(path) == 'NEW.md':
                 raise PermissionError(errno.EACCES, 'in use')
             return real(path)
-        with mock.patch.object(smod, '_replace_file', side_effect=self.fail_from_second()), \
-                mock.patch.object(smod.os, 'remove', remove):
+        with mock.patch.object(store_folder, '_replace_file',
+                               side_effect=self.fail_from_second()), \
+                mock.patch.object(store_folder.os, 'remove', remove):
             msg = self.publish_fails({'NEW': 'new\n', 'ZED': 'zed\n'})
         self.assertIn('cannot write %s/ZED.md' % DIR, msg)
         self.assertIn('could not be put back: %s/NEW.md' % DIR, msg)
@@ -1252,7 +1260,7 @@ class WriteWhole(unittest.TestCase):
 
     def test_outside_the_pm_data_worktree_the_failure_names_no_catch_up(self):
         before = self.backend._read()
-        with mock.patch.object(smod, '_replace_file',
+        with mock.patch.object(store_folder, '_replace_file',
                                side_effect=OSError(errno.ENOSPC, 'full')):
             with self.assertRaises(Failure) as cm:
                 self.backend._write_files({'BAR': 'x\n'}, before, [DIR + '/BAR.md'], None)
@@ -1262,7 +1270,7 @@ class WriteWhole(unittest.TestCase):
 
     def fail_from_second(self):
         """_replace_file that works once (BAR's write) and then fails, leaving its target alone."""
-        real, calls = smod._replace_file, [0]
+        real, calls = store_folder._replace_file, [0]
 
         def replace(full, data):
             calls[0] += 1
@@ -1298,8 +1306,8 @@ class ReplaceFile(unittest.TestCase):
             fd, path = real(*a, **k)
             made.append(path)
             return fd, path
-        with mock.patch.object(smod.tempfile, 'mkstemp', mkstemp):
-            smod._replace_file(self.full, b'new\n')
+        with mock.patch.object(store_folder.tempfile, 'mkstemp', mkstemp):
+            store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(self.content(), b'new\n')
         self.assertEqual(os.path.dirname(made[0]), self.dir)
         self.assertFalse(made[0].endswith('.md'), made[0])
@@ -1308,7 +1316,7 @@ class ReplaceFile(unittest.TestCase):
     def test_a_failed_write_into_the_temp_file_leaves_the_target_whole(self):
         _, fdopen = nth_write_fails(1)
         with fdopen, self.assertRaises(OSError) as cm:
-            smod._replace_file(self.full, b'new\n')
+            store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(cm.exception.errno, errno.ENOSPC)
         self.assertEqual(self.content(), b'old\n')
         self.assertEqual(self.others(), [])
@@ -1321,9 +1329,9 @@ class ReplaceFile(unittest.TestCase):
             if path.endswith('.put-back'):
                 raise PermissionError(errno.EACCES, 'in use')
             return real(path)
-        with fdopen, mock.patch.object(smod.os, 'remove', remove):
+        with fdopen, mock.patch.object(store_folder.os, 'remove', remove):
             with self.assertRaises(OSError) as cm:
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         left = self.others()
         self.assertEqual(len(left), 1, left)
         self.assertEqual(cm.exception.errno, errno.ENOSPC)
@@ -1340,9 +1348,9 @@ class ReplaceFile(unittest.TestCase):
             if calls[0] <= 2:
                 raise PermissionError(errno.EACCES, 'held open by a reader')
             return real(src, dst)
-        with mock.patch.object(smod.os, 'replace', replace), \
+        with mock.patch.object(store_folder.os, 'replace', replace), \
                 mock.patch.object(smod.time, 'sleep') as sleep:
-            smod._replace_file(self.full, b'new\n')
+            store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(calls[0], 3)
         self.assertEqual(self.content(), b'new\n')
         self.assertEqual(self.others(), [])
@@ -1355,18 +1363,18 @@ class ReplaceFile(unittest.TestCase):
         def replace(src, dst):
             calls[0] += 1
             raise PermissionError(errno.EACCES, 'held open by a reader')
-        with mock.patch.object(smod.os, 'replace', replace), \
-                mock.patch.object(smod, 'REPLACE_WAIT', 0.2):
+        with mock.patch.object(store_folder.os, 'replace', replace), \
+                mock.patch.object(store_folder, 'REPLACE_WAIT', 0.2):
             with self.assertRaises(PermissionError):
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         self.assertGreater(calls[0], 1)
         self.assertEqual(self.content(), b'old\n')
         self.assertEqual(self.others(), [])
 
     def test_an_interrupt_before_the_move_leaves_no_temp_file(self):
-        with mock.patch.object(smod.os, 'replace', side_effect=KeyboardInterrupt):
+        with mock.patch.object(store_folder.os, 'replace', side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(self.content(), b'old\n')
         self.assertEqual(self.others(), [])
 
@@ -1376,9 +1384,9 @@ class ReplaceFile(unittest.TestCase):
         def replace(src, dst):
             calls[0] += 1
             raise OSError(errno.EIO, 'the disk went away')
-        with mock.patch.object(smod.os, 'replace', replace):
+        with mock.patch.object(store_folder.os, 'replace', replace):
             with self.assertRaises(OSError):
-                smod._replace_file(self.full, b'new\n')
+                store_folder._replace_file(self.full, b'new\n')
         self.assertEqual(calls[0], 1)
         self.assertEqual(self.content(), b'old\n')
         self.assertEqual(self.others(), [])

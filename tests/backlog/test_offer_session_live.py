@@ -9,6 +9,7 @@ from unittest import mock
 from kitlib.backlog import offer as omod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
@@ -162,7 +163,7 @@ class SessionLiveCli(unittest.TestCase):
         test_cli.Cli.setUp(self)
 
     def test_next_notes_the_idle_session_and_offers_below_it(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snapshot = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snapshot, {
             'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='alpha',
@@ -180,7 +181,7 @@ class SessionLiveCli(unittest.TestCase):
         self.assertIn('NEXT (1 offered)', out)
 
     def seed_pair(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snapshot = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snapshot, {
             'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='alpha',

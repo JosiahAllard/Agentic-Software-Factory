@@ -129,8 +129,8 @@ class RefStoreTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_the_default_store_is_the_ref(self):
-        from kitlib.backlog import record, store
-        backend = store.RefBackend(self.root, "origin", store.STORE_REF, store.STORE_REF)
+        from kitlib.backlog import record, store, store_ref
+        backend = store_ref.RefBackend(self.root, "origin", store.STORE_REF, store.STORE_REF)
         rules = record.Rules()
         backend.publish(backend.load(rules), {
             "EX-OPEN-1": "id: EX-OPEN-1\nsummary: first open\npriority: 2\n",

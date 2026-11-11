@@ -4,7 +4,7 @@
 
   unpriced(snap, cmd)          records next waits to see priced (`backlog.py needs-priority`)
   dead_pulls(snap, ctx, cmd, split)   pulls with no branch by their pulled_by (offer.in_flight_split)
-  dead_blockers(snap, cmd)     `item:X` blockers naming no live record (store.dangling_items)
+  dead_blockers(snap, cmd)     `item:X` blockers naming no live record (store_read.dangling_items)
   duplicates(snap, cmd)        live records with the same summary, word for word
   answered(snap, cmd, questions)      parked records whose hub question the owner has answered
   audit(root, cmd, home, now, run)    kitlib.backlog.audit_check.run, days=7, fetch=False: one
@@ -18,7 +18,7 @@ import re
 from kitlib import kitroot
 from kitlib.backlog import audit_check
 from kitlib.backlog import offer as omod
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 from kitlib.config.types import ConfigError
 
 from . import Finding
@@ -76,7 +76,7 @@ _DANGLING = re.compile(r'`(item:[^`]+)` names no live record')
 
 def dead_blockers(snap, cmd):
     out = []
-    for w in smod.dangling_items(snap.by_id):
+    for w in store_read.dangling_items(snap.by_id):
         stem = w.path.rsplit('/', 1)[-1][:-3] if w.path.endswith('.md') else w.path
         m = _DANGLING.search(w.message)
         member = m.group(1) if m else 'item:<ID>'

@@ -41,8 +41,8 @@ class Failure(Refusal):
 
 class Uncommitted(Failure):
     """The write's record files are on disk in the PM data worktree but its commit failed
-    (kitlib.backlog.store.MainBackend): `backlog.py catch-up --apply` commits them (not after an
-    Overtaken, which puts them back). `paths`: every record path the write wrote, as git spells
+    (kitlib.backlog.store_folder.MainBackend): `backlog.py catch-up --apply` commits them (not after
+    an Overtaken, which puts them back). `paths`: every record path the write wrote, as git spells
     it."""
 
     def __init__(self, message, paths=()):
@@ -85,7 +85,7 @@ class Dirty(Failure):
     """Refused before anything was written: `paths` (the record paths the write would change, as
     git spells them) differ from HEAD in the PM data worktree, a change made there and not
     committed (a hand edit, a staged change, a record never committed), which the write would
-    delete or commit (kitlib.backlog.store.MainBackend with `clean`, the landing's close).
+    delete or commit (kitlib.backlog.store_folder.MainBackend with `clean`, the landing's close).
     `compare`: the command that shows them against HEAD (`git diff HEAD`, or `git status
     --short` when one is not in HEAD, which a diff would not show). `repair` instead, `compare`
     empty, when only the index differs from HEAD for them (the worktree holds HEAD's content):

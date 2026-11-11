@@ -1,6 +1,6 @@
 """`show` of a missing id names the store commit that removed it (kitlib/backlog/plan.py
-`require_shown`, store.py `last_removal`): sha, date, session and subject, never an author name;
-and a record deleted on a merged side branch is still found (`--full-history`)."""
+`require_shown`, store_read.py `last_removal`): sha, date, session and subject, never an author
+name; and a record deleted on a merged side branch is still found (`--full-history`)."""
 import os
 import subprocess
 import tempfile
@@ -11,6 +11,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_end
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_read
 from kitlib.backlog.errors import Ended, Failure, NotFound, Usage
 from kitlib.git import cmd
 from tests.backlog import ownertree
@@ -88,18 +89,18 @@ class RefStore(StoreCase):
         self.assertNotIn('removed by', said)
         for rid in ('FO*', 'F?O', '[F]OO', '../FOO', 'F\\OO', ':FOO'):
             with self.assertRaises(Usage, msg=rid):
-                smod.last_removal(self.repo.root, self.remote_tip(), smod.STORE_DIR, rid)
+                store_read.last_removal(self.repo.root, self.remote_tip(), smod.STORE_DIR, rid)
 
 
 class SessionLine(unittest.TestCase):
 
     def test_the_first_session_line_wins_and_an_empty_one_is_none(self):
-        self.assertIsNone(smod.session_of(''))
-        self.assertIsNone(smod.session_of('no trailer here\n'))
-        self.assertEqual(smod.session_of('Session: one\nSession: two\n'), 'one')
-        self.assertIsNone(smod.session_of('Session:\n'))
-        self.assertIsNone(smod.session_of('Session:   \nRuling: PM R-1\n'))
-        self.assertEqual(smod.session_of('Ruling: PM R-1\nSession: s-1\n'), 's-1')
+        self.assertIsNone(store_read.session_of(''))
+        self.assertIsNone(store_read.session_of('no trailer here\n'))
+        self.assertEqual(store_read.session_of('Session: one\nSession: two\n'), 'one')
+        self.assertIsNone(store_read.session_of('Session:\n'))
+        self.assertIsNone(store_read.session_of('Session:   \nRuling: PM R-1\n'))
+        self.assertEqual(store_read.session_of('Ruling: PM R-1\nSession: s-1\n'), 's-1')
 
 
 class UnreadableHistory(StoreCase):
@@ -108,7 +109,7 @@ class UnreadableHistory(StoreCase):
         r = TempRepo()
         self.addCleanup(r.cleanup)
         r.git('checkout', '-q', '--orphan', 'fresh')
-        store = smod.Store(smod.MainBackend(r.root, 'docs/backlog'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(r.root, 'docs/backlog'), rmod.Rules())
         ctx = pmod.Context(store, r.root, branch=BRANCH)
         with self.assertRaises(NotFound) as cm:
             pmod.require_shown(store.load(), ctx, 'FOO')
@@ -134,7 +135,7 @@ class MainStoreSideBranch(StoreCase):
         r.commit('main moves on', 'other.txt')
         r.git('merge', '-q', '--no-ff', '-m', 'merge side', 'side')
         merge = r.head()
-        store = smod.Store(smod.MainBackend(r.root, 'docs/backlog'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(r.root, 'docs/backlog'), rmod.Rules())
         ctx = pmod.Context(store, r.root, branch=BRANCH)
         with self.assertRaises(NotFound) as cm:
             pmod.require_shown(store.load(), ctx, 'FOO')
@@ -145,9 +146,10 @@ class MainStoreSideBranch(StoreCase):
 
 
 class MainStoreUncommittedClose(StoreCase):
-    """A main store's `close` deletes the file and commits nothing (store.MainBackend.publish), so
-    no commit in HEAD's history removed it yet: `show` says the file is tracked at HEAD and
-    missing here, not that the id is unknown; a git that does not answer fails closed."""
+    """A main store's `close` deletes the file and commits nothing
+    (store_folder.MainBackend.publish), so no commit in HEAD's history removed it yet: `show` says
+    the file is tracked at HEAD and missing here, not that the id is unknown; a git that does not
+    answer fails closed."""
 
     def main_store(self):
         r = TempRepo()
@@ -155,7 +157,7 @@ class MainStoreUncommittedClose(StoreCase):
         root = r.worktree('w')
         r.write('docs/backlog/FOO.md', record_text(id='FOO'), root=root)
         r.commit('adds FOO', 'docs/backlog/FOO.md', cwd=root)
-        store = smod.Store(smod.MainBackend(root, 'docs/backlog'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(root, 'docs/backlog'), rmod.Rules())
         return r, root, store, pmod.Context(store, root, branch=BRANCH)
 
     def shown(self, store, ctx, rid):
@@ -184,7 +186,7 @@ class MainStoreUncommittedClose(StoreCase):
         r, root, store, ctx = self.main_store()
         os.remove(os.path.join(root, 'docs', 'backlog', 'FOO.md'))
         dead = cmd.Result(None, b'', 'git did not answer within 30 s')
-        with mock.patch.object(smod.cmd, 'call', return_value=dead):
+        with mock.patch.object(store_folder.cmd, 'call', return_value=dead):
             with self.assertRaises(Failure) as cm:
                 store.uncommitted_removal('FOO')
             self.assertIn('did not answer', str(cm.exception))
@@ -218,7 +220,7 @@ class BackslashFolder(StoreCase):
         r.git('rm', '-q', '--', 'docs/items/FOO.md')
         r.git('commit', '-q', '-m', 'closes FOO: gone\n\nSession: bs-session')
         deleted = r.head()
-        store = smod.Store(smod.MainBackend(r.root, 'docs\\items'), rmod.Rules())
+        store = smod.Store(store_folder.MainBackend(r.root, 'docs\\items'), rmod.Rules())
         ctx = pmod.Context(store, r.root, branch=BRANCH)
         with self.assertRaises(NotFound) as cm:
             pmod.require_shown(store.load(), ctx, 'FOO')

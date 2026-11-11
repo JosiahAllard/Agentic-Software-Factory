@@ -50,7 +50,7 @@ from kitlib.backlog import plan_narrow                              # noqa: E402
 from kitlib.backlog import policy                                   # noqa: E402
 from kitlib.backlog import record as rmod                           # noqa: E402
 from kitlib.backlog import stale as stalemod                        # noqa: E402
-from kitlib.backlog import store as smod                            # noqa: E402
+from kitlib.backlog import store_folder
 from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E402
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
@@ -496,12 +496,12 @@ def do_dry(change):
 
 def do_catch_up(args, store):
     """`catch-up`: each uncommitted path in the folder store as `<kind>  <path>`, then the counts;
-    with `--apply PATH...` commit the named record paths (kitlib.backlog.store.catch_up)."""
+    with `--apply PATH...` commit the named record paths (kitlib.backlog.store_folder.catch_up)."""
     backend = store.backend
     if args.apply is not None:
         stale = None
         try:
-            tip = smod.catch_up(backend, args.apply, store.session)
+            tip = store_folder.catch_up(backend, args.apply, store.session)
         except IndexStale as exc:                # committed: report it as caught up
             stale, tip = exc, exc.commit
         say('CAUGHT UP %d record path(s) in %s -> %s'
@@ -509,7 +509,7 @@ def do_catch_up(args, store):
         if stale is not None:
             index_stale(stale)
         return 0
-    if not isinstance(backend, smod.MainBackend):
+    if not isinstance(backend, store_folder.MainBackend):
         raise Usage('`catch-up` is for a folder store; %s commits its own writes'
                     % backend.describe())
     found = backend.pending()
@@ -524,7 +524,7 @@ def do_catch_up(args, store):
     records = [p for kind, p in found if kind != 'not a record']
     if records:
         say('DRY RUN: nothing was committed; commit the record paths with: catch-up --apply %s'
-            % smod.quoted(records))
+            % store_folder.quoted(records))
     else:
         say('DRY RUN: no uncommitted record path')
     return 0

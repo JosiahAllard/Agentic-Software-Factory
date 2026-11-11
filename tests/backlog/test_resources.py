@@ -11,6 +11,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.config import schema as schemamod  # noqa: F401  (the key is checked on load below)
 
@@ -371,7 +372,7 @@ class ThroughTheTool(unittest.TestCase):
 
     def setUp(self):
         self.setUp_cli()
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {'AAA': record_text(id='AAA', priority='1', priority_by='agent',
                                                   scope='area/a/**', uses='dev-clone'),

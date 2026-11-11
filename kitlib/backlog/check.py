@@ -10,7 +10,7 @@ from . import offer as omod
 from . import record as rmod
 from . import scope as smod
 from .errors import Failure
-from .store import dangling_items
+from .store_read import dangling_items
 
 PREEMPTIONS = 'pre-emptions'
 PULL_RECORDS = 'pull records'
@@ -157,7 +157,7 @@ DEFAULT_STORE = 'default store'
 
 def check_default_store(snap):
     """One WARN per record of the implicit default store (refs/backlog/main while .kit.json names
-    no "backlog".store: store.default_store_refusal), which nothing writes, so a landing closes
+    no "backlog".store: store_live.default_store_refusal), which nothing writes, so a landing closes
     none of its records (at_landing._read_default): they are stranded there. Never red."""
     found = [rmod.Finding(DEFAULT_STORE, rec.path, 1, '%s is held by the default backlog store, '
                           'read only while .kit.json names no "backlog".store, so no landing '

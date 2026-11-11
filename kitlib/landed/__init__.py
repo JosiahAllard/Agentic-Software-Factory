@@ -78,7 +78,7 @@ def remote_main(root, remote, main):
 
     GOTCHA: a remote missing while others exist is a misnamed one (`.kit.json` "repo".remote), and
     the local main must not decide then either: NoAnswer naming the remotes there are, the rule of
-    kitlib/backlog/store.py find_remote. Only a clone with no remote at all falls back."""
+    kitlib/backlog/store_ref.py find_remote. Only a clone with no remote at all falls back."""
     r = cmd.call(['remote', 'get-url', remote], root, timeout=GIT_TIMEOUT)
     if r.rc == NO_SUCH_REMOTE:
         names, why = cmd.run_text(['remote'], root, timeout=GIT_TIMEOUT)

@@ -1,7 +1,7 @@
 """The store a linked worktree opens (docs/backlog.md "The store a worktree opens";
-kitlib.backlog.store.worktree_live_store, opener.open_store): a worktree whose `.kit.json` names
-no "backlog".store, in a repository whose PM data worktree names one, reads and writes that live
-store, acting as its own checked-out branch. `-C <worktree>` then does what
+kitlib.backlog.store_live.worktree_live_store, opener.open_store): a worktree whose `.kit.json`
+names no "backlog".store, in a repository whose PM data worktree names one, reads and writes that
+live store, acting as its own checked-out branch. `-C <worktree>` then does what
 `-C <pm data> --as <its branch>` does. The main checkout, the PM data worktree itself, a worktree
 naming its own store and a detached HEAD keep the store they open today."""
 import json
@@ -12,7 +12,7 @@ from unittest import mock
 
 from kitlib.config import pmdata
 from kitlib.backlog import opener
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_live
 
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -115,12 +115,13 @@ class WorktreeLiveStore(unittest.TestCase):
     def test_a_pm_data_record_that_cannot_be_read_keeps_its_own_and_a_write_names_why(self):
         with mock.patch.object(pmdata, 'read', side_effect=pmdata.PmDataError('bad json')):
             ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
-            refusal = smod.default_store_refusal(self.wt)
+            refusal = store_live.default_store_refusal(self.wt)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
         self.assertIn('cannot read the PM data record: bad json', refusal)
 
     def test_an_unexpected_failure_is_raised_never_a_quiet_stale_read(self):
-        with mock.patch.object(smod, 'pm_data_live_store', side_effect=RuntimeError('defect')):
+        with mock.patch.object(store_live, 'pm_data_live_store',
+                               side_effect=RuntimeError('defect')):
             with self.assertRaises(RuntimeError):
                 opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
 

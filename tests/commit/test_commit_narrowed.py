@@ -111,7 +111,7 @@ class WhatPasses(NarrowedCase):
         self.narrowed_pair()
         self.put('kit/b/x.py', 'x\n')
         from kitlib.backlog import narrowed as nmod
-        with mock.patch.object(nmod.smod, 'open_backend', side_effect=OSError('store down')):
+        with mock.patch.object(nmod.store_open, 'open_backend', side_effect=OSError('store down')):
             code, out = self.commit('store down', 'kit/b/x.py')
         self.assertEqual(code, 0, out)
         self.assertIn('WARNING: the narrowed-record check could not read the backlog store '

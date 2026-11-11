@@ -2,12 +2,13 @@
 hold is void). `check` warns on a `deliberate` or `owner` hold that cites nothing
 (kitlib.backlog.check.check_hold_citations, never red); `block` refuses to write one
 (kitlib.backlog.record.block_citation_error, called by tools/backlog.py); a hold on an item that
-closed or retired is the `item: targets` WARN (kitlib.backlog.store.dangling_items)."""
+closed or retired is the `item: targets` WARN (kitlib.backlog.store_read.dangling_items)."""
 import unittest
 
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
@@ -18,7 +19,7 @@ NOTE = 'Blocked on deliberate (2026-10-10): R-9092: held until the guard rewrite
 
 
 def snapshot(*recs):
-    return smod.Snapshot(list(recs), None, 'test', rmod.Rules())
+    return store_read.Snapshot(list(recs), None, 'test', rmod.Rules())
 
 
 def result(snap, name):

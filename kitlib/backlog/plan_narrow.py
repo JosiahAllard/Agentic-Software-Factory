@@ -16,7 +16,8 @@ from . import record as rmod
 from . import scope as smod
 from .errors import Failure, Refusal, Usage
 from .plan import shared_of
-from .store import MainBackend, RefBackend
+from .store_folder import MainBackend
+from .store_ref import RefBackend
 
 
 def own_branch(ctx, branch=None):

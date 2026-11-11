@@ -14,7 +14,7 @@ from unittest import mock
 from kitlib import maintlint
 from kitlib.backlog import audit_check
 from kitlib.backlog import record as rmod
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import Finding, backlog, ledger, page, result, verify, worktrees
 from kitlib.modulemap import scopelog
@@ -36,7 +36,7 @@ def snap(*records):
     for r in records:
         texts.update(r)
     parsed = [rmod.parse('backlog/%s.md' % stem, text, stem) for stem, text in texts.items()]
-    return smod.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
+    return store_read.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
 
 
 def temp_dir(case):

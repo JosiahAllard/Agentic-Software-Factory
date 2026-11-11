@@ -1,6 +1,6 @@
 """`delete ID --why T` (kitlib/backlog/plan_end.py plan_delete; docs/backlog.md
 "Commands"): the record goes with the subject `deletes ID: <why>`, which history reads as it
-reads `closes` and `retires` (store._last_closing), so `add` again needs `--reopen`, `show`
+reads `closes` and `retires` (store_read._last_closing), so `add` again needs `--reopen`, `show`
 names the deleting commit and a `requires: item:` on it is never met. Retire's owner gates; a
 live pull refuses, a dead one goes with the record, and `retire` shares that guard."""
 import unittest

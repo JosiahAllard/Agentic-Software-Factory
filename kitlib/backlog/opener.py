@@ -8,7 +8,7 @@ docs/backlog.md).
                        store, its `liveness` and `quiet` the caller's `probes` bound to the
                        store's repository (NO_PROBES: none), its `cap` repo_cap's; from a linked
                        worktree naming no store, the PM data worktree's live store
-                       (store.worktree_live_store)
+                       (store_live.worktree_live_store)
   follow_up_states(root, ids) -> ({id: (state, open)}, why) from the live store (no fetch)
   repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
   repo_resources(top) -> the main checkout's `.kit.json` backlog.resources, {name: capacity}
@@ -36,6 +36,7 @@ from . import record as rmod
 from . import retarget as retmod
 from . import scope as bscope
 from . import store as smod
+from . import store_live, store_open, store_read
 from .errors import Failure, Refusal, Usage
 
 # `set --<field>` for every field; plan_set refuses the ones a verb writes (plan_edit.WRITTEN_BY).
@@ -49,14 +50,15 @@ NO_PROBES = (None, None)
 
 
 def open_repo(root):
-    return smod.open_repo(root)
+    return store_open.open_repo(root)
 
 
 def open_store(root, fetch=True, session=None, branch=None, *, probes):
     """The plan.Context over the store `root`'s checkout opens. A linked worktree whose
     `.kit.json` names no store opens the live store in its repository's PM data worktree, acting
-    as its own checked-out branch unless `branch` (`--as`) names one (store.worktree_live_store):
-    `-C <worktree>` then reads and writes what `-C <pm data> --as <its branch>` does.
+    as its own checked-out branch unless `branch` (`--as`) names one
+    (store_live.worktree_live_store): `-C <worktree>` then reads and writes what
+    `-C <pm data> --as <its branch>` does.
     `probes` (required; the backlog has no default) is `(liveness, quiet)`, called as
     `liveness(top, branch)` and `quiet(top, branch, main=<code main commit>)` on the store's
     repository `top`: the worktree package's quiet.PROBES, or NO_PROBES; a None member is no
@@ -66,10 +68,10 @@ def open_store(root, fetch=True, session=None, branch=None, *, probes):
     # One worktree list for the run: the store lookup, the code config and the cap and resources
     # read lazily after all ask the one repository for it.
     listing = gitrepo.Worktrees()
-    top, cfg, rules, own, _why = smod.resolve_store(root, worktrees=listing)
+    top, cfg, rules, own, _why = store_open.resolve_store(root, worktrees=listing)
     branch = branch or own
     section = cfg.section('backlog')
-    backend = smod.open_backend(top, cfg, fetch=fetch)
+    backend = store_open.open_backend(top, cfg, fetch=fetch)
     store = smod.Store(backend, rules, session=session)
     code_main, code_remote = section['code_main'], cfg.remote
     code = pullmod.code_config(top, worktrees=listing)
@@ -91,13 +93,13 @@ def open_store(root, fetch=True, session=None, branch=None, *, probes):
 
 def follow_up_states(root, ids):
     """`({id: (state, open)}, None)` for each of `ids` in the live store of `root`'s records
-    (store.live_store_root: from a main checkout naming no store, its PM data worktree's), as last
-    fetched: `state` the record's `state:`, None when the store holds none of that id (a closed or
-    retired one), `unreadable` when it cannot be parsed; `open` True when the state is one of
-    record.STATES. `(None, why)` when the live store cannot be found or opened. A read, so it
-    opens the store with NO_PROBES."""
+    (store_live.live_store_root: from a main checkout naming no store, its PM data worktree's), as
+    last fetched: `state` the record's `state:`, None when the store holds none of that id (a closed
+    or retired one), `unreadable` when it cannot be parsed; `open` True when the state is one of
+    record.STATES. `(None, why)` when the live store cannot be found or opened. A read, so it opens
+    the store with NO_PROBES."""
     try:
-        path, why = smod.live_store_root(root)
+        path, why = store_live.live_store_root(root)
         if why:
             return None, why
         snap = open_store(path, fetch=False, probes=NO_PROBES).store.load()
@@ -240,7 +242,7 @@ def uncite_dry(ctx):
 
 def _dry(ctx, plan):
     snap = ctx.store.load()
-    smod.require_readable(snap)
+    store_read.require_readable(snap)
     with smod.plan_notes() as notes, smod.notes_on_refusal(notes):
         change = plan(snap)
     change = smod.with_plan_notes(change, notes)

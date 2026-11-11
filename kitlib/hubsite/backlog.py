@@ -28,7 +28,7 @@ import threading
 
 from kitlib import config as kconfig
 from kitlib import hubbacklog
-from kitlib.backlog import store as bstore
+from kitlib.backlog import store_open, store_ref
 from kitlib.backlog.errors import Refusal
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
@@ -142,10 +142,10 @@ def open_read(root, fetch=False):
         raise ReadError(NO_FOLDER)
     fetched = False
     try:
-        backend = bstore.open_backend(root, kconfig.load(root), fetch=fetch)
+        backend = store_open.open_backend(root, kconfig.load(root), fetch=fetch)
     except (kconfig.ConfigError, Refusal) as exc:
         raise ReadError(kind(str(exc), BAD_STORE))
-    if fetch and isinstance(backend, bstore.RefBackend) and backend.remote:
+    if fetch and isinstance(backend, store_ref.RefBackend) and backend.remote:
         try:
             backend.load(None)
         except Refusal as exc:

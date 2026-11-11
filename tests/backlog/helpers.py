@@ -12,6 +12,7 @@ from kitlib.backlog import (plan_citations, plan_claim, plan_edit, plan_end, pla
                             plan_narrow)
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from tests.gitfixture import TempRepo, fixture_env
 
 # The modules a verb's plan_<name> lives in (kitlib/backlog/__init__.py).
@@ -163,7 +164,8 @@ class StoreCase(unittest.TestCase):
         self.ctx = pmod.Context(self.store, self.repo.root, branch=BRANCH, today=TODAY)
 
     def make_backend(self, root=None):
-        return smod.RefBackend(root or self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        return store_ref.RefBackend(root or self.repo.root, 'origin', smod.STORE_REF,
+                                    smod.STORE_REF)
 
     def seed(self, *records):
         writes = {}

@@ -30,7 +30,7 @@ Low-level design of `kitlib/config`. The high-level design is ARCHITECTURE.md ("
 
 ## Errors
 
-`ConfigError` names the file and the key. `HomeFenced` in a fenced test. A missing pointer or an unreadable machine config is reported as such; no tool falls back to a guessed path.
+`ConfigError` names the file and the key. `HomeFenced` in a fenced test. A missing pointer or an unreadable machine config is reported as such; no tool falls back to a guessed path. One key of the machine config is read by `kitlib.config.pm.section(key)`: `None` when the file or key is missing, `ConfigError` naming the file when it is there but unusable (bad JSON, not an object). A reader never turns a broken file into "no config"; an unattended caller catches the error where it reports and skips its step.
 
 ## Adding to it
 

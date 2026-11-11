@@ -78,17 +78,9 @@ def is_coordinator(env=None):
 
 
 def load_config(path=None):
-    """The "coordinator_start" dict, or None when the file or key is missing. Bad JSON raises
-    ValueError; with no `path`, a machine config location that cannot be told
-    (kitlib.config.user.locate BAD) raises kitlib.config.ConfigError."""
-    p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            data = json.load(f)
-    except OSError:
-        return None
-    cfg = data.get(KEY) if isinstance(data, dict) else None
-    return cfg if isinstance(cfg, dict) else None
+    """The "coordinator_start" dict, or None when the file or key is missing; a file that cannot be
+    used raises kitlib.config.ConfigError (kitlib.config.pm.section)."""
+    return pmconfig.section(KEY, path)
 
 
 def _read(path):

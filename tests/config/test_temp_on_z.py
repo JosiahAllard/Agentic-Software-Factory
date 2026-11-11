@@ -432,7 +432,7 @@ class PrivateIndexSites(unittest.TestCase):
     """The private-index folders of commit, the backlog store and pmdata init go in the shared
     temp (user.mkdtemp), never a bare tempfile.mkdtemp in the process's TEMP."""
 
-    SITES = {'kitlib/commit/__init__.py': 1, 'kitlib/backlog/store_ref.py': 1,
+    SITES = {'kitlib/commit/run.py': 1, 'kitlib/backlog/store_ref.py': 1,
              'kitlib/backlog/store_folder.py': 1, 'kitlib/pmdata/init.py': 1,
              'kitlib/worktree/remove_abandon.py': 1}
 

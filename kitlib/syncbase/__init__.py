@@ -35,7 +35,7 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
 - The merge runs with merge.directoryRenames=true: a file this branch added under a
   folder the base moved lands in the new folder instead of resurrecting the old one.
 - Clean merge, before its commit: an owner-only path it changes must be one commit.py would
-  carry (owner_refusal, kitlib.commit.merge_owner_refusal: the merged branch's own owner or
+  carry (owner_refusal, kitlib.commit.checks.merge_owner_refusal: the merged branch's own owner or
   approved change, or the clean merge of such changes on both sides); anything else aborts the
   merge and is refused.
 - Clean merge: checks the silent-undo hazard - a file the base shrank a lot that came out of
@@ -247,10 +247,10 @@ def in_flight_reader(top, cfg):
 def owner_refusal(top, cfg, full):
     """The refusal lines, or None, for the clean merge of `full` in progress in `top`, before it
     is committed: an owner-only path it changes is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal, with <remote>/<main> as last fetched judged already; with
-    `"commit".merge_fold` off, it carries no path both sides changed). On a refusal the merge is
-    aborted."""
-    from kitlib import commit as kcommit      # here: only a merge that is committed needs it
+    (kitlib.commit.checks.merge_owner_refusal, with <remote>/<main> as last fetched judged
+    already; with `"commit".merge_fold` off, it carries no path both sides changed). On a refusal
+    the merge is aborted."""
+    from kitlib.commit import checks as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
         fold = commit_settings(cfg)['merge_fold']

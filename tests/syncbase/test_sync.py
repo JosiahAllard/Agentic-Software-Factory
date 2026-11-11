@@ -923,8 +923,8 @@ class OwnerCase(SyncCase):
           'of them')
 class OwnerOnlyFiles(OwnerCase):
     """A clean merge that changes an owner-only file is committed only as commit.py would carry it
-    (kitlib.commit.merge_owner_refusal): here, the clean join of two approved changes; anything
-    else aborts the merge."""
+    (kitlib.commit.checks.merge_owner_refusal): here, the clean join of two approved changes;
+    anything else aborts the merge."""
 
     def test_the_clean_merge_of_two_approved_changes_is_committed(self):
         seam = self.approve('A-001')

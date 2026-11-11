@@ -13,7 +13,8 @@ import subprocess
 import unittest
 from unittest import mock
 
-from kitlib import commit, reviewpack
+from kitlib import reviewpack
+from kitlib.commit import run as commit
 from kitlib.config import load as load_config
 from kitlib.docs import callers as doc_callers, index
 from kitlib.preflight import report

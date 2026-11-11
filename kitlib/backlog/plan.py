@@ -262,9 +262,9 @@ def clears_owner_blocker(rec, after):
 
 def refuse_machine_paths(field, *texts):
     """Usage when free text carries a machine path: it reaches a record or a commit subject, and
-    history cannot be fixed once it lands (commit.machine_path_error, same rule: the machine
-    config's `machine_path_folders` and a user profile). Empty texts read no machine config. A
-    machine config it cannot read searches user-profile paths only, and its WARNING ends the
+    history cannot be fixed once it lands (commit.checks.machine_path_error, same rule: the
+    machine config's `machine_path_folders` and a user profile). Empty texts read no machine
+    config. A machine config it cannot read searches user-profile paths only, and its WARNING ends the
     refusal or, with no refusal, is printed with the write (store.add_plan_note)."""
     if not any(texts):
         return

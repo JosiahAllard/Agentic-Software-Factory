@@ -37,17 +37,20 @@ approval creates that HEAD holds with other content refuses.
 apply, in order. Read-only checks first: the approval is signed under `key`, approved, never
 consumed and not expired at `now`, for the worktree's repository (approvals.check), and `branch`
 is the branch it names (the signature covers that name); HEAD is the branch, with no merge,
-cherry-pick, revert or rebase in progress; no approved path is a render source of a kit checkout
-(the hub's commit renders nothing); prewrite passes on HEAD; the worktree's own filters
-(.gitattributes, core.autocrlf: `hash-object --path`) keep each approved file as its approved
-blob; each approved path's index entry is HEAD's and nothing else is staged; each probe in
+cherry-pick, revert or rebase in progress; every approved path is one an owner approval may
+carry (kitlib.ownerfiles.request owner_paths_error, the request's own check, under the rules
+below read at HEAD: a request posted past it is refused here); prewrite passes on HEAD; the
+worktree's own filters (.gitattributes, core.autocrlf: `hash-object --path`) keep each approved
+file as its approved blob; each approved path's index entry is HEAD's (_at_head) and nothing at
+all is staged against HEAD (_staged_error); each probe in
 `checks` ((root, paths) -> why or None) passes. Then the commit is made on a private index
 (GIT_INDEX_FILE), never the worktree's: the approved bytes hashed as they are (--no-filters),
 HEAD's tree with the approved entries, one parent, the message the approval's title, its reason
 and `Owner-Approval: hub:A-<n>`, author and committer AUTHOR (never the owner, so the owner-file
 rules judge it by its approval), no hook. kitlib.ownerfiles.rules.violations must find nothing on
 it, under the rules the land check reads (_owner_rules: the config the commit holds merged with
-main's, never the work tree's `.kit.json`), with the approval judged in process (the delta rule
+main's, never the work tree's `.kit.json`; refused, as land refuses, when the main checkout is
+not on its main branch), with the approval judged in process (the delta rule
 and approvals.check, unconsumed). The branch is moved by
 compare-and-swap (`update-ref <new> <old>`: the commit point), then the files are written and the
 approved paths' index entries set to the commit's (git's index.lock, a bounded retry). A failure
@@ -340,16 +343,17 @@ def _at_head(root, old, paths):
     return got, None
 
 
-def _staged_error(root, old, paths):
-    """Why the index of `root` holds something staged against `old` besides `paths`, or None: the
-    hub applies on a clean index only, so nothing of anyone else's is left staged on its commit."""
+def _staged_error(root, old):
+    """Why the index of `root` holds something staged against `old`, or None: the hub applies on
+    a clean index only, so nothing of anyone else's is left staged on its commit. It runs after
+    _at_head, which refuses an approved path staged away from `old`."""
     out, why = _git(root, ['diff', '--cached', '--name-only', '--no-renames', '-z', old, '--'])
     if out is None:
         return why
-    others = sorted(set(n for n in out.split('\0') if n) - set(paths))
-    if others:
+    staged = sorted(n for n in out.split('\0') if n)
+    if staged:
         return ('something else is staged in %s: %s. The hub applies an approved change on a '
-                'clean index only: commit or unstage it there first' % (root, ', '.join(others)))
+                'clean index only: commit or unstage it there first' % (root, ', '.join(staged)))
     return None
 
 
@@ -372,17 +376,16 @@ def _filters_error(root, plan):
     return None
 
 
-def _render_error(root, paths):
-    """Why `paths` hold a render source of the kit checkout `root`, or None: the hub's commit
-    renders nothing, so the rendered files would be left behind (kitlib.ownerfiles.request
-    refuses such a request; this refuses one stored another way)."""
-    from kitlib.content import oncommit
-    rendered = [p for p in paths if oncommit.wants_render([p])]
-    if rendered and oncommit.is_kit(root):
-        return ('%s is a render source: the hub\'s commit renders nothing, so its rendered files '
-                'would be left behind. The owner commits it with tools/commit.py --owner-authored'
-                % ', '.join(rendered))
-    return None
+def _paths_error(root, old, paths):
+    """Why `paths` are not all ones an owner approval may carry, or None: the request's own
+    check (kitlib.ownerfiles.request owner_paths_error: a render source of a kit checkout, a path
+    the owner rules do not lock), under the owner rules _owner_rules reads at `old`. The hub's
+    POST of a request does not run it, so a request posted past it is refused here."""
+    from kitlib.ownerfiles import request
+    rules, why = _owner_rules(root, old)
+    if rules is None:
+        return why
+    return request.owner_paths_error(root, paths, rules=rules)
 
 
 def _owner_rules(root, new):
@@ -390,17 +393,23 @@ def _owner_rules(root, new):
     config the commit `new` holds (the defaults when it does not load) merged with main's
     (kitlib.config.owner.merge), main being <remote>/<main> as last fetched, else the main
     checkout's HEAD; never the work tree's `.kit.json`, so an uncommitted edit there cannot loosen
-    them. (None, why) when main's config cannot be read."""
+    them. (None, why) when main's config cannot be read, or when the main checkout is not on the
+    main branch its HEAD's config names: as land refuses then (kitlib.gate.land config_refusal),
+    since another branch's `.kit.json` would choose the rules."""
     from kitlib import config as kconfig
     found, why = gitrepo.worktrees(root)
     if not found:
         return None, 'the main checkout of %s cannot be found: %s' % (root, why or 'none listed')
-    main_root = found[0].path
+    main_root, on = found[0].path, found[0].branch
     head, why = _git(main_root, ['rev-parse', '--verify', 'HEAD^{commit}'])
     if head is None:
         return None, why
     try:
         cfg = kconfig.load_at(main_root, head.strip())
+        if on != cfg.main_branch:
+            return None, ('the main checkout %s is on %s, not %s: the owner rules are read from '
+                          'main, as gate land reads them' % (main_root, on or '(detached HEAD)',
+                                                             cfg.main_branch))
         ref = 'refs/remotes/%s/%s^{commit}' % (cfg.remote, cfg.main_branch)
         tracking, _why = _git(main_root, ['rev-parse', '--verify', '-q', ref])
         if tracking:
@@ -495,7 +504,7 @@ def _checks(root, branch, did, doc, key, now, checks):
     if out is None:
         return None, why
     old, paths = out.strip(), approved_paths(doc)
-    why = _render_error(root, paths)
+    why = _paths_error(root, old, paths)
     if why:
         return None, why
     plan, why = prewrite(root, did, doc, paths, old)
@@ -507,7 +516,7 @@ def _checks(root, branch, did, doc, key, now, checks):
     at_head, why = _at_head(root, old, paths)
     if at_head is None:
         return None, why
-    why = _staged_error(root, old, paths)
+    why = _staged_error(root, old)
     if why:
         return None, why
     for probe in checks:

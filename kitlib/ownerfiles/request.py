@@ -72,16 +72,20 @@ def read_content(path):
         raise RequestError('the content file %s is not UTF-8 text' % path, 'files')
 
 
-def owner_paths_error(top, paths):
+def owner_paths_error(top, paths, rules=None):
     """None when every one of `paths` (repo-relative, `/`) is one an owner approval may carry,
     else the refusal naming the others: a render source when `top` is a kit checkout
     (oncommit.wants_render and oncommit.is_kit: the hub's commit renders nothing), and a path
-    the repository's owner rules (kconfig.load(top).owner_rules(), as commit.py reads them) do
-    not lock. RequestError when the configuration is refused."""
-    try:
-        rules = kconfig.load(top).owner_rules()
-    except kconfig.ConfigError as e:
-        raise RequestError('the kit configuration of %s is refused: %s' % (top, e), 'checkout')
+    the owner rules do not lock: `rules`, or the repository's (kconfig.load(top).owner_rules(),
+    as commit.py reads them). The one check of both the request and the hub's apply
+    (kitlib.ownerfiles.apply, which passes the rules it reads). RequestError when the
+    configuration is refused."""
+    if rules is None:
+        try:
+            rules = kconfig.load(top).owner_rules()
+        except kconfig.ConfigError as e:
+            raise RequestError('the kit configuration of %s is refused: %s' % (top, e),
+                               'checkout')
     kit = oncommit.is_kit(top)
     rendered = [p for p in paths if kit and oncommit.wants_render([p])]
     ordinary = [p for p in paths if p not in rendered and not rules.is_locked(p)]

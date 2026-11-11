@@ -300,6 +300,24 @@ class ReviewerVerdict(GateRepoCase):
         with self.assertRaises(VE.VerdictError):
             self.tool.new_sources(self.repo.root, 'nosuch..%s' % t2)
 
+    def test_new_sources_leaves_out_what_a_sync_merge_brought_from_main(self):
+        """The observed refusal: a range from the pre-sync tip counted main's files as added."""
+        wt, t1 = self.branch('s', {'pkg/own.py': 'class Own:\n    pass\n'})
+        self.repo.write('pkg/from_main.py', 'class FromMain:\n    pass\n')
+        landed = self.repo.commit('main moves', 'pkg/from_main.py')
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.repo.git('merge', '-q', '--no-edit', landed, cwd=wt)
+        t2 = self.repo.git('rev-parse', 'HEAD', cwd=wt).strip()
+        rng = '%s..%s' % (t1, t2)
+        self.assertEqual(self.tool.new_sources(self.repo.root, rng), [])
+        # the branch's own file is still new
+        self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (self.main, t2)),
+                         ['pkg/own.py', 'pkg/own.py:Own'])
+        # main unreadable keeps today's answer: nothing is loosened
+        with mock.patch.object(self.tool, 'main_as_fetched', return_value=(None, 'no ref')):
+            self.assertEqual(self.tool.new_sources(self.repo.root, rng),
+                             ['pkg/from_main.py', 'pkg/from_main.py:FromMain'])
+
 
 class SkillIds(unittest.TestCase):
     """The ids skill specialty-review gives are the ones verdict.py add checks."""

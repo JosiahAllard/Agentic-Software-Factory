@@ -7,7 +7,8 @@ from unittest import mock
 
 from hosts.claude.adapter import host as claude_host
 from hosts.codex.adapter.host import ADAPTER as CODEX
-from kitlib import config, pmdata
+from kitlib import config
+from kitlib.config import pmdata
 from kitlib.config import schema, user
 from kitlib.guard import modes, rules
 from kitlib.host import Action, Decision, hookmain

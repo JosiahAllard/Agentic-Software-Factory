@@ -12,7 +12,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
 

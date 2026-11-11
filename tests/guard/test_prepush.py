@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.gate import runner
 from kitlib.guard import context, ownercommits, prepush
 from kitlib.hubsite import approvals as ap

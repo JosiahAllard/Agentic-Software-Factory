@@ -409,13 +409,13 @@ def trigger(kind, doc, old, now=None):
 
 def machine_pm_folder():
     """The folder name of the PM's own repository (the one holding the machine config's
-    pm_start sessions_file, as kitlib.pmstart.known_repos names it), '' when unknown."""
-    from kitlib import pmstart
-    cfg = pmstart.load_config() or {}
+    pm_start sessions_file, as kitlib.config.pm.known_repos names it), '' when unknown."""
+    from kitlib.config import pm as pmconfig
+    cfg = pmconfig.load_config() or {}
     path = cfg.get('sessions_file')
     if not path:
         return ''
-    return pmstart._toplevel(os.path.dirname(os.path.abspath(path))) or ''
+    return pmconfig._toplevel(os.path.dirname(os.path.abspath(path))) or ''
 
 
 def schedule(attempt):

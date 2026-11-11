@@ -15,7 +15,7 @@ no drive.
 
 The value is the absolute path of the PM repository's main or data work tree, never a pm/<slug>
 worktree: an existing folder that is the top of a git work tree; when its repository's common dir
-holds kit-pm-data.json (kitlib.pmdata), the work tree must be on the recorded data branch, and with
+holds kit-pm-data.json (kitlib.config.pmdata), the work tree must be on the recorded data branch, and with
 no record it must be the main checkout.
 
 Under the kit's tests (kitlib.config.user.fenced) the registry is never read: the value is the
@@ -29,7 +29,7 @@ import os
 import shlex
 
 import kitlib.platform
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import user
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs, repo
@@ -43,7 +43,7 @@ FENCE_ENV = 'KIT_PM_REPO_FENCE'
 OK, NONE, BAD = 'OK', 'NONE', 'BAD'
 
 # `state` OK, NONE or BAD; `path` the value as stored (None when there is none or it cannot be
-# read); `error` why it is BAD, else None; `record` the kitlib.pmdata Record in its repository's
+# read); `error` why it is BAD, else None; `record` the kitlib.config.pmdata Record in its repository's
 # common dir for OK, None when it has none.
 Pointer = collections.namedtuple('Pointer', 'state path error record', defaults=(None,))
 
@@ -103,7 +103,7 @@ def check(path, classify=None, branch=None):
 
 
 def _check(path, classify=None, branch=None):
-    """(check's answer, the kitlib.pmdata Record of path's repository or None)."""
+    """(check's answer, the kitlib.config.pmdata Record of path's repository or None)."""
     if not _absolute(path):
         return '%s is not an absolute path' % path, None
     if not os.path.isdir(path):

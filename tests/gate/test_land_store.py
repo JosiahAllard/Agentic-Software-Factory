@@ -9,7 +9,7 @@ from unittest import mock
 
 import kitlib.config as kconfig
 from kitlib import gate as G
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import at_landing
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
@@ -202,7 +202,7 @@ class PmDataAncestryFolderStore(PmDataAncestry):
 
 class PmDataClose(StoreLandCase):
     """A landing closes what the branch holds pulled in the PM data branch's store too: a folder
-    store in the worktree that has the recorded data branch checked out (kitlib.pmdata), where
+    store in the worktree that has the recorded data branch checked out (kitlib.config.pmdata), where
     the PM keeps this repository's records while the configured store stays empty."""
 
     def setUp(self):

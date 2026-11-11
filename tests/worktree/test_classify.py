@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 import kitlib.platform
-from kitlib import kitroot, pmdata
+from kitlib import kitroot
+from kitlib.config import pmdata
 from kitlib.records import gate_ok
 from kitlib.worktree import classify, holders, marks, remove, sweep
 from tests import gitfixture
@@ -336,7 +337,7 @@ class EmptyTrees(ClassifyCase):
     CONFIG = {'backlog': {'store': 'main'}}
 
     def pm_worktree(self, store):
-        """The PM data worktree (kitlib.pmdata), outside the worktree folder, its `.kit.json`
+        """The PM data worktree (kitlib.config.pmdata), outside the worktree folder, its `.kit.json`
         naming `store` uncommitted (the tree is dirty, so C itself)."""
         pmdata.write(self.fx.common_dir(), 'pmdata', 'private', self.git('rev-parse', 'HEAD'))
         path = os.path.join(os.path.realpath(self.fx.base), 'pm')

@@ -47,7 +47,7 @@ import re
 import shutil
 
 from kitlib import kitroot
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import ConfigError, load, load_at
 from kitlib.config import pointer as cpointer
 from kitlib.config import user

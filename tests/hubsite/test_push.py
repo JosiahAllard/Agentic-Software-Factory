@@ -1220,14 +1220,14 @@ class FiledRecipientsTest(FiledPushCase):
         self.assertEqual(len(reads), 1)
 
     def test_machine_pm_folder_is_the_folder_holding_sessions_file(self):
-        with mock.patch('kitlib.pmstart.load_config',
-                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.pmstart._toplevel',
+        with mock.patch('kitlib.config.pm.load_config',
+                        return_value={'sessions_file': os.path.join(self.root, 's.json')}),                 mock.patch('kitlib.config.pm._toplevel',
                            side_effect=lambda d: 'pmrepo' if d == self.root else None):
             self.assertEqual(push.machine_pm_folder(), 'pmrepo')
 
     def test_machine_pm_folder_is_empty_without_a_sessions_file(self):
         for cfg in ({}, None):
-            with mock.patch('kitlib.pmstart.load_config', return_value=cfg):
+            with mock.patch('kitlib.config.pm.load_config', return_value=cfg):
                 self.assertEqual(push.machine_pm_folder(), '')
 
     def test_a_freed_record_without_resolve_pings_the_pm(self):

@@ -26,7 +26,7 @@ import shutil
 import tempfile
 import time
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.fs import replace as fsreplace
 from kitlib.git import batch, cmd, refs
@@ -738,7 +738,7 @@ class MainBackend(object):
         self._branch = _UNSET
 
     def commit_branch(self, place=None):
-        """The PM data branch (kitlib.pmdata) when `root` is a worktree that has it checked out:
+        """The PM data branch (kitlib.config.pmdata) when `root` is a worktree that has it checked out:
         a write there commits. None elsewhere, a detached HEAD included. Failure when git or a
         present PM data record cannot be read: never a silent uncommitted write there. `place`:
         gitrepo.classify(root) when the caller has it."""

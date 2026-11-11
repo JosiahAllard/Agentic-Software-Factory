@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import at_landing
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod

@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import store as smod
 from kitlib.config import load as load_config
 from kitlib.git import repo as gitrepo

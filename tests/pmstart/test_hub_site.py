@@ -10,7 +10,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata, pmstart
+from kitlib import pmstart
+
+from kitlib.config import pm as pmconfig
+from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 from kitlib.pmstart import fglock
@@ -226,7 +229,7 @@ class HubSiteTest(unittest.TestCase):
                 # a value that does not end as a written string does: cut, with what follows
                 ("%s, not 'someone@mail.invalid; %s" % (team, aud), team),
                 ("%s, not \"someone@mail.invalid" % team, team),
-                # a value that is not a string, as kitlib.pmdata echoes it: a number goes alone,
+                # a value that is not a string, as kitlib.config.pmdata echoes it: a number goes alone,
                 # a list is cut with what follows
                 ("pm_data: remote must be a branch or remote name, not 7; %s, not 'tag one'" % aud,
                  "pm_data: remote must be a branch or remote name; %s" % aud),
@@ -357,12 +360,12 @@ class RealSettingsTest(unittest.TestCase):
             json.dump({"pm_start": {}, "hub": {"port": 1111}}, f)
         with open(local_file, "w", encoding="utf-8") as f:
             json.dump({"hub": {"port": 4322}, "launcher": {"accounts": {}}}, f)
-        self.assertEqual(pmstart.machine_config(),
+        self.assertEqual(pmconfig.machine_config(),
                          {"pm_start": {}, "hub": {"port": 4322}, "launcher": {"accounts": {}}})
-        self.assertEqual(pmstart.machine_config(cfg_file), {"pm_start": {}, "hub": {"port": 1111}})
+        self.assertEqual(pmconfig.machine_config(cfg_file), {"pm_start": {}, "hub": {"port": 1111}})
         with open(local_file, "w", encoding="utf-8") as f:
             f.write("[not an object")                   # unreadable: config.json's keys stand
-        self.assertEqual(pmstart.machine_config(), {"pm_start": {}, "hub": {"port": 1111}})
+        self.assertEqual(pmconfig.machine_config(), {"pm_start": {}, "hub": {"port": 1111}})
 
     def test_a_valid_hub_key_gives_the_settings(self):
         self.write({"hub": {"port": 4322}})
@@ -406,7 +409,7 @@ class RealSettingsTest(unittest.TestCase):
                     self.assertNotIn(word, txt)
 
     def test_a_bad_pm_data_value_fails_the_kit_sync_check_naming_the_rule_and_never_the_value(self):
-        # the kit_sync check reads pm_data through kitlib.pmdata's own check (check_settings), whose
+        # the kit_sync check reads pm_data through kitlib.config.pmdata's own check (check_settings), whose
         # PmDataError echoes the rejected value: the "could not check" line takes it out
         # (pmstart._failure_text)
         down = dict(make_client=lambda port: FakeClient(error=serve.NotRunning(port)))

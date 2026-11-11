@@ -8,7 +8,7 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import pull_branch
@@ -506,7 +506,7 @@ PM_KIT_JSON = {'backlog': {'id_grammar': 'upper', 'code_main': 'main'},
 
 
 class PmDataWorktree(StoreCase):
-    """The PM data worktree (kitlib.pmdata): a worktree of the code repository on the data branch,
+    """The PM data worktree (kitlib.config.pmdata): a worktree of the code repository on the data branch,
     whose .kit.json names the data remote. The code lands on the main checkout's remote
     (`repo.remote`, origin here), so `add --found-on` measures from that remote's main, not from
     the local main, which lags it until somebody pulls (kitlib/backlog/opener.py `open_store`,

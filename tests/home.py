@@ -50,7 +50,7 @@ from tests import gitfixture
 FENCE_ENV = 'KIT_HOME_FENCE'
 # The PM-repo pointer's value under the fence (kitlib.config.pointer.FENCE_ENV), spelled here too.
 PM_REPO_FENCE_ENV = 'KIT_PM_REPO_FENCE'
-# A record's root: any full commit id passes the record's check (kitlib.pmdata.check_fields).
+# A record's root: any full commit id passes the record's check (kitlib.config.pmdata.check_fields).
 RECORD_ROOT = '0' * 40
 
 # {normcase home: the test case temp_home made it for}: machine_config's default case.
@@ -106,7 +106,7 @@ def pm_repo(case, path=None, record=True):
     tier), with a kit-pm-data.json record (branch main, remote origin) when `record`, that the
     PM-repo pointer names (PM_REPO_FENCE_ENV, patched until the test ends). The remembered pointer
     answers are dropped now and when the test ends (kitlib.config.user.forget). Returns the path."""
-    from kitlib import pmdata
+    from kitlib.config import pmdata
     if path is None:
         path = tempfile.mkdtemp(prefix='kit-pm-repo-')
         case.addCleanup(gitfixture.rmtree, path)

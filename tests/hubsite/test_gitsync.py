@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 from kitlib import kitroot
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import cmd as gitcmd
 from kitlib.hubsite import gitsync
 from kitlib.hubsite.store import LOCK_NAME, Store

@@ -6,7 +6,10 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import pmdata, pmstart
+from kitlib import pmstart
+
+from kitlib.config import pm as pmconfig
+from kitlib.config import pmdata
 from kitlib.git import cmd as gitcmd, refs, repo
 from tests.platforms import windows_only
 
@@ -53,14 +56,14 @@ class ToplevelTest(unittest.TestCase):
 
     def test_names_the_repository_holding_the_path(self):
         with mock.patch.object(gitcmd, "subprocess_run", return_value=ran(out="C:/x/MyRepo\n")):
-            self.assertEqual(pmstart._toplevel(KIT), "MyRepo")
+            self.assertEqual(pmconfig._toplevel(KIT), "MyRepo")
 
     def test_outside_a_repository_or_without_git_gives_none(self):
         with mock.patch.object(gitcmd, "subprocess_run", return_value=ran(rc=128, out="C:/x/MyRepo\n")):
-            self.assertIsNone(pmstart._toplevel(KIT))
+            self.assertIsNone(pmconfig._toplevel(KIT))
         for exc in (OSError("no git"), subprocess.TimeoutExpired("git", 4)):
             with mock.patch.object(gitcmd, "subprocess_run", side_effect=exc):
-                self.assertIsNone(pmstart._toplevel(KIT))
+                self.assertIsNone(pmconfig._toplevel(KIT))
 
 
 class PmDataSettingsTest(unittest.TestCase):

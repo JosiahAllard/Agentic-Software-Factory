@@ -573,7 +573,7 @@ class SelfCheckCase(unittest.TestCase):
         with mock.patch.object(importlib, 'import_module', picky):
             with self.assertRaises(ImportError):
                 self.run_self_check()
-        for name in ('kitlib.hubsite.serve', 'kitlib.hubjobs', 'kitlib.pmdata'):
+        for name in ('kitlib.hubsite.serve', 'kitlib.hubjobs', 'kitlib.config.pmdata'):
             self.assertIn(name, names, 'every code folder is imported, %s too' % name)
         self.assertEqual(self.made, [])
 

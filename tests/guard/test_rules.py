@@ -9,7 +9,8 @@ import os
 import re
 import unittest
 
-from kitlib import lockmcp as lockmcp_names, pmdata
+from kitlib import lockmcp as lockmcp_names
+from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.git import repo
 from kitlib.guard import commands as cm, context, rules, shell as sh

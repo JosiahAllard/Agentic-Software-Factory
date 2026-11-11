@@ -16,7 +16,7 @@ ConfigError naming every problem.
 import collections
 import os
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import user
 from kitlib.config.types import Bool, ConfigError, Field, Int, ListOf, Obj, Str
 
@@ -123,7 +123,7 @@ def _value(obj, key, default):
 
 def settings(obj, pm_data=None, where=KEY):
     """The checked Settings of the `hub` object `obj` (None: every default). `pm_data` is
-    kitlib.pmdata.check_settings' answer ({path, branch, remote}) or None: it gives the default
+    kitlib.config.pmdata.check_settings' answer ({path, branch, remote}) or None: it gives the default
     store folder and the default of `push`. ConfigError naming every problem."""
     errs = check(obj, where)
     if errs:

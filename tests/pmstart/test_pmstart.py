@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pmstart
+from kitlib.config import pm as pmconfig
 from kitlib.pmstart import fglock
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, HUB_KEPT_OFF, keep_off_hub_site, keep_off_launcher_repos
@@ -421,10 +422,10 @@ class ConfigAndHookTest(unittest.TestCase):
     def test_load_config(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "c.json")
-            self.assertIsNone(pmstart.load_config(p))
+            self.assertIsNone(pmconfig.load_config(p))
             with open(p, "w") as f:
                 json.dump({"pm_start": {"memory_dir": "u"}}, f)
-            self.assertEqual(pmstart.load_config(p), {"memory_dir": "u"})
+            self.assertEqual(pmconfig.load_config(p), {"memory_dir": "u"})
 
     def test_hook_without_config_prints_json_exit_0(self):
         with tempfile.TemporaryDirectory() as d:
@@ -447,7 +448,7 @@ class KnownReposTest(unittest.TestCase):
                        "c": {"repo": "alpha"}, "d": {"name": "no repo"}})
 
     def run_it(self, cfg=CFG, top=lambda d: None):
-        return pmstart.known_repos(cfg, read=lambda p: self.SESS, toplevel=top, kit_dir="K")
+        return pmconfig.known_repos(cfg, read=lambda p: self.SESS, toplevel=top, kit_dir="K")
 
     def test_sessions_deduped_and_sorted(self):
         self.assertEqual(self.run_it(), ["alpha", "Beta"])
@@ -467,7 +468,7 @@ class KnownReposTest(unittest.TestCase):
 
     def test_no_sessions_file(self):
         with self.assertRaises(KeyError):
-            pmstart.known_repos({})
+            pmconfig.known_repos({})
 
 
 class BomFileTest(unittest.TestCase):
@@ -490,7 +491,7 @@ class BomFileTest(unittest.TestCase):
     def test_known_repos_reads_bom_sessions(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.write(d, "sessions.json", {"a": {"repo": "alpha"}})
-            got = pmstart.known_repos(dict(CFG, sessions_file=p), toplevel=lambda x: None, kit_dir="K")
+            got = pmconfig.known_repos(dict(CFG, sessions_file=p), toplevel=lambda x: None, kit_dir="K")
         self.assertEqual(got, ["alpha"])
 
     def test_reminders_reads_bom_file(self):
@@ -502,7 +503,7 @@ class BomFileTest(unittest.TestCase):
     def test_load_config_reads_bom_file(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.write(d, "config.json", {"pm_start": {"memory_dir": "u"}})
-            self.assertEqual(pmstart.load_config(p), {"memory_dir": "u"})
+            self.assertEqual(pmconfig.load_config(p), {"memory_dir": "u"})
 
 
 class EngReviewTest(unittest.TestCase):

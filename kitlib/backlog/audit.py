@@ -1,7 +1,7 @@
 """The backlog's audit log (docs/backlog.md "Audit log"): one JSON line per write whose rows carry
 an AUDITED risk (kitlib/backlog/roles.py), appended by tools/backlog.py after the store write
 publishes it, to `<pm_data>/audit/backlog.jsonl` (the machine config's pm_data.path;
-kitlib.pmdata). The folder is made on the first write and left untracked: nothing commits it and
+kitlib.config.pmdata). The folder is made on the first write and left untracked: nothing commits it and
 nothing may count on its being committed. Only the tool writes there; the guard refuses every
 other session's write (docs/guard.md rule `pm-data-audit`).
 
@@ -66,7 +66,7 @@ def log_path(pm_data):
 
 
 def pm_data_path(home=None):
-    from kitlib import pmdata
+    from kitlib.config import pmdata
     from kitlib.config.types import ConfigError
     try:
         settings = pmdata.machine_settings(home)

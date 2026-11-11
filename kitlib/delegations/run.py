@@ -54,8 +54,8 @@ from kitlib.config import user as kuser
 from kitlib.fs import writelock
 from kitlib.git import lockplace
 from kitlib.hubsite import approvals
-from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import serve as hubserve
+from kitlib.hubclient import client as hubclient
+from kitlib.hubclient import errors as huberrors
 from kitlib.ledger import files as lfiles
 from kitlib.ledger import fmt
 from kitlib.ledger import read as lread
@@ -494,7 +494,7 @@ def hub_order(op, qid, line, hub, texts, now):
         raise RunRefused('no hub to read %s from' % qid)
     try:
         items = hub.listing('questions', status='all', role=hubclient.AGENT)
-    except (hubserve.ServeError, OSError, ValueError) as e:
+    except (huberrors.ServeError, OSError, ValueError) as e:
         raise RunRefused('cannot read %s from the hub: %s' % (qid, e))
     q = next((d for d in items if isinstance(d, dict) and d.get('id') == qid
               and d.get('status') in ('logged', 'filed')), None)
@@ -756,7 +756,7 @@ def request(op, pairs, cfg, hub, title, reason=None, environ=None, kit_root=KIT_
         raise RunRefused('no hub to ask on')
     try:
         got = approvals.request_op(hub, op.id, op.repo, line, title, reason=reason, what=op.what)
-    except (hubserve.ServeError, OSError, ValueError) as e:
+    except (huberrors.ServeError, OSError, ValueError) as e:
         raise RunRefused('the hub did not take the request: %s' % (str(e) or type(e).__name__))
     rid = got.get('id') if isinstance(got, dict) else None
     if not isinstance(rid, str) or not rid:
@@ -769,7 +769,7 @@ def run(op, pairs, trigger, cfg, hub=None, now=None, spawn=procspawn.run, checks
         home=None, make_cwd=None):
     """Run the Operation `op` with the arguments `pairs` [(name, value)] on `trigger`; the module
     docstring gives the order. `cfg`: the machine config (kitlib.config.user.user_config). `hub`:
-    a kitlib.hubsite.client.Client for a question trigger or a hub approval. `spawn`, `checks`
+    a kitlib.hubclient.client.Client for a question trigger or a hub approval. `spawn`, `checks`
     (the precondition checks by kind, default CHECKS), `environ` (the caller's), `registry`
     (read_registry's stand-in), `now` (aware UTC), `pause` (called between the use-once scan and
     the ledger add), `home` (the home folder place.check reads, default the user's) and

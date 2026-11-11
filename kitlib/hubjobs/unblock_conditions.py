@@ -381,7 +381,7 @@ def plugin_root(home):
 
 def hub_store(home):
     """The hub store folder, or None when it cannot be told."""
-    from kitlib.hubsite import settings as hsettings
+    from kitlib.hubclient import settings as hsettings
     try:
         return hsettings.load(home=home).store
     except Exception:                   # noqa: BLE001

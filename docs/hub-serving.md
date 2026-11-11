@@ -60,7 +60,7 @@
 
   The warning: one error line in the hub log and a `code` object, `{"stale", "restart"}`, in GET
   health (the local listener; the tunnel's fixed health carries none) and GET snapshot
-  (`kitlib.hubsite.codestale`). `restart` is the owner's to-do: `python <kit>/tools/hub.py restart`,
+  (`kitlib.hubclient.codestale`). `restart` is the owner's to-do: `python <kit>/tools/hub.py restart`,
   or, with no autostart task, `hub.py stop` then `hub.py serve`. Three places show it: the page's
   banner (`#codeerr`), a `hub: WARN` line in the PM session-start checklist (docs/pm-start.md), and a
   `HUB` event of pm_watch (docs/pm-watch.md), said once per stale episode. `hub.py status` prints it as

@@ -18,9 +18,8 @@
   health_route(api, views, tunnel='', fixed=False)
                                                 a listener's route for GET health (below)
   scrub(text)                                   `text` without the `user:password@` of any URL
-  ask(port, method, path, token=None, body=None, timeout=ASK_TIMEOUT_S) -> (status, object)
   status_lines(health, now=None)                what `hub status` prints for a GET health answer
-  ServeError, NotRunning
+  ServeError                                    kitlib.hubclient.errors's, raised here too
 
 build() takes its parts from a Sources, so a test serves a temp store on port 0 with stand-ins
 and never reads the machine config, a real repository or the network. Nothing here reads a
@@ -216,10 +215,9 @@ pass failed, WORD_UNKNOWN when the Api gave no git status. An answer of the Api 
 leaves as its status and error code with the message HEALTH_REFUSED, never the Api's own
 message.
 
-ask() is the one request every local client makes (`hub status`, `hub open`, and
-kitlib.hubsite.client for the other verbs): to the loopback listener through http.client, which
-uses no proxy, so a token never leaves this machine. It names itself USER_AGENT. It lives in
-kitlib.hubsite.localask (the client imports it without this server) and is re-exported here.
+The request every local client makes (`hub status`, `hub open`, and kitlib.hubclient.client for
+the other verbs) is kitlib.hubclient.localask.ask, its errors kitlib.hubclient.errors: neither
+is this server's.
 """
 import datetime
 import functools
@@ -233,15 +231,16 @@ from kitlib import hubbacklog, hubjobs, pmstart, pmwatch
 from kitlib.config import pm as pmconfig, pmdata
 from kitlib.config import user
 from kitlib.config.types import ConfigError
+from kitlib.hubclient import codestale
+from kitlib.hubclient import token as _token
+from kitlib.hubclient.errors import ServeError
 from kitlib.proc import process
 
 from . import api as _api
 from . import jobs as _jobs
 from . import push as _push
-from . import access, auth, backlog, codestale, derived, gitsync, httpd, recordwrite, tunnel
+from . import access, auth, backlog, derived, gitsync, httpd, recordwrite, tunnel
 from . import repoweb, selfrestart, skilledits
-from .localask import (ASK_TIMEOUT_S, MAX_ANSWER, USER_AGENT, VIA_CLI, VIA_MCP,     # noqa: F401
-                       NoAnswer, NotRunning, ServeError, ask)
 from .store import HubError, Store, StoreBusy
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
@@ -334,7 +333,7 @@ class Sources(object):
     """Where the server's parts come from. A part that is None is a view the server does not
     have (or, for `sync`, a server that commits nothing).
 
-      tokens       the credential folder (auth.folder)
+      tokens       the credential folder (kitlib.hubclient.token.folder)
       static_dir   the page's folder; a missing one answers 404
       pm_data      kitlib.config.pmdata's {path, branch, remote}, or None
       notices      the machine lock's notice folder
@@ -529,7 +528,7 @@ def machine_sources(home=None, sync=True):
         pm = pmdata.machine_settings(home)
     except pmdata.PmDataError as e:
         raise ConfigError(str(e))
-    src = Sources(tokens=auth.folder(home), pm_data=pm,
+    src = Sources(tokens=_token.folder(home), pm_data=pm,
                   notices=pmwatch.configured_notice_dir(path),
                   agents=agents_dir(), skills=skills_dir(),
                   sync=gitsync.GitSync if sync else None, home=home)
@@ -1269,7 +1268,7 @@ def _push_line(log, text):
 
 
 def build(settings, sources, log=None):
-    """The Hub for `settings` (kitlib.hubsite.settings.Settings) from `sources` (a Sources):
+    """The Hub for `settings` (kitlib.hubclient.settings.Settings) from `sources` (a Sources):
     module docstring, "Start-up". Nothing is started; close() the Hub to release the store.
     `log(level, text)` gets the listeners' lines (httpd) and the hub's own (module docstring,
     "The log"). ServeError."""
@@ -1769,12 +1768,6 @@ def run(hub, started=None, stop=None):
     finally:
         clean = hub.close()
     return clean
-
-
-# ------------------------------------------------------------------ the local client
-
-#   ask() and its errors (ServeError, NotRunning, NoAnswer) and constants: kitlib.hubsite.localask,
-#   imported at the top and re-exported here.
 
 
 def _age(text, now):

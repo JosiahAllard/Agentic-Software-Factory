@@ -310,7 +310,7 @@ class NextCli(unittest.TestCase):
         backend.publish(smod.Store(backend, rmod.Rules()).load(), texts, 'seed\n')
 
     def hub(self, fake):
-        from kitlib.hubsite import client, settings
+        from kitlib.hubclient import client, settings
         for target, value in ((client, 'Client'), (settings, 'load')):
             patch = mock.patch.object(target, value, fake if value == 'Client'
                                       else mock.Mock(return_value=mock.Mock(port=1)))

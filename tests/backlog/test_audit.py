@@ -21,6 +21,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import roles
 from kitlib.backlog import store as smod
+from kitlib.hubclient import errors as huberrors
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, priced
@@ -489,11 +490,10 @@ class AnswerCheck(unittest.TestCase):
         self.assertEqual((self.answers(r), len(reads)), ([], 1), reads)
 
     def test_a_hub_that_cannot_be_read_is_not_checked(self):
-        from kitlib.hubsite import serve
         self.add()
         self.answer('owner-hub')
         self.answer('kit', qid='Q-1002')               # no hub needed: never the hub's
-        r = self.report(serve.NotRunning(1))
+        r = self.report(huberrors.NotRunning(1))
         found = self.answers(r)
         self.assertEqual(len(found), 1, r.findings)
         self.assertIn('answer: Q-1002 ', found[0].text)
@@ -502,12 +502,11 @@ class AnswerCheck(unittest.TestCase):
                             for n in r.notes), r.notes)
 
     def test_run_gives_an_unreadable_hub_as_a_note_and_exit_ok(self):
-        from kitlib.hubsite import serve
         self.add()
         self.answer('owner-hub')
 
         def questions():
-            raise serve.NotRunning(1)
+            raise huberrors.NotRunning(1)
         code, lines = audit_check.run(self.repo.root, fetch=False, home=self.home,
                                       questions=questions)
         self.assertEqual(code, audit_check.OK, lines)

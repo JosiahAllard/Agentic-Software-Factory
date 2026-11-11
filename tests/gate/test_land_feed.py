@@ -7,7 +7,9 @@ import unittest
 
 from kitlib import gate as G
 from kitlib.gate import result
-from kitlib.hubsite import client, landings, serve
+from kitlib.hubclient import client
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubsite import landings
 from kitlib.records import gate_ok, place
 
 from tests.gate.test_land import BRANCH, LandCase
@@ -105,10 +107,10 @@ class Posts(FeedCase):
 
 class HubFails(FeedCase):
     def test_each_hub_failure_is_a_said_warning_and_the_landing_stands(self):
-        cases = [(serve.NotRunning(8790), 'no hub is running'),
+        cases = [(huberrors.NotRunning(8790), 'no hub is running'),
                  (client.Refused(404, {'ok': False, 'error': {'code': 'not_found'}}),
                   'no /landings route'),
-                 (serve.NoAnswer('timed out'), 'did not answer'),
+                 (huberrors.NoAnswer('timed out'), 'did not answer'),
                  (KeyboardInterrupt(), 'Ctrl+C'),
                  (RuntimeError('boom'), 'RuntimeError: boom')]
         for i, (error, why) in enumerate(cases):

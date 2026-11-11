@@ -11,8 +11,8 @@ import unittest
 
 from kitlib.commit import approval as commit_approval
 from kitlib.delegations import schema as dschema
+from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import approvals as ap
-from kitlib.hubsite import serve
 from kitlib.hubsite.api import AGENT
 
 KEY = 'k' * 64
@@ -297,7 +297,7 @@ class ClientTest(unittest.TestCase):
             self.assertTrue(why)
         self.assertEqual(ap.verify_op(FakeClient({'valid': False, 'why': ap.WHY_ARGS}), 'A-1',
                                       OP, REPO, sha()), (False, ap.WHY_ARGS, None))
-        for error in (serve.NotRunning(1), OSError('reset'), RuntimeError('x')):
+        for error in (huberrors.NotRunning(1), OSError('reset'), RuntimeError('x')):
             self.assertEqual(ap.verify_op(FakeClient(error=error), 'A-1', OP, REPO, sha()),
                              (False, ap.WHY_SERVER % type(error).__name__, None))
 

@@ -14,7 +14,10 @@ from unittest import mock
 from kitlib import hubmcp, hubvalidate
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import server as srv
-from kitlib.hubsite import api, approvals, auth, serve
+from kitlib.hubclient import token as hubtoken
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, approvals, auth
 from kitlib.hubvalidate import pagecheck, todosteps
 from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
@@ -40,7 +43,7 @@ class Settings(object):
 
 
 class FakeAsk(object):
-    """serve.ask's stand-in: records each call and answers `answer` (or raises it)."""
+    """localask.ask's stand-in: records each call and answers `answer` (or raises it)."""
 
     def __init__(self, answer=(200, {"ok": True})):
         self.calls = []
@@ -133,12 +136,12 @@ class Pinned(Case):
 
     def test_no_tool_reads_the_owner_token(self):
         roles = []
-        real = auth.read_token
+        real = hubtoken.read_token
 
         def read(folder, role):
             roles.append(role)
             return real(folder, role)
-        with mock.patch.object(auth, "read_token", read):
+        with mock.patch.object(hubtoken, "read_token", read):
             s = self.server()
             for name in PINNED:
                 s.call(name, {"id": "T-1"})
@@ -186,7 +189,7 @@ class Routes(Case):
                          ("POST", api.BASE + "/questions/Q%201%2Fx/log"))
         self.assertEqual(call["body"], {"if_version": 3})
         self.assertEqual(call["token"], self.agent)
-        self.assertEqual(call["via"], serve.VIA_MCP)
+        self.assertEqual(call["via"], localask.VIA_MCP)
         self.assertEqual(call["port"], 8790)
 
     def test_the_log_and_reply_tools_take_no_ruling_id(self):
@@ -360,7 +363,7 @@ class Pages(Case):
         self.assertFalse(is_error, payload)
         call = self.ask.calls[-1]
         self.assertEqual((call["method"], call["path"], call["token"], call["via"]),
-                         ("POST", api.BASE + "/pages", self.agent, serve.VIA_MCP))
+                         ("POST", api.BASE + "/pages", self.agent, localask.VIA_MCP))
         want = {k: v for k, v in args.items() if k != "html_file"}
         want["html"] = html
         self.assertEqual(call["body"], want)
@@ -576,7 +579,7 @@ class Approvals(Case):
         self.assertEqual(payload["id"], "A-001")
         call, = self.ask.calls
         self.assertEqual((call["method"], call["path"], call["token"], call["via"]),
-                         ("POST", api.BASE + "/approvals", self.agent, serve.VIA_MCP))
+                         ("POST", api.BASE + "/approvals", self.agent, localask.VIA_MCP))
         self.assertEqual(call["body"], {
             "repo": approvals.repo_id(self.URL), "title": "Edit the readme",
             "head": self.repo.initial, "reason": "asked",
@@ -760,20 +763,20 @@ class Errors(Case):
             "code": "conflict", "message": "Q-1 changed", "field": "if_version"}})
 
     def test_a_hub_that_is_not_running_says_so(self):
-        self.ask.answer = serve.NotRunning(8790)
+        self.ask.answer = huberrors.NotRunning(8790)
         payload, is_error = self.rpc(self.server(), "hub_pending")
         self.assertEqual((is_error, payload["error"]["code"]), (True, "not_running"))
 
     def test_other_failures_are_results_not_crashes(self):
-        for answer, code in ((serve.ServeError("port 1 did not answer"), "client"),
+        for answer, code in ((huberrors.ServeError("port 1 did not answer"), "client"),
                              (ValueError("boom"), "internal")):
             self.ask.answer = answer
             payload, is_error = self.rpc(self.server(), "hub_health")
             self.assertEqual((is_error, payload["error"]["code"]), (True, code))
 
     def test_a_wait_that_fails_is_a_result_like_any_other_tool(self):
-        for answer, code in ((serve.NotRunning(8790), "not_running"),
-                             (serve.ServeError("port 1 did not answer"), "client"),
+        for answer, code in ((huberrors.NotRunning(8790), "not_running"),
+                             (huberrors.ServeError("port 1 did not answer"), "client"),
                              (ValueError("boom"), "internal")):
             with self.subTest(code=code):
                 self.ask.answer = answer
@@ -869,7 +872,7 @@ class Live(httpfix.ListenerCase):
         self.assertFalse(is_error, payload)
         doc_id = payload["id"]
         doc = self.store.docs("questions")[doc_id]
-        self.assertEqual((doc["title"], doc["via"]), ("which?", serve.VIA_MCP))
+        self.assertEqual((doc["title"], doc["via"]), ("which?", localask.VIA_MCP))
         payload, is_error = self.mcp.call("hub_list", {"collection": "questions"})
         self.assertFalse(is_error, payload)
         self.assertEqual([i["id"] for i in payload["items"]], [doc_id])
@@ -962,7 +965,7 @@ class Live(httpfix.ListenerCase):
         payload, is_error = self.mcp.call("hub_inbox", {})
         self.assertFalse(is_error, payload)
         self.assertEqual([(i["text"], i["via"]) for i in payload["items"]],
-                         [("done", serve.VIA_MCP)])
+                         [("done", localask.VIA_MCP)])
         payload, is_error = self.mcp.call("hub_health", {})
         self.assertFalse(is_error, payload)
         self.assertNotIn("store", payload)      # the agent's token: where the store is stays hidden
@@ -979,7 +982,7 @@ class Live(httpfix.ListenerCase):
         self.assertFalse(is_error, payload)
         card = self.store.docs("pages")["plan"]
         self.assertEqual((card["title"], card["via"], card["bytes"]),
-                         ("The plan", serve.VIA_MCP, len(html.encode("utf-8"))))
+                         ("The plan", localask.VIA_MCP, len(html.encode("utf-8"))))
         payload, is_error = self.mcp.call("hub_page", {"id": "plan"})
         self.assertFalse(is_error, payload)
         self.assertEqual(payload["html"], html)

@@ -5263,9 +5263,10 @@ class EachModuleImportsFirst(unittest.TestCase):
         import sys
         from kitlib.proc import spawn
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for name in ('api', 'approvals', 'client', 'landings', 'push', 'serve', 'store'):
+        for name in ('hubsite.api', 'hubsite.approvals', 'hubclient.client', 'hubsite.landings',
+                     'hubsite.push', 'hubsite.serve', 'hubsite.store'):
             with self.subTest(module=name):
-                r = spawn.run([sys.executable, '-c', 'import kitlib.hubsite.%s' % name],
+                r = spawn.run([sys.executable, '-c', 'import kitlib.%s' % name],
                                    cwd=root, capture_output=True, text=True, timeout=60)
                 self.assertEqual(r.returncode, 0, r.stderr[-600:])
 

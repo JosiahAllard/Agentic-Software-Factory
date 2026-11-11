@@ -66,7 +66,7 @@ acknowledgement. `to-pm reply` sets `done`.
 | park | hub: `{at, code, message}`, what binding the to-do did to its record, as a question's `park` (docs/hub-questions.md "A question bound to a record") |
 
 A new to-do (`POST /todos`, so `hub.py todos add` and the MCP tool `hub_todo_add` alike) may also carry
-`steps`, which is not stored: `kitlib.hubsite.api.todo_steps` turns each step into a command appended
+`steps`, which is not stored: `kitlib.hubvalidate.todosteps.todo_fields` (through `kitlib.hubsite.api.todo_steps`) turns each step into a command appended
 after `commands` and adds one summary line per step at the end of `detail` (docs/hub-mcp.md "To-do
 steps"). `hub.py todos add --steps F` reads the list from F, a UTF-8 JSON file. The server refuses, as
 `invalid` naming the field: a bad step (`steps`), a `commands` entry holding a lone surrogate (U+D800 to

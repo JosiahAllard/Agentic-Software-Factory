@@ -2,15 +2,15 @@
 JSON-RPC 2.0 over stdio, one message per line, on the standard library (CLAUDE.md), in the shape of
 kitlib.lockmcp.server.
 
-Every tool is one call to the hub server on this machine, through kitlib.hubsite.client: the
+Every tool is one call to the hub server on this machine, through kitlib.hubclient.client: the
 loopback listener only, so the server's checks (roles, fields, versions) are the ones that hold,
 and this process never opens the hub store. The port is read from the machine's hub settings
-(kitlib.hubsite.settings) at each call, so a server started later, or on another port, is found.
+(kitlib.hubclient.settings) at each call, so a server started later, or on another port, is found.
 
 Every tool carries the agent's token and nothing else (AgentClient: a route open to ANY is called
 with it too, and with no usable agent token a tool answers `no_agent_token` instead of falling
-back to the owner's); write tools name their source serve.VIA_MCP. The owner's writes are pinned in
-kitlib.hubmcp.OWNER_ONLY and do not ship yet: tools/list leaves them out and tools/call refuses
+back to the owner's); write tools name their source localask.VIA_MCP. The owner's writes are
+pinned in kitlib.hubmcp.OWNER_ONLY and do not ship yet: tools/list leaves them out and tools/call refuses
 them (`not_available`; `forbidden` in a session the launcher marked), never reading the owner's
 token. The guard already denies them to agents by name (its hub-mcp rule, kitlib/guard/hub.py
 OWNER_MCP_TOOLS); shipping the tools themselves is still to come (GUARD_WAIT says so).
@@ -28,11 +28,11 @@ import traceback
 from kitlib import hubapprove, hubvalidate, mcpwire
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import OWNER_ONLY, SERVER_NAME
-from kitlib.hubsite import api as hubapi
-from kitlib.hubsite import auth as hubauth
-from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import serve as hubserve
-from kitlib.hubsite import settings as hubsettings
+from kitlib.hubclient import client as hubclient
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubclient import settings as hubsettings
+from kitlib.hubclient import token as hubtoken
 from kitlib.hubvalidate import pagecheck, todosteps
 
 SERVER_VERSION = "0.1.0"
@@ -116,8 +116,9 @@ def _one_of(values, what):
     return {"type": "string", "enum": list(values), "description": what}
 
 
-# name -> (description, input schema, HTTP method, path below hubapi.BASE, the role the tool
-# calls as: ANY for a read, AGENT for a write, the route's role in hubapi.ROUTES being AGENT or
+# name -> (description, input schema, HTTP method, path below hubvalidate.BASE, the role the
+# tool calls as: ANY for a read, AGENT for a write, the route's role in the server's ROUTES
+# (kitlib/hubsite/api.py) being AGENT or
 # ANY). AgentClient carries the agent's token whatever the role says.
 # A `{name}` in the path is filled from the argument of that name; every other argument is the
 # query of a GET or the body of a POST.
@@ -335,16 +336,16 @@ assert not set(TOOLS) & set(OWNER_ONLY)
 REPLACES = frozenset({"hub_page_publish"})
 
 
-class NoAgentToken(hubserve.ServeError):
+class NoAgentToken(huberrors.ServeError):
     """There is no usable agent token: the hub MCP server never falls back to the owner's."""
 
 
 class AgentClient(hubclient.Client):
-    """kitlib.hubsite.client.Client that carries the agent's token on every call, a route open to
+    """kitlib.hubclient.client.Client that carries the agent's token on every call, a route open to
     ANY included. The owner's token file is never opened."""
 
     def token(self, role):
-        token = hubauth.read_token(self.tokens, AGENT)
+        token = hubtoken.read_token(self.tokens, AGENT)
         if not token:
             raise NoAgentToken("no usable agent token in %s: the hub MCP server carries the "
                                "agent's token only (tools/hub.py setup writes it)" % self.tokens)
@@ -412,10 +413,10 @@ def _error(code, message, field=None, **more):
 class Server:
     """The tools over the hub server on this machine.
 
-    port: the hub's port (None: kitlib.hubsite.settings at each call). tokens: the folder of the
-    token files (None: kitlib.hubsite.auth.folder()). ask: serve.ask or a stand-in. marked: the
-    session's mark (kitlib.host.sessionmark.mark), read once at start by mcp/hub_server.py.
-    load_settings: kitlib.hubsite.settings.load or a stand-in."""
+    port: the hub's port (None: kitlib.hubclient.settings at each call). tokens: the folder of the
+    token files (None: kitlib.hubclient.token.folder()). ask: localask.ask or a stand-in. marked:
+    the session's mark (kitlib.host.sessionmark.mark), read once at start by mcp/hub_server.py.
+    load_settings: kitlib.hubclient.settings.load or a stand-in."""
 
     def __init__(self, port=None, tokens=None, ask=None, marked=None, load_settings=None):
         self.port = port
@@ -426,7 +427,7 @@ class Server:
 
     def client(self):
         port = self.port if self.port is not None else self.load_settings().port
-        return AgentClient(port, tokens=self.tokens, ask=self.ask, via=hubserve.VIA_MCP)
+        return AgentClient(port, tokens=self.tokens, ask=self.ask, via=localask.VIA_MCP)
 
     # ---------------------------------------------------------------- tools
     def tool_list(self):
@@ -445,13 +446,13 @@ class Server:
             return (special(a) if special else self._route(name, a)), False
         except ToolError as e:
             return {"ok": False, "error": e.error}, True
-        except hubclient.Refused as e:
+        except huberrors.Refused as e:
             return _error(e.code, e.message, e.field, status=e.status)
         except NoAgentToken as e:
             return _error("no_agent_token", str(e))
-        except hubserve.NotRunning as e:
+        except huberrors.NotRunning as e:
             return _error("not_running", "%s (tools/hub.py serve starts it)" % e)
-        except hubserve.ServeError as e:
+        except huberrors.ServeError as e:
             return _error("client", str(e))
         except ConfigError as e:
             return _error("config", "the machine's hub settings cannot be read: %s" % e)
@@ -491,24 +492,24 @@ class Server:
         return {"ok": True, "items": self.client().inbox()}
 
     def _t_hub_todo_add(self, a):
-        """The hub makes the steps into commands and detail (kitlib.hubsite.api.todo_steps), so
-        they go to it as given. The same check runs here first, so a to-do it refuses (a bad
-        step, a lone surrogate in a command, text the owner's to-do rules forbid) is refused
-        with the hub's own words and never reaches the hub."""
+        """The hub makes the steps into commands and detail (todosteps.todo_fields), so they go
+        to it as given. The same check runs here first, so a to-do it refuses (a bad step, a lone
+        surrogate in a command, text the owner's to-do rules forbid) is refused with the hub's
+        own words and never reaches the hub."""
         try:
-            hubapi.todo_steps(a)
-        except hubapi.HubError as e:
-            raise ToolError(e.code, e.message, e.field)
+            todosteps.todo_fields(a)
+        except (todosteps.StepError, todosteps.Refused) as e:
+            raise ToolError("invalid", str(e), e.field)
         return self._route("hub_todo_add", a)
 
     def _t_hub_todo_edit(self, a):
         """The changed text is judged here first as the hub judges it (api.todos_edit), so an
         edit it refuses never reaches the hub."""
         try:
-            hubapi.todo_steps({k: v for k, v in a.items()
-                               if k not in ("id", "from", "if_version")}, judge=True)
-        except hubapi.HubError as e:
-            raise ToolError(e.code, e.message, e.field)
+            todosteps.todo_fields({k: v for k, v in a.items()
+                                   if k not in ("id", "from", "if_version")}, judge=True)
+        except (todosteps.StepError, todosteps.Refused) as e:
+            raise ToolError("invalid", str(e), e.field)
         return self._route("hub_todo_edit", a)
 
     def _page_file(self, path):
@@ -538,7 +539,7 @@ class Server:
         if why:
             refuse(why)
         try:
-            closed = [("the hub's token folder", self.tokens or hubauth.folder()),
+            closed = [("the hub's token folder", self.tokens or hubtoken.folder()),
                       ("the hub store", getattr(self.load_settings(), "store", None))]
         except (ConfigError, OSError, ValueError) as e:
             refuse("cannot tell where the hub keeps its tokens and store (%s), so it is not read"

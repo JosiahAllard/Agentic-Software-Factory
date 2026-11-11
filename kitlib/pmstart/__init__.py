@@ -56,7 +56,6 @@ def current_account():
     return accounts.current_account(pmconfig.machine_config())
 
 
-HUB_SITE_TIMEOUT_S = 1.5    # seconds each ask of the hub server waits (three asks at most)
 HUB_TOOL = os.path.join(KIT_ROOT, "tools", "hub.py")
 HUB_ERROR_MAX = 400         # characters of a rejected `hub` key's message shown in its line
 
@@ -84,21 +83,13 @@ class HubSettingsError(Exception):
     """The machine config has a `hub` key that cannot be used."""
 
 
-class NoHubToken(Exception):
-    """Neither token file of the hub (agent or owner) is there to read."""
-
-
-class NoHubPointer(Exception):
-    """No PM-repo pointer is set, so the hub has no token folder to look in."""
-
-
 def hub_settings():
-    """The hub Settings (kitlib.hubsite.settings.load): the `hub` key's, or every default (port
+    """The hub Settings (kitlib.hubclient.settings.load): the `hub` key's, or every default (port
     8790) when the machine config has no `hub` key. HubSettingsError when they cannot be had and
     the raw file holds a `hub` key, also when it is the machine config's check that refuses; any
     other error as it is raised: the config could not be read, with no `hub` key in it."""
     from kitlib.config.types import ConfigError
-    from kitlib.hubsite import settings as hubsettings
+    from kitlib.hubclient import settings as hubsettings
     try:
         return hubsettings.load()
     except Exception as e:
@@ -109,21 +100,6 @@ def hub_settings():
         if has_key:
             raise HubSettingsError(str(e))
         raise
-
-
-def _hub_client(port):
-    """The real client, after a look that a token file is there: NoHubToken when neither is."""
-    from kitlib.config.types import ConfigError
-    from kitlib.hubsite import auth, client
-    try:
-        folder = auth.folder()
-    except ConfigError as e:
-        if str(e) == auth.NO_POINTER:
-            raise NoHubPointer()
-        raise
-    if not any(auth.read_token(folder, role) for role in auth.ROLES):
-        raise NoHubToken()
-    return client.Client(port, tokens=folder, timeout=HUB_SITE_TIMEOUT_S)
 
 
 _PUSH_STATES = ("up", "down")
@@ -168,10 +144,11 @@ def push_line(health):
     return "hub: WARN %s; %s" % (said, read)
 
 
-def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
+def hub_site(load=None, make_client=None, stamp=None, now=None):
     """The hub site's lines, on the `hub` key's settings or, with no key, on the defaults (port
     8790): the site is the hub whether or not the key is written. Asks only the loopback server,
-    with HUB_SITE_TIMEOUT_S per ask; starts nothing. A machine config that cannot be read is one
+    through `make_client` (None: kitlib.hubclient.client.hub_client), with HUB_SITE_TIMEOUT_S per
+    ask; starts nothing. A machine config that cannot be read is one
     line naming the exception's class (the test home fence is not caught). A failure of the
     server side is one line naming no more than the port and the exception's class, so no token,
     URL or message of the server reaches the text. The one message shown is a rejected `hub`
@@ -187,17 +164,19 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
         return ["hub: the hub key of the machine config cannot be used: %s" % text]
     except Exception as e:
         return ["hub: the machine config could not be read (%s)" % type(e).__name__]
-    from kitlib.hubsite import serve
+    from kitlib.hubclient import client as hubclient
+    from kitlib.hubclient.client import HUB_SITE_TIMEOUT_S
+    from kitlib.hubclient.errors import NoHubPointer, NoHubToken, NotRunning
     port = site.port
     try:
-        hub = make_client(port)
+        hub = (make_client or hubclient.hub_client)(port)
         health = hub.get("/health", timeout=HUB_SITE_TIMEOUT_S)
     except NoHubPointer:
         return ["hub: no PM repo pointer is set, so the hub has no token folder: set it with "
                 "tools/machine_setup.py --pm-repo <PM repository> (an elevated owner step)"]
     except NoHubToken:
         return ["hub: no hub token file is there to read: run python \"%s\" setup" % HUB_TOOL]
-    except serve.NotRunning:
+    except NotRunning:
         return ["hub: hub server down (nothing listens on port %d): start it with python \"%s\" serve"
                 % (port, HUB_TOOL)]
     except Exception as e:
@@ -212,7 +191,7 @@ def hub_site(load=None, make_client=_hub_client, stamp=None, now=None):
     except Exception as e:
         return ["hub: server up on port %d, pending not asked (%s)" % (port, type(e).__name__)]
     lines = ["hub: server up on port %d, %d pending for the PM" % (port, len(items))]
-    from kitlib.hubsite import codestale
+    from kitlib.hubclient import codestale
     old = codestale.notice(health.get("code"), HUB_TOOL)      # never raises; None: current or no field
     if old:
         lines.append("hub: WARN " + old)
@@ -273,6 +252,7 @@ def filed_digest(hub, stamp, now=None):
     status=done, each &since=T): the questions whose filed_at is at or after T are counted, of
     the done ones only those the hub marked done once their asker had the answer (done_by `hub`,
     kitlib.hubsite.push "Done by the hub"), which the line counts apart; none is no line."""
+    from kitlib.hubclient.client import HUB_SITE_TIMEOUT_S
     now = now or datetime.datetime.now(datetime.timezone.utc)
     try:
         path = stamp() if callable(stamp) else stamp

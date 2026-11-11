@@ -14,7 +14,7 @@ from unittest import mock
 from kitlib.autotasks import tick as T
 from kitlib.config import pointer
 from kitlib.fs.treelock import TreeLock
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors as huberrors
 from tests import gitfixture
 from tests.home import machine_config, temp_home
 from tests.realgit import real_git
@@ -376,7 +376,7 @@ class Tick(Base):
 class HubDown(Base):
     def test_nothing_listening_starts_nothing_and_exits_clean_with_one_line(self):
         def down():
-            raise serve.NotRunning(1)
+            raise huberrors.NotRunning(1)
         code, lines = self.go(fetch=down)
         self.assertEqual(code, T.EXIT_OK)
         self.assertEqual(len(lines), 1)
@@ -391,15 +391,16 @@ class HubDown(Base):
         s.close()
         tokens = tempfile.mkdtemp(prefix='autotasks-tokens-')
         self.addCleanup(gitfixture.rmtree, tokens)
-        from kitlib.hubsite import auth, client
-        with mock.patch.object(auth, 'read_token', return_value='t'):
+        from kitlib.hubclient import client
+        from kitlib.hubclient import token as hubtoken
+        with mock.patch.object(hubtoken, 'read_token', return_value='t'):
             fetch = lambda: client.Client(port, tokens=tokens, timeout=5).listing('schedules')   # noqa: E731
             code, lines = self.go(fetch=fetch)
         self.assertEqual((code, len(lines), self.started), (T.EXIT_OK, 1, []))
         self.assertIn('hub not reachable', lines[0])
 
     def test_a_refusal_is_a_failure(self):
-        from kitlib.hubsite import client
+        from kitlib.hubclient import client
 
         def refused():
             raise client.Refused(403, {'ok': False, 'error': 'no'})

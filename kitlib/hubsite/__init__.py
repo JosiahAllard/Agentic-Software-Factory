@@ -2,7 +2,6 @@
 
   store    the hub store: one JSON file per document, one writer, ids, revision, events, pending
   schema   the fields each collection's documents carry, checked before every write
-  settings the site's machine settings, the machine config's `hub` key
   auth     who a request on the local listener is: the owner token, the pairing code, the session cookie
   access   the Cloudflare Access token check for the tunnel listener: verify, KeyCache
   approvals the approvals a request waits on: asked, decided, verified
@@ -34,12 +33,9 @@
   jobs     the timed jobs' runner (the jobs: kitlib.hubjobs): thread, cadence, failures in health
   plugin_job the timed job that refreshes the pm-kit plugin export when kit main moves
   serve    the server: the store, the api, the views and the listeners, started and closed
-  client   the client of the hub server on this machine: one call, its refusal, the exit codes
-  localask one request to the hub server on this machine and its errors: client's light half, re-exported by serve
   landings the landing feed's events, built after a landing and posted best-effort to the hub
   storecheck the store folder's findings as on disk, read only, no lock (hub.py validate)
   autostart the opt-in scheduled task that starts the server at sign-in (hub.py setup --autostart)
   control  hub.py stop and restart: ask the server to close, wait for it, start the task again
-  codestale the one restart text for a server whose hub code on disk is newer (health, page, checklist)
   selfrestart a task-run server's restart on new code: settle, self-check, wait for quiet, restart
 """

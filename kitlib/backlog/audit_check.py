@@ -282,7 +282,7 @@ def hub_questions():
     """Every question document on this machine's hub, read with the agent token through the hub's
     client (as kitlib.maintlint.backlog hub_questions and tools/hub.py read them): read only.
     Raises what the client raises, and ConfigError for a hub config that cannot be read."""
-    from kitlib.hubsite import client, settings
+    from kitlib.hubclient import client, settings
     return client.Client(settings.load().port).listing('questions', status='all',
                                                          role=client.AGENT)
 
@@ -324,10 +324,10 @@ def held(answers, qid, rid, at):
 def _hub_read(questions):
     """(the hub's answers, None) or (None, why the hub store could not be read)."""
     from kitlib.config.types import ConfigError
-    from kitlib.hubsite import serve
+    from kitlib.hubclient import errors
     try:
         return hub_answers((questions or hub_questions)()), None
-    except (serve.ServeError, ConfigError, OSError, ValueError) as exc:
+    except (errors.ServeError, ConfigError, OSError, ValueError) as exc:
         return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
 
 

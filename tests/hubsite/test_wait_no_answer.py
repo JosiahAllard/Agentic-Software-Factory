@@ -1,5 +1,5 @@
 """client.Client.wait against a stand-in hub on port 0 that takes a poll and holds it past the
-client's socket time (serve.NoAnswer): the wait asks again and ends on the item the next poll
+client's socket time (huberrors.NoAnswer): the wait asks again and ends on the item the next poll
 answers, until its own timeout or client.NO_ANSWER_TURNS unanswered polls in a row, and only when
 asking again loses no write; an answer that is not the hub's still ends it.
 hubvalidate.WAIT_MAX_S and client.WAIT_MARGIN_S are made small so a held poll costs about two seconds, and the margin is
@@ -11,7 +11,10 @@ import unittest
 from unittest import mock
 
 from kitlib import hubvalidate
-from kitlib.hubsite import api, client, httpd, serve
+from kitlib.hubclient import client
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, httpd
 from tests.hubsite import httpfix
 
 TURN_S = 0.2
@@ -108,7 +111,7 @@ class NoAnswerCase(unittest.TestCase):
 
     def test_a_hub_that_takes_every_poll_and_never_answers_ends_a_wait_with_no_timeout(self):
         hub, c = self.fake(['hold'])
-        with self.assertRaises(serve.NoAnswer):
+        with self.assertRaises(huberrors.NoAnswer):
             c.wait(since=2, pending=True, for_key='pm')
         self.assertEqual(client.NO_ANSWER_TURNS, 3)
         self.assertEqual(len(hub.paths), client.NO_ANSWER_TURNS, hub.paths)
@@ -127,7 +130,7 @@ class NoAnswerCase(unittest.TestCase):
         # poll would be lost, so a wait that ends on changes is not asked again
         for kw in ({}, {'pending': True}):
             hub, c = self.fake(['hold', 'hit'])
-            with self.assertRaises(serve.NoAnswer):
+            with self.assertRaises(huberrors.NoAnswer):
                 c.wait(**kw)
             self.assertEqual(len(hub.paths), 1, (kw, hub.paths))
         # one that ends on its own pending items only reads them again on the next poll
@@ -142,15 +145,15 @@ class NoAnswerCase(unittest.TestCase):
 
     def test_a_held_poll_is_no_answer_a_serve_error_with_the_text_of_before(self):
         hub, c = self.fake(['hold'])
-        with self.assertRaises(serve.NoAnswer) as e:
-            serve.ask(hub.port, 'GET', api.BASE + '/wait', c.token(client.ANY), timeout=0.3)
-        self.assertIsInstance(e.exception, serve.ServeError)
+        with self.assertRaises(huberrors.NoAnswer) as e:
+            localask.ask(hub.port, 'GET', api.BASE + '/wait', c.token(client.ANY), timeout=0.3)
+        self.assertIsInstance(e.exception, huberrors.ServeError)
         self.assertEqual(str(e.exception),
                          'port %d did not answer as the hub does: TimeoutError' % hub.port)
 
     def test_polls_that_are_never_answered_end_at_the_waits_own_timeout(self):
         hub, c = self.fake(['hold'])
-        with self.assertRaises(serve.NoAnswer):
+        with self.assertRaises(huberrors.NoAnswer):
             c.wait(since=2, timeout=0.1, pending=True)
         # the turn of 0.1 s, then one of 0 s begun past the end: no third poll
         self.assertEqual(len(hub.paths), 2, hub.paths)
@@ -158,9 +161,9 @@ class NoAnswerCase(unittest.TestCase):
 
     def test_an_answer_that_is_not_the_hubs_still_ends_the_wait(self):
         hub, c = self.fake(['junk'])
-        with self.assertRaises(serve.ServeError) as e:
+        with self.assertRaises(huberrors.ServeError) as e:
             c.wait(pending=True)
-        self.assertNotIsInstance(e.exception, serve.NoAnswer)
+        self.assertNotIsInstance(e.exception, huberrors.NoAnswer)
         self.assertEqual(len(hub.paths), 1)
 
 

@@ -1,7 +1,7 @@
-"""kitlib.hubsite.codestale: the one text that tells the owner to restart a stale hub."""
+"""kitlib.hubclient.codestale: the one text that tells the owner to restart a stale hub."""
 import unittest
 
-from kitlib.hubsite import codestale
+from kitlib.hubclient import codestale
 
 
 class NoticeTest(unittest.TestCase):

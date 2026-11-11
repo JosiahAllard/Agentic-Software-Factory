@@ -1,23 +1,27 @@
-"""kitlib.hubsite.client: the client of the hub server on this machine.
+"""kitlib.hubclient.client: the client of the hub server on this machine.
 
-It asks the loopback listener only (127.0.0.1:<port>), through serve.ask: http.client with no
+It asks the loopback listener only (127.0.0.1:<port>), through localask.ask: http.client with no
 proxy, so a token never leaves this machine. urllib is used for the query string alone. The
-token of a call is read from its file by auth.read_token each time, never kept and never put in
+token of a call is read from its file by token.read_token each time, never kept and never put in
 a message: the owner's for a route only the owner may call, the agent's for the rest.
 
 Nothing here prints or exits. A call answers the JSON object the server gave, or raises:
-  serve.NotRunning    nothing listens on the port                      exit code 3
+  NotRunning          nothing listens on the port                      exit code 3
   Refused             the server answered with a refusal: its `code`,  exit code 1
                       `message`, `field`, HTTP `status` and whole
                       `body` are attributes
-  serve.ServeError    anything else: no token file, an answer that is  exit code 1
+  ServeError          anything else: no token file, an answer that is  exit code 1
                       not the hub's
 exit_code(e) gives the number for one of these; OK (0), REFUSED (1), USAGE (2), NOT_RUNNING (3)
 and TIMED_OUT (4) are the exit codes of tools/hub.py, here as data. TIMED_OUT is never raised:
-Client.wait() answers with `timed_out` true.
+Client.wait() answers with `timed_out` true. The errors are kitlib.hubclient.errors'.
 
-Client(port, tokens, via=serve.VIA_CLI)
-  get(path, role, query), post(path, role, body)   one call; `path` is below api.BASE
+hub_client(port)  a Client of the token folder, with HUB_SITE_TIMEOUT_S per call, after a look
+                  that a token file is there: NoHubPointer with no PM-repo pointer, NoHubToken
+                  when neither token file is (the session starts' quick ask, kitlib.pmstart)
+
+Client(port, tokens, via=localask.VIA_CLI)
+  get(path, role, query), post(path, role, body)   one call; `path` is below hubvalidate.BASE
   listing(collection, status, repo)     the items of GET /<collection>
   pending(for_key)                      the items of GET /pending (for_key: only that session
                                         key's)
@@ -31,10 +35,10 @@ Client(port, tokens, via=serve.VIA_CLI)
                                         change, a pending item or a reset, or `timeout` seconds
                                         passed (None: no limit); with for_key, until a pending
                                         item of that session key; a poll the server took and did
-                                        not answer in its time (serve.NoAnswer) is asked again,
+                                        not answer in its time (NoAnswer) is asked again,
                                         up to NO_ANSWER_TURNS in a row, when it has a `since`
                                         or waits for its own pending items only; on the same
-                                        rule a hub that is restarting (serve.NotRunning, or
+                                        rule a hub that is restarting (NotRunning, or
                                         Refused `store`, after a poll of this wait was
                                         answered) is asked again every RETRY_PAUSE_S
                                         until the wait's timeout or RESTART_WAIT_S down in a
@@ -44,44 +48,31 @@ import time
 import urllib.parse
 
 from kitlib import hubvalidate
+from kitlib.config.types import ConfigError
 
-from . import api as _api
-from . import auth
-from . import localask as serve         # ask, its errors and constants: serve re-exports them
+from . import localask, token as _token
+from .errors import NoAnswer, NoHubPointer, NoHubToken, NotRunning, Refused, ServeError
 
 OK, REFUSED, USAGE, NOT_RUNNING, TIMED_OUT = 0, 1, 2, 3, 4
-OWNER, AGENT, ANY = _api.OWNER, _api.AGENT, _api.ANY
+OWNER, AGENT, ANY = _token.OWNER, _token.AGENT, _token.ANY
 WAIT_MARGIN_S = 10              # the socket waits this much longer than the server was asked to
-NO_ANSWER_TURNS = 3             # unanswered polls in a row (serve.NoAnswer) that end a wait
+NO_ANSWER_TURNS = 3             # unanswered polls in a row (NoAnswer) that end a wait
 RETRY_PAUSE_S = 1.0             # a wait asks a hub that is down or closing again after this
 RESTART_WAIT_S = 600            # a hub down or closing this long in a row ends a wait: a restart
                                 # is a stop (control.DEFAULT_TIMEOUT_S, 300) and a start
 STORE_DOWN = 'store'            # the refusal code of a hub whose store is not available
-REFUSAL_UNKNOWN = 'not the expected answer'
-
-
-class Refused(serve.ServeError):
-    """The server answered a call with a refusal."""
-
-    def __init__(self, status, body):
-        err = body.get('error') if isinstance(body, dict) else None
-        err = err if isinstance(err, dict) else {}
-        self.status = status
-        self.body = body
-        self.code = str(err.get('code') or status)
-        self.message = str(err.get('message') or REFUSAL_UNKNOWN)
-        self.field = err.get('field')
-        serve.ServeError.__init__(self, '%s: %s' % (self.code, self.message))
+HUB_SITE_TIMEOUT_S = 1.5        # seconds each ask of hub_client's Client waits (a session start's
+                                # check asks three times at most)
 
 
 def exit_code(error):
     """The exit code of tools/hub.py for an exception a call raised."""
-    return NOT_RUNNING if isinstance(error, serve.NotRunning) else REFUSED
+    return NOT_RUNNING if isinstance(error, NotRunning) else REFUSED
 
 
 def _path(path, query=None):
     pairs = [(k, v) for k, v in sorted((query or {}).items()) if v not in (None, '')]
-    return _api.BASE + path + ('?' + urllib.parse.urlencode(pairs) if pairs else '')
+    return hubvalidate.BASE + path + ('?' + urllib.parse.urlencode(pairs) if pairs else '')
 
 
 def part(doc_id):
@@ -90,17 +81,17 @@ def part(doc_id):
 
 
 class Client(object):
-    """`tokens`: the folder of the token files (default auth.folder()). `timeout`: seconds one
-    call waits for its answer. `ask`: serve.ask or a stand-in. `via`: the name a write gives
-    as its source (serve.VIA_CLI; the hub MCP server gives serve.VIA_MCP); a stand-in `ask` is
+    """`tokens`: the folder of the token files (default token.folder()). `timeout`: seconds one
+    call waits for its answer. `ask`: localask.ask or a stand-in. `via`: the name a write gives
+    as its source (localask.VIA_CLI; the hub MCP server gives localask.VIA_MCP); a stand-in `ask` is
     passed it as a keyword only when it is not VIA_CLI."""
 
-    def __init__(self, port, tokens=None, timeout=serve.ASK_TIMEOUT_S, ask=None,
-                 clock=time.monotonic, via=serve.VIA_CLI, sleep=time.sleep):
+    def __init__(self, port, tokens=None, timeout=localask.ASK_TIMEOUT_S, ask=None,
+                 clock=time.monotonic, via=localask.VIA_CLI, sleep=time.sleep):
         self.port = port
-        self.tokens = tokens if tokens is not None else auth.folder()
+        self.tokens = tokens if tokens is not None else _token.folder()
         self.timeout = timeout
-        self._ask = ask or serve.ask
+        self._ask = ask or localask.ask
         self._clock = clock
         self._sleep = sleep
         self.via = via
@@ -108,17 +99,17 @@ class Client(object):
     def token(self, role):
         """The token a call of a `role` route carries. ServeError when its file is absent."""
         if role == ANY:
-            token = (auth.read_token(self.tokens, AGENT)
-                     or auth.read_token(self.tokens, OWNER))
+            token = (_token.read_token(self.tokens, AGENT)
+                     or _token.read_token(self.tokens, OWNER))
             role = 'agent or owner'
         else:
-            token = auth.read_token(self.tokens, role)
+            token = _token.read_token(self.tokens, role)
         if not token:
-            raise serve.ServeError('no %s token in %s: run hub.py setup' % (role, self.tokens))
+            raise ServeError('no %s token in %s: run hub.py setup' % (role, self.tokens))
         return token
 
     def call(self, method, path, role, body=None, query=None, timeout=None):
-        extra = {} if self.via == serve.VIA_CLI else {'via': self.via}
+        extra = {} if self.via == localask.VIA_CLI else {'via': self.via}
         status, obj = self._ask(self.port, method, _path(path, query), self.token(role), body,
                                 self.timeout if timeout is None else timeout, **extra)
         if status != 200 or obj.get('ok') is False:
@@ -144,7 +135,7 @@ class Client(object):
         # the whole snapshot, whose `inbox` is read the same way
         got = self.get('/snapshot', ANY, {'collections': 'inbox'})
         docs = (got.get('collections') or {}).get('inbox') or {}
-        return [dict(docs[k], id=k) for k in sorted(docs, key=_api._natural)]
+        return [dict(docs[k], id=k) for k in sorted(docs, key=hubvalidate.natural)]
 
     def page(self, doc_id):
         """{id, html, version} of a page's body (GET /pages/<id>); Refused (not_found) when
@@ -177,7 +168,7 @@ class Client(object):
                                               'for': for_key or None,
                                               'except': ','.join(except_ids or ()) or None},
                                timeout=turn + WAIT_MARGIN_S)
-            except (serve.NotRunning, Refused) as e:
+            except (NotRunning, Refused) as e:
                 # the hub is restarting: its port is closed (NotRunning) or it answers that its
                 # store is not available (Refused `store`). Ask again after RETRY_PAUSE_S, with
                 # the same query and on the rule a NoAnswer retry keeps, until the wait's own time
@@ -195,7 +186,7 @@ class Client(object):
                     raise
                 self._sleep(RETRY_PAUSE_S if end is None else min(RETRY_PAUSE_S, end - now))
                 continue
-            except serve.NoAnswer:
+            except NoAnswer:
                 # the server took the poll and held it past the socket's time: ask again with
                 # the same query, unless the wait's own time is spent (a turn begun past it),
                 # NO_ANSWER_TURNS polls in a row went unanswered, or a retry would lose writes:
@@ -213,3 +204,17 @@ class Client(object):
             if end is not None and self._clock() >= end:
                 return got
             since = got.get('revision', since)
+
+
+def hub_client(port):
+    """The real client, after a look that a token file is there: NoHubToken when neither is,
+    NoHubPointer when no PM-repo pointer is set."""
+    try:
+        folder = _token.folder()
+    except ConfigError as e:
+        if str(e) == _token.NO_POINTER:
+            raise NoHubPointer()
+        raise
+    if not any(_token.read_token(folder, role) for role in _token.ROLES):
+        raise NoHubToken()
+    return Client(port, tokens=folder, timeout=HUB_SITE_TIMEOUT_S)

@@ -15,7 +15,8 @@ from unittest import mock
 
 from kitlib import hubapprove, hubvalidate
 from kitlib.commit import approval as consumer
-from kitlib.hubsite import api, auth, client
+from kitlib.hubclient import client
+from kitlib.hubsite import api, auth
 from kitlib.hubsite import approvals as ap
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError as HubStoreError

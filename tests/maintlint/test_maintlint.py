@@ -18,6 +18,7 @@ from kitlib.backlog import store as smod
 from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import Finding, backlog, ledger, page, result, verify, worktrees
 from kitlib.modulemap import scopelog
+from kitlib.hubclient import errors as huberrors
 
 from tests.backlog.helpers import BRANCH, StoreCase, kit_json_ref, priced, rec
 from tests.backlog.test_stale import at
@@ -160,10 +161,9 @@ class AnsweredQuestions(unittest.TestCase):
         self.assertNotIn('a one-off go', got[0].text + got[0].fix)
 
     def test_a_hub_that_cannot_be_asked_is_a_not_checked_note(self):
-        from kitlib.hubsite import serve
 
         def down():
-            raise serve.NotRunning(4321)
+            raise huberrors.NotRunning(4321)
         got, notes = backlog.answered(snap(self.parked('AAA', QID)), CMD, questions=down)
         self.assertEqual((got, notes), ([], ['answered questions NOT CHECKED: no hub server is'
                                              ' listening on port 4321']))
@@ -174,7 +174,7 @@ class AnsweredQuestions(unittest.TestCase):
         self.assertEqual(backlog.answered(snap(priced('AAA')), CMD, questions=never), ([], []))
 
     def test_the_hub_is_read_with_the_agent_token_and_every_status(self):
-        from kitlib.hubsite import client
+        from kitlib.hubclient import client
         seen = []
 
         class Fake(object):
@@ -185,7 +185,7 @@ class AnsweredQuestions(unittest.TestCase):
                 seen.append((collection, status, role))
                 return []
         with mock.patch.object(client, 'Client', Fake), \
-                mock.patch('kitlib.hubsite.settings.load', return_value=mock.Mock(port=4321)):
+                mock.patch('kitlib.hubclient.settings.load', return_value=mock.Mock(port=4321)):
             self.assertEqual(backlog.hub_questions(), [])
         self.assertEqual(seen, [4321, ('questions', 'all', client.AGENT)])
 

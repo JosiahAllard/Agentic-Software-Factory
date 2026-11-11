@@ -24,7 +24,7 @@ import subprocess
 
 from kitlib import platform
 from kitlib import pluginsource
-from kitlib.hubsite.serve import ServeError
+from kitlib.hubclient.errors import ServeError
 from kitlib.launcher import pythonw as pythonw_mod
 from kitlib.launcher import window
 from kitlib.launcher.autostart import in_worktree

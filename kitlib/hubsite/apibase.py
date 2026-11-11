@@ -41,12 +41,12 @@ import math
 import re
 
 from kitlib import hubvalidate
-from kitlib.hubvalidate import pagecheck
+from kitlib.hubclient.push import PM_KEY
+from kitlib.hubclient.token import AGENT, ANY, OWNER
+from kitlib.hubvalidate import BASE, natural as _natural, pagecheck
 from .store import HubError
 
-BASE = '/api/v1'
 API_VERSION = 'v1'
-OWNER, AGENT, ANY = 'owner', 'agent', 'any'
 APPROVER = 'approver'               # a route for the strong owner alone ("Roles")
 LOCK_WRITE = 'lock-write'           # a lock write: the owner here, the strong owner remotely
 ROLES = (OWNER, AGENT, ANY, APPROVER, LOCK_WRITE)   # what a route may ask for
@@ -76,7 +76,7 @@ REACH_GRACE_S = hubvalidate.WAIT_MAX_S + 30   # a key is reachable this long aft
 ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
 VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
 OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
-AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
+AGENT_FROM = PM_KEY                 # a to-do's `from` when an agent gives none
 DAYS_MAX = 3650
 # what a caller who is not the owner is told in place of the store's own message, by code
 AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
@@ -87,7 +87,6 @@ Request = collections.namedtuple('Request', 'role params body query via strong f
 
 _TRUE = ('1', 'true', 'yes', 'on')
 _FALSE = ('', '0', 'false', 'no', 'off')
-_ID_SPLIT = re.compile(r'([0-9]+)')
 _NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
 _SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
 # A hub item's id or a ruling's anywhere in a page id ("Pages" in apipages): hubvalidate._REF's pattern, plus
@@ -102,11 +101,6 @@ def error_body(code, message, field=''):
 
 def _invalid(message, field=''):
     return HubError('invalid', message, field)
-
-
-def _natural(doc_id):
-    # split on a group: text at the even places, ASCII digits at the odd ones
-    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
 
 
 def _version(doc):

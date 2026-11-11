@@ -13,7 +13,7 @@ from unittest import mock
 
 from kitlib.config.user import HomeFenced
 from kitlib.hubsite import api, auth, push, serve, store as store_mod
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubclient import settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 

@@ -38,6 +38,7 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | hoststart | `kitlib/hoststart` | feature layer (ARCHITECTURE.md Layers) |
 | hubapprove | `kitlib/hubapprove` | feature layer (ARCHITECTURE.md Layers) |
 | hubbacklog | `kitlib/hubbacklog` | feature layer (ARCHITECTURE.md Layers) |
+| hubclient | `kitlib/hubclient` | feature layer (ARCHITECTURE.md Layers) |
 | hubjobs | `kitlib/hubjobs` | feature layer (ARCHITECTURE.md Layers) |
 | hubmcp | `kitlib/hubmcp` | feature layer (ARCHITECTURE.md Layers) |
 | hubsite | `kitlib/hubsite` | feature layer (ARCHITECTURE.md Layers) |
@@ -232,7 +233,6 @@ None: no module is open to every other.
 | hosts | hostrpc | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hoststart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hubmcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
-| hosts | hubsite | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | hosts | launcher | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | lock | build | outer layer uses foundation layer: allowed as of 2026-11-06 |

@@ -11,7 +11,7 @@ yours.
 
 Point the tunnel at the tunnel port, never at the local port (`hub.port`, default 8790). The local
 listener trusts a local token; the tunnel listener trusts only an Access token. The two ports must
-differ (`kitlib.hubsite.settings.check` refuses a config where they are equal).
+differ (`kitlib.hubclient.settings.check` refuses a config where they are equal).
 
 Names in angle brackets below are yours:
 

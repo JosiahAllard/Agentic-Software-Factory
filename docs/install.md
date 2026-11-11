@@ -56,7 +56,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
      terminal is not elevated (docs/machine-setup.md "PM repo pointer").
    - **Until it is set**, every tool that needs the machine config refuses rather than fall back
      to the home folder: the intended state of a new machine, not a fault. `hub.py setup` and
-     `hub.py serve` (token folder `<PM repo>/.pm-kit/hub`, `kitlib/hubsite/auth.py` `folder`) exit
+     `hub.py serve` (token folder `<PM repo>/.pm-kit/hub`, `kitlib/hubclient/token.py` `folder`) exit
      2 with one line, `machine config: no PM repo pointer is set, so the hub has no token folder:
      set it first ...`, and write nothing; machine setup (step 2) refuses to store the owner's
      email and does not ask for it.

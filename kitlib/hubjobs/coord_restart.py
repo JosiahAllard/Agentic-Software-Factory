@@ -119,7 +119,7 @@ _NOWIN = 0x08000000            # CREATE_NO_WINDOW (Windows only: POSIX Popen ref
 _STOP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) stopped '([^']*)' .*; successor '([^']*)'")
 _ACCOUNT = re.compile(r'-a(\d+)(?:-r\d+)?\Z')
 STAMP_S = 1                    # stop.log stamps are whole seconds (pmwatch.stop_log_reader's allowance)
-DETAIL_MAX = 64                # kitlib.hubsite.push field(): a header field's length
+DETAIL_MAX = 64                # kitlib.hubclient.push field(): a header field's length
 _STAMP = '%Y-%m-%d %H:%M:%S'
 _FIRST = ('restarted', 'restarted-unchecked', 'gave-up', 'over-limit', 'not-signed-in')
 

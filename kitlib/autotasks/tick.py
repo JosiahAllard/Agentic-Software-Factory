@@ -251,9 +251,10 @@ def find_repo(repo, repos):
 
 
 def hub_schedules(home=None):
-    """The hub's schedule documents (GET /schedules). serve.ServeError (NotRunning among them)
-    when the hub cannot be reached; ConfigError for a hub setting that cannot be read."""
-    from kitlib.hubsite import client, settings as hub_settings
+    """The hub's schedule documents (GET /schedules). kitlib.hubclient.errors.ServeError
+    (NotRunning among them) when the hub cannot be reached; ConfigError for a hub setting that
+    cannot be read."""
+    from kitlib.hubclient import client, settings as hub_settings
     return client.Client(hub_settings.load(home=home).port).listing('schedules')
 
 
@@ -303,14 +304,14 @@ def tick(home=None, kit=None, now=None, fetch=None, start=None, repos=None, pyth
     The hub not reachable: EXIT_OK, one line, nothing started. A hub setting, an answer, the
     state folder (state_dir, home_problem, unignored) or the lock that cannot be used: EXIT_FAILED,
     nothing started."""
-    from kitlib.hubsite import client, serve
+    from kitlib.hubclient import client, errors
     kit = os.path.normpath(kit or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     now = now or datetime.datetime.now()
     try:
         schedules = (fetch or (lambda: hub_schedules(home)))()
     except client.Refused as e:
         return EXIT_FAILED, ['hub refused the schedules (%s): nothing started' % e]
-    except serve.ServeError as e:
+    except errors.ServeError as e:
         return EXIT_OK, ['hub not reachable (%s): nothing started' % e]
     except ConfigError as e:
         return EXIT_FAILED, ['hub settings could not be read (%s): nothing started' % e]

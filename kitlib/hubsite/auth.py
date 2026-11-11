@@ -1,11 +1,8 @@
 """kitlib.hubsite.auth: who a request on the LOCAL listener is.
 
-  folder(home=None)                 <machine config dir>/hub, where the token files live: the
-                                    PM repository's; ConfigError with no PM-repo pointer
-                                    (NO_POINTER)
   ensure_tokens(folder)             make the folder and the two token files when absent;
                                     TokenFileError for one that exists and cannot serve
-  read_token(folder, role)          a role's token as a client sends it, or None
+                                    (the folder and read_token: kitlib.hubclient.token)
   ensure_approval_key(folder)       make the approval key file when absent (APPROVAL_FILE);
                                     TokenFileError for one that exists and cannot serve
   read_approval_key(folder)         the approval key, or None ("The approval key")
@@ -84,27 +81,13 @@ import threading
 import time
 
 from kitlib import platform
-from kitlib.config import user
-from kitlib.config.types import ConfigError
+from kitlib.hubclient.token import (AGENT, AGENT_FILE, MAX_TOKEN, MIN_TOKEN, OWNER, OWNER_FILE,
+                                    ROLES, TOKEN_FILES, read_secret, read_token)
 
-OWNER = 'owner'
-AGENT = 'agent'
-ROLES = (OWNER, AGENT)
-FOLDER_NAME = 'hub'
-# folder()'s refusal with no PM-repo pointer: the token files live in the PM repository's machine
-# config folder, and only the pointer names that repository
-NO_POINTER = ('no PM repo pointer is set, so the hub has no token folder: set it first, from an '
-              'elevated shell: python tools/machine_setup.py --pm-repo <PM repository> (%s); '
-              'nothing written' % user.POINTER_DOC)
-OWNER_FILE = 'owner.token'
-AGENT_FILE = 'agent.token'
-TOKEN_FILES = {OWNER: OWNER_FILE, AGENT: AGENT_FILE}
 APPROVAL_FILE = 'approval.key'      # kitlib.guard.hub.APPROVAL_FILE names the same file
 STRONG_LABEL = b'hub strong session\x00'    # what _strong_key signs before the owner token
 COOKIE = 'hub_session'
 TOKEN_BYTES = 32             # the random bytes of a generated token
-MIN_TOKEN = 43               # characters, a generated token's length; a shorter file grants nothing
-MAX_TOKEN = 512
 PAIR_TTL_S = 300             # a pairing code not redeemed by then is gone
 SESSION_TTL_S = 30 * 86400   # a session's life: the server-side expiry and the cookie's Max-Age
 MAX_CODES = 8                # outstanding pairing codes; the oldest goes first
@@ -122,20 +105,6 @@ Seen = collections.namedtuple('Seen', 'role renewed strong')
 
 class TokenFileError(Exception):
     """A token file exists and cannot serve as a credential. The message names the file."""
-
-
-def folder(home=None):
-    """The credential folder: FOLDER_NAME in the PM repository's machine config folder
-    (kitlib.config.user.locate OK; `home`, default the user's, is its leftover check only).
-    ConfigError when the PM-repo pointer is not set (NO_POINTER) or the machine config cannot be
-    read (locate's error): never a folder in the home folder, so hub.py setup writes no token
-    file there."""
-    loc = user.locate(home)
-    if loc.state == user.NONE:
-        raise ConfigError(NO_POINTER)
-    if loc.state != user.OK:
-        raise ConfigError(loc.error)
-    return os.path.join(os.path.dirname(loc.new), FOLDER_NAME)
 
 
 def cookie_name(port=None):
@@ -212,41 +181,17 @@ def _make_secret(path):
             pass
 
 
-def read_token(folder, role):
-    """The token in `role`'s file under `folder`, stripped, or None when the file is absent,
-    unreadable, not ASCII, or holds fewer than MIN_TOKEN or more than MAX_TOKEN characters."""
-    if role not in TOKEN_FILES:
-        return None
-    return _read_secret(os.path.join(folder, TOKEN_FILES[role]))
-
-
 def read_approval_key(folder):
     """The approval key in APPROVAL_FILE under `folder`, read as read_token reads a token, or
     None; None too when it equals the owner's or the agent's token, since a holder of that
     token would then hold the key."""
-    key = _read_secret(os.path.join(folder, APPROVAL_FILE))
+    key = read_secret(os.path.join(folder, APPROVAL_FILE))
     if key is None:
         return None
     for role in ROLES:
         if _same(key, read_token(folder, role)):
             return None
     return key
-
-
-def _read_secret(path):
-    """The secret in the file at `path` (read_token's rules), or None."""
-    try:
-        with open(path, 'rb') as f:
-            raw = f.read(MAX_TOKEN + 64)
-    except OSError:
-        return None
-    try:
-        token = raw.decode('ascii').strip()
-    except UnicodeDecodeError:
-        return None
-    if not MIN_TOKEN <= len(token) <= MAX_TOKEN or any(c.isspace() for c in token):
-        return None
-    return token
 
 
 def _same(a, b):

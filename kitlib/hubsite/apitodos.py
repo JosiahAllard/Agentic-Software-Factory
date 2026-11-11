@@ -17,36 +17,12 @@ def todos_list(api, req):
 
 
 def todo_steps(b, judge=True):
-    """The fields b of a new to-do with its `steps` (kitlib.hubvalidate.todosteps) made into text:
-    their commands after the given ones, their summary at the end of the detail (or the detail,
-    when there is none), and no `steps` field left. Refused (`invalid`, the field named): a
-    `commands` that is not a list, a given command holding a lone surrogate, a bad step and, when
-    `judge` (an agent's to-do or edit), text the owner's to-do rules forbid (todosteps.check).
-    The rules judge the text as given, before any step is rendered: the owner's text is never
-    judged. An `os` field ('windows' by default, or 'linux') names the OS the steps' per-OS
-    commands are for; it is not kept, and an unknown one is refused (`invalid`, field `os`).
-    The caller says it: a machine-OS source is left for a later slice."""
-    b = dict(b)
-    steps = b.pop('steps', None)
-    os_ = b.pop('os', todosteps.DEFAULT_OS)
-    commands = _typed(b, 'commands', (list,), 'a list of strings')
-    for i, c in enumerate(commands or ()):
-        m = _SURROGATE.search(c) if isinstance(c, str) else None
-        if m:
-            raise _invalid('commands[%d] holds a lone surrogate (U+%04X) at character %d, half '
-                           'of a character that cannot be written'
-                           % (i, ord(m.group()), m.start()), 'commands')
+    """The fields b of a new to-do with its `steps` made into text (kitlib.hubvalidate.todosteps
+    todo_fields, which says how), its refusal an `invalid` HubError with the field named."""
     try:
-        todosteps.check_os(os_)
-        if judge:
-            todosteps.check(dict(b, steps=steps))
-        if steps is not None:
-            b['commands'] = list(commands or []) + todosteps.render(steps, os_)
-            lines = '\n'.join(todosteps.summary(steps, os_))
-            b['detail'] = (b['detail'].rstrip() + '\n\n' + lines) if b.get('detail') else lines
+        return todosteps.todo_fields(b, judge)
     except (todosteps.StepError, todosteps.Refused) as e:
         raise _invalid(str(e), e.field)
-    return b
 
 
 def todos_add(api, req):

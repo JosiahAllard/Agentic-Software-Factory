@@ -1012,7 +1012,7 @@ def _regular(entry, oid=None):
 
 class Verifier(object):
     """Asks the hub server whether a change is the approved one. `client` is a
-    kitlib.hubsite.client.Client (or a stand-in with its get()); the call is the agent's.
+    kitlib.hubclient.client.Client (or a stand-in with its get()); the call is the agent's.
     verify() fails closed: any error of the call (NotRunning, Refused, ServeError, anything
     else) or an answer without a verdict is (False, why)."""
 

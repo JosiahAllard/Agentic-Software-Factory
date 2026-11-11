@@ -71,7 +71,7 @@ def write_heartbeat(path, pid, now, stream, started=None, yielded=False):
     """Record that pm_watch `pid` polled at `now` (epoch seconds); `stream` is its --stream flag
     (the PM start no longer passes it: docs/pm-watch.md) and `started` its process start time
     (epoch seconds, None when unknown), so a reused pid is not
-    taken for the watcher. The PM start (pmstart.watcher) reads it to tell a live watcher from a hung or
+    taken for the watcher. kitlib.pmstart.watcher reads it to tell a live watcher from a hung or
     exited one. `yielded`: its session checks stepped aside for the hub's session-watch job at
     that pass (Watcher.yielded), so that job does not wait for it (a beat without the field, from
     an older pm_watch, counts as not stepped aside)."""
@@ -112,7 +112,7 @@ def own_start_time():
     return (ticks - _EPOCH_AS_FILETIME) / 1e7
 
 
-POLL_SLEEP = 60       # seconds between passes; well inside the PM start's BEAT_STALE (pmstart)
+POLL_SLEEP = 60       # seconds between passes; well inside kitlib.pmstart BEAT_STALE
 
 
 def run(w, clock, sleep, save, emit, beat, once=False, stream=False):
@@ -527,7 +527,7 @@ def hub_check(load=None, make_client=None):
     None otherwise: a restarted hub, or one that is down, re-arms it. A hub that is down, has no
     token file, or has no pointer to read is no event and no failure; any other error is a failed
     check (ERROR on the third), never a dead watcher. `load` gives the hub Settings and
-    `make_client(port)` the client, as pmstart.hub_site takes them."""
+    `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
     def check(last):
         from kitlib import kitroot
         from kitlib.hubclient import client as hubclient, codestale, errors, settings as hubsettings

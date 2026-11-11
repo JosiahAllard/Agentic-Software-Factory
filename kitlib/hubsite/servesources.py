@@ -66,8 +66,8 @@ class Sources(object):
                    `unavailable`
       jobs         the timed jobs (kitlib.hubsite.jobs): [make(sources) -> jobs.Job or None],
                    one per job, each with its `folder` (serve.code_folders) and `module` (the
-                   hubjobs package's makers, which hubjobs.machine_sources hands
-                   machine_sources; a scratch store none); [] or None: none
+                   hubjobs package's makers: hubjobs.machine_sources passes them to
+                   machine_sources; a scratch store has none); [] or None: none
       home         the home folder machine_sources read the machine config under (None: the
                    user's), for a job that reads it again
       pending      callable(for_key) -> the pending items for a session key (Api.pending: each

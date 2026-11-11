@@ -11,7 +11,7 @@ each comes from this object, and a missing one is an error that says which key t
                       Unset: one account, "1", in the default folder ~/.claude
   orgs                {"<n>": config folder}: organization sign-ins (`--org n`)
   coordinator_agent   the agent file a coordinator session runs as, bare or with the kit plugin's
-                      prefix (kitlib.agentname); unset: coordinator
+                      prefix (kitlib.host.agentname); unset: coordinator
   pm_resume_beside_desktop
                       true: after-reboot resumes the PM session even while the desktop app or an
                       unnamed Claude session runs (reboot.resume_pm); unset or false: it skips
@@ -24,7 +24,7 @@ each comes from this object, and a missing one is an error that says which key t
 import os
 import re
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 

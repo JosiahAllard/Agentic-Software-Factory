@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata, sessionmark
+from kitlib import pmdata
+from kitlib.host import sessionmark
 from kitlib.backlog import audit
 from kitlib.backlog import audit_check
 from kitlib.backlog import opener

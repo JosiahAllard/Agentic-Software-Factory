@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.host import header
 
 ROOT = Path(__file__).resolve().parents[2]

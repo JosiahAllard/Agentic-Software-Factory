@@ -5,7 +5,7 @@ header (kitlib.host.header) and, for a PM or a coordinator session, the shared s
   text(event, kit, payload, environ, checks, lock_reader)   the context text
   output(adapter, event, kit, stdin, environ)               the hook's stdout (adapter.context)
 
-The role is the session mark (PM_KIT_ROLE, kitlib.sessionmark). A SubagentStart is told that its
+The role is the session mark (PM_KIT_ROLE, kitlib.host.sessionmark). A SubagentStart is told that its
 role is its parent's mark: Codex starts a child with the parent's environment, and its hooks carry
 no child identity, so the child is held to the parent's role policy. After that note every child
 gets the agent-start block (kitlib.agentstart) for the payload's cwd, or one could-not-check line
@@ -16,7 +16,8 @@ and start nothing. A check that fails is reported in the text, never raised.
 import json
 import os
 
-from kitlib import agentstart, sessionmark
+from kitlib import agentstart
+from kitlib.host import sessionmark
 from kitlib.host import header
 
 from hosts.codex.adapter.events import absolute

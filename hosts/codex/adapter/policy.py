@@ -2,7 +2,7 @@
 `screen`). The role policy every host shares is kitlib.guard.rolepolicy; this is what step 4 left in
 the Codex branch's guard_adapter and actions.py.
 
-It holds a session the kit marks (PM_KIT_ROLE set; kitlib.sessionmark). An unmarked chat is held
+It holds a session the kit marks (PM_KIT_ROLE set; kitlib.host.sessionmark). An unmarked chat is held
 only by the shared rules, which count it as an agent session and never as the owner's
 (kitlib.guard.rules agent_session, is_owner_session).
 
@@ -23,7 +23,7 @@ only by the shared rules, which count it as an agent session and never as the ow
 Every deny is tagged with the role the guard holds the call as (rules.tag_role: `subagent` for a
 marked session, kitlib.host.hookmain.unidentified).
 """
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.host import Decision
 
 READ_TOOLS = frozenset({'Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'view_image', 'read_file', 'list_dir',

@@ -13,14 +13,14 @@ and kitlib.proc (docs/test-tools.md "Platform markers and the ratchet")."""
 import os
 
 from kitlib import clock
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.host import registry as hostregistry
 
 # boot/kitboot.py reads PM_KIT_ROOT (the kit a host entry binds), kitlib.gate.pin KIT_PINNED
 # (run live, never pin) and
 # kitlib.pluginsource.live_root KIT_LIVE_ROOT (the checkout a printed command names); PM_KIT_ROLE
 # and PM_KIT_HOST are the session's role and host, PM_KIT_SESSION_NAME its name
-# (kitlib.sessionmark). Inherited, they would steer the code under test toward the session's kit;
+# (kitlib.host.sessionmark). Inherited, they would steer the code under test toward the session's kit;
 # a test that wants one sets it itself. Also dropped, read from hosts.json (session_env_names):
 # each host's session_env variable and every PM_KIT_<HOST>_ variable (a host adapter's own state
 # folder and binary).

@@ -40,7 +40,7 @@ import re
 import tempfile
 import time
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.fs import replace as fsreplace
 from kitlib.fs import treelock
 from kitlib.git import refs

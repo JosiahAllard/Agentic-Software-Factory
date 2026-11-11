@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import kitlib  # noqa: E402,F401  (installs the CreateProcess hook before anything starts)
-from kitlib import sessionmark  # noqa: E402
+from kitlib.host import sessionmark  # noqa: E402
 from optional.bridge.win.frontend import serve_frontend
 
 

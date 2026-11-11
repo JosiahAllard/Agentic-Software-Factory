@@ -1,6 +1,6 @@
 """Text that dispatches a kit agent names it with the kit plugin's prefix (docs/ROSTER.md).
 
-The plugin registers every kit agent as `<plugin>:<name>` (kitlib.agentname.PREFIX); once the old
+The plugin registers every kit agent as `<plugin>:<name>` (kitlib.host.agentname.PREFIX); once the old
 ~/.claude/agents link is gone, a bare kit name no longer resolves. So in the agent files and
 docs/ROSTER.md, every `subagent_type` value, every `--agent` argument and every backticked kit
 agent type carries the prefix. Bare names stay where they are names, not dispatches: frontmatter
@@ -12,7 +12,7 @@ import re
 import unittest
 from pathlib import Path
 
-from kitlib import agentname
+from kitlib.host import agentname
 from tests.agents.test_agents import AGENTS
 
 ROOT = AGENTS.parents[3]

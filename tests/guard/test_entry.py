@@ -27,7 +27,7 @@ HOOK_FILES = ('boot/kitboot.py', 'tools/machine_lock.py', 'hosts/__init__.py', '
               'hosts/claude/adapter/__init__.py', 'hosts/claude/adapter/events.py',
               'hosts/claude/adapter/host.py', 'kitlib/host/__init__.py', 'kitlib/host/hookmain.py',
               'kitlib/host/registry.py', 'hosts.json',
-              'kitlib/agentname.py', 'kitlib/lockmcp/__init__.py')
+              'kitlib/host/agentname.py')
 
 
 def load():

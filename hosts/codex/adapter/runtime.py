@@ -307,7 +307,7 @@ def command_env(role):
     """The environment changes a sandboxed kit command runs with: the bound role and this host
     marked, the session name dropped, and every other host's model variable cleared, so a
     commit never takes its attribution from another host's session."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     from kitlib.host import registry
     env = {ROLE_ENV: role, 'PM_KIT_HOST': HOST, sessionmark.SESSION_NAME_ENV: None}
     for h in registry.load().values():

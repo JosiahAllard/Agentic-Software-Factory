@@ -16,7 +16,8 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import kitroot, sessionmark
+from kitlib import kitroot
+from kitlib.host import sessionmark
 from kitlib.fs import treelock
 from kitlib.guard import refusal_log
 from kitlib.host import Action, Decision

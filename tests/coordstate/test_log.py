@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from kitlib.fs import treelock
 from tests.coordstate.helpers import SESSION, SLUG, TempAgentFolder

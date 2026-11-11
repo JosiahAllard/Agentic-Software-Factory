@@ -10,7 +10,7 @@ from unittest import mock
 
 from kitlib import coordinatorstart
 from kitlib.config import ConfigError
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from kitlib.lock import api
 from kitlib.records import landing
 from tests.home import machine_config
@@ -20,7 +20,7 @@ from tests.realgit import real_git
 # the coordinator rules hook as the plugin's hooks.json runs it (boot/hook.py, its coordinator part)
 HOOK = [os.path.join(os.path.dirname(__file__), "..", "..", "boot", "hook.py"), "claude", "SessionStart", "coordinator"]
 COND = {"PM_KIT_ROLE": "coordinator"}
-P = PLUGIN_NAME + ":"          # the kit plugin's agent prefix (kitlib.agentname.PREFIX)
+P = PLUGIN_NAME + ":"          # the kit plugin's agent prefix (kitlib.host.agentname.PREFIX)
 
 
 def write(path, text):

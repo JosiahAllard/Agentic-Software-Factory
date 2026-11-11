@@ -1,16 +1,16 @@
-"""kitlib.agentname (docs/guard-fallback.md "Agent names"): an agent bundled in the kit plugin is named
+"""kitlib.host.agentname (docs/guard-fallback.md "Agent names"): an agent bundled in the kit plugin is named
 `<plugin>:<name>`; the agent type loses exactly one case-sensitive prefix, a session mark loses
 every prefix case ignored, and nothing else is stripped."""
 import unittest
 
-from kitlib import agentname, lockmcp
+from kitlib.host import agentname, registry
 
 P = agentname.PREFIX
 
 
 class Prefix(unittest.TestCase):
     def test_the_prefix_is_the_plugin_name(self):
-        self.assertEqual(P, lockmcp.PLUGIN_NAME + ':')
+        self.assertEqual(P, registry.PLUGIN_NAME + ':')
 
 
 class Bare(unittest.TestCase):

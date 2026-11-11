@@ -249,9 +249,9 @@ def refusal(role, rows, facts=()):
 
 
 def cli_role(environ=None, tree=None):
-    """The role of the session tools/backlog.py runs in: its mark (kitlib.sessionmark); when
+    """The role of the session tools/backlog.py runs in: its mark (kitlib.host.sessionmark); when
     nothing marks it, the owner, unless it is not the owner's (unowned: unlisted)."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     mark = sessionmark.mark(environ)
     if mark is not None:
         return roles.role_of(mark, False)
@@ -278,7 +278,7 @@ def by_design_refusal(session, environ=None, tree=None):
     add no audit line by design (audit_check.BY_DESIGN; docs/backlog.md "Audit log") and the
     session running it is not the owner's own: a marked one, or an unmarked one that is unowned.
     The tree is read only for such a name."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     from .audit_check import BY_DESIGN
     if (session or '').strip().lower() not in BY_DESIGN:
         return
@@ -359,7 +359,7 @@ def check(args, ctx, snap, environ=None, tree=None):
             facts = (roles.OWN_PULL,)
     text = refusal(role, rows, facts)
     if text:
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         why = unowned(tree) if role is None and sessionmark.mark(environ) is None else None
         raise Refusal('%s (kitlib/backlog/roles.py)%s; ask a session whose role may'
                       % (text, '; unmarked but not the owner: %s' % why if why else ''))

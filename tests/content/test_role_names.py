@@ -17,7 +17,7 @@ from kitlib import content
 from kitlib.backlog import roles as backlog_roles
 from kitlib.host import registry
 from kitlib.launcher import start
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 
 from hosts.claude.adapter import host as claude_host
 

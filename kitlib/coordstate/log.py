@@ -5,7 +5,7 @@ AGENT_TEMP, else TEMP, else the home folder), one JSON line per event a kit tool
 The log is opt-in per session: it exists only after `coord_state.py start`, and note() appends
 only to a log that exists, so a session that never started one pays one environment read and one
 folder listing per call, and gets no file. `stop` renames the log aside (OFF); `start` puts it
-back. The session is the launcher's PM_KIT_SESSION_NAME (kitlib.sessionmark), which every tool
+back. The session is the launcher's PM_KIT_SESSION_NAME (kitlib.host.sessionmark), which every tool
 call, subagent and detached landing of that session inherits; a name that is not a plain file
 name part (SAFE) is no session.
 
@@ -45,7 +45,7 @@ import os
 import re
 import time
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 VERSION = 1
 FOLDER_SUFFIX = '-coordinator'

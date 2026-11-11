@@ -188,7 +188,7 @@ def kit_header(kit, event, brief):
 
 
 def _mark(environ, role):
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     env = dict(environ)
     env[sessionmark.ENV] = role.name
     return env

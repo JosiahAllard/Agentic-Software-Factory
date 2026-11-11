@@ -127,7 +127,7 @@ class HostProfile:
     ({name} last), `session_process` the process image a session it launches runs as (whose
     --remote-control value names the session), `env_prefixes` the environment variable prefixes
     its sessions own (a child launched on another host never inherits them;
-    kitlib.sessionmark.child_environment), `cli_program` the name its CLI runs as on Linux and
+    kitlib.host.sessionmark.child_environment), `cli_program` the name its CLI runs as on Linux and
     `cli_package` its npm package's scoped name (@scope/name), which tell a node process that runs
     the CLI from any other (kitlib.pmstart.runs_cli; kitlib.launcher.lookup and stop)."""
     owner_paths: tuple

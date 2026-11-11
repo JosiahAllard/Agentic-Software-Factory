@@ -240,7 +240,8 @@ def _agent_start(kit, payload, environ):
     a host's own agent (Explore) and a session role do not. The one call site: an opt-in setting
     would go here."""
     try:
-        from kitlib import agentstart, sessionmark
+        from kitlib import agentstart
+        from kitlib.host import sessionmark
         act = events.parse('SubagentStart', payload or {})
         role = act.agent_role if act.agent else sessionmark.mark(environ)
         if not agentstart.is_dispatched(role, kit):

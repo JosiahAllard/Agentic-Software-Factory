@@ -58,6 +58,9 @@ def kit_path(here=None):
 
 PATH = kit_path()
 ENV = 'PM_KIT_HOST'
+# The kit plugin's name, as .claude-plugin/plugin.json gives it (the lock MCP server's test checks the two
+# agree); every host's shell names the kit's plugin so.
+PLUGIN_NAME = 'pm-kit'
 TIERS = ('light', 'standard', 'strong', 'deep')
 
 _NAME = re.compile(r'[a-z][a-z0-9-]*\Z')

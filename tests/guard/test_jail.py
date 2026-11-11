@@ -15,13 +15,13 @@ from kitlib.git import repo
 from kitlib.guard import commands_nested as cn
 from kitlib.guard import context, rules
 from kitlib.guard import shell as sh
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 
 from . import world as W
 from .claudehost import action, decide
 from .world import bash, event, ps
 
-P = PLUGIN_NAME + ':'                 # kitlib.agentname.PREFIX (tests/agentname pins it)
+P = PLUGIN_NAME + ':'                 # kitlib.host.agentname.PREFIX (tests/host/test_agentname.py pins it)
 COORDINATOR = {context.ROLE_ENV: 'coordinator'}
 OLD_MARK = {context.ROLE_ENV: 'conductor'}   # the coordinator's retired old mark: no longer held
 PM = {context.ROLE_ENV: 'pm'}

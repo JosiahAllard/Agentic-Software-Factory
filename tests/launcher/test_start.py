@@ -10,7 +10,7 @@ from unittest import mock
 
 from kitlib.launcher import start, window
 from kitlib.launcher import settings as S
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from tests.launcher.fakes import EXE, NOW, FakeHost, Home, role_of, session, windows_text
 
 DAY = datetime.timedelta(days=1)

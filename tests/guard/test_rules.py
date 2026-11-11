@@ -12,6 +12,7 @@ import unittest
 from kitlib import lockmcp as lockmcp_names, pmdata
 from kitlib.config import user as kuser
 from kitlib.git import repo
+from kitlib.host import registry
 from kitlib.guard import commands as cm, context, rules, shell as sh
 from kitlib.guard import commands_git as cg
 from kitlib.guard import commands_nested as cn
@@ -1263,7 +1264,7 @@ class RolesFromConfig(unittest.TestCase):
 
     def test_the_plugin_prefixed_lander_is_the_lander(self):
         # docs/guard-fallback.md "Agent names": <plugin>:lander holds the lander role, no other spelling does
-        p = lockmcp_names.PLUGIN_NAME + ':'           # kitlib.agentname.PREFIX
+        p = registry.PLUGIN_NAME + ':'           # kitlib.host.agentname.PREFIX
         w = W.World(kit={'repo': {'name': 'demo'}, 'roles': {'lander': {'edit_main_checkout': True, 'why': 'test'}}})
         self.addCleanup(w.cleanup)
         target = os.path.join(w.main, 'a.md')

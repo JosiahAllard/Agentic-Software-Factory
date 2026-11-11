@@ -414,7 +414,7 @@ class Server:
 
     port: the hub's port (None: kitlib.hubsite.settings at each call). tokens: the folder of the
     token files (None: kitlib.hubsite.auth.folder()). ask: serve.ask or a stand-in. marked: the
-    session's mark (kitlib.sessionmark.mark), read once at start by mcp/hub_server.py.
+    session's mark (kitlib.host.sessionmark.mark), read once at start by mcp/hub_server.py.
     load_settings: kitlib.hubsite.settings.load or a stand-in."""
 
     def __init__(self, port=None, tokens=None, ask=None, marked=None, load_settings=None):

@@ -1,12 +1,10 @@
 """The lock MCP server's logic (ARCHITECTURE.md, Scheduler UI): MCP tools over kitlib.lock.api.
 docs/lock-mcp.md is the contract; mcp/lock_server.py is the stdio entry point.
 
-The names here import nothing at load time (the host registry only when a prefix is asked for), so
-the guard can read them without loading the server."""
+The names here import nothing at load time but the host registry's plugin name, so the guard can
+read them without loading the server."""
+from kitlib.host.registry import PLUGIN_NAME
 
-# The kit plugin's name, as .claude-plugin/plugin.json gives it (tests/lockmcp checks the two
-# agree); every host's shell names the kit's plugin so.
-PLUGIN_NAME = 'pm-kit'
 # The lock MCP server's key under the plugin's mcpServers, and the name it reports.
 SERVER_NAME = 'machine-lock'
 

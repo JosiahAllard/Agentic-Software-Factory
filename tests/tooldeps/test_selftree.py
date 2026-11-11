@@ -844,11 +844,11 @@ class KitTree(unittest.TestCase):
             picked = self.select(path)
             self.assertIsNot(picked, ALL, path)
             self.assertIn('skills', picked, path)
-        # a module there selects its readers: tests/agentname whole, and a test importing it
-        picked = self.select('kitlib/agentname.py')
+        # a module there selects its readers: tests/kitroot whole, and a test importing it
+        picked = self.select('kitlib/kitroot.py')
         self.assertIsNot(picked, ALL)
-        self.assertIn('agentname', picked)
-        self.assertIn('tests.guard.test_backlog_role', picked)
+        self.assertIn('kitroot', picked)
+        self.assertIn('tests.guard.test_refusal_log', picked)
 
     def test_a_literal_import_module_reaches_its_importers_readers(self):
         # kitlib/lock/detach.py loads kitlib.platform.linux.detach by import_module

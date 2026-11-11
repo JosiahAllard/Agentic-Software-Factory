@@ -45,7 +45,7 @@ which the plugin export (kitlib.pluginsource) writes in hooks.json's place.
 import json
 import re
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.host import hookmain, registry
 from kitlib.blendermcp import SERVER_NAME as BLENDER_NAME
 from kitlib.hubmcp import SERVER_NAME as HUB_NAME

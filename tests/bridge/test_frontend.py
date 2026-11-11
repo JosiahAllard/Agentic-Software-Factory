@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 import uuid
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.proc.job import Job
 from kitlib.proc.process import own_ctime
 from optional.bridge import mcp_frontend

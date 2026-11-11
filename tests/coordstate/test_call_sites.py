@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from kitlib.gate import submit as submitmod
 from tests import inproc

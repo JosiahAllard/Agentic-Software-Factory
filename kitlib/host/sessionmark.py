@@ -12,7 +12,7 @@ read it: an agent sets the environment of every command it runs, so `PM_KIT_ROLE
 would unmark it. A subagent shares its session's environment, so only the guard (agent_id) tells
 it apart.
 
-A mark that carries the kit plugin's agent prefix (kitlib.agentname.bare_mark) is read without it,
+A mark that carries the kit plugin's agent prefix (kitlib.host.agentname.bare_mark) is read without it,
 before the reserved check: `<plugin>:coordinator` is the coordinator's mark, `<plugin>:owner` is
 'marked-owner'.
 
@@ -28,7 +28,7 @@ before the reserved check: `<plugin>:coordinator` is the coordinator's mark, `<p
 """
 import os
 
-from kitlib import agentname
+from kitlib.host import agentname
 
 ENV = 'PM_KIT_ROLE'
 # Mark values that would read as a role the guard grants by other means: a launcher that sets one

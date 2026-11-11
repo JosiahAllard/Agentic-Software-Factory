@@ -165,13 +165,13 @@ def unidentified(adapter, action, environ):
     """`action` as the guard must judge it on `adapter`'s host. A host whose hooks carry no
     subagent identity (HostCapabilities.subagent_identity_in_hooks false) cannot tell a marked
     session from a child running under its mark, so an edit, shell or MCP call in a session the
-    launcher marked (kitlib.sessionmark) is judged as an agent of the mark's role: agent
+    launcher marked (kitlib.host.sessionmark) is judged as an agent of the mark's role: agent
     UNIDENTIFIED, agent_role the mark. The owner's unmarked session, a host with identity, and an
     Action that already names its agent are unchanged."""
     caps = getattr(adapter, 'capabilities', None)
     if caps is None or caps.subagent_identity_in_hooks or action.agent or action.kind not in JUDGED_AS_AGENT:
         return action
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     mark = sessionmark.mark(environ)
     if mark is None:
         return action

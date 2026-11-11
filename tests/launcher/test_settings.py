@@ -6,7 +6,7 @@ import unittest
 
 from kitlib.config.types import ConfigError
 from kitlib.launcher import settings as S
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from tests.home import machine_config
 
 

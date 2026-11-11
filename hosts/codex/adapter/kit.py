@@ -13,7 +13,7 @@ before any entry imports this) and roles.py/roles.json (content/roles is the one
                       other name
   current_role(environ)   PM_KIT_ROLE's role ('analyst' when unset); ValueError for one no role file names
   child_environment(environ, additions, preserve_lock)
-                      kitlib.sessionmark.child_environment for a Codex child
+                      kitlib.host.sessionmark.child_environment for a Codex child
   trailer(model)      the Co-Authored-By line for `model` on Codex (an explicit model id)
   host_prefixes(own)  every other registered host's environment prefixes (hosts.json env_prefixes),
                       and Codex's own too when `own`: what a native check scrubs from a fixture
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 HOST = 'codex'
 ROLE_ENV = sessionmark.ENV

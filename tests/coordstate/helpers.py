@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from tests.gitfixture import rmtree
 

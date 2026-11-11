@@ -11,7 +11,7 @@ export folder and never names this host.
   codex_home(home, environ)        <home>\\.codex when --home names one, else CODEX_HOME, else the
                                    user's ~\\.codex
 
-A marked session (kitlib.sessionmark) installs nothing: the install is the owner's. Every problem is
+A marked session (kitlib.host.sessionmark) installs nothing: the install is the owner's. Every problem is
 a line, never an exit code: the rest of the refresh decides that. An apply that is not a marked
 session's clears the export root's codex pending flag first (plugin_install.clear_deferral), so
 whatever ends the step, only a deferral in this run leaves the flag; a marked session's skip leaves
@@ -20,7 +20,7 @@ it as it is.
 import os
 
 from hosts.codex.adapter import plugin_install
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 LABEL = 'codex'                      # the step's name: its lines start 'codex: '
 MARKET = plugin_install.OLD_MARKET   # the old hand-made copy

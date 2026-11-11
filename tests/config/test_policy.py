@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import config, lockmcp
+from kitlib import config
 from kitlib.config import policy
-from kitlib.host import Action
+from kitlib.host import Action, registry
 from tests.config.helpers import TempTree
 
 
@@ -239,8 +239,8 @@ class RolesTest(TreeCase):
 
     def test_the_plugin_prefixed_agent_type_names_the_same_role(self):
         # docs/guard-fallback.md "Agent names": the kit plugin bundles its agents as <plugin>:<name>
-        # (kitlib.agentname.PREFIX; tests/agentname pins it to this value)
-        p = lockmcp.PLUGIN_NAME + ':'
+        # (kitlib.host.agentname.PREFIX; tests/host/test_agentname.py pins it to this value)
+        p = registry.PLUGIN_NAME + ':'
         table = policy.roles(self.load({'roles': {'lander': {'edit_main_checkout': True, 'why': 'merges'}}}))
         self.assertEqual(policy.role_name(ev({'agent_id': 'a', 'agent_type': p + 'lander'}), table), 'lander')
         self.assertTrue(policy.permissions(ev({'agent_id': 'a', 'agent_type': p + 'lander'}), table)['edit_main_checkout'])

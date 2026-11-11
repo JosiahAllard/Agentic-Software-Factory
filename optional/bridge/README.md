@@ -39,7 +39,7 @@ This is the bridge from `codex/robust-bridge-plan`, ported as plan step 10
 Layer rules:
 - The core kit never imports `optional/` (tests/host/test_layering.py).
 - The bridge imports from the kit only `kitlib.ident`, `kitlib.proc` (`pipe`, `errors`,
-  `process`, `job`), `kitlib.sessionmark` (the frontend's launch mark) and, in the Claude half,
+  `process`, `job`), `kitlib.host.sessionmark` (the frontend's launch mark) and, in the Claude half,
   `hosts.claude.adapter.peer` (the peer wire format and pipe write). It does not read
   `hosts.json`. Its Win32 code is in `win/`, the halves and `kitlib/proc`.
 - `core/` names no host and touches no Win32. No bridge code outside `hosts/` names a host
@@ -175,7 +175,7 @@ nominates no channel, and the other halves keep working.
   restarted service is rejoined by replaying only the frontend's initialize handshake; a tool call
   is never replayed.
 - **Launch mark** (`mcp_frontend.py`, `win/frontend.py`, `Controller.launched`). A session the kit
-  launched carries its kind in `PM_KIT_ROLE` (`kitlib/sessionmark.py`). The frontend reads it once,
+  launched carries its kind in `PM_KIT_ROLE` (`kitlib/host/sessionmark.py`). The frontend reads it once,
   at start, so a later change to the session's environment reaches no frame. It sends the mark
   beside `channel` on every frame, the replayed handshake included. A value that is not a plain
   name (letters, digits, `-` and `_`, at most 64) is not sent. The service binds the mark into that

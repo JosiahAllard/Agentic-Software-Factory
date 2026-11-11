@@ -8,7 +8,7 @@ Nothing here prints, parses arguments or exits.
 The submodules: pagecheck (what a published page's HTML may hold: one check, refused whole, never
 stripped) and todosteps (an owner to-do's steps as PowerShell, and the to-do refusals). The
 constants the hub's api, client, tools and MCP server share are below: WAIT_MAX_S, QUESTION_CLASSES,
-AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES.
+AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES, OWNER_ONLY.
 
   validate(docs, only=None, known_repos=())
                               [Finding] for every document; `only` (a set of "collection/doc_id")
@@ -59,6 +59,9 @@ AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')    # the sta
 HANDOFF_KINDS = ('handoff', 'restart', 'stop', 'checkin')               # a hand-off record's kind
 MAX_FILES = 64                      # files in one approval
 MAX_CONTENT_BYTES = 256 * 1024      # one approved file's content, UTF-8
+# the hub MCP tool names pinned for the owner's hub writes (kitlib.hubmcp re-exports them): none ships
+# yet, and the guard reads them from here to deny them to agents
+OWNER_ONLY = ('hub_answer', 'hub_todo_done', 'hub_story_submit', 'hub_to_pm_send')
 # the collection a Q-/M-/T-/P-/S-/A-/E-/L-/C- id names (the store's id prefixes), and the fields
 # that carry such ids (an A-, E-, L- or C- id is never a ref; E is a skill edit, L a landing feed
 # event, C a session's hand-off record, docs/action-hub.md)

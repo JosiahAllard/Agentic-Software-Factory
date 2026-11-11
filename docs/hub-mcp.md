@@ -1,6 +1,6 @@
 # Hub MCP server
 
-`mcp/hub_server.py` serves the Action Hub (docs/action-hub.md) as a stdio MCP server. Each tool is one HTTP call to the hub server on this machine through `kitlib.hubsite.client.Client`, on the loopback address only: the hub's own checks (roles, fields, versions) are the ones that hold, and this process never opens the hub store. The logic is `kitlib/hubmcp/server.py`; the names the guard reads are in `kitlib/hubmcp/__init__.py`, which imports nothing. The stdio JSON-RPC loop and response shapes (`ok`, `err`, `serve`) are `kitlib/mcpwire`, shared with the lock server. In `tools/list`, `destructiveHint` is true for a tool that changes an existing document (a non-GET with an `{id}` in its path, or one of `server.REPLACES`: `hub_page_publish`, which can publish over a page) and false for one that only adds; `readOnlyHint` is true for the GET tools.
+`mcp/hub_server.py` serves the Action Hub (docs/action-hub.md) as a stdio MCP server. Each tool is one HTTP call to the hub server on this machine through `kitlib.hubsite.client.Client`, on the loopback address only: the hub's own checks (roles, fields, versions) are the ones that hold, and this process never opens the hub store. The logic is `kitlib/hubmcp/server.py`; the owner-only names the guard reads are `kitlib.hubvalidate.OWNER_ONLY` (re-exported by `kitlib/hubmcp/__init__.py`). The stdio JSON-RPC loop and response shapes (`ok`, `err`, `serve`) are `kitlib/mcpwire`, shared with the lock server. In `tools/list`, `destructiveHint` is true for a tool that changes an existing document (a non-GET with an `{id}` in its path, or one of `server.REPLACES`: `hub_page_publish`, which can publish over a page) and false for one that only adds; `readOnlyHint` is true for the GET tools.
 
 - **Transport:** JSON-RPC 2.0, one message per line on stdin and stdout, on the standard library, in the shape of the lock MCP server (docs/lock-mcp.md). It answers `initialize` (protocol 2025-06-18, 2025-03-26 or 2024-11-05), `ping`, `tools/list` and `tools/call`.
 - **Plugin:** `.claude-plugin/plugin.json` names it `hub` (`kitlib.hubmcp.SERVER_NAME`), rendered from `hosts/claude/adapter/content.py` `MCP_SERVERS`. A client shows its tools as `mcp__plugin_pm-kit_hub__<tool>`. Codex's plugin carries it as server `hub` (`hosts/codex/shell/mcp/hub_server.py`); `hosts/codex/adapter/policy.py` refuses its tools to a marked Codex session.
@@ -177,7 +177,7 @@ The hub server loads this code when it starts, and the MCP server when its clien
 
 ## The owner's tools (pinned, not shipped)
 
-`kitlib.hubmcp.OWNER_ONLY` names four tools for the owner's hub writes, and `kitlib.hubmcp.OWNER_ROUTES` the owner route each is to call:
+`kitlib.hubvalidate.OWNER_ONLY` (re-exported as `kitlib.hubmcp.OWNER_ONLY`) names four tools for the owner's hub writes, and `kitlib.hubmcp.OWNER_ROUTES` the owner route each is to call:
 
 | tool | endpoint |
 |---|---|

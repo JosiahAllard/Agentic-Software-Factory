@@ -36,7 +36,7 @@ Cut or merged, with what stays:
 | owner-lock and owner-setup | Merged into `owner-tool` over a parsed invocation (`rules.owner_tool_run`): reserve_ui as a program, python's script, a launcher's target or an opened file; the lock CLI's owner writes; machine setup with `--apply`. | The code-text and standard-input reading (A3). |
 | heredoc-winpath | Nothing. A quoting trap, not a hazard. The shell-traps skill says to write scripts with the Write tool. | The rule (B8). |
 | Unreadable (fallback) | The one place for what the parser cannot read. Adds one name pattern (W5). `pwsh -File -` is read from its pipe as `-Command -` is, and only a pipe the guard cannot read is unreadable (docs/guard-core.md "Parsing"). `fallback.plainly` gives only the script-file run as advice; the guard never rewrites a refused line. | The rewrite attempts. |
-| lock-mcp | Stays: the lock MCP has lost its write tools, but the rule still denies the retired names (`kitlib.lockmcp.OWNER_ONLY`) for a server started from an older release. | Goes once no such server runs; not a weakening, since no owner tool is left to hold. |
+| lock-mcp | Stays: the lock MCP has lost its write tools, but the rule still denies the retired names (`kitlib.lock.names.OWNER_ONLY`) for a server started from an older release. | Goes once no such server runs; not a weakening, since no owner tool is left to hold. |
 
 Built since this design: the lock checks its own caller as owner or agent (kitlib/lock/api.py), the lock MCP serves read tools only (kitlib/lockmcp), and context.py checks `ledger_dir` (`_ledger_checked`). The role-lock and lock-mcp rules are still in the code.
 

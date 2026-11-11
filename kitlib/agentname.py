@@ -1,7 +1,7 @@
 """Agent names with and without the kit plugin's prefix (docs/guard-fallback.md "Agent names").
 
 A host names an agent a plugin bundles by its hosts.json profile agent_name_format (Claude Code:
-`<plugin>:<name>`); the kit's plugin is kitlib.lockmcp.PLUGIN_NAME, so a kit agent can reach the
+`<plugin>:<name>`); the kit's plugin is kitlib.lock.names.PLUGIN_NAME, so a kit agent can reach the
 guard, the launcher and the usage reports both as `lander` and as `PREFIX + 'lander'`. PREFIX is
 the default host's format up to {name}, read once at import. Two rules, because stripping more is the
 permissive direction for one and the restrictive direction for the other:
@@ -17,7 +17,7 @@ permissive direction for one and the restrictive direction for the other:
   qualified(name)  PREFIX + bare(name).
 """
 from kitlib.host import registry
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.lock.names import PLUGIN_NAME
 
 
 def prefix(host=None, plugin=PLUGIN_NAME, path=None):

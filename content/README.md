@@ -10,7 +10,7 @@ files, the plugin manifests and docs/ROSTER.md's two tables; commit what it writ
 | A rule for every role in a repository | that repository's instructions file (each host's `instructions_file` token names it; one file may import another with an `@<path>` line) | nothing to render |
 | One role's instructions | `content/roles/<name>.md`, its body | render |
 | Its tier, effort, capabilities (its tools) or sandbox | the role file's front matter (docs/content.md "Role front matter") | render |
-| Its model on one host | `model.<host>: <model>` in the front matter, over the tier's | render |
+| Its model on one host | `hosts.json` `role_models` for that host (`{"<role>": "<model>"}`), over the tier's; a role file names no model | render (docs/ROSTER.md shows it after the role's tier) |
 | The model per tier | `hosts.json` `tiers` for that host | render (docs/ROSTER.md shows the table) |
 | Its line in docs/ROSTER.md | the role file's `summary` (its `description` when absent) | render |
 | What a role may write | the role file's `mode`, and its optional `writes` paths (the loader accepts them; no role file uses them today; docs/guard-jail-roles.md "Role policy"); a repository can override the mode with `.kit.json` `roles.<name>.mode` and turns the policy on with `guard.role_policy` | the guard reads them live; render too when `mode` changes, since a host may derive its sandbox from it (`sandbox_mode`) |

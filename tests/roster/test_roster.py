@@ -21,7 +21,8 @@ KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, os.path.join(KIT_ROOT, 'tools'))
 import agent_roster as cli  # noqa: E402
 
-MAPS = {h: dict(registry.host(h).tiers) for h in registry.names()}     # hosts.json, the one tier map
+# hosts.json, per host (tier -> model, role -> model): the one tier map and its role_models
+MAPS = {h: (dict(registry.host(h).tiers), dict(registry.host(h).role_models)) for h in registry.names()}
 
 
 def read(path):
@@ -66,15 +67,32 @@ class RealRosterTest(unittest.TestCase):
         self.assertEqual(t['tier'][0][1:], sorted(registry.names()))
 
     def test_every_rendered_model_is_the_roster_tiers(self):
-        """The model an agent file names is the role's tier through the host's tier table."""
+        """The model an agent file names is the role's Claude role_models entry its tier cell shows, else
+        its tier through the host's tier table."""
         t = tables(read(os.path.join(KIT_ROOT, 'docs', 'ROSTER.md')).decode('utf-8'))
         hosts = t['tier'][0][1:]
         models = {row[0]: dict(zip(hosts, row[1:])) for row in t['tier'][1:]}
-        for name, tier, effort, _ in t['role'][1:]:
+        for name, cell, effort, _ in t['role'][1:]:
+            tier, _, over = cell.partition(' (')
+            over = dict(hm.split(': ') for hm in over.rstrip(')').split(', ')) if over else {}
             fm = roster_frontmatter(read(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md')))
             with self.subTest(role=name):
-                self.assertEqual(fm['model'], models[tier]['claude'])
+                self.assertEqual(fm['model'], over.get('claude', models[tier]['claude']))
                 self.assertEqual(fm.get('effort', roster.NONE), effort)
+
+    def test_deep_worker_runs_fable_on_claude_and_the_consultant_its_tier(self):
+        """By owner decision deep-worker alone runs fable on Claude; the consultant, also deep, keeps
+        the tier's model; Codex has no override for either. The ROSTER cell (hosts.json itself:
+        tests/host/test_registry.py)."""
+        rows = {r[0]: r[1] for r in tables(read(os.path.join(KIT_ROOT, 'docs', 'ROSTER.md')).decode('utf-8'))['role'][1:]}
+        self.assertEqual(rows['deep-worker'], 'deep (claude: fable)')
+        self.assertEqual(rows['consultant'], 'deep')
+
+    def test_every_role_models_key_is_a_role_file(self):
+        names = {r.name for r in content.load_roles(KIT_ROOT)}
+        for h in registry.names():
+            for role, _model in registry.host(h).role_models:
+                self.assertIn(role, names, '%s.role_models' % h)
 
 
 def roster_frontmatter(data):
@@ -141,11 +159,20 @@ class TempCopyTest(unittest.TestCase):
                          text.replace('# Agent roster\n', '# Agent roster\n\nA new owner paragraph.\n', 1))
 
     def test_the_tier_table_follows_the_host_maps(self):
-        maps = dict(MAPS, claude=dict(MAPS['claude'], deep='sonnet'), other={'light': 'x'})
+        maps = dict(MAPS, claude=(dict(MAPS['claude'][0], deep='sonnet'), {}), other=({'light': 'x'}, {}))
         text = roster.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
         t = tables(text)['tier']
         self.assertEqual(t[0], ['tier', 'claude', 'codex', 'other'])
-        self.assertEqual(t[4], ['deep', 'sonnet', MAPS['codex']['deep'], '-'])
+        self.assertEqual(t[4], ['deep', 'sonnet', MAPS['codex'][0]['deep'], '-'])
+        rows = {r[0]: r[1] for r in tables(text)['role'][1:]}
+        self.assertEqual(rows['deep-worker'], 'deep')            # no role_models entry: the tier alone
+
+    def test_a_role_models_entry_shows_in_its_tier_cell(self):
+        maps = dict(MAPS, codex=(MAPS['codex'][0], {'worker': 'gpt-x'}))
+        text = roster.render(read(self.roster).decode('utf-8'), _content(self.top), maps)
+        rows = {r[0]: r[1] for r in tables(text)['role'][1:]}
+        self.assertEqual(rows['worker'], 'standard (codex: gpt-x)')
+        self.assertEqual(rows['deep-worker'], 'deep (claude: fable)')
 
     def test_missing_markers_are_usage(self):
         write_file(self.roster, read(self.roster).replace(b'<!-- rendered: roles -->', b'', 1))
@@ -188,8 +215,9 @@ class NoToolImportTest(unittest.TestCase):
                     for a in n.names]
         self.assertEqual([m for m in imported if 'render_content' in m], [])
 
-    def test_its_tier_maps_are_every_registered_hosts(self):
-        self.assertEqual(cli.tier_maps(), MAPS)
+    def test_its_model_maps_are_every_registered_hosts(self):
+        import _host
+        self.assertEqual(_host.model_maps(), MAPS)
 
 
 class ReviewerRuleTest(unittest.TestCase):

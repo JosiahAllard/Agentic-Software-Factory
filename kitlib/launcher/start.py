@@ -2,7 +2,7 @@
 
   start       a coordinator (the default agent), any other agent, or a plain session (no agent)
   start_entry a sessions.json entry by key: its repo, agent, stem and brief
-  deep        a deep-worker: the 1M-context model, effort xhigh, a brief, a requester to report to
+  deep        a deep-worker: its role's model (deep_model), effort xhigh, a brief, a requester to report to
   consultant  one long-lived consultant per repo that answers engineering questions
   topic       a plain session marked topic, in a linked worktree, building one batch of records
   homes       list a main checkout's home worktrees, or remove one
@@ -21,6 +21,7 @@ from kitlib.config import user as kuser
 from kitlib.launcher import accounts as A
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
+from kitlib.host import registry
 from kitlib.ledger import rulebook
 from kitlib.launcher import home, lookup, pipes, state, stop, window
 from kitlib.launcher.settings import LaunchError
@@ -78,7 +79,8 @@ KIT_AGENTS = tuple(r.name for r in kcontent.roster(KIT))
 # a kit agent's old name -> its name now: started as the new one, for one release (docs/ROSTER.md);
 # the guard's role policy reads the same table (kitlib.content.ALIASES)
 AGENT_ALIASES = kcontent.ALIASES
-LONG_MODEL = 'opus[1m]'
+LONG_MODEL = 'opus[1m]'          # a consultant's; a deep-worker runs its role's own model (deep_model)
+CLI_HOST = 'claude'              # the host whose CLI every launch starts (window.claude_command)
 # a consultant's notes file: <agent temp>/<repo>-consultant/notes.md (consultant_notes_path), outside
 # the repository, so the write jail leaves it open in a home worktree. The agent-temp sweep keeps any
 # <name>-consultant and <name>-coordinator folder (optional/agenttemp/agent_temp_sweep.py BUILT_IN_KEEP);
@@ -404,8 +406,22 @@ def _check_path(flag, path):
         raise LaunchError('%s must be an absolute file path on one line.' % flag)
 
 
+def deep_model():
+    """The model a deep-worker starts on: CLI_HOST's for that role (hosts.json's `role_models`
+    entry, else its model for the role's tier: kitlib.content.role_model). Unreadable is a
+    LaunchError."""
+    try:
+        host = registry.host(CLI_HOST)
+        model = kcontent.role_model(window.DEEP_WORKER, dict(host.tiers), dict(host.role_models), KIT)
+    except registry.RegistryError as e:
+        raise LaunchError('deep: %s; nothing was started.' % e) from None
+    if not model:
+        raise LaunchError('deep: no readable %s role file under %s; nothing was started.' % (window.DEEP_WORKER, KIT))
+    return model
+
+
 def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None, account='auto',
-         autocompact=DEEP_AUTOCOMPACT, model=LONG_MODEL, effort='xhigh', force=False, plan=False, brief_dir=None,
+         autocompact=DEEP_AUTOCOMPACT, model=None, effort='xhigh', force=False, plan=False, brief_dir=None,
          home_worktree=False, predecessor=None, state=None, checkin=None, permission_mode=None):
     """A deep-worker session named deep-<slug>. Every check runs before anything is written; a
     --brief-text file is removed again when the launch fails. `predecessor`: the deep-worker it
@@ -427,6 +443,7 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     _check_path('--checkin', checkin)
     if not autocompact:
         raise LaunchError('--autocompact must be %d..%d tokens, not 0.' % AUTOCOMPACT)
+    model = model or deep_model()
     _check_common(model, effort, autocompact)
     if not os.path.isdir(repo_path):
         raise LaunchError('No folder at %s' % repo_path)

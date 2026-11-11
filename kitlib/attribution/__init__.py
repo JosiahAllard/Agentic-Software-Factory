@@ -49,7 +49,7 @@ def display_name(model, provider=None, path=None):
     a display name or a longer id (a date suffix) is never reworded."""
     if not isinstance(model, str):
         return model
-    found = re.match(r'%s-(opus|sonnet|haiku)-(\d{1,2}(?:-\d{1,2})?)\Z'
+    found = re.match(r'%s-(fable|opus|sonnet|haiku)-(\d{1,2}(?:-\d{1,2})?)\Z'
                      % re.escape(_of(provider, path).name.lower()), model.strip())
     if found is None:
         return model

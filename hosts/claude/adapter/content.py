@@ -4,10 +4,12 @@ Each role becomes `hosts/claude/shell/agents/<name>.md`: front matter opening wi
 line as a YAML comment (kitlib.host.content.banner; the front matter stays the file's first thing),
 then `name`, `description`, `tools` (the
 role's capabilities as Claude tool names, in order; no line for `capabilities: all`), `model`
-(the role's `model.claude` override, else hosts.json's `tiers` model for its tier: tier_models), `effort`
+(hosts.json's Claude `role_models` model for the role, else its `tiers` model for its tier:
+role_models, tier_models), `effort`
 when the role has one, and for `cache: long` the `experimental` map with `cacheTtl: 1h`; then the
 body with its tokens filled from tokens(): TOKENS, and PROFILE_TOKENS read from hosts.json's Claude
-entry, so a value hosts.json holds is written once; `{{model:<tier>}}` from tier_models() and
+entry, so a value hosts.json holds is written once (`{{long_context_model}}` names the role's own
+`model` line's model: long_context_phrase); `{{model:<tier>}}` from tier_models() and
 `{{tool:<capability>}}` from TOOLS, the map the `tools` line uses. Lines end as the role file's do.
 Skills are not copied: the plugin manifest points at `content/skills/` itself (decision 29 in
 docs/multi-host-plan.md section 7).
@@ -90,8 +92,15 @@ PROFILE_TOKENS = {
     'owner_folder': lambda host: next(p for p in host.profile.owner_paths if p.endswith('/')),
     'user_folder': lambda host: '~/' + host.profile.state_directory,
     'coauthor_email': lambda host: host.profile.attribution.email,
-    'long_context_model': lambda host: 'the 1M-context %s model' % dict(host.tiers)['deep'],
+    'long_context_model': lambda host: long_context_phrase(dict(host.tiers)['deep']),
 }
+
+
+def long_context_phrase(model):
+    """How role prose names the model a launched long-context session runs on."""
+    return 'the 1M-context %s model' % model
+
+
 CACHE_TTL = {'long': '1h'}
 
 
@@ -116,6 +125,10 @@ class ClaudeContent:
         """hosts.json's Claude `tiers`: the one tier -> model map."""
         return dict(registry.host(HOST).tiers)
 
+    def role_models(self):
+        """hosts.json's Claude `role_models`: the roles it runs on a model other than their tier's."""
+        return dict(registry.host(HOST).role_models)
+
     def owned(self):
         return (AGENTS_REL,)
 
@@ -136,19 +149,20 @@ class ClaudeContent:
     def role_path(name):
         return '%s/%s.md' % (AGENTS_REL, name)
 
-    def settings(self, role, tiers=None):
+    def settings(self, role, tiers=None, role_models=None):
         """[(key, value)] of the front matter `role`'s agent file runs it with, in the file's order:
-        `tools` (no line for `capabilities: all`), `model`, `effort`, `autoCompactWindow` (the role's
-        `compact`; the CLI holds a subagent's window at or under it), and `cacheTtl` (under
-        `experimental`)."""
+        `tools` (no line for `capabilities: all`), `model` (Role.model_for: `role_models`, else
+        `tiers`; default: hosts.json's), `effort`, `autoCompactWindow` (the role's `compact`; the
+        CLI holds a subagent's window at or under it), and `cacheTtl` (under `experimental`)."""
         tiers = self.tier_models() if tiers is None else tiers
+        role_models = self.role_models() if role_models is None else role_models
         out = []
         if not role.all_tools:
             missing = [c for c in role.capabilities if c not in TOOLS]
             if missing:
                 raise ContentError('%s: no Claude tool for %s' % (self.role_path(role.name), ', '.join(missing)))
             out.append(('tools', ', '.join(TOOLS[c] for c in role.capabilities)))
-        out.append(('model', role.model_for(HOST, tiers)))
+        out.append(('model', role.model_for(tiers, role_models)))
         if role.effort:
             out.append(('effort', role.effort))
         if role.compact:
@@ -157,17 +171,21 @@ class ClaudeContent:
             out.append(('cacheTtl', CACHE_TTL[role.cache]))
         return out
 
-    def agent_file(self, role, names, values=None, tiers=None):
+    def agent_file(self, role, names, values=None, tiers=None, role_models=None):
         """The bytes of `role`'s agent file; `names` are every role's name (for agent tokens),
-        `values` the tokens' values and `tiers` the tier -> model map (default: hosts.json's)."""
+        `values` the tokens' values, `tiers` the tier -> model map and `role_models` the role ->
+        model map (default: hosts.json's)."""
         src = self.role_path(role.name)
         values = tokens() if values is None else values
         tiers = self.tier_models() if tiers is None else tiers
+        role_models = self.role_models() if role_models is None else role_models
+        # {{long_context_model}} names the model this role runs on: its role_models entry, else its tier's
+        values = dict(values, long_context_model=long_context_phrase(role.model_for(tiers, role_models)))
         fill = lambda text: substitute(text, values, agent_name, names, src, models=tiers,    # noqa: E731
                                        tools=TOOLS)
         lines = ['---', '# ' + banner(role_source(role.name)), 'name: %s' % role.name,
                  'description: %s' % quote(fill(role.description))]
-        for key, value in self.settings(role, tiers):
+        for key, value in self.settings(role, tiers, role_models):
             lines += ['experimental:', '  cacheTtl: %s' % value] if key == 'cacheTtl' else ['%s: %s' % (key, value)]
         lines.append('---')
         nl = role.newline
@@ -175,10 +193,10 @@ class ClaudeContent:
 
     def render(self, content):
         names = content.role_names()
-        values, tiers = tokens(), self.tier_models()
+        values, tiers, role_models = tokens(), self.tier_models(), self.role_models()
         out = {}
         for role in content.roles:
-            out[self.role_path(role.name)] = self.agent_file(role, names, values, tiers)
+            out[self.role_path(role.name)] = self.agent_file(role, names, values, tiers, role_models)
         return out
 
     def hooks(self, registry_path=None, platform='windows'):

@@ -99,7 +99,7 @@ def parser():
     d.add_argument('--slug', required=True)
     d.add_argument('--account', default='auto')
     d.add_argument('--autocompact', type=int, default=start.DEEP_AUTOCOMPACT)
-    d.add_argument('--model', default=start.LONG_MODEL)
+    d.add_argument('--model', help="default: the deep-worker role's model (start.deep_model)")
     d.add_argument('--effort', default='xhigh')
     d.add_argument('--force', action='store_true', help='start on an account at or over ' + str(accounts.HEADROOM_LIMIT) + '%%')
     d.add_argument('--plan', action='store_true', help='print, start and write nothing')

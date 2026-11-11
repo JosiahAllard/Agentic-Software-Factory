@@ -19,7 +19,7 @@ tier map; never edit them by hand. To change a role's tier, effort or "use for" 
 `tier:`, `effort:` or `summary:` front matter (docs/content.md "Role front matter") and render; the
 render also rewrites that role's agent file on every host. `python tools/render_content.py` (and
 `python tools/agent_roster.py`, which checks this file alone) lists any disagreement. `-` = no
-effort key. Never `fable` unless the owner asks; override a dispatch only upward, and never the
+effort key. Never `fable` unless the owner asks (the owner set it for deep-worker, below); override a dispatch only upward, and never the
 lander's. The per-dispatch rules have one home, content/skills/coordinator-dispatch/roster.md,
 "Tier rules", written in tiers for every host: which reviews are raised to the strong tier (from the
 review pack's printed risk groups and the strict landing paths), and the host's built-in agent
@@ -32,7 +32,7 @@ standard tier (Claude: `model: sonnet`).
 | analyst | light | high | The read type - design and branch review (skill specialty-review), research (skill specialty-research) and art critique (skill specialty-art-critique); builds and edits nothing. Raised per dispatch only by the "Reviewer model" rule (strong tier), the research rule (standard tier) and the art-critic rule (strong tier) in the dispatch skill's roster file. |
 | consultant | deep | high | Own long-lived launched session per repository (never dispatched; 1M via launcher). Answers engineering questions from coordinators and workers; never edits, lands or dispatches builds; idle until asked. |
 | coordinator | strong | medium | Main session, never a subagent. Splits work, dispatches agents, reviews designs and branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code. |
-| deep-worker | deep | xhigh | Own launched session (never dispatched; 1M via launcher). Root cause or concurrency work senior-worker failed at or plainly cannot do; never builds or plans. |
+| deep-worker | deep (claude: fable) | xhigh | Own launched session (never dispatched; 1M via launcher). Root cause or concurrency work senior-worker failed at or plainly cannot do; never builds or plans. |
 | docs-writer | standard | medium | The docs type - records and specs (skill specialty-docs). Docs only. |
 | helper | light | medium | Bulk menial reads and mechanical bulk writes, dispatched by a builder into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story. |
 | lander | light | medium | Optional wrapper: submits one reviewed branch (or a batch) for landing, waits for the result, reports. Never edits code. Dispatched with no model override, and never overridden. |
@@ -48,8 +48,9 @@ standard tier (Claude: `model: sonnet`).
 ## Tier to model, per host
 
 Each host maps a tier to a model in `hosts.json` `tiers`, which its renderer's `tier_models()` returns;
-the table below is rendered from it. A role file may name a different model for one
-host (`model.<host>:`, docs/content.md); none does.
+the table below is rendered from it. A host may run one role on a different
+model (`hosts.json` `role_models`, docs/new-host.md), shown in brackets after its tier in the role table:
+deep-worker runs `fable` on Claude by owner decision, while the consultant keeps the `deep` tier's model.
 
 <!-- rendered: tiers -->
 | tier | claude | codex |

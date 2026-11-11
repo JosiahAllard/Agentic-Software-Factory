@@ -3,8 +3,12 @@ import re
 import unittest
 from pathlib import Path
 
+from kitlib.host import registry
 from tests.shipped import scan
 
+# every model a Claude agent file may name: the host's tier models and its role_models (hosts.json)
+CLAUDE_MODELS = ({m for _, m in registry.host("claude").tiers}
+                 | {m for _, m in registry.host("claude").role_models})
 AGENTS = Path(__file__).resolve().parents[2] / "hosts" / "claude" / "shell" / "agents"
 EXPECTED = {"pm", "coordinator", "weak-worker", "worker", "senior-worker", "strong-worker", "deep-worker", "consultant",
             "analyst", "lander", "docs-writer", "test-runner", "helper", "topic"}
@@ -227,7 +231,7 @@ class AgentFilesTest(unittest.TestCase):
             self.assertIsNotNone(fm, p.name)
             self.assertEqual(fm.get("name"), p.stem, p.name)
             self.assertTrue(fm.get("description"), p.name)
-            self.assertIn(fm.get("model"), {"opus", "sonnet", "haiku"}, p.name)
+            self.assertIn(fm.get("model"), CLAUDE_MODELS, p.name)
 
     def test_plugin_manifest_lists_every_agent_file(self):
         # plugin.json's `agents` takes files, not a folder, and replaces the default agents/

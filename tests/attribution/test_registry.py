@@ -40,6 +40,13 @@ class KitHosts(unittest.TestCase):
         self.assertEqual(syncbase.trailer('claude-opus-5-5'), want)
         self.assertEqual(attribution.display_name('Claude-Opus-5-5'), 'Claude-Opus-5-5')
 
+    def test_a_fable_model_id_maps_like_the_other_families(self):
+        """A deep-worker runs fable (hosts.json role_models): its id gets the family's name too."""
+        self.assertEqual(attribution.display_name('claude-fable-5-2'), 'Fable 5.2')
+        self.assertEqual(attribution.coauthor('claude-fable-5-2'),
+                         'Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>')
+        self.assertEqual(attribution.display_name('claude-fable-5-2-20261101'), 'claude-fable-5-2-20261101')
+
     def test_trailers_are_exactly_as_before(self):
         self.assertEqual(attribution.coauthor('Opus 5.5'),
                          'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')

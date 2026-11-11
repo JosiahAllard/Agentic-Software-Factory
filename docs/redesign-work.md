@@ -290,7 +290,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-034 `hubsite/serve.py` and `hubjobs/usage_crossover.py` are split by responsibility**
 - Serves: "Dependency rules" 7; docs/modules/hub-design.md.
 - Files: `kitlib/hubsite/serve.py` (1,883 lines), `kitlib/hubjobs/usage_crossover.py` (1,867).
-- Done when: neither folder has a file over 1,500 lines; `tests/hubsite`, `tests/hubjobs` pass with test names unchanged.
+- Done when: neither folder has a .py file over 1,500 lines; `tests/hubsite`, `tests/hubjobs` pass with test names unchanged.
 - Risk and tier: `serve.py` Medium, strong-worker; `usage_crossover.py` High (it stops and restarts live sessions), senior-worker. Behaviour-neutral. After: W-032.
 
 **W-035 The session starts keep only their checks**
@@ -310,7 +310,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-037 `lock/run.py`, `platform/linux/contain.py` and `worktree/remove.py` are split by responsibility**
 - Serves: "Dependency rules" 7; docs/modules/lock-design.md, base-design.md, worktree-design.md.
 - Files: `kitlib/lock/run.py` (2,145 lines), `kitlib/platform/linux/contain.py` (2,158), `kitlib/worktree/remove.py` (1,768).
-- Done when: none of the three folders has a file over 1,500 lines; `tests/lock`, `tests/platform`, `tests/worktree` pass with test names unchanged.
+- Done when: none of the three folders has a .py file over 1,500 lines; `tests/lock`, `tests/platform`, `tests/worktree` pass with test names unchanged.
 - Risk and tier: High (the lock, containment), behaviour-neutral. senior-worker.
 - Owner: lock. After: W-001.
 
@@ -327,7 +327,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-039 A test holds the size line**
 - Serves: "Dependency rules" 7.
 - Files: new `tests/modulemap/test_size_line.py`.
-- Change: fails on a `kitlib` file over 1,500 lines outside a short listed set (the fake git's files).
+- Change: fails on a `kitlib` .py file over 1,500 lines outside a short listed set (the fake git's files).
 - Done when: the test passes on the batch's tip.
 - Risk and tier: Low. worker. After: the split items.
 

@@ -19,9 +19,11 @@ import unittest
 from unittest import mock
 
 from kitlib.config.types import ConfigError
-from kitlib.hubsite import access, auth, backlog, client, gitsync, httpd, selfrestart, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import access, auth, backlog, gitsync, httpd, selfrestart, serve
 from kitlib.hubsite import tunnel
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubclient import settings as hub_settings
+from kitlib.hubclient import token as hubtoken
 from kitlib.hubsite.api import BASE
 from kitlib.hubsite.store import Store, StoreBusy
 from kitlib.proc import process
@@ -2002,7 +2004,7 @@ class MachineCase(unittest.TestCase):
         pm = pm_repo(self, record=False)
         src = serve.machine_sources(self.home)
         self.assertEqual(os.path.normcase(src.tokens),
-                         os.path.normcase(os.path.join(pm, user.DIR_NAME, auth.FOLDER_NAME)))
+                         os.path.normcase(os.path.join(pm, user.DIR_NAME, hubtoken.FOLDER_NAME)))
         self.assertEqual((src.pm_data, src.notices, src.repos, src.usage, src.backlog),
                          (None, None, None, None, None))
         self.assertIs(src.sync, gitsync.GitSync)
@@ -2312,7 +2314,7 @@ class ClientCase(ServeCase):
                          ['revision 1', 'git: no answer', 'backlog: not read yet'])
 
     def test_status_lines_say_the_code_and_the_jobs_before_the_tunnel(self):
-        from kitlib.hubsite import codestale
+        from kitlib.hubclient import codestale
         base = {'revision': 2, 'git': None, 'backlog': None, 'tunnel': 'on'}
         health = dict(base, code=codestale.state(False), jobs=None)
         self.assertEqual(serve.status_lines(health, NOW)[3:],

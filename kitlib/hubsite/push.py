@@ -33,7 +33,7 @@ them alone, never does):
               the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
 Recipients: the item's `from` (a launcher key, or a to-do's free name; for an approval, which has
-no `from`, Api.repo_key of its repo) unless it is the PM's (AGENT_FROM, OWNER_FROM, empty, or
+no `from`, Api.repo_key of its repo) unless it is the PM's (PM_KEY, OWNER_FROM, empty, or
 is_pm), and the PM (PM_KEY) always, once.
 
 Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_as):
@@ -179,12 +179,11 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM, sessions_once
+from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
+from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
-PM_KEY = AGENT_FROM
-WRITTEN, NOT_WRITTEN, UNCERTAIN, NO_SESSION = 'written', 'not-written', 'uncertain', 'no-live-session'
 AMBIGUOUS, GAVE_UP = 'ambiguous', 'gave-up'
 SCHEDULE_S = (120, 300, 900, 1800, 3600)    # after the 1st, 2nd, ... try
 HOURLY_S = 3600                             # after the rest
@@ -282,17 +281,6 @@ DONE_VIA = 'hub-push'                       # the `via` of that write
 # a delegation run line (kitlib.delegations.run run_line, `D-nnn` its schema.ID): not imported,
 # kitlib.delegations imports this package
 RUN_LINE = re.compile(r'run D-[0-9]{3,}(?: |\Z)')
-_FIELD = re.compile(r'[^A-Za-z0-9._:-]')
-
-Sent = collections.namedtuple('Sent', 'state name session ambiguous')
-
-
-def field(value):
-    """A header field: only [A-Za-z0-9._:-], at most 64 characters, '-' for nothing."""
-    text = _FIELD.sub('_', value if isinstance(value, str) else str(value or ''))[:64]
-    return text or '-'
-
-
 def watcher_heartbeat():
     """The pm_watch heartbeat ({pid, beat, ...}) beside the state file pm_watch uses, or None
     (kitlib.pmwatch.heartbeat_file, read_heartbeat)."""

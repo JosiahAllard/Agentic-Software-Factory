@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubsite import autostart, selfrestart, serve
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubclient import settings as hub_settings
 from kitlib.proc import spawn
 
 PORT = 8765
@@ -496,7 +496,7 @@ class SelfCheckCase(unittest.TestCase):
                                    make_sources=self.make_sources)
 
     def test_the_default_scratch_hub_is_the_machines_on_a_temp_store_and_tokens_with_no_parts(self):
-        from kitlib.hubsite import settings as settings_module
+        from kitlib.hubclient import settings as settings_module
         machine = hub_settings.settings(None)._replace(
             port=8790, store=os.path.join(tempfile.gettempdir(), 'the-machine-store'), push=True)
         asked, built = [], []

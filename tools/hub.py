@@ -90,7 +90,7 @@
       stop: the STOPPED line, why, and the start command, exit 1. --timeout S covers the whole
       restart: exit 4 as for stop (the console advice only when the new server never answered).
 
-The verbs below ask the running server through kitlib.hubsite.client. Each takes --port N
+The verbs below ask the running server through kitlib.hubclient.client. Each takes --port N
 (default: hub.port) and --json, which prints the server's answer as one JSON line in place of
 the lines named here. A verb marked (owner) carries the owner's token, the others the agent's;
 the server alone decides what a role may do.
@@ -289,7 +289,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kitlib import hubvalidate, platform                           # noqa: E402
 from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
-from kitlib.hubsite import access, api, auth, client, httpd, serve, settings, tunnel   # noqa: E402
+from kitlib.hubclient import client, settings                      # noqa: E402
+from kitlib.hubclient import token as hubtoken                     # noqa: E402
+from kitlib.hubsite import access, api, auth, httpd, serve, tunnel   # noqa: E402
 from kitlib.hubsite import approvals                               # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
 from kitlib.hubsite import control                                 # noqa: E402
@@ -941,8 +943,9 @@ def _refused(port, status, obj):
 
 def _status(a, stop):
     port = a.port or settings.load().port
-    folder = auth.folder()
-    token = auth.read_token(folder, auth.OWNER) or auth.read_token(folder, auth.AGENT)
+    folder = hubtoken.folder()
+    token = (hubtoken.read_token(folder, hubtoken.OWNER)
+             or hubtoken.read_token(folder, hubtoken.AGENT))
     status, obj = serve.ask(port, 'GET', HEALTH, token)
     if status != 200 or obj.get('ok') is not True:
         return _refused(port, status, obj)
@@ -1013,7 +1016,7 @@ def _setup(a, stop):
     if why:     # before any token file is written
         raise hub_autostart.AutostartError('; '.join(why) + '; nothing registered or written')
     s = settings.load()
-    folder = auth.folder()
+    folder = hubtoken.folder()
     try:
         paths = auth.ensure_tokens(folder)
     except OSError as e:
@@ -1045,8 +1048,8 @@ def _setup(a, stop):
 
 def _open(a, stop):
     port = a.port or settings.load().port
-    folder = auth.folder()
-    token = auth.read_token(folder, auth.OWNER)
+    folder = hubtoken.folder()
+    token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
         raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
     status, obj = serve.ask(port, 'POST', httpd.PAIR_ROUTE, token)
@@ -1066,8 +1069,8 @@ def _open(a, stop):
 
 def _unpair(a, stop):
     port = a.port or settings.load().port
-    folder = auth.folder()
-    token = auth.read_token(folder, auth.OWNER)
+    folder = hubtoken.folder()
+    token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
         raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
     try:
@@ -1184,8 +1187,8 @@ NO_CONSOLE_LINUX = NO_CONSOLE.replace('the scheduled task', 'the job')
 
 
 def _owner_token():
-    folder = auth.folder()
-    token = auth.read_token(folder, auth.OWNER)
+    folder = hubtoken.folder()
+    token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
         raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
     return token

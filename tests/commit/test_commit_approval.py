@@ -27,7 +27,7 @@ from kitlib.config import owner as ownermod
 from kitlib.guard import ownercommits as oc
 from kitlib.hubsite import api as hubapi
 from kitlib.hubsite import approvals as ap
-from kitlib.hubsite import client as hubclient
+from kitlib.hubclient import client as hubclient
 from kitlib.hubsite import serve
 from kitlib.hubsite import store as hubstore
 from tests import gitfixture

@@ -174,7 +174,7 @@ class AnsweredQuestions(unittest.TestCase):
         self.assertEqual(backlog.answered(snap(priced('AAA')), CMD, questions=never), ([], []))
 
     def test_the_hub_is_read_with_the_agent_token_and_every_status(self):
-        from kitlib.hubsite import client
+        from kitlib.hubclient import client
         seen = []
 
         class Fake(object):
@@ -185,7 +185,7 @@ class AnsweredQuestions(unittest.TestCase):
                 seen.append((collection, status, role))
                 return []
         with mock.patch.object(client, 'Client', Fake), \
-                mock.patch('kitlib.hubsite.settings.load', return_value=mock.Mock(port=4321)):
+                mock.patch('kitlib.hubclient.settings.load', return_value=mock.Mock(port=4321)):
             self.assertEqual(backlog.hub_questions(), [])
         self.assertEqual(seen, [4321, ('questions', 'all', client.AGENT)])
 

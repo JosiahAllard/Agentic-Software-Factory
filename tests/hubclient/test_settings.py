@@ -1,4 +1,4 @@
-"""kitlib.hubsite.settings and the machine config's `hub` key. Every machine config here is a
+"""kitlib.hubclient.settings and the machine config's `hub` key. Every machine config here is a
 file in a temp home; the real one is never read."""
 import os
 import shutil
@@ -7,7 +7,7 @@ import unittest
 
 from kitlib import config
 from kitlib.config import user
-from kitlib.hubsite import settings
+from kitlib.hubclient import settings
 from tests.home import machine_config, pm_repo
 
 

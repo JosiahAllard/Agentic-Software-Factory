@@ -1,4 +1,4 @@
-"""kitlib.hubsite.auth.folder with no PM-repo pointer: a refusal that names the pointer step, never
+"""kitlib.hubclient.token.folder with no PM-repo pointer: a refusal that names the pointer step, never
 a token folder in the home folder, so `hub.py setup` on a fresh machine writes nothing there. All
 under a temp home and a temp PM repository; no token file of this machine is read."""
 import contextlib
@@ -10,7 +10,7 @@ from unittest import mock
 
 from kitlib.config import user
 from kitlib.config.types import ConfigError
-from kitlib.hubsite import auth
+from kitlib.hubclient import token as hubtoken
 from tests.home import PM_REPO_FENCE_ENV, pm_repo, temp_home
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,14 +42,14 @@ class FolderTest(NoPointerCase):
     def test_no_pointer_is_refused_naming_the_pointer_step(self):
         self.assertEqual(user.locate(self.home).state, user.NONE)
         with self.assertRaises(ConfigError) as got:
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
         self.assertIn('--pm-repo', str(got.exception))
         self.assertIn('machine_setup.py', str(got.exception))
         self.assertFalse(os.path.exists(self.home_config_dir()))
 
     def test_the_default_home_is_refused_too(self):
         with self.assertRaises(ConfigError):
-            auth.folder()
+            hubtoken.folder()
 
     def test_a_config_left_in_the_home_folder_is_refused_not_used(self):
         os.makedirs(self.home_config_dir())
@@ -57,9 +57,9 @@ class FolderTest(NoPointerCase):
             f.write('{}')
         self.assertEqual(user.locate(self.home).state, user.UNMOVED)
         with self.assertRaises(ConfigError) as got:
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
         self.assertIn('--pm-repo', str(got.exception))
-        self.assertFalse(os.path.exists(os.path.join(self.home_config_dir(), auth.FOLDER_NAME)))
+        self.assertFalse(os.path.exists(os.path.join(self.home_config_dir(), hubtoken.FOLDER_NAME)))
 
     def test_with_a_pointer_a_config_still_in_the_home_folder_is_refused(self):
         pm = pm_repo(self)
@@ -68,9 +68,9 @@ class FolderTest(NoPointerCase):
             f.write('{}')
         self.assertEqual(user.locate(self.home).state, user.UNMOVED)
         with self.assertRaises(ConfigError) as got:
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
         self.assertIn(user.MOVE_DOC, str(got.exception))
-        self.assertFalse(os.path.exists(os.path.join(self.home_config_dir(), auth.FOLDER_NAME)))
+        self.assertFalse(os.path.exists(os.path.join(self.home_config_dir(), hubtoken.FOLDER_NAME)))
         self.assertFalse(os.path.exists(os.path.join(pm, user.DIR_NAME)))
 
     def test_with_a_pointer_a_config_folder_that_is_a_file_is_refused(self):
@@ -79,7 +79,7 @@ class FolderTest(NoPointerCase):
             f.write('')
         self.assertEqual(user.locate(self.home).state, user.BAD)
         with self.assertRaises(ConfigError) as got:
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
         self.assertIn('is not a folder', str(got.exception))
         self.assertFalse(os.path.exists(self.home_config_dir()))
 
@@ -89,14 +89,14 @@ class FolderTest(NoPointerCase):
         user.forget()
         self.assertEqual(user.locate(self.home).state, user.BAD)
         with self.assertRaises(ConfigError) as got:
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
         self.assertIn('pointer', str(got.exception))
         self.assertFalse(os.path.exists(self.home_config_dir()))
 
     def test_with_a_pointer_the_folder_is_in_the_pm_repository(self):
         pm = pm_repo(self)
-        self.assertEqual(os.path.normcase(auth.folder(self.home)),
-                         os.path.normcase(os.path.join(pm, user.DIR_NAME, auth.FOLDER_NAME)))
+        self.assertEqual(os.path.normcase(hubtoken.folder(self.home)),
+                         os.path.normcase(os.path.join(pm, user.DIR_NAME, hubtoken.FOLDER_NAME)))
         self.assertFalse(os.path.exists(self.home_config_dir()))
 
 

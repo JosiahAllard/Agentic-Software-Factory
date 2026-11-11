@@ -7,8 +7,8 @@ Nothing here prints, parses arguments or exits.
 
 The submodules: pagecheck (what a published page's HTML may hold: one check, refused whole, never
 stripped) and todosteps (an owner to-do's steps as PowerShell, and the to-do refusals). The
-constants the hub's api, client, tools and MCP server share are below: WAIT_MAX_S, QUESTION_CLASSES,
-AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES.
+constants the hub's api, client, tools and MCP server share are below: BASE, WAIT_MAX_S,
+QUESTION_CLASSES, AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES.
 
   validate(docs, only=None, known_repos=())
                               [Finding] for every document; `only` (a set of "collection/doc_id")
@@ -19,6 +19,7 @@ AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES.
   batch_docs(entries, base)   (docs, findings) from an ArtifactData batch (a list of entries with
                               op, collection, doc_id and a data object or a file_path)
   summary(findings)           "N error(s), M warning(s)"
+  natural(doc_id)             the sort key of a hub id: its digit runs compared as numbers
 
 A Finding is (level, rel, field, code, message). level is `error` (the page would drop or hide
 the data), `warn` (the data is intact but wrong or unreachable) or `note` (a check was skipped).
@@ -50,6 +51,7 @@ STATUSES = {
 }
 # limits and word lists of the hub's api (docs/action-hub.md), read by the api, the client, tools/hub.py
 # and the MCP server
+BASE = '/api/v1'                    # the path every api route is below
 WAIT_MAX_S = 55                     # the longest one GET /wait is held, seconds
 # The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
 # a standing rule (a delegation run line too), the machine, work across repositories, or a
@@ -68,11 +70,19 @@ REF_FIELDS = {'questions': ('refs',), 'inbox': ('ref', 'refs'), 'parked': ('q',)
               'todos': ('refs',), 'to_pm': ('refs',)}
 REPO_COLLECTIONS = ('questions', 'inbox', 'todos', 'to_pm', 'stories', 'parked', 'landings')
 ANY_REPO = ('all', 'pm', '')        # a repo tag that needs no repos/ entry
+_ID_SPLIT = re.compile(r'([0-9]+)')
 _REF = re.compile(r'(?<![A-Za-z0-9])([QMTPS])-\d+(?![A-Za-z0-9])', re.I)
 # a kit plugin export folder (kitlib.pluginsource: <export_dir>/<sha12>, the default export_dir
 # %LOCALAPPDATA%\pm-kit\plugin): a plugin refresh replaces it, so a to-do command naming it goes
 # stale (plugin-path)
 PLUGIN_EXPORT = re.compile(r'(?i)[^\s"\']*?[\\/]plugin[\\/]+[0-9a-f]{12}(?![0-9a-z])')
+
+
+def natural(doc_id):
+    """The sort key of a hub id: text compared case-blind, each run of ASCII digits as a number,
+    so Q-9 sorts before Q-10."""
+    # split on a group: text at the even places, ASCII digits at the odd ones
+    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
 
 
 def _f(level, coll, doc_id, field, code, message):

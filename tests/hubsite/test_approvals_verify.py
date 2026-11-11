@@ -11,7 +11,7 @@ from kitlib import hubvalidate
 from kitlib.hubsite import approvals as ap
 from kitlib.hubsite import serve
 from kitlib.hubsite.api import AGENT
-from kitlib.hubsite.client import Refused
+from kitlib.hubclient.client import Refused
 from tests.gitfixture import TempRepo
 
 KEY = 'k' * 64

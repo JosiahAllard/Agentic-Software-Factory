@@ -1139,7 +1139,7 @@ def pm_crossover_argv(kit, target, name, state_path=None, what_if=False):
 
 
 def make(sources):
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     from kitlib.launcher import settings as lsettings
     home = getattr(sources, 'home', None)
     try:

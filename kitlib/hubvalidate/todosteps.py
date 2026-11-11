@@ -16,6 +16,8 @@ that is not one of OSES; default DEFAULT_OS). A string `run` is the same on ever
 summary(steps, os) -> [line]: what each step does, for the to-do's detail.
 check(fields) -> None: Refused when the agent-written text of a to-do (title, detail, commands,
 run steps) asks for plain Notepad, describes a hand edit in prose, or is coordinator work.
+todo_fields(fields, judge=True) -> fields: a new to-do's fields with its steps made into commands
+and detail (StepError or Refused, the field named), as the hub judges them.
 
 The edit command runs in Windows PowerShell 5.1 as one `& { ... }` block:
 - Text goes in as a readable single-quoted literal, which expands nothing. A text holding a
@@ -373,3 +375,37 @@ def check(fields):
                     if r.search(segment):
                         raise Refused('%s is coordinator work (%s): a coordinator does it, not '
                                       'the owner%s' % (where, what, route), field)
+
+
+# ------------------------------------------------------------------ a to-do's fields
+def todo_fields(b, judge=True):
+    """The fields b of a new to-do with its `steps` made into text: their commands after the
+    given ones, their summary at the end of the detail (or the detail, when there is none), and
+    no `steps` field left. StepError or Refused, the field named: a `commands` that is not a
+    list, a given command holding a lone surrogate, a bad step and, when `judge` (an agent's to-do
+    or edit), text the owner's to-do rules forbid (check). The rules judge the text as given,
+    before any step is rendered: the owner's text is never judged. An `os` field ('windows' by
+    default, or 'linux') names the OS the steps' per-OS commands are for; it is not kept, and an
+    unknown one is refused (field `os`). The caller says it: a machine-OS source is left for a
+    later slice. The hub server (kitlib/hubsite/apitodos.py) and the hub MCP server both call it."""
+    b = dict(b)
+    steps = b.pop('steps', None)
+    os_ = b.pop('os', DEFAULT_OS)
+    commands = b.get('commands')
+    if commands is not None and not isinstance(commands, list):
+        raise StepError('commands must be a list of strings, not %s' % type(commands).__name__,
+                        'commands')
+    for i, c in enumerate(commands or ()):
+        m = _SURROGATE_RE.search(c) if isinstance(c, str) else None
+        if m:
+            raise StepError('commands[%d] holds a lone surrogate (U+%04X) at character %d, half '
+                            'of a character that cannot be written'
+                            % (i, ord(m.group()), m.start()), 'commands')
+    check_os(os_)
+    if judge:
+        check(dict(b, steps=steps))
+    if steps is not None:
+        b['commands'] = list(commands or []) + render(steps, os_)
+        lines = '\n'.join(summary(steps, os_))
+        b['detail'] = (b['detail'].rstrip() + '\n\n' + lines) if b.get('detail') else lines
+    return b

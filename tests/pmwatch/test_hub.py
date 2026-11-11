@@ -6,7 +6,7 @@ import unittest
 
 from kitlib import pmstart
 from kitlib import pmwatch as W
-from kitlib.hubsite import codestale, serve
+from kitlib.hubclient import codestale, errors
 
 
 class Settings(object):
@@ -76,9 +76,7 @@ class HubEventTest(unittest.TestCase):
             self.assertEqual(self.watcher(Client(health)).poll(1.0), [], health)
 
     def test_a_hub_that_is_down_is_no_event_and_no_failure_even_after_three_polls(self):
-        down = [serve.NotRunning(8790), pmstart.NoHubToken()]
-        if hasattr(pmstart, "NoHubPointer"):
-            down.append(pmstart.NoHubPointer())
+        down = [errors.NotRunning(8790), errors.NoHubToken(), errors.NoHubPointer()]
         for err in down:
             w = self.watcher(Client(error=err))
             for n in range(1, 5):
@@ -89,7 +87,7 @@ class HubEventTest(unittest.TestCase):
         c = Client(STALE)
         w = self.watcher(c)
         self.assertEqual(len(w.poll(1.0)), 1)
-        c.health, c.error = None, serve.NotRunning(8790)
+        c.health, c.error = None, errors.NotRunning(8790)
         self.assertEqual(w.poll(2.0), [])
         c.health, c.error = STALE, None
         self.assertEqual(len(w.poll(3.0)), 1)

@@ -13,7 +13,7 @@ NEW = '''
 RETIRED = ('ledger_refs',)
 SCHEMA = {
     'owner_email': Field(Email(), None, 'x'),
-    'hub': Field(Owned('kitlib.hubsite.settings'), None, 'x'),
+    'hub': Field(Owned('kitlib.hubclient.settings'), None, 'x'),
     'plugin': Field(Owned('kitlib.pluginsource'), None, 'x'),
 }
 '''

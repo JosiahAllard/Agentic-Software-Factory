@@ -115,9 +115,10 @@ def duplicates(snap, cmd):
 
 def hub_questions():
     """Every question document on the hub of this machine, read with the agent token
-    (kitlib.hubsite.client, as tools/hub.py reads them). Raises what the client raises
-    (serve.ServeError and its kinds), and ConfigError for a hub config that cannot be read."""
-    from kitlib.hubsite import client, settings
+    (kitlib.hubclient.client, as tools/hub.py reads them). Raises what the client raises
+    (kitlib.hubclient.errors.ServeError and its kinds), and ConfigError for a hub config that
+    cannot be read."""
+    from kitlib.hubclient import client, settings
     return client.Client(settings.load().port).listing('questions', status='all',
                                                          role=client.AGENT)
 
@@ -130,10 +131,10 @@ def answered(snap, cmd, questions=None):
     parked = [r for r in snap.readable if r.get('state') == 'parked' and r.get('q')]
     if not parked:
         return [], []
-    from kitlib.hubsite import serve
+    from kitlib.hubclient import errors
     try:
         docs = (questions or hub_questions)()
-    except (serve.ServeError, ConfigError, OSError, ValueError) as exc:
+    except (errors.ServeError, ConfigError, OSError, ValueError) as exc:
         return [], ['answered questions NOT CHECKED: %s' % ' '.join(str(exc).split())]
     status = {str(d.get('id')): d.get('status') for d in docs or () if isinstance(d, dict)}
     out = []

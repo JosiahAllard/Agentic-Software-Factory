@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubsite import access, api, auth, httpd, serve, tunnel
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubclient import settings as hub_settings
 from kitlib.hubsite import store as hub_store
 from tests.hubsite import access_keys as ak
 from tests.hubsite import httpfix

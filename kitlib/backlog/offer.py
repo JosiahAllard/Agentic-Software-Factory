@@ -736,7 +736,7 @@ def hub_statuses(listing=None, timeout=HUB_TIMEOUT_S):
     gives a collection's documents (default: the hub client, `timeout` seconds a call)."""
     try:
         if listing is None:
-            from kitlib.hubsite import client, settings
+            from kitlib.hubclient import client, settings
             hub = client.Client(settings.load().port, timeout=timeout)
 
             def listing(coll):

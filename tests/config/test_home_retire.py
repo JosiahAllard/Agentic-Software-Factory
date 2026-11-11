@@ -75,10 +75,10 @@ class LocateTest(Case):
                 self.assertIn(left, str(cm.exception))
 
     def test_the_hub_credential_folder_is_refused_too(self):
-        from kitlib.hubsite import auth
+        from kitlib.hubclient import token as hubtoken
         self.leave()
         with self.assertRaises(ConfigError):
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
 
     def test_an_apostrophe_in_the_leftover_path_is_doubled_in_the_remove_command(self):
         home = os.path.join(self.home, "it's")

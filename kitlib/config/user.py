@@ -163,7 +163,7 @@ SCHEMA = {
     'guard_mark_roots': Field(MarkMap(ListOf(MARK_ROOT), what='mark'), None, 'more write-jail roots for the main sessions of one launcher mark, as {mark: [{path, mode, why}]}; a root that is, holds or lies inside the machine config folder is ignored unless it is read-only (docs/guard-jail-roles.md "Write jail")'),
     'guard_rules': Field(MapOf(Enum('deny', 'warn', 'off'), what='rule'), None, 'the guard\'s rule modes, {rule: deny|warn|off}, over the kit defaults (kitlib.guard.modes.DEFAULTS); set here only, never in .kit.json (docs/guard-core.md "Rule modes"); older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'pm_data': Field(Owned('kitlib.pmdata'), None, 'the worktree of the PM data branch: {path, branch, remote} (docs/pm-data-branch.md "Layout")'),
-    'hub': Field(Owned('kitlib.hubsite.settings'), None, 'the Action Hub site settings: port, tunnel_port, store, commit_every_s, push (unset: on only when store is unset and pm_data is set), backlog_refresh_s, access: {team, aud, emails}; unset: every default, and the site still runs; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
+    'hub': Field(Owned('kitlib.hubclient.settings'), None, 'the Action Hub site settings: port, tunnel_port, store, commit_every_s, push (unset: on only when store is unset and pm_data is set), backlog_refresh_s, access: {team, aud, emails}; unset: every default, and the site still runs; older kit copies reject the key; set it only after every folder runs a kit that knows it'),
     'pm_start': Field(Owned('kitlib.pmstart'), None, 'the PM session-start checklist settings (docs/pm-start.md "Config")'),
     'coordinator_start': Field(Owned('kitlib.coordinatorstart'), None, 'the coordinator session-start settings'),
     'pm_watch': Field(Owned('kitlib.pmwatch'), None, 'the PM watcher settings'),
@@ -616,7 +616,7 @@ class Location(collections.namedtuple('Location', 'state path local folder pm pm
     name; UNMOVED, LEFTOVER), else None. `error` why the config cannot be read (UNMOVED,
     LEFTOVER, BAD), else None. `home` the home folder.
 
-    `new` exists only for kitlib.hubsite.auth.folder (the hub's credential folder
+    `new` exists only for kitlib.hubclient.token.folder (the hub's credential folder
     beside it) and the guard's matching hold on that folder (kitlib.guard.rules.hub_secret_folders);
     the hub session removes it: `path` for OK, else the home file."""
 

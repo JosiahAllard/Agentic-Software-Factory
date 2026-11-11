@@ -409,8 +409,10 @@ def hub_jobs(load=None, make_client=None):
     `make_client` as hub_check."""
     try:
         from kitlib import pmstart
+        from kitlib.hubclient import client as hubclient
         port = (load or pmstart.hub_settings)().port
-        health = (make_client or pmstart._hub_client)(port).get("/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+        health = (make_client or hubclient.hub_client)(port).get(
+            "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         jobs = health.get("jobs") if isinstance(health, dict) else None
         return jobs if isinstance(jobs, dict) else None
     except Exception:                       # noqa: BLE001 - a hub we cannot read is a hub that is not up
@@ -521,7 +523,7 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
 def hub_check(load=None, make_client=None):
     """The HUB check for Watcher: check(last) -> (lines, last). Asks the loopback hub server's
     GET health and gives one line, once per stale episode, when its `code` says hub code newer than
-    the running server has landed (kitlib.hubsite.codestale.notice: the owner's restart step).
+    the running server has landed (kitlib.hubclient.codestale.notice: the owner's restart step).
     `last` is True once reported (kept in the state file, so a relaunch does not say it again) and
     None otherwise: a restarted hub, or one that is down, re-arms it. A hub that is down, has no
     token file, or has no pointer to read is no event and no failure; any other error is a failed
@@ -529,13 +531,12 @@ def hub_check(load=None, make_client=None):
     `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
     def check(last):
         from kitlib import pmstart
-        from kitlib.hubsite import codestale, serve
-        down = (pmstart.NoHubToken, serve.NotRunning,
-                getattr(pmstart, "NoHubPointer", pmstart.NoHubToken))
+        from kitlib.hubclient import client as hubclient, codestale, errors
+        down = (errors.NoHubToken, errors.NotRunning, errors.NoHubPointer)
         try:
             port = (load or pmstart.hub_settings)().port
-            health = (make_client or pmstart._hub_client)(port).get(
-                "/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+            health = (make_client or hubclient.hub_client)(port).get(
+                "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         except down:
             return [], None
         text = codestale.notice(health.get("code") if isinstance(health, dict) else None,
@@ -714,8 +715,9 @@ def preload(modules=()):
     import kitlib.launcher.settings
     import kitlib.launcher.usage
     import kitlib.machinesetup.extras
-    import kitlib.hubsite.codestale
-    import kitlib.hubsite.serve
+    import kitlib.hubclient.client
+    import kitlib.hubclient.codestale
+    import kitlib.hubclient.errors
     import kitlib.pluginsource
     import kitlib.pmstart.consoletasks      # kitlib.pluginsource's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)

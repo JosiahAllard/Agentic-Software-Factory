@@ -38,6 +38,7 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | hoststart | `kitlib/hoststart` | feature layer (ARCHITECTURE.md Layers) |
 | hubapprove | `kitlib/hubapprove` | feature layer (ARCHITECTURE.md Layers) |
 | hubbacklog | `kitlib/hubbacklog` | feature layer (ARCHITECTURE.md Layers) |
+| hubclient | `kitlib/hubclient` | feature layer (ARCHITECTURE.md Layers) |
 | hubjobs | `kitlib/hubjobs` | feature layer (ARCHITECTURE.md Layers) |
 | hubmcp | `kitlib/hubmcp` | feature layer (ARCHITECTURE.md Layers) |
 | hubsite | `kitlib/hubsite` | feature layer (ARCHITECTURE.md Layers) |
@@ -235,7 +236,6 @@ None: no module is open to every other.
 | hosts | hostrpc | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hoststart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hubmcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
-| hosts | hubsite | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | hosts | launcher | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | lock | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
@@ -355,7 +355,6 @@ None: no module is open to every other.
 | maintlint | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | maintlint | dailyfull | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| maintlint | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | maintlint | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -556,6 +555,22 @@ None: no module is open to every other.
 | hubapprove | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | hubmcp | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | maintlint | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
+| autotasks | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| backlog | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| commit | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| delegations | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| hosts | hubclient | build | outer layer uses feature layer: allowed as of 2026-11-11 |
+| hubclient | config | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
+| hubclient | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| hubclient | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| hubjobs | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| hubmcp | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| hubsite | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| launcher | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| maintlint | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| pmstart | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| pmwatch | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| tools | hubclient | build | outer layer uses feature layer: allowed as of 2026-11-11 |
 
 ## Ratchets
 
@@ -587,6 +602,7 @@ Crossings counted, not refused; each count is driven down to its goal.
 | guard-build-backlog | guard | backlog | build | 0 | - |
 | guard-build-commit | guard | commit | build | 0 | - |
 | guard-build-delegations | guard | delegations | build | 0 | - |
+| guard-build-hubclient | guard | hubclient | build | 0 | - |
 | guard-build-hubmcp | guard | hubmcp | build | 0 | - |
 | guard-build-hubsite | guard | hubsite | build | 0 | - |
 | guard-build-ledger | guard | ledger | build | 0 | - |

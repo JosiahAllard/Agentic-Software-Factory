@@ -5,7 +5,8 @@ test asks the machine's."""
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import client, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import serve
 from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import page, publish
 
@@ -133,7 +134,7 @@ class Publish(unittest.TestCase):
                 FakeHub.__init__(self)
                 seen.append(port)
         with mock.patch.object(client, 'Client', Fake), \
-                mock.patch('kitlib.hubsite.settings.load', return_value=mock.Mock(port=4321)):
+                mock.patch('kitlib.hubclient.settings.load', return_value=mock.Mock(port=4321)):
             self.assertIsInstance(publish.hub_client(), Fake)
         self.assertEqual(seen, [4321])
 

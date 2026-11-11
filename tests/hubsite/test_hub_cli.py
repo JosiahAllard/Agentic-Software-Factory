@@ -18,9 +18,10 @@ import unittest
 import webbrowser
 from unittest import mock
 
+from kitlib.hubclient import settings as hub_settings
+from kitlib.hubclient import token as hubtoken
 from kitlib.hubsite import approvals, auth, httpd, schema, serve, tunnel
 from kitlib.hubvalidate import todosteps
-from kitlib.hubsite import settings as hub_settings
 from kitlib.hubsite.store import Store, StoreBusy
 from tests.home import machine_config, pm_repo
 from tests.hubsite import httpfix
@@ -76,8 +77,8 @@ class CliCase(unittest.TestCase):
 
     @property
     def tokens(self):
-        """The hub's credential folder for the machine config as it stands now (auth.folder)."""
-        return auth.folder(self.home)
+        """The hub's credential folder for the machine config as it stands now (hubtoken.folder)."""
+        return hubtoken.folder(self.home)
 
     def run_cli(self, *argv, **kw):
         """(exit code, stdout, stderr) of hub.py with these arguments."""

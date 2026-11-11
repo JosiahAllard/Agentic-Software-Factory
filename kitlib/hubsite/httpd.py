@@ -132,11 +132,11 @@ import traceback
 import urllib.parse
 
 from kitlib import platform
+from kitlib.hubclient.localask import JSON, LOOPBACK, VIA_HEADER
 
 from . import api as _api
 from . import auth
 
-LOOPBACK = '127.0.0.1'
 MAX_BODY = 1 << 20              # bytes of one write's body
 MAX_WAITS = 32                  # requests blocked in GET wait at once, per listener
 MAX_CONNECTIONS = 128           # handler threads at once; a connection past it is closed
@@ -148,11 +148,9 @@ ORIGIN_SCHEMES = ('http', 'https')
 LINGER_S = 2                   # reading away what a client still sends after its answer,
 LINGER_BYTES = 4 << 20          # and never more than this much of it
 METHODS = ('GET', 'HEAD', 'POST')
-JSON = 'application/json'
 GZIP_MIN = 1024                 # bytes of a JSON body below which it is never gzipped
 GZIP_LEVEL = 6
 INDEX = 'index.html'
-VIA_HEADER = 'X-Hub-Via'
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's own source: no VIA_HEADER may claim it
 PAIR_ROUTE = _api.BASE + '/pair'    # POST, the owner's token: a one-time link for the browser
 PAIR_PATH = '/pair'                 # GET ?code=...: redeems it and sets the session cookie

@@ -1,4 +1,4 @@
-"""kitlib.hubsite.client against a real Listener on port 0 with a scratch store in a temp
+"""kitlib.hubclient.client against a real Listener on port 0 with a scratch store in a temp
 folder, and against a port nothing listens on. No test sleeps: a wait is asked for 0 seconds or
 is answered at once."""
 import os
@@ -7,7 +7,8 @@ import threading
 import unittest
 
 from kitlib import hubvalidate
-from kitlib.hubsite import api, auth, client, httpd, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import api, auth, httpd, serve
 from tests.hubsite import httpfix
 # a ledger id, built so no file holds a ruling id (tests/scrub)
 RULING = 'R-' + '0007'

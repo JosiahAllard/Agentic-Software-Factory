@@ -8,7 +8,7 @@ import shlex
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import client
+from kitlib.hubclient import client
 from tests.hubsite.test_hub_cli import HUB
 
 

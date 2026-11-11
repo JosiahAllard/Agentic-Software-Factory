@@ -62,7 +62,7 @@ GIVE_UP_S = 900             # past this from the first difference, the stale war
 CHECK_TIMEOUT_S = 120       # the self-check's child python
 RESTART_TIMEOUT_S = 300     # hub.py restart --timeout
 LAUNCH_WAIT_S = RESTART_TIMEOUT_S + 60  # a server still here this long after: the warning shows
-LOG_NAME = 'self-restart.log'   # in the hub's token folder (auth.folder), one attempt each
+LOG_NAME = 'self-restart.log'   # in the hub's token folder (token.folder), one attempt each
 RUNNING = 'Running'
 DETAIL_MAX = 300            # characters of a child's last line in a log line
 
@@ -128,7 +128,7 @@ def task_state():
 
 
 def load_settings():
-    from kitlib.hubsite import settings
+    from kitlib.hubclient import settings
     return settings.load()
 
 
@@ -190,8 +190,9 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
     import shutil
     import tempfile
     from kitlib import hubjobs
-    from kitlib.hubsite import api, auth, serve
-    from kitlib.hubsite import settings as hub_settings
+    from kitlib.hubclient import token as hubtoken
+    from kitlib.hubsite import api, serve
+    from kitlib.hubclient import settings as hub_settings
     kit_root = kit_root or KIT_ROOT
     jobs_folder = os.path.dirname(os.path.abspath(hubjobs.__file__))
     for folder in serve.code_folders():
@@ -225,7 +226,7 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
             if not hub.start():
                 raise SelfCheckError('the scratch hub did not start')
             status, obj = serve.ask(hub.port, 'GET', api.BASE + '/health',
-                                    token=auth.read_token(src.tokens, auth.AGENT))
+                                    token=hubtoken.read_token(src.tokens, hubtoken.AGENT))
             if status != 200 or obj.get('ok') is not True:
                 raise SelfCheckError('the scratch hub answered GET health with %d' % status)
         finally:

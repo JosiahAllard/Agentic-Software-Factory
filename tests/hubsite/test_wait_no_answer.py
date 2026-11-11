@@ -11,7 +11,8 @@ import unittest
 from unittest import mock
 
 from kitlib import hubvalidate
-from kitlib.hubsite import api, client, httpd, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import api, httpd, serve
 from tests.hubsite import httpfix
 
 TURN_S = 0.2

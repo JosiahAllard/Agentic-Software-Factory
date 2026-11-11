@@ -56,28 +56,28 @@ def deploy_note(message):
 
 
 def default_client(timeout=POST_TIMEOUT_S):
-    """The client of this machine's hub (kitlib.hubsite.settings port), waiting `timeout`."""
-    from kitlib.hubsite import client, settings     # here: a landing without the hub still loads
+    """The client of this machine's hub (kitlib.hubclient.settings port), waiting `timeout`."""
+    from kitlib.hubclient import client, settings     # here: a landing without the hub still loads
     return client.Client(settings.load().port, timeout=timeout)
 
 
 def _why(e, timeout):
-    from kitlib.hubsite import client, serve      # here: as default_client
+    from kitlib.hubclient import client, errors      # here: as default_client
     if isinstance(e, KeyboardInterrupt):
         return 'Ctrl+C'
     if isinstance(e, client.Refused) and e.status == 404:
         return 'the hub has no %s route (a hub older than this kit; restart it)' % PATH
-    if isinstance(e, serve.NotRunning):
+    if isinstance(e, errors.NotRunning):
         return 'no hub is running'
-    if isinstance(e, serve.NoAnswer):
+    if isinstance(e, errors.NoAnswer):
         return 'the hub did not answer in %ss' % timeout
     return ' '.join(('%s: %s' % (type(e).__name__, e)).split())
 
 
 def _skips_the_rest(e):
     """True when `e` will fail every later post the same way: no hub is running."""
-    from kitlib.hubsite import serve      # here: as default_client
-    return isinstance(e, serve.NotRunning)
+    from kitlib.hubclient import errors      # here: as default_client
+    return isinstance(e, errors.NotRunning)
 
 
 def _warning(branches, why):

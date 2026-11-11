@@ -11,7 +11,8 @@ import urllib.parse
 from unittest import mock
 
 from kitlib.gate import result
-from kitlib.hubsite import api, apilog, auth, client, landings, schema, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import api, apilog, auth, landings, schema, serve
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import Store
 

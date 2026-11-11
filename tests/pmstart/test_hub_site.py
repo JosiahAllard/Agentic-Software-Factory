@@ -14,8 +14,10 @@ from kitlib import pmdata, pmstart
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 from kitlib.pmstart import fglock
-from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import auth, serve, settings
+from kitlib.hubclient import client as hubclient
+from kitlib.hubclient import errors, settings
+from kitlib.hubclient import token as hubtoken
+from kitlib.hubsite import serve
 from tests.home import machine_config, pm_repo
 from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos, keep_off_session_job
 
@@ -23,7 +25,7 @@ NOW = datetime.datetime(2026, 10, 6, 9, 0)
 FAKES = dict(handoff=HANDOFF_FAKE, reminders={"read": lambda p: "[]"},
              liveness={"read": lambda p: "{}"})
 SET = settings.settings({"port": 4321})
-TOKEN = "secret_token_value_" + "x" * auth.MIN_TOKEN
+TOKEN = "secret_token_value_" + "x" * hubtoken.MIN_TOKEN
 
 
 def setUpModule():
@@ -68,7 +70,7 @@ class HubSiteTest(unittest.TestCase):
         self.assertEqual(c.calls, [])
 
     def test_a_hub_that_says_its_code_is_old_gets_a_warn_line_with_the_owners_restart_step(self):
-        from kitlib.hubsite import codestale
+        from kitlib.hubclient import codestale
         out = site(FakeClient(health={"ok": True, "code": {"stale": True, "restart": "x"}}))
         self.assertEqual(out[0], "hub: server up on port 4321, 0 pending for the PM")
         self.assertEqual(out[1], "hub: WARN " + codestale.text(pmstart.HUB_TOOL))
@@ -173,7 +175,7 @@ class HubSiteTest(unittest.TestCase):
             self.assertEqual(out, ["hub: server did not answer as the hub does (%s)" % type(err).__name__])
 
     def test_no_pm_repo_pointer_names_the_pointer_not_a_hub_that_did_not_answer(self):
-        with mock.patch.object(auth, "folder", side_effect=ConfigError(auth.NO_POINTER)):
+        with mock.patch.object(hubtoken, "folder", side_effect=ConfigError(hubtoken.NO_POINTER)):
             out = pmstart.hub_site(load=lambda: SET)
         self.assertEqual(len(out), 1)
         self.assertIn("no PM repo pointer is set", out[0])
@@ -267,21 +269,21 @@ class HubSiteTest(unittest.TestCase):
 
     def test_no_token_file_is_its_own_line_naming_setup(self):
         def no_token(port):
-            raise pmstart.NoHubToken()
+            raise errors.NoHubToken()
         out = pmstart.hub_site(load=lambda: SET, make_client=no_token)
         self.assertEqual(out, ['hub: no hub token file is there to read: run python "%s" setup'
                                % pmstart.HUB_TOOL])
 
     def test_the_real_client_maker_gives_no_token_when_no_file_is_there(self):
-        with tempfile.TemporaryDirectory() as d, mock.patch.object(auth, "folder", lambda: d):
-            with self.assertRaises(pmstart.NoHubToken):
-                pmstart._hub_client(4321)
-            out = pmstart.hub_site(load=lambda: SET, make_client=pmstart._hub_client)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(hubtoken, "folder", lambda: d):
+            with self.assertRaises(errors.NoHubToken):
+                hubclient.hub_client(4321)
+            out = pmstart.hub_site(load=lambda: SET, make_client=hubclient.hub_client)
             self.assertEqual(out, ['hub: no hub token file is there to read: run python "%s" setup'
                                    % pmstart.HUB_TOOL])
-            with open(os.path.join(d, auth.AGENT_FILE), "w") as f:
+            with open(os.path.join(d, hubtoken.AGENT_FILE), "w") as f:
                 f.write(TOKEN)
-            self.assertEqual(pmstart._hub_client(4321).port, 4321)
+            self.assertEqual(hubclient.hub_client(4321).port, 4321)
 
     def test_a_pending_answer_whose_items_are_not_a_list_is_zero_pending(self):
         for bad in ({"a": 1}, "abc", 7, None):
@@ -297,8 +299,8 @@ class HubSiteTest(unittest.TestCase):
     def test_each_ask_has_a_short_timeout(self):
         c = FakeClient()
         site(c)
-        self.assertEqual([t for _, t in c.calls], [pmstart.HUB_SITE_TIMEOUT_S] * 2)
-        self.assertLessEqual(pmstart.HUB_SITE_TIMEOUT_S, 2)
+        self.assertEqual([t for _, t in c.calls], [hubclient.HUB_SITE_TIMEOUT_S] * 2)
+        self.assertLessEqual(hubclient.HUB_SITE_TIMEOUT_S, 2)
 
     def test_the_real_client_gets_the_timeout_and_no_token_reaches_a_line(self):
         asked = []
@@ -307,16 +309,16 @@ class HubSiteTest(unittest.TestCase):
             asked.append((port, method, path, token, timeout))
             return 200, {"ok": True, "items": []}
         with tempfile.TemporaryDirectory() as d:
-            with open(os.path.join(d, auth.AGENT_FILE), "w") as f:
+            with open(os.path.join(d, hubtoken.AGENT_FILE), "w") as f:
                 f.write(TOKEN)
             made = pmstart.hub_site(
                 load=lambda: SET,
                 make_client=lambda port: hubclient.Client(
-                    port, tokens=d, timeout=pmstart.HUB_SITE_TIMEOUT_S, ask=ask))
+                    port, tokens=d, timeout=hubclient.HUB_SITE_TIMEOUT_S, ask=ask))
         self.assertTrue(asked)
         self.assertIn("/api/v1/pending?for=pm", [a[2] for a in asked])   # the PM's items only
         self.assertTrue(all(a[3] == TOKEN for a in asked))      # the token was sent, never shown
-        self.assertTrue(all(a[4] == pmstart.HUB_SITE_TIMEOUT_S and a[0] == 4321 for a in asked))
+        self.assertTrue(all(a[4] == hubclient.HUB_SITE_TIMEOUT_S and a[0] == 4321 for a in asked))
         self.assertNotIn(TOKEN, "\n".join(made))
         self.assertNotIn("@", "\n".join(made))
 
@@ -529,7 +531,7 @@ class FiledDigestTest(unittest.TestCase):
         text = since.isoformat(timespec="seconds")
         self.assertEqual(c.queries,
                          [{"status": "filed", "since": text}, {"status": "done", "since": text}])
-        self.assertEqual(c.calls, [("/questions", pmstart.HUB_SITE_TIMEOUT_S)] * 2)
+        self.assertEqual(c.calls, [("/questions", hubclient.HUB_SITE_TIMEOUT_S)] * 2)
         self.assertEqual(self.held(), {"at": AT.isoformat(timespec="seconds")})
 
     def test_the_next_start_counts_from_the_stamp_the_last_one_wrote(self):
@@ -616,7 +618,7 @@ class FiledDigestTest(unittest.TestCase):
         self.assertEqual(out[0], "hub: server up on port 4321, 0 pending for the PM")
         self.assertEqual(out[1], self.line(1, AT - pmstart.FILED_FALLBACK))
         self.assertIn("push", out[2])
-        self.assertEqual([t for _, t in c.calls], [pmstart.HUB_SITE_TIMEOUT_S] * 4)
+        self.assertEqual([t for _, t in c.calls], [hubclient.HUB_SITE_TIMEOUT_S] * 4)
         bare = FiledClient(filed(AT))
         self.assertEqual(len(site(bare)), 2)
         self.assertNotIn("/questions", [p for p, _ in bare.calls])

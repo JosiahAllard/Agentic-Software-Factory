@@ -14,6 +14,7 @@ from unittest import mock
 from kitlib import hubmcp, hubvalidate
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import server as srv
+from kitlib.hubclient import token as hubtoken
 from kitlib.hubsite import api, approvals, auth, serve
 from kitlib.hubvalidate import pagecheck, todosteps
 from tests.gitfixture import TempRepo
@@ -133,12 +134,12 @@ class Pinned(Case):
 
     def test_no_tool_reads_the_owner_token(self):
         roles = []
-        real = auth.read_token
+        real = hubtoken.read_token
 
         def read(folder, role):
             roles.append(role)
             return real(folder, role)
-        with mock.patch.object(auth, "read_token", read):
+        with mock.patch.object(hubtoken, "read_token", read):
             s = self.server()
             for name in PINNED:
                 s.call(name, {"id": "T-1"})

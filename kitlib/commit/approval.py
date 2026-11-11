@@ -120,11 +120,11 @@ def _err(e):
 
 def hub_client(given):
     """(client, None), or (None, why): `given` when not None, else a client of the machine's hub
-    (kitlib.hubsite.settings)."""
+    (kitlib.hubclient.settings)."""
     if given is not None:
         return given, None
     try:
-        from kitlib.hubsite import client as hubclient, settings
+        from kitlib.hubclient import client as hubclient, settings
         return hubclient.Client(settings.load().port), None
     except Exception as e:          # noqa: BLE001 - no client is no approval
         return None, 'the hub could not be asked (%s)' % _err(e)

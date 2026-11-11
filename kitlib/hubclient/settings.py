@@ -1,4 +1,4 @@
-"""kitlib.hubsite.settings: the hub site's machine settings, the machine config's `hub` key.
+"""kitlib.hubclient.settings: the hub site's machine settings, the machine config's `hub` key.
 
   load(environ=None, home=None)    the machine's Settings; every default when the key is absent
   settings(obj, pm_data, where)    the checked Settings of one `hub` object (None: every default)

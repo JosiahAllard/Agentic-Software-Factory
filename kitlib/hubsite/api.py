@@ -192,7 +192,7 @@ from .apibase import (  # noqa: F401 - re-exported: callers and tests read these
     NOT_LOCK_WRITER, WRITES_WHY, STATUS, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
     AGENT_FROM, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
-    _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
+    _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via, _reason, _timeout,
     _one_of, _SEGMENT, SEGMENT_SAYS, _record_view, _agent_from, _session_from)
 from .apipark import (  # noqa: F401 - re-exported: callers and tests read these off api

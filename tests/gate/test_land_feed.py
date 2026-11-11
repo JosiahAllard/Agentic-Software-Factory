@@ -7,7 +7,8 @@ import unittest
 
 from kitlib import gate as G
 from kitlib.gate import result, runner
-from kitlib.hubsite import client, landings, serve
+from kitlib.hubclient import client
+from kitlib.hubsite import landings, serve
 from kitlib.records import gate_ok
 
 from tests.gate.test_land import BRANCH, LandCase

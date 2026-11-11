@@ -104,7 +104,7 @@ def fail(msg, code=1):
 
 
 def hub_client():
-    from kitlib.hubsite import client, settings
+    from kitlib.hubclient import client, settings
     return client.Client(settings.load().port)
 
 

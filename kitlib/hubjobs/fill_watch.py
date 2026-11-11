@@ -193,7 +193,7 @@ def is_coordinator(key, entry):
 
 
 def nudge_text(key, free, ids, reason=None):
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     shown = coord_restart.shown_ids([push.field(i) for i in ids])
     lines = ['[hub push] fill: %d free, %d startable: %s route:%s'
              % (free, len(ids), shown, push.field(key))]
@@ -206,7 +206,7 @@ def nudge_text(key, free, ids, reason=None):
 def pull_text(key, pulled, skipped):
     """The push of an auto-pull: `pulled` [(id, branch)] and `skipped` [(id, code)], ids,
     branches and codes only (each cut to a header field; a branch part by part)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     shown = ', '.join('%s as %s' % (push.field(rid), '/'.join(push.field(p) for p in b.split('/')))
                       for rid, b in pulled)
     lines = ['[hub push] fill: pulled %s route:%s' % (shown or 'none', push.field(key))]
@@ -218,7 +218,7 @@ def pull_text(key, pulled, skipped):
 def waits_text(key, rows):
     """The push of the waits notices: `rows` [(id, priority, live pull id, its priority, its
     branch)], ids, priorities and branches only (each cut to a header field)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     lines = ['[hub push] waits: %d record(s) wait on a lower live pull route:%s'
              % (len(rows), push.field(key))]
     lines.extend('p%s %s waits on p%s pull %s on %s (lands first)'
@@ -289,9 +289,9 @@ def live_names():
 
 
 def told_states():
-    """The kitlib.hubsite.push Sent states that count as told: written and uncertain (push is
+    """The kitlib.hubclient.push Sent states that count as told: written and uncertain (push is
     imported here, at run time, as usage_crossover.make does)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     return (push.WRITTEN, push.UNCERTAIN)
 
 
@@ -745,7 +745,7 @@ class FillWatch(object):
         """The waits notices of `key` (module docstring): a pair first seen is one push, told
         once written or uncertain; one still there WAITS_PM_AFTER_S after first sight is one
         `fill` event to the PM. A read that raises BacklogUnread keeps the pairs as they were."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         try:
             rows = self.waits(key, entry)
         except coord_restart.BacklogUnread as e:
@@ -784,7 +784,7 @@ class FillWatch(object):
         """Stages 3 and 5 for a key already nudged this episode (module docstring): PULL_AFTER_S
         into it, a stand-down tells the PM once; with none the hub pulls once, the mark written
         before the pull, and slots it left free tell the PM once."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         e = told[key]
         since = e['since']
         if now - since < PULL_AFTER_S or ctx.stop.is_set():
@@ -852,7 +852,7 @@ class FillWatch(object):
         A session started after it is a new one (a `launch.py start` or a coord-restart wake writes
         no check-in), so None; a start or an `at` that cannot be read keeps it pending. `handoff
         unread` when the records cannot be read (read once per run), else None."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         if self._hands is _UNSET:
             try:
                 self._hands = self.handoffs()

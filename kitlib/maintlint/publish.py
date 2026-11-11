@@ -14,7 +14,7 @@ so a body the server would refuse is never sent. A hub that is not running, cann
 refuses is a NOT CHECKED note, never an error. Nothing here prints or exits.
 """
 from kitlib.config import ConfigError
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors
 from kitlib.hubvalidate import pagecheck
 
 FROM = 'maint-lint'
@@ -26,8 +26,8 @@ def page_id(repo):
 
 
 def hub_client():
-    """The hub client of this machine (kitlib.hubsite.client, as tools/hub.py builds it)."""
-    from kitlib.hubsite import client, settings
+    """The hub client of this machine (kitlib.hubclient.client, as tools/hub.py builds it)."""
+    from kitlib.hubclient import client, settings
     return client.Client(settings.load().port)
 
 
@@ -50,7 +50,7 @@ def publish(res, html, client=None):
     why = pagecheck.check(html)
     if why:
         return None, [_note('the page check refuses the page: %s' % why)]
-    from kitlib.hubsite import client as cmod
+    from kitlib.hubclient import client as cmod
     doc_id = page_id(repo)
     try:
         hub = client if client is not None else hub_client()
@@ -65,7 +65,7 @@ def publish(res, html, client=None):
         if pin is not None:
             body['if_version'] = pin
         got = hub.post('/pages', cmod.AGENT, body)
-    except (serve.ServeError, ConfigError, OSError) as e:
+    except (errors.ServeError, ConfigError, OSError) as e:
         return None, [_note(e)]
     version = got.get('version') if isinstance(got, dict) else None
     return ('PUBLISHED %s%s' % (doc_id, ' v%s' % version if version else ''),

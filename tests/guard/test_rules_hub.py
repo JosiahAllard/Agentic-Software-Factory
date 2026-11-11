@@ -1133,13 +1133,14 @@ class Browser(Hub):
 class Plumbing(unittest.TestCase):
     def test_the_guard_constants_are_the_hub_sites(self):
         from kitlib.guard import hub
-        from kitlib.hubsite import auth, settings
-        self.assertEqual(hub.FOLDER_NAME, auth.FOLDER_NAME)
-        self.assertEqual((hub.OWNER_FILE, hub.AGENT_FILE), (auth.OWNER_FILE, auth.AGENT_FILE))
+        from kitlib.hubclient import settings
+        from kitlib.hubclient import token as hubtoken
+        self.assertEqual(hub.FOLDER_NAME, hubtoken.FOLDER_NAME)
+        self.assertEqual((hub.OWNER_FILE, hub.AGENT_FILE), (hubtoken.OWNER_FILE, hubtoken.AGENT_FILE))
         self.assertEqual(hub.STORE_DIR, settings.STORE_DIR)
         self.assertEqual((hub.PORT, hub.TUNNEL_PORT), (settings.PORT, settings.TUNNEL_PORT))
         self.assertEqual(hub.secret_folder(os.path.join('C:\\', 'h', '.pm-kit', 'config.json')),
-                         os.path.join('C:\\', 'h', '.pm-kit', auth.FOLDER_NAME))
+                         os.path.join('C:\\', 'h', '.pm-kit', hubtoken.FOLDER_NAME))
 
     def test_the_claude_adapter_passes_mcp_input(self):
         a = action(event('mcp__claude-in-chrome__navigate', {'url': 'http://x/'}, 'C:\\w'))

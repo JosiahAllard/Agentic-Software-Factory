@@ -20,7 +20,7 @@ from kitlib.delegations import place
 from kitlib.delegations import run as drun
 from kitlib.delegations import schema
 from kitlib.hubsite import approvals as hubapprovals
-from kitlib.hubsite import client as hubclient
+from kitlib.hubclient import client as hubclient
 from kitlib.hubsite import push as hubpush
 from kitlib.hubsite import serve as hubserve
 from kitlib.ledger import write as lwrite

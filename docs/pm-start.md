@@ -15,10 +15,10 @@ work, an owner answer or an approval, adding a `--prompt` that names the reply's
 A PM that still runs but has lost its Remote Control link (an outage; the web app no longer lists it) is relaunched with `launch.py pm-relaunch --name <new>`: a fork of its conversation under the new name, the old session told to stand down, its window closed by the owner (docs/launcher.md "PM relaunch"). After a relaunch the PM runs under that new name, which coordinators.json's `pm_name` holds: every session the launcher starts afterwards is told that name first in its first message (`start.pm_ref`), and the roles message the PM session their start context names, else `Project Manager` or `pm-session`. A session started before the relaunch keeps the old names: the owner tells a long-running coordinator the new name, or recycles it. The hub's PM delivery finds the fork by its session id.
 
 Hub (`kitlib.pmstart` `hub_site`; docs/action-hub.md): the
-lines read the machine config's `hub` key (`kitlib.hubsite.settings`), or every default (port 8790)
+lines read the machine config's `hub` key (`kitlib.hubclient.settings`), or every default (port 8790)
 when there is no `hub` key. The check only asks the loopback server on `hub.port`, through
-`kitlib.hubsite.client`; it starts no process and never starts the server, and it imports
-`kitlib.hubsite.serve` only once the settings are read. Each ask (`GET /api/v1/health`,
+`kitlib.hubclient.client`; it starts no process and never starts the server, and it imports
+no server module (`kitlib/hubsite/`). Each ask (`GET /api/v1/health`,
 then `GET /api/v1/pending?for=pm`, then the filed answers' two, "Filed answers") waits at most `HUB_SITE_TIMEOUT_S` (1.5 seconds). The pending
 ask is the PM's items only, the list `hub.py pending --for pm` prints: an item routed to a creator
 that can still be reached is that session's to ack, and a PM ack would hide it from the creator's

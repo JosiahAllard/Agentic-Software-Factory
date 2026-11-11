@@ -381,9 +381,12 @@ def _live_changes(ctx, holding, branch, ours=None):
             return changes, ['NOTE: code main %s does not resolve here; branch diffs not '
                              'compared' % base], unknown
         refnames = _ref_names(ctx, ', '.join(sorted(names)))
-        mine = _branch_tips(ctx, ours, refnames)[0] if ours else []
     except (Failure, Usage) as exc:
         return changes, notes, dict((name, exc) for name in names)
+    try:
+        mine = _branch_tips(ctx, ours, refnames)[0] if ours else []
+    except (Failure, Usage):
+        mine = []       # the refinement only: every diff is then measured from the code main
     for name in sorted(names):
         try:
             changes[name] = _one_branch(ctx, name, refnames, base, sha, notes,
@@ -413,7 +416,8 @@ def _one_branch(ctx, name, refnames, base, sha, notes, ours=None):
     """`[(label, paths)]` for one live branch of `_live_changes`, its NOTEs added to `notes`.
     `ours` is the caller's branch tip: when its merge base with the live branch is newer than the
     code main's (both cut from a shared commit off the main), the diff starts there, so what both
-    inherited is no change of the live branch's."""
+    inherited is no change of the live branch's. A git that cannot answer that second question
+    leaves the diff at the code main's merge base (more hits, never fewer), unlike the first."""
     out = []
     tips, note = _branch_tips(ctx, name, refnames)
     if note:
@@ -469,13 +473,17 @@ def _live_reader(ctx, holding, own, diffs=None):
     """`live()` -> `(changes, notes, unknown)` of `_live_changes` for the live pulls of another
     branch than `own` (any letter case), read from git on the first call only. `diffs`, a list
     two checks share (current_offer), caches every live branch's diff, `own`'s too, and each
-    reader leaves its own branch out of it; without it only the other branches are diffed."""
+    reader leaves its own branch out of it; without it only the other branches are diffed. A
+    cached read is the one made for the same `own` (its fourth member): the offer without a
+    branch (`own` None) is measured from the code main, never from a branch's merge base."""
     seen = [] if diffs is None else diffs
 
     def live():
-        if not seen:
-            seen.append(_live_changes(ctx, holding, own if diffs is None else None, own))
-        changes, notes, unknown = seen[0]
+        read = next((r for r in seen if r[3] == own), None)
+        if read is None:
+            read = _live_changes(ctx, holding, own if diffs is None else None, own) + (own,)
+            seen.append(read)
+        changes, notes, unknown = read[:3]
         if diffs is not None and own:
             mine = own.lower()
             changes = dict((k, v) for k, v in changes.items() if k.lower() != mine)

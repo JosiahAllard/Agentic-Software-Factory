@@ -88,6 +88,47 @@ class SharedBaseOffMain(_Branches):
         self.assertEqual(self.hits(),
                          ['kitlib/x/shared.py vs kitlib/x/shared.py (changed on kit/holder)'])
 
+    def test_the_main_checkouts_offer_is_not_read_from_a_worktrees_cache(self):
+        self.other('kitlib/y/own.py')
+        self.seed(held('HOLD', HOLDER, 'docs/held.md'), held('MINE', BRANCH, 'docs/mine.md'),
+                  priced('FOO', scope='kitlib/x/shared.py'))
+        snap, diffs = self.store.load(), []
+        holding = plan_narrow.current_offer(snap, self.ctx, BRANCH, diffs=diffs)[2]   # worktree's
+        why = plan_narrow._offer_folds(self.ctx, holding, None, diffs)(snap.get('FOO'))
+        self.assertIn(HOLDER, why or '')        # measured from the code main, as `next` does
+
+    def test_our_own_branch_is_never_measured_from_itself_in_any_letter_case(self):
+        self.other('kitlib/y/own.py')
+        holding = self.holding + [parse('MINE', id='MINE', state='pulled', pulled_at=TODAY,
+                                        pulled_by=BRANCH, scope='docs/mine.md')]
+        changes = plan_narrow._live_changes(self.ctx, holding, None, BRANCH.upper())[0]
+        self.assertIn('kitlib/x/shared.py', changes[BRANCH][0][1])
+        self.assertNotIn('kitlib/x/shared.py', changes[HOLDER][0][1])
+
+    def test_a_git_that_cannot_find_the_second_merge_base_keeps_the_code_mains(self):
+        self.other('kitlib/y/own.py')
+        real, ours = refs.merge_base, self.repo.git('rev-parse', 'refs/heads/' + BRANCH)
+
+        def merge_base(a, b, cwd):
+            return (None, 'boom') if a == ours else real(a, b, cwd)
+        with mock.patch.object(plan_narrow.refs, 'merge_base', merge_base):
+            self.assertEqual(self.hits(),
+                             ['kitlib/x/shared.py vs kitlib/x/shared.py (changed on kit/holder)'])
+
+    def test_an_unreadable_own_tip_only_drops_the_refinement(self):
+        self.other('kitlib/y/own.py')
+        real = plan_narrow._branch_tips
+
+        def tips(ctx, branch, names):
+            if branch == BRANCH:
+                raise Failure('cannot read branch')
+            return real(ctx, branch, names)
+        with mock.patch.object(plan_narrow, '_branch_tips', tips):
+            changes, _notes, unknown = plan_narrow._live_changes(self.ctx, self.holding, None,
+                                                                 BRANCH)
+        self.assertEqual(unknown, {})
+        self.assertIn('kitlib/x/shared.py', changes[HOLDER][0][1])
+
     def test_without_our_branch_the_diff_starts_at_the_code_main(self):
         self.other('kitlib/y/own.py')
         changes = plan_narrow._live_changes(self.ctx, self.holding, None)[0]
@@ -345,13 +386,13 @@ class NextFold(_Branches):
         real, reads = plan_narrow._live_changes, []
 
         def live_changes(*args):
-            reads.append(args[2])
+            reads.append(args[3])       # `ours`: one read per way of measuring
             return real(*args)
         with mock.patch.object(plan_narrow, '_live_changes', live_changes):
             _offers, _passed, _holding, also, _notes = plan_narrow.current_offer(self.store.load(),
                                                                                  self.ctx)
         self.assertEqual([r.id for r in also], ['R2'])
-        self.assertEqual(reads, [None])
+        self.assertEqual(reads, [HOLDER, None])
 
     def test_the_callers_own_branch_diff_never_passes_over(self):
         self.branch_with(BRANCH, 'kitlib/own/b.py', existing=True)

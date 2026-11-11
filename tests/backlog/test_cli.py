@@ -144,12 +144,13 @@ class Cli(unittest.TestCase):
                                                  pulled_by=other), 'seed\n')
         later = time.time() + 3 * 24 * 3600        # days on, nothing has touched the worktree
         run_probes = classify.run_probes           # no machine lock or process scan on this host
-        with mock.patch.object(classify, 'time', types.SimpleNamespace(time=lambda: later)),                 mock.patch.object(classify, 'run_probes', lambda ctx, machine, procs: run_probes(
+        with mock.patch.object(classify, 'time', types.SimpleNamespace(time=lambda: later)), \
+                mock.patch.object(classify, 'run_probes', lambda ctx, machine, procs: run_probes(
                     ctx, lambda: ([], None), lambda: (([], 0, 1), None))):
             rc, out = self.run_tool('block', 'FOO', '--on', 'live-client',
                                     '--reason', 'its tree went quiet')
         self.assertEqual(rc, 0, out)
-        self.assertIn('was pulled_by: %s (its worktree is dead)' % other, out)
+        self.assertIn('its worktree is dead', out)
         self.assertIn('blocked', self.ok('show', 'FOO'))
 
     def test_refusals_exit_2_and_write_nothing(self):

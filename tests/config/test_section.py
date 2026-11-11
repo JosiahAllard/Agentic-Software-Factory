@@ -43,6 +43,13 @@ class SectionTest(unittest.TestCase):
                     pmconfig.section('k', self.path)
                 self.assertIn(self.path, str(cm.exception))
 
+    def test_a_file_that_cannot_be_read_is_a_config_error(self):
+        os.makedirs(self.path)          # an OSError that is not FileNotFoundError
+        for read in (lambda: pmconfig.section('k', self.path), lambda: pmconfig.machine_config(self.path)):
+            with self.assertRaises(ConfigError) as cm:
+                read()
+            self.assertIn(self.path, str(cm.exception))
+
     def test_the_three_readers_follow_it(self):
         self.put('{bad')
         for read in (pmconfig.load_config, coordinatorstart.load_config, pmwatch.load_config,

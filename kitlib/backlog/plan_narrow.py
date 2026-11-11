@@ -228,7 +228,8 @@ def current_offer(snap, ctx, branch=None, seeds=(), whys=None, diffs=None):
         # The fold check `next` runs in the main checkout (no own branch, so the branch's own
         # diff counts too): `also` must be exactly that offer, or a record the main checkout
         # offers because a higher one folds into this branch would be refused here. The diffs
-        # are read once for both offers (`diffs`).
+        # are read once per way of measuring (`diffs`, `_live_reader`): the branch's offer from
+        # its own merge base, this one from the code main's.
         result, refusals, _ranks = omod.next_offer(snap, holding, cap=ctx.cap,
                                                    session=ctx.session,
                                                    unmet=ctx.unmet(snap),
@@ -353,7 +354,7 @@ def _code_main(ctx):
     return base, sha
 
 
-def _live_changes(ctx, holding, branch):
+def _live_changes(ctx, holding, branch, ours=None):
     """`(changes, notes, unknown)` for the fold-in guard (docs/backlog.md, "The fold-in guard"):
     `changes` is `{name: [(label, paths)]}`, the paths each live pull's branch in `holding`
     changed since its merge base with the code main, the caller's `branch` (any letter case) and
@@ -364,7 +365,9 @@ def _live_changes(ctx, holding, branch):
     last fetched, with a NOTE, as `add` does (`_branch_tips`); one neither here nor on a remote
     is noted, not compared. `unknown` is `{name: error}` for each branch git could not answer
     for (a ref it cannot read, a merge base it cannot find, a diff it cannot run: the Failure,
-    or the Usage of `_spelling`); nothing is raised, so `pull` raises it and `next` passes over."""
+    or the Usage of `_spelling`); nothing is raised, so `pull` raises it and `next` passes over.
+    `ours`, a branch name, measures each diff from the newer of the merge bases with the code
+    main and with `ours` (`_one_branch`); `branch` only leaves a branch out."""
     names = []
     for other in holding:
         name = other.get('pulled_by') or ''
@@ -381,9 +384,15 @@ def _live_changes(ctx, holding, branch):
         refnames = _ref_names(ctx, ', '.join(sorted(names)))
     except (Failure, Usage) as exc:
         return changes, notes, dict((name, exc) for name in names)
+    try:
+        mine = _branch_tips(ctx, ours, refnames)[0] if ours else []
+    except (Failure, Usage):
+        mine = []       # the refinement only: every diff is then measured from the code main
     for name in sorted(names):
         try:
-            changes[name] = _one_branch(ctx, name, refnames, base, sha, notes)
+            changes[name] = _one_branch(ctx, name, refnames, base, sha, notes,
+                                        mine[0][1] if mine and name.lower() != ours.lower()
+                                        else None)
         except (Failure, Usage) as exc:
             unknown[name] = exc
     return changes, notes, unknown
@@ -404,8 +413,12 @@ def live_dirty(ctx, holding, changes):
     return out
 
 
-def _one_branch(ctx, name, refnames, base, sha, notes):
-    """`[(label, paths)]` for one live branch of `_live_changes`, its NOTEs added to `notes`."""
+def _one_branch(ctx, name, refnames, base, sha, notes, ours=None):
+    """`[(label, paths)]` for one live branch of `_live_changes`, its NOTEs added to `notes`.
+    `ours` is the caller's branch tip: when its merge base with the live branch is newer than the
+    code main's (both cut from a shared commit off the main), the diff starts there, so what both
+    inherited is no change of the live branch's. A git that cannot answer that second question
+    leaves the diff at the code main's merge base (more hits, never fewer), unlike the first."""
     out = []
     tips, note = _branch_tips(ctx, name, refnames)
     if note:
@@ -421,6 +434,10 @@ def _one_branch(ctx, name, refnames, base, sha, notes):
             notes.append('NOTE: code main %s shares no history with %s; set '
                          'backlog.code_main; branch diffs not compared' % (base, label))
             continue
+        if ours:
+            mb2, _why = refs.merge_base(ours, tip, ctx.root)
+            if mb2 and mb2 != mb and refs.is_ancestor(mb, mb2, ctx.root)[0]:
+                mb = mb2
         out.append((label, _branch_changes(ctx, label, tip, (base, sha), mb)))
     return out
 
@@ -447,7 +464,7 @@ def _pull_fold_hits(ctx, scopes, holding, branch, diffs=None):
     if diffs and not diffs[0][1]:
         changes, notes, unknown = _live_reader(ctx, holding, branch, diffs)()
     else:
-        changes, notes, unknown = _live_changes(ctx, holding, branch)
+        changes, notes, unknown = _live_changes(ctx, holding, branch, branch)
     for name in sorted(unknown):
         raise unknown[name]
     return _change_hits(scopes, changes, shared_of(ctx)), notes
@@ -457,13 +474,17 @@ def _live_reader(ctx, holding, own, diffs=None):
     """`live()` -> `(changes, notes, unknown)` of `_live_changes` for the live pulls of another
     branch than `own` (any letter case), read from git on the first call only. `diffs`, a list
     two checks share (current_offer), caches every live branch's diff, `own`'s too, and each
-    reader leaves its own branch out of it; without it only the other branches are diffed."""
+    reader leaves its own branch out of it; without it only the other branches are diffed. A
+    cached read is the one made for the same `own` (its fourth member): the offer without a
+    branch (`own` None) is measured from the code main, never from a branch's merge base."""
     seen = [] if diffs is None else diffs
 
     def live():
-        if not seen:
-            seen.append(_live_changes(ctx, holding, own if diffs is None else None))
-        changes, notes, unknown = seen[0]
+        read = next((r for r in seen if r[3] == own), None)
+        if read is None:
+            read = _live_changes(ctx, holding, own if diffs is None else None, own) + (own,)
+            seen.append(read)
+        changes, notes, unknown = read[:3]
         if diffs is not None and own:
             mine = own.lower()
             changes = dict((k, v) for k, v in changes.items() if k.lower() != mine)

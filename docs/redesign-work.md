@@ -83,9 +83,9 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 
 **W-005 One package for scheduled tasks: `schedtask`**
 - Serves: "Layers" (base: `schedtask`); docs/modules/base-design.md.
-- Files: `kitlib/launcher/pythonw.py` (whole), `kitlib/worktree/task.py` (`CARRIER`, `NOT_THE_STORE_ALIAS`, `PYTHONW_IS`, `quoted`, `AT`, `argument`, `description`), `kitlib/pmstart/consoletasks.py` (`read_tasks`, `xml_input`, `words`), `kitlib/machinesetup/extras.py` (`Host`, `pythonw`, the register and delete helpers); importers `kitlib/machinesetup/{agenttemp,extras,procwatch,worktreesweep}.py`, `kitlib/hubsite/autostart.py:28-30`, `kitlib/pluginsource/__init__.py:738,1572,1632`, `kitlib/pmwatch/__init__.py:716,720`, `kitlib/pmstart/__init__.py:1067`.
-- Change: those helpers become `kitlib/schedtask/`, over `platform`'s scheduler primitives. `worktree/task.py` keeps only the sweep task's own name and command; `pmstart/consoletasks.py` keeps only the check.
-- Done when: `kitlib/launcher/pythonw.py` is gone; `grep -rnE "worktree\.task|worktree import task" kitlib/machinesetup kitlib/pmstart` prints nothing; `grep -rnE "machinesetup|launcher" kitlib/schedtask` prints nothing; `tests/schedtask` passes.
+- Files: `kitlib/launcher/pythonw.py` (whole), `kitlib/worktree/task.py` (`NOT_THE_STORE_ALIAS`, `PYTHONW_IS`, `quoted`; `AT`, `argument` and `description` stay), `kitlib/pmstart/consoletasks.py` (`read_tasks`, `xml_input`, `words`), `kitlib/machinesetup/extras.py` (`Host`, `pythonw`, the register and delete helpers); importers `kitlib/machinesetup/{agenttemp,extras,procwatch,worktreesweep}.py`, `kitlib/hubsite/autostart.py:28-30`, `kitlib/pluginsource/__init__.py:738,1572,1632`, `kitlib/pmwatch/__init__.py:716,720`, `kitlib/pmstart/__init__.py:1067`.
+- Change: those helpers become `kitlib/schedtask/`, over `platform`'s scheduler primitives. `worktree/task.py` keeps only the sweep task's own name, schedule and command; `pmstart/consoletasks.py` keeps only the check.
+- Done when: `kitlib/launcher/pythonw.py` is gone; `grep -rnE "worktree\.task import .*(NOT_THE_STORE_ALIAS|PYTHONW_IS|quoted|CARRIER|SINGLE_QUOTES)" kitlib` prints nothing; `grep -rnE "machinesetup|launcher" kitlib/schedtask` prints nothing; `tests/schedtask` passes.
 - Risk and tier: Medium. strong-worker. After: W-006.
 
 **W-006 `proc.list_processes`**
@@ -185,7 +185,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Serves: docs/modules/sessions-design.md.
 - Files: `kitlib/pmstart/__init__.py:504-605` (`STORE_DIR`, `rc_name`, `cli_names`, `runs_cli`, `linux_clis`, `runs_a_cli`, `session_images`, `live_session_names`, `down_entries`, to `kitlib/launcher/lookup.py`); `kitlib/pluginsource/claude.py` and `machinesetup`'s `dedupe`, `default_config_dirs` (to `kitlib/launcher/accounts.py`); `kitlib/launcher/relaunch.py:45` (push words from `hubclient`); `kitlib/launcher/autostart.py` (deleted: its task is retired; `TASK_NAME`, `LINUX_JOB`, `in_worktree` go to their one reader). Importers: `hubjobs/{coord_restart,usage_crossover}.py`, `coordinatorstart`, `pmwatch`, `machinesetup/{__init__,extras,plugin,inventory}.py`, `hubsite/autostart.py:30`, `platform/linux/schedule.py`, `pmstart/consoletasks.py:29`, `tools/launch.py`.
 - Done when: `ls kitlib/launcher/autostart.py kitlib/pluginsource/claude.py` both fail; `grep -rnE "kitlib\.pmstart|import pmstart|from \.\.pmstart" kitlib/launcher kitlib/backlog kitlib/pluginsource` prints nothing.
-- Risk and tier: Medium. strong-worker. After: W-006, W-014.
+- Risk and tier: Medium. strong-worker. After: W-005, W-006, W-014.
 
 **W-020 `pluginsource` reaches nothing above it and is split by responsibility**
 - Serves: "Layers" (services: `pluginsource`), "Dependency rules" 7; docs/modules/install-design.md.

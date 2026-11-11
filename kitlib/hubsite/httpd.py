@@ -107,8 +107,12 @@ Accept-Encoding either way; GET snapshot is several megabytes and compresses to 
 A static file and a smaller answer go as they are.
 
 log(level, text). level is 'access' (one line a request: client address, method, path, status,
-role) or 'error'. The path is logged without its query, and no header is ever logged, so a line
-holds no token, no cookie and no pairing code. With no `log` nothing is written anywhere.
+role), 'error', or 'slow': one line for a request that took SLOW_S seconds or longer from its
+read to its answer's send, a counted wait excepted, as `slow <method> <path> <seconds>s`
+(kitlib.hubsite.serve keeps it for the local listener only and adds the backlog timer's
+state). The path is logged without its query, and no header is ever
+logged, so a line holds no token, no cookie and no pairing code. With no `log` nothing is
+written anywhere (kitlib.hubsite.hublog files the 'error', 'note' and 'slow' lines).
 
 Static files. Only a regular file below static_dir whose every path segment is plain (letters,
 digits, `_`, `-`, `.`, not starting with a dot) and whose extension is in CONTENT_TYPES. The
@@ -150,6 +154,8 @@ LINGER_BYTES = 4 << 20          # and never more than this much of it
 METHODS = ('GET', 'HEAD', 'POST')
 GZIP_MIN = 1024                 # bytes of a JSON body below which it is never gzipped
 GZIP_LEVEL = 6
+SLOW_S = 2.0                    # a request that took this long or longer is a 'slow' line
+_clock = time.monotonic         # what a request's time is read from (a test's seam)
 INDEX = 'index.html'
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's own source: no VIA_HEADER may claim it
 PAIR_ROUTE = _api.BASE + '/pair'    # POST, the owner's token: a one-time link for the browser
@@ -203,10 +209,11 @@ class Request(object):
     step; a gate sees them empty. `reply_headers` ((name, value) pairs) is what the gate adds to
     whatever answer the request gets, refusals too; they go before the answer's own headers, so
     a header the answer sets as well (a route's Set-Cookie) comes last and wins. `strong` starts
-    False; only a gate sets it (module docstring, step 1)."""
+    False; only a gate sets it (module docstring, step 1). `waited` is True once the request
+    took a wait slot (a GET wait: it is slow by design, so it is no 'slow' line)."""
 
     __slots__ = ('method', 'target', 'path', 'query_text', 'query', 'headers', 'client', 'port',
-                 'role', 'via', 'body', 'reply_headers', 'strong')
+                 'role', 'via', 'body', 'reply_headers', 'strong', 'waited')
 
     def __init__(self, method, target, headers, client='', port=None):
         self.method = method
@@ -221,6 +228,7 @@ class Request(object):
         self.body = None
         self.reply_headers = ()
         self.strong = False
+        self.waited = False
 
     def header(self, name):
         """The header's value when it was sent exactly once, else None."""
@@ -582,6 +590,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._unread = bool(self.headers.get_all('Content-Length')
                             or self.headers.get_all('Transfer-Encoding'))
         listener._enter()
+        began = _clock()
         try:
             try:
                 response = self._answer(listener, request)
@@ -594,6 +603,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._finish(response, request)
         finally:
             listener._leave()
+            listener._slow(request, _clock() - began)
         if self._unread:
             self._hang_up(listener)
 
@@ -779,6 +789,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return refusal(429, BUSY, 'this server already holds its %d waits: ask again in a '
                            'moment' % listener.max_waits, 'wait',
                            (('Retry-After', str(RETRY_AFTER_S)),))
+        request.waited = waits
         # agent_words is passed only by a listener made with it, and strong only for a request
         # its gate marked, so the local listener's call is the one it always was
         words = {'agent_words': True} if listener.agent_words else {}
@@ -923,6 +934,16 @@ class Listener(object):
             self._on_origin(origin_host, host)
         except Exception:           # noqa: BLE001 - a note that fails must not fail a request
             pass
+
+    def _slow(self, request, took):
+        """The 'slow' line of a request that took SLOW_S seconds or longer, counted from its
+        read to its answer's send; a counted wait is slow by design and is no such line. It
+        names the method, the path without its query and the seconds (kitlib.hubsite.serve
+        adds the backlog timer's state for the local listener)."""
+        if took < SLOW_S or request.waited:
+            return
+        self._say('slow', 'slow %s %s %.2fs' % (
+            _shown(request.method, 20), _shown(request.path), took))
 
     def _say(self, level, text):
         if self._log is None:

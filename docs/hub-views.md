@@ -68,12 +68,13 @@ Never stored; read from their sources (`kitlib.hubsite.derived`, `kitlib.hubsite
 - backlog and completed: each repository's backlog store (`.kit.json` backlog.store), every open record
   and every record closed in the last 90 days, fetched every `hub.backlog_refresh_s`. Parked is the
   backlog items whose state is parked. A repository's folder is `pm_start.repo_paths[name]`, else the PM
-  repository's sibling. While that timer runs, `GET /api/v1/snapshot` (the page's load) answers these two
-  from what the timer's reads left, however old, and starts no git. A repository the first round has not
-  reached shows with error "not read yet"; before any read the snapshot lists the view in `unavailable` as
-  `NotReadYet`, which the page shows as "The backlog view is unavailable: NotReadYet". `GET
-  /api/v1/backlog?fresh=1` runs a fetch round and reads live. With no timer (`backlog_refresh_s` unset) the
-  snapshot reads as the routes do.
+  repository's sibling. `GET /api/v1/snapshot` (the page's load) answers these two from what the reads so
+  far left (the timer's rounds and the routes' reads), however old, and starts no git, whether or not the
+  timer runs. A repository no read has reached shows with error "not read yet"; before any read the
+  snapshot lists the view in `unavailable` as `NotReadYet`, which the page shows as "The backlog view is
+  unavailable: NotReadYet". `GET /api/v1/backlog?fresh=1` runs a fetch round and reads live. A timer that
+  stopped (`backlog_refresh_s` unset, or its thread ended) leaves the snapshot on the last reads; GET
+  health says so as `backlog_timer_running: false` (docs/hub-serving.md "Serving it").
 - usage: `launch.py usage` (docs/launcher.md "Usage").
 - agents: the rendered agent definitions of the host the server runs for (`<host shell>/agents`,
   `servesources.agents_dir`).

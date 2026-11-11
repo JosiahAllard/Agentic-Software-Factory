@@ -78,7 +78,9 @@ the strong owner; the code is redeemed on the local listener), and no Host rule,
 with httpd's agent_words), so none names the store folder; the local listener's rules are what
 they were with no tunnel, and it never reads the Access header.
 
-The log. `log(level, text)` gets the listeners' lines (httpd: 'access', 'error'), the tunnel
+The log. `log(level, text)` gets the listeners' lines (httpd: 'access', 'error', and the local
+listener's 'slow', to which _local_line adds whether the backlog timer runs; _tunnel_line drops
+the tunnel listener's, which would time the remote network), the tunnel
 gate's ('note' or 'error' for a request it refused, at most one a reason a minute:
 kitlib.hubsite.tunnel), the tunnel listener's 'error' tunnel.HOST_LINE for a write refused
 because its Origin host is not its Host (httpd's origin_refused, tunnel.host_note: at most one
@@ -252,7 +254,8 @@ def _make_tunnel(settings, sources, api, notes, log):
     (a key source's maker may put a setting in it), and health carries TUNNEL_FAILED."""
     try:
         # through the module, never a name bound at import: a test replaces tunnel.start
-        lis = tunnel.start(settings, api, static_dir=sources.static_dir, log=log,
+        lis = tunnel.start(settings, api, static_dir=sources.static_dir,
+                           log=None if log is None else functools.partial(_tunnel_line, log),
                            keys=sources.access_keys, now=sources.access_now)
     except tunnel.TunnelConfigError as e:
         if not e.unset:
@@ -351,6 +354,28 @@ def _push_line(log, text):
         pass
 
 
+def _local_line(log, timer, level, text):
+    """The local listener's log: httpd's 'slow' line gains ` timer=running`, `stopped`, or `-`
+    with no backlog timer (`timer`: the backlog's timer_running, or None); every other line is
+    passed on as it is."""
+    if level == 'slow':
+        state = '-'
+        if callable(timer):
+            try:
+                state = 'running' if timer() else 'stopped'
+            except Exception:       # noqa: BLE001 - a log line must not fail a request
+                state = '?'
+        text = '%s timer=%s' % (text, state)
+    log(level, text)
+
+
+def _tunnel_line(log, level, text):
+    """The tunnel's log: every line but httpd's 'slow', which would time the remote client's
+    network, not the hub."""
+    if level != 'slow':
+        log(level, text)
+
+
 def build(settings, sources, log=None):
     """The Hub for `settings` (kitlib.hubclient.settings.Settings) from `sources` (a Sources):
     module docstring, "Start-up". Nothing is started; close() the Hub to release the store.
@@ -397,7 +422,8 @@ def build(settings, sources, log=None):
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,
-                                   log=log)
+                                   log=None if log is None else functools.partial(
+                                       _local_line, log, getattr(views_b, 'timer_running', None)))
         except httpd.BindRefused as e:
             raise ServeError('%s: is a hub server running already?' % e)
         listeners.append(local)

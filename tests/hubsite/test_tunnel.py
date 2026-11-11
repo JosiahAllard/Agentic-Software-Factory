@@ -984,14 +984,26 @@ class TunnelHealthTest(TunnelCase):
                                         'git': 'failed', 'tunnel': 'on'}, failed)
         self.assertNoSecret(self.good)
 
+    def test_only_the_local_listener_logs_a_slow_request(self):
+        """A tunnel request's time includes the remote client's network: it is no 'slow' line."""
+        from tests.hubsite.test_httpd import StepClock
+        took = httpd.SLOW_S + 1
+        with mock.patch.object(httpd, '_clock', StepClock(took)):
+            self.assertEqual(self.ask('GET', HEALTH, token=self.good).status, 200)
+            self.assertEqual(get(self.lport, HEALTH, self.owner).status, 200)
+            self.assertIs(self.hub.close(), True)       # every handler has ended
+        self.assertEqual([text for level, text in self.lines if level == 'slow'],
+                         ['slow GET %s %.2fs timer=-' % (HEALTH, took)])
+
     def test_the_local_listeners_health_is_what_it_was(self):
         self.sync.state.update(failed='push', detail=GIT_WHY)
         store = os.path.abspath(self.settings.store)
         status, obj = self.hub.api.call('GET', HEALTH, auth.OWNER)
         self.assertEqual(status, 200)
         self.assertEqual(sorted(obj), ['backlog', 'backlog_at', 'backlog_error', 'backlog_timer',
-                                       'code', 'git', 'jobs', 'ok', 'push', 'revision', 'store',
-                                       'unavailable', 'version', 'watcher'])
+                                       'backlog_timer_running', 'code', 'git', 'jobs', 'ok',
+                                       'push', 'revision', 'store', 'unavailable', 'version',
+                                       'watcher'])
         # byte for byte: the Api's own answer, git's reason for the owner, and `tunnel` last
         obj['git']['detail'] = GIT_WHY
         obj['tunnel'] = 'on'

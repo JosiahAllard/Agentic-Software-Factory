@@ -1,11 +1,12 @@
-"""GET snapshot never waits on git for the backlog views while the backlog timer runs.
+"""GET snapshot never waits on git for the backlog views, whether or not the backlog timer runs.
 
 The page's only load is GET snapshot. It used to read every repository's backlog store in the
-request thread (backlog.Views.get), so a busy machine left the page blank. With the timer running
-the snapshot's backlog and completed views answer from what the timer's reads left
-(backlog.Views.held) and start no git; with nothing read yet both are `unavailable`. With no timer
-running a snapshot reads as before. The stand-in opener here blocks until the test releases it,
-so a snapshot that reads git in its own thread is caught as one that does not answer."""
+request thread (backlog.Views.get), so a busy machine left the page blank. The snapshot's backlog
+and completed views answer from what the reads so far left (backlog.Views.held) and start no
+git; with nothing read yet both are `unavailable`. A timer that is not running (none configured,
+or its thread died) changes none of that, and health says it is not running. The stand-in opener
+here blocks until the test releases it, so a snapshot that reads git in its own thread is caught
+as one that does not answer."""
 import datetime
 import os
 import shutil
@@ -204,20 +205,87 @@ class WithTimer(SnapshotCase):
                          [(roots['alpha'], False, threading.current_thread().name)] * 2)
 
 
+class Dies(Pause):
+    """The timer's pause, ending its thread the way only a BaseException can: the timer is dead
+    after its first round, once the test sets `die`."""
+
+    def __init__(self):
+        Pause.__init__(self)
+        self.die = threading.Event()
+
+    def __call__(self, stop, seconds):
+        self.rounds.release()
+        self.die.wait(WAIT)
+        raise SystemExit()
+
+
+def fails(stop, seconds):
+    """The timer's pause, raising an ordinary error: the timer must live on."""
+    raise RuntimeError('the pause failed')
+
+
+class Fallback(Pause):
+    """Stands in for backlog.event_wait, the pause the timer makes again after its own pause
+    raised: `seen` is the timer's timer_error and whether its thread ran, read in that pause
+    (after the failure was noted and before the next round could clear it)."""
+
+    def __init__(self, views_b):
+        Pause.__init__(self)
+        self.views_b = views_b
+        self.seen = []
+
+    def __call__(self, stop, seconds):
+        self.seen.append((self.views_b.timer_error, self.views_b.timer_running()))
+        return Pause.__call__(self, stop, seconds)
+
+
 class WithoutTimer(SnapshotCase):
 
-    def test_with_no_timer_configured_the_snapshot_reads_the_backlog_itself(self):
-        roots = self.build(['alpha'], refresh_s=None)
+    def test_with_no_timer_running_the_snapshot_reads_no_git(self):
+        self.build(['alpha'], refresh_s=None)
         self.assertFalse(self.views_b.start())
-        snap = self.snapshot(WAIT)
-        self.assertFilled(snap, 'alpha')
+        snap = self.snapshot()
+        self.assertEqual(snap['unavailable']['backlog'], serveviews.NotReadYet.__name__)
         self.assertQuestions(snap)
-        self.assertEqual([c[:2] for c in self.opener.outside_timer()], [(roots['alpha'], False)])
+        self.assertEqual(self.opener.calls, [])             # no git, in any thread
+        # a route's read is held, and the next snapshot answers from it
+        status, obj = self.api.call('GET', api.BASE + '/backlog', api.AGENT)
+        self.assertEqual(status, 200, obj)
+        calls = list(self.opener.calls)
+        self.assertFilled(self.snapshot(), 'alpha')
+        self.assertEqual(self.opener.calls, calls)
+        self.assertIs(self.views.health()['backlog_timer_running'], False)
 
-    def test_a_timer_configured_but_not_running_reads_as_a_server_with_none(self):
-        self.build(['alpha'])                       # refresh_s set; start() never called
-        self.assertFilled(self.snapshot(WAIT), 'alpha')
-        self.assertEqual(len(self.opener.outside_timer()), 1)
+    def test_a_dead_timer_leaves_the_snapshot_held_and_health_says_so(self):
+        self.build(['alpha'], reuse_s=0)            # nothing held is ever "recent"
+        self.pause = self.views_b.wait = Dies()
+        serveviews._follow_rounds(self.views_b, self.views)
+        self.assertIs(self.views.health()['backlog_timer_running'], False)    # not started
+        self.assertTrue(self.views_b.start())
+        self.assertTrue(self.pause.rounds.acquire(timeout=WAIT))
+        self.assertIs(self.views.health()['backlog_timer_running'], True)
+        self.pause.die.set()
+        self.views_b._thread.join(WAIT)
+        self.assertFalse(self.views_b.timer_running())
+        calls = list(self.opener.calls)
+        for _ in range(2):
+            self.assertFilled(self.snapshot(), 'alpha')
+        self.assertEqual(self.opener.calls, calls)          # the snapshot read no git
+        h = self.views.health()
+        self.assertIs(h['backlog_timer_running'], False)
+        self.assertIsNotNone(h['backlog_at'])               # what the last round read stays
+
+    def test_a_pause_that_raises_is_a_timer_error_and_the_timer_lives(self):
+        self.build(['alpha'])
+        self.views_b.wait = fails
+        fallback = Fallback(self.views_b)
+        patcher = mock.patch.object(backlog, 'event_wait', fallback)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.assertTrue(self.views_b.start())
+        self.assertTrue(fallback.rounds.acquire(timeout=WAIT))
+        self.assertEqual(fallback.seen, [('RuntimeError', True)])
+        self.assertIs(self.views.health()['backlog_timer_running'], True)
 
     def test_held_answers_none_before_any_read(self):
         self.build(['alpha'], refresh_s=None)

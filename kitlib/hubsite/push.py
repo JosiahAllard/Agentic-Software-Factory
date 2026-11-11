@@ -186,7 +186,7 @@ from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
 from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
 from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
-from kitlib.hubsite import store
+from kitlib.hubsite import hublog, store
 from kitlib.hubsite.store import HubError
 
 AMBIGUOUS, GAVE_UP = 'ambiguous', 'gave-up'
@@ -1352,15 +1352,9 @@ class PushWorker(object):
                 'kind': entry['kind'], 'id': field(entry['id']), 'status': field(entry['status']),
                 'recipient': field(recipient), 'name': field(name) if name else None,
                 'attempt': attempt, 'reason': reason}
-        path = os.path.join(self.folder, UNDELIVERED)
         try:
-            if os.path.getsize(path) >= LOG_MAX:
-                os.replace(path, path + '.1')
-        except OSError:
-            pass
-        try:
-            with open(path, 'a', encoding='utf-8', newline='\n') as f:
-                f.write(json.dumps(line, sort_keys=True) + '\n')
+            hublog.append(os.path.join(self.folder, UNDELIVERED), json.dumps(line, sort_keys=True),
+                          LOG_MAX)
         except OSError as e:
             self.log('push: could not write %s: %s' % (UNDELIVERED, e))
 

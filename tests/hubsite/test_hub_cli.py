@@ -23,7 +23,7 @@ from kitlib.hubclient import token as hubtoken
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubclient import localask
 from kitlib.config.types import ConfigError
-from kitlib.hubsite import access, control
+from kitlib.hubsite import access, control, hublog
 from kitlib.hubsite import api as hub_api
 from kitlib.hubsite import autostart as hub_autostart
 from kitlib.hubsite.cli import common as cli_common
@@ -621,6 +621,48 @@ class ServePriorityCase(CliCase):
         self.assertEqual(code, 0)
         self.assertEqual(err, 'NOTE: %s\n' % cli_server.PRIORITY_FAILED)
         self.assertEqual(out.splitlines()[-1], cli_server.CLOSED)
+
+
+class HubLogCase(CliCase):
+    """serve files its error, note and slow lines in hub.log in the token folder, and prints
+    them as before; a scratch store's run files nothing (kitlib.hubsite.hublog)."""
+
+    def hub_log(self):
+        return os.path.join(self.tokens, hublog.LOG_NAME)
+
+    def test_the_machines_serve_files_its_notes_in_hub_log_and_prints_them(self):
+        self.store_dir = os.path.join(self.home, 'live-store')
+        self.config({'hub': {'store': self.store_dir}})
+        self.priority.return_value = 'failed'           # one NOTE line every run gives
+        self.assertEqual(self.run_cli('setup')[0], 0)   # the token folder, as on the machine
+        real = serve.build
+
+        def build(settings, sources, log=None):         # no git sync, no push: nothing leaves
+            sources.push = sources.sync = None
+            return real(settings, sources, log=log)
+
+        stop = threading.Event()
+        stop.set()
+        with mock.patch.object(serve, 'build', build):
+            code, out, err = self.run_cli('serve', '--port', '0', stop=stop)
+        self.assertEqual(code, 0, err)
+        self.assertIn('NOTE: %s\n' % cli_server.PRIORITY_FAILED, err)
+        with open(self.hub_log(), encoding='utf-8') as f:
+            filed = f.read().splitlines()
+        self.assertIn(' NOTE ' + cli_server.PRIORITY_FAILED, [ln[25:] for ln in filed])
+        for ln in filed:                                # `<UTC ISO time> <LEVEL> <text>`
+            self.assertRegex(ln, r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00 (ERROR|NOTE|SLOW) ')
+
+    def test_a_scratch_store_run_writes_no_hub_log(self):
+        self.priority.return_value = 'failed'
+        self.assertEqual(self.run_cli('setup')[0], 0)   # a token folder the line could go to
+        stop = threading.Event()
+        stop.set()
+        code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
+                                      stop=stop)
+        self.assertEqual((code, err), (0, 'NOTE: %s\n' % cli_server.PRIORITY_FAILED))
+        self.assertTrue(os.path.isdir(self.tokens))
+        self.assertFalse(os.path.exists(self.hub_log()))
 
 
 class PushCase(CliCase):

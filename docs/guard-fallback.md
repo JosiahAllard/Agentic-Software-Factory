@@ -106,7 +106,7 @@ The guard reads the command line, not the shell's state:
 
 ## Lock MCP
 
-The lock MCP server ships read-only (docs/lock-mcp.md "No write tools"); its owner-only write names are retired (`kitlib.lockmcp.OWNER_ONLY`) and stay refused here, for a server started from an older release.
+The lock MCP server ships read-only (docs/lock-mcp.md "No write tools"); its owner-only write names are retired (`kitlib.lock.names.OWNER_ONLY`) and stay refused here, for a server started from an older release.
 
 - **Which tools:** a tool named `<prefix><owner-only tool>` is caught, so is any `mcp__*__<owner-only tool>`, and so is any full name listed in the user config `guard_mcp_tools`.
 - **Prefix:** the default is the asking host's: its `hosts.json` profile `mcp_tool_format` with the kit plugin (`kitlib.host.registry.PLUGIN_NAME`) and the lock server's name filled in (`rules.host_mcp_prefix`; the same text as `kitlib.lockmcp.tool_prefix()`), and "any other server name" is the tail after the format's server separator (`__`). The Claude one is INFERRED from Claude Code's plugin MCP naming; no real PreToolUse payload has been captured, as the server is not installed. The user config `guard_mcp_prefix` replaces it and `guard_mcp_tools` adds names, so an observed name goes in config, not code (tests/guard/test_session.py `LockMcpByMark`).

@@ -1065,20 +1065,20 @@ class HubMcp(Hub):
                 self.allowed(self.call(tool))
 
     def test_the_list_is_the_servers(self):
-        # the guard's list of owner-only hub tools is the server's own
+        # the guard's list of owner-only hub tools is the server's own (hubmcp re-exports it)
         from kitlib import hubmcp
         from kitlib.guard import hub
         self.assertEqual(set(hub.OWNER_MCP_TOOLS), set(hubmcp.OWNER_ONLY))
 
     def test_the_guard_does_not_load_the_server(self):
-        # a fresh interpreter: loading the guard's rules imports kitlib.hubmcp's names only
+        # a fresh interpreter: loading the guard's rules imports neither package (the names are kitlib.hubvalidate's)
         code = ('import sys; import kitlib.guard.rules; '
                 'print(sorted(m for m in sys.modules if m.startswith(("kitlib.hubmcp", "kitlib.hubsite"))))')
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         out = subprocess.run([sys.executable, '-I', '-c', 'import sys; sys.path.insert(0, %r); %s' % (root, code)],
                              capture_output=True, text=True, timeout=60)
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(out.stdout.strip(), "['kitlib.hubmcp']")
+        self.assertEqual(out.stdout.strip(), "[]")
 
 
 # ---------------------------------------------------------------- hub-browser

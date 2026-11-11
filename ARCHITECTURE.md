@@ -17,7 +17,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 
 ## Layers
 
-`kitlib/` holds all logic, one package per module, in six layers. A package imports only packages in the layers below it, and in its own layer only the ones its row names. Entry points sit on top and hold no logic. The module map (`docs/module-map.json`) is these tables as data; the "Design" column names the low-level design, `docs/modules/<name>-design.md`.
+`kitlib/` holds all logic, one package per module, in six layers; the entry points are a seventh on top and hold no logic. A package imports only packages in the layers below it, and in its own layer only the ones its row names. The module map (`docs/module-map.json`) is these tables as data, each module's layer and Same layer names included (`tests/modulemap/test_kit_map.py` holds the two in step); the "Design" column names the low-level design, `docs/modules/<name>-design.md`.
 
 **1. Base** knows the operating system and nothing of repositories, hosts or kit features.
 
@@ -29,7 +29,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 | `schedtask` | The kit's scheduled tasks on either OS: the interpreter a task runs, its command line, register, read, remove. | `platform`, `proc` | base |
 | `mcpwire`, `hostrpc` | The stdio JSON-RPC wires the MCP servers and the host adapters share. | - | base |
 | `verdict` | One judgement rule for a tool that runs a tool and prints its verdict. | - | base |
-| root files | `clock` (time fences), `ident` (bounded ids), `kitroot` (where this kit is); `__init__` installs the console guard and nothing else. | `platform`, `proc` | base |
+| `kitlib-root` | The loose files at the top of `kitlib/`: `clock` (time fences), `ident` (bounded ids), `kitroot` (where this kit is); `__init__` installs the console guard and nothing else. | `platform`, `proc` | base |
 
 **2. Facts** say which repository, which host and what is configured. They read; they change nothing but their own files.
 
@@ -92,15 +92,26 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 
 | Package | Owns | Same layer | Design |
 |---|---|---|---|
-| `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, the PM-data branch. | `machinesetup` uses `stackskill` | install |
-| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | each uses the ones before it, and `machinesetup`, `autotasks` | sessions |
+| `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, the PM-data branch. | `machinesetup` uses `stackskill`, `autotasks` | install |
+| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | `pmwatch` uses `machinesetup`, `autotasks`; `pmstart` uses `pmwatch`, `machinesetup`, `autotasks`; `coordinatorstart` uses `pmwatch`, `pmstart`, `machinesetup`, `autotasks`; `hoststart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `machinesetup`, `autotasks`; `agentstart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `machinesetup`, `autotasks` | sessions |
 | `autotasks` | The automatic tasks the hub schedules. | - | hub |
 | `maintlint` | The maintenance lint. | - | checks |
 | `redfirst` | Red-first evidence runs. | - | tests |
 | `hubbacklog`, `hubsite`, `hubjobs` | The Action Hub server: store, API, listeners, push, backlog views, timed jobs. | `hubsite` uses `hubbacklog`, `autotasks`, `maintlint`, `pmwatch`; `hubjobs` uses `hubsite`, `pmwatch` | hub |
 | `hubmcp`, `lockmcp`, `blendermcp` | The MCP servers: the hub's API, the lock's read tools, a booked headless Blender. | - | hub, lock, extras |
 
-**Entry points** (`tools/`, `boot/`, `mcp/`, `githooks/`, `reserve_ui.pyw`): parse arguments, call the library, print, exit. Paths and exit codes stay stable. **Hosts** (`hosts/<name>/`): one adapter and one shell per AI host. **Optional** (`optional/`): installed on demand; the core never imports it. The complete lists: `python <kit>/tools/codemap.py` and `python <kit>/tools/doc_index.py --tools`.
+**7. Entry points** parse arguments, call the library, print, exit. Paths and exit codes stay stable. Nothing in `kitlib` imports one.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `tools` | The `tools/` command lines; `tools/_host.py` is the one place a tool imports a host adapter. | `hosts` | - |
+| `boot` | `boot/hook.py`, the one hook entry of every host, and `boot/kitboot.py`, the check every host entry runs first. | - | host |
+| `mcp` | The MCP server entry scripts: hub, lock, Blender. | - | hub, lock, extras |
+| `githooks-dir` | The top-level `githooks/` folder: the pre-push and pre-commit hooks. | - | content |
+| `hosts` | `hosts/<name>/`: one adapter and one shell per AI host. | - | host |
+| `opt-agenttemp`, `opt-bridge`, `opt-comfy`, `opt-loadnode`, `opt-procwatch`, `opt-usage` | The `optional/<name>` programs, installed on demand; the core never imports one. | - | extras |
+
+`reserve_ui.pyw` is an entry point too; the map holds it in `(root)`. The complete lists: `python <kit>/tools/codemap.py` and `python <kit>/tools/doc_index.py --tools`.
 
 ## Dependency rules
 

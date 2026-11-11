@@ -113,13 +113,13 @@ def _sweep(ctx, apply, now, machine, idle_s, procs, environ):
     if deferred:
         ctx.say('deferred  %s: no marked worktree is abandoned' % deferred)
     else:
-        deferred = stale_pass(ctx, apply, now, held, idle_s, data['base'], counts)
+        deferred = _stale_pass(ctx, apply, now, held, idle_s, data['base'], counts)
     ctx.say('summary   %s%s' % (', '.join('%s %d' % kv for kv in counts.items()),
                                 ', deferred' if deferred else ''))
     return REFUSED if counts['failed'] or deferred else OK
 
 
-def stale_pass(ctx, apply, now, held, idle_s, base, counts):
+def _stale_pass(ctx, apply, now, held, idle_s, base, counts):
     """Abandon each UNLANDED tree whose stale mark holds (the owner's rule), then end_marks; adds
     to `counts`. Landed trees are classify's: never acted on here. Returns why it deferred (a
     landing lock taken during it), else None."""

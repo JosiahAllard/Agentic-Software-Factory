@@ -16,7 +16,7 @@ from unittest import mock
 from kitlib import kitroot
 from kitlib.config import user
 from kitlib.git import defaults as gitdefaults
-from kitlib.worktree import nightly, sweep
+from kitlib.worktree import nightly, remove, sweep
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.worktree.test_classify import ClassifyCase
@@ -83,6 +83,29 @@ class Sweep(SweepCase):
             text = f.read()
         self.assertIn('removed   %s' % path, text)
         self.assertTrue(text.endswith('exit      0\n\n'), text)
+
+    def test_a_failed_remove_logs_every_line_of_the_remove_path(self):
+        """The `intact` (or `DESTROYED`) line after git's error is what the owner acts on after an
+        unattended run: the log carries it, not only the first `failed` line."""
+        path = self.landed('stuck')
+        real = remove.git
+
+        def fake(cwd, *args, **kw):
+            if args[:2] == ('worktree', 'remove'):
+                return 1, '', 'error: cannot remove: Permission denied'
+            return real(cwd, *args, **kw)
+        with mock.patch.object(remove, 'git', fake):
+            rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 1, out)
+        self.assertIn('failed    %s: A, plain remove' % path, out)
+        log = os.path.join(self.logs, '%s-worktree-sweep.log' % gitdefaults.repo_name(self.repo))
+        with open(log, encoding='utf-8') as f:
+            text = f.read()
+        self.assertIn('    failed    git worktree remove exited 1: error: cannot remove:'
+                      ' Permission denied', text)
+        self.assertIn('      intact   the worktree is still registered; nothing was destroyed', text)
+        self.assertTrue(os.path.isdir(path))
+        self.assertIn('kit/stuck', self.branches())
 
     def test_the_sweep_fetches_the_base(self):
         path = self.workstream('remote')

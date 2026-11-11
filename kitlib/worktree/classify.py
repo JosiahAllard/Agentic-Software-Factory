@@ -677,6 +677,11 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
                 ctx.say('would     %s %s: %s' % (result[6:], row['path'], row['apply']['why']))
             else:
                 ctx.say('%-9s %s: %s' % (result, row['path'], row['apply']['why']))
+            if result == 'failed':
+                # Every line the remove path said (git's error, `intact` or `DESTROYED`, the
+                # holders): after an unattended run the log is all the owner has to act on.
+                for line in row['apply']['lines']:
+                    ctx.say('    %s' % line)
     for klass in CLASSES:
         if act is not None and klass in ACTED:
             continue

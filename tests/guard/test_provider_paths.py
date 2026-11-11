@@ -228,7 +228,7 @@ class NativePrograms(unittest.TestCase):
 
     def test_native_writer_outside_the_roots(self):
         # a provider word the guard cannot place, run in a folder outside every repository: judged
-        # as a bash target it cannot place there is, so it passes (docs/guard-v2.md B16, cut)
+        # as a bash target it cannot place there is, so it passes (docs/guard-fallback.md "Weakened checks, by row" B16, cut)
         text = 'cd "%s"; xcopy a env:FOO' % W.fwd(self.w.plain)
         self.assertIsNone(self.decide(text, self.w.wt), text)
 

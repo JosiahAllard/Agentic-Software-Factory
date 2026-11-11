@@ -44,4 +44,4 @@ A test for package `x` goes in `tests/x/`. A test that must always run, or a pat
 
 ## Reference
 
-docs/test-tools.md, docs/redfirst.md, docs/flaky-tests.md, docs/daily-full.md.
+docs/test-tools.md, docs/redfirst.md, docs/daily-full.md.

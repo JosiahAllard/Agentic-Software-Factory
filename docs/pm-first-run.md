@@ -18,8 +18,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    `python tools/kit_tests.py --full`.
    Success: the last line starts `kit_tests: OK in`.
 
-3. **Turn on the plugin** (hand step; docs/go-live.md "Skills, templates, optional tools,
-   knowledge").
+3. **Turn on the plugin** (hand step; docs/install.md "Per Claude account").
    Success: `ListSkills` shows each skill named in docs/shipping.md once.
 
 4. **Write the user config.** Create `<config-dir>/config.json`, in the PM repository's `.pm-kit` (docs/kit-json.md "Machine config keys"), holding a JSON object,

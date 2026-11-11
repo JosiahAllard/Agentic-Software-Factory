@@ -41,4 +41,4 @@ A role: one file in `content/roles/`, then render. A skill: one folder in `conte
 
 ## Reference
 
-docs/content.md, content/README.md, docs/ROSTER.md, docs/specialty-skills.md, docs/shipping.md.
+docs/content.md, content/README.md, docs/ROSTER.md, docs/shipping.md.

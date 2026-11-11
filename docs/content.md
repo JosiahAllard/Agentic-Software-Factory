@@ -39,7 +39,7 @@ renderer).
 | `sandbox` | `read-only` or `workspace-write` |
 | `capabilities` | `all` (no tool list), or the tools in order: `[read, edit, write, search, find, bash, powershell, worktree, enter-worktree, artifact, dispatch, message, list-agents, stop-task, monitor, tool-search, skill, ask-owner, cron-create, cron-list, cron-delete, web-search, web-fetch]` (`kitlib.host.content.CAPABILITIES`) |
 | `cache` | optional: `long`, the host's long prompt cache |
-| `compact` | optional: the role's auto-compact window in tokens, a whole number 100000..1000000 (`kitlib.host.content.COMPACT`). The light subagent roles (analyst, docs-writer, helper, lander, test-runner, weak-worker) set 170000, so they compact before a 200k parent would. Claude renders it; Codex does not ("Codex") |
+| `compact` | optional: the role's auto-compact window in tokens, a whole number 100000..1000000 (`kitlib.host.content.COMPACT`). The light-tier subagent roles (analyst, helper, lander, test-runner, weak-worker) and docs-writer (standard tier) set 170000, so they compact before a 200k parent would. Claude renders it; Codex does not ("Codex") |
 | `mode` | optional: the role policy mode, `controller`, `write`, `read`, `test` or `lander` (`kitlib.host.content.MODES`). Every kit role names one. The guard reads it (`kitlib.content.role_modes`) where a repository sets `guard.role_policy` (docs/guard-jail-roles.md "Role policy"); no host's file carries it, but Codex derives its `sandbox_mode` from it ("Codex"), so a change to it renders for Codex |
 | `writes` | optional: `[path, ...]`, repo-relative posix paths or globs (no `..`, no drive, no `\`) a `read`, `test` or `lander` role may still edit in its checkout (docs/guard-jail-roles.md "Role policy"). The loader accepts it; no role file uses it today. Not rendered either |
 | `group` | optional: the role's group in the backlog policy (`kitlib/backlog/roles.py`) where its `mode` alone does not give it. Without it the group is the mode's: `controller` lead, `write` builder, `read` and `test` read-only, `lander` lander. The one value in use is `docs` (docs-writer: a `write` role that adds records but never pulls them), and it needs mode `write` (`kitlib.host.content.GROUP_MODES`). Not rendered |
@@ -83,6 +83,34 @@ Tests: tests/skills `test_skills_are_host_neutral`; tests/content/test_skill_com
 that every kit tool command a skill or role shows is written `python <kit>/tools/<name>.py`,
 exists, shows `-C` when the tool's parser defines it, and that the parser defines each flag
 shown.
+
+### Specialty skills
+
+A task specialty is a skill a generic agent loads because its brief names it. The agent type sets model, effort and permissions; the skill sets know-how. That adds specialties without adding agent types. The skills are `content/skills/specialty-<name>/SKILL.md`, with long material in companion files; the `specialty-` prefix keeps them apart from a coordinator skill such as `branch-review` and from a retired type name.
+
+| skill | brief names | keeps from the role it replaced |
+|---|---|---|
+| specialty-3d-assets | senior-worker | the script is the asset, budgets, contact sheet, options first; props here, characters and rigs in specialty-rigging |
+| specialty-rigging | senior-worker | a scripted rig to the repo's body contract, weight and bend checks, a contact sheet, skins on one shared rig |
+| specialty-tech-art | senior-worker | art that is code, checked by rendering, an art-direction stop |
+| specialty-sound | worker; senior-worker for design | measured clips, ends in a question for the owner |
+| specialty-art-critique | analyst, strong tier, high effort | a rubric of 0-4 axes, the top 3 gaps, PASS or ITERATE, read-only |
+| specialty-review | analyst | brief, diff range and logs, the report format |
+| specialty-research | analyst | concepts with evidence, the hand-off to a spec |
+| specialty-docs | docs-writer | records: transcribe, never decide; spec: findings first, defaults labelled, inferences marked |
+
+Each SKILL.md opens with a "Dispatch" line: the minimum worker tier (never weak-worker for creative work) and the profile sections it reads (the creative skills read **Art** or **Audio**, and **Shared resources**). The creative brief block and options-first live in `coordinator-dispatch/creative.md`. The coordinator's dispatch skill matches a task to a specialty, and the brief names it and the worker tier.
+
+- **The read type** is `analyst` (reviewer and researcher in one): mode `read`, sandbox `read-only`, light tier, effort high; the "Reviewer model" rule in the roster raises it per dispatch. Its capabilities are the union of both old types, `bash` and web tools included. It returns its report as text, with a file in its scratch folder for long notes, and has no `writes`. Review must stay on a read type: `kitlib/gate/land.py` `is_author` compares reviewer and author agent types as free text, so a worker type reviewing a worker's branch would match.
+- **The docs type** is `docs-writer`: mode `write`, group `docs`, sandbox `workspace-write`, standard tier, effort medium; a spec is raised by model. "Docs only" is prose, not a guard rule.
+- **Worker types** are `capabilities: all`, so creative work runs with a wider tool set than the retired creative types had; the skill text says what a brief allows (paid generation needs the owner). `strong-worker` is strong tier at medium effort; the strong, high-effort equivalent is `senior-worker`.
+- **The lander and the test-runner stay separate.** Their modes are opposites (`kitlib/guard/rolepolicy.py`: the lander may write its checkout and fetch and fast-forward in main but takes only `status` and `run` lock verbs; the test-runner gets a read-only checkout and more lock verbs). A skill is text, so merging them would force the union onto a light-tier agent.
+- **The guard sees no skill.** Modes are read from the role file (`kitlib.content.role_mode`), so no rule differs per specialty and no guard code changed for them.
+- **Retired types** are asset-smith, tech-artist, sound-smith, researcher, reviewer, records and spec-writer, cut in one landing with no alias, since `kitlib/content/__init__.py` `ALIASES` maps one old name to one new name and cannot carry a skill. A dispatch of a removed type fails loudly in the host, and `tests/content/test_role_names.py` fails on a leftover name. "Reviewer" stays as a function word in docs/agent-profile.md and the risk maps.
+- **Open:** whether a host's dispatch call can carry an effort at all (the roster says effort is not settable per dispatch, and no input for it was found); Codex skill loading from outside its plugin folder ("Codex").
+- **Downstream repos** (owner work, not checkable from here): replace the keys reviewer, researcher, records, spec-writer, tech-artist, asset-smith and sound-smith in `.kit.json` `doc_index.roles` with `analyst` and `docs-writer` (`doc_index.py --role <name>` exits 2 on an unknown role), and the lines naming a retired type in the agent and coordinator profiles with the new names. A repo with no art or audio says "specialty skills not used" in its coordinator profile.
+
+Tests: tests/skills `test_skills_are_host_neutral`; tests/content/test_skill_commands.py checks that every kit tool command a skill or role shows is written `python <kit>/tools/<name>.py`, exists, shows `-C` when the tool's parser defines it, and that the parser defines each flag shown. A repo's `.claude/agents/<same name>` overriding a kit agent is resolved by Claude Code alone; the kit only models the rule (tests/agents/test_override.py).
 
 ## Tokens
 
@@ -130,6 +158,8 @@ An agent body gets no `${CLAUDE_PLUGIN_ROOT}` substitution, so a role names the 
 `<kit>`, as a skill does, and the kit header says what it is (tests/content
 `test_no_agent_file_names_the_plugin_root_variable`).
 
+A repo's `.claude/agents/<same name>` overriding a kit agent is resolved by Claude Code alone; no kit code resolves agent names, so the kit only models the rule (tests/agents/test_override.py). Open: confirm it once by hand.
+
 ## Codex
 
 `hosts/codex/adapter/content.py` writes `hosts/codex/shell/agents/kit-<name>.toml`: a header comment
@@ -144,7 +174,7 @@ rendered; nor is `compact`, because no per-agent compact key in a Codex agent fi
 and `hosts/codex/shell/boot`, the folders the old hand-made copy needed, and `hosts/codex/shell/hooks`,
 where the hooks were rendered before the hooks plugin, so a file left in any is stale. Its
 manifests are `hosts/codex/shell/plugin.json` (the name and version; `./content/skills/` and `mcp.json` named from the export root, where the export places it as `.codex-plugin/plugin.json`, docs/plugin-source.md "Layout"; no hooks)
-and `hosts/codex/shell/mcp.json` (the read-only lock server and the hub server). The hooks are the
+and `hosts/codex/shell/mcp.json` (the read-only lock server, the hub server and the Blender server). The hooks are the
 fixed-bytes plugin `pm-kit-hooks` in `hosts/codex/shell/hooks-plugin`, written by hand and never
 rendered, since Codex asks for trust again when its bytes change (docs/plugin-source.md "Codex hooks
 plugin"). Its `hooks/hooks.json` must still equal what `hooks()` gives (every declared hook event
@@ -164,7 +194,8 @@ version, nothing else). Claude's are each JSON with indent 2 and a final newline
 - `.claude-plugin/plugin.json`: the name and version, every agent file, the skills folder
   (`./content/skills/`), the
   hooks file and the MCP servers of `MCP_SERVERS`: `machine-lock`
-  (`python ${CLAUDE_PLUGIN_ROOT}/mcp/lock_server.py`) and `hub` (`mcp/hub_server.py`, docs/hub-mcp.md).
+  (`python ${CLAUDE_PLUGIN_ROOT}/mcp/lock_server.py`), `hub` (`mcp/hub_server.py`, docs/hub-mcp.md) and
+  `blender` (`mcp/blender_server.py`, docs/blender-mcp.md).
   It stays at the kit root because the plugin root is the whole kit: the hooks and the MCP servers
   run kitlib and tools beside them, and an installed plugin reaches only files under its root.
   The export (docs/plugin-source.md) stamps its version as `<version>-main.<count>`. That is the

@@ -15,7 +15,7 @@ the environment unless it is already there (kit_tests.py marks its units; a nest
 outer run's): a kit process that inherits it refuses that folder too, and the profile folder
 Windows reports. A child given a hand-built environment without the marker is not fenced.
 
-The time fence (docs/flaky-tests.md): KIT_TIME_FENCE=1 unless the environment already says
+The time fence (docs/test-tools.md "Time fence"): KIT_TIME_FENCE=1 unless the environment already says
 otherwise, so kitlib.clock.budget gives its ceiling for a degrade budget (kitlib.agentstart's) and a
 loaded machine makes a test slower, not different. The tool processes a test starts inherit it.
 

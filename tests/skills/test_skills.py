@@ -12,7 +12,7 @@ EXPECTED = {"backlog-ops", "backlog-pricing", "branch-review", "branch-sync", "b
             "shell-and-worktree-traps",
             "specialty-3d-assets", "specialty-rigging", "specialty-tech-art", "specialty-sound",
             "specialty-review", "specialty-research", "specialty-docs", "specialty-art-critique", "topic-session"}
-# a task specialty a generic agent loads because its brief names it (docs/specialty-skills.md
+# a task specialty a generic agent loads because its brief names it (docs/content.md
 # "Specialty skills"): the agent type its Dispatch line names as the minimum
 SPECIALTY_MIN = {"specialty-3d-assets": "senior-worker", "specialty-rigging": "senior-worker",
                  "specialty-tech-art": "senior-worker",
@@ -140,7 +140,7 @@ class SkillFilesTest(unittest.TestCase):
     def test_specialty_skills_open_with_a_dispatch_line(self):
         """A specialty skill's first body line says the minimum agent type a brief names with it and
         the profile sections it reads; creative work never runs on weak-worker
-        (docs/specialty-skills.md "Specialty skills", "Decisions" 5)."""
+        (docs/content.md "Specialty skills")."""
         self.assertEqual({n for n in EXPECTED if n.startswith("specialty-")}, set(SPECIALTY_MIN))
         for name, minimum in SPECIALTY_MIN.items():
             text = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")

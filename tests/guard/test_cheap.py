@@ -463,7 +463,7 @@ class HubKept(World):
 
 class Warned(World):
     """Item 3: heavy (lock etiquette) warns; the owner's machine config makes it deny again
-    (heredoc-winpath is cut: docs/guard-v2.md B8); a warned heavy line the fallback reads is still
+    (heredoc-winpath is cut: docs/guard-fallback.md "Weakened checks, by row" B8); a warned heavy line the fallback reads is still
     judged by the kept rules."""
 
     def heavy(self):

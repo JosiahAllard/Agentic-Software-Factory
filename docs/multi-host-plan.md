@@ -231,7 +231,7 @@ promoted (below); the rest was deleted (optional/bridge/README.md).
   nothing outside the deleted set imports it.
 - **Docs:** the bridge docs and evidence files collapse into:
   - `optional/bridge/README.md`: design and contracts
-  - `optional/bridge/STATUS.md`: a capability matrix per host and direction
+  - `optional/bridge/README.md` also holds a capability matrix per host and direction ("Status")
   - the history, left in git
 
 ### 2.5 One release value
@@ -295,7 +295,7 @@ behaviour unchanged.
 | 7 | Move `claude/` → `hosts/claude/{adapter,shell}`. `kit.json` and the one release value. `boot/kitboot.py`. **Done**, with the rendered manifests and the kit header hook (docs/content.md "Manifests", "Kit header"; docs/kitboot.md; docs/machine-setup.md "Moved hook paths"). | 5, 6 |
 | 8 | Conformance suite, required in the gate. `docs/new-host.md`. **Done**: `tests/host/conformance.py`, run for Claude and for a test-only fake host (`tests/host/fakehost`); the bridge-port check is `tests/host/bridge_conformance.py` (step 10). | 3, 7 |
 | 9 | **Rebase `codex/companion-plugin`** onto main as `hosts/codex/`: `actions.py` → adapter events, `guard_adapter` reduced to what only Codex has, roles rendered from `content/`, `PM_KIT_CODEX_ROLE` removed. It must pass the conformance suite. **Done:** `hosts.json` registers Codex, `hosts/codex/` passes the suite on payloads in the branch's recorded shapes, `parse` may return several Actions (one `apply_patch`, several files) and an adapter may `screen`, the child-environment scrub is core (`kitlib.host.sessionmark.child_environment`, hosts.json `env_prefixes`), Codex's renderer fills every content token (docs/content.md "Tokens"). Nothing is installed; live parity is unverified (hosts/codex/README.md "Not verified"). The bridge owns the Codex bridge client at `optional/bridge/hosts/codex/client.py` (step 10). Codex's diagnostics either drop it or probe for it lazily and optionally by importing that module, and they never keep a copy. | 8 |
-| 10 | **Rebase `codex/robust-bridge-plan`** as `optional/bridge/`: promote the helpers, declare the port, move the host halves, delete the probe code, collapse the docs. **Done:** optional/bridge/README.md (layout, port, install, what was deleted) and STATUS.md. Claude and Codex are both served. | 9 |
+| 10 | **Rebase `codex/robust-bridge-plan`** as `optional/bridge/`: promote the helpers, declare the port, move the host halves, delete the probe code, collapse the docs. **Done:** optional/bridge/README.md (layout, port, install, what was deleted) and its "Status" section. Claude and Codex are both served. | 9 |
 
 ## 4. What does not change
 - Standard library only; Windows and Linux (macOS is out). No argparse or printing in kitlib.
@@ -382,7 +382,7 @@ docs/linux-support-plan.md (sections 1 to 2 and 10).
 
 ## 7. Instructions, roles and zero repo setup
 
-The §7 agenda was settled in a planning session with the owner. Steps 11-20 are built; the live host checks are tracked in docs/go-live.md.
+The §7 agenda was settled in a planning session with the owner. Steps 11-20 are built; the live host checks are tracked in the docs that own each host (docs/install.md "Open switches").
 
 ### 7.0 Decisions
 

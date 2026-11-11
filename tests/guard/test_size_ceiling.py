@@ -1,7 +1,7 @@
-"""A size ceiling per kitlib/guard module, and for the guard as a whole (docs/guard-v2.md "Size ceilings").
+"""A size ceiling per kitlib/guard module, and for the guard as a whole (docs/guard-core.md "Size ceilings").
 
 The rules it enforces: the builder size line (about 1,500 lines of non-test code per file) and the
-owner's ruling of 2026-10-17 (minimal guard v2, docs/guard-v2.md). The guard grew from about 14.4k
+owner's ruling of 2026-10-17 (minimal guard v2, docs/guard-core.md "Size ceilings"). The guard grew from about 14.4k
 to 18.4k lines after that ruling, so growth is a deliberate edit: CEILINGS below is the one list.
 
 Fails when

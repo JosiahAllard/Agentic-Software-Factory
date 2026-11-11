@@ -20,7 +20,7 @@ registered from a folder the user can write to is refused (codex-package-locatio
 
 Refusals are identifiers that name the setting, never a path (tools/bridge_service.py "_reason").
 It runs at preparation and at every service start (win/runtime.parse_config); an update while the
-service runs still needs a restart (STATUS.md).
+service runs still needs a restart (optional/bridge/README.md "Status").
 """
 import ctypes
 from ctypes import wintypes as w

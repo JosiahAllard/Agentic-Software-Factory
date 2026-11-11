@@ -48,4 +48,4 @@ A new rule: one function in the family file it belongs to, a row in the guard's 
 
 ## Reference
 
-docs/guard.md (the index of its pages), docs/guard-core.md, docs/guard-rules.md, docs/guard-jail-roles.md, docs/guard-fallback.md, docs/guard-owner.md, docs/guard-hooks.md, docs/guard-v2.md.
+docs/guard.md (the index of its pages), docs/guard-core.md, docs/guard-rules.md, docs/guard-jail-roles.md, docs/guard-fallback.md, docs/guard-owner.md, docs/guard-hooks.md.

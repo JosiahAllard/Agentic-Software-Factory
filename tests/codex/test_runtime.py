@@ -344,7 +344,7 @@ class BoundGuard(unittest.TestCase):
         self.assertIn('rule=host-role-edit', self.judge('analyst', 'a.py'))
 
     def test_a_broker_deny_is_logged_and_an_allow_is_not(self):
-        # kitlib.guard.refusal_log (docs/guard-v2.md "Refusal log"): one line per deny, in the
+        # kitlib.guard.refusal_log (docs/guard-core.md "Refusal log"): one line per deny, in the
         # pm_data the PM-repo pointer gives, with the bound role and never the patch's text
         from tests.gitfixture import rmtree
         from tests.home import machine_config, temp_home

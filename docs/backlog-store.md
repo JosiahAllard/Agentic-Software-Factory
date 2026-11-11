@@ -52,9 +52,10 @@ The commit message names the verb, id, session and any ruling, so `git log refs/
 
 The kit's push_block skips its gate-OK check for the store ref and for any non-main branch; its leak and secrets checks run on every pushed ref (kitlib/guard/prepush.py).
 
-## Migration
+## Open
 
-A repo moves to a ref or branch store at go-live (docs/go-live.md): land or port every in-flight records branch first; then one normal branch deletes `docs/backlog`, sets `.kit.json` `backlog.store` and updates hooks. Old record history stays in main's git log. A record not written since its store's migration ages from that commit (docs/backlog.md `stale`).
+- Per repository, a switch to a ref or branch store lands as one normal branch that deletes `docs/backlog`, sets `.kit.json` `backlog.store` and updates hooks, after every in-flight records branch is landed or ported. Old record history stays in main's git log. A record not written since its store's switch ages from that commit (docs/backlog.md `stale`).
+- The PM repo is switched (store `kit/backlog`, in use). Two other repos are still `store: ref`, the same two whose `.kit.json` `backlog.py` refuses: they use the older kit's spellings, refused on purpose (tests/config/test_load.py `test_the_old_hook_and_owner_spellings_refuse`), and each makes the key move on its switch-over branch (new spellings: docs/kit-json.md and docs/doc-tools.md). Until a repo's remote has a store, the landing close writes nothing and the ancestry check passes; the check still asks the remote (`ls-remote`) and refuses the landing when it cannot.
 
 ## Hub filing
 

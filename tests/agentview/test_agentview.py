@@ -162,7 +162,7 @@ class Start(Base):
         self.assertEqual([c[0] for c in self.calls], ['SubagentStart'])
 
     def test_a_dispatched_role_on_claude_shows_the_agent_start_block(self):
-        # The block's default budget is 1.0 s of wall time. Under the time fence (docs/flaky-tests.md)
+        # The block's default budget is 1.0 s of wall time. Under the time fence (docs/test-tools.md "Time fence")
         # it is the ceiling, so a reading slower than that (a loaded machine; here a stub that sleeps
         # past it) still finishes: the hook's own default is what is checked, with no budget passed in.
         from hosts.claude.adapter.host import ADAPTER

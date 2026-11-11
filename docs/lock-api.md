@@ -291,3 +291,10 @@ Known limits:
 - No aliases: a repository kind cannot be renamed while keeping its history under one name, as kinds.json's `aliases` do for kit kinds. A renamed kind starts a new history; a renamed kind used as `gate.kind` would also need a `HASH_KIND_AS` entry (`kitlib.gate.runner`).
 - The snapshot's `kinds` is the kit's table only, and `gate.py --measure` proposes sizes for kit kinds only.
 - Rollout: a kit from before this section refuses a `.kit.json` that has it as an unknown section, and every kit tool reads `.kit.json`. Add a `kinds` section only once every plugin folder in use has this change.
+
+## Open
+
+- Kind sizes: converting kinds.json from medium/heavy to whole numbers is a `gate.py --measure` proposal plus a reviewed commit. Only maint-lint, quick-test (1 core: a run of only the touched tests) and land-test (a landing's merged gate, 4 cores by the owner's call) are whole numbers now. Once converted, `--cores` above the kind's size exits 2, a size past agent_cap stops every run (exit 10; a land kind instead books agent_cap), and the kind no longer takes every slot inside an owner whole hold but its integer size, at most agent_cap.
+- Bare `bash` in a job runs Git Bash and is refused when there is none; Move to top (`machine_lock.py top ID`) is not offered through the lock MCP server. The live-client lock kind is not built (the owner's decision); a live client books `app-run`.
+- The `run --lock` flag is not added to the kit's run, which always locks; a caller that passes it gets exit 2, so callers change at switch-over.
+- The PM repository's docs/machine-lock.md wants the line on docker exec runs that hold no gpu slot (see "Runs").

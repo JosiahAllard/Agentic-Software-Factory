@@ -1619,7 +1619,7 @@ class UnplacedGit(MainGit):
             '$env:BASH_ENV ="x"; %s' % g], tool='PowerShell')
         # a name an env: item is renamed, copied or moved to may then hold env:, a spelling no honest
         # command uses: the provider item is not read as a write target and the line passes, for a
-        # worker and the coordinator's mark alike (docs/guard-v2.md B16, cut)
+        # worker and the coordinator's mark alike (docs/guard-fallback.md "Weakened checks, by row" B16, cut)
         for text in ("Rename-Item env:FOO TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),
                      "Rename-Item env:FOO -NewName TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),
                      "Copy-Item env:FOO env:TEMP; Set-Item \"$env:TEMP\\GIT_DIR\" '%s/.git'; %s" % (m, g),

@@ -295,12 +295,13 @@ class LookalikeWrappers(unittest.TestCase):
     def test_a_start_process_script_elsewhere_is_not_the_kit_s(self):
         # the same call from the kit's folder, started in temp, runs temp's tools/gate.py
         from kitlib.guard import commands as cm
+        from kitlib.guard import commands_nested as cn
         from kitlib.guard import rules
         from kitlib.guard import shell as sh
         text = "Start-Process python -WorkingDirectory '%s' -ArgumentList 'tools/gate.py','--full'" % W.fwd(self.w.temp)
-        c = cm.read(text, sh.PS, self.w.kit_dir).commands[0]
+        c = cn.read(text, sh.PS, self.w.kit_dir).commands[0]
         self.assertIsNone(rules.kit_wrapper(self.w.ctx(), c, cm.invocation(c), self.w.kit_dir))
-        c = cm.read(text.replace(W.fwd(self.w.temp), W.fwd(self.w.kit_dir)), sh.PS, self.w.wt).commands[0]
+        c = cn.read(text.replace(W.fwd(self.w.temp), W.fwd(self.w.kit_dir)), sh.PS, self.w.wt).commands[0]
         self.assertTrue(rules.kit_wrapper(self.w.ctx(), c, cm.invocation(c), self.w.wt))
 
 

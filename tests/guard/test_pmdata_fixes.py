@@ -88,7 +88,7 @@ class ConfigPrefixes(Base):
 
 
 class HomeByBuiltin(Base):
-    """commands.line_env_names counts HOME only when the line assigns it literally (HOME=,
+    """commands_env.line_env_names counts HOME only when the line assigns it literally (HOME=,
     export, $env:); a bash builtin that sets a variable from its arguments is not read (honest mistakes only)."""
 
     def test_other_names_pass(self):

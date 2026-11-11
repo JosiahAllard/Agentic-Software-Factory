@@ -88,12 +88,12 @@ def lock_read_call(tool):
 
 def patch_in_shell(action):
     """The apply_patch program a shell Action runs, or None."""
-    from kitlib.guard import commands, rules
+    from kitlib.guard import commands, commands_nested, rules
     from kitlib.guard import shell as sh
     text = action.command
     if not isinstance(text, str) or not text.strip():
         return None
-    parsed = commands.read(text, rules.SHELLS.get(action.shell, sh.BASH), action.workdir or action.cwd)
+    parsed = commands_nested.read(text, rules.SHELLS.get(action.shell, sh.BASH), action.workdir or action.cwd)
     for cmd in parsed.commands:
         inv = commands.invocation(cmd)
         if inv is not None and inv.name.lower() in PATCH_PROGRAMS:

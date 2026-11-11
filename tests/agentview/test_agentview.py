@@ -25,7 +25,8 @@ from kitlib.backlog import roles as broles
 from kitlib.git import repo as gitrepo
 from kitlib.guard import rolepolicy
 from kitlib.guard.context import Ctx
-from kitlib.host import content as hcontent, header, registry
+from kitlib.hookrun import header
+from kitlib.host import content as hcontent, registry
 
 from hosts.claude.adapter import content as claude_content
 from tests.home import TempHomeCase

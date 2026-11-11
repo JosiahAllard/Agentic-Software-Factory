@@ -22,10 +22,10 @@ identity (env GIT_*), and the auto-mode lines that name the owner, accounts or h
 hook or statusLine path through `<config>/tools/<link>` is re-pointed to the kit's own file
 (settings.repoint_links), as in the account settings. Off Windows the WINDOWS_ONLY keys are dropped
 from the template before all that, and a hook running this kit's guard with no onFailure gets the
-guard entry's (kitlib.host.hookmain.ON_FAILURE, through boot/hook.py --settings-entry;
+guard entry's (kitlib.hookrun.main.ON_FAILURE, through boot/hook.py --settings-entry;
 settings.add_on_failure): on Linux the managed guard blocks the call when its interpreter is gone,
 as the account entry it replaces would. On Linux {pythonw} is the interpreter that ran machine
-setup, by its full path (hookmain.command_line).
+setup, by its full path (hookrun.command_line).
 
 The written file keeps the layout the managed file has (BOM, line ends, indent); a new one is
 written in settings.NEW_LAYOUT. An existing file is replaced whole, so the run is refused when it

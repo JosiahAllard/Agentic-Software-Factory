@@ -1,4 +1,4 @@
-"""kitlib.host.hookmain: the one hook runner, over a fake adapter and a fake guard decide.
+"""kitlib.hookrun.main: the one hook runner, over a fake adapter and a fake guard decide.
 
 What every host's hook gets from it: parse -> decide -> degrade -> render, a guard-error deny for
 any failure on the way (the role tag read from the payload even when parse refuses it), a
@@ -13,7 +13,8 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib.host import Action, Decision, HostCapabilities, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Action, Decision, HostCapabilities
 from tests.platforms import windows_only
 
 
@@ -46,7 +47,7 @@ class FakeAdapter(object):
 def run(adapter, payload, decide, **kw):
     out = io.StringIO()
     with mock.patch('kitlib.guard.decide', decide):
-        code = hookmain.run(adapter, 'PreToolUse', io.StringIO(json.dumps(payload)), out,
+        code = hookrun.run(adapter, 'PreToolUse', io.StringIO(json.dumps(payload)), out,
                             environ={}, entry='C:/kit/hook.py', **kw)
     return code, out.getvalue()
 
@@ -93,7 +94,7 @@ class Run(unittest.TestCase):
 
     def test_unreadable_json_denies(self):
         a, out = FakeAdapter(), io.StringIO()
-        self.assertEqual(hookmain.run(a, 'PreToolUse', io.StringIO('{nope'), out, environ={}, entry='h.py'), 3)
+        self.assertEqual(hookrun.run(a, 'PreToolUse', io.StringIO('{nope'), out, environ={}, entry='h.py'), 3)
         self.assertTrue(a.last.reason.endswith('role=main]'))
 
     def test_a_guard_still_deciding_at_the_deadline_denies(self):
@@ -119,7 +120,7 @@ class Run(unittest.TestCase):
                 raise OSError('no stdout')
         with mock.patch('kitlib.guard.decide', lambda *x, **k: Decision('deny', 'r', 'why')):
             with self.assertRaises(OSError):
-                hookmain.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), Closed(), environ={}, entry='h')
+                hookrun.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), Closed(), environ={}, entry='h')
 
 
 class Unready(unittest.TestCase):
@@ -230,14 +231,14 @@ class NoIdentity(unittest.TestCase):
             got.append(action)
             return Decision('allow')
         with mock.patch('kitlib.guard.decide', decide):
-            hookmain.run(adapter, 'PreToolUse', io.StringIO(json.dumps(payload)), io.StringIO(),
+            hookrun.run(adapter, 'PreToolUse', io.StringIO(json.dumps(payload)), io.StringIO(),
                          environ=environ, entry='h.py')
         return got[0]
 
     def test_a_marked_call_is_an_unidentified_agent_of_its_role(self):
         for kind in ('edit', 'shell', 'mcp'):
             a = self.seen(self.adapter(False), {'kind': kind}, {'PM_KIT_ROLE': 'worker'})
-            self.assertEqual((a.agent, a.agent_role), (hookmain.UNIDENTIFIED, 'worker'), kind)
+            self.assertEqual((a.agent, a.agent_role), (hookrun.UNIDENTIFIED, 'worker'), kind)
 
     def test_the_owner_another_kind_and_a_host_with_identity_are_unchanged(self):
         self.assertIsNone(self.seen(self.adapter(False), {'kind': 'edit'}, {}).agent)
@@ -255,8 +256,8 @@ class NoIdentity(unittest.TestCase):
             budgets.append(deadline)
             time.sleep(0.03)
             return Decision('allow')
-        with mock.patch.object(hookmain, '_decide', fake):
-            code = hookmain.run(Many(), 'PreToolUse', io.StringIO('{}'), io.StringIO(), environ={},
+        with mock.patch.object(hookrun, '_decide', fake):
+            code = hookrun.run(Many(), 'PreToolUse', io.StringIO('{}'), io.StringIO(), environ={},
                                 entry='h.py', deadline=1.0)
         self.assertEqual(code, 0)
         self.assertTrue(all(b < a for a, b in zip(budgets, budgets[1:])), budgets)
@@ -271,8 +272,8 @@ class NoIdentity(unittest.TestCase):
             budgets.append(deadline)
             return None                                 # still deciding
         a = FakeAdapter()
-        with mock.patch.object(hookmain, '_decide', fake):
-            code = hookmain.run(a, 'PreToolUse', io.StringIO('{}'), io.StringIO(), environ={}, entry='h.py',
+        with mock.patch.object(hookrun, '_decide', fake):
+            code = hookrun.run(a, 'PreToolUse', io.StringIO('{}'), io.StringIO(), environ={}, entry='h.py',
                                 deadline=7, started=time.monotonic() - 3)
         self.assertEqual(code, 3)
         self.assertLessEqual(budgets[0], 4.0)
@@ -353,7 +354,7 @@ class RefusalLog(unittest.TestCase):
                 return super().write(text)
         with mock.patch('kitlib.guard.decide', lambda *x, **k: Decision('deny', 'r', 'why')), \
                 mock.patch('kitlib.guard.refusal_log.record', side_effect=lambda *a, **k: order.append('log')):
-            hookmain.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), Out(), environ={}, entry='h')
+            hookrun.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), Out(), environ={}, entry='h')
         self.assertEqual(order, ['answer', 'log'])
 
     def test_a_marked_call_on_a_host_without_identity_logs_the_role_the_guard_judged(self):
@@ -366,11 +367,11 @@ class RefusalLog(unittest.TestCase):
             tags.append(role)
             return Decision('deny', 'r', 'why [kit guard: rule=r role=%s]' % role)
         with mock.patch('kitlib.guard.decide', deny):
-            code = hookmain.run(a, 'PreToolUse', io.StringIO('{"kind": "edit"}'), io.StringIO(),
+            code = hookrun.run(a, 'PreToolUse', io.StringIO('{"kind": "edit"}'), io.StringIO(),
                                 environ={'PM_KIT_ROLE': 'worker'}, entry='h.py')
         self.assertEqual((code, tags), (3, ['subagent']))
         self.assertEqual([(r['role'], r['agent'], r['agent_role']) for r in self.rows()],
-                         [('subagent', hookmain.UNIDENTIFIED, 'worker')])
+                         [('subagent', hookrun.UNIDENTIFIED, 'worker')])
 
     def test_a_hung_git_cannot_hold_the_deny_up(self):
         from kitlib.guard import refusal_log
@@ -392,13 +393,13 @@ class RefusalLog(unittest.TestCase):
 
 class CommandLine(unittest.TestCase):
     def test_the_one_hook_command_line_is_exec_form(self):
-        line = hookmain.command_line(os.path.join('k', 'hook.py'))
+        line = hookrun.command_line(os.path.join('k', 'hook.py'))
         self.assertEqual(line['args'], ['k/hook.py'])
         self.assertTrue(os.path.isfile(line['command']))
         if os.name == 'nt':
             self.assertEqual(os.path.basename(line['command']).lower(), 'pythonw.exe')
         # an interpreter with no pythonw beside it is used itself
-        self.assertEqual(hookmain.windowless(sys.executable + '-none'), sys.executable + '-none')
+        self.assertEqual(hookrun.windowless(sys.executable + '-none'), sys.executable + '-none')
 
     @windows_only('pythonw.exe is a Windows interpreter')
     def test_an_existing_interpreter_of_any_python_name_gets_the_pythonw_beside_it(self):
@@ -406,22 +407,22 @@ class CommandLine(unittest.TestCase):
             for name in ('python3.exe', 'python3.14.exe', 'pythonw.exe'):
                 open(os.path.join(d, name), 'w').close()
             want = os.path.join(d, 'pythonw.exe')
-            self.assertEqual(hookmain.windowless(os.path.join(d, 'python3.exe')), want)
-            self.assertEqual(hookmain.windowless(os.path.join(d, 'python3.14.exe')), want)
+            self.assertEqual(hookrun.windowless(os.path.join(d, 'python3.exe')), want)
+            self.assertEqual(hookrun.windowless(os.path.join(d, 'python3.14.exe')), want)
             gone = os.path.join(d, 'python9.exe')      # no such file: used as given
-            self.assertEqual(hookmain.windowless(gone), gone)
+            self.assertEqual(hookrun.windowless(gone), gone)
 
     def test_a_manifest_command_on_windows_is_pythonw_in_exec_form(self):
-        line = hookmain.manifest_command('${ROOT}/boot/hook.py', 'windows', 'h', 'PreToolUse')
+        line = hookrun.manifest_command('${ROOT}/boot/hook.py', 'windows', 'h', 'PreToolUse')
         self.assertEqual(line, {'command': 'pythonw', 'args': ['${ROOT}/boot/hook.py', 'h', 'PreToolUse']})
-        self.assertEqual(hookmain.manifest_command('a.py', 'windows', blocking=True),
+        self.assertEqual(hookrun.manifest_command('a.py', 'windows', blocking=True),
                          {'command': 'pythonw', 'args': ['a.py']})
 
     def test_a_manifest_command_on_linux_runs_python3_under_sh_and_fails_closed(self):
-        tool = hookmain.manifest_command('${ROOT}/boot/hook.py', 'linux', 'h', 'PreToolUse', blocking=True)
+        tool = hookrun.manifest_command('${ROOT}/boot/hook.py', 'linux', 'h', 'PreToolUse', blocking=True)
         self.assertEqual(tool, {'command': '/bin/sh', 'args': [
             '-c', 'python3 "$@" || exit 2', 'kit-hook', '${ROOT}/boot/hook.py', 'h', 'PreToolUse']})
-        start = hookmain.manifest_command('${ROOT}/boot/hook.py', 'linux', 'h', 'SessionStart')
+        start = hookrun.manifest_command('${ROOT}/boot/hook.py', 'linux', 'h', 'SessionStart')
         self.assertEqual(start['command'], '/bin/sh')
         self.assertEqual(start['args'][0], '-c')
         self.assertTrue(start['args'][1].startswith('python3 "$@" || echo "PM kit: the kit did not load: '),
@@ -431,23 +432,23 @@ class CommandLine(unittest.TestCase):
 
     def test_a_manifest_command_for_a_platform_with_no_interpreter_is_refused(self):
         with self.assertRaises(ValueError):
-            hookmain.manifest_command('a.py', 'macos')
+            hookrun.manifest_command('a.py', 'macos')
 
     def test_the_mcp_interpreter_is_python3_on_linux_and_refused_for_an_unknown_platform(self):
         """Stock Ubuntu has no `python`, only python3; Windows keeps the `python` its manifests name."""
-        self.assertEqual(hookmain.mcp_interpreter('windows'), 'python')
-        self.assertEqual(hookmain.mcp_interpreter('linux'), 'python3')
+        self.assertEqual(hookrun.mcp_interpreter('windows'), 'python')
+        self.assertEqual(hookrun.mcp_interpreter('linux'), 'python3')
         with self.assertRaises(ValueError):
-            hookmain.mcp_interpreter('macos')
+            hookrun.mcp_interpreter('macos')
 
     def test_the_settings_entry_wraps_it(self):
-        entry = hookmain.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py')
+        entry = hookrun.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py')
         self.assertEqual(entry, {'PreToolUse': [{'matcher': 'Bash', 'hooks': [
             {'type': 'command', 'command': 'py', 'args': ['h.py']}]}]})
-        timed = hookmain.settings_entry('PreToolUse', '*', 'h.py', executable='py', timeout=10)
+        timed = hookrun.settings_entry('PreToolUse', '*', 'h.py', executable='py', timeout=10)
         self.assertEqual(timed['PreToolUse'][0]['hooks'][0]['timeout'], 10)
         self.assertEqual(list(entry['PreToolUse'][0]['hooks'][0]), ['type', 'command', 'args'])
-        named = hookmain.settings_entry('PreToolUse', 'Bash', 'k/boot/hook.py', executable='py',
+        named = hookrun.settings_entry('PreToolUse', 'Bash', 'k/boot/hook.py', executable='py',
                                         args=('h', 'PreToolUse'))
         self.assertEqual(named['PreToolUse'][0]['hooks'][0]['args'], ['k/boot/hook.py', 'h', 'PreToolUse'])
 
@@ -455,12 +456,12 @@ class CommandLine(unittest.TestCase):
         """A Linux entry whose interpreter is gone must block, not let the call through unguarded:
         onFailure "block" (Claude Code's hooks docs). Windows keeps its entry as it was."""
         with mock.patch('kitlib.platform.NAME', 'linux'):          # the running platform's, by default
-            hook = hookmain.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py')['PreToolUse'][0]['hooks'][0]
+            hook = hookrun.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py')['PreToolUse'][0]['hooks'][0]
         self.assertEqual(hook.get('onFailure'), 'block')
-        linux = hookmain.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py', platform='linux')
+        linux = hookrun.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py', platform='linux')
         self.assertEqual(linux, {'PreToolUse': [{'matcher': 'Bash', 'hooks': [
             {'type': 'command', 'command': 'py', 'args': ['h.py'], 'onFailure': 'block'}]}]})
-        windows = hookmain.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py', platform='windows')
+        windows = hookrun.settings_entry('PreToolUse', 'Bash', 'h.py', executable='py', platform='windows')
         self.assertEqual(list(windows['PreToolUse'][0]['hooks'][0]), ['type', 'command', 'args'])
 
 
@@ -475,21 +476,21 @@ class Dispatch(unittest.TestCase):
             return ('[%s] %s\n' % (event_name, text) if text else ''), 0
 
     def test_a_start_event_writes_the_kit_header_through_context(self):
-        from kitlib.host import header
+        from kitlib.hookrun import header
         out = io.StringIO()
-        self.assertEqual(hookmain.dispatch(self.Starts(), 'Begin', 'C:/k', '{not json', out), 0)
+        self.assertEqual(hookrun.dispatch(self.Starts(), 'Begin', 'C:/k', '{not json', out), 0)
         self.assertEqual(out.getvalue(), '[Begin] %s\n' % header.text('C:/k'))
         with self.assertRaises(ValueError):
-            hookmain.dispatch(self.Starts(), 'Begin', 'C:/k', '{}', io.StringIO(), part='pm')
+            hookrun.dispatch(self.Starts(), 'Begin', 'C:/k', '{}', io.StringIO(), part='pm')
 
     def test_start_text_gets_the_payload_and_the_part(self):
         a, seen = self.Starts(), []
         a.start_text = lambda *args: seen.append(args) or 'checks'
         out = io.StringIO()
-        hookmain.dispatch(a, 'Begin', 'C:/k', '{"cwd": "C:/r"}', out, part='pm', environ={'X': '1'})
+        hookrun.dispatch(a, 'Begin', 'C:/k', '{"cwd": "C:/r"}', out, part='pm', environ={'X': '1'})
         self.assertEqual(seen, [('Begin', 'C:/k', {'cwd': 'C:/r'}, {'X': '1'}, 'pm')])
         self.assertEqual(out.getvalue(), '[Begin] checks\n')
-        hookmain.dispatch(a, 'Begin', 'C:/k', '[]', io.StringIO())
+        hookrun.dispatch(a, 'Begin', 'C:/k', '[]', io.StringIO())
         self.assertEqual(seen[-1][2], {}, 'a payload that is not an object reads as none')
 
     def test_the_tool_event_runs_the_guard_with_the_adapters_deadline_and_the_command_line(self):
@@ -499,29 +500,29 @@ class Dispatch(unittest.TestCase):
             got.update(event=event, text=stdin.read(), entry=entry, deadline=deadline, started=started, args=args,
                        kit=kit)
             return 7
-        with mock.patch.object(hookmain, 'run', fake_run):
-            code = hookmain.dispatch(a, 'PreToolUse', 'C:/k', '{"kind": "shell"}', io.StringIO(),
+        with mock.patch.object(hookrun, 'run', fake_run):
+            code = hookrun.dispatch(a, 'PreToolUse', 'C:/k', '{"kind": "shell"}', io.StringIO(),
                                      'C:/k/boot/hook.py', ['h', 'PreToolUse'], started=1.5)
         self.assertEqual(code, 7)
         self.assertEqual(got, {'event': 'PreToolUse', 'text': '{"kind": "shell"}', 'entry': 'C:/k/boot/hook.py',
                                'deadline': 5, 'started': 1.5, 'args': ['h', 'PreToolUse'], 'kit': 'C:/k'})
         with self.assertRaises(ValueError):
-            hookmain.dispatch(a, 'PreToolUse', 'C:/k', '{}', io.StringIO(), part='pm')
+            hookrun.dispatch(a, 'PreToolUse', 'C:/k', '{}', io.StringIO(), part='pm')
 
     def test_the_reproduce_line_names_the_entrys_arguments(self):
         def boom(*a, **k):
             raise RuntimeError('x')
         out = io.StringIO()
         with mock.patch('kitlib.guard.decide', boom):
-            hookmain.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), out, environ={},
+            hookrun.run(FakeAdapter(), 'PreToolUse', io.StringIO('{}'), out, environ={},
                          entry='C:/k/boot/hook.py', args=('h', 'PreToolUse'))
         self.assertEqual(out.getvalue(), 'deny guard-error\n')
-        d = hookmain.failure(RuntimeError('x'), 'main', 'C:/k/boot/hook.py', ('h', 'PreToolUse'))
+        d = hookrun.failure(RuntimeError('x'), 'main', 'C:/k/boot/hook.py', ('h', 'PreToolUse'))
         self.assertEqual(d.instead, 'python "C:/k/boot/hook.py" h PreToolUse < event.json')
 
 
 class HeaderFollow(unittest.TestCase):
-    """The header-update line (kitlib.host.headerfollow): noted at the header part of a start
+    """The header-update line (kitlib.hookrun.headerfollow): noted at the header part of a start
     event, told with the verdict of a later tool event."""
 
     class Tells(Dispatch.Starts):
@@ -530,11 +531,11 @@ class HeaderFollow(unittest.TestCase):
 
     def test_the_header_part_notes_the_kit_with_the_payloads_agent(self):
         seen = []
-        with mock.patch('kitlib.host.headerfollow.note', lambda *a: seen.append(a)):
-            hookmain.dispatch(self.Tells(), 'Begin', 'C:/k', '{"session_id": "s", "who": "a1"}', io.StringIO())
+        with mock.patch('kitlib.hookrun.headerfollow.note', lambda *a: seen.append(a)):
+            hookrun.dispatch(self.Tells(), 'Begin', 'C:/k', '{"session_id": "s", "who": "a1"}', io.StringIO())
             a = self.Tells()
             a.start_text = lambda *args: 'checks'
-            hookmain.dispatch(a, 'Begin', 'C:/k', '{"session_id": "s"}', io.StringIO(), part='pm')
+            hookrun.dispatch(a, 'Begin', 'C:/k', '{"session_id": "s"}', io.StringIO(), part='pm')
         self.assertEqual(seen, [('C:/k', {'session_id': 's', 'who': 'a1'}, 'a1', 'Begin')])
 
     def tool(self, adapter, verdict, line='LINE', reason=None, boom=False):
@@ -548,8 +549,8 @@ class HeaderFollow(unittest.TestCase):
                 raise RuntimeError('record unreadable')
             return line
         with mock.patch('kitlib.guard.decide', lambda *x, **k: Decision(verdict, 'r', reason)), \
-                mock.patch('kitlib.host.headerfollow.line', told):
-            code = hookmain.run(adapter, 'PreToolUse', io.StringIO('{"session_id": "s", "who": "a1"}'), out,
+                mock.patch('kitlib.hookrun.headerfollow.line', told):
+            code = hookrun.run(adapter, 'PreToolUse', io.StringIO('{"session_id": "s", "who": "a1"}'), out,
                                 environ={'X': '1'}, entry='C:/k/boot/hook.py', kit='C:/k')
         return code, out.getvalue(), seen
 
@@ -603,16 +604,16 @@ class HeaderFollow(unittest.TestCase):
 
     def test_a_raising_note_does_not_fail_a_start_event(self):
         out = io.StringIO()
-        with mock.patch('kitlib.host.headerfollow.note', side_effect=RuntimeError('disk')):
-            code = hookmain.dispatch(self.Tells(), 'Begin', 'C:/k', '{"session_id": "s"}', out)
+        with mock.patch('kitlib.hookrun.headerfollow.note', side_effect=RuntimeError('disk')):
+            code = hookrun.dispatch(self.Tells(), 'Begin', 'C:/k', '{"session_id": "s"}', out)
         self.assertEqual(code, 0)
         self.assertTrue(out.getvalue())
 
     def test_no_kit_no_line(self):
         out = io.StringIO()
         with mock.patch('kitlib.guard.decide', lambda *x, **k: Decision('allow')), \
-                mock.patch('kitlib.host.headerfollow.line', side_effect=AssertionError('read')):
-            hookmain.run(self.Tells(), 'PreToolUse', io.StringIO('{"session_id": "s"}'), out, environ={})
+                mock.patch('kitlib.hookrun.headerfollow.line', side_effect=AssertionError('read')):
+            hookrun.run(self.Tells(), 'PreToolUse', io.StringIO('{"session_id": "s"}'), out, environ={})
         self.assertEqual(out.getvalue(), '')
 
 

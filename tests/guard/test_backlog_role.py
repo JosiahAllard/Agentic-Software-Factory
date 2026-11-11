@@ -1076,7 +1076,7 @@ class Refs(Base):
         """A .kit.json that is not UTF-8 raises out of the config load (UnicodeDecodeError, no
         ConfigError, so no ctx.config_error): store_kind's fault is no ground to allow. The rule
         `heavy`, which reads the same config before this one, is stubbed out: its raise is the
-        hook's fail-closed failure (kitlib.host.hookmain), which would hide this rule's answer."""
+        hook's fail-closed failure (kitlib.hookrun.main), which would hide this rule's answer."""
         with open(os.path.join(self.w.main, '.kit.json'), 'wb') as f:
             f.write(b'{"repo": {"name": "d\xff\xfeo"}}')
         with mock.patch('kitlib.guard.rules.heavy', lambda *a: None):

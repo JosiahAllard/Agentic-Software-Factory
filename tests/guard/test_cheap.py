@@ -11,7 +11,8 @@ from kitlib import config
 from kitlib.config import pmdata
 from kitlib.config import schema, user
 from kitlib.guard import modes, rules
-from kitlib.host import Action, Decision, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Action, Decision
 
 from . import world as W
 from .claudehost import action, output
@@ -695,7 +696,7 @@ class Render(World):
 
 
 class HookRunner(unittest.TestCase):
-    """kitlib.host.hookmain._judge keeps a warning: the allow it returns carries every action's."""
+    """kitlib.hookrun.main._judge keeps a warning: the allow it returns carries every action's."""
 
     def judge(self, decisions):
         it = iter(decisions)
@@ -708,7 +709,7 @@ class HookRunner(unittest.TestCase):
         class Adapter(object):
             profile = None
         acts = tuple(Action('edit', 'Write', path='p%d' % i) for i in range(len(decisions)))
-        return hookmain._judge(Adapter(), Guard(), acts, {}, None)
+        return hookrun._judge(Adapter(), Guard(), acts, {}, None)
 
     def test_warnings_of_every_action_are_joined(self):
         d = self.judge([Decision('allow'), Decision('allow', 'warn', 'a'), Decision('allow', 'warn', 'b'),

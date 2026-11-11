@@ -142,8 +142,8 @@ from `hosts/` or `optional/`.
   shell-cwd-in-checkout check, the lock-verb allowlist and `shell_gap`.
 - **One hook entry for every host** (decision 20): `boot/hook.py <host> <event>` runs the kit's
   boot check (§2.5), builds the adapter and calls
-  `kitlib.host.hookmain.run(adapter, event, stdin)`. The fail-closed deny, timeout handling and
-  settings-entry rendering live in `hookmain` once.
+  `kitlib.hookrun.main.run(adapter, event, stdin)`. The fail-closed deny, timeout handling and
+  settings-entry rendering live in `hookrun` once.
 
 ### 2.3 Single-source content (`content/`) and the generated files
 **What "generated files" means.** A host needs agents, skills and instructions in its own file

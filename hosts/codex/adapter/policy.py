@@ -1,4 +1,4 @@
-"""Codex's own hook policy: what only this host needs, judged before kitlib.guard (kitlib.host.hookmain
+"""Codex's own hook policy: what only this host needs, judged before kitlib.guard (kitlib.hookrun.main
 `screen`). The role policy every host shares is kitlib.guard.rolepolicy; this is what step 4 left in
 the Codex branch's guard_adapter and actions.py.
 
@@ -21,7 +21,7 @@ only by the shared rules, which count it as an agent session and never as the ow
                       list to keep an edit tool from such a role (the Codex branch's guard_adapter
                       held them so). Temp and scratch folders stay the write jail's.
 Every deny is tagged with the role the guard holds the call as (rules.tag_role: `subagent` for a
-marked session, kitlib.host.hookmain.unidentified).
+marked session, kitlib.hookrun.main.unidentified).
 """
 from kitlib.host import sessionmark
 from kitlib.host import Decision

@@ -24,7 +24,7 @@ manifests(kit, content) writes the files that carry the kit's one version (kit.j
   `.claude-plugin/plugin.<platform>.json`, which the plugin export writes in its place.
 - `.claude-plugin/marketplace.json`: the checkout as a local marketplace of that one plugin
   (`"source": "./"`), its version as `metadata.version`.
-- HOOKS_REL: the plugin's hooks (HOOKS), each command line from kitlib.host.hookmain.manifest_command
+- HOOKS_REL: the plugin's hooks (HOOKS), each command line from kitlib.hookrun.main.manifest_command
   for Windows: the kit's one hook entry, ${CLAUDE_PLUGIN_ROOT}/ENTRY, with `claude`, the event and,
   for the coordinator rules, its part (boot/hook.py). Each other platform hosts.json gives Claude
   gets the same hooks with that platform's command line in hooks_rel(platform),
@@ -36,7 +36,8 @@ generated-file line; plugin.json's description says it is rendered.
 import json
 
 from kitlib.host import agentname
-from kitlib.host import hookmain, registry
+from kitlib.hookrun import main as hookrun
+from kitlib.host import registry
 from kitlib.host.content import ContentError, banner, quote, role_source, substitute
 
 HOST = 'claude'
@@ -67,8 +68,8 @@ MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mc
 
 
 def mcp_servers(platform='windows'):
-    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookmain.mcp_interpreter)."""
-    command = hookmain.mcp_interpreter(platform)
+    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookrun.mcp_interpreter)."""
+    command = hookrun.mcp_interpreter(platform)
     return {name: dict(server, command=command) for name, server in MCP_SERVERS.items()}
 TOOLS = {
     'read': 'Read', 'edit': 'Edit', 'write': 'Write', 'search': 'Grep', 'find': 'Glob',
@@ -204,7 +205,7 @@ class ClaudeContent:
         events = {}
         for event, matcher, part in HOOKS:
             hook = {'type': 'command'}
-            hook.update(hookmain.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), platform, HOST, event,
+            hook.update(hookrun.manifest_command('%s/%s' % (PLUGIN_ROOT, ENTRY), platform, HOST, event,
                                                   *([part] if part else []), blocking=event == tool_event))
             group = {'matcher': matcher} if matcher else {}
             group['hooks'] = [hook]

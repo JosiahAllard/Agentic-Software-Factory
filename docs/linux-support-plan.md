@@ -27,7 +27,7 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
   (kitlib.machinesetup.linuxbox.front_door; question 11). Linux is let through (slice 14).
 - kitlib/platform/windows/win32.py binds its DLLs lazily (kitlib.platform.dll.LazyDLL), so it and
   the modules built on it import on any platform, and a call off Windows raises PlatformUnsupported.
-- The hook manifests: hookmain.INTERPRETERS is `{'windows': 'pythonw', 'linux': 'python3'}`
+- The hook manifests: hookrun.INTERPRETERS is `{'windows': 'pythonw', 'linux': 'python3'}`
   (MCP_INTERPRETERS: `python`, `python3`); hosts.json lists windows and linux for both hosts with
   per-platform `process_names`; each host renders `hooks.linux.json` beside its `hooks.json`
   (slice 12). The guard declares Linux ready: kitlib.guard.READY_PLATFORMS.
@@ -101,7 +101,7 @@ Rules:
    failure: a DLL or export that is missing fails at first call, naming the function, not at import
    (tests/platform/test_lazy_dll.py).
 4. Guard path text goes through one function per shell (kitlib/guard/paths.py norm and the
-   shell's resolve_path); hook commands come from one helper (hookmain.manifest_command).
+   shell's resolve_path); hook commands come from one helper (hookrun.manifest_command).
 5. A Linux primitive that cannot give the Windows guarantee says so in its name or raises; it
    never silently does less (section 2.3, question 4).
 
@@ -246,8 +246,8 @@ What kept Linux safe while slices 2 to 13 were built was the front door, not the
 refused Linux, because a hook command that cannot start (the Claude manifest's `pythonw` on Linux)
 is, for Claude Code, a non-blocking error (inferred from its hook contract), so the tool call goes
 ahead unguarded. A plugin installed on Linux by hand around kit.py was therefore unguarded until
-slice 12 gave the hook a Linux interpreter. The backstop that stays: hookmain blocks every guarded
-tool call when the platform is not in READY_PLATFORMS (tests/host/test_hookmain.py).
+slice 12 gave the hook a Linux interpreter. The backstop that stays: hookrun blocks every guarded
+tool call when the platform is not in READY_PLATFORMS (tests/hookrun/test_hookmain.py).
 
 ## 4. CI and test marking
 
@@ -382,12 +382,12 @@ the host as heavy.
     box without user systemd.
 11. **Sessions.** Done: kitlib/launcher/linuxwin.py (tmux, or a configured terminal command),
     launcher/stop.py, the proc process listing (proc/listing.py).
-12. **Hook interpreter.** Done: hookmain.manifest_command and INTERPRETERS (python3 on Linux, run by
+12. **Hook interpreter.** Done: hookrun.manifest_command and INTERPRETERS (python3 on Linux, run by
     /bin/sh; a tool event's line exits 2 when python3 fails or is missing, a start event's says
     the kit did not load), each host's `hooks.linux.json`, hosts.json platforms, the plugin export
-    (kitlib.pluginsource.platform_manifests), and hookmain.mcp_interpreter for the MCP servers
+    (kitlib.pluginsource.platform_manifests), and hookrun.mcp_interpreter for the MCP servers
     (`.claude-plugin/plugin.linux.json`, Codex's `mcp.linux.json`; tests/content/test_render.py
-    ManifestTest). Open proof: the posix-only run of the lines (tests/host/test_hook_linux.py) on a
+    ManifestTest). Open proof: the posix-only run of the lines (tests/hookrun/test_hook_linux.py) on a
     Linux machine.
 13. **Shell text.** Done: section 5.
 14. **Machine setup on Linux.** Done: installer/machine-setup.sh, kitlib/machinesetup

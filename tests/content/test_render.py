@@ -148,8 +148,8 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual([p['source'] for p in market['plugins']], ['./'])
 
     def test_the_hook_commands_come_from_the_one_helper(self):
-        from kitlib.host import hookmain
-        want = hookmain.manifest_command('x', 'windows')['command']
+        from kitlib.hookrun import main as hookrun
+        want = hookrun.manifest_command('x', 'windows')['command']
         hooks = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.json')['hooks']
         self.assertEqual(sorted(hooks), ['SessionStart', 'SubagentStart'])
         for event, groups in hooks.items():
@@ -161,7 +161,8 @@ class ManifestTest(unittest.TestCase):
         """hooks.linux.json: every event, matcher and hook argument hooks.json has, each run by the
         Linux command line (a start event: python3 under /bin/sh, printing the did-not-load line
         when it fails), so the two files differ in the command alone."""
-        from kitlib.host import hookmain, registry
+        from kitlib.hookrun import main as hookrun
+        from kitlib.host import registry
         self.assertEqual(registry.host('claude').platforms, ('windows', 'linux'))
         windows = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.json')['hooks']
         linux = self.load('hosts', 'claude', 'shell', 'hooks', 'hooks.linux.json')['hooks']
@@ -169,7 +170,7 @@ class ManifestTest(unittest.TestCase):
         for event in windows:
             self.assertEqual([g.get('matcher') for g in linux[event]], [g.get('matcher') for g in windows[event]])
             for w, l in zip((h for g in windows[event] for h in g['hooks']), (h for g in linux[event] for h in g['hooks'])):
-                self.assertEqual(l, dict(w, **hookmain.manifest_command(w['args'][0], 'linux', *w['args'][1:])))
+                self.assertEqual(l, dict(w, **hookrun.manifest_command(w['args'][0], 'linux', *w['args'][1:])))
                 self.assertEqual(l['args'][:3], ['-c', l['args'][1], 'kit-hook'])
                 self.assertIn('the kit did not load', l['args'][1])
 

@@ -1,4 +1,4 @@
-"""The Linux hook command line (kitlib.host.hookmain.manifest_command, rendered into each plugin's
+"""The Linux hook command line (kitlib.hookrun.main.manifest_command, rendered into each plugin's
 hooks/hooks.linux.json), run for real under /bin/sh: the script and its arguments reach python3
 intact, a tool event that fails or finds no python3 exits 2 (the guard-error deny, as boot/hook.py
 blocks), and a start event that fails says the kit did not load and exits 0."""
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 from hosts.codex.adapter import content as codex_content
-from kitlib.host import hookmain
+from kitlib.hookrun import main as hookrun
 from tests.platforms import posix_only
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,7 +39,7 @@ class LinuxHookLine(unittest.TestCase):
         os.chmod(python3, os.stat(python3).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     def run_line(self, code, blocking, path=None, script=None, args=None, stdin='', env=None):
-        line = hookmain.manifest_command(script or self.script, 'linux',
+        line = hookrun.manifest_command(script or self.script, 'linux',
                                          *(args if args is not None else ['a b', str(code)]), blocking=blocking)
         self.assertEqual(line['command'], '/bin/sh')
         full = dict(os.environ, PATH=path or self.bin, **(env or {}))
@@ -70,7 +70,7 @@ class LinuxHookLine(unittest.TestCase):
         self.assertEqual(r.stdout, '%s (exit 127)\n' % DID_NOT_LOAD)
 
     def test_codex_runs_the_same_line_as_one_shell_string(self):
-        line = hookmain.manifest_command('${PLUGIN_ROOT}/hook.py', 'linux', 'a b', '0', blocking=True)
+        line = hookrun.manifest_command('${PLUGIN_ROOT}/hook.py', 'linux', 'a b', '0', blocking=True)
         text = codex_content.CodexContent.command_text(line, 'linux')
         env = dict(os.environ, PATH=self.bin, PLUGIN_ROOT=self.dir)
         r = subprocess.run(['/bin/sh', '-c', text], capture_output=True, text=True, env=env, timeout=60)

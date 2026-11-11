@@ -144,7 +144,8 @@ One package writes each kind of data; others read it through that package.
 | The hub store (questions, to-dos, approvals, pages, landings) | `hubsite` | the PM-data worktree |
 | Approval rules (what an approval covers, when it is spent) | `ownerfiles` | read from the hub store through `hubclient` |
 | Sessions and launcher state | `launcher` | the launcher's state folder |
-| The kit export, its marker and headers | `pluginsource` | the live root |
+| The kit export and its marker | `pluginsource` | the live root |
+| The header records (which export each session's kit header named) | `hookrun` | `<export root>/headers/` |
 | Rendered agents and manifests | `content` | `hosts/<name>/shell/`; never edited by hand |
 | The refusal log | `guard` | the PM-data worktree |
 | A coordinator's event log and state note | `coordstate` | the agent temp folder, outside every repository |

@@ -56,7 +56,7 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 SANDBOXES = ('read-only', 'workspace-write')
 CACHES = ('long',)
 COMPACT = (100000, 1000000)   # a role's `compact:` bounds, the Claude CLI's own --autocompact range
-# The role-policy modes (kitlib.guard.rolepolicy, which takes them from here).
+# The role-policy modes (the guard's role policy takes them from here).
 MODES = ('controller', 'write', 'read', 'test', 'lander')
 # A role's group (kitlib.backlog.roles reads them): its mode's (MODE_GROUP), or the `group:` it
 # names, which must be one its mode allows (GROUP_MODES). A role with no mode has no group.

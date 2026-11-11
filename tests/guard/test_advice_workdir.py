@@ -211,7 +211,7 @@ class AdviceKit(unittest.TestCase):
 
     def test_a_guard_run_from_a_replaced_export_names_the_folder_the_header_names(self):
         from kitlib.guard import rules
-        from kitlib.host import headerfollow
+        from kitlib.hookrun import headerfollow
         old = self.own_export({'checkout': self.w.kit_dir})
         payload = {'session_id': 's1'}
         os.makedirs(os.path.join(self.plugin, headerfollow.HEADERS))
@@ -275,7 +275,7 @@ class AdviceKit(unittest.TestCase):
         # no mock: headerfollow.line takes advice_kit through _Ctx, which reads the machine config
         # from the home its environment names, in the PM repository the test fence's pointer names
         from kitlib.config import user
-        from kitlib.host import headerfollow
+        from kitlib.hookrun import headerfollow
         from tests.home import pm_repo, temp_home
         home, pm = temp_home(self), pm_repo(self, record=False)
         os.makedirs(os.path.join(pm, user.DIR_NAME))

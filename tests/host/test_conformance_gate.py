@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CHANGES = (
     'hosts.json',
     'kit.json',
-    'kitlib/host/hookmain.py',
+    'kitlib/hookrun/main.py',
     'kitlib/host/content.py',
     'hosts/claude/adapter/events.py',
     'boot/hook.py',

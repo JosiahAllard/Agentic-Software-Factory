@@ -160,11 +160,11 @@ def _wants_guard(plan, path, data, ctx):
 
 
 def on_failure():
-    """The onFailure the guard's entry carries on the running platform (kitlib.host.hookmain
+    """The onFailure the guard's entry carries on the running platform (kitlib.hookrun.main
     ON_FAILURE, which settings_entry reads), or None."""
     from kitlib import platform
-    from kitlib.host import hookmain
-    return hookmain.ON_FAILURE.get(platform.NAME)
+    from kitlib.hookrun import main as hookrun
+    return hookrun.ON_FAILURE.get(platform.NAME)
 
 
 def _guard_on_failure(data, ctx, did):
@@ -827,7 +827,7 @@ def _paths(h, home):
 
 def add_on_failure(data, kit, home, value):
     """Give each PreToolUse hook in `data` that runs `kit`'s guard (GUARD) and has no onFailure the
-    onFailure `value()` returns (the guard entry's: kitlib.host.hookmain.ON_FAILURE); `value` is
+    onFailure `value()` returns (the guard entry's: kitlib.hookrun.main.ON_FAILURE); `value` is
     called only for such a hook, and None from it changes nothing. A hook that has one keeps it.
     True when a hook changed."""
     guard = norm(kit_file(kit, GUARD))

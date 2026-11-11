@@ -1,5 +1,5 @@
 """What Codex's start hooks add to the context (SessionStart, PostCompact, SubagentStart): the kit
-header (kitlib.host.header) and, for a PM or a coordinator session, the shared start checks
+header (kitlib.hookrun.header) and, for a PM or a coordinator session, the shared start checks
 (kitlib.hoststart; from the Codex branch's session_adapter.py).
 
   text(event, kit, payload, environ, checks, lock_reader)   the context text
@@ -17,8 +17,8 @@ import json
 import os
 
 from kitlib import agentstart
+from kitlib.hookrun import header
 from kitlib.host import sessionmark
-from kitlib.host import header
 
 from hosts.codex.adapter.events import absolute
 

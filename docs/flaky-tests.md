@@ -31,4 +31,4 @@ The case that prompted it: the agent-start block (`kitlib.agentstart`, default `
 
 ## Open
 
-- The Codex hook's `DEADLINE` (`hosts/codex/adapter/host.py`) is a fail-closed safety timeout: still deciding at the deadline is a `deny guard-timeout` (`kitlib/host/hookmain.py`). The fence does not touch it. Fencing it would change what a test sees of a safety check, so it is the owner's decision.
+- The Codex hook's `DEADLINE` (`hosts/codex/adapter/host.py`) is a fail-closed safety timeout: still deciding at the deadline is a `deny guard-timeout` (`kitlib/hookrun/main.py`). The fence does not touch it. Fencing it would change what a test sees of a safety check, so it is the owner's decision.

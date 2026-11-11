@@ -49,7 +49,8 @@ import re
 from unittest import mock
 
 from kitlib import content as kcontent
-from kitlib.host import Action, Decision, HostCapabilities, HostProfile, header, hookmain, registry
+from kitlib.hookrun import header, main as hookrun
+from kitlib.host import Action, Decision, HostCapabilities, HostProfile, registry
 from kitlib.host.content import ARG_TOKENS, CAPABILITIES, TOKENS, ContentError
 from tests.host.test_leaks import occurrences
 
@@ -164,11 +165,11 @@ class HostConformance(object):
         return self.cases(kind='shell')[0]
 
     def hook(self, event, payload, decide, stdin=None):
-        """(verdict, reason, code) of kitlib.host.hookmain.run over the adapter, decide standing in
+        """(verdict, reason, code) of kitlib.hookrun.main.run over the adapter, decide standing in
         for kitlib.guard.decide."""
         out = io.StringIO()
         with mock.patch('kitlib.guard.decide', decide):
-            code = hookmain.run(self.adapter, event, io.StringIO(stdin if stdin is not None else json.dumps(payload)),
+            code = hookrun.run(self.adapter, event, io.StringIO(stdin if stdin is not None else json.dumps(payload)),
                                 out, environ={}, entry='C:/kit/hook.py')
         verdict, reason = self.read_output(out.getvalue(), code)
         return verdict, reason, code
@@ -294,7 +295,7 @@ class HostConformance(object):
                  for c in self.fixtures['malformed']]
         for verdict, reason, code in runs:
             self.assertEqual((verdict, code), ('deny', deny_code))
-            self.assertIn('rule=%s' % hookmain.ERROR, reason)
+            self.assertIn('rule=%s' % hookrun.ERROR, reason)
         self.assertIn('RuntimeError: guard broke', runs[0][1])
 
     def test_a_payload_that_is_not_an_object_is_denied(self):
@@ -310,7 +311,7 @@ class HostConformance(object):
                     verdict, reason, code = self.hook(event, None, lambda *a, **k: Decision('allow'),
                                                       stdin=json.dumps(value))
                     self.assertEqual((verdict, code), ('deny', deny_code))
-                    self.assertIn('rule=%s' % hookmain.ERROR, reason)
+                    self.assertIn('rule=%s' % hookrun.ERROR, reason)
 
     # -- kit header -----------------------------------------------------------------------------
     def test_the_kit_header_reaches_every_start_event(self):

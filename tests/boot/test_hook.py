@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -126,7 +128,7 @@ class Failures(Scratch):
 
     def test_the_home_fence_on_the_way_blocks_a_tool_call(self):
         """kitlib.config.user.HomeFenced is a BaseException: a guard that meets the home fence
-        (kitlib.guard.shell.home_folder) passes hookmain's `except Exception`, and run() blocks."""
+        (kitlib.guard.shell.home_folder) passes hookrun's `except Exception`, and run() blocks."""
         from kitlib.config import user as kuser
         with mock.patch.object(H, 'main', side_effect=kuser.HomeFenced(kuser.FENCE_MESSAGE)):
             code, out, err = self.run_hook(['x', 'Pre'], '{"call": {"name": "edit"}}')
@@ -137,13 +139,23 @@ class Failures(Scratch):
         self.assertEqual(self.run_hook(['x', 'Pre'], '{"call": {"name": "read"}}'), (0, '', ''))
 
     def test_a_kit_that_will_not_boot_blocks_a_tool_call_and_is_said_at_a_start(self):
-        with mock.patch.dict(os.environ, {'PM_KIT_ROOT': 'relative'}):
-            code, out, err = self.run_hook(['x', 'Pre'], '{"call": {"name": "edit"}}')
-            self.assertEqual((code, out), (H.BLOCK, ''))
-            self.assertIn('BootError', err)
-            code, out, err = self.run_hook(['x', 'Start', 'part'])
-            self.assertEqual(code, 0)
-            self.assertTrue(out.startswith('PM kit (part): the kit did not load: BootError:'), out)
+        """Two ways the kit fails to load: kitboot refuses the root, or the kit boots and its
+        kitlib.hookrun will not import (a kit from before the runner moved there)."""
+        adapter = types.ModuleType('x.adapter')
+        adapter.ADAPTER = object()
+        no_runner = {'x': types.ModuleType('x'), 'x.adapter': adapter, 'kitlib.hookrun': None}
+        for name, env, modules, reason in (
+                ('boot', {'PM_KIT_ROOT': 'relative'}, {}, 'BootError'),
+                ('hookrun import', {}, no_runner, "ModuleNotFoundError: import of kitlib.hookrun halted")):
+            with self.subTest(name), mock.patch.dict(os.environ, env), mock.patch.dict(sys.modules, modules):
+                if not env:
+                    os.environ.pop('PM_KIT_ROOT', None)         # this checkout's kit, which boots
+                code, out, err = self.run_hook(['x', 'Pre'], '{"call": {"name": "edit"}}')
+                self.assertEqual((code, out), (H.BLOCK, ''))
+                self.assertIn(reason, err)
+                code, out, err = self.run_hook(['x', 'Start', 'part'])
+                self.assertEqual(code, 0)
+                self.assertTrue(out.startswith('PM kit (part): the kit did not load: %s' % reason), out)
 
 
 if __name__ == '__main__':

@@ -81,7 +81,7 @@ class Parse(unittest.TestCase):
     def test_agent_reads_the_identity_alone(self):
         self.assertEqual(events.agent({'agent_id': 'a1'}), 'a1')
         self.assertIsNone(events.agent({}))
-        self.assertRaises(ValueError, events.agent, None)     # hookmain then tags the deny main
+        self.assertRaises(ValueError, events.agent, None)     # hookrun then tags the deny main
 
 
 class Render(unittest.TestCase):

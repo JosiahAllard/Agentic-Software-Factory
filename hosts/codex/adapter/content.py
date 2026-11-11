@@ -38,7 +38,7 @@ HOOKS_REL (and hooks_rel(platform) for each other platform) must hold, byte for 
 whose bytes never change with the kit (docs/plugin-source.md "Codex hooks plugin"): every hosts.json
 hook event, each running its STUB_ENTRY as ${PLUGIN_ROOT}/pm_kit_hook.py (the plugin root: its cache
 folder) with `codex` and the event's name; the stub runs boot/hook.py of the installed pm-kit.
-Codex reads a hook's command as one string, so it is kitlib.host.hookmain.manifest_command's
+Codex reads a hook's command as one string, so it is kitlib.hookrun.main.manifest_command's
 command line joined, the script quoted (command_text); elsewhere than Windows, a POSIX shell line,
 which the plugin export (kitlib.pluginsource) writes in hooks.json's place.
 """
@@ -46,7 +46,8 @@ import json
 import re
 
 from kitlib.host import agentname
-from kitlib.host import hookmain, registry
+from kitlib.hookrun import main as hookrun
+from kitlib.host import registry
 from kitlib.blendermcp import SERVER_NAME as BLENDER_NAME
 from kitlib.hubmcp import SERVER_NAME as HUB_NAME
 from kitlib.lockmcp import SERVER_NAME
@@ -93,8 +94,8 @@ MCP_SERVERS = {SERVER_NAME: {'type': 'stdio', 'command': 'python',
 
 
 def mcp_servers(platform='windows'):
-    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookmain.mcp_interpreter)."""
-    command = hookmain.mcp_interpreter(platform)
+    """MCP_SERVERS, each command `platform`'s MCP interpreter (hookrun.mcp_interpreter)."""
+    command = hookrun.mcp_interpreter(platform)
     return {name: dict(server, command=command) for name, server in MCP_SERVERS.items()}
 
 # hosts.json's Codex tiers are all ACCOUNT_DEFAULT: every role runs on the account's configured
@@ -301,7 +302,7 @@ class CodexContent:
 
     @staticmethod
     def command_text(command, platform='windows'):
-        """A hookmain.manifest_command as one command string. Windows: each argument holding a
+        """A hookrun.manifest_command as one command string. Windows: each argument holding a
         space or a `$` in double quotes. Elsewhere a POSIX shell line: an argument naming a
         variable (`${`) in double quotes, so the shell or Codex fills it; any other argument
         that is not plain in single quotes, so `$@` and `$?` reach the /bin/sh it starts."""
@@ -318,7 +319,7 @@ class CodexContent:
             raise ContentError('%s: HOOKS must cover exactly the hook events hosts.json declares' % HOOKS_REL)
         events = {}
         for event, matcher, status in HOOKS:
-            command = hookmain.manifest_command('%s/%s' % (PLUGIN_ROOT, STUB_ENTRY), platform, HOST, event,
+            command = hookrun.manifest_command('%s/%s' % (PLUGIN_ROOT, STUB_ENTRY), platform, HOST, event,
                                                 blocking=event == entry.hook.tool_event)
             hook = {'type': 'command', 'command': self.command_text(command, platform), 'timeout': HOOK_TIMEOUT}
             if status:

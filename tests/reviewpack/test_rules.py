@@ -55,7 +55,7 @@ class HubApprovalRows(unittest.TestCase):
 
 
 class TheOwnersCommitIsJudgedAsTheLandingJudgesIt(unittest.TestCase):
-    """kitlib.guard.ownercommits never counts a commit the owner authored, trailer or none; the
+    """kitlib.ownerfiles.rules never counts a commit the owner authored, trailer or none; the
     table must not print MISSING for one (seen on owner commits that landed)."""
 
     def test_the_owners_commit_with_no_trailer_is_ok(self):

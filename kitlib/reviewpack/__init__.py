@@ -22,13 +22,13 @@ edit the branch itself takes back, printed so a reviewer sees the round-trip but
 problem, because the path is byte-identical to the merge base. The rules are the base's `owner`
 section merged with the branch's (kitlib.config.owner.merge): a branch cannot unlock a path, and
 the owner's email comes from the base alone. As the landing guard judges (docs/guard-hooks.md "Owner-only
-commits"), a commit whose AUTHOR email is the owner's (read by ownercommits.commits, judged by
+commits"), a commit whose AUTHOR email is the owner's (read by ownerrules.commits, judged by
 rules.is_owner) is ok, with or without a trailer; its row shows an Owner-Approved trailer that
 covers the path. On anyone else's commit an Owner-Approved trailer approves nothing;
 `Owner-Approval: hub:A-<n>` (the hub form) on a non-merge commit reads ok by its form only, and
 landing verifies it; with "owner".email unset no commit is the owner's and every owner-only change
 blocks. A `"owner".shrink_only` path a one-parent commit only deletes lines of reads ok, by the
-landing's own predicate (ownercommits.deletes_only).
+landing's own predicate (ownerrules.deletes_only).
 
 `.kit.json` "review_pack" as the BASE holds it (a branch cannot switch its own check off):
 "coauthor" (default false) lists the branch's commits with no Co-Authored-By trailer, each with
@@ -67,7 +67,7 @@ from kitlib.config import owner as ownermod
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 from kitlib.git import repo as gitrepo
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from kitlib.records import gate_ok
 from kitlib import verdict
 from kitlib.docs import callers as doc_callers
@@ -302,24 +302,24 @@ def owner_approval_rows(commits, rules):
 
     A commit `not_owner` is None for (the owner authored it, by the landing guard's own test:
     owner_only_section) is ok on every locked path, as the landing judges it
-    (kitlib.guard.ownercommits: an owner's commit is never a violation); its row shows the
+    (kitlib.ownerfiles.rules: an owner's commit is never a violation); its row shows the
     Owner-Approved trailer that covers the path, if one does.
     MISSING, on anyone else's commit: a locked path no hub approval of its own covers (approval is
     per commit; an Owner-Approved trailer there is an unproven claim and covers nothing).
     UNMATCHED: a trailer naming a path this commit does not change. The hub form
-    (`Owner-Approval: hub:A-<n>`, the 5th field, read as ownercommits reads it;
+    (`Owner-Approval: hub:A-<n>`, the 5th field, read as ownerrules reads it;
     the 6th says the commit is a merge, which cannot carry one)
     covers every locked path of a commit when it is the one valid value; the hub verifies it at land
-    time (kitlib.guard.ownercommits), which this read-only pack cannot, so the row says so.
+    time (kitlib.ownerfiles.rules), which this read-only pack cannot, so the row says so.
     A path in the 7th field (owner_only_section: a `"owner".shrink_only` path this one-parent
-    commit only deletes lines of, ownercommits.deletes_only) is ok on anyone's commit."""
+    commit only deletes lines of, ownerrules.deletes_only) is ok on anyone's commit."""
     rows = []
     key = rules.trailer
     for sha, paths, values, not_owner, *rest in commits:
         hub = rest[0] if rest else []
         merge = len(rest) > 1 and rest[1]
         shrunk = rest[2] if len(rest) > 2 else ()
-        hub_ok = not merge and len(hub) == 1 and bool(ownercommits.APPROVAL_RE.match(hub[0]))
+        hub_ok = not merge and len(hub) == 1 and bool(ownerrules.APPROVAL_RE.match(hub[0]))
         for path in paths:
             if not rules.is_locked(path):
                 continue
@@ -332,14 +332,14 @@ def owner_approval_rows(commits, rules):
                              'landing judges it)'))
             elif not got and hub_ok:
                 rows.append((sha, 'ok', path, '%s %s (the hub verifies it at land time, not this pack)'
-                             % (ownercommits.TRAILER, hub[0])))
+                             % (ownerrules.TRAILER, hub[0])))
             elif not got and hub and merge:
                 rows.append((sha, 'MISSING', path, 'do not land - a merge cannot carry an owner '
                              'approval (trailers on this commit: %s)'
-                             % ', '.join('%s %s' % (ownercommits.TRAILER, t) for t in hub)))
+                             % ', '.join('%s %s' % (ownerrules.TRAILER, t) for t in hub)))
             elif not got and hub:
                 rows.append((sha, 'MISSING', path, 'do not land - its %s %s is not one hub:A-<n> (as %s)'
-                             % (ownercommits.TRAILER, ', '.join(hub), ownercommits.EXAMPLE)))
+                             % (ownerrules.TRAILER, ', '.join(hub), ownerrules.EXAMPLE)))
             elif got:
                 rows.append((sha, 'MISSING', path, 'do not land - %s %s is on a commit %s'
                              % (key, got, not_owner)))
@@ -408,14 +408,14 @@ def owner_only_section(root, base, branch, mb, rules):
     identity = rules.identity_problem()
     # Who authored each commit, read as the landing guard reads it (no mailmap, no replace refs)
     # and judged by its test, rules.is_owner, so this table and the landing cannot disagree.
-    found, why = ownercommits.commits(root, branch, [base])
+    found, why = ownerrules.commits(root, branch, [base])
     if found is None:
         raise Stop('%s: %s' % (TOOL, why))
     authors = {sha: email for sha, _, email, _ in found}
     simple, merges = [], []
     for sha, merge, author, body, names in range_commits(root, rng):
         values = trailers_of(body, rules.trailer)
-        hub = trailers_of(body, ownercommits.TRAILER)
+        hub = trailers_of(body, ownerrules.TRAILER)
         paths = commit_paths(root, sha) if merge else names
         if not values and not any(rules.is_locked(p) for p in paths):
             continue
@@ -426,7 +426,7 @@ def owner_only_section(root, base, branch, mb, rules):
         # As violations() judges it: a one-parent commit only, against its parent; a root commit's
         # `sha^` fails, and a failed read shrinks nothing.
         shrunk = {p for p in paths if not merge and not_owner and rules.is_shrink_only(p)
-                  and ownercommits.deletes_only(root, p, [sha + '^', sha])[0]}
+                  and ownerrules.deletes_only(root, p, [sha + '^', sha])[0]}
         (merges if merge else simple).append((sha[:7], paths, values, not_owner, hub, merge,
                                               shrunk))
     changed = [p for p in git(root, 'diff', '--name-only', '--no-renames', mb, branch,

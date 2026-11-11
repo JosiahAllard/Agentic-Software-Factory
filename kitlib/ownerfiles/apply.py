@@ -28,7 +28,7 @@ each answers why it refuses, or None.
                                     (line, why, consumed): consume the approval for the commit
                                     `sha`, then ask the hub to verify it for that commit
 
-What is written on HEAD (the delta rule, kitlib.hubsite.approvals.delta_targets): for each
+What is written on HEAD (the delta rule, kitlib.ownerfiles.approvals.delta_targets): for each
 approved path, the approved content where HEAD holds the base's copy (HEAD is the base, a
 descendant that changed none of the approved paths, or a rebuilt line with the same copy), and
 the clean merge of the approved change onto HEAD's copy (`git merge-file`) where HEAD changed the
@@ -36,10 +36,10 @@ path since the base. A merge that conflicts, a path HEAD holds as something othe
 file, or a file the approval creates that HEAD holds with other content refuses. So the commit
 made is the one gate land judges by the same rule.
 
-The hub is asked through kitlib.hubsite (approvals.Verifier.verify, for the approval's base,
+The hub is asked through kitlib.ownerfiles (approvals.Verifier.verify, for the approval's base,
 and approvals.consume, the agent's calls); every failure to ask it is a refusal, never a pass.
-The commit gate land and the pre-push hook judge is kitlib.guard.ownercommits.violations, by
-the delta rule (kitlib.hubsite.approvals.delta_error): the approved commit has one parent, changes
+The commit gate land and the pre-push hook judge is kitlib.ownerfiles.rules.violations, by
+the delta rule (kitlib.ownerfiles.approvals.delta_error): the approved commit has one parent, changes
 only the approval's files, makes the approved change on that parent (a clean merge onto it when the
 parent moved past the base), and is consumed by the hub, by any commit, and not
 spent. consume_commit judges the commit by delta_error too before it consumes.
@@ -47,7 +47,7 @@ spent. consume_commit judges the commit by delta_error too before it consumes.
 import os
 
 from kitlib.git import cmd
-from kitlib.guard import ownercommits as oc
+from kitlib.ownerfiles import rules as oc
 
 TRAILER = oc.TRAILER
 VALUE = 'hub:A-<n>'
@@ -202,7 +202,7 @@ def prewrite(root, did, doc, paths, head):
     """(plan, None): what to write into `root` for a commit of `paths` on `head`, {path: (blob,
     bytes)}, (None, None) for a path the change deletes; or (None, why) when the approved change
     cannot be written there (module docstring)."""
-    from kitlib.hubsite import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     want = approved_paths(doc)
     if sorted(paths) != want:
         return None, ('the paths named are not the approval\'s: named %s; hub:%s holds %s. Name '
@@ -252,7 +252,7 @@ def preverify_error(root, client, did, doc, head):
     signature, status and repository, for the approval's own base and blobs:
     approvals.Verifier.verify; prewrite judged the change on `head` against that base), or
     None."""
-    from kitlib.hubsite import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     repo, why = ap.remote_id(root)
     if repo is None:
         return 'the repository has no remote to name it: %s' % why
@@ -362,7 +362,7 @@ def consume_commit(root, client, did, value, sha):
     and have one parent, and make the approved change on it (approvals.delta_error, the land
     check's rule); the hub verifies the approved blobs for the signed base before the consume
     (Verifier.verify, no commit) and after it (with the commit)."""
-    from kitlib.hubsite import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     facts, why = commit_facts(root, sha)
     if facts is None:
         return None, why, False

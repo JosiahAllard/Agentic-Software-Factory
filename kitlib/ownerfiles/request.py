@@ -20,7 +20,7 @@ not UTF-8 or is over the size cap, a file whose content is its base (the consume
 that changes nothing), content git would store as another blob (`hash-object --path=<path>
 --stdin`: core.autocrlf or a text, eol or filter attribute changes it on staging, and the
 consumer's staged check would refuse it), and whatever
-kitlib.hubsite.approvals.new_doc refuses, in its words (its limits: MAX_FILES, MAX_CONTENT_BYTES,
+kitlib.ownerfiles.approvals.new_doc refuses, in its words (its limits: MAX_FILES, MAX_CONTENT_BYTES,
 MAX_PATH, MAX_TITLE, MAX_REASON). A delete cannot be requested: every file has content.
 
 build() passes `record` ({repo, id}) through unchecked: the hub checks it and parks that record
@@ -37,7 +37,7 @@ from kitlib import config as kconfig
 from kitlib import hubvalidate
 from kitlib.content import oncommit
 from kitlib.git import batch, cmd
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 
 _HEX40 = re.compile(r'[0-9a-f]{40}\Z')
 

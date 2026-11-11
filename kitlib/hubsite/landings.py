@@ -38,7 +38,7 @@ def event(record, repo, main_branch, main, records=(), mode=None, deploy=None, a
     new main the landing pushed: one commit for every branch of a batch, which the feed groups
     by), the backlog `records` the landing closed for the branch, the merged gate's `mode`
     (kitlib.records.gate_ok.MODES, None when unknown), the tip's `deploy` note, or None, and the
-    hub `approvals` ({A-<n>: sha}, kitlib.hubsite.approvals.landed) its commits put on main,
+    hub `approvals` ({A-<n>: sha}, kitlib.ownerfiles.approvals.landed) its commits put on main,
     left out when there is none."""
     out = dict((k, record.get(k)) for k in result.LEDGER_FIELDS)
     out.update(repo=repo, main_branch=main_branch, main=main, records=list(records or ()),

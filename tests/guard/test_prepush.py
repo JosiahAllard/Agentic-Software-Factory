@@ -11,11 +11,12 @@ import unittest
 from unittest import mock
 
 from kitlib.config import pmdata
-from kitlib.guard import context, ownercommits, prepush
-from kitlib.hubsite import approvals as ap
+from kitlib.guard import context, prepush
+from kitlib.ownerfiles import rules as ownerrules
+from kitlib.ownerfiles import approvals as ap
 from kitlib.records import gate_ok
 from tests import gitfixture
-from tests.guard import test_ownercommits as toc
+from tests.ownerfiles import test_rules as toc
 from tests.realgit import real_git
 from tests.guard import prepush_case as pc
 from tests.guard.prepush_case import AGENT, GATE, HOOKS
@@ -182,15 +183,15 @@ class HookTest(pc.PrePushCase):
 class OwnerApprovalTest(pc.PrePushCase):
     """An agent commit carrying `Owner-Approval: hub:A-<n>` is pushed to main when the hub
     verifies that approval for exactly that commit, and refused like any agent commit when it does
-    not (kitlib.guard.ownercommits, through its approvals seam: the stand-in hub of
-    tests/guard/test_ownercommits.py). prepush.check runs in this process, so the seam is patched;
+    not (kitlib.ownerfiles.rules, through its approvals seam: the stand-in hub of
+    tests/ownerfiles/test_rules.py). prepush.check runs in this process, so the seam is patched;
     git running the hook would ask the machine's hub."""
 
     def setUp(self):
         pc.PrePushCase.setUp(self)
         self.repo.git('push', '-q', 'origin', 'main')
         self.hub = toc.StandInHub()
-        patcher = mock.patch.object(ownercommits, 'default_approvals', lambda: self.hub)
+        patcher = mock.patch.object(ownerrules, 'default_approvals', lambda: self.hub)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -234,15 +235,15 @@ class OwnerApprovalTest(pc.PrePushCase):
 
     def test_an_approved_commit_on_a_base_moved_by_other_paths_is_pushed(self):
         tip = self.approved_commit('approved\n', before={'a.txt': 'a\n'})
-        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
-        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+        hub = ownerrules.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownerrules, 'default_approvals', lambda: hub):
             self.assertEqual(self.check(tip), (True, None))
         self.assertEqual(self.hub.asked[-1][1], self.with_kit)
 
     def test_an_approved_commit_on_a_base_where_the_owner_changed_its_path_is_refused(self):
         tip = self.approved_commit('approved\n', before={'CLAUDE.md': 'owner\n'})
-        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
-        with mock.patch.object(ownercommits, 'default_approvals', lambda: hub):
+        hub = ownerrules.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        with mock.patch.object(ownerrules, 'default_approvals', lambda: hub):
             ok, msg = self.check(tip)
         self.assertFalse(ok)
         # the approval creates CLAUDE.md, which the owner made since: the delta rule refuses it

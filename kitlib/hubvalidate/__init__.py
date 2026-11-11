@@ -39,7 +39,7 @@ Finding = collections.namedtuple('Finding', 'level rel field code message')
 ERROR, WARN, NOTE = 'error', 'warn', 'note'
 
 # status values per collection (docs/action-hub.md: questions, stories, todos, to_pm, finding_marks,
-# skill_edits; approvals: kitlib.hubsite.approvals)
+# skill_edits; approvals: kitlib.ownerfiles.approvals)
 STATUSES = {
     'questions': ('open', 'answered', 'logged', 'done', 'filed'),
     'stories': ('submitted', 'review', 'questions', 'added', 'declined', 'withdrawn'),

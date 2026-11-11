@@ -143,8 +143,8 @@ class TrailerTest(unittest.TestCase):
         self.assertIsNone(owner.trailer_problem('Owner-Approvals'))
 
     def test_the_reserved_key_is_the_one_the_land_check_reads(self):
-        from kitlib.guard import ownercommits
-        self.assertEqual(owner.APPROVAL_TRAILER, ownercommits.TRAILER)
+        from kitlib.ownerfiles import rules as ownerrules
+        self.assertEqual(owner.APPROVAL_TRAILER, ownerrules.TRAILER)
 
 
 if __name__ == '__main__':

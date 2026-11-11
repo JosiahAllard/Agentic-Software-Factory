@@ -19,7 +19,7 @@ from kitlib.config import user as kuser
 from kitlib.delegations import place
 from kitlib.delegations import run as drun
 from kitlib.delegations import schema
-from kitlib.hubsite import approvals as hubapprovals
+from kitlib.ownerfiles import approvals as hubapprovals
 from kitlib.hubclient import client as hubclient
 from kitlib.hubsite import push as hubpush
 from kitlib.hubclient import errors as huberrors

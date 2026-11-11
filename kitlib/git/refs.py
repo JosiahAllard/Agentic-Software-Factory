@@ -446,7 +446,7 @@ def deletes_only(root, path, revs, env=None):
     """`(True, None)` when `git diff <revs> -- <path>` (`[parent, sha]`, `['HEAD']`, `['--cached',
     head]`) changes only `path`, in place (status M), a regular text file in one mode, adding 0
     lines and deleting some; `(False, None)` otherwise; `(None, why)` when git cannot tell. The one
-    predicate of `"owner".shrink_only` (kitlib.guard.ownercommits names it as its own)."""
+    predicate of `"owner".shrink_only` (kitlib.ownerfiles.rules names it as its own)."""
     r = cmd.call(['--no-replace-objects', 'diff', '--raw', '--numstat', '-z', '--no-renames',
                   '--no-textconv', '--no-ext-diff'] + list(revs) + ['--', path], root, env=env)
     if r.rc != 0:

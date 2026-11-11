@@ -1,8 +1,8 @@
 """POST /approvals/{id}/delete and `hub.py approvals withdraw`: the requester takes back a pending
-approval request (docs/hub-approvals.md "approvals/A-NNN"). Beside tests/hubsite/test_approvals_op.py."""
+approval request (docs/hub-approvals.md "approvals/A-NNN"). Beside tests/ownerfiles/test_approvals_op.py."""
 import datetime
 
-from kitlib.hubsite import approvals
+from kitlib.ownerfiles import approvals
 from kitlib.hubsite.api import AGENT, OWNER
 from tests.hubsite import test_api, test_hub_cli
 

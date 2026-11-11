@@ -277,7 +277,7 @@ class BaseOption(WorktreeCase):
 
 
 class FakeHub(object):
-    """A hub client whose /snapshot holds `approvals` (kitlib.commit.approval.fetch reads it)."""
+    """A hub client whose /snapshot holds `approvals` (kitlib.ownerfiles.apply.fetch reads it)."""
 
     def __init__(self, approvals=None, error=None):
         self.approvals, self.error, self.asked = approvals or {}, error, []

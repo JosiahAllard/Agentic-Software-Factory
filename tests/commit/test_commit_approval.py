@@ -1,8 +1,8 @@
-"""Tests for commit.py --owner-approval hub:A-<n> (kitlib.commit.approval; docs/commit.md "Owner
+"""Tests for commit.py --owner-approval hub:A-<n> (kitlib.ownerfiles.apply; docs/commit.md "Owner
 approval").
 
 The hub is a stand-in client (Hub): its snapshot, verify and consume routes run
-kitlib.hubsite.approvals as kitlib.hubsite.api does, under a test key and a fixed time, so a
+kitlib.ownerfiles.approvals as kitlib.hubsite.api does, under a test key and a fixed time, so a
 document the test did not sign never verifies. The commits are made in a linked worktree of a
 throwaway repository (test_commit.LinkedCase) whose origin remote names REPO.
 """
@@ -23,11 +23,11 @@ if os.name == 'nt':
 
 from kitlib import attribution
 from kitlib import commit as C
-from kitlib.commit import approval as commit_approval
+from kitlib.ownerfiles import apply as commit_approval
 from kitlib.config import owner as ownermod
-from kitlib.guard import ownercommits as oc
+from kitlib.ownerfiles import rules as oc
 from kitlib.hubsite import api as hubapi
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubclient import client as hubclient
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import store as hubstore
@@ -868,7 +868,7 @@ class TheStagedCheck(unittest.TestCase):
         return {'head': 'a' * 40, 'files': [{'path': 'CLAUDE.md', 'blob': 'f' * 40}]}
 
     def test_the_head_judged_is_the_head_committed(self):
-        from kitlib.commit import approval
+        from kitlib.ownerfiles import apply as approval
         staged, snap = {'CLAUDE.md': 'M'}, {'CLAUDE.md': ('100644', 'f' * 40)}
         self.assertIsNone(approval.staged_error(self.doc(), 'b' * 40, staged, snap, 'b' * 40))
         self.assertEqual(approval.staged_error(self.doc(), 'c' * 40, staged, snap, 'b' * 40),
@@ -881,7 +881,7 @@ class TheStagedCheck(unittest.TestCase):
     def test_on_a_newer_base_the_staged_blob_is_the_merged_one(self):
         # `plan` (approval.prewrite): the approved change merged onto HEAD's copy, not the
         # approved blob itself.
-        from kitlib.commit import approval
+        from kitlib.ownerfiles import apply as approval
         staged, plan = {'CLAUDE.md': 'M'}, {'CLAUDE.md': ('e' * 40, b'merged\n')}
         merged, whole = {'CLAUDE.md': ('100644', 'e' * 40)}, {'CLAUDE.md': ('100644', 'f' * 40)}
         self.assertIsNone(approval.staged_error(self.doc(), 'b' * 40, staged, merged, 'b' * 40,
@@ -892,7 +892,7 @@ class TheStagedCheck(unittest.TestCase):
                          'git filter or .gitattributes changed it on staging)')
 
     def test_a_staged_symbolic_link_with_the_approved_blob_is_refused(self):
-        from kitlib.commit import approval
+        from kitlib.ownerfiles import apply as approval
         staged, snap = {'CLAUDE.md': 'M'}, {'CLAUDE.md': ('120000', 'f' * 40)}
         self.assertEqual(approval.staged_error(self.doc(), 'b' * 40, staged, snap, 'b' * 40),
                          'the staged CLAUDE.md has mode 120000: an approval holds regular files '

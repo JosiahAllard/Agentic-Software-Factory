@@ -22,7 +22,8 @@ from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import token as hubtoken
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubclient import localask
-from kitlib.hubsite import approvals, auth, httpd, schema, serve, tunnel
+from kitlib.hubsite import auth, httpd, schema, serve, tunnel
+from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite.store import Store, StoreBusy
 from tests.home import machine_config, pm_repo

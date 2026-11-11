@@ -1,4 +1,4 @@
-"""kitlib.guard.ownercommits on a scratch repository: a commit that changes an owner-only path is a
+"""kitlib.ownerfiles.rules on a scratch repository: a commit that changes an owner-only path is a
 violation unless its AUTHOR email is the owner's, for the paths that landing the tip on main would
 change (NetChange), or it carries an Owner-Approval the hub verifies (OwnerApprovals); a merge is
 judged by what it changes beyond the clean merge of its parents; commits already on main are not
@@ -8,10 +8,12 @@ import json
 import unittest
 from unittest import mock
 
+from kitlib import commit as C
 from kitlib.config import owner
-from kitlib.guard import ownercommits as oc
+from kitlib.ownerfiles import rules as oc
 from kitlib.hubclient import errors as huberrors
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
+from kitlib.git import cmd
 from tests import gitfixture
 from tests.realgit import real_git
 
@@ -142,7 +144,7 @@ GRANTS = '.claude/layering-grants.txt'
 
 class ShrinkOnly(OwnerCommitsCase):
     """A `"owner".shrink_only` path: an agent commit that only deletes lines of it is no
-    violation; any other change to it is, judged commit by commit (ownercommits.deletes_only)."""
+    violation; any other change to it is, judged commit by commit (ownerrules.deletes_only)."""
 
     def setUp(self):
         super().setUp()
@@ -573,6 +575,36 @@ class MergesOnRealGit(MergeCase):
         merge = self.resolve('owner\n', executable=True)
         self.assertEqual(self.bad(merge, exclude=[self.owner_edit]),
                          [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+
+class MergeTreePieces(unittest.TestCase):
+    """The merge-tree parse and merge_owned on their own (moved from tests/commit)."""
+
+    def test_parse_merge_tree_layouts(self):
+        oid = '1' * 40
+        self.assertEqual(oc.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
+        self.assertEqual(oc.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
+        self.assertEqual(oc.parse_merge_tree(oid + '\n'), (oid, set()))
+        self.assertEqual(oc.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
+                         (oid, {'p.txt', ' q dir/r.txt'}))
+
+    def test_no_merge_or_an_octopus_owns_nothing(self):
+        self.assertEqual(oc.merge_owned('.', owner.Rules(), {'a.txt'}, []), (set(), None))
+        self.assertEqual(oc.merge_owned('.', owner.Rules(), {'a.txt'}, ['a' * 40, 'b' * 40]),
+                         (set(), None))
+
+    def test_a_merge_tree_failure_reason_reaches_the_refusal(self):
+        def fake(args, cwd, **kw):
+            if args[0] == 'merge-tree':
+                return cmd.Result(128, b'', 'fatal: merge-tree stubbed to fail')
+            return cmd.Result(0, b'', '')
+        with mock.patch.object(oc.cmd, 'call', fake):
+            owned, why = oc.merge_owned('.', owner.Rules(), {'other.txt'}, ['f' * 40])
+        self.assertEqual(owned, set())
+        self.assertIn('merge-tree stubbed to fail', why)
+        text = C.foreign_refusal({'other.txt'}, why, True)
+        self.assertTrue(text.startswith('refused: already staged'), text)
+        self.assertIn('merge-tree stubbed to fail', text)
 
 
 class StandInHub(object):

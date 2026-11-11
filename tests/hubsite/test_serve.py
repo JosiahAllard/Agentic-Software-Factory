@@ -293,7 +293,7 @@ class BuildCase(ServeCase):
         self.assertIsNone(serve.Sources().lock)
 
     def test_the_api_reads_the_approval_key_and_finds_a_checkout_by_its_remote(self):
-        from kitlib.hubsite import approvals
+        from kitlib.ownerfiles import approvals
         lists = [[('alpha', 'X:\\alpha'), ('beta', 'X:\\beta')]]
 
         class Repos(FakeBacklog):
@@ -324,7 +324,7 @@ class BuildCase(ServeCase):
         """build() hands _repo_name the launcher's session keys: of two names on one checkout
         the coordinator's key wins over the folder name that sorts first, and the root's remote
         is asked of git once, not on every read."""
-        from kitlib.hubsite import approvals
+        from kitlib.ownerfiles import approvals
 
         class Repos(FakeBacklog):
             def repos(self):

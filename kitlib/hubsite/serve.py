@@ -1138,7 +1138,7 @@ class _RemoteIds(object):
         return (st.st_mtime_ns, st.st_size)
 
     def __call__(self, root):
-        from . import approvals     # local: no cycle needs it now; kept
+        from kitlib.ownerfiles import approvals     # local: no cycle needs it now; kept
         key, now = self._stat(root), self._clock()
         with self._lock:
             got = self._got.get(root)
@@ -1177,7 +1177,7 @@ def _configured(backlog_views, repo_id, remote_id=None):
     read with git (`remote_id`, default approvals.remote_id: on each call); [] when none is,
     when there is no backlog, when the repositories cannot be listed, or for a name with no
     checkout on this machine."""
-    from . import approvals         # local: no cycle needs it now; kept
+    from kitlib.ownerfiles import approvals         # local: no cycle needs it now; kept
     remote_id = remote_id or approvals.remote_id
     try:
         pairs = backlog_views.repos() if backlog_views is not None else []

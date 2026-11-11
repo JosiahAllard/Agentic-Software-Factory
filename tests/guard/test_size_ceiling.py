@@ -34,7 +34,6 @@ CEILINGS = {
     'hub.py': 407,
     'jail.py': 325,
     'modes.py': 87,
-    'ownercommits.py': 402,
     'paths.py': 154,
     'place.py': 404,
     'prepush.py': 552,

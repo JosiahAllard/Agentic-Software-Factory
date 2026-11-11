@@ -14,7 +14,7 @@ What changed from the source tests, and why:
   - Unknown keys and wrongly typed values are the schema's refusals (exit 2, kitlib.config.schema).
   - Moved out of this check, so their source tests went with them: the projection of a merge (the
     landing gate measures the real merge), the owner-only paths (tools/commit.py and
-    kitlib.guard.ownercommits) and the index listing (kitlib.docs.index).
+    kitlib.ownerfiles.rules) and the index listing (kitlib.docs.index).
   - Dropped: the git process counts by trace2 (replaced by counts of budget.git calls), the
     "config read by one git process" case (config reads are kitlib.config.load_at's), the
     cfgs_at / KIT_JSON / DuplicateKey units (gone with the legacy reader), the unparseable
@@ -596,7 +596,7 @@ class DuplicateBudgetKey(StaleRepo):
 
     def assertWarnsAndPasses(self, code, out):
         # The base's duplicate is a WARNING, not this branch's failure; whether the branch may edit
-        # .kit.json is the owner-only check's question (commit.py, kitlib.guard.ownercommits).
+        # .kit.json is the owner-only check's question (commit.py, kitlib.ownerfiles.rules).
         self.assertEqual(code, 0, out)
         self.assertIn(self.WARNING, out)
         self.assertIn('written twice in one object: %s' % GOTCHAS, out)
@@ -791,7 +791,7 @@ class OnePass(BudgetRepo):
                          'DOC BUDGET FAILED: 1 check(s) failed (HEAD, 2 .md files): stale budget key.')
 
     def test_owner_only_paths_and_the_index_are_not_judged_here(self):
-        # Moved out: owner-only paths to commit.py and kitlib.guard.ownercommits, the index to
+        # Moved out: owner-only paths to commit.py and kitlib.ownerfiles.rules, the index to
         # kitlib.docs.index. An agent's edit of an owner-only path and an unlisted doc pass here.
         self.size(GOTCHAS, 100)
         self.git('checkout', '-q', '-b', 'branch-a')

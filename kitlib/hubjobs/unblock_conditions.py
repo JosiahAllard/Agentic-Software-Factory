@@ -151,13 +151,13 @@ class Readers(object):
 
     def approval_expired(self, aid, now=None):
         """True when approval `aid` is still stored `pending` and expired undecided
-        (kitlib.hubsite.approvals status_at at `now`, default the current time); its hold stays
+        (kitlib.ownerfiles.approvals status_at at `now`, default the current time); its hold stays
         (the PM's ruling) and the job pushes the PM once (EXPIRED_EVENT)."""
         doc = self._doc('approvals', aid)
         if doc is None or doc.get('status') != 'pending':
             return False
         import datetime
-        from kitlib.hubsite import approvals
+        from kitlib.ownerfiles import approvals
         when = now or datetime.datetime.now(datetime.timezone.utc)
         return approvals.status_at(doc, when) == approvals.EXPIRED
 

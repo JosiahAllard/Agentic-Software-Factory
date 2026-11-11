@@ -9,7 +9,8 @@ import functools
 import threading
 import unittest
 
-from kitlib.hubsite import api, approvals, serve
+from kitlib.hubsite import api, serve
+from kitlib.ownerfiles import approvals
 from kitlib.hubsite.api import AGENT, OWNER
 from kitlib.hubsite.store import HubError
 from tests.gitfixture import TempRepo

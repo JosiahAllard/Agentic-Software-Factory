@@ -26,7 +26,8 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   --owner-authored commit), and user-profile paths are still refused.
 - Anything ELSE already staged is refused (it may be another session's), with one exception: with
   .kit.json "commit".merge_fold, during a merge in progress (one MERGE_HEAD), the files the merge
-  staged itself (merge_owned), so only the resolved conflicts are named. An owner-only path is the
+  staged itself (merge_owned, in kitlib.ownerfiles.rules with the other merge checks named
+  here), so only the resolved conflicts are named. An owner-only path is the
   merge's only when its staged state is exactly the merged branch's copy and that branch changed
   it (a deletion included; a conflict resolved to that copy too), or when it is exactly the clean
   merge of both sides' changes and every one of those is the owner's or approved
@@ -51,7 +52,7 @@ commit(Request) -> Outcome(code, lines). Nothing here prints or exits; tools/com
   every value given must be a blanket entry or a path committed in this call. An --owner-authored
   commit carries `Owner-Authored: yes` in place of Co-Authored-By.
 - Or an agent commits the change the owner approved on the hub: --owner-approval hub:A-<n>
-  (kitlib.commit.approval; docs/commit.md "Owner approval"). The paths named must be exactly the
+  (kitlib.ownerfiles.apply; docs/commit.md "Owner approval"). The paths named must be exactly the
   approval's, HEAD its base and each file its approved base; the hub verifies it, then the approved
   content is written, staged and checked blob for blob, committed with `Owner-Approval: hub:A-<n>`
   before Co-Authored-By, and the approval consumed, recording that commit (a rebuild of it needs
@@ -99,7 +100,8 @@ from kitlib.content import oncommit
 from kitlib.git import checkout, cmd, refs, repo
 from kitlib.proc import spawn
 
-from kitlib.commit import approval
+from kitlib.ownerfiles import apply as approval
+from kitlib.ownerfiles import rules as ownerrules
 
 OK, REFUSED, USAGE = 0, 1, 2
 TOOL = 'commit.py'
@@ -163,11 +165,11 @@ def locked_paths(rules, paths):
 
 def shrunk_paths(root, rules, paths, revs=('HEAD',)):
     """The `"owner".shrink_only` paths among `paths` whose change `git diff <revs>` shows only
-    deletes lines (kitlib.guard.ownercommits.deletes_only, the one predicate gate land and
+    deletes lines (kitlib.ownerfiles.rules.deletes_only, the one predicate gate land and
     pre-push judge the commit by): `HEAD`, the work tree's, before staging; `--cached <head>`, the
     staged copy _stage commits. A git failure shrinks nothing."""
-    from kitlib.guard.ownercommits import deletes_only     # here: as in _unapproved_paths
-    return {p for p in paths if rules.is_shrink_only(p) and deletes_only(root, p, list(revs))[0]}
+    return {p for p in paths if rules.is_shrink_only(p)
+            and ownerrules.deletes_only(root, p, list(revs))[0]}
 
 
 def owner_only_refusal(locked, carried=()):
@@ -255,17 +257,10 @@ def build_message(subject, body, trailers):
     return '\n\n'.join(parts) + '\n'
 
 
-def _git(root, *args, timeout=None):
-    """`(rc, stdout text unstripped, stderr text)`; rc None when git did not run."""
-    kw = {} if timeout is None else {'timeout': timeout}
-    r = cmd.call(list(args), root, **kw)
-    return r.rc, r.out.decode('utf-8', 'replace'), r.err
-
-
 def author_email(root):
     """The author email git will record for a commit in `root`, or None when git cannot say.
     `git var GIT_AUTHOR_IDENT` honours the GIT_AUTHOR_* environment."""
-    rc, out, _ = _git(root, 'var', 'GIT_AUTHOR_IDENT')
+    rc, out, _ = ownerrules.run_git(root, 'var', 'GIT_AUTHOR_IDENT')
     email = ownermod.email_of(out.strip()) if rc == 0 else ''
     return email or None
 
@@ -291,7 +286,8 @@ def owner_identity_error(rules, email):
 def staged_status(root):
     """`{path: status letter}` of every staged change (renames off: A, M or D only); raises _Stop
     when git cannot list them."""
-    rc, out, err = _git(root, 'diff', '--cached', '--name-status', '--no-renames', '-z')
+    rc, out, err = ownerrules.run_git(root, 'diff', '--cached', '--name-status', '--no-renames',
+                                      '-z')
     if rc != 0:
         raise _Stop(REFUSED, 'git diff --cached failed: %s' % (err or 'exit %s' % rc))
     cols = [c for c in out.split('\0') if c]
@@ -310,197 +306,6 @@ def merge_heads(root):
         return []
 
 
-def parse_merge_tree(raw):
-    """`(tree, conflicted paths)` from `git merge-tree --write-tree --name-only --no-messages -z`
-    (the tree OID, then each conflicted path once, NUL-terminated). A newline after the OID is
-    tolerated as well as a NUL."""
-    tokens = raw.split('\0')
-    head = tokens[0]
-    if '\n' in head:
-        head, rest = head.split('\n', 1)
-        tokens = [rest] + tokens[1:]
-    else:
-        tokens = tokens[1:]
-    return head.strip(), {t for t in tokens if t not in ('', '\n')}
-
-
-def _entries(out, path):
-    """The `(meta fields, name)` rows of a `-z` ls-files/ls-tree listing whose name is exactly
-    `path` (a pathspec may match more: a directory's contents, or a glob)."""
-    rows = []
-    for row in out.split('\0'):
-        meta, tab, name = row.partition('\t')
-        if tab and name == path:
-            rows.append(meta.split())
-    return rows
-
-
-def index_entry(root, path):
-    """`(known, entry)`: `path`'s staged index entry as `(mode, oid)`, or None when the index holds
-    none (a staged deletion). `known` is False when git cannot say, or when the path is unmerged
-    (a conflict stage is in the index): nothing is proven then."""
-    rc, out, _ = _git(root, 'ls-files', '--stage', '-z', '--', path)
-    if rc != 0:
-        return False, None
-    rows = _entries(out, path)
-    if not rows:
-        return True, None
-    if len(rows) != 1 or len(rows[0]) != 3 or rows[0][2] != '0':
-        return False, None
-    return True, (rows[0][0], rows[0][1])
-
-
-def tree_entry(root, rev, path):
-    """`(known, entry)`: `path`'s entry in commit `rev` as `(mode, oid)`, or None when the commit
-    has none (it deleted the path). `known` is False when git cannot say."""
-    rc, out, _ = _git(root, 'ls-tree', '-z', rev, '--', path)
-    if rc != 0:
-        return False, None
-    rows = _entries(out, path)
-    if not rows:
-        return True, None
-    if len(rows) != 1 or len(rows[0]) != 3:
-        return False, None
-    return True, (rows[0][0], rows[0][2])
-
-
-def merge_bases(root, head):
-    """Every merge base of HEAD and `head`, or None when git cannot say (or finds none)."""
-    rc, out, _ = _git(root, 'merge-base', '--all', 'HEAD', head)
-    bases = out.split() if rc == 0 else []
-    return bases or None
-
-
-def carries_merged_copy(root, path, head, bases):
-    """True when `path`'s staged state is exactly the merged-in commit `head`'s (the same mode and
-    blob, or absent from both: the merged branch deleted it and the deletion is staged) AND `head`
-    changed the path from every merge base in `bases`, so the change came in with the merged
-    branch rather than being the merge undoing this branch's own. An unmerged path, one git cannot
-    list, or no known merge base is False."""
-    if not bases:
-        return False
-    known_i, staged = index_entry(root, path)
-    known_t, theirs = tree_entry(root, head, path)
-    if not (known_i and known_t and staged == theirs):
-        return False
-    for base in bases:
-        known_b, at_base = tree_entry(root, base, path)
-        if not known_b or at_base == theirs:
-            return False
-    return True
-
-
-def dropped_owner_changes(root, rules, heads):
-    """The owner-only paths a merge in progress would commit as HEAD's own copy although the merged
-    branch changed them from every merge base (a `git checkout HEAD -- <path>` dropped that
-    change). Only a single merge; a path git cannot list, or an unmerged one, is left out."""
-    if len(heads) != 1:
-        return []
-    bases = merge_bases(root, heads[0])
-    rc, out, _ = _git(root, 'diff', '--name-only', '--no-renames', '-z', 'HEAD', heads[0])
-    if not bases or rc != 0:
-        return []
-    dropped = []
-    for p in sorted(x for x in out.split('\0') if x and rules.is_locked(x)):
-        known_i, staged = index_entry(root, p)
-        known_h, ours = tree_entry(root, 'HEAD', p)
-        known_t, theirs = tree_entry(root, heads[0], p)
-        if not (known_i and known_h and known_t) or staged != ours or ours == theirs:
-            continue
-        at_bases = [tree_entry(root, b, p) for b in bases]
-        if all(known and at != theirs for known, at in at_bases):
-            dropped.append(p)
-    return dropped
-
-
-def merge_owned(root, rules, staged, heads, landed=(), join=True):
-    """`(paths, why)`: the staged paths a merge in progress put there itself. An ordinary path
-    counts only when its staged content equals the clean merge result (`git merge-tree
-    --write-tree`) and merge-tree does not list it as conflicted. An owner-only path counts only
-    when its staged state is exactly the merged branch's own copy, which that branch changed from
-    the merge base (carries_merged_copy: same mode and blob as `<MERGE_HEAD>:<path>`, or a deletion
-    of a path the merged branch deleted), whether the merge took it cleanly or a conflict was
-    resolved to it, and every commit the merge brings that changes it, other than those reachable
-    from `landed` (landed_main), is the owner's or carries an approval the hub verifies
-    (non_owner_paths). An owner-only path both sides changed counts too when it passes the
-    ordinary test and clean_owner_merge (same name and regular file throughout, no merge driver,
-    every commit on both sides approved), unless `join` is False. Any other staged state of an owner-only path is never
-    the merge's. No merge, or an octopus one, gives `(set(), None)`; a git failure gives
-    `(set(), why)` (or the paths found so far and `why`, when only the authors could not be
-    checked)."""
-    candidates = set(staged)
-    if len(heads) != 1 or not candidates:
-        return set(), None
-    rc, out, err = _git(root, 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
-                        'HEAD', heads[0])
-    tree, conflicted = parse_merge_tree(out) if rc in (0, 1) else ('', set())
-    if not tree:
-        return set(), 'git merge-tree failed (rc %s): %s' % (rc, err or out.strip() or 'no output')
-    rc, out, err = _git(root, 'diff', '--cached', '--name-only', '--no-renames', '-z', tree)
-    if rc != 0:
-        return set(), 'git diff --cached against the merge result failed: %s' % (err or 'no output')
-    differs = {p for p in out.split('\0') if p}
-    locked = {p for p in candidates if rules.is_locked(p)}
-    owned = (candidates - locked) - differs - conflicted
-    if locked:
-        foreign, why = non_owner_paths(root, rules, heads[0], landed)
-        if foreign is None:
-            return owned, why
-        bases = merge_bases(root, heads[0])
-        owned |= {p for p in locked - foreign if carries_merged_copy(root, p, heads[0], bases)}
-        joined = (locked - foreign - owned) - differs - conflicted
-        if joined and join:
-            joined, why = clean_owner_merge(root, rules, joined, heads[0], bases, landed)
-            if joined is None:
-                return owned, why
-            owned |= joined
-    return owned, None
-
-
-def merge_attribute_unset(root, path):
-    """True when git says the `merge` attribute of `path` is unspecified, read from the work tree
-    and from the index (`git check-attr`), and no `merge.default` is configured (git applies that
-    driver to every path whose attribute is unspecified); anything else, or a git that cannot
-    say, is False: a merge driver (merge=union, -merge, a custom one) makes a result
-    merge-tree's alone does not prove."""
-    rc, _, _ = _git(root, 'config', '--get', 'merge.default')
-    if rc != 1:                     # 0: a driver is set; any other code: git could not say
-        return False
-    for extra in ((), ('--cached',)):
-        rc, out, _ = _git(root, 'check-attr', '-z', *extra, 'merge', '--', path)
-        fields = out.split('\0') if rc == 0 else []
-        if len(fields) < 3 or fields[0] != path or fields[2] != 'unspecified':
-            return False
-    return True
-
-
-def clean_owner_merge(root, rules, paths, head, bases, landed=()):
-    """`(paths, None)`: those of the owner-only `paths` (staged exactly as the clean merge of HEAD
-    and `head` has them, and not conflicted there: merge_owned's test) that the merge in progress
-    carries as the join of both sides' changes: each is a regular file of one mode (as staged)
-    under the same name at HEAD, at `head` and at every merge base in `bases` (no rename, add,
-    delete or mode change), its `merge`
-    attribute is unspecified (merge_attribute_unset), and no commit on either side that changes it,
-    other than those reachable from `landed`, lacks the owner as author or an approval the hub
-    verifies (non_owner_paths for `head`'s side; the same check of HEAD's against `head` for
-    HEAD's). `(None, why)` when git cannot tell (docs/commit.md "Owner approval")."""
-    from kitlib.guard.ownercommits import REGULAR_MODES     # here: as in _unapproved_paths
-    if not bases:
-        return set(), None
-    fit = set()
-    for p in paths:
-        known, staged = index_entry(root, p)
-        entries = [tree_entry(root, rev, p) for rev in ['HEAD', head] + list(bases)]
-        if (known and staged and staged[0] in REGULAR_MODES
-                and all(k and e and e[0] == staged[0] for k, e in entries)
-                and merge_attribute_unset(root, p)):
-            fit.add(p)
-    if not fit:
-        return set(), None
-    ours, why = _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
-    return (None, why) if ours is None else (fit - ours, None)
-
-
 def landed_main(root, remote, main):
     """`[the commit of <remote>/<main> as last fetched]` when it resolves, else `[]`: the commits
     already on main, which `gate land` and pre-push judged when they landed. The same ref pre-push
@@ -509,27 +314,6 @@ def landed_main(root, remote, main):
         return []
     sha = refs.resolve('refs/remotes/%s/%s' % (remote, main), root, known=True)[0]
     return [sha] if sha else []
-
-
-def non_owner_paths(root, rules, head, landed=()):
-    """`(paths, None)`: the owner-only paths that a commit the merged-in `head` brings (one
-    reachable neither from HEAD nor from `landed`) changes without the owner as its author or an
-    approval the hub verifies, judged as `gate land` judges a branch
-    (kitlib.guard.ownercommits.violations); or `(None, why)` when git cannot tell. A commit already
-    on main is not asked of the hub again: its approval was verified when it landed, and stops
-    verifying once past its lifetime or while the hub is down. A merged copy one of those paths carries is not the owner's,
-    so it is never the merge's."""
-    return _unapproved_paths(root, rules, head, ['HEAD'] + list(landed), 'merged')
-
-
-def _unapproved_paths(root, rules, tip, exclude, which):
-    """`(paths, None)`: the owner-only paths of ownercommits.violations(tip, exclude), or
-    `(None, why)` naming `which` commits could not be checked."""
-    from kitlib.guard import ownercommits     # here: kitlib.guard reaches back into this module
-    bad, why = ownercommits.violations(root, rules, tip, list(exclude))
-    if bad is None:
-        return None, 'the authors of the %s commits could not be checked: %s' % (which, why)
-    return {p for v in bad for p in v.paths}, None
 
 
 def merge_owner_refusal(root, rules, landed=(), fold=True):
@@ -548,7 +332,7 @@ def merge_owner_refusal(root, rules, landed=(), fold=True):
         return None, ' '.join(stop.lines)
     if not locked:
         return [], None
-    owned, why = merge_owned(root, rules, locked, heads, landed, join=fold)
+    owned, why = ownerrules.merge_owned(root, rules, locked, heads, landed, join=fold)
     return sorted(locked - owned), why
 
 
@@ -683,7 +467,7 @@ def unstage_added(root, rels, status_before, lines):
     """`lines` plus how the index was left, as one refusal text, after resetting the paths among
     `rels` this call staged that were not staged before it."""
     added = sorted(set(rels) - set(status_before))
-    rc, _out, gerr = _git(root, 'reset', '-q', '--', *added) if added else (0, '', '')
+    rc, _out, gerr = ownerrules.run_git(root, 'reset', '-q', '--', *added) if added else (0, '', '')
     return lines + ['Nothing was committed; %s' % (
         'fix it and run this again.' if rc == 0 else
         'the files this call staged are still staged (git reset failed: %s).' % gerr)]
@@ -727,12 +511,12 @@ def left_staged_line(others):
 def head_commit(root):
     """HEAD's commit id, or '' on an unborn branch (HEAD names a branch that does not exist yet).
     Any other failure to read HEAD raises _Stop: an empty tree is never guessed."""
-    rc, out, err = _git(root, 'rev-parse', '-q', '--verify', 'HEAD^{commit}')
+    rc, out, err = ownerrules.run_git(root, 'rev-parse', '-q', '--verify', 'HEAD^{commit}')
     if rc == 0 and out.strip():
         return out.strip()
-    src, ref, _e = _git(root, 'symbolic-ref', '-q', 'HEAD')
+    src, ref, _e = ownerrules.run_git(root, 'symbolic-ref', '-q', 'HEAD')
     if src == 0 and ref.strip():
-        rrc, rout, _e = _git(root, 'rev-parse', '-q', '--verify', ref.strip())
+        rrc, rout, _e = ownerrules.run_git(root, 'rev-parse', '-q', '--verify', ref.strip())
         if rrc == 1 and not rout.strip():
             return ''
     raise _Stop(REFUSED, 'refused: git could not read HEAD (rev-parse HEAD: %s). Nothing was '
@@ -743,7 +527,7 @@ def index_snapshot(root, keep):
     """`{path: (mode, oid), or None for a deletion}`: the real index's entry for each path of
     `keep` ({path: status letter}), read in one `git ls-files --stage`. Raises _Stop when git cannot
     list the index or a kept path is not one stage-0 entry (unmerged, or changed meanwhile)."""
-    rc, out, err = _git(root, 'ls-files', '--stage', '-z')
+    rc, out, err = ownerrules.run_git(root, 'ls-files', '--stage', '-z')
     if rc != 0:
         raise _Stop(REFUSED, 'git ls-files --stage failed: %s. Nothing was committed.'
                     % (err or 'exit %s' % rc))
@@ -910,8 +694,9 @@ def undo_commit(root, new, parent, saved, merged):
     """Point HEAD back at `parent` if it is still `new` (update-ref with the old value), and, when
     `new` is a merge commit (`merged`: it consumed the merge state), write back the merge-state
     files `saved` that it removed. The refusal lines either way."""
-    rc, _out, err = _git(root, 'update-ref', '-m', 'commit.py: undo a commit made on a moved HEAD',
-                         'HEAD', parent, new)
+    rc, _out, err = ownerrules.run_git(root, 'update-ref', '-m',
+                                       'commit.py: undo a commit made on a moved HEAD',
+                                       'HEAD', parent, new)
     if rc != 0:
         return ['refused, and NOT undone: commit %s was made on the moved HEAD and lacks the other '
                 'writer\'s change; git update-ref failed: %s. Undo it by hand: git update-ref HEAD '
@@ -1014,7 +799,7 @@ def commit_only(root, head, snap, msg, allow_empty=False):
     gout = r.out.decode('utf-8', 'replace')
     if r.rc != 0:
         return r.rc, gout, r.err, '', [], None
-    rc, out, err = _git(root, 'log', '-1', READ_BACK_FORMAT, 'HEAD')
+    rc, out, err = ownerrules.run_git(root, 'log', '-1', READ_BACK_FORMAT, 'HEAD')
     first, _nl, body = out.partition('\n')
     ids = first.split()
     if rc != 0 or len(ids) < 2:
@@ -1053,9 +838,9 @@ def commit_only(root, head, snap, msg, allow_empty=False):
                         % (now[:12], base[:12], ours_base[:12] or 'an unborn branch'))
         return _undo_moved(root, head, now, base, saved, len(parents) > 1)
     if ours_base == head:
-        rc, _out, _err = _git(root, 'merge-base', '--is-ancestor', ours, now)
+        rc, _out, _err = ownerrules.run_git(root, 'merge-base', '--is-ancestor', ours, now)
         if rc == 0:
-            trc, made, _err = _git(root, 'rev-parse', '%s^{tree}' % ours)
+            trc, made, _err = ownerrules.run_git(root, 'rev-parse', '%s^{tree}' % ours)
             return 0, gout, r.err, ours, [
                 'NOTE: another writer has since committed %s on top of this commit.' % now[:12]], (
                     tree, made.strip() if trc == 0 else '')
@@ -1093,7 +878,8 @@ def align_index(root, trees, ours):
     built, made = trees
     if made == built:
         return [], []
-    rc, out, err = _git(root, 'diff-tree', '-r', '-z', '--no-renames', built, made) if made else (
+    rc, out, err = ownerrules.run_git(root, 'diff-tree', '-r', '-z', '--no-renames', built,
+                                      made) if made else (
         None, '', 'its tree could not be read')
     if rc != 0:
         return [], ['refused: commit %s stands, but a hook may have changed it, and it could not be '
@@ -1104,7 +890,7 @@ def align_index(root, trees, ours):
         meta = cols[i].lstrip(':').split()
         if len(meta) >= 4:
             changed[cols[i + 1]] = (_tree_entry(meta[0], meta[2]), _tree_entry(meta[1], meta[3]))
-    rc, out, err = _git(root, 'ls-files', '--stage', '-z')
+    rc, out, err = ownerrules.run_git(root, 'ls-files', '--stage', '-z')
     if rc != 0:
         return [], ['refused: commit %s stands, but a hook changed %s in it, and the index could '
                     'not be read to bring it into line (%s). Run: git restore --staged --source=%s '
@@ -1232,7 +1018,7 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     to_add = [p for p in paths
               if not (status_before.get(p) == 'D' and not os.path.lexists(os.path.join(root, p)))]
     if to_add:
-        rc, _out, err = _git(root, 'add', '--', *to_add, timeout=None)
+        rc, _out, err = ownerrules.run_git(root, 'add', '--', *to_add, timeout=None)
         if rc != 0:
             raise _Stop(REFUSED, 'git add failed: %s' % (err or 'exit %s' % rc))
     err = oncommit.stage(root, rendered) if rendered else None
@@ -1276,7 +1062,7 @@ def _put_back(root, written, paths, stop_lines):
     was refused once the approved content was written: the files put back, the paths unstaged
     (none was staged before the call: _approval_before_write)."""
     failed = approval.restore(written)
-    rc, _out, gerr = _git(root, 'reset', '-q', '--', *paths)
+    rc, _out, gerr = ownerrules.run_git(root, 'reset', '-q', '--', *paths)
     if not failed and rc == 0:
         return stop_lines + ['The work tree is as it was, and nothing this call staged is staged.']
     return stop_lines + ['The work tree and index could not be put back: %s. Check `git status` by '
@@ -1290,7 +1076,8 @@ def _consume(req, lines):
     did = approval.doc_id(req.owner_approval)
     value = req.consume.strip()
     rc, out, _err = ((1, '', '') if not value or value.startswith('-')
-                     else _git(req.root, 'rev-parse', '-q', '--verify', value + '^{commit}'))
+                     else ownerrules.run_git(req.root, 'rev-parse', '-q', '--verify',
+                                             value + '^{commit}'))
     sha = out.strip()
     if rc != 0 or not sha:
         raise _Stop(REFUSED, 'refused: --consume %s is not a commit here. Nothing was consumed.'
@@ -1382,9 +1169,10 @@ def _commit(req, lines):
     status_before = staged_status(root)
     heads = merge_heads(root) if opts['merge_fold'] else []
     landed = landed_main(root, opts['remote'], opts['main_branch']) if heads else []
-    merged, merge_why = merge_owned(root, rules, set(status_before) - named, heads, landed)
+    merged, merge_why = ownerrules.merge_owned(root, rules, set(status_before) - named, heads,
+                                               landed)
     foreign = set(status_before) - named - merged
-    for p in dropped_owner_changes(root, rules, heads or merge_heads(root)):
+    for p in ownerrules.dropped_owner_changes(root, rules, heads or merge_heads(root)):
         lines.append("WARNING: this merge drops the merged branch's change to owner-only %s (it "
                      "commits HEAD's copy); if that is not meant, restore it from the merged "
                      "branch" % p)
@@ -1418,8 +1206,8 @@ def _commit(req, lines):
         locked = [p for p in locked if p not in shrunk]
     if locked and not req.owner_authored and not hub:
         # The hint only for a path the merge would carry unnamed, as it is staged now.
-        carried = sorted(merge_owned(root, rules, set(locked) & set(status_before), heads,
-                                     landed)[0])
+        carried = sorted(ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
+                                                heads, landed)[0])
         raise _Stop(REFUSED, owner_only_refusal(locked, carried))
     for p in ([] if hub else unapproved_locked(rules, locked, approved)):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
@@ -1455,7 +1243,7 @@ def _commit(req, lines):
         if written is None:
             raise
         raise _Stop(stop.code, *_put_back(root, written, paths, stop.lines))
-    _rc, short, _err = _git(root, 'rev-parse', '--short', new)
+    _rc, short, _err = ownerrules.run_git(root, 'rev-parse', '--short', new)
     lines.append('committed %s  %s' % (short.strip() or new[:12], req.subject))
     lines.append('files     %s' % (', '.join(
         paths + sorted((merged & set(status_after)) - set(paths))) or 'none (--allow-empty)'))

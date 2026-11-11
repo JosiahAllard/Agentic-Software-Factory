@@ -1,7 +1,7 @@
-"""kitlib.hubapprove and `tools/hub.py approvals add` (docs/hub-approvals.md "approvals/A-NNN"): a
+"""kitlib.ownerfiles.request and `tools/hub.py approvals add` (docs/hub-approvals.md "approvals/A-NNN"): a
 request built from a throwaway checkout, posted to a real kitlib.hubsite.api over a stand-in
 transport, decided by the owner, and then accepted by the consumer's own checks
-(kitlib.commit.approval). What is refused here is refused before any call."""
+(kitlib.ownerfiles.apply). What is refused here is refused before any call."""
 import contextlib
 import importlib.util
 import io
@@ -13,11 +13,12 @@ import unittest
 import urllib.parse
 from unittest import mock
 
-from kitlib import hubapprove, hubvalidate
-from kitlib.commit import approval as consumer
+from kitlib import hubvalidate
+from kitlib.ownerfiles import request as ownerrequest
+from kitlib.ownerfiles import apply as consumer
 from kitlib.hubclient import client
 from kitlib.hubsite import api, auth
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError as HubStoreError
 from kitlib.hubsite.store import Store
@@ -66,7 +67,7 @@ class Hub(object):
     client.Client whose transport calls it in process. `asked` lists each call."""
 
     def __init__(self, test, checkout):
-        folder = tempfile.mkdtemp(prefix='kit-hubapprove-')
+        folder = tempfile.mkdtemp(prefix='kit-ownerfiles-')
         test.addCleanup(shutil.rmtree, folder, True)
         store_dir = os.path.join(folder, 'store')
         os.makedirs(store_dir)
@@ -103,7 +104,7 @@ class Case(unittest.TestCase):
         self.repo.git('remote', 'add', 'origin', URL)
         own(self.repo.root)
         self.hub = Hub(self, self.repo.root)
-        self.dir = tempfile.mkdtemp(prefix='kit-hubapprove-content-')
+        self.dir = tempfile.mkdtemp(prefix='kit-ownerfiles-content-')
         self.addCleanup(shutil.rmtree, self.dir, True)
 
     def content(self, data, name='proposed.txt'):
@@ -125,8 +126,8 @@ class Case(unittest.TestCase):
         return doc
 
     def refused(self, field, said, files, checkout=None, **kw):
-        with self.assertRaises(hubapprove.RequestError) as got:
-            hubapprove.build(checkout or self.repo.root, 'a change', files, **kw)
+        with self.assertRaises(ownerrequest.RequestError) as got:
+            ownerrequest.build(checkout or self.repo.root, 'a change', files, **kw)
         self.assertEqual(got.exception.field, field, got.exception.message)
         self.assertIn(said, got.exception.message)
         self.assertEqual((self.hub.asked, self.hub.approvals()), ([], {}))
@@ -139,22 +140,22 @@ class TheRequest(Case):
 
         def run(args, cwd, stdin=None):
             seen.append((args[0], stdin))
-            return hubapprove._run_text(args, cwd, stdin=stdin)
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x y\n'))],
+            return ownerrequest._run_text(args, cwd, stdin=stdin)
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x y\n'))],
                                 run=run)
         self.assertEqual(body['files'][0]['content'], 'x y\n')
         self.assertIn(('hash-object', b'x y\n'), seen)
 
 
     def test_an_edit_is_posted_decided_and_accepted_by_the_consumer(self):
-        body = hubapprove.build(self.repo.root, 'Edit the readme',
+        body = ownerrequest.build(self.repo.root, 'Edit the readme',
                                 [('README.md', self.content('hello world\n'))], reason='asked')
         self.assertEqual(body, {'repo': ap.repo_id(URL), 'title': 'Edit the readme',
                                 'head': self.repo.initial, 'reason': 'asked',
                                 'files': [{'path': 'README.md',
                                            'base_blob': ap.blob_id('hello\n'),
                                            'content': 'hello world\n'}]})
-        got = hubapprove.request(self.hub.client, body)
+        got = ownerrequest.request(self.hub.client, body)
         self.assertEqual(self.hub.asked, [('POST', BASE + '/approvals')])
         doc = self.hub.approvals()[got['id']]
         self.assertEqual(doc['status'], 'pending')
@@ -162,7 +163,7 @@ class TheRequest(Case):
         self.accepted(got['id'], ['README.md'])
 
     def test_a_new_file_has_no_base_and_is_accepted(self):
-        got = hubapprove.request(self.hub.client, hubapprove.build(
+        got = ownerrequest.request(self.hub.client, ownerrequest.build(
             self.repo.root, 'Add a doc', [('docs/new.md', self.content('fresh\n'))]))
         doc = self.hub.approvals()[got['id']]
         self.assertEqual([(f['path'], f['base_blob']) for f in doc['files']],
@@ -173,7 +174,7 @@ class TheRequest(Case):
 
     def test_the_content_is_the_files_bytes_line_endings_kept(self):
         text = 'a\r\nb\nc'
-        got = hubapprove.request(self.hub.client, hubapprove.build(
+        got = ownerrequest.request(self.hub.client, ownerrequest.build(
             self.repo.root, 't', [('README.md', self.content(text.encode('utf-8')))]))
         f = self.hub.approvals()[got['id']]['files'][0]
         self.assertEqual((f['content'], f['blob']), (text, ap.blob_id(text)))
@@ -185,21 +186,21 @@ class TheRequest(Case):
         self.repo.commit('second', 'README.md')
         self.assertNotEqual(self.repo.head(), first)
         self.repo.write('README.md', 'hello\n')
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
                                 head=first)
         self.assertEqual((body['head'], body['files'][0]['base_blob']),
                          (first, ap.blob_id('hello\n')))
 
     def test_a_given_head_and_repo_are_used(self):
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
                                 repo=URL, head=self.repo.initial)
         self.assertEqual((body['repo'], body['head']), (URL, self.repo.initial))
 
     def test_the_hubs_refusal_comes_back_as_it_is(self):
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
                                 repo=OTHER)
         with self.assertRaises(client.Refused) as got:
-            hubapprove.request(self.hub.client, body)
+            ownerrequest.request(self.hub.client, body)
         _, obj = self.hub.api.call('POST', BASE + '/approvals', AGENT, body, None)
         self.assertEqual((got.exception.code, got.exception.field, got.exception.message),
                          ('invalid', 'repo', obj['error']['message']))
@@ -207,12 +208,12 @@ class TheRequest(Case):
 
     def test_a_record_is_carried_to_the_hub_and_bound(self):
         bind = {'repo': 'kit', 'id': 'EX-1'}
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x\n'))],
                                 record=bind)
         self.assertEqual(body['record'], bind)
-        self.assertNotIn('record', hubapprove.build(self.repo.root, 't',
+        self.assertNotIn('record', ownerrequest.build(self.repo.root, 't',
                                                     [('README.md', self.content('x\n'))]))
-        got = hubapprove.request(self.hub.client, body)
+        got = ownerrequest.request(self.hub.client, body)
         self.assertEqual(self.hub.approvals()[got['id']]['record'], bind)
 
     def test_request_only_posts_the_request(self):
@@ -225,8 +226,8 @@ class TheRequest(Case):
 
             def get(self, *a, **kw):
                 raise AssertionError('request reads nothing')
-        body = hubapprove.build(self.repo.root, 't', [('README.md', self.content('x\n'))])
-        hubapprove.request(Stub(), body)
+        body = ownerrequest.build(self.repo.root, 't', [('README.md', self.content('x\n'))])
+        ownerrequest.request(Stub(), body)
         self.assertEqual(calls, [('/approvals', AGENT, body)])
 
 
@@ -291,7 +292,7 @@ class WhatIsRefusedBeforeAnyCall(Case):
                 self.refused('files', said, [('README.md', path)])
 
     def test_the_cap_itself_is_let_through(self):
-        body = hubapprove.build(self.repo.root, 't', [
+        body = ownerrequest.build(self.repo.root, 't', [
             ('README.md', self.content(b'x' * hubvalidate.MAX_CONTENT_BYTES))])
         self.assertEqual(len(body['files'][0]['content']), hubvalidate.MAX_CONTENT_BYTES)
 
@@ -304,8 +305,8 @@ class WhatIsRefusedBeforeAnyCall(Case):
             ap.new_doc(ap.repo_id(URL), title, self.repo.initial,
                        [{'path': 'README.md', 'base_blob': ap.blob_id('hello\n'),
                          'content': 'x\n'}], None)
-        with self.assertRaises(hubapprove.RequestError) as got:
-            hubapprove.build(self.repo.root, title, [('README.md', self.content('x\n'))])
+        with self.assertRaises(ownerrequest.RequestError) as got:
+            ownerrequest.build(self.repo.root, title, [('README.md', self.content('x\n'))])
         self.assertEqual((got.exception.message, got.exception.field),
                          (want.exception.message, want.exception.field))
         # under a locked folder, so the owner-path check lets them through to the cap
@@ -343,7 +344,7 @@ class ContentGitWouldStageAsAnotherBlob(Case):
                      [('README.md', self.content(b'a\r\nb\r\n'))])
 
     def test_content_git_stores_as_it_is_is_posted_and_accepted(self):
-        got = hubapprove.request(self.hub.client, hubapprove.build(
+        got = ownerrequest.request(self.hub.client, ownerrequest.build(
             self.repo.root, 't', [('README.md', self.content(b'a\nb\n'))]))
         self.hub.decide(got['id'])
         self.accepted(got['id'], ['README.md'])
@@ -445,13 +446,13 @@ class OnlyOwnerOnlyPathsAreRequested(Case):
         self.assertNotIn('--owner-authored', said)
 
     def test_outside_a_kit_checkout_content_is_no_render_source(self):
-        body = hubapprove.build(self.repo.root, 't', [
+        body = ownerrequest.build(self.repo.root, 't', [
             ('content/roles/coordinator.md', self.content('c\n'))])
         self.assertEqual([f['path'] for f in body['files']], ['content/roles/coordinator.md'])
 
     def test_owner_only_paths_alone_are_posted(self):
         self.kit()
-        got = hubapprove.request(self.hub.client, hubapprove.build(
+        got = ownerrequest.request(self.hub.client, ownerrequest.build(
             self.repo.root, 't', [('README.md', self.content('x\n')),
                                   ('docs/new.md', self.content('n\n', 'n.txt'))]))
         self.assertEqual(self.hub.approvals()[got['id']]['status'], 'pending')

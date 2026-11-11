@@ -18,7 +18,7 @@ from kitlib import attribution
 from kitlib import commit as C
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from tests import gitfixture, inproc
 from tests.gitfixture import TempRepo
 from tests.home import TempHomeCase, machine_config, no_machine_owner
@@ -191,31 +191,6 @@ class OwnerIdentity(unittest.TestCase):
 
 
 class MessagePieces(unittest.TestCase):
-
-    def test_parse_merge_tree_layouts(self):
-        oid = '1' * 40
-        self.assertEqual(C.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(C.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(C.parse_merge_tree(oid + '\n'), (oid, set()))
-        self.assertEqual(C.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
-                         (oid, {'p.txt', ' q dir/r.txt'}))
-
-    def test_no_merge_or_an_octopus_owns_nothing(self):
-        self.assertEqual(C.merge_owned('.', rules(), {'a.txt'}, []), (set(), None))
-        self.assertEqual(C.merge_owned('.', rules(), {'a.txt'}, ['a' * 40, 'b' * 40]), (set(), None))
-
-    def test_a_merge_tree_failure_reason_reaches_the_refusal(self):
-        def fake(args, cwd, **kw):
-            if args[0] == 'merge-tree':
-                return cmd.Result(128, b'', 'fatal: merge-tree stubbed to fail')
-            return cmd.Result(0, b'', '')
-        with mock.patch.object(C.cmd, 'call', fake):
-            owned, why = C.merge_owned('.', rules(), {'other.txt'}, ['f' * 40])
-        self.assertEqual(owned, set())
-        self.assertIn('merge-tree stubbed to fail', why)
-        text = C.foreign_refusal({'other.txt'}, why, True)
-        self.assertTrue(text.startswith('refused: already staged'), text)
-        self.assertIn('merge-tree stubbed to fail', text)
 
     def test_a_machine_path_in_the_message(self):
         drive = 'C:' + '\\'
@@ -778,13 +753,13 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), '')
 
     def fail_head_read(self, rc):
-        real = C._git
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             if args[:1] == ('rev-parse',) and 'HEAD^{commit}' in args:
                 return rc, '', 'fatal: injected'
             return real(root, *args, **kw)
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 
@@ -886,15 +861,15 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), theirs[0])
 
     def fake_read_back(self, rewrite):
-        """C._git's answer to the read-back after `git commit`, passed through `rewrite`."""
-        real = C._git
+        """run_git's answer to the read-back after `git commit`, passed through `rewrite`."""
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             got = real(root, *args, **kw)
             if args[:1] == ('log',) and C.READ_BACK_FORMAT in args:
                 return rewrite(got)
             return got
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 
@@ -1479,8 +1454,8 @@ class TheOwnersIdentity(LinkedCase):
     def test_a_shrink_only_path_is_judged_again_as_staged(self):
         """The work tree grows after its shrink was judged and before `git add`: the staged copy,
         the one committed, is judged again and refused, and nothing this call staged stays."""
-        from kitlib.guard import ownercommits
-        real = ownercommits.deletes_only
+        from kitlib.ownerfiles import rules as ownerrules
+        real = ownerrules.deletes_only
 
         def then_grow(root, path, revs, env=None):
             got = real(root, path, revs, env)
@@ -1492,7 +1467,7 @@ class TheOwnersIdentity(LinkedCase):
         self.git('add', '--', 'CLAUDE.md')
         self.git('commit', '-q', '-m', 'the owner', '--', 'CLAUDE.md')
         self.put('CLAUDE.md', 'a\nc\n')
-        with mock.patch.object(ownercommits, 'deletes_only', then_grow):
+        with mock.patch.object(ownerrules, 'deletes_only', then_grow):
             self.assert_refused('refused: CLAUDE.md is owner-only, and only a commit the owner '
                                 'authors', 'CLAUDE.md')
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
@@ -2026,7 +2001,7 @@ class MergeCarriesAnOwnerChange(MergeCase):
             def check(self, root, doc_id, head, blobs, commit):
                 asked.append(doc_id)
                 return False, why
-        p = mock.patch.object(ownercommits, 'default_approvals', Stale)
+        p = mock.patch.object(ownerrules, 'default_approvals', Stale)
         p.start()
         self.addCleanup(p.stop)
         tip, main = self.merge('approved edit\n', main_author=AGENT,
@@ -2089,7 +2064,7 @@ class JoinCase(MergeCase):
 
     def approve(self, *ids):
         seam = Approves(ids)
-        p = mock.patch.object(ownercommits, 'default_approvals', lambda: seam)
+        p = mock.patch.object(ownerrules, 'default_approvals', lambda: seam)
         p.start()
         self.addCleanup(p.stop)
         return seam
@@ -2166,7 +2141,7 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         tip, main = self.merge(self.top(), self.bottom())
         self.assertEqual(self.commit('merge main', 'work.txt')[0], 0)
         rules = C.kconfig.load(self.wt).owner_rules()
-        self.assertEqual(ownercommits.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
 
     def test_an_extra_edit_on_top_of_the_merge_is_refused(self):
         self.approve('A-001', 'A-002')
@@ -2215,7 +2190,7 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.approve('A-001', 'A-002')
         tip, _ = self.merge(self.top(), self.bottom())
         self.git('config', 'merge.default', 'union')
-        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assertFalse(ownerrules.merge_attribute_unset(self.wt, self.F))
         self.assert_refused_naming(self.F, tip)
 
     def test_a_mode_change_on_one_side_is_refused(self):
@@ -2251,7 +2226,7 @@ class AMergeDriverIsRefused(JoinCase):
         self.approve('A-001', 'A-002')
         tip, _ = self.merge(self.top(), self.bottom(), attributes='CLAUDE.md merge=union\n')
         self.assertEqual(self.git('show', ':%s' % self.F) + '\n', self.both())
-        self.assertFalse(C.merge_attribute_unset(self.wt, self.F))
+        self.assertFalse(ownerrules.merge_attribute_unset(self.wt, self.F))
         self.assert_refused_naming(self.F, tip)
 
 

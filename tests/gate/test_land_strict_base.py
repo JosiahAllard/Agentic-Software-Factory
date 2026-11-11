@@ -81,7 +81,7 @@ class CarriedVerdict(StrictCase):
 
 
 class ReadFromTheBase(StrictCase):
-    # The fixture identity is the owner: the list file is owner-only (kitlib.guard.ownercommits),
+    # The fixture identity is the owner: the list file is owner-only (kitlib.ownerfiles.rules),
     # and these branches change it only to show the strict check reads the base's copy.
     KIT = dict(StrictCase.KIT, owner={'email': gitfixture.EMAIL})
     LIST = "STRICT_DEFAULTS = (\n    'special/**',\n)\n"

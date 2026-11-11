@@ -1,4 +1,4 @@
-"""kitlib.hubsite.approvals, the op kind: the owner's approval of one run of a delegated operation
+"""kitlib.ownerfiles.approvals, the op kind: the owner's approval of one run of a delegated operation
 (docs/delegations.md "Hub approvals"). Its document, its signature, its expiry, the pure verify
 and consume, the agent's calls, and that neither kind passes for the other.
 
@@ -9,10 +9,10 @@ import hashlib
 import json
 import unittest
 
-from kitlib.commit import approval as commit_approval
+from kitlib.ownerfiles import apply as commit_approval
 from kitlib.delegations import schema as dschema
 from kitlib.hubclient import errors as huberrors
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite.api import AGENT
 
 KEY = 'k' * 64
@@ -316,7 +316,7 @@ class ClientTest(unittest.TestCase):
 
 
 class CommitFetchTest(unittest.TestCase):
-    """An op approval never reaches a commit: kitlib.commit.approval reads it as malformed."""
+    """An op approval never reaches a commit: kitlib.ownerfiles.apply reads it as malformed."""
 
     def test_an_op_document_never_passes_the_file_fetch(self):
         doc = dict(approved(), version=2)

@@ -5,7 +5,7 @@
                  exact path. No other prefix is a blanket.
   paths_except   what under a locked directory is not locked (`.claude/worktrees/`).
   shrink_only    owner-only paths (exact, never a directory) that any commit may change by
-                 deleting lines only (kitlib.guard.ownercommits.deletes_only); any other change
+                 deleting lines only (kitlib.ownerfiles.rules.deletes_only); any other change
                  to one stays the owner's.
   email          the author email of the owner's own commits. A trailer counts only on a commit
                  whose AUTHOR email is this one. Unset in `.kit.json`: the machine config's
@@ -31,7 +31,7 @@ from . import schema
 DEFAULT = tuple(schema.OWNER_PATHS)
 DEFAULT_EXCEPT = tuple(schema.OWNER_PATHS_EXCEPT)
 TRAILER = 'Owner-Approved'
-APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.guard.ownercommits.TRAILER
+APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.ownerfiles.rules.TRAILER
 
 
 def trailer_problem(key):

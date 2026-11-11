@@ -143,6 +143,15 @@ class ToolRoot(unittest.TestCase):
         self.assertEqual(W.tool_root(self.live, {plugin_layout.LIVE_ROOT_ENV: self.export}), self.live)
 
 
+class RepoTask(unittest.TestCase):
+    def test_a_folder_that_is_gone_inside_another_repo_is_refused_not_that_repo(self):
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        self.assertEqual(W.repo_task(repo.root)[0], os.path.realpath(repo.root))
+        with self.assertRaises(RuntimeError):
+            W.repo_task(os.path.join(repo.root, 'gone'))
+
+
 class StepBase(MS.Base):
     """machine setup's worktree sweep step through M.run against FakeHost, in the old-kit switch
     (the default mode installs plugins, which the fake host does not), with the agent temp sweep

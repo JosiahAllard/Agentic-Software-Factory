@@ -693,13 +693,6 @@
     "commit"
    ]
   },
-  "testlist": {
-   "paths": [
-    "kitlib/testlist"
-   ],
-   "why": "The test tools",
-   "layer": "services"
-  },
   "tooldeps": {
    "paths": [
     "kitlib/tooldeps"
@@ -3367,18 +3360,6 @@
    "why": "work uses services"
   },
   {
-   "from": "testlist",
-   "to": "config",
-   "kind": "build",
-   "why": "services uses facts"
-  },
-  {
-   "from": "testlist",
-   "to": "host",
-   "kind": "build",
-   "why": "services uses facts"
-  },
-  {
    "from": "tooldeps",
    "to": "config",
    "kind": "build",
@@ -3743,12 +3724,6 @@
    "to": "syncbase",
    "kind": "build",
    "why": "entry uses work"
-  },
-  {
-   "from": "tools",
-   "to": "testlist",
-   "kind": "build",
-   "why": "entry uses services"
   },
   {
    "from": "tools",

@@ -44,7 +44,6 @@ Layers, lowest first: base, facts, services, work, guard, apps, entry. An edge g
 | pytests | services | - | `kitlib/pytests` | The test tools |
 | records | services | - | `kitlib/records` | A repository's records outside its checkouts |
 | scrub | services | `forbidden` | `kitlib/scrub` | The repo checks, one each |
-| testlist | services | - | `kitlib/testlist` | The test tools |
 | tooldeps | services | `pytests`, `lock` | `kitlib/tooldeps` | The test tools |
 | trailerscheck | services | - | `kitlib/trailerscheck` | The repo checks, one each |
 | backlog | work | - | `kitlib/backlog` | Work records |
@@ -537,8 +536,6 @@ None: no module is open to every other.
 | syncbase | git | build | work uses facts |
 | syncbase | kitlib-root | build | work uses base |
 | syncbase | records | build | work uses services |
-| testlist | config | build | services uses facts |
-| testlist | host | build | services uses facts |
 | tooldeps | config | build | services uses facts |
 | tooldeps | fs | build | services uses base |
 | tooldeps | git | build | services uses facts |
@@ -600,7 +597,6 @@ None: no module is open to every other.
 | tools | stackskill | build | entry uses apps |
 | tools | strayrestore | build | entry uses work |
 | tools | syncbase | build | entry uses work |
-| tools | testlist | build | entry uses services |
 | tools | tooldeps | build | entry uses services |
 | tools | trailerscheck | build | entry uses services |
 | tools | worktree | build | entry uses work |

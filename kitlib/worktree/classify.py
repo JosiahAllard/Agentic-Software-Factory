@@ -22,10 +22,11 @@ The classes, decided first-match in this order:
   worktree folder and scratch root (remove.orphan_outside: an unmounted or remapped drive looks
   the same): reported only.
 - A landed: the tip is in the base AND off its first-parent chain (remove_checks.merged_worktrees's
-  rule), the tree is clean, and a branch's reflog shows a commit made on it (own_commit; a
-  reflog that cannot be read, C). Also A, empty: clean, tip in the base, nothing of its own, and
-  no commit to lose (unsaved_reflog), when the live backlog stores can be read and none claims
-  it (live_claims; empty_keep says why one stays C). The PM data worktree is never empty-A.
+  rule), the tree is clean, a branch's reflog shows a commit made on it (own_commit; a
+  reflog that cannot be read, C), and no backlog record still pulled by its branch (landed_keep:
+  claimed, or claims that cannot be read, C; no store named passes). Also A, empty: clean, tip in
+  the base, nothing of its own, and no commit to lose (unsaved_reflog), when the live backlog
+  stores can be read and none claims it (live_claims; empty_keep says why one stays C). The PM data worktree is never empty-A.
 - E evidence: a detached tree outside every worktree folder; or the folder name matches
   EVIDENCE_GLOBS and the tree is clean and, on a branch, the live backlog stores can be read and
   none claims it (evidence_keep). An evidence name that fails that goes on to B or C.
@@ -83,6 +84,9 @@ LANDING_TREE = '_landing'                      # kitlib/landing/merge.py TREE_NA
 CLASSES = ('A', 'B', 'C', 'E', 'L', 'O')
 ACTED = ('A', 'E', 'O')                        # the classes --apply acts on
 ORPHAN = 'its folder is missing (an orphan: `--check` reports it)'
+NO_STORE = ('no backlog store is named: this repository\'s .kit.json names no "backlog".store'
+            ' (the implicit default is read-only, so no pull is written there) and no PM data'
+            ' worktree names one')
 HEADINGS = {
     'A': ('landed', 'tip in the base, clean, a commit of its own or empty and unclaimed',
           'removable: worktree_remove.py <slug>'),
@@ -356,9 +360,7 @@ def live_claims(ctx, base):
                 stores[r.id] = pm_root
         read += 1
     if not read:
-        return None, ('no backlog store is named: this repository\'s .kit.json names no'
-                      ' "backlog".store (the implicit default is read-only, so no pull is'
-                      ' written there) and no PM data worktree names one')
+        return None, NO_STORE
     return Claims({b: sorted(ids) for b, ids in index.items()}, stores,
                   canon(pm_root) if pm_root else None), None
 
@@ -428,6 +430,11 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
             fields['note'] = 'nothing of its own shown: %s' % why
             return 'C', fields
         if own:
+            keep = landed_keep(entry, claims)
+            if keep:
+                fields['note'] = 'landed; kept: %s' % keep
+                fields['landed'] = True
+                return 'C', fields
             return 'A', fields
     outside = not remove_checks.is_workstream(ctx, path)
     if branch is None and outside:
@@ -442,6 +449,19 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
         fields['note'] = '; '.join(n for n in (fields.get('note'),
                                                'an evidence name, kept from E: %s' % kept) if n)
     return klass, fields
+
+
+def landed_keep(entry, claims):
+    """Why a clean landed tree with a commit of its own stays C, or None when it is A: a backlog
+    record still pulled by its branch (`claims`: live_claims), or claims that cannot be read. No
+    store named (NO_STORE) passes: no pull can be written anywhere, and landed work is in the
+    base."""
+    got, why = claims
+    if got is None:
+        return None if why == NO_STORE else \
+            'whether a backlog record claims it is unknown: %s' % why
+    ids = claimed(got, entry['branch'])
+    return 'claimed by %s' % ', '.join(ids) if ids else None
 
 
 def evidence_keep(ctx, entry, dirt, claims):
@@ -565,7 +585,11 @@ def _fail(ctx, why):
     return Result(REFUSED, list(ctx.out), {'error': why})
 
 
-def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
+def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fetched=False):
+    """The run. `act(entry, row, base)` acts on (or, for the sweep's dry run, plans) each A, E and
+    O tree; `fetched`: the nightly sweep's run (kitlib.worktree.nightly), on a base it fetched,
+    whose own `summary` line follows (the class counts are said as `classes`, and the act results
+    are left to it in data['applied'])."""
     s, main = ctx.s, ctx.main
     try:
         listing = remove_checks.worktree_listing(main)
@@ -579,9 +603,10 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
         return _fail(ctx, 'git rev-list --parents %s: %s' % (base, why))
     chain, ancestors = got
     entries = trees_besides_main(main, listing)
-    ctx.say('classify  %d worktree(s) besides the main checkout, base %s %s (as it stands, not'
-            ' fetched), dead bar %d h, %s UTC' % (
-                len(entries), s['upstream'], base[:10], dead_after_s // 3600,
+    ctx.say('classify  %d worktree(s) besides the main checkout, base %s %s (%s), dead bar %d h,'
+            ' %s UTC' % (
+                len(entries), s['upstream'], base[:10],
+                'fetched' if fetched else 'as it stands, not fetched', dead_after_s // 3600,
                 datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime(
                     '%Y-%m-%d %H:%M')))
     probes, cwds = run_probes(ctx, machine, procs)
@@ -647,8 +672,17 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
                 row['apply'] = {'result': 'skipped', 'why': held, 'lines': []}
             else:
                 row['apply'] = act(entry, row, base)
-            applied[row['apply']['result']] += 1
-            ctx.say('%-9s %s: %s' % (row['apply']['result'], row['path'], row['apply']['why']))
+            result = row['apply']['result']
+            applied[result] = applied.get(result, 0) + 1
+            if result.startswith('would '):
+                ctx.say('would     %s %s: %s' % (result[6:], row['path'], row['apply']['why']))
+            else:
+                ctx.say('%-9s %s: %s' % (result, row['path'], row['apply']['why']))
+            if result == 'failed':
+                # Every line the remove path said (git's error, `intact` or `DESTROYED`, the
+                # holders): after an unattended run the log is all the owner has to act on.
+                for line in row['apply']['lines']:
+                    ctx.say('    %s' % line)
     for klass in CLASSES:
         if act is not None and klass in ACTED:
             continue
@@ -685,9 +719,10 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
             else:
                 ctx.say('next      %s %s --mark-stale "<why>"   (%s, so the nightly sweep abandons'
                         ' it once idle, if it is stale)' % (s['tool'], t['branch'], t['class']))
-    ctx.say('summary   %s' % ', '.join('%s %d' % (k, counts[k]) for k in CLASSES))
+    ctx.say('%s %s' % ('classes  ' if fetched else 'summary  ',
+                       ', '.join('%s %d' % (k, counts[k]) for k in CLASSES)))
     code = REFUSED if any(counts[k] for k in CLASSES if k != 'L') else OK
-    if applied is not None:
+    if applied is not None and not fetched:
         ctx.say('applied   %s' % ', '.join('%s %d' % (k, applied[k])
                                            for k in ('removed', 'failed', 'skipped')))
         code = REFUSED if (counts['B'] or counts['C'] or applied['failed']
@@ -701,6 +736,7 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
         data['processes'] = {'scanned': cwds[2], 'unreadable': cwds[1]}
     if applied is not None:
         data['applied'] = applied
+        data['stopped'] = stop
     return Result(code, list(ctx.out), data)
 
 
@@ -779,48 +815,79 @@ def reflog_skip(ctx, path, head):
     return None
 
 
-def apply_tree(ctx, entry, row, base, environ=None, today=None):
-    """Send one A, E or O tree through an existing remove path, each making its own checks again
-    (a tree held or changed since it was classified is refused there): A plain; E `--scratch` when
+def plan_tree(ctx, entry, row, base, environ=None):
+    """Which existing remove path one A, E or O tree takes, read-only: `{'how', 'verb'}`, or the
+    skipped result `{'result': 'skipped', 'why', 'lines'}`. A plain; E `--scratch` when
     scratch_route says so, plain when its tip is in the base, else `--abandon "evidence"` (tag
     archive/<slug>); O remove.prune_orphan, unless it is outside the worktree folders and scratch
     roots (remove.orphan_outside) or classify found its registration keeps a commit no ref
-    reaches or could not tell (skipped: left for the owner). An A tree, or an E tree not
-    for --scratch, whose HEAD reflog holds a commit no ref and not its tip reaches is skipped
-    instead (reflog_skip): the remove deletes that reflog, and the tag holds only the tip. Returns
-    {'result': removed|failed|skipped, 'why', 'lines': the path's own}. A tree removed whose
-    branch then stayed (or any other later refusal) is failed."""
+    reaches or could not tell (skipped: left for the owner). An A tree on a branch outside the
+    worktree folders is skipped: the plain verb by path takes it, and no other caller
+    (remove._remove's `branch_ok`). An A tree, or an E tree not for --scratch, whose HEAD reflog
+    holds a commit no ref and not its tip reaches is skipped instead (reflog_skip): the remove
+    deletes that reflog, and the tag holds only the tip."""
     path, head = row['path'], entry['head']
-    sub = copy.copy(ctx)
-    sub.out = []
     if row['class'] == 'O':
         if row.get('outside'):
             return {'result': 'skipped', 'why': 'O: %s' % row['outside'], 'lines': []}
         if row.get('unsaved') != 0:
             return {'result': 'skipped', 'why': 'O: %s' % row['note'], 'lines': []}
-        how, verb = 'O, its stale registration dropped', 'orphan'
-    elif row['class'] == 'A':
-        how, verb = 'A, plain remove', 'plain'
-        held = reflog_skip(ctx, path, head)
-        if held:
-            return held
-    else:
-        route, why = scratch_route(ctx, entry, environ)
-        if route is None:
-            return {'result': 'skipped', 'why': 'whether it is for --scratch cannot be read (%s)'
-                    % why, 'lines': []}
-        if route:
-            how, verb = 'E, --scratch', 'scratch'
-        else:
-            landed, why = refs.is_ancestor(head, base, ctx.main)
-            if landed is None:
-                return {'result': 'skipped', 'why': 'whether %s is in the base cannot be read (%s)'
-                        % (head[:10], why), 'lines': []}
-            how, verb = ('E, plain remove', 'plain') if landed else \
-                ('E, --abandon "evidence"', 'abandon')
-            held = reflog_skip(ctx, path, head)
-            if held:
-                return held
+        return {'how': 'O, its stale registration dropped', 'verb': 'orphan'}
+    if row['class'] == 'A':
+        if entry['branch'] and not remove_checks.is_workstream(ctx, path):
+            return {'result': 'skipped', 'why': 'A, on branch %s outside the worktree folders:'
+                    ' only the plain verb by path takes it (`%s %s`)'
+                    % (entry['branch'], ctx.s['tool'], path), 'lines': []}
+        return reflog_skip(ctx, path, head) or {'how': 'A, plain remove', 'verb': 'plain'}
+    route, why = scratch_route(ctx, entry, environ)
+    if route is None:
+        return {'result': 'skipped', 'why': 'whether it is for --scratch cannot be read (%s)'
+                % why, 'lines': []}
+    if route:
+        return {'how': 'E, --scratch', 'verb': 'scratch'}
+    landed, why = refs.is_ancestor(head, base, ctx.main)
+    if landed is None:
+        return {'result': 'skipped', 'why': 'whether %s is in the base cannot be read (%s)'
+                % (head[:10], why), 'lines': []}
+    plan = {'how': 'E, plain remove', 'verb': 'plain'} if landed else \
+        {'how': 'E, --abandon "evidence"', 'verb': 'abandon'}
+    return reflog_skip(ctx, path, head) or plan
+
+
+def sweep_plan(ctx, entry, row, base, environ=None):
+    """The nightly sweep's route for one A, E or O tree (kitlib.worktree.nightly): plan_tree's,
+    except that an E tree on a branch is skipped. An evidence-named branch is unlanded work, and
+    among unlanded work the sweep abandons only a stale-marked branch (docs/worktree-remove.md
+    "Stale marks"): it is left for the coordinator's hand-run `--classify --apply`. Read-only, so
+    kitlib.maintlint.worktrees asks it what the sweep leaves."""
+    if row['class'] == 'E' and entry['branch']:
+        return {'result': 'skipped', 'why': 'E, on branch %s: an evidence branch is the'
+                ' coordinator\'s `--classify --apply`, never the nightly sweep\'s'
+                % entry['branch'], 'lines': []}
+    return plan_tree(ctx, entry, row, base, environ)
+
+
+def sweep_run(ctx, now, machine, procs, dead_after_s, act, environ=None):
+    """The nightly sweep's classify run (kitlib.worktree.nightly) on a base it fetched: `act(entry,
+    row, base)` acts on, or plans, each A, E and O tree; the sweep says its own summary."""
+    return _classify(ctx, now, machine, procs, dead_after_s, act=act, environ=environ,
+                     fetched=True)
+
+
+def apply_tree(ctx, entry, row, base, environ=None, today=None, plan=None):
+    """Send one A, E or O tree through the existing remove path plan_tree (or the given `plan`,
+    sweep_plan's) names, each making its own checks again (a tree held or changed since it was
+    classified is refused there). Returns {'result': removed|failed|skipped, 'why', 'lines': the
+    path's own}. A tree removed whose branch then stayed (or any other later refusal) is
+    failed."""
+    path = row['path']
+    if plan is None:
+        plan = plan_tree(ctx, entry, row, base, environ)
+    if 'result' in plan:
+        return plan
+    how, verb = plan['how'], plan['verb']
+    sub = copy.copy(ctx)
+    sub.out = []
     if verb == 'orphan':
         code = remove.prune_orphan(sub, path, environ)
     elif verb == 'plain':

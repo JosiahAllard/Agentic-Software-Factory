@@ -375,18 +375,6 @@ class AnEmptyCommit(LinkedCase):
         self.assertIn('carries a machine path', out)
         self.assertEqual(self.head(), head)
 
-    def test_owner_approval_or_consume_with_the_flag_are_usage_errors(self):
-        head = self.head()
-        for kw in ({'owner_approval': 'hub:A-001'},
-                   {'owner_approval': 'hub:A-001', 'consume': 'HEAD'}):
-            code, out = self.commit('s', allow_empty=True, **kw)
-            self.assertEqual(code, 2, (kw, out))
-            self.assertIn('USAGE:', out)
-        code, out = self.commit(None, allow_empty=True, owner_approval='hub:A-001', consume='HEAD')
-        self.assertEqual(code, 2, out)
-        self.assertIn('USAGE:', out)
-        self.assertEqual(self.head(), head)
-
     def test_an_unborn_branch_is_refused(self):
         self.git('checkout', '-q', '--orphan', 'kit/unborn')
         self.git('rm', '-r', '-q', '--cached', '--', '.')
@@ -2250,6 +2238,18 @@ class TheCommandLine(LinkedCase):
                            capture_output=True, text=True, encoding='utf-8', errors='replace',
                            env=gitfixture.fixture_env({attribution.MODEL_ENV: ''}))
         return r.returncode, r.stdout + r.stderr
+
+    def test_an_agents_owner_approval_is_a_usage_error_naming_the_hub(self):
+        self.put('a.py', 'x\n')
+        head = self.head()
+        for extra in (('--owner-approval', 'hub:A-001', 'a.py'),
+                      ('--owner-approval', 'hub:A-001', '--consume', 'HEAD'),
+                      ('--consume', 'HEAD', '--allow-empty')):
+            code, out = self.in_process('-m', 's', '--model', 'M', *extra)
+            self.assertEqual(code, C.USAGE, (extra, out))
+            self.assertIn('USAGE: the hub applies a change the owner approved', out)
+            self.assertIn('hub.py approvals apply', out)
+        self.assertEqual(self.head(), head)
 
     def test_minus_c_commits_in_the_named_worktree(self):
         self.put('tools/a.py', 'x\n')

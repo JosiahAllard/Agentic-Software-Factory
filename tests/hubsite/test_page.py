@@ -2091,7 +2091,7 @@ class DomTest(unittest.TestCase):
     # A pending approval as kitlib.hubsite.api's add route stores it, diff lines and all (kitlib.ownerfiles.approvals.diff).
     APPROVALS = {
         "A-1": {"status": "pending", "repo": "github.com/team/alpha", "title": "Raise the cap", "head": "a" * 40,
-                "reason": "the cap is too low", "version": 2, "created_at": NOW,
+                "branch": "kit/cap", "reason": "the cap is too low", "version": 2, "created_at": NOW,
                 "files": [{"path": "conf.txt", "base_blob": "b" * 40, "blob": "c" * 40, "content": "cap = 9\n"}],
                 "diff": ["--- a/conf.txt\n", "+++ b/conf.txt\n", "@@ -1 +1 @@\n", "-cap = 3\n", "+cap = 9 <img src=x>\n"]},
         "A-2": {"status": "approved", "repo": "github.com/team/alpha", "title": "Already decided", "head": "a" * 40,
@@ -2113,7 +2113,8 @@ class DomTest(unittest.TestCase):
             return { before, sent: calls.filter(r => r.method === "POST").map(r => [r.path, r.body]), after: !!$("#approval-A-1"), tags: [...new Set(created)] };
         """, snapshot(strong=True, collections=dict(LISTS, approvals=self.APPROVALS)), hash="#approvals")
         b = got["before"]
-        for part in ("A-1", "github.com/team/alpha", "Raise the cap", "a" * 40, "the cap is too low"):
+        for part in ("A-1", "github.com/team/alpha", "Raise the cap", "a" * 40, "the cap is too low",
+                     "committed on branch kit/cap"):     # the branch the signature covers
             self.assertIn(part, b["card"], part)
         self.assertEqual(b["diff"], "--- a/conf.txt\n+++ b/conf.txt\n@@ -1 +1 @@\n-cap = 3\n+cap = 9 <img src=x>")
         self.assertEqual((b["approve"], b["deny"], b["decided"], b["q"], b["n"]), (False, False, False, False, "1"))     # Questions no longer hold approvals

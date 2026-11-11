@@ -291,7 +291,8 @@ class FakeHub(object):
 
 class BaseCommit(WorktreeCase):
     """`--base <full hash>` and `--approval hub:A-<n>`: a new branch at a fixed commit, as
-    commit.py --owner-approval needs once the main branch has moved past the approval's base."""
+    a branch for the hub to apply an approval on needs once the main branch has moved past the
+    approval's base."""
 
     def setUp(self):
         super().setUp()

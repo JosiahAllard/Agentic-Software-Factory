@@ -63,7 +63,7 @@ FIELDS = {
         'created_at': _STR, 'reason': _STR, 'decision': _STR, 'decided_at': _STR, 'sig': _STR,
         'commit': _STR, 'consumed_at': _STR, 'diff': _LIST, 'kind': _STR, 'op': _STR,
         'line': _STR, 'args_sha256': _STR, 'what': _STR, 'record': _DICT, 'park': _DICT,
-        'spent': _STR, 'spent_at': _STR}),
+        'spent': _STR, 'spent_at': _STR, 'branch': _STR, 'apply': _DICT, 'applied': _DICT}),
     # kitlib.hubsite.api, "Schedules": the owner's times for the kit's automatic tasks
     'schedules': (('task', 'repo', 'cadence', 'at'), {
         'task': _STR, 'repo': _STR, 'cadence': _STR, 'days': _LIST, 'at': _STR, 'set_at': _STR}),

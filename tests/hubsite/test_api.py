@@ -3171,20 +3171,18 @@ class ApprovalRouteTest(ApiCase):
         self.refused('conflict', 'status', 'POST', '/approvals/%s/decide' % doc_id, OWNER,
                      {'decision': 'approve', 'if_version': 2}, strong=True)
 
-    def test_an_approval_is_consumed_once(self):
+    def test_no_agent_consumes_a_change_approval_with_a_commit(self):
+        # only the hub's own apply consumes one (apiapprovals._applied): an agent naming a commit
+        # would spend an approval the owner approved and the hub has not applied
         doc_id = self.add()['id']
-        self.decide(doc_id)
-        obj = self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
-                      {'commit': self.COMMIT, 'if_version': 2})
-        self.assertEqual(obj['status'], 'consumed')
-        self.assertEqual(self.store.get('approvals', doc_id)['commit'], self.COMMIT)
-        self.refused('conflict', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
-                     {'commit': self.COMMIT, 'if_version': 3})
-
-    def test_a_request_not_approved_is_not_consumed(self):
-        doc_id = self.add()['id']
-        self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'commit': self.COMMIT, 'if_version': 1})
+        self.decide(doc_id)
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+                     {'commit': self.COMMIT, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)
+        self.assertEqual(doc['status'], 'approved')
+        self.assertNotIn('commit', doc)
 
     def test_verify_answers_the_check_and_never_the_sig(self):
         doc_id = self.add()['id']
@@ -3215,8 +3213,9 @@ class ApprovalRouteTest(ApiCase):
         self.assertEqual(self.verify(doc_id, commit=self.COMMIT)['why'], approvals.WHY_COMMIT)
         self.assertEqual(self.verify(doc_id, commit='')['why'], approvals.WHY_COMMIT)
         self.assertIs(self.verify(doc_id)['valid'], True)
-        self.ok('POST', '/approvals/%s/consume' % doc_id, AGENT,
-                {'commit': self.COMMIT, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)      # as the hub's apply consumes it
+        self.store.update('approvals', doc_id, approvals.consume_fields(
+            self.KEY, doc_id, doc, self.COMMIT, datetime.datetime.fromisoformat(NOW)))
         self.assertIs(self.verify(doc_id, commit=self.COMMIT)['valid'], True)
         # a rebuilt commit keeps the approval: consumed by any commit (spent is the client's)
         self.assertIs(self.verify(doc_id, commit='d' * 40)['valid'], True)
@@ -3317,7 +3316,7 @@ class OpApprovalRouteTest(ApiCase):
         obj = self.ok('GET', '/approvals/%s/verify' % doc_id, AGENT,
                       query={'repo': 'pm', 'head': 'a' * 40, 'files': '{}'})
         self.assertEqual((obj['valid'], obj['why']), (False, approvals.WHY_KIND_OP))
-        self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'commit': 'c' * 40, 'if_version': 2})
 
     def test_an_op_approval_is_consumed_once_by_its_own_arguments(self):
@@ -3325,7 +3324,7 @@ class OpApprovalRouteTest(ApiCase):
         args = approvals.line_sha256(self.LINE)
         self.refused('conflict', None, 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': approvals.line_sha256('x'), 'if_version': 2})
-        self.refused('invalid', 'args_sha256', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+        self.refused('invalid', 'commit', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': args, 'commit': 'c' * 40, 'if_version': 2})
         self.refused('conflict', 'if_version', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
                      {'args_sha256': args, 'if_version': 1})

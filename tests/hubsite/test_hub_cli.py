@@ -1423,7 +1423,7 @@ class ApprovalsCase(VerbCase):
         files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'},
                  {'path': 'gone.md', 'base_blob': 'c' * 40, 'content': None}]
         live = approvals.new_doc('https://github.com/o/r', 'live one', 'a' * 40, files, now,
-                                 reason='why not')
+                                 reason='why not', branch='kit/w')
         stale = dict(approvals.new_doc('https://github.com/o/other', 'stale one', 'a' * 40,
                                        files, old),
                      status='approved', decision='approve', decided_at=old.isoformat())
@@ -1445,9 +1445,22 @@ class ApprovalsCase(VerbCase):
 
     def test_show_prints_the_request_and_its_files(self):
         self.assertEqual(self.ok('approvals', 'show', 'A-001'), [
-            'A-001 pending [github.com/o/r] live one', 'head ' + 'a' * 40, 'reason why not',
+            'A-001 pending [github.com/o/r] live one', 'head ' + 'a' * 40, 'branch kit/w',
+            'reason why not',
             'AGENTS.md %s -> %s' % ('b' * 40, self.blob), 'gone.md %s -> deleted' % ('c' * 40)])
         self.assertIn('no approval A-009', self.refused('approvals', 'show', 'A-009'))
+
+    def test_apply_asks_the_hub_and_says_why_it_could_not(self):
+        now = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
+        files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'}]
+        fresh = dict(approvals.new_doc('https://github.com/o/r', 'fresh one', 'a' * 40, files,
+                                       now, branch='kit/w'),
+                     status='approved', decision='approve', decided_at=now.isoformat())
+        self.assertEqual(self.hub.store.add('approvals', fresh).id, 'A-003')
+        err = self.refused('approvals', 'apply', 'A-003')
+        self.assertIn('UNAPPLIED A-003: this machine has no checkout of ', err)
+        self.assertIn('error', self.hub.store.get('approvals', 'A-003')['apply'])
+        self.assertIn('REFUSED conflict', self.refused('approvals', 'apply', 'A-001'))
 
     def test_a_document_that_is_not_an_object_is_malformed(self):
         real = self.hub.store.snapshot

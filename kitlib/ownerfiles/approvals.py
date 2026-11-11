@@ -20,7 +20,7 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   scheme and `.git` dropped, the host lower-cased
   as_repo_id(value)               a repo_id kept as it is, a remote URL made one
   check_path(path)                why a path cannot be approved, or None
-  new_doc(repo, title, head, files, now, reason=None)
+  new_doc(repo, title, head, files, now, reason=None, branch=None)
                                   the pending document of a request; ApprovalError
   canonical(doc_id, doc)          the bytes a decision's signature covers
   sign(key, doc_id, doc)          that signature: HMAC with SHA-256 under the approval key, hex
@@ -69,8 +69,12 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
                                   through the verify route; fails closed.
                                   .approved_doc(doc_id) -> (doc, why) from the snapshot
-  request(client, repo, title, head, files, reason=None) / consume(client, doc_id, commit,
-  if_version)                     the agent's add and consume calls
+  request(client, repo, title, head, files, reason=None, record=None, branch=None)
+                                  the agent's add call (a change approval is consumed only by
+                                  the hub's own apply: there is no agent call for it)
+  apply_approved(client, doc_id, if_version=None)
+                                  the owner's call that has the hub apply an approved request
+                                  again (kitlib.ownerfiles.apply)
 
 The op kind: one run of a delegated operation (docs/delegations.md "Hub approvals").
   PENDING_OP_TTL_S                how long an op request waits for a decision (24 hours)
@@ -107,6 +111,11 @@ The document (collection `approvals`, ids A-<n>):
   record, park                   a file request bound to a backlog record {repo, id}, and the
                                  mark of the record's park (kitlib.hubsite.api park_item); not
                                  covered by the signature
+  branch                         the branch the hub applies the change on, in its one linked
+                                 worktree (kitlib.ownerfiles.apply); covered by the signature
+                                 when present (canonical), and shown to the owner on the card
+  apply {at, error}              the last apply that failed: the approval stays approved
+  applied {by, branch, worktree} once the hub applied it (with commit and consumed_at)
 
 An op document has no head, files or diff; it holds instead:
   kind        'op' (a document with no kind is a file approval)
@@ -149,10 +158,10 @@ and expired are final. Superseded is read too, from the `superseded` note, and b
 an approval superseded and past its life reads superseded, the act on record. It is final, never
 consumed and never verified.
 
-Routes (kitlib.hubsite.api): the helpers below call ROUTE (POST add), ROUTE/<id>/consume (POST)
-and ROUTE/<id>/verify (GET, query repo, head, files as JSON {path: blob} and an optional commit;
-it answers {"ok": true, "valid": bool, "why": str} and never the key or the sig); the owner's
-ROUTE/<id>/decide (POST) is the page's. No printing, no exit.
+Routes (kitlib.hubsite.api): the helpers below call ROUTE (POST add), ROUTE/<id>/consume (POST,
+an op approval's only) and ROUTE/<id>/verify (GET, query repo, head, files as JSON {path: blob}
+and an optional commit; it answers {"ok": true, "valid": bool, "why": str} and never the key or
+the sig); the owner's ROUTE/<id>/decide (POST) is the page's. No printing, no exit.
 """
 import datetime
 import difflib
@@ -167,7 +176,7 @@ import urllib.parse
 from kitlib import hubvalidate
 from kitlib.git import batch, cmd
 
-from kitlib.hubclient.token import AGENT, ANY
+from kitlib.hubclient.token import AGENT, ANY, OWNER
 
 
 def _part(doc_id):
@@ -194,6 +203,7 @@ COLLECTION = 'approvals'
 ROUTE = '/' + COLLECTION            # below api.BASE
 
 MAX_PATH = 400
+BRANCH = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_./-]{0,199}\Z')     # a request's branch
 MAX_TITLE = 200
 MAX_REASON = 4000
 MAX_LINE = 4000                     # an op's run line
@@ -344,12 +354,13 @@ def _text(value, field, limit, required):
     return value
 
 
-def new_doc(repo, title, head, files, now, reason=None):
+def new_doc(repo, title, head, files, now, reason=None, branch=None):
     """The pending document of a request (no id: the store gives it). `repo` is a remote URL or a
     repo_id; `files` is a list of {path, base_blob, content}: base_blob the file's blob at `head`
     (None: a new file), content its new text (None: a delete). Any `blob` a caller sends is
-    ignored: blob_id(content) is computed here. `now` is an aware datetime. ApprovalError names
-    the field that is wrong."""
+    ignored: blob_id(content) is computed here. `branch`, the branch the hub applies the change
+    on, is a branch name (BRANCH) or None. `now` is an aware datetime. ApprovalError names the
+    field that is wrong."""
     try:
         repo = as_repo_id(repo)
     except ValueError as e:
@@ -396,6 +407,12 @@ def new_doc(repo, title, head, files, now, reason=None):
            'created_at': _iso(now)}
     if reason is not None:
         doc['reason'] = reason
+    if branch is not None:
+        if not isinstance(branch, str) or not BRANCH.match(branch) or '..' in branch \
+                or '//' in branch or branch.endswith(('.lock', '/', '.')):
+            raise ApprovalError('branch is a branch name (as kit/<slug>), not %r' % (branch,),
+                                'branch')
+        doc['branch'] = branch
     return doc
 
 
@@ -445,7 +462,8 @@ def new_op_doc(op, repo, line, title, now, reason=None, what=None):
 
 def canonical(doc_id, doc):
     """The bytes sign() covers: JSON of the id, repo, head, each file's [path, base_blob, blob]
-    sorted by path, the decision and decided_at, with sorted keys and no spaces; for an op
+    sorted by path, the decision, decided_at and, only when the document has one, the branch
+    (so a signature made before branches stays valid), with sorted keys and no spaces; for an op
     document, of the id, kind, op, repo, args_sha256, the decision and decided_at. ValueError
     for a document that has not their shape, that names a path twice or is of no known kind."""
     if _is_op(doc):
@@ -467,6 +485,8 @@ def canonical(doc_id, doc):
         raise ValueError('a path of the approval is named twice')
     body = {'id': doc_id, 'repo': doc.get('repo'), 'head': doc.get('head'), 'files': triples,
             'decision': doc.get('decision'), 'decided_at': doc.get('decided_at')}
+    if 'branch' in doc:
+        body['branch'] = doc['branch']
     return json.dumps(body, sort_keys=True, separators=(',', ':'),
                       ensure_ascii=True).encode('ascii')
 
@@ -1057,7 +1077,7 @@ class Verifier(object):
         return True, ''
 
 
-def request(client, repo, title, head, files, reason=None, record=None):
+def request(client, repo, title, head, files, reason=None, record=None, branch=None):
     """Add a request for the owner (POST ROUTE, the agent's) and answer the server's reply; the
     client's errors propagate. `files` as new_doc takes them; `record` the {repo, id} it binds."""
     body = {'repo': repo, 'title': title, 'head': head, 'files': files}
@@ -1065,14 +1085,18 @@ def request(client, repo, title, head, files, reason=None, record=None):
         body['reason'] = reason
     if record is not None:
         body['record'] = record
+    if branch is not None:
+        body['branch'] = branch
     return client.post(ROUTE, AGENT, body)
 
 
-def consume(client, doc_id, commit, if_version):
-    """Mark the approval `doc_id` consumed by `commit` (POST ROUTE/<id>/consume, the agent's),
-    pinned to `if_version`; the client's errors propagate."""
-    return client.post('%s/%s/consume' % (ROUTE, _part(doc_id)), AGENT,
-                       {'commit': commit, 'if_version': if_version})
+def apply_approved(client, doc_id, if_version=None):
+    """The owner has the hub apply the approved file request `doc_id` again (POST
+    ROUTE/<id>/apply, the owner's; docs/hub-approvals.md "Applying"), pinned to `if_version`
+    when one is given, and answer the server's reply: `applied` true with `commit`, or false
+    with `why`. The client's errors propagate."""
+    body = {} if if_version is None else {'if_version': if_version}
+    return client.post('%s/%s/apply' % (ROUTE, _part(doc_id)), OWNER, body)
 
 
 def request_op(client, op, repo, line, title, reason=None, what=None):

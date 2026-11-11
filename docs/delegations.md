@@ -147,7 +147,7 @@ An approval is given only with `--approval`; `--trigger hub:...` is refused.
 
 The child runs in the empty folder, which is removed afterwards if it is still empty.
 
-How `commit.py --owner-approval` uses an approval is different: it writes no ledger entry. The commit carries an `Owner-Approval: hub:A-nnn` trailer, and the hub records the consume (docs/commit.md "Owner approval").
+How the hub uses a file approval is different: it writes no ledger entry. The hub commits the approved change itself, carrying an `Owner-Approval: hub:A-nnn` trailer, and records the consume in the same write (docs/hub-approvals.md "Applying").
 
 ## Known limits
 
@@ -156,7 +156,7 @@ How `commit.py --owner-approval` uses an approval is different: it writes no led
 - The scope and the `.exe` are checked before the order, the preconditions before the claim, and the run starts after them. A checkout or a link made inside a judged folder, a precondition that stops holding, or a swap of the `.exe` by anything that can write its folder, in between is not seen.
 - The scope check does not see everything: a bare repository (a folder that is a repository without `.git`), a hard link, and a junction made after the check are not found.
 - An approval is consumed on the hub after the claim's checks (runner and ledger write locks taken, order unused, repo accepted, ledger valid with the new entry) and before its entry is written. Only a failure of the write itself then burns it (the file cannot be written, or was changed since the check): the approval is used up and nothing ran, and the agent asks for a new one.
-- The approval path, like `commit.py --owner-approval`, trusts whatever answers on the hub's local port (`approvals.verify_op`, `approvals.consume_op`). With no hub there the runner refuses, but an agent's own listener on that port that answers `valid` and then `consumed` makes the runner run the command. It then gets only the run entry, a `delegated` entry under the approval, and never an owner entry. That is weaker than the hub order check below, where a forged listener alone is not enough: an approval run has no owner ledger entry to check, so the listener's answers are all that stands.
+- The approval path trusts whatever answers on the hub's local port (`approvals.verify_op`, `approvals.consume_op`). With no hub there the runner refuses, but an agent's own listener on that port that answers `valid` and then `consumed` makes the runner run the command. It then gets only the run entry, a `delegated` entry under the approval, and never an owner entry. That is weaker than the hub order check below, where a forged listener alone is not enough: an approval run has no owner ledger entry to check, so the listener's answers are all that stands.
 - A `branch-landed` branch deleted after it landed fails closed: with neither a local nor a remote-tracking branch, its tip cannot be told from a branch never pushed.
 - Retiring a run's `delegated` entry re-arms its trigger and anchor. The 24 h bound on the order limits how long that lasts.
 - The run's `delegated` entry is not committed. Discarding the ledger file's change (a checkout, a restore or a stash of it) removes the entry and re-arms its trigger and anchor; the 24 h bound on the order still applies. Until the entry is committed, the ledger file has an uncommitted change, so the PM's next `ledger.py add --commit` refuses.

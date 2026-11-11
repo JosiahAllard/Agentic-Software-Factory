@@ -1,15 +1,24 @@
-"""kitlib.hubsite.apiapprovals: the api's approval routes: add, decide, consume, withdraw, supersede
-and verify (kitlib.ownerfiles.approvals holds the rules). kitlib.hubsite.api re-exports every name
-here.
+"""kitlib.hubsite.apiapprovals: the api's approval routes: add, decide, apply, consume, withdraw,
+supersede and verify (kitlib.ownerfiles.approvals holds the rules). kitlib.hubsite.api re-exports
+every name here.
 
 Approvals (kitlib.ownerfiles.approvals holds the rules; these routes only carry them). POST approvals
 (AGENT) adds a pending request: the base of each file is read with git from this machine's
 checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
 that is not the file at head is `invalid`, field files), and the unified diff lines the page
-shows are stored in the document as `diff`. POST approvals/{id}/decide (APPROVER) writes the
-owner's decision, signed with Api's approval_key; POST approvals/{id}/consume (AGENT) marks an
-approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
-and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
+shows are stored in the document as `diff`; a file request may name the `branch` the change is
+applied on, which the decision's signature covers. POST approvals/{id}/decide (APPROVER) writes
+the owner's decision, signed with Api's approval_key; an approve of a file request then applies
+it (_applied, kitlib.ownerfiles.apply, docs/hub-approvals.md "Applying"): the change is
+committed on the request's branch in its one linked worktree of the checkout, and the approval
+consumed by that commit with `applied` {by, branch, worktree}; one that cannot be applied stays
+approved with `apply` {at, error}, and the answer says `applied` false and why. POST
+approvals/{id}/apply (OWNER, `if_version` optional) applies an approved file request again, the
+same way. A file request is consumed by that apply only: no route takes a commit from an agent,
+so none can spend an approval the hub has not applied. POST approvals/{id}/consume (AGENT) marks
+an op approval used (below). Decide and consume take the `if_version` the caller read and are
+pinned to it, and an ApprovalError is answered as a HubError of its code and field. POST
+approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
 expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
 requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
 does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
@@ -24,9 +33,10 @@ approvals.on_main) and `if_version`; it leaves pending and is never consumed. GE
 {ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
 An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
 is added with kind, op, repo, line, title and optional reason and what, and no checkout is read;
-any other kind is `invalid`, field kind. It is consumed with args_sha256 in place of commit, and
-verified with the query kind=op, op, repo and args (the line's sha256), which answers its version
-too, the pin of the consume that follows.
+any other kind is `invalid`, field kind. It is consumed with args_sha256 (a `commit` is
+`invalid`, field commit: a change is consumed by the hub's apply), and verified with the query
+kind=op, op, repo and args (the line's sha256), which answers its version too, the pin of the
+consume that follows.
 GET snapshot carries `strong`: true only on the strong owner's call (Request.strong), so the page
 shows Approve and Deny as usable; the decide route checks the role itself all the same.
 """
@@ -62,9 +72,9 @@ def approvals_add(api, req):
         doc = _approval(ap.new_op_doc, b.get('op'), b.get('repo'), b.get('line'), b.get('title'),
                         _when(api.clock(), ''), b.get('reason'), b.get('what'))
         return api.add(ap.COLLECTION, doc, req)
-    b = _fields(req, ('repo', 'title', 'head', 'files', 'reason', 'record'))
+    b = _fields(req, ('repo', 'title', 'head', 'files', 'reason', 'record', 'branch'))
     doc = _approval(ap.new_doc, b.get('repo'), b.get('title'), b.get('head'), b.get('files'),
-                    _when(api.clock(), ''), b.get('reason'))
+                    _when(api.clock(), ''), b.get('reason'), b.get('branch'))
     root = api.checkout(doc['repo'])
     if not root:
         raise _invalid('this machine has no checkout of %s' % doc['repo'], 'repo')
@@ -91,24 +101,89 @@ def approvals_decide(api, req):
     d = api.doc(ap.COLLECTION, doc_id, b)
     changes = _approval(ap.decide_fields, api.approval_key(), doc_id, d, b.get('decision'),
                         _when(api.clock(), ''))
-    return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
+    if changes['status'] != ap.APPROVED or d.get('kind') is not None:
+        return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
+    return _applied(api, req, doc_id, d, changes)
+
+
+def approvals_apply(api, req):
+    """The owner applies an approved file request again (one that could not be applied when it
+    was approved): _applied."""
+    from kitlib.ownerfiles import approvals as ap
+    b = _fields(req, ('if_version',))
+    _pin(b)
+    doc_id = req.params['id']
+    d = api.doc(ap.COLLECTION, doc_id, b)
+    if d.get('kind') is not None:
+        raise HubError('conflict', '%s is an op approval: only a change is applied' % doc_id,
+                       'kind')
+    status = ap.status_at(d, _when(api.clock(), ''))
+    if status != ap.APPROVED:
+        raise HubError('conflict', 'only an approved change is applied; %s is %s'
+                       % (doc_id, status or 'malformed'), 'status')
+    return _applied(api, req, doc_id, d, {})
+
+
+def _narrowed(root, paths):
+    """The backlog's narrowed-scope check of a commit of `paths` in `root`, as a probe of
+    kitlib.ownerfiles.apply: why it refuses, or None."""
+    from kitlib.backlog import narrowed
+    refusal, _warnings = narrowed.check(root, sorted(paths))
+    return '; '.join(refusal) if refusal else None
+
+
+def _applied(api, req, doc_id, d, decided):
+    """Apply the file request `doc_id`, approved once `decided` (the decision's fields, {} for one
+    already approved) is merged into its document `d` (kitlib.ownerfiles.apply), and write the
+    decision and what came of it in one write pinned to `d`: consumed by the commit, with
+    `applied`, or `apply` {at, error} with the approved status. The write's result, with
+    `status`, `applied` (true or false) and `commit` or `why`. A write that fails after the
+    commit puts the commit back (apply.undo) and raises, so nothing is written."""
+    from kitlib.ownerfiles import apply as applier
+    from kitlib.ownerfiles import approvals as ap
+    pinned, d = d, dict(d, **decided)
+    now, key, branch = _when(api.clock(), ''), api.approval_key(), d.get('branch')
+    root = api.checkout(d.get('repo'))
+    done, worktree = None, None
+    if not root:
+        why = 'this machine has no checkout of %s' % d.get('repo')
+    else:
+        worktree, why = applier.worktree_for(root, branch)
+    if worktree:
+        done, why = applier.apply(worktree, branch, doc_id, d, key, now, checks=(_narrowed,))
+    if done is None:
+        out = api.change(ap.COLLECTION, doc_id, pinned,
+                         dict(decided, apply={'at': api.clock(), 'error': why}), req)
+        return dict(out, status=d.get('status'), applied=False, why=why)
+    try:
+        changes = dict(decided, applied={'by': 'hub', 'branch': branch, 'worktree': worktree},
+                       **ap.consume_fields(key, doc_id, d, done.commit, now))
+        out = api.change(ap.COLLECTION, doc_id, pinned, changes, req)
+    except Exception as e:      # noqa: BLE001 - the commit is put back on any failure, then raised
+        failed = applier.undo(done)
+        if failed or not isinstance(e, HubError):
+            raise HubError('conflict', '%s was committed as %s but could not be consumed (%s); %s'
+                           % (doc_id, done.commit[:12], e, '; '.join(failed) if failed else
+                              'the commit was put back'), 'id')
+        raise
+    return dict(out, status=ap.CONSUMED, applied=True, commit=done.commit)
 
 
 def approvals_consume(api, req):
+    """An op approval used once (approvals.consume_op_fields). A change approval is consumed
+    only by the hub's own apply (_applied): a `commit` here is refused, so an agent cannot spend
+    one the owner approved and the hub has not applied."""
     from kitlib.ownerfiles import approvals as ap
-    b = _fields(req, ('commit', 'args_sha256', 'if_version'))
+    if isinstance(req.body, dict) and 'commit' in req.body:
+        raise _invalid('a change approval is consumed only by the hub applying it (POST '
+                       'approvals/{id}/apply, the owner\'s); this route takes args_sha256, for '
+                       'an op approval', 'commit')
+    b = _fields(req, ('args_sha256', 'if_version'), required=('args_sha256',))
     _pin(b, required=True)
-    if 'commit' in b and 'args_sha256' in b:
-        raise _invalid('give commit (a change) or args_sha256 (an operation), not both',
-                       'args_sha256')
     doc_id = req.params['id']
     d = api.doc(ap.COLLECTION, doc_id, b)
-    if 'args_sha256' in b:
-        changes = _approval(ap.consume_op_fields, api.approval_key(), doc_id, d,
-                            b['args_sha256'], _when(api.clock(), ''))
-    else:
-        changes = _approval(ap.consume_fields, api.approval_key(), doc_id, d, b.get('commit'),
-                            _when(api.clock(), ''))
+    changes = _approval(ap.consume_op_fields, api.approval_key(), doc_id, d,
+                        b['args_sha256'], _when(api.clock(), ''))
     return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
 
 

@@ -11,10 +11,10 @@ only when its AUTHOR email is the owner's (`kitlib.config.owner.Rules.is_owner`)
 trailer; with "owner".email unset nothing is the owner's. A claim on any other commit is an
 unproven claim: `unproven_claim()` says why, and the commit is judged as if it carried no claim.
 
-`Owner-Approval: hub:A-<n>` (commit.py --owner-approval; docs/commit.md "Owner approval") is read
-into `approval` for the row to show, and is never an owner claim: gate land and the pre-push hook
-check it against the hub (kitlib.ownerfiles.rules), and this rule judges the commit by its
-Co-Authored-By as any other.
+`Owner-Approval: hub:A-<n>` (the hub's commit of an approved change; docs/hub-approvals.md
+"Applying") is read into `approval` for the row to show, and is never an owner claim: gate land
+and the pre-push hook check it against the hub (kitlib.ownerfiles.rules), and this rule judges the
+commit by its Co-Authored-By as any other.
 """
 import collections
 

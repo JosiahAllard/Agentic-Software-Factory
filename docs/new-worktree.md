@@ -30,9 +30,9 @@ Exit 0 made; 1 refused (nothing made, the lines say why); 2 usage, or the kit co
 
 ## A base commit
 
-`--base <full hash>` (40 hex digits, any case) starts a NEW branch at that commit; `--approval hub:A-<n>` starts one at the owner approval's `head`, its base commit. Made for `commit.py --owner-approval`, which refuses unless HEAD is that base (docs/commit.md "Owner approval"): once the main branch moves, the approved change is committed from a worktree made this way. A shorter hash is a branch name, as before.
+`--base <full hash>` (40 hex digits, any case) starts a NEW branch at that commit; `--approval hub:A-<n>` starts one at the owner approval's `head`, its base commit. Made for a branch where an owner approval applies at its base: the hub applies an approved change on the branch its request names (docs/hub-approvals.md "Applying"), so a request asked from a worktree made this way applies there once the main branch has moved. A shorter hash is a branch name, as before.
 
-- The approval is read as `commit.py` reads it (`approval_base` in `kitlib/worktree/new.py`, through `kitlib.ownerfiles.apply`'s `doc_id`, `hub_client`, `fetch` and `state_error`): a hub that cannot be asked, no such approval, one consumed already or not `approved`, or a `head` that is no full hash is refused (exit 1). The hub is asked only after the local branch checks.
+- The approval is read from the hub (`approval_base` in `kitlib/worktree/new.py`, through `kitlib.ownerfiles.apply`'s `doc_id`, `hub_client`, `fetch` and `state_error`): a hub that cannot be asked, no such approval, one consumed already or not `approved`, or a `head` that is no full hash is refused (exit 1). The hub is asked only after the local branch checks.
 - It fetches `<remote>` and refuses unless the repository has the commit. No landing wait, landing lock or remote comparison applies: the start point is fixed. It prints `branch    <branch> from commit <12 hex digits>`, after `approval  hub:A-<n> is for base <12 hex digits>; this branch starts there`.
 - With `--existing`, or `--approval` with `--base`, it is a usage error (exit 2).
 

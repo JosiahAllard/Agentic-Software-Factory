@@ -48,7 +48,8 @@ is an exact-spelling match.
 A base commit (`base` a full commit hash, or `approval` hub:A-<n>, whose `head` approval_base
 reads from the hub as kitlib.ownerfiles.apply does): a NEW branch starts at that commit, after the
 fetch, when the repository has it. No landing wait, lock or remote comparison applies: the start
-point is fixed. Made for commit.py --owner-approval, which needs HEAD to be the approval's base.
+point is fixed. Made for a branch the hub applies an owner approval on (kitlib.ownerfiles.apply,
+docs/hub-approvals.md "Applying"), started where the approval was asked.
 
 Exit codes: OK 0; REFUSED 1 (nothing made, the lines say why); CONFIG 2 (the kit configuration
 was refused).

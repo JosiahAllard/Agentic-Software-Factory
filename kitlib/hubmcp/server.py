@@ -300,9 +300,11 @@ TOOLS = {
     "hub_approval_request": (
         "Asks the owner to approve a change to files (POST /approvals), built here from a git "
         "checkout (kitlib.ownerfiles.request): each file's base is its blob at head (none for a new "
-        "file), its new text the exact UTF-8 bytes of its content_file. Once approved, "
-        "tools/commit.py --owner-approval hub:A-<n> writes and commits it. It only asks: it never "
-        "approves, and it cannot ask for a delete. At most %d files, %d bytes each."
+        "file), its new text the exact UTF-8 bytes of its content_file. The request names the "
+        "branch the checkout is on (your worktree's): when the owner approves it, the hub commits "
+        "the change on that branch in that worktree, with the files as they were at head and none "
+        "of them staged there; one it cannot apply stays approved with the reason. It only asks: "
+        "it never approves, and it cannot ask for a delete. At most %d files, %d bytes each."
         % (hubvalidate.MAX_FILES, hubvalidate.MAX_CONTENT_BYTES),
         _obj({"checkout": {"type": "string", "description": "The absolute path of the git "
                                                             "checkout the change is for."},
@@ -315,6 +317,9 @@ TOOLS = {
                                                         "(default: the checkout's origin)."},
               "head": {"type": "string", "description": "The base commit, 40 hex digits "
                                                         "(default: the checkout's HEAD)."},
+              "branch": {"type": "string", "description": "The branch the hub applies it on, in "
+                                                          "its linked worktree (default: the "
+                                                          "checkout's current branch)."},
               "reason": {"type": "string"}, "record": _APPROVAL_RECORD},
              ["checkout", "title", "files"]), "POST", "/approvals", AGENT),
     "hub_handoff_ready": (
@@ -588,7 +593,7 @@ class Server:
         try:
             body = ownerrequest.build(checkout, a["title"], files, repo=a.get("repo"),
                                     head=a.get("head"), reason=a.get("reason"),
-                                    record=a.get("record"))
+                                    record=a.get("record"), branch=a.get("branch"))
         except ownerrequest.RequestError as e:
             raise ToolError("invalid", e.message, e.field)
         return ownerrequest.request(self.client(), body)

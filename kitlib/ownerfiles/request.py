@@ -3,23 +3,26 @@
 hub_approval_request post.
 
 build() reads each proposed file from a content file of its own, byte for byte (UTF-8, no
-line-ending change), so its blob is the one git stores when tools/commit.py --owner-approval writes
-it. The file's base is its blob at `head` in the checkout, or none when the file is absent there (a
+line-ending change), so its blob is the one git stores when the hub applies it
+(kitlib.ownerfiles.apply). The file's base is its blob at `head` in the checkout, or none when
+the file is absent there (a
 new file): what the server's read_base and the consumer's prewrite check expect. The work tree is
-never read for the proposed content: the consumer needs it still at the base.
+never read for the proposed content: the consumer needs it still at the base. The request
+names the checkout's current branch: the hub applies the approved change on it, in its linked
+worktree.
 
 Refused here, with nothing posted (RequestError): a checkout that is not a git work tree, a repo
 the checkout's origin cannot name, a head that is not 40 hex digits or not a commit of the
-checkout, a path that is not a plain path of the repository, a path that is not an owner approval's
-to carry (owner_paths_error: a render source in a kit checkout, which tools/commit.py
---owner-approval refuses, or a path the repository's owner rules do not lock, as commit.py
-reads them), a path at head that is not a file, a
+checkout, a checkout on a detached HEAD (no branch to apply on), a path that is not a plain path
+of the repository, a path that is not an owner approval's to carry (owner_paths_error: a render
+source in a kit checkout, whose rendered files the applied commit would leave out, or a path the
+repository's owner rules do not lock, as commit.py reads them), a path at head that is not a file, a
 new file the work tree already has, a file at head whose work tree copy git does not hash to its
 base (the consumer's prewrite check would refuse either), a content file that cannot be read, is
 not UTF-8 or is over the size cap, a file whose content is its base (the consumer refuses a change
 that changes nothing), content git would store as another blob (`hash-object --path=<path>
---stdin`: core.autocrlf or a text, eol or filter attribute changes it on staging, and the
-consumer's staged check would refuse it), and whatever
+--stdin`: core.autocrlf or a text, eol or filter attribute changes it on staging, so the
+applied file would not be its own index entry), and whatever
 kitlib.ownerfiles.approvals.new_doc refuses, in its words (its limits: MAX_FILES, MAX_CONTENT_BYTES,
 MAX_PATH, MAX_TITLE, MAX_REASON). A delete cannot be requested: every file has content.
 
@@ -71,8 +74,8 @@ def read_content(path):
 
 def owner_paths_error(top, paths):
     """None when every one of `paths` (repo-relative, `/`) is one an owner approval may carry,
-    else the refusal naming the others: a render source when `top` is a kit checkout (the test
-    kitlib.commit._approval_first applies: oncommit.wants_render and oncommit.is_kit), and a path
+    else the refusal naming the others: a render source when `top` is a kit checkout
+    (oncommit.wants_render and oncommit.is_kit: the hub's commit renders nothing), and a path
     the repository's owner rules (kconfig.load(top).owner_rules(), as commit.py reads them) do
     not lock. RequestError when the configuration is refused."""
     try:
@@ -86,8 +89,8 @@ def owner_paths_error(top, paths):
         return None
     named = []
     if rendered:
-        named.append('%s (a render source: tools/commit.py --owner-approval refuses it, since '
-                     'its rendered files would be committed unapproved)' % ', '.join(rendered))
+        named.append('%s (a render source: its rendered files would be left out of the '
+                     'applied commit)' % ', '.join(rendered))
     if ordinary:
         named.append('%s (not owner-only: the repository\'s owner rules do not lock it)'
                      % ', '.join(ordinary))
@@ -120,12 +123,13 @@ def _run_text(args, cwd, stdin=None):
 
 
 def build(checkout, title, files, repo=None, head=None, reason=None, now=None, run=None,
-          cat=None, record=None):
+          cat=None, record=None, branch=None):
     """The body of POST /approvals for the change `files`, a list of (path, content_file): path
     relative to the repository top with `/`, content_file the file holding its proposed text.
     `repo` defaults to the checkout's origin (ap.remote_id), `head` to its HEAD. `run` is
     _run_text (kitlib.git.cmd.run_text, which also takes stdin) and `cat` kitlib.git.batch.cat_file,
-    or stand-ins. `record`, when given, is the {repo, id} the request binds (the hub checks it).
+    or stand-ins. `record`, when given, is the {repo, id} the request binds (the hub checks it);
+    `branch`, the branch the hub applies it on, defaults to the checkout's current one.
     RequestError for anything refused (module docstring); nothing is posted."""
     run, cat = run or _run_text, cat or batch.cat_file
     top, why = run(['rev-parse', '--show-toplevel'], checkout)
@@ -143,6 +147,12 @@ def build(checkout, title, files, repo=None, head=None, reason=None, now=None, r
             raise RequestError('the checkout has no HEAD commit: %s' % (why or 'none'), 'head')
     if not isinstance(head, str) or not _HEX40.match(head):
         raise RequestError('head is a commit id of 40 lowercase hex digits', 'head')
+    if branch is None:
+        branch, why = run(['branch', '--show-current'], top)
+        if not branch:
+            raise RequestError('the checkout is on no branch (%s): the hub applies an approved '
+                               'change on the branch the request names' % (why or 'detached HEAD'),
+                               'checkout')
     if not isinstance(files, list) or not files:
         raise RequestError('give at least one file', 'files')
     for path, _ in files:
@@ -188,22 +198,23 @@ def build(checkout, title, files, repo=None, head=None, reason=None, now=None, r
         staged, why = run(['hash-object', '--path=' + path, '--stdin'], top,
                           stdin=content.encode('utf-8'))
         if staged != blob:
-            # the consumer's staged check compares the blob git stages (its clean filter,
-            # core.autocrlf, .gitattributes text or eol) with the approved one
+            # the hub commits the approved bytes as they are: git staging them as another blob
+            # (its clean filter, core.autocrlf, .gitattributes text or eol) would leave the
+            # applied file modified against its own commit
             raise RequestError('%s: git would not store the content as it is (%s); a line-'
-                               'ending or filter attribute changes it on staging, so the '
-                               'commit would be refused. Give the content as git stores it.'
+                               'ending or filter attribute changes it on staging. Give the '
+                               'content as git stores it.'
                                % (path, 'it would store %s' % staged[:12] if staged
                                   else why or 'hash-object failed'), 'files')
         out.append({'path': path, 'base_blob': base, 'content': content})
-    body = {'repo': repo, 'title': title, 'head': head, 'files': out}
+    body = {'repo': repo, 'title': title, 'head': head, 'files': out, 'branch': branch}
     if reason is not None:
         body['reason'] = reason
     if record is not None:
         body['record'] = record
     try:
         ap.new_doc(repo, title, head, out, now or datetime.datetime.now(datetime.timezone.utc),
-                   reason)
+                   reason, branch)
     except ap.ApprovalError as e:
         raise RequestError(e.message, e.field)
     return body
@@ -213,4 +224,4 @@ def request(client, body):
     """Post the request `body` (build's) for the owner (approvals.request, the agent's route) and
     answer the server's reply: {ok, id, version, ...}. The client's errors propagate."""
     return ap.request(client, body['repo'], body['title'], body['head'], body['files'],
-                      body.get('reason'), record=body.get('record'))
+                      body.get('reason'), record=body.get('record'), branch=body.get('branch'))

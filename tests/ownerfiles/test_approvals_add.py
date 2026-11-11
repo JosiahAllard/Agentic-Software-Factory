@@ -1,7 +1,7 @@
 """kitlib.ownerfiles.request and `tools/hub.py approvals add` (docs/hub-approvals.md "approvals/A-NNN"): a
 request built from a throwaway checkout, posted to a real kitlib.hubsite.api over a stand-in
-transport, decided by the owner, and then accepted by the consumer's own checks
-(kitlib.ownerfiles.apply). What is refused here is refused before any call."""
+transport, decided by the owner, and then accepted by the hub's own read-only checks before it
+applies one (kitlib.ownerfiles.apply). What is refused here is refused before any call."""
 import contextlib
 import importlib.util
 import io
@@ -121,8 +121,6 @@ class Case(unittest.TestCase):
         self.assertIsNone(consumer.state_error(doc_id, doc))
         head = self.repo.head()
         self.assertIsNone(consumer.prewrite_error(self.repo.root, doc_id, doc, paths, head))
-        self.assertIsNone(consumer.preverify_error(self.repo.root, self.hub.client, doc_id, doc,
-                                                   head))
         return doc
 
     def refused(self, field, said, files, checkout=None, **kw):
@@ -151,7 +149,7 @@ class TheRequest(Case):
         body = ownerrequest.build(self.repo.root, 'Edit the readme',
                                 [('README.md', self.content('hello world\n'))], reason='asked')
         self.assertEqual(body, {'repo': ap.repo_id(URL), 'title': 'Edit the readme',
-                                'head': self.repo.initial, 'reason': 'asked',
+                                'head': self.repo.initial, 'reason': 'asked', 'branch': 'main',
                                 'files': [{'path': 'README.md',
                                            'base_blob': ap.blob_id('hello\n'),
                                            'content': 'hello world\n'}]})
@@ -352,7 +350,7 @@ class ContentGitWouldStageAsAnotherBlob(Case):
 
 class OnlyOwnerOnlyPathsAreRequested(Case):
     """An owner approval carries owner-only files only: a render source (in a kit checkout,
-    which commit.py --owner-approval refuses) or a path the owner rules do not lock is refused
+    whose rendered files the hub's commit would leave out) or a path the owner rules do not lock is refused
     when the request is built, before the owner is asked, naming each such path."""
 
     def kit(self):

@@ -583,7 +583,7 @@ class Approvals(Case):
                          ("POST", api.BASE + "/approvals", self.agent, localask.VIA_MCP))
         self.assertEqual(call["body"], {
             "repo": approvals.repo_id(self.URL), "title": "Edit the readme",
-            "head": self.repo.initial, "reason": "asked",
+            "head": self.repo.initial, "reason": "asked", "branch": "main",
             "files": [{"path": "README.md", "base_blob": approvals.blob_id("hello\n"),
                        "content": "a\r\nb\n"}]})
 

@@ -43,7 +43,7 @@ Your caller is the coordinator (a deep-worker: the requester; a topic session: t
 
 ## Commit
 
-`python <kit>/tools/commit.py -C <worktree> -m "<what and why>" --model "<model name>" <path> ...`: explicit paths, small commits, at each milestone and before any revert, stash or checkout experiment. Unsure of your model: say so; never amend to change a trailer. Write targets are literal paths. One slice of a multi-slice record: its last commit carries `Part-of: <ID>`; only the final slice writes `Closes: <ID>`. Keep a state note in your scratch folder.
+`python <kit>/tools/commit.py -C <worktree> -m "<what and why>" --model "<model name>" <path> ...`: explicit paths, small commits, at each milestone and before any revert, stash or checkout experiment. Unsure of your model: say so; never amend to change a trailer. Write targets are literal paths. One slice of a multi-slice record: its last commit carries `Part-of: <ID>`; only the final slice writes `Closes: <ID>`. Keep a state note in your scratch folder. An owner-only path is never yours to commit: ask for an approval (skill hub-ops, step 5), and the hub commits it on your branch once approved.
 
 ## Report
 

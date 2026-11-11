@@ -13,7 +13,7 @@ import unittest
 import urllib.parse
 from unittest import mock
 
-from kitlib import hubapprove
+from kitlib import hubapprove, hubvalidate
 from kitlib.commit import approval as consumer
 from kitlib.hubsite import api, auth, client
 from kitlib.hubsite import approvals as ap
@@ -283,7 +283,7 @@ class WhatIsRefusedBeforeAnyCall(Case):
     def test_a_content_file_that_cannot_be_read_is_not_utf8_or_is_too_big(self):
         for data, said in ((None, 'cannot read the content file'),
                            (b'\xff\xfe', 'is not UTF-8'),
-                           (b'x' * (ap.MAX_CONTENT_BYTES + 1), 'bytes')):
+                           (b'x' * (hubvalidate.MAX_CONTENT_BYTES + 1), 'bytes')):
             with self.subTest(said=said):
                 path = (os.path.join(self.dir, 'absent.txt') if data is None
                         else self.content(data))
@@ -291,8 +291,8 @@ class WhatIsRefusedBeforeAnyCall(Case):
 
     def test_the_cap_itself_is_let_through(self):
         body = hubapprove.build(self.repo.root, 't', [
-            ('README.md', self.content(b'x' * ap.MAX_CONTENT_BYTES))])
-        self.assertEqual(len(body['files'][0]['content']), ap.MAX_CONTENT_BYTES)
+            ('README.md', self.content(b'x' * hubvalidate.MAX_CONTENT_BYTES))])
+        self.assertEqual(len(body['files'][0]['content']), hubvalidate.MAX_CONTENT_BYTES)
 
     def test_content_that_is_the_file_at_head(self):
         self.refused('files', 'would change nothing', [('README.md', self.content('hello\n'))])
@@ -309,8 +309,8 @@ class WhatIsRefusedBeforeAnyCall(Case):
                          (want.exception.message, want.exception.field))
         # under a locked folder, so the owner-path check lets them through to the cap
         many = [('docs/new%d.txt' % i, self.content('x\n', 'c%d.txt' % i))
-                for i in range(ap.MAX_FILES + 1)]
-        self.refused('files', 'at most %d files' % ap.MAX_FILES, many)
+                for i in range(hubvalidate.MAX_FILES + 1)]
+        self.refused('files', 'at most %d files' % hubvalidate.MAX_FILES, many)
         self.refused('files', '', [('README.md', self.content('x\n')),
                                    ('README.md', self.content('y\n', 'y.txt'))])
         self.refused('reason', '', [('README.md', self.content('x\n'))],

@@ -28,6 +28,8 @@ import ntpath
 import os
 import re
 
+from kitlib import hubvalidate
+
 from . import schema
 from .apibase import (
     FEED_MAX, LIMIT_DIGITS, _SURROGATE, _agent_from, _fields, _flag, _invalid, _natural, _one_of,
@@ -127,7 +129,6 @@ def _repo_name_of(api, repo_id):
 
 
 # hand-offs ("Hand-offs"): the record a session writes beside its ready reply to the PM
-HANDOFF_KINDS = schema.KINDS['handoffs']
 _CONTROL = re.compile('[\x00-\x1f\x7f]')
 
 
@@ -162,7 +163,7 @@ def handoffs_add(api, req):
     (HANDOFF_KINDS) and `state_path` (an absolute path, on one line), all required; the hub
     sets `at`."""
     b = _fields(req, ('from', 'kind', 'state_path'), required=('from', 'kind', 'state_path'))
-    _one_of(b, 'kind', HANDOFF_KINDS)
+    _one_of(b, 'kind', hubvalidate.HANDOFF_KINDS)
     path = _text(b, 'state_path').strip()
     if _CONTROL.search(path) or _SURROGATE.search(path) or not os.path.isabs(path):
         raise _invalid('state_path is the absolute path of your state note, on one line, not %s'

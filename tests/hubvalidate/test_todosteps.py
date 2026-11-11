@@ -1,4 +1,4 @@
-"""kitlib.hubsite.todosteps: owner to-do steps rendered as PowerShell, and the refusal rules for
+"""kitlib.hubvalidate.todosteps: owner to-do steps rendered as PowerShell, and the refusal rules for
 an agent's to-do. The PowerShell itself is run once, batched, in Windows PowerShell 5.1 against
 temporary files (skipped where powershell.exe is absent)."""
 import base64
@@ -8,8 +8,8 @@ import shutil
 import tempfile
 import unittest
 
-from kitlib.hubsite import todosteps
-from kitlib.hubsite.todosteps import Refused, StepError
+from kitlib.hubvalidate import todosteps
+from kitlib.hubvalidate.todosteps import Refused, StepError
 from kitlib.proc import spawn
 
 POWERSHELL = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32',

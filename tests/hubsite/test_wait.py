@@ -3,6 +3,7 @@ sockets; every one is ended by an event (a store write, the store closing), neve
 import threading
 import unittest
 
+from kitlib import hubvalidate
 from kitlib.hubsite import api, auth, httpd
 from kitlib.hubsite.api import BASE
 from tests.hubsite import httpfix
@@ -46,7 +47,7 @@ class Waiters(object):
 class WaitCase(httpfix.ListenerCase):
     def test_the_gate_holds_32_waits_and_refuses_the_33rd_at_once(self):
         self.assertEqual(httpd.MAX_WAITS, 32)
-        self.assertEqual(api.WAIT_MAX_S, 55)
+        self.assertEqual(hubvalidate.WAIT_MAX_S, 55)
         lis = self.listener()
         self.assertEqual(lis.max_waits, 32)
         since = self.store.revision

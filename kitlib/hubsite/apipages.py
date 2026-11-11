@@ -6,7 +6,7 @@ The body is {id, title, html, repo?, from?, summary?, refs?, kind?, folder?, if_
 id is the caller's (a document id that holds no hub item's or ruling's id, `[QMTPSARE]-<digits>`
 with no letter or digit either side, anywhere, so a ref that names a page is never read as an
 item);
-html is judged by kitlib.hubsite.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
+html is judged by kitlib.hubvalidate.pagecheck (at most PAGE_HTML_MAX bytes of UTF-8, no script, no
 outside link or load, no unrendered Mermaid), and a refusal is `invalid`, field html, with
 nothing written. Publishing over a page takes the card's `if_version`; without it, or with
 another, it is `conflict`. store.PAGES_LOCK is held from the reads to the last write of a publish or a
@@ -36,7 +36,7 @@ lock is enough: Store.open lets one process write a store (`_store.lock`).
 """
 from kitlib import hubvalidate
 
-from . import pagecheck
+from kitlib.hubvalidate import pagecheck
 from . import schema
 from .apibase import (
     _REF_SHAPED, _agent_from, _fields, _invalid, _pin, _text, _typed, _version, _via)

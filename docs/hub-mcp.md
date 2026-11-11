@@ -30,7 +30,7 @@ Endpoints are below `/api/v1` (`kitlib.hubsite.api.BASE`).
 | tool | arguments | endpoint |
 |---|---|---|
 | `hub_pending` | `for` | `GET /pending` |
-| `hub_wait` | `since`, `timeout_s` (default 30, at most 55: `api.WAIT_MAX_S`), `pending`, `for` | `GET /wait` through `Client.wait` |
+| `hub_wait` | `since`, `timeout_s` (default 30, at most 55: `hubvalidate.WAIT_MAX_S`), `pending`, `for` | `GET /wait` through `Client.wait` |
 | `hub_list` | `collection` (questions, todos, stories, to_pm or pages: the page cards, no body), `status`, `repo` | `GET /<collection>` |
 | `hub_inbox` | none | `GET /snapshot?collections=inbox`, its inbox as `{ok, items}` (the api has no inbox list route) |
 | `hub_backlog` | `repo`, `state`, `fresh` | `GET /backlog` |
@@ -65,7 +65,7 @@ Each calls a route the agent's token may call (`kitlib.hubsite.api.ROUTES`, role
 | `hub_todo_ack` | `id`; `if_version` | `POST /todos/<id>/ack` |
 | `hub_todo_edit` | `id`, `from`, `if_version`; `title`, `detail`, `commands`, `repo`, `refs`, `urgent` | `POST /todos/<id>/edit` |
 | `hub_todo_withdraw` | `id`, `from`, `if_version` | `POST /todos/<id>/delete` |
-| `hub_story_set` | `id`, `status` (`api.AGENT_STORY_STATUSES`), `if_version`; `reviewer`, `review_note`, `backlog_id`, `closed_note` | `POST /stories/<id>` |
+| `hub_story_set` | `id`, `status` (`hubvalidate.AGENT_STORY_STATUSES`), `if_version`; `reviewer`, `review_note`, `backlog_id`, `closed_note` | `POST /stories/<id>` |
 | `hub_to_pm_reply` | `id`; `reply`, `if_version` | `POST /to_pm/<id>/reply` |
 | `hub_inbox_post` | `text`; `title`, `ref`, `asked`, `repo`, `from`, `refs` | `POST /inbox` |
 | `hub_page_publish` | `id`, `title`, `html_file`; `summary`, `repo`, `from`, `refs`, `kind`, `folder`, `if_version` | `POST /pages` |
@@ -91,7 +91,7 @@ process reads each `content_file` outside the guard, so `checkout` and every `co
 be absolute and are judged by their real path as `html_file` is (`Server._readable`): never inside
 the hub's token folder or its store, or a token could be read back from the request. Those, a file
 entry that is not exactly `{path, content_file}`, and whatever the builder refuses are `invalid`
-before any call, in the builder's words (`Server._t_hub_approval_request`). At most `approvals.MAX_FILES` (64) files, `MAX_CONTENT_BYTES` (256 KiB) each.
+before any call, in the builder's words (`Server._t_hub_approval_request`). At most `hubvalidate.MAX_FILES` (64) files, `MAX_CONTENT_BYTES` (256 KiB) each.
 
 `hub_page_publish` takes the page's HTML as a file, never inline: `html_file` is an absolute path
 to a UTF-8 file, read here (at most `pagecheck.MAX_BYTES` + 1 characters, line endings kept as the
@@ -100,7 +100,7 @@ file has them) and posted as `html`. This process reads the file outside the gua
 in one of `server.PAGE_SUFFIXES` (`.html`, `.htm`), and it must not lie in the hub's token folder or
 its store, so no token can be posted as a page and read back with `hub_page`. Such a file, a
 relative path, a file that cannot be read or is not UTF-8 is `invalid`, field `html_file`, before
-the file is opened or any call is made; a body `kitlib.hubsite.pagecheck.check` refuses is
+the file is opened or any call is made; a body `kitlib.hubvalidate.pagecheck.check` refuses is
 `invalid`, field `html`, also before any call (`Server._t_hub_page_publish`). A page with a `video`, `audio` or `source` the page policy blocks still publishes; the hub's reply carries a `media-blocked` entry in `warnings` (`pagecheck.warnings`). Publishing over a page needs
 its card's version as `if_version`. What a body may hold, and why Mermaid must be drawn as svg
 first, is docs/hub-skill-pages.md "pages/<id> and page_html/<id>". `kind` and `folder` are text the
@@ -148,7 +148,7 @@ text as `hub_todo_add` does before it calls the hub (`kitlib/hubmcp/server.py` `
 
 ## To-do steps
 
-The hub's `POST /todos` takes `steps` (`kitlib/hubsite/api.py` `todo_steps`), from `hub_todo_add`, from `tools/hub.py todos add --steps F` (docs/action-hub.md) or from any other client: a list of what the owner is to do, and `kitlib.hubsite.todosteps` turns each into a PowerShell command the owner pastes (`render`), appended after any `commands` given. One line per step (`summary`), such as `replace 2 lines in <file>` or `run python t.py`, ends the to-do's detail, after a blank line. A step has exactly one verb key:
+The hub's `POST /todos` takes `steps` (`kitlib/hubsite/api.py` `todo_steps`), from `hub_todo_add`, from `tools/hub.py todos add --steps F` (docs/action-hub.md) or from any other client: a list of what the owner is to do, and `kitlib.hubvalidate.todosteps` turns each into a PowerShell command the owner pastes (`render`), appended after any `commands` given. One line per step (`summary`), such as `replace 2 lines in <file>` or `run python t.py`, ends the to-do's detail, after a blank line. A step has exactly one verb key:
 
 | step | command |
 |---|---|

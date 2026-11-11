@@ -27,7 +27,7 @@ Client(port, tokens, via=serve.VIA_CLI)
   page(id)                              a published page's body, from GET /pages/<id>
   version(collection, id)               the version of one document now, for a write that pins it
   wait(since, timeout, pending, for_key) the long-poll: GET /wait again and again, each for at
-                                        most api.WAIT_MAX_S, until the server answers with a
+                                        most hubvalidate.WAIT_MAX_S, until the server answers with a
                                         change, a pending item or a reset, or `timeout` seconds
                                         passed (None: no limit); with for_key, until a pending
                                         item of that session key; a poll the server took and did
@@ -42,6 +42,8 @@ Client(port, tokens, via=serve.VIA_CLI)
 """
 import time
 import urllib.parse
+
+from kitlib import hubvalidate
 
 from . import api as _api
 from . import auth
@@ -167,8 +169,8 @@ class Client(object):
         down = None                 # when the hub was first found down or closing, in a row
         answered = False            # a poll of this wait was answered: a restart can follow
         while True:
-            left = _api.WAIT_MAX_S if end is None else end - self._clock()
-            turn = max(0.0, min(float(left), float(_api.WAIT_MAX_S)))
+            left = hubvalidate.WAIT_MAX_S if end is None else end - self._clock()
+            turn = max(0.0, min(float(left), float(hubvalidate.WAIT_MAX_S)))
             try:
                 got = self.get('/wait', ANY, {'since': since, 'timeout': '%g' % turn,
                                               'pending': 1 if pending else None,

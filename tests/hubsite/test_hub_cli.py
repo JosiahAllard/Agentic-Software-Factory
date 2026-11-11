@@ -18,7 +18,8 @@ import unittest
 import webbrowser
 from unittest import mock
 
-from kitlib.hubsite import approvals, auth, httpd, schema, serve, todosteps, tunnel
+from kitlib.hubsite import approvals, auth, httpd, schema, serve, tunnel
+from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import settings as hub_settings
 from kitlib.hubsite.store import Store, StoreBusy
 from tests.home import machine_config, pm_repo

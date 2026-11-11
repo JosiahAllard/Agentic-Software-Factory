@@ -1,6 +1,6 @@
 """kitlib.maintlint and tools/maint_lint.py: the checks on in-memory snapshots, the whole run on a
 real store (a record that is merely old gives no finding), the ledger as counts only, the result
-file, and the page that kitlib.hubsite.pagecheck passes."""
+file, and the page that kitlib.hubvalidate.pagecheck passes."""
 import datetime
 import io
 import json
@@ -15,7 +15,7 @@ from kitlib import maintlint
 from kitlib.backlog import audit_check
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
-from kitlib.hubsite import pagecheck
+from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import Finding, backlog, ledger, page, result, verify, worktrees
 from kitlib.modulemap import scopelog
 

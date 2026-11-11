@@ -14,7 +14,8 @@ import re
 import shutil
 import unittest
 
-from kitlib.hubsite import httpd, lockdoor, pagecheck, serve
+from kitlib.hubsite import httpd, lockdoor, serve
+from kitlib.hubvalidate import pagecheck
 from kitlib.hubsite.api import BASE
 from kitlib.lock import api as lock_api
 from kitlib.proc import spawn

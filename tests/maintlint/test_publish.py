@@ -5,7 +5,8 @@ test asks the machine's."""
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import client, pagecheck, serve
+from kitlib.hubsite import client, serve
+from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import page, publish
 
 RES = {'repo': 'demo', 'findings': [{'check': 'dead-blocker', 'new': True},

@@ -272,7 +272,7 @@ Built (slice 13):
   platform (`## Windows`, `## Linux`), and no Windows-shell line remains in content/ outside it.
 - The hub's to-do steps: `{run: <command>}` stays PowerShell, verbatim; `{run: {windows: <cmd>,
   linux: <cmd>}}` carries one command per OS and the hub shows the form for the machine the step
-  is for (kitlib/hubsite/todosteps.py OSES, SHELLS). The "hand steps carry commands" ruling is
+  is for (kitlib/hubvalidate/todosteps.py OSES, SHELLS). The "hand steps carry commands" ruling is
   kept.
 - Codex's dialect default follows the platform (hosts/codex/adapter/events.py default_dialect).
 

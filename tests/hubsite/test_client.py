@@ -6,6 +6,7 @@ import socket
 import threading
 import unittest
 
+from kitlib import hubvalidate
 from kitlib.hubsite import api, auth, client, httpd, serve
 from tests.hubsite import httpfix
 # a ledger id, built so no file holds a ruling id (tests/scrub)
@@ -244,9 +245,9 @@ class LoopCase(StandIn):
     def test_a_long_wait_asks_again_from_the_revision_it_was_given(self):
         idle = {'timed_out': True, 'revision': 7, 'changes': [], 'pending': []}
         hit = {'timed_out': False, 'revision': 9, 'changes': [{'id': 'T-1'}], 'pending': []}
-        got = self.hub([dict(idle), dict(idle, revision=8), hit], api.WAIT_MAX_S).wait(since=5)
+        got = self.hub([dict(idle), dict(idle, revision=8), hit], hubvalidate.WAIT_MAX_S).wait(since=5)
         self.assertEqual(got, hit)
-        top, most = '%g' % api.WAIT_MAX_S, api.WAIT_MAX_S + client.WAIT_MARGIN_S
+        top, most = '%g' % hubvalidate.WAIT_MAX_S, hubvalidate.WAIT_MAX_S + client.WAIT_MARGIN_S
         self.assertEqual(self.asked, [
             ('GET', api.BASE + '/wait?since=5&timeout=' + top, self.agent, most),
             ('GET', api.BASE + '/wait?since=7&timeout=' + top, self.agent, most),
@@ -254,23 +255,23 @@ class LoopCase(StandIn):
 
     def test_a_timeout_ends_the_loop_and_each_turn_is_no_longer_than_what_is_left(self):
         idle = {'timed_out': True, 'revision': 7, 'changes': [], 'pending': []}
-        total = api.WAIT_MAX_S + 5
-        got = self.hub([dict(idle), dict(idle)], api.WAIT_MAX_S).wait(timeout=total, pending=True)
+        total = hubvalidate.WAIT_MAX_S + 5
+        got = self.hub([dict(idle), dict(idle)], hubvalidate.WAIT_MAX_S).wait(timeout=total, pending=True)
         self.assertIs(got['timed_out'], True)
         self.assertEqual([(a[1], a[3]) for a in self.asked], [
-            (api.BASE + '/wait?pending=1&timeout=%g' % api.WAIT_MAX_S,
-             api.WAIT_MAX_S + client.WAIT_MARGIN_S),
+            (api.BASE + '/wait?pending=1&timeout=%g' % hubvalidate.WAIT_MAX_S,
+             hubvalidate.WAIT_MAX_S + client.WAIT_MARGIN_S),
             (api.BASE + '/wait?pending=1&since=7&timeout=5', 5 + client.WAIT_MARGIN_S)])
 
     def test_for_key_goes_on_every_turn_of_a_wait_and_on_pending(self):
         idle = {'timed_out': True, 'revision': 7, 'changes': [], 'pending': []}
         hit = {'timed_out': False, 'revision': 9, 'changes': [], 'pending': [{'id': 'Q-1000'}]}
         hub = self.hub([dict(idle), hit, {'items': [{'id': 'Q-1000'}]}, {'items': []}],
-                       api.WAIT_MAX_S)
+                       hubvalidate.WAIT_MAX_S)
         self.assertEqual(hub.wait(pending=True, for_key='kit'), hit)
         self.assertEqual(hub.pending(for_key='kit'), [{'id': 'Q-1000'}])
         self.assertEqual(hub.pending(), [])
-        top = '%g' % api.WAIT_MAX_S
+        top = '%g' % hubvalidate.WAIT_MAX_S
         self.assertEqual([a[1] for a in self.asked], [
             api.BASE + '/wait?for=kit&pending=1&timeout=' + top,
             api.BASE + '/wait?for=kit&pending=1&since=7&timeout=' + top,
@@ -292,7 +293,7 @@ class RestartCase(StandIn):
         hub = self.hub([IDLE, STORE_DOWN, serve.NotRunning(1), serve.NotRunning(1), HIT], 0)
         self.assertEqual(hub.wait(since=5, pending=True, for_key='pm'), HIT)
         self.assertEqual(self.slept, [client.RETRY_PAUSE_S] * 3)
-        poll = api.BASE + '/wait?for=pm&pending=1&since=%d&timeout=' + '%g' % api.WAIT_MAX_S
+        poll = api.BASE + '/wait?for=pm&pending=1&since=%d&timeout=' + '%g' % hubvalidate.WAIT_MAX_S
         # from the revision the answered turn gave, the same one on every poll again
         self.assertEqual([a[1] for a in self.asked], [poll % 5] + [poll % 7] * 4)
 

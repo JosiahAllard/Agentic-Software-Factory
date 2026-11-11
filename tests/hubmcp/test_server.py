@@ -11,10 +11,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import hubmcp
+from kitlib import hubmcp, hubvalidate
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import server as srv
-from kitlib.hubsite import api, approvals, auth, pagecheck, serve, todosteps
+from kitlib.hubsite import api, approvals, auth, serve
+from kitlib.hubvalidate import pagecheck, todosteps
 from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
 from tests.lock.helpers import REPO, clean_env
@@ -222,9 +223,9 @@ class Routes(Case):
         self.assertFalse(is_error)
         self.assertEqual(payload["revision"], 4)
         call = self.ask.calls[-1]
-        self.assertIn("timeout=%d" % api.WAIT_MAX_S, call["path"])
+        self.assertIn("timeout=%d" % hubvalidate.WAIT_MAX_S, call["path"])
         self.assertIn("since=3", call["path"])
-        self.assertEqual(srv.WAIT_MAX_S, api.WAIT_MAX_S)
+        self.assertEqual(srv.WAIT_MAX_S, hubvalidate.WAIT_MAX_S)
 
     def test_pending_and_wait_pass_for_through_as_the_query(self):
         self.ask.answer = (200, {"ok": True, "timed_out": False, "revision": 4, "items": []})
@@ -277,7 +278,7 @@ class Arguments(Case):
 
 
 class TodoSteps(Case):
-    """hub_todo_add takes steps (kitlib.hubsite.todosteps): it posts them as given, for the hub
+    """hub_todo_add takes steps (kitlib.hubvalidate.todosteps): it posts them as given, for the hub
     to render (api.todo_steps), and refuses what an agent's to-do may not hold before any call."""
 
     def test_the_schema_takes_steps_as_a_list_of_objects(self):
@@ -337,7 +338,7 @@ class TodoSteps(Case):
 
 class Pages(Case):
     """hub_page_publish reads its body from an absolute file and checks it as the hub does
-    (kitlib.hubsite.pagecheck) before any call; hub_page reads one back. No tool deletes a page:
+    (kitlib.hubvalidate.pagecheck) before any call; hub_page reads one back. No tool deletes a page:
     that is the owner's, on the hub page only."""
 
     def setUp(self):
@@ -703,7 +704,7 @@ class Creator(Case):
 
     def test_a_class_and_unfiled_are_passed_to_the_hub_as_given(self):
         said = srv.TOOLS["hub_ask"][1]["properties"]["class"]
-        self.assertEqual(said["enum"], list(api.QUESTION_CLASSES))
+        self.assertEqual(said["enum"], list(hubvalidate.QUESTION_CLASSES))
         self.assertIn("record", said["description"])
         for name, args in (("hub_ask", {"title": "t", "class": "go"}),
                            ("hub_question_edit", {"id": "Q-1", "from": "pm", "if_version": 2,

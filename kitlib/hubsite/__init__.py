@@ -22,13 +22,11 @@
   apisched the api's schedule routes: the owner's schedules for the kit's automatic tasks
   apiread  the api's read routes: backlog, records, pending, wait, snapshot and health, and the owner's record writes
   lockdoor the api's door to the machine lock, in-process: revision, view, stats, owner writes
-  pagecheck what a published page's HTML may hold: one check, refused whole, never stripped
   skilledits the checks of an owner's skill edit: its text, its blob, the branch it names
   derived  views read from files other tools write (notices, repos, usage, agents, skills), never stored
   repoweb  a repository's web address, main branch and root names, for the page's repo-path links
   backlog  the backlog views the site shows
   recordwrite the owner's add, edit and delete from the record page, through the backlog store
-  todosteps an owner to-do's steps (edit, open, run) as PowerShell, and the to-do refusals
   gitsync  the store's commits, and its pull and push against the PM data remote
   httpd    one loopback HTTP listener in front of the api: the gate, the write rules, the waits
   tunnel   the listener a tunnel program points at: its Cloudflare Access gate, its write source

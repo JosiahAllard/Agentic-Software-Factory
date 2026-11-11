@@ -25,21 +25,19 @@ import json
 import os
 import traceback
 
-from kitlib import hubapprove, mcpwire
+from kitlib import hubapprove, hubvalidate, mcpwire
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import OWNER_ONLY, SERVER_NAME
 from kitlib.hubsite import api as hubapi
-from kitlib.hubsite import approvals as hubapprovals
 from kitlib.hubsite import auth as hubauth
 from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import pagecheck
 from kitlib.hubsite import serve as hubserve
 from kitlib.hubsite import settings as hubsettings
-from kitlib.hubsite import todosteps
+from kitlib.hubvalidate import pagecheck, todosteps
 
 SERVER_VERSION = "0.1.0"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")    # newest first
-WAIT_MAX_S = hubapi.WAIT_MAX_S                              # one tools/call waits at most this long
+WAIT_MAX_S = hubvalidate.WAIT_MAX_S                         # one tools/call waits at most this long
 WAIT_DEFAULT_S = 30
 LISTS = ("questions", "todos", "stories", "to_pm", "pages")
 VIEWS = ("notices", "repos", "usage", "agents")
@@ -170,7 +168,7 @@ TOOLS = {
                                                                 "recommend."},
               "repo": _REPO, "from": _ASK_FROM, "refs": _REFS, "urgent": _URGENT,
               "story": {"type": "string", "description": "The story this question is about."},
-              "record": _RECORD, "class": _one_of(hubapi.QUESTION_CLASSES, _CLASS_SAYS)},
+              "record": _RECORD, "class": _one_of(hubvalidate.QUESTION_CLASSES, _CLASS_SAYS)},
              ["title"]), "POST", "/questions", AGENT),
     "hub_question_log": (
         "Marks an answered or filed question logged once its answer is in the ledger "
@@ -220,7 +218,7 @@ TOOLS = {
               "recommended": {"type": "integer", "description": "The index of the option you "
                                                                 "recommend."},
               "refs": _REFS, "urgent": _URGENT, "record": _RECORD_EDIT,
-              "class": _one_of(hubapi.QUESTION_CLASSES, _CLASS_SAYS)},
+              "class": _one_of(hubvalidate.QUESTION_CLASSES, _CLASS_SAYS)},
              ["id", "from", "if_version"]),
         "POST", "/questions/{id}/edit", AGENT),
     "hub_question_withdraw": (
@@ -246,7 +244,7 @@ TOOLS = {
     "hub_story_set": (
         "Moves an owner's story on (POST /stories/<id>): status review, questions, added or "
         "declined, with the reviewer, a note, the backlog id or a closing note.",
-        _obj({"id": _ID, "status": _one_of(hubapi.AGENT_STORY_STATUSES, "The new status."),
+        _obj({"id": _ID, "status": _one_of(hubvalidate.AGENT_STORY_STATUSES, "The new status."),
               "reviewer": {"type": "string"}, "review_note": {"type": "string"},
               "backlog_id": {"type": "string"}, "closed_note": {"type": "string"},
               "if_version": _PIN}, ["id", "status", "if_version"]),
@@ -269,7 +267,7 @@ TOOLS = {
         "GET", "/pages/{id}", ANY),
     "hub_page_publish": (
         "Publishes an HTML page to the Action Hub (POST /pages), read from html_file. The page is "
-        "checked here first as the hub checks it (kitlib.hubsite.pagecheck): at most %d bytes of "
+        "checked here first as the hub checks it (kitlib.hubvalidate.pagecheck): at most %d bytes of "
         "UTF-8; a whole document is fine; no script, iframe, object, embed, form, link or base, "
         "a meta only charset utf-8 or name (%s) with content, a title only plain text; no on* "
         "handler, no URL that leaves the page (links are #fragments, images data: URIs, CSS "
@@ -303,7 +301,7 @@ TOOLS = {
         "file), its new text the exact UTF-8 bytes of its content_file. Once approved, "
         "tools/commit.py --owner-approval hub:A-<n> writes and commits it. It only asks: it never "
         "approves, and it cannot ask for a delete. At most %d files, %d bytes each."
-        % (hubapprovals.MAX_FILES, hubapprovals.MAX_CONTENT_BYTES),
+        % (hubvalidate.MAX_FILES, hubvalidate.MAX_CONTENT_BYTES),
         _obj({"checkout": {"type": "string", "description": "The absolute path of the git "
                                                             "checkout the change is for."},
               "title": {"type": "string"},
@@ -322,7 +320,7 @@ TOOLS = {
         "ready reply to the PM (skill session-handoff): the same kind and state note path. A "
         "successor told to in its first message records kind checkin once it has checked in. The "
         "hub stamps the time; GET /handoffs gives each session's newest record.",
-        _obj({"kind": _one_of(hubapi.HANDOFF_KINDS, "The ready reply's word: handoff (ready to "
+        _obj({"kind": _one_of(hubvalidate.HANDOFF_KINDS, "The ready reply's word: handoff (ready to "
                                                     "hand off), restart or stop; or checkin, a "
                                                     "successor that has checked in."),
               "state_path": {"type": "string", "description": "The absolute path of the state "

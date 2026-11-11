@@ -5,6 +5,11 @@ kitlib.hubsite.storecheck.check takes); it knows nothing of the page, ArtifactDa
 transport.
 Nothing here prints, parses arguments or exits.
 
+The submodules: pagecheck (what a published page's HTML may hold: one check, refused whole, never
+stripped) and todosteps (an owner to-do's steps as PowerShell, and the to-do refusals). The
+constants the hub's api, client, tools and MCP server share are below: WAIT_MAX_S, QUESTION_CLASSES,
+AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES.
+
   validate(docs, only=None, known_repos=())
                               [Finding] for every document; `only` (a set of "collection/doc_id")
                               limits the findings to those documents while refs and repos are
@@ -43,6 +48,17 @@ STATUSES = {
     'finding_marks': ('dismissed', 'passed_on', 'done'),
     'skill_edits': ('draft', 'submitted', 'committed', 'superseded', 'failed', 'withdrawn'),
 }
+# limits and word lists of the hub's api (docs/action-hub.md), read by the api, the client, tools/hub.py
+# and the MCP server
+WAIT_MAX_S = 55                     # the longest one GET /wait is held, seconds
+# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
+# a standing rule (a delegation run line too), the machine, work across repositories, or a
+# one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
+QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
+AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')    # the statuses an agent may set
+HANDOFF_KINDS = ('handoff', 'restart', 'stop', 'checkin')               # a hand-off record's kind
+MAX_FILES = 64                      # files in one approval
+MAX_CONTENT_BYTES = 256 * 1024      # one approved file's content, UTF-8
 # the collection a Q-/M-/T-/P-/S-/A-/E-/L-/C- id names (the store's id prefixes), and the fields
 # that carry such ids (an A-, E-, L- or C- id is never a ref; E is a skill edit, L a landing feed
 # event, C a session's hand-off record, docs/action-hub.md)

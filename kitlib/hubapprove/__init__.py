@@ -34,6 +34,7 @@ import os
 import re
 
 from kitlib import config as kconfig
+from kitlib import hubvalidate
 from kitlib.content import oncommit
 from kitlib.git import batch, cmd
 from kitlib.hubsite import approvals as ap
@@ -52,16 +53,16 @@ class RequestError(Exception):
 
 def read_content(path):
     """The text of the content file `path`: its bytes as UTF-8, line endings kept. RequestError
-    when it cannot be read, is over ap.MAX_CONTENT_BYTES or is not UTF-8."""
+    when it cannot be read, is over hubvalidate.MAX_CONTENT_BYTES or is not UTF-8."""
     try:
         with open(path, 'rb') as f:
-            data = f.read(ap.MAX_CONTENT_BYTES + 1)     # one past the cap: a huge file is not read
+            data = f.read(hubvalidate.MAX_CONTENT_BYTES + 1)     # one past the cap: a huge file is not read
     except OSError as e:
         raise RequestError('cannot read the content file %s: %s' % (path, type(e).__name__),
                            'files')
-    if len(data) > ap.MAX_CONTENT_BYTES:
+    if len(data) > hubvalidate.MAX_CONTENT_BYTES:
         raise RequestError('the content file %s is over %d bytes'
-                           % (path, ap.MAX_CONTENT_BYTES), 'files')
+                           % (path, hubvalidate.MAX_CONTENT_BYTES), 'files')
     try:
         return data.decode('utf-8')
     except UnicodeDecodeError:

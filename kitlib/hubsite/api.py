@@ -189,9 +189,9 @@ from . import schema
 from .store import HubError
 from .apibase import (  # noqa: F401 - re-exported: callers and tests read these off api
     BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
-    NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
+    NOT_LOCK_WRITER, WRITES_WHY, STATUS, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
-    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    AGENT_FROM, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
     _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via, _reason, _timeout,
     _one_of, _SEGMENT, SEGMENT_SAYS, _record_view, _agent_from, _session_from)
@@ -204,7 +204,7 @@ from .apipages import (  # noqa: F401 - re-exported: callers and tests read thes
     pages_delete)
 from .apilog import (  # noqa: F401 - re-exported: callers and tests read these off api
     inbox_add, inbox_read, LANDING_FIELDS, _newest, landings_list, landings_add, _mark_spent,
-    _repo_name_of, HANDOFF_KINDS, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
+    _repo_name_of, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
 from .apiskills import (  # noqa: F401 - re-exported: callers and tests read these off api
     SKILL_EDIT_CHANGE, SKILL_EDIT_WITHDRAW, _skill_name, _skill_text, _skill_source, _blob_field,
     skill_edits_list, _source_at, _main_blob, skill_edits_get, skill_edits_add, skill_edits_edit,
@@ -234,7 +234,7 @@ from .apiread import (  # noqa: F401 - re-exported: callers and tests read these
     record_add, record_edit, record_delete, record_unblock, _listing, pending, _unpath_pending,
     wait, _wait_for, SNAPSHOT_SKIP, _snapshot_colls, snapshot, health)
 from .apiask import (  # noqa: F401 - re-exported: callers and tests read these off api
-    questions_list, QUESTION_CLASSES, _class, questions_add, _pulled_refs, _asked, _cited,
+    questions_list, _class, questions_add, _pulled_refs, _asked, _cited,
     BINDS_FROM, questions_bind, questions_edit, questions_delete)
 from .apilock import (  # noqa: F401 - re-exported: callers and tests read these off api
     _remote, _lock, _writes, _viewed, lock_view, _wrote, _confirmed, _strs, lock_hold_add,
@@ -682,7 +682,7 @@ class Api(object):
                 q = asked.get(d['id']) or {}
                 if d.get('note') == 'filed' and isinstance(q.get('standing'), dict):
                     d['standing'] = True        # the PM logs it too (_for)
-                if not isinstance(q.get('record'), dict) and q.get('class') in QUESTION_CLASSES:
+                if not isinstance(q.get('record'), dict) and q.get('class') in hubvalidate.QUESTION_CLASSES:
                     d['class'] = q['class']     # the PM audits a classed answer (hub.py pending)
             out.append(d)
         now, flips = self.now(), []
@@ -1225,9 +1225,9 @@ def stories_set(api, req):
     for name in ('status', 'reviewer', 'review_note', 'backlog_id', 'closed_note'):
         _text(b, name)
     status = b['status']
-    if status not in AGENT_STORY_STATUSES:
+    if status not in hubvalidate.AGENT_STORY_STATUSES:
         raise _invalid('status is one of %s, not %r (submitted and withdrawn are the owner\'s)'
-                       % (', '.join(AGENT_STORY_STATUSES), status), 'status')
+                       % (', '.join(hubvalidate.AGENT_STORY_STATUSES), status), 'status')
     doc_id = req.params['id']
     d = api.doc('stories', doc_id, b)
     if d.get('status') == 'withdrawn':

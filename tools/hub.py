@@ -176,7 +176,7 @@ the server alone decides what a role may do.
   hub.py pages publish ID --title T --html-file F [--repo R] [--summary S] [--refs ID ...]
         [--kind K] [--folder F] [--from NAME]
         [--if-version V]                             `PUBLISHED ID`; F is a UTF-8 HTML file the
-                                                     hub's page check (kitlib.hubsite.pagecheck)
+                                                     hub's page check (kitlib.hubvalidate.pagecheck)
                                                      passes, checked here before it is sent;
                                                      over a page already published, --if-version
                                                      is its version (docs/hub-skill-pages.md
@@ -293,9 +293,9 @@ from kitlib.hubsite import access, api, auth, client, httpd, serve, settings, tu
 from kitlib.hubsite import approvals                               # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
 from kitlib.hubsite import control                                 # noqa: E402
-from kitlib.hubsite import pagecheck                               # noqa: E402
 from kitlib.hubsite import skilledits                              # noqa: E402
 from kitlib.hubsite import storecheck                              # noqa: E402
+from kitlib.hubvalidate import pagecheck                           # noqa: E402
 from kitlib.proc import process                                    # noqa: E402
 
 START = 'python "%s" serve' % os.path.abspath(__file__)
@@ -490,7 +490,7 @@ def _bind_lines(got):
 
 def _question_class(x, what):
     """--class on questions add and edit (docs/hub-questions.md "A question's class")."""
-    x.add_argument('--class', dest='question_class', choices=api.QUESTION_CLASSES,
+    x.add_argument('--class', dest='question_class', choices=hubvalidate.QUESTION_CLASSES,
                    help=what + ': rule (a standing rule or a delegation run line), machine, '
                         'cross-repo or go (a one-off landing or archive go)')
 
@@ -668,7 +668,7 @@ def _client_verbs(sub):
     x.add_argument('--urgent', action='store_true')
     x = _leaf(s, 'set', "set a story's status")
     x.add_argument('id')
-    x.add_argument('--status', required=True, choices=api.AGENT_STORY_STATUSES)
+    x.add_argument('--status', required=True, choices=hubvalidate.AGENT_STORY_STATUSES)
     x.add_argument('--reviewer')
     x.add_argument('--review-note', dest='review_note')
     x.add_argument('--backlog-id', dest='backlog_id')
@@ -708,7 +708,7 @@ def _client_verbs(sub):
                    help="only this session key's")
     h = x.add_subparsers(dest='sub')
     x = _leaf(h, 'add', 'record your hand-off, beside the ready reply to the PM')
-    x.add_argument('--kind', required=True, choices=api.HANDOFF_KINDS)
+    x.add_argument('--kind', required=True, choices=hubvalidate.HANDOFF_KINDS)
     x.add_argument('--state', required=True, metavar='PATH',
                    help='the absolute path of your state note')
     x.add_argument('--from', dest='who', required=True, metavar='KEY',

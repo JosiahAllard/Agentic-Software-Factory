@@ -193,8 +193,6 @@ DECISIONS = (APPROVE, DENY)
 COLLECTION = 'approvals'
 ROUTE = '/' + COLLECTION            # below api.BASE
 
-MAX_FILES = 64
-MAX_CONTENT_BYTES = 256 * 1024      # one file's content, UTF-8
 MAX_PATH = 400
 MAX_TITLE = 200
 MAX_REASON = 4000
@@ -362,8 +360,8 @@ def new_doc(repo, title, head, files, now, reason=None):
         raise ApprovalError('head is a commit id of 40 lowercase hex digits', 'head')
     if not isinstance(files, list) or not files:
         raise ApprovalError('files is a non-empty list', 'files')
-    if len(files) > MAX_FILES:
-        raise ApprovalError('one approval holds at most %d files' % MAX_FILES, 'files')
+    if len(files) > hubvalidate.MAX_FILES:
+        raise ApprovalError('one approval holds at most %d files' % hubvalidate.MAX_FILES, 'files')
     out, seen = [], set()
     for f in files:
         if not isinstance(f, dict):
@@ -385,8 +383,8 @@ def new_doc(repo, title, head, files, now, reason=None):
                 size = len(content.encode('utf-8'))
             except UnicodeEncodeError:
                 raise ApprovalError('content of %s is not valid text' % path, 'files')
-            if size > MAX_CONTENT_BYTES:
-                raise ApprovalError('content of %s is over %d bytes' % (path, MAX_CONTENT_BYTES),
+            if size > hubvalidate.MAX_CONTENT_BYTES:
+                raise ApprovalError('content of %s is over %d bytes' % (path, hubvalidate.MAX_CONTENT_BYTES),
                                     'files')
         elif base is None:
             raise ApprovalError('%s is neither in the base commit nor given content' % path,

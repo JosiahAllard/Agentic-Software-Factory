@@ -15,7 +15,8 @@ from unittest import mock
 
 from kitlib import hubvalidate
 from kitlib.backlog import store as smod
-from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve, todosteps
+from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve
+from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import backlog as hbacklog
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
@@ -1245,7 +1246,7 @@ class PagesTest(ApiCase):
         for raw in ('3600', '1e9', '55', '', '2.5'):
             self.ok('GET', '/wait', AGENT, None, {'timeout': raw} if raw else None)
         self.assertEqual(seen, [(1, 55), (1, 55), (1, 55), (1, 55), (1, 2.5)])
-        self.assertEqual(api.WAIT_MAX_S, 55)
+        self.assertEqual(hubvalidate.WAIT_MAX_S, 55)
         for raw in ('-1', 'soon', 'nan', 'inf'):
             self.refused('invalid', 'timeout', 'GET', '/wait', AGENT, None, {'timeout': raw})
         self.refused('invalid', 'since', 'GET', '/wait', AGENT, None, {'since': '-1'})
@@ -2702,8 +2703,8 @@ class QuestionClassTest(ApiCase):
         return dict({'from': 'pm', 'if_version': self.doc(qid)['version']}, **kw)
 
     def test_each_class_is_kept_on_the_question(self):
-        self.assertEqual(api.QUESTION_CLASSES, ('rule', 'machine', 'cross-repo', 'go'))
-        for name in api.QUESTION_CLASSES:
+        self.assertEqual(hubvalidate.QUESTION_CLASSES, ('rule', 'machine', 'cross-repo', 'go'))
+        for name in hubvalidate.QUESTION_CLASSES:
             with self.subTest(name=name):
                 qid = self.ok('POST', '/questions', AGENT, self.ask(**{'class': name}))['id']
                 self.assertEqual(self.doc(qid)['class'], name)

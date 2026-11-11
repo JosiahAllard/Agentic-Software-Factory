@@ -52,8 +52,10 @@ HubError is `unavailable` with only the exception's class name (_reason), never 
 """
 import time
 
+from kitlib import hubvalidate
+
 from .apibase import (
-    LOCK_DAYS_MAX, OWNER, TUNNEL_VIA, WAIT_MAX_S, WRITES_WHY, _fields, _flag, _invalid, _q, _q_int,
+    LOCK_DAYS_MAX, OWNER, TUNNEL_VIA, WRITES_WHY, _fields, _flag, _invalid, _q, _q_int,
     _reason, _text, _timeout, _typed)
 from .store import HubError
 
@@ -196,7 +198,7 @@ def lock_stats(api, req):
 
 def lock_wait(api, req):
     since = _q_int(req, 'since', 0, 10 ** 12)
-    timeout = min(_timeout(req), float(WAIT_MAX_S))
+    timeout = min(_timeout(req), float(hubvalidate.WAIT_MAX_S))
     api.store.check_open()
     if since is None:
         since = _lock(api, lambda door: door.revision())

@@ -594,8 +594,9 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     The fold-in guard (docs/backlog.md, "The fold-in guard"): `found_on` is the branch the finding
     was made on, or `none`; `why_not_folded` says why it is not fixed there. A record whose scope
     overlaps that branch's diff from the code main (`ctx.code_main`), or the scope of a record the
-    branch holds pulled, is refused: it belongs on that branch, or after it lands. Both go into a
-    `## Found` body section, and the branch into the commit subject; the summary stays the title.
+    branch holds pulled, is still filed: `add` prints a WARNING and writes the overlap into the
+    `## Found` section. Both go into a `## Found` body section, and the branch into the commit
+    subject; the summary stays the title.
 
     `body` (`--body-file`) opens the body, before the `## Found` and ADD_BODY sections.
     `summary_max`: a longer summary is a usage error naming `--body-file` (the CLI passes
@@ -635,10 +636,16 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
                       'same id makes that history read as though it were about this item: pass '
                       '`--reopen` if it is the same work coming back, or pick a new id'
                       % (rid, prior))
-    notes = [] if found_on == smod.NONE else _fold_overlap(snap, ctx, rid, found_on, scopes)
+    notes, hits = ([], []) if found_on == smod.NONE else _fold_overlap(snap, ctx, rid, found_on,
+                                                                       scopes)
     where = 'no branch (or on a branch since landed)' if found_on == smod.NONE else found_on
+    found = 'Found on %s; not folded: %s\n' % (where, not_folded)
+    if hits:
+        notes.append('WARNING: scope overlaps the work of %s (filed anyway; fold it there if it '
+                     'belongs there):\n  %s' % (found_on, '\n  '.join(hits)))
+        found += '\nScope overlaps the work of %s when filed:\n  %s\n' % (found_on, '\n  '.join(hits))
     sections = [body.rstrip('\n') + '\n'] if (body or '').strip() else []
-    sections += ['## Found\n\nFound on %s; not folded: %s\n' % (where, not_folded), ADD_BODY]
+    sections += ['## Found\n\n' + found, ADD_BODY]
     summary = summary.strip()
     pairs = [('id', rid), ('area', smod.area_from_scope(scopes)), ('priority', '-'),
              ('priority_by', '-'), ('effort', effort or '-'), ('state', 'open'),
@@ -733,13 +740,14 @@ def _bare_branch(ctx, name):
 
 
 def _fold_overlap(snap, ctx, rid, branch, scopes):
-    """The fold-in guard's git probe: Refusal when a member of `scopes` overlaps a path
-    `branch` changed since its merge base with the code main, or the scope of a record `branch`
-    holds pulled; a member that cannot be compared counts as an overlap. Refusal too when
+    """The fold-in guard's git probe: the overlap lines `hits` for each member of `scopes` that
+    overlaps a path `branch` changed since its merge base with the code main, or the scope of a
+    record `branch` holds pulled; a member that cannot be compared counts as an overlap. `add`
+    warns on them and files the record. Refusal when
     `branch` is neither a local branch, nor a branch of any remote as last fetched, nor a branch
     that landed on the code main (a `Merge <branch>` merge on its first-parent chain,
     `landing_merge`); Failure, not that Refusal, when the code main does not resolve.
-    Returns the NOTE lines: a branch only remotes have has the diff of each remote's tip
+    Returns `(notes, hits)`; the NOTE lines: a branch only remotes have has the diff of each remote's tip
     compared; a landed branch has no diff to compare; the pulled scopes are checked either way.
     Every ref name is matched in any letter case, against git's own list of names
     (`_ref_names`), so a packed ref is found as a loose one is. Failure when git cannot answer
@@ -775,11 +783,7 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
         if r.get('state') == 'pulled' and (r.get('pulled_by') or '').lower() == branch.lower():
             hits += _overlaps(scopes, r.all('scope'), '(scope of %s, pulled by %s)'
                               % (r.stem, branch))
-    if hits:
-        raise Refusal('cannot add %s: its scope overlaps the work of %s, so the finding belongs '
-                      'there:\n  %s\nfold it into %s, or file it after %s lands'
-                      % (rid, branch, '\n  '.join(hits), branch, branch))
-    return notes
+    return notes, hits
 
 
 def _branch_tips(ctx, branch, names):

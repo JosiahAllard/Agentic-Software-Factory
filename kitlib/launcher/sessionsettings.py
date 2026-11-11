@@ -9,10 +9,13 @@ with no --settings.
 
   resolve(spec)        (path, None) of the rendered file under the stable kit, or (None, the line to
                        say) when the file is not there: the session then starts with no --settings
-  plan(spec, path, mcp, folder, name)
+  plan(spec, path, mcp, folder, name, stamp)
                        the file the session gets and the JSON to write there: the rendered file itself
-                       with no `mcp`; else <folder>/launcher/settings-<name>.json, the rendered JSON
-                       less the deny entries of the `mcp` servers (written at launch, never into the kit)
+                       with no `mcp`; else <folder>/launcher/settings-<name>-<stamp>.json (stamp: the
+                       launch's epoch ms), the rendered JSON less the deny entries of the `mcp` servers
+                       (written at launch, never into the kit). The stamp makes the file this launch's
+                       own: a `consultant --replace` beside a live session of the same name never
+                       overwrites, or on a failed launch removes, the running session's file
   write(path, data)    write `data` through a temp file, then os.replace: a reader sees the whole file
   remove(path)         remove a file write() wrote (a failed launch), quietly
 
@@ -32,7 +35,7 @@ from kitlib.launcher.settings import LaunchError
 # rel: the file's kit-relative path; mcp_deny {server: its deny entry}; kit: the stable kit, None unknown
 Spec = collections.namedtuple('Spec', 'rel mcp_deny kit')
 FOLDER = 'launcher'
-NAME = 'settings-%s.json'
+NAME = 'settings-%s-%d.json'
 MISSING = 'settings: none (missing %s)'
 
 
@@ -45,9 +48,10 @@ def resolve(spec):
     return path, None
 
 
-def plan(spec, path, mcp, folder, name):
+def plan(spec, path, mcp, folder, name, stamp):
     """(the file the session starts with, the JSON to write there or None). LaunchError for a
-    server the spec has no deny entry for, or a rendered file that is not a settings object."""
+    server the spec has no deny entry for, a rendered file that is not a settings object, or a
+    per-session file already there (never another launch's to overwrite)."""
     mcp = tuple(mcp or ())
     unknown = [m for m in mcp if m not in spec.mcp_deny]
     if unknown:
@@ -61,9 +65,12 @@ def plan(spec, path, mcp, folder, name):
         deny = data['permissions']['deny']
     except (OSError, ValueError, KeyError, TypeError) as e:
         raise LaunchError('%s is not a settings file with permissions.deny: %s' % (path, e)) from None
+    own = os.path.join(folder, FOLDER, NAME % (name, stamp))
+    if os.path.exists(own):
+        raise LaunchError('%s is already there: another launch of %s wrote it; start again' % (own, name))
     keep = {spec.mcp_deny[m] for m in mcp}
     data['permissions']['deny'] = [e for e in deny if e not in keep]
-    return os.path.join(folder, FOLDER, NAME % name), data
+    return own, data
 
 
 def write(path, data):

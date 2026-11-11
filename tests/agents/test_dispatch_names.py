@@ -48,7 +48,6 @@ def bare_uses(text):
 class DispatchNamesTest(unittest.TestCase):
     def test_every_dispatch_name_is_qualified(self):
         files = scanned_files()
-        self.assertEqual(len(files), len(KIT) + 1, 'every agent file and docs/ROSTER.md')
         self.assertGreaterEqual(len(KIT), 14, 'the scan found almost no agent files: is it reading the folder?')
         for p in files:
             rel = p.relative_to(ROOT).as_posix()

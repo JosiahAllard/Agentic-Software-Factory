@@ -357,7 +357,7 @@ def _session_settings(host, mcp, name, out):
     if missing:
         out.append(missing)
         return None, None
-    return sessionsettings.plan(spec, path, mcp, agent_temp(host), name)
+    return sessionsettings.plan(spec, path, mcp, agent_temp(host), name, int(pipes.launch_ms(host.now())))
 
 
 def start_entry(settings, host, key, account=None, prompt=None, whatif=False, home_worktree=False,

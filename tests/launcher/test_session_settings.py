@@ -13,6 +13,7 @@ from unittest import mock
 from hosts.claude.adapter import content as claude_content
 from kitlib.launcher import sessionsettings, start, unlisted, window
 from kitlib.launcher.settings import LaunchError
+from tests.launcher.fakes import NOW
 from tests.launcher.test_unlisted import Base, rows
 
 CUT = ('Read', 'NotebookEdit', 'mcp__plugin_pm-kit_hub', 'mcp__plugin_pm-kit_blender')
@@ -71,19 +72,26 @@ class Files(unittest.TestCase):
 
     def test_plan_without_mcp_is_the_rendered_file_and_writes_nothing(self):
         path, _ = sessionsettings.resolve(self.spec)
-        self.assertEqual(sessionsettings.plan(self.spec, path, (), self.root, 'n'), (path, None))
+        self.assertEqual(sessionsettings.plan(self.spec, path, (), self.root, 'n', 7), (path, None))
 
     def test_plan_with_mcp_drops_that_servers_deny_entry_only(self):
         path, _ = sessionsettings.resolve(self.spec)
-        got, data = sessionsettings.plan(self.spec, path, ['hub'], self.root, 'deep-x')
-        self.assertEqual(got, os.path.join(self.root, 'launcher', 'settings-deep-x.json'))
+        got, data = sessionsettings.plan(self.spec, path, ['hub'], self.root, 'deep-x', 7)
+        self.assertEqual(got, os.path.join(self.root, 'launcher', 'settings-deep-x-7.json'))
         self.assertEqual(data, {'permissions': {'deny': ['Read', 'NotebookEdit', BLENDER]}, 'other': 1})
         self.assertFalse(os.path.exists(got))
 
     def test_an_unknown_server_is_refused_naming_the_known_ones(self):
         path, _ = sessionsettings.resolve(self.spec)
         with self.assertRaisesRegex(LaunchError, r'--mcp nope: no such MCP server \(known: blender, hub'):
-            sessionsettings.plan(self.spec, path, ['nope'], self.root, 'n')
+            sessionsettings.plan(self.spec, path, ['nope'], self.root, 'n', 7)
+
+    def test_a_file_already_there_is_never_this_launchs(self):
+        path, _ = sessionsettings.resolve(self.spec)
+        own, data = sessionsettings.plan(self.spec, path, ['hub'], self.root, 'n', 7)
+        sessionsettings.write(own, data)
+        with self.assertRaisesRegex(LaunchError, 'already there'):
+            sessionsettings.plan(self.spec, path, ['hub'], self.root, 'n', 7)
 
     def test_write_goes_through_a_temp_name_then_replace(self):
         target = os.path.join(self.root, 'launcher', 'settings-n.json')
@@ -119,7 +127,7 @@ class Launch(Base):
         self.spec = kit_with(os.path.join(self.h.root, 'my kit'), {'permissions': {'deny': list(CUT)}})
         self.rendered = os.path.join(self.spec.kit, *self.spec.rel.split('/'))
         self.host.session_spec = self.spec
-        self.own = os.path.join(self.temp, 'launcher', 'settings-deep-net-race.json')
+        self.own = os.path.join(self.temp, 'launcher', 'settings-deep-net-race-%d.json' % (NOW.timestamp() * 1000))
 
     def test_a_path_with_a_space_reads_back_through_unlisted(self):
         self.assertIn(' ', self.rendered)
@@ -162,6 +170,16 @@ class Launch(Base):
             self.deep(mcp=['hub'])
         self.assertEqual(seen, [True])
         self.assertFalse(os.path.exists(self.own))
+
+    def test_a_failed_launch_leaves_a_running_sessions_file_of_that_name(self):
+        live = os.path.join(self.temp, 'launcher', 'settings-deep-net-race-1.json')     # an earlier launch's
+        sessionsettings.write(live, {'permissions': {'deny': []}})
+        self.host.open_window = mock.Mock(side_effect=OSError('no window'))
+        with self.assertRaisesRegex(LaunchError, 'no window'):
+            self.deep(mcp=['hub'])
+        self.assertEqual(os.listdir(os.path.dirname(live)), [os.path.basename(live)])
+        with open(live, encoding='utf-8') as f:
+            self.assertEqual(json.load(f), {'permissions': {'deny': []}})
 
     def test_a_missing_file_says_so_and_passes_no_settings(self):
         os.remove(self.rendered)

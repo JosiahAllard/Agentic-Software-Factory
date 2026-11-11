@@ -25,7 +25,8 @@ CREATIVE_HOME = "specialty-tech-art"
 # reference files a skill carries beside its SKILL.md
 EXTRA_FILES = {"coordinator-dispatch": ["roster.md", "creative.md", "upkeep.md"], "specialty-tech-art": ["creative.md"],
                "specialty-sound": ["measuring.md"], "machine-lock-run": ["training.md"],
-               "specialty-docs": ["doc-writing.md"], "topic-session": ["brief-template.md"]}
+               "specialty-docs": ["doc-writing.md"], "topic-session": ["brief-template.md"],
+               "backlog-ops": ["rare-cases.md"]}
 # one repo's own: never shipped in the plugin (docs/shipping.md, "Stays repo-local")
 REPO_LOCAL = {"worktree-start"}
 REPO_LOCAL_SUFFIX = "-train-eval"     # the training-and-evaluation workflow skill

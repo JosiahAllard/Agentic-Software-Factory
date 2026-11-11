@@ -12,6 +12,9 @@ from tests.backlog.helpers import ADD_FLAGS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KINDS = ('Usage', 'Refusal', 'NotFound', 'Failure', 'Ended')
+# The plan modules: the verbs, read as one source.
+PLANS = tuple('kitlib/backlog/%s.py' % m for m in (
+    'plan', 'plan_narrow', 'plan_edit', 'plan_claim', 'plan_hold', 'plan_end', 'plan_citations'))
 
 
 def parse(rel):
@@ -106,8 +109,11 @@ class GuardSites(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with open(os.path.join(ROOT, 'kitlib', 'backlog', 'plan.py'), encoding='utf-8') as fh:
-            cls.src = fh.read()
+        texts = []
+        for rel in PLANS:
+            with open(os.path.join(ROOT, *rel.split('/')), encoding='utf-8') as fh:
+                texts.append(fh.read())
+        cls.src = '\n'.join(texts)
         cls.plan = ast.parse(cls.src)
 
     def test_bad_id_shape_guard_raises_usage(self):
@@ -163,10 +169,11 @@ class GuardSites(unittest.TestCase):
         self.assertEqual(sorted(set(raised_kinds(fn))), ['Usage'])
 
     def test_every_raise_in_the_verbs_is_one_of_the_four_kinds(self):
-        for rel in ('kitlib/backlog/plan.py',
-                    'kitlib/backlog/retarget.py', 'kitlib/backlog/opener.py',
-                    'kitlib/backlog/pull_branch.py'):
-            kinds = raised_kinds(parse(rel))
+        trees = [('the plan modules', self.plan)] + [
+            (rel, parse(rel)) for rel in ('kitlib/backlog/retarget.py', 'kitlib/backlog/opener.py',
+                                          'kitlib/backlog/pull_branch.py')]
+        for rel, tree in trees:
+            kinds = raised_kinds(tree)
             self.assertTrue(kinds, '%s raises nothing: the sweep would pass unread' % rel)
             for kind in kinds:
                 if kind in ('PartitionError', 'Conflict', 'UndecidableScope', 'ValueError'):

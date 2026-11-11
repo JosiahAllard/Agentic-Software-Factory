@@ -1,7 +1,8 @@
-"""Blocking or releasing a pulled record whose work stopped (kitlib.backlog.plan stop_pull,
-plan_block, plan_release; docs/backlog.md "Stopping a pull"): its holder may, and anybody may when
-the pull is dead or `Context.liveness` finds its worktree dead. One commit frees the scope, the
-body says where the work was left, and the branch is never touched."""
+"""Blocking or releasing a pulled record whose work stopped (kitlib.backlog.plan_claim stop_pull,
+plan_hold plan_block, plan_claim plan_release; docs/backlog.md "Stopping a pull"): its holder
+may, and anybody may when the pull is dead or `Context.liveness` finds its worktree dead. One
+commit frees the scope, the body says where the work was left, and the branch is never
+touched."""
 import os
 import time
 import unittest
@@ -178,7 +179,7 @@ class Release(StoppedCase):
 
 class PullResume(StoppedCase):
     """`pull` of a record whose body carries stop_pull's `Stopped on branch` note names that
-    branch and tip (plan.resume_line), so the puller resumes from it."""
+    branch and tip (plan_claim.resume_line), so the puller resumes from it."""
 
     def note(self, branch, tip):
         return 'Stopped on branch %s at %s, branch kept.' % (branch, tip)

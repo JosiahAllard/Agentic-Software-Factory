@@ -246,7 +246,7 @@ class Slots(unittest.TestCase):
 
     def slots(self, key, entry, cap=4):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
+        from kitlib.backlog import opener, plan_narrow
 
         class Store(object):
             def load(s):
@@ -272,7 +272,7 @@ class Slots(unittest.TestCase):
             return cap
         with mock.patch.object(opener, 'open_store', open_store), \
                 mock.patch.object(opener, 'repo_cap', repo_cap), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
                                   lambda snap, root, remote: (self.holding, [], None)):
             return W.read_slots(self.settings, key, entry)
@@ -306,7 +306,7 @@ class Slots(unittest.TestCase):
 
     def test_read_waits_gives_each_passed_over_pair_once_from_one_store_read(self):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
+        from kitlib.backlog import opener, plan_narrow
 
         class R(object):
             def __init__(s, rid, **f):
@@ -335,7 +335,7 @@ class Slots(unittest.TestCase):
         with mock.patch.object(opener, 'open_store',
                                lambda root, fetch=True, session=None, *, probes:
                                Ctx(root, session)), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
                                   lambda snap, root, remote: ([low], [], why[0])):
             rows = W.read_waits(self.settings, 'game', dict(COORD))
@@ -1351,6 +1351,7 @@ class PullOnAStore(unittest.TestCase):
     def setUp(self):
         from kitlib.backlog import record as rmod
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_ref
         from tests.backlog import helpers as bh
         from tests.home import temp_home
         patch = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
@@ -1362,7 +1363,7 @@ class PullOnAStore(unittest.TestCase):
         self.root = os.path.realpath(self.repo.root)
         bh.kit_json_ref(self.repo)
         self.repo.git('push', '-q', 'origin', 'main')
-        self.backend = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        self.backend = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         self.store = smod.Store(self.backend, rmod.Rules())
         writes = {}
         for r in (bh.priced('FOO', session='kit'), bh.priced('BAR', session='other'),
@@ -1397,6 +1398,7 @@ class PullOnAStore(unittest.TestCase):
     def test_a_record_in_the_offer_is_pulled_onto_its_own_tree(self):
         from kitlib.backlog import audit_check, opener
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_open
         got = self.pull(['FOO'], 1)
         self.assertEqual(got, ([('FOO', 'kit/fill-foo')], []))
         self.assertTrue(os.path.isdir(self.trees()['kit/fill-foo']))
@@ -1406,7 +1408,7 @@ class PullOnAStore(unittest.TestCase):
         tip = self.repo.git('ls-remote', 'origin', smod.STORE_REF).split('\t')[0]
         self.assertIn('Session: hub-fill', self.repo.git('log', '-1', '--format=%B', tip))
         top, cfg, rules = opener.open_repo(self.root)
-        report = audit_check.check(smod.open_backend(top, cfg, fetch=False), rules, [], 0)
+        report = audit_check.check(store_open.open_backend(top, cfg, fetch=False), rules, [], 0)
         self.assertEqual(report.changes, 2)                 # the seed and the pull
         self.assertEqual([f for f in report.findings if tip[:10] in f.text], [])
 
@@ -1455,8 +1457,8 @@ class WaitsOnAStore(_bh.StoreCase):
                   _bh.priced('FOO', priority='1', scope='kitlib/**'))
 
     def test_a_record_the_narrowing_clears_is_not_a_waits_pair(self):
-        from kitlib.backlog import opener, plan
-        _o, passed, _h, _w = plan.offer_for(self.store.load(), self.ctx)      # unnarrowed
+        from kitlib.backlog import opener, plan_narrow
+        _o, passed, _h, _w = plan_narrow.offer_for(self.store.load(), self.ctx)      # unnarrowed
         self.assertEqual([(p.rec.id, [w.id for w in p.waits]) for p in passed],
                          [('FOO', ['HOLD'])])
         with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \

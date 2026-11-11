@@ -24,7 +24,7 @@ LOCK = 'python tools/machine_lock.py'
 
 
 class Rec(dict):
-    """A backlog record as kitlib.backlog.store's Snapshot gives it: get() and all()."""
+    """A backlog record as kitlib.backlog.store_read's Snapshot gives it: get() and all()."""
 
     def all(self, key):
         v = self.get(key)

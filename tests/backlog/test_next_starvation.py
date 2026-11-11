@@ -13,6 +13,7 @@ from kitlib.backlog import conditions as cmod
 from kitlib.backlog import offer as omod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 
 from tests.backlog import test_cli
 from tests.backlog.helpers import TODAY, priced, rec, record_text
@@ -306,7 +307,7 @@ class NextCli(unittest.TestCase):
     ok = test_cli.Cli.ok
 
     def publish(self, texts):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         backend.publish(smod.Store(backend, rmod.Rules()).load(), texts, 'seed\n')
 
     def hub(self, fake):

@@ -13,6 +13,7 @@ from kitlib.config import pmdata
 from kitlib.backlog import at_landing
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.git import cmd, refs
 from tests.backlog.helpers import priced
 from tests.gate import test_land
@@ -48,9 +49,10 @@ class StoreLandCase(test_land.LandCase):
 
     def backend(self):
         if self.STORE == 'branch':
-            return smod.RefBackend(self.repo.root, 'origin', 'refs/heads/backlog',
-                                   'refs/remotes/origin/backlog', no_remote_ref='refs/heads/backlog')
-        return smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            return store_ref.RefBackend(self.repo.root, 'origin', 'refs/heads/backlog',
+                                        'refs/remotes/origin/backlog',
+                                        no_remote_ref='refs/heads/backlog')
+        return store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
 
     @property
     def remote_ref(self):
@@ -256,8 +258,8 @@ class PmDataClose(StoreLandCase):
         self.assertGreater(out.lines.index(closed[0]), landed[0], out.lines)
 
     # A change the PM made in the PM data worktree and did not commit is never deleted or committed
-    # by the landing's close (store.MainBackend `clean`, errors.Dirty): nothing is written, and the
-    # WARNING gives the compare and the close command.
+    # by the landing's close (store_folder.MainBackend `clean`, errors.Dirty): nothing is written,
+    # and the WARNING gives the compare and the close command.
 
     def dirty_close(self, change, seed=True):
         """`(wt, the landing)`: FOO (committed on the PM data branch unless not `seed`), then

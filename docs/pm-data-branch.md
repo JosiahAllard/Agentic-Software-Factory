@@ -35,7 +35,7 @@ A bare `git push` in the data worktree goes to the upstream, the private remote;
 
 ## Never configure a refspec
 
-`RefBackend.ensure_refspec` (`kitlib/backlog/store.py`) adds `+refs/backlog/main:refs/backlog/main` to `remote.<remote>.fetch`, only once a fetch found the store on the remote (a refspec naming a ref the remote lacks makes every plain `git fetch` fail). Nothing here may add one. Every fetch and push in this design names its refspec on the command line (`git fetch origin refs/heads/main:refs/remotes/origin/main`, `git push private refs/heads/pmdata:refs/heads/pmdata`) and never edits `remote.*.fetch` or `remote.*.push`; `.git/config` is byte-identical after every verb except `init`.
+`RefBackend.ensure_refspec` (`kitlib/backlog/store_ref.py`) adds `+refs/backlog/main:refs/backlog/main` to `remote.<remote>.fetch`, only once a fetch found the store on the remote (a refspec naming a ref the remote lacks makes every plain `git fetch` fail). Nothing here may add one. Every fetch and push in this design names its refspec on the command line (`git fetch origin refs/heads/main:refs/remotes/origin/main`, `git push private refs/heads/pmdata:refs/heads/pmdata`) and never edits `remote.*.fetch` or `remote.*.push`; `.git/config` is byte-identical after every verb except `init`.
 
 ## Pre-push guard
 

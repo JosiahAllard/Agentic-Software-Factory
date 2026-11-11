@@ -3,7 +3,7 @@ in-memory snapshot."""
 import unittest
 
 from kitlib.backlog import record as rmod
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 from kitlib.maintlint import holds
 
 from tests.backlog.helpers import priced, rec
@@ -16,7 +16,7 @@ def snap(*records):
     for r in records:
         texts.update(r)
     parsed = [rmod.parse('backlog/%s.md' % stem, text, stem) for stem, text in texts.items()]
-    return smod.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
+    return store_read.Snapshot(parsed, 'a' * 40, 'test', rmod.Rules('upper', ('L0', 'L1')))
 
 
 def one(**over):

@@ -9,6 +9,7 @@ from unittest import mock
 
 from kitlib.config import pmdata
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read, store_ref
 from kitlib.config import load as load_config
 from kitlib.git import repo as gitrepo
 from kitlib.preflight import defaultstore
@@ -25,8 +26,9 @@ class TheDefaultStoreLine(tp.Fixture):
     def seed(self, *stems):
         """refs/backlog/main holding `backlog/<stem>.md` for each stem, built by the store's own
         writer and moved locally (no remote is touched)."""
-        backend = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF, fetch=False)
-        new = backend.build(smod.Snapshot([], None, '', None),
+        backend = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                       fetch=False)
+        new = backend.build(store_read.Snapshot([], None, '', None),
                             {s: 'id: %s\n' % s for s in stems}, 'seed\n')
         self.git('update-ref', smod.STORE_REF, new)
         return new
@@ -67,7 +69,7 @@ class TheDefaultStoreLine(tp.Fixture):
             'store: %s -C "%s" list' % (self.backlog_cmd(), wt.replace('\\', '/'))])
 
     def test_a_linked_worktree_opens_the_live_store_so_no_line(self):
-        """store.worktree_live_store: `-C` here never reads the copy the line warns of."""
+        """store_live.worktree_live_store: `-C` here never reads the copy the line warns of."""
         self.seed('A')
         self.pm_worktree('kit/backlog')
         wt = self.repo.worktree('wk', branch='kit/wk')
@@ -216,7 +218,8 @@ class TheDefaultStoreLine(tp.Fixture):
 
     def test_a_failure_inside_is_not_checked_and_exit_0(self):
         self.seed('A')
-        with mock.patch.object(defaultstore.smod, 'record_entries', side_effect=OSError('gone')):
+        with mock.patch.object(defaultstore.store_read, 'record_entries',
+                               side_effect=OSError('gone')):
             code, out = self.run_preflight()
         self.assertEqual(code, 0, out)
         self.assertEqual(self.backlog_lines(out),
@@ -224,14 +227,14 @@ class TheDefaultStoreLine(tp.Fixture):
 
 
 class RecordEntries(tp.Fixture):
-    """store.record_entries: the `*.md` files directly under the store folder, as records_in_tree
-    reads them, without reading a blob."""
+    """store_read.record_entries: the `*.md` files directly under the store folder, as
+    records_in_tree reads them, without reading a blob."""
 
     def test_it_lists_what_records_in_tree_parses(self):
         tip = TheDefaultStoreLine.seed(self, 'A', 'B')
-        entries, why = smod.record_entries(self.root, tip, smod.STORE_DIR)
+        entries, why = store_read.record_entries(self.root, tip, smod.STORE_DIR)
         self.assertIsNone(why)
-        records, _raw, why = smod.records_in_tree(self.root, tip, smod.STORE_DIR)
+        records, _raw, why = store_read.records_in_tree(self.root, tip, smod.STORE_DIR)
         self.assertIsNone(why)
         self.assertEqual([e[0] for e in entries], ['A', 'B'])
         self.assertEqual(sorted(e[0] for e in entries), sorted(r.stem for r in records))

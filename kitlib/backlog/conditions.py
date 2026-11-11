@@ -4,7 +4,7 @@
 An `until` line is `<member> <condition>`: the `blocked_on` member it ends and, after one space,
 the condition. `block ID --on M --until "<condition>"` writes it; the Action Hub's
 unblock-conditions job (kitlib.hubjobs.unblock_conditions) reads it, and when the condition is met
-clears that member (plan.plan_condition_met). The conditions it reads:
+clears that member (plan_hold.plan_condition_met). The conditions it reads:
 
   todo:T-n done                the hub to-do T-n is done
   question:Q-n answered        the hub question Q-n is answered (filed, logged or done count too)
@@ -223,7 +223,7 @@ def releasable(rec, status, closed):
     rests on (record.block_citation_error), which is often the answered question that set it (a
     "Defer" answer), so an id there is the hold's ground, never its end. A question asked in
     `owner_ask` and still open needs no reading here: its answer, filed on the record, clears the
-    `owner` hold itself (plan.plan_answer).
+    `owner` hold itself (plan_hold.plan_answer).
 
     `why` is what `next` prints, `reason` the `unblock --reason` it suggests."""
     out = []

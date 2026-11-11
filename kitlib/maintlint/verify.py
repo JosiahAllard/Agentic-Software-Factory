@@ -159,7 +159,7 @@ def landed_pulls(snap, root, remote, base, cmd, tips=branch_tips):
 
 
 LANDED_CLOSE = re.compile(r'^closes (\S+): landed ([0-9a-f]{40})$')
-# Every subject that ends a record (kitlib.backlog.plan's close, retire and delete).
+# Every subject that ends a record (kitlib.backlog.plan_end's close, retire and delete).
 ENDS = re.compile(r'^(?:closes|retires|deletes) (\S+): ')
 
 

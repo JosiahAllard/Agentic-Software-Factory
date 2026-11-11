@@ -67,8 +67,8 @@ class.
 - `unpriced`: the records `backlog.py needs-priority` lists.
 - `dead-pull`: a pull with no branch by its `pulled_by` (`offer.in_flight_split`). A failed git
   probe gives a note and no finding.
-- `dead-blocker`: an `item:X` blocker that names no live record (`store.dangling_items`). Closing
-  or retiring a record deletes it.
+- `dead-blocker`: an `item:X` blocker that names no live record (`store_read.dangling_items`).
+  Closing or retiring a record deletes it.
 - `duplicate`: live records whose summaries are the same words in the same order. A near match is
   not flagged. Its target is the sorted record ids.
 - `answered-question`: a parked record whose question (`q`) the owner has answered on the Action

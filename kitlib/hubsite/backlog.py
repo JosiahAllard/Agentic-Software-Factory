@@ -28,7 +28,7 @@ import threading
 
 from kitlib import config as kconfig
 from kitlib import hubbacklog
-from kitlib.backlog import store as bstore
+from kitlib.backlog import store_open, store_ref
 from kitlib.backlog.errors import Refusal
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
@@ -142,10 +142,10 @@ def open_read(root, fetch=False):
         raise ReadError(NO_FOLDER)
     fetched = False
     try:
-        backend = bstore.open_backend(root, kconfig.load(root), fetch=fetch)
+        backend = store_open.open_backend(root, kconfig.load(root), fetch=fetch)
     except (kconfig.ConfigError, Refusal) as exc:
         raise ReadError(kind(str(exc), BAD_STORE))
-    if fetch and isinstance(backend, bstore.RefBackend) and backend.remote:
+    if fetch and isinstance(backend, store_ref.RefBackend) and backend.remote:
         try:
             backend.load(None)
         except Refusal as exc:
@@ -347,7 +347,8 @@ _RID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,127}\Z")
 _REPO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\Z")
 # A branch a record names (`pulled_by:`, `parked_from:`), before git is asked about it.
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\Z")
-# How a removal's subject names it: `deletes ID: why` is what kitlib.backlog.plan plan_delete writes.
+# How a removal's subject names it: `deletes ID: why` is what kitlib.backlog.plan_end plan_delete
+# writes.
 _HOW = (("closes ", "closed"), ("retires ", "retired"), ("deletes ", "deleted"),
         ("backlog: delete ", "deleted"))
 
@@ -405,7 +406,7 @@ def _store_path(folder, rid):
 
 def removed_how(subject):
     """How a commit with `subject` took a record out of the store: closed, retired or deleted
-    (kitlib.backlog.plan's subjects), else removed."""
+    (kitlib.backlog.plan_end's subjects), else removed."""
     for start, how in _HOW:
         if subject.startswith(start):
             return how
@@ -591,7 +592,7 @@ def record_template(name, root):
     (1, 0-1, 1+ or 0+), "required", "written_by"}] in kitlib.backlog.record.FIELDS order),
     "states", "blocked_on" ({"plain", "prefixes"}), "efforts", "priorities", "priority_by"}.
     ReadError when the repository's .kit.json cannot be read."""
-    from kitlib.backlog import plan as bplan
+    from kitlib.backlog import plan_edit
     from kitlib.backlog import record as brecord
     if not os.path.isdir(root):
         raise ReadError(NO_FOLDER)
@@ -600,7 +601,7 @@ def record_template(name, root):
         rules = brecord.Rules(section["id_grammar"], section["phases"])
     except (kconfig.ConfigError, KeyError, ValueError, TypeError):
         raise ReadError(BAD_STORE)
-    written = bplan.WRITTEN_BY
+    written = plan_edit.WRITTEN_BY
     return {"repo": name, "id_grammar": rules.id_grammar, "id_pattern": rules.id_pattern,
             "phases": list(rules.phases),
             "fields": [{"key": k, "count": count, "required": k in brecord.REQUIRED,

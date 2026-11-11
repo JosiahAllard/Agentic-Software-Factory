@@ -46,10 +46,11 @@ from kitlib.backlog import find as findmod                        # noqa: E402
 from kitlib.backlog import landable as landmod                      # noqa: E402
 from kitlib.backlog import offer as omod                            # noqa: E402
 from kitlib.backlog import plan as pmod                             # noqa: E402
+from kitlib.backlog import plan_narrow                              # noqa: E402
 from kitlib.backlog import policy                                   # noqa: E402
 from kitlib.backlog import record as rmod                           # noqa: E402
 from kitlib.backlog import stale as stalemod                        # noqa: E402
-from kitlib.backlog import store as smod                            # noqa: E402
+from kitlib.backlog import store_folder
 from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E402
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
@@ -263,11 +264,11 @@ def do_next(args, ctx, snap):
                  if rec.get('session') else '')
         say('DEAD PULL %s (pulled_by %s has no branch): %s`release %s --reason ...`'
             % (rec.id, rec.get('pulled_by'), taker, rec.id))
-    # The offer `pull` checks against (plan.offer_for): the branch's own pulls take no scope.
+    # The offer `pull` checks against (plan_narrow.offer_for): the branch's own pulls take no scope.
     # A record held only by one live pull's protected set is offered narrowed (NARROWS below);
     # `next` writes nothing, and `pull` of it writes the narrowing.
-    offers, passed, _holding, own = pmod.offer_for(snap, ctx, cap=cap, seeds=args.seeds,
-                                                   holding=holding, narrow=True)
+    offers, passed, _holding, own = plan_narrow.offer_for(snap, ctx, cap=cap, seeds=args.seeds,
+                                                          holding=holding, narrow=True)
     mine = [r.id for r in holding if own and r.get('pulled_by') == own]
     if mine:
         say('as branch %s: its own pulls (%s) take no scope here, so a record overlapping only '
@@ -330,8 +331,8 @@ def narrow_lines(ctx, passed, holding, own):
     pass-over asks for it."""
     if not omod.wants_narrowing(passed):
         return []
-    changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
-    dirty = pmod.live_dirty(ctx, holding, changes)
+    changes, _notes, unknown = plan_narrow._live_changes(ctx, holding, own)
+    dirty = plan_narrow.live_dirty(ctx, holding, changes)
     return omod.narrowings(passed, holding, changes, unknown, dirty)
 
 
@@ -342,7 +343,7 @@ def do_show(args, ctx, snap):
     say('%s  rank %s  %s  (%s)' % (rec.id, omod.rank_label(rec, ranks), bucket, rec.path))
     if rmod.is_owner_held(rec):
         say('OWNER HOLD (%s): %s' % (rmod.owner_hold_label(rec), rec.get('owner_ask')))
-    uses = pmod.uses_shown(snap, ctx, rec)
+    uses = plan_narrow.uses_shown(snap, ctx, rec)
     if uses:
         say(uses)
     say('')
@@ -476,7 +477,7 @@ def do_write(args, ctx, store):
     say('  %s' % change.subject)
     if stale is not None:
         index_stale(stale)
-    # the row a plan found (a collision with a live pull, plan._collision_change) is audited too
+    # the row a plan found (a collision with a live pull, plan_narrow._collision_change) is audited too
     rows.extend(r for r in getattr(change, 'rows', ()) if r not in rows)
     audit_line(args.verb, getattr(args, 'id', None), rows, tip, args.session)
     coordlog.note_backlog(args.verb, getattr(args, 'id', None), getattr(args, 'branch', None))
@@ -495,12 +496,12 @@ def do_dry(change):
 
 def do_catch_up(args, store):
     """`catch-up`: each uncommitted path in the folder store as `<kind>  <path>`, then the counts;
-    with `--apply PATH...` commit the named record paths (kitlib.backlog.store.catch_up)."""
+    with `--apply PATH...` commit the named record paths (kitlib.backlog.store_folder.catch_up)."""
     backend = store.backend
     if args.apply is not None:
         stale = None
         try:
-            tip = smod.catch_up(backend, args.apply, store.session)
+            tip = store_folder.catch_up(backend, args.apply, store.session)
         except IndexStale as exc:                # committed: report it as caught up
             stale, tip = exc, exc.commit
         say('CAUGHT UP %d record path(s) in %s -> %s'
@@ -508,7 +509,7 @@ def do_catch_up(args, store):
         if stale is not None:
             index_stale(stale)
         return 0
-    if not isinstance(backend, smod.MainBackend):
+    if not isinstance(backend, store_folder.MainBackend):
         raise Usage('`catch-up` is for a folder store; %s commits its own writes'
                     % backend.describe())
     found = backend.pending()
@@ -523,7 +524,7 @@ def do_catch_up(args, store):
     records = [p for kind, p in found if kind != 'not a record']
     if records:
         say('DRY RUN: nothing was committed; commit the record paths with: catch-up --apply %s'
-            % smod.quoted(records))
+            % store_folder.quoted(records))
     else:
         say('DRY RUN: no uncommitted record path')
     return 0

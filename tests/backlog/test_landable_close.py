@@ -15,6 +15,7 @@ from kitlib.backlog import at_landing
 from kitlib.backlog import landable as L
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_ref
 from tests.backlog.helpers import priced
 from tests.backlog import test_at_landing_part as part   # not its classes: their tests run there
 from tests.gate import test_land_store as tls
@@ -99,8 +100,8 @@ class RefStore(StoreLandCase):
     def test_the_implicit_default_store_still_says_not_landable(self):
         # A landing only reads the default store (at_landing._read_default): it closes nothing there.
         self.seed(pulled('FOO'))
-        implicit = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF,
-                                   implicit=True)
+        implicit = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                        implicit=True)
         v = self.verdict(backend=implicit)
         self.assertEqual((v.verdict, v.held, v.closes), (L.NOT_LANDABLE, ('FOO',), ()))
         self.assertEqual(L.exit_code([v]), 2)
@@ -113,8 +114,8 @@ class FolderStore(StoreLandCase):
         wt = self.repo.worktree('feature')
         self.repo.write('docs/backlog/FOO.md', pulled('FOO')['FOO'], root=wt)
         self.repo.commit('work\n\n%s\n' % part.TRAILERS, 'docs/backlog', cwd=wt)
-        got = L.check(smod.MainBackend(self.repo.root, 'docs/backlog'), None, self.repo.root,
-                      [BRANCH], base=self.main)
+        got = L.check(store_folder.MainBackend(self.repo.root, 'docs/backlog'), None,
+                      self.repo.root, [BRANCH], base=self.main)
         self.assertEqual([(v.verdict, v.held, v.closes) for v in got],
                          [(L.NOT_LANDABLE, ('FOO',), ())])
         lines = L.lines(got[0], COMMAND)
@@ -141,7 +142,7 @@ class PmDataStore(StoreLandCase):
 
     def test_landable_there_reads_the_store_and_the_landing_closes_the_pull(self):
         wt = self.seeded()
-        backend = smod.MainBackend(wt, 'kit/backlog')
+        backend = store_folder.MainBackend(wt, 'kit/backlog')
         snap = smod.Store(backend, rmod.Rules()).load()
         got = L.check(backend, snap, wt, [BRANCH], base=self.main)
         self.assertEqual([(v.verdict, v.held, v.closes) for v in got],

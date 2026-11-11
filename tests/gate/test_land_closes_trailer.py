@@ -12,6 +12,7 @@ from kitlib import gate as G
 from kitlib.config import pmdata
 from kitlib.backlog import at_landing, offer
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder
 from kitlib.gate import land
 from kitlib.git import refs
 
@@ -280,8 +281,8 @@ class ClosesByTrailerInThePmDataStore(StoreLandCase):
         self.assertIn('named by a Closes trailer of %s; it was pulled by main' % BRANCH, closed[0])
         self.assertFalse([l for l in out.lines if l.startswith(('WARNING', 'NOTE'))], out.lines)
 
-    # A close in this store is committed on the PM data branch (store.MainBackend._commit), and
-    # each way that commit ends has its own WARNING: they hold for a record a trailer names too.
+    # A close in this store is committed on the PM data branch (store_folder.MainBackend._commit),
+    # and each way that commit ends has its own WARNING: they hold for a record a trailer names too.
 
     def seeded(self, *records):
         """The PM data worktree with `records` committed on its branch."""
@@ -315,13 +316,13 @@ class ClosesByTrailerInThePmDataStore(StoreLandCase):
         WARNING names the holder and the close command; it never says D2 is `no longer pulled
         by` the landed branch, which never held it."""
         wt = self.seeded(pulled('D2', by='main'))
-        real, theirs = smod.MainBackend._write_files, []
+        real, theirs = store_folder.MainBackend._write_files, []
 
         def another_commit_then_write(backend, writes, before, paths, branch):
             if branch and not theirs:
                 theirs.append(self.another_commit(wt))
             real(backend, writes, before, paths, branch)
-        with mock.patch.object(smod.MainBackend, '_write_files', another_commit_then_write):
+        with mock.patch.object(store_folder.MainBackend, '_write_files', another_commit_then_write):
             out, warn = self.land_closing('D2')
         self.assertEqual(len(theirs), 1)
         self.assertTrue(os.path.exists(self.record(wt, 'D2')))
@@ -352,7 +353,7 @@ class ClosesByTrailerInThePmDataStore(StoreLandCase):
         close, and once the close deleted it a hand writes it again, so the put-back leaves it
         (Overtaken.left): the WARNING gives the compare with HEAD and no close command."""
         wt = self.seeded(pulled('D2', by='main'))
-        real, theirs = smod.MainBackend._write_files, []
+        real, theirs = store_folder.MainBackend._write_files, []
 
         def another_commit_then_write(backend, writes, before, paths, branch):
             first = branch and not theirs
@@ -362,7 +363,7 @@ class ClosesByTrailerInThePmDataStore(StoreLandCase):
             if first:
                 with open(self.record(wt, 'D2'), 'w', encoding='utf-8', newline='\n') as f:
                     f.write('written by hand\n')
-        with mock.patch.object(smod.MainBackend, '_write_files', another_commit_then_write):
+        with mock.patch.object(store_folder.MainBackend, '_write_files', another_commit_then_write):
             out, warn = self.land_closing('D2')
         self.assertEqual(len(theirs), 1)
         with open(self.record(wt, 'D2'), encoding='utf-8') as f:

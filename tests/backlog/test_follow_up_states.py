@@ -1,7 +1,7 @@
 """kitlib.backlog.opener.follow_up_states, the read tools/verdict.py add makes for --follow-up:
 from the main checkout of a repository whose PM data worktree names the live store, the records
-come from that store (store.live_store_root), not the main checkout's dead default ref, on a real
-two-store layout (tests/backlog/test_worktree_live_store.py's)."""
+come from that store (store_live.live_store_root), not the main checkout's dead default ref, on a
+real two-store layout (tests/backlog/test_worktree_live_store.py's)."""
 import json
 import os
 import unittest

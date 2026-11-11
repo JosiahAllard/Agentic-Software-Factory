@@ -16,6 +16,7 @@ from kitlib.backlog import at_landing
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_open, store_ref
 from kitlib.backlog.errors import Failure
 
 from tests.backlog.helpers import priced
@@ -53,7 +54,8 @@ class DefaultStoreWarn(unittest.TestCase):
     def seed_default(self, *records, remote=True):
         """Write `records` to refs/backlog/main with a backend that names it (the default one is
         read-only); `remote=False` leaves the local ref only, as a stale clone holds it."""
-        named = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF, fetch=False)
+        named = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                     fetch=False)
         writes = {}
         for r in records:
             writes.update(r)
@@ -191,7 +193,7 @@ class DefaultStoreWarn(unittest.TestCase):
         self.assertFalse([l for l in lines if STRANDED in l], lines)
 
     def default_snap(self):
-        backend = smod.open_backend(self.root, kconfig.load(self.root), fetch=False)
+        backend = store_open.open_backend(self.root, kconfig.load(self.root), fetch=False)
         return backend, smod.Store(backend, rmod.Rules()).load()
 
     def test_check_warns_each_record_of_a_non_empty_default_store_and_stays_green(self):
@@ -216,7 +218,7 @@ class DefaultStoreWarn(unittest.TestCase):
                           if r.name == checkmod.DEFAULT_STORE])
 
     def fetching_store(self):
-        backend = smod.open_backend(self.root, kconfig.load(self.root), fetch=True)
+        backend = store_open.open_backend(self.root, kconfig.load(self.root), fetch=True)
         self.assertTrue(backend.implicit)
         return backend, smod.Store(backend, rmod.Rules())
 
@@ -235,7 +237,7 @@ class DefaultStoreWarn(unittest.TestCase):
         """The remote holds refs/backlog/main and the load fails anyway: that Failure stands."""
         self.seed_default(priced('FOO'))
         backend, store = self.fetching_store()
-        with mock.patch.object(smod.RefBackend, 'load', side_effect=Failure('broken store')):
+        with mock.patch.object(store_ref.RefBackend, 'load', side_effect=Failure('broken store')):
             with self.assertRaises(Failure) as raised:
                 checkmod.load_for_check(store)
         self.assertEqual(str(raised.exception), 'broken store')

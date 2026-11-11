@@ -8,6 +8,7 @@ from unittest import mock
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from kitlib.hubsite import backlog, recordwrite
 from kitlib.hubsite.store import HubError
 from tests.backlog.helpers import kit_json_ref, rec, record_text
@@ -35,7 +36,7 @@ class Case(unittest.TestCase):
 
     def seed(self, **records):
         """Publish records as they are, past every plan (a pulled one cannot be written by set)."""
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap, records, 'seed\n')
 

@@ -74,7 +74,7 @@ Claims = collections.namedtuple('Claims', 'index stores pm_root')
 
 def claimed(got, branch):
     """The ids `got` (Claims) holds pulled by `branch`, matched without regard to case as
-    backlog.py matches `pulled_by` (plan.py)."""
+    backlog.py matches `pulled_by` (plan_edit.py, plan_narrow.py)."""
     return got.index.get(branch.lower(), []) if branch else []
 
 DEAD_AFTER_S = 24 * 3600                       # owner answer Q3: 24 h, the sweep's idle bar
@@ -317,11 +317,11 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
 def live_claims(ctx, base):
     """`(Claims, None)`, or `(None, why)` when "no claim" would prove nothing: the pulls of every
     live backlog store of this repository, the store its `.kit.json` names (read as
-    remove.pulled_index reads it) and the PM data worktree's (store.pm_data_live_store) when that
-    names one, its records read as backlog.py there reads them. `why` when neither names a store
-    (the implicit default ref is read-only: no pull is written there) or a named one cannot be
+    remove.pulled_index reads it) and the PM data worktree's (store_live.pm_data_live_store) when
+    that names one, its records read as backlog.py there reads them. `why` when neither names a
+    store (the implicit default ref is read-only: no pull is written there) or a named one cannot be
     read."""
-    from kitlib.backlog import opener
+    from kitlib.backlog import opener, store_live, store_open
     from kitlib.backlog import store as smod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -337,14 +337,14 @@ def live_claims(ctx, base):
             index.setdefault(branch.lower(), set()).update(ids)
             stores.update((i, None if main_kind else ctx.main) for i in ids)
         read += 1
-    pm_root, named, why = smod.pm_data_live_store(ctx.main)
+    pm_root, named, why = store_live.pm_data_live_store(ctx.main)
     if why:
         return None, ('the PM data worktree\'s backlog store cannot be read (%s)'
-                      % (smod.unreadable_kit_json(pm_root, why) if pm_root else why))
+                      % (store_live.unreadable_kit_json(pm_root, why) if pm_root else why))
     if pm_root and named is not None:
         try:
             top, cfg, rules = opener.open_repo(pm_root)
-            snap = smod.Store(smod.open_backend(top, cfg, fetch=False), rules).load()
+            snap = smod.Store(store_open.open_backend(top, cfg, fetch=False), rules).load()
         except (Refusal, ConfigError, OSError, KeyError) as e:
             return None, 'the backlog store in %s cannot be read (%s)' % (pm_root, e)
         if snap.unreadable:

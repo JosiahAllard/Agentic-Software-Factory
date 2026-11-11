@@ -27,7 +27,7 @@ reader `coord-restart`'s backlog wake shares:
   sessions.json key. A record with no `session:` counts for the repository's main coordinator,
   the entry whose key is the repository's name. Inference: one live pull is about one slot
   (Known limits).
-- **Startable**: the offer `backlog.py next --all` gives the same sessions (`plan.offer_for`, no
+- **Startable**: the offer `backlog.py next --all` gives the same sessions (`plan_narrow.offer_for`, no
   cap, no fetch), in offer order. A collision, a hold, another session's record and an unmet
   `requires:` are already passed over. It judges session liveness as `next` does: another
   session's record whose session is not running reserves no scope, so it holds back nothing of

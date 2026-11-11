@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.gate import rerun, runner
 from kitlib.lock import run_end
 from kitlib.records import gate_ok
@@ -257,7 +257,7 @@ class AddLine(unittest.TestCase):
                     'ids': ['%s.Case%d.test_%s' % (long, n, 'z' * 50)]} for n in range(5)]
         add = rerun.add_line(os.getcwd(), BRANCH, 'a' * 40, classes)
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
-        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertLessEqual(len(summary), plan_edit.SUMMARY_MAX, summary)
         self.assertIn('and 4 more', summary)
         why = re.search(r'--why-not-folded "([^"]*)"', add).group(1)
         for c in classes:
@@ -420,7 +420,7 @@ class Flake(RerunCase):
         self.assertIn('--found-on %s' % BRANCH, add)
         # the summary is a title `backlog.py add` takes; the test id goes in the reason
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
-        self.assertLessEqual(len(summary), pmod.SUMMARY_MAX, summary)
+        self.assertLessEqual(len(summary), plan_edit.SUMMARY_MAX, summary)
         self.assertIn(ID, re.search(r'--why-not-folded "([^"]*)"', add).group(1))
         self.assertIn('report this line to your coordinator', out.lines[-2])
         # one gate slot of the branch: it counts toward the branch gate budget

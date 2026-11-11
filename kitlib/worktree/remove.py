@@ -18,6 +18,7 @@ reaches.
 import os
 
 from kitlib.backlog import store as backlog_store
+from kitlib.backlog import store_folder, store_open, store_read
 from kitlib.backlog.errors import Failure as BacklogFailure
 from kitlib.config import ConfigError
 from kitlib.git import refs
@@ -515,11 +516,11 @@ def pulled_index(ctx, rev):
     local ref as it stands (never fetched; `rev` is not used), an absent ref holding no
     records."""
     try:
-        backend = backlog_store.open_backend(ctx.main, ctx.cfg, fetch=False)
+        backend = store_open.open_backend(ctx.main, ctx.cfg, fetch=False)
     except (BacklogFailure, ConfigError, KeyError) as e:
         return None, 'the backlog store cannot be opened (%s)' % e
-    if isinstance(backend, backlog_store.MainBackend):
-        records, _, why = backlog_store.records_in_tree(ctx.main, rev, backend.rel)
+    if isinstance(backend, store_folder.MainBackend):
+        records, _, why = store_read.records_in_tree(ctx.main, rev, backend.rel)
         where = '%s at %s' % (backend.rel, rev[:10])
     else:
         # refs.ref_commit: a git ended from outside is no answer, never "no store ref".
@@ -528,7 +529,7 @@ def pulled_index(ctx, rev):
             return None, 'cannot read %s (%s)' % (backend.local_ref, why)
         if not tip:
             return {}, None
-        records, _, why = backlog_store.records_in_tree(ctx.main, tip, backlog_store.STORE_DIR)
+        records, _, why = store_read.records_in_tree(ctx.main, tip, backlog_store.STORE_DIR)
         where = '%s at %s' % (backend.local_ref, tip[:10])
     if records is None:
         return None, 'the backlog records %s cannot be read (%s)' % (where, why)
@@ -567,10 +568,10 @@ def report_pulls(ctx, base, tip, branch):
                 ' gone. Tell the coordinator, so it is released in a records commit.'
                 % (record, up, branch))
     try:
-        backend = backlog_store.open_backend(ctx.main, ctx.cfg, fetch=False)
+        backend = store_open.open_backend(ctx.main, ctx.cfg, fetch=False)
     except (BacklogFailure, ConfigError, KeyError):
         return
-    if not isinstance(backend, backlog_store.MainBackend):
+    if not isinstance(backend, store_folder.MainBackend):
         return
     on_tip, _ = pulled_by(ctx, tip, branch)
     for record in on_tip or []:

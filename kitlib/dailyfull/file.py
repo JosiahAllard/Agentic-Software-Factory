@@ -20,9 +20,10 @@ priced is never repriced. Nothing is filed without a prefix. Nothing here prints
 returns the lines to say.
 """
 from kitlib.backlog import at_landing, opener
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.backlog import scope as bscope
 from kitlib.backlog import store as bstore
+from kitlib.backlog import store_live
 from kitlib.backlog.errors import Refusal
 from kitlib.config.types import ConfigError
 
@@ -60,7 +61,7 @@ def open_filing_store(root, session=SLUG):
         return ctx, None
     pm_root, _cfg, _backend, why = at_landing.pm_data_store(root, None)
     if pm_root is None:
-        return None, why or bstore.default_store_refusal(ctx.root)
+        return None, why or store_live.default_store_refusal(ctx.root)
     return opener.open_store(pm_root, fetch=True, session=session, probes=opener.NO_PROBES), None
 
 
@@ -91,15 +92,15 @@ def file(root, settings, found, red, git):
         def add(s):
             if s.get(rid) is not None:
                 return bstore.Change({}, '', ['%s is already filed' % rid])
-            return pmod.plan_add(s, ctx, rid, summary, scopes, None, 'daily-bisect %s' % sha,
-                                 session=settings.get('session'), found_on=bscope.NONE,
-                                 why_not_folded=NOT_FOLDED)
+            return plan_edit.plan_add(s, ctx, rid, summary, scopes, None, 'daily-bisect %s' % sha,
+                                      session=settings.get('session'), found_on=bscope.NONE,
+                                      why_not_folded=NOT_FOLDED)
 
         def priced(s):
             rec = s.get(rid)
             if rec is None or rec.get('priority') != '-':
                 return bstore.Change({}, '', [])
-            return pmod.plan_set(s, ctx, rid, PRICE, ())
+            return plan_edit.plan_set(s, ctx, rid, PRICE, ())
 
         for plan in (add, priced):
             change, _tip = ctx.store.write(plan)

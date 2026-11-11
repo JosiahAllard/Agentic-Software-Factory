@@ -942,7 +942,7 @@ def _record_state(api, record):
 def _filed_as(before, after):
     """What a filed answer did to its record, from the record's state before and after the
     filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
-    hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
+    hold that had stopped its pull, which is back, plan_claim.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
     could not be read (the push then treats it as before this field: docs/hub-push.md "Push
     notifications")."""

@@ -12,6 +12,7 @@ from kitlib import gate as G
 from kitlib.backlog import at_landing
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 
 from tests.backlog.helpers import priced
 from tests.gate import test_land_store as tls
@@ -157,7 +158,7 @@ class PartLanding(StoreLandCase):
         self.seed(pulled('FOO'))
         tip = self.branch_with('fix\n\nPart-of: FOO\nCloses: FOO\n%s\n' % TRAILERS)
         cfg = kconfig.load_at(self.repo.root, self.main)
-        with mock.patch.object(smod, 'require_readable',
+        with mock.patch.object(store_read, 'require_readable',
                                side_effect=at_landing.Refusal('a record cannot be read')):
             lines = at_landing.close_landed(self.repo.root, cfg, BRANCH, 'f' * 40, tip=tip,
                                             base=self.main)

@@ -30,7 +30,8 @@ import re
 from . import record as rmod
 from . import scope as smod
 from .errors import Usage
-from .plan import _refuse_live_pulls, refuse_machine_paths
+from .plan import refuse_machine_paths
+from .plan_end import _refuse_live_pulls
 from .store import Change
 
 REWRITTEN_TEXT = ('ref', 'summary')

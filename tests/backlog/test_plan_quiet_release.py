@@ -1,12 +1,12 @@
-"""A quiet release (kitlib.backlog.plan plan_release, quiet_key_why; docs/backlog.md "Stopping a
-pull"): `pull` records the caller's `--session` as `pulled_session`, every end of the pull clears
+"""A quiet release (kitlib.backlog.plan_claim plan_release, quiet_key_why; docs/backlog.md "Stopping
+a pull"): `pull` records the caller's `--session` as `pulled_session`, every end of the pull clears
 it, and `release` of a live pull of another branch is allowed when the caller is that key or a
-successor with its stem, and the context's `quiet` probe finds the holder's tree quiet (faked
-here; the probe itself, kitlib.worktree.quiet quiet_hold, is tests/worktree/test_quiet.py)."""
+successor with its stem, and the context's `quiet` probe finds the holder's tree quiet (faked here;
+the probe itself, kitlib.worktree.quiet quiet_hold, is tests/worktree/test_quiet.py)."""
 from unittest import mock
 
 from kitlib.backlog import offer as omod
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, messages, priced
@@ -194,4 +194,4 @@ class PulledSessionField(QuietCase):
                                               pulled_session='kit-a') if 'session' in m], [])
 
     def test_set_refuses_to_write_it(self):
-        self.assertIn('pulled_session', pmod.WRITTEN_BY)
+        self.assertIn('pulled_session', plan_edit.WRITTEN_BY)

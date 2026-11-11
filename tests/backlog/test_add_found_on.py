@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib.config import pmdata
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_edit, plan_narrow
 from kitlib.backlog import pull_branch
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.git import cmd, refs
@@ -273,7 +274,7 @@ class FoundOn(StoreCase):
         for branch, want in (('kit/one', ['upstream']), ('kit/both', ['origin', 'upstream']),
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                got = pmod._remotes_with(self.ctx, branch)
+                got = plan_narrow._remotes_with(self.ctx, branch)
                 self.assertEqual([r for r, _ref, _tip in got], want)
                 self.assertEqual([ref for _r, ref, _tip in got],
                                  ['refs/remotes/%s/%s' % (r, branch.lower()) for r in want])
@@ -369,21 +370,23 @@ class FoundOn(StoreCase):
         self.assertIsNone(self.get('NEW'))
 
     def test_an_unreadable_record_fails_the_pulled_scope_check(self):
-        # Store.write refuses an unreadable store first (store.require_readable); the guard's own
-        # check is reached by planning directly.
+        # Store.write refuses an unreadable store first (store_read.require_readable); the guard's
+        # own check is reached by planning directly.
         self.seed({'BAD': 'no separator here\n'})
         with self.assertRaises(Failure) as cm:
-            pmod.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
-                          ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
+            plan_edit.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
+                               ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
         self.assertIn('cannot tell which records kit/foo holds pulled', str(cm.exception))
         self.assertIn('BAD', str(cm.exception))
 
     def failing(self, module, **over):
-        """Patch plan.py's own `module` (refs or cmd) so the named functions answer as `over`
-        says; every other call goes to the real module."""
-        patch = mock.patch.object(pmod, module, _Wrap(getattr(pmod, module), **over))
-        patch.start()
-        self.addCleanup(patch.stop)
+        """Patch the plan modules' own `module` (refs or cmd) so the named functions answer as
+        `over` says; every other call goes to the real module."""
+        for mod in (pmod, plan_narrow, plan_claim):
+            if hasattr(mod, module):
+                patch = mock.patch.object(mod, module, _Wrap(getattr(mod, module), **over))
+                patch.start()
+                self.addCleanup(patch.stop)
 
     def assert_git_failure(self):
         with self.assertRaises(Failure) as cm:
@@ -427,7 +430,7 @@ class FoundOn(StoreCase):
           'Windows, a packed-refs line does not')
 class FoundOnPackedRefs(StoreCase):
     """Loose and packed refs are found alike, the name compared ignoring case (git's own list of
-    ref names, kitlib/backlog/plan.py `_ref_names` and `_spelling`)."""
+    ref names, kitlib/backlog/plan_narrow.py `_ref_names` and `_spelling`)."""
     branch_with = FoundOn.branch_with
     add = FoundOn.add
     overlap = FoundOn.overlap
@@ -467,7 +470,7 @@ class FoundOnPackedRefs(StoreCase):
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/loose', ['origin']),
                              ('KIT/LOOSE', ['origin']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                self.assertEqual([r for r, _ref, _tip in pmod._remotes_with(self.ctx, branch)],
+                self.assertEqual([r for r, _ref, _tip in plan_narrow._remotes_with(self.ctx, branch)],
                                  want)
 
     def test_two_branches_that_differ_only_in_case_are_usage_however_named(self):
@@ -542,8 +545,8 @@ class PmDataWorktree(StoreCase):
         return stale
 
     def plan(self, ctx, scopes, found_on):
-        return pmod.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
-                             found_on=found_on, why_not_folded=WHY)
+        return plan_edit.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
+                                  found_on=found_on, why_not_folded=WHY)
 
 
 class FoundOnInThePmDataWorktree(PmDataWorktree):

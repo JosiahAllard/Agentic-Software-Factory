@@ -1,4 +1,4 @@
-"""Parking a pulled record (kitlib.backlog.plan plan_set_status) gives up its pull, so it takes
+"""Parking a pulled record (kitlib.backlog.plan_hold plan_set_status) gives up its pull, so it takes
 block's and release's holder check (stop_pull): its holder parks it, anybody parks a dead pull or
 one whose worktree `Context.liveness` finds dead, and a live pull on another branch refuses,
 naming its holder."""

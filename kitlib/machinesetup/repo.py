@@ -5,8 +5,8 @@ a repository that wants it. Nothing here prints or exits: run() gives the exit c
 
 The target is an existing git checkout, named by its top level. It writes these and nothing else:
   <target>/.kit.json          "repo".main_branch and .name, "backlog".store "ref" (named, so the
-                              backlog tool writes it: kitlib.backlog.store.open_backend), "owner".email
-                              and .agent_emails, and
+                              backlog tool writes it: kitlib.backlog.store_open.open_backend),
+                              "owner".email and .agent_emails, and
                               with a stack "gate": "tools/gate.json". The name is `repo_name`,
                               else the folder's name lower-cased; either must be a lower-case repo
                               name, or it refuses.

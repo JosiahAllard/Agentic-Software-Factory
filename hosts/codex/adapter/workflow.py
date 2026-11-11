@@ -147,7 +147,7 @@ def prepare(task, coordinator_host):
     if existing is None or existing or Path(task.worker).exists():
         raise Stopped('prepare', 'branch/destination exists or Git cannot answer')
     from kitlib.backlog.opener import NO_PROBES, open_store
-    from kitlib.backlog.store import require_readable
+    from kitlib.backlog.store_read import require_readable
     ctx = open_store(task.coordinator, fetch=True, session=task.session, probes=NO_PROBES)
     snap = ctx.store.load()
     require_readable(snap)
@@ -178,7 +178,7 @@ def _checkout(task):
 
 def _claimed(task):
     from kitlib.backlog.opener import NO_PROBES, open_store
-    from kitlib.backlog.store import require_readable
+    from kitlib.backlog.store_read import require_readable
     ctx = open_store(task.coordinator, fetch=True, session=task.session, probes=NO_PROBES)
     snap = ctx.store.load()
     require_readable(snap)

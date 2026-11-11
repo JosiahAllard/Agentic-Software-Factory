@@ -1,7 +1,8 @@
 """`add --found-on BRANCH|none --why-not-folded TEXT` (docs/backlog.md, "The fold-in guard"): a
-finding is folded into the branch that found it unless it cannot be; `add` refuses a record whose
-scope overlaps that branch's diff or the scope of a record the branch holds pulled, and records
-where the finding came from and why it was not folded."""
+finding is folded into the branch that found it unless it cannot be; `add` warns, and still files,
+a record whose scope overlaps that branch's diff or the scope of a record the branch holds pulled,
+writing the overlap into `## Found`, and records where the finding came from and why it was not
+folded."""
 import json
 import os
 import unittest
@@ -71,16 +72,21 @@ class FoundOn(StoreCase):
         self.assertIn('## Found\n\nFound on no branch (or on a branch since landed); not folded: %s\n' % WHY,
                       new.body)
 
-    def test_a_scope_the_branch_changed_is_refused(self):
+    def overlap(self, scopes, pair, **kw):
+        """`add` files the record (`NEW`), warns with `pair`, and writes `pair` into `## Found`."""
+        change = self.add(scopes, **kw)
+        warning = [x for x in change.lines if x.startswith('WARNING: scope overlaps')]
+        self.assertEqual(len(warning), 1, change.lines)
+        self.assertIn(pair, warning[0])
+        self.assertIn(pair, self.get(kw.get('rid', 'NEW')).body.split('## Found')[1])
+        return change
+
+    def test_a_scope_the_branch_changed_is_filed_with_a_warning(self):
         before = self.remote_tip()
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'])
-        msg = str(cm.exception)
-        self.assertIn('kitlib/x/** vs kitlib/x/a.py (changed on kit/foo)', msg)
-        self.assertIn('fold it into kit/foo, or file it after kit/foo lands', msg)
-        self.assertNotIn('--found-on none', msg)
-        self.assertNotIn('--ruling', msg)
-        self.assertEqual(self.remote_tip(), before)
+        change = self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/a.py (changed on kit/foo)')
+        self.assertIn('Scope overlaps the work of kit/foo when filed:', self.get('NEW').body)
+        self.assertIn('ADDED NEW, found on kit/foo', change.lines)
+        self.assertNotEqual(self.remote_tip(), before)
 
     def test_a_disjoint_scope_is_added_with_where_it_was_found(self):
         change = self.add(['docs/y.md'])
@@ -91,20 +97,14 @@ class FoundOn(StoreCase):
         self.assertIn('## Why this is here', new.body)
         self.assertTrue(any('found on kit/foo' in line for line in change.lines), change.lines)
 
-    def test_a_scope_a_record_the_branch_holds_is_refused(self):
+    def test_a_scope_a_record_the_branch_holds_is_filed_with_a_warning(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=FOO, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'])
-        self.assertIn('tools/z/a.py vs tools/z/** (scope of BAR, pulled by kit/foo)',
-                      str(cm.exception))
+        self.overlap(['tools/z/a.py'], 'tools/z/a.py vs tools/z/** (scope of BAR, pulled by kit/foo)')
 
     def test_a_differently_cased_branch_still_finds_what_it_holds_pulled(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=FOO, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'], found_on='KIT/FOO')
-        self.assertIn('tools/z/a.py vs tools/z/** (scope of BAR, pulled by KIT/FOO)',
-                      str(cm.exception))
-        self.assertIsNone(self.get('NEW'))
+        self.overlap(['tools/z/a.py'], 'tools/z/a.py vs tools/z/** (scope of BAR, pulled by KIT/FOO)',
+                     found_on='KIT/FOO')
 
     def test_a_record_another_branch_holds_does_not_count(self):
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by='kit/other',
@@ -155,21 +155,16 @@ class FoundOn(StoreCase):
         gone = 'kit/gone'
         self.remote_only(gone, 'kitlib/x/b.py')
         self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=gone, scope='tools/z/**'))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['tools/z/a.py'], found_on=gone)
-        self.assertIn('(scope of BAR, pulled by kit/gone)', str(cm.exception))
-        change = self.add(['docs/y.md'], found_on=gone)
+        self.overlap(['tools/z/a.py'], '(scope of BAR, pulled by kit/gone)', found_on=gone)
+        change = self.add(['docs/y.md'], found_on=gone, rid='NEW2')
         self.assertIn('NOTE: branch kit/gone is not a local branch; its diff was compared as last '
                       'fetched from origin', change.lines)
 
     def test_a_branch_only_a_remote_has_has_its_diff_compared(self):
         other = self.second_remote()
         self.remote_only('kit/far', 'kitlib/x/b.py', remotes=(other,))
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'], found_on='kit/far')
-        self.assertIn('kitlib/x/** vs kitlib/x/b.py (changed on upstream/kit/far)',
-                      str(cm.exception))
-        self.assertIsNone(self.get('NEW'))
+        self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/b.py (changed on upstream/kit/far)',
+                     found_on='kit/far')
 
     def test_each_remote_tip_of_a_remote_only_branch_is_compared(self):
         self.remote_only('kit/far', 'kitlib/x/b.py')
@@ -179,9 +174,8 @@ class FoundOn(StoreCase):
         self.repo.git('branch', '-q', '-D', 'kit/far')
         for scope, where in (('kitlib/x/**', 'origin/kit/far'), ('tools/w/**', 'upstream/kit/far')):
             with self.subTest(scope=scope):
-                with self.assertRaises(Refusal) as cm:
-                    self.add([scope], found_on='kit/far')
-                self.assertIn('(changed on %s)' % where, str(cm.exception))
+                self.overlap([scope], '(changed on %s)' % where, found_on='kit/far',
+                             rid='NEW' + where[0].upper())
         change = self.add(['docs/y.md'], found_on='kit/far')
         self.assertIn('NOTE: branch kit/far is not a local branch; its diff was compared as last '
                       'fetched from origin, upstream', change.lines)
@@ -298,11 +292,9 @@ class FoundOn(StoreCase):
             self.add(['docs/y.md'])
         self.assertIn('backlog.code_main', str(cm.exception))
 
-    def test_a_diff_path_that_cannot_be_compared_is_refused(self):
+    def test_a_diff_path_that_cannot_be_compared_is_filed_with_a_warning(self):
         self.branch_with('kit/odd', 'kitlib/y/[a].py')
-        with self.assertRaises(Refusal) as cm:
-            self.add(['docs/y.md'], found_on='kit/odd')
-        self.assertIn('kitlib/y/[a].py', str(cm.exception))
+        self.overlap(['docs/y.md'], 'kitlib/y/[a].py', found_on='kit/odd')
 
     def test_a_short_or_machine_path_reason_is_usage(self):
         with self.assertRaises(Usage) as cm:
@@ -438,6 +430,7 @@ class FoundOnPackedRefs(StoreCase):
     ref names, kitlib/backlog/plan.py `_ref_names` and `_spelling`)."""
     branch_with = FoundOn.branch_with
     add = FoundOn.add
+    overlap = FoundOn.overlap
     remote_only = FoundOn.remote_only
     second_remote = FoundOn.second_remote
 
@@ -454,19 +447,15 @@ class FoundOnPackedRefs(StoreCase):
                     self.repo.git('pack-refs', '--all')
                     self.assertFalse(os.path.exists(os.path.join(
                         self.repo.root, '.git', 'refs', 'heads', 'kit', 'foo')))
-                with self.assertRaises(Refusal) as cm:
-                    self.add(['kitlib/x/**'], found_on='KIT/FOO')
-                self.assertIn('kitlib/x/** vs kitlib/x/a.py (changed on KIT/FOO)',
-                              str(cm.exception))
+                self.overlap(['kitlib/x/**'], 'kitlib/x/** vs kitlib/x/a.py (changed on KIT/FOO)',
+                             found_on='KIT/FOO', rid='OVER%d' % packed)
                 change = self.add(['docs/y.md'], found_on='KIT/FOO', rid='NEW%d' % packed)
                 self.assertEqual(change.subject, 'backlog: add NEW%d, found on KIT/FOO' % packed)
 
     def test_a_packed_remote_branch_named_in_another_case_is_found(self):
         self.remote_only('kit/far', 'kitlib/x/b.py')
         self.repo.git('pack-refs', '--all')
-        with self.assertRaises(Refusal) as cm:
-            self.add(['kitlib/x/**'], found_on='Kit/Far')
-        self.assertIn('(changed on origin/kit/far)', str(cm.exception))
+        self.overlap(['kitlib/x/**'], '(changed on origin/kit/far)', found_on='Kit/Far')
 
     def test_remotes_with_finds_packed_and_loose_refs_in_any_case(self):
         other = self.second_remote()
@@ -568,9 +557,9 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         ctx = opener.open_store(self.pm_worktree(), fetch=False)
         change = self.plan(ctx, ['kitlib/x/later.py'], 'kit/new')
         self.assertIn('ADDED NEW, found on kit/new', change.lines)
-        with self.assertRaises(Refusal) as cm:
-            self.plan(ctx, ['kitlib/y/**'], 'kit/new')
-        self.assertIn('kitlib/y/** vs kitlib/y/own.py (changed on kit/new)', str(cm.exception))
+        change = self.plan(ctx, ['kitlib/y/**'], 'kit/new')
+        self.assertTrue(any('kitlib/y/** vs kitlib/y/own.py (changed on kit/new)' in x
+                            for x in change.lines), change.lines)
 
     def test_a_branch_that_landed_on_the_code_remotes_main_is_proof(self):
         stale = self.repo.head()

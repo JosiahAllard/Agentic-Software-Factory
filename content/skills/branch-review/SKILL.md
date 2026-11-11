@@ -23,7 +23,7 @@ There is no separate architecture review after the build: the code review checks
 4. What to look for: specialty-review "Code review", steps 4-7: each Done-when item MET or UNMET, defects, thin and clean tests, copies and over-building.
 5. Only a flake on the repo's known-flake list (`--find flakes`) gets one rerun; any other failing run is real.
 6. Findings go to the author by continuing that agent: numbered, file and symbol, each BLOCKING, FIX-HERE or NOTE. It fixes them and re-runs the touched tests; you re-review the fix only. After your verdict the author runs the one gate on the reviewed tip; any change after review, gate fixes included, is reviewed before landing.
-7. A finding that folds (skill builder, design rule 7) is fixed on this branch, never filed. File a follow-up only for work that does not fold and is worth doing (the record bar: skill backlog-ops step 2); `backlog.py add` refuses one whose scope overlaps the branch.
+7. A finding that folds (skill builder, design rule 7) is fixed on this branch, never filed. File a follow-up only for work that does not fold and is worth doing (the record bar: skill backlog-ops step 2); `backlog.py add` files one whose scope overlaps the branch, with a warning and the overlap in `## Found`.
 8. Verdict: LAND; LAND WITH FOLLOW-UP (the follow-up recorded and named with `--follow-up <ID>`; required when the reviewer reports a Done-when item UNMET); SEND BACK. Queue it with the branch, its full tip and the reviewed range (skill land-branch); a branch adding a new non-test source file or class also names its design review with `--design-reviewer-id`.
 
 ## Prevent, once

@@ -34,6 +34,7 @@
   serve    the server: the store, the api, the views and the listeners, started and closed
   servesources the server's sources: the machine config's folders, sessions, sync and jobs
   serveviews the Api's views over the sources: backlog, completed, repos, usage, agents, skills
+  hublog   the server's hub.log in the guarded token folder: its notes and local slow lines, rotated
   servehealth GET health's fixed and owner answers, and the status lines hub.py status prints
   serverepos the kit checkout and repository names the skill and agent pages are given
   storecheck the store folder's findings as on disk, read only, no lock (hub.py validate)

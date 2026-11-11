@@ -595,8 +595,8 @@ def plan_add(snap, ctx, rid, summary, scopes, effort=None, ref=None, reopen=Fals
     was made on, or `none`; `why_not_folded` says why it is not fixed there. A record whose scope
     overlaps that branch's diff from the code main (`ctx.code_main`), or the scope of a record the
     branch holds pulled, is still filed: `add` prints a WARNING and writes the overlap into the
-    `## Found` section. Both go into a `## Found` body section, and the branch into the commit
-    subject; the summary stays the title.
+    `## Found` section. `found_on` and `why_not_folded` go into that `## Found` body section, and
+    the branch into the commit subject; the summary stays the title.
 
     `body` (`--body-file`) opens the body, before the `## Found` and ADD_BODY sections.
     `summary_max`: a longer summary is a usage error naming `--body-file` (the CLI passes

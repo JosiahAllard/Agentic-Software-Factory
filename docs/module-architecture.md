@@ -188,7 +188,6 @@ None: no module is open to every other.
 | delegations | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below delegations): allowed as of 2026-11-11 |
 | delegations | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| delegations | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | docs | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | docs | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -562,6 +561,7 @@ None: no module is open to every other.
 | tools | platform | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | tools | pluginsource | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | pmdata | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| tools | pmstart | build | outer layer uses feature layer: allowed as of 2026-11-11 |
 | tools | pmwatch | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | preflight | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | proc | build | outer layer uses foundation layer: allowed as of 2026-11-06 |

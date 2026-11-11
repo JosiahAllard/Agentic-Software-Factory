@@ -58,6 +58,10 @@ STACK = re.compile(r'^[a-z0-9]+$')
 PLAIN_ARG = re.compile(r'^[A-Za-z0-9_./:\\-]+$')
 INSTALLER_MARK = '# Added by the kit installer'
 STACK_MARK = '# From the stack template'
+# The template files a repo setup reads, relative to templates/common/ and templates/stacks/<stack>/
+# (the stack's tools/ files are copied whole, its skills by kitlib.stackskill).
+COMMON_TEMPLATES = ('.gitignore', 'gitattributes', 'INDEX.md')
+STACK_TEMPLATES = ('stack.json', 'tools/gate.json')
 CRASHED = re.compile(r'^Traceback \(most recent call last\):')
 PM_DATA_WHY = {
     1: 'refused, it changed nothing',
@@ -262,7 +266,7 @@ class Setup(object):
             known = ', '.join(sorted(n for n in os.listdir(stacks) if os.path.isdir(os.path.join(stacks, n)))) \
                 if os.path.isdir(stacks) else ''
             raise Refused("--stack '%s' is not a stack the kit has (%s)" % (c.stack, known), EXIT_USAGE)
-        meta_path = os.path.join(stack_dir, 'stack.json')
+        meta_path = os.path.join(stack_dir, STACK_TEMPLATES[0])
         try:
             meta = json.loads(_read_text(meta_path))
         except ValueError as e:
@@ -270,7 +274,7 @@ class Setup(object):
         for k in ('gitignore', 'gitattributes'):
             if isinstance(meta, dict) and meta.get(k):
                 self.stack_lines[k] = [str(x) for x in meta[k]]
-        gate_src = os.path.join(stack_dir, 'tools', 'gate.json')
+        gate_src = os.path.join(stack_dir, *STACK_TEMPLATES[1].split('/'))
         if not os.path.isfile(gate_src):
             raise Refused('the kit has no %s' % gate_src, EXIT_USAGE)
         self.gate_text = _read_text(gate_src)
@@ -285,7 +289,7 @@ class Setup(object):
         path = os.path.join(self.target, name)
         # The kit ships the attributes template as "gitattributes": a tracked .gitattributes would
         # apply to the kit's own checkout.
-        tpl_name = 'gitattributes' if name == '.gitattributes' else name
+        tpl_name = COMMON_TEMPLATES[1] if name == '.gitattributes' else name
         tpl = _lines(_read_text(os.path.join(self.ctx.kit, 'templates', 'common', tpl_name)))
         stack_want = _wanted(stack_want)
         want = list(dict.fromkeys(_wanted(tpl) + stack_want))
@@ -320,7 +324,7 @@ class Setup(object):
         self.index_text, self.unindexed = None, []
         if not self.index_new:
             return
-        self.index_text = _read_text(os.path.join(self.ctx.kit, 'templates', 'common', 'INDEX.md'))
+        self.index_text = _read_text(os.path.join(self.ctx.kit, 'templates', 'common', COMMON_TEMPLATES[2]))
         named = set(re.findall(r'`([^`]+)`', self.index_text))
         rc, out, _err = _git(self.target, '-c', 'core.quotePath=false', 'ls-files', '-z', '--', '*.md')
         if rc == 0:

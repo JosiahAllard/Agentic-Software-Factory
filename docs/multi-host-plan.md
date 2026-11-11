@@ -224,10 +224,9 @@ promoted (below); the rest was deleted (optional/bridge/README.md).
   - optional `ReturnChannel` and `HookSink`
 
   The service loops over the installed hosts with no `if 'claude'` / `if 'codex'`.
-- **Promoted helpers:** `winpipe` → `kitlib/proc/pipe.py`, next to `job` and `process` (now
-  `kitlib/platform/windows/pipe.py`). `ProbeError`, `identifier` and `digest` →
-  `kitlib/proc/errors.py` (now `ProcError` in `kitlib/platform/__init__.py`) and a small
-  `kitlib/ident.py`.
+- **Promoted helpers:** `winpipe` → `kitlib/platform/windows/pipe.py`, next to the Windows `job`
+  and `process`. `ProbeError`, `identifier` and `digest` → `ProcError` in
+  `kitlib/platform/__init__.py` and a small `kitlib/ident.py`.
 - **Probe code:** once nothing imports it, delete it. Git history keeps it. A test asserts that
   nothing outside the deleted set imports it.
 - **Docs:** the bridge docs and evidence files collapse into:

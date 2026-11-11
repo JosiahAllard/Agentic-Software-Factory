@@ -80,7 +80,7 @@ import secrets
 import threading
 import time
 
-from kitlib import platform
+from kitlib.fs import replace as fsreplace
 from kitlib.hubclient.token import (AGENT, AGENT_FILE, MAX_TOKEN, MIN_TOKEN, OWNER, OWNER_FILE,
                                     ROLES, TOKEN_FILES, read_secret, read_token)
 
@@ -159,21 +159,14 @@ def ensure_approval_key(folder):
 
 def _make_secret(path):
     """Write a fresh random secret to `path` when nothing is there (ensure_tokens): whole beside
-    it, then moved in, never over a file another process made first. The move is a rename on
-    Windows, which refuses an existing target, and a hard link elsewhere, since a POSIX rename
-    would replace it."""
+    it, then moved in (fs.replace.place_new), never over a file another process made first."""
     if os.path.lexists(path):
         return
     tmp = '%s.%s.tmp' % (path, secrets.token_hex(8))
     try:
         with open(tmp, 'x', encoding='ascii', newline='\n') as f:
             f.write(secrets.token_urlsafe(TOKEN_BYTES) + '\n')
-        if platform.NAME == 'windows':
-            os.rename(tmp, path)
-        else:
-            os.link(tmp, path)
-    except FileExistsError:
-        pass
+        fsreplace.place_new(tmp, path)
     finally:
         try:
             os.remove(tmp)         # gone already after a rename; after a link, its second name

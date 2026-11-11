@@ -448,9 +448,7 @@ class PutBack(unittest.TestCase):
 
     def test_a_file_written_at_the_path_meanwhile_is_never_replaced(self):
         held, full = self._files()
-        # POSIX rename replaces silently; emulate it so the test bites on Windows too.
-        with mock.patch.object(os, 'rename', os.replace):
-            note = sr._put_back(held, full)
+        note = sr._put_back(held, full)
         self.assertEqual(note, '; the file is kept at %s' % held)
         with open(full) as f:
             self.assertEqual(f.read(), 'written meanwhile')

@@ -444,7 +444,8 @@ class Flake(RerunCase):
         wt, tip = self.work('once')
         out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=os.path.join(self.tmp, 'own'))
         self.assertEqual(out.code, G.FAILED, out.lines)
-        self.assertIs(self.loaded(tip)[0][0]['full'], False)
+        # one red run, of the default mode
+        self.assertEqual([r['full'] for r in self.loaded(tip)[0]], [False])
         out = self.rerun(wt)
         self.assertEqual(out.code, G.OK, out.lines + out.said)
         self.assertTrue(out.lines[0].startswith('RERUN FLAKE'), out.lines)

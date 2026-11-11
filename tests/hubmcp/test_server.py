@@ -17,7 +17,8 @@ from kitlib.hubmcp import server as srv
 from kitlib.hubclient import token as hubtoken
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubclient import localask
-from kitlib.hubsite import api, approvals, auth
+from kitlib.hubsite import api, auth
+from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import pagecheck, todosteps
 from tests.gitfixture import TempRepo
 from tests.hubsite import httpfix
@@ -530,11 +531,11 @@ class Pages(Case):
         self.assertNotIn("hub_page_delete", hubmcp.OWNER_ONLY)
 
 
-@real_git("kitlib.hubapprove.build hashes the content with hash-object --path --stdin: the "
+@real_git("kitlib.ownerfiles.request.build hashes the content with hash-object --path --stdin: the "
           "fake takes no --path")
 class Approvals(Case):
-    """hub_approval_request builds the request from a checkout (kitlib.hubapprove, whose own
-    tests are tests/hubapprove) and posts it; what it refuses never reaches the hub, and a
+    """hub_approval_request builds the request from a checkout (kitlib.ownerfiles.request, whose own
+    tests are tests/ownerfiles) and posts it; what it refuses never reaches the hub, and a
     content_file in the token folder or the store is never read."""
 
     URL = "https://git.example.invalid/owner/repo.git"
@@ -545,7 +546,7 @@ class Approvals(Case):
         self.addCleanup(self.repo.cleanup)
         self.repo.git("remote", "add", "origin", self.URL)
         with open(self.repo.path(".kit.json"), "w", encoding="utf-8") as f:
-            # an owner approval carries owner-only files only (kitlib.hubapprove)
+            # an owner approval carries owner-only files only (kitlib.ownerfiles.request)
             json.dump({"owner": {"paths": ["README.md"]}}, f)
         self.dir = tempfile.mkdtemp(prefix="kit-hubmcp-approval-")
         self.addCleanup(shutil.rmtree, self.dir, True)

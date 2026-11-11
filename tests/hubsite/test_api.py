@@ -15,7 +15,8 @@ from unittest import mock
 
 from kitlib import hubvalidate
 from kitlib.backlog import store as smod
-from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve
+from kitlib.hubsite import api, apipages, derived, push, recordwrite, schema, serve
+from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import backlog as hbacklog
 from kitlib.hubsite.api import AGENT, BASE, OWNER
@@ -3072,7 +3073,7 @@ class RecordWriteRouteTest(ApiCase):
 
 class ApprovalRouteTest(ApiCase):
     """The approvals routes over a real checkout: TempRepo's one commit holds README.md
-    "hello\\n". The rules themselves are tests/hubsite/test_approvals_verify.py."""
+    "hello\\n". The rules themselves are tests/ownerfiles/test_approvals_verify.py."""
 
     KEY = 'k' * 64
     URL = 'https://github.com/Owner/Repo.git'
@@ -3237,7 +3238,7 @@ class ApprovalRouteTest(ApiCase):
 
 class OpApprovalRouteTest(ApiCase):
     """The approvals routes for the op kind: one run of a delegated operation (docs/delegations.md
-    "Hub approvals"). No checkout is read for it. The rules are tests/hubsite/test_approvals_op.py."""
+    "Hub approvals"). No checkout is read for it. The rules are tests/ownerfiles/test_approvals_op.py."""
 
     KEY = 'k' * 64
     LINE = 'run D-001 dest=dd/out src=dd/in'
@@ -5263,7 +5264,7 @@ class EachModuleImportsFirst(unittest.TestCase):
         import sys
         from kitlib.proc import spawn
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for name in ('hubsite.api', 'hubsite.approvals', 'hubclient.client', 'hubsite.landings',
+        for name in ('hubsite.api', 'ownerfiles.approvals', 'hubclient.client', 'hubsite.landings',
                      'hubsite.push', 'hubsite.serve', 'hubsite.store'):
             with self.subTest(module=name):
                 r = spawn.run([sys.executable, '-c', 'import kitlib.%s' % name],

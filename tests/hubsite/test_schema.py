@@ -2,7 +2,8 @@
 import datetime
 import unittest
 
-from kitlib.hubsite import approvals, schema
+from kitlib.hubsite import schema
+from kitlib.ownerfiles import approvals
 
 
 def codes(findings):

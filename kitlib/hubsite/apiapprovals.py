@@ -1,8 +1,8 @@
 """kitlib.hubsite.apiapprovals: the api's approval routes: add, decide, consume, withdraw, supersede
-and verify (kitlib.hubsite.approvals holds the rules). kitlib.hubsite.api re-exports every name
+and verify (kitlib.ownerfiles.approvals holds the rules). kitlib.hubsite.api re-exports every name
 here.
 
-Approvals (kitlib.hubsite.approvals holds the rules; these routes only carry them). POST approvals
+Approvals (kitlib.ownerfiles.approvals holds the rules; these routes only carry them). POST approvals
 (AGENT) adds a pending request: the base of each file is read with git from this machine's
 checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
 that is not the file at head is `invalid`, field files), and the unified diff lines the page
@@ -39,9 +39,9 @@ from .apirecord import _bound, _creator, _no_record, _withdrawn
 from .store import HubError
 
 
-# approvals: imported here, not at the top, as kitlib.hubsite.approvals imports kitlib.hubsite.api
+# approvals: imported in each route, not at the top (no cycle needs it now; kept)
 def _approval(make, *args):
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     try:
         return make(*args)
     except ap.ApprovalError as e:
@@ -52,7 +52,7 @@ def approvals_add(api, req):
     """A new pending request. A file request may give `record` {repo, id} (_bound, checked
     last): the record waits on the owner until the approval is decided (park_item); an op
     request takes none."""
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     kind = req.body.get('kind') if isinstance(req.body, dict) else None
     if kind is not None:
         if kind != ap.KIND_OP:
@@ -84,7 +84,7 @@ def approvals_add(api, req):
 
 
 def approvals_decide(api, req):
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     b = _fields(req, ('decision', 'if_version'))
     _pin(b, required=True)
     doc_id = req.params['id']
@@ -95,7 +95,7 @@ def approvals_decide(api, req):
 
 
 def approvals_consume(api, req):
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     b = _fields(req, ('commit', 'args_sha256', 'if_version'))
     _pin(b, required=True)
     if 'commit' in b and 'args_sha256' in b:
@@ -117,7 +117,7 @@ def approvals_delete(api, req):
     (approvals.withdraw_check): the `from` is a claim checked as for a question's withdrawal (an
     approval has none stored, so it is `pm`). The line the request parked on its record is
     dropped (unpark_item); the record's other lines stay."""
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     b = _fields(req, ('from', 'if_version'), required=('from',))
     _pin(b, required=True)
     _text(b, 'from')
@@ -135,7 +135,7 @@ def approvals_supersede(api, req):
     (approvals.supersede_fields, on_main). The `from` is a claim checked as questions_done checks
     one, before anything else about the approval is said; the decision and the stored status
     stay."""
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     b = _fields(req, ('from', 'by', 'if_version'), required=('from', 'by'))
     _pin(b, required=True)
     _text(b, 'from')
@@ -165,7 +165,7 @@ def approvals_supersede(api, req):
 
 
 def approvals_verify(api, req):
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     doc_id = req.params['id']
     d = api.store.get(ap.COLLECTION, doc_id) if schema.check_id(doc_id) is None else None
     if d is None:

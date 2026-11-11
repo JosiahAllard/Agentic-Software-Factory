@@ -1,4 +1,4 @@
-"""kitlib.hubsite.approvals: the owner's approval of an edit to an owner-only path, or of one
+"""kitlib.ownerfiles.approvals: the owner's approval of an edit to an owner-only path, or of one
 run of a delegated operation (the op kind, below).
 
 An agent asks the owner to approve an exact change: the files it will commit, each with the blob
@@ -125,7 +125,7 @@ decision and decided_at (canonical): editing any of them, the expiry included, v
 out, as blob binds it. The status is not covered: only `approved` and `consumed` can verify, and
 both need a signed approval.
 
-The delta rule (docs/guard-hooks.md "Owner-only commits"; kitlib.guard.ownercommits HubApprovals): an
+The delta rule (docs/guard-hooks.md "Owner-only commits"; kitlib.ownerfiles.rules HubApprovals): an
 approval is a change, not a commit. A commit C with one parent P makes it when C changes no path
 the approval does not hold and each approved path p is at C what the change gives on P,
 delta_result(base_blob, P:p, blob, content): a new file needs no file at P or the approved one; a
@@ -167,7 +167,7 @@ import urllib.parse
 from kitlib import hubvalidate
 from kitlib.git import batch, cmd
 
-from .api import AGENT, ANY
+from kitlib.hubclient.token import AGENT, ANY
 
 
 def _part(doc_id):
@@ -182,7 +182,7 @@ APPROVAL_LIFE_S = 30 * 86400    # a file approval, used or not, holds 30 days (o
 APPROVED_TTL_S = 24 * 3600      # an op approval lasts 24 hours
 DENIAL_PENDING_S = 24 * 3600    # a denial stays pending owner input this long after decided_at
                                 # (kitlib.hubsite.store.approval_decided; the PM's ruling)
-TRAILER = 'Owner-Approval'      # the trailer that carries one (kitlib.guard.ownercommits)
+TRAILER = 'Owner-Approval'      # the trailer that carries one (kitlib.ownerfiles.rules)
 
 PENDING, APPROVED, DENIED = 'pending', 'approved', 'denied'
 CONSUMED, EXPIRED = 'consumed', 'expired'
@@ -590,7 +590,7 @@ def supersede_fields(doc_id, doc, by, who, now):
 
 def on_main(checkout, sha):
     """(True/False, None): whether main as last fetched (refs/remotes/<remote>/<main> of the
-    checkout's config, as kitlib.guard.ownercommits names it) reaches the commit `sha`; (None,
+    checkout's config, as kitlib.ownerfiles.rules names it) reaches the commit `sha`; (None,
     why) when that cannot be told (no main, an unknown commit, git failing)."""
     from kitlib import config as kconfig
     from kitlib.git import refs

@@ -1,4 +1,4 @@
-"""kitlib.hubsite.approvals: a request's document, the owner's signed decision, its expiry, the
+"""kitlib.ownerfiles.approvals: a request's document, the owner's signed decision, its expiry, the
 check that a change is the approved one, and the Verifier that asks the server and fails closed.
 
 The expiry durations are the module's PENDING_TTL_S, APPROVAL_LIFE_S (a file approval) and
@@ -9,7 +9,7 @@ import unittest
 
 from kitlib import hubvalidate
 from kitlib.hubclient import errors as huberrors
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite.api import AGENT
 from kitlib.hubclient.client import Refused
 from tests.gitfixture import TempRepo
@@ -308,7 +308,7 @@ class CheckTest(unittest.TestCase):
 
     def test_with_a_commit_an_approval_consumed_by_any_commit_verifies(self):
         # No exact binding: a rebuild of the approved change (another commit) still holds; the
-        # client judges the delta and whether it is spent (kitlib.guard.ownercommits).
+        # client judges the delta and whether it is spent (kitlib.ownerfiles.rules).
         self.assertEqual(self.check(self.consumed('d' * 40), commit=COMMIT), (True, ''))
 
     def test_without_a_commit_approved_and_consumed_both_verify(self):

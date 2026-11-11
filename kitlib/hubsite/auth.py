@@ -60,7 +60,7 @@ nothing. Only a cookie is ever strong: a Bearer token, the owner's included, nev
 
 The approval key. APPROVAL_FILE beside the token files, made like them (ensure_approval_key) and
 read like them (read_approval_key); a key equal to either token is no key. It binds the strong
-sessions here and signs the owner's approval decisions (kitlib.hubsite.approvals.sign).
+sessions here and signs the owner's approval decisions (kitlib.ownerfiles.approvals.sign).
 
 Every comparison of a secret is hmac.compare_digest. Whatever cannot be checked is no role:
 an absent, short or unreadable token file, two token files holding the same token, a second

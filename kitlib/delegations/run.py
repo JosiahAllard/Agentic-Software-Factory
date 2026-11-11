@@ -53,7 +53,7 @@ import subprocess
 from kitlib.config import user as kuser
 from kitlib.fs import writelock
 from kitlib.git import lockplace
-from kitlib.hubsite import approvals
+from kitlib.ownerfiles import approvals
 from kitlib.hubclient import client as hubclient
 from kitlib.hubclient import errors as huberrors
 from kitlib.ledger import files as lfiles
@@ -72,7 +72,7 @@ SKEW = datetime.timedelta(minutes=5)         # how far in the future a stamp may
 HUB, OWNER, APPROVAL = 'hub', 'owner', 'approval'
 SESSION = 'session'
 Q_ID = re.compile(r'Q-[0-9]+')
-# A hub approval: kitlib.guard.ownercommits.APPROVAL_RE, copied (the guard is not imported here).
+# A hub approval: kitlib.ownerfiles.rules.APPROVAL_RE, copied (not imported from there).
 APPROVAL_RE = re.compile(r'hub:(A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,}))\Z')
 APPROVAL_TRIGGER = 'hub-approval'
 CWD_PREFIX = 'kit-delegated-'

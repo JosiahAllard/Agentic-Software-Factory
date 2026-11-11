@@ -72,7 +72,7 @@ def _asking(api, coll, d):
     """Whether item d still asks the owner: an open question or to-do, an approval pending and
     not expired (an expired one is never parked afresh; the line it parked stays)."""
     if coll == 'approvals':
-        from . import approvals as ap
+        from kitlib.ownerfiles import approvals as ap
         return ap.status_at(d, _when(api.clock(), '')) == ap.PENDING
     return d.get('status') == 'open'
 

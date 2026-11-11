@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib.commit import approval as ownerapproval                 # noqa: E402
+from kitlib.ownerfiles import apply as ownerapproval                # noqa: E402
 from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 from kitlib.worktree import new                                     # noqa: E402

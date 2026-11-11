@@ -36,7 +36,7 @@ TOMBSTONE_RE = re.compile(r'^Retired: (spent|superseded|duplicate) - (.+) \(see 
 RID_RE = re.compile(r'\b%s\b' % ID)
 # A hub approval as a delegated entry's anchor, `under hub:A-nnn` (docs/delegations.md "Hub
 # approvals"): the owner's signed approval on the hub is the anchor, so no owner entry is needed.
-# The id exactly as the hub issues it (kitlib.guard.ownercommits.APPROVAL_RE). No group.
+# The id exactly as the hub issues it (kitlib.ownerfiles.rules.APPROVAL_RE). No group.
 HUB_ANCHOR = r'hub:A-(?:(?!000)[0-9]{3}|[1-9][0-9]{3,})'
 # `under <ruling id>`, or `under hub:A-nnn` followed by no further id character.
 UNDER_RE = re.compile(r'\bunder (%s\b|%s(?![\w-]))' % (ID, HUB_ANCHOR))

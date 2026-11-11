@@ -1,4 +1,4 @@
-"""kitlib.hubsite.approvals: an approval is a delta. delta_result is what the approved change of one
+"""kitlib.ownerfiles.approvals: an approval is a delta. delta_result is what the approved change of one
 file (base blob B0 to approved blob A) gives on a parent P: A where P is B0 or already A, the clean
 three-way merge (`git merge-file -p P B0 A`) where P moved on, and a refusal on a conflict or any
 doubt. spent is the commit on main that carries the approval's Owner-Approval trailer: once its
@@ -7,7 +7,7 @@ merges on real git (the fake has no merge-file)."""
 import os
 import unittest
 
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from tests.gitfixture import TempRepo
 from tests.realgit import real_git
 

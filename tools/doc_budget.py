@@ -4,7 +4,7 @@
 
 Measures every tracked .md against its cap in .kit.json "doc_budget" (at HEAD, or with --worktree
 the working tree), retired paths and stale budget keys; owner-only paths and the doc index are
-commit.py's, kitlib.guard.ownercommits' and doc_index.py's. Last line `DOC BUDGET OK (...)`, exit 0; `DOC BUDGET FAILED: ...`, exit 1; a usage, config or
+commit.py's, kitlib.ownerfiles.rules' and doc_index.py's. Last line `DOC BUDGET OK (...)`, exit 0; `DOC BUDGET FAILED: ...`, exit 1; a usage, config or
 git error exits 2. Other tools run it as `[sys.executable, tools/doc_budget.py, -C, <repo>]` and
 judge it with kitlib.verdict.
 """

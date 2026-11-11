@@ -2088,7 +2088,7 @@ class DomTest(unittest.TestCase):
         self.assertIn("Read on this machine", got["note"])                       # the rest of the view is drawn
         self.assertEqual((got["err"], got["sleeps"]), ("", []))
 
-    # A pending approval as kitlib.hubsite.api's add route stores it, diff lines and all (kitlib.hubsite.approvals.diff).
+    # A pending approval as kitlib.hubsite.api's add route stores it, diff lines and all (kitlib.ownerfiles.approvals.diff).
     APPROVALS = {
         "A-1": {"status": "pending", "repo": "github.com/team/alpha", "title": "Raise the cap", "head": "a" * 40,
                 "reason": "the cap is too low", "version": 2, "created_at": NOW,
@@ -2146,7 +2146,7 @@ class DomTest(unittest.TestCase):
         self.assertEqual(got["sent"], [{"decision": "deny", "if_version": 2}])
         self.assertEqual(got["err"], "")
 
-    # A pending op approval as the add route stores it (kitlib.hubsite.approvals.new_op_doc): no head, files or diff.
+    # A pending op approval as the add route stores it (kitlib.ownerfiles.approvals.new_op_doc): no head, files or diff.
     OP_APPROVALS = {
         "A-5": {"status": "pending", "kind": "op", "op": "D-004", "repo": "*", "title": "Copy the inputs",
                 "line": "run D-004 dest=dd/out src=dd/in", "args_sha256": "d" * 64,

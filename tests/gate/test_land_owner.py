@@ -6,10 +6,10 @@ import json
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.guard import ownercommits
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import rules as ownerrules
+from kitlib.ownerfiles import approvals as ap
 from tests.gate import test_land
-from tests.guard import test_ownercommits as toc
+from tests.ownerfiles import test_rules as toc
 from tests.home import no_machine_owner
 
 BRANCH = test_land.BRANCH
@@ -109,14 +109,14 @@ class OwnerPaths(OwnerLandCase):
 
 class OwnerApproval(OwnerLandCase):
     """An agent commit carrying `Owner-Approval: hub:A-<n>` lands when the hub verifies that
-    approval for exactly that commit (kitlib.guard.ownercommits, through its approvals seam: the
-    stand-in hub of tests/guard/test_ownercommits.py), and is refused like any agent commit when
+    approval for exactly that commit (kitlib.ownerfiles.rules, through its approvals seam: the
+    stand-in hub of tests/ownerfiles/test_rules.py), and is refused like any agent commit when
     it does not."""
 
     def setUp(self):
         super().setUp()
         self.hub = toc.StandInHub()
-        patcher = mock.patch.object(ownercommits, 'default_approvals', lambda: self.hub)
+        patcher = mock.patch.object(ownerrules, 'default_approvals', lambda: self.hub)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -159,8 +159,8 @@ class OwnerApproval(OwnerLandCase):
 
     def hub_seam(self):
         """The hub's own seam (HubApprovals) on the stand-in verify route, in place of setUp's."""
-        hub = ownercommits.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
-        patcher = mock.patch.object(ownercommits, 'default_approvals', lambda: hub)
+        hub = ownerrules.HubApprovals(client=toc.VerifyRoute(self.hub), repo=toc.REPO)
+        patcher = mock.patch.object(ownerrules, 'default_approvals', lambda: hub)
         patcher.start()
         self.addCleanup(patcher.stop)
 

@@ -15,7 +15,8 @@ from kitlib.backlog import store as smod
 from kitlib.hubjobs import unblock_conditions as U
 from kitlib import hubvalidate
 from kitlib import platform as kplatform
-from kitlib.hubsite import approvals, jobs, recordwrite
+from kitlib.hubsite import jobs, recordwrite
+from kitlib.ownerfiles import approvals
 from kitlib.launcher.settings import LaunchError
 from tests.backlog.helpers import kit_json_ref, rec
 from tests.gitfixture import TempRepo, fixture_env, rmtree

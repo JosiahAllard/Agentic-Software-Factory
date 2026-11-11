@@ -14,7 +14,8 @@ import unittest
 from unittest import mock
 
 from kitlib.git import cmd as gitcmd
-from kitlib.hubsite import api, approvals, backlog, push, serve, store as store_mod
+from kitlib.hubsite import api, backlog, push, serve, store as store_mod
+from kitlib.ownerfiles import approvals
 from kitlib.hubsite.api import AGENT, BASE
 from kitlib.hubsite.store import Store
 from tests.gitfixture import own_git

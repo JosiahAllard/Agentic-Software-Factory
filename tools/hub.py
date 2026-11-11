@@ -190,7 +190,7 @@ the server alone decides what a role may do.
   hub.py approvals [--status S] [--repo R]          `A-1 pending [repo] title` for each request
                                                      for the owner's approval, its status read
                                                      now (an expired one says expired;
-                                                     kitlib.hubsite.approvals status_at)
+                                                     kitlib.ownerfiles.approvals status_at)
   hub.py approvals show A-1                         its status, repo, head, title and reason,
                                                      then `<path> <base_blob> -> <blob>` per file
   hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...] [--checkout DIR] [--repo R]
@@ -201,7 +201,7 @@ the server alone decides what a role may do.
                                                      is PATH's blob at --head (default: HEAD of
                                                      the checkout DIR, default .), none for a new
                                                      file; --repo defaults to DIR's origin. It only
-                                                     asks: no delete, no --from (kitlib.hubapprove);
+                                                     asks: no delete, no --from (kitlib.ownerfiles.request);
                                                      --record: the record waits on the owner until
                                                      the request is decided (the hub parks it)
   hub.py approvals withdraw A-1 --from KEY --if-version V    `WITHDRAWN A-1`
@@ -294,7 +294,7 @@ from kitlib.hubclient import token as hubtoken                     # noqa: E402
 from kitlib.hubclient import errors as huberrors                   # noqa: E402
 from kitlib.hubclient import localask                              # noqa: E402
 from kitlib.hubsite import access, api, auth, httpd, serve, tunnel   # noqa: E402
-from kitlib.hubsite import approvals                               # noqa: E402
+from kitlib.ownerfiles import approvals                            # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
 from kitlib.hubsite import control                                 # noqa: E402
 from kitlib.hubsite import skilledits                              # noqa: E402
@@ -1658,7 +1658,7 @@ def _skill_edit(a, stop):
 def _approvals(a, stop):
     """The requests from GET /snapshot (the api has no route that lists approvals), each with
     its status read now: approvals.status_at applies the expiry, `malformed` for a bad document.
-    add posts one request (kitlib.hubapprove): it never decides or consumes one."""
+    add posts one request (kitlib.ownerfiles.request): it never decides or consumes one."""
     if a.sub == 'withdraw':
         got = _hub(a).post(_one('approvals', a) + '/delete', client.AGENT, _edits(a, {}))
         return _wrote(a, got, 'WITHDRAWN %s' % got.get('id'))
@@ -1667,14 +1667,14 @@ def _approvals(a, stop):
                            _edits(a, {'by': a.by}))
         return _wrote(a, got, 'SUPERSEDED %s by %s' % (got.get('id'), a.by))
     if a.sub == 'add':
-        from kitlib import hubapprove       # here: 150 ms the other verbs do not pay
+        from kitlib.ownerfiles import request as ownerrequest  # here: 150 ms the other verbs do not pay
         try:
-            body = hubapprove.build(a.checkout, a.title, [tuple(f) for f in a.files],
+            body = ownerrequest.build(a.checkout, a.title, [tuple(f) for f in a.files],
                                     repo=getattr(a, 'repo', None), head=a.head, reason=a.reason,
                                     record=a.record)
-        except hubapprove.RequestError as e:
+        except ownerrequest.RequestError as e:
             raise huberrors.ServeError(e.message)
-        got = hubapprove.request(_hub(a), body)
+        got = ownerrequest.request(_hub(a), body)
         return _wrote(a, got, 'REQUESTED %s' % got.get('id'))
     docs = (_hub(a).get('/snapshot', client.ANY, {'collections': 'approvals'}).get('collections') or {}).get('approvals') or {}
     now = datetime.datetime.now(datetime.timezone.utc)

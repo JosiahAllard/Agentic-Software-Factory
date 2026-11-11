@@ -13,7 +13,7 @@ unproven claim: `unproven_claim()` says why, and the commit is judged as if it c
 
 `Owner-Approval: hub:A-<n>` (commit.py --owner-approval; docs/commit.md "Owner approval") is read
 into `approval` for the row to show, and is never an owner claim: gate land and the pre-push hook
-check it against the hub (kitlib.guard.ownercommits), and this rule judges the commit by its
+check it against the hub (kitlib.ownerfiles.rules), and this rule judges the commit by its
 Co-Authored-By as any other.
 """
 import collections
@@ -25,7 +25,7 @@ from kitlib.attribution import AGENT_TRAILER
 OWNER_APPROVED = 'Owner-Approved'
 OWNER_AUTHORED = 'Owner-Authored'
 OWNER_AUTHORED_VALUE = 'yes'
-OWNER_APPROVAL = 'Owner-Approval'       # kitlib.guard.ownercommits.TRAILER
+OWNER_APPROVAL = 'Owner-Approval'       # kitlib.ownerfiles.rules.TRAILER
 
 # One branch commit as the rule reads it: the Co-Authored-By, Owner-Approved and Owner-Authored
 # values git's trailer parser finds, `author` the author email, and `approval` the Owner-Approval

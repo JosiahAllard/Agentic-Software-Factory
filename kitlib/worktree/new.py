@@ -46,7 +46,7 @@ folder, or a branch that differs only in case from a local branch, is refused. B
 is an exact-spelling match.
 
 A base commit (`base` a full commit hash, or `approval` hub:A-<n>, whose `head` approval_base
-reads from the hub as kitlib.commit.approval does): a NEW branch starts at that commit, after the
+reads from the hub as kitlib.ownerfiles.apply does): a NEW branch starts at that commit, after the
 fetch, when the repository has it. No landing wait, lock or remote comparison applies: the start
 point is fixed. Made for commit.py --owner-approval, which needs HEAD to be the approval's base.
 
@@ -196,10 +196,10 @@ def base_commit(base):
 
 def approval_base(value, client=None):
     """`(base commit, None)` of the owner approval `value` (hub:A-<n>), or `(None, why)`. The hub
-    is asked as commit.py asks it (kitlib.commit.approval: doc_id, hub_client, fetch,
+    is asked as commit.py asks it (kitlib.ownerfiles.apply: doc_id, hub_client, fetch,
     state_error), so a consumed or undecided approval is refused here as there; `client` None is
     the machine's hub."""
-    from kitlib.commit import approval as ap
+    from kitlib.ownerfiles import apply as ap
     did = ap.doc_id(value)
     if did is None:
         return None, '--approval takes %s, as %s (not %r)' % (ap.VALUE, ap.oc.EXAMPLE, value)

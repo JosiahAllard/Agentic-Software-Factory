@@ -543,7 +543,7 @@ CHECKOUT_PATHSPECS = [
     ('git', ['status', '--porcelain=v1']),
 ]
 
-# --raw with --numstat, as kitlib.guard.ownercommits.deletes_only reads a commit's change and the
+# --raw with --numstat, as kitlib.ownerfiles.rules.deletes_only reads a commit's change and the
 # work tree's: a shrink, an add and a delete; then a work-tree shrink against HEAD.
 _RAW = ['diff', '--raw', '--numstat', '-z', '--no-renames', '--no-textconv', '--no-ext-diff']
 DIFF_RAW = [

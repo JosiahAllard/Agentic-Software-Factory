@@ -24,7 +24,7 @@ A configuration that does not read (a key written twice, an unknown key, a bad t
 disk (exit 2); at the head it fails the branch (exit 1) unless the base carries the same fault,
 which is a WARNING so the branch removing it can land.
 
-Owner-only paths are judged by commit.py and kitlib.guard.ownercommits (landing and pre-push), and
+Owner-only paths are judged by commit.py and kitlib.ownerfiles.rules (landing and pre-push), and
 the doc index by kitlib.docs.index (tools/doc_index.py), not here.
 
 Every check runs in one pass; a failure prints its block and the LAST line names every failed

@@ -85,7 +85,7 @@ def landings_add(api, req):
     records = _typed(b, 'records', (list,), 'a list')
     if records is not None and not all(isinstance(r, str) and r.strip() for r in records):
         raise _invalid('records is a list of record ids', 'records')
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     landed = _typed(b, 'approvals', (dict,), 'an object')
     if landed is not None and not all(isinstance(k, str) and ap.APPROVAL_ID.match(k)
                                       and isinstance(v, str) and ap.SHA.match(v)

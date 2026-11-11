@@ -53,7 +53,7 @@ SEVERAL = 'owner'
 # The hub question statuses that hold the owner's answer (kitlib.hubvalidate STATUSES; the same
 # set as audit_check.ANSWERED).
 ANSWERED = ('answered', 'filed', 'logged', 'done')
-# The stored hub approval statuses that hold the owner's decision (kitlib.hubsite.approvals): a
+# The stored hub approval statuses that hold the owner's decision (kitlib.ownerfiles.approvals): a
 # request still stored `pending` is not decided, however long ago it expired (the PM's ruling: an
 # expired, undecided approval keeps its hold).
 DECIDED = ('approved', 'denied', 'consumed')

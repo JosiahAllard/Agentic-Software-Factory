@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubsite import api
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite import skilledits
 from kitlib.hubsite.api import AGENT, ANY, APPROVER, BASE, LOCK_WRITE, OWNER
 from kitlib.hubsite.store import Store

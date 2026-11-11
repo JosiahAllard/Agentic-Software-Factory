@@ -36,7 +36,7 @@
                  repository's, whichever checkout pushed), no merge in progress, the branch not
                  already in main, every branch
                  commit that changes an owner-only path the landing would change authored by the owner
-                 (kitlib.guard.ownercommits; rules of the base merged with the tip's), and the
+                 (kitlib.ownerfiles.rules; rules of the base merged with the tip's), and the
                  branch's history free of the backlog store's root commit (`ref` and `branch`
                  stores; kitlib.backlog.at_landing). Then the tip gate check
                  (Lander.tip_gate_check): a base whose "gate" section has no step that is not
@@ -248,7 +248,7 @@ from kitlib.gate import cleanup, detect, gitstatus, result, reuse, runner, stash
 from kitlib.gate import carry, rerun, verdicts
 from kitlib.gate import steps as S
 from kitlib.git import cmd, refs, repo
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from kitlib.host import registry
 from kitlib.lock import kinds as lockkinds
 from kitlib.lock import queue as lockqueue
@@ -1891,7 +1891,7 @@ class Lander(object):
     def owner_refusal(self, tip):
         """None when every branch commit that changes an owner-only path is the owner's (by author
         email), counting only the paths that landing `tip` on the base would change; else why
-        not (kitlib.guard.ownercommits). The rules are the base's merged
+        not (kitlib.ownerfiles.rules). The rules are the base's merged
         with the tip's (kitlib.config.owner.merge): the branch cannot unlock a path or name its own
         owner; a tip config that does not load adds the default paths."""
         try:
@@ -1899,11 +1899,11 @@ class Lander(object):
         except ConfigError:
             work = kconfig.OwnerRules()
         rules = kconfig.merge_owner_rules(work, self.cfg.owner_rules())
-        bad, why = ownercommits.violations(self.root, rules, tip, [self.expect_main],
+        bad, why = ownerrules.violations(self.root, rules, tip, [self.expect_main],
                                            env=self.git_env)
         if bad is None:
             return 'git cannot list the commits of the branch to check owner-only paths: %s' % why
-        return ownercommits.describe(rules, bad) if bad else None
+        return ownerrules.describe(rules, bad) if bad else None
 
     def tree_path(self):
         """Where the landing tree is: Lander(tree=), else <main checkout>/<worktrees_dir>/_landing
@@ -2487,9 +2487,9 @@ class Lander(object):
 
     def landed_approvals(self, tip):
         """{A-<n>: sha} of the hub approvals the commits main (before the landing) .. `tip`
-        carry (kitlib.hubsite.approvals.landed), for the hub page's "on main"; {} when git cannot
+        carry (kitlib.ownerfiles.approvals.landed), for the hub page's "on main"; {} when git cannot
         tell. Display only: whether an approval is spent is read from main itself."""
-        from kitlib.hubsite import approvals    # here: as deploy_note
+        from kitlib.ownerfiles import approvals    # here: as deploy_note
         if not (tip and self.expect_main):
             return {}
         got, _why = approvals.landed(self.root, self.expect_main, tip)

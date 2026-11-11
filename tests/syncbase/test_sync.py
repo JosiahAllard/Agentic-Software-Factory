@@ -16,7 +16,7 @@ from kitlib import attribution, syncbase
 from kitlib.config import load as load_config
 from kitlib.git import cmd as gitcmd
 from kitlib.records import landing
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 from tests.gitfixture import NAME, EMAIL, TempRepo, fixture_env, real_fixture
 from tests.pathfree import without_paths
 from tests.realgit import real_git
@@ -830,7 +830,7 @@ SEVEN = ''.join('line %d\n' % i for i in range(1, 8))     # edits on lines 1 and
 
 
 class Approves(object):
-    """The approvals seam (kitlib.guard.ownercommits): the hub verifies exactly the ids in `ok`."""
+    """The approvals seam (kitlib.ownerfiles.rules): the hub verifies exactly the ids in `ok`."""
 
     def __init__(self, ok):
         self.ok, self.asked = set(ok), []
@@ -849,7 +849,7 @@ class OwnerCase(SyncCase):
 
     def approve(self, *ids):
         seam = Approves(ids)
-        p = mock.patch.object(ownercommits, 'default_approvals', lambda: seam)
+        p = mock.patch.object(ownerrules, 'default_approvals', lambda: seam)
         p.start()
         self.addCleanup(p.stop)
         return seam
@@ -1002,7 +1002,7 @@ class OwnerOnlyFiles(OwnerCase):
         self.approve('A-001')
         target = self.stage(self.bottom(), self.top())
         tip = self.head()
-        with mock.patch.object(ownercommits, 'violations', lambda *a, **k: (None, 'git died')):
+        with mock.patch.object(ownerrules, 'violations', lambda *a, **k: (None, 'git died')):
             done = self.sync(target)
         self.assert_refused(done, self.F, tip)
         self.assertIn('git died', self.out(done))

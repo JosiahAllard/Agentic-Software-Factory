@@ -25,7 +25,8 @@ import json
 import os
 import traceback
 
-from kitlib import hubapprove, hubvalidate, mcpwire
+from kitlib import hubvalidate, mcpwire
+from kitlib.ownerfiles import request as ownerrequest
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import OWNER_ONLY, SERVER_NAME
 from kitlib.hubclient import client as hubclient
@@ -298,7 +299,7 @@ TOOLS = {
              ["id", "if_version"]), "POST", "/pages/{id}/place", AGENT),
     "hub_approval_request": (
         "Asks the owner to approve a change to files (POST /approvals), built here from a git "
-        "checkout (kitlib.hubapprove): each file's base is its blob at head (none for a new "
+        "checkout (kitlib.ownerfiles.request): each file's base is its blob at head (none for a new "
         "file), its new text the exact UTF-8 bytes of its content_file. Once approved, "
         "tools/commit.py --owner-approval hub:A-<n> writes and commits it. It only asks: it never "
         "approves, and it cannot ask for a delete. At most %d files, %d bytes each."
@@ -571,7 +572,7 @@ class Server:
         return self.client().post("/pages", AGENT, body)
 
     def _t_hub_approval_request(self, a):
-        """The request is built here from the checkout (kitlib.hubapprove.build: its defaults,
+        """The request is built here from the checkout (kitlib.ownerfiles.request.build: its defaults,
         its refusals and the approvals module's limits), so one it refuses never reaches the
         hub. This process reads each content_file outside the guard, so the checkout and every
         content_file are absolute and judged as html_file is (_readable): never inside the hub's
@@ -585,12 +586,12 @@ class Server:
                                 "files")
             files.append((f["path"], self._readable(f["content_file"], "files", "an approval")))
         try:
-            body = hubapprove.build(checkout, a["title"], files, repo=a.get("repo"),
+            body = ownerrequest.build(checkout, a["title"], files, repo=a.get("repo"),
                                     head=a.get("head"), reason=a.get("reason"),
                                     record=a.get("record"))
-        except hubapprove.RequestError as e:
+        except ownerrequest.RequestError as e:
             raise ToolError("invalid", e.message, e.field)
-        return hubapprove.request(self.client(), body)
+        return ownerrequest.request(self.client(), body)
 
     # ---------------------------------------------------------------- JSON-RPC
     def handle(self, msg):

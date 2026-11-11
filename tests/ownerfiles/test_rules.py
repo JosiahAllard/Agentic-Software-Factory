@@ -1,4 +1,4 @@
-"""kitlib.guard.ownercommits on a scratch repository: a commit that changes an owner-only path is a
+"""kitlib.ownerfiles.rules on a scratch repository: a commit that changes an owner-only path is a
 violation unless its AUTHOR email is the owner's, for the paths that landing the tip on main would
 change (NetChange), or it carries an Owner-Approval the hub verifies (OwnerApprovals); a merge is
 judged by what it changes beyond the clean merge of its parents; commits already on main are not
@@ -9,9 +9,9 @@ import unittest
 from unittest import mock
 
 from kitlib.config import owner
-from kitlib.guard import ownercommits as oc
+from kitlib.ownerfiles import rules as oc
 from kitlib.hubclient import errors as huberrors
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from tests import gitfixture
 from tests.realgit import real_git
 
@@ -142,7 +142,7 @@ GRANTS = '.claude/layering-grants.txt'
 
 class ShrinkOnly(OwnerCommitsCase):
     """A `"owner".shrink_only` path: an agent commit that only deletes lines of it is no
-    violation; any other change to it is, judged commit by commit (ownercommits.deletes_only)."""
+    violation; any other change to it is, judged commit by commit (ownerrules.deletes_only)."""
 
     def setUp(self):
         super().setUp()

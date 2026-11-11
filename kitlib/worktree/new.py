@@ -62,6 +62,7 @@ import time
 from kitlib import kitroot
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd
+from kitlib.git import repo as gitrepo
 from kitlib.worktree import prep as gitprep
 from kitlib.git import refs as gitrefs
 from kitlib.records import inflight, landing
@@ -219,13 +220,6 @@ def approval_base(value, client=None):
     return sha, None
 
 
-def main_checkout_of(common):
-    """`<main>/.git` (git's `--git-common-dir`) -> `<main>` in its one real spelling: abspath for
-    one kind of separator, realpath so a checkout reached through a junction registers every new
-    worktree under the real path."""
-    return os.path.realpath(os.path.abspath(os.path.dirname(common)))
-
-
 def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=time.sleep,
            clock=time.monotonic, host=None, prep=None, approval=None, hub=None):
     """Outcome(code, lines) of making the worktree for `branch` in the repository `root` is in.
@@ -236,11 +230,11 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     `host` is a hosts.json name whose folder the worktree goes in (kitlib.worktree.hostdirs); None
     is "repo".worktrees_dir, as before hosts. `prep(main, folders)` is the first-use repo prep
     (None: kitlib.worktree.prep.run) run once the worktree is made; its lines follow the worktree line."""
-    rc, common, err = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    if rc != 0 or not common:
-        return Outcome(REFUSED, ['refused: %s is not a git checkout (no common dir: %s).'
-                                 % (root, err or 'git printed nothing')])
-    main = main_checkout_of(common)
+    main = gitrepo.main_checkout_toplevel(root)
+    if main is None:
+        return Outcome(REFUSED, ['refused: %s is not in a git checkout whose main checkout git can '
+                                 'tell.' % root])
+    main = os.path.realpath(os.path.abspath(main))
     try:
         cfg = load(main)
         lock = landing.LandingLock.for_config(main, cfg)

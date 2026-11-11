@@ -114,10 +114,10 @@ def repo_task(folder):
     holding its parent) or git cannot find the main checkout; ConfigError for a refused .kit.json."""
     if not os.path.isdir(folder):
         raise RuntimeError('cannot find the main checkout of %s: not a directory' % folder)
-    common, why = gitrepo.common_dir(folder)
-    if common is None:
-        raise RuntimeError('cannot find the main checkout of %s (%s)' % (folder, why))
-    main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
+    main = gitrepo.main_checkout_toplevel(folder)
+    if main is None:
+        raise RuntimeError('cannot find the main checkout of %s' % folder)
+    main = os.path.realpath(os.path.abspath(main))
     name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
     return main, name
 

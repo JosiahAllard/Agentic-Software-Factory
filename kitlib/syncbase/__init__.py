@@ -240,10 +240,10 @@ def in_flight_reader(top, cfg):
     kitlib.records.landing.LockError for a git common dir that cannot be used."""
     if cfg.section('landing').get('in_flight') is None:
         return None
-    common, why = gitrepo.common_dir(top)
-    if not common:
-        raise landing.LockError('no git common dir for %s: %s' % (top, why))
-    main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
+    main = gitrepo.main_checkout_toplevel(top)
+    if not main:
+        raise landing.LockError('no main checkout for %s' % top)
+    main = os.path.realpath(os.path.abspath(main))
     return inflight.reader(main, cfg, landing.LandingLock.for_config(main, cfg))
 
 

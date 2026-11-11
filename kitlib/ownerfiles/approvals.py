@@ -65,7 +65,7 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   landed(checkout, base, tip, call=None)
                                   ({doc id: sha}, None) of the approvals the commits base..tip
                                   carry, as spent reads one, or (None, why): what a landing puts
-                                  on main (kitlib.landing.after.Lander.post_landing)
+                                  on main (kitlib.landing.lander.Lander.post_landing)
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
                                   through the verify route; fails closed.
                                   .approved_doc(doc_id) -> (doc, why) from the snapshot

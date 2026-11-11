@@ -1,7 +1,7 @@
 """A landing closes the records a branch commit names in a `Closes:` trailer, whoever pulled them:
 a record pulled from the main checkout holds `pulled_by: main`,
 which no landing matches. kitlib.backlog.at_landing.close_landed with the tip and base that
-kitlib.landing.after.Lander.close_pulled passes, on a ref store in a scratch repository."""
+kitlib.landing.lander.Lander.close_pulled passes, on a ref store in a scratch repository."""
 import json
 import os
 import unittest

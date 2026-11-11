@@ -43,7 +43,7 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
   a junction or the real registry carry `windows_only`.
 - The 21 files outside tests/ that still read os.name or sys.platform themselves
   (tests/platform/test_no_os_checks.py ALLOWED, 21 entries). The list only shrinks.
-- The end-to-end landing tests skip on Linux ("the lock is Windows only"; in tests/gate/test_land*.py
+- The end-to-end landing tests skip on Linux ("the lock is Windows only"; in tests/landing/test_land*.py
   only a few unit tests run), so a landing has not run end to end there (slice 9, open proof c).
 - Build-daemon sparing and the TCP connection table: kitlib/proc/tcp.py has only the Windows reader
   (GetExtendedTcpTable) and kitlib/proc/daemons.py is Windows only, so on Linux the end-of-run

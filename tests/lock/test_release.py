@@ -92,7 +92,7 @@ class LockPaths(unittest.TestCase):
     @windows_only("the lock is Windows only")
     def test_other_paths_are_not_lock_paths(self):
         for p in ("docs/lock-release.md", "kitlib/lockmcp/server.py", "kitlib/locker.py",
-                  "tools/machine_lock.pyc", "tools/gate.py", "kitlib/landing/land.py"):
+                  "tools/machine_lock.pyc", "tools/gate.py", "kitlib/landing/lander.py"):
             self.assertFalse(release.is_lock_path(p), p)
 
     @windows_only("the lock is Windows only")

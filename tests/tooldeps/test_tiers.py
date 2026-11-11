@@ -110,7 +110,7 @@ class ChangedTestModules(unittest.TestCase):
     def test_what_is_not_a_test_module_of_the_tree_is_left_out(self):
         changed = ['tests/gate/test_gone.py',        # deleted: the tree holds no such module
                    'tests/gate/fixtures.py',         # a helper
-                   'tests/selection.json', 'kitlib/landing/land.py', 'docs/gate.md',
+                   'tests/selection.json', 'kitlib/landing/lander.py', 'docs/gate.md',
                    'tests/gate/test_other.txt', 'tools/test_like.py']
         self.assertEqual(tiers.changed_test_modules(changed, MODULES), [])
         self.assertEqual(tiers.changed_test_modules([], MODULES), [])

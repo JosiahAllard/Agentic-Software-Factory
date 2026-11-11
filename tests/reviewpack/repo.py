@@ -85,6 +85,27 @@ class PackCase(unittest.TestCase):
         return code, out.getvalue()
 
 
+class WithOrigin(PackCase):
+    """No tests of its own: a repository with a bare `origin`."""
+
+    def setUp(self):
+        super().setUp()
+        self.remote = os.path.join(self.r.base, 'remote.git')
+        self.r.git('init', '-q', '--bare', self.remote, cwd=self.r.base)
+        self.git('remote', 'add', 'origin', self.remote)
+        self.git('push', '-q', 'origin', 'main')
+        self.stale = self.git('rev-parse', 'HEAD')
+
+    def advance_origin(self, n=2):
+        """Push n commits to origin/main, then put the local main back at the stale commit."""
+        for i in range(n):
+            self.write('up%d.txt' % i, 'x')
+            self.commit_all('upstream %d' % i)
+        self.git('push', '-q', 'origin', 'main')
+        self.fresh = self.git('rev-parse', 'HEAD')
+        self.git('reset', '-q', '--hard', self.stale)
+
+
 def failing_call(words, rc=128, err='fatal: injected read failure'):
     """A stand-in for kitlib.git.cmd.call that fails the one git read starting with `words`
     (after any `-c core.quotepath=false`) and passes every other call through."""

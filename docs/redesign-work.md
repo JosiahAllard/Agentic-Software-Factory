@@ -12,7 +12,7 @@ Each entry has an id, a title and: **Serves** (the design section), **Files** (w
 2. **No stub at an old `kitlib` path.** Every importer changes in the same commit. Entry-point paths in `tools/` and their exit codes do not change.
 3. **Tests move with their package** to `tests/<new pkg>/`, test names unchanged.
 4. **Each item updates what names its files**: the reference docs, docs/INDEX.md, docstrings. An item is not done while a doc names a path it removed.
-5. **The module map file is owner-only**, so the map changes once, at the end (W-038). Until then the `module-map` gate step only warns.
+5. **The module map file is owner-only**, so each item's map change is written in the owner's patch with that item, not committed by the builder; the owner applies it. Until W-038 the `module-map` gate step only warns.
 6. **Design first for senior-worker items**: the builder writes its design, a reviewer checks it against the low-level design, then it builds.
 7. **No full-suite runs, with one exception.** An item runs the tests its change can break (`kit_tests.py --select`); the daily full run after the landing is the full check. The exception: an item that changes a gate config file runs every step in full once, at its landing. W-025 and W-038 change the `.kit.json` gate config, so their landings run in full once.
 8. **A file split is by responsibility**: the names in the low-level design's "Packages and files" table are the target; no function changes in a split.
@@ -21,7 +21,8 @@ Each entry has an id, a title and: **Serves** (the design section), **Files** (w
 
 | What | Items |
 |---|---|
-| `docs/module-map.json`, and `.kit.json` (the `module-map` step stops being warn-only) | W-038 |
+| `docs/module-map.json` (each item's edits, in the owner's patch with it: Rule 5) | every item that changes a package's edges; W-038 |
+| `.kit.json` (the `module-map` step stops being warn-only) | W-038 |
 | `.kit.json` (`landing.gate_once`, `landing.shared_paths` go) | W-025 |
 | `docs/agent-profile.md`, `AGENTS.md`, `.claude/coordinator-profile.md` | W-047 |
 | Changes under `kitlib/guard/` | W-002, W-007, W-009, W-012, W-015, W-016, W-017, W-031, W-042, W-044, W-045 |
@@ -344,15 +345,15 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-042 Delete the one-shot migrations**
 - Serves: the owner's decision.
 - Files: `kitlib/config/move.py`, `tools/config_move.py`, `tests/config/test_config_move.py`, `tests/config/test_move.py`, `tests/guard/test_jail_config_move.py`; `kitlib/ledger/migrate.py`, `kitlib/ledger/move.py`, the `split-move`, `migrate-report` and `rule-apply` verbs of `tools/ledger.py`, `tests/ledger/test_migrate.py`, `tests/ledger/test_move.py`; mentions in `kitlib/config/user.py`, `kitlib/delegations/load.py`, `kitlib/autotasks/tick.py`, `kitlib/kitcmd/__init__.py`, `kitlib/machinesetup/machineconfig.py`, `hosts/codex/adapter/dispatch.py`, the guard's owner-tool list, docs/kit-json.md ("Moving the machine config into the PM repo"), docs/ledger.md, docs/install.md, docs/guard-owner.md, docs/guard-jail-roles.md, docs/delegations.md.
-- Done when: `grep -rnE "config_move|split-move|migrate-report|rule-apply|ledger\.migrate" --include=*.py --include=*.md .` prints only this file.
+- Done when: `grep -rnE "config_move\b|split-move|migrate-report|rule-apply|ledger\.migrate" --include=*.py --include=*.md .` prints only this file.
 - Risk and tier: Medium. worker, fresh reviewer for the guard list.
 - Owner: guard.
 
 **W-043 `templates/` holds only what a setup step copies**
 - Serves: docs/modules/install-design.md ("Adding to it").
 - Files: `templates/common/`, `templates/stacks/*/`; the copy lists in `kitlib/machinesetup/repo.py` and `kitlib/stackskill/`.
-- Change: delete each template file no setup step copies, or wire it in if it should be copied.
-- Done when: new test `tests/templates/test_all_copied.py` passes (every file under `templates/` is named by a copy list).
+- Change: delete each template file no setup step copies and no reader uses, or wire it in if it should be copied. A template a role or docs/install.md reads (a file the owner or an agent drafts or copies from by hand) counts as used.
+- Done when: new test `tests/templates/test_all_copied.py` passes (every file under `templates/` is named by a copy list, or by its `templates/...` path in a role or docs/install.md).
 - Risk and tier: Low. worker.
 
 ### Docs

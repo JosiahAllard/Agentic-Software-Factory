@@ -1,5 +1,8 @@
 """Every file under templates/ is copied by a setup step, or named by a role or docs/install.md's
-hand steps that draft or copy from it (docs/modules/install-design.md "Adding to it")."""
+hand steps that draft or copy from it (docs/modules/install-design.md "Adding to it"). A reader
+names a file by its `templates/...` path, where `<stack>` stands for each stack and `{a,b}` for
+each of a and b."""
+import re
 import shutil
 import tempfile
 import unittest
@@ -11,16 +14,18 @@ from kitlib.machinesetup import repo
 from tests.shipped import ROOT
 
 READERS = sorted((ROOT / "content" / "roles").glob("*.md")) + [ROOT / "docs" / "install.md"]
+NAMED = re.compile(r"templates/((?:[\w.<>/-]|\{[\w.,-]+\})+)")
+BRACES = re.compile(r"\{([^{}]*)\}")
 
 
 def copied(templates):
-    """The templates-relative paths the setup steps copy: repo.py's lists, the ledger's starter,
-    each stack's tools/ files (copied whole) and its skills (stackskill.plan)."""
-    out = {"common/" + n for n in repo.COMMON_TEMPLATES}
+    """The templates-relative paths the setup steps copy: repo.py's templates, the ledger's
+    starter, each stack's tools/ files (copied whole) and its skills (stackskill.plan)."""
+    out = {"common/" + n for n in list(repo.LINE_TEMPLATES.values()) + [repo.INDEX_TEMPLATE]}
     out.add(Path(fmt.TEMPLATE).relative_to(ROOT / "templates").as_posix())
     for stack in (templates / "stacks").iterdir():
         base = "stacks/" + stack.name + "/"
-        out |= {base + n for n in repo.STACK_TEMPLATES}
+        out |= {base + n for n in (repo.STACK_META, repo.STACK_GATE)}
         tools = stack / "tools"
         out |= {base + "tools/" + p.name for p in tools.iterdir() if p.is_file()}
         with tempfile.TemporaryDirectory() as tmp:
@@ -29,20 +34,28 @@ def copied(templates):
     return out
 
 
+def expand(path, stacks):
+    """`path` with each `{a,b}` and `<stack>` spelled out: the paths it names."""
+    m = BRACES.search(path)
+    if m:
+        return {p for alt in m.group(1).split(",")
+                for p in expand(path[:m.start()] + alt + path[m.end():], stacks)}
+    return {path.replace("<stack>", s) for s in stacks} if "<stack>" in path else {path}
+
+
+def named(templates):
+    """The templates-relative paths the readers name."""
+    stacks = [p.name for p in (templates / "stacks").iterdir() if p.is_dir()]
+    text = "".join(p.read_text(encoding="utf-8") for p in READERS)
+    return {p for m in NAMED.finditer(text) for p in expand(m.group(1).rstrip("./"), stacks)}
+
+
 def unnamed(templates):
     """The files under `templates` no copy list and no reader names."""
-    text = "".join(p.read_text(encoding="utf-8") for p in READERS)
-    done = copied(templates)
-    bad = []
-    for p in sorted(templates.rglob("*")):
-        rel = p.relative_to(templates).as_posix()
-        if not p.is_file() or "__pycache__" in p.parts or rel in done or "templates/" + rel in text:
-            continue
-        inner = rel.split("/", 2)[-1] if rel.startswith("stacks/") else rel
-        if inner.startswith(".github/workflows/") and ".github/workflows/{quick,full}.yml" in text:
-            continue
-        bad.append(rel)
-    return bad
+    done = copied(templates) | named(templates)
+    return [rel for rel in (p.relative_to(templates).as_posix() for p in sorted(templates.rglob("*"))
+                            if p.is_file() and "__pycache__" not in p.parts)
+            if rel not in done]
 
 
 class AllCopiedTest(unittest.TestCase):

@@ -286,7 +286,7 @@ behaviour unchanged.
 | Step | Work | Depends on |
 |---|---|---|
 | 0 | ARCHITECTURE.md amended: new Host contract, Hosts, Content and Optional layers, the Roles contract, Packaging, and a Hosts section in place of "Host split". **Done.** | — |
-| 1 | Cherry-pick the host-neutral library parts of the Codex branch onto main: `kitlib.attribution`, `packageexport`, `kitrelease`, `hostrpc`, `hoststart`, and the worktree `--host` support. These are needed by both hosts and conflict least. | 0 |
+| 1 | Cherry-pick the host-neutral library parts of the Codex branch onto main: `kitlib.attribution`, `hostrpc`, `hoststart`, and the worktree `--host` support. These are needed by both hosts and conflict least. (The pinned-release path that came with them is deleted: the kit boots from the folder it is in.) | 0 |
 | 2 | `kitlib/host/` (types and protocols), `hosts.json` and the `PM_KIT_HOST` / `PM_KIT_ROLE` selection. Delete `kitlib/hosts`' importlib of host folders. Merge `--host` and `--provider`. | 1 |
 | 3 | Move the guard to `Action`/`Decision`, with the Claude adapter doing parse and render. Add `hookmain`. Claude's hooks become ≤20-line entries. The existing guard tests run unchanged through Claude fixtures. | 2 |
 | 4 | `kitlib/guard/rolepolicy.py`. Lift the role policy from the Codex branch's `guard_adapter` and `kit_adapter`, so Claude gets it too. | 3 |

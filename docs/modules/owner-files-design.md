@@ -13,7 +13,7 @@ Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level
 - **A sync merge carries an owner-only path** with no new approval when the staged copy equals `git merge-tree`'s result, the path is not conflicted, and every commit on either side that changed it is the owner's or approved. A rename, a mode change, a non-default merge attribute or an octopus merge refuses. Merge-tree only, never merge-file.
 - **Shrink-only paths** (`owner.shrink_only`): a one-parent commit that only deletes lines of such a path needs no approval.
 - **Everything fails closed**: a git failure, a hub that cannot be asked, a merge or root commit carrying an approval, any doubt.
-- **The delegation list** (`delegations`) is the owner's own file naming the operations the PM may run for him. It is read, never written, by the kit; the guard closes it to agents. A run checks its preconditions, places itself, and where the list says so takes a one-run hub approval. Checks that read an app (the PM start checklist) are handed in by the entry point.
+- **The delegation list** (`delegations`) is the owner's own file naming the operations the PM may run on the owner's behalf. It is read, never written, by the kit; the guard closes it to agents. A run checks its preconditions, places itself, and where the list says so takes a one-run hub approval. Checks that read an app (the PM start checklist) are handed in by the entry point.
 
 ## Packages and files
 

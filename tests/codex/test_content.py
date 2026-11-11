@@ -300,7 +300,7 @@ class Hook(unittest.TestCase):
 
     def test_the_entrys_budget_counts_the_boot(self):
         """DEADLINE is the whole call's: the time the boot took (a pinned verify hashes every file)
-        comes off what hookmain gets, which names the whole budget when it runs out."""
+        comes off what hookrun gets, which names the whole budget when it runs out."""
         import io
         import sys
         import types
@@ -319,7 +319,7 @@ class Hook(unittest.TestCase):
             return 0
         with unittest.mock.patch.dict(sys.modules, {'kitboot': boot}), \
                 unittest.mock.patch('time.monotonic', lambda: clock[0]), \
-                unittest.mock.patch('kitlib.host.hookmain.run', fake_run):
+                unittest.mock.patch('kitlib.hookrun.main.run', fake_run):
             rc = hook.main(['codex', 'PreToolUse'], io.StringIO('{"tool_name": "Write"}'), io.StringIO(), {})
         self.assertEqual(rc, 0)
         from hosts.codex.adapter.host import ADAPTER

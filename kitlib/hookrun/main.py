@@ -5,12 +5,12 @@ lives here once:
   dispatch(adapter, event_name, kit, text, stdout, entry, args, part, environ, started)
         boot/hook.py's work once the kit has booted and the adapter is imported. A start event
         (adapter.CONTEXT_EVENTS): the context text, adapter.start_text(event_name, kit, payload,
-        environ, part) when the adapter has one, else the kit header (kitlib.host.header; no part
+        environ, part) when the adapter has one, else the kit header (kitlib.hookrun.header; no part
         then), written through adapter.context; exit 0. The header part (no part) also records
-        which kit folder the header named (kitlib.host.headerfollow.note); at a SubagentStart, and
+        which kit folder the header named (kitlib.hookrun.headerfollow.note); at a SubagentStart, and
         at a SessionStart whose payload source is in FOLLOW_SOURCES (a compact, clear or in-session
         resume keeps the plugin root the session began on; startup keeps its own folder), that folder, and the one the context text names, is the
-        current export (kitlib.host.headerfollow.start_kit), not the one the session began on. Any other event: run()
+        current export (kitlib.hookrun.headerfollow.start_kit), not the one the session began on. Any other event: run()
         over the payload `text`, the adapter's DEADLINE (None when it has none) for the whole call
         from `started`, with `kit`. `entry` and `args` are the hook's own command line, for the
         reproduce line of a deny.
@@ -29,7 +29,7 @@ lives here once:
         in a marked session is judged as an agent of its mark's role (unidentified()). `args`: the
         entry's arguments, named in the reproduce line after `entry`. With `kit` (the kit the hook
         booted), the header-update line of a session whose header named an older plugin export
-        (kitlib.host.headerfollow.line: at once when the folder the header named is gone, else at
+        (kitlib.hookrun.headerfollow.line: at once when the folder the header named is gone, else at
         most once an hour) goes with the verdict whatever it is, through
         the adapter's optional tool_context(event_name, text, rendered) (none: no line), so a
         reason keeps its format; the record is rewritten only after the answer is written. A deny,
@@ -219,7 +219,7 @@ def _agent(adapter, payload):
 
 
 def _notice(adapter, event_name, kit, payload, environ, rendered):
-    """(stdout text, settle): the header-update line (kitlib.host.headerfollow.line) added to the
+    """(stdout text, settle): the header-update line (kitlib.hookrun.headerfollow.line) added to the
     rendered answer through the adapter's tool_context, for any verdict, so the deny and ask reasons
     keep their format. `settle()` rewrites the session's record: the caller runs it once the text is
     written, so a line that never reached the agent is offered again. An adapter without
@@ -229,7 +229,7 @@ def _notice(adapter, event_name, kit, payload, environ, rendered):
         tell = getattr(adapter, 'tool_context', None)
         if tell is None or not kit or not isinstance(payload, dict):
             return rendered, None
-        from kitlib.host import headerfollow
+        from kitlib.hookrun import headerfollow
         agent = _agent(adapter, payload)
         line = headerfollow.line(kit, payload, agent, environ, write=False)
         if not line:
@@ -313,7 +313,7 @@ def dispatch(adapter, event_name, kit, text, stdout, entry=None, args=(), part=N
         if part is None and (event_name == 'SubagentStart' or
                              (event_name == 'SessionStart' and payload.get('source') in FOLLOW_SOURCES)):
             try:
-                from kitlib.host import headerfollow
+                from kitlib.hookrun import headerfollow
                 kit = headerfollow.start_kit(kit, environ)
             except Exception:                   # advice too: the session's own folder stands
                 pass
@@ -321,13 +321,13 @@ def dispatch(adapter, event_name, kit, text, stdout, entry=None, args=(), part=N
         if start is not None:
             body = start(event_name, kit, payload, environ, part)
         elif part is None:
-            from kitlib.host import header
+            from kitlib.hookrun import header
             body = header.text(kit)
         else:
             raise ValueError('%s has no start check %r' % (adapter.name, part))
         if part is None:                        # the header part: record the folder it names
             try:
-                from kitlib.host import headerfollow
+                from kitlib.hookrun import headerfollow
                 headerfollow.note(kit, payload, _agent(adapter, payload), event_name)
             except Exception:                   # the record is advice: never fail a start for it
                 pass

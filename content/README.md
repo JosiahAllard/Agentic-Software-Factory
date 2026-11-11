@@ -19,7 +19,7 @@ files, the plugin manifests and docs/ROSTER.md's two tables; commit what it writ
 | A skill | `content/skills/<name>/` | nothing to render: every host loads it from there |
 | The profile a role reads when its repository has none | `content/default-profile.md` (docs/agent-profile.md); a repository's own is the file its host's `profile_path` token names | nothing to render |
 | A host's wording | the role's tokens (`{{name}}`, docs/content.md "Tokens"), filled from the host's table in `hosts/<name>/adapter/content.py` or its `hosts.json` profile | render |
-| What a session gets at start | the kit header is `kitlib/host/header.py`; the PM and coordinator start checks are `kitlib/pmstart`, `kitlib/coordinatorstart` and `kitlib/hoststart`, run by each host's start hooks | nothing to render |
+| What a session gets at start | the kit header is `kitlib/hookrun/header.py`; the PM and coordinator start checks are `kitlib/pmstart`, `kitlib/coordinatorstart` and `kitlib/hoststart`, run by each host's start hooks | nothing to render |
 | Add or remove a role | add or delete one `content/roles/<name>.md` | render; the roster, launcher and backlog groups follow |
 
 To see everything one role is given on one host, in order, and everything it is held to:

@@ -17,7 +17,7 @@ Before any kit code runs, with the standard library alone:
      fast_path is "all"; with "none" every call goes to the guard.
   3. boot/kitboot.py beside this file binds the kit (docs/kitboot.md): PM_KIT_ROOT when set, else
      the checkout this file is in (kit_here; its copy case serves only a host that would ship one).
-Then the adapter the entry names is imported and kitlib.host.hookmain.dispatch runs the event: the
+Then the adapter the entry names is imported and kitlib.hookrun.main.dispatch runs the event: the
 guard, failing closed, for the tool event (the adapter's DEADLINE, if any, counting from this
 file's start), the start context for any other. When the kit will not boot or import, or the answer
 cannot be written, a tool event exits BLOCK, which every host so far reads as a block (the reason
@@ -91,18 +91,18 @@ def main(argv, stdin, stdout, environ=os.environ, hosts=HOSTS):
             if skips(entry['hook'], json.loads(text), environ):
                 return 0                               # TodoWrite, WebFetch...: nothing to decide
         except Exception:
-            pass                                       # hookmain reads it again and denies
+            pass                                       # hookrun reads it again and denies
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
     import kitboot
     kit = kitboot.boot(here=kit_here(entry))
     import importlib
     adapter = importlib.import_module(entry['adapter']).ADAPTER
-    from kitlib.host import hookmain
+    from kitlib.hookrun import main as hookrun
     if event == SETTINGS:
         stdout.write(json.dumps(adapter.settings_entry(ENTRY), indent=2) + '\n')
         return 0
-    return hookmain.dispatch(adapter, event, kit, text, stdout, ENTRY, argv, part, environ, began)
+    return hookrun.dispatch(adapter, event, kit, text, stdout, ENTRY, argv, part, environ, began)
 
 
 def starts(argv, hosts=HOSTS):

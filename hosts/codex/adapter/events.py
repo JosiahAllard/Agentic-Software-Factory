@@ -9,7 +9,7 @@ client's payload has been captured yet (hosts/codex/README.md, "Not verified").
       PreToolUse: `tool_name` sorts the call; `cwd` must be an absolute path.
       - apply_patch: its patch text (tool_input.command, or the tool_input string itself) names
         every file it adds, updates, deletes or moves to (patch_targets). One edit Action per
-        target, in patch order, `retarget` the same patch line aimed at `{path}`: hookmain judges
+        target, in patch order, `retarget` the same patch line aimed at `{path}`: hookrun judges
         each, and any deny refuses the whole patch. A patch of the wrong shape raises, so no part
         of it is judged as allowed.
       - a file tool (FILE_TOOLS) is one edit, its target from the tool's own key.

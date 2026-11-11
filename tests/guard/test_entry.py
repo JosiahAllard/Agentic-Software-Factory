@@ -1,7 +1,7 @@
 """The guard as Claude Code runs it, `boot/hook.py claude PreToolUse`: a PreToolUse event on stdin,
 hook JSON (or nothing) on stdout, exit 0. HOME/USERPROFILE point at a scratch folder, so no real
 machine config is read, and the payloads touch no repository (a temp folder that is not a checkout).
-The entry hands the event to hosts.claude.adapter through kitlib.host.hookmain; these tests run it
+The entry hands the event to hosts.claude.adapter through kitlib.hookrun.main; these tests run it
 end to end."""
 import importlib.util
 import io
@@ -25,7 +25,8 @@ ARGS = ['claude', 'PreToolUse']
 # will not import: the hook imports these and nothing else of the kit
 HOOK_FILES = ('boot/kitboot.py', 'tools/machine_lock.py', 'hosts/__init__.py', 'hosts/claude/__init__.py',
               'hosts/claude/adapter/__init__.py', 'hosts/claude/adapter/events.py',
-              'hosts/claude/adapter/host.py', 'kitlib/host/__init__.py', 'kitlib/host/hookmain.py',
+              'hosts/claude/adapter/host.py', 'kitlib/host/__init__.py', 'kitlib/hookrun/__init__.py',
+              'kitlib/hookrun/main.py',
               'kitlib/host/registry.py', 'hosts.json',
               'kitlib/host/agentname.py', 'kitlib/lock/__init__.py', 'kitlib/lock/names.py')
 

@@ -1,4 +1,4 @@
-"""kitlib.host.headerfollow: a session whose header named an older plugin export is told the
+"""kitlib.hookrun.headerfollow: a session whose header named an older plugin export is told the
 current kit folder at a later tool event: at once when that folder is gone, else at most once an
 hour (EVERY_S)."""
 import io
@@ -13,7 +13,7 @@ from unittest import mock
 from hosts.claude.adapter.host import ADAPTER
 from kitlib import agentstart, pluginsource
 from kitlib.config import user
-from kitlib.host import headerfollow, hookmain
+from kitlib.hookrun import headerfollow, main as hookrun
 from tests import gitfixture
 from tests.home import pm_repo, temp_home
 
@@ -172,9 +172,9 @@ class SubagentStart(unittest.TestCase):
 
     def start(self, event='SubagentStart', kit=None, payload=None):
         out = io.StringIO()
-        # a fake export holds no roles: the block's own test is tests/host/test_header.py
+        # a fake export holds no roles: the block's own test is tests/hookrun/test_header.py
         with mock.patch.object(agentstart, 'is_dispatched', return_value=True):
-            code = hookmain.dispatch(ADAPTER, event, kit or self.old, json.dumps(payload or self.payload), out,
+            code = hookrun.dispatch(ADAPTER, event, kit or self.old, json.dumps(payload or self.payload), out,
                                      environ=self.env)
         self.assertEqual(code, 0)
         return json.loads(out.getvalue())['hookSpecificOutput']['additionalContext']

@@ -18,7 +18,7 @@ Every read of a Claude Code hook payload's field names is here, and nowhere in k
       agent_role with exactly one leading kit plugin prefix dropped (kitlib.host.agentname.bare,
       docs/guard-fallback.md "Agent names"), and is read only for a subagent. PM_KIT_ROLE is not in the
       payload: the guard reads it from its own environment, which Claude Code hands the hook.
-  agent(payload)  the agent_id alone, for a deny when parse itself failed (kitlib.host.hookmain)
+  agent(payload)  the agent_id alone, for a deny when parse itself failed (kitlib.hookrun.main)
 
 A payload that is not an object (null, [], 0, "", false included), or a tool_input of the wrong
 shape for its tool, raises: the hook denies it (fail closed), as it did when the guard read the

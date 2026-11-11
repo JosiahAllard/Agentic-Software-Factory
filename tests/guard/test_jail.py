@@ -1997,7 +1997,7 @@ class DevDrive(Base):
         self.assertIn('is not on the Dev Drive', d.reason)
 
     def test_a_dev_drive_that_is_relative_or_not_there_turns_the_bound_off(self):
-        # a bad value must not refuse every agent write: the header warns instead (tests/host/test_header.py)
+        # a bad value must not refuse every agent write: the header warns instead (tests/hookrun/test_header.py)
         for value in ('dev', os.path.join(self.w.base, 'no-such-drive')):
             with self.subTest(value=value):
                 self.bound(dev_drive=value)

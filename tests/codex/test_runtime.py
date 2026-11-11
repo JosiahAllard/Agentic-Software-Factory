@@ -386,7 +386,7 @@ class BoundGuard(unittest.TestCase):
             'command': 'python tools/backlog.py ' + args}}, child)
 
     def test_a_bound_root_meets_the_backlog_tools_own_check(self):
-        """A root binding is a marked session, judged as an agent of its mark (hookmain.UNIDENTIFIED):
+        """A root binding is a marked session, judged as an agent of its mark (hookrun.UNIDENTIFIED):
         the backlog's role check is the tool's own, run under the bound mark, so a coordinator root
         may claim its item. A child bound to a session-only role is unlisted, as on Claude."""
         pull = '--session s --as kit/x pull X-1'

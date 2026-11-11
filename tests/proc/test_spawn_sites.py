@@ -707,7 +707,7 @@ class Hazards(unittest.TestCase):
         """It read Python in kitlib, tests and optional/, and the PowerShell and cmd files."""
         files = hazard_files(ROOT)
         for rel in ('kitlib/proc/win32.py', 'tests/proc/test_console.py', 'githooks/pre-push',
-                    'reserve_ui.pyw', 'boot/hook.py', 'kitlib/host/hookmain.py'):
+                    'reserve_ui.pyw', 'boot/hook.py', 'kitlib/hookrun/main.py'):
             self.assertIn(rel, files)
         self.assertTrue([f for f in files if f.startswith('optional/bridge/')])
         self.assertTrue([f for f in files if f.startswith('hosts/')])

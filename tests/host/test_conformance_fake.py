@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 from kitlib import content as kcontent
-from kitlib.host import Decision, header, registry
+from kitlib.hookrun import header
+from kitlib.host import Decision, registry
 from tests.host import conformance
 from tests.host.fakehost import adapter as fake
 

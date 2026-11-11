@@ -1,7 +1,7 @@
 """Codex's kitlib.host.HostAdapter (ARCHITECTURE.md "Hosts"; plan 2.1 and 2.2).
 
 ADAPTER is the one instance; boot/hook.py (`hook.py codex <event>`, the plugin's copy of it)
-hands it to kitlib.host.hookmain.dispatch.
+hands it to kitlib.hookrun.main.dispatch.
 
   name                 'codex', its key in hosts.json
   profile, capabilities  hosts.json's "codex" entry, read on first use
@@ -12,7 +12,7 @@ hands it to kitlib.host.hookmain.dispatch.
                        warn-mode rule's warning, kitlib.guard.modes, is not shown); for a deny Codex's
                        permission JSON, {"hookSpecificOutput": {"hookEventName",
                        "permissionDecision": "deny", "permissionDecisionReason"}} and a newline,
-                       exit 0. Codex has no ask: hookmain lowers one before render, and render
+                       exit 0. Codex has no ask: hookrun lowers one before render, and render
                        lowers one it is still handed (kitlib.host.degrade), never writing an ask.
   context(event_name, text)    (stdout, 0): {"hookSpecificOutput": {"hookEventName",
                        "additionalContext"}} for the CONTEXT_EVENTS; nothing for no text

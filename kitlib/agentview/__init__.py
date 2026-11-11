@@ -14,7 +14,7 @@ conformance suite pins to what the host writes:
                            `@<path>` lines import
   User instructions        that file name in the host's per-user folder (the `user_folder` token,
                            or the folder its `config_dir_env` names); never read
-  Kit header               kitlib.host.header.text(kit), what every host's start hook adds
+  Kit header               kitlib.hookrun.header.text(kit), what every host's start hook adds
   At start                 the adapter's start_text(event, kit, payload, environ, part) for each
                            part its start_parts(event, role) names (default: the plain hook alone),
                            the call boot/hook.py makes, past the header, for a session marked with
@@ -38,7 +38,7 @@ import os
 import re
 
 from kitlib import content as kcontent
-from kitlib.host import header
+from kitlib.hookrun import header
 from kitlib.host.content import tokens_in
 
 Section = collections.namedtuple('Section', 'title lines')
@@ -181,7 +181,7 @@ def user_instructions(values, environ):
 
 def kit_header(kit, event, brief):
     title = 'Kit header (%s)' % event
-    lines = ['kitlib.host.header.text: the kit folder, and what <kit> and the other placeholders mean']
+    lines = ['kitlib.hookrun.header.text: the kit folder, and what <kit> and the other placeholders mean']
     if not brief:
         lines.append(block(header.text(kit)))
     return Section(title, lines)

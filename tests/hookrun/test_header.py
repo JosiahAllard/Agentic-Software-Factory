@@ -1,4 +1,4 @@
-"""The kit header (kitlib.host.header), its Claude rendering (ADAPTER.context) and the hook entry that
+"""The kit header (kitlib.hookrun.header), its Claude rendering (ADAPTER.context) and the hook entry that
 runs it on SessionStart and SubagentStart (boot/hook.py claude <event>)."""
 import json
 import os
@@ -7,7 +7,7 @@ import sys
 import unittest
 
 from hosts.claude.adapter.host import ADAPTER
-from kitlib.host import header
+from kitlib.hookrun import header
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ENTRY = os.path.join(ROOT, 'boot', 'hook.py')
@@ -109,7 +109,7 @@ class Entry(unittest.TestCase):
                               encoding='utf-8', env=environ, timeout=60, **stdin)
 
     def test_a_dispatched_kit_agent_gets_the_header_then_the_agent_start_block(self):
-        # The whole path, nothing mocked: boot/hook.py -> hookmain -> the Claude adapter's start_text
+        # The whole path, nothing mocked: boot/hook.py -> hookrun -> the Claude adapter's start_text
         # -> kitlib.agentstart, on a worktree of a repository built on disk.
         from tests import gitfixture
         repo = gitfixture.TempRepo(branch='main')

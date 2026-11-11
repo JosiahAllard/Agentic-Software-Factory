@@ -30,6 +30,7 @@
     ["hosts/__init__.py", ["host", "guard"]],
     ["hosts/claude/__init__.py", ["pmwatch", "guard"]],
     ["boot/**", ["boot", "guard", "host"]],
+    ["kitlib/hookrun/**", ["host"]],
     ["boot/hook.py", ["codex", "pmstart", "coordinatorstart", "plugin", "machinesetup"]],
     ["kit.json", ["content", "host"]],
     [".claude-plugin/marketplace.json", ["content"]],

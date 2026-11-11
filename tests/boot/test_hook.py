@@ -126,7 +126,7 @@ class Failures(Scratch):
 
     def test_the_home_fence_on_the_way_blocks_a_tool_call(self):
         """kitlib.config.user.HomeFenced is a BaseException: a guard that meets the home fence
-        (kitlib.guard.shell.home_folder) passes hookmain's `except Exception`, and run() blocks."""
+        (kitlib.guard.shell.home_folder) passes hookrun's `except Exception`, and run() blocks."""
         from kitlib.config import user as kuser
         with mock.patch.object(H, 'main', side_effect=kuser.HomeFenced(kuser.FENCE_MESSAGE)):
             code, out, err = self.run_hook(['x', 'Pre'], '{"call": {"name": "edit"}}')

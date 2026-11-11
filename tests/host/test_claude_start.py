@@ -10,7 +10,7 @@ from unittest import mock
 from kitlib import agentstart, coordinatorstart, pmstart
 from kitlib.config import pm as pmconfig
 from kitlib.config import user
-from kitlib.host import header
+from kitlib.hookrun import header
 from kitlib.pmstart import configcheck
 from tests import home as khome
 from tests import pmstart as tpm

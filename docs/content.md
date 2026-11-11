@@ -170,13 +170,13 @@ version, nothing else). Claude's are each JSON with indent 2 and a final newline
   The export (docs/plugin-source.md) stamps its version as `<version>-main.<count>`. That is the
   Windows file; `.claude-plugin/plugin.<platform>.json` beside it, one for each other platform
   hosts.json gives the host, is the same manifest with each MCP server run by that platform's
-  interpreter (`kitlib.host.hookmain.mcp_interpreter`: `python3` on Linux, where stock Ubuntu has no
+  interpreter (`kitlib.hookrun.main.mcp_interpreter`: `python3` on Linux, where stock Ubuntu has no
   `python`). Codex's `mcp.json` gets an `mcp.<platform>.json` the same way.
 - `.claude-plugin/marketplace.json`: the checkout as a local marketplace of that one plugin
   (`"source": "./"`), the version as `metadata.version`.
 - `hosts/claude/shell/hooks/hooks.json`: the plugin's hooks (`HOOKS` in the renderer), each running
   the kit's one hook entry, `${CLAUDE_PLUGIN_ROOT}/boot/hook.py claude <event> [<part>]`. Each command
-  line comes from `kitlib.host.hookmain.manifest_command`, the interpreter by name for one platform
+  line comes from `kitlib.hookrun.main.manifest_command`, the interpreter by name for one platform
   (`INTERPRETERS`), so no manifest spells it by hand. hooks.json is the Windows file: `pythonw` in
   exec form.
 - `hosts/claude/shell/hooks/hooks.linux.json`, one `hooks.<platform>.json` beside hooks.json for each
@@ -231,7 +231,7 @@ stays the backstop.
 `boot/hook.py <host> <event>` adds it at every start event a host declares; on Claude it runs on
 SessionStart (startup, resume, clear, compact) and on SubagentStart (every subagent). It boots the
 kit (docs/kitboot.md) and adds
-`kitlib.host.header.text(<kit folder>)` to the agent's context (`additionalContext`, rendered by the
+`kitlib.hookrun.header.text(<kit folder>)` to the agent's context (`additionalContext`, rendered by the
 Claude adapter's `context`). The text names the kit's absolute folder, says that `<kit>` in skills
 and role files means that folder (with a worked command), that the kit's tools run from it and
 never from a copy in the repository, a tool that acts on a checkout named with `-C` (decision 21 in
@@ -278,7 +278,7 @@ Sections 1-7, what the agent is given, in the order it gets it:
    imports with a `@<path>` line.
 3. **User instructions**: that file name in the host's per-user folder (the `user_folder` token,
    or the folder `config_dir_env` names). The kit never reads it.
-4. **Kit header**: `kitlib.host.header.text`, at SubagentStart for a dispatched role and at
+4. **Kit header**: `kitlib.hookrun.header.text`, at SubagentStart for a dispatched role and at
    SessionStart for a `run: session` one.
 5. **At start**: what the start hooks add past the header for a session marked with the role
    (`PM_KIT_ROLE`) in the repository: the adapter's `start_text` for each part `start_parts` says

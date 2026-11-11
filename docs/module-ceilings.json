@@ -43,7 +43,6 @@
  "ledger-build-commit": 0,
  "lock-build-host": 1,
  "pending-build-ledger": 1,
- "platform-build-proc": 3,
  "pluginsource-build-machinesetup": 3,
  "pluginsource-build-pmstart": 2,
  "pmstart-build-hubsite": 4,

@@ -378,6 +378,7 @@ None: no module is open to every other.
 | opt-agenttemp | pmstart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | opt-bridge | host | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
+| opt-bridge | platform | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | proc | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-comfy | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-comfy | fs | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
@@ -602,7 +603,6 @@ Crossings counted, not refused; each count is driven down to its goal.
 | ledger-build-commit | ledger | commit | build | 0 | - |
 | lock-build-host | lock | host | build | 0 | - |
 | pending-build-ledger | pending | ledger | build | 0 | - |
-| platform-build-proc | platform | proc | build | 0 | - |
 | pluginsource-build-machinesetup | pluginsource | machinesetup | build | 0 | - |
 | pluginsource-build-pmstart | pluginsource | pmstart | build | 0 | - |
 | pmstart-build-hubsite | pmstart | hubsite | build | 0 | - |

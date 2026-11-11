@@ -1101,6 +1101,19 @@ class HubApproval(Fixture):
         self.assertIn('the ledger refused the run entry', str(cm.exception))
         self.assertNotIn('consume', self.events)
 
+    def test_the_pre_check_refuses_an_entry_as_add_refuses_it(self):
+        self.add(decides='run D-001 name=alpha')
+        with open(self.ledger, 'a', encoding='utf-8') as fh:
+            fh.write('\n## H-kit-0009 | broken\n')
+        for repos in (['kit', 'pm'], ['pm']):      # an invalid ledger, then a repo off the list
+            with self.subTest(repos=repos):
+                with self.assertRaises((lwrite.Refused, lwrite.Usage)) as want:
+                    lwrite.add(self.ledger, 'kit', drun.PROV, 'q', 'a', 'd', 's', repos=repos, split=True)
+                with self.assertRaises(drun.RunRefused) as got:
+                    self.approve(cfg=dict(self.cfg, ledger_repos=repos))
+                self.assertIn(str(want.exception), str(got.exception))
+                self.assertNotIn('consume', self.events)
+
     def test_a_busy_ledger_write_lock_leaves_the_approval_unspent(self):
         self.add()
         with mock.patch.object(lwrite, 'LOCK_WAIT', 0.2), lwrite.locked(self.ledger):

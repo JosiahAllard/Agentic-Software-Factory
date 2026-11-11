@@ -136,16 +136,14 @@ def split_repo_problem(path, repo, repos):
     return None
 
 
-def add(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repos=None, split=False,
-        others=(), rule=None):
-    """Append one entry and return Added(id, warnings). `repos` is the configured repo columns
-    (None: any well-formed name; `all` is always accepted). `when` 'YYYY-MM-DD HH:MMZ' UTC,
-    default now. `split`: `path` is `repo`'s per-repo file, numbered H-<repo>-nnnn; `repo` must be
-    one of `repos` and never `all`, and `others` (the other files' texts) are where a delegated
-    entry's `under <id>` may also point. `rule` (a RuleChange): the entry also changes the
-    rulebook of `repo` (rulebook.target), its Decides ending with the change's tag; under the log's
-    write lock and the rulebook's both are checked, then the log is written, then the rulebook. A
-    `set` with no `checked` hash is a Usage error, a stale one is refused, and its rule text defaults to `decides`."""
+Plan = collections.namedtuple('Plan', 'rid new book')
+
+
+def plan_entry(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repos=None,
+               split=False, others=(), rule_step=None):
+    """Every check `add` makes before its write, writing nothing and taking no lock (the caller
+    holds the ledger's): Usage or Refused as `add` raises them, else Plan(rid, the new ledger text,
+    the rulebook change or None). `rule_step(text, rid)` returns `(book, the Decides to log)`."""
     for name, value in (('q', q), ('a', a), ('decides', decides), ('source', source)):
         if not (value or '').strip():
             raise Usage('--%s is empty' % name)
@@ -157,27 +155,47 @@ def add(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repo
     if when is not None and not E.WHEN_RE.match(when):
         raise Usage("--when must be UTC 'YYYY-MM-DD HH:MMZ', not %r" % when)
     mine = repo if split else None
+    text = read_text(path)
+    _valid_or_refuse(text, repos, 'the ledger is already invalid', mine, others)
+    _, blocks = E.split_entries(text)
+    rid = E.next_id(blocks, mine)
+    logged, book = decides, None
+    if rule_step is not None:
+        book, logged = rule_step(text, rid)
+    block = E.render(rid, when or now_utc(), repo, prov, q, a, logged, source, supersedes)
+    new = text.rstrip('\n') + '\n\n' + block
+    _valid_or_refuse(new, repos, 'the new entry is invalid', mine, others)
+    return Plan(rid, new, book)
+
+
+def add(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repos=None, split=False,
+        others=(), rule=None):
+    """Append one entry and return Added(id, warnings). `repos` is the configured repo columns
+    (None: any well-formed name; `all` is always accepted). `when` 'YYYY-MM-DD HH:MMZ' UTC,
+    default now. `split`: `path` is `repo`'s per-repo file, numbered H-<repo>-nnnn; `repo` must be
+    one of `repos` and never `all`, and `others` (the other files' texts) are where a delegated
+    entry's `under <id>` may also point. `rule` (a RuleChange): the entry also changes the
+    rulebook of `repo` (rulebook.target), its Decides ending with the change's tag; under the log's
+    write lock and the rulebook's both are checked, then the log is written, then the rulebook. A
+    `set` with no `checked` hash is a Usage error, a stale one is refused, and its rule text defaults to `decides`."""
     warnings = []
     with locked(path), contextlib.ExitStack() as stack:
+        rule_step = None
         if rule is not None:
             # The book's own lock too: in split mode two log files (two log locks) can route to
             # one book. Taken after the log's, as every writer does, so no two wait on each other.
             name, book_path = rule_target(rule.folder, repo, rule.book)
             stack.enter_context(locked(book_path))
-        text = read_text(path)
-        _valid_or_refuse(text, repos, 'the ledger is already invalid', mine, others)
-        _, blocks = E.split_entries(text)
-        rid = E.next_id(blocks, mine)
-        logged, book = decides, None
-        if rule is not None:
-            book, logged = _rule_change(rule, repo, rid, decides, warnings)
-            if book.name != name:
-                raise Refused('the rulebook for %s changed from %s to %s while waiting for its lock; '
-                              'nothing was written. Try again.' % (repo, rulebook.file_name(name),
-                                                                   rulebook.file_name(book.name)))
-        block = E.render(rid, when or now_utc(), repo, prov, q, a, logged, source, supersedes)
-        new = text.rstrip('\n') + '\n\n' + block
-        _valid_or_refuse(new, repos, 'the new entry is invalid', mine, others)
+
+            def rule_step(text, rid):
+                book, logged = _rule_change(rule, repo, rid, decides, warnings)
+                if book.name != name:
+                    raise Refused('the rulebook for %s changed from %s to %s while waiting for its '
+                                  'lock; nothing was written. Try again.'
+                                  % (repo, rulebook.file_name(name), rulebook.file_name(book.name)))
+                return book, logged
+        rid, new, book = plan_entry(path, repo, prov, q, a, decides, source, supersedes, when, repos,
+                                    split, others, rule_step)
         if book is not None:
             _books_or_refuse(rule.folder, book, [new] + list(others))
         write_atomic(path, new)

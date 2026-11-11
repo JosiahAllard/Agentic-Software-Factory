@@ -112,7 +112,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/review-pack.md` | review_pack | preparing a review | kw: review-pack, review
 - `docs/shipping.md` | what ships | changing the shipped set | kw: shipping, ships
 - `docs/sync-base.md` | sync_base | main moved | kw: sync-base, merge
-- `docs/test-tools.md` | testlist, tool_deps, pytests, the time fence (kitlib.clock) and flaky tests | test selection | kw: flaky, flake, time-fence, clock, budget, testlist, tool_deps, pytests, tests
+- `docs/test-tools.md` | tool_deps, pytests, the time fence (kitlib.clock) and flaky tests | test selection | kw: flaky, flake, time-fence, clock, budget, tool_deps, pytests, tests
 - `docs/windows-token-leak.md` | Windows token leak: slow process launches | slow launches | kw: windows, token-leak
 - `docs/worktree-paths.md` | worktree paths | where worktrees live | kw: worktree-paths
 - `docs/worktree-remove.md` | worktree remove | removing a worktree | kw: worktree-remove, sweep
@@ -163,7 +163,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/launch.py` | launcher (`docs/launcher.md`) | kw: launch, launcher
 - `tools/pm_watch.py` | PM watcher (`docs/pm-watch.md`) | kw: pm_watch
 - `tools/daily_full.py` | nightly full run (`docs/daily-full.md`) | kw: daily_full
-- `tools/testlist.py` | test name lists (`docs/test-tools.md`) | kw: testlist
 - `tools/tool_deps.py` | tests a changed file selects (`docs/test-tools.md`) | kw: tool_deps
 - `tools/pytests.py` | test runner (`docs/test-tools.md`) | kw: pytests
 - `tools/forbidden.py` | forbidden-text check (`docs/repo-checks.md`) | kw: forbidden

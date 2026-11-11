@@ -25,7 +25,8 @@ the new approval's id. Run in this order:
      (one another such entry supersedes does not count) is its order (hub_entry). An owner
      ledger id: a live owner entry, written in the last MAX_AGE, whose Decides
      is the run line.
-  5. the preconditions: file-exists, branch-landed, checklist-line.
+  5. the preconditions: file-exists, branch-landed; checklist-line only when the caller hands in
+     the checklist (with_checklist).
   6. the claim, under the runner lock and the ledger write lock: no live runner entry (Source
      `under <anchor>: D-nnn <trigger>`) has this anchor or this trigger, the repo is accepted and
      the existing ledger with the new entry validates; a hub approval is then
@@ -649,15 +650,20 @@ def checklist_line(pre, checklist):
     return 'no PM start checklist line holds %r' % text
 
 
-# The 'checklist-line' check is added by the entry point (checklist_line with its checklist).
+# No 'checklist-line' here: it needs the PM start checklist, which the entry point hands in.
 CHECKS = {'file-exists': file_exists, 'branch-landed': branch_landed}
+
+
+def with_checklist(checklist):
+    """CHECKS plus the checklist-line check, reading the checklist text with `checklist(cfg)`."""
+    return dict(CHECKS, **{'checklist-line': lambda pre: checklist_line(pre, checklist)})
 
 
 def preconditions(pres, checks):
     """RunRefused naming the first precondition that does not hold."""
     for j, pre in enumerate(pres):
         check = checks.get(pre.get('kind'))
-        why = check(pre) if check else 'unknown kind %r' % pre.get('kind')
+        why = check(pre) if check else 'no check of kind %r is handed in' % pre.get('kind')
         if why:
             raise RunRefused('precondition %d (%s) does not hold: %s' % (j, pre.get('kind'), why))
 
@@ -771,7 +777,7 @@ def run(op, pairs, trigger, cfg, hub=None, now=None, spawn=procspawn.run, checks
     """Run the Operation `op` with the arguments `pairs` [(name, value)] on `trigger`; the module
     docstring gives the order. `cfg`: the machine config (kitlib.config.user.user_config). `hub`:
     a kitlib.hubclient.client.Client for a question trigger or a hub approval. `spawn`, `checks`
-    (the precondition checks by kind, default CHECKS), `environ` (the caller's), `registry`
+    (the precondition checks by kind, default CHECKS: no checklist-line, see with_checklist), `environ` (the caller's), `registry`
     (read_registry's stand-in), `now` (aware UTC), `pause` (called between the use-once scan and
     the ledger add), `home` (the home folder place.check reads, default the user's) and
     `make_cwd` (makes an approval run's empty working folder) are for tests. Result, or
